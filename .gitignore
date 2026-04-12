@@ -1,13 +1,54 @@
-.DS_Store
+# Dependencies
 node_modules/
-.env
-.env.local
-*.log
+.pnpm-store/
+
+# Build output
 dist/
 build/
+.next/
+
+# Expo
 .expo/
 ios/Pods/
 android/.gradle/
+android/app/build/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# Python
 __pycache__/
 *.pyc
 .venv/
+analysis/
+curviness/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage/
+
+# Misc
+*.tsbuildinfo

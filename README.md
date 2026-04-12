@@ -15,19 +15,38 @@ The motorcycle app that tells you how good the actual road surface is — not ju
 - [x] PoC sensor app (accelerometer + GPS)
 - [x] Landing page + waitlist
 - [x] Brand identity
+- [x] Repository structure + monorepo setup
 - [ ] Accelerometer data validation (real rides)
 - [ ] ML model specification
 - [ ] API design (OpenAPI)
 - [ ] MVP development
 
-## Docs
+## Repository Structure
 
-| Document | Description |
-|----------|-------------|
-| [Tarmoto_PRD_v1.docx](docs/Tarmoto_PRD_v1.docx) | Product Requirements — vision, epics, 30 user stories, roadmap |
-| [schema.sql](docs/schema.sql) | PostgreSQL + PostGIS database schema (15 tables) |
-| [wireframes.jsx](docs/wireframes.jsx) | Interactive wireframes — 8 core screens |
-| [database_erd.html](docs/database_erd.html) | Entity relationship diagram |
+```
+tarmoto/
+├── apps/
+│   ├── mobile/              React Native + Expo (iOS & Android)
+│   └── backend/             NestJS API (serves mobile + web)
+├── packages/
+│   └── shared/              Shared types, constants, DTOs
+├── docs/
+│   ├── prd/                 Product Requirements Document
+│   ├── design/              Wireframes, ERD
+│   ├── database/            PostgreSQL + PostGIS schema
+│   └── scripts/             Utility scripts (analysis, OSM, issues)
+└── .github/                 CI workflows, issue templates
+```
+
+## Tech Stack
+
+- **Mobile**: React Native + Expo
+- **Maps**: MapLibre GL + custom vector tiles
+- **Backend**: NestJS
+- **Database**: PostgreSQL + PostGIS
+- **ML**: TensorFlow Lite (on-device) + Python (server)
+- **Real-time**: WebSockets + Redis Pub/Sub
+- **Cloud**: AWS (ECS, RDS, S3, CloudFront)
 
 ## Architecture
 
@@ -55,7 +74,7 @@ The motorcycle app that tells you how good the actual road surface is — not ju
 └─────────────────────────────────────────────────────┘
 ```
 
-## Key differentiators
+## Key Differentiators
 
 1. **Crowdsourced road surface quality** — accelerometer-based, every rider is a sensor
 2. **Smart multi-day trip planner** — Fun Zone discovery, no more Street View scouting
@@ -63,17 +82,34 @@ The motorcycle app that tells you how good the actual road surface is — not ju
 4. **Commuter mode** — daily rider features, not just weekend touring
 5. **Road preview cards** — surface quality, curves, hazards, reviews per segment
 
-## Tech stack
+## Development
 
-- **Mobile**: React Native + Expo
-- **Maps**: MapLibre GL + custom vector tiles
-- **Backend**: NestJS or FastAPI
-- **Database**: PostgreSQL + PostGIS
-- **ML**: TensorFlow Lite (on-device) + Python (server)
-- **Real-time**: WebSockets + Redis Pub/Sub
-- **Cloud**: AWS (ECS, RDS, S3, CloudFront)
+```bash
+# Prerequisites: Node 24+, pnpm 10+
 
-## Related repos
+# Install all dependencies
+pnpm install
+
+# Run backend in dev mode
+pnpm dev:backend
+
+# Run mobile app
+pnpm dev:mobile
+
+# Run all tests
+pnpm test
+```
+
+## Docs
+
+| Document | Description |
+|----------|-------------|
+| [PRD](docs/prd/PRD.md) | Product Requirements — vision, epics, 30 user stories, roadmap |
+| [Schema](docs/database/schema.sql) | PostgreSQL + PostGIS database schema (15 tables) |
+| [Wireframes](docs/design/wireframes.jsx) | Interactive wireframes — 8 core screens |
+| [ERD](docs/design/database_erd.html) | Entity relationship diagram |
+
+## Related Repos
 
 - [GetTarmoto/web](https://github.com/GetTarmoto/web) — Landing page, PoC sensor, brand assets
 

@@ -1,0 +1,20 @@
+{
+  "name": "tarmoto",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Tarmoto — Know the road before you ride it",
+  "scripts": {
+    "dev:backend": "pnpm --filter @tarmoto/backend dev",
+    "dev:mobile": "pnpm --filter @tarmoto/mobile start",
+    "build:backend": "pnpm --filter @tarmoto/backend build",
+    "build:shared": "pnpm --filter @tarmoto/shared build",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "clean": "pnpm -r exec rm -rf dist node_modules .expo"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "packageManager": "pnpm@10.32.1"
+}
