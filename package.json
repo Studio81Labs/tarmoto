@@ -6,6 +6,7 @@
   "scripts": {
     "dev:backend": "pnpm --filter @tarmoto/backend dev",
     "dev:mobile": "pnpm --filter @tarmoto/mobile start",
+    "dev:docs": "pnpm --filter @tarmoto/design-docs dev",
     "build:backend": "pnpm --filter @tarmoto/backend build",
     "build:shared": "pnpm --filter @tarmoto/shared build",
     "lint": "pnpm -r lint",

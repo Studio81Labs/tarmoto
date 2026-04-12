@@ -10,7 +10,7 @@ Tarmoto is a motorcycle companion app with crowdsourced road surface quality int
 - `apps/backend/` — NestJS API (TypeScript, serves both mobile and web)
 - `packages/shared/` — Shared types, constants, DTOs (`@tarmoto/shared`)
 - `docs/prd/` — Product requirements
-- `docs/design/` — Wireframes, ERD
+- `docs/design/` — Wireframes, ERD (Vite app, run with `pnpm dev:docs`)
 - `docs/database/` — PostgreSQL + PostGIS schema
 - `docs/scripts/` — Python utility scripts (ride analysis, OSM curviness, GitHub issue creation)
 
@@ -29,6 +29,7 @@ Tarmoto is a motorcycle companion app with crowdsourced road surface quality int
 pnpm install              # Install all workspace deps
 pnpm dev:backend          # NestJS dev server (watch mode)
 pnpm dev:mobile           # Expo dev server
+pnpm dev:docs             # Design docs viewer (wireframes + ERD) on :4200
 pnpm build:backend        # Build backend
 pnpm build:shared         # Build shared package
 pnpm test                 # Run all tests

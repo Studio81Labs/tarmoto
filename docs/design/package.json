@@ -1,0 +1,19 @@
+{
+  "name": "@tarmoto/design-docs",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Interactive wireframes and design docs viewer",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.5.2",
+    "vite": "^6.3.5"
+  }
+}

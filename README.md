@@ -96,6 +96,9 @@ pnpm dev:backend
 # Run mobile app
 pnpm dev:mobile
 
+# View wireframes + ERD locally (opens on :4200)
+pnpm dev:docs
+
 # Run all tests
 pnpm test
 ```
