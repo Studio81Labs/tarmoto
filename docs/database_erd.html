@@ -1,0 +1,227 @@
+<style>
+#erd svg.erDiagram .divider path { stroke-opacity: 0.5; }
+#erd svg.erDiagram .row-rect-odd path,
+#erd svg.erDiagram .row-rect-odd rect,
+#erd svg.erDiagram .row-rect-even path,
+#erd svg.erDiagram .row-rect-even rect { stroke: none !important; }
+</style>
+<div id="erd"></div>
+<script type="module">
+import mermaid from 'https://esm.sh/mermaid@11/dist/mermaid.esm.min.mjs';
+const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+await document.fonts.ready;
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'base',
+  fontFamily: '"Anthropic Sans", sans-serif',
+  themeVariables: {
+    darkMode: dark,
+    fontSize: '13px',
+    fontFamily: '"Anthropic Sans", sans-serif',
+    lineColor: dark ? '#9c9a92' : '#73726c',
+    textColor: dark ? '#c2c0b6' : '#3d3d3a',
+  },
+});
+const { svg } = await mermaid.render('erd-svg', `erDiagram
+  users ||--o{ rides : records
+  users ||--o{ hazard_reports : submits
+  users ||--o{ trip_members : joins
+  users ||--o{ road_reviews : writes
+  users }o--o{ user_contacts : has
+
+  rides ||--o{ ride_segments : contains
+  rides ||--o{ ride_stats : has
+
+  road_segments ||--o{ surface_readings : measured_by
+  road_segments ||--o{ hazard_reports : located_on
+  road_segments ||--o{ road_reviews : reviewed_in
+
+  trips ||--o{ trip_days : planned_in
+  trips ||--o{ trip_members : includes
+  trip_days ||--o{ trip_waypoints : routed_through
+
+  fun_zones ||--o{ fun_zone_roads : contains
+  fun_zone_roads }o--|| road_segments : references
+
+  users {
+    uuid id PK
+    string email
+    string display_name
+    string phone
+    point home_location
+    point work_location
+    jsonb preferences
+    timestamp created_at
+  }
+
+  rides {
+    uuid id PK
+    uuid user_id FK
+    timestamp started_at
+    timestamp ended_at
+    float distance_km
+    float avg_speed
+    float max_speed
+    linestring route_geom
+    float avg_road_quality
+    string status
+  }
+
+  ride_segments {
+    uuid id PK
+    uuid ride_id FK
+    uuid road_segment_id FK
+    int sequence
+    float speed_avg
+    float lean_angle_max
+    float quality_reading
+  }
+
+  ride_stats {
+    uuid id PK
+    uuid ride_id FK
+    float elevation_gain
+    float elevation_loss
+    int curve_count
+    float fuel_estimate_l
+    interval duration
+  }
+
+  road_segments {
+    uuid id PK
+    linestring geom
+    float length_m
+    string road_name
+    string road_number
+    float curviness_score
+    float quality_score
+    string surface_type
+    int reading_count
+    int confidence
+    timestamp last_updated
+  }
+
+  surface_readings {
+    uuid id PK
+    uuid road_segment_id FK
+    uuid ride_id FK
+    float iri_value
+    string classification
+    float vibration_rms
+    timestamp recorded_at
+  }
+
+  hazard_reports {
+    uuid id PK
+    uuid user_id FK
+    uuid road_segment_id FK
+    point location
+    string hazard_type
+    string severity
+    string note
+    int confirmations
+    timestamp created_at
+    timestamp expires_at
+  }
+
+  road_reviews {
+    uuid id PK
+    uuid user_id FK
+    uuid road_segment_id FK
+    int rating
+    string comment
+    string bike_model
+    timestamp created_at
+  }
+
+  trips {
+    uuid id PK
+    uuid owner_id FK
+    string title
+    string region
+    int num_days
+    float daily_km_min
+    float daily_km_max
+    float min_quality
+    string status
+    timestamp created_at
+  }
+
+  trip_members {
+    uuid id PK
+    uuid trip_id FK
+    uuid user_id FK
+    string role
+    timestamp joined_at
+  }
+
+  trip_days {
+    uuid id PK
+    uuid trip_id FK
+    int day_number
+    string title
+    float distance_km
+    linestring route_geom
+    float avg_quality
+  }
+
+  trip_waypoints {
+    uuid id PK
+    uuid trip_day_id FK
+    int sequence
+    point location
+    string name
+    string waypoint_type
+    uuid road_segment_id FK
+    string notes
+  }
+
+  fun_zones {
+    uuid id PK
+    polygon boundary
+    string name
+    float composite_score
+    int road_count
+    float total_curve_km
+    timestamp last_calculated
+  }
+
+  fun_zone_roads {
+    uuid id PK
+    uuid fun_zone_id FK
+    uuid road_segment_id FK
+    float contribution_score
+  }
+
+  user_contacts {
+    uuid id PK
+    uuid user_id FK
+    string name
+    string phone
+    bool is_emergency
+  }
+`);
+document.getElementById('erd').innerHTML = svg;
+document.querySelectorAll('#erd svg.erDiagram .node').forEach(node => {
+  const firstPath = node.querySelector('path[d]');
+  if (!firstPath) return;
+  const d = firstPath.getAttribute('d');
+  const nums = d.match(/-?[\d.]+/g)?.map(Number);
+  if (!nums || nums.length < 8) return;
+  const xs = [nums[0], nums[2], nums[4], nums[6]];
+  const ys = [nums[1], nums[3], nums[5], nums[7]];
+  const x = Math.min(...xs), y = Math.min(...ys);
+  const w = Math.max(...xs) - x, h = Math.max(...ys) - y;
+  const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  rect.setAttribute('x', x); rect.setAttribute('y', y);
+  rect.setAttribute('width', w); rect.setAttribute('height', h);
+  rect.setAttribute('rx', '8');
+  for (const a of ['fill', 'stroke', 'stroke-width', 'class', 'style']) {
+    if (firstPath.hasAttribute(a)) rect.setAttribute(a, firstPath.getAttribute(a));
+  }
+  firstPath.replaceWith(rect);
+});
+document.querySelectorAll('#erd svg.erDiagram .row-rect-odd path, #erd svg.erDiagram .row-rect-even path').forEach(p => {
+  p.setAttribute('stroke', 'none');
+});
+</script>
