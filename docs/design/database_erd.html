@@ -1,25 +1,31 @@
 <style>
+html, body { margin: 0; padding: 0; background: #0C1018; }
 #erd svg.erDiagram .divider path { stroke-opacity: 0.5; }
 #erd svg.erDiagram .row-rect-odd path,
 #erd svg.erDiagram .row-rect-odd rect,
 #erd svg.erDiagram .row-rect-even path,
 #erd svg.erDiagram .row-rect-even rect { stroke: none !important; }
 </style>
-<div id="erd"></div>
+<div id="erd" style="background: #0C1018; min-height: 100vh; padding: 16px;"></div>
 <script type="module">
 import mermaid from 'https://esm.sh/mermaid@11/dist/mermaid.esm.min.mjs';
-const dark = matchMedia('(prefers-color-scheme: dark)').matches;
 await document.fonts.ready;
 mermaid.initialize({
   startOnLoad: false,
-  theme: 'base',
-  fontFamily: '"Anthropic Sans", sans-serif',
+  theme: 'dark',
+  fontFamily: 'system-ui, sans-serif',
   themeVariables: {
-    darkMode: dark,
+    darkMode: true,
     fontSize: '13px',
-    fontFamily: '"Anthropic Sans", sans-serif',
-    lineColor: dark ? '#9c9a92' : '#73726c',
-    textColor: dark ? '#c2c0b6' : '#3d3d3a',
+    fontFamily: 'system-ui, sans-serif',
+    background: '#0C1018',
+    primaryColor: '#1e293b',
+    primaryTextColor: '#E8ECF2',
+    primaryBorderColor: '#334155',
+    lineColor: '#8B95A8',
+    textColor: '#E8ECF2',
+    attributeBackgroundColorOdd: '#0f172a',
+    attributeBackgroundColorEven: '#131c2e',
   },
 });
 const { svg } = await mermaid.render('erd-svg', `erDiagram
