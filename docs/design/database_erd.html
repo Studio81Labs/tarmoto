@@ -246,37 +246,37 @@ document.querySelectorAll('#erd svg.erDiagram .node').forEach(node => {
   firstPath.replaceWith(rect);
 });
 // Force dark colors on all SVG elements (Mermaid uses inline styles that override CSS)
-const svg = document.querySelector('#erd svg');
-if (svg) {
-  svg.style.background = 'transparent';
+const svgEl = document.querySelector('#erd svg');
+if (svgEl) {
+  svgEl.style.background = 'transparent';
   // Entity header boxes
-  svg.querySelectorAll('.entityBox').forEach(el => {
+  svgEl.querySelectorAll('.entityBox').forEach(el => {
     el.style.fill = '#1e293b';
     el.style.stroke = '#334155';
   });
   // Row backgrounds
-  svg.querySelectorAll('.row-rect-odd path, .row-rect-odd rect').forEach(el => {
+  svgEl.querySelectorAll('.row-rect-odd path, .row-rect-odd rect').forEach(el => {
     el.style.fill = '#0f172a';
     el.style.stroke = 'none';
   });
-  svg.querySelectorAll('.row-rect-even path, .row-rect-even rect').forEach(el => {
+  svgEl.querySelectorAll('.row-rect-even path, .row-rect-even rect').forEach(el => {
     el.style.fill = '#131c2e';
     el.style.stroke = 'none';
   });
   // All text white
-  svg.querySelectorAll('text').forEach(el => {
+  svgEl.querySelectorAll('text').forEach(el => {
     el.style.fill = '#E8ECF2';
   });
   // Relationship lines and markers
-  svg.querySelectorAll('.relationshipLine').forEach(el => {
+  svgEl.querySelectorAll('.relationshipLine').forEach(el => {
     el.style.stroke = '#8B95A8';
   });
-  svg.querySelectorAll('marker path').forEach(el => {
+  svgEl.querySelectorAll('marker path').forEach(el => {
     el.style.fill = '#8B95A8';
     el.style.stroke = '#8B95A8';
   });
   // Relationship labels
-  svg.querySelectorAll('.relationshipLabel text').forEach(el => {
+  svgEl.querySelectorAll('.relationshipLabel text').forEach(el => {
     el.style.fill = '#64748b';
   });
 }
