@@ -1,10 +1,28 @@
 <style>
 html, body { margin: 0; padding: 0; background: #0C1018; }
-#erd svg.erDiagram .divider path { stroke-opacity: 0.5; }
-#erd svg.erDiagram .row-rect-odd path,
-#erd svg.erDiagram .row-rect-odd rect,
-#erd svg.erDiagram .row-rect-even path,
-#erd svg.erDiagram .row-rect-even rect { stroke: none !important; }
+#erd svg { background: transparent !important; }
+/* Entity header boxes */
+#erd svg .entityBox { fill: #1e293b !important; stroke: #334155 !important; }
+/* Attribute row backgrounds */
+#erd svg .row-rect-odd path,
+#erd svg .row-rect-odd rect { fill: #0f172a !important; stroke: none !important; }
+#erd svg .row-rect-even path,
+#erd svg .row-rect-even rect { fill: #131c2e !important; stroke: none !important; }
+/* Divider lines */
+#erd svg .divider path { stroke: #334155 !important; stroke-opacity: 0.5; }
+/* All text */
+#erd svg text { fill: #E8ECF2 !important; }
+/* Entity title text */
+#erd svg .entityLabel text { fill: #0ED3CF !important; font-weight: 700; }
+/* Attribute key labels (PK/FK) */
+#erd svg .attributeBoxOdd text,
+#erd svg .attributeBoxEven text { fill: #c2c0b6 !important; }
+/* Relationship lines */
+#erd svg .relationshipLine { stroke: #8B95A8 !important; }
+#erd svg marker path { fill: #8B95A8 !important; stroke: #8B95A8 !important; }
+/* Relationship labels */
+#erd svg .relationshipLabel text,
+#erd svg .entityTitleText { fill: #8B95A8 !important; }
 </style>
 <div id="erd" style="background: #0C1018; min-height: 100vh; padding: 16px;"></div>
 <script type="module">
@@ -227,7 +245,39 @@ document.querySelectorAll('#erd svg.erDiagram .node').forEach(node => {
   }
   firstPath.replaceWith(rect);
 });
-document.querySelectorAll('#erd svg.erDiagram .row-rect-odd path, #erd svg.erDiagram .row-rect-even path').forEach(p => {
-  p.setAttribute('stroke', 'none');
-});
+// Force dark colors on all SVG elements (Mermaid uses inline styles that override CSS)
+const svg = document.querySelector('#erd svg');
+if (svg) {
+  svg.style.background = 'transparent';
+  // Entity header boxes
+  svg.querySelectorAll('.entityBox').forEach(el => {
+    el.style.fill = '#1e293b';
+    el.style.stroke = '#334155';
+  });
+  // Row backgrounds
+  svg.querySelectorAll('.row-rect-odd path, .row-rect-odd rect').forEach(el => {
+    el.style.fill = '#0f172a';
+    el.style.stroke = 'none';
+  });
+  svg.querySelectorAll('.row-rect-even path, .row-rect-even rect').forEach(el => {
+    el.style.fill = '#131c2e';
+    el.style.stroke = 'none';
+  });
+  // All text white
+  svg.querySelectorAll('text').forEach(el => {
+    el.style.fill = '#E8ECF2';
+  });
+  // Relationship lines and markers
+  svg.querySelectorAll('.relationshipLine').forEach(el => {
+    el.style.stroke = '#8B95A8';
+  });
+  svg.querySelectorAll('marker path').forEach(el => {
+    el.style.fill = '#8B95A8';
+    el.style.stroke = '#8B95A8';
+  });
+  // Relationship labels
+  svg.querySelectorAll('.relationshipLabel text').forEach(el => {
+    el.style.fill = '#64748b';
+  });
+}
 </script>
