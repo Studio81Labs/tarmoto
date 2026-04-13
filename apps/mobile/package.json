@@ -1,22 +1,56 @@
 {
   "name": "@tarmoto/mobile",
-  "version": "1.0.0",
-  "main": "index.ts",
+  "version": "0.1.0",
+  "private": true,
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web"
+    "start": "react-native start",
+    "android": "react-native run-android",
+    "ios": "react-native run-ios",
+    "lint": "eslint . --ext .ts,.tsx",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "clean": "cd android && ./gradlew clean && cd .. && cd ios && xcodebuild clean && cd .."
   },
   "dependencies": {
-    "expo": "~54.0.33",
-    "expo-status-bar": "~3.0.9",
-    "react": "19.1.0",
-    "react-native": "0.81.5"
+    "@maplibre/maplibre-react-native": "^10.0.0",
+    "@react-native-community/geolocation": "^3.4.0",
+    "@react-navigation/bottom-tabs": "^7.0.0",
+    "@react-navigation/native": "^7.0.0",
+    "@react-navigation/native-stack": "^7.0.0",
+    "@types/react-native-vector-icons": "^6.4.18",
+    "axios": "^1.7.0",
+    "immer": "^10.1.0",
+    "react": "18.3.1",
+    "react-native": "0.76.6",
+    "react-native-background-actions": "^4.0.0",
+    "react-native-carplay": "2.4.1-beta.0",
+    "react-native-device-info": "^13.0.0",
+    "react-native-fs": "^2.20.0",
+    "react-native-gesture-handler": "^2.20.0",
+    "react-native-haptic-feedback": "^2.3.0",
+    "react-native-keep-awake": "^4.0.0",
+    "react-native-mmkv": "^3.1.0",
+    "react-native-reanimated": "^3.16.0",
+    "react-native-safe-area-context": "^5.0.0",
+    "react-native-screens": "^4.4.0",
+    "react-native-sensors": "^7.3.6",
+    "react-native-share": "^11.0.0",
+    "react-native-svg": "^15.8.0",
+    "react-native-vector-icons": "^10.2.0",
+    "rxjs": "^7.8.2",
+    "socket.io-client": "^4.8.0",
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
-    "@types/react": "~19.1.0",
-    "typescript": "~5.9.2"
-  },
-  "private": true
+    "@react-native/eslint-config": "^0.76.0",
+    "@testing-library/react-native": "^12.8.0",
+    "@types/node": "^24.12.2",
+    "@types/react": "^18.3.0",
+    "@types/react-native": "^0.73.0",
+    "eslint": "^9.0.0",
+    "jest": "^29.7.0",
+    "prettier": "^3.4.0",
+    "react-native-dotenv": "^3.4.0",
+    "typescript": "^5.5.0"
+  }
 }

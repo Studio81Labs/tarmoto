@@ -26,7 +26,7 @@ The motorcycle app that tells you how good the actual road surface is — not ju
 ```
 tarmoto/
 ├── apps/
-│   ├── mobile/              React Native + Expo (iOS & Android)
+│   ├── mobile/              Bare React Native (iOS & Android)
 │   ├── backend/             NestJS API (serves mobile + web)
 │   └── poc-sensor/          Road quality sensor PoC (Cloudflare Pages)
 ├── packages/
@@ -42,7 +42,7 @@ tarmoto/
 
 ## Tech Stack
 
-- **Mobile**: React Native + Expo
+- **Mobile**: React Native (bare)
 - **Maps**: MapLibre GL + custom vector tiles
 - **Backend**: NestJS
 - **Database**: PostgreSQL + PostGIS
@@ -95,8 +95,12 @@ pnpm install
 # Run backend in dev mode
 pnpm dev:backend
 
-# Run mobile app
+# Run mobile app (Metro bundler)
 pnpm dev:mobile
+
+# Run on iOS / Android
+pnpm ios
+pnpm android
 
 # View wireframes + ERD locally (opens on :4200)
 pnpm dev:docs

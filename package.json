@@ -6,6 +6,8 @@
   "scripts": {
     "dev:backend": "pnpm --filter @tarmoto/backend dev",
     "dev:mobile": "pnpm --filter @tarmoto/mobile start",
+    "ios": "pnpm --filter @tarmoto/mobile ios",
+    "android": "pnpm --filter @tarmoto/mobile android",
     "dev:poc": "pnpm --filter @tarmoto/poc-sensor dev",
     "dev:docs": "pnpm --filter @tarmoto/design-docs dev",
     "build:backend": "pnpm --filter @tarmoto/backend build",
@@ -13,7 +15,7 @@
     "build:shared": "pnpm --filter @tarmoto/shared build",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
-    "clean": "pnpm -r exec rm -rf dist node_modules .expo"
+    "clean": "pnpm -r exec rm -rf dist node_modules"
   },
   "engines": {
     "node": ">=24.0.0",

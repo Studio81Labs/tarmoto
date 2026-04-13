@@ -2,11 +2,11 @@
 
 ## Project
 
-Tarmoto is a motorcycle companion app with crowdsourced road surface quality intelligence, real-time hazard alerts, and multi-day trip planning. Monorepo with React Native (Expo) mobile app and NestJS backend.
+Tarmoto is a motorcycle companion app with crowdsourced road surface quality intelligence, real-time hazard alerts, and multi-day trip planning. Monorepo with bare React Native mobile app and NestJS backend.
 
 ## Repository Layout
 
-- `apps/mobile/` — React Native + Expo (TypeScript)
+- `apps/mobile/` — Bare React Native (TypeScript) — sensors, TF Lite, CarPlay
 - `apps/backend/` — NestJS API (TypeScript, serves both mobile and web)
 - `apps/poc-sensor/` — Road quality sensor PoC (Vite + React, deployed to Cloudflare Pages)
 - `packages/shared/` — Shared types, constants, DTOs (`@tarmoto/shared`)
@@ -19,7 +19,7 @@ Tarmoto is a motorcycle companion app with crowdsourced road surface quality int
 ## Tech Stack
 
 - **Runtime**: Node 24+, pnpm workspaces
-- **Mobile**: React Native + Expo, TypeScript
+- **Mobile**: Bare React Native 0.76, TypeScript, Zustand, MapLibre GL
 - **Backend**: NestJS, TypeScript strict
 - **Database**: PostgreSQL 16+ with PostGIS
 - **Maps**: MapLibre GL + custom vector tiles
@@ -30,7 +30,9 @@ Tarmoto is a motorcycle companion app with crowdsourced road surface quality int
 ```bash
 pnpm install              # Install all workspace deps
 pnpm dev:backend          # NestJS dev server (watch mode)
-pnpm dev:mobile           # Expo dev server
+pnpm dev:mobile           # Metro bundler
+pnpm ios                  # Run on iOS simulator
+pnpm android              # Run on Android emulator
 pnpm dev:docs             # Design docs viewer (wireframes + ERD) on :4200
 pnpm dev:poc              # PoC sensor app dev server
 pnpm build:backend        # Build backend
