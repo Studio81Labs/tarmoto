@@ -31,7 +31,7 @@ interface ProcessedSegment {
   classification: string;
   lat: number;
   lng: number;
-  speedAvg: number;
+  speedAvg: number | null;
   sampleCount: number;
   timestamp: Date;
 }
@@ -88,7 +88,8 @@ export class SensorService {
         iri_value: segment.rms,
         classification: segment.classification,
         vibration_rms: segment.rms,
-        speed_at_reading: segment.speedAvg * 3.6, // m/s to km/h
+        speed_at_reading:
+          segment.speedAvg !== null ? segment.speedAvg * 3.6 : null,
         device_model: dto.device_model ?? null,
         recorded_at: segment.timestamp,
       });
@@ -173,7 +174,9 @@ export class SensorService {
       .filter((r) => r.speed !== undefined)
       .map((r) => r.speed!);
     const speedAvg =
-      speeds.length > 0 ? speeds.reduce((a, b) => a + b, 0) / speeds.length : 0;
+      speeds.length > 0
+        ? speeds.reduce((a, b) => a + b, 0) / speeds.length
+        : null;
 
     return {
       rms,

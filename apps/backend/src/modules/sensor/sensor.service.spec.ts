@@ -276,6 +276,31 @@ describe('SensorService', () => {
 
       expect(result.accepted).toBe(20);
       expect(result.segments_updated).toBeGreaterThanOrEqual(1);
+
+      // speed_at_reading should be null, not 0
+      const createArg = (readingRepo.create as jest.Mock).mock.calls[0][0];
+      expect(createArg.speed_at_reading).toBeNull();
+    });
+  });
+
+  describe('processSegment speed handling', () => {
+    it('should return null speedAvg when no readings have speed', () => {
+      const readings: SensorReadingDto[] = Array.from(
+        { length: 20 },
+        (_, i) => ({
+          t: Date.now() + i * 20,
+          ax: 0.1,
+          ay: 0.2,
+          az: 9.8,
+          lat: 49.1,
+          lng: 16.75,
+        }),
+      );
+
+      const result = service.processSegment(readings);
+
+      expect(result).not.toBeNull();
+      expect(result!.speedAvg).toBeNull();
     });
   });
 });
