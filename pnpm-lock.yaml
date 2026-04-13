@@ -43,6 +43,9 @@ importers:
       class-validator:
         specifier: ^0.15.1
         version: 0.15.1
+      express:
+        specifier: ^5.2.1
+        version: 5.2.1
       geojson:
         specifier: ^0.5.0
         version: 0.5.0

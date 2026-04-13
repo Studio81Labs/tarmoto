@@ -6,6 +6,7 @@ import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { DatabaseModule } from './modules/database/database.module.js';
 import { AuthModule } from './modules/auth/index.js';
+import { HazardsModule } from './modules/hazards/index.js';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { AuthModule } from './modules/auth/index.js';
     }),
     DatabaseModule,
     AuthModule,
+    HazardsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
