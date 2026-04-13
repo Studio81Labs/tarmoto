@@ -1,5 +1,9 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, Index, OneToMany,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  Index,
+  OneToMany,
 } from 'typeorm';
 import * as GeoJSON from 'geojson';
 import { FunZoneRoad } from './fun-zone-road.entity.js';

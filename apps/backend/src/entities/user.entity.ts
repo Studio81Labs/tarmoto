@@ -1,6 +1,10 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, CreateDateColumn,
-  UpdateDateColumn, OneToMany, Index,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  OneToMany,
 } from 'typeorm';
 import * as GeoJSON from 'geojson';
 import { UserContact } from './user-contact.entity.js';
@@ -18,16 +22,29 @@ export class User {
   @Column({ type: 'varchar', length: 255, unique: true })
   email: string;
 
+  @Column({ type: 'varchar', length: 255, select: false })
+  password_hash: string;
+
   @Column({ type: 'varchar', length: 100 })
   display_name: string;
 
   @Column({ type: 'varchar', length: 20, nullable: true })
   phone: string | null;
 
-  @Column({ type: 'geometry', spatialFeatureType: 'Point', srid: 4326, nullable: true })
+  @Column({
+    type: 'geometry',
+    spatialFeatureType: 'Point',
+    srid: 4326,
+    nullable: true,
+  })
   home_location: GeoJSON.Geometry | null;
 
-  @Column({ type: 'geometry', spatialFeatureType: 'Point', srid: 4326, nullable: true })
+  @Column({
+    type: 'geometry',
+    spatialFeatureType: 'Point',
+    srid: 4326,
+    nullable: true,
+  })
   work_location: GeoJSON.Geometry | null;
 
   @Column({ type: 'jsonb', default: '{}' })

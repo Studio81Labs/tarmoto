@@ -17,6 +17,7 @@ import { FunZone } from './entities/fun-zone.entity.js';
 import { FunZoneRoad } from './entities/fun-zone-road.entity.js';
 import { CommuteRoute } from './entities/commute-route.entity.js';
 import { InitSchema1713000000000 } from './migrations/1713000000000-InitSchema.js';
+import { AddPasswordHash1713100000000 } from './migrations/1713100000000-AddPasswordHash.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -26,12 +27,23 @@ export const AppDataSource = new DataSource({
   username: process.env.TARMOTO_DATABASE_USER || 'tarmoto',
   password: process.env.TARMOTO_DATABASE_PASSWORD || 'tarmoto',
   entities: [
-    User, UserContact, RoadSegment, SurfaceReading,
-    Ride, RideSegment, RideStats,
-    HazardReport, RoadReview,
-    Trip, TripMember, TripDay, TripWaypoint,
-    FunZone, FunZoneRoad, CommuteRoute,
+    User,
+    UserContact,
+    RoadSegment,
+    SurfaceReading,
+    Ride,
+    RideSegment,
+    RideStats,
+    HazardReport,
+    RoadReview,
+    Trip,
+    TripMember,
+    TripDay,
+    TripWaypoint,
+    FunZone,
+    FunZoneRoad,
+    CommuteRoute,
   ],
-  migrations: [InitSchema1713000000000],
+  migrations: [InitSchema1713000000000, AddPasswordHash1713100000000],
   synchronize: false,
 });

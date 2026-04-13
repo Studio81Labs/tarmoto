@@ -1,6 +1,11 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column,
-  ManyToOne, JoinColumn, OneToMany, Unique,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  JoinColumn,
+  OneToMany,
+  Unique,
 } from 'typeorm';
 import * as GeoJSON from 'geojson';
 import { Trip } from './trip.entity.js';
@@ -24,7 +29,12 @@ export class TripDay {
   @Column({ type: 'float', nullable: true })
   distance_km: number | null;
 
-  @Column({ type: 'geometry', spatialFeatureType: 'LineString', srid: 4326, nullable: true })
+  @Column({
+    type: 'geometry',
+    spatialFeatureType: 'LineString',
+    srid: 4326,
+    nullable: true,
+  })
   route_geom: GeoJSON.Geometry | null;
 
   @Column({ type: 'float', nullable: true })

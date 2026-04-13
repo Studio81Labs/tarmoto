@@ -2,6 +2,45 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { databaseConfig } from '../../config/database.config.js';
+import { InitSchema1713000000000 } from '../../migrations/1713000000000-InitSchema.js';
+import { AddPasswordHash1713100000000 } from '../../migrations/1713100000000-AddPasswordHash.js';
+import {
+  User,
+  UserContact,
+  RoadSegment,
+  SurfaceReading,
+  Ride,
+  RideSegment,
+  RideStats,
+  HazardReport,
+  RoadReview,
+  Trip,
+  TripMember,
+  TripDay,
+  TripWaypoint,
+  FunZone,
+  FunZoneRoad,
+  CommuteRoute,
+} from '../../entities/index.js';
+
+const entities = [
+  User,
+  UserContact,
+  RoadSegment,
+  SurfaceReading,
+  Ride,
+  RideSegment,
+  RideStats,
+  HazardReport,
+  RoadReview,
+  Trip,
+  TripMember,
+  TripDay,
+  TripWaypoint,
+  FunZone,
+  FunZoneRoad,
+  CommuteRoute,
+];
 
 @Module({
   imports: [
@@ -15,11 +54,14 @@ import { databaseConfig } from '../../config/database.config.js';
         database: config.get('database.database'),
         username: config.get('database.username'),
         password: config.get('database.password'),
-        autoLoadEntities: true,
-        synchronize: false,
+        entities,
+        migrations: [InitSchema1713000000000, AddPasswordHash1713100000000],
         migrationsRun: true,
-        migrations: ['dist/migrations/*.js'],
-        logging: config.get('TARMOTO_NODE_ENV') === 'development' ? ['error', 'warn', 'migration'] : ['error'],
+        synchronize: false,
+        logging:
+          config.get('TARMOTO_NODE_ENV') === 'development'
+            ? ['error', 'warn', 'migration']
+            : ['error'],
       }),
     }),
   ],
