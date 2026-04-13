@@ -20,8 +20,8 @@ Tarmoto is a motorcycle companion app with crowdsourced road surface quality int
 
 - **Runtime**: Node 24+, pnpm workspaces
 - **Mobile**: Bare React Native 0.76, TypeScript, Zustand, MapLibre GL
-- **Backend**: NestJS, TypeScript strict
-- **Database**: PostgreSQL 16+ with PostGIS
+- **Backend**: NestJS 11, TypeORM, TypeScript strict
+- **Database**: PostgreSQL 16 + PostGIS 3.4 (Docker)
 - **Maps**: MapLibre GL + custom vector tiles
 - **ML**: TensorFlow Lite (on-device)
 
@@ -35,6 +35,9 @@ pnpm ios                  # Run on iOS simulator
 pnpm android              # Run on Android emulator
 pnpm dev:docs             # Design docs viewer (wireframes + ERD) on :4200
 pnpm dev:poc              # PoC sensor app dev server
+pnpm db:up                # Start PostgreSQL + Redis via Docker
+pnpm db:down              # Stop Docker services
+pnpm db:migrate           # Build backend + run TypeORM migrations
 pnpm build:backend        # Build backend
 pnpm build:poc            # Build PoC sensor (output: apps/poc-sensor/dist)
 pnpm build:shared         # Build shared package
@@ -49,3 +52,7 @@ pnpm lint                 # Lint all packages
 - TypeScript strict mode everywhere
 - Shared types/constants go in `packages/shared`
 - Domain enums (hazard types, surface types, ride types) are defined in `@tarmoto/shared`
+- Env vars use `TARMOTO_` prefix (e.g. `TARMOTO_DATABASE_HOST`)
+- Database: TypeORM with native PostGIS geometry columns (not Prisma — Prisma lacks PostGIS support)
+- Entities in `apps/backend/src/entities/`, feature modules in `apps/backend/src/modules/`
+- Docker services in `infra/docker/docker-compose.yml`
