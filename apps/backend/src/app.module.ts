@@ -9,6 +9,7 @@ import { AuthModule } from './modules/auth/index.js';
 import { HazardsModule } from './modules/hazards/index.js';
 import { SensorModule } from './modules/sensor/index.js';
 import { RoadsModule } from './modules/roads/index.js';
+import { UsersModule } from './modules/users/index.js';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { RoadsModule } from './modules/roads/index.js';
     }),
     DatabaseModule,
     AuthModule,
+    UsersModule,
     HazardsModule,
     SensorModule,
     RoadsModule,
