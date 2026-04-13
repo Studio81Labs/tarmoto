@@ -1,0 +1,1833 @@
+openapi: 3.0.3
+info:
+  title: Tarmoto API
+  description: |
+    **Know the road before you ride it.**
+
+    REST API for the Tarmoto motorcycle companion app. Provides road surface quality intelligence,
+    trip planning, hazard reporting, ride tracking, and community features.
+
+    ## Authentication
+    All authenticated endpoints require a Bearer token in the Authorization header.
+    Tokens are obtained via `/auth/login` or `/auth/register`.
+
+    ## Rate Limits
+    - Public endpoints: 60 requests/minute
+    - Authenticated endpoints: 120 requests/minute
+    - Sensor data upload: 10 requests/minute (batched)
+
+    ## Geospatial
+    All coordinates use WGS84 (EPSG:4326). Latitude/longitude as decimal degrees.
+    Distances in meters unless specified otherwise.
+  version: 1.0.0
+  contact:
+    name: Tarmoto Team
+    url: https://tarmoto.app
+  license:
+    name: Proprietary
+
+servers:
+  - url: https://api.tarmoto.app/v1
+    description: Production
+  - url: https://api-staging.tarmoto.app/v1
+    description: Staging
+
+tags:
+  - name: Auth
+    description: Authentication and account management
+  - name: Users
+    description: User profile and settings
+  - name: Rides
+    description: Ride recording and tracking
+  - name: Road Segments
+    description: Road quality data and map overlay
+  - name: Hazards
+    description: Community hazard reporting
+  - name: Trips
+    description: Multi-day trip planning and collaboration
+  - name: Reviews
+    description: Road segment reviews
+  - name: Commute
+    description: Commuter mode routes and stats
+  - name: Sensor Data
+    description: Accelerometer data upload and processing
+
+paths:
+  # ─── AUTH ───
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new account
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, display_name]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: rider@example.com
+                password:
+                  type: string
+                  minLength: 8
+                  example: "securePassword123"
+                display_name:
+                  type: string
+                  maxLength: 100
+                  example: "Martin_CZ"
+      responses:
+        "201":
+          description: Account created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "409":
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login with email and password
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access token
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        "200":
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+
+  # ─── USERS ───
+  /users/me:
+    get:
+      tags: [Users]
+      summary: Get current user profile
+      operationId: getProfile
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+    patch:
+      tags: [Users]
+      summary: Update user profile
+      operationId: updateProfile
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                display_name:
+                  type: string
+                phone:
+                  type: string
+                home_location:
+                  $ref: "#/components/schemas/LatLng"
+                work_location:
+                  $ref: "#/components/schemas/LatLng"
+                preferences:
+                  $ref: "#/components/schemas/UserPreferences"
+      responses:
+        "200":
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /users/me/contacts:
+    get:
+      tags: [Users]
+      summary: List emergency contacts
+      operationId: getContacts
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Contact list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EmergencyContact"
+
+    post:
+      tags: [Users]
+      summary: Add emergency contact
+      operationId: addContact
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, phone]
+              properties:
+                name:
+                  type: string
+                phone:
+                  type: string
+                is_emergency:
+                  type: boolean
+                  default: true
+      responses:
+        "201":
+          description: Contact added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmergencyContact"
+
+  # ─── RIDES ───
+  /rides:
+    get:
+      tags: [Rides]
+      summary: List user's rides
+      operationId: listRides
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: type
+          in: query
+          description: Filter by ride type
+          schema:
+            type: string
+            enum: [free, commute, trip, tracked]
+      responses:
+        "200":
+          description: List of rides
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rides:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/RideSummary"
+                  total:
+                    type: integer
+
+  /rides/start:
+    post:
+      tags: [Rides]
+      summary: Start a new ride
+      operationId: startRide
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ride_type:
+                  type: string
+                  enum: [free, commute, trip, tracked]
+                  default: free
+                trip_day_id:
+                  type: string
+                  format: uuid
+                  description: If riding a planned trip day
+      responses:
+        "201":
+          description: Ride started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ride"
+
+  /rides/{rideId}/stop:
+    post:
+      tags: [Rides]
+      summary: Stop an active ride
+      operationId: stopRide
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/rideId"
+      responses:
+        "200":
+          description: Ride stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ride"
+
+  /rides/{rideId}:
+    get:
+      tags: [Rides]
+      summary: Get ride details with stats
+      operationId: getRide
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/rideId"
+      responses:
+        "200":
+          description: Ride details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RideDetail"
+
+  /rides/{rideId}/gpx:
+    get:
+      tags: [Rides]
+      summary: Export ride as GPX
+      operationId: exportGpx
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/rideId"
+      responses:
+        "200":
+          description: GPX file
+          content:
+            application/gpx+xml:
+              schema:
+                type: string
+
+  /rides/import:
+    post:
+      tags: [Rides]
+      summary: Import a GPX file as a route
+      operationId: importGpx
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                name:
+                  type: string
+      responses:
+        "201":
+          description: Route imported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RideSummary"
+
+  # ─── SENSOR DATA ───
+  /sensor/upload:
+    post:
+      tags: [Sensor Data]
+      summary: Upload batched accelerometer readings
+      description: |
+        Upload a batch of sensor readings collected during a ride.
+        Readings are processed server-side to update road quality scores.
+        Data should be batched and uploaded periodically (e.g. every 5 min)
+        or at ride end. GPS coordinates are optional (privacy setting).
+      operationId: uploadSensorData
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ride_id, readings]
+              properties:
+                ride_id:
+                  type: string
+                  format: uuid
+                device_model:
+                  type: string
+                  example: "iPhone 15 Pro"
+                readings:
+                  type: array
+                  maxItems: 5000
+                  items:
+                    type: object
+                    required: [t, ax, ay, az]
+                    properties:
+                      t:
+                        type: integer
+                        description: Unix timestamp milliseconds
+                      ax:
+                        type: number
+                        format: float
+                        description: Accelerometer X (m/s²)
+                      ay:
+                        type: number
+                        format: float
+                      az:
+                        type: number
+                        format: float
+                      lat:
+                        type: number
+                        format: double
+                      lng:
+                        type: number
+                        format: double
+                      speed:
+                        type: number
+                        description: Speed in m/s
+      responses:
+        "202":
+          description: Data accepted for processing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted:
+                    type: integer
+                    description: Number of readings accepted
+                  segments_updated:
+                    type: integer
+                    description: Road segments that got new quality data
+
+  # ─── ROAD SEGMENTS ───
+  /roads/nearby:
+    get:
+      tags: [Road Segments]
+      summary: Get road segments near a location
+      operationId: getNearbyRoads
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema:
+            type: number
+            format: double
+        - name: lng
+          in: query
+          required: true
+          schema:
+            type: number
+            format: double
+        - name: radius
+          in: query
+          description: Search radius in meters
+          schema:
+            type: integer
+            default: 5000
+            maximum: 50000
+        - name: min_quality
+          in: query
+          description: Minimum quality score filter
+          schema:
+            type: number
+            minimum: 1
+            maximum: 5
+        - name: surface_type
+          in: query
+          description: Filter by surface type
+          schema:
+            type: string
+            enum: [asphalt, concrete, cobblestone, gravel, dirt]
+      responses:
+        "200":
+          description: Nearby road segments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RoadSegment"
+
+  /roads/{segmentId}:
+    get:
+      tags: [Road Segments]
+      summary: Get road segment details (Road Preview Card data)
+      operationId: getRoadSegment
+      parameters:
+        - name: segmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Road segment details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoadSegmentDetail"
+
+  /roads/tiles/{z}/{x}/{y}.mvt:
+    get:
+      tags: [Road Segments]
+      summary: Get vector map tile with road quality overlay
+      operationId: getQualityTile
+      parameters:
+        - name: z
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: x
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: "y"
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: layers
+          in: query
+          description: Which layers to include
+          schema:
+            type: string
+            enum: [quality, surface, hazards, all]
+            default: all
+      responses:
+        "200":
+          description: Mapbox Vector Tile
+          content:
+            application/vnd.mapbox-vector-tile:
+              schema:
+                type: string
+                format: binary
+
+  /roads/fun-zones:
+    get:
+      tags: [Road Segments]
+      summary: Get fun zones in a bounding box
+      operationId: getFunZones
+      parameters:
+        - name: bbox
+          in: query
+          required: true
+          description: "Bounding box: west,south,east,north"
+          schema:
+            type: string
+            example: "18.1,49.4,18.6,49.7"
+      responses:
+        "200":
+          description: Fun zones with scores
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FunZone"
+
+  # ─── HAZARDS ───
+  /hazards:
+    get:
+      tags: [Hazards]
+      summary: Get active hazards in area
+      operationId: getHazards
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema:
+            type: number
+        - name: lng
+          in: query
+          required: true
+          schema:
+            type: number
+        - name: radius
+          in: query
+          schema:
+            type: integer
+            default: 10000
+        - name: types
+          in: query
+          description: Comma-separated hazard types
+          schema:
+            type: string
+            example: "pothole,gravel,roadworks"
+      responses:
+        "200":
+          description: Active hazards
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Hazard"
+
+    post:
+      tags: [Hazards]
+      summary: Report a hazard
+      operationId: reportHazard
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lat, lng, hazard_type]
+              properties:
+                lat:
+                  type: number
+                lng:
+                  type: number
+                hazard_type:
+                  type: string
+                  enum: [pothole, gravel, oil_spill, roadworks, animals, police, flooding, ice, other]
+                severity:
+                  type: string
+                  enum: [low, medium, high]
+                  default: medium
+                note:
+                  type: string
+                  maxLength: 500
+      responses:
+        "201":
+          description: Hazard reported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Hazard"
+
+  /hazards/{hazardId}/confirm:
+    post:
+      tags: [Hazards]
+      summary: Confirm a hazard is still present
+      operationId: confirmHazard
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: hazardId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Hazard confirmed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Hazard"
+
+  /hazards/{hazardId}/dismiss:
+    post:
+      tags: [Hazards]
+      summary: Report hazard is no longer present
+      operationId: dismissHazard
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: hazardId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Hazard dismissed
+
+  /hazards/route:
+    post:
+      tags: [Hazards]
+      summary: Get hazards along a route
+      description: Returns all active hazards within a buffer distance of a route geometry
+      operationId: getHazardsAlongRoute
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [route]
+              properties:
+                route:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/LatLng"
+                buffer_m:
+                  type: integer
+                  default: 200
+                  description: Buffer distance from route in meters
+      responses:
+        "200":
+          description: Hazards along route
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Hazard"
+
+  # ─── TRIPS ───
+  /trips:
+    get:
+      tags: [Trips]
+      summary: List user's trips
+      operationId: listTrips
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, planned, active, completed]
+      responses:
+        "200":
+          description: User's trips
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TripSummary"
+
+    post:
+      tags: [Trips]
+      summary: Create a new trip
+      operationId: createTrip
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, num_days]
+              properties:
+                title:
+                  type: string
+                  example: "Beskydy Weekend"
+                region:
+                  type: string
+                  example: "Beskydy & Jeseníky"
+                num_days:
+                  type: integer
+                  minimum: 1
+                  maximum: 30
+                daily_km_min:
+                  type: number
+                  default: 150
+                daily_km_max:
+                  type: number
+                  default: 350
+                min_quality:
+                  type: number
+                  minimum: 1
+                  maximum: 5
+                  default: 3.0
+                road_preference:
+                  type: string
+                  enum: [curvy, scenic, fast, mixed]
+                  default: curvy
+      responses:
+        "201":
+          description: Trip created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trip"
+
+  /trips/{tripId}:
+    get:
+      tags: [Trips]
+      summary: Get trip details with all days and waypoints
+      operationId: getTrip
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/tripId"
+      responses:
+        "200":
+          description: Full trip details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trip"
+
+    patch:
+      tags: [Trips]
+      summary: Update trip settings
+      operationId: updateTrip
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/tripId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                num_days:
+                  type: integer
+                daily_km_min:
+                  type: number
+                daily_km_max:
+                  type: number
+                min_quality:
+                  type: number
+                road_preference:
+                  type: string
+                status:
+                  type: string
+                  enum: [draft, planned, active, completed]
+      responses:
+        "200":
+          description: Trip updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trip"
+
+    delete:
+      tags: [Trips]
+      summary: Delete a trip
+      operationId: deleteTrip
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/tripId"
+      responses:
+        "204":
+          description: Trip deleted
+
+  /trips/{tripId}/generate:
+    post:
+      tags: [Trips]
+      summary: Auto-generate optimized route for the trip
+      description: |
+        Uses the trip parameters and Fun Zone data to generate an optimized
+        multi-day route. Each day maximizes fun-factor roads while respecting
+        daily distance limits. Includes suggested overnight stops and fuel stops.
+      operationId: generateTripRoute
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/tripId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                start_location:
+                  $ref: "#/components/schemas/LatLng"
+                end_location:
+                  $ref: "#/components/schemas/LatLng"
+                  description: If different from start (one-way trip)
+                bbox:
+                  type: string
+                  description: "Bounding box to search for roads: west,south,east,north"
+                  example: "17.8,49.35,18.85,49.85"
+      responses:
+        "200":
+          description: Generated route
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trip"
+
+  /trips/{tripId}/members:
+    get:
+      tags: [Trips]
+      summary: List trip members
+      operationId: listTripMembers
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/tripId"
+      responses:
+        "200":
+          description: Trip members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TripMember"
+
+  /trips/{tripId}/join:
+    post:
+      tags: [Trips]
+      summary: Join a trip (via invite code)
+      operationId: joinTrip
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/tripId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                invite_code:
+                  type: string
+      responses:
+        "200":
+          description: Joined trip
+
+  /trips/{tripId}/days/{dayNumber}:
+    get:
+      tags: [Trips]
+      summary: Get a specific day's route and details
+      operationId: getTripDay
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/tripId"
+        - name: dayNumber
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Day details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TripDay"
+
+    patch:
+      tags: [Trips]
+      summary: Update a trip day (add/remove waypoints, reorder)
+      operationId: updateTripDay
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/tripId"
+        - name: dayNumber
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                waypoints:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/WaypointInput"
+      responses:
+        "200":
+          description: Day updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TripDay"
+
+  # ─── REVIEWS ───
+  /roads/{segmentId}/reviews:
+    get:
+      tags: [Reviews]
+      summary: Get reviews for a road segment
+      operationId: getReviews
+      parameters:
+        - name: segmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Reviews list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RoadReview"
+
+    post:
+      tags: [Reviews]
+      summary: Submit a road review
+      operationId: submitReview
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: segmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rating]
+              properties:
+                rating:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                comment:
+                  type: string
+                  maxLength: 1000
+                bike_model:
+                  type: string
+                  example: "BMW R1250GS"
+      responses:
+        "201":
+          description: Review submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoadReview"
+
+  # ─── COMMUTE ───
+  /commute/routes:
+    get:
+      tags: [Commute]
+      summary: Get user's saved commute routes
+      operationId: getCommuteRoutes
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Commute routes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CommuteRoute"
+
+    post:
+      tags: [Commute]
+      summary: Save a commute route
+      operationId: saveCommuteRoute
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [origin, destination]
+              properties:
+                name:
+                  type: string
+                  default: "Default"
+                origin:
+                  $ref: "#/components/schemas/LatLng"
+                destination:
+                  $ref: "#/components/schemas/LatLng"
+      responses:
+        "201":
+          description: Route saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommuteRoute"
+
+  /commute/status:
+    get:
+      tags: [Commute]
+      summary: Get current commute status (hazards, weather, route quality)
+      operationId: getCommuteStatus
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Commute status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  route:
+                    $ref: "#/components/schemas/CommuteRoute"
+                  hazards:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Hazard"
+                  weather:
+                    $ref: "#/components/schemas/Weather"
+                  estimated_time_min:
+                    type: integer
+                  route_quality:
+                    type: number
+                  status:
+                    type: string
+                    enum: [clear, hazards, weather_warning, delays]
+
+  /commute/stats:
+    get:
+      tags: [Commute]
+      summary: Get weekly commute statistics
+      operationId: getCommuteStats
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [week, month]
+            default: week
+      responses:
+        "200":
+          description: Commute statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  period:
+                    type: string
+                  total_rides:
+                    type: integer
+                  total_km:
+                    type: number
+                  total_time_min:
+                    type: integer
+                  avg_duration_min:
+                    type: number
+                  fuel_estimate_l:
+                    type: number
+                  daily_breakdown:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date:
+                          type: string
+                          format: date
+                        rides:
+                          type: integer
+                        km:
+                          type: number
+                        duration_min:
+                          type: integer
+
+  # ─── ROUTING ───
+  /route/calculate:
+    post:
+      tags: [Road Segments]
+      summary: Calculate a quality-aware route
+      description: |
+        Calculates a route between points, factoring in road surface quality,
+        curviness preference, and hazard avoidance. Returns the route geometry
+        along with per-segment quality data.
+      operationId: calculateRoute
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [waypoints]
+              properties:
+                waypoints:
+                  type: array
+                  minItems: 2
+                  items:
+                    $ref: "#/components/schemas/LatLng"
+                preferences:
+                  type: object
+                  properties:
+                    road_preference:
+                      type: string
+                      enum: [fastest, curvy, scenic, balanced]
+                      default: balanced
+                    min_quality:
+                      type: number
+                      minimum: 1
+                      maximum: 5
+                      default: 1
+                    avoid_highway:
+                      type: boolean
+                      default: false
+                    avoid_toll:
+                      type: boolean
+                      default: false
+                    avoid_hazards:
+                      type: boolean
+                      default: true
+      responses:
+        "200":
+          description: Calculated route
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  distance_m:
+                    type: number
+                  duration_s:
+                    type: integer
+                  avg_quality:
+                    type: number
+                  geometry:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/LatLng"
+                  segments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        road_segment_id:
+                          type: string
+                          format: uuid
+                        road_name:
+                          type: string
+                        quality_score:
+                          type: number
+                        curviness_score:
+                          type: number
+                        surface_type:
+                          type: string
+                        length_m:
+                          type: number
+                        hazard_count:
+                          type: integer
+
+  # ─── CRASH DETECTION ───
+  /safety/crash-alert:
+    post:
+      tags: [Hazards]
+      summary: Send crash alert to emergency contacts
+      description: |
+        Triggered by the app when crash detection activates and
+        the countdown timer expires without cancellation.
+      operationId: sendCrashAlert
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lat, lng]
+              properties:
+                lat:
+                  type: number
+                lng:
+                  type: number
+                ride_id:
+                  type: string
+                  format: uuid
+                speed_at_impact:
+                  type: number
+                  description: Last known speed in km/h
+      responses:
+        "200":
+          description: Alert sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contacts_notified:
+                    type: integer
+                  alert_id:
+                    type: string
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    rideId:
+      name: rideId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    tripId:
+      name: tripId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    LatLng:
+      type: object
+      required: [lat, lng]
+      properties:
+        lat:
+          type: number
+          format: double
+          example: 49.5
+        lng:
+          type: number
+          format: double
+          example: 18.3
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        status:
+          type: integer
+
+    AuthResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        expires_in:
+          type: integer
+          description: Seconds until access token expires
+        user:
+          $ref: "#/components/schemas/User"
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+        phone:
+          type: string
+        home_location:
+          $ref: "#/components/schemas/LatLng"
+        work_location:
+          $ref: "#/components/schemas/LatLng"
+        preferences:
+          $ref: "#/components/schemas/UserPreferences"
+        created_at:
+          type: string
+          format: date-time
+
+    UserPreferences:
+      type: object
+      properties:
+        units:
+          type: string
+          enum: [metric, imperial]
+          default: metric
+        daily_km:
+          type: integer
+          default: 250
+        min_quality:
+          type: number
+          default: 3.0
+        road_types:
+          type: array
+          items:
+            type: string
+        record_gps:
+          type: boolean
+          default: true
+        crash_detection:
+          type: boolean
+          default: true
+
+    EmergencyContact:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        phone:
+          type: string
+        is_emergency:
+          type: boolean
+
+    RideSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+        distance_km:
+          type: number
+        duration_min:
+          type: integer
+        avg_speed:
+          type: number
+        avg_road_quality:
+          type: number
+        ride_type:
+          type: string
+        status:
+          type: string
+
+    Ride:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [active, completed, cancelled]
+        ride_type:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+
+    RideDetail:
+      allOf:
+        - $ref: "#/components/schemas/RideSummary"
+        - type: object
+          properties:
+            route_geometry:
+              type: array
+              items:
+                $ref: "#/components/schemas/LatLng"
+            max_speed:
+              type: number
+            elevation_gain:
+              type: number
+            elevation_loss:
+              type: number
+            curve_count:
+              type: integer
+            max_lean_angle:
+              type: number
+            fuel_estimate_l:
+              type: number
+            segments:
+              type: array
+              items:
+                type: object
+                properties:
+                  road_segment_id:
+                    type: string
+                    format: uuid
+                  road_name:
+                    type: string
+                  quality_reading:
+                    type: number
+                  speed_avg:
+                    type: number
+                  lean_angle_max:
+                    type: number
+
+    RoadSegment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        road_name:
+          type: string
+        road_number:
+          type: string
+        quality_score:
+          type: number
+          description: "1-5 scale"
+        curviness_score:
+          type: number
+          description: "0-5 scale"
+        surface_type:
+          type: string
+          enum: [asphalt, concrete, cobblestone, gravel, dirt, unknown]
+        length_m:
+          type: number
+        confidence:
+          type: integer
+          description: "0-100, based on number of readings"
+        reading_count:
+          type: integer
+        last_updated:
+          type: string
+          format: date-time
+
+    RoadSegmentDetail:
+      allOf:
+        - $ref: "#/components/schemas/RoadSegment"
+        - type: object
+          properties:
+            geometry:
+              type: array
+              items:
+                $ref: "#/components/schemas/LatLng"
+            elevation_min:
+              type: number
+            elevation_max:
+              type: number
+            quality_breakdown:
+              type: object
+              description: Percentage of segment in each quality tier
+              properties:
+                excellent:
+                  type: number
+                good:
+                  type: number
+                fair:
+                  type: number
+                poor:
+                  type: number
+                very_poor:
+                  type: number
+            active_hazards:
+              type: array
+              items:
+                $ref: "#/components/schemas/Hazard"
+            recent_reviews:
+              type: array
+              items:
+                $ref: "#/components/schemas/RoadReview"
+            riders_per_month:
+              type: integer
+            avg_review_rating:
+              type: number
+
+    FunZone:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        composite_score:
+          type: number
+        road_count:
+          type: integer
+        total_curve_km:
+          type: number
+        avg_quality:
+          type: number
+        best_season:
+          type: string
+        boundary:
+          type: array
+          items:
+            $ref: "#/components/schemas/LatLng"
+
+    Hazard:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        lat:
+          type: number
+        lng:
+          type: number
+        hazard_type:
+          type: string
+          enum: [pothole, gravel, oil_spill, roadworks, animals, police, flooding, ice, other]
+        severity:
+          type: string
+          enum: [low, medium, high]
+        note:
+          type: string
+        confirmations:
+          type: integer
+        reporter:
+          type: string
+          description: Display name of reporter
+        road_name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+
+    TripSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        region:
+          type: string
+        num_days:
+          type: integer
+        status:
+          type: string
+          enum: [draft, planned, active, completed]
+        member_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    Trip:
+      allOf:
+        - $ref: "#/components/schemas/TripSummary"
+        - type: object
+          properties:
+            daily_km_min:
+              type: number
+            daily_km_max:
+              type: number
+            min_quality:
+              type: number
+            road_preference:
+              type: string
+            days:
+              type: array
+              items:
+                $ref: "#/components/schemas/TripDay"
+            members:
+              type: array
+              items:
+                $ref: "#/components/schemas/TripMember"
+            invite_code:
+              type: string
+              description: Code for others to join this trip
+
+    TripDay:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        day_number:
+          type: integer
+        title:
+          type: string
+        distance_km:
+          type: number
+        avg_quality:
+          type: number
+        elevation_gain:
+          type: number
+        estimated_time_min:
+          type: integer
+        route_geometry:
+          type: array
+          items:
+            $ref: "#/components/schemas/LatLng"
+        waypoints:
+          type: array
+          items:
+            $ref: "#/components/schemas/Waypoint"
+
+    Waypoint:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        sequence:
+          type: integer
+        lat:
+          type: number
+        lng:
+          type: number
+        name:
+          type: string
+        waypoint_type:
+          type: string
+          enum: [start, via, fuel, food, coffee, hotel, photo, end]
+        road_segment_id:
+          type: string
+          format: uuid
+        notes:
+          type: string
+        duration_min:
+          type: integer
+          description: Planned stop duration
+
+    WaypointInput:
+      type: object
+      required: [lat, lng]
+      properties:
+        lat:
+          type: number
+        lng:
+          type: number
+        name:
+          type: string
+        waypoint_type:
+          type: string
+          enum: [start, via, fuel, food, coffee, hotel, photo, end]
+          default: via
+        notes:
+          type: string
+        duration_min:
+          type: integer
+
+    TripMember:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        role:
+          type: string
+          enum: [owner, admin, member]
+        joined_at:
+          type: string
+          format: date-time
+
+    RoadReview:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_display_name:
+          type: string
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+        bike_model:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    CommuteRoute:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        origin:
+          $ref: "#/components/schemas/LatLng"
+        destination:
+          $ref: "#/components/schemas/LatLng"
+        distance_km:
+          type: number
+        avg_duration_min:
+          type: integer
+        avg_quality:
+          type: number
+        is_primary:
+          type: boolean
+        route_geometry:
+          type: array
+          items:
+            $ref: "#/components/schemas/LatLng"
+
+    Weather:
+      type: object
+      properties:
+        temperature_c:
+          type: number
+        condition:
+          type: string
+          enum: [clear, cloudy, rain, storm, snow, fog, ice]
+        wind_kmh:
+          type: number
+        precipitation_chance:
+          type: number
+        road_condition:
+          type: string
+          enum: [dry, wet, icy, unknown]
+        description:
+          type: string
+          example: "14°C · Dry roads · Wind 12 km/h"
