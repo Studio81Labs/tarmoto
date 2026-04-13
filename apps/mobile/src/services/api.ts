@@ -5,7 +5,7 @@
  */
 
 import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
-import { MMKV } from 'react-native-mmkv';
+import { createMMKV } from 'react-native-mmkv';
 import type {
   AuthResponse, User, RideSummary, RideDetail, RoadSegment,
   RoadSegmentDetail, FunZone, Hazard, HazardType, Severity,
@@ -13,7 +13,7 @@ import type {
   RoutePreferences, LatLng, RoadReview,
 } from '@/types';
 
-const storage = new MMKV();
+const storage = createMMKV({ id: 'tarmoto-auth' });
 const API_URL = __DEV__
   ? 'http://localhost:3000/v1'
   : 'https://api.tarmoto.app/v1';
@@ -89,8 +89,8 @@ class ApiService {
   }
 
   private clearTokens(): void {
-    storage.delete('access_token');
-    storage.delete('refresh_token');
+    storage.remove('access_token');
+    storage.remove('refresh_token');
   }
 
   isAuthenticated(): boolean {
