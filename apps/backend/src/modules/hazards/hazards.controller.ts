@@ -61,9 +61,10 @@ export class HazardsController {
   @ApiResponse({ status: 200, type: HazardResponseDto })
   @ApiResponse({ status: 404, description: 'Hazard not found' })
   async confirm(
+    @Req() req: express.Request,
     @Param('hazardId', ParseUUIDPipe) hazardId: string,
   ): Promise<HazardResponseDto> {
-    return this.hazardsService.confirm(hazardId);
+    return this.hazardsService.confirm(hazardId, req.user!.userId);
   }
 
   @Post(':hazardId/dismiss')

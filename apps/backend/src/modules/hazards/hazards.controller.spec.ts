@@ -87,9 +87,10 @@ describe('HazardsController', () => {
 
   describe('POST /hazards/:id/confirm', () => {
     it('should confirm and return updated hazard', async () => {
-      const result = await controller.confirm(mockResponse.id);
+      const req = { user: { userId: 'user-1' } } as never;
+      const result = await controller.confirm(req, mockResponse.id);
 
-      expect(service.confirm).toHaveBeenCalledWith(mockResponse.id);
+      expect(service.confirm).toHaveBeenCalledWith(mockResponse.id, 'user-1');
       expect(result.confirmations).toBe(1);
     });
   });

@@ -11,6 +11,21 @@ import { QueryHazardsDto } from './dto/query-hazards.dto.js';
 import { RouteHazardsDto } from './dto/route-hazards.dto.js';
 import { HazardResponseDto } from './dto/hazard-response.dto.js';
 
+const HAZARD_SELECT_BASE = `
+  SELECT
+    hr.id, hr.hazard_type, hr.severity, hr.note, hr.confirmations,
+    hr.created_at, hr.expires_at,
+    ST_Y(hr.location::geometry) AS lat,
+    ST_X(hr.location::geometry) AS lng,
+    u.display_name AS reporter,
+    rs.road_name
+  FROM hazard_reports hr
+  JOIN users u ON u.id = hr.user_id
+  LEFT JOIN road_segments rs ON rs.id = hr.road_segment_id
+  WHERE hr.is_active = true
+    AND hr.expires_at > NOW()
+`;
+
 @Injectable()
 export class HazardsService {
   constructor(
@@ -47,19 +62,9 @@ export class HazardsService {
       ? query.types.split(',').map((t) => t.trim())
       : null;
 
-    let sql = `
-      SELECT
-        hr.id, hr.hazard_type, hr.severity, hr.note, hr.confirmations,
-        hr.created_at, hr.expires_at,
-        ST_Y(hr.location::geometry) AS lat,
-        ST_X(hr.location::geometry) AS lng,
-        u.display_name AS reporter,
-        rs.road_name
-      FROM hazard_reports hr
-      JOIN users u ON u.id = hr.user_id
-      LEFT JOIN road_segments rs ON rs.id = hr.road_segment_id
-      WHERE hr.is_active = true
-        AND hr.expires_at > NOW()
+    let sql =
+      HAZARD_SELECT_BASE +
+      `
         AND ST_DWithin(
           hr.location::geography,
           ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
@@ -82,8 +87,17 @@ export class HazardsService {
     );
   }
 
-  async confirm(hazardId: string): Promise<HazardResponseDto> {
+  async confirm(hazardId: string, userId: string): Promise<HazardResponseDto> {
+    const hazard = await this.findActiveHazard(hazardId);
+
+    // Prevent reporter from confirming their own hazard
+    if (hazard.user_id === userId) {
+      throw new BadRequestException('Cannot confirm your own hazard report');
+    }
+
     // Atomic update to avoid lost confirmations under concurrent access
+    // Also prevents the same user from extending expiry repeatedly by
+    // only updating if confirmed_by doesn't already include this user
     await this.hazardRepo
       .createQueryBuilder()
       .update(HazardReport)
@@ -97,8 +111,8 @@ export class HazardsService {
       })
       .execute();
 
-    const hazard = await this.findActiveHazard(hazardId);
-    return this.toResponse(hazard);
+    const updated = await this.findActiveHazard(hazardId);
+    return this.toResponse(updated);
   }
 
   async dismiss(hazardId: string): Promise<void> {
@@ -124,19 +138,9 @@ export class HazardsService {
       params.push(p.lng, p.lat);
     }
 
-    const sql = `
-      SELECT
-        hr.id, hr.hazard_type, hr.severity, hr.note, hr.confirmations,
-        hr.created_at, hr.expires_at,
-        ST_Y(hr.location::geometry) AS lat,
-        ST_X(hr.location::geometry) AS lng,
-        u.display_name AS reporter,
-        rs.road_name
-      FROM hazard_reports hr
-      JOIN users u ON u.id = hr.user_id
-      LEFT JOIN road_segments rs ON rs.id = hr.road_segment_id
-      WHERE hr.is_active = true
-        AND hr.expires_at > NOW()
+    const sql =
+      HAZARD_SELECT_BASE +
+      `
         AND ST_DWithin(
           hr.location::geography,
           ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326)::geography,

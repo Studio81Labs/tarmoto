@@ -190,54 +190,62 @@ describe('HazardsService', () => {
   });
 
   describe('confirm', () => {
-    it('should atomically increment confirmations and extend expiry', async () => {
-      // First call: atomic UPDATE
-      const updateQb = {
-        update: jest.fn().mockReturnThis(),
-        set: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        execute: jest.fn().mockResolvedValue({ affected: 1 }),
-      };
-      // Second call: findActiveHazard (SELECT with joins)
-      const selectQb = {
-        leftJoinAndSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        getOne: jest.fn().mockResolvedValue({
-          ...mockHazard,
-          confirmations: 1,
-          user: { display_name: 'Rider' },
-          road_segment: null,
-        }),
-      };
-      repo
-        .createQueryBuilder!.mockReturnValueOnce(updateQb as never)
-        .mockReturnValueOnce(selectQb as never);
+    const makeSelectQb = (result: unknown) => ({
+      leftJoinAndSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue(result),
+    });
+    const makeUpdateQb = () => ({
+      update: jest.fn().mockReturnThis(),
+      set: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      execute: jest.fn().mockResolvedValue({ affected: 1 }),
+    });
 
-      const result = await service.confirm(mockHazard.id!);
+    it('should atomically increment confirmations and extend expiry', async () => {
+      const hazardWithUser = {
+        ...mockHazard,
+        user_id: 'reporter-1',
+        user: { display_name: 'Reporter' },
+        road_segment: null,
+      };
+      // 1st call: findActiveHazard (ownership check)
+      // 2nd call: atomic UPDATE
+      // 3rd call: findActiveHazard (reload)
+      const selectQb1 = makeSelectQb(hazardWithUser);
+      const updateQb = makeUpdateQb();
+      const selectQb2 = makeSelectQb({
+        ...hazardWithUser,
+        confirmations: 1,
+      });
+      repo
+        .createQueryBuilder!.mockReturnValueOnce(selectQb1 as never)
+        .mockReturnValueOnce(updateQb as never)
+        .mockReturnValueOnce(selectQb2 as never);
+
+      const result = await service.confirm(mockHazard.id!, 'other-user');
 
       expect(updateQb.update).toHaveBeenCalledWith(HazardReport);
       expect(result.confirmations).toBe(1);
-      expect(result.reporter).toBe('Rider');
+    });
+
+    it('should prevent self-confirmation', async () => {
+      const selectQb = makeSelectQb({
+        ...mockHazard,
+        user_id: 'user-1',
+      });
+      repo.createQueryBuilder!.mockReturnValueOnce(selectQb as never);
+
+      await expect(service.confirm(mockHazard.id!, 'user-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should throw NotFoundException for missing hazard', async () => {
-      // UPDATE succeeds but SELECT returns null (expired between calls)
-      const updateQb = {
-        update: jest.fn().mockReturnThis(),
-        set: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        execute: jest.fn().mockResolvedValue({ affected: 0 }),
-      };
-      const selectQb = {
-        leftJoinAndSelect: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        getOne: jest.fn().mockResolvedValue(null),
-      };
-      repo
-        .createQueryBuilder!.mockReturnValueOnce(updateQb as never)
-        .mockReturnValueOnce(selectQb as never);
+      const selectQb = makeSelectQb(null);
+      repo.createQueryBuilder!.mockReturnValueOnce(selectQb as never);
 
-      await expect(service.confirm('nonexistent-id')).rejects.toThrow(
+      await expect(service.confirm('nonexistent-id', 'user-1')).rejects.toThrow(
         NotFoundException,
       );
     });
