@@ -1,0 +1,27 @@
+backend:
+  - changed-files:
+      - any-glob-to-any-file: 'apps/backend/**'
+
+mobile:
+  - changed-files:
+      - any-glob-to-any-file: 'apps/mobile/**'
+
+poc-sensor:
+  - changed-files:
+      - any-glob-to-any-file: 'apps/poc-sensor/**'
+
+shared:
+  - changed-files:
+      - any-glob-to-any-file: 'packages/shared/**'
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: '.github/workflows/**'
+
+infra:
+  - changed-files:
+      - any-glob-to-any-file: 'infra/**'
+
+docs:
+  - changed-files:
+      - any-glob-to-any-file: 'docs/**'
