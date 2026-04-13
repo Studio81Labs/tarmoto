@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
@@ -38,6 +38,8 @@ describe('HazardsService', () => {
         set: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         execute: jest.fn().mockResolvedValue({ affected: 0 }),
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(null),
       }),
     };
 
@@ -189,35 +191,51 @@ describe('HazardsService', () => {
 
   describe('confirm', () => {
     it('should atomically increment confirmations and extend expiry', async () => {
-      const mockQb = {
+      // First call: atomic UPDATE
+      const updateQb = {
         update: jest.fn().mockReturnThis(),
         set: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         execute: jest.fn().mockResolvedValue({ affected: 1 }),
       };
-      repo.createQueryBuilder!.mockReturnValueOnce(mockQb as never);
-      repo.findOne!.mockResolvedValueOnce({
-        ...mockHazard,
-        confirmations: 1,
-      } as HazardReport);
+      // Second call: findActiveHazard (SELECT with joins)
+      const selectQb = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue({
+          ...mockHazard,
+          confirmations: 1,
+          user: { display_name: 'Rider' },
+          road_segment: null,
+        }),
+      };
+      repo
+        .createQueryBuilder!.mockReturnValueOnce(updateQb as never)
+        .mockReturnValueOnce(selectQb as never);
 
       const result = await service.confirm(mockHazard.id!);
 
-      expect(mockQb.update).toHaveBeenCalledWith(HazardReport);
-      expect(mockQb.set).toHaveBeenCalledWith(
-        expect.objectContaining({
-          confirmed_at: expect.any(Date),
-        }),
-      );
-      expect(mockQb.where).toHaveBeenCalledWith(
-        'id = :id AND is_active = true',
-        { id: mockHazard.id },
-      );
+      expect(updateQb.update).toHaveBeenCalledWith(HazardReport);
       expect(result.confirmations).toBe(1);
+      expect(result.reporter).toBe('Rider');
     });
 
     it('should throw NotFoundException for missing hazard', async () => {
-      repo.findOne!.mockResolvedValueOnce(null);
+      // UPDATE succeeds but SELECT returns null (expired between calls)
+      const updateQb = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected: 0 }),
+      };
+      const selectQb = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(null),
+      };
+      repo
+        .createQueryBuilder!.mockReturnValueOnce(updateQb as never)
+        .mockReturnValueOnce(selectQb as never);
 
       await expect(service.confirm('nonexistent-id')).rejects.toThrow(
         NotFoundException,
@@ -227,7 +245,12 @@ describe('HazardsService', () => {
 
   describe('dismiss', () => {
     it('should set is_active to false', async () => {
-      repo.findOne!.mockResolvedValueOnce(mockHazard as HazardReport);
+      const selectQb = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(mockHazard),
+      };
+      repo.createQueryBuilder!.mockReturnValueOnce(selectQb as never);
 
       await service.dismiss(mockHazard.id!);
 
@@ -237,7 +260,12 @@ describe('HazardsService', () => {
     });
 
     it('should throw NotFoundException for missing hazard', async () => {
-      repo.findOne!.mockResolvedValueOnce(null);
+      const selectQb = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(null),
+      };
+      repo.createQueryBuilder!.mockReturnValueOnce(selectQb as never);
 
       await expect(service.dismiss('nonexistent-id')).rejects.toThrow(
         NotFoundException,

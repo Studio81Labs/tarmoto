@@ -92,7 +92,9 @@ export class HazardsService {
         confirmed_at: new Date(),
         expires_at: () => "expires_at + interval '24 hours'",
       })
-      .where('id = :id AND is_active = true', { id: hazardId })
+      .where('id = :id AND is_active = true AND expires_at > NOW()', {
+        id: hazardId,
+      })
       .execute();
 
     const hazard = await this.findActiveHazard(hazardId);
@@ -161,9 +163,14 @@ export class HazardsService {
   }
 
   private async findActiveHazard(hazardId: string): Promise<HazardReport> {
-    const hazard = await this.hazardRepo.findOne({
-      where: { id: hazardId, is_active: true },
-    });
+    const hazard = await this.hazardRepo
+      .createQueryBuilder('hr')
+      .leftJoinAndSelect('hr.user', 'user')
+      .leftJoinAndSelect('hr.road_segment', 'road_segment')
+      .where('hr.id = :id AND hr.is_active = true AND hr.expires_at > NOW()', {
+        id: hazardId,
+      })
+      .getOne();
     if (!hazard) {
       throw new NotFoundException('Hazard not found or already expired');
     }
@@ -182,8 +189,8 @@ export class HazardsService {
       severity: hazard.severity,
       note: hazard.note,
       confirmations: hazard.confirmations,
-      reporter: null,
-      road_name: null,
+      reporter: hazard.user?.display_name ?? null,
+      road_name: hazard.road_segment?.road_name ?? null,
       created_at: hazard.created_at.toISOString(),
       expires_at: hazard.expires_at.toISOString(),
     };
