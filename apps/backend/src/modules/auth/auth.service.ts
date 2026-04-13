@@ -71,7 +71,7 @@ export class AuthService {
   }
 
   async refresh(refreshToken: string) {
-    let payload: { sub: string; type: string };
+    let payload: { sub: string; type: string; orig_iat?: number; iat?: number };
     try {
       payload = await this.jwt.verifyAsync(refreshToken);
     } catch {
@@ -82,22 +82,31 @@ export class AuthService {
       throw new UnauthorizedException('Invalid token type');
     }
 
+    // Enforce maximum session lifetime from original login
+    const sessionStart = payload.orig_iat ?? payload.iat ?? 0;
+    const ageSeconds = Math.floor(Date.now() / 1000) - sessionStart;
+    if (ageSeconds > REFRESH_TOKEN_EXPIRY) {
+      throw new UnauthorizedException('Session expired, please log in again');
+    }
+
     const user = await this.userRepo.findOne({ where: { id: payload.sub } });
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
 
-    return this.buildAuthResponse(user);
+    return this.buildAuthResponse(user, sessionStart);
   }
 
-  private buildAuthResponse(user: User) {
+  private buildAuthResponse(user: User, origIat?: number) {
+    const now = Math.floor(Date.now() / 1000);
+
     const accessToken = this.jwt.sign(
       { sub: user.id, type: 'access' },
       { expiresIn: ACCESS_TOKEN_EXPIRY },
     );
 
     const refreshToken = this.jwt.sign(
-      { sub: user.id, type: 'refresh' },
+      { sub: user.id, type: 'refresh', orig_iat: origIat ?? now },
       { expiresIn: REFRESH_TOKEN_EXPIRY },
     );
 
