@@ -14,6 +14,9 @@ import { LoginDto } from './dto/login.dto.js';
 const ACCESS_TOKEN_EXPIRY = 60 * 60; // 1 hour
 const REFRESH_TOKEN_EXPIRY = 90 * 24 * 60 * 60; // 90 days
 const BCRYPT_ROUNDS = 12;
+// Dummy hash for constant-time login rejection when user not found
+const DUMMY_HASH =
+  '$2b$12$000000000000000000000uGhtZ2nTis4GxVpCR7tOZXaKQfGKqaJi';
 
 @Injectable()
 export class AuthService {
@@ -57,12 +60,10 @@ export class AuthService {
       .addSelect('user.password_hash')
       .where('user.email = :email', { email: dto.email })
       .getOne();
-    if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    const valid = await bcrypt.compare(dto.password, user.password_hash);
-    if (!valid) {
+    // Always run bcrypt.compare to prevent timing-based email enumeration
+    const hash = user?.password_hash ?? DUMMY_HASH;
+    const valid = await bcrypt.compare(dto.password, hash);
+    if (!user || !valid) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
