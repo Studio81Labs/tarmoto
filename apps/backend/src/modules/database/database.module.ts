@@ -3,19 +3,41 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { databaseConfig } from '../../config/database.config.js';
 import {
-  User, UserContact, RoadSegment, SurfaceReading,
-  Ride, RideSegment, RideStats,
-  HazardReport, RoadReview,
-  Trip, TripMember, TripDay, TripWaypoint,
-  FunZone, FunZoneRoad, CommuteRoute,
+  User,
+  UserContact,
+  RoadSegment,
+  SurfaceReading,
+  Ride,
+  RideSegment,
+  RideStats,
+  HazardReport,
+  RoadReview,
+  Trip,
+  TripMember,
+  TripDay,
+  TripWaypoint,
+  FunZone,
+  FunZoneRoad,
+  CommuteRoute,
 } from '../../entities/index.js';
 
 const entities = [
-  User, UserContact, RoadSegment, SurfaceReading,
-  Ride, RideSegment, RideStats,
-  HazardReport, RoadReview,
-  Trip, TripMember, TripDay, TripWaypoint,
-  FunZone, FunZoneRoad, CommuteRoute,
+  User,
+  UserContact,
+  RoadSegment,
+  SurfaceReading,
+  Ride,
+  RideSegment,
+  RideStats,
+  HazardReport,
+  RoadReview,
+  Trip,
+  TripMember,
+  TripDay,
+  TripWaypoint,
+  FunZone,
+  FunZoneRoad,
+  CommuteRoute,
 ];
 
 @Module({
@@ -32,7 +54,10 @@ const entities = [
         password: config.get('database.password'),
         entities,
         synchronize: false,
-        logging: config.get('TARMOTO_NODE_ENV') === 'development' ? ['error', 'warn'] : ['error'],
+        logging:
+          config.get('TARMOTO_NODE_ENV') === 'development'
+            ? ['error', 'warn']
+            : ['error'],
       }),
     }),
   ],

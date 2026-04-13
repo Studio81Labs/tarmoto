@@ -1,6 +1,13 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, CreateDateColumn,
-  ManyToOne, JoinColumn, OneToMany, OneToOne, Index,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  ManyToOne,
+  JoinColumn,
+  OneToMany,
+  OneToOne,
+  Index,
 } from 'typeorm';
 import * as GeoJSON from 'geojson';
 import { User } from './user.entity.js';
@@ -33,7 +40,12 @@ export class Ride {
   @Column({ type: 'float', nullable: true })
   max_speed: number | null;
 
-  @Column({ type: 'geometry', spatialFeatureType: 'LineString', srid: 4326, nullable: true })
+  @Column({
+    type: 'geometry',
+    spatialFeatureType: 'LineString',
+    srid: 4326,
+    nullable: true,
+  })
   route_geom: GeoJSON.Geometry | null;
 
   @Column({ type: 'float', nullable: true })

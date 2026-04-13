@@ -1,6 +1,10 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column,
-  ManyToOne, JoinColumn, Unique,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  JoinColumn,
+  Unique,
 } from 'typeorm';
 import { FunZone } from './fun-zone.entity.js';
 import { RoadSegment } from './road-segment.entity.js';

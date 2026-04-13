@@ -6,7 +6,16 @@ export class InitSchema1713000000000 implements MigrationInterface {
   name = 'InitSchema1713000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    const schemaPath = join(__dirname, '..', '..', '..', '..', 'docs', 'database', 'schema.sql');
+    const schemaPath = join(
+      __dirname,
+      '..',
+      '..',
+      '..',
+      '..',
+      'docs',
+      'database',
+      'schema.sql',
+    );
     const sql = readFileSync(schemaPath, 'utf-8');
     await queryRunner.query(sql);
   }

@@ -1,6 +1,11 @@
 import {
-  Entity, PrimaryGeneratedColumn, Column, CreateDateColumn,
-  ManyToOne, JoinColumn, Index,
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  ManyToOne,
+  JoinColumn,
+  Index,
 } from 'typeorm';
 import * as GeoJSON from 'geojson';
 import { User } from './user.entity.js';
@@ -23,7 +28,12 @@ export class CommuteRoute {
   @Column({ type: 'geometry', spatialFeatureType: 'Point', srid: 4326 })
   destination: GeoJSON.Geometry;
 
-  @Column({ type: 'geometry', spatialFeatureType: 'LineString', srid: 4326, nullable: true })
+  @Column({
+    type: 'geometry',
+    spatialFeatureType: 'LineString',
+    srid: 4326,
+    nullable: true,
+  })
   route_geom: GeoJSON.Geometry | null;
 
   @Column({ type: 'float', nullable: true })
