@@ -2,7 +2,6 @@ import {
   Entity,
   PrimaryGeneratedColumn,
   Column,
-  CreateDateColumn,
   ManyToOne,
   JoinColumn,
   Index,
@@ -45,7 +44,7 @@ export class SurfaceReading {
   @Column({ type: 'varchar', length: 100, nullable: true })
   device_model: string | null;
 
-  @CreateDateColumn({ type: 'timestamptz' })
+  @Column({ type: 'timestamptz', default: () => 'NOW()' })
   recorded_at: Date;
 
   @ManyToOne(() => RoadSegment, (rs) => rs.surface_readings)
