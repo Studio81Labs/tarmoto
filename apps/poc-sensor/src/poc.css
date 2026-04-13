@@ -1,0 +1,609 @@
+/* PoC Sensor Page Styles */
+/* Converted from original poc.html <style> tag — uses global.css CSS variables */
+
+/* ─── Header (original class names used in PocSensor.tsx) ───── */
+.header {
+  background: linear-gradient(135deg, #0f172a, #1a2744);
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.header-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--cyan), var(--cyan-deep));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 900;
+  color: #0f172a;
+}
+
+.logo-text h1 {
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--cyan);
+  letter-spacing: -0.03em;
+}
+
+.logo-text p {
+  font-size: 10px;
+  color: #64748b;
+}
+
+.content {
+  padding: 16px 20px;
+}
+
+@media (min-width: 500px) {
+  .content {
+    max-width: 420px;
+    margin: 0 auto;
+  }
+}
+
+/* ─── Header (Astro page wrapper — poc-prefixed variants) ────── */
+.poc-header {
+  background: linear-gradient(135deg, #0f172a, #1a2744);
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.poc-header-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.poc-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--cyan), var(--cyan-deep));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 900;
+  color: #0f172a;
+}
+
+.poc-logo-text h1 {
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--cyan);
+  letter-spacing: -0.03em;
+}
+
+.poc-logo-text p {
+  font-size: 10px;
+  color: #64748b;
+}
+
+/* ─── Content wrapper ────────────────────────────────────────── */
+.poc-content {
+  padding: 16px 20px;
+}
+
+@media (min-width: 500px) {
+  .poc-content {
+    max-width: 420px;
+    margin: 0 auto;
+  }
+}
+
+/* ─── Card / label / step / tip ─────────────────────────────── */
+.card {
+  background: rgba(30, 41, 59, 0.5);
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+}
+
+.label {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin-bottom: 10px;
+}
+
+.step {
+  color: #cbd5e1;
+  font-size: 13px;
+  line-height: 1.6;
+  margin-bottom: 8px;
+}
+
+.tip {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: rgba(14, 211, 207, 0.08);
+  border-radius: 8px;
+  border: 1px solid rgba(14, 211, 207, 0.15);
+  color: var(--cyan);
+  font-size: 11px;
+}
+
+/* ─── Buttons ────────────────────────────────────────────────── */
+.btn {
+  width: 100%;
+  padding: 16px;
+  border-radius: 14px;
+  border: none;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+  font-family: var(--font);
+  letter-spacing: -0.01em;
+  transition: opacity 0.2s;
+}
+
+.btn:active {
+  opacity: 0.8;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--cyan), var(--cyan-deep));
+  color: #0f172a;
+}
+
+.btn-danger {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: var(--red);
+}
+
+.btn-export {
+  background: rgba(14, 211, 207, 0.1);
+  border: 1px solid rgba(14, 211, 207, 0.3);
+  color: var(--cyan);
+}
+
+.btn:disabled {
+  background: #334155;
+  color: #64748b;
+  cursor: not-allowed;
+}
+
+/* ─── Input field ────────────────────────────────────────────── */
+.input-field {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(15, 23, 42, 0.6);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  outline: none;
+}
+
+.input-field:focus {
+  border-color: rgba(14, 211, 207, 0.4);
+}
+
+.input-field::placeholder {
+  color: #475569;
+}
+
+/* ─── Toggle switches ────────────────────────────────────────── */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+}
+
+.toggle-label {
+  color: #cbd5e1;
+  font-size: 13px;
+}
+
+.toggle-sub {
+  color: #64748b;
+  font-size: 10px;
+  margin-top: 2px;
+}
+
+.toggle-switch {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  cursor: pointer;
+  z-index: 1;
+  margin: 0;
+}
+
+.toggle-track {
+  position: absolute;
+  inset: 0;
+  background: #334155;
+  border-radius: 12px;
+  transition: background 0.2s;
+}
+
+.toggle-switch input:checked + .toggle-track {
+  background: var(--cyan);
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+  pointer-events: none;
+}
+
+.toggle-switch input:checked ~ .toggle-thumb {
+  transform: translateX(20px);
+}
+
+/* ─── Quality banner ─────────────────────────────────────────── */
+.quality-banner {
+  border-radius: 14px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+}
+
+.qb-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.qb-label {
+  font-size: 22px;
+  font-weight: 900;
+  margin-top: 4px;
+}
+
+.qb-rms {
+  font-size: 28px;
+  font-weight: 900;
+  opacity: 0.9;
+}
+
+.qb-unit {
+  font-size: 10px;
+  opacity: 0.5;
+}
+
+/* ─── Stats grid ─────────────────────────────────────────────── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.stat {
+  background: rgba(30, 41, 59, 0.5);
+  border-radius: 10px;
+  padding: 10px 8px;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.stat-label {
+  color: #64748b;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.stat-value {
+  color: #f1f5f9;
+  font-size: 18px;
+  font-weight: 800;
+  margin-top: 4px;
+}
+
+.stat-unit {
+  color: #475569;
+  font-size: 9px;
+}
+
+/* ─── Graph ──────────────────────────────────────────────────── */
+.graph-container {
+  margin-top: 14px;
+  background: rgba(30, 41, 59, 0.4);
+  border-radius: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.graph-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.graph-header span {
+  font-size: 10px;
+}
+
+.graph-header .l {
+  color: #94a3b8;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.graph-header .r {
+  color: #475569;
+}
+
+.graph-inner {
+  background: rgba(15, 23, 42, 0.5);
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+}
+
+.threshold-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed;
+}
+
+.graph-legend {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 8px;
+}
+
+/* ─── Segments ───────────────────────────────────────────────── */
+.segment-bar {
+  display: flex;
+  gap: 2px;
+  height: 24px;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.segment-bar div {
+  flex: 1;
+  opacity: 0.85;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  margin: 0 4px 4px 0;
+}
+
+.seg-list {
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: 10px;
+}
+
+.seg-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.seg-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.seg-label {
+  color: #e2e8f0;
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 70px;
+}
+
+.seg-meta {
+  color: #64748b;
+  font-size: 10px;
+}
+
+/* ─── Road type tagger ───────────────────────────────────────── */
+.tag-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.tag-btn {
+  padding: 14px 8px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(30, 41, 59, 0.5);
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.tag-btn .icon {
+  font-size: 22px;
+  margin-bottom: 4px;
+}
+
+.tag-btn .name {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.tag-btn.active {
+  border-color: rgba(234, 179, 8, 0.5);
+  background: rgba(234, 179, 8, 0.12);
+}
+
+.tag-btn.active .name {
+  color: var(--yellow);
+  font-weight: 700;
+}
+
+.tag-status {
+  margin-top: 8px;
+  text-align: center;
+  font-size: 11px;
+  color: #475569;
+}
+
+.tag-log-container {
+  margin-top: 8px;
+  max-height: 80px;
+  overflow-y: auto;
+}
+
+.tag-event {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 10px;
+  color: #64748b;
+}
+
+/* .dot is also used generically as the tag event indicator */
+.dot,
+.tag-event .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ─── Threshold reference ────────────────────────────────────── */
+.thresholds {
+  margin-top: 20px;
+  background: rgba(30, 41, 59, 0.3);
+  border-radius: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.threshold-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 2px;
+}
+
+.threshold-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.threshold-text {
+  color: #94a3b8;
+  font-size: 10px;
+}
+
+/* ─── Errors ─────────────────────────────────────────────────── */
+.error-box {
+  background: rgba(234, 179, 8, 0.1);
+  border: 1px solid rgba(234, 179, 8, 0.25);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  color: var(--yellow);
+  font-size: 12px;
+}
+
+.sensor-error {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.sensor-error p {
+  color: var(--red);
+}
+
+.error-title {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.error-sub {
+  color: rgba(239, 68, 68, 0.53);
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+/* ─── Privacy notice ─────────────────────────────────────────── */
+.privacy-box {
+  background: rgba(139, 92, 246, 0.08);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.privacy-box p {
+  color: #a78bfa;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* .title is used inside .privacy-box in PocSensor.tsx */
+.privacy-box .title,
+.privacy-title {
+  font-weight: 700;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+/* .sub is used inside .sensor-error in PocSensor.tsx */
+.sensor-error .sub {
+  color: rgba(239, 68, 68, 0.53);
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+/* ─── Export / misc ──────────────────────────────────────────── */
+.export-info {
+  color: #475569;
+  font-size: 10px;
+  text-align: center;
+  margin-top: 6px;
+}
+
+.note {
+  color: #475569;
+  font-size: 9px;
+  margin-top: 8px;
+}
