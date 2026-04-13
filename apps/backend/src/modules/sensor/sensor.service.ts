@@ -29,7 +29,6 @@ const QUALITY_THRESHOLDS: Array<{
 interface ProcessedSegment {
   rms: number;
   classification: string;
-  iriValue: number;
   lat: number;
   lng: number;
   speedAvg: number;
@@ -86,7 +85,7 @@ export class SensorService {
         road_segment_id: roadSegmentId,
         ride_id: dto.ride_id,
         user_id: userId,
-        iri_value: segment.iriValue,
+        iri_value: segment.rms,
         classification: segment.classification,
         vibration_rms: segment.rms,
         speed_at_reading: segment.speedAvg * 3.6, // m/s to km/h
@@ -161,7 +160,7 @@ export class SensorService {
       deviations.reduce((sum, d) => sum + d * d, 0) / deviations.length,
     );
 
-    const { classification, score } = classify(rms);
+    const { classification } = classify(rms);
 
     // Use centroid GPS position
     const gpsReadings = readings.filter(
@@ -179,7 +178,6 @@ export class SensorService {
     return {
       rms,
       classification,
-      iriValue: score,
       lat: midpoint.lat!,
       lng: midpoint.lng!,
       speedAvg,
