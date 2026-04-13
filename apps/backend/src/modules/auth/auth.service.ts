@@ -61,7 +61,7 @@ export class AuthService {
       .where('user.email = :email', { email: dto.email })
       .getOne();
     // Always run bcrypt.compare to prevent timing-based email enumeration
-    const hash = user?.password_hash ?? DUMMY_HASH;
+    const hash = user?.password_hash || DUMMY_HASH;
     const valid = await bcrypt.compare(dto.password, hash);
     if (!user || !valid) {
       throw new UnauthorizedException('Invalid credentials');
