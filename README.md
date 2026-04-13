@@ -27,7 +27,8 @@ The motorcycle app that tells you how good the actual road surface is — not ju
 tarmoto/
 ├── apps/
 │   ├── mobile/              React Native + Expo (iOS & Android)
-│   └── backend/             NestJS API (serves mobile + web)
+│   ├── backend/             NestJS API (serves mobile + web)
+│   └── poc-sensor/          Road quality sensor PoC (Cloudflare Pages)
 ├── packages/
 │   └── shared/              Shared types, constants, DTOs
 ├── docs/
