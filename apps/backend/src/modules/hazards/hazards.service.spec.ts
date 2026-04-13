@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
@@ -188,29 +188,32 @@ describe('HazardsService', () => {
   });
 
   describe('confirm', () => {
-    it('should increment confirmations and extend expiry', async () => {
-      const originalExpiry = new Date('2026-04-16T10:00:00Z');
-      const hazardCopy = {
-        ...mockHazard,
-        expires_at: originalExpiry,
-        confirmations: 0,
+    it('should atomically increment confirmations and extend expiry', async () => {
+      const mockQb = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected: 1 }),
       };
-      repo.findOne!.mockResolvedValueOnce(hazardCopy as HazardReport);
+      repo.createQueryBuilder!.mockReturnValueOnce(mockQb as never);
+      repo.findOne!.mockResolvedValueOnce({
+        ...mockHazard,
+        confirmations: 1,
+      } as HazardReport);
 
-      await service.confirm(hazardCopy.id!);
+      const result = await service.confirm(mockHazard.id!);
 
-      expect(repo.save).toHaveBeenCalledWith(
+      expect(mockQb.update).toHaveBeenCalledWith(HazardReport);
+      expect(mockQb.set).toHaveBeenCalledWith(
         expect.objectContaining({
-          confirmations: 1,
           confirmed_at: expect.any(Date),
         }),
       );
-      // Expiry extended by 24h
-      const savedEntity = (repo.save as jest.Mock).mock
-        .calls[0][0] as HazardReport;
-      expect(savedEntity.expires_at.getTime()).toBe(
-        originalExpiry.getTime() + 24 * 60 * 60 * 1000,
+      expect(mockQb.where).toHaveBeenCalledWith(
+        'id = :id AND is_active = true',
+        { id: mockHazard.id },
       );
+      expect(result.confirmations).toBe(1);
     });
 
     it('should throw NotFoundException for missing hazard', async () => {
@@ -255,8 +258,8 @@ describe('HazardsService', () => {
       await service.findAlongRoute(dto);
 
       expect(repo.query).toHaveBeenCalledWith(
-        expect.stringContaining('LINESTRING(16.75 49.1,16.85 49.2)'),
-        [300],
+        expect.stringContaining('ST_MakeLine'),
+        [300, 16.75, 49.1, 16.85, 49.2],
       );
     });
 
@@ -271,8 +274,8 @@ describe('HazardsService', () => {
       await service.findAlongRoute(dto);
 
       expect(repo.query).toHaveBeenCalledWith(
-        expect.stringContaining('ST_DWithin'),
-        [200],
+        expect.stringContaining('ST_MakeLine'),
+        [200, 16.75, 49.1, 16.85, 49.2],
       );
     });
 

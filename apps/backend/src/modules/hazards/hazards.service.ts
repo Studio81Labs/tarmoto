@@ -83,19 +83,20 @@ export class HazardsService {
   }
 
   async confirm(hazardId: string): Promise<HazardResponseDto> {
+    // Atomic update to avoid lost confirmations under concurrent access
+    await this.hazardRepo
+      .createQueryBuilder()
+      .update(HazardReport)
+      .set({
+        confirmations: () => 'confirmations + 1',
+        confirmed_at: new Date(),
+        expires_at: () => "expires_at + interval '24 hours'",
+      })
+      .where('id = :id AND is_active = true', { id: hazardId })
+      .execute();
+
     const hazard = await this.findActiveHazard(hazardId);
-
-    hazard.confirmations += 1;
-    hazard.confirmed_at = new Date();
-
-    // Extend expiry by 24h on each confirmation
-    const newExpiry = new Date(
-      hazard.expires_at.getTime() + 24 * 60 * 60 * 1000,
-    );
-    hazard.expires_at = newExpiry;
-
-    const saved = await this.hazardRepo.save(hazard);
-    return this.toResponse(saved);
+    return this.toResponse(hazard);
   }
 
   async dismiss(hazardId: string): Promise<void> {
@@ -111,8 +112,15 @@ export class HazardsService {
 
     const bufferM = dto.buffer_m ?? 200;
 
-    // Build a LineString from the route points
-    const lineCoords = dto.route.map((p) => `${p.lng} ${p.lat}`).join(',');
+    // Build parameterized LineString from route points
+    // ST_MakeLine + ST_MakePoint avoids string interpolation of coordinates
+    const pointsSql = dto.route
+      .map((_, i) => `ST_MakePoint($${i * 2 + 2}, $${i * 2 + 3})`)
+      .join(',');
+    const params: number[] = [bufferM];
+    for (const p of dto.route) {
+      params.push(p.lng, p.lat);
+    }
 
     const sql = `
       SELECT
@@ -129,14 +137,14 @@ export class HazardsService {
         AND hr.expires_at > NOW()
         AND ST_DWithin(
           hr.location::geography,
-          ST_SetSRID(ST_GeomFromText('LINESTRING(${lineCoords})'), 4326)::geography,
+          ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326)::geography,
           $1
         )
       ORDER BY hr.created_at DESC
     `;
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const rows = await this.hazardRepo.query(sql, [bufferM]);
+    const rows = await this.hazardRepo.query(sql, params);
     return (rows as Record<string, unknown>[]).map((row) =>
       this.rowToResponse(row),
     );
