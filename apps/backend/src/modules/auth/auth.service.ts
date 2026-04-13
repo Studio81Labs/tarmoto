@@ -24,13 +24,6 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto) {
-    const existing = await this.userRepo.findOne({
-      where: { email: dto.email },
-    });
-    if (existing) {
-      throw new ConflictException('Email already registered');
-    }
-
     const password_hash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
     const user = this.userRepo.create({
@@ -39,7 +32,22 @@ export class AuthService {
       display_name: dto.display_name,
     });
 
-    const saved = await this.userRepo.save(user);
+    let saved: User;
+    try {
+      saved = await this.userRepo.save(user);
+    } catch (err: unknown) {
+      // PostgreSQL unique_violation code
+      if (
+        typeof err === 'object' &&
+        err !== null &&
+        'code' in err &&
+        (err as { code: string }).code === '23505'
+      ) {
+        throw new ConflictException('Email already registered');
+      }
+      throw err;
+    }
+
     return this.buildAuthResponse(saved);
   }
 

@@ -27,7 +27,8 @@ export class AuthGuard implements CanActivate {
         throw new UnauthorizedException('Invalid token type');
       }
       request['user'] = { userId: payload.sub };
-    } catch {
+    } catch (err) {
+      if (err instanceof UnauthorizedException) throw err;
       throw new UnauthorizedException();
     }
 
