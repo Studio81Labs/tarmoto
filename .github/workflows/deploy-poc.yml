@@ -32,9 +32,7 @@ jobs:
         run: pnpm build:poc
 
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          packageManager: npx
-          command: pages deploy apps/poc-sensor/dist --project-name=tarmoto-poc-sensor
+        run: npx wrangler pages deploy apps/poc-sensor/dist --project-name=tarmoto-poc-sensor
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
