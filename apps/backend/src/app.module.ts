@@ -8,6 +8,7 @@ import { DatabaseModule } from './modules/database/database.module.js';
 import { AuthModule } from './modules/auth/index.js';
 import { HazardsModule } from './modules/hazards/index.js';
 import { SensorModule } from './modules/sensor/index.js';
+import { RoadsModule } from './modules/roads/index.js';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { SensorModule } from './modules/sensor/index.js';
     AuthModule,
     HazardsModule,
     SensorModule,
+    RoadsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
