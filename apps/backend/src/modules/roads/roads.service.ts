@@ -100,18 +100,39 @@ export class RoadsService {
       lng: coord[0],
     }));
 
-    // Get quality breakdown from surface_readings
+    // Run all four independent queries in parallel
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const breakdownRows = await this.segmentRepo.query(
-      `SELECT
-        classification,
-        COUNT(*)::int AS count
-      FROM surface_readings
-      WHERE road_segment_id = $1
-        AND recorded_at > NOW() - INTERVAL '6 months'
-      GROUP BY classification`,
-      [segmentId],
-    );
+    const [breakdownRows, hazardRows, reviewRows, riderRows] =
+      await Promise.all([
+        this.segmentRepo.query(
+          `SELECT classification, COUNT(*)::int AS count
+          FROM surface_readings
+          WHERE road_segment_id = $1
+            AND recorded_at > NOW() - INTERVAL '6 months'
+          GROUP BY classification`,
+          [segmentId],
+        ),
+        this.segmentRepo.query(
+          `SELECT COUNT(*)::int AS count
+          FROM hazard_reports
+          WHERE road_segment_id = $1
+            AND is_active = true AND expires_at > NOW()`,
+          [segmentId],
+        ),
+        this.segmentRepo.query(
+          `SELECT COUNT(*)::int AS count, AVG(rating)::float AS avg_rating
+          FROM road_reviews
+          WHERE road_segment_id = $1`,
+          [segmentId],
+        ),
+        this.segmentRepo.query(
+          `SELECT COUNT(DISTINCT user_id)::int AS count
+          FROM surface_readings
+          WHERE road_segment_id = $1
+            AND recorded_at > NOW() - INTERVAL '30 days'`,
+          [segmentId],
+        ),
+      ]);
 
     const breakdown = { excellent: 0, good: 0, fair: 0, poor: 0, very_poor: 0 };
     let totalReadings = 0;
@@ -119,12 +140,11 @@ export class RoadsService {
       classification: string;
       count: number;
     }>) {
-      totalReadings += br.count;
       if (br.classification in breakdown) {
         breakdown[br.classification as keyof typeof breakdown] = br.count;
+        totalReadings += br.count;
       }
     }
-    // Convert counts to percentages
     if (totalReadings > 0) {
       for (const key of Object.keys(breakdown) as Array<
         keyof typeof breakdown
@@ -133,42 +153,11 @@ export class RoadsService {
       }
     }
 
-    // Get active hazard count
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const hazardRows = await this.segmentRepo.query(
-      `SELECT COUNT(*)::int AS count
-      FROM hazard_reports
-      WHERE road_segment_id = $1
-        AND is_active = true
-        AND expires_at > NOW()`,
-      [segmentId],
-    );
     const activeHazards =
       (hazardRows as Array<{ count: number }>)[0]?.count ?? 0;
-
-    // Get review stats
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const reviewRows = await this.segmentRepo.query(
-      `SELECT
-        COUNT(*)::int AS count,
-        AVG(rating)::float AS avg_rating
-      FROM road_reviews
-      WHERE road_segment_id = $1`,
-      [segmentId],
-    );
     const reviewStats = (
       reviewRows as Array<{ count: number; avg_rating: number | null }>
     )[0];
-
-    // Get unique riders in last 30 days
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const riderRows = await this.segmentRepo.query(
-      `SELECT COUNT(DISTINCT user_id)::int AS count
-      FROM surface_readings
-      WHERE road_segment_id = $1
-        AND recorded_at > NOW() - INTERVAL '30 days'`,
-      [segmentId],
-    );
     const ridersPerMonth =
       (riderRows as Array<{ count: number }>)[0]?.count ?? 0;
 
