@@ -60,7 +60,7 @@ const entities = [
         synchronize: false,
         logging:
           config.get('TARMOTO_NODE_ENV') === 'development'
-            ? ['error', 'warn']
+            ? ['error', 'warn', 'migration']
             : ['error'],
       }),
     }),
