@@ -36,4 +36,5 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          packageManager: npx
           command: pages deploy apps/poc-sensor/dist --project-name=tarmoto-poc-sensor
