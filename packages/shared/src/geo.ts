@@ -32,3 +32,24 @@ export function haversineKm(
 ): number {
   return haversineMeters(lat1, lon1, lat2, lon2) / 1000;
 }
+
+/**
+ * Convert a GeoJSON Point to a lat/lng object.
+ * PostGIS stores coordinates as [lng, lat]; this swaps them.
+ */
+export function pointToLatLng(
+  point: unknown,
+): { lat: number; lng: number } | null {
+  if (!point) return null;
+  const geo = point as { coordinates: [number, number] };
+  return { lat: geo.coordinates[1], lng: geo.coordinates[0] };
+}
+
+/**
+ * Convert a lat/lng object to a GeoJSON Point.
+ */
+export function latLngToPoint(
+  latLng: { lat: number; lng: number },
+): { type: 'Point'; coordinates: [number, number] } {
+  return { type: 'Point', coordinates: [latLng.lng, latLng.lat] };
+}

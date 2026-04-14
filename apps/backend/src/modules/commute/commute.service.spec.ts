@@ -33,6 +33,7 @@ describe('CommuteService', () => {
         .mockImplementation((data) => ({ ...mockRoute, ...data })),
       save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
       remove: jest.fn().mockResolvedValue(undefined),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
       query: jest.fn().mockResolvedValue([{ count: 0 }]),
     };
     rideRepo = {
@@ -77,6 +78,21 @@ describe('CommuteService', () => {
         }),
       );
       expect(result.name).toBe('Daily commute');
+    });
+
+    it('should unset primary on existing routes before creating', async () => {
+      await service.createRoute('user-1', {
+        origin: { lat: 49.2, lng: 16.6 },
+        destination: { lat: 49.1, lng: 16.75 },
+      });
+
+      expect(routeRepo.update).toHaveBeenCalledWith(
+        { user_id: 'user-1', is_primary: true },
+        { is_primary: false },
+      );
+      expect(routeRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ is_primary: true }),
+      );
     });
 
     it('should default name to "Default"', async () => {

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { pointToLatLng } from '@tarmoto/shared';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
 import {
@@ -33,9 +34,16 @@ export class CommuteService {
     userId: string,
     dto: CreateCommuteRouteDto,
   ): Promise<CommuteRouteResponseDto> {
+    // New route becomes primary; unset primary on all existing routes
+    await this.routeRepo.update(
+      { user_id: userId, is_primary: true },
+      { is_primary: false },
+    );
+
     const route = this.routeRepo.create({
       user_id: userId,
       name: dto.name ?? 'Default',
+      is_primary: true,
       origin: {
         type: 'Point',
         coordinates: [dto.origin.lng, dto.origin.lat],
@@ -159,18 +167,13 @@ export class CommuteService {
     return {
       id: route.id,
       name: route.name,
-      origin: this.pointToLatLng(route.origin),
-      destination: this.pointToLatLng(route.destination),
+      origin: pointToLatLng(route.origin)!,
+      destination: pointToLatLng(route.destination)!,
       distance_km: route.distance_km,
       avg_quality: route.avg_quality,
       is_primary: route.is_primary,
       created_at: route.created_at.toISOString(),
     };
-  }
-
-  private pointToLatLng(point: unknown): { lat: number; lng: number } {
-    const geo = point as { coordinates: [number, number] };
-    return { lat: geo.coordinates[1], lng: geo.coordinates[0] };
   }
 
   private getCoords(point: unknown): [number, number] {
