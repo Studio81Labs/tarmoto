@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
@@ -22,10 +22,13 @@ function tileToBBox(
   return { west, south, east, north };
 }
 
+interface LayerQuery {
+  sql: string;
+  params: number[];
+}
+
 @Injectable()
 export class TilesService {
-  private readonly logger = new Logger(TilesService.name);
-
   constructor(
     @InjectRepository(RoadSegment)
     private readonly segmentRepo: Repository<RoadSegment>,
@@ -42,29 +45,44 @@ export class TilesService {
     layers: string = 'all',
   ): Promise<Buffer | null> {
     const bbox = tileToBBox(z, x, y);
+    const bboxParams = [bbox.west, bbox.south, bbox.east, bbox.north];
 
-    const layerQueries: string[] = [];
+    const layerQueries: LayerQuery[] = [];
 
     if (layers === 'all' || layers === 'quality') {
-      layerQueries.push(this.buildQualityLayer(bbox));
+      layerQueries.push(this.buildQualityLayer());
     }
     if (layers === 'all' || layers === 'surface') {
-      layerQueries.push(this.buildSurfaceLayer(bbox));
+      layerQueries.push(this.buildSurfaceLayer());
     }
     if (layers === 'all' || layers === 'hazards') {
-      layerQueries.push(this.buildHazardLayer(bbox));
+      layerQueries.push(this.buildHazardLayer());
     }
 
     if (layerQueries.length === 0) {
       return null;
     }
 
-    // Concatenate all MVT layers into one tile
-    // Each ST_AsMVT produces a separate layer; we concat the binary results
-    const sql = `SELECT (${layerQueries.join(' || ')}) AS tile`;
+    // Each layer query uses $1-$4 for the bbox, so we rewrite placeholders
+    // to use unique parameter indices when concatenating multiple layers
+    let paramIndex = 1;
+    const allParams: number[] = [];
+    const rewrittenLayers: string[] = [];
+
+    for (const layer of layerQueries) {
+      let sql = layer.sql;
+      for (let i = layer.params.length; i >= 1; i--) {
+        sql = sql.replaceAll(`$${i}`, `$${paramIndex + i - 1}`);
+      }
+      rewrittenLayers.push(sql);
+      allParams.push(...bboxParams);
+      paramIndex += layer.params.length;
+    }
+
+    const sql = `SELECT (${rewrittenLayers.join(' || ')}) AS tile`;
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const result = await this.segmentRepo.query(sql);
+    const result = await this.segmentRepo.query(sql, allParams);
     const rows = result as Array<{ tile: Buffer | null }>;
 
     if (
@@ -77,78 +95,72 @@ export class TilesService {
     return rows[0].tile;
   }
 
-  private buildQualityLayer(bbox: {
-    west: number;
-    south: number;
-    east: number;
-    north: number;
-  }): string {
-    return `(
-      SELECT ST_AsMVT(q, 'quality', 4096, 'geom') FROM (
-        SELECT
-          rs.id,
-          rs.quality_score,
-          rs.confidence,
-          rs.reading_count,
-          ST_AsMVTGeom(
-            rs.geom,
-            ST_MakeEnvelope(${bbox.west}, ${bbox.south}, ${bbox.east}, ${bbox.north}, 4326),
-            4096, 64, true
-          ) AS geom
-        FROM road_segments rs
-        WHERE rs.geom && ST_MakeEnvelope(${bbox.west}, ${bbox.south}, ${bbox.east}, ${bbox.north}, 4326)
-          AND rs.quality_score IS NOT NULL
-      ) q
-    )`;
+  private buildQualityLayer(): LayerQuery {
+    return {
+      sql: `(
+        SELECT ST_AsMVT(q, 'quality', 4096, 'geom') FROM (
+          SELECT
+            rs.id,
+            rs.quality_score,
+            rs.confidence,
+            rs.reading_count,
+            ST_AsMVTGeom(
+              rs.geom,
+              ST_MakeEnvelope($1, $2, $3, $4, 4326),
+              4096, 64, true
+            ) AS geom
+          FROM road_segments rs
+          WHERE rs.geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)
+            AND rs.quality_score IS NOT NULL
+        ) q
+      )`,
+      params: [0, 0, 0, 0], // placeholder, replaced by bboxParams
+    };
   }
 
-  private buildSurfaceLayer(bbox: {
-    west: number;
-    south: number;
-    east: number;
-    north: number;
-  }): string {
-    return `(
-      SELECT ST_AsMVT(q, 'surface', 4096, 'geom') FROM (
-        SELECT
-          rs.id,
-          rs.surface_type,
-          rs.curviness_score,
-          rs.length_m,
-          ST_AsMVTGeom(
-            rs.geom,
-            ST_MakeEnvelope(${bbox.west}, ${bbox.south}, ${bbox.east}, ${bbox.north}, 4326),
-            4096, 64, true
-          ) AS geom
-        FROM road_segments rs
-        WHERE rs.geom && ST_MakeEnvelope(${bbox.west}, ${bbox.south}, ${bbox.east}, ${bbox.north}, 4326)
-      ) q
-    )`;
+  private buildSurfaceLayer(): LayerQuery {
+    return {
+      sql: `(
+        SELECT ST_AsMVT(q, 'surface', 4096, 'geom') FROM (
+          SELECT
+            rs.id,
+            rs.surface_type,
+            rs.curviness_score,
+            rs.length_m,
+            ST_AsMVTGeom(
+              rs.geom,
+              ST_MakeEnvelope($1, $2, $3, $4, 4326),
+              4096, 64, true
+            ) AS geom
+          FROM road_segments rs
+          WHERE rs.geom && ST_MakeEnvelope($1, $2, $3, $4, 4326)
+        ) q
+      )`,
+      params: [0, 0, 0, 0],
+    };
   }
 
-  private buildHazardLayer(bbox: {
-    west: number;
-    south: number;
-    east: number;
-    north: number;
-  }): string {
-    return `(
-      SELECT ST_AsMVT(q, 'hazards', 4096, 'geom') FROM (
-        SELECT
-          hr.id,
-          hr.hazard_type,
-          hr.severity,
-          hr.confirmations,
-          ST_AsMVTGeom(
-            hr.location,
-            ST_MakeEnvelope(${bbox.west}, ${bbox.south}, ${bbox.east}, ${bbox.north}, 4326),
-            4096, 64, true
-          ) AS geom
-        FROM hazard_reports hr
-        WHERE hr.location && ST_MakeEnvelope(${bbox.west}, ${bbox.south}, ${bbox.east}, ${bbox.north}, 4326)
-          AND hr.is_active = true
-          AND hr.expires_at > NOW()
-      ) q
-    )`;
+  private buildHazardLayer(): LayerQuery {
+    return {
+      sql: `(
+        SELECT ST_AsMVT(q, 'hazards', 4096, 'geom') FROM (
+          SELECT
+            hr.id,
+            hr.hazard_type,
+            hr.severity,
+            hr.confirmations,
+            ST_AsMVTGeom(
+              hr.location,
+              ST_MakeEnvelope($1, $2, $3, $4, 4326),
+              4096, 64, true
+            ) AS geom
+          FROM hazard_reports hr
+          WHERE hr.location && ST_MakeEnvelope($1, $2, $3, $4, 4326)
+            AND hr.is_active = true
+            AND hr.expires_at > NOW()
+        ) q
+      )`,
+      params: [0, 0, 0, 0],
+    };
   }
 }

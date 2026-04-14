@@ -31,7 +31,29 @@ describe('TilesService', () => {
       expect(result).toBeInstanceOf(Buffer);
       expect(segmentRepo.query).toHaveBeenCalledWith(
         expect.stringContaining('ST_AsMVT'),
+        expect.any(Array),
       );
+    });
+
+    it('should use parameterized queries (no bbox interpolation)', async () => {
+      await service.getTile(10, 550, 335, 'quality');
+
+      const sql = segmentRepo.query!.mock.calls[0][0] as string;
+      const params = segmentRepo.query!.mock.calls[0][1] as number[];
+
+      // SQL should have $N placeholders, not raw numbers
+      expect(sql).toContain('ST_MakeEnvelope($');
+      expect(sql).not.toMatch(/ST_MakeEnvelope\(\d+\.\d+/);
+      // Params should contain bbox values
+      expect(params.length).toBe(4);
+      expect(params.every((p) => typeof p === 'number')).toBe(true);
+    });
+
+    it('should pass 12 params for all 3 layers (4 bbox params each)', async () => {
+      await service.getTile(10, 550, 335, 'all');
+
+      const params = segmentRepo.query!.mock.calls[0][1] as number[];
+      expect(params.length).toBe(12);
     });
 
     it('should include quality layer by default', async () => {
@@ -39,6 +61,7 @@ describe('TilesService', () => {
 
       expect(segmentRepo.query).toHaveBeenCalledWith(
         expect.stringContaining("'quality'"),
+        expect.any(Array),
       );
     });
 
@@ -47,6 +70,7 @@ describe('TilesService', () => {
 
       expect(segmentRepo.query).toHaveBeenCalledWith(
         expect.stringContaining("'surface'"),
+        expect.any(Array),
       );
     });
 
@@ -55,6 +79,7 @@ describe('TilesService', () => {
 
       expect(segmentRepo.query).toHaveBeenCalledWith(
         expect.stringContaining("'hazards'"),
+        expect.any(Array),
       );
     });
 
@@ -90,14 +115,6 @@ describe('TilesService', () => {
       const result = await service.getTile(10, 550, 335);
 
       expect(result).toBeNull();
-    });
-
-    it('should use correct bounding box for tile z=10 x=550 y=335', async () => {
-      await service.getTile(10, 550, 335);
-
-      // z=10, x=550, y=335 should produce a bbox in central Europe
-      const sql = segmentRepo.query!.mock.calls[0][0] as string;
-      expect(sql).toContain('ST_MakeEnvelope');
     });
 
     it('should filter quality layer by non-null quality_score', async () => {
