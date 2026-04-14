@@ -86,8 +86,8 @@ describe('RidesService', () => {
       );
     });
 
-    it('should reject if user already has active ride', async () => {
-      rideRepo.findOne!.mockResolvedValueOnce(mockRide);
+    it('should reject if user already has active ride (unique violation)', async () => {
+      rideRepo.save!.mockRejectedValueOnce({ code: '23505' });
 
       await expect(service.start('user-1', {})).rejects.toThrow(
         BadRequestException,

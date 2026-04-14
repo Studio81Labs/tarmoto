@@ -29,16 +29,6 @@ export class RidesService {
   ) {}
 
   async start(userId: string, dto: StartRideDto): Promise<RideResponseDto> {
-    // Check for existing active ride
-    const active = await this.rideRepo.findOne({
-      where: { user_id: userId, status: 'active' },
-    });
-    if (active) {
-      throw new BadRequestException(
-        'You already have an active ride. Stop it before starting a new one.',
-      );
-    }
-
     const ride = this.rideRepo.create({
       user_id: userId,
       ride_type: dto.ride_type ?? 'free',
@@ -46,7 +36,24 @@ export class RidesService {
       status: 'active',
     });
 
-    const saved = await this.rideRepo.save(ride);
+    let saved: Ride;
+    try {
+      saved = await this.rideRepo.save(ride);
+    } catch (err: unknown) {
+      // Partial unique index: idx_rides_one_active_per_user
+      if (
+        typeof err === 'object' &&
+        err !== null &&
+        'code' in err &&
+        (err as { code: string }).code === '23505'
+      ) {
+        throw new BadRequestException(
+          'You already have an active ride. Stop it before starting a new one.',
+        );
+      }
+      throw err;
+    }
+
     return this.toRideResponse(saved);
   }
 
