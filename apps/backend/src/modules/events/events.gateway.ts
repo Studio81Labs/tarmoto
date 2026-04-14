@@ -58,8 +58,8 @@ export class EventsGateway
       this.logger.log(`Redis adapter connected (${redisHost}:${redisPort})`);
     } catch (err) {
       // Clean up any partially connected clients
-      await pub.disconnect().catch(() => {});
-      await sub.disconnect().catch(() => {});
+      await pub.close().catch(() => {});
+      await sub.close().catch(() => {});
       this.pubClient = null;
       this.subClient = null;
       this.logger.warn(
@@ -70,12 +70,12 @@ export class EventsGateway
   }
 
   async onModuleDestroy(): Promise<void> {
-    // Disconnect independently so one failure doesn't skip the other
+    // Gracefully close independently so one failure doesn't skip the other
     if (this.pubClient) {
-      await this.pubClient.disconnect().catch(() => {});
+      await this.pubClient.close().catch(() => {});
     }
     if (this.subClient) {
-      await this.subClient.disconnect().catch(() => {});
+      await this.subClient.close().catch(() => {});
     }
   }
 
