@@ -6,10 +6,12 @@ import { Repository } from 'typeorm';
 import { HazardsService } from './hazards.service.js';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
 import { EXPIRY_HOURS } from './dto/create-hazard.dto.js';
+import { EventsGateway } from '../events/events.gateway.js';
 
 describe('HazardsService', () => {
   let service: HazardsService;
   let repo: jest.Mocked<Partial<Repository<HazardReport>>>;
+  let eventsGateway: { emitHazardAlert: jest.Mock };
 
   const mockHazard: Partial<HazardReport> = {
     id: '123e4567-e89b-12d3-a456-426614174000',
@@ -43,10 +45,13 @@ describe('HazardsService', () => {
       }),
     };
 
+    eventsGateway = { emitHazardAlert: jest.fn() };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         HazardsService,
         { provide: getRepositoryToken(HazardReport), useValue: repo },
+        { provide: EventsGateway, useValue: eventsGateway },
       ],
     }).compile();
 
@@ -77,6 +82,21 @@ describe('HazardsService', () => {
       const expiryTime = new Date(result.expires_at).getTime();
       const expectedExpiry = before + EXPIRY_HOURS['pothole'] * 60 * 60 * 1000;
       expect(Math.abs(expiryTime - expectedExpiry)).toBeLessThan(5000);
+    });
+
+    it('should broadcast new hazard via WebSocket', async () => {
+      const dto = { lat: 49.1, lng: 16.75, hazard_type: 'pothole' as const };
+      await service.create('user-1', dto);
+
+      expect(eventsGateway.emitHazardAlert).toHaveBeenCalledWith(
+        49.1,
+        16.75,
+        expect.objectContaining({
+          hazard_type: 'pothole',
+          lat: 49.1,
+          lng: 16.75,
+        }),
+      );
     });
 
     it('should use custom severity and note', async () => {

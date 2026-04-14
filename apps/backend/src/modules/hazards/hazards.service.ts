@@ -10,6 +10,7 @@ import { CreateHazardDto, EXPIRY_HOURS } from './dto/create-hazard.dto.js';
 import { QueryHazardsDto } from './dto/query-hazards.dto.js';
 import { RouteHazardsDto } from './dto/route-hazards.dto.js';
 import { HazardResponseDto } from './dto/hazard-response.dto.js';
+import { EventsGateway } from '../events/events.gateway.js';
 
 const HAZARD_SELECT_BASE = `
   SELECT
@@ -31,6 +32,7 @@ export class HazardsService {
   constructor(
     @InjectRepository(HazardReport)
     private readonly hazardRepo: Repository<HazardReport>,
+    private readonly eventsGateway: EventsGateway,
   ) {}
 
   async create(
@@ -53,7 +55,12 @@ export class HazardsService {
     });
 
     const saved = await this.hazardRepo.save(hazard);
-    return this.toResponse(saved);
+    const response = this.toResponse(saved);
+
+    // Broadcast new hazard to nearby riders via WebSocket
+    this.emitHazardEvent(response);
+
+    return response;
   }
 
   async findNearby(query: QueryHazardsDto): Promise<HazardResponseDto[]> {
@@ -112,13 +119,23 @@ export class HazardsService {
       .execute();
 
     const updated = await this.findActiveHazard(hazardId);
-    return this.toResponse(updated);
+    const response = this.toResponse(updated);
+
+    // Broadcast confirmation to nearby riders
+    this.emitHazardEvent(response);
+
+    return response;
   }
 
   async dismiss(hazardId: string): Promise<void> {
     const hazard = await this.findActiveHazard(hazardId);
+    const response = this.toResponse(hazard);
+
     hazard.is_active = false;
     await this.hazardRepo.save(hazard);
+
+    // Broadcast dismissal to nearby riders
+    this.emitHazardEvent({ ...response, severity: 'dismissed' });
   }
 
   async findAlongRoute(dto: RouteHazardsDto): Promise<HazardResponseDto[]> {
@@ -198,6 +215,16 @@ export class HazardsService {
       created_at: hazard.created_at.toISOString(),
       expires_at: hazard.expires_at.toISOString(),
     };
+  }
+
+  private emitHazardEvent(response: HazardResponseDto): void {
+    this.eventsGateway.emitHazardAlert(response.lat, response.lng, {
+      id: response.id,
+      hazard_type: response.hazard_type,
+      severity: response.severity,
+      lat: response.lat,
+      lng: response.lng,
+    });
   }
 
   private rowToResponse(row: Record<string, unknown>): HazardResponseDto {
