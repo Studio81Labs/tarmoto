@@ -93,7 +93,9 @@ export class RidesController {
   }
 
   @Post('import')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }), // 10 MB max
+  )
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Import a GPX file as a route' })
   @ApiBody({

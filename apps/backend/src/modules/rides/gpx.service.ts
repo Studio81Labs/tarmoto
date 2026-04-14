@@ -61,7 +61,7 @@ export class GpxService {
     }
 
     const startTime = points[0].time ?? new Date();
-    const endTime = points[points.length - 1].time ?? new Date();
+    const endTime = points[points.length - 1].time ?? null;
 
     // Build GeoJSON LineString
     const coordinates = points.map((p) => [p.lng, p.lat]);
