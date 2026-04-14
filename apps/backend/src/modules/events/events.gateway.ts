@@ -9,6 +9,7 @@ import {
   MessageBody,
 } from '@nestjs/websockets';
 import { Logger, OnModuleDestroy } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -18,6 +19,7 @@ import { createClient } from 'redis';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { Ride } from '../../entities/ride.entity.js';
 
+@SkipThrottle()
 @WebSocketGateway({
   cors: { origin: '*' },
   namespace: '/events',
