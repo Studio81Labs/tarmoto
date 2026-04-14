@@ -56,6 +56,18 @@ describe('TilesService', () => {
       expect(params.length).toBe(12);
     });
 
+    it('should rewrite param indices correctly for 3 layers (no $1 inside $10)', async () => {
+      await service.getTile(10, 550, 335, 'all');
+
+      const sql = segmentRepo.query!.mock.calls[0][0] as string;
+      // Third layer (hazards) should use $9-$12, not $90/$91/$92
+      expect(sql).toContain('$9');
+      expect(sql).toContain('$12');
+      expect(sql).not.toContain('$90');
+      expect(sql).not.toContain('$91');
+      expect(sql).not.toContain('$92');
+    });
+
     it('should include quality layer by default', async () => {
       await service.getTile(10, 550, 335);
 

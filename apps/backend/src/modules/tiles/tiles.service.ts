@@ -64,7 +64,8 @@ export class TilesService {
     }
 
     // Each layer query uses $1-$4 for the bbox, so we rewrite placeholders
-    // to use unique parameter indices when concatenating multiple layers
+    // to use unique parameter indices when concatenating multiple layers.
+    // Use regex with word boundary (?!\d) to avoid $1 matching inside $10/$11/$12.
     let paramIndex = 1;
     const allParams: number[] = [];
     const rewrittenLayers: string[] = [];
@@ -72,7 +73,10 @@ export class TilesService {
     for (const layer of layerQueries) {
       let sql = layer.sql;
       for (let i = layer.params.length; i >= 1; i--) {
-        sql = sql.replaceAll(`$${i}`, `$${paramIndex + i - 1}`);
+        sql = sql.replaceAll(
+          new RegExp(`\\$${i}(?!\\d)`, 'g'),
+          `$${paramIndex + i - 1}`,
+        );
       }
       rewrittenLayers.push(sql);
       allParams.push(...bboxParams);
