@@ -29,7 +29,7 @@ except ImportError:
     import requests
 
 OWNER = "GetTarmoto"
-REPO = "web"
+REPO = "tarmoto"
 API = f"https://api.github.com/repos/{OWNER}/{REPO}"
 
 # ── Labels ──
