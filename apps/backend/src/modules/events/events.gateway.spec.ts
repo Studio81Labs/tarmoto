@@ -224,6 +224,23 @@ describe('EventsGateway', () => {
       expect(client.join).toHaveBeenCalledWith('ride:ride-1');
     });
 
+    it('should reject missing ride_id', async () => {
+      const client = {
+        id: 'client-1',
+        data: { userId: 'user-1' },
+        join: jest.fn(),
+        emit: jest.fn(),
+      } as unknown as Socket;
+
+      await gateway.handleSubscribeGroupRide(client, {} as never);
+
+      expect(client.join).not.toHaveBeenCalled();
+      expect(rideRepo.findOne).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith('error', {
+        message: 'ride_id is required',
+      });
+    });
+
     it('should reject user who does not own the ride', async () => {
       rideRepo.findOne.mockResolvedValueOnce(null);
       const client = {

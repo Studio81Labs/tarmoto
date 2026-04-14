@@ -144,6 +144,11 @@ export class EventsGateway
       return;
     }
 
+    if (!data.ride_id || typeof data.ride_id !== 'string') {
+      client.emit('error', { message: 'ride_id is required' });
+      return;
+    }
+
     // Verify user is the ride owner (ride participants would need a
     // ride_members table in future for full group ride support)
     const ride = await this.rideRepo.findOne({
