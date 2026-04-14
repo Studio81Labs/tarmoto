@@ -58,8 +58,11 @@ describe('EventsGateway', () => {
   });
 
   describe('handleConnection', () => {
-    it('should authenticate client with valid token', async () => {
-      jwtService.verifyAsync.mockResolvedValueOnce({ sub: 'user-1' });
+    it('should authenticate client with valid access token', async () => {
+      jwtService.verifyAsync.mockResolvedValueOnce({
+        sub: 'user-1',
+        type: 'access',
+      });
 
       const client = {
         id: 'client-1',
@@ -89,6 +92,25 @@ describe('EventsGateway', () => {
       expect(client.join).not.toHaveBeenCalled();
     });
 
+    it('should reject refresh tokens', async () => {
+      jwtService.verifyAsync.mockResolvedValueOnce({
+        sub: 'user-1',
+        type: 'refresh',
+      });
+
+      const client = {
+        id: 'client-reject',
+        data: {},
+        handshake: { auth: { token: 'refresh-jwt' }, headers: {} },
+        join: jest.fn(),
+      } as unknown as Socket;
+
+      await gateway.handleConnection(client);
+
+      expect(client.data.userId).toBeUndefined();
+      expect(client.join).not.toHaveBeenCalled();
+    });
+
     it('should handle invalid token gracefully', async () => {
       jwtService.verifyAsync.mockRejectedValueOnce(new Error('invalid'));
 
@@ -105,7 +127,10 @@ describe('EventsGateway', () => {
     });
 
     it('should extract token from Authorization header', async () => {
-      jwtService.verifyAsync.mockResolvedValueOnce({ sub: 'user-2' });
+      jwtService.verifyAsync.mockResolvedValueOnce({
+        sub: 'user-2',
+        type: 'access',
+      });
 
       const client = {
         id: 'client-4',

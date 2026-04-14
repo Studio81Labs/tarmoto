@@ -8,7 +8,7 @@ import {
   ConnectedSocket,
   MessageBody,
 } from '@nestjs/websockets';
-import { Logger } from '@nestjs/common';
+import { Logger, OnModuleDestroy } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -23,12 +23,18 @@ import { Ride } from '../../entities/ride.entity.js';
   namespace: '/events',
 })
 export class EventsGateway
-  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+  implements
+    OnGatewayInit,
+    OnGatewayConnection,
+    OnGatewayDisconnect,
+    OnModuleDestroy
 {
   @WebSocketServer()
   server: Server;
 
   private readonly logger = new Logger(EventsGateway.name);
+  private pubClient: ReturnType<typeof createClient> | null = null;
+  private subClient: ReturnType<typeof createClient> | null = null;
 
   constructor(
     private readonly config: ConfigService,
@@ -42,12 +48,12 @@ export class EventsGateway
     const redisPort = this.config.get<number>('redis.port', 6379);
 
     try {
-      const pubClient = createClient({
+      this.pubClient = createClient({
         url: `redis://${redisHost}:${redisPort}`,
       });
-      const subClient = pubClient.duplicate();
-      await Promise.all([pubClient.connect(), subClient.connect()]);
-      server.adapter(createAdapter(pubClient, subClient));
+      this.subClient = this.pubClient.duplicate();
+      await Promise.all([this.pubClient.connect(), this.subClient.connect()]);
+      server.adapter(createAdapter(this.pubClient, this.subClient));
       this.logger.log(`Redis adapter connected (${redisHost}:${redisPort})`);
     } catch (err) {
       this.logger.warn(
@@ -55,6 +61,11 @@ export class EventsGateway
         err instanceof Error ? err.message : String(err),
       );
     }
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    if (this.pubClient) await this.pubClient.disconnect();
+    if (this.subClient) await this.subClient.disconnect();
   }
 
   async handleConnection(client: Socket): Promise<void> {
@@ -65,9 +76,18 @@ export class EventsGateway
     }
 
     try {
-      const payload = await this.jwt.verifyAsync<{ sub: string }>(token);
+      const payload = await this.jwt.verifyAsync<{
+        sub: string;
+        type: string;
+      }>(token);
+      // Only accept access tokens — reject refresh tokens
+      if (payload.type !== 'access') {
+        this.logger.debug(
+          `Client ${client.id} connected (wrong token type: ${payload.type})`,
+        );
+        return;
+      }
       (client.data as Record<string, unknown>).userId = payload.sub;
-      // Join user-specific room for targeted events
       client.join(`user:${payload.sub}`);
       this.logger.debug(`Client ${client.id} authenticated as ${payload.sub}`);
     } catch {
