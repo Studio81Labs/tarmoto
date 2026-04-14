@@ -58,16 +58,7 @@ export class HazardsService {
     const response = this.toResponse(saved);
 
     // Broadcast new hazard to nearby riders via WebSocket
-    const savedCoords = (
-      saved.location as unknown as { coordinates: [number, number] }
-    ).coordinates;
-    this.eventsGateway.emitHazardAlert(savedCoords[1], savedCoords[0], {
-      id: saved.id,
-      hazard_type: saved.hazard_type,
-      severity: saved.severity,
-      lat: savedCoords[1],
-      lng: savedCoords[0],
-    });
+    this.emitHazardEvent(response);
 
     return response;
   }
@@ -131,37 +122,20 @@ export class HazardsService {
     const response = this.toResponse(updated);
 
     // Broadcast confirmation to nearby riders
-    const coords = (
-      updated.location as unknown as { coordinates: [number, number] }
-    ).coordinates;
-    this.eventsGateway.emitHazardAlert(coords[1], coords[0], {
-      id: updated.id,
-      hazard_type: updated.hazard_type,
-      severity: updated.severity,
-      lat: coords[1],
-      lng: coords[0],
-    });
+    this.emitHazardEvent(response);
 
     return response;
   }
 
   async dismiss(hazardId: string): Promise<void> {
     const hazard = await this.findActiveHazard(hazardId);
-    const coords = (
-      hazard.location as unknown as { coordinates: [number, number] }
-    ).coordinates;
+    const response = this.toResponse(hazard);
 
     hazard.is_active = false;
     await this.hazardRepo.save(hazard);
 
     // Broadcast dismissal to nearby riders
-    this.eventsGateway.emitHazardAlert(coords[1], coords[0], {
-      id: hazard.id,
-      hazard_type: hazard.hazard_type,
-      severity: 'dismissed',
-      lat: coords[1],
-      lng: coords[0],
-    });
+    this.emitHazardEvent({ ...response, severity: 'dismissed' });
   }
 
   async findAlongRoute(dto: RouteHazardsDto): Promise<HazardResponseDto[]> {
@@ -241,6 +215,16 @@ export class HazardsService {
       created_at: hazard.created_at.toISOString(),
       expires_at: hazard.expires_at.toISOString(),
     };
+  }
+
+  private emitHazardEvent(response: HazardResponseDto): void {
+    this.eventsGateway.emitHazardAlert(response.lat, response.lng, {
+      id: response.id,
+      hazard_type: response.hazard_type,
+      severity: response.severity,
+      lat: response.lat,
+      lng: response.lng,
+    });
   }
 
   private rowToResponse(row: Record<string, unknown>): HazardResponseDto {
