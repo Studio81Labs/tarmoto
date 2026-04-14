@@ -11,7 +11,6 @@ import {
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
-  Header,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -87,13 +86,13 @@ export class RidesController {
   @ApiProduces('application/gpx+xml')
   @ApiResponse({ status: 200, description: 'GPX file' })
   @ApiResponse({ status: 404, description: 'Ride not found' })
-  @Header('Content-Type', 'application/gpx+xml')
   async exportGpx(
     @Req() req: express.Request,
     @Res() res: express.Response,
     @Param('rideId', ParseUUIDPipe) rideId: string,
   ): Promise<void> {
     const gpx = await this.ridesService.exportGpx(req.user!.userId, rideId);
+    res.set('Content-Type', 'application/gpx+xml');
     res.set(
       'Content-Disposition',
       `attachment; filename="tarmoto-ride-${rideId}.gpx"`,
