@@ -36,6 +36,7 @@
     "@nestjs/typeorm": "^11.0.1",
     "@nestjs/websockets": "^11.1.19",
     "@socket.io/redis-adapter": "^8.3.0",
+    "@tarmoto/shared": "workspace:*",
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",

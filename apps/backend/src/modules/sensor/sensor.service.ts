@@ -8,10 +8,10 @@ import {
   SensorReadingDto,
 } from './dto/upload-sensor-data.dto.js';
 import { UploadResponseDto } from './dto/upload-response.dto.js';
+import { haversineMeters } from '@tarmoto/shared';
 
 const SEGMENT_LENGTH_M = 100;
 const MIN_SPEED_MS = 2.78; // ~10 km/h — discard stopped readings
-const EARTH_RADIUS_M = 6371000;
 
 /** RMS thresholds matching the PoC sensor app and ML spec */
 const QUALITY_THRESHOLDS: Array<{
@@ -116,7 +116,7 @@ export class SensorService {
 
     for (const reading of readings) {
       if (reading.lat !== undefined && reading.lng !== undefined) {
-        const dist = haversine(lastLat, lastLng, reading.lat, reading.lng);
+        const dist = haversineMeters(lastLat, lastLng, reading.lat, reading.lng);
         segmentDistance += dist;
         lastLat = reading.lat;
         lastLng = reading.lng;
@@ -230,19 +230,3 @@ function classify(rms: number): { classification: string; score: number } {
   return { classification: 'very_poor', score: 1 };
 }
 
-/** Haversine distance in meters */
-function haversine(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number,
-): number {
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) ** 2;
-  return EARTH_RADIUS_M * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
