@@ -4,6 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { databaseConfig } from '../../config/database.config.js';
 import { InitSchema1713000000000 } from '../../migrations/1713000000000-InitSchema.js';
 import { AddPasswordHash1713100000000 } from '../../migrations/1713100000000-AddPasswordHash.js';
+import { FixIsEmergencyDefault1713200000000 } from '../../migrations/1713200000000-FixIsEmergencyDefault.js';
 import {
   User,
   UserContact,
@@ -55,7 +56,11 @@ const entities = [
         username: config.get('database.username'),
         password: config.get('database.password'),
         entities,
-        migrations: [InitSchema1713000000000, AddPasswordHash1713100000000],
+        migrations: [
+          InitSchema1713000000000,
+          AddPasswordHash1713100000000,
+          FixIsEmergencyDefault1713200000000,
+        ],
         migrationsRun: true,
         synchronize: false,
         logging:
