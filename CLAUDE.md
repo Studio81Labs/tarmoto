@@ -2,12 +2,13 @@
 
 ## Project
 
-Tarmoto is a motorcycle companion app with crowdsourced road surface quality intelligence, real-time hazard alerts, and multi-day trip planning. Monorepo with bare React Native mobile app and NestJS backend.
+Tarmoto is a motorcycle companion app with crowdsourced road surface quality intelligence, real-time hazard alerts, and multi-day trip planning. Monorepo with bare React Native mobile app, NestJS backend, and React dashboard web app.
 
 ## Repository Layout
 
 - `apps/mobile/` — Bare React Native (TypeScript) — sensors, TF Lite, CarPlay
 - `apps/backend/` — NestJS API (TypeScript, serves both mobile and web)
+- `apps/dashboard/` — Web dashboard (Vite + React + TailwindCSS) — trip planner, ride history, account management
 - `apps/poc-sensor/` — Road quality sensor PoC (Vite + React, deployed to Cloudflare Pages)
 - `packages/shared/` — Shared types, constants, DTOs (`@tarmoto/shared`)
 - `docs/prd/` — Product requirements
@@ -19,7 +20,8 @@ Tarmoto is a motorcycle companion app with crowdsourced road surface quality int
 ## Tech Stack
 
 - **Runtime**: Node 24+, pnpm workspaces
-- **Mobile**: Bare React Native 0.76, TypeScript, Zustand, MapLibre GL
+- **Dashboard**: Vite + React 18, TailwindCSS, Zustand, MapLibre GL, React Router
+- **Mobile**: Bare React Native 0.85, TypeScript, Zustand, MapLibre GL
 - **Backend**: NestJS 11, TypeORM, TypeScript strict
 - **Database**: PostgreSQL 16 + PostGIS 3.4 (Docker)
 - **Maps**: MapLibre GL + custom vector tiles
@@ -33,12 +35,14 @@ pnpm dev:backend          # NestJS dev server (watch mode)
 pnpm dev:mobile           # Metro bundler
 pnpm ios                  # Run on iOS simulator
 pnpm android              # Run on Android emulator
+pnpm dev:dashboard        # Dashboard web app dev server
 pnpm dev:docs             # Design docs viewer (wireframes + ERD) on :4200
 pnpm dev:poc              # PoC sensor app dev server
 pnpm db:up                # Start PostgreSQL + Redis via Docker
 pnpm db:down              # Stop Docker services
 pnpm db:migrate           # Build backend + run TypeORM migrations
 pnpm build:backend        # Build backend
+pnpm build:dashboard      # Build dashboard (output: apps/dashboard/dist)
 pnpm build:poc            # Build PoC sensor (output: apps/poc-sensor/dist)
 pnpm build:shared         # Build shared package
 pnpm test                 # Run all tests

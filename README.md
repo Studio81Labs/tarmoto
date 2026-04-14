@@ -28,6 +28,7 @@ tarmoto/
 ├── apps/
 │   ├── mobile/              Bare React Native (iOS & Android)
 │   ├── backend/             NestJS API (serves mobile + web)
+│   ├── dashboard/           Web dashboard (Vite + React + TailwindCSS)
 │   └── poc-sensor/          Road quality sensor PoC (Cloudflare Pages)
 ├── packages/
 │   └── shared/              Shared types, constants, DTOs
