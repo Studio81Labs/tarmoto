@@ -47,15 +47,21 @@ export class EventsGateway
     const redisHost = this.config.get<string>('redis.host', 'localhost');
     const redisPort = this.config.get<number>('redis.port', 6379);
 
+    const pub = createClient({ url: `redis://${redisHost}:${redisPort}` });
+    const sub = pub.duplicate();
+
     try {
-      this.pubClient = createClient({
-        url: `redis://${redisHost}:${redisPort}`,
-      });
-      this.subClient = this.pubClient.duplicate();
-      await Promise.all([this.pubClient.connect(), this.subClient.connect()]);
-      server.adapter(createAdapter(this.pubClient, this.subClient));
+      await Promise.all([pub.connect(), sub.connect()]);
+      this.pubClient = pub;
+      this.subClient = sub;
+      server.adapter(createAdapter(pub, sub));
       this.logger.log(`Redis adapter connected (${redisHost}:${redisPort})`);
     } catch (err) {
+      // Clean up any partially connected clients
+      await pub.disconnect().catch(() => {});
+      await sub.disconnect().catch(() => {});
+      this.pubClient = null;
+      this.subClient = null;
       this.logger.warn(
         'Redis adapter not available, falling back to in-memory',
         err instanceof Error ? err.message : String(err),
@@ -64,8 +70,13 @@ export class EventsGateway
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.pubClient) await this.pubClient.disconnect();
-    if (this.subClient) await this.subClient.disconnect();
+    // Disconnect independently so one failure doesn't skip the other
+    if (this.pubClient) {
+      await this.pubClient.disconnect().catch(() => {});
+    }
+    if (this.subClient) {
+      await this.subClient.disconnect().catch(() => {});
+    }
   }
 
   async handleConnection(client: Socket): Promise<void> {
