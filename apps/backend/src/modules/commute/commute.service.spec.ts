@@ -2,10 +2,27 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException } from '@nestjs/common';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { CommuteService } from './commute.service.js';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
+
+const mockTransactionManager = {
+  update: jest.fn().mockResolvedValue({ affected: 1 }),
+  create: jest
+    .fn()
+    .mockImplementation((_entity: unknown, data: unknown) => ({
+      id: 'route-new',
+      created_at: new Date('2026-04-15T10:00:00Z'),
+      distance_km: null,
+      avg_quality: null,
+      is_primary: true,
+      ...(data as Record<string, unknown>),
+    })),
+  save: jest
+    .fn()
+    .mockImplementation((entity: unknown) => Promise.resolve(entity)),
+};
 
 describe('CommuteService', () => {
   let service: CommuteService;
@@ -45,6 +62,20 @@ describe('CommuteService', () => {
         CommuteService,
         { provide: getRepositoryToken(CommuteRoute), useValue: routeRepo },
         { provide: getRepositoryToken(Ride), useValue: rideRepo },
+        {
+          provide: DataSource,
+          useValue: {
+            transaction: jest
+              .fn()
+              .mockImplementation(
+                (
+                  cb: (
+                    manager: typeof mockTransactionManager,
+                  ) => Promise<unknown>,
+                ) => cb(mockTransactionManager),
+              ),
+          },
+        },
       ],
     }).compile();
 
@@ -62,14 +93,15 @@ describe('CommuteService', () => {
   });
 
   describe('createRoute', () => {
-    it('should create a commute route with Point geometry', async () => {
-      const result = await service.createRoute('user-1', {
+    it('should create a commute route with Point geometry via transaction', async () => {
+      await service.createRoute('user-1', {
         name: 'Daily commute',
         origin: { lat: 49.2, lng: 16.6 },
         destination: { lat: 49.1, lng: 16.75 },
       });
 
-      expect(routeRepo.create).toHaveBeenCalledWith(
+      expect(mockTransactionManager.create).toHaveBeenCalledWith(
+        CommuteRoute,
         expect.objectContaining({
           user_id: 'user-1',
           name: 'Daily commute',
@@ -77,20 +109,21 @@ describe('CommuteService', () => {
           destination: { type: 'Point', coordinates: [16.75, 49.1] },
         }),
       );
-      expect(result.name).toBe('Daily commute');
     });
 
-    it('should unset primary on existing routes before creating', async () => {
+    it('should unset primary on existing routes atomically', async () => {
       await service.createRoute('user-1', {
         origin: { lat: 49.2, lng: 16.6 },
         destination: { lat: 49.1, lng: 16.75 },
       });
 
-      expect(routeRepo.update).toHaveBeenCalledWith(
+      expect(mockTransactionManager.update).toHaveBeenCalledWith(
+        CommuteRoute,
         { user_id: 'user-1', is_primary: true },
         { is_primary: false },
       );
-      expect(routeRepo.create).toHaveBeenCalledWith(
+      expect(mockTransactionManager.create).toHaveBeenCalledWith(
+        CommuteRoute,
         expect.objectContaining({ is_primary: true }),
       );
     });
@@ -101,7 +134,8 @@ describe('CommuteService', () => {
         destination: { lat: 49.1, lng: 16.75 },
       });
 
-      expect(routeRepo.create).toHaveBeenCalledWith(
+      expect(mockTransactionManager.create).toHaveBeenCalledWith(
+        CommuteRoute,
         expect.objectContaining({ name: 'Default' }),
       );
     });

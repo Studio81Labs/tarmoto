@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { pointToLatLng } from '@tarmoto/shared';
+import { Repository, DataSource } from 'typeorm';
+import { pointToLatLng, latLngToPoint } from '@tarmoto/shared';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
 import {
@@ -20,6 +20,7 @@ export class CommuteService {
     private readonly routeRepo: Repository<CommuteRoute>,
     @InjectRepository(Ride)
     private readonly rideRepo: Repository<Ride>,
+    private readonly dataSource: DataSource,
   ) {}
 
   async listRoutes(userId: string): Promise<CommuteRouteResponseDto[]> {
@@ -34,27 +35,26 @@ export class CommuteService {
     userId: string,
     dto: CreateCommuteRouteDto,
   ): Promise<CommuteRouteResponseDto> {
-    // New route becomes primary; unset primary on all existing routes
-    await this.routeRepo.update(
-      { user_id: userId, is_primary: true },
-      { is_primary: false },
-    );
+    // Transaction ensures atomic primary flag swap + insert
+    const saved = await this.dataSource.transaction(async (manager) => {
+      // Unset primary on all existing routes
+      await manager.update(
+        CommuteRoute,
+        { user_id: userId, is_primary: true },
+        { is_primary: false },
+      );
 
-    const route = this.routeRepo.create({
-      user_id: userId,
-      name: dto.name ?? 'Default',
-      is_primary: true,
-      origin: {
-        type: 'Point',
-        coordinates: [dto.origin.lng, dto.origin.lat],
-      },
-      destination: {
-        type: 'Point',
-        coordinates: [dto.destination.lng, dto.destination.lat],
-      },
+      const route = manager.create(CommuteRoute, {
+        user_id: userId,
+        name: dto.name ?? 'Default',
+        is_primary: true,
+        origin: latLngToPoint(dto.origin),
+        destination: latLngToPoint(dto.destination),
+      });
+
+      return manager.save(route);
     });
 
-    const saved = await this.routeRepo.save(route);
     return this.toRouteResponse(saved);
   }
 
