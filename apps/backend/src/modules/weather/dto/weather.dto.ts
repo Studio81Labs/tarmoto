@@ -1,4 +1,4 @@
-import { IsNumber, IsArray, ValidateNested } from 'class-validator';
+import { IsNumber, IsArray, ArrayMinSize, ValidateNested } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -25,6 +25,7 @@ class LatLngDto {
 export class RouteWeatherDto {
   @ApiProperty({ type: [LatLngDto], minItems: 2 })
   @IsArray()
+  @ArrayMinSize(2)
   @ValidateNested({ each: true })
   @Type(() => LatLngDto)
   route: LatLngDto[];
