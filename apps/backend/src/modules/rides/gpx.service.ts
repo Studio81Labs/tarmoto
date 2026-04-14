@@ -21,9 +21,9 @@ interface GpxTrack {
 interface GpxRoot {
   gpx: {
     trk: GpxTrack | GpxTrack[];
-    rte?: {
-      rtept: GpxTrackPoint | GpxTrackPoint[];
-    };
+    rte?:
+      | { rtept?: GpxTrackPoint | GpxTrackPoint[] }
+      | Array<{ rtept?: GpxTrackPoint | GpxTrackPoint[] }>;
   };
 }
 
@@ -131,10 +131,26 @@ export class GpxService {
 
     // Fall back to routes (<rte><rtept>)
     if (parsed.gpx.rte) {
-      const rtepts = Array.isArray(parsed.gpx.rte.rtept)
-        ? parsed.gpx.rte.rtept
-        : [parsed.gpx.rte.rtept];
-      return rtepts.map((pt) => this.parsePoint(pt));
+      const routes = Array.isArray(parsed.gpx.rte)
+        ? parsed.gpx.rte
+        : [parsed.gpx.rte];
+
+      const points: Array<{
+        lat: number;
+        lng: number;
+        ele?: number;
+        time?: Date;
+      }> = [];
+
+      for (const route of routes) {
+        if (!route?.rtept) continue;
+        const rtepts = Array.isArray(route.rtept) ? route.rtept : [route.rtept];
+        for (const pt of rtepts) {
+          points.push(this.parsePoint(pt));
+        }
+      }
+
+      if (points.length > 0) return points;
     }
 
     throw new BadRequestException('GPX file contains no track or route data');
@@ -149,7 +165,7 @@ export class GpxService {
     return {
       lat: parseFloat(pt['@_lat']),
       lng: parseFloat(pt['@_lon']),
-      ele: pt.ele ? Number(pt.ele) : undefined,
+      ele: pt.ele != null ? Number(pt.ele) : undefined,
       time: pt.time ? new Date(pt.time) : undefined,
     };
   }
