@@ -10,6 +10,7 @@ import { HazardsModule } from './modules/hazards/index.js';
 import { SensorModule } from './modules/sensor/index.js';
 import { RoadsModule } from './modules/roads/index.js';
 import { UsersModule } from './modules/users/index.js';
+import { RidesModule } from './modules/rides/index.js';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { UsersModule } from './modules/users/index.js';
     HazardsModule,
     SensorModule,
     RoadsModule,
+    RidesModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
