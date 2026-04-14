@@ -10,6 +10,7 @@ import { CreateHazardDto, EXPIRY_HOURS } from './dto/create-hazard.dto.js';
 import { QueryHazardsDto } from './dto/query-hazards.dto.js';
 import { RouteHazardsDto } from './dto/route-hazards.dto.js';
 import { HazardResponseDto } from './dto/hazard-response.dto.js';
+import { EventsGateway } from '../events/events.gateway.js';
 
 const HAZARD_SELECT_BASE = `
   SELECT
@@ -31,6 +32,7 @@ export class HazardsService {
   constructor(
     @InjectRepository(HazardReport)
     private readonly hazardRepo: Repository<HazardReport>,
+    private readonly eventsGateway: EventsGateway,
   ) {}
 
   async create(
@@ -53,7 +55,18 @@ export class HazardsService {
     });
 
     const saved = await this.hazardRepo.save(hazard);
-    return this.toResponse(saved);
+    const response = this.toResponse(saved);
+
+    // Broadcast new hazard to nearby riders via WebSocket
+    this.eventsGateway.emitHazardAlert(dto.lat, dto.lng, {
+      id: saved.id,
+      hazard_type: dto.hazard_type,
+      severity: dto.severity ?? 'medium',
+      lat: dto.lat,
+      lng: dto.lng,
+    });
+
+    return response;
   }
 
   async findNearby(query: QueryHazardsDto): Promise<HazardResponseDto[]> {
@@ -112,13 +125,40 @@ export class HazardsService {
       .execute();
 
     const updated = await this.findActiveHazard(hazardId);
-    return this.toResponse(updated);
+    const response = this.toResponse(updated);
+
+    // Broadcast confirmation to nearby riders
+    const coords = (
+      updated.location as unknown as { coordinates: [number, number] }
+    ).coordinates;
+    this.eventsGateway.emitHazardAlert(coords[1], coords[0], {
+      id: updated.id,
+      hazard_type: updated.hazard_type,
+      severity: updated.severity,
+      lat: coords[1],
+      lng: coords[0],
+    });
+
+    return response;
   }
 
   async dismiss(hazardId: string): Promise<void> {
     const hazard = await this.findActiveHazard(hazardId);
+    const coords = (
+      hazard.location as unknown as { coordinates: [number, number] }
+    ).coordinates;
+
     hazard.is_active = false;
     await this.hazardRepo.save(hazard);
+
+    // Broadcast dismissal to nearby riders
+    this.eventsGateway.emitHazardAlert(coords[1], coords[0], {
+      id: hazard.id,
+      hazard_type: hazard.hazard_type,
+      severity: 'dismissed',
+      lat: coords[1],
+      lng: coords[0],
+    });
   }
 
   async findAlongRoute(dto: RouteHazardsDto): Promise<HazardResponseDto[]> {
