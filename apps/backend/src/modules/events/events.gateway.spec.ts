@@ -1,13 +1,16 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { EventsGateway } from './events.gateway.js';
+import { Ride } from '../../entities/ride.entity.js';
 import { Server, Socket } from 'socket.io';
 
 describe('EventsGateway', () => {
   let gateway: EventsGateway;
   let jwtService: jest.Mocked<JwtService>;
+  let rideRepo: { findOne: jest.Mock };
 
   const mockServer = {
     adapter: jest.fn(),
@@ -35,11 +38,18 @@ describe('EventsGateway', () => {
             verifyAsync: jest.fn(),
           },
         },
+        {
+          provide: getRepositoryToken(Ride),
+          useValue: {
+            findOne: jest.fn().mockResolvedValue(null),
+          },
+        },
       ],
     }).compile();
 
     gateway = module.get<EventsGateway>(EventsGateway);
     jwtService = module.get(JwtService);
+    rideRepo = module.get(getRepositoryToken(Ride));
     gateway.server = mockServer;
   });
 
@@ -117,7 +127,9 @@ describe('EventsGateway', () => {
     it('should join center cell for small radius', () => {
       const client = {
         id: 'client-1',
+        rooms: new Set(['client-1']),
         join: jest.fn(),
+        leave: jest.fn(),
       } as unknown as Socket;
 
       gateway.handleSubscribeHazards(client, {
@@ -132,7 +144,9 @@ describe('EventsGateway', () => {
     it('should join 9 cells for large radius', () => {
       const client = {
         id: 'client-1',
+        rooms: new Set(['client-1']),
         join: jest.fn(),
+        leave: jest.fn(),
       } as unknown as Socket;
 
       gateway.handleSubscribeHazards(client, {
@@ -142,14 +156,35 @@ describe('EventsGateway', () => {
       });
 
       expect(client.join).toHaveBeenCalledTimes(9);
-      expect(client.join).toHaveBeenCalledWith('hazards:491:167');
-      expect(client.join).toHaveBeenCalledWith('hazards:490:166');
-      expect(client.join).toHaveBeenCalledWith('hazards:492:168');
+    });
+
+    it('should leave old hazard rooms before joining new ones', () => {
+      const client = {
+        id: 'client-1',
+        rooms: new Set(['client-1', 'hazards:490:166', 'hazards:491:167']),
+        join: jest.fn(),
+        leave: jest.fn(),
+      } as unknown as Socket;
+
+      gateway.handleSubscribeHazards(client, {
+        lat: 50.0,
+        lng: 17.0,
+      });
+
+      // Should leave old hazard rooms
+      expect(client.leave).toHaveBeenCalledWith('hazards:490:166');
+      expect(client.leave).toHaveBeenCalledWith('hazards:491:167');
+      // Should join new cell
+      expect(client.join).toHaveBeenCalledWith('hazards:500:170');
     });
   });
 
   describe('handleSubscribeGroupRide', () => {
-    it('should join ride room for authenticated client', () => {
+    it('should join ride room for ride owner', async () => {
+      rideRepo.findOne.mockResolvedValueOnce({
+        id: 'ride-1',
+        user_id: 'user-1',
+      });
       const client = {
         id: 'client-1',
         data: { userId: 'user-1' },
@@ -157,14 +192,33 @@ describe('EventsGateway', () => {
         emit: jest.fn(),
       } as unknown as Socket;
 
-      gateway.handleSubscribeGroupRide(client, {
+      await gateway.handleSubscribeGroupRide(client, {
         ride_id: 'ride-1',
       });
 
       expect(client.join).toHaveBeenCalledWith('ride:ride-1');
     });
 
-    it('should reject unauthenticated client', () => {
+    it('should reject user who does not own the ride', async () => {
+      rideRepo.findOne.mockResolvedValueOnce(null);
+      const client = {
+        id: 'client-1',
+        data: { userId: 'user-2' },
+        join: jest.fn(),
+        emit: jest.fn(),
+      } as unknown as Socket;
+
+      await gateway.handleSubscribeGroupRide(client, {
+        ride_id: 'ride-1',
+      });
+
+      expect(client.join).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith('error', {
+        message: 'Ride not found or access denied',
+      });
+    });
+
+    it('should reject unauthenticated client', async () => {
       const client = {
         id: 'client-2',
         data: {},
@@ -172,7 +226,7 @@ describe('EventsGateway', () => {
         emit: jest.fn(),
       } as unknown as Socket;
 
-      gateway.handleSubscribeGroupRide(client, {
+      await gateway.handleSubscribeGroupRide(client, {
         ride_id: 'ride-1',
       });
 

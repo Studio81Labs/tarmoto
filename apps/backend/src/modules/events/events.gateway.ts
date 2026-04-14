@@ -9,11 +9,14 @@ import {
   MessageBody,
 } from '@nestjs/websockets';
 import { Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
 import { createClient } from 'redis';
 import { createAdapter } from '@socket.io/redis-adapter';
+import { Ride } from '../../entities/ride.entity.js';
 
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -30,6 +33,8 @@ export class EventsGateway
   constructor(
     private readonly config: ConfigService,
     private readonly jwt: JwtService,
+    @InjectRepository(Ride)
+    private readonly rideRepo: Repository<Ride>,
   ) {}
 
   async afterInit(server: Server): Promise<void> {
@@ -83,6 +88,13 @@ export class EventsGateway
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { lat: number; lng: number; radius_m?: number },
   ): void {
+    // Leave previously joined hazard rooms to avoid accumulation
+    for (const room of client.rooms) {
+      if (room.startsWith('hazards:')) {
+        client.leave(room);
+      }
+    }
+
     // Subscribe to the center cell plus adjacent cells to cover radius
     const cells = this.getCoveringCells(data.lat, data.lng, data.radius_m);
     const rooms = cells.map((c) => `hazards:${c}`);
@@ -100,10 +112,10 @@ export class EventsGateway
    * Client sends: { ride_id }
    */
   @SubscribeMessage('subscribe:group-ride')
-  handleSubscribeGroupRide(
+  async handleSubscribeGroupRide(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { ride_id: string },
-  ): void {
+  ): Promise<void> {
     const userId = (client.data as Record<string, unknown>).userId as
       | string
       | undefined;
@@ -111,6 +123,17 @@ export class EventsGateway
       client.emit('error', { message: 'Authentication required' });
       return;
     }
+
+    // Verify user is the ride owner (ride participants would need a
+    // ride_members table in future for full group ride support)
+    const ride = await this.rideRepo.findOne({
+      where: { id: data.ride_id, user_id: userId },
+    });
+    if (!ride) {
+      client.emit('error', { message: 'Ride not found or access denied' });
+      return;
+    }
+
     client.join(`ride:${data.ride_id}`);
     this.logger.debug(`Client ${client.id} joined group ride ${data.ride_id}`);
   }
