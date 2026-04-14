@@ -78,6 +78,7 @@ export class OpenWeatherMapProvider implements WeatherProvider {
   private mapCondition(code: number): WeatherCondition {
     if (code >= 200 && code < 300) return 'storm'; // thunderstorm
     if (code >= 300 && code < 400) return 'rain'; // drizzle
+    if (code === 511) return 'ice'; // freezing rain
     if (code >= 500 && code < 600) return 'rain';
     if (code >= 600 && code < 700) return 'snow';
     // 7xx: atmosphere — squall (771) and tornado (781) are storms, rest is fog
