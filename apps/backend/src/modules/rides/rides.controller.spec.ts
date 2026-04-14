@@ -4,6 +4,7 @@ import { NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { RidesController } from './rides.controller.js';
 import { RidesService } from './rides.service.js';
+import { GpxService } from './gpx.service.js';
 
 describe('RidesController', () => {
   let controller: RidesController;
@@ -35,6 +36,7 @@ describe('RidesController', () => {
       controllers: [RidesController],
       providers: [
         { provide: RidesService, useValue: mockService },
+        { provide: GpxService, useValue: { importGpx: jest.fn() } },
         { provide: JwtService, useValue: { verifyAsync: jest.fn() } },
       ],
     }).compile();

@@ -117,9 +117,7 @@ export class OpenWeatherMapProvider implements WeatherProvider {
     if (condition === 'snow' || condition === 'ice') return 'icy';
     if (
       tempC <= 0 &&
-      (condition === 'rain' ||
-        condition === 'storm' ||
-        (rainMm && rainMm > 0))
+      (condition === 'rain' || condition === 'storm' || (rainMm && rainMm > 0))
     )
       return 'icy';
     if (tempC < 2 && condition === 'fog') return 'icy';
