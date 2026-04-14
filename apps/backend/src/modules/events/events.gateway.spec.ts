@@ -114,42 +114,82 @@ describe('EventsGateway', () => {
   });
 
   describe('handleSubscribeHazards', () => {
-    it('should join grid cell room', async () => {
+    it('should join center cell for small radius', () => {
       const client = {
         id: 'client-1',
         join: jest.fn(),
       } as unknown as Socket;
 
-      await gateway.handleSubscribeHazards(client, {
+      gateway.handleSubscribeHazards(client, {
         lat: 49.15,
         lng: 16.75,
       });
 
-      // 49.15 * 10 = 491.5 → floor = 491, 16.75 * 10 = 167.5 → floor = 167
+      expect(client.join).toHaveBeenCalledTimes(1);
       expect(client.join).toHaveBeenCalledWith('hazards:491:167');
     });
-  });
 
-  describe('handleSubscribeGroupRide', () => {
-    it('should join ride room', async () => {
+    it('should join 9 cells for large radius', () => {
       const client = {
         id: 'client-1',
         join: jest.fn(),
       } as unknown as Socket;
 
-      await gateway.handleSubscribeGroupRide(client, {
+      gateway.handleSubscribeHazards(client, {
+        lat: 49.15,
+        lng: 16.75,
+        radius_m: 10000,
+      });
+
+      expect(client.join).toHaveBeenCalledTimes(9);
+      expect(client.join).toHaveBeenCalledWith('hazards:491:167');
+      expect(client.join).toHaveBeenCalledWith('hazards:490:166');
+      expect(client.join).toHaveBeenCalledWith('hazards:492:168');
+    });
+  });
+
+  describe('handleSubscribeGroupRide', () => {
+    it('should join ride room for authenticated client', () => {
+      const client = {
+        id: 'client-1',
+        data: { userId: 'user-1' },
+        join: jest.fn(),
+        emit: jest.fn(),
+      } as unknown as Socket;
+
+      gateway.handleSubscribeGroupRide(client, {
         ride_id: 'ride-1',
       });
 
       expect(client.join).toHaveBeenCalledWith('ride:ride-1');
     });
+
+    it('should reject unauthenticated client', () => {
+      const client = {
+        id: 'client-2',
+        data: {},
+        join: jest.fn(),
+        emit: jest.fn(),
+      } as unknown as Socket;
+
+      gateway.handleSubscribeGroupRide(client, {
+        ride_id: 'ride-1',
+      });
+
+      expect(client.join).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith('error', {
+        message: 'Authentication required',
+      });
+    });
   });
 
   describe('handleLocationUpdate', () => {
-    it('should broadcast location to ride room', () => {
+    it('should broadcast to ride room excluding sender', () => {
+      const mockTo = jest.fn().mockReturnValue({ emit: jest.fn() });
       const client = {
         id: 'client-1',
         data: { userId: 'user-1' },
+        to: mockTo,
       } as unknown as Socket;
 
       gateway.handleLocationUpdate(client, {
@@ -160,8 +200,9 @@ describe('EventsGateway', () => {
         heading: 180,
       });
 
-      expect(mockServer.to).toHaveBeenCalledWith('ride:ride-1');
-      expect(mockServer.emit).toHaveBeenCalledWith(
+      // Uses client.to() not server.to() to exclude sender
+      expect(mockTo).toHaveBeenCalledWith('ride:ride-1');
+      expect(mockTo('ride:ride-1').emit).toHaveBeenCalledWith(
         'rider:location',
         expect.objectContaining({
           user_id: 'user-1',
@@ -174,9 +215,11 @@ describe('EventsGateway', () => {
     });
 
     it('should ignore unauthenticated clients', () => {
+      const mockTo = jest.fn();
       const client = {
         id: 'client-2',
         data: {},
+        to: mockTo,
       } as unknown as Socket;
 
       gateway.handleLocationUpdate(client, {
@@ -185,7 +228,7 @@ describe('EventsGateway', () => {
         lng: 16.75,
       });
 
-      expect(mockServer.to).not.toHaveBeenCalled();
+      expect(mockTo).not.toHaveBeenCalled();
     });
   });
 

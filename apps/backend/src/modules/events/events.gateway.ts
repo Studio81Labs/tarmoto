@@ -63,7 +63,7 @@ export class EventsGateway
       const payload = await this.jwt.verifyAsync<{ sub: string }>(token);
       (client.data as Record<string, unknown>).userId = payload.sub;
       // Join user-specific room for targeted events
-      await client.join(`user:${payload.sub}`);
+      client.join(`user:${payload.sub}`);
       this.logger.debug(`Client ${client.id} authenticated as ${payload.sub}`);
     } catch {
       this.logger.debug(`Client ${client.id} connected (invalid token)`);
@@ -79,33 +79,45 @@ export class EventsGateway
    * Client sends: { lat, lng, radius_m }
    */
   @SubscribeMessage('subscribe:hazards')
-  async handleSubscribeHazards(
+  handleSubscribeHazards(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { lat: number; lng: number; radius_m?: number },
-  ): Promise<void> {
-    // Create a geohash-based room for the area (simplified: grid cell)
-    const cellId = this.toGridCell(data.lat, data.lng);
-    await client.join(`hazards:${cellId}`);
+  ): void {
+    // Subscribe to the center cell plus adjacent cells to cover radius
+    const cells = this.getCoveringCells(data.lat, data.lng, data.radius_m);
+    const rooms = cells.map((c) => `hazards:${c}`);
+    for (const room of rooms) {
+      client.join(room);
+    }
     this.logger.debug(
-      `Client ${client.id} subscribed to hazards in cell ${cellId}`,
+      `Client ${client.id} subscribed to hazards in ${rooms.length} cells`,
     );
   }
 
   /**
    * Subscribe to group ride location updates.
+   * Requires authentication — ride positions are sensitive.
    * Client sends: { ride_id }
    */
   @SubscribeMessage('subscribe:group-ride')
-  async handleSubscribeGroupRide(
+  handleSubscribeGroupRide(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { ride_id: string },
-  ): Promise<void> {
-    await client.join(`ride:${data.ride_id}`);
+  ): void {
+    const userId = (client.data as Record<string, unknown>).userId as
+      | string
+      | undefined;
+    if (!userId) {
+      client.emit('error', { message: 'Authentication required' });
+      return;
+    }
+    client.join(`ride:${data.ride_id}`);
     this.logger.debug(`Client ${client.id} joined group ride ${data.ride_id}`);
   }
 
   /**
    * Share location update within a group ride.
+   * Uses client.to() to exclude the sender from receiving their own update.
    * Client sends: { ride_id, lat, lng, speed, heading }
    */
   @SubscribeMessage('location:update')
@@ -125,7 +137,8 @@ export class EventsGateway
       | undefined;
     if (!userId) return;
 
-    this.server.to(`ride:${data.ride_id}`).emit('rider:location', {
+    // client.to() excludes the sender, unlike server.to()
+    client.to(`ride:${data.ride_id}`).emit('rider:location', {
       user_id: userId,
       lat: data.lat,
       lng: data.lng,
@@ -189,5 +202,34 @@ export class EventsGateway
     const latCell = Math.floor(lat * 10);
     const lngCell = Math.floor(lng * 10);
     return `${latCell}:${lngCell}`;
+  }
+
+  /**
+   * Get all grid cells that cover a radius around a point.
+   * Returns the center cell + adjacent cells if radius exceeds half a cell.
+   * Each cell is ~11km, so radius > 5500m needs neighbors.
+   */
+  private getCoveringCells(
+    lat: number,
+    lng: number,
+    radiusM?: number,
+  ): string[] {
+    const centerLatCell = Math.floor(lat * 10);
+    const centerLngCell = Math.floor(lng * 10);
+    const center = `${centerLatCell}:${centerLngCell}`;
+
+    // Default or small radius: center cell only
+    if (!radiusM || radiusM <= 5500) {
+      return [center];
+    }
+
+    // Larger radius: include all 8 neighbors (3x3 grid)
+    const cells: string[] = [];
+    for (let dLat = -1; dLat <= 1; dLat++) {
+      for (let dLng = -1; dLng <= 1; dLng++) {
+        cells.push(`${centerLatCell + dLat}:${centerLngCell + dLng}`);
+      }
+    }
+    return cells;
   }
 }
