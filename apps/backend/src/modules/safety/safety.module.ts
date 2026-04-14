@@ -10,5 +10,6 @@ import { SafetyService } from './safety.service.js';
   imports: [TypeOrmModule.forFeature([User, UserContact]), EventsModule],
   controllers: [SafetyController],
   providers: [SafetyService],
+  exports: [SafetyService],
 })
 export class SafetyModule {}

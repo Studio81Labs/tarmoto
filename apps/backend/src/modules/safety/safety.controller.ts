@@ -1,4 +1,12 @@
-import { Controller, Post, Body, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Req,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -18,6 +26,7 @@ export class SafetyController {
   constructor(private readonly safetyService: SafetyService) {}
 
   @Post('crash-alert')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Send crash alert to emergency contacts',
     description:
