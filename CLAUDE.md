@@ -60,3 +60,4 @@ pnpm lint                 # Lint all packages
 - Database: TypeORM with native PostGIS geometry columns (not Prisma — Prisma lacks PostGIS support)
 - Entities in `apps/backend/src/entities/`, feature modules in `apps/backend/src/modules/`
 - Docker services in `infra/docker/docker-compose.yml`
+- Units: backend stores and serves **metric only** (°C, km/h, meters, km). Clients convert for display using `@tarmoto/shared` unit helpers based on user preference
