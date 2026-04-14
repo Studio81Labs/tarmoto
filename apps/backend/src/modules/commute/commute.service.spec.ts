@@ -148,6 +148,38 @@ describe('CommuteService', () => {
       expect(routeRepo.remove).toHaveBeenCalledWith(mockRoute);
     });
 
+    it('should promote next route when deleting primary', async () => {
+      const nextRoute = {
+        ...mockRoute,
+        id: 'route-2',
+        is_primary: false,
+      };
+      // First findOne: the route to delete (primary)
+      routeRepo.findOne!.mockResolvedValueOnce(mockRoute);
+      // Second findOne: the next route to promote
+      routeRepo.findOne!.mockResolvedValueOnce(
+        nextRoute as unknown as CommuteRoute,
+      );
+
+      await service.deleteRoute('user-1', 'route-1');
+
+      expect(routeRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'route-2', is_primary: true }),
+      );
+    });
+
+    it('should not promote when deleting non-primary route', async () => {
+      routeRepo.findOne!.mockResolvedValueOnce({
+        ...mockRoute,
+        is_primary: false,
+      } as unknown as CommuteRoute);
+
+      await service.deleteRoute('user-1', 'route-1');
+
+      // save should not be called (only remove)
+      expect(routeRepo.save).not.toHaveBeenCalled();
+    });
+
     it('should throw NotFoundException for missing route', async () => {
       routeRepo.findOne!.mockResolvedValueOnce(null);
 

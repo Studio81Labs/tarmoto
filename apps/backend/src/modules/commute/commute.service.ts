@@ -65,7 +65,21 @@ export class CommuteService {
     if (!route) {
       throw new NotFoundException('Commute route not found');
     }
+
+    const wasPrimary = route.is_primary;
     await this.routeRepo.remove(route);
+
+    // If deleted route was primary, promote the most recent remaining route
+    if (wasPrimary) {
+      const next = await this.routeRepo.findOne({
+        where: { user_id: userId },
+        order: { created_at: 'DESC' },
+      });
+      if (next) {
+        next.is_primary = true;
+        await this.routeRepo.save(next);
+      }
+    }
   }
 
   async getStatus(userId: string): Promise<CommuteStatusResponseDto> {
