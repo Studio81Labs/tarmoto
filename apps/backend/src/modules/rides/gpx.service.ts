@@ -13,14 +13,14 @@ interface GpxTrackPoint {
 }
 
 interface GpxTrack {
-  trkseg:
+  trkseg?:
     | { trkpt: GpxTrackPoint | GpxTrackPoint[] }
     | Array<{ trkpt: GpxTrackPoint | GpxTrackPoint[] }>;
 }
 
 interface GpxRoot {
   gpx: {
-    trk: GpxTrack | GpxTrack[];
+    trk?: GpxTrack | GpxTrack[];
     rte?:
       | { rtept?: GpxTrackPoint | GpxTrackPoint[] }
       | Array<{ rtept?: GpxTrackPoint | GpxTrackPoint[] }>;
