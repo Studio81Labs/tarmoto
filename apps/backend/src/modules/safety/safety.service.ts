@@ -45,7 +45,8 @@ export class SafetyService {
       this.logger.warn(
         `CRASH ALERT [${alertId}]: Notifying ${contact.name} (${contact.phone}) ` +
           `for rider ${user.display_name} at ${dto.lat},${dto.lng} ` +
-          `speed=${dto.speed_at_impact ?? 'unknown'} km/h — ${mapsLink}`,
+          `speed=${dto.speed_at_impact ?? 'unknown'} km/h ` +
+          `ride=${dto.ride_id ?? 'none'} — ${mapsLink}`,
       );
     }
 
@@ -55,6 +56,8 @@ export class SafetyService {
       contacts_notified: contacts.length,
       lat: dto.lat,
       lng: dto.lng,
+      ride_id: dto.ride_id ?? null,
+      speed_at_impact: dto.speed_at_impact ?? null,
       timestamp: new Date().toISOString(),
     });
 
