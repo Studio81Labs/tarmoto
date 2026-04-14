@@ -17,7 +17,6 @@ describe('WeatherService', () => {
     wind_kmh: 12,
     precipitation_chance: 0,
     road_condition: 'dry',
-    provider_description: 'clear sky',
   };
 
   beforeEach(async () => {

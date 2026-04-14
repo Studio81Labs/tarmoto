@@ -68,7 +68,6 @@ export class OpenWeatherMapProvider implements WeatherProvider {
       wind_kmh: Math.round(data.wind.speed * 3.6 * 10) / 10,
       precipitation_chance: precipChance,
       road_condition: roadCondition,
-      provider_description: weather?.description ?? 'unknown',
     };
   }
 
@@ -77,11 +76,13 @@ export class OpenWeatherMapProvider implements WeatherProvider {
    * https://openweathermap.org/weather-conditions
    */
   private mapCondition(code: number): WeatherCondition {
-    if (code >= 200 && code < 300) return 'storm';
+    if (code >= 200 && code < 300) return 'storm'; // thunderstorm
     if (code >= 300 && code < 400) return 'rain'; // drizzle
     if (code >= 500 && code < 600) return 'rain';
     if (code >= 600 && code < 700) return 'snow';
-    if (code >= 700 && code < 800) return 'fog'; // atmosphere (mist, fog, haze)
+    // 7xx: atmosphere — squall (771) and tornado (781) are storms, rest is fog
+    if (code === 771 || code === 781) return 'storm';
+    if (code >= 700 && code < 800) return 'fog'; // mist, haze, dust, smoke
     if (code === 800) return 'clear';
     if (code > 800) return 'cloudy';
     return 'clear';

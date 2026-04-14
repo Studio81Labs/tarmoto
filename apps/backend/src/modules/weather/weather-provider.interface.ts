@@ -10,8 +10,6 @@ export interface WeatherData {
   wind_kmh: number;
   precipitation_chance: number;
   road_condition: RoadCondition;
-  /** Raw description from provider (e.g. "light rain") */
-  provider_description: string;
 }
 
 /**
