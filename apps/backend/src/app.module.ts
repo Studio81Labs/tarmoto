@@ -13,6 +13,7 @@ import { UsersModule } from './modules/users/index.js';
 import { RidesModule } from './modules/rides/index.js';
 import { EventsModule } from './modules/events/index.js';
 import { SafetyModule } from './modules/safety/index.js';
+import { TilesModule } from './modules/tiles/index.js';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { SafetyModule } from './modules/safety/index.js';
     RidesModule,
     EventsModule,
     SafetyModule,
+    TilesModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
