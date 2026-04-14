@@ -24,7 +24,7 @@ export class UserContact {
   @Column({ type: 'varchar', length: 20 })
   phone: string;
 
-  @Column({ type: 'boolean', default: false })
+  @Column({ type: 'boolean', default: true })
   is_emergency: boolean;
 
   @CreateDateColumn({ type: 'timestamptz' })

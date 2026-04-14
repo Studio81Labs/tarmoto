@@ -27,7 +27,7 @@ CREATE TABLE user_contacts (
     user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name            VARCHAR(100) NOT NULL,
     phone           VARCHAR(20) NOT NULL,
-    is_emergency    BOOLEAN DEFAULT FALSE,
+    is_emergency    BOOLEAN DEFAULT TRUE,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

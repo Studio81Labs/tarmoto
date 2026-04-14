@@ -18,6 +18,7 @@ import { FunZoneRoad } from './entities/fun-zone-road.entity.js';
 import { CommuteRoute } from './entities/commute-route.entity.js';
 import { InitSchema1713000000000 } from './migrations/1713000000000-InitSchema.js';
 import { AddPasswordHash1713100000000 } from './migrations/1713100000000-AddPasswordHash.js';
+import { FixIsEmergencyDefault1713200000000 } from './migrations/1713200000000-FixIsEmergencyDefault.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -44,6 +45,10 @@ export const AppDataSource = new DataSource({
     FunZoneRoad,
     CommuteRoute,
   ],
-  migrations: [InitSchema1713000000000, AddPasswordHash1713100000000],
+  migrations: [
+    InitSchema1713000000000,
+    AddPasswordHash1713100000000,
+    FixIsEmergencyDefault1713200000000,
+  ],
   synchronize: false,
 });
