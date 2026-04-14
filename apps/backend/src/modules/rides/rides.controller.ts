@@ -101,9 +101,9 @@ export class RidesController {
   @ApiBody({
     schema: {
       type: 'object',
+      required: ['file'],
       properties: {
         file: { type: 'string', format: 'binary' },
-        name: { type: 'string' },
       },
     },
   })
