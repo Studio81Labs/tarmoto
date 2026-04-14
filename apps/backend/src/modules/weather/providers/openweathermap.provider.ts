@@ -118,7 +118,8 @@ export class OpenWeatherMapProvider implements WeatherProvider {
     if (tempC < 2 && condition === 'fog') return 'icy';
     if (condition === 'rain' || condition === 'storm') return 'wet';
     if (rainMm && rainMm > 0) return 'wet';
-    if (condition === 'clear' || condition === 'cloudy') return 'dry';
+    if (condition === 'clear' || condition === 'cloudy' || condition === 'fog')
+      return 'dry';
     return 'unknown';
   }
 }
