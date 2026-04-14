@@ -96,7 +96,7 @@ export class RidesService {
     const [rides, total] = await qb.getManyAndCount();
 
     return {
-      rides: rides.map((r) => this.toSummaryDto(r)),
+      rides: rides.map((r) => this.toSummary(r)),
       total,
     };
   }
@@ -202,7 +202,7 @@ ${points}
     };
   }
 
-  private toSummaryDto(ride: Ride): RideSummaryDto {
+  toSummary(ride: Ride): RideSummaryDto {
     return {
       ...this.toRideResponse(ride),
       duration_min: this.calcDurationMin(ride),

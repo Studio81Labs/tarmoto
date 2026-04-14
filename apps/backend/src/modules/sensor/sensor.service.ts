@@ -116,7 +116,12 @@ export class SensorService {
 
     for (const reading of readings) {
       if (reading.lat !== undefined && reading.lng !== undefined) {
-        const dist = haversineMeters(lastLat, lastLng, reading.lat, reading.lng);
+        const dist = haversineMeters(
+          lastLat,
+          lastLng,
+          reading.lat,
+          reading.lng,
+        );
         segmentDistance += dist;
         lastLat = reading.lat;
         lastLng = reading.lng;
@@ -229,4 +234,3 @@ function classify(rms: number): { classification: string; score: number } {
   }
   return { classification: 'very_poor', score: 1 };
 }
-

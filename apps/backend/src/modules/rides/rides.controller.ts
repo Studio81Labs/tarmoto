@@ -8,24 +8,32 @@ import {
   Req,
   Res,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
   ApiProduces,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
 import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { RidesService } from './rides.service.js';
+import { GpxService } from './gpx.service.js';
 import { StartRideDto } from './dto/start-ride.dto.js';
 import { ListRidesDto } from './dto/list-rides.dto.js';
 import {
   RideResponseDto,
+  RideSummaryDto,
   RideDetailDto,
   RideListResponseDto,
 } from './dto/ride-response.dto.js';
@@ -35,7 +43,10 @@ import {
 @UseGuards(AuthGuard)
 @ApiBearerAuth()
 export class RidesController {
-  constructor(private readonly ridesService: RidesService) {}
+  constructor(
+    private readonly ridesService: RidesService,
+    private readonly gpxService: GpxService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: "List user's rides" })
@@ -79,6 +90,33 @@ export class RidesController {
     @Param('rideId', ParseUUIDPipe) rideId: string,
   ): Promise<RideDetailDto> {
     return this.ridesService.getDetail(req.user!.userId, rideId);
+  }
+
+  @Post('import')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }), // 10 MB max
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Import a GPX file as a route' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @ApiResponse({ status: 201, type: RideSummaryDto })
+  async importGpx(
+    @Req() req: express.Request,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ): Promise<RideSummaryDto> {
+    if (!file) {
+      throw new BadRequestException('GPX file is required');
+    }
+    const ride = await this.gpxService.importGpx(req.user!.userId, file.buffer);
+    return this.ridesService.toSummary(ride);
   }
 
   @Get(':rideId/gpx')
