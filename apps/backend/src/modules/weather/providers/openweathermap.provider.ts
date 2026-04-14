@@ -113,7 +113,7 @@ export class OpenWeatherMapProvider implements WeatherProvider {
   ): RoadCondition {
     if (snowMm && snowMm > 0) return 'icy';
     if (condition === 'snow' || condition === 'ice') return 'icy';
-    if (tempC < 0 && (condition === 'rain' || (rainMm && rainMm > 0)))
+    if (tempC <= 0 && (condition === 'rain' || (rainMm && rainMm > 0)))
       return 'icy';
     if (tempC < 2 && condition === 'fog') return 'icy';
     if (condition === 'rain' || condition === 'storm') return 'wet';
