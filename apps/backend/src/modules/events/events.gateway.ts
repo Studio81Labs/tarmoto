@@ -137,8 +137,12 @@ export class EventsGateway
       | undefined;
     if (!userId) return;
 
+    // Verify client is a member of this ride room
+    const rideRoom = `ride:${data.ride_id}`;
+    if (!client.rooms.has(rideRoom)) return;
+
     // client.to() excludes the sender, unlike server.to()
-    client.to(`ride:${data.ride_id}`).emit('rider:location', {
+    client.to(rideRoom).emit('rider:location', {
       user_id: userId,
       lat: data.lat,
       lng: data.lng,

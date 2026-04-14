@@ -189,6 +189,7 @@ describe('EventsGateway', () => {
       const client = {
         id: 'client-1',
         data: { userId: 'user-1' },
+        rooms: new Set(['client-1', 'ride:ride-1']),
         to: mockTo,
       } as unknown as Socket;
 
@@ -200,7 +201,6 @@ describe('EventsGateway', () => {
         heading: 180,
       });
 
-      // Uses client.to() not server.to() to exclude sender
       expect(mockTo).toHaveBeenCalledWith('ride:ride-1');
       expect(mockTo('ride:ride-1').emit).toHaveBeenCalledWith(
         'rider:location',
@@ -214,11 +214,30 @@ describe('EventsGateway', () => {
       );
     });
 
+    it('should reject authenticated client not in ride room', () => {
+      const mockTo = jest.fn();
+      const client = {
+        id: 'client-1',
+        data: { userId: 'user-1' },
+        rooms: new Set(['client-1']), // not in ride:ride-1
+        to: mockTo,
+      } as unknown as Socket;
+
+      gateway.handleLocationUpdate(client, {
+        ride_id: 'ride-1',
+        lat: 49.1,
+        lng: 16.75,
+      });
+
+      expect(mockTo).not.toHaveBeenCalled();
+    });
+
     it('should ignore unauthenticated clients', () => {
       const mockTo = jest.fn();
       const client = {
         id: 'client-2',
         data: {},
+        rooms: new Set(['client-2']),
         to: mockTo,
       } as unknown as Socket;
 
