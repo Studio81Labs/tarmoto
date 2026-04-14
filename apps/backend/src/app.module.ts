@@ -11,6 +11,7 @@ import { SensorModule } from './modules/sensor/index.js';
 import { RoadsModule } from './modules/roads/index.js';
 import { UsersModule } from './modules/users/index.js';
 import { RidesModule } from './modules/rides/index.js';
+import { EventsModule } from './modules/events/index.js';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { RidesModule } from './modules/rides/index.js';
     SensorModule,
     RoadsModule,
     RidesModule,
+    EventsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
