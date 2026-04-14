@@ -58,12 +58,15 @@ export class HazardsService {
     const response = this.toResponse(saved);
 
     // Broadcast new hazard to nearby riders via WebSocket
-    this.eventsGateway.emitHazardAlert(dto.lat, dto.lng, {
+    const savedCoords = (
+      saved.location as unknown as { coordinates: [number, number] }
+    ).coordinates;
+    this.eventsGateway.emitHazardAlert(savedCoords[1], savedCoords[0], {
       id: saved.id,
-      hazard_type: dto.hazard_type,
-      severity: dto.severity ?? 'medium',
-      lat: dto.lat,
-      lng: dto.lng,
+      hazard_type: saved.hazard_type,
+      severity: saved.severity,
+      lat: savedCoords[1],
+      lng: savedCoords[0],
     });
 
     return response;
