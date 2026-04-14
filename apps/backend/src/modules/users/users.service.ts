@@ -43,16 +43,20 @@ export class UsersService {
       user.phone = dto.phone;
     }
     if (dto.home_location !== undefined) {
-      user.home_location = {
-        type: 'Point',
-        coordinates: [dto.home_location.lng, dto.home_location.lat],
-      };
+      user.home_location = dto.home_location
+        ? {
+            type: 'Point',
+            coordinates: [dto.home_location.lng, dto.home_location.lat],
+          }
+        : null;
     }
     if (dto.work_location !== undefined) {
-      user.work_location = {
-        type: 'Point',
-        coordinates: [dto.work_location.lng, dto.work_location.lat],
-      };
+      user.work_location = dto.work_location
+        ? {
+            type: 'Point',
+            coordinates: [dto.work_location.lng, dto.work_location.lat],
+          }
+        : null;
     }
     if (dto.preferences !== undefined) {
       user.preferences = { ...user.preferences, ...dto.preferences };

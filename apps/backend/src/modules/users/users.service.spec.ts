@@ -124,6 +124,26 @@ describe('UsersService', () => {
       );
     });
 
+    it('should clear home_location when null is sent', async () => {
+      await service.updateProfile('user-1', {
+        home_location: null as never,
+      });
+
+      expect(userRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ home_location: null }),
+      );
+    });
+
+    it('should clear work_location when null is sent', async () => {
+      await service.updateProfile('user-1', {
+        work_location: null as never,
+      });
+
+      expect(userRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ work_location: null }),
+      );
+    });
+
     it('should merge preferences', async () => {
       await service.updateProfile('user-1', {
         preferences: { daily_km: 300 },
