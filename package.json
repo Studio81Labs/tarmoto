@@ -20,6 +20,7 @@
     "db:migrate": "pnpm build:backend && pnpm --filter @tarmoto/backend db:migrate",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
+    "generate:api": "pnpm --filter @tarmoto/openapi generate",
     "clean": "pnpm -r exec rm -rf dist node_modules"
   },
   "engines": {
