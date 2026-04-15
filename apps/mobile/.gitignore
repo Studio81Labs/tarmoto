@@ -1,7 +1,9 @@
 # iOS
 ios/Pods/
 ios/build/
-ios/*.xcworkspace/xcuserdata/
+ios/*.xcworkspace/
+ios/*.xcodeproj/project.xcworkspace/
+ios/.xcode.env.local
 *.ipa
 
 # Android
