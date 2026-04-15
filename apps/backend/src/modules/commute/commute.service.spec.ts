@@ -9,6 +9,8 @@ import { Ride } from '../../entities/ride.entity.js';
 
 const mockTransactionManager = {
   update: jest.fn().mockResolvedValue({ affected: 1 }),
+  remove: jest.fn().mockResolvedValue(undefined),
+  findOne: jest.fn().mockResolvedValue(null),
   create: jest
     .fn()
     .mockImplementation((_entity: unknown, data: unknown) => ({
@@ -80,6 +82,9 @@ describe('CommuteService', () => {
     }).compile();
 
     service = module.get<CommuteService>(CommuteService);
+
+    // Reset transaction manager mocks between tests
+    jest.clearAllMocks();
   });
 
   describe('listRoutes', () => {
@@ -142,10 +147,10 @@ describe('CommuteService', () => {
   });
 
   describe('deleteRoute', () => {
-    it('should delete a route owned by user', async () => {
+    it('should delete a route via transaction', async () => {
       await service.deleteRoute('user-1', 'route-1');
 
-      expect(routeRepo.remove).toHaveBeenCalledWith(mockRoute);
+      expect(mockTransactionManager.remove).toHaveBeenCalledWith(mockRoute);
     });
 
     it('should promote next route when deleting primary', async () => {
@@ -154,16 +159,11 @@ describe('CommuteService', () => {
         id: 'route-2',
         is_primary: false,
       };
-      // First findOne: the route to delete (primary)
-      routeRepo.findOne!.mockResolvedValueOnce(mockRoute);
-      // Second findOne: the next route to promote
-      routeRepo.findOne!.mockResolvedValueOnce(
-        nextRoute as unknown as CommuteRoute,
-      );
+      mockTransactionManager.findOne.mockResolvedValueOnce(nextRoute);
 
       await service.deleteRoute('user-1', 'route-1');
 
-      expect(routeRepo.save).toHaveBeenCalledWith(
+      expect(mockTransactionManager.save).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'route-2', is_primary: true }),
       );
     });
@@ -176,8 +176,8 @@ describe('CommuteService', () => {
 
       await service.deleteRoute('user-1', 'route-1');
 
-      // save should not be called (only remove)
-      expect(routeRepo.save).not.toHaveBeenCalled();
+      // transaction manager save should not be called for non-primary
+      expect(mockTransactionManager.save).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException for missing route', async () => {
