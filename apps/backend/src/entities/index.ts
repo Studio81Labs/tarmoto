@@ -17,3 +17,5 @@ export { CommuteRoute } from './commute-route.entity.js';
 export { SharedRide } from './shared-ride.entity.js';
 export { UserFollow } from './user-follow.entity.js';
 export { UserBadge } from './user-badge.entity.js';
+export { Challenge } from './challenge.entity.js';
+export { ChallengeEntry } from './challenge-entry.entity.js';

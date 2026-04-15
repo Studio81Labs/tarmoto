@@ -7,6 +7,7 @@ import { AddPasswordHash1713100000000 } from '../../migrations/1713100000000-Add
 import { FixIsEmergencyDefault1713200000000 } from '../../migrations/1713200000000-FixIsEmergencyDefault.js';
 import { AddUniqueActiveRide1713300000000 } from '../../migrations/1713300000000-AddUniqueActiveRide.js';
 import { AddCommunityTables1713400000000 } from '../../migrations/1713400000000-AddCommunityTables.js';
+import { AddChallengeTables1713500000000 } from '../../migrations/1713500000000-AddChallengeTables.js';
 import {
   User,
   UserContact,
@@ -27,6 +28,8 @@ import {
   SharedRide,
   UserFollow,
   UserBadge,
+  Challenge,
+  ChallengeEntry,
 } from '../../entities/index.js';
 
 const entities = [
@@ -49,6 +52,8 @@ const entities = [
   SharedRide,
   UserFollow,
   UserBadge,
+  Challenge,
+  ChallengeEntry,
 ];
 
 @Module({
@@ -70,6 +75,7 @@ const entities = [
           FixIsEmergencyDefault1713200000000,
           AddUniqueActiveRide1713300000000,
           AddCommunityTables1713400000000,
+          AddChallengeTables1713500000000,
         ],
         migrationsRun: true,
         synchronize: false,
