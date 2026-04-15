@@ -17,7 +17,7 @@ export async function registerUser(
   password: string,
   displayName: string,
 ) {
-  const res = await fetch(`${API_BASE}/api/v1/auth/register`, {
+  const res = await fetch(`${API_BASE}/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password, display_name: displayName }),
@@ -41,7 +41,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<{ data: T 
       : init?.headers ?? {}),
   };
   const { headers: _, ...rest } = init ?? {};
-  const res = await fetch(`${API_BASE}/api/v1${path}`, { ...rest, headers });
+  const res = await fetch(`${API_BASE}${path}`, { ...rest, headers });
   if (!res.ok) {
     if (res.status === 401) useAuthStore.getState().clearSession();
     const body = await res.json().catch(() => ({}));
