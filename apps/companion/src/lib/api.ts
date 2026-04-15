@@ -11,34 +11,35 @@ export const api = axios.create({
 
 // ── Request interceptor: attach JWT ──
 api.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().token;
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  const accessToken = useAuthStore.getState().accessToken;
+  if (accessToken) {
+    config.headers.Authorization = `Bearer ${accessToken}`;
   }
   return config;
 });
 
 // ── Response interceptor: handle 401 ──
+// Middleware handles redirecting to /login — we just clear the session here.
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      useAuthStore.getState().logout();
-      window.location.href = '/login';
+      useAuthStore.getState().clearSession();
     }
     return Promise.reject(error);
   },
 );
 
 // ── Auth endpoints ──
+// Login goes through Auth.js signIn() — only register remains here.
 export const authApi = {
-  login: (email: string, password: string) =>
-    api.post<{ user: any; token: string }>('/auth/login', { email, password }),
-
   register: (email: string, password: string, displayName: string) =>
-    api.post<{ user: any; token: string }>('/auth/register', { email, password, displayName }),
-
-  me: () => api.get('/auth/me'),
+    api.post<{
+      access_token: string;
+      refresh_token: string;
+      expires_in: number;
+      user: any;
+    }>('/auth/register', { email, password, display_name: displayName }),
 };
 
 // ── Trip endpoints ──
