@@ -6,6 +6,7 @@ import { Repository, DataSource } from 'typeorm';
 import { CommuteService } from './commute.service.js';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
+import { ROUTING_PROVIDER } from './routing-provider.interface.js';
 
 const mockTransactionManager = {
   update: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -74,6 +75,12 @@ describe('CommuteService', () => {
                   ) => Promise<unknown>,
                 ) => cb(mockTransactionManager),
               ),
+          },
+        },
+        {
+          provide: ROUTING_PROVIDER,
+          useValue: {
+            getAlternatives: jest.fn().mockResolvedValue([]),
           },
         },
       ],
@@ -243,6 +250,56 @@ describe('CommuteService', () => {
       expect(result.total_rides).toBe(0);
       expect(result.total_km).toBe(0);
       expect(result.fuel_estimate_l).toBe(0);
+    });
+  });
+
+  describe('getAlternatives', () => {
+    it('should return alternatives with hazard and quality enrichment', async () => {
+      // Mock routing provider with alternatives
+      const routingProvider = service['routingProvider'] as jest.Mocked<{
+        getAlternatives: jest.Mock;
+      }>;
+      routingProvider.getAlternatives.mockResolvedValueOnce([
+        {
+          distance_km: 14.2,
+          duration_min: 22,
+          geometry: [
+            { lat: 49.2, lng: 16.6 },
+            { lat: 49.15, lng: 16.7 },
+            { lat: 49.1, lng: 16.75 },
+          ],
+        },
+      ]);
+
+      // Mock hazard counts (primary + alternative)
+      routeRepo.query!.mockResolvedValueOnce([{ count: 2 }]); // primary hazards
+      routeRepo.query!.mockResolvedValueOnce([{ count: 0 }]); // alt hazards
+      routeRepo.query!.mockResolvedValueOnce([{ avg_quality: 4.1 }]); // alt quality
+
+      const result = await service.getAlternatives('user-1');
+
+      expect(result.primary_route.id).toBe('route-1');
+      expect(result.primary_hazard_count).toBe(2);
+      expect(result.alternatives).toHaveLength(1);
+      expect(result.alternatives[0].distance_km).toBe(14.2);
+      expect(result.alternatives[0].hazard_count).toBe(0);
+      expect(result.alternatives[0].avg_quality).toBe(4.1);
+    });
+
+    it('should throw NotFoundException when no primary route', async () => {
+      routeRepo.findOne!.mockResolvedValueOnce(null);
+
+      await expect(service.getAlternatives('user-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('should return empty alternatives when routing provider returns none', async () => {
+      routeRepo.query!.mockResolvedValueOnce([{ count: 0 }]); // primary hazards
+
+      const result = await service.getAlternatives('user-1');
+
+      expect(result.alternatives).toHaveLength(0);
     });
   });
 });

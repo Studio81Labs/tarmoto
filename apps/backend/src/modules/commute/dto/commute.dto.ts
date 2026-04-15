@@ -98,6 +98,42 @@ class DailyBreakdownDto {
   duration_min: number;
 }
 
+class RouteGeometryPointDto {
+  @ApiProperty()
+  lat: number;
+
+  @ApiProperty()
+  lng: number;
+}
+
+export class AlternativeRouteDto {
+  @ApiProperty()
+  distance_km: number;
+
+  @ApiProperty()
+  duration_min: number;
+
+  @ApiProperty({ nullable: true })
+  avg_quality: number | null;
+
+  @ApiProperty()
+  hazard_count: number;
+
+  @ApiProperty({ type: [RouteGeometryPointDto] })
+  geometry: Array<{ lat: number; lng: number }>;
+}
+
+export class CommuteAlternativesResponseDto {
+  @ApiProperty({ type: CommuteRouteResponseDto })
+  primary_route: CommuteRouteResponseDto;
+
+  @ApiProperty()
+  primary_hazard_count: number;
+
+  @ApiProperty({ type: [AlternativeRouteDto] })
+  alternatives: AlternativeRouteDto[];
+}
+
 export class CommuteStatsResponseDto {
   @ApiProperty()
   period: string;

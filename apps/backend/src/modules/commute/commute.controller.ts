@@ -27,6 +27,7 @@ import {
   CommuteRouteResponseDto,
   CommuteStatusResponseDto,
   CommuteStatsResponseDto,
+  CommuteAlternativesResponseDto,
 } from './dto/commute.dto.js';
 
 @ApiTags('commute')
@@ -77,6 +78,18 @@ export class CommuteController {
     @Req() req: express.Request,
   ): Promise<CommuteStatusResponseDto> {
     return this.commuteService.getStatus(req.user!.userId);
+  }
+
+  @Get('alternatives')
+  @ApiOperation({
+    summary: 'Get alternative routes when primary has issues',
+  })
+  @ApiResponse({ status: 200, type: CommuteAlternativesResponseDto })
+  @ApiResponse({ status: 404, description: 'No primary commute route' })
+  async getAlternatives(
+    @Req() req: express.Request,
+  ): Promise<CommuteAlternativesResponseDto> {
+    return this.commuteService.getAlternatives(req.user!.userId);
   }
 
   @Get('stats')
