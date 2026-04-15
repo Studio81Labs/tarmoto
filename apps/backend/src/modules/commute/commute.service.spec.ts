@@ -11,16 +11,14 @@ const mockTransactionManager = {
   update: jest.fn().mockResolvedValue({ affected: 1 }),
   remove: jest.fn().mockResolvedValue(undefined),
   findOne: jest.fn().mockResolvedValue(null),
-  create: jest
-    .fn()
-    .mockImplementation((_entity: unknown, data: unknown) => ({
-      id: 'route-new',
-      created_at: new Date('2026-04-15T10:00:00Z'),
-      distance_km: null,
-      avg_quality: null,
-      is_primary: true,
-      ...(data as Record<string, unknown>),
-    })),
+  create: jest.fn().mockImplementation((_entity: unknown, data: unknown) => ({
+    id: 'route-new',
+    created_at: new Date('2026-04-15T10:00:00Z'),
+    distance_km: null,
+    avg_quality: null,
+    is_primary: true,
+    ...(data as Record<string, unknown>),
+  })),
   save: jest
     .fn()
     .mockImplementation((entity: unknown) => Promise.resolve(entity)),
