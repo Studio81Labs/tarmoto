@@ -57,7 +57,10 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<{ data: T 
 // ── Trip endpoints (not yet in spec) ──
 export const tripsApi = {
   list: (params?: { page?: number; status?: string }) => {
-    const query = params ? "?" + new URLSearchParams(params as Record<string, string>).toString() : "";
+    const defined = params
+      ? Object.fromEntries(Object.entries(params).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)]))
+      : undefined;
+    const query = defined ? "?" + new URLSearchParams(defined).toString() : "";
     return apiFetch(`/trips${query}`);
   },
   get: (id: string) => apiFetch(`/trips/${id}`),

@@ -5,7 +5,7 @@ import Apple from "next-auth/providers/apple";
 import type { NextAuthConfig } from "next-auth";
 import "./auth-types";
 
-import { API_BASE } from "@/lib/config";
+import { API_BASE_SERVER } from "@/lib/config";
 
 interface BackendAuthResponse {
   access_token: string;
@@ -21,7 +21,7 @@ interface BackendAuthResponse {
 }
 
 async function refreshAccessToken(refreshToken: string): Promise<BackendAuthResponse> {
-  const res = await fetch(`${API_BASE}/auth/refresh`, {
+  const res = await fetch(`${API_BASE_SERVER}/auth/refresh`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ refresh_token: refreshToken }),
@@ -43,7 +43,7 @@ const providers: NextAuthConfig["providers"] = [
       if (!credentials?.email || !credentials?.password) return null;
 
       try {
-        const res = await fetch(`${API_BASE}/auth/login`, {
+        const res = await fetch(`${API_BASE_SERVER}/auth/login`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
