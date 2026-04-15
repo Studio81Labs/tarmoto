@@ -67,10 +67,6 @@ export const BADGE_DEFINITIONS: BadgeDefinition[] = [
   },
 ];
 
-export function getBadgeDefinition(key: string): BadgeDefinition | undefined {
-  return BADGE_DEFINITIONS.find((b) => b.key === key);
-}
-
 export function computeTier(
   value: number,
   tiers: BadgeDefinition['tiers'],

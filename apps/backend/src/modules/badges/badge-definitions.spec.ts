@@ -1,8 +1,4 @@
-import {
-  BADGE_DEFINITIONS,
-  getBadgeDefinition,
-  computeTier,
-} from './badge-definitions.js';
+import { BADGE_DEFINITIONS, computeTier } from './badge-definitions.js';
 
 describe('badge-definitions', () => {
   describe('BADGE_DEFINITIONS', () => {
@@ -20,17 +16,6 @@ describe('badge-definitions', () => {
         expect(def.tiers.bronze).toBeLessThan(def.tiers.silver);
         expect(def.tiers.silver).toBeLessThan(def.tiers.gold);
       }
-    });
-  });
-
-  describe('getBadgeDefinition', () => {
-    it('should return definition for valid key', () => {
-      const def = getBadgeDefinition('total_distance');
-      expect(def?.name).toBe('Road Warrior');
-    });
-
-    it('should return undefined for invalid key', () => {
-      expect(getBadgeDefinition('nonexistent')).toBeUndefined();
     });
   });
 

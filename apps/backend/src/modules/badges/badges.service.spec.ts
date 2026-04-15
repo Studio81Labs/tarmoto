@@ -14,6 +14,9 @@ describe('BadgesService', () => {
   let service: BadgesService;
   let userBadgeRepo: jest.Mocked<Partial<Repository<UserBadge>>>;
   let rideRepo: jest.Mocked<Partial<Repository<Ride>>>;
+  let hazardRepo: { count: jest.Mock };
+  let reviewRepo: { count: jest.Mock };
+  let sharedRideRepo: { count: jest.Mock };
 
   const mockQb = {
     select: jest.fn().mockReturnThis(),
@@ -51,9 +54,9 @@ describe('BadgesService', () => {
     const rideSegmentRepo = {
       createQueryBuilder: jest.fn().mockReturnValue(mockQb),
     };
-    const hazardRepo = { count: jest.fn().mockResolvedValue(8) };
-    const reviewRepo = { count: jest.fn().mockResolvedValue(6) };
-    const sharedRideRepo = { count: jest.fn().mockResolvedValue(4) };
+    hazardRepo = { count: jest.fn().mockResolvedValue(0) };
+    reviewRepo = { count: jest.fn().mockResolvedValue(0) };
+    sharedRideRepo = { count: jest.fn().mockResolvedValue(0) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -115,6 +118,9 @@ describe('BadgesService', () => {
         .mockResolvedValueOnce({ max: '60' })
         .mockResolvedValueOnce({ count: '30' });
       rideRepo.count!.mockResolvedValueOnce(15);
+      reviewRepo.count.mockResolvedValueOnce(6);
+      hazardRepo.count.mockResolvedValueOnce(8);
+      sharedRideRepo.count.mockResolvedValueOnce(4);
 
       const result = await service.checkAndAward('user-1');
 
@@ -179,7 +185,7 @@ describe('BadgesService', () => {
 
       const result = await service.checkAndAward('user-1');
 
-      expect(Array.isArray(result.newly_earned)).toBe(true);
+      expect(result.newly_earned).toEqual([]);
     });
 
     it('should award gold tier directly if threshold met', async () => {
@@ -207,6 +213,9 @@ describe('BadgesService', () => {
         .mockResolvedValueOnce({ max: '85.3' })
         .mockResolvedValueOnce({ count: '42' });
       rideRepo.count!.mockResolvedValueOnce(20);
+      reviewRepo.count.mockResolvedValueOnce(6);
+      hazardRepo.count.mockResolvedValueOnce(8);
+      sharedRideRepo.count.mockResolvedValueOnce(4);
 
       const stats = await service.computeStats('user-1');
 
