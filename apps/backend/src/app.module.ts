@@ -18,6 +18,7 @@ import { WeatherModule } from './modules/weather/index.js';
 import { CommuteModule } from './modules/commute/index.js';
 import { ReviewsModule } from './modules/reviews/index.js';
 import { SharingModule } from './modules/sharing/index.js';
+import { FollowersModule } from './modules/followers/index.js';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { SharingModule } from './modules/sharing/index.js';
     WeatherModule,
     CommuteModule,
     ReviewsModule,
+    FollowersModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

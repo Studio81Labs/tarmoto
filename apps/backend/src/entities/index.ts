@@ -15,3 +15,4 @@ export { FunZone } from './fun-zone.entity.js';
 export { FunZoneRoad } from './fun-zone-road.entity.js';
 export { CommuteRoute } from './commute-route.entity.js';
 export { SharedRide } from './shared-ride.entity.js';
+export { UserFollow } from './user-follow.entity.js';
