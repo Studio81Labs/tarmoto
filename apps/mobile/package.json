@@ -12,6 +12,7 @@
     "clean": "cd android && ./gradlew clean && cd .. && cd ios && xcodebuild clean && cd .."
   },
   "dependencies": {
+    "@babel/runtime": "^7.29.2",
     "@maplibre/maplibre-react-native": "^10.0.0",
     "@react-native-community/geolocation": "^3.4.0",
     "@react-navigation/bottom-tabs": "^7.0.0",
@@ -20,7 +21,7 @@
     "@types/react-native-vector-icons": "^6.4.18",
     "axios": "^1.7.0",
     "immer": "^11.1.4",
-    "react": "^19.2.5",
+    "react": "^19.2.3",
     "react-native": "^0.85.0",
     "react-native-background-actions": "^4.0.0",
     "react-native-carplay": "2.4.1-beta.0",
