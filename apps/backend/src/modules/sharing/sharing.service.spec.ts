@@ -169,7 +169,6 @@ describe('SharingService', () => {
       expect(sharedRideRepo.findOne).toHaveBeenCalledWith({
         where: {
           share_token: 'abc123def456abc123def456abc12345',
-          is_public: true,
         },
         relations: ['ride', 'user'],
       });
@@ -179,6 +178,18 @@ describe('SharingService', () => {
       expect(result.duration_min).toBe(90);
       expect(result.route_geometry).toHaveLength(3);
       expect(result.route_geometry![0]).toEqual({ lat: 49.2, lng: 16.6 });
+    });
+
+    it('should return private shared rides by token', async () => {
+      const privateShared = {
+        ...mockShared,
+        is_public: false,
+      } as unknown as SharedRide;
+      sharedRideRepo.findOne!.mockResolvedValueOnce(privateShared);
+
+      const result = await service.getByToken('abc123def456abc123def456abc12345');
+
+      expect(result.id).toBe('ride-1');
     });
 
     it('should throw NotFoundException for invalid token', async () => {

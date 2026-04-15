@@ -73,7 +73,7 @@ export class SharingService {
 
   async getByToken(token: string): Promise<SharedRideDetailDto> {
     const shared = await this.sharedRideRepo.findOne({
-      where: { share_token: token, is_public: true },
+      where: { share_token: token },
       relations: ['ride', 'user'],
     });
     if (!shared) {
