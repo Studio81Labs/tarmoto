@@ -23,6 +23,7 @@ import {
   FunZone,
   FunZoneRoad,
   CommuteRoute,
+  SharedRide,
 } from '../../entities/index.js';
 
 const entities = [
@@ -42,6 +43,7 @@ const entities = [
   FunZone,
   FunZoneRoad,
   CommuteRoute,
+  SharedRide,
 ];
 
 @Module({
