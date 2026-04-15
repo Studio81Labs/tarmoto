@@ -8,7 +8,7 @@ let socket: Socket | null = null;
 export function connectSocket(): Socket {
   if (socket?.connected) return socket;
 
-  const token = useAuthStore.getState().token;
+  const token = useAuthStore.getState().accessToken;
 
   socket = io(WS_URL, {
     auth: { token },
