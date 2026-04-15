@@ -100,23 +100,7 @@ export class CommuteService {
       throw new NotFoundException('No primary commute route configured');
     }
 
-    // Count active hazards near the route
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const hazardRows = await this.routeRepo.query(
-      `SELECT COUNT(*)::int AS count
-       FROM hazard_reports hr
-       WHERE hr.is_active = true AND hr.expires_at > NOW()
-         AND ST_DWithin(
-           hr.location::geography,
-           ST_MakeLine(
-             ST_SetSRID(ST_MakePoint($1, $2), 4326),
-             ST_SetSRID(ST_MakePoint($3, $4), 4326)
-           )::geography,
-           500
-         )`,
-      [...this.getCoords(route.origin), ...this.getCoords(route.destination)],
-    );
-    const hazardCount = (hazardRows as Array<{ count: number }>)[0]?.count ?? 0;
+    const hazardCount = await this.countHazardsNearLine(route);
 
     let status: string = 'clear';
     if (hazardCount > 0) status = 'hazards';
@@ -255,12 +239,24 @@ export class CommuteService {
     return (rows as Array<{ count: number }>)[0]?.count ?? 0;
   }
 
+  private geometryToWkt(geometry: Array<{ lat: number; lng: number }>): string {
+    const coords = geometry.map((p) => {
+      const lng = Number(p.lng);
+      const lat = Number(p.lat);
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
+        throw new Error('Invalid coordinate in route geometry');
+      }
+      return `${lng} ${lat}`;
+    });
+    return `LINESTRING(${coords.join(',')})`;
+  }
+
   private async countHazardsAlongGeometry(
     geometry: Array<{ lat: number; lng: number }>,
   ): Promise<number> {
     if (geometry.length < 2) return 0;
 
-    const lineCoords = geometry.map((p) => `${p.lng} ${p.lat}`).join(',');
+    const wkt = this.geometryToWkt(geometry);
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const rows = await this.routeRepo.query(
@@ -269,9 +265,10 @@ export class CommuteService {
        WHERE hr.is_active = true AND hr.expires_at > NOW()
          AND ST_DWithin(
            hr.location::geography,
-           ST_GeomFromText('LINESTRING(${lineCoords})', 4326)::geography,
+           ST_GeomFromText($1, 4326)::geography,
            500
          )`,
+      [wkt],
     );
     return (rows as Array<{ count: number }>)[0]?.count ?? 0;
   }
@@ -281,7 +278,7 @@ export class CommuteService {
   ): Promise<number | null> {
     if (geometry.length < 2) return null;
 
-    const lineCoords = geometry.map((p) => `${p.lng} ${p.lat}`).join(',');
+    const wkt = this.geometryToWkt(geometry);
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const rows = await this.routeRepo.query(
@@ -290,9 +287,10 @@ export class CommuteService {
        WHERE rs.quality_score IS NOT NULL
          AND ST_DWithin(
            rs.geom::geography,
-           ST_GeomFromText('LINESTRING(${lineCoords})', 4326)::geography,
+           ST_GeomFromText($1, 4326)::geography,
            100
          )`,
+      [wkt],
     );
     const avg = (rows as Array<{ avg_quality: number | null }>)[0]?.avg_quality;
     return avg != null ? Math.round(avg * 10) / 10 : null;
