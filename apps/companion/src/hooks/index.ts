@@ -1,10 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { api } from '@/lib/api';
+import { useAuthStore } from '@/stores/auth';
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '/api/v1';
 
 /**
- * Generic data fetching hook with loading/error states
+ * Generic data fetching hook with loading/error states.
+ * Uses raw fetch so it works with arbitrary URL strings.
  */
-export function useApi<T>(url: string, params?: Record<string, any>) {
+export function useApi<T>(url: string, params?: Record<string, unknown>) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -13,13 +16,28 @@ export function useApi<T>(url: string, params?: Record<string, any>) {
     setLoading(true);
     setError(null);
     try {
-      const { data: response } = await api.get(url, { params });
-      setData(response);
-    } catch (err: any) {
-      setError(err.response?.data?.message ?? 'Request failed');
+      const query = params && Object.keys(params).length
+        ? '?' + new URLSearchParams(params as Record<string, string>).toString()
+        : '';
+      const fullUrl = url.startsWith('http') ? `${url}${query}` : `${API_BASE}${url}${query}`;
+      const token = useAuthStore.getState().accessToken;
+      const res = await fetch(fullUrl, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { message?: string }).message ?? 'Request failed');
+      }
+      setData(await res.json() as T);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Request failed');
     } finally {
       setLoading(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, JSON.stringify(params)]);
 
   useEffect(() => {

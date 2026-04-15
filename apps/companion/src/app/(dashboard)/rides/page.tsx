@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ridesApi } from '@/lib/api';
+import { api } from '@/lib/api';
 import { History, Calendar, MapPin, Gauge, ChevronRight } from 'lucide-react';
 import type { Ride, QualityTier } from '@/lib/types';
 
@@ -19,8 +19,8 @@ export default function RideListPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    ridesApi.list().then(({ data }) => {
-      setRides(data.data ?? []);
+    api.GET("/api/v1/rides").then(({ data }) => {
+      setRides((data?.rides as unknown as Ride[]) ?? []);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
