@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { UserBadge } from '../../entities/user-badge.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
 import { RideSegment } from '../../entities/ride-segment.entity.js';
@@ -25,6 +25,7 @@ export class BadgesService {
     private readonly reviewRepo: Repository<RoadReview>,
     @InjectRepository(SharedRide)
     private readonly sharedRideRepo: Repository<SharedRide>,
+    private readonly dataSource: DataSource,
   ) {}
 
   async listBadges(userId: string): Promise<BadgeDto[]> {
@@ -57,41 +58,43 @@ export class BadgesService {
   }
 
   async checkAndAward(userId: string): Promise<CheckBadgesResponseDto> {
-    const [existing, stats] = await Promise.all([
-      this.userBadgeRepo.find({ where: { user_id: userId } }),
-      this.computeStats(userId),
-    ]);
+    const stats = await this.computeStats(userId);
 
-    const existingMap = new Map(existing.map((e) => [e.badge_key, e]));
-    const newlyEarned: string[] = [];
+    const newlyEarned = await this.dataSource.transaction(async (manager) => {
+      const existing = await manager.find(UserBadge, {
+        where: { user_id: userId },
+      });
+      const existingMap = new Map(existing.map((e) => [e.badge_key, e]));
+      const earned: string[] = [];
+      const tierOrder = ['bronze', 'silver', 'gold'];
 
-    for (const def of BADGE_DEFINITIONS) {
-      const current = stats[def.key] ?? 0;
-      const newTier = computeTier(current, def.tiers);
+      for (const def of BADGE_DEFINITIONS) {
+        const current = stats[def.key] ?? 0;
+        const newTier = computeTier(current, def.tiers);
 
-      if (!newTier) continue;
+        if (!newTier) continue;
 
-      const existing = existingMap.get(def.key);
-      if (existing) {
-        // Upgrade tier if higher
-        const tierOrder = ['bronze', 'silver', 'gold'];
-        if (tierOrder.indexOf(newTier) > tierOrder.indexOf(existing.tier)) {
-          existing.tier = newTier;
-          existing.earned_at = new Date();
-          await this.userBadgeRepo.save(existing);
-          newlyEarned.push(`${def.key}:${newTier}`);
+        const badge = existingMap.get(def.key);
+        if (badge) {
+          if (tierOrder.indexOf(newTier) > tierOrder.indexOf(badge.tier)) {
+            badge.tier = newTier;
+            badge.earned_at = new Date();
+            await manager.save(UserBadge, badge);
+            earned.push(`${def.key}:${newTier}`);
+          }
+        } else {
+          const created = manager.create(UserBadge, {
+            user_id: userId,
+            badge_key: def.key,
+            tier: newTier,
+          });
+          await manager.save(UserBadge, created);
+          earned.push(`${def.key}:${newTier}`);
         }
-      } else {
-        // Award new badge
-        const badge = this.userBadgeRepo.create({
-          user_id: userId,
-          badge_key: def.key,
-          tier: newTier,
-        });
-        await this.userBadgeRepo.save(badge);
-        newlyEarned.push(`${def.key}:${newTier}`);
       }
-    }
+
+      return earned;
+    });
 
     return { newly_earned: newlyEarned };
   }

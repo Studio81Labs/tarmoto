@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { BadgesService } from './badges.service.js';
 import { UserBadge } from '../../entities/user-badge.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
@@ -36,6 +36,20 @@ describe('BadgesService', () => {
     earned_at: new Date('2026-04-10T10:00:00Z'),
   } as unknown as UserBadge;
 
+  const mockTransactionManager = {
+    find: jest.fn().mockResolvedValue([]),
+    create: jest.fn().mockImplementation((_entity: unknown, data: unknown) => ({
+      id: 'badge-new',
+      earned_at: new Date('2026-04-15T10:00:00Z'),
+      ...(data as Record<string, unknown>),
+    })),
+    save: jest
+      .fn()
+      .mockImplementation((_entity: unknown, data: unknown) =>
+        Promise.resolve(data),
+      ),
+  };
+
   beforeEach(async () => {
     userBadgeRepo = {
       find: jest.fn().mockResolvedValue([mockExistingBadge]),
@@ -67,6 +81,20 @@ describe('BadgesService', () => {
         { provide: getRepositoryToken(HazardReport), useValue: hazardRepo },
         { provide: getRepositoryToken(RoadReview), useValue: reviewRepo },
         { provide: getRepositoryToken(SharedRide), useValue: sharedRideRepo },
+        {
+          provide: DataSource,
+          useValue: {
+            transaction: jest
+              .fn()
+              .mockImplementation(
+                (
+                  cb: (
+                    manager: typeof mockTransactionManager,
+                  ) => Promise<unknown>,
+                ) => cb(mockTransactionManager),
+              ),
+          },
+        },
       ],
     }).compile();
 
@@ -110,8 +138,8 @@ describe('BadgesService', () => {
 
   describe('checkAndAward', () => {
     it('should award new badges when thresholds met', async () => {
-      // No existing badges
-      userBadgeRepo.find!.mockResolvedValueOnce([]);
+      // Transaction manager: no existing badges
+      mockTransactionManager.find.mockResolvedValueOnce([]);
       // Stats: 150km total, 60km longest, 15 rides, 30 roads, 6 reviews, 8 hazards, 4 shared
       mockQb.getRawOne
         .mockResolvedValueOnce({ total: '150' })
@@ -136,7 +164,7 @@ describe('BadgesService', () => {
     it('should upgrade tier and update earned_at when higher threshold met', async () => {
       // Existing bronze badge for total_distance
       const existingBadge = { ...mockExistingBadge };
-      userBadgeRepo.find!.mockResolvedValueOnce([existingBadge]);
+      mockTransactionManager.find.mockResolvedValueOnce([existingBadge]);
       // Stats: 1500km — qualifies for silver
       mockQb.getRawOne
         .mockResolvedValueOnce({ total: '1500' })
@@ -147,14 +175,15 @@ describe('BadgesService', () => {
       const result = await service.checkAndAward('user-1');
 
       expect(result.newly_earned).toContain('total_distance:silver');
-      expect(userBadgeRepo.save).toHaveBeenCalledWith(
+      expect(mockTransactionManager.save).toHaveBeenCalledWith(
+        UserBadge,
         expect.objectContaining({
           tier: 'silver',
           earned_at: expect.any(Date),
         }),
       );
       // earned_at should be updated to now, not the original bronze date
-      const savedBadge = (userBadgeRepo.save as jest.Mock).mock.calls[0][0];
+      const savedBadge = mockTransactionManager.save.mock.calls[0][1];
       expect(savedBadge.earned_at.getTime()).toBeGreaterThan(
         mockExistingBadge.earned_at.getTime(),
       );
@@ -162,7 +191,9 @@ describe('BadgesService', () => {
 
     it('should not re-award same tier', async () => {
       // Existing bronze badge
-      userBadgeRepo.find!.mockResolvedValueOnce([{ ...mockExistingBadge }]);
+      mockTransactionManager.find.mockResolvedValueOnce([
+        { ...mockExistingBadge },
+      ]);
       // Stats: 150km — still bronze
       mockQb.getRawOne
         .mockResolvedValueOnce({ total: '150' })
@@ -176,7 +207,7 @@ describe('BadgesService', () => {
     });
 
     it('should return empty array when no thresholds met', async () => {
-      userBadgeRepo.find!.mockResolvedValueOnce([]);
+      mockTransactionManager.find.mockResolvedValueOnce([]);
       mockQb.getRawOne
         .mockResolvedValueOnce({ total: '0' })
         .mockResolvedValueOnce({ max: '0' })
@@ -189,7 +220,7 @@ describe('BadgesService', () => {
     });
 
     it('should award gold tier directly if threshold met', async () => {
-      userBadgeRepo.find!.mockResolvedValueOnce([]);
+      mockTransactionManager.find.mockResolvedValueOnce([]);
       // 15000km total — straight to gold
       mockQb.getRawOne
         .mockResolvedValueOnce({ total: '15000' })
