@@ -59,16 +59,15 @@ export class CommuteService {
   }
 
   async deleteRoute(userId: string, routeId: string): Promise<void> {
-    const route = await this.routeRepo.findOne({
-      where: { id: routeId, user_id: userId },
-    });
-    if (!route) {
-      throw new NotFoundException('Commute route not found');
-    }
-
-    const wasPrimary = route.is_primary;
-
     await this.dataSource.transaction(async (manager) => {
+      const route = await manager.findOne(CommuteRoute, {
+        where: { id: routeId, user_id: userId },
+      });
+      if (!route) {
+        throw new NotFoundException('Commute route not found');
+      }
+
+      const wasPrimary = route.is_primary;
       await manager.remove(route);
 
       // If deleted route was primary, promote the most recent remaining route

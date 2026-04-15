@@ -148,6 +148,9 @@ describe('CommuteService', () => {
 
   describe('deleteRoute', () => {
     it('should delete a route via transaction', async () => {
+      // findOne inside transaction returns the route
+      mockTransactionManager.findOne.mockResolvedValueOnce(mockRoute);
+
       await service.deleteRoute('user-1', 'route-1');
 
       expect(mockTransactionManager.remove).toHaveBeenCalledWith(mockRoute);
@@ -159,6 +162,9 @@ describe('CommuteService', () => {
         id: 'route-2',
         is_primary: false,
       };
+      // First findOne: the route to delete (primary)
+      mockTransactionManager.findOne.mockResolvedValueOnce(mockRoute);
+      // Second findOne: the next route to promote
       mockTransactionManager.findOne.mockResolvedValueOnce(nextRoute);
 
       await service.deleteRoute('user-1', 'route-1');
@@ -169,19 +175,18 @@ describe('CommuteService', () => {
     });
 
     it('should not promote when deleting non-primary route', async () => {
-      routeRepo.findOne!.mockResolvedValueOnce({
+      mockTransactionManager.findOne.mockResolvedValueOnce({
         ...mockRoute,
         is_primary: false,
-      } as unknown as CommuteRoute);
+      });
 
       await service.deleteRoute('user-1', 'route-1');
 
-      // transaction manager save should not be called for non-primary
       expect(mockTransactionManager.save).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException for missing route', async () => {
-      routeRepo.findOne!.mockResolvedValueOnce(null);
+      mockTransactionManager.findOne.mockResolvedValueOnce(null);
 
       await expect(service.deleteRoute('user-1', 'missing')).rejects.toThrow(
         NotFoundException,
