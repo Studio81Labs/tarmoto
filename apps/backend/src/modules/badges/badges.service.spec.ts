@@ -1,0 +1,225 @@
+/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return */
+import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { BadgesService } from './badges.service.js';
+import { UserBadge } from '../../entities/user-badge.entity.js';
+import { Ride } from '../../entities/ride.entity.js';
+import { RideSegment } from '../../entities/ride-segment.entity.js';
+import { HazardReport } from '../../entities/hazard-report.entity.js';
+import { RoadReview } from '../../entities/road-review.entity.js';
+import { SharedRide } from '../../entities/shared-ride.entity.js';
+
+describe('BadgesService', () => {
+  let service: BadgesService;
+  let userBadgeRepo: jest.Mocked<Partial<Repository<UserBadge>>>;
+  let rideRepo: jest.Mocked<Partial<Repository<Ride>>>;
+
+  const mockQb = {
+    select: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    innerJoin: jest.fn().mockReturnThis(),
+    getRawOne: jest
+      .fn()
+      .mockResolvedValue({ total: '150', max: '60', count: '30' }),
+  };
+
+  const mockExistingBadge = {
+    id: 'badge-1',
+    user_id: 'user-1',
+    badge_key: 'total_distance',
+    tier: 'bronze',
+    earned_at: new Date('2026-04-10T10:00:00Z'),
+  } as unknown as UserBadge;
+
+  beforeEach(async () => {
+    userBadgeRepo = {
+      find: jest.fn().mockResolvedValue([mockExistingBadge]),
+      create: jest.fn().mockImplementation((data) => ({
+        id: 'badge-new',
+        earned_at: new Date('2026-04-15T10:00:00Z'),
+        ...data,
+      })),
+      save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
+    };
+    rideRepo = {
+      createQueryBuilder: jest.fn().mockReturnValue(mockQb),
+      count: jest.fn().mockResolvedValue(15),
+    };
+
+    const rideSegmentRepo = {
+      createQueryBuilder: jest.fn().mockReturnValue(mockQb),
+    };
+    const hazardRepo = { count: jest.fn().mockResolvedValue(8) };
+    const reviewRepo = { count: jest.fn().mockResolvedValue(6) };
+    const sharedRideRepo = { count: jest.fn().mockResolvedValue(4) };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        BadgesService,
+        { provide: getRepositoryToken(UserBadge), useValue: userBadgeRepo },
+        { provide: getRepositoryToken(Ride), useValue: rideRepo },
+        { provide: getRepositoryToken(RideSegment), useValue: rideSegmentRepo },
+        { provide: getRepositoryToken(HazardReport), useValue: hazardRepo },
+        { provide: getRepositoryToken(RoadReview), useValue: reviewRepo },
+        { provide: getRepositoryToken(SharedRide), useValue: sharedRideRepo },
+      ],
+    }).compile();
+
+    service = module.get<BadgesService>(BadgesService);
+    jest.clearAllMocks();
+  });
+
+  describe('listBadges', () => {
+    it('should return all badge definitions with progress', async () => {
+      userBadgeRepo.find!.mockResolvedValueOnce([mockExistingBadge]);
+      mockQb.getRawOne
+        .mockResolvedValueOnce({ total: '150' }) // total_distance
+        .mockResolvedValueOnce({ max: '60' }) // single_ride
+        .mockResolvedValueOnce({ count: '30' }); // roads_discovered
+      rideRepo.count!.mockResolvedValueOnce(15); // ride_count
+
+      const result = await service.listBadges('user-1');
+
+      expect(result).toHaveLength(7);
+      // total_distance has existing bronze badge
+      const distBadge = result.find((b) => b.key === 'total_distance');
+      expect(distBadge?.tier).toBe('bronze');
+      expect(distBadge?.progress.current).toBe(150);
+      expect(distBadge?.progress.bronze).toBe(100);
+    });
+
+    it('should return null tier and earned_at for unearned badges', async () => {
+      userBadgeRepo.find!.mockResolvedValueOnce([]);
+      mockQb.getRawOne
+        .mockResolvedValueOnce({ total: '0' })
+        .mockResolvedValueOnce({ max: '0' })
+        .mockResolvedValueOnce({ count: '0' });
+      rideRepo.count!.mockResolvedValueOnce(0);
+
+      const result = await service.listBadges('user-1');
+
+      expect(result[0].tier).toBeNull();
+      expect(result[0].earned_at).toBeNull();
+    });
+  });
+
+  describe('checkAndAward', () => {
+    it('should award new badges when thresholds met', async () => {
+      // No existing badges
+      userBadgeRepo.find!.mockResolvedValueOnce([]);
+      // Stats: 150km total, 60km longest, 15 rides, 30 roads, 6 reviews, 8 hazards, 4 shared
+      mockQb.getRawOne
+        .mockResolvedValueOnce({ total: '150' })
+        .mockResolvedValueOnce({ max: '60' })
+        .mockResolvedValueOnce({ count: '30' });
+      rideRepo.count!.mockResolvedValueOnce(15);
+
+      const result = await service.checkAndAward('user-1');
+
+      expect(result.newly_earned).toContain('total_distance:bronze');
+      expect(result.newly_earned).toContain('single_ride:bronze');
+      expect(result.newly_earned).toContain('ride_count:bronze');
+      expect(result.newly_earned).toContain('roads_discovered:bronze');
+      expect(result.newly_earned).toContain('reviews_written:bronze');
+      expect(result.newly_earned).toContain('hazards_reported:bronze');
+      expect(result.newly_earned).toContain('rides_shared:bronze');
+    });
+
+    it('should upgrade tier when higher threshold met', async () => {
+      // Existing bronze badge for total_distance
+      userBadgeRepo.find!.mockResolvedValueOnce([{ ...mockExistingBadge }]);
+      // Stats: 1500km — qualifies for silver
+      mockQb.getRawOne
+        .mockResolvedValueOnce({ total: '1500' })
+        .mockResolvedValueOnce({ max: '10' })
+        .mockResolvedValueOnce({ count: '2' });
+      rideRepo.count!.mockResolvedValueOnce(3);
+
+      const result = await service.checkAndAward('user-1');
+
+      expect(result.newly_earned).toContain('total_distance:silver');
+    });
+
+    it('should not re-award same tier', async () => {
+      // Existing bronze badge
+      userBadgeRepo.find!.mockResolvedValueOnce([{ ...mockExistingBadge }]);
+      // Stats: 150km — still bronze
+      mockQb.getRawOne
+        .mockResolvedValueOnce({ total: '150' })
+        .mockResolvedValueOnce({ max: '10' })
+        .mockResolvedValueOnce({ count: '2' });
+      rideRepo.count!.mockResolvedValueOnce(3);
+
+      const result = await service.checkAndAward('user-1');
+
+      expect(result.newly_earned).not.toContain('total_distance:bronze');
+    });
+
+    it('should return empty array when no thresholds met', async () => {
+      userBadgeRepo.find!.mockResolvedValueOnce([]);
+      mockQb.getRawOne
+        .mockResolvedValueOnce({ total: '0' })
+        .mockResolvedValueOnce({ max: '0' })
+        .mockResolvedValueOnce({ count: '0' });
+      rideRepo.count!.mockResolvedValueOnce(0);
+
+      const result = await service.checkAndAward('user-1');
+
+      expect(Array.isArray(result.newly_earned)).toBe(true);
+    });
+
+    it('should award gold tier directly if threshold met', async () => {
+      userBadgeRepo.find!.mockResolvedValueOnce([]);
+      // 15000km total — straight to gold
+      mockQb.getRawOne
+        .mockResolvedValueOnce({ total: '15000' })
+        .mockResolvedValueOnce({ max: '600' })
+        .mockResolvedValueOnce({ count: '600' });
+      rideRepo.count!.mockResolvedValueOnce(250);
+
+      const result = await service.checkAndAward('user-1');
+
+      expect(result.newly_earned).toContain('total_distance:gold');
+      expect(result.newly_earned).toContain('single_ride:gold');
+      expect(result.newly_earned).toContain('ride_count:gold');
+      expect(result.newly_earned).toContain('roads_discovered:gold');
+    });
+  });
+
+  describe('computeStats', () => {
+    it('should aggregate all stat categories', async () => {
+      mockQb.getRawOne
+        .mockResolvedValueOnce({ total: '250.5' })
+        .mockResolvedValueOnce({ max: '85.3' })
+        .mockResolvedValueOnce({ count: '42' });
+      rideRepo.count!.mockResolvedValueOnce(20);
+
+      const stats = await service.computeStats('user-1');
+
+      expect(stats.total_distance).toBe(250.5);
+      expect(stats.single_ride).toBe(85.3);
+      expect(stats.ride_count).toBe(20);
+      expect(stats.roads_discovered).toBe(42);
+      expect(stats.reviews_written).toBe(6);
+      expect(stats.hazards_reported).toBe(8);
+      expect(stats.rides_shared).toBe(4);
+    });
+
+    it('should handle null/zero stats gracefully', async () => {
+      mockQb.getRawOne
+        .mockResolvedValueOnce({ total: null })
+        .mockResolvedValueOnce({ max: null })
+        .mockResolvedValueOnce({ count: null });
+      rideRepo.count!.mockResolvedValueOnce(0);
+
+      const stats = await service.computeStats('user-1');
+
+      expect(stats.total_distance).toBe(0);
+      expect(stats.single_ride).toBe(0);
+      expect(stats.ride_count).toBe(0);
+      expect(stats.roads_discovered).toBe(0);
+    });
+  });
+});

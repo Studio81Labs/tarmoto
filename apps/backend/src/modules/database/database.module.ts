@@ -26,6 +26,7 @@ import {
   CommuteRoute,
   SharedRide,
   UserFollow,
+  UserBadge,
 } from '../../entities/index.js';
 
 const entities = [
@@ -47,6 +48,7 @@ const entities = [
   CommuteRoute,
   SharedRide,
   UserFollow,
+  UserBadge,
 ];
 
 @Module({
