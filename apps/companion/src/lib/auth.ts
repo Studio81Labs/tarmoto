@@ -5,7 +5,7 @@ import Apple from "next-auth/providers/apple";
 import type { NextAuthConfig } from "next-auth";
 import "./auth-types";
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000") + "/api/v1";
+import { API_BASE } from "@/lib/config";
 
 interface BackendAuthResponse {
   access_token: string;

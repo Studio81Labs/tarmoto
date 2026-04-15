@@ -40,7 +40,7 @@ async function exportSpec(): Promise<void> {
   // the OpenAPI document is generated from metadata, not live data.
   const realExit = process.exit.bind(process) as (code?: number) => never;
   process.exit = ((code?: number) => {
-    if (code !== 0 && !exportDone) {
+    if ((code ?? 0) !== 0 && !exportDone) {
       // Swallow premature exits from NestJS's error handler — we will call
       // realExit ourselves once the spec has been written.
       return undefined as never;

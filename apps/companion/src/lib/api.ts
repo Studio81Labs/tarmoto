@@ -1,12 +1,10 @@
 import { createApiClient } from "@tarmoto/openapi/client";
 import { useAuthStore } from "@/stores/auth";
-
-// baseUrl is the host only — spec paths already include /api/v1
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
+import { API_HOST, API_BASE } from "@/lib/config";
 
 // Typed openapi-fetch client for all spec-defined endpoints
 export const api = createApiClient({
-  baseUrl: API_BASE,
+  baseUrl: API_HOST,
   getToken: () => useAuthStore.getState().accessToken,
   onUnauthorized: () => useAuthStore.getState().clearSession(),
 });
@@ -38,8 +36,12 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<{ data: T 
   const headers: HeadersInit = {
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(init?.headers instanceof Headers
+      ? Object.fromEntries(init.headers.entries())
+      : init?.headers ?? {}),
   };
-  const res = await fetch(`${API_BASE}/api/v1${path}`, { ...init, headers });
+  const { headers: _, ...rest } = init ?? {};
+  const res = await fetch(`${API_BASE}/api/v1${path}`, { ...rest, headers });
   if (!res.ok) {
     if (res.status === 401) useAuthStore.getState().clearSession();
     const body = await res.json().catch(() => ({}));
