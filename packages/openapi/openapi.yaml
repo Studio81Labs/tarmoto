@@ -1,0 +1,2227 @@
+openapi: 3.0.0
+paths:
+  /api/v1:
+    get:
+      operationId: AppController_getHello
+      parameters: []
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: string
+      tags:
+        - App
+  /api/v1/auth/register:
+    post:
+      operationId: AuthController_register
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterDto'
+      responses:
+        '201':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponseDto'
+        '409':
+          description: Email already registered
+      summary: Register a new account
+      tags: &ref_0
+        - auth
+  /api/v1/auth/login:
+    post:
+      operationId: AuthController_login
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginDto'
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponseDto'
+        '401':
+          description: Invalid credentials
+      summary: Login with email and password
+      tags: *ref_0
+  /api/v1/auth/refresh:
+    post:
+      operationId: AuthController_refresh
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenDto'
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponseDto'
+        '401':
+          description: Invalid or expired refresh token
+      summary: Refresh access token
+      tags: *ref_0
+  /api/v1/users/me:
+    get:
+      operationId: UsersController_getProfile
+      parameters: []
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponseDto'
+      security: &ref_1
+        - bearer: []
+      summary: Get current user profile
+      tags: &ref_2
+        - users
+    patch:
+      operationId: UsersController_updateProfile
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileDto'
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponseDto'
+      security: *ref_1
+      summary: Update user profile
+      tags: *ref_2
+  /api/v1/users/me/contacts:
+    get:
+      operationId: UsersController_listContacts
+      parameters: []
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ContactResponseDto'
+      security: *ref_1
+      summary: List emergency contacts
+      tags: *ref_2
+    post:
+      operationId: UsersController_addContact
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateContactDto'
+      responses:
+        '201':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContactResponseDto'
+      security: *ref_1
+      summary: Add emergency contact
+      tags: *ref_2
+  /api/v1/users/me/contacts/{contactId}:
+    delete:
+      operationId: UsersController_deleteContact
+      parameters:
+        - name: contactId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '204':
+          description: ''
+        '404':
+          description: Contact not found
+      security: *ref_1
+      summary: Delete emergency contact
+      tags: *ref_2
+  /api/v1/hazards:
+    get:
+      operationId: HazardsController_findNearby
+      parameters:
+        - name: lat
+          required: true
+          in: query
+          schema:
+            example: 49.1
+            type: number
+        - name: lng
+          required: true
+          in: query
+          schema:
+            example: 16.75
+            type: number
+        - name: radius
+          required: false
+          in: query
+          schema:
+            default: 10000
+            type: number
+        - name: types
+          required: false
+          in: query
+          description: Comma-separated hazard types
+          schema:
+            example: pothole,gravel,roadworks
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/HazardResponseDto'
+      summary: Get active hazards in area
+      tags: &ref_3
+        - hazards
+    post:
+      operationId: HazardsController_create
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateHazardDto'
+      responses:
+        '201':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HazardResponseDto'
+      security:
+        - bearer: []
+      summary: Report a hazard
+      tags: *ref_3
+  /api/v1/hazards/{hazardId}/confirm:
+    post:
+      operationId: HazardsController_confirm
+      parameters:
+        - name: hazardId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HazardResponseDto'
+        '404':
+          description: Hazard not found
+      security:
+        - bearer: []
+      summary: Confirm a hazard is still present
+      tags: *ref_3
+  /api/v1/hazards/{hazardId}/dismiss:
+    post:
+      operationId: HazardsController_dismiss
+      parameters:
+        - name: hazardId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ''
+        '404':
+          description: Hazard not found
+      security:
+        - bearer: []
+      summary: Report hazard is no longer present
+      tags: *ref_3
+  /api/v1/hazards/route:
+    post:
+      operationId: HazardsController_findAlongRoute
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RouteHazardsDto'
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/HazardResponseDto'
+      summary: Get hazards along a route
+      tags: *ref_3
+  /api/v1/sensor/upload:
+    post:
+      description: >-
+        Upload a batch of sensor readings collected during a ride. Readings are processed server-side to update road
+        quality scores.
+      operationId: SensorController_upload
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadSensorDataDto'
+      responses:
+        '202':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadResponseDto'
+      security:
+        - bearer: []
+      summary: Upload batched accelerometer readings
+      tags:
+        - sensor
+  /api/v1/roads/nearby:
+    get:
+      operationId: RoadsController_findNearby
+      parameters:
+        - name: lat
+          required: true
+          in: query
+          schema:
+            example: 49.1
+            type: number
+        - name: lng
+          required: true
+          in: query
+          schema:
+            example: 16.75
+            type: number
+        - name: radius
+          required: false
+          in: query
+          schema:
+            maximum: 50000
+            default: 5000
+            type: number
+        - name: min_quality
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 5
+            type: number
+        - name: surface_type
+          required: false
+          in: query
+          schema:
+            type: string
+            enum:
+              - asphalt
+              - concrete
+              - cobblestone
+              - gravel
+              - dirt
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoadSegmentDto'
+      summary: Get road segments near a location
+      tags: &ref_4
+        - roads
+  /api/v1/roads/fun-zones:
+    get:
+      operationId: RoadsController_findFunZones
+      parameters:
+        - name: bbox
+          required: true
+          in: query
+          description: 'Bounding box: west,south,east,north'
+          schema:
+            example: 18.1,49.4,18.6,49.7
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FunZoneDto'
+      summary: Get fun zones in a bounding box
+      tags: *ref_4
+  /api/v1/roads/{segmentId}:
+    get:
+      operationId: RoadsController_findById
+      parameters:
+        - name: segmentId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoadSegmentDetailDto'
+        '404':
+          description: Road segment not found
+      summary: Get road segment details (Road Preview Card data)
+      tags: *ref_4
+  /api/v1/rides/{rideId}/share:
+    post:
+      operationId: SharingController_toggleShare
+      parameters:
+        - name: rideId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToggleShareDto'
+      responses:
+        '201':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SharedRideResponseDto'
+        '400':
+          description: Ride not completed
+        '404':
+          description: Ride not found
+      security:
+        - bearer: []
+      summary: Share or update sharing for a ride
+      tags: &ref_5
+        - sharing
+    delete:
+      operationId: SharingController_unshare
+      parameters:
+        - name: rideId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '204':
+          description: ''
+        '404':
+          description: Shared ride not found
+      security:
+        - bearer: []
+      summary: Remove sharing for a ride
+      tags: *ref_5
+  /api/v1/rides/shared/{token}:
+    get:
+      operationId: SharingController_getSharedRide
+      parameters:
+        - name: token
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SharedRideDetailDto'
+        '404':
+          description: Shared ride not found
+      summary: View a shared ride by token (no auth required)
+      tags: *ref_5
+  /api/v1/rides/community:
+    get:
+      operationId: SharingController_listCommunityRides
+      parameters:
+        - name: lat
+          required: true
+          in: query
+          description: Latitude of search center
+          schema:
+            type: number
+        - name: lng
+          required: true
+          in: query
+          description: Longitude of search center
+          schema:
+            type: number
+        - name: radius_km
+          required: false
+          in: query
+          description: Search radius in km
+          schema:
+            minimum: 1
+            maximum: 100
+            default: 25
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 50
+            default: 20
+            type: number
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CommunityRideDto'
+      summary: Browse community rides nearby
+      tags: *ref_5
+  /api/v1/rides:
+    get:
+      operationId: RidesController_list
+      parameters:
+        - name: limit
+          required: false
+          in: query
+          schema:
+            maximum: 100
+            default: 20
+            type: number
+        - name: offset
+          required: false
+          in: query
+          schema:
+            default: 0
+            type: number
+        - name: type
+          required: false
+          in: query
+          schema:
+            type: string
+            enum:
+              - free
+              - commute
+              - trip
+              - tracked
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RideListResponseDto'
+      security: &ref_6
+        - bearer: []
+      summary: List user's rides
+      tags: &ref_7
+        - rides
+  /api/v1/rides/start:
+    post:
+      operationId: RidesController_start
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartRideDto'
+      responses:
+        '201':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RideResponseDto'
+        '400':
+          description: Already have an active ride
+      security: *ref_6
+      summary: Start a new ride
+      tags: *ref_7
+  /api/v1/rides/{rideId}/stop:
+    post:
+      operationId: RidesController_stop
+      parameters:
+        - name: rideId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RideResponseDto'
+        '404':
+          description: Ride not found
+      security: *ref_6
+      summary: Stop an active ride
+      tags: *ref_7
+  /api/v1/rides/{rideId}:
+    get:
+      operationId: RidesController_getDetail
+      parameters:
+        - name: rideId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RideDetailDto'
+        '404':
+          description: Ride not found
+      security: *ref_6
+      summary: Get ride details with stats
+      tags: *ref_7
+  /api/v1/rides/import:
+    post:
+      operationId: RidesController_importGpx
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RideSummaryDto'
+      security: *ref_6
+      summary: Import a GPX file as a route
+      tags: *ref_7
+  /api/v1/rides/{rideId}/gpx:
+    get:
+      operationId: RidesController_exportGpx
+      parameters:
+        - name: rideId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '200':
+          description: GPX file
+        '404':
+          description: Ride not found
+      security: *ref_6
+      summary: Export ride as GPX
+      tags: *ref_7
+  /api/v1/safety/crash-alert:
+    post:
+      description: Triggered by the app when crash detection activates and the countdown timer expires without cancellation.
+      operationId: SafetyController_sendCrashAlert
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrashAlertDto'
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrashAlertResponseDto'
+      security:
+        - bearer: []
+      summary: Send crash alert to emergency contacts
+      tags:
+        - safety
+  /api/v1/roads/tiles/{z}/{x}/{y}.mvt:
+    get:
+      operationId: TilesController_getTile
+      parameters:
+        - name: z
+          required: true
+          in: path
+          schema:
+            type: number
+        - name: x
+          required: true
+          in: path
+          schema:
+            type: number
+        - name: 'y'
+          required: true
+          in: path
+          schema:
+            type: number
+        - name: layers
+          required: false
+          in: query
+          schema:
+            default: all
+            type: string
+            enum:
+              - quality
+              - surface
+              - hazards
+              - all
+      responses:
+        '200':
+          description: Mapbox Vector Tile
+        '204':
+          description: Empty tile (no data in area)
+      summary: Get vector map tile with road quality overlay
+      tags:
+        - tiles
+  /api/v1/weather/current:
+    get:
+      operationId: WeatherController_getCurrent
+      parameters:
+        - name: lat
+          required: true
+          in: query
+          schema:
+            example: 49.1
+            type: number
+        - name: lng
+          required: true
+          in: query
+          schema:
+            example: 16.75
+            type: number
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeatherResponseDto'
+      summary: Get current weather at a location
+      tags: &ref_8
+        - weather
+  /api/v1/weather/route:
+    post:
+      description: >-
+        Samples weather every ~20km along the route and returns conditions at each point plus alerts for dangerous
+        conditions (rain, ice, storms, wind).
+      operationId: WeatherController_getRouteWeather
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RouteWeatherDto'
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteWeatherResponseDto'
+      summary: Get weather conditions along a route
+      tags: *ref_8
+  /api/v1/commute/routes:
+    get:
+      operationId: CommuteController_listRoutes
+      parameters: []
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CommuteRouteResponseDto'
+      security: &ref_9
+        - bearer: []
+      summary: Get user's saved commute routes
+      tags: &ref_10
+        - commute
+    post:
+      operationId: CommuteController_createRoute
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCommuteRouteDto'
+      responses:
+        '201':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommuteRouteResponseDto'
+      security: *ref_9
+      summary: Save a commute route
+      tags: *ref_10
+  /api/v1/commute/routes/{routeId}:
+    delete:
+      operationId: CommuteController_deleteRoute
+      parameters:
+        - name: routeId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '204':
+          description: ''
+        '404':
+          description: Route not found
+      security: *ref_9
+      summary: Delete a commute route
+      tags: *ref_10
+  /api/v1/commute/status:
+    get:
+      operationId: CommuteController_getStatus
+      parameters: []
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommuteStatusResponseDto'
+        '404':
+          description: No primary commute route
+      security: *ref_9
+      summary: Get current commute status (hazards, weather, route quality)
+      tags: *ref_10
+  /api/v1/commute/stats:
+    get:
+      operationId: CommuteController_getStats
+      parameters:
+        - name: period
+          required: false
+          in: query
+          schema:
+            default: week
+            type: string
+            enum:
+              - week
+              - month
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommuteStatsResponseDto'
+      security: *ref_9
+      summary: Get commute statistics
+      tags: *ref_10
+  /api/v1/roads/{segmentId}/reviews:
+    get:
+      operationId: ReviewsController_list
+      parameters:
+        - name: segmentId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ReviewResponseDto'
+      summary: Get reviews for a road segment
+      tags: &ref_11
+        - reviews
+    post:
+      operationId: ReviewsController_create
+      parameters:
+        - name: segmentId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReviewDto'
+      responses:
+        '201':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewResponseDto'
+        '409':
+          description: Already reviewed this segment
+      security:
+        - bearer: []
+      summary: Submit a road review
+      tags: *ref_11
+    put:
+      operationId: ReviewsController_update
+      parameters:
+        - name: segmentId
+          required: true
+          in: path
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReviewDto'
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewResponseDto'
+        '404':
+          description: Review not found
+      security:
+        - bearer: []
+      summary: Update your review for a road segment
+      tags: *ref_11
+    delete:
+      operationId: ReviewsController_delete
+      parameters:
+        - name: segmentId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '204':
+          description: ''
+        '404':
+          description: Review not found
+      security:
+        - bearer: []
+      summary: Delete your review for a road segment
+      tags: *ref_11
+  /api/v1/users/{userId}/follow:
+    post:
+      operationId: FollowersController_follow
+      parameters:
+        - name: userId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '201':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FollowUserResponseDto'
+        '400':
+          description: Cannot follow yourself
+        '404':
+          description: User not found
+        '409':
+          description: Already following
+      security: &ref_12
+        - bearer: []
+      summary: Follow a user
+      tags: &ref_13
+        - followers
+    delete:
+      operationId: FollowersController_unfollow
+      parameters:
+        - name: userId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '204':
+          description: ''
+        '404':
+          description: Not following this user
+      security: *ref_12
+      summary: Unfollow a user
+      tags: *ref_13
+  /api/v1/users/{userId}/followers:
+    get:
+      operationId: FollowersController_listFollowers
+      parameters:
+        - name: userId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FollowerDto'
+      security: *ref_12
+      summary: List a user's followers
+      tags: *ref_13
+  /api/v1/users/{userId}/following:
+    get:
+      operationId: FollowersController_listFollowing
+      parameters:
+        - name: userId
+          required: true
+          in: path
+          schema:
+            type: string
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FollowingDto'
+      security: *ref_12
+      summary: List who a user is following
+      tags: *ref_13
+  /api/v1/feed/rides:
+    get:
+      operationId: FollowersController_getFeed
+      parameters:
+        - name: lat
+          required: false
+          in: query
+          description: Latitude to filter rides by location
+          schema:
+            type: number
+        - name: lng
+          required: false
+          in: query
+          description: Longitude to filter rides by location
+          schema:
+            type: number
+        - name: radius_km
+          required: false
+          in: query
+          description: Search radius in km (requires lat/lng)
+          schema:
+            minimum: 1
+            maximum: 200
+            default: 50
+            type: number
+        - name: limit
+          required: false
+          in: query
+          schema:
+            minimum: 1
+            maximum: 50
+            default: 20
+            type: number
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FeedRideDto'
+      security: *ref_12
+      summary: Get ride feed from followed riders
+      tags: *ref_13
+info:
+  title: Tarmoto API
+  description: Know the road before you ride it
+  version: '1.0'
+  contact: {}
+tags: []
+servers: []
+components:
+  securitySchemes:
+    bearer:
+      scheme: bearer
+      bearerFormat: JWT
+      type: http
+  schemas:
+    RegisterDto:
+      type: object
+      properties:
+        email:
+          type: string
+          example: rider@example.com
+        password:
+          type: string
+          example: securePassword123
+          minLength: 8
+          maxLength: 72
+        display_name:
+          type: string
+          example: Martin_CZ
+          maxLength: 100
+      required:
+        - email
+        - password
+        - display_name
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        display_name:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+      required:
+        - id
+        - email
+        - display_name
+        - created_at
+    AuthResponseDto:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        expires_in:
+          type: number
+          description: Seconds until access token expires
+        user:
+          $ref: '#/components/schemas/UserResponse'
+      required:
+        - access_token
+        - refresh_token
+        - expires_in
+        - user
+    LoginDto:
+      type: object
+      properties:
+        email:
+          type: string
+          example: rider@example.com
+        password:
+          type: string
+      required:
+        - email
+        - password
+    RefreshTokenDto:
+      type: object
+      properties:
+        refresh_token:
+          type: string
+      required:
+        - refresh_token
+    LatLngResponse:
+      type: object
+      properties:
+        lat:
+          type: number
+        lng:
+          type: number
+      required:
+        - lat
+        - lng
+    UserResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        display_name:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        home_location:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/LatLngResponse'
+        work_location:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/LatLngResponse'
+        preferences:
+          type: object
+        created_at:
+          type: string
+      required:
+        - id
+        - email
+        - display_name
+        - phone
+        - home_location
+        - work_location
+        - preferences
+        - created_at
+    LatLngDto:
+      type: object
+      properties:
+        lat:
+          type: number
+        lng:
+          type: number
+      required:
+        - lat
+        - lng
+    UserPreferencesDto:
+      type: object
+      properties:
+        units:
+          type: string
+        daily_km:
+          type: number
+        min_quality:
+          type: number
+        road_types:
+          type: array
+          items:
+            type: string
+        record_gps:
+          type: boolean
+        crash_detection:
+          type: boolean
+    UpdateProfileDto:
+      type: object
+      properties:
+        display_name:
+          type: string
+        phone:
+          type: string
+        home_location:
+          $ref: '#/components/schemas/LatLngDto'
+        work_location:
+          $ref: '#/components/schemas/LatLngDto'
+        preferences:
+          $ref: '#/components/schemas/UserPreferencesDto'
+    ContactResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        phone:
+          type: string
+        is_emergency:
+          type: boolean
+        created_at:
+          type: string
+      required:
+        - id
+        - name
+        - phone
+        - is_emergency
+        - created_at
+    CreateContactDto:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Jane Doe
+        phone:
+          type: string
+          example: '+420123456789'
+        is_emergency:
+          type: boolean
+          default: true
+      required:
+        - name
+        - phone
+    HazardResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+        lat:
+          type: number
+        lng:
+          type: number
+        hazard_type:
+          type: string
+        severity:
+          type: string
+        note:
+          type: string
+          nullable: true
+        confirmations:
+          type: number
+        reporter:
+          type: string
+          nullable: true
+        road_name:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+        expires_at:
+          type: string
+      required:
+        - id
+        - lat
+        - lng
+        - hazard_type
+        - severity
+        - note
+        - confirmations
+        - reporter
+        - road_name
+        - created_at
+        - expires_at
+    CreateHazardDto:
+      type: object
+      properties:
+        lat:
+          type: number
+          example: 49.1
+        lng:
+          type: number
+          example: 16.75
+        hazard_type:
+          type: string
+          enum:
+            - pothole
+            - gravel
+            - oil_spill
+            - roadworks
+            - animals
+            - police
+            - flooding
+            - ice
+            - other
+          example: pothole
+        severity:
+          type: string
+          enum:
+            - low
+            - medium
+            - high
+          default: medium
+        note:
+          type: string
+          maxLength: 500
+      required:
+        - lat
+        - lng
+        - hazard_type
+    LatLng:
+      type: object
+      properties:
+        lat:
+          type: number
+        lng:
+          type: number
+      required:
+        - lat
+        - lng
+    RouteHazardsDto:
+      type: object
+      properties:
+        route:
+          minItems: 2
+          type: array
+          items:
+            $ref: '#/components/schemas/LatLng'
+        buffer_m:
+          type: number
+          default: 200
+      required:
+        - route
+    SensorReadingDto:
+      type: object
+      properties:
+        t:
+          type: number
+          description: Unix timestamp milliseconds
+        ax:
+          type: number
+          description: Accelerometer X (m/s²)
+        ay:
+          type: number
+          description: Accelerometer Y (m/s²)
+        az:
+          type: number
+          description: Accelerometer Z (m/s²)
+        lat:
+          type: number
+        lng:
+          type: number
+        speed:
+          type: number
+          description: Speed in m/s
+      required:
+        - t
+        - ax
+        - ay
+        - az
+    UploadSensorDataDto:
+      type: object
+      properties:
+        ride_id:
+          type: string
+          format: uuid
+        device_model:
+          type: string
+          example: iPhone 15 Pro
+        readings:
+          maxItems: 5000
+          type: array
+          items:
+            $ref: '#/components/schemas/SensorReadingDto'
+      required:
+        - ride_id
+        - readings
+    UploadResponseDto:
+      type: object
+      properties:
+        accepted:
+          type: number
+          description: Number of readings accepted
+        segments_updated:
+          type: number
+          description: Road segments that got new quality data
+      required:
+        - accepted
+        - segments_updated
+    RoadSegmentDto:
+      type: object
+      properties:
+        id:
+          type: string
+        road_name:
+          type: string
+          nullable: true
+        road_number:
+          type: string
+          nullable: true
+        quality_score:
+          type: number
+          nullable: true
+          description: 1-5 scale
+        curviness_score:
+          type: number
+          description: 0-5 scale
+        surface_type:
+          type: string
+        length_m:
+          type: number
+        confidence:
+          type: number
+          description: 0-100, based on number of readings
+        reading_count:
+          type: number
+        last_updated:
+          type: string
+        distance_m:
+          type: number
+          description: Distance from query point in meters
+      required:
+        - id
+        - road_name
+        - road_number
+        - quality_score
+        - curviness_score
+        - surface_type
+        - length_m
+        - confidence
+        - reading_count
+        - last_updated
+    FunZoneDto:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          nullable: true
+        composite_score:
+          type: number
+        road_count:
+          type: number
+        total_curve_km:
+          type: number
+          nullable: true
+        avg_quality:
+          type: number
+          nullable: true
+        best_season:
+          type: string
+          nullable: true
+        boundary:
+          type: array
+          items:
+            type: object
+      required:
+        - id
+        - name
+        - composite_score
+        - road_count
+        - total_curve_km
+        - avg_quality
+        - best_season
+        - boundary
+    QualityBreakdownDto:
+      type: object
+      properties:
+        excellent:
+          type: number
+        good:
+          type: number
+        fair:
+          type: number
+        poor:
+          type: number
+        very_poor:
+          type: number
+      required:
+        - excellent
+        - good
+        - fair
+        - poor
+        - very_poor
+    RoadSegmentDetailDto:
+      type: object
+      properties:
+        id:
+          type: string
+        road_name:
+          type: string
+          nullable: true
+        road_number:
+          type: string
+          nullable: true
+        quality_score:
+          type: number
+          nullable: true
+          description: 1-5 scale
+        curviness_score:
+          type: number
+          description: 0-5 scale
+        surface_type:
+          type: string
+        length_m:
+          type: number
+        confidence:
+          type: number
+          description: 0-100, based on number of readings
+        reading_count:
+          type: number
+        last_updated:
+          type: string
+        distance_m:
+          type: number
+          description: Distance from query point in meters
+        geometry:
+          type: array
+          items:
+            type: object
+        elevation_min:
+          type: number
+          nullable: true
+        elevation_max:
+          type: number
+          nullable: true
+        quality_breakdown:
+          $ref: '#/components/schemas/QualityBreakdownDto'
+        active_hazards:
+          type: number
+        review_count:
+          type: number
+        avg_review_rating:
+          type: number
+          nullable: true
+        riders_per_month:
+          type: number
+      required:
+        - id
+        - road_name
+        - road_number
+        - quality_score
+        - curviness_score
+        - surface_type
+        - length_m
+        - confidence
+        - reading_count
+        - last_updated
+        - geometry
+        - elevation_min
+        - elevation_max
+        - quality_breakdown
+        - active_hazards
+        - review_count
+        - avg_review_rating
+        - riders_per_month
+    ToggleShareDto:
+      type: object
+      properties:
+        is_public:
+          type: boolean
+          description: Whether the ride should be publicly visible
+      required:
+        - is_public
+    SharedRideResponseDto:
+      type: object
+      properties:
+        share_token:
+          type: string
+        is_public:
+          type: boolean
+        share_url:
+          type: string
+      required:
+        - share_token
+        - is_public
+        - share_url
+    SharedRideDetailDto:
+      type: object
+      properties:
+        id:
+          type: string
+        rider_name:
+          type: string
+        ride_type:
+          type: string
+        started_at:
+          type: string
+        ended_at:
+          type: string
+          nullable: true
+        distance_km:
+          type: number
+          nullable: true
+        avg_speed:
+          type: number
+          nullable: true
+        max_speed:
+          type: number
+          nullable: true
+        avg_road_quality:
+          type: number
+          nullable: true
+        duration_min:
+          type: number
+          nullable: true
+        route_geometry:
+          nullable: true
+          type: array
+          items:
+            type: object
+      required:
+        - id
+        - rider_name
+        - ride_type
+        - started_at
+        - ended_at
+        - distance_km
+        - avg_speed
+        - max_speed
+        - avg_road_quality
+        - duration_min
+        - route_geometry
+    CommunityRideDto:
+      type: object
+      properties:
+        id:
+          type: string
+        share_token:
+          type: string
+        rider_name:
+          type: string
+        ride_type:
+          type: string
+        started_at:
+          type: string
+        distance_km:
+          type: number
+          nullable: true
+        avg_speed:
+          type: number
+          nullable: true
+        avg_road_quality:
+          type: number
+          nullable: true
+        duration_min:
+          type: number
+          nullable: true
+      required:
+        - id
+        - share_token
+        - rider_name
+        - ride_type
+        - started_at
+        - distance_km
+        - avg_speed
+        - avg_road_quality
+        - duration_min
+    RideSummaryDto:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        ride_type:
+          type: string
+        started_at:
+          type: string
+        ended_at:
+          type: string
+          nullable: true
+        distance_km:
+          type: number
+          nullable: true
+        avg_speed:
+          type: number
+          nullable: true
+        avg_road_quality:
+          type: number
+          nullable: true
+        duration_min:
+          type: number
+          nullable: true
+      required:
+        - id
+        - status
+        - ride_type
+        - started_at
+        - ended_at
+        - distance_km
+        - avg_speed
+        - avg_road_quality
+        - duration_min
+    RideListResponseDto:
+      type: object
+      properties:
+        rides:
+          type: array
+          items:
+            $ref: '#/components/schemas/RideSummaryDto'
+        total:
+          type: number
+      required:
+        - rides
+        - total
+    StartRideDto:
+      type: object
+      properties:
+        ride_type:
+          type: string
+          enum:
+            - free
+            - commute
+            - trip
+            - tracked
+          default: free
+    RideResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        ride_type:
+          type: string
+        started_at:
+          type: string
+        ended_at:
+          type: string
+          nullable: true
+        distance_km:
+          type: number
+          nullable: true
+        avg_speed:
+          type: number
+          nullable: true
+        avg_road_quality:
+          type: number
+          nullable: true
+      required:
+        - id
+        - status
+        - ride_type
+        - started_at
+        - ended_at
+        - distance_km
+        - avg_speed
+        - avg_road_quality
+    RideDetailDto:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        ride_type:
+          type: string
+        started_at:
+          type: string
+        ended_at:
+          type: string
+          nullable: true
+        distance_km:
+          type: number
+          nullable: true
+        avg_speed:
+          type: number
+          nullable: true
+        avg_road_quality:
+          type: number
+          nullable: true
+        duration_min:
+          type: number
+          nullable: true
+        max_speed:
+          type: number
+          nullable: true
+        route_geometry:
+          nullable: true
+          type: array
+          items:
+            type: object
+        elevation_gain:
+          type: number
+          nullable: true
+        elevation_loss:
+          type: number
+          nullable: true
+        curve_count:
+          type: number
+          nullable: true
+        max_lean_angle:
+          type: number
+          nullable: true
+        fuel_estimate_l:
+          type: number
+          nullable: true
+        segments:
+          type: array
+          items:
+            type: object
+      required:
+        - id
+        - status
+        - ride_type
+        - started_at
+        - ended_at
+        - distance_km
+        - avg_speed
+        - avg_road_quality
+        - duration_min
+        - max_speed
+        - route_geometry
+        - elevation_gain
+        - elevation_loss
+        - curve_count
+        - max_lean_angle
+        - fuel_estimate_l
+        - segments
+    CrashAlertDto:
+      type: object
+      properties:
+        lat:
+          type: number
+          example: 49.1
+        lng:
+          type: number
+          example: 16.75
+        ride_id:
+          type: string
+          format: uuid
+        speed_at_impact:
+          type: number
+          description: Last known speed in km/h
+      required:
+        - lat
+        - lng
+    CrashAlertResponseDto:
+      type: object
+      properties:
+        contacts_notified:
+          type: number
+        alert_id:
+          type: string
+      required:
+        - contacts_notified
+        - alert_id
+    WeatherResponseDto:
+      type: object
+      properties:
+        temperature_c:
+          type: number
+        condition:
+          type: string
+          enum: &ref_14
+            - clear
+            - cloudy
+            - rain
+            - storm
+            - snow
+            - fog
+            - ice
+        wind_kmh:
+          type: number
+        precipitation_chance:
+          type: number
+        road_condition:
+          type: string
+          enum: &ref_15
+            - dry
+            - wet
+            - icy
+            - unknown
+        description:
+          type: string
+          example: 14°C · Dry roads · Wind 12 km/h
+      required:
+        - temperature_c
+        - condition
+        - wind_kmh
+        - precipitation_chance
+        - road_condition
+        - description
+    RouteWeatherDto:
+      type: object
+      properties:
+        route:
+          minItems: 2
+          type: array
+          items:
+            $ref: '#/components/schemas/LatLngDto'
+      required:
+        - route
+    RouteWeatherPointDto:
+      type: object
+      properties:
+        temperature_c:
+          type: number
+        condition:
+          type: string
+          enum: *ref_14
+        wind_kmh:
+          type: number
+        precipitation_chance:
+          type: number
+        road_condition:
+          type: string
+          enum: *ref_15
+        description:
+          type: string
+          example: 14°C · Dry roads · Wind 12 km/h
+        lat:
+          type: number
+        lng:
+          type: number
+      required:
+        - temperature_c
+        - condition
+        - wind_kmh
+        - precipitation_chance
+        - road_condition
+        - description
+        - lat
+        - lng
+    RouteWeatherResponseDto:
+      type: object
+      properties:
+        points:
+          type: array
+          items:
+            $ref: '#/components/schemas/RouteWeatherPointDto'
+        has_alerts:
+          type: boolean
+        alerts:
+          type: array
+          items:
+            type: string
+      required:
+        - points
+        - has_alerts
+        - alerts
+    CommuteRouteResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        origin:
+          $ref: '#/components/schemas/LatLngDto'
+        destination:
+          $ref: '#/components/schemas/LatLngDto'
+        distance_km:
+          type: number
+          nullable: true
+        avg_quality:
+          type: number
+          nullable: true
+        is_primary:
+          type: boolean
+        created_at:
+          type: string
+      required:
+        - id
+        - name
+        - origin
+        - destination
+        - distance_km
+        - avg_quality
+        - is_primary
+        - created_at
+    CreateCommuteRouteDto:
+      type: object
+      properties:
+        name:
+          type: string
+          default: Default
+        origin:
+          $ref: '#/components/schemas/LatLngDto'
+        destination:
+          $ref: '#/components/schemas/LatLngDto'
+      required:
+        - origin
+        - destination
+    CommuteStatusResponseDto:
+      type: object
+      properties:
+        route:
+          $ref: '#/components/schemas/CommuteRouteResponseDto'
+        hazard_count:
+          type: number
+        route_quality:
+          type: number
+          nullable: true
+        status:
+          type: string
+          enum:
+            - clear
+            - hazards
+            - weather_warning
+            - delays
+      required:
+        - route
+        - hazard_count
+        - route_quality
+        - status
+    DailyBreakdownDto:
+      type: object
+      properties:
+        date:
+          type: string
+        rides:
+          type: number
+        km:
+          type: number
+        duration_min:
+          type: number
+      required:
+        - date
+        - rides
+        - km
+        - duration_min
+    CommuteStatsResponseDto:
+      type: object
+      properties:
+        period:
+          type: string
+        total_rides:
+          type: number
+        total_km:
+          type: number
+        total_time_min:
+          type: number
+        avg_duration_min:
+          type: number
+        fuel_estimate_l:
+          type: number
+        daily_breakdown:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyBreakdownDto'
+      required:
+        - period
+        - total_rides
+        - total_km
+        - total_time_min
+        - avg_duration_min
+        - fuel_estimate_l
+        - daily_breakdown
+    ReviewResponseDto:
+      type: object
+      properties:
+        id:
+          type: string
+        user_display_name:
+          type: string
+        rating:
+          type: number
+        comment:
+          type: string
+          nullable: true
+        bike_model:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+      required:
+        - id
+        - user_display_name
+        - rating
+        - comment
+        - bike_model
+        - created_at
+    CreateReviewDto:
+      type: object
+      properties:
+        rating:
+          type: number
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+          maxLength: 1000
+        bike_model:
+          type: string
+          example: BMW R1250GS
+      required:
+        - rating
+    FollowUserResponseDto:
+      type: object
+      properties:
+        following_id:
+          type: string
+        display_name:
+          type: string
+        followed_at:
+          type: string
+      required:
+        - following_id
+        - display_name
+        - followed_at
+    FollowerDto:
+      type: object
+      properties:
+        user_id:
+          type: string
+        display_name:
+          type: string
+        followed_at:
+          type: string
+      required:
+        - user_id
+        - display_name
+        - followed_at
+    FollowingDto:
+      type: object
+      properties:
+        user_id:
+          type: string
+        display_name:
+          type: string
+        followed_at:
+          type: string
+      required:
+        - user_id
+        - display_name
+        - followed_at
+    FeedRideDto:
+      type: object
+      properties:
+        ride_id:
+          type: string
+        share_token:
+          type: string
+        rider_id:
+          type: string
+        rider_name:
+          type: string
+        ride_type:
+          type: string
+        started_at:
+          type: string
+        distance_km:
+          type: number
+          nullable: true
+        avg_speed:
+          type: number
+          nullable: true
+        avg_road_quality:
+          type: number
+          nullable: true
+        duration_min:
+          type: number
+          nullable: true
+      required:
+        - ride_id
+        - share_token
+        - rider_id
+        - rider_name
+        - ride_type
+        - started_at
+        - distance_km
+        - avg_speed
+        - avg_road_quality
+        - duration_min
