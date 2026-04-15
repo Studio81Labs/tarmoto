@@ -308,7 +308,7 @@ export { createApiClient, type ApiClient, type paths } from "./client.js";
 
 - [ ] **Step 7: Create Postman generation script**
 
-Create `packages/openapi/scripts/generate-postman.js` — adapted from the nexcue pattern. Read the nexcue version at `/Users/akadlec/Development/GetNexcue/nexcue/packages/openapi/scripts/generate-postman.js` and adapt:
+Create `packages/openapi/scripts/generate-postman.js` — adapted from the existing pattern in the org's other repos. Key changes:
 - Change "Nexcue" → "Tarmoto" in collection name, environment name
 - Change `baseUrl` default to `http://localhost:3000/api/v1`
 - Change output filenames to `tarmoto-api.postman_collection.json` and `tarmoto-local.postman_environment.json`
