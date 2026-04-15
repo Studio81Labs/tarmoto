@@ -41,6 +41,19 @@ describe('CommuteController', () => {
         fuel_estimate_l: 0,
         daily_breakdown: [],
       }),
+      getAlternatives: jest.fn().mockResolvedValue({
+        primary_route: mockRoute,
+        primary_hazard_count: 2,
+        alternatives: [
+          {
+            distance_km: 14.2,
+            duration_min: 22,
+            avg_quality: 4.1,
+            hazard_count: 0,
+            geometry: [{ lat: 49.2, lng: 16.6 }],
+          },
+        ],
+      }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -79,6 +92,13 @@ describe('CommuteController', () => {
     const result = await controller.getStatus(mockReq);
     expect(service.getStatus).toHaveBeenCalledWith('user-1');
     expect(result.status).toBe('clear');
+  });
+
+  it('GET /commute/alternatives should return alternatives', async () => {
+    const result = await controller.getAlternatives(mockReq);
+    expect(service.getAlternatives).toHaveBeenCalledWith('user-1');
+    expect(result.primary_hazard_count).toBe(2);
+    expect(result.alternatives).toHaveLength(1);
   });
 
   it('GET /commute/stats should return stats', async () => {

@@ -1,14 +1,20 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { pointToLatLng, latLngToPoint } from '@tarmoto/shared';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
 import {
+  ROUTING_PROVIDER,
+  type RoutingProvider,
+} from './routing-provider.interface.js';
+import {
   CreateCommuteRouteDto,
   CommuteRouteResponseDto,
   CommuteStatusResponseDto,
   CommuteStatsResponseDto,
+  AlternativeRouteDto,
+  CommuteAlternativesResponseDto,
 } from './dto/commute.dto.js';
 
 const FUEL_L_PER_KM = 0.05; // ~5L/100km average motorcycle
@@ -21,6 +27,8 @@ export class CommuteService {
     @InjectRepository(Ride)
     private readonly rideRepo: Repository<Ride>,
     private readonly dataSource: DataSource,
+    @Inject(ROUTING_PROVIDER)
+    private readonly routingProvider: RoutingProvider,
   ) {}
 
   async listRoutes(userId: string): Promise<CommuteRouteResponseDto[]> {
@@ -92,23 +100,7 @@ export class CommuteService {
       throw new NotFoundException('No primary commute route configured');
     }
 
-    // Count active hazards near the route
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const hazardRows = await this.routeRepo.query(
-      `SELECT COUNT(*)::int AS count
-       FROM hazard_reports hr
-       WHERE hr.is_active = true AND hr.expires_at > NOW()
-         AND ST_DWithin(
-           hr.location::geography,
-           ST_MakeLine(
-             ST_SetSRID(ST_MakePoint($1, $2), 4326),
-             ST_SetSRID(ST_MakePoint($3, $4), 4326)
-           )::geography,
-           500
-         )`,
-      [...this.getCoords(route.origin), ...this.getCoords(route.destination)],
-    );
-    const hazardCount = (hazardRows as Array<{ count: number }>)[0]?.count ?? 0;
+    const hazardCount = await this.countHazardsNearLine(route);
 
     let status: string = 'clear';
     if (hazardCount > 0) status = 'hazards';
@@ -177,6 +169,131 @@ export class CommuteService {
       fuel_estimate_l: Math.round(totalKm * FUEL_L_PER_KM * 100) / 100,
       daily_breakdown: dailyBreakdown,
     };
+  }
+
+  async getAlternatives(
+    userId: string,
+  ): Promise<CommuteAlternativesResponseDto> {
+    const route = await this.routeRepo.findOne({
+      where: { user_id: userId, is_primary: true },
+    });
+    if (!route) {
+      throw new NotFoundException('No primary commute route configured');
+    }
+
+    const [originLng, originLat] = this.getCoords(route.origin);
+    const [destLng, destLat] = this.getCoords(route.destination);
+
+    // Get hazard count on primary route and fetch alternatives in parallel
+    const [primaryHazardCount, rawAlternatives] = await Promise.all([
+      this.countHazardsNearLine(route),
+      this.routingProvider.getAlternatives(
+        originLat,
+        originLng,
+        destLat,
+        destLng,
+        3,
+      ),
+    ]);
+
+    // Enrich each alternative with hazard count and avg road quality
+    const alternatives: AlternativeRouteDto[] = await Promise.all(
+      rawAlternatives.map(async (alt) => {
+        const [hazardCount, avgQuality] = await Promise.all([
+          this.countHazardsAlongGeometry(alt.geometry),
+          this.avgQualityAlongGeometry(alt.geometry),
+        ]);
+        return {
+          distance_km: alt.distance_km,
+          duration_min: alt.duration_min,
+          avg_quality: avgQuality,
+          hazard_count: hazardCount,
+          geometry: alt.geometry,
+        };
+      }),
+    );
+
+    return {
+      primary_route: this.toRouteResponse(route),
+      primary_hazard_count: primaryHazardCount,
+      alternatives,
+    };
+  }
+
+  private async countHazardsNearLine(route: CommuteRoute): Promise<number> {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const rows = await this.routeRepo.query(
+      `SELECT COUNT(*)::int AS count
+       FROM hazard_reports hr
+       WHERE hr.is_active = true AND hr.expires_at > NOW()
+         AND ST_DWithin(
+           hr.location::geography,
+           ST_MakeLine(
+             ST_SetSRID(ST_MakePoint($1, $2), 4326),
+             ST_SetSRID(ST_MakePoint($3, $4), 4326)
+           )::geography,
+           500
+         )`,
+      [...this.getCoords(route.origin), ...this.getCoords(route.destination)],
+    );
+    return (rows as Array<{ count: number }>)[0]?.count ?? 0;
+  }
+
+  private geometryToWkt(geometry: Array<{ lat: number; lng: number }>): string {
+    const coords = geometry.map((p) => {
+      const lng = Number(p.lng);
+      const lat = Number(p.lat);
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
+        throw new Error('Invalid coordinate in route geometry');
+      }
+      return `${lng} ${lat}`;
+    });
+    return `LINESTRING(${coords.join(',')})`;
+  }
+
+  private async countHazardsAlongGeometry(
+    geometry: Array<{ lat: number; lng: number }>,
+  ): Promise<number> {
+    if (geometry.length < 2) return 0;
+
+    const wkt = this.geometryToWkt(geometry);
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const rows = await this.routeRepo.query(
+      `SELECT COUNT(*)::int AS count
+       FROM hazard_reports hr
+       WHERE hr.is_active = true AND hr.expires_at > NOW()
+         AND ST_DWithin(
+           hr.location::geography,
+           ST_GeomFromText($1, 4326)::geography,
+           500
+         )`,
+      [wkt],
+    );
+    return (rows as Array<{ count: number }>)[0]?.count ?? 0;
+  }
+
+  private async avgQualityAlongGeometry(
+    geometry: Array<{ lat: number; lng: number }>,
+  ): Promise<number | null> {
+    if (geometry.length < 2) return null;
+
+    const wkt = this.geometryToWkt(geometry);
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const rows = await this.routeRepo.query(
+      `SELECT AVG(rs.quality_score)::float AS avg_quality
+       FROM road_segments rs
+       WHERE rs.quality_score IS NOT NULL
+         AND ST_DWithin(
+           rs.geom::geography,
+           ST_GeomFromText($1, 4326)::geography,
+           100
+         )`,
+      [wkt],
+    );
+    const avg = (rows as Array<{ avg_quality: number | null }>)[0]?.avg_quality;
+    return avg != null ? Math.round(avg * 10) / 10 : null;
   }
 
   private toRouteResponse(route: CommuteRoute): CommuteRouteResponseDto {
