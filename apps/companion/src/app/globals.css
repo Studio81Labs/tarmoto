@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+/* ── Tarmoto theme ── */
+@theme {
+  --color-tarmoto-cyan: #0ED3CF;
+  --color-tarmoto-cyan-light: #5DE5E2;
+  --color-tarmoto-cyan-dark: #0AA8A5;
+
+  --color-quality-excellent: #22C55E;
+  --color-quality-good: #84CC16;
+  --color-quality-fair: #EAB308;
+  --color-quality-poor: #F97316;
+  --color-quality-very-poor: #EF4444;
+
+  --color-surface-asphalt: #3B82F6;
+  --color-surface-concrete: #6B7280;
+  --color-surface-cobblestone: #A78BFA;
+  --color-surface-gravel: #D97706;
+  --color-surface-dirt: #92400E;
+
+  --color-slate-850: #172033;
+  --color-slate-950: #0B1120;
+
+  --font-sans: "Plus Jakarta Sans", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+
+  --animate-fade-in: fadeIn 0.3s ease-out;
+  --animate-slide-up: slideUp 0.3s ease-out;
+  --animate-slide-in-right: slideInRight 0.3s ease-out;
+  --animate-pulse-slow: pulse 3s ease-in-out infinite;
+
+  @keyframes fadeIn {
+    0% { opacity: 0; }
+    100% { opacity: 1; }
+  }
+
+  @keyframes slideUp {
+    0% { opacity: 0; transform: translateY(10px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes slideInRight {
+    0% { opacity: 0; transform: translateX(20px); }
+    100% { opacity: 1; transform: translateX(0); }
+  }
+}
+
+@layer base {
+  html { scroll-behavior: smooth; }
+  body { min-height: 100vh; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--color-slate-700, #334155); border-radius: 9999px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--color-slate-600, #475569); }
+}
+
+@layer components {
+  .quality-excellent { background: color-mix(in srgb, var(--color-quality-excellent) 20%, transparent); color: var(--color-quality-excellent); }
+  .quality-good { background: color-mix(in srgb, var(--color-quality-good) 20%, transparent); color: var(--color-quality-good); }
+  .quality-fair { background: color-mix(in srgb, var(--color-quality-fair) 20%, transparent); color: var(--color-quality-fair); }
+  .quality-poor { background: color-mix(in srgb, var(--color-quality-poor) 20%, transparent); color: var(--color-quality-poor); }
+  .quality-very-poor { background: color-mix(in srgb, var(--color-quality-very-poor) 20%, transparent); color: var(--color-quality-very-poor); }
+
+  .glass {
+    background: color-mix(in srgb, var(--color-slate-900, #0f172a) 80%, transparent);
+    backdrop-filter: blur(24px);
+    border: 1px solid color-mix(in srgb, var(--color-slate-700, #334155) 50%, transparent);
+  }
+
+  .map-panel {
+    background: color-mix(in srgb, var(--color-slate-900, #0f172a) 80%, transparent);
+    backdrop-filter: blur(24px);
+    border: 1px solid color-mix(in srgb, var(--color-slate-700, #334155) 50%, transparent);
+    border-radius: 1rem;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+  }
+}
