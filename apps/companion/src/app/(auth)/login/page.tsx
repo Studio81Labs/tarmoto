@@ -2,28 +2,37 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useAuthStore } from "@/stores/auth";
-import { authApi } from "@/lib/api";
+import { useSearchParams } from "next/navigation";
+import { signIn } from "next-auth/react";
+import { OAuthButtons } from "@/components/OAuthButtons";
+
+const oauthProviders: string[] = [];
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const setAuth = useAuthStore((s) => s.setAuth);
-  const router = useRouter();
+  const searchParams = useSearchParams();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
-      const { data } = await authApi.login(email, password);
-      setAuth(data.user, data.token);
-      router.push("/");
-    } catch (err: any) {
-      setError(err.response?.data?.message ?? "Login failed");
+      const callbackUrl = searchParams.get("callbackUrl") ?? "/";
+      const result = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+      });
+      if (result?.error) {
+        setError("Invalid email or password");
+      } else {
+        window.location.href = callbackUrl;
+      }
+    } catch {
+      setError("An unexpected error occurred");
     } finally {
       setLoading(false);
     }
@@ -83,6 +92,8 @@ export default function LoginPage() {
           {loading ? "Signing in..." : "Sign in"}
         </button>
       </form>
+
+      <OAuthButtons providers={oauthProviders} />
 
       <p className="mt-6 text-center text-sm text-slate-400">
         Don&apos;t have an account?{" "}

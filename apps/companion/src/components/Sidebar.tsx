@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter, usePathname } from "next/navigation";
-import { useAuthStore } from "@/stores/auth";
+import { usePathname } from "next/navigation";
+import { signOut } from "next-auth/react";
 import {
   Home,
   Map,
@@ -59,13 +59,10 @@ const NAV_SECTIONS = [
 
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
-  const router = useRouter();
   const pathname = usePathname();
-  const logout = useAuthStore((s) => s.logout);
 
   const handleLogout = () => {
-    logout();
-    router.push("/login");
+    signOut({ callbackUrl: "/login" });
   };
 
   return (

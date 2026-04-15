@@ -1,10 +1,11 @@
 "use client";
 
 import { Bell } from "lucide-react";
-import { useAuthStore } from "@/stores/auth";
+import { useSession } from "next-auth/react";
 
 export function Topbar() {
-  const user = useAuthStore((s) => s.user);
+  const { data: session } = useSession();
+  const user = session?.user;
 
   return (
     <header className="flex h-16 items-center justify-between border-b border-slate-800 px-6">

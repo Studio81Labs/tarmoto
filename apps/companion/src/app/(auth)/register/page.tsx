@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useAuthStore } from "@/stores/auth";
+import { signIn } from "next-auth/react";
 import { authApi } from "@/lib/api";
 
 export default function RegisterPage() {
@@ -12,17 +11,23 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const setAuth = useAuthStore((s) => s.setAuth);
-  const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
-      const { data } = await authApi.register(email, password, displayName);
-      setAuth(data.user, data.token);
-      router.push("/");
+      await authApi.register(email, password, displayName);
+      const result = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+      });
+      if (result?.error) {
+        setError("Account created but sign-in failed. Please log in.");
+      } else {
+        window.location.href = "/";
+      }
     } catch (err: any) {
       setError(err.response?.data?.message ?? "Registration failed");
     } finally {
