@@ -133,7 +133,10 @@ export class ChallengesService {
       target,
       completed: entry.completed,
       completed_at: entry.completed_at?.toISOString() ?? null,
-      percent: Math.min(100, Math.round((entry.progress / target) * 100)),
+      percent:
+        target > 0
+          ? Math.min(100, Math.round((entry.progress / target) * 100))
+          : 0,
     };
   }
 

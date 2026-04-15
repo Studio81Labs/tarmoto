@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import {
@@ -219,6 +219,20 @@ describe('ChallengesService', () => {
 
       expect(result.percent).toBe(100);
       expect(result.completed).toBe(true);
+    });
+
+    it('should return 0 percent when target is zero', async () => {
+      const zeroTargetChallenge = { ...mockChallenge, target: 0 };
+      entryRepo.findOne!.mockResolvedValueOnce({
+        ...mockEntry,
+        progress: 0,
+        challenge: zeroTargetChallenge,
+      } as unknown as ChallengeEntry);
+
+      const result = await service.getProgress('user-1', 'ch-1');
+
+      expect(result.percent).toBe(0);
+      expect(result.target).toBe(0);
     });
 
     it('should throw NotFoundException when not participating', async () => {
