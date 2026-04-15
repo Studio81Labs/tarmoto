@@ -30,6 +30,7 @@
     "react-native-haptic-feedback": "^3.0.0",
     "react-native-keep-awake": "^4.0.0",
     "react-native-mmkv": "^4.3.1",
+    "react-native-nitro-modules": "^0.35.4",
     "react-native-reanimated": "^4.3.0",
     "react-native-safe-area-context": "^5.0.0",
     "react-native-screens": "^4.4.0",
