@@ -31,7 +31,7 @@ process.env['TARMOTO_DATABASE_USER'] ??= 'tarmoto';
 process.env['TARMOTO_DATABASE_PASSWORD'] ??= 'tarmoto';
 process.env['TARMOTO_REDIS_HOST'] ??= 'localhost';
 process.env['TARMOTO_REDIS_PORT'] ??= '6379';
-process.env['TARMOTO_JWT_SECRET'] ??= 'openapi-export-placeholder-secret';
+process.env['TARMOTO_JWT_SECRET'] ??= 'DO-NOT-USE-openapi-export-only-00000000';
 
 async function exportSpec(): Promise<void> {
   // NestJS's ExceptionsZone calls process.exit(1) when TypeORM fails to connect

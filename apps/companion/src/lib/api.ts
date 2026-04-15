@@ -11,22 +11,16 @@ export const api = createApiClient({
 
 // ── Register endpoint ──
 // Used by the registration page before Auth.js signIn.
-// This stays as raw fetch since registration is handled outside the normal API flow.
 export async function registerUser(
   email: string,
   password: string,
   displayName: string,
 ) {
-  const res = await fetch(`${API_BASE}/auth/register`, {
+  const { data } = await apiFetch("/auth/register", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password, display_name: displayName }),
   });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error((data as { message?: string }).message ?? "Registration failed");
-  }
-  return res.json();
+  return data;
 }
 
 // ── Raw fetch helper for endpoints not yet in the OpenAPI spec ──
