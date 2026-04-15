@@ -59,7 +59,9 @@ export class OsrmProvider implements RoutingProvider {
       return [];
     }
 
-    return data.routes.map((route) => ({
+    // OSRM returns the optimal route at index 0, alternatives at 1+.
+    // Skip the primary and return only true alternatives, capped at maxAlternatives.
+    return data.routes.slice(1, maxAlternatives + 1).map((route) => ({
       distance_km: Math.round((route.distance / 1000) * 100) / 100,
       duration_min: Math.round(route.duration / 60),
       geometry: route.geometry.coordinates.map((c) => ({
