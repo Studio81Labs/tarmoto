@@ -77,6 +77,7 @@ export class BadgesService {
         const tierOrder = ['bronze', 'silver', 'gold'];
         if (tierOrder.indexOf(newTier) > tierOrder.indexOf(existing.tier)) {
           existing.tier = newTier;
+          existing.earned_at = new Date();
           await this.userBadgeRepo.save(existing);
           newlyEarned.push(`${def.key}:${newTier}`);
         }
@@ -125,6 +126,7 @@ export class BadgesService {
         .select('COUNT(DISTINCT rs.road_segment_id)', 'count')
         .innerJoin('rs.ride', 'r')
         .where('r.user_id = :userId', { userId })
+        .andWhere("r.status = 'completed'")
         .getRawOne<{ count: string }>(),
       this.reviewRepo.count({ where: { user_id: userId } }),
       this.hazardRepo.count({ where: { user_id: userId } }),

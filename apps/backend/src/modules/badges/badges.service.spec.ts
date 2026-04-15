@@ -127,9 +127,10 @@ describe('BadgesService', () => {
       expect(result.newly_earned).toContain('rides_shared:bronze');
     });
 
-    it('should upgrade tier when higher threshold met', async () => {
+    it('should upgrade tier and update earned_at when higher threshold met', async () => {
       // Existing bronze badge for total_distance
-      userBadgeRepo.find!.mockResolvedValueOnce([{ ...mockExistingBadge }]);
+      const existingBadge = { ...mockExistingBadge };
+      userBadgeRepo.find!.mockResolvedValueOnce([existingBadge]);
       // Stats: 1500km — qualifies for silver
       mockQb.getRawOne
         .mockResolvedValueOnce({ total: '1500' })
@@ -140,6 +141,17 @@ describe('BadgesService', () => {
       const result = await service.checkAndAward('user-1');
 
       expect(result.newly_earned).toContain('total_distance:silver');
+      expect(userBadgeRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tier: 'silver',
+          earned_at: expect.any(Date),
+        }),
+      );
+      // earned_at should be updated to now, not the original bronze date
+      const savedBadge = (userBadgeRepo.save as jest.Mock).mock.calls[0][0];
+      expect(savedBadge.earned_at.getTime()).toBeGreaterThan(
+        mockExistingBadge.earned_at.getTime(),
+      );
     });
 
     it('should not re-award same tier', async () => {
@@ -205,6 +217,19 @@ describe('BadgesService', () => {
       expect(stats.reviews_written).toBe(6);
       expect(stats.hazards_reported).toBe(8);
       expect(stats.rides_shared).toBe(4);
+    });
+
+    it('should filter roads_discovered by completed rides', async () => {
+      mockQb.getRawOne
+        .mockResolvedValueOnce({ total: '0' })
+        .mockResolvedValueOnce({ max: '0' })
+        .mockResolvedValueOnce({ count: '10' });
+      rideRepo.count!.mockResolvedValueOnce(0);
+
+      await service.computeStats('user-1');
+
+      // The roads_discovered query builder should have andWhere for completed status
+      expect(mockQb.andWhere).toHaveBeenCalledWith("r.status = 'completed'");
     });
 
     it('should handle null/zero stats gracefully', async () => {

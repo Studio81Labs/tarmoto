@@ -2,7 +2,6 @@ import {
   Entity,
   PrimaryGeneratedColumn,
   Column,
-  CreateDateColumn,
   ManyToOne,
   JoinColumn,
   Unique,
@@ -26,7 +25,7 @@ export class UserBadge {
   @Column({ type: 'varchar', length: 10 })
   tier: string;
 
-  @CreateDateColumn({ type: 'timestamptz' })
+  @Column({ type: 'timestamptz', default: () => 'NOW()' })
   earned_at: Date;
 
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
