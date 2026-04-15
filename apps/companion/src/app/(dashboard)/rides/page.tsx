@@ -6,7 +6,7 @@ import { ridesApi } from '@/lib/api';
 import { History, Calendar, MapPin, Gauge, ChevronRight } from 'lucide-react';
 import type { Ride, QualityTier } from '@/lib/types';
 
-export const QUALITY_COLORS: Record<QualityTier, string> = {
+const QUALITY_COLORS: Record<QualityTier, string> = {
   excellent: 'text-quality-excellent',
   good: 'text-quality-good',
   fair: 'text-quality-fair',
