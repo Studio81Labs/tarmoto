@@ -19,8 +19,13 @@ export default function RideListPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // The spec returns RideSummaryDto (snake_case) while the local Ride type
+    // uses camelCase. Cast through unknown until the local types are replaced
+    // with spec-generated types.
     api.GET("/api/v1/rides").then(({ data }) => {
-      setRides((data?.rides as unknown as Ride[]) ?? []);
+      if (data?.rides) {
+        setRides(data.rides as unknown as Ride[]);
+      }
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
