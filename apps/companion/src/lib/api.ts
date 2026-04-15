@@ -1,7 +1,8 @@
 import { createApiClient } from "@tarmoto/openapi/client";
 import { useAuthStore } from "@/stores/auth";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
+// baseUrl is the host only — spec paths already include /api/v1
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
 
 // Typed openapi-fetch client for all spec-defined endpoints
 export const api = createApiClient({
@@ -17,7 +18,7 @@ export async function registerUser(
   password: string,
   displayName: string,
 ) {
-  const res = await fetch(`${API_BASE}/auth/register`, {
+  const res = await fetch(`${API_BASE}/api/v1/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password, display_name: displayName }),
@@ -41,39 +42,39 @@ const getAuthHeaders = (): HeadersInit => {
 export const tripsApi = {
   list: (params?: { page?: number; status?: string }) => {
     const query = params ? "?" + new URLSearchParams(params as Record<string, string>).toString() : "";
-    return fetch(`${API_BASE}/trips${query}`, { headers: getAuthHeaders() }).then((r) => r.json().then((data) => ({ data })));
+    return fetch(`${API_BASE}/api/v1/trips${query}`, { headers: getAuthHeaders() }).then((r) => r.json().then((data) => ({ data })));
   },
   get: (id: string) =>
-    fetch(`${API_BASE}/trips/${id}`, { headers: getAuthHeaders() }).then((r) => r.json().then((data) => ({ data }))),
+    fetch(`${API_BASE}/api/v1/trips/${id}`, { headers: getAuthHeaders() }).then((r) => r.json().then((data) => ({ data }))),
   create: (data: unknown) =>
-    fetch(`${API_BASE}/trips`, { method: "POST", headers: getAuthHeaders(), body: JSON.stringify(data) }).then((r) => r.json().then((d) => ({ data: d }))),
+    fetch(`${API_BASE}/api/v1/trips`, { method: "POST", headers: getAuthHeaders(), body: JSON.stringify(data) }).then((r) => r.json().then((d) => ({ data: d }))),
   update: (id: string, data: unknown) =>
-    fetch(`${API_BASE}/trips/${id}`, { method: "PATCH", headers: getAuthHeaders(), body: JSON.stringify(data) }).then((r) => r.json().then((d) => ({ data: d }))),
+    fetch(`${API_BASE}/api/v1/trips/${id}`, { method: "PATCH", headers: getAuthHeaders(), body: JSON.stringify(data) }).then((r) => r.json().then((d) => ({ data: d }))),
   delete: (id: string) =>
-    fetch(`${API_BASE}/trips/${id}`, { method: "DELETE", headers: getAuthHeaders() }),
+    fetch(`${API_BASE}/api/v1/trips/${id}`, { method: "DELETE", headers: getAuthHeaders() }),
   generate: (params: unknown) =>
-    fetch(`${API_BASE}/trips/generate`, { method: "POST", headers: getAuthHeaders(), body: JSON.stringify(params) }).then((r) => r.json().then((data) => ({ data }))),
+    fetch(`${API_BASE}/api/v1/trips/generate`, { method: "POST", headers: getAuthHeaders(), body: JSON.stringify(params) }).then((r) => r.json().then((data) => ({ data }))),
   invite: (tripId: string, email: string) =>
-    fetch(`${API_BASE}/trips/${tripId}/invite`, { method: "POST", headers: getAuthHeaders(), body: JSON.stringify({ email }) }).then((r) => r.json().then((data) => ({ data }))),
+    fetch(`${API_BASE}/api/v1/trips/${tripId}/invite`, { method: "POST", headers: getAuthHeaders(), body: JSON.stringify({ email }) }).then((r) => r.json().then((data) => ({ data }))),
 };
 
 // ── Account endpoints ──
 // Account bikes are not yet in the OpenAPI spec — using raw fetch until they are added.
 export const accountApi = {
   updateProfile: (data: unknown) =>
-    fetch(`${API_BASE}/account/profile`, { method: "PATCH", headers: getAuthHeaders(), body: JSON.stringify(data) }).then((r) => r.json().then((d) => ({ data: d }))),
+    fetch(`${API_BASE}/api/v1/account/profile`, { method: "PATCH", headers: getAuthHeaders(), body: JSON.stringify(data) }).then((r) => r.json().then((d) => ({ data: d }))),
   getSubscription: () =>
-    fetch(`${API_BASE}/account/subscription`, { headers: getAuthHeaders() }).then((r) => r.json().then((data) => ({ data }))),
+    fetch(`${API_BASE}/api/v1/account/subscription`, { headers: getAuthHeaders() }).then((r) => r.json().then((data) => ({ data }))),
   getBikes: () =>
-    fetch(`${API_BASE}/account/bikes`, { headers: getAuthHeaders() }).then((r) => r.json().then((data) => ({ data }))),
+    fetch(`${API_BASE}/api/v1/account/bikes`, { headers: getAuthHeaders() }).then((r) => r.json().then((data) => ({ data }))),
   addBike: (data: unknown) =>
-    fetch(`${API_BASE}/account/bikes`, { method: "POST", headers: getAuthHeaders(), body: JSON.stringify(data) }).then((r) => r.json().then((d) => ({ data: d }))),
+    fetch(`${API_BASE}/api/v1/account/bikes`, { method: "POST", headers: getAuthHeaders(), body: JSON.stringify(data) }).then((r) => r.json().then((d) => ({ data: d }))),
   updateBike: (id: string, data: unknown) =>
-    fetch(`${API_BASE}/account/bikes/${id}`, { method: "PATCH", headers: getAuthHeaders(), body: JSON.stringify(data) }).then((r) => r.json().then((d) => ({ data: d }))),
+    fetch(`${API_BASE}/api/v1/account/bikes/${id}`, { method: "PATCH", headers: getAuthHeaders(), body: JSON.stringify(data) }).then((r) => r.json().then((d) => ({ data: d }))),
   deleteBike: (id: string) =>
-    fetch(`${API_BASE}/account/bikes/${id}`, { method: "DELETE", headers: getAuthHeaders() }),
+    fetch(`${API_BASE}/api/v1/account/bikes/${id}`, { method: "DELETE", headers: getAuthHeaders() }),
   exportData: () =>
-    fetch(`${API_BASE}/account/export`, { method: "POST", headers: getAuthHeaders() }).then((r) => r.json().then((data) => ({ data }))),
+    fetch(`${API_BASE}/api/v1/account/export`, { method: "POST", headers: getAuthHeaders() }).then((r) => r.json().then((data) => ({ data }))),
   deleteAccount: () =>
-    fetch(`${API_BASE}/account`, { method: "DELETE", headers: getAuthHeaders() }),
+    fetch(`${API_BASE}/api/v1/account`, { method: "DELETE", headers: getAuthHeaders() }),
 };

@@ -194,7 +194,7 @@ const environment = {
   id: uuid(),
   name: 'Tarmoto — Local',
   values: [
-    { key: 'baseUrl', value: 'http://localhost:3000/api/v1', enabled: true },
+    { key: 'baseUrl', value: 'http://localhost:3000', enabled: true },
     { key: 'token', value: '', enabled: true },
   ],
   _postman_variable_scope: 'environment',

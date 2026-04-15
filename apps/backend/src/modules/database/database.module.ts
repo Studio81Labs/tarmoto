@@ -61,7 +61,6 @@ const entities = [
     ConfigModule.forFeature(databaseConfig),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
-<<<<<<< HEAD
       useFactory: (config: ConfigService) => {
         const isOpenApiExport = process.env['OPENAPI_EXPORT'] === 'true';
         return {
