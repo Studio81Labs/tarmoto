@@ -17,6 +17,7 @@ import { TilesModule } from './modules/tiles/index.js';
 import { WeatherModule } from './modules/weather/index.js';
 import { CommuteModule } from './modules/commute/index.js';
 import { ReviewsModule } from './modules/reviews/index.js';
+import { SharingModule } from './modules/sharing/index.js';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { ReviewsModule } from './modules/reviews/index.js';
     HazardsModule,
     SensorModule,
     RoadsModule,
+    SharingModule,
     RidesModule,
     EventsModule,
     SafetyModule,
