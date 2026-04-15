@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { pointToLatLng } from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
 import { UserContact } from '../../entities/user-contact.entity.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
@@ -104,17 +105,11 @@ export class UsersService {
       email: user.email,
       display_name: user.display_name,
       phone: user.phone,
-      home_location: this.pointToLatLng(user.home_location),
-      work_location: this.pointToLatLng(user.work_location),
+      home_location: pointToLatLng(user.home_location),
+      work_location: pointToLatLng(user.work_location),
       preferences: user.preferences,
       created_at: user.created_at.toISOString(),
     };
-  }
-
-  private pointToLatLng(point: unknown): { lat: number; lng: number } | null {
-    if (!point) return null;
-    const geo = point as { coordinates: [number, number] };
-    return { lat: geo.coordinates[1], lng: geo.coordinates[0] };
   }
 
   private toContactResponse(contact: UserContact): ContactResponseDto {
