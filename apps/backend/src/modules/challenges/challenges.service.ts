@@ -79,7 +79,7 @@ export class ChallengesService {
     challengeId: string,
   ): Promise<JoinChallengeResponseDto> {
     const challenge = await this.challengeRepo.findOne({
-      where: { id: challengeId },
+      where: { id: challengeId, is_active: true },
     });
     if (!challenge) {
       throw new NotFoundException('Challenge not found');
@@ -95,8 +95,9 @@ export class ChallengesService {
       user_id: userId,
     });
 
+    let saved: ChallengeEntry;
     try {
-      await this.entryRepo.save(entry);
+      saved = await this.entryRepo.save(entry);
     } catch (err: unknown) {
       if (
         typeof err === 'object' &&
@@ -111,7 +112,7 @@ export class ChallengesService {
 
     return {
       challenge_id: challengeId,
-      joined_at: entry.joined_at.toISOString(),
+      joined_at: saved.joined_at.toISOString(),
     };
   }
 

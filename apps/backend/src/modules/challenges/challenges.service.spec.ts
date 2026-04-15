@@ -50,10 +50,14 @@ describe('ChallengesService', () => {
       find: jest.fn().mockResolvedValue([mockEntry]),
       findOne: jest.fn().mockResolvedValue(mockEntry),
       count: jest.fn().mockResolvedValue(5),
-      create: jest
-        .fn()
-        .mockImplementation((data) => ({ ...mockEntry, ...data })),
-      save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
+      create: jest.fn().mockImplementation((data) => ({ ...data })),
+      save: jest.fn().mockImplementation((entity) =>
+        Promise.resolve({
+          ...entity,
+          id: entity.id ?? 'entry-new',
+          joined_at: entity.joined_at ?? new Date(),
+        }),
+      ),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -142,6 +146,14 @@ describe('ChallengesService', () => {
       challengeRepo.findOne!.mockResolvedValueOnce(null);
 
       await expect(service.join('user-1', 'missing')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('should throw NotFoundException for deactivated challenge', async () => {
+      challengeRepo.findOne!.mockResolvedValueOnce(null);
+
+      await expect(service.join('user-1', 'ch-1')).rejects.toThrow(
         NotFoundException,
       );
     });
