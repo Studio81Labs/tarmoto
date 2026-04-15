@@ -12,19 +12,21 @@ interface AuthState {
   setLoading: (loading: boolean) => void;
 }
 
+const isBrowser = typeof window !== 'undefined';
+
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
-  token: localStorage.getItem('tarmoto_token'),
-  isAuthenticated: !!localStorage.getItem('tarmoto_token'),
+  token: isBrowser ? localStorage.getItem('tarmoto_token') : null,
+  isAuthenticated: isBrowser ? !!localStorage.getItem('tarmoto_token') : false,
   isLoading: false,
 
   setAuth: (user, token) => {
-    localStorage.setItem('tarmoto_token', token);
+    if (isBrowser) localStorage.setItem('tarmoto_token', token);
     set({ user, token, isAuthenticated: true });
   },
 
   logout: () => {
-    localStorage.removeItem('tarmoto_token');
+    if (isBrowser) localStorage.removeItem('tarmoto_token');
     set({ user: null, token: null, isAuthenticated: false });
   },
 

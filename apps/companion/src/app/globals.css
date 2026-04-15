@@ -68,7 +68,9 @@
   }
 
   .map-panel {
-    @apply glass;
+    background: color-mix(in srgb, var(--color-slate-900, #0f172a) 80%, transparent);
+    backdrop-filter: blur(24px);
+    border: 1px solid color-mix(in srgb, var(--color-slate-700, #334155) 50%, transparent);
     border-radius: 1rem;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
   }
