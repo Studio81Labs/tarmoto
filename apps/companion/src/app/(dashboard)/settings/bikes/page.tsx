@@ -12,7 +12,7 @@ export default function BikesPage() {
 
   useEffect(() => {
     accountApi.getBikes().then(({ data }) => {
-      setBikes(data ?? []);
+      setBikes((data as unknown as Bike[]) ?? []);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);

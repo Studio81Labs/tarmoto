@@ -39,7 +39,7 @@ async function exportSpec(): Promise<void> {
   // complete: the database connection failure is expected and harmless because
   // the OpenAPI document is generated from metadata, not live data.
   const realExit = process.exit.bind(process) as (code?: number) => never;
-  (process as NodeJS.Process).exit = ((code?: number) => {
+  process.exit = ((code?: number) => {
     if (code !== 0 && !exportDone) {
       // Swallow premature exits from NestJS's error handler — we will call
       // realExit ourselves once the spec has been written.
@@ -78,7 +78,7 @@ async function exportSpec(): Promise<void> {
     await app.close();
   } finally {
     // Always restore process.exit before we return.
-    (process as NodeJS.Process).exit = realExit;
+    process.exit = realExit;
   }
 }
 

@@ -22,9 +22,13 @@ describe('createSwaggerConfig', () => {
     const config = createSwaggerConfig();
     const schemes = config.components?.securitySchemes ?? {};
     const bearerScheme = Object.values(schemes).find(
-      (s: any) => s.scheme === 'bearer',
-    ) as any;
+      (s) =>
+        typeof s === 'object' &&
+        s !== null &&
+        'scheme' in s &&
+        s.scheme === 'bearer',
+    ) as { type: string; scheme: string } | undefined;
     expect(bearerScheme).toBeDefined();
-    expect(bearerScheme.type).toBe('http');
+    expect(bearerScheme!.type).toBe('http');
   });
 });

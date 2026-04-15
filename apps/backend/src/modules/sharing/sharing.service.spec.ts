@@ -187,7 +187,9 @@ describe('SharingService', () => {
       } as unknown as SharedRide;
       sharedRideRepo.findOne!.mockResolvedValueOnce(privateShared);
 
-      const result = await service.getByToken('abc123def456abc123def456abc12345');
+      const result = await service.getByToken(
+        'abc123def456abc123def456abc12345',
+      );
 
       expect(result.id).toBe('ride-1');
     });
