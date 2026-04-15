@@ -16,6 +16,7 @@ import { SafetyModule } from './modules/safety/index.js';
 import { TilesModule } from './modules/tiles/index.js';
 import { WeatherModule } from './modules/weather/index.js';
 import { CommuteModule } from './modules/commute/index.js';
+import { ReviewsModule } from './modules/reviews/index.js';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { CommuteModule } from './modules/commute/index.js';
     TilesModule,
     WeatherModule,
     CommuteModule,
+    ReviewsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
