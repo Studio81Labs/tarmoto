@@ -20,6 +20,7 @@ import { ReviewsModule } from './modules/reviews/index.js';
 import { SharingModule } from './modules/sharing/index.js';
 import { FollowersModule } from './modules/followers/index.js';
 import { BadgesModule } from './modules/badges/index.js';
+import { ChallengesModule } from './modules/challenges/index.js';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { BadgesModule } from './modules/badges/index.js';
     ReviewsModule,
     FollowersModule,
     BadgesModule,
+    ChallengesModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
