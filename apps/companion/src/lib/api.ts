@@ -9,7 +9,15 @@ export const api = createApiClient({
   onUnauthorized: () => useAuthStore.getState().clearSession(),
 });
 
-// ── Register endpoint ──
+// ── Auth helpers ──
+
+export async function forgotPassword(email: string) {
+  await apiFetch("/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
 // Used by the registration page before Auth.js signIn.
 export async function registerUser(
   email: string,

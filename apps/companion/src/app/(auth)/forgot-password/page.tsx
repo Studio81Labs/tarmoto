@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { API_BASE } from "@/lib/config";
+import { forgotPassword } from "@/lib/api";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -13,16 +13,11 @@ export default function ForgotPasswordPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      await fetch(`${API_BASE}/auth/forgot-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      setSent(true);
+      await forgotPassword(email);
     } catch {
-      // Show success regardless to prevent email enumeration
-      setSent(true);
+      // Ignore errors — show success regardless to prevent email enumeration
     } finally {
+      setSent(true);
       setLoading(false);
     }
   };
