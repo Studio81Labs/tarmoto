@@ -1,0 +1,25 @@
+{
+  "name": "@tarmoto/openapi",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts",
+    "./client": "./client.ts",
+    "./types": "./types.ts"
+  },
+  "scripts": {
+    "generate": "bash scripts/generate.sh",
+    "generate:types": "openapi-typescript openapi.yaml -o types.ts",
+    "postman": "node scripts/generate-postman.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "openapi-fetch": "^0.13.0"
+  },
+  "devDependencies": {
+    "js-yaml": "^4.1.1",
+    "openapi-typescript": "^7.0.0",
+    "vitest": "^4.1.4"
+  }
+}

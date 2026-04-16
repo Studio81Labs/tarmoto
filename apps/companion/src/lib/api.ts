@@ -1,129 +1,86 @@
-import axios from 'axios';
-import { useAuthStore } from '@/stores/auth';
+import { createApiClient } from "@tarmoto/openapi/client";
+import { useAuthStore } from "@/stores/auth";
+import { API_HOST, API_BASE } from "@/lib/config";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? '/api';
-
-export const api = axios.create({
-  baseURL: API_BASE,
-  headers: { 'Content-Type': 'application/json' },
-  timeout: 30_000,
+// Typed openapi-fetch client for all spec-defined endpoints
+export const api = createApiClient({
+  baseUrl: API_HOST,
+  getToken: () => useAuthStore.getState().accessToken,
+  onUnauthorized: () => useAuthStore.getState().clearSession(),
 });
 
-// ── Request interceptor: attach JWT ──
-api.interceptors.request.use((config) => {
-  const accessToken = useAuthStore.getState().accessToken;
-  if (accessToken) {
-    config.headers.Authorization = `Bearer ${accessToken}`;
+// ── Auth helpers ──
+
+export async function forgotPassword(email: string) {
+  await apiFetch("/auth/forgot-password", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+// Used by the registration page before Auth.js signIn.
+export async function registerUser(
+  email: string,
+  password: string,
+  displayName: string,
+) {
+  const { data } = await apiFetch("/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ email, password, display_name: displayName }),
+  });
+  return data;
+}
+
+// ── Raw fetch helper for endpoints not yet in the OpenAPI spec ──
+// Checks res.ok and clears session on 401 (matching openapi-fetch client behavior).
+async function apiFetch<T>(path: string, init?: RequestInit): Promise<{ data: T }> {
+  const token = useAuthStore.getState().accessToken;
+  const headers: HeadersInit = {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(init?.headers instanceof Headers
+      ? Object.fromEntries(init.headers.entries())
+      : init?.headers ?? {}),
+  };
+  const { headers: _, ...rest } = init ?? {};
+  const res = await fetch(`${API_BASE}${path}`, { ...rest, headers });
+  if (!res.ok) {
+    if (res.status === 401) useAuthStore.getState().clearSession();
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { message?: string }).message ?? `Request failed (${res.status})`);
   }
-  return config;
-});
+  if (res.status === 204 || res.headers.get("content-length") === "0") {
+    return { data: undefined as T };
+  }
+  const data = await res.json() as T;
+  return { data };
+}
 
-// ── Response interceptor: handle 401 ──
-// Middleware handles redirecting to /login — we just clear the session here.
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      useAuthStore.getState().clearSession();
-    }
-    return Promise.reject(error);
-  },
-);
-
-// ── Auth endpoints ──
-// Login goes through Auth.js signIn() — only register remains here.
-export const authApi = {
-  register: (email: string, password: string, displayName: string) =>
-    api.post<{
-      access_token: string;
-      refresh_token: string;
-      expires_in: number;
-      user: any;
-    }>('/auth/register', { email, password, display_name: displayName }),
-};
-
-// ── Trip endpoints ──
+// ── Trip endpoints (not yet in spec) ──
 export const tripsApi = {
-  list: (params?: { page?: number; status?: string }) =>
-    api.get('/trips', { params }),
-
-  get: (id: string) => api.get(`/trips/${id}`),
-
-  create: (data: any) => api.post('/trips', data),
-
-  update: (id: string, data: any) => api.patch(`/trips/${id}`, data),
-
-  delete: (id: string) => api.delete(`/trips/${id}`),
-
-  generate: (params: any) =>
-    api.post('/trips/generate', params),
-
-  invite: (tripId: string, email: string) =>
-    api.post(`/trips/${tripId}/invite`, { email }),
+  list: (params?: { page?: number; status?: string }) => {
+    const defined = params
+      ? Object.fromEntries(Object.entries(params).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)]))
+      : undefined;
+    const query = defined ? "?" + new URLSearchParams(defined).toString() : "";
+    return apiFetch(`/trips${query}`);
+  },
+  get: (id: string) => apiFetch(`/trips/${id}`),
+  create: (data: unknown) => apiFetch("/trips", { method: "POST", body: JSON.stringify(data) }),
+  update: (id: string, data: unknown) => apiFetch(`/trips/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  delete: (id: string) => apiFetch(`/trips/${id}`, { method: "DELETE" }),
+  generate: (params: unknown) => apiFetch("/trips/generate", { method: "POST", body: JSON.stringify(params) }),
+  invite: (tripId: string, email: string) => apiFetch(`/trips/${tripId}/invite`, { method: "POST", body: JSON.stringify({ email }) }),
 };
 
-// ── Road quality endpoints ──
-export const roadsApi = {
-  getSegment: (id: string) => api.get(`/roads/${id}`),
-
-  search: (params: { bounds: string; quality?: string; surface?: string }) =>
-    api.get('/roads/search', { params }),
-
-  getHazards: (bounds: string) =>
-    api.get('/roads/hazards', { params: { bounds } }),
-
-  getFunZones: (bounds: string) =>
-    api.get('/roads/fun-zones', { params: { bounds } }),
-};
-
-// ── Ride endpoints ──
-export const ridesApi = {
-  list: (params?: { page?: number; sort?: string }) =>
-    api.get('/rides', { params }),
-
-  get: (id: string) => api.get(`/rides/${id}`),
-
-  getStats: () => api.get('/rides/stats'),
-
-  getRoadMap: () => api.get('/rides/road-map'),
-
-  export: (id: string, format: 'gpx' | 'csv') =>
-    api.get(`/rides/${id}/export`, { params: { format }, responseType: 'blob' }),
-};
-
-// ── Community endpoints ──
-export const communityApi = {
-  feed: (params?: { page?: number; region?: string; sort?: string }) =>
-    api.get('/community/feed', { params }),
-
-  getProfile: (riderId: string) => api.get(`/riders/${riderId}`),
-
-  follow: (riderId: string) => api.post(`/riders/${riderId}/follow`),
-
-  unfollow: (riderId: string) => api.delete(`/riders/${riderId}/follow`),
-
-  getCollections: (params?: { page?: number }) =>
-    api.get('/community/collections', { params }),
-
-  submitReview: (segmentId: string, data: { rating: number; text: string }) =>
-    api.post(`/roads/${segmentId}/reviews`, data),
-};
-
-// ── Account endpoints ──
+// ── Account endpoints (not yet in spec) ──
 export const accountApi = {
-  updateProfile: (data: any) => api.patch('/account/profile', data),
-
-  getSubscription: () => api.get('/account/subscription'),
-
-  getBikes: () => api.get('/account/bikes'),
-
-  addBike: (data: any) => api.post('/account/bikes', data),
-
-  updateBike: (id: string, data: any) => api.patch(`/account/bikes/${id}`, data),
-
-  deleteBike: (id: string) => api.delete(`/account/bikes/${id}`),
-
-  exportData: () => api.post('/account/export'),
-
-  deleteAccount: () => api.delete('/account'),
+  updateProfile: (data: unknown) => apiFetch("/account/profile", { method: "PATCH", body: JSON.stringify(data) }),
+  getSubscription: () => apiFetch("/account/subscription"),
+  getBikes: () => apiFetch("/account/bikes"),
+  addBike: (data: unknown) => apiFetch("/account/bikes", { method: "POST", body: JSON.stringify(data) }),
+  updateBike: (id: string, data: unknown) => apiFetch(`/account/bikes/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteBike: (id: string) => apiFetch(`/account/bikes/${id}`, { method: "DELETE" }),
+  exportData: () => apiFetch("/account/export", { method: "POST" }),
+  deleteAccount: () => apiFetch("/account", { method: "DELETE" }),
 };

@@ -1,33 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { api } from '@/lib/api';
-
-/**
- * Generic data fetching hook with loading/error states
- */
-export function useApi<T>(url: string, params?: Record<string, any>) {
-  const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { data: response } = await api.get(url, { params });
-      setData(response);
-    } catch (err: any) {
-      setError(err.response?.data?.message ?? 'Request failed');
-    } finally {
-      setLoading(false);
-    }
-  }, [url, JSON.stringify(params)]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  return { data, loading, error, refetch: fetchData };
-}
+import { useState, useEffect, useRef } from 'react';
 
 /**
  * Debounced value hook — useful for search inputs

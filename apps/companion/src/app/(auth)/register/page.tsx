@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
-import { authApi } from "@/lib/api";
+import { registerUser } from "@/lib/api";
 
 export default function RegisterPage() {
   const [displayName, setDisplayName] = useState("");
@@ -17,7 +17,7 @@ export default function RegisterPage() {
     setError("");
     setLoading(true);
     try {
-      await authApi.register(email, password, displayName);
+      await registerUser(email, password, displayName);
       const result = await signIn("credentials", {
         email,
         password,
@@ -29,7 +29,7 @@ export default function RegisterPage() {
         window.location.href = "/";
       }
     } catch (err: any) {
-      setError(err.response?.data?.message ?? "Registration failed");
+      setError(err instanceof Error ? err.message : "Registration failed");
     } finally {
       setLoading(false);
     }

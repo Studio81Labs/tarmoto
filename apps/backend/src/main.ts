@@ -1,8 +1,9 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module.js';
+import { createSwaggerConfig } from './config/swagger.config.js';
 
 async function bootstrap() {
   const isProd = process.env.TARMOTO_NODE_ENV === 'production';
@@ -20,13 +21,7 @@ async function bootstrap() {
   );
 
   if (!isProd) {
-    const config = new DocumentBuilder()
-      .setTitle('Tarmoto API')
-      .setDescription('Know the road before you ride it')
-      .setVersion('1.0')
-      .addBearerAuth()
-      .build();
-    const document = SwaggerModule.createDocument(app, config);
+    const document = SwaggerModule.createDocument(app, createSwaggerConfig());
     SwaggerModule.setup('api/docs', app, document);
   }
 

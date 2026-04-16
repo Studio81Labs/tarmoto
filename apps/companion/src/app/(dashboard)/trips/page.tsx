@@ -14,7 +14,8 @@ export default function TripListPage() {
 
   useEffect(() => {
     tripsApi.list().then(({ data }) => {
-      setTrips(data.data ?? []);
+      const body = data as unknown as { data?: Trip[] } | Trip[];
+      setTrips(Array.isArray(body) ? body : body?.data ?? []);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [setTrips]);

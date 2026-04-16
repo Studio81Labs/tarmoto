@@ -61,29 +61,35 @@ const entities = [
     ConfigModule.forFeature(databaseConfig),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        type: 'postgres',
-        host: config.get('database.host'),
-        port: config.get('database.port'),
-        database: config.get('database.database'),
-        username: config.get('database.username'),
-        password: config.get('database.password'),
-        entities,
-        migrations: [
-          InitSchema1713000000000,
-          AddPasswordHash1713100000000,
-          FixIsEmergencyDefault1713200000000,
-          AddUniqueActiveRide1713300000000,
-          AddCommunityTables1713400000000,
-          AddChallengeTables1713500000000,
-        ],
-        migrationsRun: true,
-        synchronize: false,
-        logging:
-          config.get('TARMOTO_NODE_ENV') === 'development'
-            ? ['error', 'warn', 'migration']
-            : ['error'],
-      }),
+      useFactory: (config: ConfigService) => {
+        const isOpenApiExport = process.env['OPENAPI_EXPORT'] === 'true';
+        return {
+          type: 'postgres',
+          host: config.get('database.host'),
+          port: config.get('database.port'),
+          database: config.get('database.database'),
+          username: config.get('database.username'),
+          password: config.get('database.password'),
+          entities,
+          migrations: [
+            InitSchema1713000000000,
+            AddPasswordHash1713100000000,
+            FixIsEmergencyDefault1713200000000,
+            AddUniqueActiveRide1713300000000,
+            AddCommunityTables1713400000000,
+            AddChallengeTables1713500000000,
+          ],
+          // During OpenAPI spec export we don't need a real DB connection.
+          // Disable retries and migrations so bootstrap completes without a DB.
+          migrationsRun: !isOpenApiExport,
+          synchronize: false,
+          retryAttempts: isOpenApiExport ? 0 : 10,
+          logging:
+            config.get('TARMOTO_NODE_ENV') === 'development'
+              ? ['error', 'warn', 'migration']
+              : ['error'],
+        };
+      },
     }),
   ],
 })
