@@ -8,19 +8,16 @@ The motorcycle app that tells you how good the actual road surface is — not ju
 
 ```bash
 git clone <repo-url> && cd tarmoto
-pnpm install
-pnpm db:up               # Start PostgreSQL + Redis in Docker
-pnpm build:shared        # Build @tarmoto/shared (backend depends on it)
-pnpm build:backend       # Compile backend (TypeORM reads compiled data-source)
-pnpm db:migrate          # Run migrations against Postgres
-pnpm dev:backend         # Start backend in watch mode
+pnpm bootstrap
 ```
 
-Then, in other terminals:
+That single command installs dependencies, starts Postgres + Redis, builds shared + backend, copies `.env.example` files, and runs migrations. See [Bootstrap Details](#bootstrap-details) below.
+
+After bootstrap:
 
 ```bash
-pnpm dev:mobile                  # Metro bundler
-pnpm ios                         # or `pnpm android`
+pnpm dev:backend                 # Backend watch mode
+pnpm dev:mobile                  # Metro bundler (then `pnpm ios` / `pnpm android`)
 pnpm dev:companion               # Next.js companion (web)
 pnpm dev:docs                    # Design docs viewer on :4200
 ```
@@ -31,6 +28,22 @@ pnpm dev:docs                    # Design docs viewer on :4200
 - pnpm >= 10
 - Docker & Docker Compose
 - Xcode (iOS) or Android Studio (Android) for mobile development
+
+## Manual Setup
+
+If `pnpm bootstrap` doesn't fit your environment:
+
+```bash
+pnpm install
+cp apps/backend/.env.example apps/backend/.env
+cp apps/mobile/.env.example apps/mobile/.env
+cp apps/companion/.env.example apps/companion/.env
+pnpm db:up               # Start PostgreSQL + Redis in Docker
+pnpm build:shared        # Build @tarmoto/shared (backend depends on it)
+pnpm build:backend       # Compile backend (TypeORM reads compiled data-source)
+pnpm db:migrate          # Run migrations against Postgres
+pnpm dev:backend         # Start backend in watch mode
+```
 
 ## Project Structure
 
@@ -59,6 +72,7 @@ tarmoto/
 
 | Command | Description |
 |---------|-------------|
+| `pnpm bootstrap` | Full dev environment setup |
 | `pnpm install` | Install workspace dependencies |
 | `pnpm dev:backend` | Start backend in watch mode |
 | `pnpm dev:mobile` | Start Metro bundler |
@@ -124,6 +138,18 @@ For database schema changes, see [docs/process/typeorm-migrations.md](./docs/pro
 
 - **PoC sensor** deploys to Cloudflare Pages via `deploy-poc.yml` on push to `main` (path filter `apps/poc-sensor/**`).
 - **Backend, mobile, companion** deploys are not yet wired. Target per the product spec is AWS (ECS, RDS, S3, CloudFront).
+
+## Bootstrap Details
+
+`pnpm bootstrap` runs `scripts/bootstrap.sh`, which:
+
+1. Checks prerequisites (node, pnpm, docker)
+2. Runs `pnpm install`
+3. Copies `.env.example` to `.env` for backend, mobile, and companion (if not present)
+4. Starts Postgres + Redis via Docker Compose and waits for Postgres to be healthy
+5. Builds `@tarmoto/shared` and the backend (TypeORM needs the compiled data-source)
+6. Runs TypeORM migrations
+7. Prints the next local commands
 
 ## Related Repos
 

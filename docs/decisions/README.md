@@ -45,13 +45,12 @@ Briefly: what else did we look at, and why not?
 
 ## Existing decisions
 
-_(empty — record ADRs here as they're accepted)_
+- [0001 — TypeORM over Prisma for the backend](./0001-typeorm-over-prisma.md)
 
 ## Candidates worth writing up
 
 Implicit decisions in the current codebase that would benefit from an ADR:
 
-- **TypeORM over Prisma** — driven by PostGIS support; Prisma lacks first-class geospatial.
 - **Metric-only backend** — clients convert for display to avoid unit drift in persisted data.
 - **Zustand for state on both mobile and companion** — consistency across surfaces.
 - **Next.js App Router for companion** — adopted April 2026 after migrating from a Vite + React dashboard.

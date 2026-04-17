@@ -7,13 +7,10 @@ Human-facing contribution guide. For agent-specific instructions see [AGENTS.md]
 1. Read [README.md](./README.md) for the high-level overview.
 2. Get the dev environment running:
    ```bash
-   pnpm install
-   pnpm db:up               # Start PostgreSQL + Redis in Docker
-   pnpm build:shared        # Build @tarmoto/shared (backend depends on it)
-   pnpm build:backend       # Compile backend (TypeORM reads compiled data-source)
-   pnpm db:migrate          # Run migrations against Postgres
+   pnpm bootstrap           # Installs, starts Postgres + Redis, builds, migrates
    pnpm dev:backend         # Start backend in watch mode
    ```
+   The bootstrap script is documented in [README.md#bootstrap-details](./README.md#bootstrap-details).
 3. Skim [docs/reference/architecture.md](./docs/reference/architecture.md) to understand the shape of the system.
 4. Read the relevant slice of [docs/specs/tarmoto-product-spec.md](./docs/specs/tarmoto-product-spec.md) before touching domain code — this spec is the source of truth.
 
