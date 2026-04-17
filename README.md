@@ -35,6 +35,9 @@ tarmoto/
 │   └── openapi/             OpenAPI spec generation from backend
 ├── docs/
 │   ├── specs/               Product spec (canonical)
+│   ├── decisions/           ADRs
+│   ├── reference/           Architecture overview + reference material
+│   ├── process/             Runbook, testing, migrations, DoD, issue workflow
 │   ├── api/                 OpenAPI spec + Swagger UI viewer
 │   ├── design/              Wireframes, ERD
 │   └── database/            PostgreSQL + PostGIS schema
@@ -125,6 +128,10 @@ pnpm test
 ## Related Repos
 
 - [GetTarmoto/web](https://github.com/GetTarmoto/web) — Landing page, PoC sensor, brand assets
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for branching, commit conventions, PR flow, and what not to commit. For a system overview see [docs/reference/architecture.md](./docs/reference/architecture.md).
 
 ## License
 

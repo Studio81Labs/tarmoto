@@ -1,0 +1,110 @@
+# Testing Strategy
+
+How we test Tarmoto. For CI details see `.github/workflows/`. For running locally see [../../CONTRIBUTING.md#before-opening-a-pr](../../CONTRIBUTING.md#before-opening-a-pr).
+
+## Principles
+
+- **Test behavior people depend on, not implementation.** Prefer tests that fail when a user-visible contract breaks, not when an internal helper changes signature.
+- **Prioritize risky areas.** First dibs on tests:
+  - `sensor` — road surface classification (ML inference inputs/outputs, fallback behavior)
+  - `rides` — ride lifecycle, segment calculation, GPS buffer handling
+  - `trips` — multi-day trip planning, waypoint sequencing
+  - `hazards` — report dedupe, expiry, spatial uniqueness
+  - `safety` — incident detection thresholds, alert fan-out
+  - `auth` — JWT lifetime, guards
+- **No enforced coverage threshold today.** Use judgment; cover the path a regression would hurt most.
+
+## Backend
+
+### Unit tests
+
+- **Location:** colocated next to source as `*.spec.ts`. Example: `src/modules/rides/rides.service.spec.ts`.
+- **Runner:** Jest (NestJS default). Config embedded in `apps/backend/package.json`.
+- **Commands:**
+  - `pnpm test` — all backend unit tests
+  - `pnpm --filter @tarmoto/backend test:watch` — watch mode
+  - `pnpm --filter @tarmoto/backend test:cov` — with coverage
+- **What goes here:** pure functions, service methods with mocked dependencies, edge cases for classification / scoring / geospatial logic. Mock `TypeORM` repositories via Jest stubs; mock `WeatherService`, `TileService` at the service boundary.
+
+### End-to-end (E2E) tests
+
+- **Location:** `apps/backend/test/*.e2e-spec.ts` with config in `apps/backend/test/jest-e2e.json`.
+- **Command:** `pnpm --filter @tarmoto/backend test:e2e`. Requires a running database — run `pnpm db:up` first.
+- **What goes here:** request → response cycles exercising real modules against a real Postgres (test DB). Existing coverage: app-level bootstrap. Expand as endpoints solidify.
+- **When to add an E2E test:**
+  - New public API endpoint
+  - Change to auth/JWT behavior
+  - Change to a safety-critical data path (ride recording, hazard reporting)
+  - WebSocket event contract changes
+- **When a unit test is enough:** pure classification/scoring logic, pure data transformations, geospatial helpers.
+
+### Mocking patterns
+
+- **TypeORM repositories:** inject `getRepositoryToken(Entity)` stubs returning hand-crafted data. Don't mock repository methods one-by-one — stub at the service's repository boundary.
+- **External services (weather, tile server):** mock at the service class boundary. Do not hit the network in tests.
+- **TensorFlow Lite on mobile:** don't try to run the model in tests. Mock `sensorService.classify()` to return a fixed label.
+
+## Mobile (React Native)
+
+### Current state
+
+Jest and `@testing-library/react-native` are installed but **no tests are written yet**. As features stabilize, start covering them.
+
+### Priority surfaces
+
+- `services/location` — GPS tracking, buffering under network loss
+- `services/sensor` — ML classification wrapper, fallback when model fails to load
+- `stores/rideStore` — ride lifecycle state transitions
+- `stores/hazardStore` — pending-report queue, optimistic apply
+
+### Test layout (target)
+
+When adding tests, colocate next to source (`screens/HomeScreen.test.tsx` next to `screens/HomeScreen.tsx`) or use `__tests__/` subfolders per feature — pick one convention and stick to it.
+
+### Command
+
+`pnpm --filter @tarmoto/mobile test` (once wired; currently the mobile workspace may not run tests through the root alias).
+
+## Companion (Next.js web)
+
+### Current state
+
+No test infrastructure yet. When adding, install either Jest + `@testing-library/react` or Vitest. Stick to one choice across companion.
+
+### Priority surfaces
+
+- `lib/api` — API client error handling, token refresh
+- `stores/*` — route-planning state, auth
+- `middleware.ts` — route protection
+- Form validation in `(auth)/` flows
+
+## What gets run in CI
+
+Each PR triggers:
+
+- `ci.yml` — builds `shared` + `backend`, runs lint, runs backend unit tests
+- `lint-pr.yml` — enforces conventional-commit PR titles with valid scope
+- `claude-code-review.yml` — auto-reviews the diff with Claude Code Review
+
+If CI fails, fix the root cause. Do not merge on a red build.
+
+## Adding a new test — quick recipe
+
+### Backend unit test
+
+1. Create `<module>/<thing>.spec.ts` next to the source.
+2. Use NestJS `Test.createTestingModule()` to build the graph with stubs.
+3. Assert the contract a caller depends on.
+
+### Backend E2E test
+
+1. Create `apps/backend/test/<feature>.e2e-spec.ts`.
+2. Bootstrap the app via the existing `app.e2e-spec.ts` pattern.
+3. Use `supertest` to hit real endpoints. Seed via a TypeORM repository if needed.
+4. Tear down between tests — don't leak state.
+
+### Mobile test (when you start)
+
+1. Create `src/<path>/<Name>.test.tsx`.
+2. Use `@testing-library/react-native` — render, assert visible text / semantics.
+3. Mock hooks (Zustand stores, services) with factories.
