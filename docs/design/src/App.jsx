@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import TarmotoWireframes from '../wireframes';
 import TarmotoMobileMockups from '../mobile-mockups';
+import TarmotoMobileConceptV2 from '../mobile-concept-v2';
 
 const tabs = [
   { id: 'wireframes', label: 'Wireframes' },
   { id: 'mobile', label: 'Mobile Mockups' },
+  { id: 'mobile-v2', label: 'Mobile Concept V2' },
   { id: 'erd', label: 'Database ERD' },
 ];
 
@@ -66,6 +68,7 @@ export default function App() {
       <div style={{ padding: 24 }}>
         {active === 'wireframes' && <TarmotoWireframes />}
         {active === 'mobile' && <TarmotoMobileMockups />}
+        {active === 'mobile-v2' && <TarmotoMobileConceptV2 />}
         {active === 'erd' && <ErdViewer />}
       </div>
     </div>
