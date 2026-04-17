@@ -84,7 +84,6 @@ Each PR triggers:
 
 - `ci.yml` — builds `shared` + `backend`, runs lint, runs backend unit tests
 - `lint-pr.yml` — enforces conventional-commit PR titles with valid scope
-- `claude-code-review.yml` — auto-reviews the diff with Claude Code Review
 
 If CI fails, fix the root cause. Do not merge on a red build.
 

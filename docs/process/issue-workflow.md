@@ -32,10 +32,6 @@ GitHub Issues are the source of truth for active implementation work. This repo 
 - If something is ambiguous, choose a safe default that stays inside the current product-spec guardrails and document the choice in the PR.
 - Favor tests for sensor classification, ride lifecycle, and safety-critical behavior before UI polish.
 
-## Automation available
-- **`@claude` in an issue or PR comment** triggers `claude.yml` for interactive help.
-- **`claude-code-review.yml`** auto-reviews every PR on open and after new commits.
-
 ## PR naming
 
 See [../../CONTRIBUTING.md#commit-messages-and-pr-titles](../../CONTRIBUTING.md#commit-messages-and-pr-titles). PR titles follow conventional commits — `lint-pr.yml` will reject non-conforming titles.

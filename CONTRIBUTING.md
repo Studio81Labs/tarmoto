@@ -66,9 +66,8 @@ Mobile and companion don't have tests yet — contribute tests alongside feature
 2. PR title follows conventional-commits (same format as squash-merge commit). Example: `feat(backend): add hazard report endpoint`.
 3. Link the GitHub issue your PR resolves.
 4. Confirm everything in [docs/process/definition-of-done.md](./docs/process/definition-of-done.md) applies.
-5. `claude-code-review.yml` will auto-review on open. Address its suggestions if they're valid; push back if they're wrong.
-6. Request human review. Address comments with follow-up commits — don't force-push to shared branches mid-review.
-7. Merge via **Squash and merge**. The squash commit message should be the final conventional-commit message.
+5. Request human review. Address comments with follow-up commits — don't force-push to shared branches mid-review.
+6. Merge via **Squash and merge**. The squash commit message should be the final conventional-commit message.
 
 ## Testing
 
@@ -107,4 +106,3 @@ See [docs/process/typeorm-migrations.md](./docs/process/typeorm-migrations.md). 
 ## Getting help
 
 - Open a GitHub issue with the `question` label.
-- Mention `@claude` in an issue or PR comment to invoke `claude.yml` for interactive AI help against the repo.
