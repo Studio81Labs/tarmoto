@@ -54,6 +54,18 @@ describe("mergeWithDefaults", () => {
     expect(merged.routeComments).toEqual({ email: true, push: true });
   });
 
+  it("ignores null channel payloads without crashing", () => {
+    // Regression: a previous guard (`!== undefined`) let null through and
+    // mergeChannels then threw on property access.
+    const payload = { rideLikes: null } as unknown as Parameters<
+      typeof mergeWithDefaults
+    >[0];
+    const merged = mergeWithDefaults(payload);
+    expect(merged.rideLikes).toEqual(
+      DEFAULT_NOTIFICATION_PREFERENCES.rideLikes,
+    );
+  });
+
   it("falls back to channel defaults for non-boolean values", () => {
     // rideLikes default is { email: false, push: true }.
     const merged = mergeWithDefaults({

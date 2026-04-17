@@ -57,8 +57,9 @@ export function mergeWithDefaults(
     "rideLikes",
     "tripCollaboration",
   ] as const) {
-    if (partial[key] !== undefined) {
-      merged[key] = mergeChannels(partial[key], merged[key]);
+    const value = partial[key];
+    if (value != null && typeof value === "object") {
+      merged[key] = mergeChannels(value, merged[key]);
     }
   }
   return merged;

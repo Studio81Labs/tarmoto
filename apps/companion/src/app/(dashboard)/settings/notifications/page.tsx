@@ -93,9 +93,16 @@ export default function NotificationsPage() {
 
   const isDirty = !preferencesEqual(prefs, serverPrefs);
 
+  // Clear a prior "saved"/"error" badge once the user starts editing, but
+  // never overwrite an in-flight "saving" state — doing so would re-enable
+  // the save button and allow a second concurrent save to race the first.
+  function clearTransientSaveState() {
+    setSaveState((s) => (s.kind === "saving" ? s : { kind: "idle" }));
+  }
+
   function setDigest(value: EmailDigestFrequency) {
     setPrefs((p) => ({ ...p, emailDigest: value }));
-    setSaveState({ kind: "idle" });
+    clearTransientSaveState();
   }
 
   function toggleChannel(
@@ -106,15 +113,16 @@ export default function NotificationsPage() {
       ...p,
       [key]: { ...p[key], [channel]: !p[key][channel] },
     }));
-    setSaveState({ kind: "idle" });
+    clearTransientSaveState();
   }
 
   function toggleMarketing() {
     setPrefs((p) => ({ ...p, marketingEmails: !p.marketingEmails }));
-    setSaveState({ kind: "idle" });
+    clearTransientSaveState();
   }
 
   async function save() {
+    if (saveState.kind === "saving") return;
     setSaveState({ kind: "saving" });
     try {
       await accountApi.updateNotificationPreferences(prefs);
