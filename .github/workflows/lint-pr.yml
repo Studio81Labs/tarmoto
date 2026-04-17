@@ -26,10 +26,13 @@ jobs:
           scopes: |
             backend
             mobile
+            companion
             poc
             shared
+            openapi
             infra
             ci
+            deps
             docs
           requireScope: false
           subjectPattern: ^(?![A-Z]).+$
