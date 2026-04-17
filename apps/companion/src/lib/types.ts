@@ -1,4 +1,4 @@
-import type * as GeoJSON from 'geojson';
+import type * as GeoJSON from "geojson";
 
 // ── User ──
 
@@ -8,14 +8,19 @@ export interface User {
   displayName: string;
   avatarUrl?: string;
   homeRegion?: string;
-  tier: 'free' | 'premium' | 'pro';
+  tier: "free" | "premium" | "pro";
   createdAt: string;
 }
 
 // ── Road Quality ──
 
-export type QualityTier = 'excellent' | 'good' | 'fair' | 'poor' | 'very-poor';
-export type SurfaceType = 'asphalt' | 'concrete' | 'cobblestone' | 'gravel' | 'dirt';
+export type QualityTier = "excellent" | "good" | "fair" | "poor" | "very-poor";
+export type SurfaceType =
+  | "asphalt"
+  | "concrete"
+  | "cobblestone"
+  | "gravel"
+  | "dirt";
 
 export interface RoadSegment {
   id: string;
@@ -62,14 +67,14 @@ export interface SegmentReview {
 // ── Hazards ──
 
 export type HazardType =
-  | 'pothole'
-  | 'gravel'
-  | 'oil'
-  | 'roadworks'
-  | 'animals'
-  | 'police'
-  | 'flooding'
-  | 'ice';
+  | "pothole"
+  | "gravel"
+  | "oil"
+  | "roadworks"
+  | "animals"
+  | "police"
+  | "flooding"
+  | "ice";
 
 export interface Hazard {
   id: string;
@@ -77,7 +82,7 @@ export interface Hazard {
   location: GeoJSON.Point;
   reporterId: string;
   reporterName: string;
-  severity: 'low' | 'medium' | 'high';
+  severity: "low" | "medium" | "high";
   note?: string;
   confirmations: number;
   createdAt: string;
@@ -90,7 +95,7 @@ export interface Trip {
   id: string;
   name: string;
   description?: string;
-  status: 'draft' | 'planned' | 'active' | 'completed';
+  status: "draft" | "planned" | "active" | "completed";
   days: TripDay[];
   parameters: TripParameters;
   collaborators: TripCollaborator[];
@@ -115,13 +120,13 @@ export interface Waypoint {
   id: string;
   name?: string;
   location: { lng: number; lat: number };
-  type: 'start' | 'via' | 'end' | 'fuel' | 'rest' | 'photo' | 'accommodation';
+  type: "start" | "via" | "end" | "fuel" | "rest" | "photo" | "accommodation";
 }
 
 export interface TripParameters {
   days: number;
   dailyKmTarget: number;
-  roadPreference: 'curvy' | 'scenic' | 'mixed' | 'direct';
+  roadPreference: "curvy" | "scenic" | "mixed" | "direct";
   surfacePreference: SurfaceType[];
   avoidHighways: boolean;
   avoidTolls: boolean;
@@ -133,7 +138,7 @@ export interface TripCollaborator {
   userId: string;
   displayName: string;
   avatarUrl?: string;
-  role: 'owner' | 'editor' | 'viewer';
+  role: "owner" | "editor" | "viewer";
 }
 
 // ── Rides ──
@@ -217,7 +222,7 @@ export interface RouteCollection {
 export interface POI {
   id: string;
   name: string;
-  type: 'accommodation' | 'fuel' | 'restaurant' | 'viewpoint' | 'cafe';
+  type: "accommodation" | "fuel" | "restaurant" | "viewpoint" | "cafe";
   location: { lng: number; lat: number };
   rating?: number;
   priceLevel?: number;
@@ -240,4 +245,23 @@ export interface PaginatedResponse<T> {
   page: number;
   pageSize: number;
   hasMore: boolean;
+}
+
+// ── Notification preferences ──
+
+export type EmailDigestFrequency = "daily" | "weekly" | "never";
+
+export interface NotificationChannels {
+  email: boolean;
+  push: boolean;
+}
+
+export interface NotificationPreferences {
+  emailDigest: EmailDigestFrequency;
+  hazardAlertsSavedRoutes: NotificationChannels;
+  newFollowers: NotificationChannels;
+  routeComments: NotificationChannels;
+  rideLikes: NotificationChannels;
+  tripCollaboration: NotificationChannels;
+  marketingEmails: boolean;
 }
