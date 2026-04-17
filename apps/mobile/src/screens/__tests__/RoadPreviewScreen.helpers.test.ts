@@ -25,6 +25,13 @@ describe("formatLengthKm", () => {
     expect(formatLengthKm(250)).toBe("250 m");
   });
 
+  // Round the meters before the unit pick so 999.7m doesn't render
+  // as "1000 m" when the rounded value would flip to km.
+  it("promotes to km when meters round up to 1000", () => {
+    expect(formatLengthKm(999.7)).toBe("1.0 km");
+    expect(formatLengthKm(999.4)).toBe("999 m");
+  });
+
   it("returns empty for non-positive or invalid input", () => {
     expect(formatLengthKm(0)).toBe("");
     expect(formatLengthKm(-5)).toBe("");

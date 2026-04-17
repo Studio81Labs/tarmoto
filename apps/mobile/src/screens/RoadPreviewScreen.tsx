@@ -57,35 +57,53 @@ export default function RoadPreviewScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(
-    async (mode: "initial" | "refresh") => {
-      if (!segmentId) {
-        setError("Missing segment id");
-        setLoading(false);
-        return;
-      }
-      if (mode === "initial") setLoading(true);
-      else setRefreshing(true);
-      setError(null);
-      try {
-        const data = await api.getRoadSegment(segmentId);
-        setSegment(data);
-      } catch (e) {
-        setError(
-          e instanceof Error ? e.message : "Failed to load road segment",
-        );
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    },
-    [segmentId],
-  );
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
-    load("initial");
-  }, [load]);
+    if (!segmentId) {
+      setError("Missing segment id");
+      setLoading(false);
+      return;
+    }
+    // Guard against a late response from an older segmentId overwriting
+    // the current screen state if the route changes mid-flight.
+    let ignore = false;
+    setLoading(true);
+    setError(null);
+    (async () => {
+      try {
+        const data = await api.getRoadSegment(segmentId);
+        if (!ignore) setSegment(data);
+      } catch (e) {
+        if (!ignore) {
+          setError(
+            e instanceof Error ? e.message : "Failed to load road segment",
+          );
+        }
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    })();
+    return () => {
+      ignore = true;
+    };
+  }, [segmentId, retryKey]);
+
+  const refresh = useCallback(async () => {
+    if (!segmentId) return;
+    setRefreshing(true);
+    setError(null);
+    try {
+      const data = await api.getRoadSegment(segmentId);
+      setSegment(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load road segment");
+    } finally {
+      setRefreshing(false);
+    }
+  }, [segmentId]);
+
+  const retry = useCallback(() => setRetryKey((k) => k + 1), []);
 
   if (loading) {
     return (
@@ -101,10 +119,7 @@ export default function RoadPreviewScreen() {
         <Icon name="alert-circle-outline" size={48} color={colors.danger} />
         <Text style={styles.errorTitle}>Unable to load road preview</Text>
         {error ? <Text style={styles.errorBody}>{error}</Text> : null}
-        <TouchableOpacity
-          style={styles.retryButton}
-          onPress={() => load("initial")}
-        >
+        <TouchableOpacity style={styles.retryButton} onPress={retry}>
           <Text style={styles.retryLabel}>Try again</Text>
         </TouchableOpacity>
       </View>
@@ -118,7 +133,7 @@ export default function RoadPreviewScreen() {
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          onRefresh={() => load("refresh")}
+          onRefresh={refresh}
           tintColor={colors.primary}
           colors={[colors.primary]}
         />

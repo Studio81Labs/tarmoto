@@ -7,7 +7,8 @@
 
 export function formatLengthKm(m: number): string {
   if (!Number.isFinite(m) || m <= 0) return "";
-  return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
+  const rounded = Math.round(m);
+  return rounded >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${rounded} m`;
 }
 
 export function formatSurface(surface: string): string {
