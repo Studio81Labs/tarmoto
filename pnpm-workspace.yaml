@@ -4,6 +4,8 @@ packages:
   - "docs/design"
 onlyBuiltDependencies:
   - "@nestjs/core"
-  - "unrs-resolver"
-  - "esbuild"
+  - '@scarf/scarf'
   - "bcrypt"
+  - "esbuild"
+  - sharp
+  - "unrs-resolver"
