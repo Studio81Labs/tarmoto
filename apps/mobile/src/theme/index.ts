@@ -150,7 +150,7 @@ export function qualityLabel(score: number): string {
 }
 
 /**
- * Map hazard type to icon name (react-native-vector-icons/MaterialCommunityIcons)
+ * Map hazard type to icon name (@react-native-vector-icons/material-design-icons)
  */
 export const hazardIcons: Record<string, string> = {
   pothole: 'circle-off-outline',

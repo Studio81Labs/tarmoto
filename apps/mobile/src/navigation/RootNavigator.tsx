@@ -7,8 +7,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const Icon = require('react-native-vector-icons/MaterialCommunityIcons').default as React.ComponentType<{ name: string; size: number; color: string }>;
+import Icon from '@react-native-vector-icons/material-design-icons';
 import { colors } from '@/theme';
 
 // Screens
