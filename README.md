@@ -4,24 +4,35 @@
 
 The motorcycle app that tells you how good the actual road surface is — not just how curvy it looks on a map. Crowdsourced road quality intelligence, real-time hazard alerts, and a multi-day trip planner that replaces hours of Street View scouting.
 
-## Status
+## Quick Start
 
-**Phase: Concept validation**
+```bash
+git clone <repo-url> && cd tarmoto
+pnpm install
+pnpm db:up               # Start PostgreSQL + Redis in Docker
+pnpm build:shared        # Build @tarmoto/shared (backend depends on it)
+pnpm build:backend       # Compile backend (TypeORM reads compiled data-source)
+pnpm db:migrate          # Run migrations against Postgres
+pnpm dev:backend         # Start backend in watch mode
+```
 
-- [x] Product Requirements Document
-- [x] Wireframes (8 core screens)
-- [x] System architecture
-- [x] Database schema
-- [x] PoC sensor app (accelerometer + GPS)
-- [x] Landing page + waitlist
-- [x] Brand identity
-- [x] Repository structure + monorepo setup
-- [ ] Accelerometer data validation (real rides)
-- [x] ML model specification
-- [x] API design (OpenAPI) — generated from NestJS swagger decorators via `pnpm generate:api`
-- [ ] MVP development
+Then, in other terminals:
 
-## Repository Structure
+```bash
+pnpm dev:mobile                  # Metro bundler
+pnpm ios                         # or `pnpm android`
+pnpm dev:companion               # Next.js companion (web)
+pnpm dev:docs                    # Design docs viewer on :4200
+```
+
+## Prerequisites
+
+- Node.js >= 24 (see `.nvmrc`)
+- pnpm >= 10
+- Docker & Docker Compose
+- Xcode (iOS) or Android Studio (Android) for mobile development
+
+## Project Structure
 
 ```
 tarmoto/
@@ -40,89 +51,79 @@ tarmoto/
 │   ├── process/             Runbook, testing, migrations, DoD, issue workflow
 │   ├── design/              Wireframes, ERD
 │   └── database/            PostgreSQL + PostGIS schema
+├── infra/docker/            docker-compose (Postgres + Redis)
 └── .github/                 CI workflows, issue templates
 ```
 
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `pnpm install` | Install workspace dependencies |
+| `pnpm dev:backend` | Start backend in watch mode |
+| `pnpm dev:mobile` | Start Metro bundler |
+| `pnpm ios` / `pnpm android` | Run mobile on simulator / emulator |
+| `pnpm dev:companion` | Start companion (Next.js) dev server |
+| `pnpm dev:poc` | Start PoC sensor dev server |
+| `pnpm dev:docs` | Design docs viewer (wireframes + ERD) on `:4200` |
+| `pnpm build:backend` | Build backend |
+| `pnpm build:companion` | Build companion |
+| `pnpm build:shared` | Build shared package |
+| `pnpm build:poc` | Build PoC sensor |
+| `pnpm db:up` | Start PostgreSQL + Redis via Docker |
+| `pnpm db:down` | Stop Docker services |
+| `pnpm db:migrate` | Build backend + run TypeORM migrations |
+| `pnpm generate:api` | Generate OpenAPI spec + TypeScript client from backend |
+| `pnpm lint` | Lint all packages |
+| `pnpm test` | Run backend tests |
+| `pnpm clean` | Remove `dist/` + `node_modules/` |
+
+## Development Workflow
+
+```
+Backend (NestJS + TypeORM + PostGIS)
+    ↓  pnpm generate:api
+OpenAPI spec + TypeScript client  (packages/openapi/ — gitignored)
+    ↓
+Mobile (React Native) & Companion (Next.js) consume @tarmoto/openapi
+```
+
+1. Make backend changes in `apps/backend/` with `@nestjs/swagger` decorators.
+2. Run `pnpm generate:api` to regenerate the OpenAPI spec and TypeScript client.
+3. Mobile and companion import the typed client from `@tarmoto/openapi`.
+
+For database schema changes, see [docs/process/typeorm-migrations.md](./docs/process/typeorm-migrations.md).
+
 ## Tech Stack
 
-- **Mobile**: React Native (bare)
-- **Maps**: MapLibre GL + custom vector tiles
-- **Backend**: NestJS
-- **Database**: PostgreSQL + PostGIS
-- **ML**: TensorFlow Lite (on-device) + Python (server)
-- **Real-time**: WebSockets + Redis Pub/Sub
-- **Cloud**: AWS (ECS, RDS, S3, CloudFront)
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────┐
-│  Client: React Native (iOS + Android + CarPlay/AA)  │
-│  On-device: TensorFlow Lite (road classification)   │
-└──────────────────────┬──────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────┐
-│  API Gateway: REST + WebSocket · JWT · Rate limiting │
-└──────────────────────┬──────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────┐
-│  Services: Route Engine │ Trip Planner │ Safety │    │
-│            Community │ Commute                       │
-└──────────────────────┬──────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────┐
-│  Processing: Road Quality ML │ Tile Server │ Events  │
-└──────────────────────┬──────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────┐
-│  Storage: PostgreSQL/PostGIS │ Redis │ S3 │ Timescale│
-└─────────────────────────────────────────────────────┘
-```
-
-## Key Differentiators
-
-1. **Crowdsourced road surface quality** — accelerometer-based, every rider is a sensor
-2. **Smart multi-day trip planner** — Fun Zone discovery, no more Street View scouting
-3. **Real-time hazard alerts** — Waze-style, motorcycle-specific
-4. **Commuter mode** — daily rider features, not just weekend touring
-5. **Road preview cards** — surface quality, curves, hazards, reviews per segment
-
-## Development
-
-```bash
-# Prerequisites: Node 24+, pnpm 10+
-
-# Install all dependencies
-pnpm install
-
-# Run backend in dev mode
-pnpm dev:backend
-
-# Run mobile app (Metro bundler)
-pnpm dev:mobile
-
-# Run on iOS / Android
-pnpm ios
-pnpm android
-
-# View wireframes + ERD locally (opens on :4200)
-pnpm dev:docs
-
-# Run all tests
-pnpm test
-```
+| Layer | Technology |
+|-------|------------|
+| Mobile | Bare React Native 0.85, Zustand, MapLibre GL |
+| Companion (web) | Next.js, TailwindCSS, Zustand, MapLibre GL |
+| Backend | NestJS 11, TypeORM, TypeScript strict |
+| Database | PostgreSQL 16 + PostGIS 3.4 |
+| Real-time | WebSockets + Redis Pub/Sub |
+| On-device ML | TensorFlow Lite (road-surface classifier) |
+| Contracts | OpenAPI 3.0 (generated from backend) |
+| Infra | pnpm workspaces, Docker Compose, GitHub Actions |
 
 ## Docs
 
-| Document | Description |
-|----------|-------------|
-| [Product spec](docs/specs/tarmoto-product-spec.md) | Product Requirements — vision, epics, 30 user stories, roadmap |
-| [Schema](docs/database/schema.sql) | PostgreSQL + PostGIS database schema (15 tables) |
-| [Wireframes](docs/design/wireframes.jsx) | Interactive wireframes — 8 core screens |
-| [ERD](docs/design/database_erd.html) | Entity relationship diagram |
-| [ML Spec](docs/ML_MODEL_SPEC.md) | Road surface classification model — architecture, features, training pipeline |
+- [Architecture overview](./docs/reference/architecture.md) — system shape, modules, data flows
+- [Product spec](./docs/specs/tarmoto-product-spec.md) — canonical PRD
+- [Runbook](./docs/process/runbook.md) — operational response
+- [Testing strategy](./docs/process/testing-strategy.md)
+- [TypeORM migrations](./docs/process/typeorm-migrations.md)
+- [Definition of Done](./docs/process/definition-of-done.md)
+- [Issue workflow](./docs/process/issue-workflow.md)
+- [ML model spec](./docs/ML_MODEL_SPEC.md)
+- [Database schema](./docs/database/schema.sql)
+- [Wireframes + ERD](./docs/design/)
 
-The OpenAPI spec is generated from NestJS swagger decorators — run `pnpm generate:api` to produce `packages/openapi/openapi.yaml` (gitignored).
+## Deployment
+
+- **PoC sensor** deploys to Cloudflare Pages via `deploy-poc.yml` on push to `main` (path filter `apps/poc-sensor/**`).
+- **Backend, mobile, companion** deploys are not yet wired. Target per the product spec is AWS (ECS, RDS, S3, CloudFront).
 
 ## Related Repos
 
