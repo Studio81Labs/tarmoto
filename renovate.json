@@ -1,0 +1,67 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":semanticCommits"],
+  "timezone": "Europe/Prague",
+  "schedule": ["before 4am on monday"],
+  "prConcurrentLimit": 10,
+  "prHourlyLimit": 0,
+  "labels": ["dependencies"],
+  "semanticCommitType": "chore",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 4am on monday"]
+  },
+  "packageRules": [
+    {
+      "description": "Group all minor + patch into one weekly PR",
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "all minor and patch"
+    },
+    {
+      "description": "Scope commits to backend",
+      "matchFileNames": ["apps/backend/**"],
+      "semanticCommitScope": "backend",
+      "addLabels": ["backend"]
+    },
+    {
+      "description": "Scope commits to mobile",
+      "matchFileNames": ["apps/mobile/**"],
+      "semanticCommitScope": "mobile",
+      "addLabels": ["mobile"]
+    },
+    {
+      "description": "Scope commits to companion",
+      "matchFileNames": ["apps/companion/**"],
+      "semanticCommitScope": "companion",
+      "addLabels": ["companion"]
+    },
+    {
+      "description": "Scope commits to poc when touching apps/poc-sensor",
+      "matchFileNames": ["apps/poc-sensor/**"],
+      "semanticCommitScope": "poc",
+      "addLabels": ["poc-sensor"]
+    },
+    {
+      "description": "Scope commits to shared",
+      "matchFileNames": ["packages/shared/**"],
+      "semanticCommitScope": "shared"
+    },
+    {
+      "description": "Scope commits to openapi",
+      "matchFileNames": ["packages/openapi/**"],
+      "semanticCommitScope": "openapi"
+    },
+    {
+      "description": "GitHub Actions bumps get the ci scope",
+      "matchManagers": ["github-actions"],
+      "semanticCommitScope": "ci",
+      "addLabels": ["ci"]
+    },
+    {
+      "description": "Never auto-open react-native or react majors (too invasive)",
+      "matchPackageNames": ["react-native", "react"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    }
+  ]
+}
