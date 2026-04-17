@@ -61,6 +61,20 @@ describe("formatRelativeTime", () => {
     ).toBe("2d ago");
   });
 
+  // Floor (not round) so labels don't jump a bucket early at half-unit
+  // boundaries — 90m must stay "1h ago", not "2h ago".
+  it("floors partial units instead of rounding them up", () => {
+    expect(formatRelativeTime(new Date(NOW - 90 * 60_000).toISOString())).toBe(
+      "1h ago",
+    );
+    expect(formatRelativeTime(new Date(NOW - 150 * 60_000).toISOString())).toBe(
+      "2h ago",
+    );
+    expect(
+      formatRelativeTime(new Date(NOW - 36 * 3_600_000).toISOString()),
+    ).toBe("1d ago");
+  });
+
   it("returns empty string for unparseable input", () => {
     expect(formatRelativeTime("not-a-date")).toBe("");
   });
