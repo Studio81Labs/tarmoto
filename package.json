@@ -5,7 +5,6 @@
   "description": "Tarmoto — Know the road before you ride it",
   "scripts": {
     "bootstrap": "bash scripts/bootstrap.sh",
-    "prepare": "husky",
     "dev:backend": "pnpm --filter @tarmoto/backend dev",
     "dev:mobile": "pnpm --filter @tarmoto/mobile start",
     "ios": "pnpm --filter @tarmoto/mobile ios",
@@ -24,16 +23,6 @@
     "test": "pnpm -r test",
     "generate:api": "pnpm --filter @tarmoto/openapi generate",
     "clean": "pnpm -r exec rm -rf dist node_modules"
-  },
-  "devDependencies": {
-    "@commitlint/cli": "^19.5.0",
-    "@commitlint/config-conventional": "^19.5.0",
-    "husky": "^9.1.0",
-    "lint-staged": "^15.2.0",
-    "prettier": "^3.3.0"
-  },
-  "lint-staged": {
-    "*.{ts,tsx,js,jsx,json,md,yml,yaml}": "prettier --write --ignore-unknown"
   },
   "engines": {
     "node": ">=24.0.0",
