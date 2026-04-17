@@ -92,12 +92,13 @@ export default function RoadPreviewScreen() {
   const refresh = useCallback(async () => {
     if (!segmentId) return;
     setRefreshing(true);
-    setError(null);
     try {
       const data = await api.getRoadSegment(segmentId);
       setSegment(data);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load road segment");
+    } catch {
+      // Swallow — `segment` still holds the last good data, so keep
+      // showing it rather than blowing the whole screen away into the
+      // error state. The user can pull to refresh again.
     } finally {
       setRefreshing(false);
     }
