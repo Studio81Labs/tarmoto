@@ -152,7 +152,7 @@ updates:
           - minor
           - patch
     commit-message:
-      prefix: "ci"
+      prefix: "chore(ci)"
     labels:
       - dependencies
       - ci
