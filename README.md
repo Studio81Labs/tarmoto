@@ -28,16 +28,16 @@ tarmoto/
 ├── apps/
 │   ├── mobile/              Bare React Native (iOS & Android)
 │   ├── backend/             NestJS API (serves mobile + web)
-│   ├── dashboard/           Web dashboard (Vite + React + TailwindCSS)
+│   ├── companion/           Web companion (Next.js + TailwindCSS)
 │   └── poc-sensor/          Road quality sensor PoC (Cloudflare Pages)
 ├── packages/
-│   └── shared/              Shared types, constants, DTOs
+│   ├── shared/              Shared types, constants, DTOs
+│   └── openapi/             OpenAPI spec generation from backend
 ├── docs/
-│   ├── prd/                 Product Requirements Document
+│   ├── specs/               Product spec (canonical)
 │   ├── api/                 OpenAPI spec + Swagger UI viewer
 │   ├── design/              Wireframes, ERD
-│   ├── database/            PostgreSQL + PostGIS schema
-│   └── scripts/             Utility scripts (analysis, OSM, issues)
+│   └── database/            PostgreSQL + PostGIS schema
 └── .github/                 CI workflows, issue templates
 ```
 
@@ -114,7 +114,7 @@ pnpm test
 
 | Document | Description |
 |----------|-------------|
-| [PRD](docs/prd/PRD.md) | Product Requirements — vision, epics, 30 user stories, roadmap |
+| [Product spec](docs/specs/tarmoto-product-spec.md) | Product Requirements — vision, epics, 30 user stories, roadmap |
 | [Schema](docs/database/schema.sql) | PostgreSQL + PostGIS database schema (15 tables) |
 | [Wireframes](docs/design/wireframes.jsx) | Interactive wireframes — 8 core screens |
 | [ERD](docs/design/database_erd.html) | Entity relationship diagram |
