@@ -1,0 +1,158 @@
+version: 2
+updates:
+  # Root workspace
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: "chore"
+      prefix-development: "chore"
+      include: "scope"
+    labels:
+      - dependencies
+
+  # Backend (NestJS)
+  - package-ecosystem: npm
+    directory: /apps/backend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: "chore(backend)"
+      prefix-development: "chore(backend)"
+    labels:
+      - dependencies
+      - backend
+
+  # Mobile (React Native)
+  - package-ecosystem: npm
+    directory: /apps/mobile
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    # React Native version bumps are intrusive — keep majors out of auto-open flow
+    ignore:
+      - dependency-name: react-native
+        update-types: [version-update:semver-major]
+      - dependency-name: react
+        update-types: [version-update:semver-major]
+    commit-message:
+      prefix: "chore(mobile)"
+      prefix-development: "chore(mobile)"
+    labels:
+      - dependencies
+      - mobile
+
+  # Companion (Next.js)
+  - package-ecosystem: npm
+    directory: /apps/companion
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: "chore(companion)"
+      prefix-development: "chore(companion)"
+    labels:
+      - dependencies
+      - companion
+
+  # PoC sensor (Vite + React)
+  - package-ecosystem: npm
+    directory: /apps/poc-sensor
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: "chore(poc)"
+      prefix-development: "chore(poc)"
+    labels:
+      - dependencies
+      - poc
+
+  # Shared package
+  - package-ecosystem: npm
+    directory: /packages/shared
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: "chore(shared)"
+      prefix-development: "chore(shared)"
+    labels:
+      - dependencies
+      - shared
+
+  # OpenAPI generator package
+  - package-ecosystem: npm
+    directory: /packages/openapi
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: "chore(openapi)"
+      prefix-development: "chore(openapi)"
+    labels:
+      - dependencies
+      - openapi
+
+  # GitHub Actions workflows
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: "ci"
+    labels:
+      - dependencies
+      - ci
