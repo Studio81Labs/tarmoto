@@ -14,7 +14,7 @@
     "clsx": "^2.1.0",
     "date-fns": "^4.1.0",
     "lucide-react": "^0.460.0",
-    "maplibre-gl": "^4.7.0",
+    "maplibre-gl": "^5.23.0",
     "next": "^15.0.0",
     "next-auth": "5.0.0-beta.31",
     "react": "^19.0.0",
