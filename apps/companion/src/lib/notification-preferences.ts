@@ -4,11 +4,6 @@ import type {
   EmailDigestFrequency,
 } from "@/lib/types";
 
-export const DEFAULT_CHANNELS: NotificationChannels = {
-  email: false,
-  push: false,
-};
-
 export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   emailDigest: "weekly",
   hazardAlertsSavedRoutes: { email: true, push: true },
@@ -62,17 +57,22 @@ export function mergeWithDefaults(
     "rideLikes",
     "tripCollaboration",
   ] as const) {
-    merged[key] = mergeChannels(partial[key]);
+    if (partial[key] !== undefined) {
+      merged[key] = mergeChannels(partial[key], merged[key]);
+    }
   }
   return merged;
 }
 
+// Overlay a partial channel payload onto the provided defaults so a server
+// returning only { email: true } for a key preserves the default push value.
 function mergeChannels(
-  partial: Partial<NotificationChannels> | null | undefined,
+  partial: Partial<NotificationChannels>,
+  defaults: NotificationChannels,
 ): NotificationChannels {
   return {
-    email: typeof partial?.email === "boolean" ? partial.email : false,
-    push: typeof partial?.push === "boolean" ? partial.push : false,
+    email: typeof partial.email === "boolean" ? partial.email : defaults.email,
+    push: typeof partial.push === "boolean" ? partial.push : defaults.push,
   };
 }
 

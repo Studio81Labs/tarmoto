@@ -35,19 +35,34 @@ describe("mergeWithDefaults", () => {
     );
   });
 
-  it("fills missing channel properties with false", () => {
-    const merged = mergeWithDefaults({ routeComments: { email: true } });
-    expect(merged.routeComments).toEqual({ email: true, push: false });
+  it("preserves channel defaults when the key is absent from the payload", () => {
+    // Regression: when the server returns only scalar fields, every channel
+    // key must keep its default (previously they were all wiped to false).
+    const merged = mergeWithDefaults({ emailDigest: "daily" });
+    expect(merged.hazardAlertsSavedRoutes).toEqual(
+      DEFAULT_NOTIFICATION_PREFERENCES.hazardAlertsSavedRoutes,
+    );
+    expect(merged.tripCollaboration).toEqual(
+      DEFAULT_NOTIFICATION_PREFERENCES.tripCollaboration,
+    );
   });
 
-  it("coerces non-boolean channel values to false", () => {
+  it("overlays a partial channel onto the key's default", () => {
+    // routeComments default is { email: false, push: true } — supplying only
+    // email should retain the default push value.
+    const merged = mergeWithDefaults({ routeComments: { email: true } });
+    expect(merged.routeComments).toEqual({ email: true, push: true });
+  });
+
+  it("falls back to channel defaults for non-boolean values", () => {
+    // rideLikes default is { email: false, push: true }.
     const merged = mergeWithDefaults({
       rideLikes: {
         email: "yes" as unknown as boolean,
         push: 1 as unknown as boolean,
       },
     });
-    expect(merged.rideLikes).toEqual({ email: false, push: false });
+    expect(merged.rideLikes).toEqual({ email: false, push: true });
   });
 });
 
