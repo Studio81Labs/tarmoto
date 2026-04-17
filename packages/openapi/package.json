@@ -15,7 +15,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "openapi-fetch": "^0.13.0"
+    "openapi-fetch": "^0.17.0"
   },
   "devDependencies": {
     "js-yaml": "^4.1.1",
