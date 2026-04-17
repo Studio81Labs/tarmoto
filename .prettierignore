@@ -1,0 +1,10 @@
+# Lockfiles — pnpm writes these in its own canonical format; prettier must
+# not rewrite quoting or the file diverges from `pnpm install` output and
+# breaks --frozen-lockfile in CI.
+pnpm-lock.yaml
+
+# Generated / vendor
+**/node_modules
+**/dist
+**/.next
+**/coverage
