@@ -71,10 +71,14 @@ export function useCommute(): UseCommuteResult {
         return;
       }
 
-      setRoute(primary);
       // getCommuteStatus returns the status for whichever route the backend
       // treats as primary — same route we just picked above.
       const next = await api.getCommuteStatus();
+      // Commit route + status atomically. If the status fetch fails, we
+      // leave both untouched so the screen doesn't render the new route's
+      // name next to the old route's hazards (and acknowledge() can't
+      // corrupt MMKV by writing IDs from one route into another's bucket).
+      setRoute(primary);
       setStatus(next);
       setPhase("ready");
     } catch (err) {
