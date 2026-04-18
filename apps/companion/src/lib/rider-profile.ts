@@ -185,9 +185,7 @@ export async function fetchRiderProfile(
   riderId: string,
   options: { signal?: AbortSignal; accessToken?: string | null } = {},
 ): Promise<{ profile: RiderProfileDetail; fromFallback: boolean }> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
+  const headers: Record<string, string> = {};
   if (options.accessToken) {
     headers.Authorization = `Bearer ${options.accessToken}`;
   }
