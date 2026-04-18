@@ -95,6 +95,11 @@ describe("formatHours", () => {
   it("rounds large hour counts", () => {
     expect(formatHours(412.7)).toBe("413 h");
   });
+
+  it("promotes values that would render as '100.0' into the integer branch", () => {
+    expect(formatHours(99.97)).toBe("100 h");
+    expect(formatHours(100)).toBe("100 h");
+  });
 });
 
 describe("formatJoinedLabel", () => {

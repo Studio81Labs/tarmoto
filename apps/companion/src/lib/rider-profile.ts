@@ -183,8 +183,11 @@ export function formatCount(value: number): string {
 
 export function formatHours(hours: number): string {
   if (hours < 1) return `${Math.round(hours * 60)} min`;
-  if (hours < 100) return `${hours.toFixed(1)} h`;
-  return `${Math.round(hours).toLocaleString()} h`;
+  // Mirror the formatKm/formatCount guard: values just under 100 round
+  // to "100.0" at one decimal and would render inconsistently next to
+  // 100's "100 h". Promote them into the integer branch.
+  if (hours >= 99.95) return `${Math.round(hours).toLocaleString()} h`;
+  return `${hours.toFixed(1)} h`;
 }
 
 function formatEarnedLabel(earnedAt: string): string {
