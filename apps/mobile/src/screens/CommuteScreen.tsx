@@ -14,7 +14,7 @@
  * layer can reuse via the same `useCommute()` hook.
  */
 
-import React, { ComponentProps, useEffect } from "react";
+import React, { ComponentProps } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -37,6 +37,10 @@ import {
 } from "@/theme";
 import { useCommute, type CommuteHazardView } from "@/hooks/useCommute";
 import type { CommuteStatus, Weather } from "@/types";
+import {
+  formatHazardType,
+  formatRelativeTime,
+} from "./RoadPreviewScreen.helpers";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -53,12 +57,10 @@ export default function CommuteScreen() {
     isRefreshing,
   } = useCommute();
 
-  // Auto-acknowledge when the rider leaves the screen, so the NEW markers
-  // naturally reset on their next visit without an extra tap. We do this on
-  // unmount rather than on mount so the rider first *sees* the NEW badges.
-  useEffect(() => {
-    return () => acknowledge();
-  }, [acknowledge]);
+  // NEW hazard markers stay sticky until the rider explicitly taps
+  // "Mark all seen" below. Avoid auto-acknowledging on unmount: the
+  // `acknowledge` callback's identity changes on every refresh, which
+  // would cause the cleanup to silently clear the pre-refresh diff.
 
   if (phase === "loading") {
     return (
@@ -410,23 +412,6 @@ function severityAlpha(severity: string): string {
     default:
       return "rgba(59, 130, 246, 0.15)";
   }
-}
-
-function formatHazardType(type: string): string {
-  return type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function formatRelativeTime(iso: string): string {
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return "";
-  const diffS = Math.max(0, Math.floor((Date.now() - t) / 1000));
-  if (diffS < 60) return "just now";
-  const mins = Math.floor(diffS / 60);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
 }
 
 function capitalize(s: string): string {
