@@ -5,11 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Printer, ArrowLeft } from "lucide-react";
 import type { Trip } from "@/lib/types";
-import {
-  TRIP_PRINT_STORAGE_KEY,
-  buildTurnList,
-  tripToGpx,
-} from "@/lib/trip-export";
+import { TRIP_PRINT_STORAGE_KEY, buildTurnList } from "@/lib/trip-export";
 import { formatDistance, formatDuration } from "@/lib/utils";
 import { DEMO_TRIP } from "@/lib/demo-trip";
 
@@ -115,8 +111,6 @@ function TripPrintPageContent() {
       </div>
     );
   }
-
-  const gpxHeader = tripToGpx(trip).split("\n").slice(0, 2).join(" ");
 
   return (
     <div className="trip-print min-h-screen bg-white text-slate-900">
@@ -226,9 +220,6 @@ function TripPrintPageContent() {
         <footer className="pt-4 border-t border-slate-200 text-xs text-slate-500">
           <p>
             Generated with Tarmoto Companion · {new Date().toLocaleDateString()}
-          </p>
-          <p className="mt-1 font-mono text-[10px] truncate" title={gpxHeader}>
-            {gpxHeader}
           </p>
         </footer>
       </article>
