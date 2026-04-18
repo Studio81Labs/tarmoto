@@ -7,27 +7,26 @@ import {
 import { colors } from "@/theme";
 
 describe("getQualityTileUrlTemplate", () => {
-  it("points at localhost in dev", () => {
-    expect(getQualityTileUrlTemplate(true)).toBe(
+  it("appends the MVT tile path to the given api base", () => {
+    expect(getQualityTileUrlTemplate("http://localhost:3000/v1")).toBe(
       "http://localhost:3000/v1/roads/tiles/{z}/{x}/{y}.mvt?layers=quality",
     );
-  });
-
-  it("points at api.tarmoto.app in prod", () => {
-    expect(getQualityTileUrlTemplate(false)).toBe(
+    expect(getQualityTileUrlTemplate("https://api.tarmoto.app/v1")).toBe(
       "https://api.tarmoto.app/v1/roads/tiles/{z}/{x}/{y}.mvt?layers=quality",
     );
   });
 
   it("keeps xyz placeholders unsubstituted so MapLibre can fill them", () => {
-    const template = getQualityTileUrlTemplate(true);
+    const template = getQualityTileUrlTemplate("http://localhost:3000/v1");
     expect(template).toContain("{z}");
     expect(template).toContain("{x}");
     expect(template).toContain("{y}");
   });
 
   it("requests only the quality MVT layer (hazards/surface are separate features)", () => {
-    expect(getQualityTileUrlTemplate(true)).toContain("layers=quality");
+    expect(getQualityTileUrlTemplate("http://localhost:3000/v1")).toContain(
+      "layers=quality",
+    );
   });
 });
 
@@ -72,14 +71,25 @@ describe("qualityLineStyle", () => {
     expect(widthAt20).toBeGreaterThan(widthAt8);
   });
 
-  it("fades segments with low confidence via lineOpacity", () => {
+  it("fades segments with low confidence via lineOpacity (0-100 scale per backend DTO)", () => {
     const expr = qualityLineStyle.lineOpacity as unknown as unknown[];
     expect(expr[0]).toBe("interpolate");
     expect(expr[2]).toEqual(["get", "confidence"]);
-    const opacityAt0 = expr[4] as number;
-    const opacityAt100 = expr[6] as number;
-    expect(opacityAt0).toBeLessThan(opacityAt100);
-    expect(opacityAt100).toBe(1);
+    // Backend serves confidence as an int 0-100 ("0-100, based on number of
+    // readings" — see road-segment.dto.ts). Stops must match that range.
+    const [, , , lowerStop, opacityAtLow, upperStop, opacityAtHigh] = expr as [
+      string,
+      unknown,
+      unknown,
+      number,
+      number,
+      number,
+      number,
+    ];
+    expect(lowerStop).toBe(0);
+    expect(upperStop).toBe(100);
+    expect(opacityAtLow).toBeLessThan(opacityAtHigh);
+    expect(opacityAtHigh).toBe(1);
   });
 });
 

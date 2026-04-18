@@ -11,19 +11,22 @@
  */
 
 import type { LineLayerStyle } from "@maplibre/maplibre-react-native";
+import { API_BASE_URL } from "@/config";
 import { colors } from "@/theme";
-
-const DEV_API_BASE = "http://localhost:3000/v1";
-const PROD_API_BASE = "https://api.tarmoto.app/v1";
 
 /**
  * Return the MapLibre xyz tile URL template for the road-quality MVT layer.
  * MapLibre substitutes `{z}/{x}/{y}` at fetch time; we keep the query string
  * on the end so only the quality layer is decoded on the wire.
+ *
+ * The `apiBase` argument defaults to the shared `API_BASE_URL` so production
+ * code never specifies it — the parameter only exists so unit tests can
+ * assert both dev and prod without mocking `__DEV__`.
  */
-export function getQualityTileUrlTemplate(isDev: boolean = __DEV__): string {
-  const base = isDev ? DEV_API_BASE : PROD_API_BASE;
-  return `${base}/roads/tiles/{z}/{x}/{y}.mvt?layers=quality`;
+export function getQualityTileUrlTemplate(
+  apiBase: string = API_BASE_URL,
+): string {
+  return `${apiBase}/roads/tiles/{z}/{x}/{y}.mvt?layers=quality`;
 }
 
 /**
@@ -53,7 +56,10 @@ export const QUALITY_STEP_BREAKS = [1.5, 2.5, 3.5, 4.5] as const;
  *   all zoom levels".
  *
  * `lineOpacity` — fade segments with low `confidence` so sparse data
- *   doesn't pretend to be authoritative.
+ *   doesn't pretend to be authoritative. `confidence` arrives from the
+ *   backend on a 0-100 integer scale (see
+ *   `apps/backend/.../road-segment.dto.ts`, "0-100, based on number of
+ *   readings"), not 0-1 — so the interpolation stops match that range.
  */
 export const qualityLineStyle: LineLayerStyle = {
   lineColor: [
