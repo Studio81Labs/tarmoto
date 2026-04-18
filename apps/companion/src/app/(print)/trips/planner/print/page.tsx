@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Printer, ArrowLeft } from "lucide-react";
@@ -30,6 +30,18 @@ import { DEMO_TRIP } from "@/lib/demo-trip";
 const hydratedTrips = new Map<string, Trip>();
 
 export default function TripPrintPage() {
+  // `useSearchParams` requires a Suspense boundary in Next.js 15 or the
+  // build errors with "Missing Suspense boundary with useSearchParams".
+  return (
+    <Suspense
+      fallback={<div className="p-10 text-sm text-slate-500">Loading…</div>}
+    >
+      <TripPrintPageContent />
+    </Suspense>
+  );
+}
+
+function TripPrintPageContent() {
   const params = useSearchParams();
   const tripId = params?.get("trip") ?? null;
   const [trip, setTrip] = useState<Trip | null>(null);
