@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useAuthStore } from '@/stores/auth';
 import {
   User, CreditCard, Shield, Bell, Bike, ChevronRight,
-  Download, Trash2,
+  Database,
 } from 'lucide-react';
 
 const SETTINGS_SECTIONS = [
@@ -14,6 +14,7 @@ const SETTINGS_SECTIONS = [
   { href: '/settings/privacy', icon: Shield, label: 'Privacy', description: 'Visibility, data sharing, consent' },
   { href: '/settings/bikes', icon: Bike, label: 'My Bikes', description: 'Manage your motorcycle garage' },
   { href: '/settings/notifications', icon: Bell, label: 'Notifications', description: 'Email, alerts, community updates' },
+  { href: '/settings/data', icon: Database, label: 'Data & Account', description: 'Export your data or delete your account' },
 ];
 
 export default function AccountPage() {
@@ -94,18 +95,6 @@ export default function AccountPage() {
         </button>
       </div>
 
-      {/* Danger zone */}
-      <div className="mt-8 rounded-2xl border border-red-500/20 p-6 space-y-4">
-        <h2 className="text-lg font-semibold text-red-400">Data &amp; Account</h2>
-        <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition">
-            <Download size={14} /> Export all data
-          </button>
-          <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/10 text-red-400 text-sm hover:bg-red-500/20 transition">
-            <Trash2 size={14} /> Delete account
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
