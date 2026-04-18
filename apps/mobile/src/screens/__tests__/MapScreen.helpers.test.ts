@@ -1,10 +1,33 @@
 import {
   DEV_MAP_STYLE_URL,
+  PASS_STATUS_COLORS,
   QUALITY_STEP_BREAKS,
   getQualityTileUrlTemplate,
+  passMarkerStyle,
+  passesToFeatureCollection,
   qualityLineStyle,
 } from "../MapScreen.helpers";
 import { colors } from "@/theme";
+import type { MountainPass } from "@/types";
+
+function makePass(overrides: Partial<MountainPass> = {}): MountainPass {
+  return {
+    id: "pass-1",
+    name: "Test Pass",
+    country_code: "AT",
+    region: "Tyrol",
+    lat: 47.1,
+    lng: 11.5,
+    elevation_m: 2000,
+    typical_open_month: 6,
+    typical_close_month: 10,
+    status: "open",
+    status_overridden: false,
+    notes: null,
+    last_updated: "2026-04-18T00:00:00.000Z",
+    ...overrides,
+  };
+}
 
 describe("getQualityTileUrlTemplate", () => {
   it("appends the MVT tile path to the given api base", () => {
@@ -96,5 +119,56 @@ describe("qualityLineStyle", () => {
 describe("DEV_MAP_STYLE_URL", () => {
   it("uses the MapLibre public demotiles style until a Tarmoto basemap ships", () => {
     expect(DEV_MAP_STYLE_URL).toMatch(/^https:\/\/demotiles\.maplibre\.org\//);
+  });
+});
+
+describe("passesToFeatureCollection", () => {
+  it("emits a FeatureCollection with one Point per pass and status carried on properties", () => {
+    const fc = passesToFeatureCollection([
+      makePass({ id: "a", status: "open", lng: 10, lat: 46 }),
+      makePass({ id: "b", status: "closed", lng: 11, lat: 47 }),
+    ]);
+    expect(fc.type).toBe("FeatureCollection");
+    expect(fc.features).toHaveLength(2);
+    expect(fc.features[0].geometry).toEqual({
+      type: "Point",
+      coordinates: [10, 46],
+    });
+    expect(fc.features[0].properties).toEqual({ id: "a", status: "open" });
+    expect(fc.features[1].properties.status).toBe("closed");
+  });
+
+  it("returns an empty collection for an empty input (avoids ShapeSource errors)", () => {
+    const fc = passesToFeatureCollection([]);
+    expect(fc.features).toEqual([]);
+  });
+});
+
+describe("passMarkerStyle", () => {
+  it("matches each PassStatus to its theme colour with unknown as fallback", () => {
+    const expr = passMarkerStyle.circleColor as unknown as unknown[];
+    expect(expr[0]).toBe("match");
+    expect(expr[1]).toEqual(["get", "status"]);
+    expect(expr[2]).toBe("open");
+    expect(expr[3]).toBe(PASS_STATUS_COLORS.open);
+    expect(expr[4]).toBe("closed");
+    expect(expr[5]).toBe(PASS_STATUS_COLORS.closed);
+    // Final element of `match` is the fallback — must be the unknown colour.
+    expect(expr[expr.length - 1]).toBe(PASS_STATUS_COLORS.unknown);
+  });
+
+  it("uses theme colours for the three statuses (no hardcoded hex drift)", () => {
+    expect(PASS_STATUS_COLORS.open).toBe(colors.success);
+    expect(PASS_STATUS_COLORS.closed).toBe(colors.danger);
+    expect(PASS_STATUS_COLORS.unknown).toBe(colors.textTertiary);
+  });
+
+  it("scales marker radius with zoom so passes are visible at country level", () => {
+    const expr = passMarkerStyle.circleRadius as unknown as unknown[];
+    expect(expr[0]).toBe("interpolate");
+    expect(expr[2]).toEqual(["zoom"]);
+    const radiusAtLowZoom = expr[4] as number;
+    const radiusAtHighZoom = expr[expr.length - 1] as number;
+    expect(radiusAtHighZoom).toBeGreaterThan(radiusAtLowZoom);
   });
 });

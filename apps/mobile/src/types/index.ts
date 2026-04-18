@@ -33,7 +33,7 @@ export interface User {
 }
 
 export interface UserPreferences {
-  units: 'metric' | 'imperial';
+  units: "metric" | "imperial";
   daily_km: number;
   min_quality: number;
   road_types: string[];
@@ -50,8 +50,14 @@ export interface EmergencyContact {
 
 // ── Road Segments ──
 
-export type SurfaceType = 'asphalt' | 'concrete' | 'cobblestone' | 'gravel' | 'dirt' | 'unknown';
-export type QualityClass = 'excellent' | 'good' | 'fair' | 'poor' | 'very_poor';
+export type SurfaceType =
+  | "asphalt"
+  | "concrete"
+  | "cobblestone"
+  | "gravel"
+  | "dirt"
+  | "unknown";
+export type QualityClass = "excellent" | "good" | "fair" | "poor" | "very_poor";
 
 export interface RoadSegment {
   id: string;
@@ -96,8 +102,8 @@ export interface FunZone {
 
 // ── Rides ──
 
-export type RideType = 'free' | 'commute' | 'trip' | 'tracked';
-export type RideStatus = 'active' | 'completed' | 'cancelled';
+export type RideType = "free" | "commute" | "trip" | "tracked";
+export type RideStatus = "active" | "completed" | "cancelled";
 
 export interface RideSummary {
   id: string;
@@ -133,10 +139,17 @@ export interface RideSegment {
 // ── Hazards ──
 
 export type HazardType =
-  | 'pothole' | 'gravel' | 'oil_spill' | 'roadworks'
-  | 'animals' | 'police' | 'flooding' | 'ice' | 'other';
+  | "pothole"
+  | "gravel"
+  | "oil_spill"
+  | "roadworks"
+  | "animals"
+  | "police"
+  | "flooding"
+  | "ice"
+  | "other";
 
-export type Severity = 'low' | 'medium' | 'high';
+export type Severity = "low" | "medium" | "high";
 
 export interface Hazard {
   id: string;
@@ -154,9 +167,17 @@ export interface Hazard {
 
 // ── Trips ──
 
-export type TripStatus = 'draft' | 'planned' | 'active' | 'completed';
-export type RoadPreference = 'curvy' | 'scenic' | 'fast' | 'mixed';
-export type WaypointType = 'start' | 'via' | 'fuel' | 'food' | 'coffee' | 'hotel' | 'photo' | 'end';
+export type TripStatus = "draft" | "planned" | "active" | "completed";
+export type RoadPreference = "curvy" | "scenic" | "fast" | "mixed";
+export type WaypointType =
+  | "start"
+  | "via"
+  | "fuel"
+  | "food"
+  | "coffee"
+  | "hotel"
+  | "photo"
+  | "end";
 
 export interface TripSummary {
   id: string;
@@ -205,7 +226,7 @@ export interface Waypoint {
 export interface TripMember {
   user_id: string;
   display_name: string;
-  role: 'owner' | 'admin' | 'member';
+  role: "owner" | "admin" | "member";
   joined_at: string;
 }
 
@@ -240,28 +261,54 @@ export interface CommuteStatus {
   weather: Weather;
   estimated_time_min: number;
   route_quality: number;
-  status: 'clear' | 'hazards' | 'weather_warning' | 'delays';
+  status: "clear" | "hazards" | "weather_warning" | "delays";
 }
 
 export interface Weather {
   temperature_c: number;
-  condition: 'clear' | 'cloudy' | 'rain' | 'storm' | 'snow' | 'fog' | 'ice';
+  condition: "clear" | "cloudy" | "rain" | "storm" | "snow" | "fog" | "ice";
   wind_kmh: number;
   precipitation_chance: number;
-  road_condition: 'dry' | 'wet' | 'icy' | 'unknown';
+  road_condition: "dry" | "wet" | "icy" | "unknown";
   description: string;
+}
+
+// ── Mountain Passes (US-11) ──
+
+export type PassStatus = "open" | "closed" | "unknown";
+
+export interface MountainPass {
+  id: string;
+  name: string;
+  country_code: string;
+  region: string | null;
+  lat: number;
+  lng: number;
+  elevation_m: number;
+  typical_open_month: number; // 1..12
+  typical_close_month: number; // 1..12
+  status: PassStatus;
+  status_overridden: boolean;
+  notes: string | null;
+  last_updated: string;
+}
+
+export interface CheckRouteForPassesResponse {
+  passes: MountainPass[];
+  closed_count: number;
+  unknown_count: number;
 }
 
 // ── Sensor Data ──
 
 export interface SensorReading {
-  t: number;      // Unix ms
-  ax: number;     // Accelerometer X
-  ay: number;     // Accelerometer Y
-  az: number;     // Accelerometer Z
-  gx?: number;    // Gyroscope X
-  gy?: number;    // Gyroscope Y
-  gz?: number;    // Gyroscope Z
+  t: number; // Unix ms
+  ax: number; // Accelerometer X
+  ay: number; // Accelerometer Y
+  az: number; // Accelerometer Z
+  gx?: number; // Gyroscope X
+  gy?: number; // Gyroscope Y
+  gz?: number; // Gyroscope Z
   lat?: number;
   lng?: number;
   speed?: number; // m/s
@@ -285,7 +332,7 @@ export interface SegmentClassification {
 // ── Route Calculation ──
 
 export interface RoutePreferences {
-  road_preference: 'fastest' | 'curvy' | 'scenic' | 'balanced';
+  road_preference: "fastest" | "curvy" | "scenic" | "balanced";
   min_quality: number;
   avoid_highway: boolean;
   avoid_toll: boolean;

@@ -5,7 +5,13 @@
  * pulling React Native or navigation into the module graph.
  */
 
-import type { TripDay, TripStatus, Waypoint, WaypointType } from "@/types";
+import type {
+  LatLng,
+  TripDay,
+  TripStatus,
+  Waypoint,
+  WaypointType,
+} from "@/types";
 
 export const DAILY_KM_PRESETS = [
   { label: "Relaxed", min: 100, max: 200 },
@@ -115,6 +121,26 @@ export function averageQuality(days: TripDay[]): number {
     0,
   );
   return weighted / totalKm;
+}
+
+/**
+ * Flatten every day's `route_geometry` into one polyline for the
+ * pass-check API. Days are concatenated in `day_number` order so the
+ * resulting line follows the actual trip sequence; days with fewer
+ * than two points are skipped because PostGIS' `ST_MakeLine` would
+ * collapse them into degenerate geometry. Returns an empty array when
+ * no usable geometry exists, letting callers short-circuit the network
+ * round-trip entirely.
+ */
+export function flattenTripRoute(days: TripDay[]): LatLng[] {
+  const ordered = [...days].sort((a, b) => a.day_number - b.day_number);
+  const out: LatLng[] = [];
+  for (const day of ordered) {
+    const geom = day.route_geometry;
+    if (!Array.isArray(geom) || geom.length < 2) continue;
+    out.push(...geom);
+  }
+  return out;
 }
 
 /**

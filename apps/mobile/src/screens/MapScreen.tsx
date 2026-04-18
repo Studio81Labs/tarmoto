@@ -1,31 +1,42 @@
 /**
- * MapScreen — US-1 road quality overlay on the map.
+ * MapScreen — US-1 road quality overlay + US-11 mountain pass markers.
  *
- * Renders a MapLibre basemap with a vector-tile overlay fed by the
- * backend's `/roads/tiles/{z}/{x}/{y}.mvt?layers=quality` endpoint.
- * Segments are coloured by `quality_score` (1..5) matching the rest of
- * the app's theme, and opacity fades with `confidence` so thinly-sampled
- * roads don't pretend to be authoritative.
+ * Renders a MapLibre basemap with two independent overlays toggled via
+ * the FAB column on the right. Both toggles persist in `useMapStore` so
+ * the preferences survive tab switches.
  *
- * The quality layer can be toggled on/off via the floating FAB; state
- * lives in `useMapStore` so the preference survives tab switches.
+ *   - Quality: vector-tile overlay fed by the backend's
+ *     `/roads/tiles/{z}/{x}/{y}.mvt?layers=quality` endpoint. Segments
+ *     are coloured by `quality_score` (1..5) and faded by `confidence`.
+ *
+ *   - Passes (US-11): point markers fetched once from `/passes`,
+ *     colour-coded by current open/closed/unknown status. The seasonal
+ *     status is computed server-side from the typical open/close window.
  *
  * Offline tile caching (US-1 AC #4) is intentionally out of scope for
- * this iteration — it's a substantial feature that belongs to US-18
- * "Offline maps and navigation".
+ * this iteration — it belongs to US-18 "Offline maps and navigation".
  */
-import React, { useCallback } from "react";
+import React, {
+  type ComponentProps,
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import {
   Camera,
+  CircleLayer,
   LineLayer,
   MapView,
   type RegionPayload,
+  ShapeSource,
   UserLocation,
   VectorSource,
 } from "@maplibre/maplibre-react-native";
 import Icon from "@react-native-vector-icons/material-design-icons";
+import { api } from "@/services/api";
 import { useMapStore } from "@/stores";
+import type { MountainPass } from "@/types";
 import {
   borderRadius,
   colors,
@@ -37,20 +48,49 @@ import {
 import {
   DEV_MAP_STYLE_URL,
   getQualityTileUrlTemplate,
+  PASS_STATUS_COLORS,
+  PASS_STATUS_LABELS,
+  passesToFeatureCollection,
+  passMarkerStyle,
   qualityLineStyle,
 } from "./MapScreen.helpers";
 
 type RegionChangeFeature = GeoJSON.Feature<GeoJSON.Point, RegionPayload>;
+type IconName = ComponentProps<typeof Icon>["name"];
 
 export default function MapScreen() {
   const center = useMapStore((s) => s.center);
   const zoom = useMapStore((s) => s.zoom);
   const showQualityOverlay = useMapStore((s) => s.showQualityOverlay);
+  const showPassesOverlay = useMapStore((s) => s.showPassesOverlay);
   const setCenter = useMapStore((s) => s.setCenter);
   const setZoom = useMapStore((s) => s.setZoom);
   const toggleQuality = useMapStore((s) => s.toggleQuality);
+  const togglePasses = useMapStore((s) => s.togglePasses);
 
   const tileUrl = getQualityTileUrlTemplate();
+
+  // US-11: load mountain passes once per mount. The seeded dataset is
+  // small (≈ a dozen rows), so a single global fetch is far cheaper than
+  // refetching on every camera move and lets us toggle the overlay
+  // without flicker. If the catalog grows past hundreds we'll switch to
+  // bbox-scoped fetching driven by `handleRegionDidChange`.
+  const [passes, setPasses] = useState<MountainPass[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .getPasses()
+      .then((next) => {
+        if (!cancelled) setPasses(next);
+      })
+      .catch(() => {
+        // Soft failure — the overlay is informational; toast/console
+        // belongs to a future generic error surface.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Sync settled camera back to the store so the next visit opens where
   // the rider left off. `onRegionDidChange` fires only after the gesture
@@ -95,19 +135,52 @@ export default function MapScreen() {
             />
           </VectorSource>
         ) : null}
+
+        {showPassesOverlay && passes.length > 0 ? (
+          <ShapeSource
+            id="tarmoto-passes"
+            shape={passesToFeatureCollection(passes)}
+          >
+            <CircleLayer
+              id="tarmoto-passes-markers"
+              sourceID="tarmoto-passes"
+              style={passMarkerStyle}
+            />
+          </ShapeSource>
+        ) : null}
       </MapView>
 
-      <QualityToggleFab active={showQualityOverlay} onPress={toggleQuality} />
+      <View style={styles.fabColumn}>
+        <ToggleFab
+          icon="road-variant"
+          label="Quality"
+          active={showQualityOverlay}
+          onPress={toggleQuality}
+        />
+        <ToggleFab
+          icon="terrain"
+          label="Passes"
+          active={showPassesOverlay}
+          onPress={togglePasses}
+        />
+      </View>
 
       {showQualityOverlay ? <QualityLegend /> : null}
+      {showPassesOverlay && passes.length > 0 ? (
+        <PassesLegend stacked={showQualityOverlay} />
+      ) : null}
     </View>
   );
 }
 
-function QualityToggleFab({
+function ToggleFab({
+  icon,
+  label,
   active,
   onPress,
 }: {
+  icon: IconName;
+  label: string;
   active: boolean;
   onPress: () => void;
 }) {
@@ -116,20 +189,18 @@ function QualityToggleFab({
       style={[styles.toggleFab, active ? styles.toggleFabActive : null]}
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={
-        active ? "Hide road quality overlay" : "Show road quality overlay"
-      }
+      accessibilityLabel={`${active ? "Hide" : "Show"} ${label.toLowerCase()} overlay`}
       accessibilityState={{ selected: active }}
     >
       <Icon
-        name="road-variant"
+        name={icon}
         size={20}
         color={active ? colors.textInverse : colors.textPrimary}
       />
       <Text
         style={[styles.toggleLabel, active ? styles.toggleLabelActive : null]}
       >
-        Quality
+        {label}
       </Text>
     </TouchableOpacity>
   );
@@ -159,6 +230,37 @@ function LegendSwatch({ color, label }: { color: string; label: string }) {
   );
 }
 
+function PassesLegend({ stacked }: { stacked: boolean }) {
+  return (
+    <View style={[styles.legend, stacked ? styles.legendPassesStacked : null]}>
+      <Text style={styles.legendTitle}>Mountain passes</Text>
+      <View style={styles.legendRow}>
+        <LegendDot
+          color={PASS_STATUS_COLORS.open}
+          label={PASS_STATUS_LABELS.open}
+        />
+        <LegendDot
+          color={PASS_STATUS_COLORS.closed}
+          label={PASS_STATUS_LABELS.closed}
+        />
+        <LegendDot
+          color={PASS_STATUS_COLORS.unknown}
+          label={PASS_STATUS_LABELS.unknown}
+        />
+      </View>
+    </View>
+  );
+}
+
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <View style={styles.swatchRow}>
+      <View style={[styles.dot, { backgroundColor: color }]} />
+      <Text style={styles.swatchLabel}>{label}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -167,10 +269,13 @@ const styles = StyleSheet.create({
   map: {
     flex: 1,
   },
-  toggleFab: {
+  fabColumn: {
     position: "absolute",
     top: spacing.xl,
     right: spacing.lg,
+    gap: spacing.sm,
+  },
+  toggleFab: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
@@ -205,6 +310,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     ...shadows.card,
+  },
+  // Applied only when the quality legend is also visible — shifts the
+  // passes legend just above it so both fit at the bottom without
+  // colliding with the FAB column on the right. Quality's legend is
+  // roughly 76 px tall (title + single row + padding); keep in sync if
+  // that ever changes. When quality is hidden the passes legend stays
+  // pinned at the default `bottom: spacing.xl` from `styles.legend`.
+  legendPassesStacked: {
+    bottom: spacing.xl + 76 + spacing.sm,
+  },
+  dot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
   legendTitle: {
     color: colors.textTertiary,

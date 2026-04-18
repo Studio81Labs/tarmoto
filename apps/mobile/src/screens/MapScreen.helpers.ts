@@ -10,9 +10,13 @@
  *   - `DEV_MAP_STYLE_URL` — default basemap until the Tarmoto style ships.
  */
 
-import type { LineLayerStyle } from "@maplibre/maplibre-react-native";
+import type {
+  CircleLayerStyle,
+  LineLayerStyle,
+} from "@maplibre/maplibre-react-native";
 import { API_BASE_URL } from "@/config";
 import { colors } from "@/theme";
+import type { MountainPass, PassStatus } from "@/types";
 
 /**
  * Return the MapLibre xyz tile URL template for the road-quality MVT layer.
@@ -99,4 +103,69 @@ export const qualityLineStyle: LineLayerStyle = {
     100,
     1,
   ],
+};
+
+// ── US-11 mountain passes ──
+
+/** Status → marker fill color. Mirrors PASS_LEGEND copy below. */
+export const PASS_STATUS_COLORS: Record<PassStatus, string> = {
+  open: colors.success,
+  closed: colors.danger,
+  unknown: colors.textTertiary,
+};
+
+/** Status → human label used in the legend and trip warning copy. */
+export const PASS_STATUS_LABELS: Record<PassStatus, string> = {
+  open: "Open",
+  closed: "Closed",
+  unknown: "Unknown",
+};
+
+/**
+ * Build a GeoJSON FeatureCollection from a list of passes so a single
+ * `ShapeSource` can drive both the marker and (potential future) label
+ * layers. We carry `status` on the feature properties so the data-driven
+ * style can colour markers without per-feature rendering churn.
+ */
+export function passesToFeatureCollection(
+  passes: MountainPass[],
+): GeoJSON.FeatureCollection<
+  GeoJSON.Point,
+  { id: string; status: PassStatus }
+> {
+  return {
+    type: "FeatureCollection",
+    features: passes.map((p) => ({
+      type: "Feature",
+      id: p.id,
+      properties: { id: p.id, status: p.status },
+      geometry: { type: "Point", coordinates: [p.lng, p.lat] },
+    })),
+  };
+}
+
+/**
+ * Marker style for the mountain-pass layer.
+ *
+ * `circleColor` — `match` expression on `status` so each marker takes its
+ *   colour from the status carried on the feature properties (no need
+ *   to split passes into separate sources per status).
+ *
+ * `circleRadius` — interpolates with zoom so passes stay visible at
+ *   country level (z6) and don't dominate the map up close (z14+).
+ */
+export const passMarkerStyle: CircleLayerStyle = {
+  circleColor: [
+    "match",
+    ["get", "status"],
+    "open",
+    PASS_STATUS_COLORS.open,
+    "closed",
+    PASS_STATUS_COLORS.closed,
+    PASS_STATUS_COLORS.unknown,
+  ],
+  circleRadius: ["interpolate", ["linear"], ["zoom"], 6, 5, 10, 7, 14, 10],
+  circleStrokeColor: colors.bg,
+  circleStrokeWidth: 2,
+  circleOpacity: 0.95,
 };
