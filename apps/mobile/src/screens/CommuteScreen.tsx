@@ -41,6 +41,7 @@ import {
   formatHazardType,
   formatRelativeTime,
 } from "./RoadPreviewScreen.helpers";
+import { capitalize } from "./TripScreens.helpers";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
@@ -413,10 +414,6 @@ function severityAlpha(severity: string): string {
     default:
       return "rgba(59, 130, 246, 0.15)";
   }
-}
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 // ── Styles ──
