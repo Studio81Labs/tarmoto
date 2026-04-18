@@ -198,6 +198,9 @@ importers:
       '@tarmoto/openapi':
         specifier: workspace:*
         version: link:../../packages/openapi
+      '@tarmoto/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       clsx:
         specifier: ^2.1.0
         version: 2.1.1
