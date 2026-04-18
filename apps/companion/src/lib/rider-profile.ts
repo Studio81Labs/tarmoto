@@ -165,15 +165,20 @@ export function formatJoinedLabel(
 }
 
 export function formatKm(km: number): string {
-  if (km >= 10_000) return `${Math.round(km / 1000).toLocaleString()}k km`;
-  if (km >= 1_000) return `${(km / 1000).toFixed(1)}k km`;
-  return `${Math.round(km).toLocaleString()} km`;
+  if (km < 1_000) return `${Math.round(km).toLocaleString()} km`;
+  const k = km / 1000;
+  // Values like 9,950 round to "10.0" at one decimal, which looked
+  // inconsistent next to 10,000's "10k km" output. Promote anything
+  // that would render as 10.0+ into the integer branch.
+  if (k >= 9.95) return `${Math.round(k).toLocaleString()}k km`;
+  return `${k.toFixed(1)}k km`;
 }
 
 export function formatCount(value: number): string {
-  if (value >= 10_000) return `${Math.round(value / 1000).toLocaleString()}k`;
-  if (value >= 1_000) return `${(value / 1000).toFixed(1)}k`;
-  return Math.round(value).toLocaleString();
+  if (value < 1_000) return Math.round(value).toLocaleString();
+  const k = value / 1000;
+  if (k >= 9.95) return `${Math.round(k).toLocaleString()}k`;
+  return `${k.toFixed(1)}k`;
 }
 
 export function formatHours(hours: number): string {
@@ -210,32 +215,42 @@ export async function fetchRiderProfile(
     headers.Authorization = `Bearer ${options.accessToken}`;
   }
 
+  // The network fetch and the body parse are in separate try blocks on
+  // purpose: only a network-level failure (endpoint genuinely not
+  // reachable) should fall back to the demo profile. A 200 with a
+  // malformed body is a backend contract regression and must surface as
+  // an error so the page shows its error state instead of fake data.
+  let res: Response;
   try {
-    const res = await fetch(`${API_BASE}/community/riders/${riderId}`, {
-      headers,
-      signal: options.signal,
-    });
-    if (res.ok) {
-      const data = (await res.json()) as RiderProfileDetail;
-      return { profile: normalizeProfile(data, riderId), fromFallback: false };
-    }
-    if (res.status === 404) {
-      throw new RiderProfileNotFoundError(riderId);
-    }
-    throw new RiderProfileFetchError(
-      `Profile request failed (${res.status})`,
-      res.status,
+    res = await fetch(
+      `${API_BASE}/community/riders/${encodeURIComponent(riderId)}`,
+      { headers, signal: options.signal },
     );
   } catch (err) {
-    if (err instanceof RiderProfileNotFoundError) throw err;
-    if (err instanceof RiderProfileFetchError) throw err;
     if ((err as { name?: string })?.name === "AbortError") throw err;
-    // Only reach here for network-level failures (fetch reject, JSON parse,
-    // etc.) — endpoint not reachable at all, so fall back to demo so the
-    // page stays usable in dev/CI before the backend route exists.
+    return { profile: buildDemoProfile(riderId), fromFallback: true };
   }
 
-  return { profile: buildDemoProfile(riderId), fromFallback: true };
+  if (res.ok) {
+    try {
+      const data = (await res.json()) as Partial<RiderProfileDetail>;
+      return { profile: normalizeProfile(data, riderId), fromFallback: false };
+    } catch (err) {
+      throw new RiderProfileFetchError(
+        err instanceof Error
+          ? `Profile payload is invalid (${err.message})`
+          : "Profile payload is invalid",
+        res.status,
+      );
+    }
+  }
+  if (res.status === 404) {
+    throw new RiderProfileNotFoundError(riderId);
+  }
+  throw new RiderProfileFetchError(
+    `Profile request failed (${res.status})`,
+    res.status,
+  );
 }
 
 export class RiderProfileNotFoundError extends Error {
@@ -276,10 +291,10 @@ async function mutateFollow(
 ): Promise<void> {
   const headers: Record<string, string> = {};
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
-  const res = await fetch(`${API_BASE}/users/${riderId}/follow`, {
-    method,
-    headers,
-  });
+  const res = await fetch(
+    `${API_BASE}/users/${encodeURIComponent(riderId)}/follow`,
+    { method, headers },
+  );
   if (!res.ok) {
     // 409 (already following) on POST and 404 (not following) on DELETE are
     // idempotent from the user's perspective — treat them as success so the
@@ -441,23 +456,84 @@ function normalizeProfile(
   raw: Partial<RiderProfileDetail>,
   riderId: string,
 ): RiderProfileDetail {
-  const fallback = buildDemoProfile(riderId);
+  // Build the demo profile lazily — on a well-formed API response (the
+  // normal case) we never read from it, and `buildDemoProfile` allocates
+  // bikes/badges/rides/collections we'd immediately throw away.
+  let fallback: RiderProfileDetail | null = null;
+  const getFallback = (): RiderProfileDetail => {
+    fallback ??= buildDemoProfile(riderId);
+    return fallback;
+  };
   // `??` would let an empty/whitespace display name from the API sneak
   // through and poison downstream formatters (avatar initials, etc.).
   const rawName =
     typeof raw.displayName === "string" ? raw.displayName.trim() : "";
   return {
     id: raw.id ?? riderId,
-    displayName: rawName || fallback.displayName,
+    displayName: rawName || getFallback().displayName,
     avatarUrl: raw.avatarUrl ?? undefined,
     bio: raw.bio,
     homeRegion: raw.homeRegion,
     bikes: Array.isArray(raw.bikes) ? raw.bikes : [],
-    stats: raw.stats ?? fallback.stats,
+    stats: normalizeStats(raw.stats, getFallback),
     badges: Array.isArray(raw.badges) ? raw.badges : [],
     isFollowing: Boolean(raw.isFollowing),
     recentRides: Array.isArray(raw.recentRides) ? raw.recentRides : [],
     collections: Array.isArray(raw.collections) ? raw.collections : [],
+  };
+}
+
+/**
+ * Guards every numeric field of `RiderStats` against `NaN`/`Infinity`/
+ * missing values so downstream formatters can't emit "NaN km" or similar.
+ * A non-object or missing payload returns the fallback wholesale.
+ * `getFallback` is a thunk so the caller can defer demo-profile generation
+ * until a field actually needs it.
+ */
+function normalizeStats(
+  rawStats: unknown,
+  getFallback: () => RiderProfileDetail,
+): RiderStats {
+  if (!rawStats || typeof rawStats !== "object") return getFallback().stats;
+  const s = rawStats as Partial<RiderStats>;
+  const isFiniteNumber = (v: unknown): v is number =>
+    typeof v === "number" && Number.isFinite(v);
+  const isValidDate = (v: unknown): v is string =>
+    typeof v === "string" && !Number.isNaN(new Date(v).getTime());
+  // All-valid is the hot path — skip demo generation entirely.
+  if (
+    isFiniteNumber(s.totalKm) &&
+    isFiniteNumber(s.totalRides) &&
+    isFiniteNumber(s.totalHours) &&
+    isFiniteNumber(s.roadsDiscovered) &&
+    isFiniteNumber(s.hazardsReported) &&
+    isValidDate(s.joinedAt)
+  ) {
+    return {
+      totalKm: s.totalKm,
+      totalRides: s.totalRides,
+      totalHours: s.totalHours,
+      roadsDiscovered: s.roadsDiscovered,
+      hazardsReported: s.hazardsReported,
+      joinedAt: s.joinedAt,
+    };
+  }
+  const fallback = getFallback().stats;
+  return {
+    totalKm: isFiniteNumber(s.totalKm) ? s.totalKm : fallback.totalKm,
+    totalRides: isFiniteNumber(s.totalRides)
+      ? s.totalRides
+      : fallback.totalRides,
+    totalHours: isFiniteNumber(s.totalHours)
+      ? s.totalHours
+      : fallback.totalHours,
+    roadsDiscovered: isFiniteNumber(s.roadsDiscovered)
+      ? s.roadsDiscovered
+      : fallback.roadsDiscovered,
+    hazardsReported: isFiniteNumber(s.hazardsReported)
+      ? s.hazardsReported
+      : fallback.hazardsReported,
+    joinedAt: isValidDate(s.joinedAt) ? s.joinedAt : fallback.joinedAt,
   };
 }
 

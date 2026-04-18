@@ -58,6 +58,13 @@ describe("formatKm", () => {
     expect(formatKm(12_340)).toBe("12k km");
     expect(formatKm(100_000)).toBe("100k km");
   });
+
+  it("promotes values that would round up to 10.0 into the integer branch", () => {
+    // Without the guard 9,950 would render "10.0k km" immediately before
+    // 10,000 renders "10k km" — visually inconsistent for neighbours.
+    expect(formatKm(9_950)).toBe("10k km");
+    expect(formatKm(9_999)).toBe("10k km");
+  });
 });
 
 describe("formatCount", () => {
@@ -69,6 +76,10 @@ describe("formatCount", () => {
   it("switches to k for larger counts", () => {
     expect(formatCount(1_500)).toBe("1.5k");
     expect(formatCount(25_000)).toBe("25k");
+  });
+
+  it("avoids the 9,950 → '10.0k' vs 10,000 → '10k' discontinuity", () => {
+    expect(formatCount(9_950)).toBe("10k");
   });
 });
 
@@ -366,6 +377,57 @@ describe("fetchRiderProfile", () => {
       (init as RequestInit).headers as Record<string, string>,
     ).toMatchObject({ Authorization: "Bearer token-123" });
   });
+
+  it("URL-encodes riderId so ids containing slashes or spaces stay on the right endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: "rider", displayName: "R" }),
+    });
+    global.fetch = fetchMock;
+    await fetchRiderProfile("rider/with space");
+    const [url] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/community/riders/rider%2Fwith%20space");
+  });
+
+  it("does not fall back when a 200 body is malformed JSON", async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new SyntaxError("Unexpected token");
+      },
+    });
+    await expect(fetchRiderProfile("rider-bad-json")).rejects.toMatchObject({
+      name: "RiderProfileFetchError",
+    });
+  });
+
+  it("sanitises non-finite numbers in the stats payload", async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: "r",
+        displayName: "R",
+        stats: {
+          totalKm: Number.NaN,
+          totalRides: 5,
+          totalHours: Number.POSITIVE_INFINITY,
+          roadsDiscovered: 10,
+          hazardsReported: -3,
+          joinedAt: "not-a-date",
+        },
+      }),
+    });
+    const { profile } = await fetchRiderProfile("r");
+    expect(Number.isFinite(profile.stats.totalKm)).toBe(true);
+    expect(Number.isFinite(profile.stats.totalHours)).toBe(true);
+    expect(profile.stats.totalRides).toBe(5);
+    expect(profile.stats.hazardsReported).toBe(-3);
+    // Invalid ISO strings are replaced with the fallback date, not the raw.
+    expect(profile.stats.joinedAt).not.toBe("not-a-date");
+  });
 });
 
 describe("follow / unfollow", () => {
@@ -396,6 +458,13 @@ describe("follow / unfollow", () => {
   it("treats 404 not-following as success on unfollow", async () => {
     fetchMock.mockResolvedValue({ ok: false, status: 404 });
     await expect(unfollowRider("rider-1", null)).resolves.toBeUndefined();
+  });
+
+  it("URL-encodes riderId in the follow path", async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 201 });
+    await followRider("rider/with space", null);
+    const [url] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("/users/rider%2Fwith%20space/follow");
   });
 
   it("rejects on other non-ok statuses", async () => {
