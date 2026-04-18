@@ -73,6 +73,7 @@ import {
   passesToFeatureCollection,
   passMarkerStyle,
 } from "./MapScreen.helpers";
+import { formatKm } from "./TripScreens.helpers";
 
 type RegionChangeFeature = GeoJSON.Feature<GeoJSON.Point, RegionPayload>;
 type IconName = ComponentProps<typeof Icon>["name"];
@@ -596,11 +597,6 @@ function FunZoneStat({ label, value }: { label: string; value: string }) {
       <Text style={styles.funZoneStatValue}>{value}</Text>
     </View>
   );
-}
-
-function formatKm(km: number): string {
-  if (km >= 100) return `${Math.round(km)} km`;
-  return `${km.toFixed(1)} km`;
 }
 
 function formatSeason(season: string): string {
