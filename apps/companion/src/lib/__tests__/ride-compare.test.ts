@@ -5,7 +5,6 @@ import {
   deltaDirection,
   diffQualityBreakdown,
   formatDelta,
-  formatStatValue,
   type ComparableRide,
 } from "../ride-compare";
 
@@ -209,13 +208,7 @@ describe("buildUnifiedRoutePreview", () => {
   });
 });
 
-describe("formatStatValue / formatDelta / deltaDirection", () => {
-  it("formatStatValue formats numbers and em-dashes missing values", () => {
-    expect(formatStatValue(12.345, 1)).toBe("12.3");
-    expect(formatStatValue(null, 0)).toBe("—");
-    expect(formatStatValue(Number.NaN, 2)).toBe("—");
-  });
-
+describe("formatDelta / deltaDirection", () => {
   it("formatDelta adds explicit +/− signs and renders zero without a sign", () => {
     expect(formatDelta(5, 0)).toBe("+5");
     expect(formatDelta(-3.2, 1)).toBe("−3.2");

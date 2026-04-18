@@ -10,7 +10,6 @@
  */
 
 import type { QualityTier } from "@/lib/types";
-import { QUALITY_CONFIG, QUALITY_TIERS } from "@/lib/utils";
 import {
   buildRoutePreview,
   computeQualityBreakdown,
@@ -300,14 +299,6 @@ function isValidLatLng(p: RoutePoint): boolean {
 
 // ── Display formatting ──
 
-export function formatStatValue(
-  value: number | null | undefined,
-  digits: number,
-): string {
-  if (value == null || Number.isNaN(value)) return "—";
-  return value.toFixed(digits);
-}
-
 /**
  * Signed delta string with fixed precision. Zero renders as "0" with no sign
  * so we don't visually scream "change" when nothing changed.
@@ -337,9 +328,3 @@ export function deltaDirection(
   const positive = rounded > 0;
   return positive === higherIsBetter ? "improved" : "regressed";
 }
-
-export function qualityTierColor(tier: QualityTier): string {
-  return QUALITY_CONFIG[tier].hex;
-}
-
-export const QUALITY_TIER_ORDER = QUALITY_TIERS;

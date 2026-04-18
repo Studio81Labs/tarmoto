@@ -15,13 +15,13 @@ import {
 import { api } from "@/lib/api";
 import type { QualityTier } from "@/lib/types";
 import { QUALITY_CONFIG } from "@/lib/utils";
+import { formatNumber } from "@/lib/ride-detail";
 import {
   buildUnifiedRoutePreview,
   computeStatRows,
   deltaDirection,
   diffQualityBreakdown,
   formatDelta,
-  formatStatValue,
   type ComparableRide,
   type DeltaDirection,
   type StatRow,
@@ -427,13 +427,13 @@ function StatsTable({ rows }: { rows: StatRow[] }) {
                 <tr key={row.key} className="text-slate-200">
                   <td className="py-2 pr-4">{row.label}</td>
                   <td className="py-2 pr-4 text-right tabular-nums">
-                    {formatStatValue(row.a, row.digits)}
+                    {formatNumber(row.a, row.digits)}
                     {row.unit && (
                       <span className="text-slate-500 ml-1">{row.unit}</span>
                     )}
                   </td>
                   <td className="py-2 pr-4 text-right tabular-nums">
-                    {formatStatValue(row.b, row.digits)}
+                    {formatNumber(row.b, row.digits)}
                     {row.unit && (
                       <span className="text-slate-500 ml-1">{row.unit}</span>
                     )}
