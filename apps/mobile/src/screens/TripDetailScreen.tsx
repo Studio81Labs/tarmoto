@@ -42,6 +42,7 @@ import type { MountainPass, Trip, TripDay, TripMember } from "@/types";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
 import {
   averageQuality,
+  capitalize,
   flattenTripRoute,
   formatDurationMin,
   formatKm,
@@ -421,7 +422,7 @@ function MemberRow({ member }: { member: TripMember }) {
       </Text>
       <View style={[styles.roleBadge, { borderColor: badgeColor }]}>
         <Text style={[styles.roleLabel, { color: badgeColor }]}>
-          {formatRole(member.role)}
+          {capitalize(member.role)}
         </Text>
       </View>
     </View>
@@ -448,10 +449,6 @@ function roleBadgeColor(role: TripMember["role"]): string {
     case "member":
       return colors.textTertiary;
   }
-}
-
-function formatRole(role: TripMember["role"]): string {
-  return role.charAt(0).toUpperCase() + role.slice(1);
 }
 
 function ClosedPassesWarning({ passes }: { passes: MountainPass[] }) {

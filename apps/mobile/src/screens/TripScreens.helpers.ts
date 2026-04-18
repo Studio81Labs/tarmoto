@@ -52,15 +52,20 @@ export function formatDurationMin(minutes: number): string {
   return `${h}h ${m}m`;
 }
 
+export function capitalize(s: string): string {
+  if (!s) return s;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 export function formatStatus(status: TripStatus): string {
-  return status.charAt(0).toUpperCase() + status.slice(1);
+  return capitalize(status);
 }
 
 export function formatWaypointType(t: WaypointType): string {
   // "via" reads oddly capitalised — leave it lowercase so "Via" doesn't
   // appear as a proper noun in the UI.
   if (t === "via") return "Waypoint";
-  return t.charAt(0).toUpperCase() + t.slice(1);
+  return capitalize(t);
 }
 
 export const WAYPOINT_ICONS: Record<WaypointType, string> = {
