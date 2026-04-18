@@ -2,6 +2,17 @@ import type { QualityTier, HazardType } from "@/lib/types";
 
 // ── Road Quality ──
 
+// Canonical ordering used everywhere the app renders tier lists (legends,
+// breakdown charts, filter panels). Keep this in sync with the `QualityTier`
+// string union.
+export const QUALITY_TIERS = [
+  "excellent",
+  "good",
+  "fair",
+  "poor",
+  "very-poor",
+] as const satisfies readonly QualityTier[];
+
 export const QUALITY_CONFIG: Record<
   QualityTier,
   { label: string; color: string; bg: string; hex: string }

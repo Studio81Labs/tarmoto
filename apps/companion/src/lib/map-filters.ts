@@ -1,16 +1,11 @@
 import type { SurfaceType } from "@tarmoto/shared";
+import { QUALITY_TIERS } from "@/lib/utils";
 
 export type QualityTier = "excellent" | "good" | "fair" | "poor" | "very-poor";
 
 export type FilterableSurface = Exclude<SurfaceType, "unknown">;
 
-export const QUALITY_TIERS: readonly QualityTier[] = [
-  "excellent",
-  "good",
-  "fair",
-  "poor",
-  "very-poor",
-] as const;
+export { QUALITY_TIERS };
 
 export const FILTERABLE_SURFACES: readonly FilterableSurface[] = [
   "asphalt",

@@ -9,15 +9,7 @@
  */
 
 import type { QualityTier } from "@/lib/types";
-import { QUALITY_CONFIG, scoreToTier } from "@/lib/utils";
-
-export const QUALITY_TIERS = [
-  "excellent",
-  "good",
-  "fair",
-  "poor",
-  "very-poor",
-] as const satisfies readonly QualityTier[];
+import { QUALITY_CONFIG, QUALITY_TIERS, scoreToTier } from "@/lib/utils";
 
 // Null-safe wrapper around `scoreToTier` from utils. Threshold-based so a
 // reading of 4.5 maps to "excellent" — aligned with the rest of the app.

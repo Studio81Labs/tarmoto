@@ -180,6 +180,11 @@ export default function RideDetailPage() {
 
   const rideName = `Ride on ${new Date(ride.started_at).toLocaleDateString()}`;
   const avgTier = readingToTier(ride.avg_road_quality);
+  // Guard against empty strings from the API; the `as unknown as RideDetail`
+  // cast bypasses the type system, so we can't assume a non-empty value.
+  const rideTypeLabel = ride.ride_type
+    ? ride.ride_type[0]!.toUpperCase() + ride.ride_type.slice(1)
+    : "Unknown";
 
   return (
     <PageShell
@@ -195,8 +200,8 @@ export default function RideDetailPage() {
           <div className="flex-1 min-w-0">
             <h1 className="text-2xl font-bold truncate">{rideName}</h1>
             <p className="text-sm text-slate-400 mt-0.5">
-              {new Date(ride.started_at).toLocaleString()} ·{" "}
-              {ride.ride_type[0]!.toUpperCase() + ride.ride_type.slice(1)} ride
+              {new Date(ride.started_at).toLocaleString()} · {rideTypeLabel}{" "}
+              ride
             </p>
           </div>
           <button
