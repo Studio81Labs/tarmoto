@@ -13,7 +13,7 @@
  * get a clear error banner and can retry with different parameters.
  */
 
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -90,7 +90,19 @@ export default function TripCreateScreen() {
   // creating another. Any parameter change invalidates the draft (its
   // server-side fields are now stale) so the next Generate starts fresh.
   const [draftTripId, setDraftTripId] = useState<string | null>(null);
-  const invalidateDraft = useCallback(() => setDraftTripId(null), []);
+  // Refs that handleGenerate reads across await points: `submittingRef`
+  // lets setters detect an in-flight submit even before a re-render has
+  // propagated the `submitting` state, and `dirtySinceSubmitRef` records
+  // whether the user edited a param between `createTrip` firing and it
+  // resolving. If they did, we skip caching the returned draft id so a
+  // retry can't reuse a draft whose server-side params no longer match
+  // the form — closes the race the bugbot flagged.
+  const submittingRef = useRef(false);
+  const dirtySinceSubmitRef = useRef(false);
+  const invalidateDraft = useCallback(() => {
+    if (submittingRef.current) dirtySinceSubmitRef.current = true;
+    setDraftTripId(null);
+  }, []);
 
   const setTitle = useCallback(
     (v: string) => {
@@ -147,6 +159,8 @@ export default function TripCreateScreen() {
 
   const handleGenerate = useCallback(async () => {
     if (!canSubmit) return;
+    submittingRef.current = true;
+    dirtySinceSubmitRef.current = false;
     setSubmitting(true);
     setErrorMessage(null);
     try {
@@ -167,7 +181,13 @@ export default function TripCreateScreen() {
           daily_km_max: dailyKm.max,
         });
         tripId = trip.id;
-        setDraftTripId(tripId);
+        // Only cache the id for reuse if the parameters we just submitted
+        // are still current. If the user edited mid-flight this request's
+        // draft becomes single-use — the next Generate will create a new
+        // one that matches the new form state.
+        if (!dirtySinceSubmitRef.current) {
+          setDraftTripId(tripId);
+        }
       }
       const bbox = bboxAroundPoint(
         startLocation.lat,
@@ -185,6 +205,7 @@ export default function TripCreateScreen() {
       // Also pop an alert so the user can't miss it behind the keyboard.
       Alert.alert("Generation failed", message);
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }, [

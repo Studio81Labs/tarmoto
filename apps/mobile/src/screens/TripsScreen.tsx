@@ -42,10 +42,13 @@ export default function TripsScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Read the latest cached count inside the callback rather than closing
-  // over `trips.length`. Otherwise `load`'s identity flips as soon as the
-  // first fetch lands, which would re-run `useFocusEffect` on the same
-  // focus session and fire a spurious second request.
+  // `load`'s two callers want different UX: the initial mount with no
+  // cache shows the full-screen spinner, while a re-focus after we
+  // already have trips should just flip the RefreshControl. Read cache
+  // presence from a ref so the callback identity stays stable — if it
+  // closed over `trips.length` directly, `load` would be recreated each
+  // time the list landed, causing `useFocusEffect` to re-fire on the
+  // same focus session.
   const hasCachedTripsRef = useRef(trips.length > 0);
   useEffect(() => {
     hasCachedTripsRef.current = trips.length > 0;
@@ -81,17 +84,17 @@ export default function TripsScreen() {
     [setTrips],
   );
 
-  useEffect(() => {
-    void load(true);
-  }, [load]);
-
-  // Refresh when the tab regains focus so a newly-created trip from the
-  // Create screen appears at the top without a manual pull. `load` is
-  // stable (doesn't close over render-local state) so this won't re-fire
-  // spuriously while the screen stays focused.
+  // One effect handles both the initial load and every re-focus: on the
+  // first run we pass isInitial=true (so the empty state renders the
+  // full-screen spinner, not a cached-data refresh indicator) and on
+  // subsequent focuses we pass false. A separate `useEffect` + focus
+  // effect would double-fire on mount.
+  const hasLoadedOnceRef = useRef(false);
   useFocusEffect(
     useCallback(() => {
-      void load(false);
+      const isInitial = !hasLoadedOnceRef.current;
+      hasLoadedOnceRef.current = true;
+      void load(isInitial);
     }, [load]),
   );
 

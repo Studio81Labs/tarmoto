@@ -27,19 +27,6 @@ export type RoadPreferenceValue = (typeof ROAD_PREFERENCES)[number]["value"];
 
 export const DAY_OPTIONS = [2, 3, 4, 5, 7, 10, 14] as const;
 
-/**
- * Pick the preset whose (min,max) matches the stored trip values. Returns
- * `null` when the stored values don't line up — callers fall back to the
- * default preset so we don't silently coerce an unfamiliar range.
- */
-export function findDailyKmPreset(
-  min: number | undefined,
-  max: number | undefined,
-): DailyKmPreset | null {
-  if (min == null || max == null) return null;
-  return DAILY_KM_PRESETS.find((p) => p.min === min && p.max === max) ?? null;
-}
-
 export function formatKm(km: number): string {
   if (!Number.isFinite(km)) return "0 km";
   return `${Math.round(km)} km`;

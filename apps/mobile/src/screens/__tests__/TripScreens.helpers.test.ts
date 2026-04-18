@@ -1,7 +1,6 @@
 import {
   averageQuality,
   bboxAroundPoint,
-  findDailyKmPreset,
   formatDurationMin,
   formatKm,
   formatStatus,
@@ -69,17 +68,6 @@ describe("formatKm / formatDurationMin / formatStatus / formatWaypointType", () 
     expect(formatWaypointType("via")).toBe("Waypoint");
     expect(formatWaypointType("fuel")).toBe("Fuel");
     expect(formatWaypointType("start")).toBe("Start");
-  });
-});
-
-describe("findDailyKmPreset", () => {
-  it("matches exact range", () => {
-    expect(findDailyKmPreset(150, 300)?.label).toBe("Standard");
-  });
-
-  it("returns null when the range is custom so UI can fall back safely", () => {
-    expect(findDailyKmPreset(180, 260)).toBeNull();
-    expect(findDailyKmPreset(undefined, undefined)).toBeNull();
   });
 });
 
