@@ -475,6 +475,12 @@ function FunZonesLegend({ zoneCount }: { zoneCount: number }) {
         <View
           style={[
             styles.funZonesLegendSwatch,
+            { backgroundColor: FUN_ZONE_COLORS.veryPoor },
+          ]}
+        />
+        <View
+          style={[
+            styles.funZonesLegendSwatch,
             { backgroundColor: FUN_ZONE_COLORS.poor },
           ]}
         />
