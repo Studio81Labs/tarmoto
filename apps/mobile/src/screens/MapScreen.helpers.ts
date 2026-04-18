@@ -15,7 +15,7 @@ import type {
   LineLayerStyle,
 } from "@maplibre/maplibre-react-native";
 import { API_BASE_URL } from "@/config";
-import { colors } from "@/theme";
+import { colors, MIN_QUALITY_BOUNDS } from "@/theme";
 import type { MountainPass, PassStatus } from "@/types";
 
 /**
@@ -104,6 +104,50 @@ export const qualityLineStyle: LineLayerStyle = {
     1,
   ],
 };
+
+/**
+ * Opacity applied to segments below the rider's minimum-quality threshold.
+ * Keeps the geometry legible so riders can still see what's there (and
+ * spot a nicer alternative on a parallel road) without those segments
+ * competing with qualifying roads for attention. Mirrors the dimming
+ * applied on `RoadPreviewScreen` cards (US-5 AC: "shown in gray/excluded").
+ */
+export const BELOW_THRESHOLD_OPACITY = 0.2;
+
+/**
+ * US-5: build the road-quality line style with the rider's minimum-quality
+ * threshold baked into the style expressions. Segments below the threshold
+ * are painted in `textTertiary` gray and faded to `BELOW_THRESHOLD_OPACITY`.
+ *
+ * We compare against `minQuality - 0.5` to match the half-point buckets that
+ * `qualityLabel` / `qualityColor` use: a "Fair or better" filter (minQuality
+ * 3) must keep a 2.8-scored segment — it still labels as "Fair".
+ *
+ * When `minQuality` is at or below the minimum bound (1), no filtering is
+ * needed and we return the baseline `qualityLineStyle` untouched so the step
+ * expression tests (and MapLibre's style diffing) stay cheap.
+ */
+export function buildQualityLineStyle(minQuality: number): LineLayerStyle {
+  if (minQuality <= MIN_QUALITY_BOUNDS.min) return qualityLineStyle;
+
+  const threshold = minQuality - 0.5;
+
+  return {
+    ...qualityLineStyle,
+    lineColor: [
+      "case",
+      ["<", ["get", "quality_score"], threshold],
+      colors.textTertiary,
+      qualityLineStyle.lineColor,
+    ] as LineLayerStyle["lineColor"],
+    lineOpacity: [
+      "case",
+      ["<", ["get", "quality_score"], threshold],
+      BELOW_THRESHOLD_OPACITY,
+      qualityLineStyle.lineOpacity,
+    ] as LineLayerStyle["lineOpacity"],
+  };
+}
 
 // ── US-11 mountain passes ──
 
