@@ -52,8 +52,55 @@ describe("usePreferencesStore", () => {
       PREFERENCES_DEFAULTS.minQuality,
     );
   });
+
+  describe("fuelRangeKm (US-10)", () => {
+    it("starts at the default fuel range", () => {
+      expect(usePreferencesStore.getState().fuelRangeKm).toBe(
+        PREFERENCES_DEFAULTS.fuelRangeKm,
+      );
+    });
+
+    it("clamps values below 50 km", () => {
+      usePreferencesStore.getState().setFuelRangeKm(10);
+      expect(usePreferencesStore.getState().fuelRangeKm).toBe(50);
+    });
+
+    it("clamps values above 1000 km", () => {
+      usePreferencesStore.getState().setFuelRangeKm(2500);
+      expect(usePreferencesStore.getState().fuelRangeKm).toBe(1000);
+    });
+
+    it("snaps non-grid inputs to the nearest 50 km step", () => {
+      usePreferencesStore.getState().setFuelRangeKm(237);
+      expect(usePreferencesStore.getState().fuelRangeKm).toBe(250);
+
+      usePreferencesStore.getState().setFuelRangeKm(262);
+      expect(usePreferencesStore.getState().fuelRangeKm).toBe(250);
+
+      usePreferencesStore.getState().setFuelRangeKm(275);
+      expect(usePreferencesStore.getState().fuelRangeKm).toBe(300);
+    });
+
+    it("falls back to the default on NaN", () => {
+      usePreferencesStore.getState().setFuelRangeKm(Number.NaN);
+      expect(usePreferencesStore.getState().fuelRangeKm).toBe(
+        PREFERENCES_DEFAULTS.fuelRangeKm,
+      );
+    });
+
+    it("resetPreferences restores the fuel-range default", () => {
+      usePreferencesStore.getState().setFuelRangeKm(500);
+      usePreferencesStore.getState().resetPreferences();
+      expect(usePreferencesStore.getState().fuelRangeKm).toBe(
+        PREFERENCES_DEFAULTS.fuelRangeKm,
+      );
+    });
+  });
 });
 
 function useStoreReset() {
-  usePreferencesStore.setState({ minQuality: PREFERENCES_DEFAULTS.minQuality });
+  usePreferencesStore.setState({
+    minQuality: PREFERENCES_DEFAULTS.minQuality,
+    fuelRangeKm: PREFERENCES_DEFAULTS.fuelRangeKm,
+  });
 }

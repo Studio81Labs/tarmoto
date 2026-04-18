@@ -156,6 +156,18 @@ export function qualityLabel(score: number): string {
 export const MIN_QUALITY_BOUNDS = { min: 1, max: 5 } as const;
 
 /**
+ * Rider-declared fuel range in kilometres. Used by US-10 to flag day
+ * routes whose longest fuel-to-fuel leg outruns the bike's tank. The
+ * bounds match the coarsest useful bracket — 50 km below is noise for
+ * motorcycle planning, 1000 km above is beyond any stock tank we care
+ * about. Snapped to 50 km steps by the preferences setter.
+ */
+export const FUEL_RANGE_BOUNDS = { min: 50, max: 1000 } as const;
+
+/** Step between pill selections on the fuel-range picker. */
+export const FUEL_RANGE_STEP_KM = 50;
+
+/**
  * Does a segment's quality score pass the rider's minimum-label threshold?
  *
  * The threshold is expressed as an integer that matches `qualityLabel`'s

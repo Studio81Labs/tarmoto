@@ -37,7 +37,9 @@ import {
   formatDurationMin,
   formatKm,
   formatWaypointType,
+  summarizeFuelRange,
   summarizeWaypoints,
+  type FuelLeg,
 } from "./TripScreens.helpers";
 
 type DayRoute = RouteProp<TripsStackParamList, "TripDay">;
@@ -50,6 +52,7 @@ export default function TripDayScreen() {
   const cachedTrip = useTripStore((s) => s.activeTrip);
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
   const minQuality = usePreferencesStore((s) => s.minQuality);
+  const fuelRangeKm = usePreferencesStore((s) => s.fuelRangeKm);
 
   // Warm-cache: if the user came from TripDetail we already have the
   // trip and don't need to block on a fetch. If they deep-linked (e.g.
@@ -127,6 +130,7 @@ export default function TripDayScreen() {
   const belowThreshold =
     day.avg_quality > 0 && !meetsQualityThreshold(day.avg_quality, minQuality);
   const summary = summarizeWaypoints(day.waypoints);
+  const fuelRange = summarizeFuelRange(day, fuelRangeKm);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -170,6 +174,14 @@ export default function TripDayScreen() {
         overnightStops={summary.overnightStops}
       />
 
+      {fuelRange.exceedingCount > 0 ? (
+        <FuelRangeWarning
+          legs={fuelRange.legs}
+          fuelRangeKm={fuelRangeKm}
+          exceedingCount={fuelRange.exceedingCount}
+        />
+      ) : null}
+
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Route</Text>
         {day.waypoints.length === 0 ? (
@@ -189,6 +201,71 @@ export default function TripDayScreen() {
         )}
       </View>
     </ScrollView>
+  );
+}
+
+function FuelRangeWarning({
+  legs,
+  fuelRangeKm,
+  exceedingCount,
+}: {
+  legs: FuelLeg[];
+  fuelRangeKm: number;
+  exceedingCount: number;
+}) {
+  // US-10: surface the offending legs so the rider can eyeball where to
+  // insert a refuel. We show all legs (not just the over-range ones) so
+  // the warning is legible — the context makes it obvious which stretch
+  // is the problem without extra prose.
+  const longest = legs.reduce(
+    (m, l) => (l.distanceKm > m ? l.distanceKm : m),
+    0,
+  );
+  const headline =
+    exceedingCount === 1
+      ? "1 leg exceeds your fuel range"
+      : `${exceedingCount} legs exceed your fuel range`;
+  return (
+    <View
+      style={styles.fuelWarningCard}
+      accessibilityRole="alert"
+      accessibilityLabel={headline}
+    >
+      <View style={styles.fuelWarningHeader}>
+        <Icon name="gas-station-off" size={22} color={colors.warning} />
+        <Text style={styles.fuelWarningTitle}>{headline}</Text>
+      </View>
+      <Text style={styles.fuelWarningBody}>
+        Longest leg is {formatKm(longest)} — beyond your {formatKm(fuelRangeKm)}{" "}
+        range. Add a fuel stop or check that tank will make it.
+      </Text>
+      {legs.map((leg, idx) => (
+        <View
+          key={`${idx}-${leg.fromName}-${leg.toName}`}
+          style={styles.fuelLegRow}
+        >
+          <View
+            style={[
+              styles.fuelLegBullet,
+              leg.exceedsRange
+                ? styles.fuelLegBulletOver
+                : styles.fuelLegBulletOk,
+            ]}
+          />
+          <Text style={styles.fuelLegNames} numberOfLines={1}>
+            {leg.fromName} → {leg.toName}
+          </Text>
+          <Text
+            style={[
+              styles.fuelLegDistance,
+              leg.exceedsRange ? styles.fuelLegDistanceOver : null,
+            ]}
+          >
+            {formatKm(leg.distanceKm)}
+          </Text>
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -525,5 +602,60 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     fontWeight: fontWeight.bold,
     letterSpacing: 0.5,
+  },
+  fuelWarningCard: {
+    backgroundColor: colors.qualityAlpha.fair,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    padding: spacing.lg,
+    gap: spacing.sm,
+  },
+  fuelWarningHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  fuelWarningTitle: {
+    color: colors.textPrimary,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.bold,
+    flex: 1,
+  },
+  fuelWarningBody: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
+    lineHeight: 18,
+  },
+  fuelLegRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingTop: spacing.xs,
+  },
+  fuelLegBullet: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  fuelLegBulletOver: {
+    backgroundColor: colors.warning,
+  },
+  fuelLegBulletOk: {
+    backgroundColor: colors.textTertiary,
+  },
+  fuelLegNames: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
+  },
+  fuelLegDistance: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
+  },
+  fuelLegDistanceOver: {
+    color: colors.warning,
   },
 });

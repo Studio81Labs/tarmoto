@@ -9,11 +9,14 @@ import {
   spacing,
 } from "@/theme";
 import QualityThresholdSlider from "@/components/QualityThresholdSlider";
+import FuelRangePicker from "@/components/FuelRangePicker";
 import { usePreferencesStore } from "@/stores";
 
 export default function SettingsScreen() {
   const minQuality = usePreferencesStore((s) => s.minQuality);
   const setMinQuality = usePreferencesStore((s) => s.setMinQuality);
+  const fuelRangeKm = usePreferencesStore((s) => s.fuelRangeKm);
+  const setFuelRangeKm = usePreferencesStore((s) => s.setFuelRangeKm);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -31,6 +34,21 @@ export default function SettingsScreen() {
           onChange={setMinQuality}
           label="Minimum quality"
           helpText={`Currently showing ${qualityLabel(minQuality)} and above.`}
+        />
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>Fuel range</Text>
+        <Text style={styles.sectionBody}>
+          How far your bike comfortably goes on a tank. Trip days with a stretch
+          longer than this between fuel stops will trigger a warning.
+        </Text>
+
+        <FuelRangePicker
+          value={fuelRangeKm}
+          onChange={setFuelRangeKm}
+          label="Fuel range"
+          helpText="Tap a distance to match your bike."
         />
       </View>
     </ScrollView>
