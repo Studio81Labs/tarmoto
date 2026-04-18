@@ -222,14 +222,20 @@ export default function MapScreen() {
     // of longitude at higher latitudes. The fallback bbox only needs to be
     // approximate (the region handler refines it on the next pan), but the
     // correction has to go on longitude, not latitude.
+    //
     // Slippy-map convention: the world spans 360° of longitude at zoom 0 and
-    // halves per zoom level. Use that as a rough longitudinal span for the
-    // viewport — the region handler will overwrite it on the next settle,
-    // so an over-approximation is preferable to under-fetching.
-    const degrees = 360 / Math.pow(2, zoom);
-    const halfLat = degrees / 2;
+    // halves per zoom level — `360 / 2^zoom` is the span of ONE tile. A
+    // typical mobile viewport shows roughly 1-3 tiles per axis depending on
+    // device/DPI, so we multiply by a conservative factor to over-cover the
+    // visible window. The region handler overwrites this on the next settle,
+    // so a one-off over-fetch is cheaper than missing zones at the edges.
+    const tileDegrees = 360 / Math.pow(2, zoom);
+    const viewportTiles = 3;
+    const halfLat = (tileDegrees * viewportTiles) / 2;
     const halfLng =
-      degrees / 2 / Math.max(Math.cos((center.lat * Math.PI) / 180), 0.01);
+      (tileDegrees * viewportTiles) /
+      2 /
+      Math.max(Math.cos((center.lat * Math.PI) / 180), 0.01);
     const bbox = bboxFromVisibleBounds([
       [center.lng - halfLng, center.lat - halfLat],
       [center.lng + halfLng, center.lat + halfLat],
