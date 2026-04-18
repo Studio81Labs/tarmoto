@@ -9,6 +9,9 @@ export type {
   UseCommuteResult,
 } from "./useCommute";
 
+export { usePendingUploads } from "./usePendingUploads";
+export type { PendingUploadsState } from "./usePendingUploads";
+
 import { useEffect, useRef, useCallback, useState } from "react";
 import { AppState, AppStateStatus } from "react-native";
 import KeepAwake from "react-native-keep-awake";

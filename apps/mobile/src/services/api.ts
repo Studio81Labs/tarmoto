@@ -28,7 +28,14 @@ import type {
   RoadReview,
   MountainPass,
   CheckRouteForPassesResponse,
+  SensorReading,
 } from "@/types";
+import {
+  drainOfflineQueue,
+  submitSensorUpload,
+  type DrainResult,
+  type SubmitResult,
+} from "./offlineQueue";
 
 const storage = createMMKV({ id: "tarmoto-auth" });
 
@@ -175,10 +182,15 @@ class ApiService {
   }
 
   // ── Sensor Data ──
+  //
+  // The raw POST is intentionally private: every ride-stop flow must go
+  // through `submitSensorData` so offline rides get queued instead of
+  // silently dropped (US-18 AC #4). `flushPendingSensorUploads` shares
+  // the same underlying call via the queue's uploader callback.
 
-  async uploadSensorData(
+  private async uploadSensorData(
     rideId: string,
-    readings: any[],
+    readings: SensorReading[],
     deviceModel: string,
   ): Promise<{ accepted: number; segments_updated: number }> {
     const { data } = await this.client.post("/sensor/upload", {
@@ -187,6 +199,32 @@ class ApiService {
       readings,
     });
     return data;
+  }
+
+  /**
+   * Submit sensor readings via the offline-aware queue (US-18 AC #4).
+   * This is the ride-stop flow's entry point — the raw POST is kept
+   * private so every caller goes through the queue.
+   */
+  async submitSensorData(
+    rideId: string,
+    readings: SensorReading[],
+    deviceModel: string,
+  ): Promise<SubmitResult> {
+    return submitSensorUpload(rideId, readings, deviceModel, (id, r, model) =>
+      this.uploadSensorData(id, r, model),
+    );
+  }
+
+  /**
+   * Best-effort flush of any pending sensor uploads. Driven by the
+   * Settings "Retry now" button and could be called by a future
+   * connectivity watcher.
+   */
+  async flushPendingSensorUploads(): Promise<DrainResult> {
+    return drainOfflineQueue((id, r, model) =>
+      this.uploadSensorData(id, r, model),
+    );
   }
 
   // ── Road Segments ──
