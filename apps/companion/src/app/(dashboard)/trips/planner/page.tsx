@@ -6,12 +6,12 @@ import {
   Layers,
   Sliders,
   Users,
-  Download,
   Upload,
   Sparkles,
   ChevronRight,
 } from "lucide-react";
 import { SegmentSidebar } from "@/components/SegmentSidebar";
+import { TripExportMenu } from "@/components/TripExportMenu";
 import { DEMO_TRIP } from "@/lib/demo-trip";
 
 /**
@@ -45,10 +45,7 @@ export default function TripPlannerPage() {
             <Upload size={14} />
             Import GPX
           </button>
-          <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition">
-            <Download size={14} />
-            Export
-          </button>
+          <TripExportMenu trip={activeTrip} />
           {!activeTrip && (
             <button
               type="button"
