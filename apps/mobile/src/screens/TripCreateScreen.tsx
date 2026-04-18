@@ -67,23 +67,73 @@ export default function TripCreateScreen() {
   }, [rideLocation, mapCenter]);
   const startIsLive = rideLocation !== null;
 
-  const [title, setTitle] = useState("");
-  const [region, setRegion] = useState("");
-  const [numDays, setNumDays] = useState<number>(3);
-  const [dailyKm, setDailyKm] = useState<DailyKmPreset>(DAILY_KM_PRESETS[1]);
-  const [roadPref, setRoadPref] = useState<RoadPreferenceValue>("curvy");
+  const [title, setTitleRaw] = useState("");
+  const [region, setRegionRaw] = useState("");
+  const [numDays, setNumDaysRaw] = useState<number>(3);
+  const [dailyKm, setDailyKmRaw] = useState<DailyKmPreset>(DAILY_KM_PRESETS[1]);
+  const [roadPref, setRoadPrefRaw] = useState<RoadPreferenceValue>("curvy");
 
   // Keep the override logic from the original screen: null means "use the
   // rider's current default", so toggling the Settings default while this
   // screen is mounted doesn't spuriously flip the trip into an override.
-  const [minQualityOverride, setMinQualityOverride] = useState<number | null>(
-    null,
-  );
+  const [minQualityOverride, setMinQualityOverrideRaw] = useState<
+    number | null
+  >(null);
   const tripMinQuality = minQualityOverride ?? defaultMinQuality;
   const overridesDefault = minQualityOverride !== null;
 
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // If `createTrip` succeeded but `generateTripRoute` failed, we hold onto
+  // the draft id and retry generation against the same draft instead of
+  // creating another. Any parameter change invalidates the draft (its
+  // server-side fields are now stale) so the next Generate starts fresh.
+  const [draftTripId, setDraftTripId] = useState<string | null>(null);
+  const invalidateDraft = useCallback(() => setDraftTripId(null), []);
+
+  const setTitle = useCallback(
+    (v: string) => {
+      setTitleRaw(v);
+      invalidateDraft();
+    },
+    [invalidateDraft],
+  );
+  const setRegion = useCallback(
+    (v: string) => {
+      setRegionRaw(v);
+      invalidateDraft();
+    },
+    [invalidateDraft],
+  );
+  const setNumDays = useCallback(
+    (v: number) => {
+      setNumDaysRaw(v);
+      invalidateDraft();
+    },
+    [invalidateDraft],
+  );
+  const setDailyKm = useCallback(
+    (v: DailyKmPreset) => {
+      setDailyKmRaw(v);
+      invalidateDraft();
+    },
+    [invalidateDraft],
+  );
+  const setRoadPref = useCallback(
+    (v: RoadPreferenceValue) => {
+      setRoadPrefRaw(v);
+      invalidateDraft();
+    },
+    [invalidateDraft],
+  );
+  const setMinQualityOverride = useCallback(
+    (v: number | null) => {
+      setMinQualityOverrideRaw(v);
+      invalidateDraft();
+    },
+    [invalidateDraft],
+  );
 
   const trimmedTitle = title.trim();
   const canSubmit = trimmedTitle.length > 0 && !submitting;
@@ -100,24 +150,34 @@ export default function TripCreateScreen() {
     setSubmitting(true);
     setErrorMessage(null);
     try {
-      const trip = await api.createTrip({
-        title: trimmedTitle,
-        num_days: numDays,
-        region: region.trim() || undefined,
-        min_quality: tripMinQuality,
-        road_preference: roadPref,
-        daily_km_min: dailyKm.min,
-        daily_km_max: dailyKm.max,
-      });
+      // Reuse an existing draft from a previous failed attempt so retries
+      // don't accumulate orphaned drafts in the rider's trips list. The
+      // parameter setters above clear `draftTripId` whenever the user
+      // edits a field, so a stale draft can't outlive the values it was
+      // created with.
+      let tripId = draftTripId;
+      if (!tripId) {
+        const trip = await api.createTrip({
+          title: trimmedTitle,
+          num_days: numDays,
+          region: region.trim() || undefined,
+          min_quality: tripMinQuality,
+          road_preference: roadPref,
+          daily_km_min: dailyKm.min,
+          daily_km_max: dailyKm.max,
+        });
+        tripId = trip.id;
+        setDraftTripId(tripId);
+      }
       const bbox = bboxAroundPoint(
         startLocation.lat,
         startLocation.lng,
         numDays,
       );
-      await api.generateTripRoute(trip.id, startLocation, bbox);
+      await api.generateTripRoute(tripId, startLocation, bbox);
       // Replace rather than push: the detail screen for this trip should
       // be the back target from Day screens, not a half-filled create form.
-      navigation.replace("TripDetail", { tripId: trip.id });
+      navigation.replace("TripDetail", { tripId });
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Unable to generate trip";
@@ -129,6 +189,7 @@ export default function TripCreateScreen() {
     }
   }, [
     canSubmit,
+    draftTripId,
     trimmedTitle,
     numDays,
     region,

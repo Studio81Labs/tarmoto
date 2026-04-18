@@ -7,7 +7,7 @@
  * create → generate → detail flow.
  */
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -42,9 +42,19 @@ export default function TripsScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Read the latest cached count inside the callback rather than closing
+  // over `trips.length`. Otherwise `load`'s identity flips as soon as the
+  // first fetch lands, which would re-run `useFocusEffect` on the same
+  // focus session and fire a spurious second request.
+  const hasCachedTripsRef = useRef(trips.length > 0);
+  useEffect(() => {
+    hasCachedTripsRef.current = trips.length > 0;
+  }, [trips.length]);
+
   const load = useCallback(
     async (isInitial: boolean) => {
-      if (isInitial && trips.length === 0) {
+      const hadCache = hasCachedTripsRef.current;
+      if (isInitial && !hadCache) {
         setPhase("loading");
         setErrorMessage(null);
       } else {
@@ -58,7 +68,7 @@ export default function TripsScreen() {
         // Refresh failures: keep showing cached trips. Initial failures
         // with no cache: surface a full error state so the user knows
         // something's off.
-        if (isInitial && trips.length === 0) {
+        if (isInitial && !hadCache) {
           setPhase("error");
           setErrorMessage(
             err instanceof Error ? err.message : "Unable to load trips",
@@ -68,17 +78,17 @@ export default function TripsScreen() {
         setIsRefreshing(false);
       }
     },
-    [setTrips, trips.length],
+    [setTrips],
   );
 
   useEffect(() => {
     void load(true);
-    // `load` closes over `trips.length`; we only want this to run on mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [load]);
 
   // Refresh when the tab regains focus so a newly-created trip from the
-  // Create screen appears at the top without a manual pull.
+  // Create screen appears at the top without a manual pull. `load` is
+  // stable (doesn't close over render-local state) so this won't re-fire
+  // spuriously while the screen stays focused.
   useFocusEffect(
     useCallback(() => {
       void load(false);

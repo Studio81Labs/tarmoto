@@ -56,68 +56,72 @@ export default function TripDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadOnce = useCallback(async () => {
-    if (!tripId) {
-      setError("Missing trip id");
-      setLoading(false);
-      return;
-    }
+  // Single source of truth for "fetch this trip and commit it to local +
+  // store state". The mount effect, retry button, and pull-to-refresh all
+  // go through this — future changes to response shape or error mapping
+  // only need to land in one place.
+  const fetchTrip = useCallback(
+    async (opts: { signal?: { cancelled: boolean } } = {}) => {
+      if (!tripId) {
+        if (!opts.signal?.cancelled) setError("Missing trip id");
+        return;
+      }
+      try {
+        const next = await api.getTrip(tripId);
+        if (opts.signal?.cancelled) return;
+        setTrip(next);
+        setActiveTrip(next);
+        setError(null);
+      } catch (e) {
+        if (opts.signal?.cancelled) return;
+        throw e instanceof Error ? e : new Error("Failed to load trip");
+      }
+    },
+    [tripId, setActiveTrip],
+  );
+
+  useEffect(() => {
+    // Guard against a stale response from an older tripId overwriting
+    // the current screen's state if the route changes mid-flight.
+    const signal = { cancelled: false };
+    setLoading(true);
+    (async () => {
+      try {
+        await fetchTrip({ signal });
+      } catch (e) {
+        if (!signal.cancelled) {
+          setError(e instanceof Error ? e.message : "Failed to load trip");
+        }
+      } finally {
+        if (!signal.cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      signal.cancelled = true;
+    };
+  }, [fetchTrip]);
+
+  const retry = useCallback(async () => {
+    setLoading(true);
     try {
-      const next = await api.getTrip(tripId);
-      setTrip(next);
-      setActiveTrip(next);
-      setError(null);
+      await fetchTrip();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load trip");
     } finally {
       setLoading(false);
     }
-  }, [tripId, setActiveTrip]);
-
-  useEffect(() => {
-    // Guard against a stale response from an older tripId overwriting
-    // the current screen's state if the route changes mid-flight.
-    let ignore = false;
-    setLoading(true);
-    (async () => {
-      if (!tripId) {
-        if (!ignore) {
-          setError("Missing trip id");
-          setLoading(false);
-        }
-        return;
-      }
-      try {
-        const next = await api.getTrip(tripId);
-        if (ignore) return;
-        setTrip(next);
-        setActiveTrip(next);
-        setError(null);
-      } catch (e) {
-        if (ignore) return;
-        setError(e instanceof Error ? e.message : "Failed to load trip");
-      } finally {
-        if (!ignore) setLoading(false);
-      }
-    })();
-    return () => {
-      ignore = true;
-    };
-  }, [tripId, setActiveTrip]);
+  }, [fetchTrip]);
 
   const refresh = useCallback(async () => {
-    if (!tripId) return;
     setRefreshing(true);
     try {
-      const next = await api.getTrip(tripId);
-      setTrip(next);
-      setActiveTrip(next);
+      await fetchTrip();
     } catch {
       // Silent on refresh — keep showing last good data.
     } finally {
       setRefreshing(false);
     }
-  }, [tripId, setActiveTrip]);
+  }, [fetchTrip]);
 
   const openDay = useCallback(
     (dayNumber: number) => {
@@ -143,10 +147,7 @@ export default function TripDetailScreen() {
         {error ? <Text style={styles.errorBody}>{error}</Text> : null}
         <TouchableOpacity
           style={styles.primaryBtn}
-          onPress={() => {
-            setLoading(true);
-            void loadOnce();
-          }}
+          onPress={() => void retry()}
         >
           <Text style={styles.primaryBtnLabel}>Try again</Text>
         </TouchableOpacity>

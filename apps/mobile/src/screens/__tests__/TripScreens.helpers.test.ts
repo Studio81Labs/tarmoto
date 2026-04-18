@@ -51,6 +51,15 @@ describe("formatKm / formatDurationMin / formatStatus / formatWaypointType", () 
     expect(formatDurationMin(-5)).toBe("0m");
   });
 
+  it("rounds total minutes before splitting so fractional inputs never produce '60m' or '1h 60m'", () => {
+    // Rounding the modulo remainder on its own would yield 60 for both
+    // of these inputs (59.5 → "60m", 119.5 → "1h 60m"). Rounding the
+    // total first avoids the overflow.
+    expect(formatDurationMin(59.5)).toBe("1h");
+    expect(formatDurationMin(119.5)).toBe("2h");
+    expect(formatDurationMin(89.7)).toBe("1h 30m");
+  });
+
   it("title-cases statuses", () => {
     expect(formatStatus("draft")).toBe("Draft");
     expect(formatStatus("completed")).toBe("Completed");
