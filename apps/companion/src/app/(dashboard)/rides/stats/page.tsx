@@ -46,6 +46,28 @@ const YOY_COLORS = [
   "#34d399",
 ] as const;
 
+// Stats must cover every ride the user has, not just the most recent page.
+// The backend caps `limit` at 100, so we page through `offset` until we've
+// retrieved the reported `total`. The MAX_PAGES guard stops a misbehaving
+// server from looping forever.
+const PAGE_SIZE = 100;
+const MAX_PAGES = 100;
+
+async function fetchAllRides(): Promise<RideForStats[]> {
+  const collected: RideForStats[] = [];
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const { data, error } = await api.GET("/api/v1/rides", {
+      params: { query: { limit: PAGE_SIZE, offset: page * PAGE_SIZE } },
+    });
+    if (error) throw new Error("Could not load ride history");
+    const batch = data?.rides ?? [];
+    collected.push(...batch);
+    const total = data?.total ?? collected.length;
+    if (collected.length >= total || batch.length < PAGE_SIZE) break;
+  }
+  return collected;
+}
+
 export default function StatsPage() {
   const [rides, setRides] = useState<RideForStats[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,20 +77,15 @@ export default function StatsPage() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    api
-      .GET("/api/v1/rides")
-      .then(({ data, error }) => {
+    fetchAllRides()
+      .then((all) => {
         if (cancelled) return;
-        if (error) {
-          setLoadError("Could not load ride history");
-        } else {
-          setRides(data?.rides ?? []);
-        }
+        setRides(all);
         setLoading(false);
       })
       .catch((err: Error) => {
         if (cancelled) return;
-        setLoadError(err.message);
+        setLoadError(err.message || "Could not load ride history");
         setLoading(false);
       });
     return () => {
