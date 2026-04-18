@@ -120,4 +120,10 @@ export const accountApi = {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
+  getPrivacySettings: () => apiFetch("/account/privacy-settings"),
+  updatePrivacySettings: (data: unknown) =>
+    apiFetch("/account/privacy-settings", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
 };

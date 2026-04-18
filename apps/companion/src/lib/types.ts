@@ -247,6 +247,26 @@ export interface PaginatedResponse<T> {
   hasMore: boolean;
 }
 
+// ── Privacy settings ──
+
+export type ProfileVisibility = "public" | "riders-only" | "private";
+export type RideSharingDefault = "public" | "private";
+export type LocationRetention =
+  | "3months"
+  | "6months"
+  | "1year"
+  | "2years"
+  | "forever";
+
+export interface PrivacySettings {
+  profileVisibility: ProfileVisibility;
+  defaultRideSharing: RideSharingDefault;
+  roadDataContribution: boolean;
+  locationRetention: LocationRetention;
+  analyticsConsent: boolean;
+  personalizedRecommendationsConsent: boolean;
+}
+
 // ── Notification preferences ──
 
 export type EmailDigestFrequency = "daily" | "weekly" | "never";
