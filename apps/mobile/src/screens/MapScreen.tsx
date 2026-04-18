@@ -369,7 +369,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "baseline",
     justifyContent: "space-between",
-    marginBottom: spacing.sm,
     gap: spacing.sm,
   },
   legendTitle: {
@@ -378,6 +377,7 @@ const styles = StyleSheet.create({
     fontWeight: fontWeight.semibold,
     textTransform: "uppercase",
     letterSpacing: 0.6,
+    marginBottom: spacing.sm,
   },
   legendSubtitle: {
     color: colors.textSecondary,
