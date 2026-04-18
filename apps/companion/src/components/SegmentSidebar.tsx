@@ -99,13 +99,7 @@ export function SegmentSidebar() {
                           )
                         }
                         onHoverStart={() => hoverSegment(segment.id)}
-                        onHoverEnd={() =>
-                          hoverSegment(
-                            hoveredSegmentId === segment.id
-                              ? null
-                              : hoveredSegmentId,
-                          )
-                        }
+                        onHoverEnd={() => hoverSegment(null)}
                         onToggleExpand={() => toggleExpand(segment.id)}
                       />
                     ))}
