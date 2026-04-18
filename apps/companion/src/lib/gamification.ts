@@ -222,7 +222,8 @@ export function formatDaysRemaining(
   if (!Number.isFinite(end)) return "Ongoing";
   const diffMs = end - now.getTime();
   if (diffMs <= 0) return "Ended";
-  const days = Math.ceil(diffMs / (24 * 60 * 60 * 1000));
+  const days = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+  if (days === 0) return "Ends today";
   if (days === 1) return "Ends tomorrow";
   if (days < 7) return `${days} days left`;
   const weeks = Math.floor(days / 7);
@@ -232,7 +233,9 @@ export function formatDaysRemaining(
       ? `${weeks} week${weeks === 1 ? "" : "s"} left`
       : `${weeks}w ${extra}d left`;
   }
-  const months = Math.floor(days / 30);
+  // Clamp to at least 1 so the 28-29 day band (weeks === 4, days / 30 === 0)
+  // doesn't render "0 months left".
+  const months = Math.max(1, Math.floor(days / 30));
   return `${months} month${months === 1 ? "" : "s"} left`;
 }
 

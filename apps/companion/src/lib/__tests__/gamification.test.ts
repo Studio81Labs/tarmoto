@@ -278,6 +278,11 @@ describe("formatDaysRemaining", () => {
     ).toBe("Ended");
   });
 
+  it("reports today when less than 24 hours remain", () => {
+    const endsAt = new Date(NOW.getTime() + 6 * 60 * 60 * 1000).toISOString();
+    expect(formatDaysRemaining(endsAt, NOW)).toBe("Ends today");
+  });
+
   it("uses the tomorrow shortcut for one day left", () => {
     const endsAt = new Date(NOW.getTime() + 24 * 60 * 60 * 1000).toISOString();
     expect(formatDaysRemaining(endsAt, NOW)).toBe("Ends tomorrow");
@@ -300,6 +305,13 @@ describe("formatDaysRemaining", () => {
   it("switches to months past four weeks", () => {
     const endsAt = new Date(
       NOW.getTime() + 45 * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    expect(formatDaysRemaining(endsAt, NOW)).toBe("1 month left");
+  });
+
+  it("rounds the 28-29 day band up to '1 month left' instead of zero", () => {
+    const endsAt = new Date(
+      NOW.getTime() + 28 * 24 * 60 * 60 * 1000,
     ).toISOString();
     expect(formatDaysRemaining(endsAt, NOW)).toBe("1 month left");
   });
