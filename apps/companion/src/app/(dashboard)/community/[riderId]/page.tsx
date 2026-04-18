@@ -60,6 +60,12 @@ export default function RiderProfilePage() {
 
   useEffect(() => {
     if (!riderId) return;
+    // `cancelled` guards every setState inside the async chain, including the
+    // `.finally`, because AbortError is swallowed by the fetcher. Without this
+    // the old effect's `setLoading(false)` can land after the new effect has
+    // already called `setLoading(true)`, flashing stale content during a
+    // riderId or accessToken switch. Pattern matches the other ride pages.
+    let cancelled = false;
     const controller = new AbortController();
     setLoading(true);
     setNotFound(false);
@@ -69,10 +75,12 @@ export default function RiderProfilePage() {
       accessToken,
     })
       .then(({ profile: next, fromFallback }) => {
+        if (cancelled) return;
         setProfile(next);
         setUsingDemo(fromFallback);
       })
       .catch((err: unknown) => {
+        if (cancelled) return;
         if ((err as { name?: string })?.name === "AbortError") return;
         if (err instanceof RiderProfileNotFoundError) {
           setNotFound(true);
@@ -81,9 +89,13 @@ export default function RiderProfilePage() {
         setError("Could not load rider profile");
       })
       .finally(() => {
+        if (cancelled) return;
         setLoading(false);
       });
-    return () => controller.abort();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [riderId, accessToken]);
 
   const isSelf = profile?.id === currentUserId;
@@ -104,9 +116,13 @@ export default function RiderProfilePage() {
   async function handleFollowToggle() {
     if (!profile || followPending || isSelf) return;
     const wasFollowing = profile.isFollowing;
-    // Optimistic toggle — mirrors how ride-likes and collaborator invites work
-    // elsewhere; if the API fails we revert and surface the error inline.
-    setProfile({ ...profile, isFollowing: !wasFollowing });
+    // Optimistic toggle via the functional setter so a concurrent profile
+    // re-fetch (e.g. token refresh) isn't silently overwritten by this stale
+    // closure — we only touch `isFollowing` and leave the rest of whatever
+    // React holds as the current profile.
+    setProfile((prev) =>
+      prev ? { ...prev, isFollowing: !wasFollowing } : prev,
+    );
     setFollowPending(true);
     setFollowError(null);
     try {
@@ -116,7 +132,9 @@ export default function RiderProfilePage() {
         await followRider(profile.id, accessToken);
       }
     } catch (err) {
-      setProfile({ ...profile, isFollowing: wasFollowing });
+      setProfile((prev) =>
+        prev ? { ...prev, isFollowing: wasFollowing } : prev,
+      );
       const message =
         err instanceof Error ? err.message : "Could not update follow";
       setFollowError(message);
