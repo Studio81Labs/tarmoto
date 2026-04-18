@@ -94,6 +94,30 @@ describe("useOfflineStore", () => {
     expect(region?.lastUpdatedAt).not.toBeNull();
   });
 
+  it("updateProgress leaves only the changed region's reference stale", () => {
+    // Confirms the per-tile path doesn't churn every row's identity — only
+    // the region that ticked should see a new object, so a memoised list
+    // item in the UI can skip re-rendering siblings.
+    const a = buildSpec({ id: "region-a" });
+    const b = buildSpec({ id: "region-b" });
+    useOfflineStore.getState().addRegion(a, 10);
+    useOfflineStore.getState().addRegion(b, 10);
+
+    const before = useOfflineStore.getState().regions;
+    const beforeB = before.find((r) => r.id === b.id);
+
+    useOfflineStore.getState().updateProgress(a.id, {
+      downloaded: 3,
+      failed: 0,
+      bytesOnDisk: 0,
+    });
+
+    const afterB = useOfflineStore
+      .getState()
+      .regions.find((r) => r.id === b.id);
+    expect(afterB).toBe(beforeB);
+  });
+
   it("finishDownload records the terminal outcome", () => {
     const spec = buildSpec();
     useOfflineStore.getState().addRegion(spec, 10);

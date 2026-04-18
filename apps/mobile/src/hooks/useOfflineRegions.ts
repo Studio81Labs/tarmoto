@@ -34,7 +34,11 @@ import { useOfflineStore } from "@/stores";
 
 export type AddRegionOutcome =
   | { ok: true; regionId: string }
-  | { ok: false; reason: "too-many-tiles" | "invalid-bbox"; tileCount: number };
+  | {
+      ok: false;
+      reason: "too-many-tiles" | "invalid-bbox" | "busy";
+      tileCount: number;
+    };
 
 interface UseOfflineRegionsDeps {
   /** Injected in tests so jest doesn't touch the native FS binding. */
@@ -153,6 +157,15 @@ export function useOfflineRegions(
 
   const saveRegion = useCallback<UseOfflineRegionsResult["saveRegion"]>(
     async (name, bbox, minZoom, maxZoom) => {
+      // Serial pipeline: refuse a second save while one's in flight. The
+      // module header explains why — mobile bandwidth is bottlenecked and
+      // the backend rate-limits aggressive parallel tile bursts — and
+      // without this guard two quick taps would spawn parallel downloads,
+      // leaving `activeRegionId` pointing at only the last one started.
+      if (runPromises.current.size > 0) {
+        return { ok: false, reason: "busy", tileCount: 0 };
+      }
+
       if (
         !Number.isFinite(bbox.west) ||
         !Number.isFinite(bbox.east) ||

@@ -593,8 +593,17 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
   },
 
   updateProgress: (regionId, patch) => {
-    set((s) => {
-      const next = s.regions.map((r) => {
+    // Intentionally does NOT persist. `onProgress` fires once per tile and a
+    // region can hold up to MAX_TILES_PER_REGION (5000); serialising the
+    // whole regions array to MMKV on every tick would burn ~5000 JSON
+    // writes per download and choke the UI with re-renders. In-memory state
+    // carries the live progress bar; durable state is refreshed on
+    // `beginDownload` and `finishDownload` only. Crash recovery is safe:
+    // `loadPersistedRegions` clamps any region left in "downloading" (or
+    // "pending") to "failed" so the rider always sees a Retry affordance,
+    // and the resume path re-uses tiles already on disk via `tileExists`.
+    set((s) => ({
+      regions: s.regions.map((r) => {
         if (r.id !== regionId) return r;
         return {
           ...r,
@@ -603,10 +612,8 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
           bytesOnDisk: patch.bytesOnDisk,
           lastUpdatedAt: Date.now(),
         };
-      });
-      persistRegions(next);
-      return { regions: next };
-    });
+      }),
+    }));
   },
 
   finishDownload: (regionId, outcome) => {

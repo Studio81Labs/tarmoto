@@ -87,12 +87,13 @@ export default function OfflineRegionsScreen() {
       DEFAULT_MAX_ZOOM,
     );
     if (!outcome.ok) {
-      Alert.alert(
-        "Couldn't save this area",
+      const message =
         outcome.reason === "too-many-tiles"
           ? `This area would need ${outcome.tileCount} tiles, which is over the offline cache limit. Zoom in before saving.`
-          : "The map bounds looked invalid. Move the map and try again.",
-      );
+          : outcome.reason === "busy"
+            ? "Another region is still downloading. Wait for it to finish (or pause it) before saving a new one."
+            : "The map bounds looked invalid. Move the map and try again.";
+      Alert.alert("Couldn't save this area", message);
     }
   }, [center, saveRegion]);
 
@@ -195,7 +196,18 @@ interface RegionRowProps {
   onDelete: (region: OfflineRegion) => void;
 }
 
-function RegionRow({ region, onRetry, onCancel, onDelete }: RegionRowProps) {
+// Memoised so tile-tick updates to the active region don't force every
+// other row in the FlatList to re-render. `onRetry`/`onCancel`/`onDelete`
+// are `useCallback`-stable in the parent, so identity-based equality is
+// enough — no custom comparator needed.
+const RegionRow = React.memo(RegionRowImpl);
+
+function RegionRowImpl({
+  region,
+  onRetry,
+  onCancel,
+  onDelete,
+}: RegionRowProps) {
   const statusColor = STATUS_COLORS[region.status];
   const statusLabel = STATUS_LABELS[region.status];
   const statusIcon = STATUS_ICONS[region.status];
