@@ -143,6 +143,123 @@ export function flattenTripRoute(days: TripDay[]): LatLng[] {
   return out;
 }
 
+// Great-circle distance between two lat/lng pairs, in kilometres.
+// Inlined here so the helper module stays free of runtime deps — the
+// mobile app doesn't (yet) pull in `@tarmoto/shared` at build time.
+const EARTH_RADIUS_KM = 6371;
+function haversineKm(a: LatLng, b: LatLng): number {
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((a.lat * Math.PI) / 180) *
+      Math.cos((b.lat * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
+  return EARTH_RADIUS_KM * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+/**
+ * One fuel-to-fuel leg of a day's route. Names default to "Start" / "End"
+ * / "Fuel" when the source waypoint has no label — the UI renders them
+ * literally so callers can feed them straight into JSX.
+ */
+export interface FuelLeg {
+  fromName: string;
+  toName: string;
+  distanceKm: number;
+  exceedsRange: boolean;
+}
+
+/**
+ * Partition a day's route into legs bounded by fuel waypoints and surface
+ * the ones that outrun the rider's declared fuel range (US-10).
+ *
+ * Algorithm:
+ *   1. Pre-compute cumulative polyline distance at each geometry vertex.
+ *   2. Snap every `fuel` waypoint to the nearest vertex (by haversine)
+ *      and record its cumulative distance along the polyline.
+ *   3. Sort those anchors along the route so two fuel stops listed in
+ *      non-geographic order still yield monotonic legs.
+ *   4. Prepend a virtual "Start" anchor at 0 km and append an "End"
+ *      anchor at `totalKm`, then emit each consecutive pair as a leg.
+ *
+ * Returns `[]` for degenerate inputs (no geometry, fewer than two
+ * points) — callers use that to short-circuit the warning card.
+ *
+ * Edge cases:
+ *   - A fuel waypoint far from any vertex still snaps to its nearest;
+ *     callers are expected to trust the waypoint is along the route.
+ *   - `fuelRangeKm <= 0` disables the exceed flag so a misconfigured
+ *     preference can never nag the rider about every leg.
+ */
+export function computeFuelRangeLegs(
+  day: TripDay,
+  fuelRangeKm: number,
+): FuelLeg[] {
+  const geom = day.route_geometry;
+  if (!Array.isArray(geom) || geom.length < 2) return [];
+
+  const cumKm: number[] = new Array(geom.length);
+  cumKm[0] = 0;
+  for (let i = 1; i < geom.length; i++) {
+    cumKm[i] = cumKm[i - 1] + haversineKm(geom[i - 1], geom[i]);
+  }
+  const totalKm = cumKm[cumKm.length - 1];
+
+  const sortedWaypoints = [...day.waypoints].sort(
+    (a, b) => a.sequence - b.sequence,
+  );
+  const anchors = sortedWaypoints
+    .filter((w) => w.waypoint_type === "fuel")
+    .map((w) => {
+      let bestIdx = 0;
+      let bestDist = Infinity;
+      for (let i = 0; i < geom.length; i++) {
+        const d = haversineKm(w, geom[i]);
+        if (d < bestDist) {
+          bestDist = d;
+          bestIdx = i;
+        }
+      }
+      return { name: w.name ?? "Fuel", cumKm: cumKm[bestIdx] };
+    })
+    .sort((a, b) => a.cumKm - b.cumKm);
+
+  const start = sortedWaypoints.find((w) => w.waypoint_type === "start");
+  const end = sortedWaypoints.find((w) => w.waypoint_type === "end");
+  const points = [
+    { name: start?.name ?? "Start", cumKm: 0 },
+    ...anchors,
+    { name: end?.name ?? "End", cumKm: totalKm },
+  ];
+
+  const legs: FuelLeg[] = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const distanceKm = Math.max(0, points[i + 1].cumKm - points[i].cumKm);
+    legs.push({
+      fromName: points[i].name,
+      toName: points[i + 1].name,
+      distanceKm,
+      exceedsRange: fuelRangeKm > 0 && distanceKm > fuelRangeKm,
+    });
+  }
+  return legs;
+}
+
+/**
+ * Aggregate view of a day's fuel-leg breakdown — convenient when the UI
+ * just wants "is there a problem, and how bad is the worst leg?"
+ */
+export function summarizeFuelRange(
+  day: TripDay,
+  fuelRangeKm: number,
+): { legs: FuelLeg[]; longestLegKm: number; exceedingCount: number } {
+  const legs = computeFuelRangeLegs(day, fuelRangeKm);
+  const longestLegKm = legs.reduce((m, l) => Math.max(m, l.distanceKm), 0);
+  const exceedingCount = legs.filter((l) => l.exceedsRange).length;
+  return { legs, longestLegKm, exceedingCount };
+}
+
 /**
  * Build a coarse bounding box around a start point for the generator API.
  * The backend refines this based on the number of days, but it needs *some*

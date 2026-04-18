@@ -17,7 +17,11 @@ import type {
 } from "@/types";
 import type { ClassificationResult, WindowFeatures } from "@/services/sensors";
 import type { LocationUpdate } from "@/services/location";
-import { MIN_QUALITY_BOUNDS } from "@/theme";
+import {
+  DEFAULT_FUEL_RANGE_KM,
+  MIN_QUALITY_BOUNDS,
+  clampFuelRangeKm,
+} from "@/theme";
 
 // ── Auth Store ──
 
@@ -204,6 +208,7 @@ export const useMapStore = create<MapState>((set) => ({
 const PREFS_STORAGE_ID = "tarmoto-prefs";
 const MIN_QUALITY_KEY = "minQuality";
 const DEFAULT_MIN_QUALITY = 3; // "Fair or better" — matches UserPreferences default
+const FUEL_RANGE_KEY = "fuelRangeKm";
 
 interface PrefsStorage {
   getNumber(key: string): number | undefined;
@@ -250,10 +255,19 @@ function loadPersistedMinQuality(): number {
   return clampMinQuality(raw);
 }
 
+function loadPersistedFuelRange(): number {
+  const raw = prefsStorage.getNumber(FUEL_RANGE_KEY);
+  if (raw === undefined) return DEFAULT_FUEL_RANGE_KM;
+  return clampFuelRangeKm(raw);
+}
+
 interface PreferencesState {
   /** Minimum road quality (1..5) the rider wants to see in planning. */
   minQuality: number;
   setMinQuality: (value: number) => void;
+  /** Rider's usable fuel range in kilometres — US-10 long-leg warnings. */
+  fuelRangeKm: number;
+  setFuelRangeKm: (value: number) => void;
   resetPreferences: () => void;
 }
 
@@ -264,14 +278,25 @@ export const usePreferencesStore = create<PreferencesState>((set) => ({
     prefsStorage.set(MIN_QUALITY_KEY, clamped);
     set({ minQuality: clamped });
   },
+  fuelRangeKm: loadPersistedFuelRange(),
+  setFuelRangeKm: (value) => {
+    const clamped = clampFuelRangeKm(value);
+    prefsStorage.set(FUEL_RANGE_KEY, clamped);
+    set({ fuelRangeKm: clamped });
+  },
   resetPreferences: () => {
     prefsStorage.set(MIN_QUALITY_KEY, DEFAULT_MIN_QUALITY);
-    set({ minQuality: DEFAULT_MIN_QUALITY });
+    prefsStorage.set(FUEL_RANGE_KEY, DEFAULT_FUEL_RANGE_KM);
+    set({
+      minQuality: DEFAULT_MIN_QUALITY,
+      fuelRangeKm: DEFAULT_FUEL_RANGE_KM,
+    });
   },
 }));
 
 export const PREFERENCES_DEFAULTS = {
   minQuality: DEFAULT_MIN_QUALITY,
+  fuelRangeKm: DEFAULT_FUEL_RANGE_KM,
 } as const;
 
 // ── Commute Store ──
