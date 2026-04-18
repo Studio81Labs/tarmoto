@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMapStore } from "@/stores/map";
 import { Layers, Filter, Search, RotateCcw } from "lucide-react";
@@ -65,17 +65,19 @@ function ExplorerPageInner() {
     resetFilters,
   } = useMapStore();
 
-  // Hydrate store from URL on first mount (and on back/forward navigation).
-  const hydratedRef = useRef(false);
+  // Hydrate the store from URL params on mount and on back/forward navigation.
+  // `hydrated` is state (not a ref) so the URL-sync effect waits for the render
+  // that follows the store update — otherwise it would see stale `filters` from
+  // the same commit and overwrite the URL with defaults.
+  const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
-    const fromUrl = filtersFromSearchParams(searchParams);
-    setFilters(fromUrl);
-    hydratedRef.current = true;
+    setFilters(filtersFromSearchParams(searchParams));
+    setHydrated(true);
   }, [searchParams, setFilters]);
 
   // Reflect store changes back into the URL without scrolling or pushing history.
   useEffect(() => {
-    if (!hydratedRef.current) return;
+    if (!hydrated) return;
     const current = new URLSearchParams(searchParams.toString());
     const next = filtersToSearchParams(filters, current);
     if (next.toString() === current.toString()) return;
@@ -83,7 +85,7 @@ function ExplorerPageInner() {
     router.replace(query ? `${pathname}?${query}` : pathname, {
       scroll: false,
     });
-  }, [filters, pathname, router, searchParams]);
+  }, [filters, hydrated, pathname, router, searchParams]);
 
   const isDefault = filtersEqual(filters, DEFAULT_MAP_FILTERS);
 

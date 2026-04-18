@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import {
   DEFAULT_MAP_FILTERS,
+  clampCurviness,
   filtersEqual,
   type FilterableSurface,
   type MapFilters,
@@ -74,7 +75,7 @@ export const useMapStore = create<MapState>((set) => ({
     }),
   setMinCurviness: (value) =>
     set((s) => ({
-      filters: { ...s.filters, minCurviness: clamp(value) },
+      filters: { ...s.filters, minCurviness: clampCurviness(value) },
     })),
   setFilters: (filters) =>
     set((s) =>
@@ -84,10 +85,3 @@ export const useMapStore = create<MapState>((set) => ({
     ),
   resetFilters: () => set({ filters: cloneFilters(DEFAULT_MAP_FILTERS) }),
 }));
-
-function clamp(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  if (value < 0) return 0;
-  if (value > 100) return 100;
-  return Math.round(value);
-}

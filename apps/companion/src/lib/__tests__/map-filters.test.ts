@@ -67,6 +67,17 @@ describe("filtersToSearchParams", () => {
     expect(params.get("c")).toBeNull();
     expect(params.get("tab")).toBe("map");
   });
+
+  it("encodes empty-set selections with a sentinel, not an empty value", () => {
+    const params = filtersToSearchParams(
+      makeFilters({
+        quality: new Set(),
+        surface: new Set(),
+      }),
+    );
+    expect(params.get("q")).toBe("none");
+    expect(params.get("s")).toBe("none");
+  });
 });
 
 describe("filtersFromSearchParams", () => {
@@ -127,6 +138,26 @@ describe("filtersFromSearchParams", () => {
     });
     const parsed = filtersFromSearchParams(filtersToSearchParams(original));
     expect(filtersEqual(original, parsed)).toBe(true);
+  });
+
+  it("round-trips empty-set selections via the sentinel", () => {
+    const original = makeFilters({
+      quality: new Set(),
+      surface: new Set(),
+      minCurviness: 10,
+    });
+    const parsed = filtersFromSearchParams(filtersToSearchParams(original));
+    expect(parsed.quality.size).toBe(0);
+    expect(parsed.surface.size).toBe(0);
+    expect(parsed.minCurviness).toBe(10);
+  });
+
+  it("treats the 'none' sentinel as an empty set", () => {
+    const filters = filtersFromSearchParams(
+      new URLSearchParams("q=none&s=none"),
+    );
+    expect(filters.quality.size).toBe(0);
+    expect(filters.surface.size).toBe(0);
   });
 });
 

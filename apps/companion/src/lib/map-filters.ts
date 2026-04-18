@@ -36,6 +36,11 @@ const QUALITY_PARAM = "q";
 const SURFACE_PARAM = "s";
 const CURVINESS_PARAM = "c";
 
+// Sentinel emitted when the user has explicitly cleared every option in a set
+// filter. Needed to distinguish "nothing selected" from "param absent" (which
+// falls back to defaults on parse) and from "garbage URL" (also defaults).
+const EMPTY_SENTINEL = "none";
+
 export function isQualityTier(value: string): value is QualityTier {
   return (QUALITY_TIERS as readonly string[]).includes(value);
 }
@@ -54,13 +59,17 @@ export function filtersToSearchParams(
   params.delete(CURVINESS_PARAM);
 
   const allQuality = QUALITY_TIERS.every((t) => filters.quality.has(t));
-  if (!allQuality) {
+  if (filters.quality.size === 0) {
+    params.set(QUALITY_PARAM, EMPTY_SENTINEL);
+  } else if (!allQuality) {
     const ordered = QUALITY_TIERS.filter((t) => filters.quality.has(t));
     params.set(QUALITY_PARAM, ordered.join(","));
   }
 
   const allSurface = FILTERABLE_SURFACES.every((s) => filters.surface.has(s));
-  if (!allSurface) {
+  if (filters.surface.size === 0) {
+    params.set(SURFACE_PARAM, EMPTY_SENTINEL);
+  } else if (!allSurface) {
     const ordered = FILTERABLE_SURFACES.filter((s) => filters.surface.has(s));
     params.set(SURFACE_PARAM, ordered.join(","));
   }
@@ -136,6 +145,7 @@ function parseCsvSet<T extends string>(
   guard: (value: string) => value is T,
 ): Set<T> {
   if (raw === null) return new Set(all);
+  if (raw.trim() === EMPTY_SENTINEL) return new Set<T>();
   const parts = raw
     .split(",")
     .map((p) => p.trim())
@@ -145,7 +155,7 @@ function parseCsvSet<T extends string>(
   return new Set(valid);
 }
 
-function clampCurviness(value: number): number {
+export function clampCurviness(value: number): number {
   if (!Number.isFinite(value)) return 0;
   if (value < 0) return 0;
   if (value > 100) return 100;
