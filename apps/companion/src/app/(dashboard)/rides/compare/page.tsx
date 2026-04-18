@@ -153,7 +153,7 @@ function CompareRidesPageInner() {
         />
       </div>
 
-      {options.length < 2 && !optionsLoading && (
+      {options.length < 2 && !optionsLoading && !optionsError && (
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-10 text-center text-sm text-slate-400">
           You need at least two rides to run a comparison. Keep riding with the
           Tarmoto mobile app!
@@ -202,7 +202,7 @@ function RidePicker({
         </option>
         {options.map((ride) => (
           <option key={ride.id} value={ride.id}>
-            {formatRideOption(ride)}
+            {formatRideMeta(ride)}
           </option>
         ))}
       </select>
@@ -210,7 +210,10 @@ function RidePicker({
   );
 }
 
-function formatRideOption(ride: RideOption): string {
+function formatRideMeta(ride: {
+  started_at: string;
+  distance_km: number | null;
+}): string {
   const date = new Date(ride.started_at).toLocaleDateString();
   const distance =
     ride.distance_km != null ? ` · ${ride.distance_km.toFixed(1)} km` : "";
@@ -325,14 +328,14 @@ function RouteCompareSection({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <RouteBox
           label="Ride A"
-          meta={rideHeaderMeta(rideA)}
+          meta={formatRideMeta(rideA)}
           svg={unified?.a?.path}
           viewBox={unified?.viewBox}
           color="#0ED3CF"
         />
         <RouteBox
           label="Ride B"
-          meta={rideHeaderMeta(rideB)}
+          meta={formatRideMeta(rideB)}
           svg={unified?.b?.path}
           viewBox={unified?.viewBox}
           color="#F472B6"
@@ -340,13 +343,6 @@ function RouteCompareSection({
       </div>
     </section>
   );
-}
-
-function rideHeaderMeta(ride: FetchedRide): string {
-  const date = new Date(ride.started_at).toLocaleDateString();
-  const dist =
-    ride.distance_km != null ? ` · ${ride.distance_km.toFixed(1)} km` : "";
-  return `${date}${dist}`;
 }
 
 function RouteBox({
