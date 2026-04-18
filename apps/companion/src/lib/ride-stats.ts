@@ -34,7 +34,6 @@ export interface RideForStats {
   distance_km?: number | null;
   duration_min?: number | null;
   ride_type?: string | null;
-  bike_id?: string | null;
 }
 
 export interface AllTimeTotals {
@@ -73,13 +72,11 @@ export type YearOverYearPoint = {
 export interface RideFilters {
   year: number | "all";
   rideType: RideType | "all";
-  bikeId: string | "all";
 }
 
 export const DEFAULT_RIDE_FILTERS: RideFilters = {
   year: "all",
   rideType: "all",
-  bikeId: "all",
 };
 
 export function isRideType(value: unknown): value is RideType {
@@ -113,9 +110,6 @@ export function filterRides(
     if (filters.rideType !== "all" && ride.ride_type !== filters.rideType) {
       return false;
     }
-    if (filters.bikeId !== "all" && (ride.bike_id ?? "") !== filters.bikeId) {
-      return false;
-    }
     if (filters.year !== "all") {
       const date = parseStartedAt(ride.started_at);
       if (!date || date.getFullYear() !== filters.year) return false;
@@ -131,14 +125,6 @@ export function availableYears(rides: readonly RideForStats[]): number[] {
     if (date) years.add(date.getFullYear());
   }
   return [...years].sort((a, b) => b - a);
-}
-
-export function availableBikeIds(rides: readonly RideForStats[]): string[] {
-  const bikes = new Set<string>();
-  for (const ride of rides) {
-    if (ride.bike_id) bikes.add(ride.bike_id);
-  }
-  return [...bikes].sort();
 }
 
 export function computeAllTimeTotals(

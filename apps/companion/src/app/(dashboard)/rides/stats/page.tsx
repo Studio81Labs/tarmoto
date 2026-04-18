@@ -79,7 +79,6 @@ export default function StatsPage() {
   const years = useMemo(() => availableYears(rides), [rides]);
   const filtered = useMemo(() => filterRides(rides, filters), [rides, filters]);
   const totals = useMemo(() => computeAllTimeTotals(filtered), [filtered]);
-  const yearlyTotals = useMemo(() => computeYearlyTotals(filtered), [filtered]);
 
   // The monthly + heatmap charts always need a single concrete year. When the
   // year filter is "all" we anchor on the latest year that has data so the
@@ -98,15 +97,20 @@ export default function StatsPage() {
     [filtered, focusYear],
   );
   const yoyYears = useMemo(() => years.slice(0, 3), [years]);
-  // YoY compares across years, so it ignores the year filter — otherwise
-  // selecting a single year would always produce a one-line chart.
-  const ridesForYoY = useMemo(
+  // YoY and the "All years" table compare across years, so they ignore the
+  // year filter — otherwise selecting a single year would collapse both to a
+  // single data point.
+  const ridesAcrossYears = useMemo(
     () => filterRides(rides, { ...filters, year: "all" }),
     [rides, filters],
   );
+  const yearlyTotals = useMemo(
+    () => computeYearlyTotals(ridesAcrossYears),
+    [ridesAcrossYears],
+  );
   const yoy = useMemo(
-    () => computeYearOverYear(ridesForYoY, yoyYears),
-    [ridesForYoY, yoyYears],
+    () => computeYearOverYear(ridesAcrossYears, yoyYears),
+    [ridesAcrossYears, yoyYears],
   );
 
   if (loading) {
@@ -166,7 +170,7 @@ export default function StatsPage() {
         <ChartHeader
           icon={<BarChart3 size={16} />}
           title={`Monthly distance — ${focusYear}`}
-          subtitle="Distance ridden each month, with ride count overlaid."
+          subtitle="Distance ridden each month."
         />
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
@@ -197,12 +201,10 @@ export default function StatsPage() {
                   fontSize: 12,
                 }}
                 labelStyle={{ color: "#e2e8f0" }}
-                formatter={(value: number, name: string) => {
-                  if (name === "distanceKm") {
-                    return [`${value.toFixed(0)} km`, "Distance"];
-                  }
-                  return [value, "Rides"];
-                }}
+                formatter={(value: number) => [
+                  `${value.toFixed(0)} km`,
+                  "Distance",
+                ]}
               />
               <Bar dataKey="distanceKm" fill="#22d3ee" radius={[4, 4, 0, 0]} />
             </BarChart>

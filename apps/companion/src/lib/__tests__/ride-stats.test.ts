@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  availableBikeIds,
   availableYears,
   computeAllTimeTotals,
   computeCalendarHeatmap,
@@ -21,7 +20,6 @@ function ride(overrides: Partial<RideForStats> & { id: string }): RideForStats {
     distance_km: 50,
     duration_min: 60,
     ride_type: "free",
-    bike_id: "bike-1",
     ...overrides,
   };
 }
@@ -106,19 +104,16 @@ describe("filterRides", () => {
       id: "a",
       started_at: "2026-01-15T10:00:00Z",
       ride_type: "free",
-      bike_id: "bike-1",
     }),
     ride({
       id: "b",
       started_at: "2026-06-15T10:00:00Z",
       ride_type: "commute",
-      bike_id: "bike-2",
     }),
     ride({
       id: "c",
       started_at: "2025-09-01T10:00:00Z",
       ride_type: "trip",
-      bike_id: "bike-1",
     }),
   ];
 
@@ -136,15 +131,10 @@ describe("filterRides", () => {
     expect(result.map((r) => r.id)).toEqual(["b"]);
   });
 
-  it("filters by bike id", () => {
-    const result = filterRides(dataset, makeFilters({ bikeId: "bike-1" }));
-    expect(result.map((r) => r.id)).toEqual(["a", "c"]);
-  });
-
   it("combines filters with AND semantics", () => {
     const result = filterRides(
       dataset,
-      makeFilters({ year: 2026, rideType: "free", bikeId: "bike-1" }),
+      makeFilters({ year: 2026, rideType: "free" }),
     );
     expect(result.map((r) => r.id)).toEqual(["a"]);
   });
@@ -158,7 +148,7 @@ describe("filterRides", () => {
   });
 });
 
-describe("availableYears / availableBikeIds", () => {
+describe("availableYears", () => {
   it("returns years sorted newest-first, deduped", () => {
     const years = availableYears([
       ride({ id: "1", started_at: "2024-01-01T00:00:00Z" }),
@@ -167,17 +157,6 @@ describe("availableYears / availableBikeIds", () => {
       ride({ id: "4", started_at: "broken" }),
     ]);
     expect(years).toEqual([2026, 2024]);
-  });
-
-  it("returns bike ids sorted, ignoring null/undefined", () => {
-    const bikes = availableBikeIds([
-      ride({ id: "1", bike_id: "ducati" }),
-      ride({ id: "2", bike_id: null }),
-      ride({ id: "3", bike_id: undefined }),
-      ride({ id: "4", bike_id: "aprilia" }),
-      ride({ id: "5", bike_id: "ducati" }),
-    ]);
-    expect(bikes).toEqual(["aprilia", "ducati"]);
   });
 });
 
