@@ -26,6 +26,8 @@ import type {
   RoutePreferences,
   LatLng,
   RoadReview,
+  MountainPass,
+  CheckRouteForPassesResponse,
 } from "@/types";
 
 const storage = createMMKV({ id: "tarmoto-auth" });
@@ -355,6 +357,26 @@ class ApiService {
 
   async getCommuteStatus(): Promise<CommuteStatus> {
     const { data } = await this.client.get<CommuteStatus>("/commute/status");
+    return data;
+  }
+
+  // ── Mountain Passes (US-11) ──
+
+  async getPasses(bbox?: string): Promise<MountainPass[]> {
+    const { data } = await this.client.get<MountainPass[]>("/passes", {
+      params: bbox ? { bbox } : undefined,
+    });
+    return data;
+  }
+
+  async checkRouteForPasses(
+    route: LatLng[],
+    bufferM?: number,
+  ): Promise<CheckRouteForPassesResponse> {
+    const { data } = await this.client.post<CheckRouteForPassesResponse>(
+      "/passes/check-route",
+      { route, buffer_m: bufferM },
+    );
     return data;
   }
 

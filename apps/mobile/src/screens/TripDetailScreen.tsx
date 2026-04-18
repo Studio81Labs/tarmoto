@@ -5,6 +5,12 @@
  * and a day-by-day list where each card drills into TripDayScreen. This
  * is where riders land right after hitting "Generate" on TripCreate — the
  * screen's job is to answer "did I get a sensible trip?" at a glance.
+ *
+ * Also surfaces the US-11 closed-pass warning: every time the trip days
+ * change, we flatten their geometry into one polyline and ask the
+ * backend which mountain passes the route crosses. Any whose status is
+ * `closed` are rendered in a danger-tinted card directly under the
+ * header so the rider sees the problem before scrolling.
  */
 
 import React, { useCallback, useEffect, useState } from "react";
@@ -31,10 +37,11 @@ import {
 } from "@/theme";
 import { api } from "@/services/api";
 import { useTripStore } from "@/stores";
-import type { Trip, TripDay } from "@/types";
+import type { MountainPass, Trip, TripDay } from "@/types";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
 import {
   averageQuality,
+  flattenTripRoute,
   formatDurationMin,
   formatKm,
   formatStatus,
@@ -55,6 +62,7 @@ export default function TripDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [closedPasses, setClosedPasses] = useState<MountainPass[]>([]);
 
   // Single source of truth for "fetch this trip and commit it to local +
   // store state". The mount effect, retry button, and pull-to-refresh all
@@ -100,6 +108,37 @@ export default function TripDetailScreen() {
       signal.cancelled = true;
     };
   }, [fetchTrip]);
+
+  // US-11: surface closed mountain passes that the planned route
+  // crosses so the rider doesn't drive into a snowbank. We re-run the
+  // check whenever the trip days change (route regeneration, edits, or
+  // refresh-driven reload) — cheap because the pass dataset is tiny
+  // and the check is one PostGIS query. Soft-fails to "no warning" so
+  // the screen still renders if `/passes/check-route` is unavailable.
+  useEffect(() => {
+    if (!trip) {
+      setClosedPasses([]);
+      return;
+    }
+    const route = flattenTripRoute(trip.days);
+    if (route.length < 2) {
+      setClosedPasses([]);
+      return;
+    }
+    let cancelled = false;
+    void api
+      .checkRouteForPasses(route)
+      .then((res) => {
+        if (cancelled) return;
+        setClosedPasses(res.passes.filter((p) => p.status === "closed"));
+      })
+      .catch(() => {
+        if (!cancelled) setClosedPasses([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [trip]);
 
   const retry = useCallback(async () => {
     setLoading(true);
@@ -171,6 +210,10 @@ export default function TripDetailScreen() {
       }
     >
       <HeaderCard trip={trip} totalKm={totalKm} avgQ={avgQ} />
+
+      {closedPasses.length > 0 ? (
+        <ClosedPassesWarning passes={closedPasses} />
+      ) : null}
 
       <View style={styles.sectionHeaderRow}>
         <Text style={styles.sectionHeader}>Days</Text>
@@ -278,6 +321,42 @@ function DayCard({ day, onPress }: { day: TripDay; onPress: () => void }) {
   );
 }
 
+function ClosedPassesWarning({ passes }: { passes: MountainPass[] }) {
+  // Sort by elevation descending so the most consequential closure
+  // (typically also the one most likely to be still snowed-in) leads.
+  const sorted = [...passes].sort((a, b) => b.elevation_m - a.elevation_m);
+  const headline =
+    sorted.length === 1
+      ? "1 closed pass on this route"
+      : `${sorted.length} closed passes on this route`;
+  return (
+    <View
+      style={styles.warningCard}
+      accessibilityRole="alert"
+      accessibilityLabel={headline}
+    >
+      <View style={styles.warningHeaderRow}>
+        <Icon name="alert-octagon" size={22} color={colors.danger} />
+        <Text style={styles.warningTitle}>{headline}</Text>
+      </View>
+      <Text style={styles.warningBody}>
+        These passes are likely closed when you ride. Plan a detour or check
+        local conditions before departing.
+      </Text>
+      {sorted.map((p) => (
+        <View key={p.id} style={styles.warningPassRow}>
+          <Text style={styles.warningPassName} numberOfLines={1}>
+            {p.name}
+          </Text>
+          <Text style={styles.warningPassMeta}>
+            {p.elevation_m} m · {p.country_code}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function Metric({
   label,
   value,
@@ -350,6 +429,47 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     padding: spacing.lg,
     gap: spacing.md,
+  },
+  warningCard: {
+    backgroundColor: colors.qualityAlpha.veryPoor,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.danger,
+    padding: spacing.lg,
+    gap: spacing.sm,
+  },
+  warningHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  warningTitle: {
+    color: colors.textPrimary,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.bold,
+    flex: 1,
+  },
+  warningBody: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
+    lineHeight: 18,
+  },
+  warningPassRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingTop: spacing.xs,
+  },
+  warningPassName: {
+    color: colors.textPrimary,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
+    flex: 1,
+    paddingRight: spacing.sm,
+  },
+  warningPassMeta: {
+    color: colors.textTertiary,
+    fontSize: fontSize.xs,
   },
   titleRow: {
     flexDirection: "row",

@@ -1,6 +1,7 @@
 import {
   averageQuality,
   bboxAroundPoint,
+  flattenTripRoute,
   formatDurationMin,
   formatKm,
   formatStatus,
@@ -8,7 +9,7 @@ import {
   summarizeWaypoints,
   sumDistance,
 } from "../TripScreens.helpers";
-import type { TripDay, Waypoint } from "@/types";
+import type { LatLng, TripDay, Waypoint } from "@/types";
 
 const wp = (
   id: string,
@@ -145,5 +146,60 @@ describe("bboxAroundPoint", () => {
   it("handles missing / zero day count without producing NaN", () => {
     const bbox = bboxAroundPoint(0, 0, 0);
     expect(bbox.split(",").every((n) => Number.isFinite(Number(n)))).toBe(true);
+  });
+});
+
+describe("flattenTripRoute", () => {
+  const dayWith = (
+    day_number: number,
+    geom: LatLng[],
+    distance_km = 100,
+  ): TripDay => ({
+    id: `d-${day_number}`,
+    day_number,
+    distance_km,
+    avg_quality: 0,
+    elevation_gain: 0,
+    estimated_time_min: 0,
+    route_geometry: geom,
+    waypoints: [],
+  });
+
+  it("concatenates day geometries in day_number order", () => {
+    const result = flattenTripRoute([
+      dayWith(2, [
+        { lat: 47.1, lng: 11.1 },
+        { lat: 47.2, lng: 11.2 },
+      ]),
+      dayWith(1, [
+        { lat: 46.9, lng: 10.9 },
+        { lat: 47.0, lng: 11.0 },
+      ]),
+    ]);
+    expect(result).toEqual([
+      { lat: 46.9, lng: 10.9 },
+      { lat: 47.0, lng: 11.0 },
+      { lat: 47.1, lng: 11.1 },
+      { lat: 47.2, lng: 11.2 },
+    ]);
+  });
+
+  it("skips days with fewer than two points (degenerate geometry)", () => {
+    const result = flattenTripRoute([
+      dayWith(1, []),
+      dayWith(2, [{ lat: 47, lng: 11 }]),
+      dayWith(3, [
+        { lat: 47.5, lng: 11.5 },
+        { lat: 47.6, lng: 11.6 },
+      ]),
+    ]);
+    expect(result).toEqual([
+      { lat: 47.5, lng: 11.5 },
+      { lat: 47.6, lng: 11.6 },
+    ]);
+  });
+
+  it("returns an empty array when no day has usable geometry", () => {
+    expect(flattenTripRoute([dayWith(1, []), dayWith(2, [])])).toEqual([]);
   });
 });

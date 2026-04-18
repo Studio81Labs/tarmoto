@@ -158,11 +158,13 @@ interface MapState {
   showQualityOverlay: boolean;
   showSurfaceOverlay: boolean;
   showHazardOverlay: boolean;
+  showPassesOverlay: boolean;
   setCenter: (center: LatLng) => void;
   setZoom: (zoom: number) => void;
   toggleQuality: () => void;
   toggleSurface: () => void;
   toggleHazards: () => void;
+  togglePasses: () => void;
 }
 
 export const useMapStore = create<MapState>((set) => ({
@@ -171,6 +173,7 @@ export const useMapStore = create<MapState>((set) => ({
   showQualityOverlay: true,
   showSurfaceOverlay: false,
   showHazardOverlay: true,
+  showPassesOverlay: true,
   setCenter: (center) => set({ center }),
   setZoom: (zoom) => set({ zoom }),
   toggleQuality: () =>
@@ -179,6 +182,7 @@ export const useMapStore = create<MapState>((set) => ({
     set((s) => ({ showSurfaceOverlay: !s.showSurfaceOverlay })),
   toggleHazards: () =>
     set((s) => ({ showHazardOverlay: !s.showHazardOverlay })),
+  togglePasses: () => set((s) => ({ showPassesOverlay: !s.showPassesOverlay })),
 }));
 
 // ── Preferences Store ──

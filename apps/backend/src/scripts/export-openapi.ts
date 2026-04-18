@@ -50,7 +50,9 @@ async function exportSpec(): Promise<void> {
       // was the only thing preventing the event loop from draining.
       if (!hangTimeout) {
         hangTimeout = setTimeout(() => {
-          console.error('export-openapi: timed out waiting for bootstrap after swallowed exit');
+          console.error(
+            'export-openapi: timed out waiting for bootstrap after swallowed exit',
+          );
           realExit(1);
         }, 30_000).unref();
       }
