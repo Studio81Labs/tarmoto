@@ -278,17 +278,29 @@ export async function drainOfflineQueue(
   }
   drainInFlight = true;
   let flushed = 0;
+  // Each drain touches every item at most once. Without this guard, a
+  // poison pill (HTTP 4xx) would be retried three times back-to-back in
+  // the same call — `replaceById` keeps the failed entry at index 0, so
+  // re-reading and picking `queue[0]` loops on the same payload until
+  // `attempts` hits the drop threshold. That wastes server capacity and
+  // starves healthy items behind it. Skipping ids we've already tried
+  // this pass means the next iteration moves past the poison to the
+  // next entry and the three attempts spread across three drain calls,
+  // matching the original design intent.
+  const attemptedThisDrain = new Set<string>();
   try {
     while (true) {
       const queue = readQueue();
-      if (queue.length === 0) break;
-      const head = queue[0];
+      // Re-read each iteration so a concurrent enqueue isn't silently
+      // overwritten, but skip anything we've already handled this pass.
+      const next = queue.find((e) => !attemptedThisDrain.has(e.id));
+      if (!next) break;
+      attemptedThisDrain.add(next.id);
       try {
-        await uploader(head.rideId, head.readings, head.deviceModel);
-        // Re-read the queue in case enqueueUpload ran while we awaited —
-        // splicing by index would corrupt positions if someone enqueued
-        // in the meantime. Matching by id is position-independent.
-        removeById(head.id);
+        await uploader(next.rideId, next.readings, next.deviceModel);
+        // Matching by id is position-independent — if enqueueUpload ran
+        // while we awaited, the freshly-added entry stays intact.
+        removeById(next.id);
         flushed += 1;
       } catch (error) {
         if (isRetriableNetworkError(error)) {
@@ -299,11 +311,11 @@ export async function drainOfflineQueue(
         // drop it so one bad payload doesn't block every other ride.
         // `attempts` exists partly so a future UI could surface stuck
         // items — for now the threshold is conservative.
-        head.attempts += 1;
-        if (head.attempts >= 3) {
-          removeById(head.id);
+        next.attempts += 1;
+        if (next.attempts >= 3) {
+          removeById(next.id);
         } else {
-          replaceById(head.id, head);
+          replaceById(next.id, next);
         }
         // Don't count poison retries as flushed, but keep draining — the
         // next item might be healthy.

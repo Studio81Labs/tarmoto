@@ -218,7 +218,10 @@ describe("offlineQueue", () => {
       // attempts matches the threshold in the service.
       enqueueUpload("poison", [makeReading(1)], "iPhone");
       enqueueUpload("healthy", [makeReading(2)], "iPhone");
-      const uploader: SensorUploader = jest.fn(async (rideId) => {
+      const uploader = jest.fn<
+        ReturnType<SensorUploader>,
+        Parameters<SensorUploader>
+      >(async (rideId) => {
         if (rideId === "poison") throw makeServerError(400);
         return { accepted: 1, segments_updated: 0 };
       });
@@ -234,6 +237,31 @@ describe("offlineQueue", () => {
       expect(remaining.find((e) => e.rideId === "poison")).toBeUndefined();
       // The healthy item should have flushed in the very first drain.
       expect(remaining.find((e) => e.rideId === "healthy")).toBeUndefined();
+    });
+
+    it("only attempts a poison item once per drain call", async () => {
+      // Regression: an earlier version kept the failed item at index 0
+      // and re-read the queue in the same loop, which burned all 3
+      // retries inside the first drain and hammered the server with
+      // rapid-fire 400s. The fix tracks ids already attempted this
+      // pass so the retries are spread across drain calls.
+      enqueueUpload("poison", [makeReading(1)], "iPhone");
+      const poisonCalls = jest.fn();
+      const uploader: SensorUploader = async (rideId) => {
+        if (rideId === "poison") {
+          poisonCalls();
+          throw makeServerError(400);
+        }
+        return { accepted: 1, segments_updated: 0 };
+      };
+
+      await drainOfflineQueue(uploader);
+
+      expect(poisonCalls).toHaveBeenCalledTimes(1);
+      // Still in the queue, attempts bumped exactly once.
+      const [entry] = getPendingUploads();
+      expect(entry.rideId).toBe("poison");
+      expect(entry.attempts).toBe(1);
     });
   });
 
