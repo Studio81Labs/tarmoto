@@ -12,6 +12,12 @@ export type {
 export { usePendingUploads } from "./usePendingUploads";
 export type { PendingUploadsState } from "./usePendingUploads";
 
+export { useOfflineRegions } from "./useOfflineRegions";
+export type {
+  AddRegionOutcome,
+  UseOfflineRegionsResult,
+} from "./useOfflineRegions";
+
 import { useEffect, useRef, useCallback, useState } from "react";
 import { AppState, AppStateStatus } from "react-native";
 import KeepAwake from "react-native-keep-awake";
