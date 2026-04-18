@@ -77,6 +77,14 @@ import {
 type RegionChangeFeature = GeoJSON.Feature<GeoJSON.Point, RegionPayload>;
 type IconName = ComponentProps<typeof Icon>["name"];
 
+// Approximate rendered heights (padding + content) of the bottom legends.
+// Used by `FunZoneCard` to shift itself above whichever legends are open so
+// the card never lands on top of them. Keep these in sync with
+// `styles.legend` / `styles.legendPassesStacked` below if the copy or
+// padding ever changes.
+const FUN_ZONE_CARD_QUALITY_OFFSET = 76 + spacing.sm;
+const FUN_ZONE_CARD_PASSES_OFFSET = 60 + spacing.sm;
+
 export default function MapScreen() {
   const center = useMapStore((s) => s.center);
   const zoom = useMapStore((s) => s.zoom);
@@ -147,9 +155,16 @@ export default function MapScreen() {
       if (lastFunZoneBboxRef.current !== bbox) return;
       setFunZones(next);
     } catch {
-      // Soft-fail — the other overlays stay up and the rider can pan to
-      // retry. A persistent error surface belongs to a future global
-      // toast system.
+      // Soft-fail — clear the ref so the same viewport can be retried.
+      // Without this, an optimistic dedup entry pins a failed bbox and
+      // both the region handler and the toggle-on fallback short-circuit
+      // forever until the rider pans to a distinctly different window.
+      // Guard on `=== bbox` so a newer in-flight fetch (which has already
+      // taken over the ref) stays untouched and remains the source of
+      // truth for the current viewport.
+      if (lastFunZoneBboxRef.current === bbox) {
+        lastFunZoneBboxRef.current = null;
+      }
     }
   }, []);
 
@@ -316,6 +331,13 @@ export default function MapScreen() {
         <FunZoneCard
           zone={selectedZone}
           onClose={() => setSelectedZone(null)}
+          // Shift the card above whatever bottom legends are currently
+          // visible so the two don't overlap. Quality legend (~76 px) pins
+          // to the bottom; Passes legend (~60 px) stacks above it when
+          // quality is also on. Passing both flags lets the card compute
+          // the right offset without tight coupling to the legend styles.
+          hasQualityLegend={showQualityOverlay}
+          hasPassesLegend={showPassesOverlay && passes.length > 0}
         />
       ) : showFunZonesOverlay ? (
         <FunZonesLegend zoneCount={funZones.length} />
@@ -482,21 +504,32 @@ function FunZonesLegend({ zoneCount }: { zoneCount: number }) {
 function FunZoneCard({
   zone,
   onClose,
+  hasQualityLegend,
+  hasPassesLegend,
 }: {
   zone: FunZone;
   onClose: () => void;
+  hasQualityLegend: boolean;
+  hasPassesLegend: boolean;
 }) {
   // Reuse the quality colour ramp — composite scores sit on the same 0-5
   // scale and the breakpoints match, so a separate function would just be a
   // drift risk if the buckets ever change.
   const accent = qualityColor(zone.composite_score);
+  // Push above whichever bottom legends are showing. Heights mirror the
+  // constants used by `legendPassesStacked` (quality ≈ 76 px, passes ≈
+  // 60 px); keep in sync if those legends ever resize.
+  const stackOffset =
+    (hasQualityLegend ? FUN_ZONE_CARD_QUALITY_OFFSET : 0) +
+    (hasPassesLegend ? FUN_ZONE_CARD_PASSES_OFFSET : 0);
+  const bottom = spacing.xl + stackOffset;
   const title = zone.name?.trim() || "Fun zone";
   const curveKm =
     zone.total_curve_km != null ? formatKm(zone.total_curve_km) : null;
   const avgQuality =
     zone.avg_quality != null ? qualityLabel(zone.avg_quality) : null;
   return (
-    <View style={styles.funZoneCard}>
+    <View style={[styles.funZoneCard, { bottom }]}>
       <View style={styles.funZoneCardHeader}>
         <View style={[styles.funZoneScoreChip, { borderColor: accent }]}>
           <Text style={[styles.funZoneScoreChipValue, { color: accent }]}>
@@ -694,6 +727,11 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   funZoneCard: {
+    // `bottom` is supplied inline — it shifts based on which other
+    // legends are open (Quality, Passes) so the card never lands on top
+    // of them. Default 0 keeps the card glued to the screen edge when no
+    // inline override lands (e.g. in a future context that doesn't pass
+    // the legend flags).
     position: "absolute",
     bottom: spacing.xl,
     left: spacing.lg,
