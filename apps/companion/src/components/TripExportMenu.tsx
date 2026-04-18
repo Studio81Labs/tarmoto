@@ -114,10 +114,12 @@ export function TripExportMenu({ trip }: TripExportMenuProps) {
   function handlePrint() {
     if (!trip) return;
     // The Zustand trip store is tab-local, so the new tab can't read
-    // `activeTrip`. Stash the trip in sessionStorage keyed by id and let the
-    // print page pick it up on mount.
+    // `activeTrip`. sessionStorage would work except `noopener` below severs
+    // the creator relationship which skips its copy (HTML spec); localStorage
+    // is shared across same-origin tabs, and the print page deletes the key
+    // as soon as it hydrates so nothing lingers.
     try {
-      sessionStorage.setItem(TRIP_PRINT_STORAGE_KEY, JSON.stringify(trip));
+      localStorage.setItem(TRIP_PRINT_STORAGE_KEY, JSON.stringify(trip));
     } catch {
       /* private mode or storage full — the print page has a demo fallback */
     }

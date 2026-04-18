@@ -16,7 +16,11 @@ import { DEMO_TRIP } from "@/lib/demo-trip";
 /**
  * Print-friendly trip summary (US-39). Opened in a new tab from the planner's
  * Export menu; the Zustand trip store is tab-local so the planner stashes the
- * active trip in sessionStorage keyed by id and we hydrate from there.
+ * active trip in localStorage keyed by id and we hydrate from there.
+ * `sessionStorage` would be the natural fit but `window.open(..., "noopener")`
+ * in the planner severs the creator relationship, which skips its copy; we
+ * therefore use localStorage and clear the key after reading so nothing
+ * persists beyond the print handoff.
  */
 export default function TripPrintPage() {
   const params = useSearchParams();
@@ -27,8 +31,9 @@ export default function TripPrintPage() {
   useEffect(() => {
     let loaded: Trip | null = null;
     try {
-      const raw = sessionStorage.getItem(TRIP_PRINT_STORAGE_KEY);
+      const raw = localStorage.getItem(TRIP_PRINT_STORAGE_KEY);
       if (raw) {
+        localStorage.removeItem(TRIP_PRINT_STORAGE_KEY);
         const parsed = JSON.parse(raw) as Trip;
         if (!tripId || parsed.id === tripId) loaded = parsed;
       }

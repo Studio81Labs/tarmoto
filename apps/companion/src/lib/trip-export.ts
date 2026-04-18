@@ -94,9 +94,13 @@ export function buildMobileDeepLink(trip: Trip): string {
 }
 
 /**
- * Key used by the planner to hand a Trip to the print tab via sessionStorage.
+ * Key used by the planner to hand a Trip to the print tab via localStorage.
  * The planner Zustand store is tab-scoped, so a new tab opened via
  * `window.open` starts empty and needs the trip re-hydrated explicitly.
+ * We use localStorage (not sessionStorage) because `window.open` with the
+ * `noopener` flag severs the creator relationship, which per the HTML spec
+ * skips the sessionStorage copy; localStorage is shared across same-origin
+ * tabs so the handoff works regardless of `noopener`.
  */
 export const TRIP_PRINT_STORAGE_KEY = "tarmoto-print-trip";
 
