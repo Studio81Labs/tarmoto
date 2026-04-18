@@ -190,6 +190,11 @@ describe("tripFileName", () => {
     const trip = minimalTrip({ id: "abc-123", name: "✨✨✨" });
     expect(tripFileName(trip, "gpx")).toBe("tarmoto-abc-123.gpx");
   });
+
+  it("slugifies the id fallback so filesystem-unsafe chars don't leak in", () => {
+    const trip = minimalTrip({ id: "a b/c", name: "✨✨" });
+    expect(tripFileName(trip, "gpx")).toBe("tarmoto-a-b-c.gpx");
+  });
 });
 
 describe("buildTripShareUrl", () => {
