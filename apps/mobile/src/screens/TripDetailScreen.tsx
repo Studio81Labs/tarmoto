@@ -18,6 +18,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -37,7 +38,7 @@ import {
 } from "@/theme";
 import { api } from "@/services/api";
 import { useTripStore } from "@/stores";
-import type { MountainPass, Trip, TripDay } from "@/types";
+import type { MountainPass, Trip, TripDay, TripMember } from "@/types";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
 import {
   averageQuality,
@@ -215,6 +216,9 @@ export default function TripDetailScreen() {
         <ClosedPassesWarning passes={closedPasses} />
       ) : null}
 
+      <InviteCard tripId={trip.id} inviteCode={trip.invite_code} />
+      <MembersCard members={trip.members} />
+
       <View style={styles.sectionHeaderRow}>
         <Text style={styles.sectionHeader}>Days</Text>
         <Text style={styles.sectionHeaderMeta}>
@@ -319,6 +323,135 @@ function DayCard({ day, onPress }: { day: TripDay; onPress: () => void }) {
       </View>
     </TouchableOpacity>
   );
+}
+
+function InviteCard({
+  tripId,
+  inviteCode,
+}: {
+  tripId: string;
+  inviteCode: string;
+}) {
+  // US-8: the invite code is the only token a rider needs to join, so we
+  // make it the visual centrepiece. Share.share lets riders forward the
+  // details through whatever channel they use — SMS, WhatsApp, etc. — so
+  // we don't need a custom share-sheet component.
+  const [shareError, setShareError] = useState<string | null>(null);
+
+  const handleShare = useCallback(async () => {
+    setShareError(null);
+    try {
+      const message =
+        `Join my Tarmoto trip\n\n` +
+        `Trip ID: ${tripId}\n` +
+        `Invite code: ${inviteCode}\n\n` +
+        `Open Tarmoto → Trips → Join a trip and paste both to ride along.`;
+      await Share.share({ message, title: "Tarmoto trip invite" });
+    } catch (err) {
+      setShareError(err instanceof Error ? err.message : "Unable to share");
+    }
+  }, [tripId, inviteCode]);
+
+  if (!inviteCode) return null;
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.inviteHeader}>
+        <Icon name="account-multiple-plus" size={20} color={colors.primary} />
+        <Text style={styles.inviteHeaderLabel}>Invite riders</Text>
+      </View>
+      <Text style={styles.inviteBody}>
+        Share this code so your group can join and plan together.
+      </Text>
+      <View style={styles.inviteCodeRow}>
+        <Text
+          style={styles.inviteCode}
+          selectable
+          accessibilityLabel={`Invite code ${inviteCode}`}
+        >
+          {inviteCode}
+        </Text>
+        <TouchableOpacity
+          style={styles.inviteShareBtn}
+          onPress={() => void handleShare()}
+          accessibilityRole="button"
+          accessibilityLabel="Share invite"
+        >
+          <Icon name="share-variant" size={16} color={colors.textInverse} />
+          <Text style={styles.inviteShareLabel}>Share</Text>
+        </TouchableOpacity>
+      </View>
+      {shareError ? <Text style={styles.inviteError}>{shareError}</Text> : null}
+    </View>
+  );
+}
+
+function MembersCard({ members }: { members: TripMember[] }) {
+  if (members.length === 0) return null;
+  // Owner leads, then admins, then members — inside each bucket keep the
+  // server's ordering (typically join order). Sorting by role keeps the
+  // owner anchored to the top regardless of who joined first.
+  const sorted = [...members].sort(
+    (a, b) => rolePriority(a.role) - rolePriority(b.role),
+  );
+  return (
+    <View style={styles.card}>
+      <View style={styles.sectionHeaderRow}>
+        <Text style={styles.sectionHeader}>Members</Text>
+        <Text style={styles.sectionHeaderMeta}>
+          {members.length} rider{members.length === 1 ? "" : "s"}
+        </Text>
+      </View>
+      {sorted.map((m) => (
+        <MemberRow key={m.user_id} member={m} />
+      ))}
+    </View>
+  );
+}
+
+function MemberRow({ member }: { member: TripMember }) {
+  const badgeColor = roleBadgeColor(member.role);
+  return (
+    <View style={styles.memberRow}>
+      <View style={styles.memberAvatar}>
+        <Icon name="account" size={18} color={colors.primary} />
+      </View>
+      <Text style={styles.memberName} numberOfLines={1}>
+        {member.display_name}
+      </Text>
+      <View style={[styles.roleBadge, { borderColor: badgeColor }]}>
+        <Text style={[styles.roleLabel, { color: badgeColor }]}>
+          {formatRole(member.role)}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function rolePriority(role: TripMember["role"]): number {
+  switch (role) {
+    case "owner":
+      return 0;
+    case "admin":
+      return 1;
+    case "member":
+      return 2;
+  }
+}
+
+function roleBadgeColor(role: TripMember["role"]): string {
+  switch (role) {
+    case "owner":
+      return colors.primary;
+    case "admin":
+      return colors.info;
+    case "member":
+      return colors.textTertiary;
+  }
+}
+
+function formatRole(role: TripMember["role"]): string {
+  return role.charAt(0).toUpperCase() + role.slice(1);
 }
 
 function ClosedPassesWarning({ passes }: { passes: MountainPass[] }) {
@@ -594,5 +727,87 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: fontSize.sm,
     lineHeight: 20,
+  },
+  inviteHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  inviteHeaderLabel: {
+    color: colors.textPrimary,
+    fontSize: fontSize.lg,
+    fontWeight: fontWeight.semibold,
+  },
+  inviteBody: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
+    lineHeight: 20,
+  },
+  inviteCodeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  inviteCode: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: fontSize.lg,
+    fontWeight: fontWeight.bold,
+    letterSpacing: 1,
+    padding: spacing.md,
+    backgroundColor: colors.bgElevated,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  inviteShareBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.pill,
+    backgroundColor: colors.primary,
+  },
+  inviteShareLabel: {
+    color: colors.textInverse,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.bold,
+  },
+  inviteError: {
+    color: colors.danger,
+    fontSize: fontSize.xs,
+  },
+  memberRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  memberAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.primaryAlpha15,
+  },
+  memberName: {
+    flex: 1,
+    color: colors.textPrimary,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.semibold,
+  },
+  roleBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.pill,
+    borderWidth: 1,
+  },
+  roleLabel: {
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
   },
 });

@@ -103,6 +103,11 @@ export default function TripsScreen() {
     [navigation],
   );
 
+  const openJoin = useCallback(
+    () => navigation.navigate("TripJoin"),
+    [navigation],
+  );
+
   const openDetail = useCallback(
     (tripId: string) => navigation.navigate("TripDetail", { tripId }),
     [navigation],
@@ -147,7 +152,12 @@ export default function TripsScreen() {
             tintColor={colors.primary}
           />
         }
-        ListEmptyComponent={<EmptyState onCreate={openCreate} />}
+        ListEmptyComponent={
+          <EmptyState onCreate={openCreate} onJoin={openJoin} />
+        }
+        ListHeaderComponent={
+          trips.length > 0 ? <ListHeader onJoin={openJoin} /> : null
+        }
         renderItem={({ item }) => (
           <TripCard trip={item} onPress={() => openDetail(item.id)} />
         )}
@@ -168,7 +178,35 @@ export default function TripsScreen() {
   );
 }
 
-function EmptyState({ onCreate }: { onCreate: () => void }) {
+function ListHeader({ onJoin }: { onJoin: () => void }) {
+  return (
+    <TouchableOpacity
+      style={styles.joinRow}
+      onPress={onJoin}
+      accessibilityRole="button"
+      accessibilityLabel="Join a trip with an invite code"
+    >
+      <View style={styles.joinIconWrap}>
+        <Icon name="account-multiple-plus" size={20} color={colors.primary} />
+      </View>
+      <View style={styles.joinBody}>
+        <Text style={styles.joinTitle}>Join a trip</Text>
+        <Text style={styles.joinSubtitle}>
+          Got an invite code? Ride along with the rest of the group.
+        </Text>
+      </View>
+      <Icon name="chevron-right" size={22} color={colors.textTertiary} />
+    </TouchableOpacity>
+  );
+}
+
+function EmptyState({
+  onCreate,
+  onJoin,
+}: {
+  onCreate: () => void;
+  onJoin: () => void;
+}) {
   return (
     <View style={styles.emptyWrap}>
       <Icon name="calendar-blank-outline" size={48} color={colors.primary} />
@@ -180,6 +218,10 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
       <TouchableOpacity style={styles.primaryBtn} onPress={onCreate}>
         <Icon name="plus" size={18} color={colors.textInverse} />
         <Text style={styles.primaryBtnLabel}>Plan a trip</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.secondaryBtn} onPress={onJoin}>
+        <Icon name="account-multiple-plus" size={18} color={colors.primary} />
+        <Text style={styles.secondaryBtnLabel}>Join with invite code</Text>
       </TouchableOpacity>
     </View>
   );
@@ -291,6 +333,54 @@ const styles = StyleSheet.create({
     color: colors.textInverse,
     fontWeight: fontWeight.bold,
     fontSize: fontSize.md,
+  },
+  secondaryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.pill,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  secondaryBtnLabel: {
+    color: colors.primary,
+    fontWeight: fontWeight.bold,
+    fontSize: fontSize.md,
+  },
+  joinRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    backgroundColor: colors.bgCard,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  joinIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.primaryAlpha15,
+  },
+  joinBody: {
+    flex: 1,
+    gap: 2,
+  },
+  joinTitle: {
+    color: colors.textPrimary,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.semibold,
+  },
+  joinSubtitle: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
   },
   card: {
     flexDirection: "row",
