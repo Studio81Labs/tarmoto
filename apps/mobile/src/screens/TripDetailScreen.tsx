@@ -42,7 +42,6 @@ import type { MountainPass, Trip, TripDay, TripMember } from "@/types";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
 import {
   averageQuality,
-  capitalize,
   flattenTripRoute,
   formatDurationMin,
   formatKm,
@@ -422,7 +421,7 @@ function MemberRow({ member }: { member: TripMember }) {
       </Text>
       <View style={[styles.roleBadge, { borderColor: badgeColor }]}>
         <Text style={[styles.roleLabel, { color: badgeColor }]}>
-          {capitalize(member.role)}
+          {member.role}
         </Text>
       </View>
     </View>
