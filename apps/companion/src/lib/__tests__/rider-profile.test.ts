@@ -309,6 +309,16 @@ describe("fetchRiderProfile", () => {
     );
   });
 
+  it("re-throws AbortError rather than falling back to demo", async () => {
+    const abortError = Object.assign(new Error("aborted"), {
+      name: "AbortError",
+    });
+    global.fetch = vi.fn().mockRejectedValue(abortError);
+    await expect(fetchRiderProfile("rider-abort")).rejects.toMatchObject({
+      name: "AbortError",
+    });
+  });
+
   it("throws RiderProfileFetchError on 403 rather than faking a profile", async () => {
     global.fetch = vi
       .fn()

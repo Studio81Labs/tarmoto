@@ -48,7 +48,7 @@ export interface RiderProfileDetail extends RiderProfile {
 // ── Derived views ──
 
 export interface StatTile {
-  key: keyof RiderStats | "totalHours";
+  key: keyof RiderStats;
   label: string;
   value: string;
   sub?: string;
@@ -256,9 +256,7 @@ async function mutateFollow(
   method: "POST" | "DELETE",
   accessToken: string | null,
 ): Promise<void> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
+  const headers: Record<string, string> = {};
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
   const res = await fetch(`${API_BASE}/users/${riderId}/follow`, {
     method,
