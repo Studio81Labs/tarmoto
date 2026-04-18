@@ -177,7 +177,6 @@ interface DeleteConfirmModalProps {
 }
 
 function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
-  const clearSession = useAuthStore((s) => s.clearSession);
   const [typed, setTyped] = useState("");
   const [state, setState] = useState<DeleteState>({ kind: "idle" });
 
@@ -189,8 +188,10 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
     setState({ kind: "deleting" });
     try {
       await accountApi.deleteAccount();
-      clearSession();
-      // Let next-auth clear its cookie and bounce us to the login page.
+      // AuthSync clears the Zustand store when next-auth transitions to
+      // unauthenticated, so we only need to signOut here. Clearing the store
+      // ourselves would unmount this modal (gated on user?.email) mid-await
+      // and swallow any signOut error.
       await signOut({ callbackUrl: "/login?deleted=1" });
     } catch (err) {
       const message =
