@@ -201,9 +201,15 @@ export default function MapScreen() {
       // rider pans while the overlay is off and then re-enables it, the
       // previous viewport's polygons flash on screen until the new fetch
       // resolves (and the legend reports a stale count).
+      //
+      // Guard the state setters on actual state presence: this effect's
+      // deps include `zoom` + `center.{lat,lng}`, which fire on every map
+      // settle even while the overlay is off. Without the guards we'd
+      // allocate fresh null/[] references each pan and force a re-render
+      // (which would also invalidate the `funZoneFc` memo for nothing).
       lastFunZoneBboxRef.current = null;
-      setSelectedZone(null);
-      setFunZones([]);
+      setSelectedZone((prev) => (prev === null ? prev : null));
+      setFunZones((prev) => (prev.length === 0 ? prev : []));
       return;
     }
     // Only fire the fallback fetch if the region handler hasn't already
