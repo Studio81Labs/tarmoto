@@ -156,15 +156,21 @@ export function qualityLabel(score: number): string {
 export const MIN_QUALITY_BOUNDS = { min: 1, max: 5 } as const;
 
 /**
- * Does a segment's quality score meet the rider's minimum threshold?
- * Uses floor comparison (a 3.5 score is >= threshold of 3 but not 4).
+ * Does a segment's quality score pass the rider's minimum-label threshold?
+ *
+ * The threshold is expressed as an integer that matches `qualityLabel`'s
+ * buckets (1 = Very Poor, …, 5 = Excellent). Because `qualityLabel` uses
+ * half-point boundaries (≥ 4.5 is Excellent, ≥ 3.5 is Good, …), we must
+ * compare against the bucket's lower edge (`minQuality - 0.5`) rather than
+ * the integer itself. Otherwise a 2.8-scored road would be labeled "Fair"
+ * yet fail a "Fair or better" filter, which is what the UI promises.
  */
 export function meetsQualityThreshold(
   score: number,
   minQuality: number,
 ): boolean {
   if (!Number.isFinite(score)) return false;
-  return score >= minQuality;
+  return score >= minQuality - 0.5;
 }
 
 /**
