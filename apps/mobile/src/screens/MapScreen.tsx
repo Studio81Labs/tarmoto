@@ -196,9 +196,14 @@ export default function MapScreen() {
   // that only needs to be coarse enough to cover the visible viewport.
   useEffect(() => {
     if (!showFunZonesOverlay) {
-      // Clear cached bbox when toggled off so re-opening refetches fresh.
+      // Clear cached bbox + any open card when toggled off so re-opening
+      // refetches fresh. Also drop the rendered zones — otherwise, if the
+      // rider pans while the overlay is off and then re-enables it, the
+      // previous viewport's polygons flash on screen until the new fetch
+      // resolves (and the legend reports a stale count).
       lastFunZoneBboxRef.current = null;
       setSelectedZone(null);
+      setFunZones([]);
       return;
     }
     // Only fire the fallback fetch if the region handler hasn't already
@@ -210,7 +215,11 @@ export default function MapScreen() {
     // of longitude at higher latitudes. The fallback bbox only needs to be
     // approximate (the region handler refines it on the next pan), but the
     // correction has to go on longitude, not latitude.
-    const degrees = 180 / Math.pow(2, zoom); // full map span at this zoom
+    // Slippy-map convention: the world spans 360° of longitude at zoom 0 and
+    // halves per zoom level. Use that as a rough longitudinal span for the
+    // viewport — the region handler will overwrite it on the next settle,
+    // so an over-approximation is preferable to under-fetching.
+    const degrees = 360 / Math.pow(2, zoom);
     const halfLat = degrees / 2;
     const halfLng =
       degrees / 2 / Math.max(Math.cos((center.lat * Math.PI) / 180), 0.01);
