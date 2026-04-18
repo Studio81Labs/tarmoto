@@ -5,7 +5,6 @@ import {
   DEV_MAP_STYLE_URL,
   FUN_ZONE_COLORS,
   FUN_ZONE_SCORE_BREAKS,
-  funZoneColor,
   funZoneFillStyle,
   funZoneLineStyle,
   funZonesToFeatureCollection,
@@ -423,23 +422,5 @@ describe("funZoneFillStyle / funZoneLineStyle", () => {
     const opacityAtLowZoom = expr[4] as number;
     const opacityAtHighZoom = expr[expr.length - 1] as number;
     expect(opacityAtLowZoom).toBeGreaterThan(opacityAtHighZoom);
-  });
-});
-
-describe("funZoneColor", () => {
-  it("returns the excellent colour at and above the top bucket boundary", () => {
-    expect(funZoneColor(4.5)).toBe(FUN_ZONE_COLORS.excellent);
-    expect(funZoneColor(5)).toBe(FUN_ZONE_COLORS.excellent);
-  });
-
-  it("matches qualityColor's half-point buckets so the UI stays consistent", () => {
-    expect(funZoneColor(4.4)).toBe(FUN_ZONE_COLORS.good);
-    expect(funZoneColor(3.5)).toBe(FUN_ZONE_COLORS.good);
-    expect(funZoneColor(3.4)).toBe(FUN_ZONE_COLORS.fair);
-    expect(funZoneColor(2.5)).toBe(FUN_ZONE_COLORS.fair);
-    expect(funZoneColor(2.4)).toBe(FUN_ZONE_COLORS.poor);
-    expect(funZoneColor(1.5)).toBe(FUN_ZONE_COLORS.poor);
-    expect(funZoneColor(1.4)).toBe(FUN_ZONE_COLORS.veryPoor);
-    expect(funZoneColor(0)).toBe(FUN_ZONE_COLORS.veryPoor);
   });
 });

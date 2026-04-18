@@ -54,6 +54,7 @@ import {
   colors,
   fontSize,
   fontWeight,
+  qualityColor,
   qualityLabel,
   shadows,
   spacing,
@@ -63,7 +64,6 @@ import {
   buildQualityLineStyle,
   DEV_MAP_STYLE_URL,
   FUN_ZONE_COLORS,
-  funZoneColor,
   funZoneFillStyle,
   funZoneLineStyle,
   funZonesToFeatureCollection,
@@ -140,6 +140,11 @@ export default function MapScreen() {
     lastFunZoneBboxRef.current = bbox;
     try {
       const next = await api.getFunZones(bbox);
+      // Drop the response if a newer fetch has since taken over the ref —
+      // otherwise a slow in-flight call for a previous viewport can resolve
+      // after a fresher one and silently clobber the correct zones with
+      // stale data. Ref, not state, because this check is synchronous.
+      if (lastFunZoneBboxRef.current !== bbox) return;
       setFunZones(next);
     } catch {
       // Soft-fail — the other overlays stay up and the rider can pan to
@@ -184,9 +189,16 @@ export default function MapScreen() {
     // Only fire the fallback fetch if the region handler hasn't already
     // cached a bbox — otherwise we'd double-fetch every toggle flip.
     if (lastFunZoneBboxRef.current !== null) return;
+    // Degrees of latitude per screen row are roughly constant (parallels are
+    // parallel), but degrees of longitude compress by a factor of cos(φ) as
+    // we move towards the poles — so a square viewport covers MORE degrees
+    // of longitude at higher latitudes. The fallback bbox only needs to be
+    // approximate (the region handler refines it on the next pan), but the
+    // correction has to go on longitude, not latitude.
     const degrees = 180 / Math.pow(2, zoom); // full map span at this zoom
-    const halfLng = degrees / 2;
-    const halfLat = degrees / 2 / Math.cos((center.lat * Math.PI) / 180);
+    const halfLat = degrees / 2;
+    const halfLng =
+      degrees / 2 / Math.max(Math.cos((center.lat * Math.PI) / 180), 0.01);
     const bbox = bboxFromVisibleBounds([
       [center.lng - halfLng, center.lat - halfLat],
       [center.lng + halfLng, center.lat + halfLat],
@@ -474,7 +486,10 @@ function FunZoneCard({
   zone: FunZone;
   onClose: () => void;
 }) {
-  const accent = funZoneColor(zone.composite_score);
+  // Reuse the quality colour ramp — composite scores sit on the same 0-5
+  // scale and the breakpoints match, so a separate function would just be a
+  // drift risk if the buckets ever change.
+  const accent = qualityColor(zone.composite_score);
   const title = zone.name?.trim() || "Fun zone";
   const curveKm =
     zone.total_curve_km != null ? formatKm(zone.total_curve_km) : null;

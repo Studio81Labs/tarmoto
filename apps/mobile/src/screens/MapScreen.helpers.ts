@@ -384,15 +384,3 @@ export const funZoneLineStyle: LineLayerStyle = {
   lineOpacity: 0.85,
   lineJoin: "round",
 };
-
-/**
- * Map a composite score to the matching bucket colour. Used by the legend
- * and by the detail card's score chip so the UI never drifts from the layer.
- */
-export function funZoneColor(score: number): string {
-  if (score >= FUN_ZONE_SCORE_BREAKS[3]) return FUN_ZONE_COLORS.excellent;
-  if (score >= FUN_ZONE_SCORE_BREAKS[2]) return FUN_ZONE_COLORS.good;
-  if (score >= FUN_ZONE_SCORE_BREAKS[1]) return FUN_ZONE_COLORS.fair;
-  if (score >= FUN_ZONE_SCORE_BREAKS[0]) return FUN_ZONE_COLORS.poor;
-  return FUN_ZONE_COLORS.veryPoor;
-}
