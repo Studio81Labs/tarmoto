@@ -204,6 +204,7 @@ export interface Bike {
   photoUrl?: string;
   isActive: boolean;
   totalKm: number;
+  totalRides?: number;
 }
 
 export interface RouteCollection {
