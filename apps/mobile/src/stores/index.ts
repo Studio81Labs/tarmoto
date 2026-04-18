@@ -18,9 +18,9 @@ import type {
 import type { ClassificationResult, WindowFeatures } from "@/services/sensors";
 import type { LocationUpdate } from "@/services/location";
 import {
-  FUEL_RANGE_BOUNDS,
-  FUEL_RANGE_STEP_KM,
+  DEFAULT_FUEL_RANGE_KM,
   MIN_QUALITY_BOUNDS,
+  clampFuelRangeKm,
 } from "@/theme";
 
 // ── Auth Store ──
@@ -209,7 +209,6 @@ const PREFS_STORAGE_ID = "tarmoto-prefs";
 const MIN_QUALITY_KEY = "minQuality";
 const DEFAULT_MIN_QUALITY = 3; // "Fair or better" — matches UserPreferences default
 const FUEL_RANGE_KEY = "fuelRangeKm";
-const DEFAULT_FUEL_RANGE_KM = 250; // typical mid-size adventure bike — plenty of safety margin
 
 interface PrefsStorage {
   getNumber(key: string): number | undefined;
@@ -256,22 +255,10 @@ function loadPersistedMinQuality(): number {
   return clampMinQuality(raw);
 }
 
-function clampFuelRange(value: number): number {
-  if (!Number.isFinite(value)) return DEFAULT_FUEL_RANGE_KM;
-  // Snap to the nearest 50 km step so the persisted value stays on the
-  // same grid the picker exposes — avoids drift between stored state
-  // and the closest pill the UI can render.
-  const snapped = Math.round(value / FUEL_RANGE_STEP_KM) * FUEL_RANGE_STEP_KM;
-  return Math.max(
-    FUEL_RANGE_BOUNDS.min,
-    Math.min(FUEL_RANGE_BOUNDS.max, snapped),
-  );
-}
-
 function loadPersistedFuelRange(): number {
   const raw = prefsStorage.getNumber(FUEL_RANGE_KEY);
   if (raw === undefined) return DEFAULT_FUEL_RANGE_KM;
-  return clampFuelRange(raw);
+  return clampFuelRangeKm(raw);
 }
 
 interface PreferencesState {
@@ -293,7 +280,7 @@ export const usePreferencesStore = create<PreferencesState>((set) => ({
   },
   fuelRangeKm: loadPersistedFuelRange(),
   setFuelRangeKm: (value) => {
-    const clamped = clampFuelRange(value);
+    const clamped = clampFuelRangeKm(value);
     prefsStorage.set(FUEL_RANGE_KEY, clamped);
     set({ fuelRangeKm: clamped });
   },

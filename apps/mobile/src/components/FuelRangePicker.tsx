@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import {
   borderRadius,
+  clampFuelRangeKm,
   colors,
   fontSize,
   fontWeight,
@@ -51,7 +52,9 @@ export default function FuelRangePicker({
   label,
   helpText,
 }: Props) {
-  const active = snapToStep(value);
+  // Share the exact clamp/snap rules with the preferences store so the
+  // highlighted pill always matches whatever the store decided to keep.
+  const active = clampFuelRangeKm(value);
 
   return (
     <View style={styles.container}>
@@ -99,15 +102,6 @@ export default function FuelRangePicker({
 
       {helpText ? <Text style={styles.help}>{helpText}</Text> : null}
     </View>
-  );
-}
-
-function snapToStep(value: number): number {
-  if (!Number.isFinite(value)) return FUEL_RANGE_BOUNDS.min;
-  const snapped = Math.round(value / FUEL_RANGE_STEP_KM) * FUEL_RANGE_STEP_KM;
-  return Math.max(
-    FUEL_RANGE_BOUNDS.min,
-    Math.min(FUEL_RANGE_BOUNDS.max, snapped),
   );
 }
 

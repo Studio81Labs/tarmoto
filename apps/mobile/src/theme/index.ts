@@ -167,6 +167,25 @@ export const FUEL_RANGE_BOUNDS = { min: 50, max: 1000 } as const;
 /** Step between pill selections on the fuel-range picker. */
 export const FUEL_RANGE_STEP_KM = 50;
 
+/** Default range for a mid-size adventure bike — plenty of safety margin. */
+export const DEFAULT_FUEL_RANGE_KM = 250;
+
+/**
+ * Snap an arbitrary km value onto the fuel-range grid (50..1000 in
+ * 50 km steps). Shared between the preferences setter and the picker
+ * so the stored value and the highlighted pill can't drift apart —
+ * in particular, both agree on the NaN/Infinity fallback
+ * (`DEFAULT_FUEL_RANGE_KM`).
+ */
+export function clampFuelRangeKm(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_FUEL_RANGE_KM;
+  const snapped = Math.round(value / FUEL_RANGE_STEP_KM) * FUEL_RANGE_STEP_KM;
+  return Math.max(
+    FUEL_RANGE_BOUNDS.min,
+    Math.min(FUEL_RANGE_BOUNDS.max, snapped),
+  );
+}
+
 /**
  * Does a segment's quality score pass the rider's minimum-label threshold?
  *
