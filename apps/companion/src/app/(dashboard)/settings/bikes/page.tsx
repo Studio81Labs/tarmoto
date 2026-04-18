@@ -180,7 +180,7 @@ export default function BikesPage() {
         </div>
       ) : error?.kind === "load" ? (
         <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-5 text-sm text-red-300">
-          Could not load your bikes: {error.message}
+          {error.message}
         </div>
       ) : sortedBikes.length === 0 ? (
         <EmptyState onAdd={() => setModal({ kind: "add" })} />
