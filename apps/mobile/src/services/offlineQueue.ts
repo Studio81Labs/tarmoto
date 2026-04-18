@@ -55,6 +55,14 @@ export interface DrainResult {
   flushed: number;
   /** Entries that couldn't be flushed — either network-blocked or dropped. */
   remaining: number;
+  /**
+   * True only when the drain stopped because a retriable network error
+   * told us the link is down. Callers gate "skip the live call" on this,
+   * not on `remaining > 0`: a non-zero `remaining` could equally be a
+   * poison pill waiting to be retried — in that case the network is
+   * fine and fresh payloads should still go live.
+   */
+  networkFailed: boolean;
 }
 
 /** Callback used to actually POST one payload. Injected for testability. */
@@ -112,7 +120,13 @@ function createQueueStorage(): QueueStorage {
 // tests swap in a fresh shim between cases without touching MMKV.
 
 let storage: QueueStorage = createQueueStorage();
-let drainInFlight = false;
+// Holds the promise for the currently-running drain (if any) so
+// concurrent callers can await it and reuse its DrainResult instead of
+// short-circuiting with a synthetic "backlog blocked" reply that races
+// the real flush. A boolean lock would force the second caller to
+// guess the network state — returning the in-flight promise lets them
+// act on the actual outcome.
+let drainInFlight: Promise<DrainResult> | null = null;
 const listeners = new Set<(pending: number) => void>();
 
 function readQueue(): PendingUpload[] {
@@ -220,10 +234,14 @@ export async function submitSensorUpload(
   // and the backend's "newest data wins" aggregation would re-rank older
   // evidence below newer. If the flush hits a network error mid-way, the
   // current payload falls through to the same enqueue path below.
+  //
+  // Gate on `networkFailed`, not `remaining > 0`: poison pills (HTTP
+  // 4xx awaiting their 3rd attempt) sit in the queue without meaning the
+  // network is down, and a healthy fresh upload shouldn't be delayed
+  // behind them. If the link really is down, `networkFailed` is set.
   const drain = await drainOfflineQueue(uploader);
-  const backlogBlocked = drain.remaining > 0;
 
-  if (backlogBlocked) {
+  if (drain.networkFailed) {
     // Don't even try the live call — we already know the network is down.
     enqueueUpload(rideId, readings, deviceModel);
     return {
@@ -270,25 +288,26 @@ export async function submitSensorUpload(
  * Safe to call concurrently: a second invocation while the first is
  * running is a no-op.
  */
-export async function drainOfflineQueue(
+export function drainOfflineQueue(
   uploader: SensorUploader,
 ): Promise<DrainResult> {
-  if (drainInFlight) {
-    return { flushed: 0, remaining: getPendingCount() };
-  }
-  drainInFlight = true;
-  let flushed = 0;
-  // Each drain touches every item at most once. Without this guard, a
-  // poison pill (HTTP 4xx) would be retried three times back-to-back in
-  // the same call — `replaceById` keeps the failed entry at index 0, so
-  // re-reading and picking `queue[0]` loops on the same payload until
-  // `attempts` hits the drop threshold. That wastes server capacity and
-  // starves healthy items behind it. Skipping ids we've already tried
-  // this pass means the next iteration moves past the poison to the
-  // next entry and the three attempts spread across three drain calls,
-  // matching the original design intent.
-  const attemptedThisDrain = new Set<string>();
-  try {
+  // Concurrent callers get the exact same promise so they see the real
+  // outcome instead of a stub reply that would race the in-flight flush.
+  if (drainInFlight) return drainInFlight;
+
+  const run = async (): Promise<DrainResult> => {
+    let flushed = 0;
+    let networkFailed = false;
+    // Each drain touches every item at most once. Without this guard, a
+    // poison pill (HTTP 4xx) would be retried three times back-to-back
+    // in the same call — `replaceById` keeps the failed entry at index
+    // 0, so re-reading and picking `queue[0]` loops on the same payload
+    // until `attempts` hits the drop threshold. That wastes server
+    // capacity and starves healthy items behind it. Skipping ids we've
+    // already tried this pass means the next iteration moves past the
+    // poison to the next entry and the three attempts spread across
+    // three drain calls, matching the original design intent.
+    const attemptedThisDrain = new Set<string>();
     while (true) {
       const queue = readQueue();
       // Re-read each iteration so a concurrent enqueue isn't silently
@@ -304,7 +323,9 @@ export async function drainOfflineQueue(
         flushed += 1;
       } catch (error) {
         if (isRetriableNetworkError(error)) {
-          // Still offline. Leave the rest for the next drain.
+          // Still offline. Leave the rest for the next drain and tell
+          // the caller why we stopped so they can skip their live call.
+          networkFailed = true;
           break;
         }
         // Poison pill: bump attempts; if we've seen it too many times,
@@ -321,10 +342,13 @@ export async function drainOfflineQueue(
         // next item might be healthy.
       }
     }
-  } finally {
-    drainInFlight = false;
-  }
-  return { flushed, remaining: getPendingCount() };
+    return { flushed, remaining: getPendingCount(), networkFailed };
+  };
+
+  drainInFlight = run().finally(() => {
+    drainInFlight = null;
+  });
+  return drainInFlight;
 }
 
 /** Append one entry to the queue. Exported mainly for tests. */
@@ -392,6 +416,6 @@ function replaceById(id: string, next: PendingUpload): void {
 // `clearOfflineQueue()` instead.
 export function __setStorageForTest(next: QueueStorage): void {
   storage = next;
-  drainInFlight = false;
+  drainInFlight = null;
   listeners.clear();
 }

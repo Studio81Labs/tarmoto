@@ -163,6 +163,32 @@ describe("offlineQueue", () => {
       const pending = getPendingUploads();
       expect(pending.map((e) => e.rideId)).toEqual(["old-ride", "new-ride"]);
     });
+
+    it("still uploads live when a poison pill sits in the queue", async () => {
+      // Regression: an earlier version gated the live-upload skip on
+      // `drain.remaining > 0`, which mistook a poison pill for a network
+      // outage and queued perfectly-valid fresh payloads behind it.
+      // A poison item just means the server rejected ONE bad payload —
+      // the link is fine and new uploads should still go live.
+      enqueueUpload("poison", [makeReading(1)], "iPhone");
+      const uploader: SensorUploader = jest.fn(async (rideId) => {
+        if (rideId === "poison") throw makeServerError(400);
+        return { accepted: 7, segments_updated: 2 };
+      });
+
+      const result = await submitSensorUpload(
+        "fresh",
+        [makeReading(2)],
+        "iPhone",
+        uploader,
+      );
+
+      expect(result.status).toBe("uploaded");
+      expect(result.accepted).toBe(7);
+      // Poison still waiting its next attempt; fresh was NOT queued.
+      const pending = getPendingUploads();
+      expect(pending.map((e) => e.rideId)).toEqual(["poison"]);
+    });
   });
 
   describe("drainOfflineQueue", () => {
@@ -172,7 +198,11 @@ describe("offlineQueue", () => {
         Parameters<SensorUploader>
       >();
       const result = await drainOfflineQueue(uploader);
-      expect(result).toEqual({ flushed: 0, remaining: 0 });
+      expect(result).toEqual({
+        flushed: 0,
+        remaining: 0,
+        networkFailed: false,
+      });
       expect(uploader).not.toHaveBeenCalled();
     });
 
@@ -209,7 +239,44 @@ describe("offlineQueue", () => {
 
       expect(result.flushed).toBe(1);
       expect(result.remaining).toBe(2);
+      expect(result.networkFailed).toBe(true);
       expect(getPendingUploads().map((e) => e.rideId)).toEqual(["b", "c"]);
+    });
+
+    it("does not flag networkFailed when only poison items remain", async () => {
+      enqueueUpload("poison", [makeReading(1)], "iPhone");
+      const uploader: SensorUploader = async () => {
+        throw makeServerError(400);
+      };
+
+      const result = await drainOfflineQueue(uploader);
+
+      expect(result.networkFailed).toBe(false);
+      expect(result.remaining).toBe(1);
+    });
+
+    it("shares the in-flight drain across concurrent callers", async () => {
+      // Two drains started in parallel should return the same result and
+      // the uploader should only see each payload once. A boolean lock
+      // would return a synthetic no-op to the second caller, racing the
+      // real flush and reporting a stale `remaining`.
+      enqueueUpload("a", [makeReading(1)], "iPhone");
+      enqueueUpload("b", [makeReading(2)], "iPhone");
+      const uploader = jest.fn<
+        ReturnType<SensorUploader>,
+        Parameters<SensorUploader>
+      >(async () => ({ accepted: 1, segments_updated: 0 }));
+
+      const [first, second] = await Promise.all([
+        drainOfflineQueue(uploader),
+        drainOfflineQueue(uploader),
+      ]);
+
+      // Both callers see the same outcome (not a stubbed 0/N reply).
+      expect(first).toEqual(second);
+      expect(first.flushed).toBe(2);
+      expect(first.remaining).toBe(0);
+      expect(uploader).toHaveBeenCalledTimes(2);
     });
 
     it("drops poison items after 3 failed attempts so the queue can drain", async () => {
