@@ -166,7 +166,9 @@ export default function MapScreen() {
       </View>
 
       {showQualityOverlay ? <QualityLegend /> : null}
-      {showPassesOverlay && passes.length > 0 ? <PassesLegend /> : null}
+      {showPassesOverlay && passes.length > 0 ? (
+        <PassesLegend stacked={showQualityOverlay} />
+      ) : null}
     </View>
   );
 }
@@ -228,9 +230,9 @@ function LegendSwatch({ color, label }: { color: string; label: string }) {
   );
 }
 
-function PassesLegend() {
+function PassesLegend({ stacked }: { stacked: boolean }) {
   return (
-    <View style={[styles.legend, styles.legendPasses]}>
+    <View style={[styles.legend, stacked ? styles.legendPassesStacked : null]}>
       <Text style={styles.legendTitle}>Mountain passes</Text>
       <View style={styles.legendRow}>
         <LegendDot
@@ -309,11 +311,13 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     ...shadows.card,
   },
-  // Stack passes legend just above the quality legend so both fit at the
-  // bottom without colliding with the FAB column on the right. Quality's
-  // legend is roughly 76 px tall (title + single row + padding) — keep
-  // the offset in sync if that ever changes.
-  legendPasses: {
+  // Applied only when the quality legend is also visible — shifts the
+  // passes legend just above it so both fit at the bottom without
+  // colliding with the FAB column on the right. Quality's legend is
+  // roughly 76 px tall (title + single row + padding); keep in sync if
+  // that ever changes. When quality is hidden the passes legend stays
+  // pinned at the default `bottom: spacing.xl` from `styles.legend`.
+  legendPassesStacked: {
     bottom: spacing.xl + 76 + spacing.sm,
   },
   dot: {
