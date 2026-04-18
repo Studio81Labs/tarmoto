@@ -3,7 +3,13 @@
  * `GET /api/v1/rides/:rideId`. Kept side-effect free so the page can re-derive
  * every derived view from a single fetch and so the helpers are unit-testable
  * without rendering React.
+ *
+ * Tier labels, colors, and `formatDuration` live in `lib/utils.ts` — this file
+ * only hosts helpers that don't make sense outside the ride detail context.
  */
+
+import type { QualityTier } from "@/lib/types";
+import { QUALITY_CONFIG, scoreToTier } from "@/lib/utils";
 
 export const QUALITY_TIERS = [
   "excellent",
@@ -11,63 +17,15 @@ export const QUALITY_TIERS = [
   "fair",
   "poor",
   "very-poor",
-] as const;
-export type QualityTier = (typeof QUALITY_TIERS)[number];
+] as const satisfies readonly QualityTier[];
 
-export interface QualityTierMeta {
-  tier: QualityTier;
-  label: string;
-  color: string;
-  className: string;
-}
-
-export const QUALITY_TIER_META: Record<QualityTier, QualityTierMeta> = {
-  excellent: {
-    tier: "excellent",
-    label: "Excellent",
-    color: "#22C55E",
-    className: "quality-excellent",
-  },
-  good: {
-    tier: "good",
-    label: "Good",
-    color: "#84CC16",
-    className: "quality-good",
-  },
-  fair: {
-    tier: "fair",
-    label: "Fair",
-    color: "#EAB308",
-    className: "quality-fair",
-  },
-  poor: {
-    tier: "poor",
-    label: "Poor",
-    color: "#F97316",
-    className: "quality-poor",
-  },
-  "very-poor": {
-    tier: "very-poor",
-    label: "Very poor",
-    color: "#EF4444",
-    className: "quality-very-poor",
-  },
-};
-
-// Backend stores quality as a 1-5 reading. Map to tier using standard buckets:
-// 5 → excellent, 4 → good, 3 → fair, 2 → poor, 1 → very-poor. Non-integer
-// readings are floored so 3.7 counts as 3 (fair).
-export function qualityReadingToTier(
+// Null-safe wrapper around `scoreToTier` from utils. Threshold-based so a
+// reading of 4.5 maps to "excellent" — aligned with the rest of the app.
+export function readingToTier(
   reading: number | null | undefined,
 ): QualityTier | null {
   if (reading == null || Number.isNaN(reading)) return null;
-  const rounded = Math.floor(reading);
-  if (rounded >= 5) return "excellent";
-  if (rounded === 4) return "good";
-  if (rounded === 3) return "fair";
-  if (rounded === 2) return "poor";
-  if (rounded <= 1) return "very-poor";
-  return null;
+  return scoreToTier(reading);
 }
 
 export interface RideSegmentLike {
@@ -100,7 +58,7 @@ export function computeQualityBreakdown(
   };
   let total = 0;
   for (const seg of segments) {
-    const tier = qualityReadingToTier(seg.quality_reading);
+    const tier = readingToTier(seg.quality_reading);
     if (!tier) continue;
     counts[tier] += 1;
     total += 1;
@@ -108,21 +66,9 @@ export function computeQualityBreakdown(
   return QUALITY_TIERS.map((tier) => {
     const count = counts[tier];
     const percent = total === 0 ? 0 : Math.round((count / total) * 100);
-    const meta = QUALITY_TIER_META[tier];
-    return { tier, label: meta.label, color: meta.color, count, percent };
+    const meta = QUALITY_CONFIG[tier];
+    return { tier, label: meta.label, color: meta.hex, count, percent };
   });
-}
-
-// Formats `duration_min` as "2h 15m" / "45m". Returns "—" for null/invalid so
-// callers can render the raw value directly without conditionals.
-export function formatDuration(minutes: number | null | undefined): string {
-  if (minutes == null || Number.isNaN(minutes) || minutes < 0) return "—";
-  const whole = Math.round(minutes);
-  const hours = Math.floor(whole / 60);
-  const mins = whole % 60;
-  if (hours === 0) return `${mins}m`;
-  if (mins === 0) return `${hours}h`;
-  return `${hours}h ${mins}m`;
 }
 
 export function formatNumber(

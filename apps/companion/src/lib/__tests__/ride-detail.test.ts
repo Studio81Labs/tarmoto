@@ -2,9 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildRoutePreview,
   computeQualityBreakdown,
-  formatDuration,
   formatNumber,
-  qualityReadingToTier,
+  readingToTier,
   type RideSegmentLike,
 } from "../ride-detail";
 
@@ -18,30 +17,25 @@ function segment(overrides: Partial<RideSegmentLike> = {}): RideSegmentLike {
   };
 }
 
-describe("qualityReadingToTier", () => {
-  it("maps integer readings 1-5 to the canonical tiers", () => {
-    expect(qualityReadingToTier(5)).toBe("excellent");
-    expect(qualityReadingToTier(4)).toBe("good");
-    expect(qualityReadingToTier(3)).toBe("fair");
-    expect(qualityReadingToTier(2)).toBe("poor");
-    expect(qualityReadingToTier(1)).toBe("very-poor");
-  });
-
-  it("floors non-integer readings into the lower tier", () => {
-    expect(qualityReadingToTier(3.7)).toBe("fair");
-    expect(qualityReadingToTier(4.99)).toBe("good");
-  });
-
-  it("clamps out-of-range readings into endpoints", () => {
-    expect(qualityReadingToTier(6)).toBe("excellent");
-    expect(qualityReadingToTier(0)).toBe("very-poor");
-    expect(qualityReadingToTier(-2)).toBe("very-poor");
+describe("readingToTier", () => {
+  it("delegates to scoreToTier's threshold buckets", () => {
+    // Threshold bands from utils.scoreToTier: >=4.5 excellent, >=3.5 good,
+    // >=2.5 fair, >=1.5 poor, else very-poor. Keep these tests aligned with
+    // that function so the app shows the same tier label everywhere.
+    expect(readingToTier(5)).toBe("excellent");
+    expect(readingToTier(4.5)).toBe("excellent");
+    expect(readingToTier(4)).toBe("good");
+    expect(readingToTier(3.5)).toBe("good");
+    expect(readingToTier(3)).toBe("fair");
+    expect(readingToTier(2)).toBe("poor");
+    expect(readingToTier(1)).toBe("very-poor");
+    expect(readingToTier(0)).toBe("very-poor");
   });
 
   it("returns null for missing or non-numeric readings", () => {
-    expect(qualityReadingToTier(null)).toBeNull();
-    expect(qualityReadingToTier(undefined)).toBeNull();
-    expect(qualityReadingToTier(Number.NaN)).toBeNull();
+    expect(readingToTier(null)).toBeNull();
+    expect(readingToTier(undefined)).toBeNull();
+    expect(readingToTier(Number.NaN)).toBeNull();
   });
 });
 
@@ -66,7 +60,7 @@ describe("computeQualityBreakdown", () => {
       segment({ quality_reading: 5 }),
       segment({ quality_reading: 5 }),
       segment({ quality_reading: 4 }),
-      segment({ quality_reading: 3 }),
+      segment({ quality_reading: 2.5 }),
     ]);
     const by = Object.fromEntries(rows.map((r) => [r.tier, r] as const));
     expect(by.excellent!.count).toBe(2);
@@ -88,32 +82,11 @@ describe("computeQualityBreakdown", () => {
     expect(by.good!.count).toBe(1);
     expect(by.good!.percent).toBe(100);
   });
-});
 
-describe("formatDuration", () => {
-  it("renders minutes-only when under an hour", () => {
-    expect(formatDuration(0)).toBe("0m");
-    expect(formatDuration(45)).toBe("45m");
-  });
-
-  it("renders hours-only when minutes are zero", () => {
-    expect(formatDuration(120)).toBe("2h");
-  });
-
-  it("renders mixed hours + minutes", () => {
-    expect(formatDuration(135)).toBe("2h 15m");
-  });
-
-  it("rounds fractional minutes before formatting", () => {
-    expect(formatDuration(59.4)).toBe("59m");
-    expect(formatDuration(59.6)).toBe("1h");
-  });
-
-  it("returns an em-dash for missing or invalid input", () => {
-    expect(formatDuration(null)).toBe("—");
-    expect(formatDuration(undefined)).toBe("—");
-    expect(formatDuration(Number.NaN)).toBe("—");
-    expect(formatDuration(-5)).toBe("—");
+  it("exposes hex colors from QUALITY_CONFIG for each row", () => {
+    const [excellent, , , , veryPoor] = computeQualityBreakdown([]);
+    expect(excellent!.color).toBe("#22C55E");
+    expect(veryPoor!.color).toBe("#EF4444");
   });
 });
 

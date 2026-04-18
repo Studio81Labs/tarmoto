@@ -17,14 +17,13 @@ import {
 import { api } from "@/lib/api";
 import { API_BASE } from "@/lib/config";
 import { useAuthStore } from "@/stores/auth";
+import type { QualityTier } from "@/lib/types";
+import { formatDuration, QUALITY_CONFIG } from "@/lib/utils";
 import {
   buildRoutePreview,
   computeQualityBreakdown,
-  formatDuration,
   formatNumber,
-  qualityReadingToTier,
-  QUALITY_TIER_META,
-  type QualityTier,
+  readingToTier,
   type RideSegmentLike,
 } from "@/lib/ride-detail";
 
@@ -55,6 +54,7 @@ export default function RideDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [shareCopied, setShareCopied] = useState(false);
 
   useEffect(() => {
@@ -107,6 +107,7 @@ export default function RideDetailPage() {
   async function handleExportGpx() {
     if (!ride || exporting) return;
     setExporting(true);
+    setExportError(null);
     try {
       const token = useAuthStore.getState().accessToken;
       const res = await fetch(`${API_BASE}/rides/${ride.id}/gpx`, {
@@ -123,7 +124,9 @@ export default function RideDetailPage() {
       link.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Export failed");
+      // Keep this separate from the page-level `error` state so a transient
+      // export failure doesn't replace the whole ride view with an error card.
+      setExportError(err instanceof Error ? err.message : "Export failed");
     } finally {
       setExporting(false);
     }
@@ -176,7 +179,7 @@ export default function RideDetailPage() {
   }
 
   const rideName = `Ride on ${new Date(ride.started_at).toLocaleDateString()}`;
-  const avgTier = qualityReadingToTier(ride.avg_road_quality);
+  const avgTier = readingToTier(ride.avg_road_quality);
 
   return (
     <PageShell
@@ -221,6 +224,22 @@ export default function RideDetailPage() {
         </div>
       }
     >
+      {exportError && (
+        <div
+          role="alert"
+          className="mb-6 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-300 flex items-center justify-between gap-3"
+        >
+          <span>GPX export failed: {exportError}</span>
+          <button
+            type="button"
+            onClick={() => setExportError(null)}
+            className="text-xs text-red-300/70 hover:text-red-200 transition"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Route preview */}
       <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5 mb-6">
         <SectionHeader
@@ -341,9 +360,9 @@ export default function RideDetailPage() {
             <p className="text-xs text-slate-500 mb-1">Avg road quality</p>
             {avgTier ? (
               <span
-                className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold ${QUALITY_TIER_META[avgTier].className}`}
+                className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold quality-${avgTier}`}
               >
-                {QUALITY_TIER_META[avgTier].label}
+                {QUALITY_CONFIG[avgTier].label}
                 <span className="text-[10px] opacity-70 tabular-nums">
                   {formatNumber(ride.avg_road_quality, 1)}/5
                 </span>
@@ -387,7 +406,7 @@ export default function RideDetailPage() {
               </thead>
               <tbody className="divide-y divide-slate-800">
                 {ride.segments.map((seg, index) => {
-                  const tier = qualityReadingToTier(seg.quality_reading);
+                  const tier = readingToTier(seg.quality_reading);
                   const pct =
                     maxSegmentSpeed > 0 && seg.speed_avg != null
                       ? Math.max(
@@ -405,9 +424,9 @@ export default function RideDetailPage() {
                       <td className="py-2 pr-4">
                         {tier ? (
                           <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${QUALITY_TIER_META[tier].className}`}
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold quality-${tier}`}
                           >
-                            {QUALITY_TIER_META[tier].label}
+                            {QUALITY_CONFIG[tier].label}
                           </span>
                         ) : (
                           <span className="text-slate-500">—</span>
