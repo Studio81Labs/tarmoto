@@ -114,6 +114,30 @@ export interface TripDay {
   elevationGain: number;
   avgQuality: number;
   overnightStop?: POI;
+  segments?: RoutePreviewSegment[];
+}
+
+/**
+ * Per-segment preview data surfaced in the trip-planner sidebar (US-33).
+ * Decoupled from `RoadSegmentDetail` so the planner can render cards without
+ * paying for full segment geometry/reviews; the map layer looks up the same
+ * segment by `id` when a card is focused.
+ */
+export interface RoutePreviewSegment {
+  id: string;
+  name?: string;
+  dayNumber: number;
+  orderInDay: number;
+  distanceKm: number;
+  qualityScore: number; // 1-5
+  qualityTier: QualityTier;
+  surfaceType: SurfaceType;
+  curvinessScore: number; // 0-100
+  elevationProfile: number[];
+  photos: SegmentPhoto[];
+  activeHazards: Hazard[];
+  qualityHistory?: { date: string; score: number }[];
+  bounds?: [[number, number], [number, number]];
 }
 
 export interface Waypoint {
