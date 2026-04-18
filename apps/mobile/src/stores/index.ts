@@ -9,6 +9,7 @@ import type {
   RideDetail,
   Hazard,
   Trip,
+  TripSummary,
   CommuteRoute,
   LatLng,
   QualityClass,
@@ -133,9 +134,12 @@ export const useHazardStore = create<HazardState>((set) => ({
 // ── Trip Store ──
 
 interface TripState {
-  trips: Trip[];
+  // Trips tab list uses the lightweight summary shape returned by
+  // `/trips`; `activeTrip` holds the full `Trip` (with days + waypoints)
+  // populated by TripDetailScreen from `/trips/:id`.
+  trips: TripSummary[];
   activeTrip: Trip | null;
-  setTrips: (trips: Trip[]) => void;
+  setTrips: (trips: TripSummary[]) => void;
   setActiveTrip: (trip: Trip | null) => void;
 }
 
