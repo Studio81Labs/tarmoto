@@ -53,9 +53,12 @@ export function useCommute(): UseCommuteResult {
   const seenByRoute = useCommuteStore((s) => s.seenHazardsByRoute);
 
   const load = useCallback(async (isInitial: boolean) => {
-    if (isInitial) setPhase("loading");
-    else setIsRefreshing(true);
-    setErrorMessage(null);
+    if (isInitial) {
+      setPhase("loading");
+      setErrorMessage(null);
+    } else {
+      setIsRefreshing(true);
+    }
 
     try {
       const routes = await api.getCommuteRoutes();
@@ -75,10 +78,17 @@ export function useCommute(): UseCommuteResult {
       setStatus(next);
       setPhase("ready");
     } catch (err) {
-      setPhase("error");
-      setErrorMessage(
-        err instanceof Error ? err.message : "Unable to load commute",
-      );
+      // On initial/retry loads there's nothing else on screen, so show
+      // the full error view. On a pull-to-refresh we keep the existing
+      // data visible — the RefreshControl stopping is enough feedback
+      // for a transient network blip, and tearing the rider off their
+      // commute view for a temporary glitch is worse than a silent miss.
+      if (isInitial) {
+        setPhase("error");
+        setErrorMessage(
+          err instanceof Error ? err.message : "Unable to load commute",
+        );
+      }
     } finally {
       if (!isInitial) setIsRefreshing(false);
     }
