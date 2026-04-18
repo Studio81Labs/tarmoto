@@ -294,6 +294,8 @@ class ApiService {
     region?: string;
     min_quality?: number;
     road_preference?: string;
+    daily_km_min?: number;
+    daily_km_max?: number;
   }): Promise<Trip> {
     const { data } = await this.client.post<Trip>("/trips", params);
     return data;
