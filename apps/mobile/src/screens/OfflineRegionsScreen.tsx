@@ -27,7 +27,7 @@ import Icon from "@react-native-vector-icons/material-design-icons";
 import { bboxAroundPoint, type OfflineRegion } from "@/services/offlineRegions";
 
 type IconName = ComponentProps<typeof Icon>["name"];
-import { useMapStore } from "@/stores";
+import { regionProgress, useMapStore } from "@/stores";
 import { useOfflineRegions } from "@/hooks";
 import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
 
@@ -200,13 +200,7 @@ function RegionRow({ region, onRetry, onCancel, onDelete }: RegionRowProps) {
   const statusLabel = STATUS_LABELS[region.status];
   const statusIcon = STATUS_ICONS[region.status];
 
-  const progressPct =
-    region.totalTiles > 0
-      ? Math.round(
-          ((region.downloadedTiles + region.failedTiles) / region.totalTiles) *
-            100,
-        )
-      : 0;
+  const progressPct = Math.round(regionProgress(region) * 100);
 
   return (
     <View style={styles.card}>

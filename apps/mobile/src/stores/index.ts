@@ -474,12 +474,18 @@ function loadPersistedRegions(): OfflineRegion[] {
     // that fails the shape check gets dropped silently — the rider can
     // re-add the region; we never pretend a broken one is downloadable.
     return parsed.filter(isOfflineRegion).map((r) => ({
-      // Any region that was "downloading" when the app died is stuck in
-      // that state forever otherwise, blocking retry. Clamp to "failed"
-      // so the rider gets a retry button on next launch.
+      // Any region that was in a transient state when the app died is
+      // stuck there forever otherwise. "downloading" obviously needs to
+      // flip out — no loop is running — but "pending" is equally bad:
+      // if the app crashed between `addRegion` (persists pending) and
+      // `beginDownload`, the rider would see a region with no Retry
+      // affordance (Retry is only shown for failed/cancelled). Clamp
+      // both to "failed" so there's always a way forward.
       ...r,
       status:
-        r.status === "downloading" ? ("failed" as RegionStatus) : r.status,
+        r.status === "downloading" || r.status === "pending"
+          ? ("failed" as RegionStatus)
+          : r.status,
     }));
   } catch {
     return [];

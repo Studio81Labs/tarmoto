@@ -184,6 +184,7 @@ function fakeDownloader(overrides: Partial<TileDownloader> = {}): {
       calls.removed.push(path);
     },
     tileExists: async () => false,
+    fileSize: async () => 512,
     ...overrides,
   };
   return { downloader, calls };
@@ -233,7 +234,7 @@ describe("downloadRegion", () => {
     expect(progress[progress.length - 1]).toBe(tileCount);
   });
 
-  it("skips tiles that are already on disk (resume path)", async () => {
+  it("skips tiles that are already on disk (resume path) and counts their bytes", async () => {
     const spec = buildSpec();
     const tileCount = countTilesForRegion(
       spec.bbox,
@@ -242,6 +243,7 @@ describe("downloadRegion", () => {
     );
     const { downloader, calls } = fakeDownloader({
       tileExists: async () => true,
+      fileSize: async () => 700,
     });
 
     const result = await downloadRegion({
@@ -254,8 +256,33 @@ describe("downloadRegion", () => {
     expect(result.downloaded).toBe(tileCount);
     // No HTTP fetches — every tile was already cached.
     expect(calls.downloads.length).toBe(0);
-    // bytesOnDisk stays 0 because we don't re-stat cached files here —
-    // the field captures bytes this run wrote. Documented behaviour.
+    // Resumed tiles contribute their on-disk size so the UI reports
+    // accurate storage usage.
+    expect(result.bytesOnDisk).toBe(tileCount * 700);
+  });
+
+  it("treats fileSize errors on resume as 0 rather than aborting", async () => {
+    const spec = buildSpec();
+    const tileCount = countTilesForRegion(
+      spec.bbox,
+      spec.minZoom,
+      spec.maxZoom,
+    );
+    const { downloader } = fakeDownloader({
+      tileExists: async () => true,
+      fileSize: async () => {
+        throw new Error("stat failed");
+      },
+    });
+
+    const result = await downloadRegion({
+      spec,
+      docsDir: "/docs",
+      downloader,
+    });
+
+    expect(result.status).toBe("complete");
+    expect(result.downloaded).toBe(tileCount);
     expect(result.bytesOnDisk).toBe(0);
   });
 

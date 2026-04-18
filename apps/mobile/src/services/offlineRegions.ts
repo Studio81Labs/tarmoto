@@ -107,6 +107,13 @@ export interface TileDownloader {
   removeDir(dirPath: string): Promise<void>;
   /** `true` if the tile is already on disk. */
   tileExists(destPath: string): Promise<boolean>;
+  /**
+   * Size in bytes of an existing tile. Used to account for disk usage on
+   * the resume path. Implementations should return 0 on missing files or
+   * stat errors rather than throwing — a stat failure shouldn't abort a
+   * whole region download.
+   */
+  fileSize(destPath: string): Promise<number>;
 }
 
 // ── Constants ──
@@ -424,8 +431,11 @@ export async function downloadRegion(
       if (await downloader.tileExists(dest)) {
         // Resume path: assume the existing file is intact. Re-hashing every
         // tile would double the I/O for a tiny chance of catching corruption
-        // that the next render would flag anyway.
+        // that the next render would flag anyway. We do `stat` the file so
+        // `bytesOnDisk` reflects actual storage — a stat failure falls back
+        // to 0 rather than aborting the run.
         downloaded += 1;
+        bytesOnDisk += await downloader.fileSize(dest).catch(() => 0);
         report();
         continue;
       }
@@ -481,6 +491,14 @@ export function createRNFSDownloader(): TileDownloader {
         fromUrl: tileUrlStr,
         toFile: destPath,
         progressDivider: 100,
+        // Without a timeout a flaky cell link can wedge the whole region
+        // queue behind one stuck tile. These bounds are generous enough
+        // that a slow-but-working link still succeeds, but short enough
+        // that a truly dead socket falls through to the retry path.
+        // iOS honours `backgroundTimeout` even with `background: false`.
+        connectionTimeout: 15000,
+        readTimeout: 30000,
+        background: false,
       });
       const result = await promise;
       if (result.statusCode < 200 || result.statusCode >= 300) {
@@ -501,6 +519,14 @@ export function createRNFSDownloader(): TileDownloader {
     },
     async tileExists(destPath) {
       return RNFS.exists(destPath);
+    },
+    async fileSize(destPath) {
+      try {
+        const stat = await RNFS.stat(destPath);
+        return Number(stat.size) || 0;
+      } catch {
+        return 0;
+      }
     },
   };
 }

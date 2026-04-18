@@ -24,6 +24,7 @@ import {
   createRNFSDownloader,
   downloadRegion,
   getDefaultDocsDir,
+  MAX_TILES_PER_REGION,
   regionDir,
   type BBox,
   type OfflineRegionSpec,
@@ -81,6 +82,11 @@ export function useOfflineRegions(
   // Cancellation flag per region id. Using a ref-backed map keeps cancel()
   // synchronous (no re-render between the tap and the next tile check).
   const cancelFlags = useRef<Map<string, boolean>>(new Map());
+  // In-flight run promise per region id. `deleteRegion` awaits the matching
+  // entry so a delete-while-downloading doesn't race the download loop —
+  // otherwise the loop keeps writing tiles after the store entry is gone,
+  // leaving orphaned files on disk that the UI can no longer reference.
+  const runPromises = useRef<Map<string, Promise<void>>>(new Map());
 
   const downloader = useMemo(
     () => deps.downloader ?? createRNFSDownloader(),
@@ -93,48 +99,54 @@ export function useOfflineRegions(
   const now = deps.now ?? Date.now;
 
   const runDownload = useCallback(
-    async (spec: OfflineRegionSpec) => {
+    (spec: OfflineRegionSpec): Promise<void> => {
       setActiveRegionId(spec.id);
       beginDownload(spec.id);
       cancelFlags.current.set(spec.id, false);
 
-      try {
-        const result = await downloadRegion({
-          spec,
-          docsDir,
-          downloader,
-          isCancelled: () => cancelFlags.current.get(spec.id) === true,
-          onProgress: (update) => {
-            updateProgress(spec.id, {
-              downloaded: update.downloaded,
-              failed: update.failed,
-              bytesOnDisk: update.bytesOnDisk,
-            });
-          },
-        });
+      const work = (async () => {
+        try {
+          const result = await downloadRegion({
+            spec,
+            docsDir,
+            downloader,
+            isCancelled: () => cancelFlags.current.get(spec.id) === true,
+            onProgress: (update) => {
+              updateProgress(spec.id, {
+                downloaded: update.downloaded,
+                failed: update.failed,
+                bytesOnDisk: update.bytesOnDisk,
+              });
+            },
+          });
 
-        finishDownload(spec.id, {
-          status: result.status,
-          downloaded: result.downloaded,
-          failed: result.failed,
-          bytesOnDisk: result.bytesOnDisk,
-          error: result.error,
-        });
-      } catch (err) {
-        // Unexpected throws from the downloader adapter shouldn't leave
-        // the region stuck on "downloading". Route them through the
-        // regular failed path so the UI shows an actionable retry.
-        finishDownload(spec.id, {
-          status: "failed",
-          downloaded: 0,
-          failed: 0,
-          bytesOnDisk: 0,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      } finally {
-        cancelFlags.current.delete(spec.id);
-        setActiveRegionId((curr) => (curr === spec.id ? null : curr));
-      }
+          finishDownload(spec.id, {
+            status: result.status,
+            downloaded: result.downloaded,
+            failed: result.failed,
+            bytesOnDisk: result.bytesOnDisk,
+            error: result.error,
+          });
+        } catch (err) {
+          // Unexpected throws from the downloader adapter shouldn't leave
+          // the region stuck on "downloading". Route them through the
+          // regular failed path so the UI shows an actionable retry.
+          finishDownload(spec.id, {
+            status: "failed",
+            downloaded: 0,
+            failed: 0,
+            bytesOnDisk: 0,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        } finally {
+          cancelFlags.current.delete(spec.id);
+          runPromises.current.delete(spec.id);
+          setActiveRegionId((curr) => (curr === spec.id ? null : curr));
+        }
+      })();
+
+      runPromises.current.set(spec.id, work);
+      return work;
     },
     [downloader, docsDir, beginDownload, updateProgress, finishDownload],
   );
@@ -156,7 +168,7 @@ export function useOfflineRegions(
       // The downloader will also reject over-cap specs, but catching it
       // here keeps the error off the store (no half-registered region).
       // The UI uses the returned count to phrase the message.
-      if (tileCount === 0 || tileCount > 5000) {
+      if (tileCount === 0 || tileCount > MAX_TILES_PER_REGION) {
         return {
           ok: false,
           reason: "too-many-tiles",
@@ -206,15 +218,26 @@ export function useOfflineRegions(
 
   const deleteRegion = useCallback<UseOfflineRegionsResult["deleteRegion"]>(
     async (regionId) => {
-      // Best-effort disk cleanup first so a store remove followed by a
-      // FS failure doesn't orphan the tiles — the store is the "source
-      // of truth" and losing regions here matches the rider's intent.
+      // If a download is in flight we MUST stop the loop and wait for it
+      // to return before touching the filesystem. Otherwise the loop would
+      // keep calling `ensureDir` + `downloadTile` after we've rm'd the
+      // directory, orphaning tile files that the UI can no longer reach.
+      const active = runPromises.current.get(regionId);
+      if (active) {
+        cancelFlags.current.set(regionId, true);
+        // `active` never rejects — the inner try/catch in runDownload
+        // routes everything through `finishDownload` — so awaiting is safe.
+        await active;
+      }
+
+      // Best-effort disk cleanup. If this fails we still drop the store
+      // entry so the rider's intent wins; a future launch can GC the
+      // stragglers by walking the on-disk region-id set against the store.
       try {
         await downloader.removeDir(regionDir(docsDir, regionId));
       } catch {
         // Ignore — tiles might not exist yet (region never downloaded)
-        // or the FS might be temporarily unhappy. Either way the store
-        // entry should still go away to match user intent.
+        // or the FS might be temporarily unhappy.
       }
       removeRegion(regionId);
     },
