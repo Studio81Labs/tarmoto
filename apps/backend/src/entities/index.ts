@@ -20,4 +20,3 @@ export { UserBadge } from './user-badge.entity.js';
 export { Challenge } from './challenge.entity.js';
 export { ChallengeEntry } from './challenge-entry.entity.js';
 export { MountainPass } from './mountain-pass.entity.js';
-export type { MountainPassOverrideStatus } from './mountain-pass.entity.js';
