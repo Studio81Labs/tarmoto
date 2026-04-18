@@ -16,11 +16,13 @@ import {
   fontSize,
   fontWeight,
   hazardIcons,
-  qualityColor,
+  meetsQualityThreshold,
+  qualityColorWithThreshold,
   qualityLabel,
   spacing,
 } from "@/theme";
 import { api } from "@/services/api";
+import { usePreferencesStore } from "@/stores";
 import type { Hazard, RoadReview, RoadSegmentDetail } from "@/types";
 import {
   curvinessLabel,
@@ -52,6 +54,7 @@ const QUALITY_BUCKETS: Array<{
 export default function RoadPreviewScreen() {
   const { params } = useRoute<RoadPreviewRoute>();
   const segmentId = params?.segmentId;
+  const minQuality = usePreferencesStore((s) => s.minQuality);
 
   const [segment, setSegment] = useState<RoadSegmentDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -140,8 +143,8 @@ export default function RoadPreviewScreen() {
         />
       }
     >
-      <HeaderCard segment={segment} />
-      <QualityCard segment={segment} />
+      <HeaderCard segment={segment} minQuality={minQuality} />
+      <QualityCard segment={segment} minQuality={minQuality} />
       <CurvinessCard segment={segment} />
       <ElevationCard segment={segment} />
       <HazardsCard hazards={segment.active_hazards} />
@@ -155,7 +158,13 @@ export default function RoadPreviewScreen() {
 
 // ── Subcomponents ──────────────────────────────────────────────────────────
 
-function HeaderCard({ segment }: { segment: RoadSegmentDetail }) {
+function HeaderCard({
+  segment,
+  minQuality,
+}: {
+  segment: RoadSegmentDetail;
+  minQuality: number;
+}) {
   const title = segment.road_name || segment.road_number || "Unnamed road";
   const subtitle = [
     segment.road_number && segment.road_name ? segment.road_number : null,
@@ -163,8 +172,26 @@ function HeaderCard({ segment }: { segment: RoadSegmentDetail }) {
   ]
     .filter(Boolean)
     .join(" · ");
+  const belowThreshold = !meetsQualityThreshold(
+    segment.quality_score,
+    minQuality,
+  );
   return (
-    <View style={[styles.card, styles.headerCard]}>
+    <View
+      style={[
+        styles.card,
+        styles.headerCard,
+        belowThreshold && styles.headerCardDimmed,
+      ]}
+    >
+      {belowThreshold ? (
+        <View style={styles.thresholdBadge}>
+          <Icon name="eye-off-outline" size={12} color={colors.textSecondary} />
+          <Text style={styles.thresholdBadgeLabel}>
+            Below your minimum ({qualityLabel(minQuality)})
+          </Text>
+        </View>
+      ) : null}
       <Text style={styles.headerTitle} numberOfLines={2}>
         {title}
       </Text>
@@ -187,8 +214,18 @@ function HeaderCard({ segment }: { segment: RoadSegmentDetail }) {
   );
 }
 
-function QualityCard({ segment }: { segment: RoadSegmentDetail }) {
-  const color = qualityColor(segment.quality_score);
+function QualityCard({
+  segment,
+  minQuality,
+}: {
+  segment: RoadSegmentDetail;
+  minQuality: number;
+}) {
+  const color = qualityColorWithThreshold(segment.quality_score, minQuality);
+  const belowThreshold = !meetsQualityThreshold(
+    segment.quality_score,
+    minQuality,
+  );
   return (
     <View style={styles.card}>
       <SectionTitle icon="road-variant" title="Surface quality" />
@@ -206,6 +243,12 @@ function QualityCard({ segment }: { segment: RoadSegmentDetail }) {
           <Text style={styles.qualityScoreMaxText}>/ 5.0</Text>
         </View>
       </View>
+      {belowThreshold ? (
+        <Text style={styles.thresholdHint}>
+          Your filter is set to {qualityLabel(minQuality)} and above — this road
+          falls below it.
+        </Text>
+      ) : null}
       <QualityBreakdownBar breakdown={segment.quality_breakdown} />
     </View>
   );
@@ -509,6 +552,30 @@ const styles = StyleSheet.create({
   },
   headerCard: {
     gap: spacing.sm,
+  },
+  headerCardDimmed: {
+    opacity: 0.7,
+    borderColor: colors.borderLight,
+  },
+  thresholdBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.pill,
+    backgroundColor: colors.bgElevated,
+  },
+  thresholdBadgeLabel: {
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
+  },
+  thresholdHint: {
+    color: colors.textTertiary,
+    fontSize: fontSize.xs,
+    fontStyle: "italic",
   },
   headerTitle: {
     color: colors.textPrimary,

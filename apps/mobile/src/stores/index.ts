@@ -2,13 +2,21 @@
  * Tarmoto State Stores (Zustand)
  */
 
-import { create } from 'zustand';
+import { create } from "zustand";
 import type {
-  User, RideSummary, RideDetail, Hazard, Trip, CommuteRoute,
-  LatLng, QualityClass, SurfaceType,
-} from '@/types';
-import type { ClassificationResult, WindowFeatures } from '@/services/sensors';
-import type { LocationUpdate } from '@/services/location';
+  User,
+  RideSummary,
+  RideDetail,
+  Hazard,
+  Trip,
+  CommuteRoute,
+  LatLng,
+  QualityClass,
+  SurfaceType,
+} from "@/types";
+import type { ClassificationResult, WindowFeatures } from "@/services/sensors";
+import type { LocationUpdate } from "@/services/location";
+import { MIN_QUALITY_BOUNDS } from "@/theme";
 
 // ── Auth Store ──
 
@@ -36,7 +44,7 @@ interface RideState {
   // Active ride
   activeRide: RideDetail | null;
   isRiding: boolean;
-  rideType: 'free' | 'commute' | 'trip';
+  rideType: "free" | "commute" | "trip";
 
   // Live data
   currentSpeed: number;
@@ -47,7 +55,7 @@ interface RideState {
   segmentCount: number;
 
   // Actions
-  startRide: (type?: 'free' | 'commute' | 'trip') => void;
+  startRide: (type?: "free" | "commute" | "trip") => void;
   stopRide: () => void;
   updateSpeed: (speed: number) => void;
   updateQuality: (quality: ClassificationResult) => void;
@@ -64,7 +72,7 @@ interface RideState {
 export const useRideStore = create<RideState>((set) => ({
   activeRide: null,
   isRiding: false,
-  rideType: 'free',
+  rideType: "free",
   currentSpeed: 0,
   currentQuality: null,
   location: null,
@@ -73,20 +81,22 @@ export const useRideStore = create<RideState>((set) => ({
   segmentCount: 0,
   recentRides: [],
 
-  startRide: (type = 'free') => set({
-    isRiding: true,
-    rideType: type,
-    distance: 0,
-    duration: 0,
-    segmentCount: 0,
-    currentQuality: null,
-  }),
-  stopRide: () => set({
-    isRiding: false,
-    activeRide: null,
-    currentQuality: null,
-    currentSpeed: 0,
-  }),
+  startRide: (type = "free") =>
+    set({
+      isRiding: true,
+      rideType: type,
+      distance: 0,
+      duration: 0,
+      segmentCount: 0,
+      currentQuality: null,
+    }),
+  stopRide: () =>
+    set({
+      isRiding: false,
+      activeRide: null,
+      currentQuality: null,
+      currentSpeed: 0,
+    }),
   updateSpeed: (currentSpeed) => set({ currentSpeed }),
   updateQuality: (currentQuality) => set({ currentQuality }),
   updateLocation: (location) => set({ location }),
@@ -112,10 +122,12 @@ export const useHazardStore = create<HazardState>((set) => ({
   routeHazards: [],
   setNearbyHazards: (nearbyHazards) => set({ nearbyHazards }),
   setRouteHazards: (routeHazards) => set({ routeHazards }),
-  addHazard: (hazard) => set((s) => ({ nearbyHazards: [hazard, ...s.nearbyHazards] })),
-  removeHazard: (id) => set((s) => ({
-    nearbyHazards: s.nearbyHazards.filter((h) => h.id !== id),
-  })),
+  addHazard: (hazard) =>
+    set((s) => ({ nearbyHazards: [hazard, ...s.nearbyHazards] })),
+  removeHazard: (id) =>
+    set((s) => ({
+      nearbyHazards: s.nearbyHazards.filter((h) => h.id !== id),
+    })),
 }));
 
 // ── Trip Store ──
@@ -157,7 +169,92 @@ export const useMapStore = create<MapState>((set) => ({
   showHazardOverlay: true,
   setCenter: (center) => set({ center }),
   setZoom: (zoom) => set({ zoom }),
-  toggleQuality: () => set((s) => ({ showQualityOverlay: !s.showQualityOverlay })),
-  toggleSurface: () => set((s) => ({ showSurfaceOverlay: !s.showSurfaceOverlay })),
-  toggleHazards: () => set((s) => ({ showHazardOverlay: !s.showHazardOverlay })),
+  toggleQuality: () =>
+    set((s) => ({ showQualityOverlay: !s.showQualityOverlay })),
+  toggleSurface: () =>
+    set((s) => ({ showSurfaceOverlay: !s.showSurfaceOverlay })),
+  toggleHazards: () =>
+    set((s) => ({ showHazardOverlay: !s.showHazardOverlay })),
 }));
+
+// ── Preferences Store ──
+// Rider-level preferences that shape what gets surfaced in planning and
+// rides. Currently scoped to the US-5 minimum-quality filter; other
+// preferences will land here as they ship.
+//
+// Persistence uses MMKV when available (device). In Jest the native module
+// isn't linked, so the guarded require falls back to an in-memory shim —
+// tests can freely reset state without touching disk.
+
+const PREFS_STORAGE_ID = "tarmoto-prefs";
+const MIN_QUALITY_KEY = "minQuality";
+const DEFAULT_MIN_QUALITY = 3; // "Fair or better" — matches UserPreferences default
+
+interface PrefsStorage {
+  getNumber(key: string): number | undefined;
+  set(key: string, value: number): void;
+}
+
+function createPrefsStorage(): PrefsStorage {
+  try {
+    // Lazy require so the store module stays importable in environments
+    // without the native MMKV binding (e.g. jest).
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { createMMKV } =
+      require("react-native-mmkv") as typeof import("react-native-mmkv");
+    const mmkv = createMMKV({ id: PREFS_STORAGE_ID });
+    return {
+      getNumber: (key) => mmkv.getNumber(key),
+      set: (key, value) => mmkv.set(key, value),
+    };
+  } catch {
+    const memory = new Map<string, number>();
+    return {
+      getNumber: (key) => memory.get(key),
+      set: (key, value) => {
+        memory.set(key, value);
+      },
+    };
+  }
+}
+
+const prefsStorage = createPrefsStorage();
+
+function clampMinQuality(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_MIN_QUALITY;
+  const rounded = Math.round(value);
+  return Math.max(
+    MIN_QUALITY_BOUNDS.min,
+    Math.min(MIN_QUALITY_BOUNDS.max, rounded),
+  );
+}
+
+function loadPersistedMinQuality(): number {
+  const raw = prefsStorage.getNumber(MIN_QUALITY_KEY);
+  if (raw === undefined) return DEFAULT_MIN_QUALITY;
+  return clampMinQuality(raw);
+}
+
+interface PreferencesState {
+  /** Minimum road quality (1..5) the rider wants to see in planning. */
+  minQuality: number;
+  setMinQuality: (value: number) => void;
+  resetPreferences: () => void;
+}
+
+export const usePreferencesStore = create<PreferencesState>((set) => ({
+  minQuality: loadPersistedMinQuality(),
+  setMinQuality: (value) => {
+    const clamped = clampMinQuality(value);
+    prefsStorage.set(MIN_QUALITY_KEY, clamped);
+    set({ minQuality: clamped });
+  },
+  resetPreferences: () => {
+    prefsStorage.set(MIN_QUALITY_KEY, DEFAULT_MIN_QUALITY);
+    set({ minQuality: DEFAULT_MIN_QUALITY });
+  },
+}));
+
+export const PREFERENCES_DEFAULTS = {
+  minQuality: DEFAULT_MIN_QUALITY,
+} as const;
