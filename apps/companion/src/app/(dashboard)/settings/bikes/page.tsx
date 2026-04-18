@@ -38,7 +38,9 @@ export default function BikesPage() {
     try {
       const { data } = await accountApi.getBikes();
       setBikes(((data as unknown as Bike[]) ?? []).slice());
-      setError((prev) => (prev?.kind === "load" ? null : prev));
+      // A successful refresh supersedes any prior error (load or action),
+      // so the banner doesn't linger after the user's latest action succeeds.
+      setError(null);
     } catch (err) {
       setError({
         kind: "load",
@@ -88,14 +90,26 @@ export default function BikesPage() {
   async function handleSetActive(bike: Bike) {
     if (bike.isActive || pendingActionBikeId) return;
     setPendingActionBikeId(bike.id);
-    // Optimistic: flip active flags locally so there's immediate feedback.
-    const previous = bikes;
+    // Capture the id of whatever was active before, so a rollback can restore
+    // exactly the two flags we touched without snapshotting the whole list —
+    // modal submits aren't blocked by pendingActionBikeId and can mutate
+    // `bikes` concurrently.
+    const previousActiveId = bikes.find((b) => b.isActive)?.id ?? null;
     setBikes((list) => list.map((b) => ({ ...b, isActive: b.id === bike.id })));
     try {
       await accountApi.updateBike(bike.id, { isActive: true });
       await refresh();
     } catch (err) {
-      setBikes(previous);
+      // Functional revert: flip only the two affected bikes' isActive flags,
+      // so any concurrent additions/edits that landed mid-request survive.
+      setBikes((list) =>
+        list.map((b) => {
+          if (b.id === bike.id) return { ...b, isActive: false };
+          if (previousActiveId && b.id === previousActiveId)
+            return { ...b, isActive: true };
+          return b;
+        }),
+      );
       setError({
         kind: "action",
         message:
