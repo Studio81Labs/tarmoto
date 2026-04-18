@@ -185,13 +185,30 @@ function nextId(): string {
 }
 
 // ── Error classification ──
+//
+// Three buckets drive the drain's behavior:
+//
+//   - Network failures (no `response`) mean the link itself is down.
+//     Stop draining, flag `networkFailed` so callers skip their live
+//     call, and leave everything queued for next time.
+//
+//   - Transient server failures (5xx, 408, 429) reach the server but
+//     indicate a temporary condition — an outage, a cold cache, a
+//     rate limit. Dropping the payload would lose data that would
+//     almost certainly succeed on retry; treat them like network
+//     failures for queueing purposes (keep queued, stop draining) but
+//     don't flag `networkFailed` because the link is actually fine.
+//
+//   - Client errors (other 4xx: 400/401/403/404/…) are poison pills.
+//     The payload itself is wrong or the auth is gone; retrying the
+//     same bytes forever won't fix it. Bump attempts and drop after a
+//     conservative threshold so one bad ride can't starve the rest.
 
-function isRetriableNetworkError(error: unknown): boolean {
-  // Anything that made it to the server (`response.status` set) isn't a
-  // connectivity failure — the server either accepted, rejected, or
-  // throttled us. Retrying those on the queue would be spinning.
+function isNetworkDownError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   const axiosErr = error as AxiosError;
+  // A response status means the request reached the server — not a
+  // connectivity problem regardless of the status value.
   if (axiosErr.response) return false;
   // Axios v1 surfaces disconnects as ERR_NETWORK / ECONNABORTED / ETIMEDOUT
   // depending on whether the request reached the socket before failing.
@@ -211,17 +228,34 @@ function isRetriableNetworkError(error: unknown): boolean {
   return /network|timeout|offline|disconnected/i.test(message);
 }
 
+function isTransientServerError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const status = (error as AxiosError).response?.status;
+  if (typeof status !== "number") return false;
+  // 408 Request Timeout and 429 Too Many Requests are explicitly
+  // retry-safe per RFC 9110. 5xx is the catch-all for server-side
+  // faults that aren't the client's doing.
+  return status === 408 || status === 429 || (status >= 500 && status < 600);
+}
+
+/** Either category counts as "don't lose the payload, try again later". */
+function isRetriableError(error: unknown): boolean {
+  return isNetworkDownError(error) || isTransientServerError(error);
+}
+
 // ── Public API ──
 
 /**
  * Submit a sensor payload. If the network call succeeds the payload (and
  * any backlog) is uploaded live. If the network call fails for
- * connectivity reasons the payload is enqueued and the caller still gets
- * a successful `SubmitResult` with `status: "queued"` — the ride is
- * already over, we don't want to bubble a retry into the UI.
+ * connectivity reasons OR a transient server condition (5xx/408/429)
+ * the payload is enqueued and the caller still gets a successful
+ * `SubmitResult` with `status: "queued"` — the ride is already over,
+ * we don't want to bubble a retry into the UI.
  *
- * Non-network failures (4xx, 5xx) propagate — those are caller-actionable
- * bugs (bad payload, auth) or server outages that the queue can't fix.
+ * Client-error failures (4xx other than 408/429) propagate — those are
+ * caller-actionable bugs (bad payload, auth) the queue can't fix by
+ * retrying the same bytes.
  */
 export async function submitSensorUpload(
   rideId: string,
@@ -265,7 +299,10 @@ export async function submitSensorUpload(
       pending: getPendingCount(),
     };
   } catch (error) {
-    if (isRetriableNetworkError(error)) {
+    if (isRetriableError(error)) {
+      // Both connectivity drops and transient server faults land here —
+      // either way the correct move is to preserve the ride data and
+      // retry later, not surface a blocking error to the rider.
       enqueueUpload(rideId, readings, deviceModel);
       return {
         status: "queued",
@@ -322,16 +359,27 @@ export function drainOfflineQueue(
         removeById(next.id);
         flushed += 1;
       } catch (error) {
-        if (isRetriableNetworkError(error)) {
-          // Still offline. Leave the rest for the next drain and tell
+        if (isNetworkDownError(error)) {
+          // Link is down. Leave the rest for the next drain and tell
           // the caller why we stopped so they can skip their live call.
           networkFailed = true;
           break;
         }
-        // Poison pill: bump attempts; if we've seen it too many times,
-        // drop it so one bad payload doesn't block every other ride.
-        // `attempts` exists partly so a future UI could surface stuck
-        // items — for now the threshold is conservative.
+        if (isTransientServerError(error)) {
+          // Server hiccup (5xx, rate limit, request timeout). The
+          // payload is fine — retrying later is the right move. Stop
+          // draining to avoid hammering a struggling backend, but keep
+          // everything queued and don't flag `networkFailed` because
+          // the link itself is working. `attempts` stays untouched so
+          // a temporarily unhappy server doesn't burn a payload's
+          // retry budget.
+          break;
+        }
+        // Poison pill (4xx client error): bump attempts; if we've seen
+        // it too many times, drop it so one bad payload doesn't block
+        // every other ride. `attempts` exists partly so a future UI
+        // could surface stuck items — for now the threshold is
+        // conservative.
         next.attempts += 1;
         if (next.attempts >= 3) {
           removeById(next.id);

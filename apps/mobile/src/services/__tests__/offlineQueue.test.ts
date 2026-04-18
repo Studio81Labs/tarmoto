@@ -111,14 +111,16 @@ describe("offlineQueue", () => {
       expect(getPendingUploads()[0].rideId).toBe("ride-1");
     });
 
-    it("bubbles non-network errors so callers can react", async () => {
+    it("bubbles 4xx client errors so callers can react", async () => {
+      // 4xx means the payload or auth is wrong — the queue can't fix
+      // that by retrying the same bytes, so the error surfaces.
       const uploader: SensorUploader = jest.fn(async () => {
-        throw makeServerError(500);
+        throw makeServerError(400);
       });
 
       await expect(
         submitSensorUpload("ride-1", [makeReading(1)], "iPhone", uploader),
-      ).rejects.toThrow("HTTP 500");
+      ).rejects.toThrow("HTTP 400");
       expect(getPendingCount()).toBe(0);
     });
 
@@ -140,6 +142,26 @@ describe("offlineQueue", () => {
       expect(calls).toEqual(["old-ride", "new-ride"]);
       expect(result.status).toBe("uploaded");
       expect(result.pending).toBe(0);
+    });
+
+    it("queues the new payload when the server is transiently failing (5xx)", async () => {
+      // Regression: an earlier version dropped 5xx items as poison,
+      // losing ride data on server hiccups. 5xx/408/429 mean "try
+      // again", not "this payload is bad".
+      const uploader: SensorUploader = jest.fn(async () => {
+        throw makeServerError(503);
+      });
+
+      const result = await submitSensorUpload(
+        "ride-1",
+        [makeReading(1)],
+        "iPhone",
+        uploader,
+      );
+
+      expect(result.status).toBe("queued");
+      expect(result.pending).toBe(1);
+      expect(getPendingUploads()[0].rideId).toBe("ride-1");
     });
 
     it("queues the new payload if the backlog flush hits the network", async () => {
@@ -253,6 +275,64 @@ describe("offlineQueue", () => {
 
       expect(result.networkFailed).toBe(false);
       expect(result.remaining).toBe(1);
+    });
+
+    it("preserves items across drains when the server is transiently failing", async () => {
+      // Regression: an earlier version bumped `attempts` on any non-
+      // network error and dropped after 3, so 5xx/429/408 (which mean
+      // "try again later") would eat a rider's sensor data. Transient
+      // server faults must NOT bump attempts or drop the payload.
+      enqueueUpload("a", [makeReading(1)], "iPhone");
+      enqueueUpload("b", [makeReading(2)], "iPhone");
+      const uploader = jest.fn<
+        ReturnType<SensorUploader>,
+        Parameters<SensorUploader>
+      >(async () => {
+        throw makeServerError(503);
+      });
+
+      // Five drains' worth of server pain should still leave both items
+      // intact with `attempts` untouched.
+      for (let i = 0; i < 5; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await drainOfflineQueue(uploader);
+      }
+
+      const remaining = getPendingUploads();
+      expect(remaining.map((e) => e.rideId)).toEqual(["a", "b"]);
+      expect(remaining.every((e) => e.attempts === 0)).toBe(true);
+
+      // And when the server recovers, the next drain flushes them.
+      const recovered: SensorUploader = async () => ({
+        accepted: 1,
+        segments_updated: 0,
+      });
+      const result = await drainOfflineQueue(recovered);
+      expect(result.flushed).toBe(2);
+      expect(getPendingCount()).toBe(0);
+    });
+
+    it("treats 429 and 408 as retriable, not poison", async () => {
+      enqueueUpload("a", [makeReading(1)], "iPhone");
+      let callIdx = 0;
+      const uploader: SensorUploader = async () => {
+        callIdx += 1;
+        // Rate-limited twice, then timed out once — nothing should be
+        // dropped. A fourth call succeeds.
+        if (callIdx === 1) throw makeServerError(429);
+        if (callIdx === 2) throw makeServerError(429);
+        if (callIdx === 3) throw makeServerError(408);
+        return { accepted: 1, segments_updated: 0 };
+      };
+
+      await drainOfflineQueue(uploader);
+      await drainOfflineQueue(uploader);
+      await drainOfflineQueue(uploader);
+      expect(getPendingUploads()[0].attempts).toBe(0);
+
+      const final = await drainOfflineQueue(uploader);
+      expect(final.flushed).toBe(1);
+      expect(getPendingCount()).toBe(0);
     });
 
     it("shares the in-flight drain across concurrent callers", async () => {
