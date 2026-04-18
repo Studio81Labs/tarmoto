@@ -91,12 +91,12 @@ export interface RoadSegmentDetail extends RoadSegment {
 
 export interface FunZone {
   id: string;
-  name: string;
+  name: string | null;
   composite_score: number;
   road_count: number;
-  total_curve_km: number;
-  avg_quality: number;
-  best_season: string;
+  total_curve_km: number | null;
+  avg_quality: number | null;
+  best_season: string | null;
   boundary: LatLng[];
 }
 

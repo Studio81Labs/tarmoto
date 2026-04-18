@@ -12,11 +12,12 @@
 
 import type {
   CircleLayerStyle,
+  FillLayerStyle,
   LineLayerStyle,
 } from "@maplibre/maplibre-react-native";
 import { API_BASE_URL } from "@/config";
 import { colors, MIN_QUALITY_BOUNDS } from "@/theme";
-import type { MountainPass, PassStatus } from "@/types";
+import type { FunZone, LatLng, MountainPass, PassStatus } from "@/types";
 
 /**
  * Return the MapLibre xyz tile URL template for the road-quality MVT layer.
@@ -212,4 +213,174 @@ export const passMarkerStyle: CircleLayerStyle = {
   circleStrokeColor: colors.bg,
   circleStrokeWidth: 2,
   circleOpacity: 0.95,
+};
+
+// ── US-6 Fun Zones ──
+//
+// Composite scores come back as floats on a rough 0-5 scale (see
+// `roads.service.spec.ts` seeds), mirroring the road-quality score. We reuse
+// the quality colour ramp + half-point breaks so zones feel consistent with
+// every other score surface in the app: a "4.5+" fun zone reads as Excellent,
+// same as a 4.5+ road segment.
+
+/** Composite-score bucket boundaries. Mirror theme.qualityColor(). */
+export const FUN_ZONE_SCORE_BREAKS = [1.5, 2.5, 3.5, 4.5] as const;
+
+/** Ordered (worst → best) score → colour mapping for the fun-zone layer. */
+export const FUN_ZONE_COLORS: {
+  veryPoor: string;
+  poor: string;
+  fair: string;
+  good: string;
+  excellent: string;
+} = {
+  veryPoor: colors.quality.veryPoor,
+  poor: colors.quality.poor,
+  fair: colors.quality.fair,
+  good: colors.quality.good,
+  excellent: colors.quality.excellent,
+};
+
+/**
+ * Convert a MapLibre region (centre + zoom + latitude/longitude deltas) into
+ * the `west,south,east,north` string the backend expects. The region feature
+ * carries visibleBounds as `[[east, north], [west, south]]` in newer
+ * MapLibre builds; older builds emitted visibleBounds in the other order, so
+ * we sort the corners defensively. Rounded to 4 decimals to keep the URL
+ * stable across tiny camera jitter — same bbox, same request, same 304.
+ */
+export function bboxFromVisibleBounds(
+  visibleBounds: [[number, number], [number, number]],
+): string {
+  const [a, b] = visibleBounds;
+  const west = Math.min(a[0], b[0]);
+  const east = Math.max(a[0], b[0]);
+  const south = Math.min(a[1], b[1]);
+  const north = Math.max(a[1], b[1]);
+  const round = (n: number): number => Math.round(n * 10000) / 10000;
+  return `${round(west)},${round(south)},${round(east)},${round(north)}`;
+}
+
+/**
+ * Fun zones arrive with boundary as `LatLng[]` — a closed ring (first vertex
+ * equals last). GeoJSON polygons want `[lng, lat]` tuples, and MapLibre's
+ * polygon renderer requires the ring to be explicitly closed. We enforce
+ * both here so the `FillLayer` renders without truncation and the `FillLayer
+ * + LineLayer` pair traces the same boundary.
+ *
+ * Zones with fewer than three unique vertices (degenerate polygons that can
+ * slip through from partial backend aggregation) are dropped — MapLibre
+ * warns on them but still renders artefacts.
+ */
+export function funZonesToFeatureCollection(
+  zones: FunZone[],
+): GeoJSON.FeatureCollection<
+  GeoJSON.Polygon,
+  {
+    id: string;
+    name: string | null;
+    composite_score: number;
+    road_count: number;
+    total_curve_km: number | null;
+    avg_quality: number | null;
+    best_season: string | null;
+  }
+> {
+  const features = zones
+    .map((zone) => {
+      const ring = toClosedRing(zone.boundary);
+      if (ring.length < 4) return null;
+      return {
+        type: "Feature" as const,
+        id: zone.id,
+        properties: {
+          id: zone.id,
+          name: zone.name ?? null,
+          composite_score: zone.composite_score,
+          road_count: zone.road_count,
+          total_curve_km: zone.total_curve_km ?? null,
+          avg_quality: zone.avg_quality ?? null,
+          best_season: zone.best_season ?? null,
+        },
+        geometry: {
+          type: "Polygon" as const,
+          coordinates: [ring],
+        },
+      };
+    })
+    .filter((f): f is NonNullable<typeof f> => f !== null);
+  return { type: "FeatureCollection", features };
+}
+
+function toClosedRing(boundary: LatLng[]): [number, number][] {
+  if (boundary.length < 3) return [];
+  const ring = boundary.map((p) => [p.lng, p.lat] as [number, number]);
+  const first = ring[0];
+  const last = ring[ring.length - 1];
+  if (first[0] !== last[0] || first[1] !== last[1]) {
+    ring.push([first[0], first[1]]);
+  }
+  return ring;
+}
+
+/**
+ * Fill style for the Fun Zone overlay.
+ *
+ * `fillColor` — `step` on `composite_score` matching the quality buckets,
+ *   so a zone with an excellent composite score shows in the same green as
+ *   excellent road segments.
+ *
+ * `fillOpacity` — `interpolate` on `zoom` so zones read as translucent
+ *   heatmap patches at low zoom and fade out before they start obscuring
+ *   individual roads at high zoom. US-6 explicitly asks for a heatmap feel.
+ */
+export const funZoneFillStyle: FillLayerStyle = {
+  fillColor: [
+    "step",
+    ["get", "composite_score"],
+    FUN_ZONE_COLORS.veryPoor,
+    FUN_ZONE_SCORE_BREAKS[0],
+    FUN_ZONE_COLORS.poor,
+    FUN_ZONE_SCORE_BREAKS[1],
+    FUN_ZONE_COLORS.fair,
+    FUN_ZONE_SCORE_BREAKS[2],
+    FUN_ZONE_COLORS.good,
+    FUN_ZONE_SCORE_BREAKS[3],
+    FUN_ZONE_COLORS.excellent,
+  ],
+  fillOpacity: [
+    "interpolate",
+    ["linear"],
+    ["zoom"],
+    6,
+    0.35,
+    12,
+    0.22,
+    16,
+    0.1,
+  ],
+};
+
+/**
+ * Outline style for the Fun Zone overlay. Uses the same colour ramp as the
+ * fill so the boundary keeps reading as part of the same zone even when the
+ * fill fades out at high zoom.
+ */
+export const funZoneLineStyle: LineLayerStyle = {
+  lineColor: [
+    "step",
+    ["get", "composite_score"],
+    FUN_ZONE_COLORS.veryPoor,
+    FUN_ZONE_SCORE_BREAKS[0],
+    FUN_ZONE_COLORS.poor,
+    FUN_ZONE_SCORE_BREAKS[1],
+    FUN_ZONE_COLORS.fair,
+    FUN_ZONE_SCORE_BREAKS[2],
+    FUN_ZONE_COLORS.good,
+    FUN_ZONE_SCORE_BREAKS[3],
+    FUN_ZONE_COLORS.excellent,
+  ],
+  lineWidth: ["interpolate", ["linear"], ["zoom"], 6, 1, 12, 1.5, 16, 2],
+  lineOpacity: 0.85,
+  lineJoin: "round",
 };
