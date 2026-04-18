@@ -182,8 +182,13 @@ class ApiService {
   }
 
   // ── Sensor Data ──
+  //
+  // The raw POST is intentionally private: every ride-stop flow must go
+  // through `submitSensorData` so offline rides get queued instead of
+  // silently dropped (US-18 AC #4). `flushPendingSensorUploads` shares
+  // the same underlying call via the queue's uploader callback.
 
-  async uploadSensorData(
+  private async uploadSensorData(
     rideId: string,
     readings: SensorReading[],
     deviceModel: string,
@@ -198,11 +203,8 @@ class ApiService {
 
   /**
    * Submit sensor readings via the offline-aware queue (US-18 AC #4).
-   *
-   * Prefer this over `uploadSensorData` from ride-stop flows — if the
-   * phone is offline the payload is persisted to MMKV and replayed on
-   * the next successful submission instead of vanishing. The caller gets
-   * a `SubmitResult` describing which path ran plus the current backlog.
+   * This is the ride-stop flow's entry point — the raw POST is kept
+   * private so every caller goes through the queue.
    */
   async submitSensorData(
     rideId: string,
