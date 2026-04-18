@@ -11,6 +11,7 @@ import {
   formatJoinedLabel,
   formatKm,
   pickShowcaseBike,
+  RiderProfileFetchError,
   RiderProfileNotFoundError,
   sortBadges,
   unfollowRider,
@@ -297,6 +298,25 @@ describe("fetchRiderProfile", () => {
     expect(result.fromFallback).toBe(true);
     expect(result.profile.id).toBe("rider-2");
     expect(result.profile.bikes.length).toBeGreaterThan(0);
+  });
+
+  it("throws RiderProfileFetchError on 500-class responses", async () => {
+    global.fetch = vi
+      .fn()
+      .mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
+    await expect(fetchRiderProfile("rider-3")).rejects.toBeInstanceOf(
+      RiderProfileFetchError,
+    );
+  });
+
+  it("throws RiderProfileFetchError on 403 rather than faking a profile", async () => {
+    global.fetch = vi
+      .fn()
+      .mockResolvedValue({ ok: false, status: 403, json: async () => ({}) });
+    await expect(fetchRiderProfile("rider-4")).rejects.toMatchObject({
+      name: "RiderProfileFetchError",
+      status: 403,
+    });
   });
 
   it("forwards the access token as a bearer header when provided", async () => {

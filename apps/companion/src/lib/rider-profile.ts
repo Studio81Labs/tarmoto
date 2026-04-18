@@ -177,9 +177,11 @@ function formatEarnedLabel(earnedAt: string): string {
 
 /**
  * Loads the rider profile. The public profile endpoint is still spec-pending
- * (tracked by #71 / account epic), so we try the future route and fall back
- * to the demo profile so the page remains usable in dev and CI. Callers can
- * distinguish by `fromFallback` if they want to warn the user.
+ * (tracked by #71 / account epic), so a network failure (endpoint genuinely
+ * missing) falls back to the deterministic demo profile. A successful 404
+ * means the rider doesn't exist and surfaces a not-found state; any other
+ * non-OK response is a real server error and propagates so the page can show
+ * its error state rather than quietly pretending with fake data.
  */
 export async function fetchRiderProfile(
   riderId: string,
@@ -202,10 +204,17 @@ export async function fetchRiderProfile(
     if (res.status === 404) {
       throw new RiderProfileNotFoundError(riderId);
     }
+    throw new RiderProfileFetchError(
+      `Profile request failed (${res.status})`,
+      res.status,
+    );
   } catch (err) {
     if (err instanceof RiderProfileNotFoundError) throw err;
+    if (err instanceof RiderProfileFetchError) throw err;
     if ((err as { name?: string })?.name === "AbortError") throw err;
-    // Network / endpoint-missing — fall through to demo.
+    // Only reach here for network-level failures (fetch reject, JSON parse,
+    // etc.) — endpoint not reachable at all, so fall back to demo so the
+    // page stays usable in dev/CI before the backend route exists.
   }
 
   return { profile: buildDemoProfile(riderId), fromFallback: true };
@@ -215,6 +224,16 @@ export class RiderProfileNotFoundError extends Error {
   constructor(public readonly riderId: string) {
     super(`Rider ${riderId} not found`);
     this.name = "RiderProfileNotFoundError";
+  }
+}
+
+export class RiderProfileFetchError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = "RiderProfileFetchError";
   }
 }
 
