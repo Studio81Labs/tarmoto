@@ -10,6 +10,7 @@ import {
   formatHours,
   formatJoinedLabel,
   formatKm,
+  initialsFromName,
   pickShowcaseBike,
   RiderProfileFetchError,
   RiderProfileNotFoundError,
@@ -129,6 +130,29 @@ describe("buildStatTiles", () => {
     expect(tiles[0].value).toBe("121");
     expect(tiles[1].value).toBe("17k km");
     expect(tiles[2].value).toBe("284");
+  });
+});
+
+describe("initialsFromName", () => {
+  it("takes the first letter of the first two words", () => {
+    expect(initialsFromName("Alice Doe")).toBe("AD");
+    expect(initialsFromName("Alice Bob Carol")).toBe("AB");
+  });
+
+  it("handles single-word names", () => {
+    expect(initialsFromName("Alice")).toBe("A");
+  });
+
+  it("does not leak 'UN' from 'undefined' when the name has leading whitespace", () => {
+    expect(initialsFromName("  Alice")).toBe("A");
+    expect(initialsFromName("\t\n Alice Doe")).toBe("AD");
+  });
+
+  it("falls back to '?' for empty, whitespace-only, or nullish names", () => {
+    expect(initialsFromName("")).toBe("?");
+    expect(initialsFromName("   ")).toBe("?");
+    expect(initialsFromName(null)).toBe("?");
+    expect(initialsFromName(undefined)).toBe("?");
   });
 });
 

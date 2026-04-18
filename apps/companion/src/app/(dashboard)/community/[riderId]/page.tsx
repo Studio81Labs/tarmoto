@@ -30,6 +30,7 @@ import {
   followRider,
   formatHours,
   formatJoinedLabel,
+  initialsFromName,
   pickShowcaseBike,
   RiderProfileNotFoundError,
   sortBadges,
@@ -245,12 +246,7 @@ function Header({
   onToggleFollow,
   showcaseBike,
 }: HeaderProps) {
-  const initials = profile.displayName
-    .split(/\s+/)
-    .map((w) => w[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+  const initials = initialsFromName(profile.displayName);
 
   return (
     <section className="rounded-2xl bg-slate-900 border border-slate-800 p-6 mb-6">
@@ -265,7 +261,7 @@ function Header({
             />
           ) : (
             <div className="w-20 h-20 rounded-full bg-tarmoto-cyan/20 flex items-center justify-center text-tarmoto-cyan text-2xl font-bold">
-              {initials || "?"}
+              {initials}
             </div>
           )}
         </div>

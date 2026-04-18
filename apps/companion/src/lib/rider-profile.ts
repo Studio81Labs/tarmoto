@@ -117,6 +117,26 @@ export function countEarnedBadges(entries: BadgeEntry[]): number {
 }
 
 /**
+ * Extracts up to 2 uppercase initials from a display name for avatar
+ * fallbacks. Returns `"?"` when the name is empty, whitespace-only, or
+ * otherwise yields no alphanumeric characters — without this guard
+ * `"  Alice".split(/\s+/)` would produce an empty-string word whose
+ * first char is `undefined`, joined to the literal string
+ * `"undefined"`, and sliced to `"UN"`.
+ */
+export function initialsFromName(name: string | null | undefined): string {
+  if (!name) return "?";
+  const letters = name
+    .split(/\s+/)
+    .map((word) => word[0])
+    .filter((ch): ch is string => typeof ch === "string" && ch.length > 0)
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+  return letters || "?";
+}
+
+/**
  * Returns the rider's single highlighted bike (active bike preferred, else
  * the most-ridden). Used in the header — the full garage is on the account
  * page, not the public profile.
@@ -422,9 +442,13 @@ function normalizeProfile(
   riderId: string,
 ): RiderProfileDetail {
   const fallback = buildDemoProfile(riderId);
+  // `??` would let an empty/whitespace display name from the API sneak
+  // through and poison downstream formatters (avatar initials, etc.).
+  const rawName =
+    typeof raw.displayName === "string" ? raw.displayName.trim() : "";
   return {
     id: raw.id ?? riderId,
-    displayName: raw.displayName ?? fallback.displayName,
+    displayName: rawName || fallback.displayName,
     avatarUrl: raw.avatarUrl ?? undefined,
     bio: raw.bio,
     homeRegion: raw.homeRegion,
