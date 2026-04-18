@@ -53,6 +53,7 @@ export default function CommuteScreen() {
     newHazardCount,
     errorMessage,
     refresh,
+    retry,
     acknowledge,
     isRefreshing,
   } = useCommute();
@@ -78,7 +79,7 @@ export default function CommuteScreen() {
         <Text style={styles.emptyBody}>
           {errorMessage ?? "Check your connection and try again."}
         </Text>
-        <TouchableOpacity style={styles.retryBtn} onPress={refresh}>
+        <TouchableOpacity style={styles.retryBtn} onPress={retry}>
           <Text style={styles.retryLabel}>Retry</Text>
         </TouchableOpacity>
       </View>

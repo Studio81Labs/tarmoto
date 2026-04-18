@@ -332,13 +332,13 @@ export const useCommuteStore = create<CommuteState>((set, get) => ({
   seenHazardsByRoute: {},
 
   getSeenHazards: (routeId) => {
+    // Pure read: return the in-memory cache if we have it, else decode
+    // synchronously from MMKV. No store mutation here — callers can read
+    // this from a useMemo during render without triggering a re-entrant
+    // set(). Priming the in-memory cache is `markHazardsSeen`'s job.
     const cached = get().seenHazardsByRoute[routeId];
     if (cached) return cached;
-    const loaded = decodeSeen(commuteStorage.getString(seenKey(routeId)));
-    set((s) => ({
-      seenHazardsByRoute: { ...s.seenHazardsByRoute, [routeId]: loaded },
-    }));
-    return loaded;
+    return decodeSeen(commuteStorage.getString(seenKey(routeId)));
   },
 
   markHazardsSeen: (routeId, hazardIds) => {

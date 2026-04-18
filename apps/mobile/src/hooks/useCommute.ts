@@ -31,7 +31,10 @@ export interface UseCommuteResult {
   hazards: CommuteHazardView[];
   newHazardCount: number;
   errorMessage: string | null;
+  /** Pull-to-refresh from the ready state — keeps existing data visible. */
   refresh: () => Promise<void>;
+  /** Error-state retry — goes back through the full loading spinner. */
+  retry: () => Promise<void>;
   /** Mark every currently-visible hazard as seen (dismiss NEW markers). */
   acknowledge: () => void;
   isRefreshing: boolean;
@@ -85,20 +88,17 @@ export function useCommute(): UseCommuteResult {
     void load(true);
   }, [load]);
 
-  // Prime the seen-hazard snapshot for the current route once we know its
-  // ID. `getSeenHazards` writes through to the store on a miss, so calling
-  // it from an effect (not useMemo) keeps render pure.
-  useEffect(() => {
-    if (!route) return;
-    if (seenByRoute[route.id]) return;
-    useCommuteStore.getState().getSeenHazards(route.id);
-  }, [route, seenByRoute]);
-
   const refresh = useCallback(() => load(false), [load]);
+  const retry = useCallback(() => load(true), [load]);
 
   const hazards = useMemo<CommuteHazardView[]>(() => {
     if (!route || !status) return [];
-    const seen = seenByRoute[route.id] ?? new Set<string>();
+    // Prefer the in-memory cache (kept in sync by `markHazardsSeen`), and
+    // fall back to a synchronous MMKV read so returning users don't see
+    // every hazard flash with a NEW badge on the first paint.
+    const seen =
+      seenByRoute[route.id] ??
+      useCommuteStore.getState().getSeenHazards(route.id);
     const currentIds = status.hazards.map((h) => h.id);
     const newIds = new Set(diffNewHazards(currentIds, seen));
     // Surface NEW hazards first so they're unmissable when the rider opens
@@ -131,6 +131,7 @@ export function useCommute(): UseCommuteResult {
     newHazardCount,
     errorMessage,
     refresh,
+    retry,
     acknowledge,
     isRefreshing,
   };
