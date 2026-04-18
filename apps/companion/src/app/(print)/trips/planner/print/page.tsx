@@ -62,7 +62,18 @@ function TripPrintPageContent() {
       if (raw) {
         localStorage.removeItem(TRIP_PRINT_STORAGE_KEY);
         const parsed = JSON.parse(raw) as Trip;
-        if (!tripId || parsed.id === tripId) loaded = parsed;
+        // localStorage persists across app versions so schema drift is a
+        // real risk; do a minimal shape check before trusting the payload
+        // so downstream `.days.reduce(...)` can't crash the page.
+        if (
+          parsed &&
+          typeof parsed.id === "string" &&
+          typeof parsed.name === "string" &&
+          Array.isArray(parsed.days) &&
+          (!tripId || parsed.id === tripId)
+        ) {
+          loaded = parsed;
+        }
       }
     } catch {
       /* ignore — fall back below */
