@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -57,6 +57,10 @@ export default function RiderProfilePage() {
   const [usingDemo, setUsingDemo] = useState(false);
   const [followPending, setFollowPending] = useState(false);
   const [followError, setFollowError] = useState<string | null>(null);
+  // Tracks whichever rider this page is currently rendering. Read inside
+  // async follow callbacks so a request that resolves after a navigation
+  // can tell whether its riderId is still on screen before touching state.
+  const activeRiderIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!riderId) return;
@@ -67,9 +71,15 @@ export default function RiderProfilePage() {
     // riderId or accessToken switch. Pattern matches the other ride pages.
     let cancelled = false;
     const controller = new AbortController();
+    activeRiderIdRef.current = riderId;
     setLoading(true);
     setNotFound(false);
     setError(null);
+    // Follow state is per-rider — drop any stale pending/error from the
+    // previous profile so a failed toggle on rider A doesn't show up on
+    // rider B's page after navigation.
+    setFollowPending(false);
+    setFollowError(null);
     fetchRiderProfile(riderId, {
       signal: controller.signal,
       accessToken,
@@ -115,31 +125,40 @@ export default function RiderProfilePage() {
 
   async function handleFollowToggle() {
     if (!profile || followPending || isSelf) return;
+    const targetId = profile.id;
     const wasFollowing = profile.isFollowing;
     // Optimistic toggle via the functional setter so a concurrent profile
     // re-fetch (e.g. token refresh) isn't silently overwritten by this stale
-    // closure — we only touch `isFollowing` and leave the rest of whatever
-    // React holds as the current profile.
+    // closure. The rider-id guard on every state update means a request
+    // that resolves after the user navigates away can't corrupt the
+    // newly loaded profile or surface a stale error/pending flag.
     setProfile((prev) =>
-      prev ? { ...prev, isFollowing: !wasFollowing } : prev,
+      prev && prev.id === targetId
+        ? { ...prev, isFollowing: !wasFollowing }
+        : prev,
     );
     setFollowPending(true);
     setFollowError(null);
     try {
       if (wasFollowing) {
-        await unfollowRider(profile.id, accessToken);
+        await unfollowRider(targetId, accessToken);
       } else {
-        await followRider(profile.id, accessToken);
+        await followRider(targetId, accessToken);
       }
     } catch (err) {
+      if (activeRiderIdRef.current !== targetId) return;
       setProfile((prev) =>
-        prev ? { ...prev, isFollowing: wasFollowing } : prev,
+        prev && prev.id === targetId
+          ? { ...prev, isFollowing: wasFollowing }
+          : prev,
       );
       const message =
         err instanceof Error ? err.message : "Could not update follow";
       setFollowError(message);
     } finally {
-      setFollowPending(false);
+      if (activeRiderIdRef.current === targetId) {
+        setFollowPending(false);
+      }
     }
   }
 

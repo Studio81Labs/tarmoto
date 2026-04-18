@@ -51,7 +51,6 @@ export interface StatTile {
   key: keyof RiderStats;
   label: string;
   value: string;
-  sub?: string;
 }
 
 export interface BadgeEntry {
@@ -81,7 +80,6 @@ export function buildStatTiles(stats: RiderStats): StatTile[] {
       key: "roadsDiscovered",
       label: "Roads discovered",
       value: formatCount(stats.roadsDiscovered),
-      sub: "First rider to map this road",
     },
     {
       key: "hazardsReported",
