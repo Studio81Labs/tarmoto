@@ -22,6 +22,13 @@ import { DEMO_TRIP } from "@/lib/demo-trip";
  * therefore use localStorage and clear the key after reading so nothing
  * persists beyond the print handoff.
  */
+
+// Module-level cache keyed by trip id. React StrictMode double-invokes
+// effects in dev (setup → cleanup → setup) and Next.js can re-run them on
+// fast-refresh; after the first run deletes the localStorage entry the
+// subsequent runs would otherwise see `null` and clobber the loaded trip.
+const hydratedTrips = new Map<string, Trip>();
+
 export default function TripPrintPage() {
   const params = useSearchParams();
   const tripId = params?.get("trip") ?? null;
@@ -29,6 +36,14 @@ export default function TripPrintPage() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    const cacheKey = tripId ?? "";
+    const cached = hydratedTrips.get(cacheKey);
+    if (cached) {
+      setTrip(cached);
+      setReady(true);
+      return;
+    }
+
     let loaded: Trip | null = null;
     try {
       const raw = localStorage.getItem(TRIP_PRINT_STORAGE_KEY);
@@ -41,6 +56,7 @@ export default function TripPrintPage() {
       /* ignore — fall back below */
     }
     if (!loaded && tripId === DEMO_TRIP.id) loaded = DEMO_TRIP;
+    if (loaded) hydratedTrips.set(cacheKey, loaded);
     setTrip(loaded);
     setReady(true);
   }, [tripId]);
