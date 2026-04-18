@@ -2,6 +2,7 @@ import { create } from "zustand";
 import {
   DEFAULT_MAP_FILTERS,
   clampCurviness,
+  cloneFilters,
   filtersEqual,
   type FilterableSurface,
   type MapFilters,
@@ -31,14 +32,6 @@ interface MapState {
   setMinCurviness: (value: number) => void;
   setFilters: (filters: MapFilters) => void;
   resetFilters: () => void;
-}
-
-function cloneFilters(filters: MapFilters): MapFilters {
-  return {
-    quality: new Set(filters.quality),
-    surface: new Set(filters.surface),
-    minCurviness: filters.minCurviness,
-  };
 }
 
 export const useMapStore = create<MapState>((set) => ({

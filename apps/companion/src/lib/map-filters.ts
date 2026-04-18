@@ -84,7 +84,7 @@ export function filtersToSearchParams(
 export function filtersFromSearchParams(
   params: URLSearchParams | null | undefined,
 ): MapFilters {
-  if (!params) return cloneDefaults();
+  if (!params) return cloneFilters(DEFAULT_MAP_FILTERS);
 
   const quality = parseCsvSet(
     params.get(QUALITY_PARAM),
@@ -131,11 +131,11 @@ export function filtersEqual(a: MapFilters, b: MapFilters): boolean {
   return true;
 }
 
-function cloneDefaults(): MapFilters {
+export function cloneFilters(filters: MapFilters): MapFilters {
   return {
-    quality: new Set(DEFAULT_MAP_FILTERS.quality),
-    surface: new Set(DEFAULT_MAP_FILTERS.surface),
-    minCurviness: DEFAULT_MAP_FILTERS.minCurviness,
+    quality: new Set(filters.quality),
+    surface: new Set(filters.surface),
+    minCurviness: filters.minCurviness,
   };
 }
 
