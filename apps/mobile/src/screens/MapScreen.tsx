@@ -20,6 +20,7 @@ import React, {
   type ComponentProps,
   useCallback,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -35,24 +36,25 @@ import {
 } from "@maplibre/maplibre-react-native";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import { api } from "@/services/api";
-import { useMapStore } from "@/stores";
+import { useMapStore, usePreferencesStore } from "@/stores";
 import type { MountainPass } from "@/types";
 import {
   borderRadius,
   colors,
   fontSize,
   fontWeight,
+  qualityLabel,
   shadows,
   spacing,
 } from "@/theme";
 import {
+  buildQualityLineStyle,
   DEV_MAP_STYLE_URL,
   getQualityTileUrlTemplate,
   PASS_STATUS_COLORS,
   PASS_STATUS_LABELS,
   passesToFeatureCollection,
   passMarkerStyle,
-  qualityLineStyle,
 } from "./MapScreen.helpers";
 
 type RegionChangeFeature = GeoJSON.Feature<GeoJSON.Point, RegionPayload>;
@@ -67,8 +69,18 @@ export default function MapScreen() {
   const setZoom = useMapStore((s) => s.setZoom);
   const toggleQuality = useMapStore((s) => s.toggleQuality);
   const togglePasses = useMapStore((s) => s.togglePasses);
+  const minQuality = usePreferencesStore((s) => s.minQuality);
 
   const tileUrl = getQualityTileUrlTemplate();
+
+  // Rebuild the line style only when the rider's minimum-quality threshold
+  // changes so MapLibre's style diff stays a no-op on every render. US-5:
+  // segments below the threshold are grayed and faded so they recede but
+  // remain visible as context for alternative-route decisions.
+  const qualityStyle = useMemo(
+    () => buildQualityLineStyle(minQuality),
+    [minQuality],
+  );
 
   // US-11: load mountain passes once per mount. The seeded dataset is
   // small (≈ a dozen rows), so a single global fetch is far cheaper than
@@ -131,7 +143,7 @@ export default function MapScreen() {
               id="tarmoto-quality-lines"
               sourceID="tarmoto-quality"
               sourceLayerID="quality"
-              style={qualityLineStyle}
+              style={qualityStyle}
             />
           </VectorSource>
         ) : null}
@@ -165,7 +177,7 @@ export default function MapScreen() {
         />
       </View>
 
-      {showQualityOverlay ? <QualityLegend /> : null}
+      {showQualityOverlay ? <QualityLegend minQuality={minQuality} /> : null}
       {showPassesOverlay && passes.length > 0 ? (
         <PassesLegend stacked={showQualityOverlay} />
       ) : null}
@@ -206,24 +218,52 @@ function ToggleFab({
   );
 }
 
-function QualityLegend() {
+function QualityLegend({ minQuality }: { minQuality: number }) {
+  // Buckets are rendered top-down (Excellent → Very poor) but the score
+  // values map 5 → 1. Buckets with a score below `minQuality` are dimmed
+  // and swatched in gray to match the map's below-threshold rendering.
+  const buckets: Array<{ score: number; color: string; label: string }> = [
+    { score: 5, color: colors.quality.excellent, label: "Excellent" },
+    { score: 4, color: colors.quality.good, label: "Good" },
+    { score: 3, color: colors.quality.fair, label: "Fair" },
+    { score: 2, color: colors.quality.poor, label: "Poor" },
+    { score: 1, color: colors.quality.veryPoor, label: "Very poor" },
+  ];
   return (
     <View style={styles.legend}>
-      <Text style={styles.legendTitle}>Road quality</Text>
+      <View style={styles.legendHeader}>
+        <Text style={styles.legendTitle}>Road quality</Text>
+        {minQuality > 1 ? (
+          <Text style={styles.legendSubtitle}>
+            Min: {qualityLabel(minQuality)}
+          </Text>
+        ) : null}
+      </View>
       <View style={styles.legendRow}>
-        <LegendSwatch color={colors.quality.excellent} label="Excellent" />
-        <LegendSwatch color={colors.quality.good} label="Good" />
-        <LegendSwatch color={colors.quality.fair} label="Fair" />
-        <LegendSwatch color={colors.quality.poor} label="Poor" />
-        <LegendSwatch color={colors.quality.veryPoor} label="Very poor" />
+        {buckets.map((b) => (
+          <LegendSwatch
+            key={b.label}
+            color={b.score < minQuality ? colors.textTertiary : b.color}
+            label={b.label}
+            dimmed={b.score < minQuality}
+          />
+        ))}
       </View>
     </View>
   );
 }
 
-function LegendSwatch({ color, label }: { color: string; label: string }) {
+function LegendSwatch({
+  color,
+  label,
+  dimmed,
+}: {
+  color: string;
+  label: string;
+  dimmed?: boolean;
+}) {
   return (
-    <View style={styles.swatchRow}>
+    <View style={[styles.swatchRow, dimmed ? styles.swatchRowDimmed : null]}>
       <View style={[styles.swatch, { backgroundColor: color }]} />
       <Text style={styles.swatchLabel}>{label}</Text>
     </View>
@@ -325,6 +365,12 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
   },
+  legendHeader: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
   legendTitle: {
     color: colors.textTertiary,
     fontSize: fontSize.xs,
@@ -332,6 +378,11 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.6,
     marginBottom: spacing.sm,
+  },
+  legendSubtitle: {
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
   },
   legendRow: {
     flexDirection: "row",
@@ -343,6 +394,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+  },
+  swatchRowDimmed: {
+    opacity: 0.5,
   },
   swatch: {
     width: 12,

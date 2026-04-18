@@ -1,4 +1,6 @@
 import {
+  BELOW_THRESHOLD_OPACITY,
+  buildQualityLineStyle,
   DEV_MAP_STYLE_URL,
   PASS_STATUS_COLORS,
   QUALITY_STEP_BREAKS,
@@ -119,6 +121,57 @@ describe("qualityLineStyle", () => {
 describe("DEV_MAP_STYLE_URL", () => {
   it("uses the MapLibre public demotiles style until a Tarmoto basemap ships", () => {
     expect(DEV_MAP_STYLE_URL).toMatch(/^https:\/\/demotiles\.maplibre\.org\//);
+  });
+});
+
+describe("buildQualityLineStyle (US-5 minimum-quality filter)", () => {
+  it("returns the baseline style unchanged when the threshold is at the floor", () => {
+    // minQuality = 1 means "show everything" — no filter should be applied
+    // so the lineColor stays a plain `step` expression (the MapLibre style
+    // diff stays cheap and nothing is grayed out).
+    expect(buildQualityLineStyle(1)).toBe(qualityLineStyle);
+  });
+
+  it("wraps the color expression in a case so below-threshold segments go gray", () => {
+    const style = buildQualityLineStyle(3);
+    const expr = style.lineColor as unknown as unknown[];
+    expect(expr[0]).toBe("case");
+    // Condition: quality_score < (minQuality - 0.5) = 2.5
+    expect(expr[1]).toEqual(["<", ["get", "quality_score"], 2.5]);
+    // Gray fill for segments below threshold.
+    expect(expr[2]).toBe(colors.textTertiary);
+    // Fallback: the baseline step expression untouched.
+    expect(expr[3]).toBe(qualityLineStyle.lineColor);
+  });
+
+  it("fades below-threshold segments via lineOpacity case", () => {
+    const style = buildQualityLineStyle(4);
+    const expr = style.lineOpacity as unknown as unknown[];
+    expect(expr[0]).toBe("case");
+    // minQuality 4 → below-threshold = quality_score < 3.5
+    expect(expr[1]).toEqual(["<", ["get", "quality_score"], 3.5]);
+    expect(expr[2]).toBe(BELOW_THRESHOLD_OPACITY);
+    // Fallback keeps the confidence-driven opacity for qualifying segments.
+    expect(expr[3]).toBe(qualityLineStyle.lineOpacity);
+  });
+
+  it("keeps line width, cap, and join from the baseline style", () => {
+    const style = buildQualityLineStyle(5);
+    expect(style.lineWidth).toBe(qualityLineStyle.lineWidth);
+    expect(style.lineCap).toBe(qualityLineStyle.lineCap);
+    expect(style.lineJoin).toBe(qualityLineStyle.lineJoin);
+  });
+
+  it("uses half-point bucket boundaries to match qualityLabel buckets", () => {
+    // A 2.8-scored road labels as "Fair" (qualityLabel uses ≥ 2.5), so a
+    // "Fair or better" filter (minQuality 3) must treat it as qualifying.
+    // The filter threshold is minQuality - 0.5, not minQuality itself.
+    for (const minQ of [2, 3, 4, 5] as const) {
+      const style = buildQualityLineStyle(minQ);
+      const expr = style.lineColor as unknown as unknown[];
+      const condition = expr[1] as unknown[];
+      expect(condition[2]).toBe(minQ - 0.5);
+    }
   });
 });
 

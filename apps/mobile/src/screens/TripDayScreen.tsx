@@ -23,12 +23,13 @@ import {
   colors,
   fontSize,
   fontWeight,
-  qualityColor,
+  meetsQualityThreshold,
+  qualityColorWithThreshold,
   qualityLabel,
   spacing,
 } from "@/theme";
 import { api } from "@/services/api";
-import { useTripStore } from "@/stores";
+import { usePreferencesStore, useTripStore } from "@/stores";
 import type { Trip, TripDay, Waypoint } from "@/types";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
 import {
@@ -48,6 +49,7 @@ export default function TripDayScreen() {
 
   const cachedTrip = useTripStore((s) => s.activeTrip);
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
+  const minQuality = usePreferencesStore((s) => s.minQuality);
 
   // Warm-cache: if the user came from TripDetail we already have the
   // trip and don't need to block on a fetch. If they deep-linked (e.g.
@@ -116,14 +118,35 @@ export default function TripDayScreen() {
   }
 
   const qColor =
-    day.avg_quality > 0 ? qualityColor(day.avg_quality) : colors.textTertiary;
+    day.avg_quality > 0
+      ? qualityColorWithThreshold(day.avg_quality, minQuality)
+      : colors.textTertiary;
+  // US-5: flag days whose aggregate quality sits below the rider's minimum
+  // so trip planners notice a day that doesn't match their expectations
+  // without having to scan every segment manually.
+  const belowThreshold =
+    day.avg_quality > 0 && !meetsQualityThreshold(day.avg_quality, minQuality);
   const summary = summarizeWaypoints(day.waypoints);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.card}>
+      <View
+        style={[styles.card, belowThreshold ? styles.cardBelowThreshold : null]}
+      >
         <Text style={styles.subLabel}>Day {day.day_number}</Text>
         <Text style={styles.title}>{day.title ?? `Day ${day.day_number}`}</Text>
+        {belowThreshold ? (
+          <View style={styles.thresholdBadge}>
+            <Icon
+              name="eye-off-outline"
+              size={12}
+              color={colors.textSecondary}
+            />
+            <Text style={styles.thresholdBadgeLabel}>
+              Below your minimum ({qualityLabel(minQuality)})
+            </Text>
+          </View>
+        ) : null}
         <View style={styles.metricsRow}>
           <Metric label="Distance" value={formatKm(day.distance_km)} />
           <Metric
@@ -345,6 +368,25 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     padding: spacing.lg,
     gap: spacing.md,
+  },
+  cardBelowThreshold: {
+    opacity: 0.7,
+    borderColor: colors.borderLight,
+  },
+  thresholdBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.pill,
+    backgroundColor: colors.bgElevated,
+  },
+  thresholdBadgeLabel: {
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
   },
   subLabel: {
     color: colors.textTertiary,
