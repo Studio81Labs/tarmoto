@@ -2,9 +2,16 @@
  * Tarmoto Custom Hooks
  */
 
-import { useEffect, useRef, useCallback, useState } from 'react';
-import { AppState, AppStateStatus } from 'react-native';
-import KeepAwake from 'react-native-keep-awake';
+export { useCommute } from "./useCommute";
+export type {
+  CommutePhase,
+  CommuteHazardView,
+  UseCommuteResult,
+} from "./useCommute";
+
+import { useEffect, useRef, useCallback, useState } from "react";
+import { AppState, AppStateStatus } from "react-native";
+import KeepAwake from "react-native-keep-awake";
 
 /**
  * Keep screen awake while component is mounted (for ride mode)
@@ -50,19 +57,21 @@ export function useFormattedDuration(seconds: number): string {
   const m = Math.floor((seconds % 3600) / 60);
   const s = seconds % 60;
   if (h > 0) {
-    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   }
-  return `${m}:${s.toString().padStart(2, '0')}`;
+  return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 /**
  * Track app foreground/background state
  */
 export function useAppState(): AppStateStatus {
-  const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState);
+  const [appState, setAppState] = useState<AppStateStatus>(
+    AppState.currentState,
+  );
 
   useEffect(() => {
-    const sub = AppState.addEventListener('change', setAppState);
+    const sub = AppState.addEventListener("change", setAppState);
     return () => sub.remove();
   }, []);
 

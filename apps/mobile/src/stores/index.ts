@@ -258,3 +258,117 @@ export const usePreferencesStore = create<PreferencesState>((set) => ({
 export const PREFERENCES_DEFAULTS = {
   minQuality: DEFAULT_MIN_QUALITY,
 } as const;
+
+// ── Commute Store ──
+// Per-route snapshot of hazard IDs the rider has already seen, used by
+// US-15 to flag which hazards are NEW since their last check.
+//
+// We store the set as a comma-joined string (MMKV has no array primitive
+// and strings dedupe free). The shim fallback keeps tests hermetic.
+
+const COMMUTE_STORAGE_ID = "tarmoto-commute";
+const SEEN_KEY_PREFIX = "seenHazards:";
+
+interface CommuteStorage {
+  getString(key: string): string | undefined;
+  set(key: string, value: string): void;
+  remove(key: string): void;
+}
+
+function createCommuteStorage(): CommuteStorage {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { createMMKV } =
+      require("react-native-mmkv") as typeof import("react-native-mmkv");
+    const mmkv = createMMKV({ id: COMMUTE_STORAGE_ID });
+    return {
+      getString: (key) => mmkv.getString(key),
+      set: (key, value) => mmkv.set(key, value),
+      remove: (key) => {
+        mmkv.remove(key);
+      },
+    };
+  } catch {
+    const memory = new Map<string, string>();
+    return {
+      getString: (key) => memory.get(key),
+      set: (key, value) => {
+        memory.set(key, value);
+      },
+      remove: (key) => {
+        memory.delete(key);
+      },
+    };
+  }
+}
+
+const commuteStorage = createCommuteStorage();
+
+function seenKey(routeId: string): string {
+  return `${SEEN_KEY_PREFIX}${routeId}`;
+}
+
+function decodeSeen(raw: string | undefined): Set<string> {
+  if (!raw) return new Set();
+  return new Set(raw.split(",").filter(Boolean));
+}
+
+function encodeSeen(ids: Iterable<string>): string {
+  return Array.from(new Set(ids)).join(",");
+}
+
+interface CommuteState {
+  /** Map of routeId → set of hazard IDs last acknowledged by the rider. */
+  seenHazardsByRoute: Record<string, Set<string>>;
+  /** Return the hazard IDs last acknowledged on this route. */
+  getSeenHazards: (routeId: string) => Set<string>;
+  /** Mark the given hazard IDs as seen on this route, replacing prior set. */
+  markHazardsSeen: (routeId: string, hazardIds: string[]) => void;
+  /** Forget the snapshot for one route (e.g. route deleted server-side). */
+  clearRoute: (routeId: string) => void;
+}
+
+export const useCommuteStore = create<CommuteState>((set, get) => ({
+  seenHazardsByRoute: {},
+
+  getSeenHazards: (routeId) => {
+    const cached = get().seenHazardsByRoute[routeId];
+    if (cached) return cached;
+    const loaded = decodeSeen(commuteStorage.getString(seenKey(routeId)));
+    set((s) => ({
+      seenHazardsByRoute: { ...s.seenHazardsByRoute, [routeId]: loaded },
+    }));
+    return loaded;
+  },
+
+  markHazardsSeen: (routeId, hazardIds) => {
+    const next = new Set(hazardIds);
+    commuteStorage.set(seenKey(routeId), encodeSeen(next));
+    set((s) => ({
+      seenHazardsByRoute: { ...s.seenHazardsByRoute, [routeId]: next },
+    }));
+  },
+
+  clearRoute: (routeId) => {
+    commuteStorage.remove(seenKey(routeId));
+    set((s) => {
+      const next = { ...s.seenHazardsByRoute };
+      delete next[routeId];
+      return { seenHazardsByRoute: next };
+    });
+  },
+}));
+
+/**
+ * Compute which hazard IDs are NEW since the rider's last check on a route.
+ *
+ * Pure function — the store and hook call this before any state mutation,
+ * so the diff is deterministic and trivially unit-testable. Order follows
+ * the input `currentHazardIds` so callers can trust a stable UI sort.
+ */
+export function diffNewHazards(
+  currentHazardIds: string[],
+  lastSeen: Set<string>,
+): string[] {
+  return currentHazardIds.filter((id) => !lastSeen.has(id));
+}
