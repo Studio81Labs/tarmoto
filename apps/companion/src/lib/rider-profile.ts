@@ -103,13 +103,21 @@ export function sortBadges(badges: Badge[]): BadgeEntry[] {
   return entries.sort((a, b) => {
     if (a.earned !== b.earned) return a.earned ? -1 : 1;
     if (a.earned && b.earned) {
-      return (
-        new Date(b.badge.earnedAt ?? 0).getTime() -
-        new Date(a.badge.earnedAt ?? 0).getTime()
-      );
+      return earnedAtMs(b.badge.earnedAt) - earnedAtMs(a.badge.earnedAt);
     }
     return a.badge.name.localeCompare(b.badge.name);
   });
+}
+
+/**
+ * Parses `earnedAt` into a sortable timestamp. Invalid strings fall back to
+ * `-Infinity` so they sort to the end rather than poisoning the comparator
+ * with `NaN` (which `Array.sort` treats as unordered).
+ */
+function earnedAtMs(value: string | undefined): number {
+  if (!value) return Number.NEGATIVE_INFINITY;
+  const t = new Date(value).getTime();
+  return Number.isFinite(t) ? t : Number.NEGATIVE_INFINITY;
 }
 
 export function countEarnedBadges(entries: BadgeEntry[]): number {
@@ -154,9 +162,16 @@ export function formatJoinedLabel(
 ): string {
   const date = new Date(joinedAt);
   if (Number.isNaN(date.getTime())) return "Joined recently";
-  const months =
-    (now.getFullYear() - date.getFullYear()) * 12 +
-    (now.getMonth() - date.getMonth());
+  let months =
+    (now.getUTCFullYear() - date.getUTCFullYear()) * 12 +
+    (now.getUTCMonth() - date.getUTCMonth());
+  // Calendar-month arithmetic overstates age when the day-of-month
+  // hasn't been reached yet (e.g. joined Mar 20, now Apr 18 is 29 days,
+  // not a full month). Future dates clamp to zero so ledger drift or
+  // clock skew can't show "Joined -2 months ago". UTC accessors keep the
+  // comparison timezone-agnostic so a user's locale can't flip the day.
+  if (now.getUTCDate() < date.getUTCDate()) months -= 1;
+  if (months < 0) months = 0;
   if (months < 1) return "Joined this month";
   if (months < 12)
     return `Joined ${months} month${months === 1 ? "" : "s"} ago`;

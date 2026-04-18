@@ -130,6 +130,19 @@ describe("formatJoinedLabel", () => {
   it("degrades gracefully for bad dates", () => {
     expect(formatJoinedLabel("not-a-date", FIXED_NOW)).toBe("Joined recently");
   });
+
+  it("does not count a partial month as a full month", () => {
+    // Joined Mar 20, now Apr 18 — 29 days, not a full calendar month.
+    expect(formatJoinedLabel("2026-03-20T00:00:00Z", FIXED_NOW)).toBe(
+      "Joined this month",
+    );
+  });
+
+  it("clamps future join dates so we never display negative ages", () => {
+    expect(formatJoinedLabel("2026-06-01T00:00:00Z", FIXED_NOW)).toBe(
+      "Joined this month",
+    );
+  });
 });
 
 describe("buildStatTiles", () => {
@@ -239,6 +252,40 @@ describe("sortBadges", () => {
       { id: "a", name: "Alpha", description: "", icon: "trophy" },
     ];
     expect(sortBadges(badges).map((e) => e.badge.id)).toEqual(["a", "z"]);
+  });
+
+  it("keeps ordering stable when an earned badge has an invalid date", () => {
+    // A NaN getTime() used to leak into the comparator and scramble the
+    // order of every earned badge. With the guard, the invalid entry
+    // sorts last among earned and the rest keep their recency order.
+    const badges: Badge[] = [
+      {
+        id: "valid-new",
+        name: "New",
+        description: "",
+        icon: "trophy",
+        earnedAt: "2026-03-01T00:00:00Z",
+      },
+      {
+        id: "invalid",
+        name: "Bad",
+        description: "",
+        icon: "trophy",
+        earnedAt: "not-a-real-date",
+      },
+      {
+        id: "valid-old",
+        name: "Old",
+        description: "",
+        icon: "trophy",
+        earnedAt: "2024-01-01T00:00:00Z",
+      },
+    ];
+    expect(sortBadges(badges).map((e) => e.badge.id)).toEqual([
+      "valid-new",
+      "valid-old",
+      "invalid",
+    ]);
   });
 });
 
@@ -463,6 +510,8 @@ describe("follow / unfollow", () => {
   it("treats 404 not-following as success on unfollow", async () => {
     fetchMock.mockResolvedValue({ ok: false, status: 404 });
     await expect(unfollowRider("rider-1", null)).resolves.toBeUndefined();
+    const [, init] = fetchMock.mock.calls[0];
+    expect((init as RequestInit).method).toBe("DELETE");
   });
 
   it("URL-encodes riderId in the follow path", async () => {
