@@ -1,17 +1,24 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { api } from '@/lib/api';
-import { History, Calendar, MapPin, Gauge, ChevronRight } from 'lucide-react';
-import type { Ride, QualityTier } from '@/lib/types';
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import { api } from "@/lib/api";
+import {
+  History,
+  Calendar,
+  MapPin,
+  Gauge,
+  ChevronRight,
+  Scale,
+} from "lucide-react";
+import type { Ride, QualityTier } from "@/lib/types";
 
 const QUALITY_COLORS: Record<QualityTier, string> = {
-  excellent: 'text-quality-excellent',
-  good: 'text-quality-good',
-  fair: 'text-quality-fair',
-  poor: 'text-quality-poor',
-  'very-poor': 'text-quality-very-poor',
+  excellent: "text-quality-excellent",
+  good: "text-quality-good",
+  fair: "text-quality-fair",
+  poor: "text-quality-poor",
+  "very-poor": "text-quality-very-poor",
 };
 
 export default function RideListPage() {
@@ -22,29 +29,47 @@ export default function RideListPage() {
     // The spec returns RideSummaryDto (snake_case) while the local Ride type
     // uses camelCase. Cast through unknown until the local types are replaced
     // with spec-generated types.
-    api.GET("/api/v1/rides").then(({ data }) => {
-      if (data?.rides) {
-        setRides(data.rides as unknown as Ride[]);
-      }
-      setLoading(false);
-    }).catch(() => setLoading(false));
+    api
+      .GET("/api/v1/rides")
+      .then(({ data }) => {
+        if (data?.rides) {
+          setRides(data.rides as unknown as Ride[]);
+        }
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
   }, []);
 
   return (
     <div className="p-6 max-w-6xl mx-auto animate-fade-in">
-      <h1 className="text-2xl font-bold mb-6">Ride History</h1>
+      <div className="flex items-center justify-between mb-6 gap-4">
+        <h1 className="text-2xl font-bold">Ride History</h1>
+        {rides.length >= 2 && (
+          <Link
+            href="/rides/compare"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm hover:bg-slate-700 transition"
+          >
+            <Scale size={14} /> Compare rides
+          </Link>
+        )}
+      </div>
 
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-20 rounded-xl bg-slate-900 border border-slate-800 animate-pulse" />
+            <div
+              key={i}
+              className="h-20 rounded-xl bg-slate-900 border border-slate-800 animate-pulse"
+            />
           ))}
         </div>
       ) : rides.length === 0 ? (
         <div className="rounded-2xl bg-slate-900 border border-slate-800 p-16 text-center">
           <History size={48} className="mx-auto text-slate-600 mb-4" />
           <p className="text-slate-400 text-lg mb-2">No rides recorded yet</p>
-          <p className="text-slate-500 text-sm">Start riding with the Tarmoto mobile app to see your history here.</p>
+          <p className="text-slate-500 text-sm">
+            Start riding with the Tarmoto mobile app to see your history here.
+          </p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -56,12 +81,20 @@ export default function RideListPage() {
             >
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-white group-hover:text-tarmoto-cyan truncate transition">
-                  {ride.name ?? `Ride on ${new Date(ride.startedAt).toLocaleDateString()}`}
+                  {ride.name ??
+                    `Ride on ${new Date(ride.startedAt).toLocaleDateString()}`}
                 </p>
                 <div className="flex items-center gap-4 mt-1 text-sm text-slate-400">
-                  <span className="flex items-center gap-1"><Calendar size={12} /> {new Date(ride.startedAt).toLocaleDateString()}</span>
-                  <span className="flex items-center gap-1"><MapPin size={12} /> {ride.distanceKm.toFixed(1)} km</span>
-                  <span className="flex items-center gap-1"><Gauge size={12} /> {ride.avgSpeedKmh.toFixed(0)} km/h avg</span>
+                  <span className="flex items-center gap-1">
+                    <Calendar size={12} />{" "}
+                    {new Date(ride.startedAt).toLocaleDateString()}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <MapPin size={12} /> {ride.distanceKm.toFixed(1)} km
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Gauge size={12} /> {ride.avgSpeedKmh.toFixed(0)} km/h avg
+                  </span>
                 </div>
               </div>
               <ChevronRight size={16} className="text-slate-600" />
