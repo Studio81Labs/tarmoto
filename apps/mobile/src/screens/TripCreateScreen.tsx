@@ -158,6 +158,12 @@ export default function TripCreateScreen() {
   );
 
   const handleGenerate = useCallback(async () => {
+    // Re-entrancy guard: a rapid double-tap can fire this callback twice
+    // before React re-renders with `submitting=true`, so both closures
+    // would see `canSubmit=true` and hit `api.createTrip` — producing
+    // duplicate drafts on the server. The ref flips synchronously so the
+    // second call bails before any network I/O.
+    if (submittingRef.current) return;
     if (!canSubmit) return;
     submittingRef.current = true;
     dirtySinceSubmitRef.current = false;
