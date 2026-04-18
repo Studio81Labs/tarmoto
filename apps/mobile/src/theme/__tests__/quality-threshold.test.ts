@@ -29,7 +29,7 @@ describe("meetsQualityThreshold", () => {
 
   it("rejects non-finite scores so unknown segments are excluded", () => {
     expect(meetsQualityThreshold(Number.NaN, 1)).toBe(false);
-    expect(meetsQualityThreshold(Number.POSITIVE_INFINITY, 1)).toBe(true);
+    expect(meetsQualityThreshold(Number.POSITIVE_INFINITY, 1)).toBe(false);
   });
 });
 
