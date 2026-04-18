@@ -19,8 +19,19 @@ import { usePreferencesStore } from "@/stores";
 
 export default function TripCreateScreen() {
   const defaultMinQuality = usePreferencesStore((s) => s.minQuality);
-  const [tripMinQuality, setTripMinQuality] = useState(defaultMinQuality);
-  const overridesDefault = tripMinQuality !== defaultMinQuality;
+  // `override` is null when the trip follows the rider's current default.
+  // Using an explicit flag (rather than comparing values against
+  // `defaultMinQuality`) avoids a stale-snapshot bug: if we derived the
+  // override from `tripMinQuality !== defaultMinQuality`, changing the
+  // default in Settings while this screen sits mounted inside the tab
+  // navigator would spuriously report an override the user never set.
+  const [override, setOverride] = useState<number | null>(null);
+  const tripMinQuality = override ?? defaultMinQuality;
+  const overridesDefault = override !== null;
+
+  const handleChange = (value: number) => {
+    setOverride(value === defaultMinQuality ? null : value);
+  };
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -35,7 +46,7 @@ export default function TripCreateScreen() {
 
         <QualityThresholdSlider
           value={tripMinQuality}
-          onChange={setTripMinQuality}
+          onChange={handleChange}
           label="Minimum quality"
           helpText={
             overridesDefault
@@ -46,7 +57,7 @@ export default function TripCreateScreen() {
 
         {overridesDefault ? (
           <TouchableOpacity
-            onPress={() => setTripMinQuality(defaultMinQuality)}
+            onPress={() => setOverride(null)}
             style={styles.resetRow}
           >
             <Text style={styles.resetLabel}>Reset to default</Text>
