@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -40,7 +39,6 @@ describe('PassesService', () => {
   beforeEach(async () => {
     passRepo = {
       createQueryBuilder: jest.fn().mockReturnValue(mockQb),
-      query: jest.fn().mockResolvedValue([STELVIO]),
     };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -142,7 +140,7 @@ describe('PassesService', () => {
     });
 
     it('runs the spatial query and aggregates closed/unknown counts', async () => {
-      passRepo.query!.mockResolvedValueOnce([STELVIO, FORCED_CLOSED]);
+      mockQb.getMany.mockResolvedValueOnce([STELVIO, FORCED_CLOSED]);
       jest.spyOn(global.Date.prototype, 'getUTCMonth').mockReturnValue(0); // January
 
       const result = await service.checkRoute({
@@ -157,24 +155,32 @@ describe('PassesService', () => {
       // Stelvio in January = closed (not overridden); forced = closed (overridden)
       expect(result.closed_count).toBe(2);
       expect(result.unknown_count).toBe(0);
-      // Buffer must be the first parameter, then alternating lng/lat.
-      expect(passRepo.query).toHaveBeenCalledWith(
+      // Each coordinate is passed as its own named parameter so TypeORM can
+      // bind them safely — no string interpolation of user input.
+      expect(mockQb.where).toHaveBeenCalledWith(
         expect.stringContaining('ST_DWithin'),
-        [2000, 10.4, 46.5, 10.5, 46.6],
+        {
+          buffer: 2000,
+          lng0: 10.4,
+          lat0: 46.5,
+          lng1: 10.5,
+          lat1: 46.6,
+        },
       );
+      expect(mockQb.orderBy).toHaveBeenCalledWith('p.elevation_m', 'DESC');
     });
 
     it('defaults the buffer to 1500 m', async () => {
-      passRepo.query!.mockResolvedValueOnce([]);
+      mockQb.getMany.mockResolvedValueOnce([]);
       await service.checkRoute({
         route: [
           { lat: 46.5, lng: 10.4 },
           { lat: 46.6, lng: 10.5 },
         ],
       });
-      expect(passRepo.query).toHaveBeenCalledWith(
+      expect(mockQb.where).toHaveBeenCalledWith(
         expect.any(String),
-        [1500, 10.4, 46.5, 10.5, 46.6],
+        expect.objectContaining({ buffer: 1500 }),
       );
     });
   });

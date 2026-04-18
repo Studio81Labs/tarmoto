@@ -83,30 +83,34 @@ export class PassesService {
     }
     const bufferM = dto.buffer_m ?? 1500;
 
-    // Parameterised LineString to keep coordinates out of the SQL string.
+    // Build the LineString via TypeORM's named-parameter binding so each
+    // coordinate is passed as a real SQL parameter (no string
+    // interpolation of user input). Going through `createQueryBuilder`
+    // rather than `repo.query` also makes TypeORM hydrate the `location`
+    // column back into a GeoJSON Point — with raw `.query()` we'd get
+    // a WKB hex string and `toDto` would crash on `p.location.coordinates`.
+    const params: Record<string, number> = { buffer: bufferM };
     const pointsSql = dto.route
-      .map((_, i) => `ST_MakePoint($${i * 2 + 2}, $${i * 2 + 3})`)
+      .map((p, i) => {
+        params[`lng${i}`] = p.lng;
+        params[`lat${i}`] = p.lat;
+        return `ST_MakePoint(:lng${i}, :lat${i})`;
+      })
       .join(',');
-    const params: number[] = [bufferM];
-    for (const p of dto.route) {
-      params.push(p.lng, p.lat);
-    }
 
-    const sql = `
-      SELECT *
-      FROM mountain_passes p
-      WHERE ST_DWithin(
-        p.location::geography,
-        ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326)::geography,
-        $1
+    const rows = await this.passRepo
+      .createQueryBuilder('p')
+      .where(
+        `ST_DWithin(
+          p.location::geography,
+          ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326)::geography,
+          :buffer
+        )`,
+        params,
       )
-      ORDER BY p.elevation_m DESC
-    `;
+      .orderBy('p.elevation_m', 'DESC')
+      .getMany();
 
-    // `Repository.query` is typed `any` because raw SQL has no schema; we
-    // know the SELECT yields full mountain_passes rows so the cast lines
-    // the result up with the entity's TypeScript shape.
-    const rows: MountainPass[] = await this.passRepo.query(sql, params);
     const month = this.currentMonthUtc();
     const passes: MountainPassDto[] = rows.map((p) => this.toDto(p, month));
 
