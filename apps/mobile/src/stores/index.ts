@@ -159,12 +159,14 @@ interface MapState {
   showSurfaceOverlay: boolean;
   showHazardOverlay: boolean;
   showPassesOverlay: boolean;
+  showFunZonesOverlay: boolean;
   setCenter: (center: LatLng) => void;
   setZoom: (zoom: number) => void;
   toggleQuality: () => void;
   toggleSurface: () => void;
   toggleHazards: () => void;
   togglePasses: () => void;
+  toggleFunZones: () => void;
 }
 
 export const useMapStore = create<MapState>((set) => ({
@@ -174,6 +176,9 @@ export const useMapStore = create<MapState>((set) => ({
   showSurfaceOverlay: false,
   showHazardOverlay: true,
   showPassesOverlay: true,
+  // US-6: off by default so first-time users see the road-quality overlay
+  // without competing fills. Opt-in discovery from the FAB column.
+  showFunZonesOverlay: false,
   setCenter: (center) => set({ center }),
   setZoom: (zoom) => set({ zoom }),
   toggleQuality: () =>
@@ -183,6 +188,8 @@ export const useMapStore = create<MapState>((set) => ({
   toggleHazards: () =>
     set((s) => ({ showHazardOverlay: !s.showHazardOverlay })),
   togglePasses: () => set((s) => ({ showPassesOverlay: !s.showPassesOverlay })),
+  toggleFunZones: () =>
+    set((s) => ({ showFunZonesOverlay: !s.showFunZonesOverlay })),
 }));
 
 // ── Preferences Store ──

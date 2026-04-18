@@ -1,7 +1,14 @@
 import {
   BELOW_THRESHOLD_OPACITY,
+  bboxFromVisibleBounds,
   buildQualityLineStyle,
   DEV_MAP_STYLE_URL,
+  FUN_ZONE_COLORS,
+  FUN_ZONE_SCORE_BREAKS,
+  funZoneColor,
+  funZoneFillStyle,
+  funZoneLineStyle,
+  funZonesToFeatureCollection,
   PASS_STATUS_COLORS,
   QUALITY_STEP_BREAKS,
   getQualityTileUrlTemplate,
@@ -10,7 +17,7 @@ import {
   qualityLineStyle,
 } from "../MapScreen.helpers";
 import { colors } from "@/theme";
-import type { MountainPass } from "@/types";
+import type { FunZone, LatLng, MountainPass } from "@/types";
 
 function makePass(overrides: Partial<MountainPass> = {}): MountainPass {
   return {
@@ -223,5 +230,216 @@ describe("passMarkerStyle", () => {
     const radiusAtLowZoom = expr[4] as number;
     const radiusAtHighZoom = expr[expr.length - 1] as number;
     expect(radiusAtHighZoom).toBeGreaterThan(radiusAtLowZoom);
+  });
+});
+
+// ── US-6 Fun Zones ──────────────────────────────────────────────────────────
+
+function makeSquareBoundary(
+  centerLat: number,
+  centerLng: number,
+  size = 0.1,
+): LatLng[] {
+  const half = size / 2;
+  // Explicitly unclosed — the helper is expected to close it for us.
+  return [
+    { lat: centerLat - half, lng: centerLng - half },
+    { lat: centerLat - half, lng: centerLng + half },
+    { lat: centerLat + half, lng: centerLng + half },
+    { lat: centerLat + half, lng: centerLng - half },
+  ];
+}
+
+function makeFunZone(overrides: Partial<FunZone> = {}): FunZone {
+  return {
+    id: "zone-1",
+    name: "Beskydy loop",
+    composite_score: 4.2,
+    road_count: 12,
+    total_curve_km: 48.5,
+    avg_quality: 4.1,
+    best_season: "summer",
+    boundary: makeSquareBoundary(49.5, 18.3),
+    ...overrides,
+  };
+}
+
+describe("bboxFromVisibleBounds", () => {
+  it("emits west,south,east,north ordered regardless of the corner order", () => {
+    // MapLibre 10.x hands over `[[east, north], [west, south]]`; older
+    // builds swapped them. The helper must normalise either orientation.
+    expect(
+      bboxFromVisibleBounds([
+        [18.4, 49.6],
+        [18.2, 49.4],
+      ]),
+    ).toBe("18.2,49.4,18.4,49.6");
+    expect(
+      bboxFromVisibleBounds([
+        [18.2, 49.4],
+        [18.4, 49.6],
+      ]),
+    ).toBe("18.2,49.4,18.4,49.6");
+  });
+
+  it("rounds to 4 decimals so tiny camera jitter yields a stable bbox", () => {
+    // Two near-identical viewports should collapse to the same bbox so the
+    // fetch cache key (see MapScreen.lastFunZoneBboxRef) doesn't thrash.
+    const a = bboxFromVisibleBounds([
+      [18.20001, 49.40002],
+      [18.39999, 49.59999],
+    ]);
+    const b = bboxFromVisibleBounds([
+      [18.20004, 49.4],
+      [18.4, 49.6],
+    ]);
+    expect(a).toBe(b);
+  });
+});
+
+describe("funZonesToFeatureCollection", () => {
+  it("emits a FeatureCollection with one Polygon per zone and a closed ring", () => {
+    const fc = funZonesToFeatureCollection([
+      makeFunZone({ id: "a" }),
+      makeFunZone({ id: "b", composite_score: 3.1 }),
+    ]);
+    expect(fc.type).toBe("FeatureCollection");
+    expect(fc.features).toHaveLength(2);
+    expect(fc.features[0].geometry.type).toBe("Polygon");
+    const ring = fc.features[0].geometry.coordinates[0];
+    // 4 unique vertices + explicit close → 5 entries in the output ring.
+    expect(ring).toHaveLength(5);
+    expect(ring[0]).toEqual(ring[ring.length - 1]);
+  });
+
+  it("carries zone metadata on feature properties so the tap handler can look it up", () => {
+    const zone = makeFunZone({
+      id: "meta",
+      composite_score: 4.7,
+      road_count: 9,
+      total_curve_km: 22.3,
+      avg_quality: 4.5,
+      best_season: "summer",
+      name: "Custom zone",
+    });
+    const fc = funZonesToFeatureCollection([zone]);
+    expect(fc.features[0].properties).toEqual({
+      id: "meta",
+      name: "Custom zone",
+      composite_score: 4.7,
+      road_count: 9,
+      total_curve_km: 22.3,
+      avg_quality: 4.5,
+      best_season: "summer",
+    });
+  });
+
+  it("outputs [lng, lat] tuples as GeoJSON requires (not [lat, lng])", () => {
+    const fc = funZonesToFeatureCollection([
+      makeFunZone({
+        boundary: [
+          { lat: 10, lng: 20 },
+          { lat: 10, lng: 21 },
+          { lat: 11, lng: 21 },
+          { lat: 11, lng: 20 },
+        ],
+      }),
+    ]);
+    const first = fc.features[0].geometry.coordinates[0][0];
+    expect(first).toEqual([20, 10]);
+  });
+
+  it("drops degenerate zones with fewer than three unique vertices", () => {
+    const fc = funZonesToFeatureCollection([
+      makeFunZone({
+        id: "degenerate",
+        boundary: [
+          { lat: 10, lng: 20 },
+          { lat: 10, lng: 21 },
+        ],
+      }),
+      makeFunZone({ id: "ok" }),
+    ]);
+    expect(fc.features).toHaveLength(1);
+    expect(fc.features[0].properties.id).toBe("ok");
+  });
+
+  it("returns an empty collection for an empty input (avoids ShapeSource errors)", () => {
+    const fc = funZonesToFeatureCollection([]);
+    expect(fc.features).toEqual([]);
+  });
+
+  it("normalises nullable metadata to null rather than undefined", () => {
+    // The backend DTO already uses null for missing name/curve/season, but
+    // mobile code sometimes coerces to undefined — make sure the helper
+    // hands feature properties that MapLibre can diff without surprises.
+    const fc = funZonesToFeatureCollection([
+      makeFunZone({
+        name: null,
+        total_curve_km: null,
+        avg_quality: null,
+        best_season: null,
+      }),
+    ]);
+    const props = fc.features[0].properties;
+    expect(props.name).toBeNull();
+    expect(props.total_curve_km).toBeNull();
+    expect(props.avg_quality).toBeNull();
+    expect(props.best_season).toBeNull();
+  });
+});
+
+describe("funZoneFillStyle / funZoneLineStyle", () => {
+  it("reuses the quality colour ramp so fun zones read with the same semantics", () => {
+    // A 4.5+ fun zone must show in the same excellent-green as a 4.5+ road
+    // segment — keeps the visual contract across every score surface.
+    expect(FUN_ZONE_COLORS).toEqual({
+      veryPoor: colors.quality.veryPoor,
+      poor: colors.quality.poor,
+      fair: colors.quality.fair,
+      good: colors.quality.good,
+      excellent: colors.quality.excellent,
+    });
+    expect(FUN_ZONE_SCORE_BREAKS).toEqual(QUALITY_STEP_BREAKS);
+  });
+
+  it("applies a step colour expression keyed on composite_score", () => {
+    const fillExpr = funZoneFillStyle.fillColor as unknown as unknown[];
+    expect(fillExpr[0]).toBe("step");
+    expect(fillExpr[1]).toEqual(["get", "composite_score"]);
+    expect(fillExpr[2]).toBe(FUN_ZONE_COLORS.veryPoor);
+    expect(fillExpr[fillExpr.length - 1]).toBe(FUN_ZONE_COLORS.excellent);
+    const lineExpr = funZoneLineStyle.lineColor as unknown as unknown[];
+    expect(lineExpr[0]).toBe("step");
+    expect(lineExpr[1]).toEqual(["get", "composite_score"]);
+  });
+
+  it("fades the fill out at high zoom so individual roads stay readable", () => {
+    // Heatmap vibes at country zoom; at street level the layer is nearly
+    // transparent so quality-overlay lines show through.
+    const expr = funZoneFillStyle.fillOpacity as unknown as unknown[];
+    expect(expr[0]).toBe("interpolate");
+    expect(expr[2]).toEqual(["zoom"]);
+    const opacityAtLowZoom = expr[4] as number;
+    const opacityAtHighZoom = expr[expr.length - 1] as number;
+    expect(opacityAtLowZoom).toBeGreaterThan(opacityAtHighZoom);
+  });
+});
+
+describe("funZoneColor", () => {
+  it("returns the excellent colour at and above the top bucket boundary", () => {
+    expect(funZoneColor(4.5)).toBe(FUN_ZONE_COLORS.excellent);
+    expect(funZoneColor(5)).toBe(FUN_ZONE_COLORS.excellent);
+  });
+
+  it("matches qualityColor's half-point buckets so the UI stays consistent", () => {
+    expect(funZoneColor(4.4)).toBe(FUN_ZONE_COLORS.good);
+    expect(funZoneColor(3.5)).toBe(FUN_ZONE_COLORS.good);
+    expect(funZoneColor(3.4)).toBe(FUN_ZONE_COLORS.fair);
+    expect(funZoneColor(2.5)).toBe(FUN_ZONE_COLORS.fair);
+    expect(funZoneColor(2.4)).toBe(FUN_ZONE_COLORS.poor);
+    expect(funZoneColor(1.5)).toBe(FUN_ZONE_COLORS.poor);
+    expect(funZoneColor(1.4)).toBe(FUN_ZONE_COLORS.veryPoor);
+    expect(funZoneColor(0)).toBe(FUN_ZONE_COLORS.veryPoor);
   });
 });

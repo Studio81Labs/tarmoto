@@ -1,9 +1,10 @@
 /**
- * MapScreen — US-1 road quality overlay + US-11 mountain pass markers.
+ * MapScreen — US-1 road quality overlay + US-11 mountain pass markers
+ * + US-6 fun zone discovery.
  *
- * Renders a MapLibre basemap with two independent overlays toggled via
- * the FAB column on the right. Both toggles persist in `useMapStore` so
- * the preferences survive tab switches.
+ * Renders a MapLibre basemap with three independent overlays toggled via
+ * the FAB column on the right. Toggles persist in `useMapStore` so the
+ * preferences survive tab switches.
  *
  *   - Quality: vector-tile overlay fed by the backend's
  *     `/roads/tiles/{z}/{x}/{y}.mvt?layers=quality` endpoint. Segments
@@ -13,6 +14,14 @@
  *     colour-coded by current open/closed/unknown status. The seasonal
  *     status is computed server-side from the typical open/close window.
  *
+ *   - Fun Zones (US-6): polygon heatmap patches fetched from
+ *     `/roads/fun-zones?bbox=…` for the current viewport. Panning the map
+ *     re-queries (debounced). Tapping a zone opens a bottom card with
+ *     the composite score, road count, total curve km, and best season.
+ *     Mobile intentionally uses the viewport as the "region" rather than
+ *     a draw-polygon tool — that's a desktop-first pattern covered on
+ *     web by #43.
+ *
  * Offline tile caching (US-1 AC #4) is intentionally out of scope for
  * this iteration — it belongs to US-18 "Offline maps and navigation".
  */
@@ -21,12 +30,14 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import {
   Camera,
   CircleLayer,
+  FillLayer,
   LineLayer,
   MapView,
   type RegionPayload,
@@ -37,7 +48,7 @@ import {
 import Icon from "@react-native-vector-icons/material-design-icons";
 import { api } from "@/services/api";
 import { useMapStore, usePreferencesStore } from "@/stores";
-import type { MountainPass } from "@/types";
+import type { FunZone, MountainPass } from "@/types";
 import {
   borderRadius,
   colors,
@@ -48,8 +59,14 @@ import {
   spacing,
 } from "@/theme";
 import {
+  bboxFromVisibleBounds,
   buildQualityLineStyle,
   DEV_MAP_STYLE_URL,
+  FUN_ZONE_COLORS,
+  funZoneColor,
+  funZoneFillStyle,
+  funZoneLineStyle,
+  funZonesToFeatureCollection,
   getQualityTileUrlTemplate,
   PASS_STATUS_COLORS,
   PASS_STATUS_LABELS,
@@ -65,10 +82,12 @@ export default function MapScreen() {
   const zoom = useMapStore((s) => s.zoom);
   const showQualityOverlay = useMapStore((s) => s.showQualityOverlay);
   const showPassesOverlay = useMapStore((s) => s.showPassesOverlay);
+  const showFunZonesOverlay = useMapStore((s) => s.showFunZonesOverlay);
   const setCenter = useMapStore((s) => s.setCenter);
   const setZoom = useMapStore((s) => s.setZoom);
   const toggleQuality = useMapStore((s) => s.toggleQuality);
   const togglePasses = useMapStore((s) => s.togglePasses);
+  const toggleFunZones = useMapStore((s) => s.toggleFunZones);
   const minQuality = usePreferencesStore((s) => s.minQuality);
 
   const tileUrl = getQualityTileUrlTemplate();
@@ -104,16 +123,90 @@ export default function MapScreen() {
     };
   }, []);
 
+  // US-6: fun-zone overlay state. Fetches are keyed on the viewport bbox
+  // string so repeated region events at the same camera position don't
+  // thrash the network. The last-bbox ref lets the region handler skip
+  // any refetch while we're already holding fresh data for that window.
+  const [funZones, setFunZones] = useState<FunZone[]>([]);
+  const [selectedZone, setSelectedZone] = useState<FunZone | null>(null);
+  const lastFunZoneBboxRef = useRef<string | null>(null);
+
+  const fetchFunZones = useCallback(async (bbox: string) => {
+    // Don't refetch the same window twice — the backend query is GIST-bound
+    // and cheap, but repeated fetches would repaint the layer and cause
+    // flicker on every debounced region event. Keying on the rounded bbox
+    // string also means tiny pan jitter after a settle won't refire.
+    if (lastFunZoneBboxRef.current === bbox) return;
+    lastFunZoneBboxRef.current = bbox;
+    try {
+      const next = await api.getFunZones(bbox);
+      setFunZones(next);
+    } catch {
+      // Soft-fail — the other overlays stay up and the rider can pan to
+      // retry. A persistent error surface belongs to a future global
+      // toast system.
+    }
+  }, []);
+
   // Sync settled camera back to the store so the next visit opens where
   // the rider left off. `onRegionDidChange` fires only after the gesture
-  // settles, so no extra throttling is needed.
+  // settles, so no extra throttling is needed. When the fun-zones overlay
+  // is on we piggyback a fetch here so the layer always matches what the
+  // rider sees.
   const handleRegionDidChange = useCallback(
     (feature: RegionChangeFeature) => {
       const [lng, lat] = feature.geometry.coordinates;
       setCenter({ lat, lng });
       setZoom(feature.properties.zoomLevel);
+
+      if (showFunZonesOverlay) {
+        const bounds = (feature.properties as { visibleBounds?: unknown })
+          .visibleBounds as [[number, number], [number, number]] | undefined;
+        if (bounds) {
+          void fetchFunZones(bboxFromVisibleBounds(bounds));
+        }
+      }
     },
-    [setCenter, setZoom],
+    [setCenter, setZoom, showFunZonesOverlay, fetchFunZones],
+  );
+
+  // When the rider toggles fun zones ON without panning the camera we
+  // still need to populate the layer. Derive an approximate bbox from the
+  // stored camera centre + zoom using a rough degrees-per-pixel lookup
+  // that only needs to be coarse enough to cover the visible viewport.
+  useEffect(() => {
+    if (!showFunZonesOverlay) {
+      // Clear cached bbox when toggled off so re-opening refetches fresh.
+      lastFunZoneBboxRef.current = null;
+      setSelectedZone(null);
+      return;
+    }
+    // Only fire the fallback fetch if the region handler hasn't already
+    // cached a bbox — otherwise we'd double-fetch every toggle flip.
+    if (lastFunZoneBboxRef.current !== null) return;
+    const degrees = 180 / Math.pow(2, zoom); // full map span at this zoom
+    const halfLng = degrees / 2;
+    const halfLat = degrees / 2 / Math.cos((center.lat * Math.PI) / 180);
+    const bbox = bboxFromVisibleBounds([
+      [center.lng - halfLng, center.lat - halfLat],
+      [center.lng + halfLng, center.lat + halfLat],
+    ]);
+    void fetchFunZones(bbox);
+  }, [showFunZonesOverlay, zoom, center.lat, center.lng, fetchFunZones]);
+
+  const funZoneFc = useMemo(
+    () => funZonesToFeatureCollection(funZones),
+    [funZones],
+  );
+
+  const handleFunZonePress = useCallback(
+    (event: { features: GeoJSON.Feature[] }) => {
+      const id = event.features[0]?.properties?.id as string | undefined;
+      if (!id) return;
+      const zone = funZones.find((z) => z.id === id);
+      if (zone) setSelectedZone(zone);
+    },
+    [funZones],
   );
 
   return (
@@ -160,6 +253,26 @@ export default function MapScreen() {
             />
           </ShapeSource>
         ) : null}
+
+        {showFunZonesOverlay && funZoneFc.features.length > 0 ? (
+          <ShapeSource
+            id="tarmoto-fun-zones"
+            shape={funZoneFc}
+            onPress={handleFunZonePress}
+            hitbox={{ width: 1, height: 1 }}
+          >
+            <FillLayer
+              id="tarmoto-fun-zones-fill"
+              sourceID="tarmoto-fun-zones"
+              style={funZoneFillStyle}
+            />
+            <LineLayer
+              id="tarmoto-fun-zones-line"
+              sourceID="tarmoto-fun-zones"
+              style={funZoneLineStyle}
+            />
+          </ShapeSource>
+        ) : null}
       </MapView>
 
       <View style={styles.fabColumn}>
@@ -175,11 +288,25 @@ export default function MapScreen() {
           active={showPassesOverlay}
           onPress={togglePasses}
         />
+        <ToggleFab
+          icon="fire"
+          label="Fun zones"
+          active={showFunZonesOverlay}
+          onPress={toggleFunZones}
+        />
       </View>
 
       {showQualityOverlay ? <QualityLegend minQuality={minQuality} /> : null}
       {showPassesOverlay && passes.length > 0 ? (
         <PassesLegend stacked={showQualityOverlay} />
+      ) : null}
+      {showFunZonesOverlay && selectedZone ? (
+        <FunZoneCard
+          zone={selectedZone}
+          onClose={() => setSelectedZone(null)}
+        />
+      ) : showFunZonesOverlay ? (
+        <FunZonesLegend zoneCount={funZones.length} />
       ) : null}
     </View>
   );
@@ -301,6 +428,118 @@ function LegendDot({ color, label }: { color: string; label: string }) {
   );
 }
 
+function FunZonesLegend({ zoneCount }: { zoneCount: number }) {
+  return (
+    <View style={styles.funZonesLegend}>
+      <Icon name="fire" size={16} color={colors.primary} />
+      <Text style={styles.funZonesLegendTitle}>
+        {zoneCount > 0
+          ? `${zoneCount} fun zone${zoneCount === 1 ? "" : "s"} · tap to open`
+          : "Pan the map to find fun zones"}
+      </Text>
+      <View style={styles.funZonesLegendGradient}>
+        <View
+          style={[
+            styles.funZonesLegendSwatch,
+            { backgroundColor: FUN_ZONE_COLORS.poor },
+          ]}
+        />
+        <View
+          style={[
+            styles.funZonesLegendSwatch,
+            { backgroundColor: FUN_ZONE_COLORS.fair },
+          ]}
+        />
+        <View
+          style={[
+            styles.funZonesLegendSwatch,
+            { backgroundColor: FUN_ZONE_COLORS.good },
+          ]}
+        />
+        <View
+          style={[
+            styles.funZonesLegendSwatch,
+            { backgroundColor: FUN_ZONE_COLORS.excellent },
+          ]}
+        />
+      </View>
+    </View>
+  );
+}
+
+function FunZoneCard({
+  zone,
+  onClose,
+}: {
+  zone: FunZone;
+  onClose: () => void;
+}) {
+  const accent = funZoneColor(zone.composite_score);
+  const title = zone.name?.trim() || "Fun zone";
+  const curveKm =
+    zone.total_curve_km != null ? formatKm(zone.total_curve_km) : null;
+  const avgQuality =
+    zone.avg_quality != null ? qualityLabel(zone.avg_quality) : null;
+  return (
+    <View style={styles.funZoneCard}>
+      <View style={styles.funZoneCardHeader}>
+        <View style={[styles.funZoneScoreChip, { borderColor: accent }]}>
+          <Text style={[styles.funZoneScoreChipValue, { color: accent }]}>
+            {zone.composite_score.toFixed(1)}
+          </Text>
+          <Text style={styles.funZoneScoreChipLabel}>score</Text>
+        </View>
+        <View style={styles.funZoneCardHeaderText}>
+          <Text style={styles.funZoneCardTitle} numberOfLines={1}>
+            {title}
+          </Text>
+          {zone.best_season ? (
+            <Text style={styles.funZoneCardSubtitle}>
+              Best: {formatSeason(zone.best_season)}
+            </Text>
+          ) : null}
+        </View>
+        <TouchableOpacity
+          onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel="Close fun zone details"
+          hitSlop={10}
+        >
+          <Icon name="close" size={20} color={colors.textSecondary} />
+        </TouchableOpacity>
+      </View>
+      <View style={styles.funZoneStatsRow}>
+        <FunZoneStat
+          label="Roads"
+          value={zone.road_count > 0 ? zone.road_count.toString() : "—"}
+        />
+        <FunZoneStat label="Curve km" value={curveKm ?? "—"} />
+        <FunZoneStat label="Avg quality" value={avgQuality ?? "—"} />
+      </View>
+    </View>
+  );
+}
+
+function FunZoneStat({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.funZoneStat}>
+      <Text style={styles.funZoneStatLabel}>{label}</Text>
+      <Text style={styles.funZoneStatValue}>{value}</Text>
+    </View>
+  );
+}
+
+function formatKm(km: number): string {
+  if (km >= 100) return `${Math.round(km)} km`;
+  return `${km.toFixed(1)} km`;
+}
+
+function formatSeason(season: string): string {
+  const cleaned = season.replace(/_/g, " ").trim();
+  if (!cleaned) return season;
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -406,5 +645,108 @@ const styles = StyleSheet.create({
   swatchLabel: {
     color: colors.textSecondary,
     fontSize: fontSize.xs,
+  },
+  // Compact pill in the top-left so fun-zones status stays visible without
+  // competing with the stacked bottom legends (Quality, Passes) or the FAB
+  // column on the right.
+  funZonesLegend: {
+    position: "absolute",
+    top: spacing.xl,
+    left: spacing.lg,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.pill,
+    backgroundColor: colors.bgCard,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
+  },
+  funZonesLegendTitle: {
+    color: colors.textPrimary,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
+  },
+  funZonesLegendGradient: {
+    flexDirection: "row",
+    gap: 2,
+  },
+  funZonesLegendSwatch: {
+    width: 10,
+    height: 6,
+    borderRadius: 2,
+  },
+  funZoneCard: {
+    position: "absolute",
+    bottom: spacing.xl,
+    left: spacing.lg,
+    right: spacing.lg,
+    padding: spacing.lg,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.bgCard,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.md,
+    ...shadows.card,
+  },
+  funZoneCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  funZoneCardHeaderText: {
+    flex: 1,
+    gap: 2,
+  },
+  funZoneCardTitle: {
+    color: colors.textPrimary,
+    fontSize: fontSize.lg,
+    fontWeight: fontWeight.bold,
+  },
+  funZoneCardSubtitle: {
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+  },
+  funZoneScoreChip: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.bgElevated,
+  },
+  funZoneScoreChipValue: {
+    fontSize: fontSize.lg,
+    fontWeight: fontWeight.bold,
+  },
+  funZoneScoreChipLabel: {
+    color: colors.textTertiary,
+    fontSize: 9,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    fontWeight: fontWeight.semibold,
+  },
+  funZoneStatsRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+  },
+  funZoneStat: {
+    flex: 1,
+  },
+  funZoneStatLabel: {
+    color: colors.textTertiary,
+    fontSize: fontSize.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    fontWeight: fontWeight.semibold,
+  },
+  funZoneStatValue: {
+    color: colors.textPrimary,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.bold,
+    marginTop: 2,
   },
 });
