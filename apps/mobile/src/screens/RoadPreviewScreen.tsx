@@ -380,7 +380,7 @@ function ReviewRow({ review }: { review: RoadReview }) {
       <View style={styles.reviewHeader}>
         <Text style={styles.reviewAuthor}>{review.user_display_name}</Text>
         <Text style={styles.reviewRating}>
-          {"★".repeat(Math.max(0, Math.min(5, review.rating)))}
+          {"★".repeat(Math.max(0, Math.min(5, Math.round(review.rating))))}
         </Text>
       </View>
       {review.comment ? (
