@@ -172,8 +172,30 @@ export default function NavigationScreen() {
   }
 
   const startCenter = polyline[0];
-  const nextManeuver = tick?.nextManeuver ?? maneuvers[1] ?? maneuvers[0];
+  // Three states for the next-turn card:
+  //   1. We have a live tick with a next maneuver → show it.
+  //   2. We have a tick but no next maneuver → the rider has arrived
+  //      (or overshot the last maneuver), so show "Arrive" instead of
+  //      stale "Turn right" copy from the start of the route.
+  //   3. No tick yet (pre-GPS-fix) → preview the first real turn.
+  const nextManeuver: Maneuver =
+    tick?.nextManeuver ??
+    (tick !== null
+      ? (maneuvers[maneuvers.length - 1] ?? maneuvers[0])
+      : (maneuvers[1] ?? maneuvers[0]));
   const offRoute = tick?.offRoute ?? false;
+  // Live count of interior maneuvers still ahead of the rider. Falls back
+  // to the total interior count before the first GPS fix lands so the
+  // stat row stays populated; once `tick` arrives, it tracks progress
+  // tick-by-tick alongside Remaining and Off-axis.
+  const remainingManeuvers = tick
+    ? maneuvers.filter(
+        (m) =>
+          m.type !== "depart" &&
+          m.type !== "arrive" &&
+          m.distanceFromStartM > tick.progressM,
+      ).length
+    : Math.max(0, maneuvers.length - 2);
 
   return (
     <View style={styles.container}>
@@ -228,10 +250,7 @@ export default function NavigationScreen() {
             label="Off-axis"
             value={formatMeters(tick?.offRouteDistanceM ?? 0)}
           />
-          <Stat
-            label="Maneuvers"
-            value={`${Math.max(0, maneuvers.length - 2)}`}
-          />
+          <Stat label="Maneuvers" value={`${remainingManeuvers}`} />
         </View>
         <View style={styles.actionsRow}>
           <TouchableOpacity
