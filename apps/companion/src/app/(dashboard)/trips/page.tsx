@@ -141,15 +141,18 @@ export default function TripListPage() {
   }, [setTrips, userId]);
 
   useEffect(() => {
+    // On any userId change (sign-out, sign-in, or direct account switch)
+    // drop the previous user's folder scope so it doesn't point at a folder
+    // the new user doesn't have. Scope is client-only state; the server-side
+    // folderId is per-trip and handled by the fetch effect above.
+    setFilters((prev) =>
+      prev.folderScope.kind === "folder"
+        ? { ...prev, folderScope: { kind: "all" } }
+        : prev,
+    );
     if (!userId) {
-      // Sign-out / account switch: drop the previous user's folders and any
-      // selected folder scope so nothing leaks across sessions.
+      // Sign-out: also drop the previous user's folder metadata.
       setFolders([]);
-      setFilters((prev) =>
-        prev.folderScope.kind === "folder"
-          ? { ...prev, folderScope: { kind: "all" } }
-          : prev,
-      );
       return;
     }
     setFolders(sortFoldersByName(loadFolders(userId)));
