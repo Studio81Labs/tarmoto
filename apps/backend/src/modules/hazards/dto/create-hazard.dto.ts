@@ -40,15 +40,15 @@ export const EXPIRY_HOURS: Record<string, number> = {
 export class CreateHazardDto {
   @ApiProperty({ example: 49.1 })
   @IsNumber()
-  lat: number;
+  lat!: number;
 
   @ApiProperty({ example: 16.75 })
   @IsNumber()
-  lng: number;
+  lng!: number;
 
   @ApiProperty({ enum: HAZARD_TYPES, example: 'pothole' })
   @IsEnum(HAZARD_TYPES)
-  hazard_type: HazardType;
+  hazard_type!: HazardType;
 
   @ApiProperty({ enum: SEVERITY_LEVELS, default: 'medium', required: false })
   @IsOptional()

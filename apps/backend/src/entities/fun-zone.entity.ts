@@ -13,32 +13,32 @@ import { FunZoneRoad } from './fun-zone-road.entity.js';
 @Index('idx_fun_zones_score', ['composite_score'])
 export class FunZone {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'geometry', spatialFeatureType: 'Polygon', srid: 4326 })
-  boundary: GeoJSON.Geometry;
+  boundary!: GeoJSON.Geometry;
 
   @Column({ type: 'varchar', length: 200, nullable: true })
-  name: string | null;
+  name!: string | null;
 
   @Column({ type: 'float' })
-  composite_score: number;
+  composite_score!: number;
 
   @Column({ type: 'int' })
-  road_count: number;
+  road_count!: number;
 
   @Column({ type: 'float', nullable: true })
-  total_curve_km: number | null;
+  total_curve_km!: number | null;
 
   @Column({ type: 'float', nullable: true })
-  avg_quality: number | null;
+  avg_quality!: number | null;
 
   @Column({ type: 'varchar', length: 20, nullable: true })
-  best_season: string | null;
+  best_season!: string | null;
 
   @Column({ type: 'timestamptz', default: () => 'NOW()' })
-  last_calculated: Date;
+  last_calculated!: Date;
 
   @OneToMany(() => FunZoneRoad, (r) => r.fun_zone)
-  roads: FunZoneRoad[];
+  roads!: FunZoneRoad[];
 }

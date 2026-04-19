@@ -18,46 +18,46 @@ export type PassStatus = 'open' | 'closed' | 'unknown';
 
 export class MountainPassDto {
   @ApiProperty()
-  id: string;
+  id!: string;
 
   @ApiProperty()
-  name: string;
+  name!: string;
 
   @ApiProperty({ description: 'ISO 3166-1 alpha-2 country code' })
-  country_code: string;
+  country_code!: string;
 
   @ApiProperty({ nullable: true })
-  region: string | null;
+  region!: string | null;
 
   @ApiProperty()
-  lat: number;
+  lat!: number;
 
   @ApiProperty()
-  lng: number;
+  lng!: number;
 
   @ApiProperty()
-  elevation_m: number;
+  elevation_m!: number;
 
   @ApiProperty({ description: '1=January .. 12=December (inclusive)' })
-  typical_open_month: number;
+  typical_open_month!: number;
 
   @ApiProperty({ description: '1=January .. 12=December (inclusive)' })
-  typical_close_month: number;
+  typical_close_month!: number;
 
   @ApiProperty({ enum: ['open', 'closed', 'unknown'] })
-  status: PassStatus;
+  status!: PassStatus;
 
   @ApiProperty({
     description:
       'True when status comes from a manual override rather than the typical schedule.',
   })
-  status_overridden: boolean;
+  status_overridden!: boolean;
 
   @ApiProperty({ nullable: true })
-  notes: string | null;
+  notes!: string | null;
 
   @ApiProperty()
-  last_updated: string;
+  last_updated!: string;
 }
 
 export class ListPassesQueryDto {
@@ -84,12 +84,12 @@ class RoutePointDto {
   @ApiProperty()
   @IsLatitude()
   @Type(() => Number)
-  lat: number;
+  lat!: number;
 
   @ApiProperty()
   @IsLongitude()
   @Type(() => Number)
-  lng: number;
+  lng!: number;
 }
 
 export class CheckRouteDto {
@@ -98,7 +98,7 @@ export class CheckRouteDto {
   @ArrayMinSize(2)
   @ValidateNested({ each: true })
   @Type(() => RoutePointDto)
-  route: RoutePointDto[];
+  route!: RoutePointDto[];
 
   @ApiPropertyOptional({
     default: 1500,
@@ -117,13 +117,13 @@ export class CheckRouteDto {
 
 export class CheckRouteResponseDto {
   @ApiProperty({ type: [MountainPassDto] })
-  passes: MountainPassDto[];
+  passes!: MountainPassDto[];
 
   @ApiProperty({
     description: 'Count of passes on the route currently closed.',
   })
-  closed_count: number;
+  closed_count!: number;
 
   @ApiProperty({ description: 'Count of passes whose status is unknown.' })
-  unknown_count: number;
+  unknown_count!: number;
 }

@@ -29,14 +29,14 @@ export class AccommodationQueryDto {
   @IsNumber()
   @Min(-90)
   @Max(90)
-  lat: number;
+  lat!: number;
 
   @ApiProperty({ example: 16.75 })
   @Transform(({ value }: { value: unknown }) => Number(value))
   @IsNumber()
   @Min(-180)
   @Max(180)
-  lng: number;
+  lng!: number;
 
   @ApiProperty({
     example: DEFAULT_RADIUS_KM,
@@ -53,42 +53,42 @@ export class AccommodationQueryDto {
 
 export class AccommodationDto {
   @ApiProperty()
-  external_id: string;
+  external_id!: string;
 
   @ApiProperty({ nullable: true })
-  name: string | null;
+  name!: string | null;
 
   @ApiProperty({ enum: ACCOMMODATION_KINDS })
-  kind: AccommodationKind;
+  kind!: AccommodationKind;
 
   @ApiProperty()
-  lat: number;
+  lat!: number;
 
   @ApiProperty()
-  lng: number;
+  lng!: number;
 
   @ApiProperty({ description: 'Distance from the anchor point, km.' })
-  distance_km: number;
+  distance_km!: number;
 
   @ApiProperty({ nullable: true })
-  website: string | null;
+  website!: string | null;
 
   @ApiProperty({ nullable: true })
-  phone: string | null;
+  phone!: string | null;
 
   @ApiProperty({
     nullable: true,
     description: 'Hotel star rating 1..5 when the provider reports one.',
   })
-  stars: number | null;
+  stars!: number | null;
 }
 
 export class AccommodationListDto {
   @ApiProperty({ type: [AccommodationDto] })
-  accommodations: AccommodationDto[];
+  accommodations!: AccommodationDto[];
 
   @ApiProperty({ description: 'Radius actually used for the lookup, km.' })
-  radius_km: number;
+  radius_km!: number;
 }
 
 export { DEFAULT_RADIUS_KM, MAX_RADIUS_KM };

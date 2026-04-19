@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException } from '@nestjs/common';
@@ -9,8 +8,8 @@ import { FunZone } from '../../entities/fun-zone.entity.js';
 
 describe('RoadsService', () => {
   let service: RoadsService;
-  let segmentRepo: jest.Mocked<Partial<Repository<RoadSegment>>>;
-  let funZoneRepo: jest.Mocked<Partial<Repository<FunZone>>>;
+  let segmentRepo: Partial<jest.Mocked<Repository<RoadSegment>>>;
+  let funZoneRepo: Partial<jest.Mocked<Repository<FunZone>>>;
 
   beforeEach(async () => {
     segmentRepo = {

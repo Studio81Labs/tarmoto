@@ -7,5 +7,5 @@ export class QueryFunZonesDto {
     example: '18.1,49.4,18.6,49.7',
   })
   @IsString()
-  bbox: string;
+  bbox!: string;
 }

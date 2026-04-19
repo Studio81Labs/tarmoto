@@ -32,7 +32,7 @@ export class EventsGateway
     OnModuleDestroy
 {
   @WebSocketServer()
-  server: Server;
+  server!: Server;
 
   private readonly logger = new Logger(EventsGateway.name);
   private pubClient: ReturnType<typeof createClient> | null = null;

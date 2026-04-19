@@ -2,42 +2,42 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class BadgeProgressDto {
   @ApiProperty()
-  current: number;
+  current!: number;
 
   @ApiProperty()
-  bronze: number;
+  bronze!: number;
 
   @ApiProperty()
-  silver: number;
+  silver!: number;
 
   @ApiProperty()
-  gold: number;
+  gold!: number;
 }
 
 export class BadgeDto {
   @ApiProperty()
-  key: string;
+  key!: string;
 
   @ApiProperty()
-  name: string;
+  name!: string;
 
   @ApiProperty()
-  description: string;
+  description!: string;
 
   @ApiProperty()
-  category: string;
+  category!: string;
 
   @ApiProperty({ nullable: true })
-  tier: string | null;
+  tier!: string | null;
 
   @ApiPropertyOptional({ nullable: true })
-  earned_at: string | null;
+  earned_at!: string | null;
 
   @ApiProperty()
-  progress: BadgeProgressDto;
+  progress!: BadgeProgressDto;
 }
 
 export class CheckBadgesResponseDto {
   @ApiProperty({ type: [String] })
-  newly_earned: string[];
+  newly_earned!: string[];
 }

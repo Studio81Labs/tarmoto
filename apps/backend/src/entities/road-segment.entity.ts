@@ -16,50 +16,50 @@ import { RoadReview } from './road-review.entity.js';
 @Index('idx_road_segments_curviness', ['curviness_score'])
 export class RoadSegment {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'geometry', spatialFeatureType: 'LineString', srid: 4326 })
-  geom: GeoJSON.Geometry;
+  geom!: GeoJSON.Geometry;
 
   @Column({ type: 'float' })
-  length_m: number;
+  length_m!: number;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
-  road_name: string | null;
+  road_name!: string | null;
 
   @Column({ type: 'varchar', length: 50, nullable: true })
-  road_number: string | null;
+  road_number!: string | null;
 
   @Column({ type: 'float', default: 0 })
-  curviness_score: number;
+  curviness_score!: number;
 
   @Column({ type: 'float', nullable: true })
-  quality_score: number | null;
+  quality_score!: number | null;
 
   @Column({ type: 'varchar', length: 30, default: 'unknown' })
-  surface_type: string;
+  surface_type!: string;
 
   @Column({ type: 'int', default: 0 })
-  reading_count: number;
+  reading_count!: number;
 
   @Column({ type: 'int', default: 0 })
-  confidence: number;
+  confidence!: number;
 
   @Column({ type: 'float', nullable: true })
-  elevation_min: number | null;
+  elevation_min!: number | null;
 
   @Column({ type: 'float', nullable: true })
-  elevation_max: number | null;
+  elevation_max!: number | null;
 
   @Column({ type: 'timestamptz', default: () => 'NOW()' })
-  last_updated: Date;
+  last_updated!: Date;
 
   @OneToMany(() => SurfaceReading, (r) => r.road_segment)
-  surface_readings: SurfaceReading[];
+  surface_readings!: SurfaceReading[];
 
   @OneToMany(() => HazardReport, (h) => h.road_segment)
-  hazard_reports: HazardReport[];
+  hazard_reports!: HazardReport[];
 
   @OneToMany(() => RoadReview, (r) => r.road_segment)
-  road_reviews: RoadReview[];
+  road_reviews!: RoadReview[];
 }

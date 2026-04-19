@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
@@ -9,8 +9,8 @@ import { Ride } from '../../entities/ride.entity.js';
 
 describe('SharingService', () => {
   let service: SharingService;
-  let sharedRideRepo: jest.Mocked<Partial<Repository<SharedRide>>>;
-  let rideRepo: jest.Mocked<Partial<Repository<Ride>>>;
+  let sharedRideRepo: Partial<jest.Mocked<Repository<SharedRide>>>;
+  let rideRepo: Partial<jest.Mocked<Repository<Ride>>>;
 
   const mockRide = {
     id: 'ride-1',

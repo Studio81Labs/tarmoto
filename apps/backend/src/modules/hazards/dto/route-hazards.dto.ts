@@ -12,10 +12,10 @@ import { ApiProperty } from '@nestjs/swagger';
 
 class LatLng {
   @IsNumber()
-  lat: number;
+  lat!: number;
 
   @IsNumber()
-  lng: number;
+  lng!: number;
 }
 
 export class RouteHazardsDto {
@@ -23,7 +23,7 @@ export class RouteHazardsDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => LatLng)
-  route: LatLng[];
+  route!: LatLng[];
 
   @ApiProperty({ default: 200, required: false })
   @IsOptional()

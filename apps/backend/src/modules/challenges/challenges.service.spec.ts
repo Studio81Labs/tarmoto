@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import {
@@ -13,8 +13,8 @@ import { ChallengeEntry } from '../../entities/challenge-entry.entity.js';
 
 describe('ChallengesService', () => {
   let service: ChallengesService;
-  let challengeRepo: jest.Mocked<Partial<Repository<Challenge>>>;
-  let entryRepo: jest.Mocked<Partial<Repository<ChallengeEntry>>>;
+  let challengeRepo: Partial<jest.Mocked<Repository<Challenge>>>;
+  let entryRepo: Partial<jest.Mocked<Repository<ChallengeEntry>>>;
 
   const now = new Date();
   const mockChallenge = {

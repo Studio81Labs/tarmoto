@@ -12,10 +12,10 @@ import { ApiProperty } from '@nestjs/swagger';
 
 class LatLngDto {
   @IsNumber()
-  lat: number;
+  lat!: number;
 
   @IsNumber()
-  lng: number;
+  lng!: number;
 }
 
 class UserPreferencesDto {

@@ -2,59 +2,59 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class RideResponseDto {
   @ApiProperty()
-  id: string;
+  id!: string;
 
   @ApiProperty()
-  status: string;
+  status!: string;
 
   @ApiProperty()
-  ride_type: string;
+  ride_type!: string;
 
   @ApiProperty()
-  started_at: string;
+  started_at!: string;
 
   @ApiProperty({ nullable: true })
-  ended_at: string | null;
+  ended_at!: string | null;
 
   @ApiProperty({ nullable: true })
-  distance_km: number | null;
+  distance_km!: number | null;
 
   @ApiProperty({ nullable: true })
-  avg_speed: number | null;
+  avg_speed!: number | null;
 
   @ApiProperty({ nullable: true })
-  avg_road_quality: number | null;
+  avg_road_quality!: number | null;
 }
 
 export class RideSummaryDto extends RideResponseDto {
   @ApiProperty({ nullable: true })
-  duration_min: number | null;
+  duration_min!: number | null;
 }
 
 export class RideDetailDto extends RideSummaryDto {
   @ApiProperty({ nullable: true })
-  max_speed: number | null;
+  max_speed!: number | null;
 
   @ApiProperty({ type: [Object], nullable: true })
-  route_geometry: Array<{ lat: number; lng: number }> | null;
+  route_geometry!: Array<{ lat: number; lng: number }> | null;
 
   @ApiProperty({ nullable: true })
-  elevation_gain: number | null;
+  elevation_gain!: number | null;
 
   @ApiProperty({ nullable: true })
-  elevation_loss: number | null;
+  elevation_loss!: number | null;
 
   @ApiProperty({ nullable: true })
-  curve_count: number | null;
+  curve_count!: number | null;
 
   @ApiProperty({ nullable: true })
-  max_lean_angle: number | null;
+  max_lean_angle!: number | null;
 
   @ApiProperty({ nullable: true })
-  fuel_estimate_l: number | null;
+  fuel_estimate_l!: number | null;
 
   @ApiProperty({ type: [Object] })
-  segments: Array<{
+  segments!: Array<{
     road_segment_id: string | null;
     road_name: string | null;
     quality_reading: number | null;
@@ -65,8 +65,8 @@ export class RideDetailDto extends RideSummaryDto {
 
 export class RideListResponseDto {
   @ApiProperty({ type: [RideSummaryDto] })
-  rides: RideSummaryDto[];
+  rides!: RideSummaryDto[];
 
   @ApiProperty()
-  total: number;
+  total!: number;
 }

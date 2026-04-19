@@ -2,35 +2,35 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class HazardResponseDto {
   @ApiProperty()
-  id: string;
+  id!: string;
 
   @ApiProperty()
-  lat: number;
+  lat!: number;
 
   @ApiProperty()
-  lng: number;
+  lng!: number;
 
   @ApiProperty()
-  hazard_type: string;
+  hazard_type!: string;
 
   @ApiProperty()
-  severity: string;
+  severity!: string;
 
   @ApiProperty({ nullable: true })
-  note: string | null;
+  note!: string | null;
 
   @ApiProperty()
-  confirmations: number;
+  confirmations!: number;
 
   @ApiProperty({ nullable: true })
-  reporter: string | null;
+  reporter!: string | null;
 
   @ApiProperty({ nullable: true })
-  road_name: string | null;
+  road_name!: string | null;
 
   @ApiProperty()
-  created_at: string;
+  created_at!: string;
 
   @ApiProperty()
-  expires_at: string;
+  expires_at!: string;
 }

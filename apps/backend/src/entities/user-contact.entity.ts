@@ -12,25 +12,25 @@ import { User } from './user.entity.js';
 @Entity('user_contacts')
 export class UserContact {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'uuid' })
   @Index('idx_user_contacts_user')
-  user_id: string;
+  user_id!: string;
 
   @Column({ type: 'varchar', length: 100 })
-  name: string;
+  name!: string;
 
   @Column({ type: 'varchar', length: 20 })
-  phone: string;
+  phone!: string;
 
   @Column({ type: 'boolean', default: true })
-  is_emergency: boolean;
+  is_emergency!: boolean;
 
   @CreateDateColumn({ type: 'timestamptz' })
-  created_at: Date;
+  created_at!: Date;
 
   @ManyToOne(() => User, (u) => u.contacts, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })
-  user: User;
+  user!: User;
 }

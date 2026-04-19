@@ -8,9 +8,9 @@ export class LoginDto {
     typeof value === 'string' ? value.toLowerCase().trim() : value,
   )
   @IsEmail()
-  email: string;
+  email!: string;
 
   @ApiProperty()
   @IsString()
-  password: string;
+  password!: string;
 }

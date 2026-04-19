@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
@@ -10,7 +10,7 @@ import { EventsGateway } from '../events/events.gateway.js';
 
 describe('HazardsService', () => {
   let service: HazardsService;
-  let repo: jest.Mocked<Partial<Repository<HazardReport>>>;
+  let repo: Partial<jest.Mocked<Repository<HazardReport>>>;
   let eventsGateway: { emitHazardAlert: jest.Mock };
 
   const mockHazard: Partial<HazardReport> = {

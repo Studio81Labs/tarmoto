@@ -28,7 +28,7 @@ const FORCED_CLOSED: MountainPass = {
 
 describe('PassesService', () => {
   let service: PassesService;
-  let passRepo: jest.Mocked<Partial<Repository<MountainPass>>>;
+  let passRepo: Partial<jest.Mocked<Repository<MountainPass>>>;
 
   const mockQb = {
     where: jest.fn().mockReturnThis(),

@@ -17,48 +17,48 @@ import { TripDay } from './trip-day.entity.js';
 @Index('idx_trips_owner', ['owner_id'])
 export class Trip {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'uuid' })
-  owner_id: string;
+  owner_id!: string;
 
   @Column({ type: 'varchar', length: 200 })
-  title: string;
+  title!: string;
 
   @Column({ type: 'varchar', length: 200, nullable: true })
-  region: string | null;
+  region!: string | null;
 
   @Column({ type: 'int', default: 1 })
-  num_days: number;
+  num_days!: number;
 
   @Column({ type: 'float', default: 150 })
-  daily_km_min: number;
+  daily_km_min!: number;
 
   @Column({ type: 'float', default: 350 })
-  daily_km_max: number;
+  daily_km_max!: number;
 
   @Column({ type: 'float', default: 3.0 })
-  min_quality: number;
+  min_quality!: number;
 
   @Column({ type: 'varchar', length: 30, default: 'curvy' })
-  road_preference: string;
+  road_preference!: string;
 
   @Column({ type: 'varchar', length: 20, default: 'draft' })
-  status: string;
+  status!: string;
 
   @CreateDateColumn({ type: 'timestamptz' })
-  created_at: Date;
+  created_at!: Date;
 
   @UpdateDateColumn({ type: 'timestamptz' })
-  updated_at: Date;
+  updated_at!: Date;
 
   @ManyToOne(() => User, (u) => u.trips)
   @JoinColumn({ name: 'owner_id' })
-  owner: User;
+  owner!: User;
 
   @OneToMany(() => TripMember, (m) => m.trip)
-  members: TripMember[];
+  members!: TripMember[];
 
   @OneToMany(() => TripDay, (d) => d.trip)
-  days: TripDay[];
+  days!: TripDay[];
 }

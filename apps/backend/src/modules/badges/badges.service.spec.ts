@@ -12,8 +12,8 @@ import { SharedRide } from '../../entities/shared-ride.entity.js';
 
 describe('BadgesService', () => {
   let service: BadgesService;
-  let userBadgeRepo: jest.Mocked<Partial<Repository<UserBadge>>>;
-  let rideRepo: jest.Mocked<Partial<Repository<Ride>>>;
+  let userBadgeRepo: Partial<jest.Mocked<Repository<UserBadge>>>;
+  let rideRepo: Partial<jest.Mocked<Repository<Ride>>>;
   let hazardRepo: { count: jest.Mock };
   let reviewRepo: { count: jest.Mock };
   let sharedRideRepo: { count: jest.Mock };

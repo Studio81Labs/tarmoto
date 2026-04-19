@@ -4,28 +4,28 @@ import { Type } from 'class-transformer';
 
 export class ExplorationStatsDto {
   @ApiProperty()
-  ridden_segments: number;
+  ridden_segments!: number;
 
   @ApiProperty()
-  total_segments: number;
+  total_segments!: number;
 
   @ApiProperty()
-  percent_explored: number;
+  percent_explored!: number;
 
   @ApiProperty()
-  total_distance_km: number;
+  total_distance_km!: number;
 }
 
 export class NearbyUnriddenQueryDto {
   @ApiProperty()
   @IsNumber()
   @Type(() => Number)
-  lat: number;
+  lat!: number;
 
   @ApiProperty()
   @IsNumber()
   @Type(() => Number)
-  lng: number;
+  lng!: number;
 
   @ApiPropertyOptional({ default: 10, minimum: 1, maximum: 50 })
   @IsOptional()
@@ -46,25 +46,25 @@ export class NearbyUnriddenQueryDto {
 
 export class UnriddenSegmentDto {
   @ApiProperty()
-  id: string;
+  id!: string;
 
   @ApiProperty({ nullable: true })
-  road_name: string | null;
+  road_name!: string | null;
 
   @ApiProperty()
-  length_m: number;
+  length_m!: number;
 
   @ApiProperty({ nullable: true })
-  quality_score: number | null;
+  quality_score!: number | null;
 
   @ApiProperty()
-  surface_type: string;
+  surface_type!: string;
 
   @ApiProperty()
-  distance_m: number;
+  distance_m!: number;
 }
 
 export class RiddenSegmentIdsDto {
   @ApiProperty({ type: [String] })
-  segment_ids: string[];
+  segment_ids!: string[];
 }

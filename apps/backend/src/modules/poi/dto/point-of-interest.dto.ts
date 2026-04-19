@@ -82,14 +82,14 @@ export class PoiQueryDto {
   @IsNumber()
   @Min(-90)
   @Max(90)
-  lat: number;
+  lat!: number;
 
   @ApiProperty({ example: 16.75 })
   @Transform(({ value }: { value: unknown }) => toRequiredNumber(value))
   @IsNumber()
   @Min(-180)
   @Max(180)
-  lng: number;
+  lng!: number;
 
   @ApiProperty({
     example: DEFAULT_RADIUS_KM,
@@ -121,28 +121,28 @@ export class PoiQueryDto {
 
 export class PoiDto {
   @ApiProperty()
-  external_id: string;
+  external_id!: string;
 
   @ApiProperty({ nullable: true })
-  name: string | null;
+  name!: string | null;
 
   @ApiProperty({ enum: POI_KINDS })
-  kind: PoiKind;
+  kind!: PoiKind;
 
   @ApiProperty()
-  lat: number;
+  lat!: number;
 
   @ApiProperty()
-  lng: number;
+  lng!: number;
 
   @ApiProperty({ description: 'Distance from the anchor point, km.' })
-  distance_km: number;
+  distance_km!: number;
 
   @ApiProperty({ nullable: true })
-  website: string | null;
+  website!: string | null;
 
   @ApiProperty({ nullable: true })
-  phone: string | null;
+  phone!: string | null;
 
   @ApiProperty({
     nullable: true,
@@ -150,22 +150,22 @@ export class PoiDto {
       'Cuisine or description hint. For restaurants/cafés this is the ' +
       '`cuisine` OSM tag; for viewpoints it is the `description` tag.',
   })
-  hint: string | null;
+  hint!: string | null;
 }
 
 export class PoiListDto {
   @ApiProperty({ type: [PoiDto] })
-  pois: PoiDto[];
+  pois!: PoiDto[];
 
   @ApiProperty({ description: 'Radius actually used for the lookup, km.' })
-  radius_km: number;
+  radius_km!: number;
 
   @ApiProperty({
     enum: POI_KINDS,
     isArray: true,
     description: 'Kinds that were actually queried for this response.',
   })
-  kinds: PoiKind[];
+  kinds!: PoiKind[];
 }
 
 export { DEFAULT_RADIUS_KM, MAX_RADIUS_KM };

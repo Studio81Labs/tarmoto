@@ -8,7 +8,7 @@ import { Ride } from '../../entities/ride.entity.js';
 
 describe('GpxService', () => {
   let service: GpxService;
-  let rideRepo: jest.Mocked<Partial<Repository<Ride>>>;
+  let rideRepo: Partial<jest.Mocked<Repository<Ride>>>;
 
   beforeEach(async () => {
     rideRepo = {

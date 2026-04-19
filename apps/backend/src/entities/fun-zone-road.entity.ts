@@ -13,22 +13,22 @@ import { RoadSegment } from './road-segment.entity.js';
 @Unique(['fun_zone_id', 'road_segment_id'])
 export class FunZoneRoad {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'uuid' })
-  fun_zone_id: string;
+  fun_zone_id!: string;
 
   @Column({ type: 'uuid' })
-  road_segment_id: string;
+  road_segment_id!: string;
 
   @Column({ type: 'float', nullable: true })
-  contribution_score: number | null;
+  contribution_score!: number | null;
 
   @ManyToOne(() => FunZone, (fz) => fz.roads, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'fun_zone_id' })
-  fun_zone: FunZone;
+  fun_zone!: FunZone;
 
   @ManyToOne(() => RoadSegment)
   @JoinColumn({ name: 'road_segment_id' })
-  road_segment: RoadSegment;
+  road_segment!: RoadSegment;
 }

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -9,8 +8,8 @@ import { EventsGateway } from '../events/events.gateway.js';
 
 describe('SafetyService', () => {
   let service: SafetyService;
-  let contactRepo: jest.Mocked<Partial<Repository<UserContact>>>;
-  let userRepo: jest.Mocked<Partial<Repository<User>>>;
+  let contactRepo: Partial<jest.Mocked<Repository<UserContact>>>;
+  let userRepo: Partial<jest.Mocked<Repository<User>>>;
   let eventsGateway: { emitToUser: jest.Mock };
 
   const mockUser = {

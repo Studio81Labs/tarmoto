@@ -16,22 +16,22 @@ import { User } from './user.entity.js';
 @Index('idx_user_follows_following', ['following_id'])
 export class UserFollow {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'uuid' })
-  follower_id: string;
+  follower_id!: string;
 
   @Column({ type: 'uuid' })
-  following_id: string;
+  following_id!: string;
 
   @CreateDateColumn({ type: 'timestamptz' })
-  created_at: Date;
+  created_at!: Date;
 
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'follower_id' })
-  follower: User;
+  follower!: User;
 
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'following_id' })
-  following: User;
+  following!: User;
 }
