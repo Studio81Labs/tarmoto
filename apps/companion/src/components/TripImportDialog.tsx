@@ -1,0 +1,324 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { FileUp, Loader2, MapPin, X } from "lucide-react";
+import {
+  importedRouteToTrip,
+  parseImportedRoute,
+  type ImportedRoute,
+} from "@/lib/gpx-kml-import";
+import { QUALITY_CONFIG, formatDistance } from "@/lib/utils";
+import { useTripStore } from "@/stores/trip";
+import { flattenSegments } from "@/stores/trip";
+import type { Trip } from "@/lib/types";
+
+interface TripImportDialogProps {
+  open: boolean;
+  initialFile?: File | null;
+  onClose: () => void;
+}
+
+/**
+ * Dialog shown after a GPX/KML file is dropped or picked (US-38).
+ * Owns the parse → preview → adopt lifecycle and calls `setActiveTrip` so the
+ * planner sidebar and timeline light up with the imported route.
+ */
+export function TripImportDialog({
+  open,
+  initialFile,
+  onClose,
+}: TripImportDialogProps) {
+  const setActiveTrip = useTripStore((s) => s.setActiveTrip);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [status, setStatus] = useState<"idle" | "parsing" | "ready" | "error">(
+    "idle",
+  );
+  const [route, setRoute] = useState<ImportedRoute | null>(null);
+  const [trip, setTrip] = useState<Trip | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setStatus("idle");
+      setRoute(null);
+      setTrip(null);
+      setError(null);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (open && initialFile) void handleFile(initialFile);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialFile]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  const segments = useMemo(() => flattenSegments(trip), [trip]);
+
+  async function handleFile(file: File) {
+    setStatus("parsing");
+    setError(null);
+    setRoute(null);
+    setTrip(null);
+    try {
+      const text = await file.text();
+      const result = parseImportedRoute(text, file.name);
+      if (!result.ok) {
+        setError(result.error);
+        setStatus("error");
+        return;
+      }
+      const nextTrip = importedRouteToTrip(result.route);
+      setRoute(result.route);
+      setTrip(nextTrip);
+      setStatus("ready");
+    } catch {
+      setError("Could not read the file. Try again or pick a different file.");
+      setStatus("error");
+    }
+  }
+
+  function handleAdopt() {
+    if (!trip) return;
+    setActiveTrip(trip);
+    onClose();
+  }
+
+  if (!open) return null;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="trip-import-title"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="w-full max-w-2xl rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl shadow-black/60 overflow-hidden">
+        <header className="flex items-center justify-between px-5 py-3 border-b border-slate-800">
+          <h2
+            id="trip-import-title"
+            className="text-sm font-semibold text-slate-200 flex items-center gap-2"
+          >
+            <FileUp size={14} className="text-tarmoto-cyan" />
+            Import GPX or KML
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close import dialog"
+            className="text-slate-500 hover:text-slate-200 transition"
+          >
+            <X size={16} />
+          </button>
+        </header>
+
+        <div className="p-5 space-y-4">
+          {status === "idle" && (
+            <IdlePicker onPick={() => fileInputRef.current?.click()} />
+          )}
+
+          {status === "parsing" && (
+            <div className="flex items-center gap-3 text-slate-300 text-sm py-6 justify-center">
+              <Loader2 size={16} className="animate-spin" />
+              Parsing route…
+            </div>
+          )}
+
+          {status === "error" && (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200 space-y-3">
+              <p>{error}</p>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="text-xs font-semibold text-red-200 underline hover:text-white"
+              >
+                Pick another file
+              </button>
+            </div>
+          )}
+
+          {status === "ready" && route && trip && (
+            <RoutePreview
+              route={route}
+              trip={trip}
+              segmentCount={segments.length}
+            />
+          )}
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".gpx,.kml,application/gpx+xml,application/vnd.google-earth.kml+xml,text/xml,application/xml"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handleFile(file);
+              // Allow re-picking the same file.
+              e.target.value = "";
+            }}
+          />
+        </div>
+
+        <footer className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-800">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 rounded-lg text-sm text-slate-300 hover:bg-slate-800 transition"
+          >
+            Cancel
+          </button>
+          {status === "ready" && (
+            <button
+              type="button"
+              onClick={handleAdopt}
+              className="px-3 py-1.5 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light transition"
+            >
+              Adopt as trip draft
+            </button>
+          )}
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+function IdlePicker({ onPick }: { onPick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onPick}
+      className="w-full rounded-xl border-2 border-dashed border-slate-700 hover:border-tarmoto-cyan transition p-8 text-center"
+    >
+      <FileUp
+        size={32}
+        className="mx-auto text-slate-500 group-hover:text-tarmoto-cyan mb-3"
+      />
+      <p className="text-sm text-slate-200 font-medium">
+        Choose a GPX or KML file
+      </p>
+      <p className="text-xs text-slate-500 mt-1">
+        Exports from Garmin, Calimoto, Kurviger, Scenic, Google Earth
+      </p>
+    </button>
+  );
+}
+
+function RoutePreview({
+  route,
+  trip,
+  segmentCount,
+}: {
+  route: ImportedRoute;
+  trip: Trip;
+  segmentCount: number;
+}) {
+  const firstDay = trip.days[0];
+  const maxSegmentKm =
+    firstDay?.segments?.reduce((m, seg) => Math.max(m, seg.distanceKm), 0) ?? 1;
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
+        <p className="text-xs uppercase tracking-wider text-slate-500 mb-1">
+          Route
+        </p>
+        <p className="text-base font-semibold text-slate-100 truncate">
+          {route.name}
+        </p>
+        <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
+          <Stat
+            label="Distance"
+            value={formatDistance(route.totalDistanceKm)}
+          />
+          <Stat label="Points" value={String(route.points.length)} />
+          <Stat
+            label="Avg quality"
+            value={firstDay ? firstDay.avgQuality.toFixed(1) : "—"}
+          />
+        </div>
+        <p className="text-[11px] text-slate-500 mt-3 leading-relaxed">
+          Road quality shown is a deterministic preview until your route is
+          matched against Tarmoto's tile data (#6, #79). Each segment bar below
+          uses the same colour scale as the planner overlay.
+        </p>
+      </div>
+
+      <div>
+        <p className="text-xs uppercase tracking-wider text-slate-500 mb-2">
+          Segment quality ({segmentCount})
+        </p>
+        <div className="space-y-1">
+          {firstDay?.segments?.map((seg) => {
+            const cfg = QUALITY_CONFIG[seg.qualityTier];
+            const widthPct = Math.max(8, (seg.distanceKm / maxSegmentKm) * 100);
+            return (
+              <div
+                key={seg.id}
+                className="flex items-center gap-2 text-xs"
+                data-testid={`import-segment-${seg.id}`}
+              >
+                <span className="w-24 truncate text-slate-400">{seg.name}</span>
+                <div className="flex-1 h-2 rounded-full bg-slate-800 overflow-hidden">
+                  <div
+                    className={`${cfg.bg} h-full`}
+                    style={{ width: `${widthPct}%` }}
+                    aria-label={`${cfg.label} • ${formatDistance(seg.distanceKm)}`}
+                  />
+                </div>
+                <span className="w-14 text-right tabular-nums text-slate-500">
+                  {formatDistance(seg.distanceKm)}
+                </span>
+                <span className={`w-16 text-right font-semibold ${cfg.color}`}>
+                  {cfg.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {route.waypoints.length > 0 && (
+        <div>
+          <p className="text-xs uppercase tracking-wider text-slate-500 mb-2">
+            Waypoints ({route.waypoints.length})
+          </p>
+          <ul className="space-y-1 text-xs text-slate-400 max-h-28 overflow-y-auto pr-1">
+            {route.waypoints.map((wp, i) => (
+              <li key={i} className="flex items-center gap-2 truncate">
+                <MapPin size={12} className="text-slate-500 shrink-0" />
+                <span className="truncate">
+                  {wp.name ?? `Waypoint ${i + 1}`}
+                </span>
+                <span className="tabular-nums text-slate-600">
+                  {wp.lat.toFixed(4)}, {wp.lng.toFixed(4)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[11px] uppercase tracking-wider text-slate-500">
+        {label}
+      </p>
+      <p className="font-semibold text-slate-100 tabular-nums">{value}</p>
+    </div>
+  );
+}
