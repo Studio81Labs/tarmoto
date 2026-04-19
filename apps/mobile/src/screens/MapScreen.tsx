@@ -22,8 +22,14 @@
  *     a draw-polygon tool — that's a desktop-first pattern covered on
  *     web by #43.
  *
- * Offline tile caching (US-1 AC #4) is intentionally out of scope for
- * this iteration — it belongs to US-18 "Offline maps and navigation".
+ * Offline tiles (US-18 AC #3): when the current viewport centre sits
+ * inside a rider's completed offline region, we feed MapLibre a
+ * `file://` tile template pointing at the cached bytes on disk instead
+ * of the backend URL. Full offline detection (NetInfo) is a follow-up;
+ * for now the rule is "if you've cached this area, you want to see the
+ * cached copy here". A subtle legend line tells the rider which region
+ * is feeding the overlay. Offline routing (US-18 AC #2) remains out of
+ * scope.
  */
 import React, {
   type ComponentProps,
@@ -47,7 +53,12 @@ import {
 } from "@maplibre/maplibre-react-native";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import { api } from "@/services/api";
-import { useMapStore, usePreferencesStore } from "@/stores";
+import { getDefaultDocsDir } from "@/services/offlineRegions";
+import {
+  findBestOfflineRegion,
+  offlineTileUrlTemplate,
+} from "@/services/offlineTileLookup";
+import { useMapStore, useOfflineStore, usePreferencesStore } from "@/stores";
 import type { FunZone, MountainPass } from "@/types";
 import {
   borderRadius,
@@ -98,8 +109,31 @@ export default function MapScreen() {
   const togglePasses = useMapStore((s) => s.togglePasses);
   const toggleFunZones = useMapStore((s) => s.toggleFunZones);
   const minQuality = usePreferencesStore((s) => s.minQuality);
+  const offlineRegions = useOfflineStore((s) => s.regions);
 
-  const tileUrl = getQualityTileUrlTemplate();
+  // US-18 AC #3: when the rider is panning inside a completed offline
+  // region at a zoom the region caches, serve the overlay from the
+  // on-disk `file://` template instead of hitting the backend. When the
+  // rider pans out of any cached bbox we flip back to the online URL —
+  // MapLibre will re-request tiles for the new source, which is the
+  // intended behaviour. `getDefaultDocsDir` reaches into RNFS, so guard
+  // with try/catch so environments without the native binding (tests,
+  // web preview) fall through to the online path rather than crashing.
+  const offlineSource = useMemo(() => {
+    const region = findBestOfflineRegion(offlineRegions, center, zoom);
+    if (!region) return null;
+    try {
+      const docsDir = getDefaultDocsDir();
+      return {
+        regionName: region.name,
+        template: offlineTileUrlTemplate(docsDir, region.id),
+      };
+    } catch {
+      return null;
+    }
+  }, [offlineRegions, center, zoom]);
+
+  const tileUrl = offlineSource?.template ?? getQualityTileUrlTemplate();
 
   // Rebuild the line style only when the rider's minimum-quality threshold
   // changes so MapLibre's style diff stays a no-op on every render. US-5:
@@ -275,7 +309,13 @@ export default function MapScreen() {
         />
         <UserLocation visible animated />
         {showQualityOverlay ? (
+          // `key` includes the offline source so MapLibre fully remounts the
+          // VectorSource when we swap between the backend URL and a cached
+          // `file://` template. Keeping the same `id` across templates would
+          // leave the native side pointing at the old tile URL even after
+          // React updated the prop.
           <VectorSource
+            key={`quality-${offlineSource?.regionName ?? "online"}`}
             id="tarmoto-quality"
             tileUrlTemplates={[tileUrl]}
             minZoomLevel={0}
@@ -345,7 +385,12 @@ export default function MapScreen() {
         />
       </View>
 
-      {showQualityOverlay ? <QualityLegend minQuality={minQuality} /> : null}
+      {showQualityOverlay ? (
+        <QualityLegend
+          minQuality={minQuality}
+          offlineRegionName={offlineSource?.regionName}
+        />
+      ) : null}
       {showPassesOverlay && passes.length > 0 ? (
         <PassesLegend stacked={showQualityOverlay} />
       ) : null}
@@ -401,7 +446,13 @@ function ToggleFab({
   );
 }
 
-function QualityLegend({ minQuality }: { minQuality: number }) {
+function QualityLegend({
+  minQuality,
+  offlineRegionName,
+}: {
+  minQuality: number;
+  offlineRegionName?: string;
+}) {
   // Buckets are rendered top-down (Excellent → Very poor) but the score
   // values map 5 → 1. Buckets with a score below `minQuality` are dimmed
   // and swatched in gray to match the map's below-threshold rendering.
@@ -432,6 +483,18 @@ function QualityLegend({ minQuality }: { minQuality: number }) {
           />
         ))}
       </View>
+      {offlineRegionName ? (
+        <View style={styles.legendOfflineRow}>
+          <Icon
+            name="cloud-check-outline"
+            size={12}
+            color={colors.textSecondary}
+          />
+          <Text style={styles.legendOfflineText} numberOfLines={1}>
+            Offline tiles · {offlineRegionName}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -716,6 +779,21 @@ const styles = StyleSheet.create({
   swatchLabel: {
     color: colors.textSecondary,
     fontSize: fontSize.xs,
+  },
+  legendOfflineRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderLight,
+  },
+  legendOfflineText: {
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
+    flex: 1,
   },
   // Compact pill in the top-left so fun-zones status stays visible without
   // competing with the stacked bottom legends (Quality, Passes) or the FAB
