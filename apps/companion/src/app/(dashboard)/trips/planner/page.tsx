@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useTripStore } from "@/stores/trip";
 import {
   Layers,
@@ -9,9 +9,11 @@ import {
   Upload,
   Sparkles,
   ChevronRight,
+  FileUp,
 } from "lucide-react";
 import { SegmentSidebar } from "@/components/SegmentSidebar";
 import { TripExportMenu } from "@/components/TripExportMenu";
+import { TripImportDialog } from "@/components/TripImportDialog";
 import { DEMO_TRIP } from "@/lib/demo-trip";
 
 /**
@@ -25,9 +27,40 @@ import { DEMO_TRIP } from "@/lib/demo-trip";
 export default function TripPlannerPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [paramsOpen, setParamsOpen] = useState(true);
+  const [importOpen, setImportOpen] = useState(false);
+  const [pendingImportFile, setPendingImportFile] = useState<File | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
   const activeTrip = useTripStore((s) => s.activeTrip);
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
   const isGenerating = useTripStore((s) => s.isGenerating);
+
+  const openImport = useCallback((file: File | null = null) => {
+    setPendingImportFile(file);
+    setImportOpen(true);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (!Array.from(e.dataTransfer.types).includes("Files")) return;
+    e.preventDefault();
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    // Only clear if leaving the drop target, not bubbling from children.
+    if (e.currentTarget === e.target) setIsDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      setIsDragOver(false);
+      const file = Array.from(e.dataTransfer.files).find((f) =>
+        /\.(gpx|kml)$/i.test(f.name),
+      );
+      if (file) openImport(file);
+    },
+    [openImport],
+  );
 
   return (
     <div className="flex flex-col h-full">
@@ -41,7 +74,11 @@ export default function TripPlannerPage() {
             <Sparkles size={14} />
             Generate
           </button>
-          <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition">
+          <button
+            type="button"
+            onClick={() => openImport()}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition"
+          >
             <Upload size={14} />
             Import GPX
           </button>
@@ -177,9 +214,14 @@ export default function TripPlannerPage() {
         )}
 
         {/* Map canvas */}
-        <div className="flex-1 relative bg-slate-900">
+        <div
+          className="flex-1 relative bg-slate-900"
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
           {/* MapLibre GL JS will mount here */}
-          <div className="absolute inset-0 flex items-center justify-center">
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="text-center">
               <MapIcon size={64} className="mx-auto text-slate-700 mb-4" />
               <p className="text-slate-500 text-lg font-medium">
@@ -188,8 +230,26 @@ export default function TripPlannerPage() {
               <p className="text-slate-600 text-sm mt-1">
                 Road quality heatmap • Fun Zone clusters • Draggable waypoints
               </p>
+              <p className="text-slate-600 text-xs mt-3">
+                Drop a GPX or KML file here to import a route
+              </p>
             </div>
           </div>
+
+          {/* Drop overlay */}
+          {isDragOver && (
+            <div
+              aria-hidden
+              className="absolute inset-4 rounded-2xl border-2 border-dashed border-tarmoto-cyan bg-tarmoto-cyan/10 flex items-center justify-center pointer-events-none z-10"
+            >
+              <div className="text-center">
+                <FileUp size={40} className="mx-auto text-tarmoto-cyan mb-2" />
+                <p className="text-tarmoto-cyan font-semibold">
+                  Drop to import GPX or KML
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Generating overlay */}
           {isGenerating && (
@@ -237,6 +297,15 @@ export default function TripPlannerPage() {
           + Add day
         </button>
       </div>
+
+      <TripImportDialog
+        open={importOpen}
+        initialFile={pendingImportFile}
+        onClose={() => {
+          setImportOpen(false);
+          setPendingImportFile(null);
+        }}
+      />
     </div>
   );
 }
