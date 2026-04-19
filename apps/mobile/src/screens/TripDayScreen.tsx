@@ -380,22 +380,37 @@ function AccommodationRow({ item }: { item: Accommodation }) {
   ];
   if (item.stars) metaParts.push("★".repeat(item.stars));
 
-  const openExternal = () => {
-    const url = item.website
-      ? item.website
-      : item.phone
-        ? `tel:${item.phone.replace(/\s+/g, "")}`
-        : `https://www.openstreetmap.org/?mlat=${item.lat}&mlon=${item.lng}#map=17/${item.lat}/${item.lng}`;
-    void Linking.openURL(url).catch(() => {
-      // Swallow — Linking throws on simulators without the target app.
-      // Nothing useful to surface to the user beyond the row going inert.
-    });
+  const openExternal = async () => {
+    // Crowd-sourced data: a malformed or custom-scheme website must not
+    // abort the fallback chain. Accept only http(s) websites, then walk
+    // website → phone → OSM, swallowing per-step failures so a missing
+    // target app on one row never leaves the row inert.
+    const website =
+      item.website && /^https?:\/\//i.test(item.website.trim())
+        ? item.website.trim()
+        : null;
+    const candidates = [
+      website,
+      item.phone ? `tel:${item.phone.replace(/\s+/g, "")}` : null,
+      `https://www.openstreetmap.org/?mlat=${item.lat}&mlon=${item.lng}#map=17/${item.lat}/${item.lng}`,
+    ].filter((value): value is string => !!value);
+
+    for (const url of candidates) {
+      try {
+        await Linking.openURL(url);
+        return;
+      } catch {
+        // Try the next fallback.
+      }
+    }
   };
 
   return (
     <TouchableOpacity
       style={styles.accommodationRow}
-      onPress={openExternal}
+      onPress={() => {
+        void openExternal();
+      }}
       accessibilityRole="button"
       accessibilityLabel={`${label}, ${item.distance_km.toFixed(1)} kilometres away`}
     >

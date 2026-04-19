@@ -41,15 +41,13 @@ export class AccommodationQueryDto {
   @ApiProperty({
     example: DEFAULT_RADIUS_KM,
     required: false,
-    description: `Search radius in km (capped at ${MAX_RADIUS_KM}).`,
+    description: `Search radius in km (defaulted to ${DEFAULT_RADIUS_KM}, capped at ${MAX_RADIUS_KM} by the service).`,
   })
   @IsOptional()
   @Transform(({ value }: { value: unknown }) =>
     value === undefined ? undefined : Number(value),
   )
   @IsNumber()
-  @Min(0.5)
-  @Max(MAX_RADIUS_KM)
   radius_km?: number;
 }
 

@@ -117,14 +117,31 @@ export class OverpassPoiProvider implements PoiProvider {
   }
 
   private parseStars(raw: string | undefined): number | null {
-    if (!raw) return null;
-    // OSM stars tag can carry trailing "S" (superior), fractional values,
-    // or a range (e.g. "4-5"). Collapse to the highest integer value we
-    // can read so the mobile card stays a simple count.
-    const match = raw.match(/\d+/g);
-    if (!match) return null;
-    const max = Math.max(...match.map((n) => Number(n)));
-    if (!Number.isFinite(max) || max < 1 || max > 5) return null;
-    return max;
+    return parseStarsTag(raw);
   }
+}
+
+/**
+ * Parse an OSM `stars` tag into a whole-star count in 1..5.
+ *
+ * The tag can carry trailing "S" (superior), fractional values
+ * (e.g. "4.5"), or a range (e.g. "4-5"). We capture decimal tokens and
+ * range endpoints explicitly — a naive `\d+` split would shatter "4.5"
+ * into 4 and 5 and overstate the advertised rating. Pick the highest
+ * endpoint, floor it to a whole star, and reject anything outside 1..5
+ * so the UI never renders six stars for a "6S" tag.
+ */
+export function parseStarsTag(raw: string | undefined | null): number | null {
+  if (!raw) return null;
+  const tokens = raw.match(/\d+(?:\.\d+)?/g);
+  if (!tokens) return null;
+  let max = -Infinity;
+  for (const t of tokens) {
+    const n = Number(t);
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  if (!Number.isFinite(max)) return null;
+  const floored = Math.floor(max);
+  if (floored < 1 || floored > 5) return null;
+  return floored;
 }

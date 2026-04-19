@@ -41,8 +41,11 @@ export class PoiService {
       // Keep trip planning resilient: if the upstream provider is down or
       // rate-limited, the day card just shows an empty state instead of
       // blocking the whole screen.
+      // Log only the error cause. Rider coordinates are intentionally
+      // omitted so an Overpass outage can't bulk-leak precise trip
+      // locations into backend logs.
       this.logger.warn(
-        `POI provider failed at ${lat},${lng}: ${err instanceof Error ? err.message : String(err)}`,
+        `POI provider failed: ${err instanceof Error ? err.message : String(err)}`,
       );
       return { accommodations: [], radius_km: radius };
     }
