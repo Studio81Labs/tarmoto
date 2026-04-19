@@ -95,10 +95,13 @@ function sortTrips(trips: Trip[], sort: TripSortKey): Trip[] {
     case "distance":
       copy.sort((a, b) => tripDistanceKm(b) - tripDistanceKm(a));
       return copy;
-    default:
-      // Exhaustive over TripSortKey today; the default keeps the return type
-      // honest if a new sort key is added without updating this switch.
+    default: {
+      // Compile-time exhaustiveness: adding a new TripSortKey without a
+      // case above will make this assertion fail to typecheck.
+      const _exhaustive: never = sort;
+      void _exhaustive;
       return copy;
+    }
   }
 }
 

@@ -870,6 +870,7 @@ function TripCard({
         aria-label={`Trip actions for ${trip.name}`}
         onClick={(e) => {
           e.preventDefault();
+          e.stopPropagation();
           setMenuOpen((v) => !v);
           setMoveOpen(false);
         }}
@@ -996,13 +997,18 @@ function FolderModal({
   const [value, setValue] = useState(initialName);
   const [error, setError] = useState<string | null>(null);
 
+  // Keep the latest onClose in a ref so the keydown effect doesn't re-add
+  // the listener every render just because the parent passes an inline
+  // arrow function for onClose.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, []);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
