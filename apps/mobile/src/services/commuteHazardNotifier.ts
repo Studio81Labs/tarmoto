@@ -311,9 +311,21 @@ export function startCommuteHazardMonitor(): () => void {
       void checkCommuteHazardsAndNotify();
     }
   };
-  monitorSubscription = AppState.addEventListener("change", onChange);
+  const subscription = AppState.addEventListener("change", onChange);
+  monitorSubscription = subscription;
 
-  return stopCommuteHazardMonitor;
+  // Bind the returned cleanup to *this specific* subscription so a stale
+  // cleanup closure (e.g. from an unmounted root after a hot reload or a
+  // second start() call) can't accidentally tear down a newer listener
+  // and leave the app with no hazard monitor. `stopCommuteHazardMonitor`
+  // remains the global "drop whatever's active" helper for tests and
+  // top-level resets.
+  return () => {
+    if (monitorSubscription === subscription) {
+      subscription.remove();
+      monitorSubscription = null;
+    }
+  };
 }
 
 function stopCommuteHazardMonitor(): void {

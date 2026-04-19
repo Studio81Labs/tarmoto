@@ -24,12 +24,14 @@ jest.mock("@/services/api", () => ({
 
 // Import AFTER the mock so the service binds to the mocked `api`.
 /* eslint-disable import/first */
+import { AppState } from "react-native";
 import { api } from "@/services/api";
 import {
   __resetCommuteHazardNotifierForTest,
   __setNotifierForTest,
   checkCommuteHazardsAndNotify,
   decideCommuteHazardNotification,
+  startCommuteHazardMonitor,
   type Notifier,
   type NotificationPayload,
 } from "../commuteHazardNotifier";
@@ -412,5 +414,49 @@ describe("checkCommuteHazardsAndNotify", () => {
     const third = await checkCommuteHazardsAndNotify();
     // h1 was notified on `first`, so this is a dedup hit — not in-progress.
     expect(third.reason).toBe("all-notified");
+  });
+});
+
+// ── Monitor lifecycle ──
+
+describe("startCommuteHazardMonitor", () => {
+  beforeEach(() => {
+    __resetCommuteHazardNotifierForTest();
+    __setNotifierForTest(createFakeNotifier());
+    mockApi.getCommuteRoutes.mockResolvedValue([]);
+    mockApi.getCommuteStatus.mockResolvedValue(makeStatus([]));
+  });
+
+  afterEach(() => {
+    __resetCommuteHazardNotifierForTest();
+  });
+
+  it("returned cleanup only removes its own subscription, not a newer one", () => {
+    const addSpy = jest.spyOn(AppState, "addEventListener");
+
+    // First start — captures sub1. Fake the subscription `.remove` so we
+    // can assert which subscription was torn down.
+    const sub1Remove = jest.fn();
+    addSpy.mockReturnValueOnce({ remove: sub1Remove });
+    const stop1 = startCommuteHazardMonitor();
+
+    // Second start — captures sub2. If it removed sub1 via
+    // stopCommuteHazardMonitor() at the top, sub1Remove should fire
+    // exactly once here (expected — housekeeping).
+    const sub2Remove = jest.fn();
+    addSpy.mockReturnValueOnce({ remove: sub2Remove });
+    startCommuteHazardMonitor();
+
+    expect(sub1Remove).toHaveBeenCalledTimes(1);
+    expect(sub2Remove).not.toHaveBeenCalled();
+
+    // Now invoke the *first* start's cleanup. The pre-fix bug would
+    // delegate to `stopCommuteHazardMonitor` and remove sub2 — stopping
+    // hazard checks for an unrelated consumer. The fix binds the
+    // cleanup to its own sub1, so sub2 must stay live.
+    stop1();
+    expect(sub2Remove).not.toHaveBeenCalled();
+
+    addSpy.mockRestore();
   });
 });
