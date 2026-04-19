@@ -88,11 +88,6 @@ export function useNavigationSession(
   // Sync voice state during render, not in an effect. Location callbacks
   // can fire between commit and effect flush, so an effect-based update
   // would leave the ref reading a stale value on the first few ticks
-  // after a toggle. The mute side-effect on TTS itself still lives in
-  // useEffect so it runs once per change, not on every render.
-  // Sync voice state during render, not in an effect. Location callbacks
-  // can fire between commit and effect flush, so an effect-based update
-  // would leave the ref reading a stale value on the first few ticks
   // after a toggle AND — worse — leave the TTS singleton's mute flag
   // out of sync with the ref: on off→on, handleAnnouncement would read
   // `voiceEnabled=true` from the ref and call `ttsService.speak()` while
