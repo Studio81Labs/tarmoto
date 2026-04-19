@@ -26,7 +26,7 @@ import {
   removeTripFromCollection,
   saveCollections,
   sortCollectionsByName,
-  type RouteCollection,
+  type StoredRouteCollection,
 } from "@/lib/route-collections";
 import { tripDistanceKm } from "@/lib/trip-filters";
 import { buildRoutePreview, type RoutePoint } from "@/lib/ride-detail";
@@ -40,7 +40,7 @@ export default function CollectionDetailPage() {
   const trips = useTripStore((s) => s.trips);
   const setTrips = useTripStore((s) => s.setTrips);
 
-  const [collections, setCollections] = useState<RouteCollection[]>([]);
+  const [collections, setCollections] = useState<StoredRouteCollection[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [loadingTrips, setLoadingTrips] = useState(true);
   const [showPicker, setShowPicker] = useState(false);
@@ -95,7 +95,7 @@ export default function CollectionDetailPage() {
     return map;
   }, [trips]);
 
-  const persist = (next: readonly RouteCollection[]) => {
+  const persist = (next: readonly StoredRouteCollection[]) => {
     const sorted = sortCollectionsByName(next);
     setCollections(sorted);
     if (userId) saveCollections(userId, sorted);

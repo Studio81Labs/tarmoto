@@ -28,7 +28,7 @@ import {
   validateCollectionDescription,
   validateCollectionName,
   type CollectionInput,
-  type RouteCollection,
+  type StoredRouteCollection,
 } from "@/lib/route-collections";
 import { tripDistanceKm } from "@/lib/trip-filters";
 import { formatDistance, formatRelativeTime } from "@/lib/utils";
@@ -41,12 +41,14 @@ export default function RouteCollectionsPage() {
   const setTrips = useTripStore((s) => s.setTrips);
   const userId = useAuthStore((s) => s.user?.id ?? null);
 
-  const [collections, setCollections] = useState<RouteCollection[]>([]);
+  const [collections, setCollections] = useState<StoredRouteCollection[]>([]);
   const [loadingTrips, setLoadingTrips] = useState(true);
   const [search, setSearch] = useState("");
   const [visibility, setVisibility] = useState<VisibilityFilter>("all");
   const [modal, setModal] = useState<
-    { mode: "create" } | { mode: "edit"; collection: RouteCollection } | null
+    | { mode: "create" }
+    | { mode: "edit"; collection: StoredRouteCollection }
+    | null
   >(null);
 
   // Load trips for stats (route count, distance). Trips already live in the
@@ -96,7 +98,7 @@ export default function RouteCollectionsPage() {
     return map;
   }, [trips]);
 
-  const persist = (next: readonly RouteCollection[]) => {
+  const persist = (next: readonly StoredRouteCollection[]) => {
     const sorted = sortCollectionsByName(next);
     setCollections(sorted);
     if (userId) saveCollections(userId, sorted);
@@ -112,7 +114,7 @@ export default function RouteCollectionsPage() {
     setModal(null);
   };
 
-  const deleteCollection = (collection: RouteCollection) => {
+  const deleteCollection = (collection: StoredRouteCollection) => {
     if (
       !confirm(
         `Delete "${collection.name}"? The routes inside won't be affected.`,
@@ -294,7 +296,7 @@ function CollectionCard({
   onEdit,
   onDelete,
 }: {
-  collection: RouteCollection;
+  collection: StoredRouteCollection;
   tripById: Map<string, Trip>;
   loadingTrips: boolean;
   onEdit: () => void;
@@ -430,7 +432,7 @@ function CollectionModal({
 }: {
   mode: "create" | "edit";
   initial: { name: string; description: string; isPublic: boolean };
-  collections: readonly RouteCollection[];
+  collections: readonly StoredRouteCollection[];
   excludeId?: string;
   onClose: () => void;
   onSubmit: (input: CollectionInput) => void;

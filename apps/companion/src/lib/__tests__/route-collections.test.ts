@@ -13,7 +13,7 @@ import {
   updateCollection,
   validateCollectionDescription,
   validateCollectionName,
-  type RouteCollection,
+  type StoredRouteCollection,
 } from "../route-collections";
 
 const USER = "user_123";
@@ -23,8 +23,8 @@ beforeEach(() => {
 });
 
 function makeCollection(
-  overrides: Partial<RouteCollection> = {},
-): RouteCollection {
+  overrides: Partial<StoredRouteCollection> = {},
+): StoredRouteCollection {
   return {
     id: overrides.id ?? "col_1",
     name: overrides.name ?? "Beskydy Loops",
@@ -67,9 +67,10 @@ describe("validateCollectionName", () => {
 });
 
 describe("validateCollectionDescription", () => {
-  it("passes when undefined or empty", () => {
+  it("passes when undefined, empty, or whitespace only", () => {
     expect(validateCollectionDescription(undefined)).toBeNull();
     expect(validateCollectionDescription("")).toBeNull();
+    expect(validateCollectionDescription("   ")).toBeNull();
   });
 
   it("rejects descriptions over the length limit", () => {
@@ -78,6 +79,13 @@ describe("validateCollectionDescription", () => {
         "a".repeat(MAX_COLLECTION_DESCRIPTION_LENGTH + 1),
       ),
     ).toMatch(/characters or fewer/);
+  });
+
+  it("measures length after trimming so pad whitespace doesn't trip the limit", () => {
+    // The stored description is trimmed, so a value that fits after trimming
+    // must not be rejected even if the raw string overflows.
+    const padded = `   ${"a".repeat(MAX_COLLECTION_DESCRIPTION_LENGTH)}   `;
+    expect(validateCollectionDescription(padded)).toBeNull();
   });
 
   it("accepts a valid description", () => {

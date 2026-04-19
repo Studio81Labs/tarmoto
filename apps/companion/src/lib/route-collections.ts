@@ -8,9 +8,13 @@
  * localStorage keyed per user. The member trips themselves are server state
  * fetched via `tripsApi`. When the backend ships a collections endpoint this
  * module can switch storage without touching consumers.
+ *
+ * Deliberately named `StoredRouteCollection` to avoid colliding with the
+ * server-shaped `RouteCollection` DTO in `@/lib/types.ts`, which embeds full
+ * `Trip[]` and rider metadata instead of just `tripIds`.
  */
 
-export interface RouteCollection {
+export interface StoredRouteCollection {
   id: string;
   name: string;
   description?: string;
@@ -35,7 +39,7 @@ export function storageKey(userId: string): string {
   return `${STORAGE_PREFIX}${userId}`;
 }
 
-export function loadCollections(userId: string): RouteCollection[] {
+export function loadCollections(userId: string): StoredRouteCollection[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = window.localStorage.getItem(storageKey(userId));
@@ -50,7 +54,7 @@ export function loadCollections(userId: string): RouteCollection[] {
 
 export function saveCollections(
   userId: string,
-  collections: readonly RouteCollection[],
+  collections: readonly StoredRouteCollection[],
 ): void {
   if (typeof window === "undefined") return;
   try {
@@ -64,7 +68,7 @@ export function saveCollections(
   }
 }
 
-function isCollection(value: unknown): value is RouteCollection {
+function isCollection(value: unknown): value is StoredRouteCollection {
   if (!value || typeof value !== "object") return false;
   const c = value as Record<string, unknown>;
   return (
@@ -81,7 +85,7 @@ function isCollection(value: unknown): value is RouteCollection {
 
 export function validateCollectionName(
   name: string,
-  collections: readonly RouteCollection[],
+  collections: readonly StoredRouteCollection[],
   excludeId?: string,
 ): string | null {
   const trimmed = name.trim();
@@ -100,8 +104,13 @@ export function validateCollectionName(
 export function validateCollectionDescription(
   description: string | undefined,
 ): string | null {
-  if (description === undefined || description === "") return null;
-  if (description.length > MAX_COLLECTION_DESCRIPTION_LENGTH) {
+  if (description === undefined) return null;
+  // Trim to match what `createCollection`/`updateCollection` actually store —
+  // otherwise trailing whitespace could be rejected even though the persisted
+  // value would fit within the limit.
+  const trimmed = description.trim();
+  if (trimmed === "") return null;
+  if (trimmed.length > MAX_COLLECTION_DESCRIPTION_LENGTH) {
     return `Description must be ${MAX_COLLECTION_DESCRIPTION_LENGTH} characters or fewer`;
   }
   return null;
@@ -110,7 +119,7 @@ export function validateCollectionDescription(
 export function createCollection(
   input: CollectionInput,
   now: Date = new Date(),
-): RouteCollection {
+): StoredRouteCollection {
   const trimmedDescription = input.description?.trim();
   return {
     id: generateCollectionId(now),
@@ -124,11 +133,11 @@ export function createCollection(
 }
 
 export function updateCollection(
-  collections: readonly RouteCollection[],
+  collections: readonly StoredRouteCollection[],
   id: string,
   input: CollectionInput,
   now: Date = new Date(),
-): RouteCollection[] {
+): StoredRouteCollection[] {
   return collections.map((c) => {
     if (c.id !== id) return c;
     const trimmedDescription = input.description?.trim();
@@ -143,18 +152,18 @@ export function updateCollection(
 }
 
 export function removeCollection(
-  collections: readonly RouteCollection[],
+  collections: readonly StoredRouteCollection[],
   id: string,
-): RouteCollection[] {
+): StoredRouteCollection[] {
   return collections.filter((c) => c.id !== id);
 }
 
 export function addTripsToCollection(
-  collections: readonly RouteCollection[],
+  collections: readonly StoredRouteCollection[],
   id: string,
   tripIds: readonly string[],
   now: Date = new Date(),
-): RouteCollection[] {
+): StoredRouteCollection[] {
   return collections.map((c) => {
     if (c.id !== id) return c;
     // De-dup while preserving insertion order so added-last routes show up at
@@ -177,11 +186,11 @@ export function addTripsToCollection(
 }
 
 export function removeTripFromCollection(
-  collections: readonly RouteCollection[],
+  collections: readonly StoredRouteCollection[],
   id: string,
   tripId: string,
   now: Date = new Date(),
-): RouteCollection[] {
+): StoredRouteCollection[] {
   return collections.map((c) => {
     if (c.id !== id) return c;
     if (!c.tripIds.includes(tripId)) return c;
@@ -194,8 +203,8 @@ export function removeTripFromCollection(
 }
 
 export function sortCollectionsByName(
-  collections: readonly RouteCollection[],
-): RouteCollection[] {
+  collections: readonly StoredRouteCollection[],
+): StoredRouteCollection[] {
   return collections
     .slice()
     .sort((a, b) =>
