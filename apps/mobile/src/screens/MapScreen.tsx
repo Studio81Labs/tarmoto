@@ -22,8 +22,14 @@
  *     a draw-polygon tool — that's a desktop-first pattern covered on
  *     web by #43.
  *
- * Offline tile caching (US-1 AC #4) is intentionally out of scope for
- * this iteration — it belongs to US-18 "Offline maps and navigation".
+ * Offline tiles (US-18 AC #3): when the current viewport centre sits
+ * inside a rider's completed offline region, we feed MapLibre a
+ * `file://` tile template pointing at the cached bytes on disk instead
+ * of the backend URL. Full offline detection (NetInfo) is a follow-up;
+ * for now the rule is "if you've cached this area, you want to see the
+ * cached copy here". A subtle legend line tells the rider which region
+ * is feeding the overlay. Offline routing (US-18 AC #2) remains out of
+ * scope.
  */
 import React, {
   type ComponentProps,
@@ -47,7 +53,12 @@ import {
 } from "@maplibre/maplibre-react-native";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import { api } from "@/services/api";
-import { useMapStore, usePreferencesStore } from "@/stores";
+import { getDefaultDocsDir } from "@/services/offlineRegions";
+import {
+  findBestOfflineRegion,
+  offlineTileUrlTemplate,
+} from "@/services/offlineTileLookup";
+import { useMapStore, useOfflineStore, usePreferencesStore } from "@/stores";
 import type { FunZone, MountainPass } from "@/types";
 import {
   borderRadius,
@@ -78,12 +89,12 @@ import { formatKm } from "./TripScreens.helpers";
 type RegionChangeFeature = GeoJSON.Feature<GeoJSON.Point, RegionPayload>;
 type IconName = ComponentProps<typeof Icon>["name"];
 
-// Approximate rendered heights (padding + content) of the bottom legends.
-// Used by `FunZoneCard` to shift itself above whichever legends are open so
-// the card never lands on top of them. Keep these in sync with
-// `styles.legend` / `styles.legendPassesStacked` below if the copy or
-// padding ever changes.
-const FUN_ZONE_CARD_QUALITY_OFFSET = 76 + spacing.sm;
+// The quality legend grows when offline tiles are active (an extra row
+// announces the cached region), so a hardcoded height would leave the
+// passes legend and fun-zone card overlapping it. The actual height is
+// measured via `onLayout` and fed to both. This fallback is only used
+// before the first layout pass.
+const QUALITY_LEGEND_FALLBACK_HEIGHT = 76;
 const FUN_ZONE_CARD_PASSES_OFFSET = 60 + spacing.sm;
 
 export default function MapScreen() {
@@ -98,8 +109,57 @@ export default function MapScreen() {
   const togglePasses = useMapStore((s) => s.togglePasses);
   const toggleFunZones = useMapStore((s) => s.toggleFunZones);
   const minQuality = usePreferencesStore((s) => s.minQuality);
+  const offlineRegions = useOfflineStore((s) => s.regions);
 
-  const tileUrl = getQualityTileUrlTemplate();
+  // Actual rendered height of the quality legend. Passed to siblings
+  // (passes legend, fun-zone card) so their stacking offsets track the
+  // legend's real size — the offline row can grow it by ~25 px. Guarded
+  // against duplicate layout events (same height) so we don't thrash
+  // re-renders during settle.
+  const [qualityLegendHeight, setQualityLegendHeight] = useState(
+    QUALITY_LEGEND_FALLBACK_HEIGHT,
+  );
+  const handleQualityLegendLayout = useCallback((height: number) => {
+    setQualityLegendHeight((prev) => (prev === height ? prev : height));
+  }, []);
+  // Reset to the fallback whenever the quality overlay is toggled off so
+  // the next toggle-on doesn't briefly use a stale (possibly larger)
+  // height for positioning the passes legend / fun-zone card before
+  // `onLayout` fires.
+  useEffect(() => {
+    if (!showQualityOverlay) {
+      setQualityLegendHeight(QUALITY_LEGEND_FALLBACK_HEIGHT);
+    }
+  }, [showQualityOverlay]);
+
+  // US-18 AC #3: when the rider is panning inside a completed offline
+  // region at a zoom the region caches, serve the overlay from the
+  // on-disk `file://` template instead of hitting the backend. When the
+  // rider pans out of any cached bbox we flip back to the online URL —
+  // MapLibre will re-request tiles for the new source, which is the
+  // intended behaviour. `getDefaultDocsDir` reaches into RNFS, so guard
+  // with try/catch so environments without the native binding (tests,
+  // web preview) fall through to the online path rather than crashing.
+  const offlineSource = useMemo(() => {
+    const region = findBestOfflineRegion(offlineRegions, center, zoom);
+    if (!region) return null;
+    try {
+      const docsDir = getDefaultDocsDir();
+      return {
+        // `regionId` (not `regionName`) drives the VectorSource remount key:
+        // rider-chosen names are not guaranteed unique, so two same-named
+        // regions on different bboxes would leave MapLibre pointed at the
+        // old tile URL when the rider pans from one to the other.
+        regionId: region.id,
+        regionName: region.name,
+        template: offlineTileUrlTemplate(docsDir, region.id),
+      };
+    } catch {
+      return null;
+    }
+  }, [offlineRegions, center, zoom]);
+
+  const tileUrl = offlineSource?.template ?? getQualityTileUrlTemplate();
 
   // Rebuild the line style only when the rider's minimum-quality threshold
   // changes so MapLibre's style diff stays a no-op on every render. US-5:
@@ -275,7 +335,13 @@ export default function MapScreen() {
         />
         <UserLocation visible animated />
         {showQualityOverlay ? (
+          // `key` includes the offline source so MapLibre fully remounts the
+          // VectorSource when we swap between the backend URL and a cached
+          // `file://` template. Keeping the same `id` across templates would
+          // leave the native side pointing at the old tile URL even after
+          // React updated the prop.
           <VectorSource
+            key={`quality-${offlineSource?.regionId ?? "online"}`}
             id="tarmoto-quality"
             tileUrlTemplates={[tileUrl]}
             minZoomLevel={0}
@@ -345,21 +411,30 @@ export default function MapScreen() {
         />
       </View>
 
-      {showQualityOverlay ? <QualityLegend minQuality={minQuality} /> : null}
+      {showQualityOverlay ? (
+        <QualityLegend
+          minQuality={minQuality}
+          offlineRegionName={offlineSource?.regionName}
+          onHeightChange={handleQualityLegendLayout}
+        />
+      ) : null}
       {showPassesOverlay && passes.length > 0 ? (
-        <PassesLegend stacked={showQualityOverlay} />
+        <PassesLegend
+          stacked={showQualityOverlay}
+          qualityLegendHeight={qualityLegendHeight}
+        />
       ) : null}
       {showFunZonesOverlay && selectedZone ? (
         <FunZoneCard
           zone={selectedZone}
           onClose={() => setSelectedZone(null)}
           // Shift the card above whatever bottom legends are currently
-          // visible so the two don't overlap. Quality legend (~76 px) pins
-          // to the bottom; Passes legend (~60 px) stacks above it when
-          // quality is also on. Passing both flags lets the card compute
-          // the right offset without tight coupling to the legend styles.
+          // visible so the two don't overlap. Quality legend height is
+          // measured via `onLayout` (it grows when the offline row is
+          // showing), while the passes legend is still a fixed ~60 px.
           hasQualityLegend={showQualityOverlay}
           hasPassesLegend={showPassesOverlay && passes.length > 0}
+          qualityLegendHeight={qualityLegendHeight}
         />
       ) : showFunZonesOverlay ? (
         <FunZonesLegend zoneCount={funZones.length} />
@@ -401,7 +476,15 @@ function ToggleFab({
   );
 }
 
-function QualityLegend({ minQuality }: { minQuality: number }) {
+function QualityLegend({
+  minQuality,
+  offlineRegionName,
+  onHeightChange,
+}: {
+  minQuality: number;
+  offlineRegionName?: string;
+  onHeightChange?: (height: number) => void;
+}) {
   // Buckets are rendered top-down (Excellent → Very poor) but the score
   // values map 5 → 1. Buckets with a score below `minQuality` are dimmed
   // and swatched in gray to match the map's below-threshold rendering.
@@ -413,7 +496,12 @@ function QualityLegend({ minQuality }: { minQuality: number }) {
     { score: 1, color: colors.quality.veryPoor, label: "Very poor" },
   ];
   return (
-    <View style={styles.legend}>
+    <View
+      style={styles.legend}
+      onLayout={(event) => {
+        onHeightChange?.(event.nativeEvent.layout.height);
+      }}
+    >
       <View style={styles.legendHeader}>
         <Text style={styles.legendTitle}>Road quality</Text>
         {minQuality > 1 ? (
@@ -432,6 +520,18 @@ function QualityLegend({ minQuality }: { minQuality: number }) {
           />
         ))}
       </View>
+      {offlineRegionName ? (
+        <View style={styles.legendOfflineRow}>
+          <Icon
+            name="cloud-check-outline"
+            size={12}
+            color={colors.textSecondary}
+          />
+          <Text style={styles.legendOfflineText} numberOfLines={1}>
+            Offline tiles · {offlineRegionName}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -453,9 +553,22 @@ function LegendSwatch({
   );
 }
 
-function PassesLegend({ stacked }: { stacked: boolean }) {
+function PassesLegend({
+  stacked,
+  qualityLegendHeight,
+}: {
+  stacked: boolean;
+  qualityLegendHeight: number;
+}) {
+  // When stacked, pin above the quality legend using its measured height
+  // (grows when offline tiles are active) plus a small gutter so the two
+  // legends never kiss. Falls back to the default bottom from
+  // `styles.legend` when quality is hidden.
+  const stackedStyle = stacked
+    ? { bottom: spacing.xl + qualityLegendHeight + spacing.sm }
+    : null;
   return (
-    <View style={[styles.legend, stacked ? styles.legendPassesStacked : null]}>
+    <View style={[styles.legend, stackedStyle]}>
       <Text style={styles.legendTitle}>Mountain passes</Text>
       <View style={styles.legendRow}>
         <LegendDot
@@ -534,21 +647,23 @@ function FunZoneCard({
   onClose,
   hasQualityLegend,
   hasPassesLegend,
+  qualityLegendHeight,
 }: {
   zone: FunZone;
   onClose: () => void;
   hasQualityLegend: boolean;
   hasPassesLegend: boolean;
+  qualityLegendHeight: number;
 }) {
   // Reuse the quality colour ramp — composite scores sit on the same 0-5
   // scale and the breakpoints match, so a separate function would just be a
   // drift risk if the buckets ever change.
   const accent = qualityColor(zone.composite_score);
-  // Push above whichever bottom legends are showing. Heights mirror the
-  // constants used by `legendPassesStacked` (quality ≈ 76 px, passes ≈
-  // 60 px); keep in sync if those legends ever resize.
+  // Push above whichever bottom legends are showing. Quality legend height
+  // is measured (it grows when the offline row is active); passes legend
+  // is still an approximate fixed height since its content never changes.
   const stackOffset =
-    (hasQualityLegend ? FUN_ZONE_CARD_QUALITY_OFFSET : 0) +
+    (hasQualityLegend ? qualityLegendHeight + spacing.sm : 0) +
     (hasPassesLegend ? FUN_ZONE_CARD_PASSES_OFFSET : 0);
   const bottom = spacing.xl + stackOffset;
   const title = zone.name?.trim() || "Fun zone";
@@ -661,15 +776,6 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     ...shadows.card,
   },
-  // Applied only when the quality legend is also visible — shifts the
-  // passes legend just above it so both fit at the bottom without
-  // colliding with the FAB column on the right. Quality's legend is
-  // roughly 76 px tall (title + single row + padding); keep in sync if
-  // that ever changes. When quality is hidden the passes legend stays
-  // pinned at the default `bottom: spacing.xl` from `styles.legend`.
-  legendPassesStacked: {
-    bottom: spacing.xl + 76 + spacing.sm,
-  },
   dot: {
     width: 10,
     height: 10,
@@ -716,6 +822,21 @@ const styles = StyleSheet.create({
   swatchLabel: {
     color: colors.textSecondary,
     fontSize: fontSize.xs,
+  },
+  legendOfflineRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderLight,
+  },
+  legendOfflineText: {
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
+    flex: 1,
   },
   // Compact pill in the top-left so fun-zones status stays visible without
   // competing with the stacked bottom legends (Quality, Passes) or the FAB
