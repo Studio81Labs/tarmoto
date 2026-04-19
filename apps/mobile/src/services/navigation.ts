@@ -471,28 +471,41 @@ export class NavSession {
       if (nextManeuver && nextIndex !== null) {
         const state = this.thresholds[nextIndex];
         if (nextManeuver.type !== "depart" && nextManeuver.type !== "arrive") {
-          if (!state.farFired && distanceToNextM <= WARNING_FAR_M) {
+          // Fire at most ONE threshold per tick, picking the most urgent
+          // one the rider has crossed. A cold-start fix can land inside
+          // `WARNING_NEAR_M` — or even `EXECUTE_M` — with none of the
+          // thresholds fired yet; stacked `if`s would emit all three
+          // announcements back-to-back ("In 0 meters, turn left" …
+          // "Turn left now"), which is exactly the kind of noise voice
+          // nav is meant to avoid.
+          //
+          // Cascade-mark the farther thresholds as fired so they stay
+          // suppressed on later ticks (the rider has already moved past
+          // the "early warning" window, we don't want to rewind and
+          // announce "in 300 meters" after we've been speaking at 45m).
+          if (!state.executeFired && distanceToNextM <= EXECUTE_M) {
+            state.executeFired = true;
+            state.nearFired = true;
             state.farFired = true;
             announcements.push({
-              type: "warning-far",
+              type: "execute",
               maneuver: nextManeuver,
               distanceM: distanceToNextM,
               currentRoadName,
             });
-          }
-          if (!state.nearFired && distanceToNextM <= WARNING_NEAR_M) {
+          } else if (!state.nearFired && distanceToNextM <= WARNING_NEAR_M) {
             state.nearFired = true;
+            state.farFired = true;
             announcements.push({
               type: "warning-near",
               maneuver: nextManeuver,
               distanceM: distanceToNextM,
               currentRoadName,
             });
-          }
-          if (!state.executeFired && distanceToNextM <= EXECUTE_M) {
-            state.executeFired = true;
+          } else if (!state.farFired && distanceToNextM <= WARNING_FAR_M) {
+            state.farFired = true;
             announcements.push({
-              type: "execute",
+              type: "warning-far",
               maneuver: nextManeuver,
               distanceM: distanceToNextM,
               currentRoadName,

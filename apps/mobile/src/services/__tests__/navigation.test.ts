@@ -257,6 +257,27 @@ describe("NavSession", () => {
     expect(recovered.offRoute).toBe(false);
     expect(recovered.announcements.map((a) => a.type)).toContain("on-route");
   });
+
+  it("collapses stacked thresholds on a cold-start fix inside the near window", () => {
+    // Rider's first GPS fix lands 30m before the turn — below both the far
+    // (300m) and near (50m) thresholds. We should hear ONE prompt (the most
+    // urgent) rather than "In 0 meters, turn right" chased by "Turn right
+    // now" on the same tick. The far threshold is silently marked fired so
+    // a later tick doesn't rewind and announce the early warning.
+    const s = new NavSession(poly, maneuvers);
+    const turnM = executedTurn.distanceFromStartM;
+    const tick = s.update(pointAlong(poly, turnM - 30));
+    const thresholdKinds = tick.announcements
+      .map((a) => a.type)
+      .filter(
+        (t) => t === "warning-far" || t === "warning-near" || t === "execute",
+      );
+    expect(thresholdKinds).toEqual(["warning-near"]);
+
+    // And the far announcement must not resurrect on subsequent ticks.
+    const later = s.update(pointAlong(poly, turnM - 20));
+    expect(later.announcements.map((a) => a.type)).not.toContain("warning-far");
+  });
 });
 
 describe("phraseForAnnouncement", () => {

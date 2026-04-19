@@ -43,8 +43,6 @@ export interface NavigationState {
   tick: NavTick | null;
   maneuvers: Maneuver[];
   liveLocation: LatLng | null;
-  liveSpeedKmh: number;
-  totalDistanceM: number;
 }
 
 const HAPTIC_CONFIG = {
@@ -73,7 +71,6 @@ export function useNavigationSession(
 
   const [tick, setTick] = useState<NavTick | null>(null);
   const [liveLocation, setLiveLocation] = useState<LatLng | null>(null);
-  const [liveSpeedKmh, setLiveSpeedKmh] = useState(0);
   // Sync voice state during render, not in an effect. Location callbacks
   // can fire between commit and effect flush, so an effect-based update
   // would leave the ref reading a stale value on the first few ticks
@@ -91,7 +88,6 @@ export function useNavigationSession(
     const handle = (loc: LocationUpdate) => {
       const here: LatLng = { lat: loc.lat, lng: loc.lng };
       setLiveLocation(here);
-      setLiveSpeedKmh(loc.speed);
       const next = session.update(here);
       setTick(next);
 
@@ -107,12 +103,7 @@ export function useNavigationSession(
     };
   }, [session, trackLocation]);
 
-  const totalDistanceM = useMemo(() => {
-    if (maneuvers.length === 0) return 0;
-    return maneuvers[maneuvers.length - 1].distanceFromStartM;
-  }, [maneuvers]);
-
-  return { tick, maneuvers, liveLocation, liveSpeedKmh, totalDistanceM };
+  return { tick, maneuvers, liveLocation };
 }
 
 function handleAnnouncement(ann: NavAnnouncement, voiceEnabled: boolean): void {
