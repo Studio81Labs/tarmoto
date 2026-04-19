@@ -7,7 +7,6 @@ import {
   QUALITY_CONFIG,
   formatDistance,
   formatRelativeTime,
-  scoreToTier,
 } from "@/lib/utils";
 import {
   buildSparklinePath,
@@ -16,6 +15,7 @@ import {
   segmentHazardSeverity,
 } from "@/lib/segment-preview";
 import { HAZARD_CONFIG } from "@/lib/utils";
+import { SegmentTrendChart } from "@/components/SegmentTrendChart";
 
 const SEVERITY_COLOR: Record<"none" | "low" | "medium" | "high", string> = {
   none: "text-slate-500",
@@ -51,10 +51,6 @@ export function RoadPreviewCard({
     () => buildSparklinePath(segment.elevationProfile, 240, 40),
     [segment.elevationProfile],
   );
-  const trendPath = useMemo(() => {
-    const scores = (segment.qualityHistory ?? []).map((p) => p.score);
-    return buildSparklinePath(scores, 240, 40);
-  }, [segment.qualityHistory]);
 
   const detailId = useId();
   const severityLabel = severity === "none" ? "No hazards" : `${severity} risk`;
@@ -202,34 +198,14 @@ export function RoadPreviewCard({
 
           {segment.qualityHistory && segment.qualityHistory.length > 1 && (
             <div>
-              <p className="text-[11px] uppercase tracking-wider text-slate-500 mb-1">
+              <p className="text-[11px] uppercase tracking-wider text-slate-500 mb-2">
                 Quality trend
               </p>
-              <svg
-                viewBox="0 0 240 40"
-                preserveAspectRatio="none"
-                aria-hidden="true"
-                className={`w-full h-10 ${scoreToTier(segment.qualityScore) === "very-poor" ? "text-quality-very-poor" : tier.color}`}
-              >
-                <path
-                  d={trendPath}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  vectorEffect="non-scaling-stroke"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              <div className="flex justify-between text-[10px] text-slate-500 mt-1">
-                <span>{segment.qualityHistory[0]!.date}</span>
-                <span>
-                  {
-                    segment.qualityHistory[segment.qualityHistory.length - 1]!
-                      .date
-                  }
-                </span>
-              </div>
+              <SegmentTrendChart
+                segmentId={segment.id}
+                history={segment.qualityHistory}
+                regionalHistory={segment.regionalQualityHistory}
+              />
             </div>
           )}
 

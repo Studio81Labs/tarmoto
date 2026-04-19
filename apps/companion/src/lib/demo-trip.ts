@@ -81,9 +81,21 @@ export const DEMO_TRIP: Trip = {
           ],
           activeHazards: [],
           qualityHistory: [
-            { date: "2025-11-01", score: 3.8 },
-            { date: "2026-01-15", score: 4.0 },
+            { date: "2025-05-15", score: 3.4 },
+            { date: "2025-07-20", score: 3.3 },
+            { date: "2025-09-10", score: 3.2 },
+            { date: "2025-11-01", score: 3.0 },
+            { date: "2025-12-05", score: 2.9 },
+            // Repair work in late January — quality jumps a full tier.
+            { date: "2026-02-12", score: 4.1 },
             { date: "2026-03-20", score: 4.3 },
+          ],
+          regionalQualityHistory: [
+            { date: "2025-05-15", score: 3.5 },
+            { date: "2025-09-10", score: 3.4 },
+            { date: "2025-12-05", score: 3.3 },
+            { date: "2026-02-12", score: 3.4 },
+            { date: "2026-03-20", score: 3.5 },
           ],
         },
         {
@@ -121,9 +133,16 @@ export const DEMO_TRIP: Trip = {
             },
           ],
           qualityHistory: [
+            { date: "2025-07-20", score: 3.5 },
+            { date: "2025-09-10", score: 3.5 },
             { date: "2025-11-01", score: 3.4 },
             { date: "2026-01-15", score: 3.6 },
             { date: "2026-03-20", score: 3.7 },
+          ],
+          regionalQualityHistory: [
+            { date: "2025-07-20", score: 3.5 },
+            { date: "2025-11-01", score: 3.4 },
+            { date: "2026-03-20", score: 3.5 },
           ],
         },
         {
@@ -164,9 +183,22 @@ export const DEMO_TRIP: Trip = {
             },
           ],
           qualityHistory: [
+            { date: "2025-05-15", score: 3.7 },
+            { date: "2025-07-20", score: 3.6 },
+            { date: "2025-09-10", score: 3.4 },
+            // Winter damage — steady decline crossing into deterioration
+            // threshold between Sept and Nov.
             { date: "2025-11-01", score: 3.2 },
             { date: "2026-01-15", score: 3.0 },
-            { date: "2026-03-20", score: 2.8 },
+            { date: "2026-02-20", score: 2.5 },
+            { date: "2026-03-20", score: 2.4 },
+          ],
+          regionalQualityHistory: [
+            { date: "2025-05-15", score: 3.6 },
+            { date: "2025-09-10", score: 3.5 },
+            { date: "2025-11-01", score: 3.3 },
+            { date: "2026-01-15", score: 3.2 },
+            { date: "2026-03-20", score: 3.3 },
           ],
         },
       ],

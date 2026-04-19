@@ -137,6 +137,13 @@ export interface RoutePreviewSegment {
   photos: SegmentPhoto[];
   activeHazards: Hazard[];
   qualityHistory?: { date: string; score: number }[];
+  /**
+   * Regional average quality score sampled over time, used by the quality
+   * trend graph (US-45) to contextualise this segment's history against the
+   * surrounding area. Dates don't need to align with `qualityHistory`; the
+   * chart interpolates at render time.
+   */
+  regionalQualityHistory?: { date: string; score: number }[];
   bounds?: [[number, number], [number, number]];
 }
 
