@@ -309,7 +309,10 @@ function AccommodationsCard({ day }: { day: TripDay }) {
   // vertex); if neither is known, the card hides itself.
   const anchor = useMemo(() => pickDayEndAnchor(day), [day]);
   const [items, setItems] = useState<Accommodation[] | null>(null);
-  const [loading, setLoading] = useState(false);
+  // Start in the loading state whenever there is an anchor to fetch for,
+  // so the first paint shows the spinner instead of flashing the empty
+  // state before the effect has a chance to run.
+  const [loading, setLoading] = useState(!!anchor);
   const [error, setError] = useState<string | null>(null);
   const [radiusKm, setRadiusKm] = useState<number | null>(null);
 
