@@ -29,6 +29,7 @@ import type {
   MountainPass,
   CheckRouteForPassesResponse,
   SensorReading,
+  AccommodationList,
 } from "@/types";
 import {
   drainOfflineQueue,
@@ -414,6 +415,22 @@ class ApiService {
     const { data } = await this.client.post<CheckRouteForPassesResponse>(
       "/passes/check-route",
       { route, buffer_m: bufferM },
+    );
+    return data;
+  }
+
+  // ── POI / Accommodations (US-10) ──
+
+  async listAccommodations(
+    lat: number,
+    lng: number,
+    radiusKm?: number,
+  ): Promise<AccommodationList> {
+    const { data } = await this.client.get<AccommodationList>(
+      "/poi/accommodations",
+      {
+        params: { lat, lng, radius_km: radiusKm },
+      },
     );
     return data;
   }

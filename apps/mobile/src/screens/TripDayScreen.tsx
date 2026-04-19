@@ -7,9 +7,10 @@
  * follow the generator's proposal as-is.
  */
 
-import React, { ComponentProps, useEffect, useState } from "react";
+import React, { ComponentProps, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -30,13 +31,21 @@ import {
 } from "@/theme";
 import { api } from "@/services/api";
 import { usePreferencesStore, useTripStore } from "@/stores";
-import type { Trip, TripDay, Waypoint } from "@/types";
+import type {
+  Accommodation,
+  AccommodationKind,
+  Trip,
+  TripDay,
+  Waypoint,
+} from "@/types";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
 import {
   WAYPOINT_ICONS,
   formatDurationMin,
   formatKm,
   formatWaypointType,
+  isLastDay,
+  pickDayEndAnchor,
   summarizeFuelRange,
   summarizeWaypoints,
   type FuelLeg,
@@ -182,6 +191,10 @@ export default function TripDayScreen() {
         />
       ) : null}
 
+      {!isLastDay(trip.days, day.day_number) ? (
+        <AccommodationsCard day={day} />
+      ) : null}
+
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Route</Text>
         {day.waypoints.length === 0 ? (
@@ -266,6 +279,141 @@ function FuelRangeWarning({
         </View>
       ))}
     </View>
+  );
+}
+
+const ACCOMMODATION_KIND_LABELS: Record<AccommodationKind, string> = {
+  hotel: "Hotel",
+  motel: "Motel",
+  hostel: "Hostel",
+  guest_house: "Guest house",
+  apartment: "Apartment",
+  chalet: "Chalet",
+  camp_site: "Camp site",
+};
+
+const ACCOMMODATION_KIND_ICONS: Record<AccommodationKind, IconName> = {
+  hotel: "bed",
+  motel: "bed-outline",
+  hostel: "account-group-outline",
+  guest_house: "home-outline",
+  apartment: "domain",
+  chalet: "home-roof",
+  camp_site: "tent",
+};
+
+function AccommodationsCard({ day }: { day: TripDay }) {
+  // US-10: suggest overnight stops near each day-end waypoint so planners
+  // don't have to jump out to a hotel search app mid-plan. Anchor is the
+  // day's end point (last waypoint, falling back to the last geometry
+  // vertex); if neither is known, the card hides itself.
+  const anchor = useMemo(() => pickDayEndAnchor(day), [day]);
+  const [items, setItems] = useState<Accommodation[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [radiusKm, setRadiusKm] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!anchor) return;
+    let ignore = false;
+    setLoading(true);
+    setError(null);
+    (async () => {
+      try {
+        const res = await api.listAccommodations(anchor.lat, anchor.lng);
+        if (ignore) return;
+        setItems(res.accommodations);
+        setRadiusKm(res.radius_km);
+      } catch (e) {
+        if (ignore) return;
+        setError(e instanceof Error ? e.message : "Couldn't load nearby stays");
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    })();
+    return () => {
+      ignore = true;
+    };
+  }, [anchor?.lat, anchor?.lng]);
+
+  if (!anchor) return null;
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.accommodationsHeader}>
+        <Icon name="bed-outline" size={20} color={colors.primary} />
+        <Text style={styles.sectionTitle}>Stays near day end</Text>
+        {radiusKm !== null && items && items.length > 0 ? (
+          <Text style={styles.accommodationsRadius}>
+            within {Math.round(radiusKm)} km
+          </Text>
+        ) : null}
+      </View>
+
+      {loading ? (
+        <View style={styles.accommodationsEmpty}>
+          <ActivityIndicator size="small" color={colors.primary} />
+        </View>
+      ) : error ? (
+        <Text style={styles.accommodationsEmptyBody}>{error}</Text>
+      ) : !items || items.length === 0 ? (
+        <Text style={styles.accommodationsEmptyBody}>
+          No accommodations found near the end of this day. Try expanding the
+          day or adjusting the end point.
+        </Text>
+      ) : (
+        items.map((a) => <AccommodationRow key={a.external_id} item={a} />)
+      )}
+    </View>
+  );
+}
+
+function AccommodationRow({ item }: { item: Accommodation }) {
+  const label = item.name?.trim() || ACCOMMODATION_KIND_LABELS[item.kind];
+  const icon = ACCOMMODATION_KIND_ICONS[item.kind];
+  const metaParts = [
+    ACCOMMODATION_KIND_LABELS[item.kind],
+    `${item.distance_km.toFixed(1)} km`,
+  ];
+  if (item.stars) metaParts.push("★".repeat(item.stars));
+
+  const openExternal = () => {
+    const url = item.website
+      ? item.website
+      : item.phone
+        ? `tel:${item.phone.replace(/\s+/g, "")}`
+        : `https://www.openstreetmap.org/?mlat=${item.lat}&mlon=${item.lng}#map=17/${item.lat}/${item.lng}`;
+    void Linking.openURL(url).catch(() => {
+      // Swallow — Linking throws on simulators without the target app.
+      // Nothing useful to surface to the user beyond the row going inert.
+    });
+  };
+
+  return (
+    <TouchableOpacity
+      style={styles.accommodationRow}
+      onPress={openExternal}
+      accessibilityRole="button"
+      accessibilityLabel={`${label}, ${item.distance_km.toFixed(1)} kilometres away`}
+    >
+      <View style={styles.accommodationIconWrap}>
+        <Icon name={icon} size={18} color={colors.primary} />
+      </View>
+      <View style={styles.accommodationBody}>
+        <Text style={styles.accommodationName} numberOfLines={1}>
+          {label}
+        </Text>
+        <Text style={styles.accommodationMeta} numberOfLines={1}>
+          {metaParts.join(" · ")}
+        </Text>
+      </View>
+      <Icon
+        name="open-in-new"
+        size={16}
+        color={colors.textTertiary}
+        style={styles.accommodationChevron}
+      />
+    </TouchableOpacity>
   );
 }
 
@@ -657,5 +805,55 @@ const styles = StyleSheet.create({
   },
   fuelLegDistanceOver: {
     color: colors.warning,
+  },
+  accommodationsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  accommodationsRadius: {
+    marginLeft: "auto",
+    color: colors.textTertiary,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
+  },
+  accommodationsEmpty: {
+    paddingVertical: spacing.md,
+    alignItems: "center",
+  },
+  accommodationsEmptyBody: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
+    lineHeight: 20,
+  },
+  accommodationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  accommodationIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.primaryAlpha15,
+  },
+  accommodationBody: {
+    flex: 1,
+    gap: 2,
+  },
+  accommodationName: {
+    color: colors.textPrimary,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.semibold,
+  },
+  accommodationMeta: {
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+  },
+  accommodationChevron: {
+    marginLeft: spacing.xs,
   },
 });

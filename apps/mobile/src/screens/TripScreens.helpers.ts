@@ -266,6 +266,41 @@ export function summarizeFuelRange(
 }
 
 /**
+ * Pick the anchor point a day's accommodation suggestions should orbit
+ * around (US-10). Riders need somewhere to sleep at the end of the day,
+ * so we prefer the last waypoint by sequence — typically a "hotel" or
+ * "end" marker produced by the trip generator. If that's missing, fall
+ * back to the last vertex of the route geometry; if neither exists,
+ * return `null` so the UI can hide the card entirely.
+ */
+export function pickDayEndAnchor(day: TripDay): LatLng | null {
+  if (day.waypoints.length > 0) {
+    const sorted = [...day.waypoints].sort((a, b) => a.sequence - b.sequence);
+    const last = sorted[sorted.length - 1];
+    if (last) return { lat: last.lat, lng: last.lng };
+  }
+  const geom = day.route_geometry;
+  if (Array.isArray(geom) && geom.length > 0) {
+    return geom[geom.length - 1];
+  }
+  return null;
+}
+
+/**
+ * Whether a given day is the final day of a trip. The accommodation
+ * suggestions card is hidden on the last day since the rider is expected
+ * to be returning home, not looking for another bed.
+ */
+export function isLastDay(days: TripDay[], dayNumber: number): boolean {
+  if (days.length === 0) return false;
+  const max = days.reduce(
+    (m, d) => (d.day_number > m ? d.day_number : m),
+    days[0].day_number,
+  );
+  return dayNumber === max;
+}
+
+/**
  * Build a coarse bounding box around a start point for the generator API.
  * The backend refines this based on the number of days, but it needs *some*
  * envelope so the initial solver doesn't grind over the entire continent.

@@ -23,6 +23,7 @@ import { BadgesModule } from './modules/badges/index.js';
 import { ChallengesModule } from './modules/challenges/index.js';
 import { ExplorationModule } from './modules/exploration/index.js';
 import { PassesModule } from './modules/passes/index.js';
+import { PoiModule } from './modules/poi/index.js';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { PassesModule } from './modules/passes/index.js';
     ChallengesModule,
     ExplorationModule,
     PassesModule,
+    PoiModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
