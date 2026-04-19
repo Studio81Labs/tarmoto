@@ -28,6 +28,7 @@ import CommuteScreen from "@/screens/CommuteScreen";
 import RideDetailScreen from "@/screens/RideDetailScreen";
 import SettingsScreen from "@/screens/SettingsScreen";
 import JoinTripScreen from "@/screens/JoinTripScreen";
+import OfflineRegionsScreen from "@/screens/OfflineRegionsScreen";
 
 // ── Type definitions ──
 
@@ -68,6 +69,7 @@ export type TripsStackParamList = {
 export type ProfileStackParamList = {
   Profile: undefined;
   Settings: undefined;
+  OfflineRegions: undefined;
 };
 
 // ── Navigators ──
@@ -189,6 +191,11 @@ function ProfileNavigator() {
         options={{ headerShown: false }}
       />
       <ProfileStack.Screen name="Settings" component={SettingsScreen} />
+      <ProfileStack.Screen
+        name="OfflineRegions"
+        component={OfflineRegionsScreen}
+        options={{ title: "Offline maps" }}
+      />
     </ProfileStack.Navigator>
   );
 }

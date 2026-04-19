@@ -8,6 +8,8 @@ import {
   View,
 } from "react-native";
 import Icon from "@react-native-vector-icons/material-design-icons";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
   borderRadius,
   colors,
@@ -18,8 +20,11 @@ import {
 } from "@/theme";
 import QualityThresholdSlider from "@/components/QualityThresholdSlider";
 import FuelRangePicker from "@/components/FuelRangePicker";
-import { usePreferencesStore } from "@/stores";
+import { usePreferencesStore, useOfflineStore } from "@/stores";
 import { usePendingUploads } from "@/hooks";
+import type { ProfileStackParamList } from "@/navigation/RootNavigator";
+
+type SettingsNav = NativeStackNavigationProp<ProfileStackParamList, "Settings">;
 
 export default function SettingsScreen() {
   const minQuality = usePreferencesStore((s) => s.minQuality);
@@ -61,8 +66,53 @@ export default function SettingsScreen() {
         />
       </View>
 
+      <OfflineRegionsCard />
+
       <PendingUploadsCard />
     </ScrollView>
+  );
+}
+
+// US-18 AC #1: surface the offline region manager from Settings. Keeping
+// it here (vs a standalone tab) mirrors how iOS/Android apps expose
+// "offline content" — Settings is where riders look for storage-shaped
+// features. The screen itself lives at ProfileStack/OfflineRegions.
+function OfflineRegionsCard() {
+  const navigation = useNavigation<SettingsNav>();
+  const regions = useOfflineStore((s) => s.regions);
+  const downloading = regions.filter((r) => r.status === "downloading").length;
+  const ready = regions.filter((r) => r.status === "complete").length;
+
+  const summary =
+    regions.length === 0
+      ? "Save map areas so the road-quality overlay keeps working without cell service."
+      : downloading > 0
+        ? `${downloading} region${downloading === 1 ? "" : "s"} downloading now.`
+        : `${ready} of ${regions.length} region${regions.length === 1 ? "" : "s"} ready offline.`;
+
+  return (
+    <TouchableOpacity
+      style={styles.card}
+      onPress={() => navigation.navigate("OfflineRegions")}
+      accessibilityRole="button"
+      accessibilityLabel="Manage offline map regions"
+    >
+      <View style={styles.uploadsHeader}>
+        <Icon
+          name="map-outline"
+          size={22}
+          color={downloading > 0 ? colors.primary : colors.textPrimary}
+        />
+        <Text style={styles.sectionTitle}>Offline maps</Text>
+        <Icon
+          name="chevron-right"
+          size={20}
+          color={colors.textTertiary}
+          style={styles.chevron}
+        />
+      </View>
+      <Text style={styles.sectionBody}>{summary}</Text>
+    </TouchableOpacity>
   );
 }
 
@@ -152,6 +202,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
+  },
+  chevron: {
+    marginLeft: "auto",
   },
   retryBtn: {
     alignSelf: "flex-start",

@@ -17,6 +17,11 @@ import type {
 } from "@/types";
 import type { ClassificationResult, WindowFeatures } from "@/services/sensors";
 import type { LocationUpdate } from "@/services/location";
+import type {
+  OfflineRegion,
+  OfflineRegionSpec,
+  RegionStatus,
+} from "@/services/offlineRegions";
 import {
   DEFAULT_FUEL_RANGE_KM,
   MIN_QUALITY_BOUNDS,
@@ -411,4 +416,248 @@ export function diffNewHazards(
   lastSeen: Set<string>,
 ): string[] {
   return currentHazardIds.filter((id) => !lastSeen.has(id));
+}
+
+// ── Offline Regions Store ──
+// US-18 AC #1: "Download map regions for offline use". Keeps a durable list
+// of regions the rider has asked to cache so the UI can show progress,
+// retry failed tiles, and delete regions to reclaim space. Tile bytes
+// themselves live under `DocumentDirectoryPath/offline-tiles/<id>/…` and
+// are managed by `services/offlineRegions.ts` — this store only tracks
+// metadata (spec + progress).
+
+const OFFLINE_STORAGE_ID = "tarmoto-offline-regions";
+const OFFLINE_REGIONS_KEY = "regions";
+
+interface OfflineStorage {
+  getString(key: string): string | undefined;
+  set(key: string, value: string): void;
+  remove(key: string): void;
+}
+
+function createOfflineStorage(): OfflineStorage {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { createMMKV } =
+      require("react-native-mmkv") as typeof import("react-native-mmkv");
+    const mmkv = createMMKV({ id: OFFLINE_STORAGE_ID });
+    return {
+      getString: (key) => mmkv.getString(key),
+      set: (key, value) => mmkv.set(key, value),
+      remove: (key) => {
+        mmkv.remove(key);
+      },
+    };
+  } catch {
+    const memory = new Map<string, string>();
+    return {
+      getString: (key) => memory.get(key),
+      set: (key, value) => {
+        memory.set(key, value);
+      },
+      remove: (key) => {
+        memory.delete(key);
+      },
+    };
+  }
+}
+
+const offlineStorage = createOfflineStorage();
+
+function loadPersistedRegions(): OfflineRegion[] {
+  const raw = offlineStorage.getString(OFFLINE_REGIONS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    // A crashed write shouldn't brick the app on next launch. Everything
+    // that fails the shape check gets dropped silently — the rider can
+    // re-add the region; we never pretend a broken one is downloadable.
+    return parsed.filter(isOfflineRegion).map((r) => ({
+      // Any region that was in a transient state when the app died is
+      // stuck there forever otherwise. "downloading" obviously needs to
+      // flip out — no loop is running — but "pending" is equally bad:
+      // if the app crashed between `addRegion` (persists pending) and
+      // `beginDownload`, the rider would see a region with no Retry
+      // affordance (Retry is only shown for failed/cancelled). Clamp
+      // both to "failed" so there's always a way forward.
+      ...r,
+      status:
+        r.status === "downloading" || r.status === "pending"
+          ? ("failed" as RegionStatus)
+          : r.status,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function isOfflineRegion(value: unknown): value is OfflineRegion {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Partial<OfflineRegion>;
+  return (
+    typeof v.id === "string" &&
+    typeof v.name === "string" &&
+    typeof v.minZoom === "number" &&
+    typeof v.maxZoom === "number" &&
+    typeof v.status === "string" &&
+    typeof v.totalTiles === "number" &&
+    typeof v.downloadedTiles === "number" &&
+    typeof v.bbox === "object" &&
+    v.bbox !== null
+  );
+}
+
+function persistRegions(regions: OfflineRegion[]): void {
+  if (regions.length === 0) {
+    offlineStorage.remove(OFFLINE_REGIONS_KEY);
+  } else {
+    offlineStorage.set(OFFLINE_REGIONS_KEY, JSON.stringify(regions));
+  }
+}
+
+interface OfflineState {
+  regions: OfflineRegion[];
+  /** Register a new region; initial state is "pending" until download starts. */
+  addRegion: (spec: OfflineRegionSpec, totalTiles: number) => OfflineRegion;
+  /** Mark the region as actively downloading. */
+  beginDownload: (regionId: string) => void;
+  /** Merge a progress tick into the region. Idempotent on duplicate reports. */
+  updateProgress: (
+    regionId: string,
+    patch: {
+      downloaded: number;
+      failed: number;
+      bytesOnDisk: number;
+    },
+  ) => void;
+  /** Terminal state transition at the end of a download/retry. */
+  finishDownload: (
+    regionId: string,
+    outcome: {
+      status: Exclude<RegionStatus, "pending" | "downloading">;
+      downloaded: number;
+      failed: number;
+      bytesOnDisk: number;
+      error: string | null;
+    },
+  ) => void;
+  /** Drop the region from state. Caller is responsible for FS cleanup. */
+  removeRegion: (regionId: string) => void;
+  /** Convenience selector used by screens and tests. */
+  getRegion: (regionId: string) => OfflineRegion | undefined;
+  /** Wipe all offline regions — used when the rider clears offline storage. */
+  clearAll: () => void;
+}
+
+export const useOfflineStore = create<OfflineState>((set, get) => ({
+  regions: loadPersistedRegions(),
+
+  addRegion: (spec, totalTiles) => {
+    // `lastUpdatedAt` is intentionally `null` on first add — it only
+    // advances when real tile writes land, so the UI can tell "just
+    // registered" from "download finished just now".
+    const region: OfflineRegion = {
+      ...spec,
+      status: "pending",
+      totalTiles,
+      downloadedTiles: 0,
+      failedTiles: 0,
+      bytesOnDisk: 0,
+      lastError: null,
+      lastUpdatedAt: null,
+    };
+    set((s) => {
+      // Replace any existing region with the same id — addRegion acts as
+      // upsert so a retry from the "add" path (e.g. tapping "save current
+      // area" twice on the same bounds) resets the counters instead of
+      // stacking two entries pointing at the same on-disk tree.
+      const without = s.regions.filter((r) => r.id !== region.id);
+      const next = [...without, region];
+      persistRegions(next);
+      return { regions: next };
+    });
+    return region;
+  },
+
+  beginDownload: (regionId) => {
+    set((s) => {
+      const next = s.regions.map((r) =>
+        r.id === regionId
+          ? { ...r, status: "downloading" as RegionStatus, lastError: null }
+          : r,
+      );
+      persistRegions(next);
+      return { regions: next };
+    });
+  },
+
+  updateProgress: (regionId, patch) => {
+    // Intentionally does NOT persist. `onProgress` fires once per tile and a
+    // region can hold up to MAX_TILES_PER_REGION (5000); serialising the
+    // whole regions array to MMKV on every tick would burn ~5000 JSON
+    // writes per download and choke the UI with re-renders. In-memory state
+    // carries the live progress bar; durable state is refreshed on
+    // `beginDownload` and `finishDownload` only. Crash recovery is safe:
+    // `loadPersistedRegions` clamps any region left in "downloading" (or
+    // "pending") to "failed" so the rider always sees a Retry affordance,
+    // and the resume path re-uses tiles already on disk via `tileExists`.
+    set((s) => ({
+      regions: s.regions.map((r) => {
+        if (r.id !== regionId) return r;
+        return {
+          ...r,
+          downloadedTiles: patch.downloaded,
+          failedTiles: patch.failed,
+          bytesOnDisk: patch.bytesOnDisk,
+          lastUpdatedAt: Date.now(),
+        };
+      }),
+    }));
+  },
+
+  finishDownload: (regionId, outcome) => {
+    set((s) => {
+      const next = s.regions.map((r) => {
+        if (r.id !== regionId) return r;
+        return {
+          ...r,
+          status: outcome.status,
+          downloadedTiles: outcome.downloaded,
+          failedTiles: outcome.failed,
+          bytesOnDisk: outcome.bytesOnDisk,
+          lastError: outcome.error,
+          lastUpdatedAt: Date.now(),
+        };
+      });
+      persistRegions(next);
+      return { regions: next };
+    });
+  },
+
+  removeRegion: (regionId) => {
+    set((s) => {
+      const next = s.regions.filter((r) => r.id !== regionId);
+      persistRegions(next);
+      return { regions: next };
+    });
+  },
+
+  getRegion: (regionId) => get().regions.find((r) => r.id === regionId),
+
+  clearAll: () => {
+    persistRegions([]);
+    set({ regions: [] });
+  },
+}));
+
+/**
+ * Derive a 0-1 progress ratio for a region. Returns 1 when the tile count
+ * is 0 (degenerate region) so the UI bar doesn't get stuck at 0 — the
+ * download job will fail-fast on an empty spec anyway.
+ */
+export function regionProgress(region: OfflineRegion): number {
+  if (region.totalTiles <= 0) return 1;
+  const done = region.downloadedTiles + region.failedTiles;
+  return Math.max(0, Math.min(1, done / region.totalTiles));
 }
