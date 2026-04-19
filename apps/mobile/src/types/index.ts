@@ -301,6 +301,28 @@ export interface AccommodationList {
   radius_km: number;
 }
 
+// ── Along-route POIs (US-10) ──
+
+export type PoiKind = "restaurant" | "viewpoint" | "cafe";
+
+export interface Poi {
+  external_id: string;
+  name: string | null;
+  kind: PoiKind;
+  lat: number;
+  lng: number;
+  distance_km: number;
+  website: string | null;
+  phone: string | null;
+  hint: string | null;
+}
+
+export interface PoiList {
+  pois: Poi[];
+  radius_km: number;
+  kinds: PoiKind[];
+}
+
 // ── Mountain Passes (US-11) ──
 
 export type PassStatus = "open" | "closed" | "unknown";

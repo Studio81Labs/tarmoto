@@ -30,6 +30,8 @@ import type {
   CheckRouteForPassesResponse,
   SensorReading,
   AccommodationList,
+  PoiKind,
+  PoiList,
 } from "@/types";
 import {
   drainOfflineQueue,
@@ -432,6 +434,24 @@ class ApiService {
         params: { lat, lng, radius_km: radiusKm },
       },
     );
+    return data;
+  }
+
+  async listPois(
+    lat: number,
+    lng: number,
+    options: { radiusKm?: number; kinds?: PoiKind[] } = {},
+  ): Promise<PoiList> {
+    const { data } = await this.client.get<PoiList>("/poi/nearby", {
+      params: {
+        lat,
+        lng,
+        radius_km: options.radiusKm,
+        // Send kinds as a comma-separated list; the backend DTO
+        // accepts both that form and repeated params.
+        kinds: options.kinds?.length ? options.kinds.join(",") : undefined,
+      },
+    });
     return data;
   }
 

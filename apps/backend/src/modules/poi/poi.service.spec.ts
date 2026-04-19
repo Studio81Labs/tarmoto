@@ -5,7 +5,9 @@ import {
   POI_PROVIDER,
   type PoiProvider,
   type AccommodationPoi,
+  type PointOfInterest,
 } from './poi-provider.interface.js';
+import type { PoiKind } from './dto/point-of-interest.dto.js';
 
 describe('PoiService', () => {
   let service: PoiService;
@@ -27,9 +29,24 @@ describe('PoiService', () => {
     ...over,
   });
 
+  const buildNearbyPoi = (
+    over: Partial<PointOfInterest> = {},
+  ): PointOfInterest => ({
+    external_id: 'osm:node:1',
+    name: 'Placeholder',
+    kind: 'restaurant',
+    lat: anchor.lat + 0.01,
+    lng: anchor.lng + 0.01,
+    website: null,
+    phone: null,
+    hint: null,
+    ...over,
+  });
+
   beforeEach(async () => {
     provider = {
       findAccommodations: jest.fn(),
+      findPointsOfInterest: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -198,6 +215,194 @@ describe('PoiService', () => {
 
       const distance = result[0].distance_km;
       expect(distance).toBeCloseTo(Math.round(distance * 10) / 10);
+    });
+  });
+
+  describe('findPointsOfInterestNear', () => {
+    it('defaults radius + kinds when neither is supplied', async () => {
+      provider.findPointsOfInterest.mockResolvedValue([]);
+
+      const result = await service.findPointsOfInterestNear(
+        anchor.lat,
+        anchor.lng,
+      );
+
+      expect(provider.findPointsOfInterest).toHaveBeenCalledWith(
+        anchor.lat,
+        anchor.lng,
+        5,
+        expect.arrayContaining<PoiKind>(['restaurant', 'viewpoint', 'cafe']),
+      );
+      expect(result.radius_km).toBe(5);
+      expect(result.kinds).toEqual(
+        expect.arrayContaining<PoiKind>(['restaurant', 'viewpoint', 'cafe']),
+      );
+      expect(result.pois).toEqual([]);
+    });
+
+    it('respects an explicit kinds filter', async () => {
+      provider.findPointsOfInterest.mockResolvedValue([]);
+
+      await service.findPointsOfInterestNear(anchor.lat, anchor.lng, 7, [
+        'viewpoint',
+      ]);
+
+      expect(provider.findPointsOfInterest).toHaveBeenCalledWith(
+        anchor.lat,
+        anchor.lng,
+        7,
+        ['viewpoint'],
+      );
+    });
+
+    it('caps radius at 25 km', async () => {
+      provider.findPointsOfInterest.mockResolvedValue([]);
+
+      const result = await service.findPointsOfInterestNear(
+        anchor.lat,
+        anchor.lng,
+        500,
+      );
+
+      expect(provider.findPointsOfInterest).toHaveBeenCalledWith(
+        anchor.lat,
+        anchor.lng,
+        25,
+        expect.any(Array),
+      );
+      expect(result.radius_km).toBe(25);
+    });
+
+    it('returns an empty list when the provider throws', async () => {
+      provider.findPointsOfInterest.mockRejectedValue(
+        new Error('overpass down'),
+      );
+
+      const result = await service.findPointsOfInterestNear(
+        anchor.lat,
+        anchor.lng,
+      );
+
+      expect(result.pois).toEqual([]);
+      expect(result.radius_km).toBe(5);
+    });
+
+    it('drops kinds that were not requested', async () => {
+      provider.findPointsOfInterest.mockResolvedValue([
+        buildNearbyPoi({
+          external_id: 'osm:node:rest',
+          kind: 'restaurant',
+          name: 'Trattoria',
+        }),
+        buildNearbyPoi({
+          external_id: 'osm:node:view',
+          kind: 'viewpoint',
+          name: 'Cliff top',
+        }),
+      ]);
+
+      const result = await service.findPointsOfInterestNear(
+        anchor.lat,
+        anchor.lng,
+        5,
+        ['viewpoint'],
+      );
+
+      expect(result.pois.map((p) => p.external_id)).toEqual(['osm:node:view']);
+    });
+  });
+
+  describe('rankPois', () => {
+    const allKinds: PoiKind[] = ['restaurant', 'viewpoint', 'cafe'];
+
+    it('drops unnamed POIs with no website or phone', () => {
+      const result = service.rankPois(
+        [
+          buildNearbyPoi({ external_id: 'osm:node:nameless', name: null }),
+          buildNearbyPoi({
+            external_id: 'osm:node:named',
+            name: 'Named restaurant',
+          }),
+        ],
+        anchor.lat,
+        anchor.lng,
+        allKinds,
+      );
+
+      expect(result.map((r) => r.external_id)).toEqual(['osm:node:named']);
+    });
+
+    it('keeps unnamed POIs if they have a contact channel', () => {
+      const result = service.rankPois(
+        [
+          buildNearbyPoi({
+            external_id: 'osm:node:phone',
+            name: null,
+            phone: '+420 555 000 111',
+          }),
+        ],
+        anchor.lat,
+        anchor.lng,
+        allKinds,
+      );
+
+      expect(result.map((r) => r.external_id)).toEqual(['osm:node:phone']);
+    });
+
+    it('caps results per-kind so one kind cannot squeeze out others', () => {
+      const many: PointOfInterest[] = [];
+      // Ten restaurants (well above the per-kind cap of 6) …
+      for (let i = 0; i < 10; i++) {
+        many.push(
+          buildNearbyPoi({
+            external_id: `osm:node:r${i}`,
+            kind: 'restaurant',
+            name: `Restaurant ${i}`,
+            lat: anchor.lat + i * 0.0001,
+          }),
+        );
+      }
+      // … and one far-away viewpoint.
+      many.push(
+        buildNearbyPoi({
+          external_id: 'osm:node:view',
+          kind: 'viewpoint',
+          name: 'Far viewpoint',
+          lat: anchor.lat + 0.02,
+        }),
+      );
+
+      const result = service.rankPois(many, anchor.lat, anchor.lng, allKinds);
+
+      const restaurants = result.filter((p) => p.kind === 'restaurant');
+      const viewpoints = result.filter((p) => p.kind === 'viewpoint');
+      expect(restaurants.length).toBeLessThanOrEqual(6);
+      expect(viewpoints.map((v) => v.external_id)).toEqual(['osm:node:view']);
+    });
+
+    it('final order is closest-first across kinds', () => {
+      const result = service.rankPois(
+        [
+          buildNearbyPoi({
+            external_id: 'osm:node:far',
+            kind: 'restaurant',
+            name: 'Far',
+            lat: anchor.lat + 0.05,
+          }),
+          buildNearbyPoi({
+            external_id: 'osm:node:close',
+            kind: 'viewpoint',
+            name: 'Close',
+            lat: anchor.lat + 0.001,
+          }),
+        ],
+        anchor.lat,
+        anchor.lng,
+        allKinds,
+      );
+
+      expect(result[0].external_id).toBe('osm:node:close');
+      expect(result[0].distance_km).toBeLessThan(result[1].distance_km);
     });
   });
 });
