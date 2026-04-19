@@ -18,6 +18,7 @@ import {
   Pencil,
   Inbox,
   X,
+  ChevronDown,
 } from "lucide-react";
 import { tripsApi } from "@/lib/api";
 import { useTripStore } from "@/stores/trip";
@@ -349,6 +350,18 @@ export default function TripListPage() {
             </div>
           )}
 
+          <MobileFolderBar
+            folders={folders}
+            scope={filters.folderScope}
+            unfiledCount={unfiledCount}
+            totalCount={trips.length}
+            tripsPerFolder={tripsPerFolder}
+            onSelect={(next) => setFilters({ ...filters, folderScope: next })}
+            onNew={() => setFolderModal({ mode: "create" })}
+            onRename={(folder) => setFolderModal({ mode: "rename", folder })}
+            onDelete={handleDeleteFolder}
+          />
+
           <TripToolbar
             filters={filters}
             statusCounts={statusCounts}
@@ -449,6 +462,34 @@ function FolderNav({
 }: FolderNavProps) {
   return (
     <aside className="hidden md:flex w-56 shrink-0 flex-col border-r border-slate-800 bg-slate-950/60 px-3 py-5">
+      <FolderNavContent
+        folders={folders}
+        scope={scope}
+        unfiledCount={unfiledCount}
+        totalCount={totalCount}
+        tripsPerFolder={tripsPerFolder}
+        onSelect={onSelect}
+        onNew={onNew}
+        onRename={onRename}
+        onDelete={onDelete}
+      />
+    </aside>
+  );
+}
+
+function FolderNavContent({
+  folders,
+  scope,
+  unfiledCount,
+  totalCount,
+  tripsPerFolder,
+  onSelect,
+  onNew,
+  onRename,
+  onDelete,
+}: FolderNavProps) {
+  return (
+    <>
       <div className="flex items-center justify-between mb-3 px-2">
         <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
           Folders
@@ -496,7 +537,61 @@ function FolderNav({
           </div>
         )}
       </nav>
-    </aside>
+    </>
+  );
+}
+
+function MobileFolderBar(props: FolderNavProps) {
+  const [open, setOpen] = useState(false);
+  const { folders, scope, unfiledCount, totalCount, tripsPerFolder, onSelect } =
+    props;
+
+  const activeLabel =
+    scope.kind === "all"
+      ? "All trips"
+      : scope.kind === "unfiled"
+        ? "Unfiled"
+        : (folders.find((f) => f.id === scope.id)?.name ?? "Folder");
+  const activeCount =
+    scope.kind === "all"
+      ? totalCount
+      : scope.kind === "unfiled"
+        ? unfiledCount
+        : (tripsPerFolder.get(scope.id) ?? 0);
+
+  // When the user picks a folder, collapse the panel — keeps the mobile flow
+  // close to a native picker.
+  const handleSelect = (next: FolderScope) => {
+    onSelect(next);
+    setOpen(false);
+  };
+
+  return (
+    <div className="md:hidden mb-4">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-200 hover:border-slate-700 transition"
+      >
+        <span className="flex items-center gap-2 truncate">
+          <Folder size={14} className="text-slate-500" />
+          <span className="truncate">{activeLabel}</span>
+          <span className="text-xs tabular-nums text-slate-500">
+            {activeCount}
+          </span>
+        </span>
+        <ChevronDown
+          size={14}
+          className={`text-slate-500 transition ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open && (
+        <div className="mt-2 rounded-lg border border-slate-800 bg-slate-950 px-3 py-3">
+          <FolderNavContent {...props} onSelect={handleSelect} />
+        </div>
+      )}
+    </div>
   );
 }
 
