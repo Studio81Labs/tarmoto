@@ -19,12 +19,10 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { useUserTrips } from "@/hooks/useUserTrips";
+import { useCollections } from "@/hooks/useCollections";
 import {
   addTripsToCollection,
-  loadCollections,
   removeTripFromCollection,
-  saveCollections,
-  sortCollectionsByName,
   type StoredRouteCollection,
 } from "@/lib/route-collections";
 import { tripDistanceKm } from "@/lib/trip-filters";
@@ -37,32 +35,15 @@ export default function CollectionDetailPage() {
   const router = useRouter();
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const { trips, tripById, loading: loadingTrips } = useUserTrips();
+  const { collections, hydrated, persist } = useCollections(userId);
 
-  const [collections, setCollections] = useState<StoredRouteCollection[]>([]);
-  const [hydrated, setHydrated] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
-
-  useEffect(() => {
-    if (!userId) {
-      setCollections([]);
-      setHydrated(true);
-      return;
-    }
-    setCollections(sortCollectionsByName(loadCollections(userId)));
-    setHydrated(true);
-  }, [userId]);
 
   const collection = useMemo(
     () => collections.find((c) => c.id === collectionId) ?? null,
     [collections, collectionId],
   );
-
-  const persist = (next: readonly StoredRouteCollection[]) => {
-    const sorted = sortCollectionsByName(next);
-    setCollections(sorted);
-    if (userId) saveCollections(userId, sorted);
-  };
 
   const handleAddTrips = (tripIds: string[]) => {
     if (!collection || tripIds.length === 0) return;

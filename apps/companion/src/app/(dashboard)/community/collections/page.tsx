@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useMemo, useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import {
   FolderOpen,
@@ -15,14 +15,12 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { useUserTrips } from "@/hooks/useUserTrips";
+import { useCollections } from "@/hooks/useCollections";
 import {
   MAX_COLLECTION_DESCRIPTION_LENGTH,
   MAX_COLLECTION_NAME_LENGTH,
   createCollection,
-  loadCollections,
   removeCollection,
-  saveCollections,
-  sortCollectionsByName,
   updateCollection,
   validateCollectionDescription,
   validateCollectionName,
@@ -38,8 +36,8 @@ type VisibilityFilter = "all" | "public" | "private";
 export default function RouteCollectionsPage() {
   const { tripById, loading: loadingTrips } = useUserTrips();
   const userId = useAuthStore((s) => s.user?.id ?? null);
+  const { collections, persist } = useCollections(userId);
 
-  const [collections, setCollections] = useState<StoredRouteCollection[]>([]);
   const [search, setSearch] = useState("");
   const [visibility, setVisibility] = useState<VisibilityFilter>("all");
   const [modal, setModal] = useState<
@@ -47,20 +45,6 @@ export default function RouteCollectionsPage() {
     | { mode: "edit"; collection: StoredRouteCollection }
     | null
   >(null);
-
-  useEffect(() => {
-    if (!userId) {
-      setCollections([]);
-      return;
-    }
-    setCollections(sortCollectionsByName(loadCollections(userId)));
-  }, [userId]);
-
-  const persist = (next: readonly StoredRouteCollection[]) => {
-    const sorted = sortCollectionsByName(next);
-    setCollections(sorted);
-    if (userId) saveCollections(userId, sorted);
-  };
 
   const submitModal = (input: CollectionInput) => {
     if (!modal) return;
