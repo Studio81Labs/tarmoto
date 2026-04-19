@@ -98,6 +98,11 @@ describe("duplicateTripPayload", () => {
     expect(payload).not.toHaveProperty("folderId");
   });
 
+  it("preserves an explicitly empty description", () => {
+    const payload = duplicateTripPayload(makeTrip({ description: "" }));
+    expect(payload.description).toBe("");
+  });
+
   it("applies the (copy) suffix to the duplicated name", () => {
     expect(duplicateTripPayload(makeTrip()).name).toBe("Alps Loop (copy)");
   });

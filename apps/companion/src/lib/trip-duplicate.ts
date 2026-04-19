@@ -39,8 +39,10 @@ export function duplicateTripPayload(trip: Trip): TripDuplicatePayload {
       surfacePreference: [...trip.parameters.surfacePreference],
     },
   };
-  if (trip.description) payload.description = trip.description;
-  if (trip.folderId) payload.folderId = trip.folderId;
+  // Use `!== undefined` rather than truthiness so an intentionally empty
+  // description ("") survives duplication instead of being silently dropped.
+  if (trip.description !== undefined) payload.description = trip.description;
+  if (trip.folderId !== undefined) payload.folderId = trip.folderId;
   return payload;
 }
 

@@ -356,11 +356,21 @@ export default function TripListPage() {
             <EmptyState
               title="No trips yet"
               body="Plan your first ride with the trip planner."
+              action={{ label: "Create trip", href: "/trips/planner" }}
             />
           ) : visibleTrips.length === 0 ? (
             <EmptyState
               title="No trips match your filters"
               body="Try clearing the search or selecting a different folder."
+              action={{
+                label: "Clear filters",
+                onClick: () =>
+                  setFilters({
+                    ...DEFAULT_TRIP_FILTERS,
+                    statuses: new Set(DEFAULT_TRIP_FILTERS.statuses),
+                    folderScope: { ...DEFAULT_TRIP_FILTERS.folderScope },
+                  }),
+              }}
             />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-5">
@@ -953,18 +963,39 @@ function FolderModal({
 // Shared UI bits
 // ─────────────────────────────────────────────────────────
 
-function EmptyState({ title, body }: { title: string; body: string }) {
+function EmptyState({
+  title,
+  body,
+  action,
+}: {
+  title: string;
+  body: string;
+  action?:
+    | { label: string; onClick: () => void }
+    | { label: string; href: string };
+}) {
   return (
     <div className="rounded-2xl bg-slate-900 border border-slate-800 p-16 text-center mt-5">
       <Route size={48} className="mx-auto text-slate-600 mb-4" />
       <p className="text-slate-400 text-lg mb-1">{title}</p>
       <p className="text-slate-500 text-sm mb-6">{body}</p>
-      <Link
-        href="/trips/planner"
-        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition"
-      >
-        <Plus size={16} /> Create trip
-      </Link>
+      {action &&
+        ("href" in action ? (
+          <Link
+            href={action.href}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition"
+          >
+            <Plus size={16} /> {action.label}
+          </Link>
+        ) : (
+          <button
+            type="button"
+            onClick={action.onClick}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm hover:bg-slate-700 transition"
+          >
+            {action.label}
+          </button>
+        ))}
     </div>
   );
 }

@@ -43,38 +43,6 @@ export const DEFAULT_TRIP_FILTERS: TripFilters = {
   sort: "updated",
 };
 
-export function isTripStatus(value: string): value is TripStatus {
-  return (TRIP_STATUSES as readonly string[]).includes(value);
-}
-
-export function isTripSortKey(value: string): value is TripSortKey {
-  return (TRIP_SORT_KEYS as readonly string[]).includes(value);
-}
-
-export function cloneTripFilters(filters: TripFilters): TripFilters {
-  return {
-    search: filters.search,
-    statuses: new Set(filters.statuses),
-    folderScope: { ...filters.folderScope } as FolderScope,
-    sort: filters.sort,
-  };
-}
-
-export function tripFiltersEqual(a: TripFilters, b: TripFilters): boolean {
-  if (a.search !== b.search) return false;
-  if (a.sort !== b.sort) return false;
-  if (!folderScopeEqual(a.folderScope, b.folderScope)) return false;
-  if (a.statuses.size !== b.statuses.size) return false;
-  for (const s of a.statuses) if (!b.statuses.has(s)) return false;
-  return true;
-}
-
-function folderScopeEqual(a: FolderScope, b: FolderScope): boolean {
-  if (a.kind !== b.kind) return false;
-  if (a.kind === "folder" && b.kind === "folder") return a.id === b.id;
-  return true;
-}
-
 export function applyTripFilters(
   trips: readonly Trip[],
   filters: TripFilters,

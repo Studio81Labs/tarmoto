@@ -3,12 +3,8 @@ import {
   DEFAULT_TRIP_FILTERS,
   TRIP_STATUSES,
   applyTripFilters,
-  cloneTripFilters,
   countByStatus,
-  isTripSortKey,
-  isTripStatus,
   tripDistanceKm,
-  tripFiltersEqual,
   type TripFilters,
 } from "../trip-filters";
 import type { Trip } from "../types";
@@ -234,51 +230,6 @@ describe("tripDistanceKm", () => {
       ],
     });
     expect(tripDistanceKm(trip)).toBeCloseTo(200.5);
-  });
-});
-
-describe("tripFiltersEqual", () => {
-  it("recognises identical filters", () => {
-    expect(tripFiltersEqual(makeFilters(), makeFilters())).toBe(true);
-  });
-
-  it("rejects differing statuses", () => {
-    expect(
-      tripFiltersEqual(
-        makeFilters({ statuses: new Set(["draft"]) }),
-        makeFilters({ statuses: new Set(["draft", "planned"]) }),
-      ),
-    ).toBe(false);
-  });
-
-  it("rejects differing folder scopes", () => {
-    expect(
-      tripFiltersEqual(
-        makeFilters({ folderScope: { kind: "folder", id: "a" } }),
-        makeFilters({ folderScope: { kind: "folder", id: "b" } }),
-      ),
-    ).toBe(false);
-  });
-});
-
-describe("cloneTripFilters", () => {
-  it("produces an independent statuses set", () => {
-    const original = makeFilters({ statuses: new Set(["draft"]) });
-    const cloned = cloneTripFilters(original);
-    cloned.statuses.add("completed");
-    expect(original.statuses.has("completed")).toBe(false);
-  });
-});
-
-describe("type guards", () => {
-  it("isTripStatus recognises valid values", () => {
-    expect(isTripStatus("draft")).toBe(true);
-    expect(isTripStatus("archived")).toBe(false);
-  });
-
-  it("isTripSortKey recognises valid values", () => {
-    expect(isTripSortKey("updated")).toBe(true);
-    expect(isTripSortKey("popular")).toBe(false);
   });
 });
 
