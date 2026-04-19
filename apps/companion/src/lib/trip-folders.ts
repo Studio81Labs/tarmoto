@@ -74,11 +74,9 @@ export function validateFolderName(
   return null;
 }
 
-export function createFolder(
-  folders: readonly TripFolder[],
-  name: string,
-  now: Date = new Date(),
-): TripFolder {
+// Validation (uniqueness, length) is handled at the call site via
+// `validateFolderName`. This helper just mints the record.
+export function createFolder(name: string, now: Date = new Date()): TripFolder {
   return {
     id: generateFolderId(now),
     name: name.trim(),

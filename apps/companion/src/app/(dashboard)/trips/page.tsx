@@ -129,10 +129,10 @@ export default function TripListPage() {
     return map;
   }, [trips]);
 
-  // When a folder is deleted, trips in it become unfiled locally so the list
-  // reflects the change immediately. The server still has the old folderId,
-  // but without the folder row it's functionally unfiled. Callers that move
-  // trips between folders go through `moveTripToFolder` and hit the API.
+  // When a folder is deleted we drop its metadata, clear `folderId` on every
+  // affected trip locally, and tell the server to do the same. Without the
+  // server update those trips would reload with a stale folderId that no
+  // longer matches any folder and would be filtered out of "Unfiled" too.
   const handleDeleteFolder = async (folder: TripFolder) => {
     if (
       !confirm(
@@ -148,11 +148,20 @@ export default function TripListPage() {
     ) {
       setFilters({ ...filters, folderScope: { kind: "all" } });
     }
+    const affected = trips.filter((t) => t.folderId === folder.id);
     setTrips(
       trips.map((t) =>
         t.folderId === folder.id ? { ...t, folderId: undefined } : t,
       ),
     );
+    const failures = await Promise.allSettled(
+      affected.map((t) => tripsApi.update(t.id, { folderId: null })),
+    );
+    if (failures.some((r) => r.status === "rejected")) {
+      setErrorBanner(
+        "Folder deleted, but some trips couldn't sync. They may reappear after reload.",
+      );
+    }
   };
 
   const moveTripToFolder = async (trip: Trip, folderId: string | null) => {
@@ -177,7 +186,9 @@ export default function TripListPage() {
     try {
       const { data } = await tripsApi.create(duplicateTripPayload(trip));
       const created = (data as unknown as Trip) ?? null;
-      if (created) setTrips([created, ...trips]);
+      // Read the fresh trip list from the store — concurrent deletes or
+      // moves made during the await shouldn't be silently reverted.
+      if (created) setTrips([created, ...useTripStore.getState().trips]);
     } catch {
       setErrorBanner("Couldn't duplicate the trip. Try again.");
     } finally {
@@ -203,7 +214,7 @@ export default function TripListPage() {
   const submitFolderModal = (name: string) => {
     if (!folderModal) return;
     if (folderModal.mode === "create") {
-      persistFolders([...folders, createFolder(folders, name)]);
+      persistFolders([...folders, createFolder(name)]);
     } else {
       persistFolders(renameFolder(folders, folderModal.folder.id, name));
     }
@@ -464,6 +475,7 @@ function FolderRow({
       </button>
       <button
         type="button"
+        data-menu-trigger
         onClick={() => setOpen((v) => !v)}
         aria-label={`Folder actions for ${folder.name}`}
         className="absolute right-1 opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition"
@@ -666,6 +678,7 @@ function TripCard({
 
       <button
         type="button"
+        data-menu-trigger
         aria-label={`Trip actions for ${trip.name}`}
         onClick={(e) => {
           e.preventDefault();
@@ -897,7 +910,12 @@ function Menu({
   useEffect(() => {
     function onDoc(e: MouseEvent) {
       const target = e.target as HTMLElement;
-      if (!target.closest("[data-trip-menu]")) onClose();
+      // The trigger button sits outside the menu container, so without the
+      // `[data-menu-trigger]` bail-out mousedown fires before the button's
+      // onClick and the menu toggle would immediately reopen itself.
+      if (target.closest("[data-trip-menu]")) return;
+      if (target.closest("[data-menu-trigger]")) return;
+      onClose();
     }
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);

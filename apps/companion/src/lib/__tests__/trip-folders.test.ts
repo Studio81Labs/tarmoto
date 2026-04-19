@@ -55,7 +55,7 @@ describe("validateFolderName", () => {
 describe("createFolder", () => {
   it("trims whitespace and stamps createdAt", () => {
     const now = new Date("2026-04-01T12:00:00Z");
-    const folder = createFolder([], "  Summer 2026 Alps  ", now);
+    const folder = createFolder("  Summer 2026 Alps  ", now);
     expect(folder.name).toBe("Summer 2026 Alps");
     expect(folder.createdAt).toBe(now.toISOString());
     expect(folder.id).toMatch(/^fld_/);
