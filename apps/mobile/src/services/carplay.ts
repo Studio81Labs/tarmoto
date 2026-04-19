@@ -77,6 +77,19 @@ export interface CarPlayBridge {
   }): void;
   updateInformationTemplateItems(items: InformationTemplateItem[]): void;
   clearRootTemplate(): void;
+  /**
+   * Subscribe to CarPlay disconnect events. When the bike head-unit
+   * disconnects mid-ride, the native CPTemplate scene is destroyed —
+   * any subsequent `updateInformationTemplateItems` would target a
+   * vanished template and the rider would see a blank display until
+   * the ride ends. The controller uses this hook to clear its
+   * mount-tracking flags so the next ride-tick after a reconnect
+   * re-issues `setRootTemplate` instead.
+   *
+   * Returns an unsubscribe function for symmetry with the package
+   * API; the no-op bridge returns a no-op unsubscriber.
+   */
+  subscribeDisconnect(callback: () => void): () => void;
 }
 
 // ── Pure formatters ──
@@ -224,6 +237,17 @@ export function createDefaultCarPlayBridge(): CarPlayBridge {
         // scene is replaced when the rider starts another ride.
         template = null;
       },
+      subscribeDisconnect: (callback) => {
+        // Drop the local template reference too — the native scene is
+        // gone with the head-unit, so a stale handle would let the
+        // next setRoot path think it could update items on it.
+        const handler = () => {
+          template = null;
+          callback();
+        };
+        CarPlay.registerOnDisconnect(handler);
+        return () => CarPlay.unregisterOnDisconnect(handler);
+      },
     };
   } catch {
     return createNoopBridge();
@@ -236,6 +260,7 @@ function createNoopBridge(): CarPlayBridge {
     setRootInformationTemplate: () => undefined,
     updateInformationTemplateItems: () => undefined,
     clearRootTemplate: () => undefined,
+    subscribeDisconnect: () => () => undefined,
   };
 }
 
@@ -259,8 +284,26 @@ let templateMounted = false;
 let mountedTitle: string | null = null;
 
 function getBridge(): CarPlayBridge {
-  if (!activeBridge) activeBridge = createDefaultCarPlayBridge();
+  if (!activeBridge) {
+    activeBridge = createDefaultCarPlayBridge();
+    attachDisconnectHandler(activeBridge);
+  }
   return activeBridge;
+}
+
+/**
+ * Reset mount-tracking flags when CarPlay disconnects so the next
+ * ride-tick after a reconnect re-issues `setRootTemplate` instead of
+ * trying to push items to a destroyed native template. Called once
+ * when the lazy bridge is first resolved (and re-armed by
+ * `__setCarPlayBridgeForTest` so injected fakes can simulate the
+ * disconnect path the same way).
+ */
+function attachDisconnectHandler(bridge: CarPlayBridge): void {
+  bridge.subscribeDisconnect(() => {
+    templateMounted = false;
+    mountedTitle = null;
+  });
 }
 
 /**
@@ -301,18 +344,6 @@ export function mountRideStatusBoard(board: RideStatusBoard): boolean {
 }
 
 /**
- * Push a fresh stats snapshot to the already-mounted template. No-op
- * when the template hasn't been mounted yet — that case is the natural
- * order of the ride lifecycle, so callers don't need to gate on it.
- */
-export function updateRideStatusBoard(board: RideStatusBoard): void {
-  if (!templateMounted) return;
-  const bridge = getBridge();
-  if (!bridge.isAvailable()) return;
-  bridge.updateInformationTemplateItems(buildRideStatusItems(board));
-}
-
-/**
  * Tear down the template at the end of a ride. Idempotent so a stop
  * dispatched while the template was never mounted (offline, no CarPlay)
  * is safe.
@@ -339,6 +370,10 @@ export function __setCarPlayBridgeForTest(bridge: CarPlayBridge | null): void {
   activeBridge = bridge;
   templateMounted = false;
   mountedTitle = null;
+  // Re-arm the disconnect handler against the new fake so tests can
+  // exercise the reconnect-after-disconnect path through the same
+  // contract the production bridge uses.
+  if (bridge) attachDisconnectHandler(bridge);
 }
 
 /**

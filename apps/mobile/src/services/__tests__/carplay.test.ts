@@ -26,19 +26,21 @@ import {
   mountRideStatusBoard,
   type RideStatusBoard,
   unmountRideStatusBoard,
-  updateRideStatusBoard,
 } from "../carplay";
 
 interface FakeBridge extends CarPlayBridge {
   setRoot: jest.Mock;
   updateItems: jest.Mock;
   clear: jest.Mock;
+  /** Fire any disconnect callbacks the controller has registered. */
+  fireDisconnect: () => void;
 }
 
 function createFakeBridge(): FakeBridge {
   const setRoot = jest.fn();
   const updateItems = jest.fn();
   const clear = jest.fn();
+  const disconnectListeners = new Set<() => void>();
   return {
     setRoot,
     updateItems,
@@ -47,6 +49,13 @@ function createFakeBridge(): FakeBridge {
     setRootInformationTemplate: setRoot,
     updateInformationTemplateItems: updateItems,
     clearRootTemplate: clear,
+    subscribeDisconnect: (cb) => {
+      disconnectListeners.add(cb);
+      return () => disconnectListeners.delete(cb);
+    },
+    fireDisconnect: () => {
+      for (const cb of disconnectListeners) cb();
+    },
   };
 }
 
@@ -254,22 +263,27 @@ describe("ride status board lifecycle", () => {
     expect(offlineBridge.clear).not.toHaveBeenCalled();
   });
 
-  it("updates only when a template is mounted", () => {
-    // No mount yet — update is a no-op so the rider doesn't see ghost
-    // template content if the hook fires a tick before the mount effect.
-    updateRideStatusBoard(makeBoard());
-    expect(bridge.updateItems).not.toHaveBeenCalled();
-
+  it("re-issues setRootTemplate after a CarPlay disconnect/reconnect", () => {
+    // First mount on initial connect.
     mountRideStatusBoard(makeBoard());
-    bridge.updateItems.mockClear();
+    expect(bridge.setRoot).toHaveBeenCalledTimes(1);
 
-    updateRideStatusBoard(makeBoard({ distanceKm: 99 }));
+    // Same-title mount → items-only update path (no second setRoot).
+    mountRideStatusBoard(makeBoard({ speedKmh: 42 }));
+    expect(bridge.setRoot).toHaveBeenCalledTimes(1);
     expect(bridge.updateItems).toHaveBeenCalledTimes(1);
-    const items = bridge.updateItems.mock.calls[0]?.[0] as {
-      title: string;
-      detail: string;
-    }[];
-    expect(items.find((i) => i.title === "Distance")?.detail).toBe("99.0 km");
+
+    // CarPlay disconnects mid-ride — the native CPTemplate scene is
+    // destroyed. The bridge fires its disconnect listeners, which the
+    // controller uses to reset its mount flag.
+    bridge.fireDisconnect();
+
+    // Reconnect: next ride-tick comes in. We must re-issue setRoot
+    // (NOT items-update) because the previous template no longer
+    // exists on the native side. Otherwise the bike display stays
+    // blank for the rest of the ride.
+    mountRideStatusBoard(makeBoard({ speedKmh: 50 }));
+    expect(bridge.setRoot).toHaveBeenCalledTimes(2);
   });
 
   it("unmount is idempotent and resets the mount flag", () => {
