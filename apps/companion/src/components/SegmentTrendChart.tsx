@@ -144,7 +144,6 @@ export function SegmentTrendChart({
                   dot={{ r: 2, fill: "#22d3ee" }}
                   activeDot={{ r: 4 }}
                   isAnimationActive={false}
-                  connectNulls
                   name="This segment"
                 />
                 {filteredRegional.length > 0 && (
@@ -156,7 +155,6 @@ export function SegmentTrendChart({
                     strokeDasharray="4 4"
                     dot={false}
                     isAnimationActive={false}
-                    connectNulls
                     name="Regional avg"
                   />
                 )}
