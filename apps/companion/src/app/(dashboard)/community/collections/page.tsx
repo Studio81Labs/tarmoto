@@ -13,9 +13,8 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
-import { tripsApi } from "@/lib/api";
-import { useTripStore } from "@/stores/trip";
 import { useAuthStore } from "@/stores/auth";
+import { useUserTrips } from "@/hooks/useUserTrips";
 import {
   MAX_COLLECTION_DESCRIPTION_LENGTH,
   MAX_COLLECTION_NAME_LENGTH,
@@ -37,12 +36,10 @@ import type { Trip } from "@/lib/types";
 type VisibilityFilter = "all" | "public" | "private";
 
 export default function RouteCollectionsPage() {
-  const trips = useTripStore((s) => s.trips);
-  const setTrips = useTripStore((s) => s.setTrips);
+  const { tripById, loading: loadingTrips } = useUserTrips();
   const userId = useAuthStore((s) => s.user?.id ?? null);
 
   const [collections, setCollections] = useState<StoredRouteCollection[]>([]);
-  const [loadingTrips, setLoadingTrips] = useState(true);
   const [search, setSearch] = useState("");
   const [visibility, setVisibility] = useState<VisibilityFilter>("all");
   const [modal, setModal] = useState<
@@ -51,39 +48,6 @@ export default function RouteCollectionsPage() {
     | null
   >(null);
 
-  // Load trips for stats (route count, distance). Trips already live in the
-  // store when arriving from /trips, but the user can land directly on
-  // /community/collections, so we fetch on mount. Unauthenticated visitors
-  // just see an empty list and a log-in prompt on the detail page.
-  useEffect(() => {
-    let cancelled = false;
-    setTrips([]);
-    if (!userId) {
-      setLoadingTrips(false);
-      return () => {
-        cancelled = true;
-      };
-    }
-    setLoadingTrips(true);
-    tripsApi
-      .list()
-      .then(({ data }) => {
-        if (cancelled) return;
-        const body = data as unknown as { data?: Trip[] } | Trip[];
-        setTrips(Array.isArray(body) ? body : (body?.data ?? []));
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setTrips([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingTrips(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [setTrips, userId]);
-
   useEffect(() => {
     if (!userId) {
       setCollections([]);
@@ -91,12 +55,6 @@ export default function RouteCollectionsPage() {
     }
     setCollections(sortCollectionsByName(loadCollections(userId)));
   }, [userId]);
-
-  const tripById = useMemo(() => {
-    const map = new Map<string, Trip>();
-    for (const t of trips) map.set(t.id, t);
-    return map;
-  }, [trips]);
 
   const persist = (next: readonly StoredRouteCollection[]) => {
     const sorted = sortCollectionsByName(next);

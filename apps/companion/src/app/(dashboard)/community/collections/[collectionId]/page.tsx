@@ -17,9 +17,8 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { tripsApi } from "@/lib/api";
-import { useTripStore } from "@/stores/trip";
 import { useAuthStore } from "@/stores/auth";
+import { useUserTrips } from "@/hooks/useUserTrips";
 import {
   addTripsToCollection,
   loadCollections,
@@ -37,12 +36,10 @@ export default function CollectionDetailPage() {
   const { collectionId } = useParams<{ collectionId: string }>();
   const router = useRouter();
   const userId = useAuthStore((s) => s.user?.id ?? null);
-  const trips = useTripStore((s) => s.trips);
-  const setTrips = useTripStore((s) => s.setTrips);
+  const { trips, tripById, loading: loadingTrips } = useUserTrips();
 
   const [collections, setCollections] = useState<StoredRouteCollection[]>([]);
   const [hydrated, setHydrated] = useState(false);
-  const [loadingTrips, setLoadingTrips] = useState(true);
   const [showPicker, setShowPicker] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
 
@@ -56,44 +53,10 @@ export default function CollectionDetailPage() {
     setHydrated(true);
   }, [userId]);
 
-  useEffect(() => {
-    let cancelled = false;
-    setTrips([]);
-    if (!userId) {
-      setLoadingTrips(false);
-      return () => {
-        cancelled = true;
-      };
-    }
-    setLoadingTrips(true);
-    tripsApi
-      .list()
-      .then(({ data }) => {
-        if (cancelled) return;
-        const body = data as unknown as { data?: Trip[] } | Trip[];
-        setTrips(Array.isArray(body) ? body : (body?.data ?? []));
-      })
-      .catch(() => {
-        if (!cancelled) setTrips([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingTrips(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [setTrips, userId]);
-
   const collection = useMemo(
     () => collections.find((c) => c.id === collectionId) ?? null,
     [collections, collectionId],
   );
-
-  const tripById = useMemo(() => {
-    const map = new Map<string, Trip>();
-    for (const t of trips) map.set(t.id, t);
-    return map;
-  }, [trips]);
 
   const persist = (next: readonly StoredRouteCollection[]) => {
     const sorted = sortCollectionsByName(next);
