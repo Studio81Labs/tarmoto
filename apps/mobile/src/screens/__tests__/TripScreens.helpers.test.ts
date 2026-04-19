@@ -7,6 +7,8 @@ import {
   formatKm,
   formatStatus,
   formatWaypointType,
+  isLastDay,
+  pickDayEndAnchor,
   summarizeFuelRange,
   summarizeWaypoints,
   sumDistance,
@@ -363,5 +365,73 @@ describe("summarizeFuelRange", () => {
     expect(result.legs).toEqual([]);
     expect(result.longestLegKm).toBe(0);
     expect(result.exceedingCount).toBe(0);
+  });
+});
+
+describe("pickDayEndAnchor", () => {
+  it("prefers the last waypoint by sequence", () => {
+    const d = dayFrom(vertexStrip([49, 50]), [
+      {
+        id: "start",
+        sequence: 1,
+        lat: 49.0,
+        lng: 10.0,
+        waypoint_type: "start",
+      },
+      { id: "end", sequence: 2, lat: 50.0, lng: 11.0, waypoint_type: "end" },
+    ]);
+    expect(pickDayEndAnchor(d)).toEqual({ lat: 50.0, lng: 11.0 });
+  });
+
+  it("sorts waypoints by sequence even if they arrive in reverse", () => {
+    const d = dayFrom(vertexStrip([49, 50]), [
+      { id: "end", sequence: 2, lat: 50.0, lng: 11.0, waypoint_type: "end" },
+      {
+        id: "start",
+        sequence: 1,
+        lat: 49.0,
+        lng: 10.0,
+        waypoint_type: "start",
+      },
+    ]);
+    expect(pickDayEndAnchor(d)).toEqual({ lat: 50.0, lng: 11.0 });
+  });
+
+  it("falls back to the last geometry vertex when no waypoints exist", () => {
+    const d = dayFrom(
+      [
+        { lat: 49, lng: 0 },
+        { lat: 49.5, lng: 0 },
+        { lat: 50, lng: 0 },
+      ],
+      [],
+    );
+    expect(pickDayEndAnchor(d)).toEqual({ lat: 50, lng: 0 });
+  });
+
+  it("returns null when there is nothing to anchor on", () => {
+    expect(pickDayEndAnchor(dayFrom([], []))).toBeNull();
+  });
+});
+
+describe("isLastDay", () => {
+  it("identifies the final day by highest day_number", () => {
+    const days: TripDay[] = [
+      { ...dayFrom([], []), id: "d1", day_number: 1 },
+      { ...dayFrom([], []), id: "d3", day_number: 3 },
+      { ...dayFrom([], []), id: "d2", day_number: 2 },
+    ];
+    expect(isLastDay(days, 3)).toBe(true);
+    expect(isLastDay(days, 2)).toBe(false);
+    expect(isLastDay(days, 1)).toBe(false);
+  });
+
+  it("returns false for an empty day list", () => {
+    expect(isLastDay([], 1)).toBe(false);
+  });
+
+  it("handles a single-day trip", () => {
+    const days: TripDay[] = [{ ...dayFrom([], []), day_number: 1 }];
+    expect(isLastDay(days, 1)).toBe(true);
   });
 });

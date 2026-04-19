@@ -273,6 +273,34 @@ export interface Weather {
   description: string;
 }
 
+// ── Accommodations (US-10) ──
+
+export type AccommodationKind =
+  | "hotel"
+  | "motel"
+  | "hostel"
+  | "guest_house"
+  | "apartment"
+  | "chalet"
+  | "camp_site";
+
+export interface Accommodation {
+  external_id: string;
+  name: string | null;
+  kind: AccommodationKind;
+  lat: number;
+  lng: number;
+  distance_km: number;
+  website: string | null;
+  phone: string | null;
+  stars: number | null;
+}
+
+export interface AccommodationList {
+  accommodations: Accommodation[];
+  radius_km: number;
+}
+
 // ── Mountain Passes (US-11) ──
 
 export type PassStatus = "open" | "closed" | "unknown";
