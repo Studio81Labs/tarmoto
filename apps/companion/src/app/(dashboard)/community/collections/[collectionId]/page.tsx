@@ -256,6 +256,16 @@ export default function CollectionDetailPage() {
         </h2>
         {memberTrips.length === 0 ? (
           <EmptyRoutes onAdd={() => setShowPicker(true)} />
+        ) : loadingTrips ? (
+          // Until the trips API has responded, `tripById` is empty and every
+          // member would otherwise render as "missing" with an active remove
+          // button. Show skeleton rows instead so users don't accidentally
+          // drop valid references on slow networks or API failures.
+          <ul className="space-y-3">
+            {memberTrips.map((entry) => (
+              <LoadingTripRow key={entry.id} />
+            ))}
+          </ul>
         ) : (
           <ul className="space-y-3">
             {memberTrips.map((entry) =>
@@ -280,6 +290,7 @@ export default function CollectionDetailPage() {
         <RoutePickerModal
           trips={availableTrips}
           loading={loadingTrips}
+          hasAnyTrips={trips.length > 0}
           onClose={() => setShowPicker(false)}
           onAdd={handleAddTrips}
           onPlanTrip={() => router.push("/trips/planner")}
@@ -417,6 +428,18 @@ function MissingTripRow({ onRemove }: { onRemove: () => void }) {
   );
 }
 
+function LoadingTripRow() {
+  return (
+    <li className="rounded-2xl border border-slate-800 bg-slate-900 p-4 flex items-center gap-4 animate-pulse">
+      <div className="hidden sm:block shrink-0 w-24 h-16 rounded-lg bg-slate-800" />
+      <div className="flex-1 min-w-0 space-y-2">
+        <div className="h-3.5 w-1/2 rounded bg-slate-800" />
+        <div className="h-2.5 w-1/3 rounded bg-slate-800" />
+      </div>
+    </li>
+  );
+}
+
 // ─────────────────────────────────────────────────────────
 // Route picker modal
 // ─────────────────────────────────────────────────────────
@@ -424,12 +447,18 @@ function MissingTripRow({ onRemove }: { onRemove: () => void }) {
 function RoutePickerModal({
   trips,
   loading,
+  hasAnyTrips,
   onClose,
   onAdd,
   onPlanTrip,
 }: {
   trips: Trip[];
   loading: boolean;
+  // `trips` is already filtered to exclude members of this collection, so
+  // `trips.length === 0` alone can't distinguish "user has no trips" from
+  // "every trip is already here". Caller passes the unfiltered count so we
+  // render the right empty state.
+  hasAnyTrips: boolean;
   onClose: () => void;
   onAdd: (tripIds: string[]) => void;
   onPlanTrip: () => void;
@@ -502,21 +531,32 @@ function RoutePickerModal({
               Loading your trips…
             </div>
           ) : trips.length === 0 ? (
-            <div className="py-8 text-center">
-              <p className="text-sm text-slate-400 mb-1">
-                You don&apos;t have any trips yet
-              </p>
-              <p className="text-xs text-slate-500 mb-4">
-                Plan a trip first and it will show up here.
-              </p>
-              <button
-                type="button"
-                onClick={onPlanTrip}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-200 text-xs hover:bg-slate-700 transition"
-              >
-                <Plus size={14} /> New trip
-              </button>
-            </div>
+            hasAnyTrips ? (
+              <div className="py-8 text-center">
+                <p className="text-sm text-slate-400 mb-1">
+                  All your trips are already in this collection
+                </p>
+                <p className="text-xs text-slate-500">
+                  Plan another trip to add it here.
+                </p>
+              </div>
+            ) : (
+              <div className="py-8 text-center">
+                <p className="text-sm text-slate-400 mb-1">
+                  You don&apos;t have any trips yet
+                </p>
+                <p className="text-xs text-slate-500 mb-4">
+                  Plan a trip first and it will show up here.
+                </p>
+                <button
+                  type="button"
+                  onClick={onPlanTrip}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-200 text-xs hover:bg-slate-700 transition"
+                >
+                  <Plus size={14} /> New trip
+                </button>
+              </div>
+            )
           ) : visible.length === 0 ? (
             <p className="py-8 text-center text-sm text-slate-500">
               No trips match your search.
