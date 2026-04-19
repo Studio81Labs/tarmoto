@@ -220,7 +220,10 @@ export default function NavigationScreen() {
 
       <View pointerEvents="box-none" style={styles.bottomOverlay}>
         <View style={styles.statsRow}>
-          <Stat label="Remaining" value={formatKm(tick?.remainingM ?? 0)} />
+          <Stat
+            label="Remaining"
+            value={formatDistanceM(tick?.remainingM ?? 0)}
+          />
           <Stat
             label="Off-axis"
             value={formatMeters(tick?.offRouteDistanceM ?? 0)}
@@ -373,7 +376,13 @@ function formatManeuverDistance(m: number): string {
   return `${(m / 1000).toFixed(1)} km`;
 }
 
-function formatKm(m: number): string {
+/**
+ * Format a distance in METERS for the stats panel, switching to km with
+ * one decimal above 1 km. Deliberately named distinct from
+ * `formatKm` in `TripScreens.helpers.ts` (which takes kilometres) so a
+ * future refactor can't silently introduce a 1000× unit drift.
+ */
+function formatDistanceM(m: number): string {
   if (m <= 0) return "0 km";
   if (m < 1000) return `${Math.round(m)} m`;
   return `${(m / 1000).toFixed(1)} km`;
