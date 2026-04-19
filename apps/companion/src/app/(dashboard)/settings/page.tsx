@@ -1,26 +1,70 @@
 "use client";
 
-import { useState } from 'react';
-import Link from 'next/link';
-import { useAuthStore } from '@/stores/auth';
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useAuthStore } from "@/stores/auth";
+import { usePreferencesStore } from "@/stores/preferences";
+import type { UnitSystem } from "@tarmoto/shared";
 import {
-  User, CreditCard, Shield, Bell, Bike, ChevronRight,
+  User,
+  CreditCard,
+  Shield,
+  Bell,
+  Bike,
+  ChevronRight,
   Database,
-} from 'lucide-react';
+} from "lucide-react";
 
 const SETTINGS_SECTIONS = [
-  { href: '/settings', icon: User, label: 'Profile', description: 'Display name, avatar, home region' },
-  { href: '/settings/subscription', icon: CreditCard, label: 'Subscription', description: 'Plan, billing, payment methods' },
-  { href: '/settings/privacy', icon: Shield, label: 'Privacy', description: 'Visibility, data sharing, consent' },
-  { href: '/settings/bikes', icon: Bike, label: 'My Bikes', description: 'Manage your motorcycle garage' },
-  { href: '/settings/notifications', icon: Bell, label: 'Notifications', description: 'Email, alerts, community updates' },
-  { href: '/settings/data', icon: Database, label: 'Data & Account', description: 'Export your data or delete your account' },
+  {
+    href: "/settings",
+    icon: User,
+    label: "Profile",
+    description: "Display name, avatar, home region",
+  },
+  {
+    href: "/settings/subscription",
+    icon: CreditCard,
+    label: "Subscription",
+    description: "Plan, billing, payment methods",
+  },
+  {
+    href: "/settings/privacy",
+    icon: Shield,
+    label: "Privacy",
+    description: "Visibility, data sharing, consent",
+  },
+  {
+    href: "/settings/bikes",
+    icon: Bike,
+    label: "My Bikes",
+    description: "Manage your motorcycle garage",
+  },
+  {
+    href: "/settings/notifications",
+    icon: Bell,
+    label: "Notifications",
+    description: "Email, alerts, community updates",
+  },
+  {
+    href: "/settings/data",
+    icon: Database,
+    label: "Data & Account",
+    description: "Export your data or delete your account",
+  },
 ];
 
 export default function AccountPage() {
   const user = useAuthStore((s) => s.user);
-  const [displayName, setDisplayName] = useState(user?.displayName ?? '');
-  const [homeRegion, setHomeRegion] = useState('');
+  const [displayName, setDisplayName] = useState(user?.displayName ?? "");
+  const [homeRegion, setHomeRegion] = useState("");
+
+  const unitSystem = usePreferencesStore((s) => s.unitSystem);
+  const setUnitSystem = usePreferencesStore((s) => s.setUnitSystem);
+  const hydratePreferences = usePreferencesStore((s) => s.hydrate);
+  useEffect(() => {
+    hydratePreferences();
+  }, [hydratePreferences]);
 
   return (
     <div className="p-6 max-w-3xl mx-auto animate-fade-in">
@@ -52,7 +96,7 @@ export default function AccountPage() {
 
         <div className="flex items-center gap-4 mb-6">
           <div className="w-16 h-16 rounded-full bg-tarmoto-cyan/20 flex items-center justify-center text-tarmoto-cyan text-xl font-bold">
-            {displayName[0]?.toUpperCase() ?? 'T'}
+            {displayName[0]?.toUpperCase() ?? "T"}
           </div>
           <button className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition">
             Change photo
@@ -60,7 +104,9 @@ export default function AccountPage() {
         </div>
 
         <div>
-          <label className="block text-sm text-slate-400 mb-1.5">Display name</label>
+          <label className="block text-sm text-slate-400 mb-1.5">
+            Display name
+          </label>
           <input
             type="text"
             value={displayName}
@@ -73,14 +119,16 @@ export default function AccountPage() {
           <label className="block text-sm text-slate-400 mb-1.5">Email</label>
           <input
             type="email"
-            value={user?.email ?? ''}
+            value={user?.email ?? ""}
             disabled
             className="w-full px-4 py-2.5 rounded-lg bg-slate-800/50 border border-slate-700/50 text-slate-500 text-sm"
           />
         </div>
 
         <div>
-          <label className="block text-sm text-slate-400 mb-1.5">Home region</label>
+          <label className="block text-sm text-slate-400 mb-1.5">
+            Home region
+          </label>
           <input
             type="text"
             value={homeRegion}
@@ -95,6 +143,28 @@ export default function AccountPage() {
         </button>
       </div>
 
+      <div className="rounded-2xl bg-slate-900 border border-slate-800 p-6 mt-4">
+        <h2 className="text-lg font-semibold mb-1">Display units</h2>
+        <p className="text-sm text-slate-500 mb-4">
+          Choose how distances and speeds are shown across the dashboard.
+        </p>
+        <div className="inline-flex rounded-lg bg-slate-800 p-1">
+          {(["metric", "imperial"] as UnitSystem[]).map((value) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setUnitSystem(value)}
+              className={`px-4 py-1.5 rounded-md text-sm transition ${
+                unitSystem === value
+                  ? "bg-tarmoto-cyan text-slate-950 font-semibold"
+                  : "text-slate-300 hover:text-white"
+              }`}
+            >
+              {value === "metric" ? "Metric (km)" : "Imperial (mi)"}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

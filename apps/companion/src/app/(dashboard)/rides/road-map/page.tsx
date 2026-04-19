@@ -11,20 +11,26 @@ import {
   Share2,
   Sparkles,
 } from "lucide-react";
-import { api, explorationApi } from "@/lib/api";
+import type { UnitSystem } from "@tarmoto/shared";
+import { explorationApi } from "@/lib/api";
 import type { ExplorationStats, UnriddenSegment } from "@/lib/api";
-import { QUALITY_CONFIG, scoreToTier } from "@/lib/utils";
+import {
+  QUALITY_CONFIG,
+  formatDistance,
+  formatDistanceFromMeters,
+  scoreToTier,
+} from "@/lib/utils";
+import { fetchAllRides } from "@/lib/rides-fetch";
 import type { RideForStats } from "@/lib/ride-stats";
 import {
   TIME_PERIODS,
   TIME_PERIOD_LABELS,
   buildShareSummary,
   computePeriodStats,
-  formatDistanceMeters,
-  formatKilometers,
   groupUnriddenByRegion,
   type TimePeriod,
 } from "@/lib/exploration";
+import { usePreferencesStore } from "@/stores/preferences";
 
 /**
  * Personal road map (US-50).
@@ -46,23 +52,6 @@ const NEARBY_LIMIT = 25;
 // letting the coordinate inputs accept any lat/lng.
 const FALLBACK_CENTER = { lat: 50.0755, lng: 14.4378, label: "Prague" };
 
-async function fetchAllRides(): Promise<RideForStats[]> {
-  const collected: RideForStats[] = [];
-  const PAGE_SIZE = 100;
-  const MAX_PAGES = 100;
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const { data, error } = await api.GET("/api/v1/rides", {
-      params: { query: { limit: PAGE_SIZE, offset: page * PAGE_SIZE } },
-    });
-    if (error) throw new Error("Could not load ride history");
-    const batch = (data?.rides ?? []) as RideForStats[];
-    collected.push(...batch);
-    const total = data?.total ?? collected.length;
-    if (collected.length >= total || batch.length < PAGE_SIZE) break;
-  }
-  return collected;
-}
-
 export default function RoadMapPage() {
   const [stats, setStats] = useState<ExplorationStats | null>(null);
   const [riddenSegmentIds, setRiddenSegmentIds] = useState<string[]>([]);
@@ -82,6 +71,15 @@ export default function RoadMapPage() {
   const [shareState, setShareState] = useState<
     "idle" | "copied" | "shared" | "error"
   >("idle");
+
+  // Preferences are hydrated from localStorage on the client; during SSR the
+  // store still returns the metric default so the server-rendered markup
+  // matches the first client paint.
+  const unitSystem = usePreferencesStore((s) => s.unitSystem);
+  const hydratePreferences = usePreferencesStore((s) => s.hydrate);
+  useEffect(() => {
+    hydratePreferences();
+  }, [hydratePreferences]);
 
   useEffect(() => {
     let cancelled = false;
@@ -178,7 +176,7 @@ export default function RoadMapPage() {
 
   const handleShare = useCallback(async () => {
     if (!stats) return;
-    const text = buildShareSummary(stats, periodStats);
+    const text = buildShareSummary(stats, periodStats, unitSystem);
     const url =
       typeof window !== "undefined" ? window.location.href : undefined;
     const shareData: ShareData = {
@@ -209,7 +207,7 @@ export default function RoadMapPage() {
       return;
     }
     window.setTimeout(() => setShareState("idle"), 2500);
-  }, [stats, periodStats]);
+  }, [stats, periodStats, unitSystem]);
 
   if (loading) {
     return (
@@ -283,7 +281,11 @@ export default function RoadMapPage() {
         {/* Sidebar */}
         <aside className="overflow-y-auto bg-slate-950/60">
           <section className="p-5 border-b border-slate-800 space-y-4">
-            <SummaryCards stats={stats} periodStats={periodStats} />
+            <SummaryCards
+              stats={stats}
+              periodStats={periodStats}
+              units={unitSystem}
+            />
           </section>
 
           <section className="p-5 border-b border-slate-800">
@@ -307,7 +309,7 @@ export default function RoadMapPage() {
             <SectionHeader
               icon={<Sparkles size={14} />}
               title="Regional breakdown"
-              subtitle={`${nearby.length} unridden roads within ${NEARBY_DEFAULT_RADIUS_KM} km`}
+              subtitle={`${nearby.length} unridden roads within ${formatDistance(NEARBY_DEFAULT_RADIUS_KM, unitSystem)}`}
             />
             {nearbyLoading ? (
               <LoaderRow label="Loading unridden roads…" />
@@ -332,7 +334,7 @@ export default function RoadMapPage() {
                       </p>
                     </div>
                     <span className="text-xs text-slate-400 tabular-nums">
-                      {formatKilometers(bucket.totalLengthKm)}
+                      {formatDistance(bucket.totalLengthKm, unitSystem)}
                     </span>
                   </li>
                 ))}
@@ -355,7 +357,7 @@ export default function RoadMapPage() {
             ) : (
               <ul className="space-y-2">
                 {nearby.slice(0, 10).map((seg) => (
-                  <NearbyRow key={seg.id} segment={seg} />
+                  <NearbyRow key={seg.id} segment={seg} units={unitSystem} />
                 ))}
               </ul>
             )}
@@ -391,9 +393,10 @@ function PageHeader({ percentExplored }: PageHeaderProps) {
 interface SummaryCardsProps {
   stats: ExplorationStats;
   periodStats: ReturnType<typeof computePeriodStats>;
+  units: UnitSystem;
 }
 
-function SummaryCards({ stats, periodStats }: SummaryCardsProps) {
+function SummaryCards({ stats, periodStats, units }: SummaryCardsProps) {
   const cards = [
     {
       label: "Segments ridden",
@@ -402,7 +405,7 @@ function SummaryCards({ stats, periodStats }: SummaryCardsProps) {
     },
     {
       label: "All-time distance",
-      value: formatKilometers(stats.total_distance_km),
+      value: formatDistance(stats.total_distance_km, units),
       sub: `${stats.percent_explored}% explored`,
     },
     {
@@ -411,7 +414,7 @@ function SummaryCards({ stats, periodStats }: SummaryCardsProps) {
       sub:
         periodStats.rideCount === 0
           ? "No rides in this period"
-          : `${formatKilometers(periodStats.distanceKm)} · ${periodStats.activeDays} active day${periodStats.activeDays === 1 ? "" : "s"}`,
+          : `${formatDistance(periodStats.distanceKm, units)} · ${periodStats.activeDays} active day${periodStats.activeDays === 1 ? "" : "s"}`,
     },
   ];
   return (
@@ -474,6 +477,10 @@ function NearbyCenterControls({
   }, [center.lat, center.lng]);
 
   const apply = () => {
+    // `Number("")` is 0, which would quietly snap the map to Null Island.
+    // Reject blank inputs before coercing so an empty field is an error, not
+    // a valid coordinate.
+    if (latInput.trim() === "" || lngInput.trim() === "") return;
     const lat = Number(latInput);
     const lng = Number(lngInput);
     if (
@@ -539,9 +546,10 @@ function NearbyCenterControls({
 
 interface NearbyRowProps {
   segment: UnriddenSegment;
+  units: UnitSystem;
 }
 
-function NearbyRow({ segment }: NearbyRowProps) {
+function NearbyRow({ segment, units }: NearbyRowProps) {
   const tier =
     segment.quality_score != null ? scoreToTier(segment.quality_score) : null;
   const tierInfo = tier ? QUALITY_CONFIG[tier] : null;
@@ -558,11 +566,11 @@ function NearbyRow({ segment }: NearbyRowProps) {
         <p className="text-xs text-slate-500 capitalize">
           {segment.surface_type}
           {tierInfo ? ` · ${tierInfo.label.toLowerCase()}` : ""} ·{" "}
-          {formatDistanceMeters(segment.length_m)}
+          {formatDistanceFromMeters(segment.length_m, units)}
         </p>
       </div>
       <span className="text-xs text-slate-400 tabular-nums">
-        {formatDistanceMeters(segment.distance_m)} away
+        {formatDistanceFromMeters(segment.distance_m, units)} away
       </span>
     </li>
   );

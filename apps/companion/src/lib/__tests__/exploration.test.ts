@@ -3,8 +3,6 @@ import {
   buildShareSummary,
   computePeriodStats,
   filterRidesByPeriod,
-  formatDistanceMeters,
-  formatKilometers,
   groupUnriddenByRegion,
   isTimePeriod,
   periodStartDate,
@@ -217,35 +215,6 @@ describe("groupUnriddenByRegion", () => {
   });
 });
 
-describe("formatKilometers", () => {
-  it("renders meters for sub-kilometer values", () => {
-    expect(formatKilometers(0.4)).toBe("400 m");
-  });
-  it("renders one decimal for short distances", () => {
-    expect(formatKilometers(4.23)).toBe("4.2 km");
-  });
-  it("rounds to whole km for larger distances", () => {
-    expect(formatKilometers(127.6)).toBe("128 km");
-  });
-  it("handles zero and invalid inputs defensively", () => {
-    expect(formatKilometers(0)).toBe("0 km");
-    expect(formatKilometers(-5)).toBe("0 km");
-    expect(formatKilometers(Number.NaN)).toBe("0 km");
-  });
-});
-
-describe("formatDistanceMeters", () => {
-  it("uses meters under 1 km", () => {
-    expect(formatDistanceMeters(250)).toBe("250 m");
-  });
-  it("switches to km above 1 km", () => {
-    expect(formatDistanceMeters(1500)).toBe("1.5 km");
-  });
-  it("handles invalid inputs", () => {
-    expect(formatDistanceMeters(-10)).toBe("0 m");
-  });
-});
-
 describe("buildShareSummary", () => {
   const stats: ExplorationStats = {
     ridden_segments: 1234,
@@ -254,13 +223,17 @@ describe("buildShareSummary", () => {
     total_distance_km: 842,
   };
 
-  it("includes the global percentage and totals", () => {
-    const text = buildShareSummary(stats, {
-      period: "all",
-      distanceKm: 0,
-      rideCount: 0,
-      activeDays: 0,
-    });
+  it("includes the global percentage and totals in metric", () => {
+    const text = buildShareSummary(
+      stats,
+      {
+        period: "all",
+        distanceKm: 0,
+        rideCount: 0,
+        activeDays: 0,
+      },
+      "metric",
+    );
     expect(text).toContain("22%");
     expect(text).toContain("1,234");
     expect(text).toContain("5,678");
@@ -268,26 +241,59 @@ describe("buildShareSummary", () => {
     expect(text).toContain("Join me on Tarmoto");
   });
 
+  it("renders distances as miles when units are imperial", () => {
+    const text = buildShareSummary(
+      stats,
+      {
+        period: "year" satisfies TimePeriod,
+        distanceKm: 420,
+        rideCount: 14,
+        activeDays: 9,
+      },
+      "imperial",
+    );
+    expect(text).not.toContain("km");
+    expect(text).toMatch(/\bmi\b/);
+  });
+
   it("omits the period line when no rides match the selected period", () => {
-    const text = buildShareSummary(stats, {
-      period: "30d",
-      distanceKm: 0,
-      rideCount: 0,
-      activeDays: 0,
-    });
+    const text = buildShareSummary(
+      stats,
+      {
+        period: "30d",
+        distanceKm: 0,
+        rideCount: 0,
+        activeDays: 0,
+      },
+      "metric",
+    );
     expect(text).not.toContain("Last 30 days");
   });
 
   it("includes a period line when there are rides in the window", () => {
-    const text = buildShareSummary(stats, {
-      period: "year" satisfies TimePeriod,
-      distanceKm: 420,
-      rideCount: 14,
-      activeDays: 9,
-    });
+    const text = buildShareSummary(
+      stats,
+      {
+        period: "year" satisfies TimePeriod,
+        distanceKm: 420,
+        rideCount: 14,
+        activeDays: 9,
+      },
+      "metric",
+    );
     expect(text).toContain("This year");
     expect(text).toContain("14 rides");
     expect(text).toContain("420 km");
     expect(text).toContain("9 active days");
+  });
+
+  it("defaults to metric when no unit system is passed", () => {
+    const text = buildShareSummary(stats, {
+      period: "all",
+      distanceKm: 0,
+      rideCount: 0,
+      activeDays: 0,
+    });
+    expect(text).toContain("842 km");
   });
 });

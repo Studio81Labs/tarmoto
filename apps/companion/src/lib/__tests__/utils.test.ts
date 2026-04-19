@@ -9,6 +9,7 @@
 import {
   scoreToTier,
   formatDistance,
+  formatDistanceFromMeters,
   formatDuration,
   formatElevation,
   formatSpeed,
@@ -37,6 +38,59 @@ describe("formatDistance", () => {
   it("rounds km to whole numbers", () => {
     expect(formatDistance(1)).toMatch(/1/);
     expect(formatDistance(12.6)).toMatch(/13/);
+  });
+
+  it("renders sub-kilometer values in metres for metric", () => {
+    expect(formatDistance(0.4)).toBe("400 m");
+  });
+
+  it("keeps one decimal for 1–10 km in metric", () => {
+    expect(formatDistance(4.23)).toBe("4.2 km");
+  });
+
+  it("rounds to whole km for larger distances", () => {
+    expect(formatDistance(127.6)).toBe("128 km");
+  });
+
+  it("defends against invalid or zero input", () => {
+    expect(formatDistance(0)).toBe("0 km");
+    expect(formatDistance(-5)).toBe("0 km");
+    expect(formatDistance(Number.NaN)).toBe("0 km");
+    expect(formatDistance(0, "imperial")).toBe("0 mi");
+  });
+
+  it("converts to miles when units are imperial", () => {
+    // 10 km ≈ 6.21 mi
+    expect(formatDistance(10, "imperial")).toMatch(/mi$/);
+    expect(formatDistance(10, "imperial")).toContain("6.2");
+  });
+
+  it("uses feet for very short imperial distances", () => {
+    // 0.05 km = 50 m ≈ 164 ft
+    expect(formatDistance(0.05, "imperial")).toMatch(/ft$/);
+  });
+});
+
+describe("formatDistanceFromMeters", () => {
+  it("renders metres under 1 km in metric", () => {
+    expect(formatDistanceFromMeters(250)).toBe("250 m");
+  });
+
+  it("switches to km above 1 km in metric", () => {
+    expect(formatDistanceFromMeters(1500)).toBe("1.5 km");
+  });
+
+  it("uses feet for short imperial distances", () => {
+    expect(formatDistanceFromMeters(100, "imperial")).toMatch(/ft$/);
+  });
+
+  it("uses miles for longer imperial distances", () => {
+    expect(formatDistanceFromMeters(5000, "imperial")).toMatch(/mi$/);
+  });
+
+  it("handles invalid and zero input", () => {
+    expect(formatDistanceFromMeters(-10)).toBe("0 m");
+    expect(formatDistanceFromMeters(0, "imperial")).toBe("0 ft");
   });
 });
 

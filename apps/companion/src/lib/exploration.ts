@@ -12,12 +12,14 @@
  * the user flips a period chip.
  */
 
+import type { UnitSystem } from "@tarmoto/shared";
 import {
   localDateKey,
   parseStartedAt,
   toNumber,
   type RideForStats,
 } from "./ride-stats";
+import { formatDistance } from "./utils";
 import type { ExplorationStats, UnriddenSegment } from "./api";
 
 export const TIME_PERIODS = ["all", "year", "90d", "30d"] as const;
@@ -153,37 +155,29 @@ function regionLabelFor(roadName: string | null | undefined): string {
   return first;
 }
 
-export function formatKilometers(km: number): string {
-  if (!Number.isFinite(km) || km <= 0) return "0 km";
-  if (km < 1) return `${(km * 1000).toFixed(0)} m`;
-  if (km < 10) return `${km.toFixed(1)} km`;
-  return `${km.toFixed(0)} km`;
-}
-
-export function formatDistanceMeters(meters: number): string {
-  if (!Number.isFinite(meters) || meters <= 0) return "0 m";
-  if (meters < 1000) return `${Math.round(meters)} m`;
-  return formatKilometers(meters / 1000);
-}
-
 /**
  * Formats a social-friendly summary for the "Share exploration stats" action.
- * Kept in-module so the share button and unit tests agree on the exact text.
+ * Takes a `UnitSystem` so metric/imperial riders get the same message in their
+ * preferred units — formatter lives in `utils.ts` so every page renders
+ * distances consistently.
  */
 export function buildShareSummary(
   stats: ExplorationStats,
   period: PeriodStats,
+  units: UnitSystem = "metric",
 ): string {
   const lines = [
     `I've explored ${stats.percent_explored}% of Tarmoto's road network 🏍️`,
-    `${stats.ridden_segments.toLocaleString()} of ${stats.total_segments.toLocaleString()} road segments ridden — ${formatKilometers(
+    `${stats.ridden_segments.toLocaleString()} of ${stats.total_segments.toLocaleString()} road segments ridden — ${formatDistance(
       stats.total_distance_km,
+      units,
     )} in total.`,
   ];
   if (period.period !== "all" && period.rideCount > 0) {
     lines.push(
-      `${TIME_PERIOD_LABELS[period.period]}: ${period.rideCount} rides, ${formatKilometers(
+      `${TIME_PERIOD_LABELS[period.period]}: ${period.rideCount} rides, ${formatDistance(
         period.distanceKm,
+        units,
       )} across ${period.activeDays} active days.`,
     );
   }

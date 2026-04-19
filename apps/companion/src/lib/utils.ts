@@ -1,4 +1,7 @@
+import { kmToMiles, metersToFeet, type UnitSystem } from "@tarmoto/shared";
 import type { QualityTier, HazardType } from "@/lib/types";
+
+export type { UnitSystem };
 
 // ── Road Quality ──
 
@@ -79,9 +82,53 @@ export const HAZARD_CONFIG: Record<
 
 // ── Formatting ──
 
-export function formatDistance(km: number): string {
+/**
+ * Distance formatter used across the companion dashboard. Defaults to metric
+ * so existing callers keep their current behaviour; pages that read the user's
+ * unit preference pass `units: 'imperial'` explicitly.
+ *
+ * Tiering keeps the label short at every scale:
+ *   - sub-kilometre: whole metres (or feet) so trail segments don't lose sign
+ *   - 1–10 km: one decimal so short rides don't collapse to the same bucket
+ *   - ≥10 km: whole units so cards stay aligned
+ */
+export function formatDistance(
+  km: number,
+  units: UnitSystem = "metric",
+): string {
+  if (!Number.isFinite(km) || km <= 0) {
+    return units === "imperial" ? "0 mi" : "0 km";
+  }
+  if (units === "imperial") {
+    const mi = kmToMiles(km);
+    if (mi < 0.1) return `${metersToFeet(km * 1000)} ft`;
+    if (mi < 10) return `${mi.toFixed(1)} mi`;
+    return `${mi.toFixed(0)} mi`;
+  }
   if (km < 1) return `${Math.round(km * 1000)} m`;
-  return `${km.toFixed(1)} km`;
+  if (km < 10) return `${km.toFixed(1)} km`;
+  return `${km.toFixed(0)} km`;
+}
+
+/**
+ * Thin wrapper for sources whose native unit is metres (road segment lengths,
+ * distance-to-point from /exploration/nearby-unridden). Kept next to
+ * `formatDistance` so a single display rule covers both shapes.
+ */
+export function formatDistanceFromMeters(
+  meters: number,
+  units: UnitSystem = "metric",
+): string {
+  if (!Number.isFinite(meters) || meters <= 0) {
+    return units === "imperial" ? "0 ft" : "0 m";
+  }
+  if (units === "imperial" && meters < 160) {
+    return `${metersToFeet(meters)} ft`;
+  }
+  if (units === "metric" && meters < 1000) {
+    return `${Math.round(meters)} m`;
+  }
+  return formatDistance(meters / 1000, units);
 }
 
 export function formatDuration(minutes: number | null | undefined): string {
