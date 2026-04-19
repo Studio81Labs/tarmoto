@@ -5,12 +5,12 @@ export class CreateContactDto {
   @ApiProperty({ example: 'Jane Doe' })
   @IsString()
   @MaxLength(100)
-  name: string;
+  name!: string;
 
   @ApiProperty({ example: '+420123456789' })
   @IsString()
   @MaxLength(20)
-  phone: string;
+  phone!: string;
 
   @ApiProperty({ default: true, required: false })
   @IsOptional()

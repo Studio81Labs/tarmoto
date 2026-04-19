@@ -14,19 +14,19 @@ import { User } from './user.entity.js';
 @Index('idx_commute_routes_user', ['user_id'])
 export class CommuteRoute {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'uuid' })
-  user_id: string;
+  user_id!: string;
 
   @Column({ type: 'varchar', length: 100, default: 'Default' })
-  name: string;
+  name!: string;
 
   @Column({ type: 'geometry', spatialFeatureType: 'Point', srid: 4326 })
-  origin: GeoJSON.Geometry;
+  origin!: GeoJSON.Geometry;
 
   @Column({ type: 'geometry', spatialFeatureType: 'Point', srid: 4326 })
-  destination: GeoJSON.Geometry;
+  destination!: GeoJSON.Geometry;
 
   @Column({
     type: 'geometry',
@@ -34,24 +34,24 @@ export class CommuteRoute {
     srid: 4326,
     nullable: true,
   })
-  route_geom: GeoJSON.Geometry | null;
+  route_geom!: GeoJSON.Geometry | null;
 
   @Column({ type: 'float', nullable: true })
-  distance_km: number | null;
+  distance_km!: number | null;
 
   @Column({ type: 'interval', nullable: true })
-  avg_duration: string | null;
+  avg_duration!: string | null;
 
   @Column({ type: 'float', nullable: true })
-  avg_quality: number | null;
+  avg_quality!: number | null;
 
   @Column({ type: 'boolean', default: true })
-  is_primary: boolean;
+  is_primary!: boolean;
 
   @CreateDateColumn({ type: 'timestamptz' })
-  created_at: Date;
+  created_at!: Date;
 
   @ManyToOne(() => User, (u) => u.commute_routes)
   @JoinColumn({ name: 'user_id' })
-  user: User;
+  user!: User;
 }

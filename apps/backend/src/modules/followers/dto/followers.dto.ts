@@ -4,35 +4,35 @@ import { Type } from 'class-transformer';
 
 export class FollowUserResponseDto {
   @ApiProperty()
-  following_id: string;
+  following_id!: string;
 
   @ApiProperty()
-  display_name: string;
+  display_name!: string;
 
   @ApiProperty()
-  followed_at: string;
+  followed_at!: string;
 }
 
 export class FollowerDto {
   @ApiProperty()
-  user_id: string;
+  user_id!: string;
 
   @ApiProperty()
-  display_name: string;
+  display_name!: string;
 
   @ApiProperty()
-  followed_at: string;
+  followed_at!: string;
 }
 
 export class FollowingDto {
   @ApiProperty()
-  user_id: string;
+  user_id!: string;
 
   @ApiProperty()
-  display_name: string;
+  display_name!: string;
 
   @ApiProperty()
-  followed_at: string;
+  followed_at!: string;
 }
 
 export class FeedQueryDto {
@@ -74,32 +74,32 @@ export class FeedQueryDto {
 
 export class FeedRideDto {
   @ApiProperty()
-  ride_id: string;
+  ride_id!: string;
 
   @ApiProperty()
-  share_token: string;
+  share_token!: string;
 
   @ApiProperty()
-  rider_id: string;
+  rider_id!: string;
 
   @ApiProperty()
-  rider_name: string;
+  rider_name!: string;
 
   @ApiProperty()
-  ride_type: string;
+  ride_type!: string;
 
   @ApiProperty()
-  started_at: string;
+  started_at!: string;
 
   @ApiProperty({ nullable: true })
-  distance_km: number | null;
+  distance_km!: number | null;
 
   @ApiProperty({ nullable: true })
-  avg_speed: number | null;
+  avg_speed!: number | null;
 
   @ApiProperty({ nullable: true })
-  avg_road_quality: number | null;
+  avg_road_quality!: number | null;
 
   @ApiProperty({ nullable: true })
-  duration_min: number | null;
+  duration_min!: number | null;
 }

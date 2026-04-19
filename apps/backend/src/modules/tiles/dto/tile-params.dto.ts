@@ -8,19 +8,19 @@ export class TileParamsDto {
   @IsInt()
   @Min(0)
   @Max(22)
-  z: number;
+  z!: number;
 
   @ApiProperty()
   @Transform(({ value }: { value: unknown }) => Number(value))
   @IsInt()
   @Min(0)
-  x: number;
+  x!: number;
 
   @ApiProperty()
   @Transform(({ value }: { value: unknown }) => Number(value))
   @IsInt()
   @Min(0)
-  y: number;
+  y!: number;
 }
 
 const TILE_LAYERS = ['quality', 'surface', 'hazards', 'all'] as const;

@@ -14,19 +14,19 @@ import { ApiProperty } from '@nestjs/swagger';
 export class SensorReadingDto {
   @ApiProperty({ description: 'Unix timestamp milliseconds' })
   @IsInt()
-  t: number;
+  t!: number;
 
   @ApiProperty({ description: 'Accelerometer X (m/s²)' })
   @IsNumber()
-  ax: number;
+  ax!: number;
 
   @ApiProperty({ description: 'Accelerometer Y (m/s²)' })
   @IsNumber()
-  ay: number;
+  ay!: number;
 
   @ApiProperty({ description: 'Accelerometer Z (m/s²)' })
   @IsNumber()
-  az: number;
+  az!: number;
 
   @ApiProperty({ required: false })
   @IsOptional()
@@ -47,7 +47,7 @@ export class SensorReadingDto {
 export class UploadSensorDataDto {
   @ApiProperty({ format: 'uuid' })
   @IsUUID()
-  ride_id: string;
+  ride_id!: string;
 
   @ApiProperty({ required: false, example: 'iPhone 15 Pro' })
   @IsOptional()
@@ -59,5 +59,5 @@ export class UploadSensorDataDto {
   @ArrayMaxSize(5000)
   @ValidateNested({ each: true })
   @Type(() => SensorReadingDto)
-  readings: SensorReadingDto[];
+  readings!: SensorReadingDto[];
 }

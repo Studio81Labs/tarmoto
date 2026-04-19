@@ -4,11 +4,11 @@ import { ApiProperty } from '@nestjs/swagger';
 export class CrashAlertDto {
   @ApiProperty({ example: 49.1 })
   @IsNumber()
-  lat: number;
+  lat!: number;
 
   @ApiProperty({ example: 16.75 })
   @IsNumber()
-  lng: number;
+  lng!: number;
 
   @ApiProperty({ required: false, format: 'uuid' })
   @IsOptional()
@@ -23,8 +23,8 @@ export class CrashAlertDto {
 
 export class CrashAlertResponseDto {
   @ApiProperty()
-  contacts_notified: number;
+  contacts_notified!: number;
 
   @ApiProperty()
-  alert_id: string;
+  alert_id!: string;
 }

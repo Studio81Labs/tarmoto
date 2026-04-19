@@ -20,35 +20,35 @@ export type MountainPassOverrideStatus = 'open' | 'closed' | 'unknown';
 @Index('idx_mountain_passes_country', ['country_code'])
 export class MountainPass {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'varchar', length: 120 })
-  name: string;
+  name!: string;
 
   @Column({ type: 'varchar', length: 2 })
-  country_code: string;
+  country_code!: string;
 
   @Column({ type: 'varchar', length: 120, nullable: true })
-  region: string | null;
+  region!: string | null;
 
   @Column({ type: 'geometry', spatialFeatureType: 'Point', srid: 4326 })
-  location: GeoJSON.Point;
+  location!: GeoJSON.Point;
 
   @Column({ type: 'int' })
-  elevation_m: number;
+  elevation_m!: number;
 
   @Column({ type: 'smallint' })
-  typical_open_month: number;
+  typical_open_month!: number;
 
   @Column({ type: 'smallint' })
-  typical_close_month: number;
+  typical_close_month!: number;
 
   @Column({ type: 'varchar', length: 10, nullable: true })
-  override_status: MountainPassOverrideStatus | null;
+  override_status!: MountainPassOverrideStatus | null;
 
   @Column({ type: 'text', nullable: true })
-  notes: string | null;
+  notes!: string | null;
 
   @Column({ type: 'timestamptz', default: () => 'NOW()' })
-  last_updated: Date;
+  last_updated!: Date;
 }

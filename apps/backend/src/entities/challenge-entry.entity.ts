@@ -17,31 +17,31 @@ import { Challenge } from './challenge.entity.js';
 @Index('idx_challenge_entries_user', ['user_id'])
 export class ChallengeEntry {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'uuid' })
-  challenge_id: string;
+  challenge_id!: string;
 
   @Column({ type: 'uuid' })
-  user_id: string;
+  user_id!: string;
 
   @Column({ type: 'float', default: 0 })
-  progress: number;
+  progress!: number;
 
   @Column({ type: 'boolean', default: false })
-  completed: boolean;
+  completed!: boolean;
 
   @Column({ type: 'timestamptz', nullable: true })
-  completed_at: Date | null;
+  completed_at!: Date | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
-  joined_at: Date;
+  joined_at!: Date;
 
   @ManyToOne(() => Challenge, (c) => c.entries, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'challenge_id' })
-  challenge: Challenge;
+  challenge!: Challenge;
 
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })
-  user: User;
+  user!: User;
 }

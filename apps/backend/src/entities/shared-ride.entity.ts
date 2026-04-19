@@ -17,28 +17,28 @@ import { User } from './user.entity.js';
 @Index('idx_shared_rides_user', ['user_id'])
 export class SharedRide {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'uuid' })
-  ride_id: string;
+  ride_id!: string;
 
   @Column({ type: 'uuid' })
-  user_id: string;
+  user_id!: string;
 
   @Column({ type: 'varchar', length: 32, unique: true })
-  share_token: string;
+  share_token!: string;
 
   @Column({ type: 'boolean', default: true })
-  is_public: boolean;
+  is_public!: boolean;
 
   @CreateDateColumn({ type: 'timestamptz' })
-  created_at: Date;
+  created_at!: Date;
 
   @ManyToOne(() => Ride, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'ride_id' })
-  ride: Ride;
+  ride!: Ride;
 
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'user_id' })
-  user: User;
+  user!: User;
 }

@@ -11,10 +11,10 @@ import { ApiProperty } from '@nestjs/swagger';
 
 class LatLngDto {
   @IsNumber()
-  lat: number;
+  lat!: number;
 
   @IsNumber()
-  lng: number;
+  lng!: number;
 }
 
 export class CreateCommuteRouteDto {
@@ -27,12 +27,12 @@ export class CreateCommuteRouteDto {
   @ApiProperty({ type: LatLngDto })
   @ValidateNested()
   @Type(() => LatLngDto)
-  origin: LatLngDto;
+  origin!: LatLngDto;
 
   @ApiProperty({ type: LatLngDto })
   @ValidateNested()
   @Type(() => LatLngDto)
-  destination: LatLngDto;
+  destination!: LatLngDto;
 }
 
 export class CommuteStatsQueryDto {
@@ -44,115 +44,115 @@ export class CommuteStatsQueryDto {
 
 export class CommuteRouteResponseDto {
   @ApiProperty()
-  id: string;
+  id!: string;
 
   @ApiProperty()
-  name: string;
+  name!: string;
 
   @ApiProperty({ type: LatLngDto })
-  origin: { lat: number; lng: number };
+  origin!: { lat: number; lng: number };
 
   @ApiProperty({ type: LatLngDto })
-  destination: { lat: number; lng: number };
+  destination!: { lat: number; lng: number };
 
   @ApiProperty({ nullable: true })
-  distance_km: number | null;
+  distance_km!: number | null;
 
   @ApiProperty({ nullable: true })
-  avg_quality: number | null;
+  avg_quality!: number | null;
 
   @ApiProperty()
-  is_primary: boolean;
+  is_primary!: boolean;
 
   @ApiProperty()
-  created_at: string;
+  created_at!: string;
 }
 
 export class CommuteStatusResponseDto {
   @ApiProperty({ type: CommuteRouteResponseDto })
-  route: CommuteRouteResponseDto;
+  route!: CommuteRouteResponseDto;
 
   @ApiProperty()
-  hazard_count: number;
+  hazard_count!: number;
 
   @ApiProperty({ nullable: true })
-  route_quality: number | null;
+  route_quality!: number | null;
 
   @ApiProperty({
     enum: ['clear', 'hazards', 'weather_warning', 'delays'],
   })
-  status: string;
+  status!: string;
 }
 
 class DailyBreakdownDto {
   @ApiProperty()
-  date: string;
+  date!: string;
 
   @ApiProperty()
-  rides: number;
+  rides!: number;
 
   @ApiProperty()
-  km: number;
+  km!: number;
 
   @ApiProperty()
-  duration_min: number;
+  duration_min!: number;
 }
 
 class RouteGeometryPointDto {
   @ApiProperty()
-  lat: number;
+  lat!: number;
 
   @ApiProperty()
-  lng: number;
+  lng!: number;
 }
 
 export class AlternativeRouteDto {
   @ApiProperty()
-  distance_km: number;
+  distance_km!: number;
 
   @ApiProperty()
-  duration_min: number;
+  duration_min!: number;
 
   @ApiProperty({ nullable: true })
-  avg_quality: number | null;
+  avg_quality!: number | null;
 
   @ApiProperty()
-  hazard_count: number;
+  hazard_count!: number;
 
   @ApiProperty({ type: [RouteGeometryPointDto] })
-  geometry: Array<{ lat: number; lng: number }>;
+  geometry!: Array<{ lat: number; lng: number }>;
 }
 
 export class CommuteAlternativesResponseDto {
   @ApiProperty({ type: CommuteRouteResponseDto })
-  primary_route: CommuteRouteResponseDto;
+  primary_route!: CommuteRouteResponseDto;
 
   @ApiProperty()
-  primary_hazard_count: number;
+  primary_hazard_count!: number;
 
   @ApiProperty({ type: [AlternativeRouteDto] })
-  alternatives: AlternativeRouteDto[];
+  alternatives!: AlternativeRouteDto[];
 }
 
 export class CommuteStatsResponseDto {
   @ApiProperty()
-  period: string;
+  period!: string;
 
   @ApiProperty()
-  total_rides: number;
+  total_rides!: number;
 
   @ApiProperty()
-  total_km: number;
+  total_km!: number;
 
   @ApiProperty()
-  total_time_min: number;
+  total_time_min!: number;
 
   @ApiProperty()
-  avg_duration_min: number;
+  avg_duration_min!: number;
 
   @ApiProperty()
-  fuel_estimate_l: number;
+  fuel_estimate_l!: number;
 
   @ApiProperty({ type: [DailyBreakdownDto] })
-  daily_breakdown: DailyBreakdownDto[];
+  daily_breakdown!: DailyBreakdownDto[];
 }

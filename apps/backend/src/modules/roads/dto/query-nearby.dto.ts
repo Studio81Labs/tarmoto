@@ -13,12 +13,12 @@ export class QueryNearbyDto {
   @ApiProperty({ example: 49.1 })
   @Transform(({ value }: { value: unknown }) => Number(value))
   @IsNumber()
-  lat: number;
+  lat!: number;
 
   @ApiProperty({ example: 16.75 })
   @Transform(({ value }: { value: unknown }) => Number(value))
   @IsNumber()
-  lng: number;
+  lng!: number;
 
   @ApiProperty({ default: 5000, required: false, maximum: 50000 })
   @IsOptional()

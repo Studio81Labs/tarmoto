@@ -2,34 +2,34 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class RoadSegmentDto {
   @ApiProperty()
-  id: string;
+  id!: string;
 
   @ApiProperty({ nullable: true })
-  road_name: string | null;
+  road_name!: string | null;
 
   @ApiProperty({ nullable: true })
-  road_number: string | null;
+  road_number!: string | null;
 
   @ApiProperty({ description: '1-5 scale', nullable: true })
-  quality_score: number | null;
+  quality_score!: number | null;
 
   @ApiProperty({ description: '0-5 scale' })
-  curviness_score: number;
+  curviness_score!: number;
 
   @ApiProperty()
-  surface_type: string;
+  surface_type!: string;
 
   @ApiProperty()
-  length_m: number;
+  length_m!: number;
 
   @ApiProperty({ description: '0-100, based on number of readings' })
-  confidence: number;
+  confidence!: number;
 
   @ApiProperty()
-  reading_count: number;
+  reading_count!: number;
 
   @ApiProperty()
-  last_updated: string;
+  last_updated!: string;
 
   @ApiProperty({
     required: false,
@@ -40,43 +40,43 @@ export class RoadSegmentDto {
 
 export class QualityBreakdownDto {
   @ApiProperty()
-  excellent: number;
+  excellent!: number;
 
   @ApiProperty()
-  good: number;
+  good!: number;
 
   @ApiProperty()
-  fair: number;
+  fair!: number;
 
   @ApiProperty()
-  poor: number;
+  poor!: number;
 
   @ApiProperty()
-  very_poor: number;
+  very_poor!: number;
 }
 
 export class RoadSegmentDetailDto extends RoadSegmentDto {
   @ApiProperty({ type: [Object] })
-  geometry: Array<{ lat: number; lng: number }>;
+  geometry!: Array<{ lat: number; lng: number }>;
 
   @ApiProperty({ nullable: true })
-  elevation_min: number | null;
+  elevation_min!: number | null;
 
   @ApiProperty({ nullable: true })
-  elevation_max: number | null;
+  elevation_max!: number | null;
 
   @ApiProperty({ type: QualityBreakdownDto })
-  quality_breakdown: QualityBreakdownDto;
+  quality_breakdown!: QualityBreakdownDto;
 
   @ApiProperty()
-  active_hazards: number;
+  active_hazards!: number;
 
   @ApiProperty()
-  review_count: number;
+  review_count!: number;
 
   @ApiProperty({ nullable: true })
-  avg_review_rating: number | null;
+  avg_review_rating!: number | null;
 
   @ApiProperty()
-  riders_per_month: number;
+  riders_per_month!: number;
 }

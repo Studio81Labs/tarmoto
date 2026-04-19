@@ -14,37 +14,37 @@ import { RoadSegment } from './road-segment.entity.js';
 @Index('idx_trip_waypoints_day', ['trip_day_id', 'sequence'])
 export class TripWaypoint {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'uuid' })
-  trip_day_id: string;
+  trip_day_id!: string;
 
   @Column({ type: 'int' })
-  sequence: number;
+  sequence!: number;
 
   @Column({ type: 'geometry', spatialFeatureType: 'Point', srid: 4326 })
-  location: GeoJSON.Geometry;
+  location!: GeoJSON.Geometry;
 
   @Column({ type: 'varchar', length: 200, nullable: true })
-  name: string | null;
+  name!: string | null;
 
   @Column({ type: 'varchar', length: 30, default: 'via' })
-  waypoint_type: string;
+  waypoint_type!: string;
 
   @Column({ type: 'uuid', nullable: true })
-  road_segment_id: string | null;
+  road_segment_id!: string | null;
 
   @Column({ type: 'text', nullable: true })
-  notes: string | null;
+  notes!: string | null;
 
   @Column({ type: 'int', nullable: true })
-  duration_min: number | null;
+  duration_min!: number | null;
 
   @ManyToOne(() => TripDay, (d) => d.waypoints, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'trip_day_id' })
-  trip_day: TripDay;
+  trip_day!: TripDay;
 
   @ManyToOne(() => RoadSegment, { nullable: true })
   @JoinColumn({ name: 'road_segment_id' })
-  road_segment: RoadSegment | null;
+  road_segment!: RoadSegment | null;
 }

@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException } from '@nestjs/common';
@@ -9,8 +9,8 @@ import { UserContact } from '../../entities/user-contact.entity.js';
 
 describe('UsersService', () => {
   let service: UsersService;
-  let userRepo: jest.Mocked<Partial<Repository<User>>>;
-  let contactRepo: jest.Mocked<Partial<Repository<UserContact>>>;
+  let userRepo: Partial<jest.Mocked<Repository<User>>>;
+  let contactRepo: Partial<jest.Mocked<Repository<UserContact>>>;
 
   const mockUser = {
     id: 'user-1',
@@ -22,7 +22,7 @@ describe('UsersService', () => {
     preferences: { units: 'metric' },
     created_at: new Date('2026-04-13T10:00:00Z'),
     updated_at: new Date('2026-04-13T10:00:00Z'),
-  } as User;
+  } as unknown as User;
 
   const mockContact = {
     id: 'contact-1',

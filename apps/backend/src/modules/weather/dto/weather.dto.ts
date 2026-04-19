@@ -11,20 +11,20 @@ export class WeatherQueryDto {
   @ApiProperty({ example: 49.1 })
   @Transform(({ value }: { value: unknown }) => Number(value))
   @IsNumber()
-  lat: number;
+  lat!: number;
 
   @ApiProperty({ example: 16.75 })
   @Transform(({ value }: { value: unknown }) => Number(value))
   @IsNumber()
-  lng: number;
+  lng!: number;
 }
 
 class LatLngDto {
   @IsNumber()
-  lat: number;
+  lat!: number;
 
   @IsNumber()
-  lng: number;
+  lng!: number;
 }
 
 export class RouteWeatherDto {
@@ -33,7 +33,7 @@ export class RouteWeatherDto {
   @ArrayMinSize(2)
   @ValidateNested({ each: true })
   @Type(() => LatLngDto)
-  route: LatLngDto[];
+  route!: LatLngDto[];
 }
 
 export type WeatherCondition =
@@ -49,41 +49,41 @@ export type RoadCondition = 'dry' | 'wet' | 'icy' | 'unknown';
 
 export class WeatherResponseDto {
   @ApiProperty()
-  temperature_c: number;
+  temperature_c!: number;
 
   @ApiProperty({
     enum: ['clear', 'cloudy', 'rain', 'storm', 'snow', 'fog', 'ice'],
   })
-  condition: WeatherCondition;
+  condition!: WeatherCondition;
 
   @ApiProperty()
-  wind_kmh: number;
+  wind_kmh!: number;
 
   @ApiProperty()
-  precipitation_chance: number;
+  precipitation_chance!: number;
 
   @ApiProperty({ enum: ['dry', 'wet', 'icy', 'unknown'] })
-  road_condition: RoadCondition;
+  road_condition!: RoadCondition;
 
   @ApiProperty({ example: '14°C · Dry roads · Wind 12 km/h' })
-  description: string;
+  description!: string;
 }
 
 export class RouteWeatherPointDto extends WeatherResponseDto {
   @ApiProperty()
-  lat: number;
+  lat!: number;
 
   @ApiProperty()
-  lng: number;
+  lng!: number;
 }
 
 export class RouteWeatherResponseDto {
   @ApiProperty({ type: [RouteWeatherPointDto] })
-  points: RouteWeatherPointDto[];
+  points!: RouteWeatherPointDto[];
 
   @ApiProperty()
-  has_alerts: boolean;
+  has_alerts!: boolean;
 
   @ApiProperty({ type: [String] })
-  alerts: string[];
+  alerts!: string[];
 }

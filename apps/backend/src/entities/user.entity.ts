@@ -17,19 +17,19 @@ import { CommuteRoute } from './commute-route.entity.js';
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'varchar', length: 255, unique: true })
-  email: string;
+  email!: string;
 
   @Column({ type: 'varchar', length: 255, select: false })
-  password_hash: string;
+  password_hash!: string;
 
   @Column({ type: 'varchar', length: 100 })
-  display_name: string;
+  display_name!: string;
 
   @Column({ type: 'varchar', length: 20, nullable: true })
-  phone: string | null;
+  phone!: string | null;
 
   @Column({
     type: 'geometry',
@@ -37,7 +37,7 @@ export class User {
     srid: 4326,
     nullable: true,
   })
-  home_location: GeoJSON.Geometry | null;
+  home_location!: GeoJSON.Geometry | null;
 
   @Column({
     type: 'geometry',
@@ -45,32 +45,32 @@ export class User {
     srid: 4326,
     nullable: true,
   })
-  work_location: GeoJSON.Geometry | null;
+  work_location!: GeoJSON.Geometry | null;
 
   @Column({ type: 'jsonb', default: '{}' })
-  preferences: Record<string, unknown>;
+  preferences!: Record<string, unknown>;
 
   @CreateDateColumn({ type: 'timestamptz' })
-  created_at: Date;
+  created_at!: Date;
 
   @UpdateDateColumn({ type: 'timestamptz' })
-  updated_at: Date;
+  updated_at!: Date;
 
   @OneToMany(() => UserContact, (c) => c.user)
-  contacts: UserContact[];
+  contacts!: UserContact[];
 
   @OneToMany(() => Ride, (r) => r.user)
-  rides: Ride[];
+  rides!: Ride[];
 
   @OneToMany(() => HazardReport, (h) => h.user)
-  hazard_reports: HazardReport[];
+  hazard_reports!: HazardReport[];
 
   @OneToMany(() => RoadReview, (r) => r.user)
-  road_reviews: RoadReview[];
+  road_reviews!: RoadReview[];
 
   @OneToMany(() => Trip, (t) => t.owner)
-  trips: Trip[];
+  trips!: Trip[];
 
   @OneToMany(() => CommuteRoute, (c) => c.user)
-  commute_routes: CommuteRoute[];
+  commute_routes!: CommuteRoute[];
 }

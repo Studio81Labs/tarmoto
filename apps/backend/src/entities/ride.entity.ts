@@ -20,25 +20,25 @@ import { RideStats } from './ride-stats.entity.js';
 @Index('idx_rides_started', ['started_at'])
 export class Ride {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'uuid' })
-  user_id: string;
+  user_id!: string;
 
   @Column({ type: 'timestamptz' })
-  started_at: Date;
+  started_at!: Date;
 
   @Column({ type: 'timestamptz', nullable: true })
-  ended_at: Date | null;
+  ended_at!: Date | null;
 
   @Column({ type: 'float', nullable: true })
-  distance_km: number | null;
+  distance_km!: number | null;
 
   @Column({ type: 'float', nullable: true })
-  avg_speed: number | null;
+  avg_speed!: number | null;
 
   @Column({ type: 'float', nullable: true })
-  max_speed: number | null;
+  max_speed!: number | null;
 
   @Column({
     type: 'geometry',
@@ -46,27 +46,27 @@ export class Ride {
     srid: 4326,
     nullable: true,
   })
-  route_geom: GeoJSON.Geometry | null;
+  route_geom!: GeoJSON.Geometry | null;
 
   @Column({ type: 'float', nullable: true })
-  avg_road_quality: number | null;
+  avg_road_quality!: number | null;
 
   @Column({ type: 'varchar', length: 20, default: 'free' })
-  ride_type: string;
+  ride_type!: string;
 
   @Column({ type: 'varchar', length: 20, default: 'active' })
-  status: string;
+  status!: string;
 
   @CreateDateColumn({ type: 'timestamptz' })
-  created_at: Date;
+  created_at!: Date;
 
   @ManyToOne(() => User, (u) => u.rides)
   @JoinColumn({ name: 'user_id' })
-  user: User;
+  user!: User;
 
   @OneToMany(() => RideSegment, (rs) => rs.ride)
-  segments: RideSegment[];
+  segments!: RideSegment[];
 
   @OneToOne(() => RideStats, (rs) => rs.ride)
-  stats: RideStats | null;
+  stats!: RideStats | null;
 }

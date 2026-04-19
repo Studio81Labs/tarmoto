@@ -4,32 +4,32 @@ import { ChallengeEntry } from './challenge-entry.entity.js';
 @Entity('challenges')
 export class Challenge {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'varchar', length: 100 })
-  title: string;
+  title!: string;
 
   @Column({ type: 'text' })
-  description: string;
+  description!: string;
 
   @Column({ type: 'varchar', length: 30 })
-  metric: string;
+  metric!: string;
 
   @Column({ type: 'int' })
-  target: number;
+  target!: number;
 
   @Column({ type: 'timestamptz' })
-  starts_at: Date;
+  starts_at!: Date;
 
   @Column({ type: 'timestamptz' })
-  ends_at: Date;
+  ends_at!: Date;
 
   @Column({ type: 'varchar', length: 50, nullable: true })
-  reward_badge_key: string | null;
+  reward_badge_key!: string | null;
 
   @Column({ type: 'boolean', default: true })
-  is_active: boolean;
+  is_active!: boolean;
 
   @OneToMany(() => ChallengeEntry, (e) => e.challenge)
-  entries: ChallengeEntry[];
+  entries!: ChallengeEntry[];
 }

@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException } from '@nestjs/common';
@@ -27,8 +27,8 @@ const mockTransactionManager = {
 
 describe('CommuteService', () => {
   let service: CommuteService;
-  let routeRepo: jest.Mocked<Partial<Repository<CommuteRoute>>>;
-  let rideRepo: jest.Mocked<Partial<Repository<Ride>>>;
+  let routeRepo: Partial<jest.Mocked<Repository<CommuteRoute>>>;
+  let rideRepo: Partial<jest.Mocked<Repository<Ride>>>;
 
   const mockRoute = {
     id: 'route-1',

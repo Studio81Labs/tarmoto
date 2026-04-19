@@ -15,47 +15,47 @@ import { User } from './user.entity.js';
 @Index('idx_surface_readings_time', ['recorded_at'])
 export class SurfaceReading {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'uuid' })
-  road_segment_id: string;
+  road_segment_id!: string;
 
   @Column({ type: 'uuid', nullable: true })
-  ride_id: string | null;
+  ride_id!: string | null;
 
   @Column({ type: 'uuid', nullable: true })
-  user_id: string | null;
+  user_id!: string | null;
 
   @Column({ type: 'float' })
-  iri_value: number;
+  iri_value!: number;
 
   @Column({ type: 'varchar', length: 20 })
-  classification: string;
+  classification!: string;
 
   @Column({ type: 'varchar', length: 30, nullable: true })
-  surface_type: string | null;
+  surface_type!: string | null;
 
   @Column({ type: 'float', nullable: true })
-  vibration_rms: number | null;
+  vibration_rms!: number | null;
 
   @Column({ type: 'float', nullable: true })
-  speed_at_reading: number | null;
+  speed_at_reading!: number | null;
 
   @Column({ type: 'varchar', length: 100, nullable: true })
-  device_model: string | null;
+  device_model!: string | null;
 
   @Column({ type: 'timestamptz', default: () => 'NOW()' })
-  recorded_at: Date;
+  recorded_at!: Date;
 
   @ManyToOne(() => RoadSegment, (rs) => rs.surface_readings)
   @JoinColumn({ name: 'road_segment_id' })
-  road_segment: RoadSegment;
+  road_segment!: RoadSegment;
 
   @ManyToOne(() => Ride, { nullable: true })
   @JoinColumn({ name: 'ride_id' })
-  ride: Ride | null;
+  ride!: Ride | null;
 
   @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'user_id' })
-  user: User | null;
+  user!: User | null;
 }

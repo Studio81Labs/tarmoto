@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -7,7 +6,7 @@ import { RoadSegment } from '../../entities/road-segment.entity.js';
 
 describe('TilesService', () => {
   let service: TilesService;
-  let segmentRepo: jest.Mocked<Partial<Repository<RoadSegment>>>;
+  let segmentRepo: Partial<jest.Mocked<Repository<RoadSegment>>>;
 
   beforeEach(async () => {
     segmentRepo = {
@@ -38,7 +37,7 @@ describe('TilesService', () => {
     it('should use parameterized queries (no bbox interpolation)', async () => {
       await service.getTile(10, 550, 335, 'quality');
 
-      const sql = segmentRepo.query!.mock.calls[0][0] as string;
+      const sql = segmentRepo.query!.mock.calls[0][0];
       const params = segmentRepo.query!.mock.calls[0][1] as number[];
 
       // SQL should have $N placeholders, not raw numbers
@@ -59,7 +58,7 @@ describe('TilesService', () => {
     it('should rewrite param indices correctly for 3 layers (no $1 inside $10)', async () => {
       await service.getTile(10, 550, 335, 'all');
 
-      const sql = segmentRepo.query!.mock.calls[0][0] as string;
+      const sql = segmentRepo.query!.mock.calls[0][0];
       // Third layer (hazards) should use $9-$12, not $90/$91/$92
       expect(sql).toContain('$9');
       expect(sql).toContain('$12');
@@ -98,7 +97,7 @@ describe('TilesService', () => {
     it('should return only quality layer when requested', async () => {
       await service.getTile(10, 550, 335, 'quality');
 
-      const sql = segmentRepo.query!.mock.calls[0][0] as string;
+      const sql = segmentRepo.query!.mock.calls[0][0];
       expect(sql).toContain("'quality'");
       expect(sql).not.toContain("'surface'");
       expect(sql).not.toContain("'hazards'");
@@ -107,7 +106,7 @@ describe('TilesService', () => {
     it('should return only hazards layer when requested', async () => {
       await service.getTile(10, 550, 335, 'hazards');
 
-      const sql = segmentRepo.query!.mock.calls[0][0] as string;
+      const sql = segmentRepo.query!.mock.calls[0][0];
       expect(sql).toContain("'hazards'");
       expect(sql).not.toContain("'quality'");
       expect(sql).not.toContain("'surface'");
@@ -132,14 +131,14 @@ describe('TilesService', () => {
     it('should filter quality layer by non-null quality_score', async () => {
       await service.getTile(10, 550, 335, 'quality');
 
-      const sql = segmentRepo.query!.mock.calls[0][0] as string;
+      const sql = segmentRepo.query!.mock.calls[0][0];
       expect(sql).toContain('quality_score IS NOT NULL');
     });
 
     it('should filter hazards by is_active and expires_at', async () => {
       await service.getTile(10, 550, 335, 'hazards');
 
-      const sql = segmentRepo.query!.mock.calls[0][0] as string;
+      const sql = segmentRepo.query!.mock.calls[0][0];
       expect(sql).toContain('is_active = true');
       expect(sql).toContain('expires_at > NOW()');
     });

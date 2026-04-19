@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -9,9 +8,9 @@ import { Ride } from '../../entities/ride.entity.js';
 
 describe('ExplorationService', () => {
   let service: ExplorationService;
-  let rideSegmentRepo: jest.Mocked<Partial<Repository<RideSegment>>>;
-  let roadSegmentRepo: jest.Mocked<Partial<Repository<RoadSegment>>>;
-  let rideRepo: jest.Mocked<Partial<Repository<Ride>>>;
+  let rideSegmentRepo: Partial<jest.Mocked<Repository<RideSegment>>>;
+  let roadSegmentRepo: Partial<jest.Mocked<Repository<RoadSegment>>>;
+  let rideRepo: Partial<jest.Mocked<Repository<Ride>>>;
 
   const mockRideSegmentQb = {
     select: jest.fn().mockReturnThis(),

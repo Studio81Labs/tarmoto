@@ -13,7 +13,7 @@ export class CreateReviewDto {
   @IsInt()
   @Min(1)
   @Max(5)
-  rating: number;
+  rating!: number;
 
   @ApiProperty({ required: false, maxLength: 1000 })
   @IsOptional()
@@ -30,20 +30,20 @@ export class CreateReviewDto {
 
 export class ReviewResponseDto {
   @ApiProperty()
-  id: string;
+  id!: string;
 
   @ApiProperty()
-  user_display_name: string;
+  user_display_name!: string;
 
   @ApiProperty()
-  rating: number;
+  rating!: number;
 
   @ApiProperty({ nullable: true })
-  comment: string | null;
+  comment!: string | null;
 
   @ApiProperty({ nullable: true })
-  bike_model: string | null;
+  bike_model!: string | null;
 
   @ApiProperty()
-  created_at: string;
+  created_at!: string;
 }

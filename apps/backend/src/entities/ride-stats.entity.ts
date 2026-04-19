@@ -10,36 +10,36 @@ import { Ride } from './ride.entity.js';
 @Entity('ride_stats')
 export class RideStats {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'uuid', unique: true })
-  ride_id: string;
+  ride_id!: string;
 
   @Column({ type: 'float', nullable: true })
-  elevation_gain: number | null;
+  elevation_gain!: number | null;
 
   @Column({ type: 'float', nullable: true })
-  elevation_loss: number | null;
+  elevation_loss!: number | null;
 
   @Column({ type: 'int', nullable: true })
-  curve_count: number | null;
+  curve_count!: number | null;
 
   @Column({ type: 'float', nullable: true })
-  fuel_estimate_l: number | null;
+  fuel_estimate_l!: number | null;
 
   @Column({ type: 'interval', nullable: true })
-  duration: string | null;
+  duration!: string | null;
 
   @Column({ type: 'float', nullable: true })
-  avg_lean_angle: number | null;
+  avg_lean_angle!: number | null;
 
   @Column({ type: 'float', nullable: true })
-  max_lean_angle: number | null;
+  max_lean_angle!: number | null;
 
   @Column({ type: 'int', nullable: true })
-  calories_est: number | null;
+  calories_est!: number | null;
 
   @OneToOne(() => Ride, (r) => r.stats, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'ride_id' })
-  ride: Ride;
+  ride!: Ride;
 }

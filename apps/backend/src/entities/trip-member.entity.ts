@@ -14,25 +14,25 @@ import { User } from './user.entity.js';
 @Unique(['trip_id', 'user_id'])
 export class TripMember {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ type: 'uuid' })
-  trip_id: string;
+  trip_id!: string;
 
   @Column({ type: 'uuid' })
-  user_id: string;
+  user_id!: string;
 
   @Column({ type: 'varchar', length: 20, default: 'member' })
-  role: string;
+  role!: string;
 
   @CreateDateColumn({ type: 'timestamptz' })
-  joined_at: Date;
+  joined_at!: Date;
 
   @ManyToOne(() => Trip, (t) => t.members, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'trip_id' })
-  trip: Trip;
+  trip!: Trip;
 
   @ManyToOne(() => User)
   @JoinColumn({ name: 'user_id' })
-  user: User;
+  user!: User;
 }

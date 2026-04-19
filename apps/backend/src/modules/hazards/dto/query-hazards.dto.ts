@@ -13,12 +13,12 @@ export class QueryHazardsDto {
   @ApiProperty({ example: 49.1 })
   @Transform(({ value }: { value: unknown }) => Number(value))
   @IsNumber()
-  lat: number;
+  lat!: number;
 
   @ApiProperty({ example: 16.75 })
   @Transform(({ value }: { value: unknown }) => Number(value))
   @IsNumber()
-  lng: number;
+  lng!: number;
 
   @ApiProperty({ default: 10000, required: false })
   @IsOptional()

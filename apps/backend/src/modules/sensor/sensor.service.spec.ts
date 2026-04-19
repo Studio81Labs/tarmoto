@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -9,8 +9,8 @@ import { SensorReadingDto } from './dto/upload-sensor-data.dto.js';
 
 describe('SensorService', () => {
   let service: SensorService;
-  let readingRepo: jest.Mocked<Partial<Repository<SurfaceReading>>>;
-  let segmentRepo: jest.Mocked<Partial<Repository<RoadSegment>>>;
+  let readingRepo: Partial<jest.Mocked<Repository<SurfaceReading>>>;
+  let segmentRepo: Partial<jest.Mocked<Repository<RoadSegment>>>;
 
   beforeEach(async () => {
     readingRepo = {

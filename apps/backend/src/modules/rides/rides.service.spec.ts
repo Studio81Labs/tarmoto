@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
@@ -10,9 +10,9 @@ import { RideSegment } from '../../entities/ride-segment.entity.js';
 
 describe('RidesService', () => {
   let service: RidesService;
-  let rideRepo: jest.Mocked<Partial<Repository<Ride>>>;
-  let statsRepo: jest.Mocked<Partial<Repository<RideStats>>>;
-  let segmentRepo: jest.Mocked<Partial<Repository<RideSegment>>>;
+  let rideRepo: Partial<jest.Mocked<Repository<Ride>>>;
+  let statsRepo: Partial<jest.Mocked<Repository<RideStats>>>;
+  let segmentRepo: Partial<jest.Mocked<Repository<RideSegment>>>;
 
   const mockRide = {
     id: 'ride-1',

@@ -34,6 +34,8 @@ import { usePreferencesStore, useTripStore } from "@/stores";
 import type {
   Accommodation,
   AccommodationKind,
+  Poi,
+  PoiKind,
   Trip,
   TripDay,
   Waypoint,
@@ -195,6 +197,8 @@ export default function TripDayScreen() {
         <AccommodationsCard day={day} />
       ) : null}
 
+      <NearbyPoisCard day={day} />
+
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Route</Text>
         {day.waypoints.length === 0 ? (
@@ -280,6 +284,40 @@ function FuelRangeWarning({
       ))}
     </View>
   );
+}
+
+/**
+ * Open the first available external link for a nearby POI-ish row —
+ * accommodations, restaurants, viewpoints, and cafés all share this
+ * chain. Crowd-sourced data means a malformed or custom-scheme website
+ * must not abort the fallback: we accept only http(s) websites, then
+ * walk website → phone → OSM, swallowing per-step failures so a missing
+ * target app on one row never leaves the row inert.
+ */
+async function openPoiFallback(item: {
+  website: string | null;
+  phone: string | null;
+  lat: number;
+  lng: number;
+}): Promise<void> {
+  const website =
+    item.website && /^https?:\/\//i.test(item.website.trim())
+      ? item.website.trim()
+      : null;
+  const candidates = [
+    website,
+    item.phone ? `tel:${item.phone.replace(/\s+/g, "")}` : null,
+    `https://www.openstreetmap.org/?mlat=${item.lat}&mlon=${item.lng}#map=17/${item.lat}/${item.lng}`,
+  ].filter((value): value is string => !!value);
+
+  for (const url of candidates) {
+    try {
+      await Linking.openURL(url);
+      return;
+    } catch {
+      // Try the next fallback.
+    }
+  }
 }
 
 const ACCOMMODATION_KIND_LABELS: Record<AccommodationKind, string> = {
@@ -380,36 +418,134 @@ function AccommodationRow({ item }: { item: Accommodation }) {
   ];
   if (item.stars) metaParts.push("★".repeat(item.stars));
 
-  const openExternal = async () => {
-    // Crowd-sourced data: a malformed or custom-scheme website must not
-    // abort the fallback chain. Accept only http(s) websites, then walk
-    // website → phone → OSM, swallowing per-step failures so a missing
-    // target app on one row never leaves the row inert.
-    const website =
-      item.website && /^https?:\/\//i.test(item.website.trim())
-        ? item.website.trim()
-        : null;
-    const candidates = [
-      website,
-      item.phone ? `tel:${item.phone.replace(/\s+/g, "")}` : null,
-      `https://www.openstreetmap.org/?mlat=${item.lat}&mlon=${item.lng}#map=17/${item.lat}/${item.lng}`,
-    ].filter((value): value is string => !!value);
+  return (
+    <TouchableOpacity
+      style={styles.accommodationRow}
+      onPress={() => {
+        void openPoiFallback(item);
+      }}
+      accessibilityRole="button"
+      accessibilityLabel={`${label}, ${item.distance_km.toFixed(1)} kilometres away`}
+    >
+      <View style={styles.accommodationIconWrap}>
+        <Icon name={icon} size={18} color={colors.primary} />
+      </View>
+      <View style={styles.accommodationBody}>
+        <Text style={styles.accommodationName} numberOfLines={1}>
+          {label}
+        </Text>
+        <Text style={styles.accommodationMeta} numberOfLines={1}>
+          {metaParts.join(" · ")}
+        </Text>
+      </View>
+      <Icon
+        name="open-in-new"
+        size={16}
+        color={colors.textTertiary}
+        style={styles.accommodationChevron}
+      />
+    </TouchableOpacity>
+  );
+}
 
-    for (const url of candidates) {
+const POI_KIND_LABELS: Record<PoiKind, string> = {
+  restaurant: "Restaurant",
+  viewpoint: "Viewpoint",
+  cafe: "Café",
+};
+
+const POI_KIND_ICONS: Record<PoiKind, IconName> = {
+  restaurant: "silverware-fork-knife",
+  viewpoint: "binoculars",
+  cafe: "coffee",
+};
+
+function NearbyPoisCard({ day }: { day: TripDay }) {
+  // US-10: restaurants / viewpoints / cafés near the day end. Anchored to
+  // the same point the accommodations card uses so dinner-and-sleep
+  // suggestions land in the same spatial context, which is what most
+  // riders are planning on a long-distance day. If the day has no anchor
+  // (no waypoints and no route geometry) the card hides itself.
+  const anchor = useMemo(() => pickDayEndAnchor(day), [day]);
+  const [items, setItems] = useState<Poi[] | null>(null);
+  const [loading, setLoading] = useState(!!anchor);
+  const [error, setError] = useState<string | null>(null);
+  const [radiusKm, setRadiusKm] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!anchor) return;
+    let ignore = false;
+    setLoading(true);
+    setError(null);
+    (async () => {
       try {
-        await Linking.openURL(url);
-        return;
-      } catch {
-        // Try the next fallback.
+        const res = await api.listPois(anchor.lat, anchor.lng);
+        if (ignore) return;
+        setItems(res.pois);
+        setRadiusKm(res.radius_km);
+      } catch (e) {
+        if (ignore) return;
+        setError(
+          e instanceof Error ? e.message : "Couldn't load nearby places",
+        );
+      } finally {
+        if (!ignore) setLoading(false);
       }
-    }
-  };
+    })();
+    return () => {
+      ignore = true;
+    };
+  }, [anchor?.lat, anchor?.lng]);
+
+  if (!anchor) return null;
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.accommodationsHeader}>
+        <Icon
+          name="map-marker-radius-outline"
+          size={20}
+          color={colors.primary}
+        />
+        <Text style={styles.sectionTitle}>Places near day end</Text>
+        {radiusKm !== null && items && items.length > 0 ? (
+          <Text style={styles.accommodationsRadius}>
+            within {Math.round(radiusKm)} km
+          </Text>
+        ) : null}
+      </View>
+
+      {loading ? (
+        <View style={styles.accommodationsEmpty}>
+          <ActivityIndicator size="small" color={colors.primary} />
+        </View>
+      ) : error ? (
+        <Text style={styles.accommodationsEmptyBody}>{error}</Text>
+      ) : !items || items.length === 0 ? (
+        <Text style={styles.accommodationsEmptyBody}>
+          No restaurants, viewpoints, or cafés found near the end of this day.
+        </Text>
+      ) : (
+        items.map((p) => <PoiRow key={p.external_id} item={p} />)
+      )}
+    </View>
+  );
+}
+
+function PoiRow({ item }: { item: Poi }) {
+  const label = item.name?.trim() || POI_KIND_LABELS[item.kind];
+  const icon = POI_KIND_ICONS[item.kind];
+  const metaParts = [
+    POI_KIND_LABELS[item.kind],
+    `${item.distance_km.toFixed(1)} km`,
+  ];
+  if (item.hint) metaParts.push(item.hint);
 
   return (
     <TouchableOpacity
       style={styles.accommodationRow}
       onPress={() => {
-        void openExternal();
+        void openPoiFallback(item);
       }}
       accessibilityRole="button"
       accessibilityLabel={`${label}, ${item.distance_km.toFixed(1)} kilometres away`}

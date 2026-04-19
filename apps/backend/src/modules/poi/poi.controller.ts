@@ -5,6 +5,7 @@ import {
   AccommodationListDto,
   AccommodationQueryDto,
 } from './dto/accommodation.dto.js';
+import { PoiListDto, PoiQueryDto } from './dto/point-of-interest.dto.js';
 
 @ApiTags('poi')
 @Controller('poi')
@@ -27,6 +28,25 @@ export class PoiController {
       query.lat,
       query.lng,
       query.radius_km,
+    );
+  }
+
+  @Get('nearby')
+  @ApiOperation({
+    summary: 'Find along-route POIs near a point (US-10)',
+    description:
+      'Returns nearby restaurants, viewpoints, and cafés sourced from ' +
+      'the configured POI provider. Used by the mobile trip planner to ' +
+      'suggest pit stops along each day of a trip. Omit `kinds` to ' +
+      'request all supported kinds in one call.',
+  })
+  @ApiResponse({ status: 200, type: PoiListDto })
+  async findPointsOfInterest(@Query() query: PoiQueryDto): Promise<PoiListDto> {
+    return this.poiService.findPointsOfInterestNear(
+      query.lat,
+      query.lng,
+      query.radius_km,
+      query.kinds,
     );
   }
 }

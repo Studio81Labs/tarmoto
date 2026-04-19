@@ -2,85 +2,85 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class ChallengeDto {
   @ApiProperty()
-  id: string;
+  id!: string;
 
   @ApiProperty()
-  title: string;
+  title!: string;
 
   @ApiProperty()
-  description: string;
+  description!: string;
 
   @ApiProperty()
-  metric: string;
+  metric!: string;
 
   @ApiProperty()
-  target: number;
+  target!: number;
 
   @ApiProperty()
-  starts_at: string;
+  starts_at!: string;
 
   @ApiProperty()
-  ends_at: string;
+  ends_at!: string;
 
   @ApiPropertyOptional({ nullable: true })
-  reward_badge_key: string | null;
+  reward_badge_key!: string | null;
 
   @ApiProperty()
-  participant_count: number;
+  participant_count!: number;
 }
 
 export class LeaderboardEntryDto {
   @ApiProperty()
-  rank: number;
+  rank!: number;
 
   @ApiProperty()
-  user_id: string;
+  user_id!: string;
 
   @ApiProperty()
-  display_name: string;
+  display_name!: string;
 
   @ApiProperty()
-  progress: number;
+  progress!: number;
 
   @ApiProperty()
-  completed: boolean;
+  completed!: boolean;
 }
 
 export class ChallengeDetailDto extends ChallengeDto {
   @ApiPropertyOptional({ nullable: true })
-  my_progress: number | null;
+  my_progress!: number | null;
 
   @ApiPropertyOptional({ nullable: true })
-  my_completed: boolean | null;
+  my_completed!: boolean | null;
 
   @ApiProperty({ type: [LeaderboardEntryDto] })
-  leaderboard: LeaderboardEntryDto[];
+  leaderboard!: LeaderboardEntryDto[];
 }
 
 export class JoinChallengeResponseDto {
   @ApiProperty()
-  challenge_id: string;
+  challenge_id!: string;
 
   @ApiProperty()
-  joined_at: string;
+  joined_at!: string;
 }
 
 export class ProgressDto {
   @ApiProperty()
-  challenge_id: string;
+  challenge_id!: string;
 
   @ApiProperty()
-  progress: number;
+  progress!: number;
 
   @ApiProperty()
-  target: number;
+  target!: number;
 
   @ApiProperty()
-  completed: boolean;
+  completed!: boolean;
 
   @ApiPropertyOptional({ nullable: true })
-  completed_at: string | null;
+  completed_at!: string | null;
 
   @ApiProperty()
-  percent: number;
+  percent!: number;
 }

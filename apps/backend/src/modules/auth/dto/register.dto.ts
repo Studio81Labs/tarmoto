@@ -8,16 +8,16 @@ export class RegisterDto {
     typeof value === 'string' ? value.toLowerCase().trim() : value,
   )
   @IsEmail()
-  email: string;
+  email!: string;
 
   @ApiProperty({ example: 'securePassword123', minLength: 8, maxLength: 72 })
   @IsString()
   @MinLength(8)
   @MaxLength(72)
-  password: string;
+  password!: string;
 
   @ApiProperty({ example: 'Martin_CZ', maxLength: 100 })
   @IsString()
   @MaxLength(100)
-  display_name: string;
+  display_name!: string;
 }

@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import {
@@ -15,9 +15,9 @@ import { Ride } from '../../entities/ride.entity.js';
 
 describe('FollowersService', () => {
   let service: FollowersService;
-  let followRepo: jest.Mocked<Partial<Repository<UserFollow>>>;
-  let userRepo: jest.Mocked<Partial<Repository<User>>>;
-  let sharedRideRepo: jest.Mocked<Partial<Repository<SharedRide>>>;
+  let followRepo: Partial<jest.Mocked<Repository<UserFollow>>>;
+  let userRepo: Partial<jest.Mocked<Repository<User>>>;
+  let sharedRideRepo: Partial<jest.Mocked<Repository<SharedRide>>>;
 
   const mockUser = {
     id: 'user-2',
