@@ -83,7 +83,7 @@ export function computeCurveCount(
     const delta = Math.abs(
       normalizeBearingDelta(bearings[i] - bearings[i - 1]),
     );
-    if (delta >= turnThresholdDeg) {
+    if (delta > turnThresholdDeg) {
       if (!inTurn) {
         count += 1;
         inTurn = true;
