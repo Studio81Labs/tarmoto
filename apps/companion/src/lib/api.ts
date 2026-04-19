@@ -93,6 +93,46 @@ export const tripsApi = {
     }),
 };
 
+// ── Exploration endpoints (not yet in spec) ──
+export interface ExplorationStats {
+  ridden_segments: number;
+  total_segments: number;
+  percent_explored: number;
+  total_distance_km: number;
+}
+
+export interface UnriddenSegment {
+  id: string;
+  road_name: string | null;
+  length_m: number;
+  quality_score: number | null;
+  surface_type: string;
+  distance_m: number;
+}
+
+export const explorationApi = {
+  getStats: () => apiFetch<ExplorationStats>("/exploration/stats"),
+  getRiddenIds: () =>
+    apiFetch<{ segment_ids: string[] }>("/exploration/ridden-ids"),
+  getNearbyUnridden: (params: {
+    lat: number;
+    lng: number;
+    radius_km?: number;
+    limit?: number;
+  }) => {
+    const query = new URLSearchParams({
+      lat: String(params.lat),
+      lng: String(params.lng),
+    });
+    if (params.radius_km != null)
+      query.set("radius_km", String(params.radius_km));
+    if (params.limit != null) query.set("limit", String(params.limit));
+    return apiFetch<UnriddenSegment[]>(
+      `/exploration/nearby-unridden?${query.toString()}`,
+    );
+  },
+};
+
 // ── Account endpoints (not yet in spec) ──
 export const accountApi = {
   updateProfile: (data: unknown) =>
