@@ -119,15 +119,26 @@ describe("filterRidesByPeriod", () => {
     ]);
   });
 
-  it("ignores rides with an unparseable timestamp", () => {
+  it("ignores rides with an unparseable timestamp across every period", () => {
     const broken = [...rides, ride({ id: "r-bad", started_at: "not-a-date" })];
-    const kept = filterRidesByPeriod(broken, "all", now).map((r) => r.id);
-    // 'all' keeps the malformed row (no lower bound).
-    expect(kept).toContain("r-bad");
-    // Bounded periods should exclude it.
+    expect(
+      filterRidesByPeriod(broken, "all", now).map((r) => r.id),
+    ).not.toContain("r-bad");
     expect(
       filterRidesByPeriod(broken, "30d", now).map((r) => r.id),
     ).not.toContain("r-bad");
+  });
+
+  it("excludes rides started in the future from every period", () => {
+    const withFuture = [
+      ...rides,
+      ride({ id: "r-future", started_at: "2027-01-01T09:00:00Z" }),
+    ];
+    for (const period of ["all", "year", "90d", "30d"] as const) {
+      expect(
+        filterRidesByPeriod(withFuture, period, now).map((r) => r.id),
+      ).not.toContain("r-future");
+    }
   });
 });
 
@@ -153,7 +164,7 @@ describe("computePeriodStats", () => {
       }),
       ride({
         id: "b",
-        started_at: "2026-04-19T18:00:00Z", // same calendar day as 'a'
+        started_at: "2026-04-19T11:30:00Z", // same calendar day as 'a', still before `now`
         distance_km: 25,
       }),
       ride({

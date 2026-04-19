@@ -148,11 +148,22 @@ export default function AccountPage() {
         <p className="text-sm text-slate-500 mb-4">
           Choose how distances and speeds are shown across the dashboard.
         </p>
-        <div className="inline-flex rounded-lg bg-slate-800 p-1">
+        <div
+          className="inline-flex rounded-lg bg-slate-800 p-1"
+          role="radiogroup"
+          aria-label="Display units"
+        >
           {(["metric", "imperial"] as UnitSystem[]).map((value) => (
             <button
               key={value}
               type="button"
+              role="radio"
+              aria-checked={unitSystem === value}
+              aria-label={
+                value === "metric"
+                  ? "Use metric units (kilometres)"
+                  : "Use imperial units (miles)"
+              }
               onClick={() => setUnitSystem(value)}
               className={`px-4 py-1.5 rounded-md text-sm transition ${
                 unitSystem === value

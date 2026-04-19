@@ -89,10 +89,13 @@ export function filterRidesByPeriod(
   now: Date = new Date(),
 ): RideForStats[] {
   const lowerBound = periodStartDate(period, now);
-  if (!lowerBound) return [...rides];
   return rides.filter((ride) => {
     const date = parseStartedAt(ride.started_at);
-    return date !== null && date >= lowerBound;
+    if (date === null) return false;
+    // Future-dated rides (clock skew or bad data) would otherwise inflate the
+    // period totals, so we cap the window at `now`.
+    if (date > now) return false;
+    return lowerBound === null || date >= lowerBound;
   });
 }
 
