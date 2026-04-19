@@ -101,4 +101,45 @@ describe("duplicateTripPayload", () => {
   it("applies the (copy) suffix to the duplicated name", () => {
     expect(duplicateTripPayload(makeTrip()).name).toBe("Alps Loop (copy)");
   });
+
+  it("deep-copies waypoint locations", () => {
+    const trip = makeTrip();
+    const payload = duplicateTripPayload(trip);
+    expect(payload.days[0]?.waypoints[0]?.location).not.toBe(
+      trip.days[0]?.waypoints[0]?.location,
+    );
+  });
+
+  it("omits overnight bookings, cached geometry, and segment previews", () => {
+    const trip = makeTrip({
+      days: [
+        {
+          dayNumber: 1,
+          waypoints: [],
+          distanceKm: 250,
+          durationMinutes: 400,
+          elevationGain: 2000,
+          avgQuality: 4,
+          overnightStop: {
+            id: "poi_1",
+            name: "Hotel",
+            type: "accommodation",
+            location: { lng: 10, lat: 45 },
+          },
+          routeGeometry: {
+            type: "LineString",
+            coordinates: [
+              [10, 45],
+              [11, 46],
+            ],
+          },
+          segments: [],
+        },
+      ],
+    });
+    const payload = duplicateTripPayload(trip);
+    expect(payload.days[0]).not.toHaveProperty("overnightStop");
+    expect(payload.days[0]).not.toHaveProperty("routeGeometry");
+    expect(payload.days[0]).not.toHaveProperty("segments");
+  });
 });

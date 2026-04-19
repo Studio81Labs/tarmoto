@@ -19,8 +19,20 @@ export function duplicateTripPayload(trip: Trip): TripDuplicatePayload {
   const payload: TripDuplicatePayload = {
     name: nextCopyName(trip.name),
     days: trip.days.map((day) => ({
-      ...day,
-      waypoints: day.waypoints.map((wp) => ({ ...wp })),
+      // Construct each day explicitly rather than spreading, so overnight
+      // bookings, cached route geometry, and segment previews don't leak
+      // from the original trip into the copy. The backend will recompute
+      // those fields when the duplicated trip is next opened.
+      dayNumber: day.dayNumber,
+      title: day.title,
+      waypoints: day.waypoints.map((wp) => ({
+        ...wp,
+        location: { ...wp.location },
+      })),
+      distanceKm: day.distanceKm,
+      durationMinutes: day.durationMinutes,
+      elevationGain: day.elevationGain,
+      avgQuality: day.avgQuality,
     })),
     parameters: {
       ...trip.parameters,

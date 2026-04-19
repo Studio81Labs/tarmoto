@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import {
   Plus,
@@ -101,7 +101,17 @@ export default function TripListPage() {
   }, [setTrips]);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) {
+      // Sign-out / account switch: drop the previous user's folders and any
+      // selected folder scope so nothing leaks across sessions.
+      setFolders([]);
+      setFilters((prev) =>
+        prev.folderScope.kind === "folder"
+          ? { ...prev, folderScope: { kind: "all" } }
+          : prev,
+      );
+      return;
+    }
     setFolders(sortFoldersByName(loadFolders(userId)));
   }, [userId]);
 
@@ -472,7 +482,7 @@ function FolderRow({
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="group relative flex items-center">
+    <div data-menu-root className="group relative flex items-center">
       <button
         type="button"
         onClick={onSelect}
@@ -639,6 +649,7 @@ function TripCard({
 
   return (
     <div
+      data-menu-root
       className={`relative rounded-2xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition ${
         busy ? "opacity-60" : ""
       }`}
@@ -922,14 +933,24 @@ function Menu({
   align: "left" | "right";
   children: React.ReactNode;
 }) {
+  const menuRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     function onDoc(e: MouseEvent) {
       const target = e.target as HTMLElement;
-      // The trigger button sits outside the menu container, so without the
-      // `[data-menu-trigger]` bail-out mousedown fires before the button's
-      // onClick and the menu toggle would immediately reopen itself.
       if (target.closest("[data-trip-menu]")) return;
-      if (target.closest("[data-menu-trigger]")) return;
+      // Ignore the mousedown only if it lands on *this* menu's own trigger —
+      // clicking a sibling menu's trigger should still close us so the page
+      // never shows two menus open at once. Each menu+trigger pair is scoped
+      // by a common `[data-menu-root]` ancestor.
+      const menuRoot = menuRef.current?.closest("[data-menu-root]");
+      const targetRoot = target.closest("[data-menu-root]");
+      if (
+        targetRoot &&
+        targetRoot === menuRoot &&
+        target.closest("[data-menu-trigger]")
+      ) {
+        return;
+      }
       onClose();
     }
     document.addEventListener("mousedown", onDoc);
@@ -938,6 +959,7 @@ function Menu({
 
   return (
     <div
+      ref={menuRef}
       data-trip-menu
       className={`absolute top-10 z-20 w-56 rounded-lg border border-slate-800 bg-slate-950 shadow-xl py-1 ${
         align === "right" ? "right-2" : "left-2"
