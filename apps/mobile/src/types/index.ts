@@ -74,8 +74,14 @@ export interface RoadSegment {
 
 export interface RoadSegmentDetail extends RoadSegment {
   geometry: LatLng[];
-  elevation_min: number;
-  elevation_max: number;
+  elevation_min: number | null;
+  elevation_max: number | null;
+  /**
+   * Per-vertex elevation in meters, aligned 1:1 with `geometry`. Null when
+   * the backend hasn't ingested an elevation profile for this segment yet —
+   * callers should fall back to min/max stats only.
+   */
+  elevation_profile: number[] | null;
   quality_breakdown: {
     excellent: number;
     good: number;
@@ -83,10 +89,15 @@ export interface RoadSegmentDetail extends RoadSegment {
     poor: number;
     very_poor: number;
   };
+  /** Top-N most-recent active hazards on this segment. */
   active_hazards: Hazard[];
+  /** Total active hazard count (>= active_hazards.length when truncated). */
+  active_hazard_count: number;
+  /** Top-N most-recent reviews — full collection lives at /roads/:id/reviews. */
   recent_reviews: RoadReview[];
+  review_count: number;
   riders_per_month: number;
-  avg_review_rating: number;
+  avg_review_rating: number | null;
 }
 
 export interface FunZone {
@@ -238,6 +249,8 @@ export interface RoadReview {
   rating: number;
   comment?: string;
   bike_model?: string;
+  /** HTTPS URLs of photos uploaded with the review. Empty array when none. */
+  photos: string[];
   created_at: string;
 }
 

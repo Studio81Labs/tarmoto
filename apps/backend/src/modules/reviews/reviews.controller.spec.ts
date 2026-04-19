@@ -16,6 +16,7 @@ describe('ReviewsController', () => {
     rating: 4,
     comment: 'Smooth asphalt, great ride!',
     bike_model: 'BMW R1250GS',
+    photos: [],
     created_at: '2026-04-14T10:00:00.000Z',
   };
 

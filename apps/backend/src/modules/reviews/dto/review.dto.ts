@@ -1,12 +1,17 @@
 import {
+  ArrayMaxSize,
+  IsArray,
   IsInt,
   IsString,
   IsOptional,
+  IsUrl,
   Min,
   Max,
   MaxLength,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+
+export const MAX_REVIEW_PHOTOS = 5;
 
 export class CreateReviewDto {
   @ApiProperty({ minimum: 1, maximum: 5 })
@@ -26,6 +31,18 @@ export class CreateReviewDto {
   @IsString()
   @MaxLength(100)
   bike_model?: string;
+
+  @ApiProperty({
+    required: false,
+    type: [String],
+    maxItems: MAX_REVIEW_PHOTOS,
+    description: 'HTTPS URLs of review photos hosted on Tarmoto media storage.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_REVIEW_PHOTOS)
+  @IsUrl({ protocols: ['https'], require_protocol: true }, { each: true })
+  photos?: string[];
 }
 
 export class ReviewResponseDto {
@@ -43,6 +60,9 @@ export class ReviewResponseDto {
 
   @ApiProperty({ nullable: true })
   bike_model!: string | null;
+
+  @ApiProperty({ type: [String] })
+  photos!: string[];
 
   @ApiProperty()
   created_at!: string;

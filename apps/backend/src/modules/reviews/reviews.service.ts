@@ -47,6 +47,7 @@ export class ReviewsService {
       rating: dto.rating,
       comment: dto.comment ?? null,
       bike_model: dto.bike_model ?? null,
+      photos: dto.photos ?? null,
     });
 
     let saved: RoadReview;
@@ -92,6 +93,7 @@ export class ReviewsService {
     review.rating = dto.rating;
     review.comment = dto.comment ?? null;
     review.bike_model = dto.bike_model ?? null;
+    review.photos = dto.photos ?? null;
 
     const saved = await this.reviewRepo.save(review);
     return this.toResponse(saved);
@@ -114,6 +116,7 @@ export class ReviewsService {
       rating: review.rating,
       comment: review.comment,
       bike_model: review.bike_model,
+      photos: review.photos ?? [],
       created_at: review.created_at.toISOString(),
     };
   }

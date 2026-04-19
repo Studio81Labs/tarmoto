@@ -1,4 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { HazardResponseDto } from '../../hazards/dto/hazard-response.dto.js';
+import { ReviewResponseDto } from '../../reviews/dto/review.dto.js';
 
 export class RoadSegmentDto {
   @ApiProperty()
@@ -65,11 +67,25 @@ export class RoadSegmentDetailDto extends RoadSegmentDto {
   @ApiProperty({ nullable: true })
   elevation_max!: number | null;
 
+  @ApiProperty({
+    nullable: true,
+    type: [Number],
+    description:
+      'Per-vertex elevation in meters, aligned with `geometry`. Null when no elevation samples have been ingested yet.',
+  })
+  elevation_profile!: number[] | null;
+
   @ApiProperty({ type: QualityBreakdownDto })
   quality_breakdown!: QualityBreakdownDto;
 
+  @ApiProperty({ type: [HazardResponseDto] })
+  active_hazards!: HazardResponseDto[];
+
   @ApiProperty()
-  active_hazards!: number;
+  active_hazard_count!: number;
+
+  @ApiProperty({ type: [ReviewResponseDto] })
+  recent_reviews!: ReviewResponseDto[];
 
   @ApiProperty()
   review_count!: number;

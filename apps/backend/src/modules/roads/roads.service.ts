@@ -3,6 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { FunZone } from '../../entities/fun-zone.entity.js';
+import { HazardResponseDto } from '../hazards/dto/hazard-response.dto.js';
+import { ReviewResponseDto } from '../reviews/dto/review.dto.js';
 import { QueryNearbyDto } from './dto/query-nearby.dto.js';
 import {
   RoadSegmentDto,
@@ -10,6 +12,9 @@ import {
 } from './dto/road-segment.dto.js';
 import { QueryFunZonesDto } from './dto/query-fun-zones.dto.js';
 import { FunZoneDto } from './dto/fun-zone.dto.js';
+
+const RECENT_REVIEW_LIMIT = 5;
+const ACTIVE_HAZARD_LIMIT = 10;
 
 @Injectable()
 export class RoadsService {
@@ -80,7 +85,7 @@ export class RoadsService {
         rs.id, rs.road_name, rs.road_number, rs.quality_score,
         rs.curviness_score, rs.surface_type, rs.length_m,
         rs.confidence, rs.reading_count, rs.last_updated,
-        rs.elevation_min, rs.elevation_max,
+        rs.elevation_min, rs.elevation_max, rs.elevation_profile,
         ST_AsGeoJSON(rs.geom)::json AS geojson
       FROM road_segments rs
       WHERE rs.id = $1`,
@@ -98,40 +103,82 @@ export class RoadsService {
       lat: coord[1],
       lng: coord[0],
     }));
+    const elevationProfile = normalizeElevationProfile(
+      row.elevation_profile,
+      geometry.length,
+    );
 
-    // Run all four independent queries in parallel
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const [breakdownRows, hazardRows, reviewRows, riderRows] =
-      await Promise.all([
-        this.segmentRepo.query(
-          `SELECT classification, COUNT(*)::int AS count
-          FROM surface_readings
-          WHERE road_segment_id = $1
-            AND recorded_at > NOW() - INTERVAL '6 months'
-          GROUP BY classification`,
-          [segmentId],
-        ),
-        this.segmentRepo.query(
-          `SELECT COUNT(*)::int AS count
-          FROM hazard_reports
-          WHERE road_segment_id = $1
-            AND is_active = true AND expires_at > NOW()`,
-          [segmentId],
-        ),
-        this.segmentRepo.query(
-          `SELECT COUNT(*)::int AS count, AVG(rating)::float AS avg_rating
-          FROM road_reviews
-          WHERE road_segment_id = $1`,
-          [segmentId],
-        ),
-        this.segmentRepo.query(
-          `SELECT COUNT(DISTINCT user_id)::int AS count
-          FROM surface_readings
-          WHERE road_segment_id = $1
-            AND recorded_at > NOW() - INTERVAL '30 days'`,
-          [segmentId],
-        ),
-      ]);
+    // Run all six independent queries in parallel
+    /* eslint-disable @typescript-eslint/no-unsafe-assignment */
+    const [
+      breakdownRows,
+      hazardCountRows,
+      hazardRows,
+      reviewStatsRows,
+      reviewRows,
+      riderRows,
+    ] = await Promise.all([
+      this.segmentRepo.query(
+        `SELECT classification, COUNT(*)::int AS count
+        FROM surface_readings
+        WHERE road_segment_id = $1
+          AND recorded_at > NOW() - INTERVAL '6 months'
+        GROUP BY classification`,
+        [segmentId],
+      ),
+      this.segmentRepo.query(
+        `SELECT COUNT(*)::int AS count
+        FROM hazard_reports
+        WHERE road_segment_id = $1
+          AND is_active = true AND expires_at > NOW()`,
+        [segmentId],
+      ),
+      // Top-N most-recent active hazards with reporter + road name. Joining
+      // on road_segments here so the response shape matches the standalone
+      // /hazards endpoint, which the mobile RoadPreview screen renders.
+      this.segmentRepo.query(
+        `SELECT
+          h.id, h.hazard_type, h.severity, h.note, h.confirmations,
+          h.created_at, h.expires_at,
+          ST_X(h.location::geometry) AS lng,
+          ST_Y(h.location::geometry) AS lat,
+          u.display_name AS reporter,
+          rs.road_name AS road_name
+        FROM hazard_reports h
+        LEFT JOIN users u ON u.id = h.user_id
+        LEFT JOIN road_segments rs ON rs.id = h.road_segment_id
+        WHERE h.road_segment_id = $1
+          AND h.is_active = true AND h.expires_at > NOW()
+        ORDER BY h.created_at DESC
+        LIMIT $2`,
+        [segmentId, ACTIVE_HAZARD_LIMIT],
+      ),
+      this.segmentRepo.query(
+        `SELECT COUNT(*)::int AS count, AVG(rating)::float AS avg_rating
+        FROM road_reviews
+        WHERE road_segment_id = $1`,
+        [segmentId],
+      ),
+      this.segmentRepo.query(
+        `SELECT
+          rr.id, rr.rating, rr.comment, rr.bike_model, rr.photos, rr.created_at,
+          u.display_name
+        FROM road_reviews rr
+        LEFT JOIN users u ON u.id = rr.user_id
+        WHERE rr.road_segment_id = $1
+        ORDER BY rr.created_at DESC
+        LIMIT $2`,
+        [segmentId, RECENT_REVIEW_LIMIT],
+      ),
+      this.segmentRepo.query(
+        `SELECT COUNT(DISTINCT user_id)::int AS count
+        FROM surface_readings
+        WHERE road_segment_id = $1
+          AND recorded_at > NOW() - INTERVAL '30 days'`,
+        [segmentId],
+      ),
+    ]);
+    /* eslint-enable @typescript-eslint/no-unsafe-assignment */
 
     const breakdown = { excellent: 0, good: 0, fair: 0, poor: 0, very_poor: 0 };
     let totalReadings = 0;
@@ -152,10 +199,10 @@ export class RoadsService {
       }
     }
 
-    const activeHazards =
-      (hazardRows as Array<{ count: number }>)[0]?.count ?? 0;
+    const activeHazardCount =
+      (hazardCountRows as Array<{ count: number }>)[0]?.count ?? 0;
     const reviewStats = (
-      reviewRows as Array<{ count: number; avg_rating: number | null }>
+      reviewStatsRows as Array<{ count: number; avg_rating: number | null }>
     )[0];
     const ridersPerMonth =
       (riderRows as Array<{ count: number }>)[0]?.count ?? 0;
@@ -174,8 +221,11 @@ export class RoadsService {
       geometry,
       elevation_min: (row.elevation_min as number) ?? null,
       elevation_max: (row.elevation_max as number) ?? null,
+      elevation_profile: elevationProfile,
       quality_breakdown: breakdown,
-      active_hazards: activeHazards,
+      active_hazards: mapHazardRows(hazardRows),
+      active_hazard_count: activeHazardCount,
+      recent_reviews: mapReviewRows(reviewRows),
       review_count: reviewStats?.count ?? 0,
       avg_review_rating: reviewStats?.avg_rating
         ? Math.round(reviewStats.avg_rating * 10) / 10
@@ -221,4 +271,51 @@ export class RoadsService {
       };
     });
   }
+}
+
+function mapHazardRows(rows: unknown): HazardResponseDto[] {
+  if (!Array.isArray(rows)) return [];
+  return (rows as Array<Record<string, unknown>>).map((r) => ({
+    id: r.id as string,
+    lat: Number(r.lat),
+    lng: Number(r.lng),
+    hazard_type: r.hazard_type as string,
+    severity: r.severity as string,
+    note: (r.note as string) ?? null,
+    confirmations: r.confirmations as number,
+    reporter: (r.reporter as string) ?? null,
+    road_name: (r.road_name as string) ?? null,
+    created_at: (r.created_at as Date).toISOString(),
+    expires_at: (r.expires_at as Date).toISOString(),
+  }));
+}
+
+function mapReviewRows(rows: unknown): ReviewResponseDto[] {
+  if (!Array.isArray(rows)) return [];
+  return (rows as Array<Record<string, unknown>>).map((r) => ({
+    id: r.id as string,
+    user_display_name: (r.display_name as string) ?? 'Unknown',
+    rating: r.rating as number,
+    comment: (r.comment as string) ?? null,
+    bike_model: (r.bike_model as string) ?? null,
+    photos: Array.isArray(r.photos) ? (r.photos as string[]) : [],
+    created_at: (r.created_at as Date).toISOString(),
+  }));
+}
+
+// Validate the elevation_profile column matches the geometry length so a stale
+// profile (left behind after a geometry edit) can't render a misaligned chart.
+function normalizeElevationProfile(
+  raw: unknown,
+  geometryLength: number,
+): number[] | null {
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  if (raw.length !== geometryLength) return null;
+  const profile: number[] = [];
+  for (const v of raw) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return null;
+    profile.push(n);
+  }
+  return profile;
 }

@@ -137,3 +137,91 @@ export function normalizeBreakdown<K extends string>(
     .map((k) => ({ key: k, pct: Math.max(0, breakdown[k] || 0) / total }))
     .filter((e) => e.pct > 0);
 }
+
+/**
+ * Sum of positive / negative elevation deltas along the profile, in meters.
+ * Used by RoadPreview to surface ascent/descent next to the elevation chart
+ * without re-running it from `geometry`. NaN/Infinity samples are skipped so
+ * a single bad reading can't poison the rolling totals.
+ */
+export function computeElevationStats(elevations: readonly number[]): {
+  ascent: number;
+  descent: number;
+} {
+  if (!Array.isArray(elevations) || elevations.length < 2) {
+    return { ascent: 0, descent: 0 };
+  }
+  let ascent = 0;
+  let descent = 0;
+  let prev: number | null = null;
+  for (const sample of elevations) {
+    if (!Number.isFinite(sample)) continue;
+    if (prev !== null) {
+      const delta = sample - prev;
+      if (delta > 0) ascent += delta;
+      else descent += -delta;
+    }
+    prev = sample;
+  }
+  return { ascent, descent };
+}
+
+/**
+ * Project an elevation profile onto a chart of `width × height` and return
+ * SVG path strings: `line` for the polyline and `area` for a filled region
+ * down to the baseline. Uses the actual sample min/max for the y-domain so
+ * tiny variation still renders as a visible curve. Returns `null` when the
+ * profile is too short (< 2 finite samples) or has zero range — callers
+ * skip rendering the chart in that case.
+ */
+export function buildElevationChartPaths(
+  elevations: readonly number[],
+  width: number,
+  height: number,
+): { line: string; area: string; min: number; max: number } | null {
+  if (!Array.isArray(elevations) || elevations.length < 2) return null;
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
+  if (width <= 0 || height <= 0) return null;
+
+  const finite = elevations.filter((v) => Number.isFinite(v));
+  if (finite.length < 2) return null;
+
+  let min = finite[0];
+  let max = finite[0];
+  for (const v of finite) {
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  // A perfectly flat profile would degenerate the line to the bottom edge —
+  // bail out so the caller can show a "flat" hint instead of a misleading
+  // chart pinned to one pixel row.
+  if (max - min === 0) return null;
+
+  const span = max - min;
+  const stepX = width / (elevations.length - 1);
+  const points: Array<{ x: number; y: number }> = [];
+  let prevY = height;
+  for (let i = 0; i < elevations.length; i++) {
+    const v = elevations[i];
+    const x = i * stepX;
+    // Forward-fill non-finite samples so a single dropped reading doesn't
+    // create a chart gap; the path stays continuous and visually plausible.
+    const y = Number.isFinite(v) ? height - ((v - min) / span) * height : prevY;
+    points.push({ x, y });
+    prevY = y;
+  }
+
+  const line = points
+    .map((p, i) => `${i === 0 ? "M" : "L"}${fmt(p.x)} ${fmt(p.y)}`)
+    .join(" ");
+  const area =
+    `M${fmt(points[0].x)} ${fmt(height)} ` +
+    points.map((p) => `L${fmt(p.x)} ${fmt(p.y)}`).join(" ") +
+    ` L${fmt(points[points.length - 1].x)} ${fmt(height)} Z`;
+
+  return { line, area, min, max };
+}
+
+function fmt(n: number): string {
+  return Number.isFinite(n) ? n.toFixed(2) : "0";
+}

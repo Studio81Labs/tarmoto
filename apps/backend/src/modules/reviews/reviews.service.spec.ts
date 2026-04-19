@@ -21,6 +21,7 @@ describe('ReviewsService', () => {
     rating: 4,
     comment: 'Smooth asphalt, great ride!',
     bike_model: 'BMW R1250GS',
+    photos: null,
     created_at: new Date('2026-04-14T10:00:00Z'),
     user: mockUser,
   } as unknown as RoadReview;
@@ -113,6 +114,7 @@ describe('ReviewsService', () => {
         rating: 5,
         comment: 'Amazing road!',
         bike_model: null,
+        photos: null,
       });
       expect(result.rating).toBe(5);
       expect(result.user_display_name).toBe('John Rider');
@@ -127,6 +129,7 @@ describe('ReviewsService', () => {
         expect.objectContaining({
           comment: null,
           bike_model: null,
+          photos: null,
         }),
       );
     });
@@ -139,6 +142,24 @@ describe('ReviewsService', () => {
       expect(reviewRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
           bike_model: 'Ducati Monster',
+        }),
+      );
+    });
+
+    it('should persist photos when provided', async () => {
+      const dto = {
+        rating: 5,
+        photos: [
+          'https://media.tarmoto.app/r/abc.jpg',
+          'https://media.tarmoto.app/r/def.jpg',
+        ],
+      };
+
+      await service.create('user-1', 'seg-1', dto);
+
+      expect(reviewRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          photos: dto.photos,
         }),
       );
     });
@@ -190,6 +211,18 @@ describe('ReviewsService', () => {
 
       expect(result.comment).toBeNull();
       expect(result.bike_model).toBeNull();
+      expect(result.photos).toEqual([]);
+    });
+
+    it('should replace photos when provided', async () => {
+      const dto = {
+        rating: 4,
+        photos: ['https://media.tarmoto.app/r/new.jpg'],
+      };
+
+      const result = await service.update('user-1', 'seg-1', dto);
+
+      expect(result.photos).toEqual(dto.photos);
     });
 
     it('should throw NotFoundException when review does not exist', async () => {
@@ -241,6 +274,7 @@ describe('ReviewsService', () => {
         rating: 4,
         comment: 'Smooth asphalt, great ride!',
         bike_model: 'BMW R1250GS',
+        photos: ['https://media.tarmoto.app/r/abc.jpg'],
         created_at: new Date('2026-04-14T10:00:00Z'),
         user: mockUser,
       } as unknown as RoadReview;
@@ -254,8 +288,21 @@ describe('ReviewsService', () => {
         rating: 4,
         comment: 'Smooth asphalt, great ride!',
         bike_model: 'BMW R1250GS',
+        photos: ['https://media.tarmoto.app/r/abc.jpg'],
         created_at: '2026-04-14T10:00:00.000Z',
       });
+    });
+
+    it('should default photos to empty array when null', async () => {
+      const freshReview = {
+        ...mockReview,
+        photos: null,
+      } as unknown as RoadReview;
+      reviewRepo.find!.mockResolvedValueOnce([freshReview]);
+
+      const result = await service.listForSegment('seg-1');
+
+      expect(result[0].photos).toEqual([]);
     });
   });
 });

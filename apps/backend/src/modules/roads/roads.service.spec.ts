@@ -117,7 +117,10 @@ describe('RoadsService', () => {
   });
 
   describe('findById', () => {
-    it('should return detailed segment with breakdown', async () => {
+    it('should return detailed segment with breakdown, hazards and reviews', async () => {
+      const hazardCreatedAt = new Date('2026-04-14T08:00:00Z');
+      const hazardExpiresAt = new Date('2026-04-21T08:00:00Z');
+      const reviewCreatedAt = new Date('2026-04-12T15:30:00Z');
       // Mock: segment query
       segmentRepo
         .query!.mockResolvedValueOnce([
@@ -134,9 +137,11 @@ describe('RoadsService', () => {
             last_updated: new Date('2026-04-13T10:00:00Z'),
             elevation_min: 350,
             elevation_max: 420,
+            elevation_profile: [350, 380, 420],
             geojson: {
               coordinates: [
                 [16.75, 49.1],
+                [16.755, 49.105],
                 [16.76, 49.11],
               ],
             },
@@ -148,10 +153,38 @@ describe('RoadsService', () => {
           { classification: 'good', count: 3 },
           { classification: 'fair', count: 2 },
         ])
-        // Mock: hazard count
+        // Mock: active hazard count
         .mockResolvedValueOnce([{ count: 1 }])
+        // Mock: active hazard rows (top N)
+        .mockResolvedValueOnce([
+          {
+            id: 'h-1',
+            hazard_type: 'pothole',
+            severity: 'high',
+            note: 'Big crater',
+            confirmations: 3,
+            created_at: hazardCreatedAt,
+            expires_at: hazardExpiresAt,
+            lng: 16.755,
+            lat: 49.105,
+            reporter: 'Jane Rider',
+            road_name: 'Test Road',
+          },
+        ])
         // Mock: review stats
         .mockResolvedValueOnce([{ count: 4, avg_rating: 4.3 }])
+        // Mock: review rows (top N)
+        .mockResolvedValueOnce([
+          {
+            id: 'r-1',
+            rating: 5,
+            comment: 'Smooth tarmac',
+            bike_model: 'Ducati Monster',
+            photos: ['https://media.tarmoto.app/r/abc.jpg'],
+            created_at: reviewCreatedAt,
+            display_name: 'John Rider',
+          },
+        ])
         // Mock: riders per month
         .mockResolvedValueOnce([{ count: 12 }]);
 
@@ -161,15 +194,36 @@ describe('RoadsService', () => {
       expect(result.quality_score).toBe(4.0);
       expect(result.geometry).toEqual([
         { lat: 49.1, lng: 16.75 },
+        { lat: 49.105, lng: 16.755 },
         { lat: 49.11, lng: 16.76 },
       ]);
+      expect(result.elevation_profile).toEqual([350, 380, 420]);
       expect(result.quality_breakdown.excellent).toBe(50);
       expect(result.quality_breakdown.good).toBe(30);
       expect(result.quality_breakdown.fair).toBe(20);
       expect(result.quality_breakdown.poor).toBe(0);
-      expect(result.active_hazards).toBe(1);
+      expect(result.active_hazard_count).toBe(1);
+      expect(result.active_hazards).toHaveLength(1);
+      expect(result.active_hazards[0]).toMatchObject({
+        id: 'h-1',
+        hazard_type: 'pothole',
+        severity: 'high',
+        lat: 49.105,
+        lng: 16.755,
+        reporter: 'Jane Rider',
+        road_name: 'Test Road',
+      });
       expect(result.review_count).toBe(4);
       expect(result.avg_review_rating).toBe(4.3);
+      expect(result.recent_reviews).toHaveLength(1);
+      expect(result.recent_reviews[0]).toMatchObject({
+        id: 'r-1',
+        user_display_name: 'John Rider',
+        rating: 5,
+        comment: 'Smooth tarmac',
+        bike_model: 'Ducati Monster',
+        photos: ['https://media.tarmoto.app/r/abc.jpg'],
+      });
       expect(result.riders_per_month).toBe(12);
     });
 
@@ -197,12 +251,15 @@ describe('RoadsService', () => {
             last_updated: new Date('2026-04-13T10:00:00Z'),
             elevation_min: null,
             elevation_max: null,
+            elevation_profile: null,
             geojson: { coordinates: [[16.75, 49.1]] },
           },
         ])
         .mockResolvedValueOnce([]) // no readings
-        .mockResolvedValueOnce([{ count: 0 }]) // no hazards
-        .mockResolvedValueOnce([{ count: 0, avg_rating: null }]) // no reviews
+        .mockResolvedValueOnce([{ count: 0 }]) // no hazard count
+        .mockResolvedValueOnce([]) // no hazard rows
+        .mockResolvedValueOnce([{ count: 0, avg_rating: null }]) // no review stats
+        .mockResolvedValueOnce([]) // no review rows
         .mockResolvedValueOnce([{ count: 0 }]); // no riders
 
       const result = await service.findById('seg-2');
@@ -211,6 +268,48 @@ describe('RoadsService', () => {
       expect(result.quality_breakdown.excellent).toBe(0);
       expect(result.avg_review_rating).toBeNull();
       expect(result.riders_per_month).toBe(0);
+      expect(result.active_hazards).toEqual([]);
+      expect(result.active_hazard_count).toBe(0);
+      expect(result.recent_reviews).toEqual([]);
+      expect(result.elevation_profile).toBeNull();
+    });
+
+    it('should drop a stale elevation_profile that does not match geometry length', async () => {
+      segmentRepo
+        .query!.mockResolvedValueOnce([
+          {
+            id: 'seg-3',
+            road_name: 'Mismatched',
+            road_number: null,
+            quality_score: 3.0,
+            curviness_score: 2.0,
+            surface_type: 'asphalt',
+            length_m: 150,
+            confidence: 50,
+            reading_count: 4,
+            last_updated: new Date('2026-04-13T10:00:00Z'),
+            elevation_min: 100,
+            elevation_max: 150,
+            elevation_profile: [100, 150], // length 2, geometry length 3
+            geojson: {
+              coordinates: [
+                [16.7, 49.1],
+                [16.71, 49.105],
+                [16.72, 49.11],
+              ],
+            },
+          },
+        ])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ count: 0 }])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ count: 0, avg_rating: null }])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ count: 0 }]);
+
+      const result = await service.findById('seg-3');
+
+      expect(result.elevation_profile).toBeNull();
     });
   });
 

@@ -8,7 +8,9 @@
 
 import type { LatLng } from "@/types";
 import {
+  buildElevationChartPaths,
   computeCurveCount,
+  computeElevationStats,
   curvinessLabel,
   formatHazardType,
   formatLengthKm,
@@ -205,6 +207,72 @@ describe("computeCurveCount", () => {
     const geometry = polylineWithTurns(5, 20);
     expect(computeCurveCount(geometry, 25)).toBe(0);
     expect(computeCurveCount(geometry, 15)).toBe(5);
+  });
+});
+
+describe("computeElevationStats", () => {
+  it("returns zero ascent/descent for empty or single-sample profiles", () => {
+    expect(computeElevationStats([])).toEqual({ ascent: 0, descent: 0 });
+    expect(computeElevationStats([100])).toEqual({ ascent: 0, descent: 0 });
+  });
+
+  it("sums positive deltas as ascent and negative deltas as descent", () => {
+    expect(computeElevationStats([100, 120, 110, 130, 125])).toEqual({
+      ascent: 40,
+      descent: 15,
+    });
+  });
+
+  it("returns zero descent for a monotonic climb", () => {
+    expect(computeElevationStats([100, 110, 120, 130])).toEqual({
+      ascent: 30,
+      descent: 0,
+    });
+  });
+
+  it("skips non-finite samples without splitting the run", () => {
+    // The NaN should be ignored; the 110→130 gap still counts as +20.
+    expect(computeElevationStats([100, 110, Number.NaN, 130])).toEqual({
+      ascent: 30,
+      descent: 0,
+    });
+  });
+});
+
+describe("buildElevationChartPaths", () => {
+  it("returns null for too-short profiles", () => {
+    expect(buildElevationChartPaths([], 200, 80)).toBeNull();
+    expect(buildElevationChartPaths([100], 200, 80)).toBeNull();
+  });
+
+  it("returns null for invalid chart dimensions", () => {
+    expect(buildElevationChartPaths([100, 200], 0, 80)).toBeNull();
+    expect(buildElevationChartPaths([100, 200], 200, 0)).toBeNull();
+    expect(buildElevationChartPaths([100, 200], Number.NaN, 80)).toBeNull();
+  });
+
+  it("returns null for a perfectly flat profile", () => {
+    expect(buildElevationChartPaths([100, 100, 100], 200, 80)).toBeNull();
+  });
+
+  it("maps min to bottom of chart and max to top of chart", () => {
+    const result = buildElevationChartPaths([100, 200, 300], 200, 80);
+    expect(result).not.toBeNull();
+    expect(result!.min).toBe(100);
+    expect(result!.max).toBe(300);
+    // First point: x=0, max delta - min => max value (300) sits at top (y=0)
+    // Last point: highest value at the right edge
+    expect(result!.line.startsWith("M0.00 80.00")).toBe(true);
+    expect(result!.line.endsWith("L200.00 0.00")).toBe(true);
+  });
+
+  it("closes the area path back to the baseline", () => {
+    const result = buildElevationChartPaths([100, 200], 200, 80);
+    expect(result).not.toBeNull();
+    // Area path must start and end at baseline (y=height) so the fill
+    // region is bounded — otherwise SVG would fill an open polygon weirdly.
+    expect(result!.area.startsWith("M0.00 80.00")).toBe(true);
+    expect(result!.area.endsWith("L200.00 80.00 Z")).toBe(true);
   });
 });
 

@@ -7,6 +7,8 @@ import React, {
 } from "react";
 import {
   ActivityIndicator,
+  Image,
+  LayoutChangeEvent,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -16,6 +18,7 @@ import {
 } from "react-native";
 import { RouteProp, useRoute } from "@react-navigation/native";
 import Icon from "@react-native-vector-icons/material-design-icons";
+import Svg, { Path } from "react-native-svg";
 import {
   borderRadius,
   colors,
@@ -31,7 +34,9 @@ import { api } from "@/services/api";
 import { usePreferencesStore } from "@/stores";
 import type { Hazard, RoadReview, RoadSegmentDetail } from "@/types";
 import {
+  buildElevationChartPaths,
   computeCurveCount,
+  computeElevationStats,
   curvinessLabel,
   formatHazardType,
   formatLengthKm,
@@ -39,6 +44,9 @@ import {
   formatSurface,
   normalizeBreakdown,
 } from "./RoadPreviewScreen.helpers";
+
+const ELEVATION_CHART_HEIGHT = 80;
+const REVIEW_PHOTO_SIZE = 84;
 
 type RoadPreviewRoute = RouteProp<
   { RoadPreview: { segmentId: string } },
@@ -353,16 +361,89 @@ function CurvinessCard({ segment }: { segment: RoadSegmentDetail }) {
 }
 
 function ElevationCard({ segment }: { segment: RoadSegmentDetail }) {
-  const { elevation_min, elevation_max } = segment;
-  const range = Math.max(0, elevation_max - elevation_min);
+  const { elevation_min, elevation_max, elevation_profile } = segment;
+  // Show "—" instead of "0 m" when the segment has no elevation data so the
+  // card doesn't claim a sea-level reading we never actually measured.
+  const hasMin = elevation_min !== null && Number.isFinite(elevation_min);
+  const hasMax = elevation_max !== null && Number.isFinite(elevation_max);
+  const range =
+    hasMin && hasMax ? Math.max(0, elevation_max! - elevation_min!) : null;
+
+  const stats = useMemo(
+    () => (elevation_profile ? computeElevationStats(elevation_profile) : null),
+    [elevation_profile],
+  );
+
   return (
     <View style={styles.card}>
-      <SectionTitle icon="terrain" title="Elevation" />
+      <SectionTitle
+        icon="terrain"
+        title="Elevation"
+        rightLabel={
+          stats && (stats.ascent > 0 || stats.descent > 0)
+            ? `↑${Math.round(stats.ascent)} m  ↓${Math.round(stats.descent)} m`
+            : undefined
+        }
+      />
+      {elevation_profile ? (
+        <ElevationProfileChart profile={elevation_profile} />
+      ) : null}
       <View style={styles.elevationRow}>
-        <ElevationStat label="Min" value={`${Math.round(elevation_min)} m`} />
-        <ElevationStat label="Max" value={`${Math.round(elevation_max)} m`} />
-        <ElevationStat label="Range" value={`${Math.round(range)} m`} />
+        <ElevationStat
+          label="Min"
+          value={hasMin ? `${Math.round(elevation_min!)} m` : "—"}
+        />
+        <ElevationStat
+          label="Max"
+          value={hasMax ? `${Math.round(elevation_max!)} m` : "—"}
+        />
+        <ElevationStat
+          label="Range"
+          value={range !== null ? `${Math.round(range)} m` : "—"}
+        />
       </View>
+    </View>
+  );
+}
+
+function ElevationProfileChart({ profile }: { profile: number[] }) {
+  const [width, setWidth] = useState(0);
+  const onLayout = useCallback((e: LayoutChangeEvent) => {
+    setWidth(e.nativeEvent.layout.width);
+  }, []);
+
+  const paths = useMemo(
+    () => buildElevationChartPaths(profile, width, ELEVATION_CHART_HEIGHT),
+    [profile, width],
+  );
+
+  return (
+    <View
+      onLayout={onLayout}
+      style={styles.elevationChartWrap}
+      // 1:1 aspect with the chart height isn't ideal — let the parent set
+      // width and lock the height so this composes nicely on any screen.
+    >
+      {width > 0 && paths ? (
+        <Svg
+          width={width}
+          height={ELEVATION_CHART_HEIGHT}
+          // Disable accessibility focus on the SVG itself; the SectionTitle
+          // already announces ascent/descent which is the actionable info.
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
+          <Path d={paths.area} fill={colors.primaryAlpha15} />
+          <Path
+            d={paths.line}
+            stroke={colors.primary}
+            strokeWidth={2}
+            fill="none"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
+        </Svg>
+      ) : null}
     </View>
   );
 }
@@ -419,14 +500,15 @@ function ReviewsCard({
   avgRating,
 }: {
   reviews: RoadReview[];
-  avgRating: number;
+  avgRating: number | null;
 }) {
+  const showAvg = reviews.length > 0 && avgRating !== null;
   return (
     <View style={styles.card}>
       <SectionTitle
         icon="star-outline"
         title="Recent reviews"
-        rightLabel={reviews.length ? `${avgRating.toFixed(1)} ★` : undefined}
+        rightLabel={showAvg ? `${avgRating!.toFixed(1)} ★` : undefined}
       />
       {reviews.length === 0 ? (
         <Text style={styles.empty}>
@@ -440,6 +522,7 @@ function ReviewsCard({
 }
 
 function ReviewRow({ review }: { review: RoadReview }) {
+  const photos = Array.isArray(review.photos) ? review.photos : [];
   return (
     <View style={styles.reviewRow}>
       <View style={styles.reviewHeader}>
@@ -451,6 +534,7 @@ function ReviewRow({ review }: { review: RoadReview }) {
       {review.comment ? (
         <Text style={styles.reviewComment}>{review.comment}</Text>
       ) : null}
+      {photos.length > 0 ? <ReviewPhotos photos={photos} /> : null}
       <View style={styles.reviewFooter}>
         {review.bike_model ? (
           <View style={styles.reviewMetaRow}>
@@ -463,6 +547,32 @@ function ReviewRow({ review }: { review: RoadReview }) {
         </Text>
       </View>
     </View>
+  );
+}
+
+function ReviewPhotos({ photos }: { photos: string[] }) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.reviewPhotosRow}
+      // Allow scrolling photos without fighting the parent vertical scroll;
+      // RN handles the gesture handoff but we hint it explicitly here.
+      directionalLockEnabled
+      accessibilityLabel={`${photos.length} review photo${
+        photos.length === 1 ? "" : "s"
+      }`}
+    >
+      {photos.map((uri, idx) => (
+        <Image
+          key={`${uri}-${idx}`}
+          source={{ uri }}
+          style={styles.reviewPhoto}
+          resizeMode="cover"
+          accessibilityIgnoresInvertColors
+        />
+      ))}
+    </ScrollView>
   );
 }
 
@@ -718,6 +828,13 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
   },
 
+  elevationChartWrap: {
+    width: "100%",
+    height: ELEVATION_CHART_HEIGHT,
+    backgroundColor: colors.bgElevated,
+    borderRadius: borderRadius.sm,
+    overflow: "hidden",
+  },
   elevationRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -794,6 +911,16 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: fontSize.sm,
     lineHeight: 20,
+  },
+  reviewPhotosRow: {
+    gap: spacing.sm,
+    paddingTop: spacing.xs,
+  },
+  reviewPhoto: {
+    width: REVIEW_PHOTO_SIZE,
+    height: REVIEW_PHOTO_SIZE,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.bgElevated,
   },
   reviewFooter: {
     flexDirection: "row",
