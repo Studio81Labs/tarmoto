@@ -226,15 +226,26 @@ export function createDefaultCarPlayBridge(): CarPlayBridge {
       },
       clearRootTemplate: () => {
         if (!template) return;
-        // We deliberately don't call into native to "release" the
-        // template here. The package's documented public surface
-        // (setRootTemplate / pushTemplate / popTemplate) doesn't expose
-        // a stable "destroy template" call, and the next ride's mount
-        // will overwrite the root via `setRootTemplate(newTemplate,
-        // false)` — that's the documented way to replace the current
-        // root. Dropping the JS reference is enough on our side; the
-        // previous template object becomes unreachable and the native
-        // scene is replaced when the rider starts another ride.
+        // The package's public surface has no "remove root" call —
+        // CarPlay always shows a root template once one has been set.
+        // To stop the bike display from showing the stale ride board
+        // (last speed / distance frozen at ride end), install a
+        // minimal idle template via the documented `setRootTemplate`
+        // replacement path. The next ride's mount swaps this back out
+        // for the live ride board.
+        try {
+          const idle = new InformationTemplate({
+            title: "Tarmoto",
+            items: [],
+            actions: [],
+            onActionButtonPressed: () => undefined,
+          });
+          CarPlay.setRootTemplate(idle, false);
+        } catch {
+          // Native side may already have torn down (CarPlay disconnect
+          // racing the unmount), in which case there's nothing to
+          // clear — the disconnect handler already reset our flags.
+        }
         template = null;
       },
       subscribeDisconnect: (callback) => {
