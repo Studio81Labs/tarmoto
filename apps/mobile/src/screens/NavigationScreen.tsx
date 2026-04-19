@@ -119,18 +119,23 @@ export default function NavigationScreen() {
   const routeShape = useMemo<GeoJSON.FeatureCollection>(
     () => ({
       type: "FeatureCollection",
-      features: polyline.length
-        ? [
-            {
-              type: "Feature",
-              properties: {},
-              geometry: {
-                type: "LineString",
-                coordinates: polyline.map((p) => [p.lng, p.lat]),
+      // A LineString with a single coordinate is invalid GeoJSON and the
+      // rest of the flow (TripDayScreen's Start-Navigation guard, the
+      // NavSession projection) already considers < 2 points unusable.
+      // Drop any stray single-point polyline so the layer stays empty.
+      features:
+        polyline.length >= 2
+          ? [
+              {
+                type: "Feature",
+                properties: {},
+                geometry: {
+                  type: "LineString",
+                  coordinates: polyline.map((p) => [p.lng, p.lat]),
+                },
               },
-            },
-          ]
-        : [],
+            ]
+          : [],
     }),
     [polyline],
   );
@@ -143,7 +148,7 @@ export default function NavigationScreen() {
     setVoiceEnabled((v) => !v);
   }, []);
 
-  if (!day || polyline.length === 0) {
+  if (!day || polyline.length < 2) {
     return (
       <View style={styles.empty}>
         <Icon

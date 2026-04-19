@@ -107,8 +107,11 @@ export const ARRIVED_M = 20;
 // ── Public helpers ────────────────────────────────────────────────────────
 
 /**
- * Haversine distance in meters. Copied (not imported) from the location
- * service so this module stays dependency-free and unit-testable.
+ * Haversine distance in meters. Inlined rather than imported: the mobile
+ * app doesn't pull in `@tarmoto/shared` at RN build time (same precedent
+ * as `haversineKm` in `TripScreens.helpers.ts`), and re-using the private
+ * method on `locationService` would drag the whole Geolocation native
+ * dep into jest / web preview builds of this module.
  */
 export function haversineM(
   lat1: number,
@@ -508,7 +511,7 @@ const MANEUVER_PHRASE: Record<ManeuverType, string> = {
   uturn: "Make a U-turn",
 };
 
-export function maneuverPhrase(m: Maneuver): string {
+function maneuverPhrase(m: Maneuver): string {
   return MANEUVER_PHRASE[m.type] ?? "Continue";
 }
 

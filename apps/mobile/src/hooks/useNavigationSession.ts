@@ -74,12 +74,14 @@ export function useNavigationSession(
   const [tick, setTick] = useState<NavTick | null>(null);
   const [liveLocation, setLiveLocation] = useState<LatLng | null>(null);
   const [liveSpeedKmh, setLiveSpeedKmh] = useState(0);
-  // Ref mirrors — read inside the location callback so it picks up the
-  // latest `voiceEnabled` flag without the subscription having to teardown
-  // and re-attach on every toggle.
+  // Sync voice state during render, not in an effect. Location callbacks
+  // can fire between commit and effect flush, so an effect-based update
+  // would leave the ref reading a stale value on the first few ticks
+  // after a toggle. The mute side-effect on TTS itself still lives in
+  // useEffect so it runs once per change, not on every render.
   const voiceRef = useRef(voiceEnabled);
+  voiceRef.current = voiceEnabled;
   useEffect(() => {
-    voiceRef.current = voiceEnabled;
     ttsService.setMuted(!voiceEnabled);
   }, [voiceEnabled]);
 
