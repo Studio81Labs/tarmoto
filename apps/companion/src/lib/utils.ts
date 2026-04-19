@@ -1,8 +1,6 @@
 import { kmToMiles, metersToFeet, type UnitSystem } from "@tarmoto/shared";
 import type { QualityTier, HazardType } from "@/lib/types";
 
-export type { UnitSystem };
-
 // ── Road Quality ──
 
 // Canonical ordering used everywhere the app renders tier lists (legends,
@@ -91,6 +89,11 @@ export const HAZARD_CONFIG: Record<
  *   - sub-kilometre: whole metres (or feet) so trail segments don't lose sign
  *   - 1–10 km: one decimal so short rides don't collapse to the same bucket
  *   - ≥10 km: whole units so cards stay aligned
+ *
+ * NOTE: `@tarmoto/shared` exports a simpler `formatDistance` too. Always
+ * import from `@/lib/utils` inside the companion so the dashboard renders the
+ * same tiered labels everywhere. The shared version is meant for contexts
+ * (e.g. mobile) that don't need the tiering.
  */
 export function formatDistance(
   km: number,

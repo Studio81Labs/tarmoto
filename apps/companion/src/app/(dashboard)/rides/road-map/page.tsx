@@ -62,7 +62,6 @@ export default function RoadMapPage() {
   const [period, setPeriod] = useState<TimePeriod>("all");
 
   const [center, setCenter] = useState(FALLBACK_CENTER);
-  const [centerLabel, setCenterLabel] = useState<string>(FALLBACK_CENTER.label);
   const [nearby, setNearby] = useState<UnriddenSegment[]>([]);
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyError, setNearbyError] = useState<string | null>(null);
@@ -160,7 +159,6 @@ export default function RoadMapPage() {
           lng: Number(pos.coords.longitude.toFixed(4)),
           label: "My location",
         });
-        setCenterLabel("My location");
       },
       (err) => {
         setLocating(false);
@@ -292,7 +290,7 @@ export default function RoadMapPage() {
             <SectionHeader
               icon={<Crosshair size={14} />}
               title="Explore near"
-              subtitle={centerLabel}
+              subtitle={center.label}
             />
             <NearbyCenterControls
               center={center}
@@ -300,7 +298,6 @@ export default function RoadMapPage() {
               onUseMyLocation={handleUseMyLocation}
               onCoordinatesChanged={(lat, lng, label) => {
                 setCenter({ lat, lng, label });
-                setCenterLabel(label);
               }}
             />
           </section>
