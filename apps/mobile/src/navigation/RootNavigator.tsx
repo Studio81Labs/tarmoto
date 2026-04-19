@@ -9,6 +9,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import { colors } from "@/theme";
+import CarPlayRideMirror from "@/components/CarPlayRideMirror";
 
 // Screens
 import HomeScreen from "@/screens/HomeScreen";
@@ -214,55 +215,65 @@ const tabIcons: Record<string, string> = {
 
 export default function RootNavigator() {
   return (
-    <NavigationContainer>
-      <Tab.Navigator
-        screenOptions={({ route }) => ({
-          headerShown: false,
-          tabBarStyle: {
-            backgroundColor: colors.bgCard,
-            borderTopColor: colors.border,
-            borderTopWidth: 1,
-            paddingBottom: 4,
-            height: 60,
-          },
-          tabBarActiveTintColor: colors.primary,
-          tabBarInactiveTintColor: colors.textTertiary,
-          tabBarLabelStyle: { fontSize: 10, fontWeight: "600" },
-          tabBarIcon: ({ color, size }) => (
-            <Icon
-              name={tabIcons[route.name] || "circle"}
-              size={size}
-              color={color}
-            />
-          ),
-        })}
-      >
-        <Tab.Screen
-          name="HomeTab"
-          component={HomeNavigator}
-          options={{ tabBarLabel: "Home" }}
-        />
-        <Tab.Screen
-          name="MapTab"
-          component={MapNavigator}
-          options={{ tabBarLabel: "Map" }}
-        />
-        <Tab.Screen
-          name="RideTab"
-          component={RideNavigator}
-          options={{ tabBarLabel: "Ride" }}
-        />
-        <Tab.Screen
-          name="TripsTab"
-          component={TripsNavigator}
-          options={{ tabBarLabel: "Trips" }}
-        />
-        <Tab.Screen
-          name="ProfileTab"
-          component={ProfileNavigator}
-          options={{ tabBarLabel: "Profile" }}
-        />
-      </Tab.Navigator>
-    </NavigationContainer>
+    <>
+      {/*
+        US-17 AC #3: mirror the active ride to the CarPlay information
+        template from the root so the bike display follows the rider
+        regardless of which tab is focused. Rendered as a sibling leaf
+        (returns null) so its high-frequency ride-store subscriptions
+        don't re-render the whole navigator on every tick.
+      */}
+      <CarPlayRideMirror />
+      <NavigationContainer>
+        <Tab.Navigator
+          screenOptions={({ route }) => ({
+            headerShown: false,
+            tabBarStyle: {
+              backgroundColor: colors.bgCard,
+              borderTopColor: colors.border,
+              borderTopWidth: 1,
+              paddingBottom: 4,
+              height: 60,
+            },
+            tabBarActiveTintColor: colors.primary,
+            tabBarInactiveTintColor: colors.textTertiary,
+            tabBarLabelStyle: { fontSize: 10, fontWeight: "600" },
+            tabBarIcon: ({ color, size }) => (
+              <Icon
+                name={tabIcons[route.name] || "circle"}
+                size={size}
+                color={color}
+              />
+            ),
+          })}
+        >
+          <Tab.Screen
+            name="HomeTab"
+            component={HomeNavigator}
+            options={{ tabBarLabel: "Home" }}
+          />
+          <Tab.Screen
+            name="MapTab"
+            component={MapNavigator}
+            options={{ tabBarLabel: "Map" }}
+          />
+          <Tab.Screen
+            name="RideTab"
+            component={RideNavigator}
+            options={{ tabBarLabel: "Ride" }}
+          />
+          <Tab.Screen
+            name="TripsTab"
+            component={TripsNavigator}
+            options={{ tabBarLabel: "Trips" }}
+          />
+          <Tab.Screen
+            name="ProfileTab"
+            component={ProfileNavigator}
+            options={{ tabBarLabel: "Profile" }}
+          />
+        </Tab.Navigator>
+      </NavigationContainer>
+    </>
   );
 }

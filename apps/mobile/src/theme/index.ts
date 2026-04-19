@@ -231,3 +231,25 @@ export const hazardIcons: Record<string, string> = {
   ice: "snowflake",
   other: "alert-circle",
 };
+
+/**
+ * Format a duration expressed in seconds as `mm:ss` (or `h:mm:ss` past the
+ * hour mark). Non-finite / negative inputs collapse to `0:00` so UI
+ * surfaces never render `NaN:NaN`. Fractional seconds are floored so a
+ * sub-second tick doesn't round up into the next minute.
+ *
+ * Shared across the CarPlay ride board and any on-phone HUD that renders
+ * an active-ride duration — keeping one copy here prevents the two
+ * surfaces from drifting when edge-case handling changes.
+ */
+export function formatDurationSeconds(totalSeconds: number): string {
+  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return "0:00";
+  const seconds = Math.floor(totalSeconds);
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) {
+    return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  }
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
