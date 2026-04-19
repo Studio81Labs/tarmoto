@@ -4,9 +4,7 @@ import {
   computePeriodStats,
   filterRidesByPeriod,
   groupUnriddenByRegion,
-  isTimePeriod,
   periodStartDate,
-  TIME_PERIODS,
   type TimePeriod,
 } from "../exploration";
 import type { RideForStats } from "../ride-stats";
@@ -35,21 +33,6 @@ function segment(
     ...overrides,
   };
 }
-
-describe("isTimePeriod", () => {
-  it("accepts all four period keys", () => {
-    for (const p of TIME_PERIODS) {
-      expect(isTimePeriod(p)).toBe(true);
-    }
-  });
-
-  it("rejects unknown values and non-strings", () => {
-    expect(isTimePeriod("month")).toBe(false);
-    expect(isTimePeriod("")).toBe(false);
-    expect(isTimePeriod(42)).toBe(false);
-    expect(isTimePeriod(null)).toBe(false);
-  });
-});
 
 describe("periodStartDate", () => {
   const now = new Date("2026-04-19T12:00:00Z");

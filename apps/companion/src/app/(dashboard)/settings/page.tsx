@@ -59,6 +59,14 @@ export default function AccountPage() {
   const [displayName, setDisplayName] = useState(user?.displayName ?? "");
   const [homeRegion, setHomeRegion] = useState("");
 
+  // `useState(user?.displayName ?? "")` only captures the value at first
+  // render. When Auth.js finishes hydrating the session after mount, the
+  // local field would otherwise stay blank and a later "Save" could wipe the
+  // real display name. Syncing from the store keeps the editable field aligned.
+  useEffect(() => {
+    if (user?.displayName) setDisplayName(user.displayName);
+  }, [user?.displayName]);
+
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const setUnitSystem = usePreferencesStore((s) => s.setUnitSystem);
   const hydratePreferences = usePreferencesStore((s) => s.hydrate);
@@ -148,31 +156,41 @@ export default function AccountPage() {
         <p className="text-sm text-slate-500 mb-4">
           Choose how distances and speeds are shown across the dashboard.
         </p>
+        {/*
+          Native radio inputs (visually hidden) carry browser-native keyboard
+          semantics — arrow keys move selection, only the checked input is in
+          the tab order — which a custom button-based radiogroup would need to
+          re-implement manually. The visible labels provide the styling.
+        */}
         <div
-          className="inline-flex rounded-lg bg-slate-800 p-1"
           role="radiogroup"
           aria-label="Display units"
+          className="inline-flex rounded-lg bg-slate-800 p-1"
         >
           {(["metric", "imperial"] as UnitSystem[]).map((value) => (
-            <button
+            <label
               key={value}
-              type="button"
-              role="radio"
-              aria-checked={unitSystem === value}
-              aria-label={
-                value === "metric"
-                  ? "Use metric units (kilometres)"
-                  : "Use imperial units (miles)"
-              }
-              onClick={() => setUnitSystem(value)}
-              className={`px-4 py-1.5 rounded-md text-sm transition ${
+              className={`relative px-4 py-1.5 rounded-md text-sm transition cursor-pointer ${
                 unitSystem === value
                   ? "bg-tarmoto-cyan text-slate-950 font-semibold"
                   : "text-slate-300 hover:text-white"
               }`}
             >
+              <input
+                type="radio"
+                name="unit-system"
+                value={value}
+                checked={unitSystem === value}
+                onChange={() => setUnitSystem(value)}
+                className="sr-only"
+                aria-label={
+                  value === "metric"
+                    ? "Use metric units (kilometres)"
+                    : "Use imperial units (miles)"
+                }
+              />
               {value === "metric" ? "Metric (km)" : "Imperial (mi)"}
-            </button>
+            </label>
           ))}
         </div>
       </div>

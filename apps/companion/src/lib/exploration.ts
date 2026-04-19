@@ -48,13 +48,6 @@ export interface RegionBucket {
   totalLengthKm: number;
 }
 
-export function isTimePeriod(value: unknown): value is TimePeriod {
-  return (
-    typeof value === "string" &&
-    (TIME_PERIODS as readonly string[]).includes(value)
-  );
-}
-
 /**
  * Inclusive lower bound for a time period relative to `now`. Returns `null` for
  * `"all"` which means "no lower bound". `"year"` is the start of the current
@@ -104,18 +97,24 @@ export function computePeriodStats(
   period: TimePeriod,
   now: Date = new Date(),
 ): PeriodStats {
-  const filtered = filterRidesByPeriod(rides, period, now);
+  // Inlined filter + parse so each ride's timestamp is parsed once instead of
+  // twice (once in `filterRidesByPeriod`, then again for `localDateKey`).
+  const lowerBound = periodStartDate(period, now);
   const activeDayKeys = new Set<string>();
   let distanceKm = 0;
-  for (const ride of filtered) {
-    distanceKm += toNumber(ride.distance_km);
+  let rideCount = 0;
+  for (const ride of rides) {
     const date = parseStartedAt(ride.started_at);
-    if (date) activeDayKeys.add(localDateKey(date));
+    if (date === null || date > now) continue;
+    if (lowerBound !== null && date < lowerBound) continue;
+    distanceKm += toNumber(ride.distance_km);
+    activeDayKeys.add(localDateKey(date));
+    rideCount += 1;
   }
   return {
     period,
     distanceKm,
-    rideCount: filtered.length,
+    rideCount,
     activeDays: activeDayKeys.size,
   };
 }
@@ -155,7 +154,10 @@ function regionLabelFor(roadName: string | null | undefined): string {
   const trimmed = roadName.trim();
   if (!trimmed) return "Unnamed";
   const first = trimmed.split(/\s+/)[0] ?? trimmed;
-  return first;
+  // Upper-case the first character so buckets render with consistent casing
+  // regardless of whichever variant the backend returned first ("Beskydy"
+  // and "beskydy" both surface as "Beskydy").
+  return first.charAt(0).toUpperCase() + first.slice(1);
 }
 
 /**

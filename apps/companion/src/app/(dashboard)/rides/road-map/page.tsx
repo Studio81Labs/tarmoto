@@ -145,6 +145,14 @@ export default function RoadMapPage() {
 
   const regionBuckets = useMemo(() => groupUnriddenByRegion(nearby), [nearby]);
 
+  // The backend returns nearby-unridden sorted by distance today, but the UI
+  // explicitly advertises "Sorted by distance" — sorting client-side makes
+  // that claim resilient if the service ordering ever changes.
+  const nearbyByDistance = useMemo(
+    () => [...nearby].sort((a, b) => a.distance_m - b.distance_m),
+    [nearby],
+  );
+
   const handleUseMyLocation = useCallback(() => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       setNearbyError("Geolocation is not available in this browser");
@@ -236,12 +244,17 @@ export default function RoadMapPage() {
       <PageHeader percentExplored={stats.percent_explored} />
 
       <div className="px-6 pt-4 pb-2 flex flex-wrap items-center gap-2 border-b border-slate-800">
-        <div className="flex items-center gap-1.5 mr-2">
+        <div
+          className="flex items-center gap-1.5 mr-2"
+          role="group"
+          aria-label="Filter by period"
+        >
           {TIME_PERIODS.map((p) => (
             <button
               key={p}
               type="button"
               onClick={() => setPeriod(p)}
+              aria-pressed={period === p}
               className={`px-3 py-1.5 rounded-lg text-sm transition ${
                 period === p
                   ? "bg-tarmoto-cyan/10 text-tarmoto-cyan"
@@ -353,7 +366,7 @@ export default function RoadMapPage() {
               <EmptyState label="Nothing nearby — zoom out or pick a new centre." />
             ) : (
               <ul className="space-y-2">
-                {nearby.slice(0, 10).map((seg) => (
+                {nearbyByDistance.slice(0, 10).map((seg) => (
                   <NearbyRow key={seg.id} segment={seg} units={unitSystem} />
                 ))}
               </ul>
