@@ -76,18 +76,21 @@ export function clampScore(score: number): number {
  * `setMonth` lands on March 3 instead of February 28, which silently
  * shrinks the window by a few days and drops valid points. We clamp to
  * the last day of the target month instead.
+ *
+ * UTC accessors are used throughout because `filterByRange` compares via
+ * `toISOString()` (UTC) — mixing local-time arithmetic here would let the
+ * viewer's timezone flip the cutoff by ±1 day. Same pattern as
+ * `rider-profile.ts`'s day bucketing.
  */
 function subtractMonths(date: Date, months: number): Date {
   const result = new Date(date);
-  const originalDay = result.getDate();
-  result.setDate(1);
-  result.setMonth(result.getMonth() - months);
+  const originalDay = result.getUTCDate();
+  result.setUTCDate(1);
+  result.setUTCMonth(result.getUTCMonth() - months);
   const daysInTargetMonth = new Date(
-    result.getFullYear(),
-    result.getMonth() + 1,
-    0,
-  ).getDate();
-  result.setDate(Math.min(originalDay, daysInTargetMonth));
+    Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  result.setUTCDate(Math.min(originalDay, daysInTargetMonth));
   return result;
 }
 
