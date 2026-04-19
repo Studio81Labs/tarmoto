@@ -1,20 +1,25 @@
-name: CI
+name: PoC CI
 
+# Pull-request validation for apps/poc-sensor. Main-branch builds are
+# handled by poc-deploy.yml, which also ships to Cloudflare Pages.
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
+    paths:
+      - "apps/poc-sensor/**"
+      - ".github/workflows/poc-ci.yml"
+
+permissions:
+  contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
     name: Build & Test
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v6
 
@@ -30,14 +35,5 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build shared package
-        run: pnpm build:shared
-
-      - name: Build backend
-        run: pnpm build:backend
-
-      - name: Lint backend
-        run: pnpm --filter @tarmoto/backend lint
-
-      - name: Test backend
-        run: pnpm --filter @tarmoto/backend test
+      - name: Build PoC sensor
+        run: pnpm build:poc
