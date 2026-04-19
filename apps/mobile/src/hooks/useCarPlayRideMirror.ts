@@ -25,7 +25,6 @@ import { useRideStore } from "@/stores";
 import {
   mountRideStatusBoard,
   unmountRideStatusBoard,
-  updateRideStatusBoard,
   type RideStatusBoard,
 } from "@/services/carplay";
 
@@ -68,13 +67,16 @@ export function useCarPlayRideMirror(): void {
       rideType,
     };
 
-    if (!mountedRef.current) {
-      mountRideStatusBoard(board);
-      mountedRef.current = true;
-      return;
-    }
-
-    updateRideStatusBoard(board);
+    // `mountRideStatusBoard` also handles the ride-type title-change
+    // path (it re-issues setRootTemplate when the title differs from
+    // what's currently mounted), so calling it unconditionally while
+    // riding is correct. The service decides mount-vs-update internally
+    // based on the board title vs. its own mounted state. `mountedRef`
+    // tracks whether the bridge accepted the mount so the cleanup
+    // effect below can skip the unmount call when CarPlay was never
+    // connected (no native round-trip needed).
+    const accepted = mountRideStatusBoard(board);
+    if (accepted) mountedRef.current = true;
   }, [isRiding, rideType, speedKmh, distanceKm, durationSeconds, quality]);
 
   // Belt-and-braces cleanup if the host (RootNavigator) ever unmounts —

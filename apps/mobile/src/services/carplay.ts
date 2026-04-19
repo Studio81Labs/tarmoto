@@ -35,7 +35,7 @@
  */
 
 import { Platform } from "react-native";
-import { qualityLabel } from "@/theme";
+import { formatDurationSeconds, qualityLabel } from "@/theme";
 
 // ── Public types ──
 
@@ -103,19 +103,13 @@ export function formatDistanceKm(km: number): string {
 }
 
 /**
- * mm:ss for short rides, h:mm:ss past the hour mark — same shape as the
- * `useFormattedDuration` hook used on-phone, so the two surfaces match.
+ * mm:ss for short rides, h:mm:ss past the hour mark. Thin delegate to
+ * `formatDurationSeconds` in `@/theme` so the CarPlay board and the
+ * on-phone HUD always render durations the same way — see that helper
+ * for the NaN / negative / sub-second edge cases.
  */
 export function formatDuration(totalSeconds: number): string {
-  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return "0:00";
-  const seconds = Math.floor(totalSeconds);
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  if (h > 0) {
-    return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-  }
-  return `${m}:${s.toString().padStart(2, "0")}`;
+  return formatDurationSeconds(totalSeconds);
 }
 
 /**
@@ -256,6 +250,13 @@ function createNoopBridge(): CarPlayBridge {
  */
 let activeBridge: CarPlayBridge | null = null;
 let templateMounted = false;
+/**
+ * Remember the title that's currently on-screen so a ride-type change
+ * mid-mount remounts the template (setRootTemplate replaces the root and
+ * picks up the new title) instead of pushing items-only updates that
+ * would leave the old title stale.
+ */
+let mountedTitle: string | null = null;
 
 function getBridge(): CarPlayBridge {
   if (!activeBridge) activeBridge = createDefaultCarPlayBridge();
@@ -267,25 +268,35 @@ function getBridge(): CarPlayBridge {
  * it with the rider's first stats snapshot. Idempotent — if the template
  * is already mounted (e.g. the rider backgrounded and re-foregrounded
  * the app), the call falls through to an items update so the bike display
- * never blanks while we re-mount.
+ * never blanks while we re-mount. If the rider's ride type changed
+ * (different title), we re-issue `setRootInformationTemplate` so the
+ * title refreshes too.
  *
- * Returns `true` when the template is now visible on CarPlay (live or
- * a no-op success when CarPlay isn't connected — callers should treat
- * the return as "the bridge accepted the request"), or `false` when the
- * bridge isn't reachable at all (Android, missing native module).
+ * Returns `true` when the bridge accepted the request, or `false` when
+ * CarPlay isn't reachable (Android, no connection, missing native
+ * module) — callers can use this to short-circuit subsequent ticks.
  */
 export function mountRideStatusBoard(board: RideStatusBoard): boolean {
   const bridge = getBridge();
+  // Skip the native round-trip when CarPlay isn't connected — saves
+  // bridge traffic on every ride-store tick while the rider's phone
+  // sits unmounted, and keeps the no-op iOS / Android path symmetric.
+  if (!bridge.isAvailable()) return false;
+
   const items = buildRideStatusItems(board);
-  if (templateMounted) {
+  const title = formatRideTypeTitle(board.rideType);
+
+  if (templateMounted && title === mountedTitle) {
     bridge.updateInformationTemplateItems(items);
     return true;
   }
-  bridge.setRootInformationTemplate({
-    title: formatRideTypeTitle(board.rideType),
-    items,
-  });
+
+  // Fresh mount, or ride-type changed — setRootTemplate replaces the
+  // current root (documented contract of the package), so this handles
+  // both the first-mount and title-change paths.
+  bridge.setRootInformationTemplate({ title, items });
   templateMounted = true;
+  mountedTitle = title;
   return true;
 }
 
@@ -297,6 +308,7 @@ export function mountRideStatusBoard(board: RideStatusBoard): boolean {
 export function updateRideStatusBoard(board: RideStatusBoard): void {
   if (!templateMounted) return;
   const bridge = getBridge();
+  if (!bridge.isAvailable()) return;
   bridge.updateInformationTemplateItems(buildRideStatusItems(board));
 }
 
@@ -308,8 +320,12 @@ export function updateRideStatusBoard(board: RideStatusBoard): void {
 export function unmountRideStatusBoard(): void {
   if (!templateMounted) return;
   const bridge = getBridge();
-  bridge.clearRootTemplate();
+  // Even if CarPlay disconnected mid-ride we still drop our local state
+  // so the next ride mounts cleanly; the bridge is allowed to no-op on
+  // its side when `isAvailable` is false.
+  if (bridge.isAvailable()) bridge.clearRootTemplate();
   templateMounted = false;
+  mountedTitle = null;
 }
 
 // ── Test seam ──
@@ -322,6 +338,7 @@ export function unmountRideStatusBoard(): void {
 export function __setCarPlayBridgeForTest(bridge: CarPlayBridge | null): void {
   activeBridge = bridge;
   templateMounted = false;
+  mountedTitle = null;
 }
 
 /**
@@ -330,4 +347,5 @@ export function __setCarPlayBridgeForTest(bridge: CarPlayBridge | null): void {
  */
 export function __resetCarPlayStateForTest(): void {
   templateMounted = false;
+  mountedTitle = null;
 }

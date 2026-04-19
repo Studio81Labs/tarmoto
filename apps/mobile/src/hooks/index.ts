@@ -23,6 +23,7 @@ export { useCarPlayRideMirror } from "./useCarPlayRideMirror";
 import { useEffect, useRef, useCallback, useState } from "react";
 import { AppState, AppStateStatus } from "react-native";
 import KeepAwake from "react-native-keep-awake";
+import { formatDurationSeconds } from "@/theme";
 
 /**
  * Keep screen awake while component is mounted (for ride mode)
@@ -61,16 +62,13 @@ export function useTimer(running: boolean) {
 }
 
 /**
- * Format seconds to mm:ss or h:mm:ss
+ * Format seconds to mm:ss or h:mm:ss. Thin re-export of
+ * `formatDurationSeconds` from the theme module — kept under this
+ * `use*` name for callers that already import from the hooks barrel,
+ * but both call sites land on the same implementation.
  */
 export function useFormattedDuration(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  if (h > 0) {
-    return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-  }
-  return `${m}:${s.toString().padStart(2, "0")}`;
+  return formatDurationSeconds(seconds);
 }
 
 /**

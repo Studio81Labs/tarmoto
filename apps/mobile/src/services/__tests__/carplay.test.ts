@@ -217,6 +217,43 @@ describe("ride status board lifecycle", () => {
     expect(config.title).toBe("Commute");
   });
 
+  it("re-issues setRootTemplate when the ride type changes mid-mount", () => {
+    // Seed mount with free-ride title.
+    mountRideStatusBoard(makeBoard({ rideType: "free" }));
+    expect(bridge.setRoot).toHaveBeenCalledTimes(1);
+
+    // Same ride type on the next mount call → items-only update, no
+    // setRoot re-issue (that would flicker the bike display).
+    mountRideStatusBoard(makeBoard({ rideType: "free", speedKmh: 42 }));
+    expect(bridge.setRoot).toHaveBeenCalledTimes(1);
+    expect(bridge.updateItems).toHaveBeenCalledTimes(1);
+
+    // Ride type flips → re-issue setRootTemplate so the title refreshes.
+    mountRideStatusBoard(makeBoard({ rideType: "commute" }));
+    expect(bridge.setRoot).toHaveBeenCalledTimes(2);
+    const secondSetRoot = bridge.setRoot.mock.calls[1]?.[0] as {
+      title: string;
+    };
+    expect(secondSetRoot.title).toBe("Commute");
+  });
+
+  it("skips native traffic when CarPlay is not available", () => {
+    // Bridge reports disconnected — every lifecycle op should no-op
+    // without touching setRoot / updateItems / clear.
+    const offlineBridge = createFakeBridge();
+    offlineBridge.isAvailable = () => false;
+    __setCarPlayBridgeForTest(offlineBridge);
+
+    expect(mountRideStatusBoard(makeBoard())).toBe(false);
+    expect(offlineBridge.setRoot).not.toHaveBeenCalled();
+
+    updateRideStatusBoard(makeBoard({ speedKmh: 80 }));
+    expect(offlineBridge.updateItems).not.toHaveBeenCalled();
+
+    unmountRideStatusBoard();
+    expect(offlineBridge.clear).not.toHaveBeenCalled();
+  });
+
   it("updates only when a template is mounted", () => {
     // No mount yet — update is a no-op so the rider doesn't see ghost
     // template content if the hook fires a tick before the mount effect.
