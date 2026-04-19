@@ -112,6 +112,7 @@ function getNotifier(): Notifier {
 export function __setNotifierForTest(next: Notifier | null): void {
   notifier = next;
   sessionNotifiedByRoute.clear();
+  checkInProgress = false;
   monitorSubscription?.remove();
   monitorSubscription = null;
 }
@@ -202,8 +203,18 @@ export interface CheckResult {
     | "all-seen"
     | "all-notified"
     | "notifier-unavailable"
-    | "api-error";
+    | "api-error"
+    | "check-in-progress";
 }
+
+// Guards against a second check being started while the first is still
+// in flight (e.g. rapid background→active→background→active bounces on
+// iOS). The existing dedup via `alreadyNotified` already makes duplicate
+// *alerts* impossible — JS is single-threaded and there's no await
+// between the dedup read and the `alreadyNotified.add` write — but the
+// guard still avoids stacking two concurrent API round trips for no
+// gain.
+let checkInProgress = false;
 
 /**
  * Fetch the rider's primary commute + status, compute a notification, and
@@ -215,6 +226,10 @@ export async function checkCommuteHazardsAndNotify(): Promise<CheckResult> {
   if (!impl.isAvailable()) {
     return { notified: false, hazardIds: [], reason: "notifier-unavailable" };
   }
+  if (checkInProgress) {
+    return { notified: false, hazardIds: [], reason: "check-in-progress" };
+  }
+  checkInProgress = true;
 
   try {
     const routes = await api.getCommuteRoutes();
@@ -240,10 +255,17 @@ export async function checkCommuteHazardsAndNotify(): Promise<CheckResult> {
     });
 
     if (!payload) {
+      // Pick the reason by *actual* filter that removed the batch, not by
+      // whether `alreadyNotified` happens to hold IDs from an earlier
+      // check. A rider who was alerted about hazard A, then visited
+      // CommuteScreen and acknowledged B/C, then reopens the app with a
+      // status of [B, C] must see "all-seen" — even though
+      // `alreadyNotified` still holds A from the first alert.
+      const allSeen = status.hazards.every((h) => lastSeen.has(h.id));
       return {
         notified: false,
         hazardIds: [],
-        reason: alreadyNotified.size > 0 ? "all-notified" : "all-seen",
+        reason: allSeen ? "all-seen" : "all-notified",
       };
     }
 
@@ -256,6 +278,8 @@ export async function checkCommuteHazardsAndNotify(): Promise<CheckResult> {
     // noisy "couldn't check" error dialog on every cold start would be
     // worse than a silent miss.
     return { notified: false, hazardIds: [], reason: "api-error" };
+  } finally {
+    checkInProgress = false;
   }
 }
 
@@ -303,5 +327,6 @@ function stopCommuteHazardMonitor(): void {
 export function __resetCommuteHazardNotifierForTest(): void {
   stopCommuteHazardMonitor();
   sessionNotifiedByRoute.clear();
+  checkInProgress = false;
   notifier = null;
 }

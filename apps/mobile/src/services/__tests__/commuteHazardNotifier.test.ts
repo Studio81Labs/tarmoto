@@ -359,4 +359,58 @@ describe("checkCommuteHazardsAndNotify", () => {
     // short-circuits before any network traffic.
     expect(mockApi.getCommuteStatus).not.toHaveBeenCalled();
   });
+
+  it("reports 'all-seen' when current hazards are acknowledged, even if alreadyNotified still holds stale IDs", async () => {
+    // First check: alert on h1. Afterward alreadyNotified = {h1}.
+    mockApi.getCommuteRoutes.mockResolvedValue([makeRoute({ id: "route-1" })]);
+    mockApi.getCommuteStatus.mockResolvedValue(
+      makeStatus([makeHazard({ id: "h1" })]),
+    );
+    const first = await checkCommuteHazardsAndNotify();
+    expect(first.notified).toBe(true);
+
+    // Rider visits CommuteScreen and acknowledges a fresh batch [h2, h3].
+    // Current status now reports exactly those two hazards (h1 has expired
+    // server-side). The diagnostic reason should be "all-seen" — the batch
+    // was filtered by lastSeen, not by the stale alreadyNotified entry.
+    useCommuteStore.getState().markHazardsSeen("route-1", ["h2", "h3"]);
+    mockApi.getCommuteStatus.mockResolvedValue(
+      makeStatus([makeHazard({ id: "h2" }), makeHazard({ id: "h3" })]),
+    );
+
+    const result = await checkCommuteHazardsAndNotify();
+    expect(result.notified).toBe(false);
+    expect(result.reason).toBe("all-seen");
+  });
+
+  it("short-circuits a concurrent call with reason 'check-in-progress'", async () => {
+    let resolveRoutes: (value: CommuteRoute[]) => void;
+    mockApi.getCommuteRoutes.mockImplementation(
+      () =>
+        new Promise<CommuteRoute[]>((resolve) => {
+          resolveRoutes = resolve;
+        }),
+    );
+    mockApi.getCommuteStatus.mockResolvedValue(
+      makeStatus([makeHazard({ id: "h1" })]),
+    );
+
+    const first = checkCommuteHazardsAndNotify();
+    // Before `first` resolves its awaited getRoutes, fire a second check.
+    const second = await checkCommuteHazardsAndNotify();
+    expect(second.notified).toBe(false);
+    expect(second.reason).toBe("check-in-progress");
+
+    // Complete the first check — it should still notify normally and
+    // release the guard for future calls.
+    resolveRoutes!([makeRoute()]);
+    const firstResult = await first;
+    expect(firstResult.notified).toBe(true);
+    expect(fake.calls).toHaveLength(1);
+
+    // A subsequent call after `first` finishes runs normally again.
+    const third = await checkCommuteHazardsAndNotify();
+    // h1 was notified on `first`, so this is a dedup hit — not in-progress.
+    expect(third.reason).toBe("all-notified");
+  });
 });
