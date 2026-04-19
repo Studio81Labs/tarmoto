@@ -204,23 +204,32 @@ export class PoiService {
   }
 
   private clampRadiusKm(input: number | undefined): number {
-    if (input === undefined || !Number.isFinite(input)) {
-      return DEFAULT_RADIUS_KM;
-    }
-    if (input <= 0) return DEFAULT_RADIUS_KM;
-    return Math.min(input, MAX_RADIUS_KM);
+    return clampRadius(input, DEFAULT_RADIUS_KM, MAX_RADIUS_KM);
   }
 
   private clampPoiRadiusKm(input: number | undefined): number {
-    if (input === undefined || !Number.isFinite(input)) {
-      return POI_DEFAULT_RADIUS_KM;
-    }
-    if (input <= 0) return POI_DEFAULT_RADIUS_KM;
-    return Math.min(input, POI_MAX_RADIUS_KM);
+    return clampRadius(input, POI_DEFAULT_RADIUS_KM, POI_MAX_RADIUS_KM);
   }
 
   private resolveKinds(input: PoiKind[] | undefined): PoiKind[] {
     if (!input || input.length === 0) return [...POI_KINDS];
     return Array.from(new Set(input));
   }
+}
+
+/**
+ * Clamp a radius (km) query parameter into the `[defaultKm, maxKm]`
+ * window. Accommodation and POI lookups share this logic but keep
+ * their own constants since the two endpoints are semantically
+ * independent — they could diverge in the future (e.g. a wider cap for
+ * along-route POIs) without touching the accommodation contract.
+ */
+function clampRadius(
+  input: number | undefined,
+  defaultKm: number,
+  maxKm: number,
+): number {
+  if (input === undefined || !Number.isFinite(input)) return defaultKm;
+  if (input <= 0) return defaultKm;
+  return Math.min(input, maxKm);
 }
