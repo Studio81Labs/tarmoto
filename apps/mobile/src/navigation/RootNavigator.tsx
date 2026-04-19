@@ -9,6 +9,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import { colors } from "@/theme";
+import { useCarPlayRideMirror } from "@/hooks";
 
 // Screens
 import HomeScreen from "@/screens/HomeScreen";
@@ -213,6 +214,11 @@ const tabIcons: Record<string, string> = {
 // ── Root Navigator ──
 
 export default function RootNavigator() {
+  // US-17 AC #3: mirror the active ride to the CarPlay information template
+  // from the root so the bike display follows the rider regardless of which
+  // tab is focused. No-op on Android / Jest / when CarPlay isn't connected.
+  useCarPlayRideMirror();
+
   return (
     <NavigationContainer>
       <Tab.Navigator

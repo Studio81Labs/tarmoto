@@ -18,6 +18,8 @@ export type {
   UseOfflineRegionsResult,
 } from "./useOfflineRegions";
 
+export { useCarPlayRideMirror } from "./useCarPlayRideMirror";
+
 import { useEffect, useRef, useCallback, useState } from "react";
 import { AppState, AppStateStatus } from "react-native";
 import KeepAwake from "react-native-keep-awake";
