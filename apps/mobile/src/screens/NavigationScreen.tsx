@@ -114,6 +114,10 @@ export default function NavigationScreen() {
     polyline,
     roadNames,
     voiceEnabled,
+    // Skip GPS hardware activation when the polyline is unusable — the
+    // screen renders the empty-state below and the rider isn't navigating
+    // anything, so there's nothing to project live location onto.
+    trackLocation: polyline.length >= 2,
   });
 
   const routeShape = useMemo<GeoJSON.FeatureCollection>(
@@ -210,6 +214,7 @@ export default function NavigationScreen() {
         <NextManeuverCard
           maneuver={nextManeuver}
           distanceM={tick?.distanceToNextM ?? 0}
+          hasFix={tick !== null}
         />
       </View>
 
@@ -267,14 +272,26 @@ export default function NavigationScreen() {
 function NextManeuverCard({
   maneuver,
   distanceM,
+  hasFix,
 }: {
   maneuver: Maneuver;
   distanceM: number;
+  /**
+   * Whether the rider has a live GPS fix yet. Until the first tick lands
+   * `distanceM` is defaulted to 0, which would otherwise render as "Now"
+   * — a dangerous misread on a motorcycle (it implies the turn is
+   * imminent when GPS hasn't even locked). Before the first fix we show
+   * a neutral placeholder instead.
+   */
+  hasFix: boolean;
 }) {
   const icon = MANEUVER_ICONS[maneuver.type] ?? "arrow-up";
   const label = MANEUVER_LABELS[maneuver.type] ?? "Continue";
-  const distance =
-    maneuver.type === "depart" ? "Depart" : formatManeuverDistance(distanceM);
+  const distance = !hasFix
+    ? "—"
+    : maneuver.type === "depart"
+      ? "Depart"
+      : formatManeuverDistance(distanceM);
   return (
     <View style={styles.maneuverCard}>
       <View style={styles.maneuverIconWrap}>
