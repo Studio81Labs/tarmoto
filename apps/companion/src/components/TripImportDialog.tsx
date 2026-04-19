@@ -30,6 +30,10 @@ export function TripImportDialog({
 }: TripImportDialogProps) {
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // Monotonic token that lets `handleFile` detect when its in-flight parse has
+  // been superseded (dialog closed, another file picked) and drop its result
+  // instead of racing with the cleanup effect and leaving stale preview data.
+  const parseTokenRef = useRef(0);
 
   const [status, setStatus] = useState<"idle" | "parsing" | "ready" | "error">(
     "idle",
@@ -40,6 +44,7 @@ export function TripImportDialog({
 
   useEffect(() => {
     if (!open) {
+      parseTokenRef.current++;
       setStatus("idle");
       setRoute(null);
       setTrip(null);
@@ -64,23 +69,28 @@ export function TripImportDialog({
   const segments = useMemo(() => flattenSegments(trip), [trip]);
 
   async function handleFile(file: File) {
+    const token = ++parseTokenRef.current;
     setStatus("parsing");
     setError(null);
     setRoute(null);
     setTrip(null);
     try {
       const text = await file.text();
+      if (parseTokenRef.current !== token) return;
       const result = parseImportedRoute(text, file.name);
+      if (parseTokenRef.current !== token) return;
       if (!result.ok) {
         setError(result.error);
         setStatus("error");
         return;
       }
       const nextTrip = importedRouteToTrip(result.route);
+      if (parseTokenRef.current !== token) return;
       setRoute(result.route);
       setTrip(nextTrip);
       setStatus("ready");
     } catch {
+      if (parseTokenRef.current !== token) return;
       setError("Could not read the file. Try again or pick a different file.");
       setStatus("error");
     }

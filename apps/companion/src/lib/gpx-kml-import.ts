@@ -332,15 +332,25 @@ function deriveWaypoints(route: ImportedRoute): Waypoint[] {
     type: "via",
   }));
 
+  // Only adopt an imported waypoint's name for start/end when it's actually
+  // co-located with that endpoint — otherwise a mid-route "Viewpoint" placemark
+  // would be labelled "Start" and also survive as a duplicate via below.
+  const startMatch = route.waypoints.find((wp) =>
+    samePoint({ lng: wp.lng, lat: wp.lat }, { lng: first[0], lat: first[1] }),
+  );
+  const endMatch = route.waypoints.find((wp) =>
+    samePoint({ lng: wp.lng, lat: wp.lat }, { lng: last[0], lat: last[1] }),
+  );
+
   const start: Waypoint = {
     id: "imp-wp-start",
-    name: route.waypoints[0]?.name ?? "Start",
+    name: startMatch?.name ?? "Start",
     location: { lng: first[0], lat: first[1] },
     type: "start",
   };
   const end: Waypoint = {
     id: "imp-wp-end",
-    name: route.waypoints[route.waypoints.length - 1]?.name ?? "End",
+    name: endMatch?.name ?? "End",
     location: { lng: last[0], lat: last[1] },
     type: "end",
   };
@@ -383,7 +393,6 @@ function buildPreviewSegments(route: ImportedRoute): RoutePreviewSegment[] {
   const chunkKm = total / targetSegments;
 
   const segments: RoutePreviewSegment[] = [];
-  let acc = 0;
   let chunkPoints: Array<[number, number]> = [route.points[0]];
   let chunkDistance = 0;
   let chunkIndex = 0;
@@ -391,7 +400,6 @@ function buildPreviewSegments(route: ImportedRoute): RoutePreviewSegment[] {
   for (let i = 1; i < route.points.length; i++) {
     const step = haversineKm(route.points[i - 1], route.points[i]);
     chunkDistance += step;
-    acc += step;
     chunkPoints.push(route.points[i]);
 
     const isLast = i === route.points.length - 1;

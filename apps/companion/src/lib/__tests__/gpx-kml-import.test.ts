@@ -229,6 +229,31 @@ describe("importedRouteToTrip", () => {
     expect(wps.find((w) => w.type === "end")?.name).toBe("Prato");
   });
 
+  it("does not adopt mid-route waypoint names for start/end", () => {
+    const gpx = `<?xml version="1.0"?>
+<gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">
+  <wpt lat="46.52" lon="10.43"><name>Scenic viewpoint</name></wpt>
+  <trk><trkseg>
+    <trkpt lat="46.47" lon="10.37"/>
+    <trkpt lat="46.50" lon="10.41"/>
+    <trkpt lat="46.52" lon="10.43"/>
+    <trkpt lat="46.55" lon="10.47"/>
+    <trkpt lat="46.60" lon="10.55"/>
+  </trkseg></trk>
+</gpx>`;
+    const parsed = parseImportedRoute(gpx, "loop.gpx");
+    if (!parsed.ok) throw new Error("parse failed");
+    const trip = importedRouteToTrip(parsed.route);
+    const wps = trip.days[0].waypoints;
+    // Mid-route waypoint must not be promoted to start/end…
+    expect(wps.find((w) => w.type === "start")?.name).toBe("Start");
+    expect(wps.find((w) => w.type === "end")?.name).toBe("End");
+    // …and should survive as a via with its actual name.
+    const vias = wps.filter((w) => w.type === "via");
+    expect(vias).toHaveLength(1);
+    expect(vias[0].name).toBe("Scenic viewpoint");
+  });
+
   it("estimates duration at roughly 55 km/h average with a 30-minute floor", () => {
     const parsed = parseImportedRoute(GPX_TRACK, "stelvio.gpx");
     if (!parsed.ok) throw new Error("parse failed");
