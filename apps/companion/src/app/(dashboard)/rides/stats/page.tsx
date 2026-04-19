@@ -14,7 +14,7 @@ import {
   YAxis,
 } from "recharts";
 import { BarChart3, CalendarDays, Loader2, TrendingUp } from "lucide-react";
-import { api } from "@/lib/api";
+import { fetchAllRides } from "@/lib/rides-fetch";
 import {
   availableYears,
   computeAllTimeTotals,
@@ -45,28 +45,6 @@ const YOY_COLORS = [
   "#facc15",
   "#34d399",
 ] as const;
-
-// Stats must cover every ride the user has, not just the most recent page.
-// The backend caps `limit` at 100, so we page through `offset` until we've
-// retrieved the reported `total`. The MAX_PAGES guard stops a misbehaving
-// server from looping forever.
-const PAGE_SIZE = 100;
-const MAX_PAGES = 100;
-
-async function fetchAllRides(): Promise<RideForStats[]> {
-  const collected: RideForStats[] = [];
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const { data, error } = await api.GET("/api/v1/rides", {
-      params: { query: { limit: PAGE_SIZE, offset: page * PAGE_SIZE } },
-    });
-    if (error) throw new Error("Could not load ride history");
-    const batch = data?.rides ?? [];
-    collected.push(...batch);
-    const total = data?.total ?? collected.length;
-    if (collected.length >= total || batch.length < PAGE_SIZE) break;
-  }
-  return collected;
-}
 
 export default function StatsPage() {
   const [rides, setRides] = useState<RideForStats[]>([]);

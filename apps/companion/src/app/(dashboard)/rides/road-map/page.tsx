@@ -1,40 +1,659 @@
 "use client";
 
-import { MapPin } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Check,
+  Copy,
+  Crosshair,
+  Loader2,
+  MapPin,
+  Navigation,
+  Share2,
+  Sparkles,
+} from "lucide-react";
+import type { UnitSystem } from "@tarmoto/shared";
+import { explorationApi } from "@/lib/api";
+import type { ExplorationStats, UnriddenSegment } from "@/lib/api";
+import {
+  QUALITY_CONFIG,
+  formatDistance,
+  formatDistanceFromMeters,
+  scoreToTier,
+} from "@/lib/utils";
+import { fetchAllRides } from "@/lib/rides-fetch";
+import type { RideForStats } from "@/lib/ride-stats";
+import {
+  TIME_PERIODS,
+  TIME_PERIOD_LABELS,
+  buildShareSummary,
+  computePeriodStats,
+  groupUnriddenByRegion,
+  type TimePeriod,
+} from "@/lib/exploration";
+import { usePreferencesStore } from "@/stores/preferences";
 
 /**
- * RoadMapPage — Personal road map (ridden vs unridden)
+ * Personal road map (US-50).
  *
- * TODO: Fetch /rides/road-map from API
- * TODO: MapLibre full-screen with ridden roads highlighted in tarmoto-cyan
- * TODO: Exploration percentage per region
- * TODO: Nearby unridden roads suggestions
- * TODO: Share exploration stats as image
+ * Global ridden/unridden totals come from `/exploration/stats`. The map layer
+ * itself is a placeholder until INFRA #79 (MapLibre integration) lands; we
+ * still fetch `/exploration/ridden-ids` so the page can report how many
+ * segments the layer would render. Period chips only filter the rides list
+ * (the exploration stats endpoint is not time-bucketed) so the global %
+ * remains visible no matter which period is active.
  */
 
+const NEARBY_DEFAULT_RADIUS_KM = 15;
+const NEARBY_LIMIT = 25;
+
+// Fallback coordinate used when the browser blocks or doesn't have geolocation.
+// Prague is a sensible neutral default for a motorcycle app whose spec targets
+// Central Europe; the user can override via the "Use my location" button or by
+// letting the coordinate inputs accept any lat/lng.
+const FALLBACK_CENTER = { lat: 50.0755, lng: 14.4378, label: "Prague" };
+
 export default function RoadMapPage() {
+  const [stats, setStats] = useState<ExplorationStats | null>(null);
+  const [riddenSegmentIds, setRiddenSegmentIds] = useState<string[]>([]);
+  const [rides, setRides] = useState<RideForStats[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [period, setPeriod] = useState<TimePeriod>("all");
+
+  const [center, setCenter] = useState(FALLBACK_CENTER);
+  const [nearby, setNearby] = useState<UnriddenSegment[]>([]);
+  const [nearbyLoading, setNearbyLoading] = useState(false);
+  const [nearbyError, setNearbyError] = useState<string | null>(null);
+  const [locating, setLocating] = useState(false);
+
+  const [shareState, setShareState] = useState<
+    "idle" | "copied" | "shared" | "error"
+  >("idle");
+
+  // Preferences are hydrated from localStorage on the client; during SSR the
+  // store still returns the metric default so the server-rendered markup
+  // matches the first client paint.
+  const unitSystem = usePreferencesStore((s) => s.unitSystem);
+  const hydratePreferences = usePreferencesStore((s) => s.hydrate);
+  useEffect(() => {
+    hydratePreferences();
+  }, [hydratePreferences]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+
+    Promise.all([
+      explorationApi.getStats(),
+      explorationApi.getRiddenIds(),
+      fetchAllRides(),
+    ])
+      .then(([statsRes, riddenRes, ridesList]) => {
+        if (cancelled) return;
+        setStats(statsRes.data);
+        setRiddenSegmentIds(riddenRes.data.segment_ids);
+        setRides(ridesList);
+        setLoading(false);
+      })
+      .catch((err: Error) => {
+        if (cancelled) return;
+        setLoadError(err.message || "Could not load exploration data");
+        setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // `cancelled` guards against stale responses when the centre changes faster
+  // than the network round-trip (e.g. pasting coordinates, then immediately
+  // clicking "Use my location"). Without it, a late-resolving request would
+  // overwrite fresher results.
+  useEffect(() => {
+    let cancelled = false;
+    setNearbyLoading(true);
+    setNearbyError(null);
+    explorationApi
+      .getNearbyUnridden({
+        lat: center.lat,
+        lng: center.lng,
+        radius_km: NEARBY_DEFAULT_RADIUS_KM,
+        limit: NEARBY_LIMIT,
+      })
+      .then(({ data }) => {
+        if (cancelled) return;
+        setNearby(data);
+        setNearbyLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setNearbyError("Could not load nearby unridden roads");
+        setNearby([]);
+        setNearbyLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [center.lat, center.lng]);
+
+  const periodStats = useMemo(
+    () => computePeriodStats(rides, period),
+    [rides, period],
+  );
+
+  const regionBuckets = useMemo(() => groupUnriddenByRegion(nearby), [nearby]);
+
+  // The backend returns nearby-unridden sorted by distance today, but the UI
+  // explicitly advertises "Sorted by distance" — sorting client-side makes
+  // that claim resilient if the service ordering ever changes.
+  const nearbyByDistance = useMemo(
+    () => [...nearby].sort((a, b) => a.distance_m - b.distance_m),
+    [nearby],
+  );
+
+  const handleUseMyLocation = useCallback(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setNearbyError("Geolocation is not available in this browser");
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocating(false);
+        setCenter({
+          lat: Number(pos.coords.latitude.toFixed(4)),
+          lng: Number(pos.coords.longitude.toFixed(4)),
+          label: "My location",
+        });
+      },
+      (err) => {
+        setLocating(false);
+        setNearbyError(
+          err.code === err.PERMISSION_DENIED
+            ? "Location permission denied. Enter coordinates below."
+            : "Could not read your location. Enter coordinates below.",
+        );
+      },
+      { timeout: 10_000 },
+    );
+  }, []);
+
+  const handleShare = useCallback(async () => {
+    if (!stats) return;
+    const text = buildShareSummary(stats, periodStats, unitSystem);
+    const url =
+      typeof window !== "undefined" ? window.location.href : undefined;
+    const shareData: ShareData = {
+      title: "My Tarmoto exploration",
+      text,
+      ...(url ? { url } : {}),
+    };
+    try {
+      if (
+        typeof navigator !== "undefined" &&
+        typeof navigator.share === "function" &&
+        (!navigator.canShare || navigator.canShare(shareData))
+      ) {
+        await navigator.share(shareData);
+        setShareState("shared");
+      } else if (
+        typeof navigator !== "undefined" &&
+        navigator.clipboard?.writeText
+      ) {
+        await navigator.clipboard.writeText(text);
+        setShareState("copied");
+      } else {
+        setShareState("error");
+      }
+    } catch {
+      // A user-cancelled share on iOS Safari rejects; treat as idle, not error.
+      setShareState("idle");
+      return;
+    }
+    window.setTimeout(() => setShareState("idle"), 2500);
+  }, [stats, periodStats, unitSystem]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col h-full">
+        <PageHeader percentExplored={null} />
+        <div className="flex-1 flex items-center justify-center text-slate-400 gap-2 text-sm">
+          <Loader2 size={16} className="animate-spin" /> Loading road map…
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError || !stats) {
+    return (
+      <div className="flex flex-col h-full">
+        <PageHeader percentExplored={null} />
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="max-w-md rounded-xl border border-red-500/20 bg-red-500/5 p-5 text-sm text-red-300">
+            {loadError ?? "Could not load exploration data"}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
-        <div>
-          <h1 className="text-xl font-bold">My Road Map</h1>
-          <p className="text-sm text-slate-400 mt-0.5">Every road you&apos;ve ridden</p>
+      <PageHeader percentExplored={stats.percent_explored} />
+
+      <div className="px-6 pt-4 pb-2 flex flex-wrap items-center gap-2 border-b border-slate-800">
+        <div
+          className="flex items-center gap-1.5 mr-2"
+          role="group"
+          aria-label="Filter by period"
+        >
+          {TIME_PERIODS.map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => setPeriod(p)}
+              aria-pressed={period === p}
+              className={`px-3 py-1.5 rounded-lg text-sm transition ${
+                period === p
+                  ? "bg-tarmoto-cyan/10 text-tarmoto-cyan"
+                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+              }`}
+            >
+              {TIME_PERIOD_LABELS[p]}
+            </button>
+          ))}
         </div>
-        <div className="px-4 py-2 rounded-xl bg-tarmoto-cyan/10 text-tarmoto-cyan font-semibold text-sm">
-          0% explored
+
+        <div className="ml-auto">
+          <ShareButton state={shareState} onClick={handleShare} />
         </div>
       </div>
 
-      <div className="flex-1 relative bg-slate-900">
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-center">
-            <MapPin size={64} className="mx-auto text-slate-700 mb-4" />
-            <p className="text-slate-500 text-lg font-medium">Personal Road Map</p>
-            <p className="text-slate-600 text-sm mt-1">
-              Ridden roads highlighted • Exploration stats • Unridden suggestions
-            </p>
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_360px]">
+        {/* Map placeholder */}
+        <div className="relative bg-slate-900 border-b lg:border-b-0 lg:border-r border-slate-800 min-h-[320px]">
+          <MapLegend riddenCount={riddenSegmentIds.length} />
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="text-center">
+              <MapPin size={56} className="mx-auto text-slate-700 mb-4" />
+              <p className="text-slate-500 text-lg font-medium">
+                Personal Road Map
+              </p>
+              <p className="text-slate-600 text-sm mt-1 max-w-md mx-auto px-4">
+                Ridden roads in Tarmoto Cyan, unridden dimmed. Full-screen
+                MapLibre layer lands with INFRA #79.
+              </p>
+            </div>
           </div>
         </div>
+
+        {/* Sidebar */}
+        <aside className="overflow-y-auto bg-slate-950/60">
+          <section className="p-5 border-b border-slate-800 space-y-4">
+            <SummaryCards
+              stats={stats}
+              periodStats={periodStats}
+              units={unitSystem}
+            />
+          </section>
+
+          <section className="p-5 border-b border-slate-800">
+            <SectionHeader
+              icon={<Crosshair size={14} />}
+              title="Explore near"
+              subtitle={center.label}
+            />
+            <NearbyCenterControls
+              center={center}
+              locating={locating}
+              onUseMyLocation={handleUseMyLocation}
+              onCoordinatesChanged={(lat, lng, label) => {
+                setCenter({ lat, lng, label });
+              }}
+            />
+          </section>
+
+          <section className="p-5 border-b border-slate-800">
+            <SectionHeader
+              icon={<Sparkles size={14} />}
+              title="Regional breakdown"
+              subtitle={`${nearby.length} unridden roads within ${formatDistance(NEARBY_DEFAULT_RADIUS_KM, unitSystem)}`}
+            />
+            {nearbyLoading ? (
+              <LoaderRow label="Loading unridden roads…" />
+            ) : nearbyError ? (
+              <p className="text-sm text-red-300">{nearbyError}</p>
+            ) : regionBuckets.length === 0 ? (
+              <EmptyState label="No unridden roads found nearby. You've explored this area well!" />
+            ) : (
+              <ul className="space-y-2">
+                {regionBuckets.slice(0, 6).map((bucket) => (
+                  <li
+                    key={bucket.key}
+                    className="flex items-center justify-between rounded-lg bg-slate-900 border border-slate-800 px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-white truncate">
+                        {bucket.label}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {bucket.segments.length} segment
+                        {bucket.segments.length === 1 ? "" : "s"} to discover
+                      </p>
+                    </div>
+                    <span className="text-xs text-slate-400 tabular-nums">
+                      {formatDistance(bucket.totalLengthKm, unitSystem)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="p-5">
+            <SectionHeader
+              icon={<Navigation size={14} />}
+              title="Nearby unridden suggestions"
+              subtitle="Sorted by distance"
+            />
+            {nearbyLoading ? (
+              <LoaderRow label="Loading suggestions…" />
+            ) : nearbyError ? (
+              <p className="text-sm text-red-300">{nearbyError}</p>
+            ) : nearby.length === 0 ? (
+              <EmptyState label="Nothing nearby — zoom out or pick a new centre." />
+            ) : (
+              <ul className="space-y-2">
+                {nearbyByDistance.slice(0, 10).map((seg) => (
+                  <NearbyRow key={seg.id} segment={seg} units={unitSystem} />
+                ))}
+              </ul>
+            )}
+          </section>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+// ── Sub-components ──
+
+interface PageHeaderProps {
+  percentExplored: number | null;
+}
+
+function PageHeader({ percentExplored }: PageHeaderProps) {
+  return (
+    <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+      <div>
+        <h1 className="text-xl font-bold">My Road Map</h1>
+        <p className="text-sm text-slate-400 mt-0.5">
+          Every road you&apos;ve ridden
+        </p>
+      </div>
+      <div className="px-4 py-2 rounded-xl bg-tarmoto-cyan/10 text-tarmoto-cyan font-semibold text-sm tabular-nums">
+        {percentExplored == null ? "…" : `${percentExplored}% explored`}
+      </div>
+    </div>
+  );
+}
+
+interface SummaryCardsProps {
+  stats: ExplorationStats;
+  periodStats: ReturnType<typeof computePeriodStats>;
+  units: UnitSystem;
+}
+
+function SummaryCards({ stats, periodStats, units }: SummaryCardsProps) {
+  const cards = [
+    {
+      label: "Segments ridden",
+      value: stats.ridden_segments.toLocaleString(),
+      sub: `of ${stats.total_segments.toLocaleString()} total`,
+    },
+    {
+      label: "All-time distance",
+      value: formatDistance(stats.total_distance_km, units),
+      sub: `${stats.percent_explored}% explored`,
+    },
+    {
+      label: `Rides — ${TIME_PERIOD_LABELS[periodStats.period]}`,
+      value: periodStats.rideCount.toLocaleString(),
+      sub:
+        periodStats.rideCount === 0
+          ? "No rides in this period"
+          : `${formatDistance(periodStats.distanceKm, units)} · ${periodStats.activeDays} active day${periodStats.activeDays === 1 ? "" : "s"}`,
+    },
+  ];
+  return (
+    <div className="grid grid-cols-1 gap-2">
+      {cards.map((c) => (
+        <div
+          key={c.label}
+          className="rounded-xl bg-slate-900 border border-slate-800 p-3"
+        >
+          <p className="text-xs uppercase tracking-wider text-slate-500">
+            {c.label}
+          </p>
+          <p className="text-xl font-bold text-white tabular-nums mt-0.5">
+            {c.value}
+          </p>
+          <p className="text-xs text-slate-500 mt-0.5">{c.sub}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+interface SectionHeaderProps {
+  icon: React.ReactNode;
+  title: string;
+  subtitle?: string;
+}
+
+function SectionHeader({ icon, title, subtitle }: SectionHeaderProps) {
+  return (
+    <div className="mb-3">
+      <div className="flex items-center gap-2 text-white">
+        <span className="text-tarmoto-cyan">{icon}</span>
+        <h2 className="text-sm font-semibold">{title}</h2>
+      </div>
+      {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
+    </div>
+  );
+}
+
+interface NearbyCenterControlsProps {
+  center: { lat: number; lng: number; label: string };
+  locating: boolean;
+  onUseMyLocation: () => void;
+  onCoordinatesChanged: (lat: number, lng: number, label: string) => void;
+}
+
+function NearbyCenterControls({
+  center,
+  locating,
+  onUseMyLocation,
+  onCoordinatesChanged,
+}: NearbyCenterControlsProps) {
+  const [latInput, setLatInput] = useState(String(center.lat));
+  const [lngInput, setLngInput] = useState(String(center.lng));
+
+  useEffect(() => {
+    setLatInput(String(center.lat));
+    setLngInput(String(center.lng));
+  }, [center.lat, center.lng]);
+
+  const apply = () => {
+    // `Number("")` is 0, which would quietly snap the map to Null Island.
+    // Reject blank inputs before coercing so an empty field is an error, not
+    // a valid coordinate.
+    if (latInput.trim() === "" || lngInput.trim() === "") return;
+    const lat = Number(latInput);
+    const lng = Number(lngInput);
+    if (
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng) ||
+      lat < -90 ||
+      lat > 90 ||
+      lng < -180 ||
+      lng > 180
+    ) {
+      return;
+    }
+    onCoordinatesChanged(lat, lng, "Custom point");
+  };
+
+  return (
+    <div className="space-y-2">
+      <button
+        type="button"
+        onClick={onUseMyLocation}
+        disabled={locating}
+        className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm hover:bg-slate-700 transition disabled:opacity-60"
+      >
+        {locating ? (
+          <Loader2 size={14} className="animate-spin" />
+        ) : (
+          <Crosshair size={14} />
+        )}
+        {locating ? "Locating…" : "Use my location"}
+      </button>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="text-xs text-slate-400">
+          <span className="block mb-1">Latitude</span>
+          <input
+            type="number"
+            step="0.0001"
+            value={latInput}
+            onChange={(e) => setLatInput(e.target.value)}
+            className="w-full px-2 py-1.5 rounded bg-slate-800 border border-slate-700 text-sm text-white focus:outline-none focus:border-tarmoto-cyan"
+          />
+        </label>
+        <label className="text-xs text-slate-400">
+          <span className="block mb-1">Longitude</span>
+          <input
+            type="number"
+            step="0.0001"
+            value={lngInput}
+            onChange={(e) => setLngInput(e.target.value)}
+            className="w-full px-2 py-1.5 rounded bg-slate-800 border border-slate-700 text-sm text-white focus:outline-none focus:border-tarmoto-cyan"
+          />
+        </label>
+      </div>
+      <button
+        type="button"
+        onClick={apply}
+        className="w-full px-3 py-1.5 rounded-lg bg-tarmoto-cyan/10 text-tarmoto-cyan text-sm hover:bg-tarmoto-cyan/20 transition"
+      >
+        Apply coordinates
+      </button>
+    </div>
+  );
+}
+
+interface NearbyRowProps {
+  segment: UnriddenSegment;
+  units: UnitSystem;
+}
+
+function NearbyRow({ segment, units }: NearbyRowProps) {
+  const tier =
+    segment.quality_score != null ? scoreToTier(segment.quality_score) : null;
+  const tierInfo = tier ? QUALITY_CONFIG[tier] : null;
+  return (
+    <li className="flex items-center gap-3 rounded-lg bg-slate-900 border border-slate-800 px-3 py-2">
+      <span
+        className={`w-2 h-2 rounded-full ${tierInfo?.bg ?? "bg-slate-600"}`}
+        aria-hidden
+      />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm text-white truncate">
+          {segment.road_name ?? "Unnamed road"}
+        </p>
+        <p className="text-xs text-slate-500 capitalize">
+          {segment.surface_type}
+          {tierInfo ? ` · ${tierInfo.label.toLowerCase()}` : ""} ·{" "}
+          {formatDistanceFromMeters(segment.length_m, units)}
+        </p>
+      </div>
+      <span className="text-xs text-slate-400 tabular-nums">
+        {formatDistanceFromMeters(segment.distance_m, units)} away
+      </span>
+    </li>
+  );
+}
+
+interface ShareButtonProps {
+  state: "idle" | "copied" | "shared" | "error";
+  onClick: () => void;
+}
+
+function ShareButton({ state, onClick }: ShareButtonProps) {
+  const label =
+    state === "copied"
+      ? "Copied!"
+      : state === "shared"
+        ? "Shared"
+        : state === "error"
+          ? "Share unavailable"
+          : "Share stats";
+  const Icon =
+    state === "copied"
+      ? Check
+      : state === "shared"
+        ? Check
+        : state === "error"
+          ? Copy
+          : Share2;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-medium hover:bg-cyan-300 transition"
+    >
+      <Icon size={14} />
+      {label}
+    </button>
+  );
+}
+
+interface LoaderRowProps {
+  label: string;
+}
+
+function LoaderRow({ label }: LoaderRowProps) {
+  return (
+    <div className="flex items-center gap-2 text-sm text-slate-400">
+      <Loader2 size={14} className="animate-spin" /> {label}
+    </div>
+  );
+}
+
+interface EmptyStateProps {
+  label: string;
+}
+
+function EmptyState({ label }: EmptyStateProps) {
+  return <p className="text-sm text-slate-500">{label}</p>;
+}
+
+interface MapLegendProps {
+  riddenCount: number;
+}
+
+function MapLegend({ riddenCount }: MapLegendProps) {
+  return (
+    <div className="absolute top-4 left-4 z-10 rounded-xl bg-slate-950/80 border border-slate-800 backdrop-blur px-4 py-3 text-xs text-slate-300 space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="h-1 w-6 rounded-full bg-tarmoto-cyan" />
+        Ridden ({riddenCount.toLocaleString()} segments)
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="h-1 w-6 rounded-full bg-slate-600" />
+        Unridden
       </div>
     </div>
   );
