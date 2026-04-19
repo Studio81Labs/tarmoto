@@ -53,16 +53,39 @@ function parseKinds(value: unknown): PoiKind[] | undefined {
   return kinds.size === 0 ? undefined : Array.from(kinds);
 }
 
+/**
+ * Coerce a required numeric query string. A blank or whitespace-only
+ * value becomes NaN so `@IsNumber()` rejects it — `Number('')` on its
+ * own returns `0`, which would silently validate `?lat=&lng=` as the
+ * coordinate origin.
+ */
+function toRequiredNumber(value: unknown): number {
+  if (typeof value === 'string' && value.trim() === '') return Number.NaN;
+  return Number(value);
+}
+
+/**
+ * Coerce an optional numeric query string. Blank/whitespace/nullish
+ * values fall through to `undefined` so `@IsOptional()` treats them as
+ * "not provided" and the service layer applies its default, instead of
+ * `Number('')` collapsing them to `0`.
+ */
+function toOptionalNumber(value: unknown): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === 'string' && value.trim() === '') return undefined;
+  return Number(value);
+}
+
 export class PoiQueryDto {
   @ApiProperty({ example: 49.1 })
-  @Transform(({ value }: { value: unknown }) => Number(value))
+  @Transform(({ value }: { value: unknown }) => toRequiredNumber(value))
   @IsNumber()
   @Min(-90)
   @Max(90)
   lat: number;
 
   @ApiProperty({ example: 16.75 })
-  @Transform(({ value }: { value: unknown }) => Number(value))
+  @Transform(({ value }: { value: unknown }) => toRequiredNumber(value))
   @IsNumber()
   @Min(-180)
   @Max(180)
@@ -74,9 +97,7 @@ export class PoiQueryDto {
     description: `Search radius in km (defaulted to ${DEFAULT_RADIUS_KM}, capped at ${MAX_RADIUS_KM} by the service).`,
   })
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) =>
-    value === undefined ? undefined : Number(value),
-  )
+  @Transform(({ value }: { value: unknown }) => toOptionalNumber(value))
   @IsNumber()
   radius_km?: number;
 
