@@ -165,16 +165,25 @@ export default function TripListPage() {
   };
 
   const moveTripToFolder = async (trip: Trip, folderId: string | null) => {
-    const previous = trips;
-    const optimistic = trips.map((t) =>
-      t.id === trip.id ? { ...t, folderId: folderId ?? undefined } : t,
+    const previousFolderId = trip.folderId;
+    setTrips(
+      trips.map((t) =>
+        t.id === trip.id ? { ...t, folderId: folderId ?? undefined } : t,
+      ),
     );
-    setTrips(optimistic);
     setBusyTripId(trip.id);
     try {
       await tripsApi.update(trip.id, { folderId });
     } catch {
-      setTrips(previous);
+      // Targeted rollback: touch only this trip so concurrent duplicates or
+      // deletes made during the await aren't clobbered by a stale snapshot.
+      setTrips(
+        useTripStore
+          .getState()
+          .trips.map((t) =>
+            t.id === trip.id ? { ...t, folderId: previousFolderId } : t,
+          ),
+      );
       setErrorBanner("Couldn't move the trip. Try again.");
     } finally {
       setBusyTripId(null);
@@ -198,13 +207,19 @@ export default function TripListPage() {
 
   const deleteTrip = async (trip: Trip) => {
     if (!confirm(`Delete "${trip.name}"? This cannot be undone.`)) return;
-    const previous = trips;
+    const indexBefore = trips.findIndex((t) => t.id === trip.id);
     setTrips(trips.filter((t) => t.id !== trip.id));
     setBusyTripId(trip.id);
     try {
       await tripsApi.delete(trip.id);
     } catch {
-      setTrips(previous);
+      // Targeted rollback: splice the deleted trip back into the fresh list
+      // so concurrent adds/moves aren't clobbered.
+      const current = useTripStore.getState().trips;
+      const restored = current.slice();
+      const insertAt = Math.min(Math.max(indexBefore, 0), restored.length);
+      restored.splice(insertAt, 0, trip);
+      setTrips(restored);
       setErrorBanner("Couldn't delete the trip. Try again.");
     } finally {
       setBusyTripId(null);
