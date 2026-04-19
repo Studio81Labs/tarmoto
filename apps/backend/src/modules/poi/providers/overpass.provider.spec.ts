@@ -57,12 +57,43 @@ describe('classifyPoiTags', () => {
     expect(classifyPoiTags({})).toBeNull();
   });
 
-  it('prefers amenity classification over tourism when both are present', () => {
-    // Real-world data: a restaurant with tourism=viewpoint nearby tags.
-    // Amenity always wins so the row keeps its primary category.
+  it('defaults to amenity over tourism when no requested kinds are given', () => {
+    // Real-world data: a mountaintop restaurant that is also tagged
+    // `tourism=viewpoint`. With no caller context, the default stays
+    // amenity-first so the element keeps its primary category.
     expect(
       classifyPoiTags({ amenity: 'restaurant', tourism: 'viewpoint' }),
     ).toBe('restaurant');
+  });
+
+  it('picks the requested kind from a dual-tagged element', () => {
+    // The bug Bugbot caught: if the caller asked for viewpoints only,
+    // a dual-tagged viewpoint-restaurant must be classified as a
+    // viewpoint — otherwise the post-query filter drops it even though
+    // the Overpass query only fetched it *because* it is a viewpoint.
+    expect(
+      classifyPoiTags({ amenity: 'restaurant', tourism: 'viewpoint' }, [
+        'viewpoint',
+      ]),
+    ).toBe('viewpoint');
+  });
+
+  it('keeps the amenity-first priority when multiple matches are all requested', () => {
+    // Deterministic tie-break so the caller always sees the same row
+    // per element even if the request includes both kinds.
+    expect(
+      classifyPoiTags({ amenity: 'restaurant', tourism: 'viewpoint' }, [
+        'restaurant',
+        'viewpoint',
+      ]),
+    ).toBe('restaurant');
+  });
+
+  it('returns null when none of the element kinds are in requestedKinds', () => {
+    // An amenity=cafe element in a viewpoint-only query shouldn't
+    // leak through — the service layer relies on this to stop
+    // double-filtering downstream.
+    expect(classifyPoiTags({ amenity: 'cafe' }, ['viewpoint'])).toBeNull();
   });
 });
 

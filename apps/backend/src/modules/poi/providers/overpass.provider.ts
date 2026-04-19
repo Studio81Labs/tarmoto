@@ -132,8 +132,8 @@ export class OverpassPoiProvider implements PoiProvider {
     const data = await this.runQuery(query);
     const pois: PointOfInterest[] = [];
     for (const element of data.elements ?? []) {
-      const poi = this.normalizePoi(element);
-      if (poi && kinds.includes(poi.kind)) pois.push(poi);
+      const poi = this.normalizePoi(element, kinds);
+      if (poi) pois.push(poi);
     }
     return pois;
   }
@@ -188,9 +188,12 @@ export class OverpassPoiProvider implements PoiProvider {
     };
   }
 
-  private normalizePoi(element: OverpassElement): PointOfInterest | null {
+  private normalizePoi(
+    element: OverpassElement,
+    requestedKinds: readonly PoiKind[],
+  ): PointOfInterest | null {
     const tags = element.tags ?? {};
-    const kind = classifyPoiTags(tags);
+    const kind = classifyPoiTags(tags, requestedKinds);
     if (!kind) return null;
 
     const lat = element.lat ?? element.center?.lat;
@@ -216,15 +219,40 @@ export class OverpassPoiProvider implements PoiProvider {
 
 /**
  * Decide which of our POI kinds an Overpass element belongs to based on
- * its `amenity` / `tourism` tags. Returns `null` for anything that
- * doesn't match — guarding against amenity=bar / tourism=hotel etc. that
- * may show up in a bbox query even when we didn't ask for them.
+ * its `amenity` / `tourism` tags.
+ *
+ * Dual-tagged elements (e.g. a mountaintop restaurant that is also a
+ * `tourism=viewpoint`) are ambiguous. Callers pass the kinds the user
+ * asked for so we can pick whichever matching kind the Overpass query
+ * actually fetched the element for — otherwise a viewpoint-only query
+ * would silently drop it. When no context is given, or when none of
+ * the element's kinds are in `requestedKinds`, we fall back to a
+ * stable default: amenity first, then tourism.
+ *
+ * Returns `null` for anything that doesn't map to one of our kinds —
+ * guarding against amenity=bar / tourism=hotel etc. that may still show
+ * up in the response.
  */
-export function classifyPoiTags(tags: Record<string, string>): PoiKind | null {
+export function classifyPoiTags(
+  tags: Record<string, string>,
+  requestedKinds?: readonly PoiKind[],
+): PoiKind | null {
+  const matches: PoiKind[] = [];
   const amenity = tags.amenity;
-  if (amenity === 'restaurant' || amenity === 'cafe') return amenity;
-  if (tags.tourism === 'viewpoint') return 'viewpoint';
-  return null;
+  if (amenity === 'restaurant' || amenity === 'cafe') matches.push(amenity);
+  if (tags.tourism === 'viewpoint') matches.push('viewpoint');
+  if (matches.length === 0) return null;
+
+  if (requestedKinds && requestedKinds.length > 0) {
+    // Prefer a requested kind when one matches; if several do, stick
+    // to the element's own priority (amenity first) so the choice is
+    // deterministic for the dedup caller and stable across requests.
+    const preferred = matches.find((k) => requestedKinds.includes(k));
+    if (preferred) return preferred;
+    return null;
+  }
+
+  return matches[0];
 }
 
 /**
