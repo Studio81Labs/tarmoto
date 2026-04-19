@@ -90,11 +90,26 @@ export function useNavigationSession(
   // would leave the ref reading a stale value on the first few ticks
   // after a toggle. The mute side-effect on TTS itself still lives in
   // useEffect so it runs once per change, not on every render.
+  // Sync voice state during render, not in an effect. Location callbacks
+  // can fire between commit and effect flush, so an effect-based update
+  // would leave the ref reading a stale value on the first few ticks
+  // after a toggle AND — worse — leave the TTS singleton's mute flag
+  // out of sync with the ref: on off→on, handleAnnouncement would read
+  // `voiceEnabled=true` from the ref and call `ttsService.speak()` while
+  // `ttsService.muted` was still `true`, silently dropping the phrase.
+  // `NavSession` has already marked the threshold as fired, so that
+  // announcement would never replay. Flipping both values during render
+  // keeps them in lockstep. The `prevVoiceEnabledRef` guard means the
+  // singleton isn't reset on every re-render — only on actual
+  // transitions, which also means `setMuted(true)`'s stop() side effect
+  // doesn't thrash during unrelated renders.
   const voiceRef = useRef(voiceEnabled);
   voiceRef.current = voiceEnabled;
-  useEffect(() => {
+  const prevVoiceEnabledRef = useRef<boolean | null>(null);
+  if (prevVoiceEnabledRef.current !== voiceEnabled) {
+    prevVoiceEnabledRef.current = voiceEnabled;
     ttsService.setMuted(!voiceEnabled);
-  }, [voiceEnabled]);
+  }
 
   // Reset the singleton's mute flag when the session tears down so a rider
   // who muted mid-nav doesn't leak silence to every future TTS consumer
