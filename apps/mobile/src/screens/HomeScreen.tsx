@@ -25,6 +25,10 @@ export default function HomeScreen() {
   // acknowledge flow that drives the in-list NEW markers.
   const { phase, newHazardCount } = useCommute();
   const showBadge = phase === "ready" && newHazardCount > 0;
+  // Cap the displayed count at 99+ so the badge stays visually compact,
+  // and reuse the same string in the accessibility label so VoiceOver
+  // announces the same value a sighted rider sees.
+  const displayCount = newHazardCount > 99 ? "99+" : String(newHazardCount);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -38,7 +42,7 @@ export default function HomeScreen() {
           accessibilityRole="button"
           accessibilityLabel={
             showBadge
-              ? `Open commute hazard check. ${newHazardCount} new ${
+              ? `Open commute hazard check. ${displayCount} new ${
                   newHazardCount === 1 ? "hazard" : "hazards"
                 } since your last check.`
               : "Open commute hazard check"
@@ -62,9 +66,7 @@ export default function HomeScreen() {
               accessibilityElementsHidden
               importantForAccessibility="no-hide-descendants"
             >
-              <Text style={styles.newBadgeText}>
-                {newHazardCount > 99 ? "99+" : newHazardCount} NEW
-              </Text>
+              <Text style={styles.newBadgeText}>{displayCount} NEW</Text>
             </View>
           ) : null}
           <Icon name="chevron-right" size={22} color={colors.textTertiary} />
@@ -130,7 +132,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.danger,
   },
   newBadgeText: {
-    color: colors.textInverse,
+    color: colors.white,
     fontSize: fontSize.xs,
     fontWeight: fontWeight.bold,
     letterSpacing: 0.4,
