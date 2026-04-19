@@ -5,10 +5,10 @@
  * without pulling React Native, navigation, or theme into the module graph.
  */
 
-import type { LatLng } from "@/types";
+import type { LatLng } from '@/types';
 
 export function formatLengthKm(m: number): string {
-  if (!Number.isFinite(m) || m <= 0) return "";
+  if (!Number.isFinite(m) || m <= 0) return '';
   const rounded = Math.round(m);
   return rounded >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${rounded} m`;
 }
@@ -18,14 +18,14 @@ export function formatSurface(surface: string): string {
 }
 
 export function formatHazardType(type: string): string {
-  return type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  return type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 export function formatRelativeTime(iso: string): string {
   const t = Date.parse(iso);
-  if (Number.isNaN(t)) return "";
+  if (Number.isNaN(t)) return '';
   const diffS = Math.max(0, Math.floor((Date.now() - t) / 1000));
-  if (diffS < 60) return "just now";
+  if (diffS < 60) return 'just now';
   const mins = Math.floor(diffS / 60);
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
@@ -38,11 +38,11 @@ export function formatRelativeTime(iso: string): string {
 }
 
 export function curvinessLabel(score: number): string {
-  if (score >= 4.5) return "Very twisty — a full-on playground.";
-  if (score >= 3.5) return "Plenty of curves to lean into.";
-  if (score >= 2.5) return "Mixed — sweepers with occasional straights.";
-  if (score >= 1.5) return "Mostly straight with a few bends.";
-  return "Straight, transit-style road.";
+  if (score >= 4.5) return 'Very twisty — a full-on playground.';
+  if (score >= 3.5) return 'Plenty of curves to lean into.';
+  if (score >= 2.5) return 'Mixed — sweepers with occasional straights.';
+  if (score >= 1.5) return 'Mostly straight with a few bends.';
+  return 'Straight, transit-style road.';
 }
 
 /**
@@ -139,6 +139,25 @@ export function normalizeBreakdown<K extends string>(
 }
 
 /**
+ * True only when the profile has ≥2 finite samples that are all equal —
+ * i.e. the road really is level. Degenerate inputs (fewer than 2 finite
+ * samples) return `false` so callers don't mislabel insufficient data as
+ * "flat"; they're expected to hide the chart block entirely in that case.
+ */
+export function isFlatElevationProfile(elevations: readonly number[]): boolean {
+  if (!Array.isArray(elevations) || elevations.length < 2) return false;
+  let finiteCount = 0;
+  let first: number | null = null;
+  for (const v of elevations) {
+    if (!Number.isFinite(v)) continue;
+    finiteCount++;
+    if (first === null) first = v;
+    else if (v !== first) return false;
+  }
+  return finiteCount >= 2;
+}
+
+/**
  * Sum of positive / negative elevation deltas along the profile, in meters.
  * Used by RoadPreview to surface ascent/descent next to the elevation chart
  * without re-running it from `geometry`. NaN/Infinity samples are skipped so
@@ -212,16 +231,16 @@ export function buildElevationChartPaths(
   }
 
   const line = points
-    .map((p, i) => `${i === 0 ? "M" : "L"}${fmt(p.x)} ${fmt(p.y)}`)
-    .join(" ");
+    .map((p, i) => `${i === 0 ? 'M' : 'L'}${fmt(p.x)} ${fmt(p.y)}`)
+    .join(' ');
   const area =
     `M${fmt(points[0].x)} ${fmt(height)} ` +
-    points.map((p) => `L${fmt(p.x)} ${fmt(p.y)}`).join(" ") +
+    points.map((p) => `L${fmt(p.x)} ${fmt(p.y)}`).join(' ') +
     ` L${fmt(points[points.length - 1].x)} ${fmt(height)} Z`;
 
   return { line, area, min, max };
 }
 
 function fmt(n: number): string {
-  return Number.isFinite(n) ? n.toFixed(2) : "0";
+  return Number.isFinite(n) ? n.toFixed(2) : '0';
 }
