@@ -286,6 +286,40 @@ function FuelRangeWarning({
   );
 }
 
+/**
+ * Open the first available external link for a nearby POI-ish row —
+ * accommodations, restaurants, viewpoints, and cafés all share this
+ * chain. Crowd-sourced data means a malformed or custom-scheme website
+ * must not abort the fallback: we accept only http(s) websites, then
+ * walk website → phone → OSM, swallowing per-step failures so a missing
+ * target app on one row never leaves the row inert.
+ */
+async function openPoiFallback(item: {
+  website: string | null;
+  phone: string | null;
+  lat: number;
+  lng: number;
+}): Promise<void> {
+  const website =
+    item.website && /^https?:\/\//i.test(item.website.trim())
+      ? item.website.trim()
+      : null;
+  const candidates = [
+    website,
+    item.phone ? `tel:${item.phone.replace(/\s+/g, "")}` : null,
+    `https://www.openstreetmap.org/?mlat=${item.lat}&mlon=${item.lng}#map=17/${item.lat}/${item.lng}`,
+  ].filter((value): value is string => !!value);
+
+  for (const url of candidates) {
+    try {
+      await Linking.openURL(url);
+      return;
+    } catch {
+      // Try the next fallback.
+    }
+  }
+}
+
 const ACCOMMODATION_KIND_LABELS: Record<AccommodationKind, string> = {
   hotel: "Hotel",
   motel: "Motel",
@@ -384,36 +418,11 @@ function AccommodationRow({ item }: { item: Accommodation }) {
   ];
   if (item.stars) metaParts.push("★".repeat(item.stars));
 
-  const openExternal = async () => {
-    // Crowd-sourced data: a malformed or custom-scheme website must not
-    // abort the fallback chain. Accept only http(s) websites, then walk
-    // website → phone → OSM, swallowing per-step failures so a missing
-    // target app on one row never leaves the row inert.
-    const website =
-      item.website && /^https?:\/\//i.test(item.website.trim())
-        ? item.website.trim()
-        : null;
-    const candidates = [
-      website,
-      item.phone ? `tel:${item.phone.replace(/\s+/g, "")}` : null,
-      `https://www.openstreetmap.org/?mlat=${item.lat}&mlon=${item.lng}#map=17/${item.lat}/${item.lng}`,
-    ].filter((value): value is string => !!value);
-
-    for (const url of candidates) {
-      try {
-        await Linking.openURL(url);
-        return;
-      } catch {
-        // Try the next fallback.
-      }
-    }
-  };
-
   return (
     <TouchableOpacity
       style={styles.accommodationRow}
       onPress={() => {
-        void openExternal();
+        void openPoiFallback(item);
       }}
       accessibilityRole="button"
       accessibilityLabel={`${label}, ${item.distance_km.toFixed(1)} kilometres away`}
@@ -532,35 +541,11 @@ function PoiRow({ item }: { item: Poi }) {
   ];
   if (item.hint) metaParts.push(item.hint);
 
-  const openExternal = async () => {
-    // Same fallback chain as AccommodationRow so a malformed website or a
-    // row with only a phone number still takes the rider somewhere
-    // useful instead of silently no-oping.
-    const website =
-      item.website && /^https?:\/\//i.test(item.website.trim())
-        ? item.website.trim()
-        : null;
-    const candidates = [
-      website,
-      item.phone ? `tel:${item.phone.replace(/\s+/g, "")}` : null,
-      `https://www.openstreetmap.org/?mlat=${item.lat}&mlon=${item.lng}#map=17/${item.lat}/${item.lng}`,
-    ].filter((value): value is string => !!value);
-
-    for (const url of candidates) {
-      try {
-        await Linking.openURL(url);
-        return;
-      } catch {
-        // Try the next fallback.
-      }
-    }
-  };
-
   return (
     <TouchableOpacity
       style={styles.accommodationRow}
       onPress={() => {
-        void openExternal();
+        void openPoiFallback(item);
       }}
       accessibilityRole="button"
       accessibilityLabel={`${label}, ${item.distance_km.toFixed(1)} kilometres away`}

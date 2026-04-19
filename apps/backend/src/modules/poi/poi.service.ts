@@ -218,8 +218,9 @@ export class PoiService {
 }
 
 /**
- * Clamp a radius (km) query parameter into the `[defaultKm, maxKm]`
- * window. Accommodation and POI lookups share this logic but keep
+ * Resolve a radius (km) query parameter. Returns `defaultKm` when the
+ * input is missing, non-finite, or non-positive; otherwise caps at
+ * `maxKm`. Accommodation and POI lookups share this logic but keep
  * their own constants since the two endpoints are semantically
  * independent — they could diverge in the future (e.g. a wider cap for
  * along-route POIs) without touching the accommodation contract.

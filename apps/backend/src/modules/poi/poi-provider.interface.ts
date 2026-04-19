@@ -51,9 +51,10 @@ export interface PoiProvider {
 
   /**
    * Find along-route POIs (restaurants, viewpoints, cafés) within
-   * `radiusKm` of a point. `kinds` selects which subset to fetch — an
-   * empty array is invalid and should be rejected by the caller (the
-   * service enforces the default).
+   * `radiusKm` of a point. `kinds` selects which subset to fetch;
+   * implementations short-circuit to `[]` on an empty array, but the
+   * service layer normally substitutes the default so callers don't
+   * have to.
    */
   findPointsOfInterest(
     lat: number,

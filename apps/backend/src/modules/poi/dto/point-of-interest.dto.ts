@@ -26,25 +26,31 @@ export type PoiKind = (typeof POI_KINDS)[number];
 const DEFAULT_RADIUS_KM = 5;
 const MAX_RADIUS_KM = 25;
 
+const POI_KIND_SET: ReadonlySet<string> = new Set(POI_KINDS);
+
+function isPoiKind(value: string): value is PoiKind {
+  return POI_KIND_SET.has(value);
+}
+
 /**
  * Turn a `kinds=restaurant,cafe` query string into a deduplicated,
- * validated array. Tolerates repeated params and whitespace. An empty
- * value falls through to `undefined` so the service applies the default
- * (all POI kinds).
+ * validated array. Tolerates repeated params and whitespace. Unknown
+ * tokens are dropped here so the downstream `@IsIn` validator sees a
+ * clean `PoiKind[]` — if every token is invalid the result is still
+ * `undefined`, which lets the service apply the default (all kinds).
  */
 function parseKinds(value: unknown): PoiKind[] | undefined {
   if (value === undefined || value === null) return undefined;
   const raw = Array.isArray(value) ? value : [value];
-  const parts: string[] = [];
+  const kinds = new Set<PoiKind>();
   for (const item of raw) {
     if (typeof item !== 'string') continue;
     for (const token of item.split(',')) {
       const trimmed = token.trim();
-      if (trimmed) parts.push(trimmed);
+      if (trimmed && isPoiKind(trimmed)) kinds.add(trimmed);
     }
   }
-  if (parts.length === 0) return undefined;
-  return Array.from(new Set(parts)) as PoiKind[];
+  return kinds.size === 0 ? undefined : Array.from(kinds);
 }
 
 export class PoiQueryDto {
