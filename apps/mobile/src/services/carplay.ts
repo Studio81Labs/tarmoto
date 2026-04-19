@@ -35,6 +35,7 @@
  */
 
 import { Platform } from "react-native";
+import { qualityLabel } from "@/theme";
 
 // ── Public types ──
 
@@ -145,25 +146,10 @@ export function formatQualityDetail(
   confidence: number | null,
 ): string {
   if (score == null) return "Reading surface…";
-  const label = qualityLabelForScore(score);
+  const label = Number.isFinite(score) ? qualityLabel(score) : "Unknown";
   if (confidence == null || !Number.isFinite(confidence)) return label;
   const pct = Math.round(Math.max(0, Math.min(1, confidence)) * 100);
   return `${label} · ${pct}% conf`;
-}
-
-/**
- * Same buckets as `theme/qualityLabel` — duplicated locally to keep the
- * service free of theme-package imports (this module is consumed by tests
- * that don't otherwise need the theme tree). Keep the breakpoints in sync
- * with `theme/qualityLabel`.
- */
-function qualityLabelForScore(score: number): string {
-  if (!Number.isFinite(score)) return "Unknown";
-  if (score >= 4.5) return "Excellent";
-  if (score >= 3.5) return "Good";
-  if (score >= 2.5) return "Fair";
-  if (score >= 1.5) return "Poor";
-  return "Very Poor";
 }
 
 /**
@@ -233,17 +219,15 @@ export function createDefaultCarPlayBridge(): CarPlayBridge {
       },
       clearRootTemplate: () => {
         if (!template) return;
-        // `invalidate` releases the native template registration so the
-        // next ride can mount a fresh instance without leaking the
-        // previous template id. The native side may already have torn
-        // down the scene (e.g. CarPlay disconnect mid-ride), so we
-        // swallow throws instead of bubbling them into the ride-stop
-        // path.
-        try {
-          CarPlay.bridge.invalidate(template.id);
-        } catch {
-          // Native side already gone — nothing to release.
-        }
+        // We deliberately don't call into native to "release" the
+        // template here. The package's documented public surface
+        // (setRootTemplate / pushTemplate / popTemplate) doesn't expose
+        // a stable "destroy template" call, and the next ride's mount
+        // will overwrite the root via `setRootTemplate(newTemplate,
+        // false)` — that's the documented way to replace the current
+        // root. Dropping the JS reference is enough on our side; the
+        // previous template object becomes unreachable and the native
+        // scene is replaced when the rider starts another ride.
         template = null;
       },
     };

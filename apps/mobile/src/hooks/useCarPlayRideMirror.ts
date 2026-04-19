@@ -57,7 +57,14 @@ export function useCarPlayRideMirror(): void {
       distanceKm,
       durationSeconds,
       qualityScore: quality?.quality_score ?? null,
-      qualityConfidence: quality?.confidence ?? null,
+      // The on-device classifier in `services/sensors.ts` reports
+      // confidence as a 0-100 integer percent (currently 30 / 70 based
+      // on speed). The CarPlay formatter contract is a 0-1 fraction —
+      // matching the backend's `RoadSegmentDetail.confidence` shape —
+      // so we convert at this boundary rather than reshape every
+      // formatter caller.
+      qualityConfidence:
+        quality?.confidence != null ? quality.confidence / 100 : null,
       rideType,
     };
 
