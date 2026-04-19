@@ -249,7 +249,7 @@ describe("buildShareSummary", () => {
     expect(text).toContain("22%");
     expect(text).toContain("1,234");
     expect(text).toContain("5,678");
-    expect(text).toContain("842 km");
+    expect(text).toContain("842.0 km");
     expect(text).toContain("Join me on Tarmoto");
   });
 
@@ -295,7 +295,7 @@ describe("buildShareSummary", () => {
     );
     expect(text).toContain("This year");
     expect(text).toContain("14 rides");
-    expect(text).toContain("420 km");
+    expect(text).toContain("420.0 km");
     expect(text).toContain("9 active days");
   });
 
@@ -306,6 +306,6 @@ describe("buildShareSummary", () => {
       rideCount: 0,
       activeDays: 0,
     });
-    expect(text).toContain("842 km");
+    expect(text).toContain("842.0 km");
   });
 });

@@ -81,36 +81,35 @@ export const HAZARD_CONFIG: Record<
 // ── Formatting ──
 
 /**
- * Distance formatter used across the companion dashboard. Defaults to metric
- * so existing callers keep their current behaviour; pages that read the user's
- * unit preference pass `units: 'imperial'` explicitly.
+ * Distance formatter used across the companion dashboard. The metric branch
+ * matches the pre-existing `formatDistance(km)` output exactly so callers
+ * that don't opt into a unit system render as before (short distances in
+ * metres, km with one decimal, zero → `"0 m"`). The only new metric
+ * behaviour is a defensive fallback for NaN / negative inputs, which
+ * weren't meaningfully supported either way.
  *
- * Tiering keeps the label short at every scale:
- *   - sub-kilometre: whole metres (or feet) so trail segments don't lose sign
- *   - 1–10 km: one decimal so short rides don't collapse to the same bucket
- *   - ≥10 km: whole units so cards stay aligned
+ * The imperial branch is new: a tiered label (sub-0.1 mi in feet, 1–10 mi
+ * with one decimal, ≥10 mi whole) that pages opt into by passing `units`.
  *
  * NOTE: `@tarmoto/shared` exports a simpler `formatDistance` too. Always
- * import from `@/lib/utils` inside the companion so the dashboard renders the
- * same tiered labels everywhere. The shared version is meant for contexts
- * (e.g. mobile) that don't need the tiering.
+ * import from `@/lib/utils` inside the companion so the dashboard renders
+ * distances consistently. The shared version is meant for contexts (e.g.
+ * mobile) that don't need the imperial branch.
  */
 export function formatDistance(
   km: number,
   units: UnitSystem = "metric",
 ): string {
-  if (!Number.isFinite(km) || km <= 0) {
-    return units === "imperial" ? "0 mi" : "0 km";
-  }
   if (units === "imperial") {
+    if (!Number.isFinite(km) || km <= 0) return "0 mi";
     const mi = kmToMiles(km);
     if (mi < 0.1) return `${metersToFeet(km * 1000)} ft`;
     if (mi < 10) return `${mi.toFixed(1)} mi`;
     return `${mi.toFixed(0)} mi`;
   }
+  if (!Number.isFinite(km) || km < 0) return "0 m";
   if (km < 1) return `${Math.round(km * 1000)} m`;
-  if (km < 10) return `${km.toFixed(1)} km`;
-  return `${km.toFixed(0)} km`;
+  return `${km.toFixed(1)} km`;
 }
 
 /**

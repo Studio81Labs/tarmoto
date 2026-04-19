@@ -35,27 +35,23 @@ describe("scoreToTier", () => {
 });
 
 describe("formatDistance", () => {
-  it("rounds km to whole numbers", () => {
-    expect(formatDistance(1)).toMatch(/1/);
-    expect(formatDistance(12.6)).toMatch(/13/);
-  });
-
-  it("renders sub-kilometer values in metres for metric", () => {
+  it("renders sub-kilometre values in metres for metric", () => {
     expect(formatDistance(0.4)).toBe("400 m");
   });
 
-  it("keeps one decimal for 1–10 km in metric", () => {
-    expect(formatDistance(4.23)).toBe("4.2 km");
+  it("renders km with one decimal for metric", () => {
+    expect(formatDistance(1)).toBe("1.0 km");
+    expect(formatDistance(12.6)).toBe("12.6 km");
+    expect(formatDistance(127.6)).toBe("127.6 km");
   });
 
-  it("rounds to whole km for larger distances", () => {
-    expect(formatDistance(127.6)).toBe("128 km");
+  it("renders zero as 0 m for metric (preserves legacy behaviour)", () => {
+    expect(formatDistance(0)).toBe("0 m");
   });
 
-  it("defends against invalid or zero input", () => {
-    expect(formatDistance(0)).toBe("0 km");
-    expect(formatDistance(-5)).toBe("0 km");
-    expect(formatDistance(Number.NaN)).toBe("0 km");
+  it("defends against invalid or negative inputs", () => {
+    expect(formatDistance(-5)).toBe("0 m");
+    expect(formatDistance(Number.NaN)).toBe("0 m");
     expect(formatDistance(0, "imperial")).toBe("0 mi");
   });
 
@@ -68,6 +64,11 @@ describe("formatDistance", () => {
   it("uses feet for very short imperial distances", () => {
     // 0.05 km = 50 m ≈ 164 ft
     expect(formatDistance(0.05, "imperial")).toMatch(/ft$/);
+  });
+
+  it("rounds to whole miles for imperial distances ≥ 10 mi", () => {
+    expect(formatDistance(100, "imperial")).toMatch(/mi$/);
+    expect(formatDistance(100, "imperial")).not.toContain(".");
   });
 });
 
