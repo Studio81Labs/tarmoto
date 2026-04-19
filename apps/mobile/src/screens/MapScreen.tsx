@@ -122,6 +122,15 @@ export default function MapScreen() {
   const handleQualityLegendLayout = useCallback((height: number) => {
     setQualityLegendHeight((prev) => (prev === height ? prev : height));
   }, []);
+  // Reset to the fallback whenever the quality overlay is toggled off so
+  // the next toggle-on doesn't briefly use a stale (possibly larger)
+  // height for positioning the passes legend / fun-zone card before
+  // `onLayout` fires.
+  useEffect(() => {
+    if (!showQualityOverlay) {
+      setQualityLegendHeight(QUALITY_LEGEND_FALLBACK_HEIGHT);
+    }
+  }, [showQualityOverlay]);
 
   // US-18 AC #3: when the rider is panning inside a completed offline
   // region at a zoom the region caches, serve the overlay from the
