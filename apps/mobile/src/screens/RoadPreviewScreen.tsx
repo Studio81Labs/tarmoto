@@ -373,6 +373,14 @@ function ElevationCard({ segment }: { segment: RoadSegmentDetail }) {
     () => (elevation_profile ? computeElevationStats(elevation_profile) : null),
     [elevation_profile],
   );
+  // A flat or unrenderable profile (all samples equal, or <2 finite samples)
+  // would otherwise leave the chart wrapper as an empty box. Detect it here
+  // so we can render a compact hint instead of a broken-looking card.
+  const isFlatProfile =
+    elevation_profile !== null &&
+    stats !== null &&
+    stats.ascent === 0 &&
+    stats.descent === 0;
 
   return (
     <View style={styles.card}>
@@ -385,8 +393,11 @@ function ElevationCard({ segment }: { segment: RoadSegmentDetail }) {
             : undefined
         }
       />
-      {elevation_profile ? (
+      {elevation_profile && !isFlatProfile ? (
         <ElevationProfileChart profile={elevation_profile} />
+      ) : null}
+      {isFlatProfile ? (
+        <Text style={styles.emptyInline}>Flat profile.</Text>
       ) : null}
       <View style={styles.elevationRow}>
         <ElevationStat
@@ -417,14 +428,14 @@ function ElevationProfileChart({ profile }: { profile: number[] }) {
     [profile, width],
   );
 
+  // Once we know the layout width, only render the sized container when we
+  // actually have a path to draw — otherwise an unrenderable profile (flat
+  // or too few finite samples) would leave a fixed-height empty box behind.
+  if (width > 0 && !paths) return null;
+
   return (
-    <View
-      onLayout={onLayout}
-      style={styles.elevationChartWrap}
-      // 1:1 aspect with the chart height isn't ideal — let the parent set
-      // width and lock the height so this composes nicely on any screen.
-    >
-      {width > 0 && paths ? (
+    <View onLayout={onLayout} style={styles.elevationChartWrap}>
+      {paths ? (
         <Svg
           width={width}
           height={ELEVATION_CHART_HEIGHT}

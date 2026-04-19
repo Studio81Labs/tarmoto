@@ -4,7 +4,10 @@ import { Repository } from 'typeorm';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { FunZone } from '../../entities/fun-zone.entity.js';
 import { HazardResponseDto } from '../hazards/dto/hazard-response.dto.js';
-import { ReviewResponseDto } from '../reviews/dto/review.dto.js';
+import {
+  MAX_REVIEW_PHOTOS,
+  ReviewResponseDto,
+} from '../reviews/dto/review.dto.js';
 import { QueryNearbyDto } from './dto/query-nearby.dto.js';
 import {
   RoadSegmentDto,
@@ -292,15 +295,28 @@ function mapHazardRows(rows: unknown): HazardResponseDto[] {
 
 function mapReviewRows(rows: unknown): ReviewResponseDto[] {
   if (!Array.isArray(rows)) return [];
-  return (rows as Array<Record<string, unknown>>).map((r) => ({
-    id: r.id as string,
-    user_display_name: (r.display_name as string) ?? 'Unknown',
-    rating: r.rating as number,
-    comment: (r.comment as string) ?? null,
-    bike_model: (r.bike_model as string) ?? null,
-    photos: Array.isArray(r.photos) ? (r.photos as string[]) : [],
-    created_at: (r.created_at as Date).toISOString(),
-  }));
+  return (rows as Array<Record<string, unknown>>).map((r) => {
+    // Defensive sanitization: the DB column is `text[]` with no per-element
+    // validation, and CreateReviewDto's HTTPS rule is newer than some seed
+    // data. Drop anything that isn't a plain https:// string and cap at the
+    // same limit the write path enforces so the DTO contract holds.
+    const rawPhotos = Array.isArray(r.photos) ? (r.photos as unknown[]) : [];
+    const photos = rawPhotos
+      .filter(
+        (p): p is string => typeof p === 'string' && p.startsWith('https://'),
+      )
+      .slice(0, MAX_REVIEW_PHOTOS);
+
+    return {
+      id: r.id as string,
+      user_display_name: (r.display_name as string) ?? 'Unknown',
+      rating: r.rating as number,
+      comment: (r.comment as string) ?? null,
+      bike_model: (r.bike_model as string) ?? null,
+      photos,
+      created_at: (r.created_at as Date).toISOString(),
+    };
+  });
 }
 
 // Validate the elevation_profile column matches the geometry length so a stale

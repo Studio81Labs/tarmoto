@@ -274,6 +274,66 @@ describe('RoadsService', () => {
       expect(result.elevation_profile).toBeNull();
     });
 
+    it('should sanitize review photos: drop non-https and cap at 5', async () => {
+      segmentRepo
+        .query!.mockResolvedValueOnce([
+          {
+            id: 'seg-photos',
+            road_name: null,
+            road_number: null,
+            quality_score: 3.0,
+            curviness_score: 2.0,
+            surface_type: 'asphalt',
+            length_m: 100,
+            confidence: 50,
+            reading_count: 3,
+            last_updated: new Date('2026-04-13T10:00:00Z'),
+            elevation_min: null,
+            elevation_max: null,
+            elevation_profile: null,
+            geojson: { coordinates: [[16.75, 49.1]] },
+          },
+        ])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ count: 0 }])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ count: 1, avg_rating: 4.0 }])
+        .mockResolvedValueOnce([
+          {
+            id: 'r-photos',
+            rating: 4,
+            comment: null,
+            bike_model: null,
+            photos: [
+              'https://media.tarmoto.app/a.jpg',
+              'http://insecure.example.com/b.jpg',
+              'file:///etc/passwd',
+              42,
+              null,
+              'https://media.tarmoto.app/c.jpg',
+              'https://media.tarmoto.app/d.jpg',
+              'https://media.tarmoto.app/e.jpg',
+              'https://media.tarmoto.app/f.jpg',
+              'https://media.tarmoto.app/g.jpg', // 6th valid URL — should be dropped
+            ],
+            created_at: new Date('2026-04-12T10:00:00Z'),
+            display_name: 'Safe Rider',
+          },
+        ])
+        .mockResolvedValueOnce([{ count: 0 }]);
+
+      const result = await service.findById('seg-photos');
+
+      expect(result.recent_reviews).toHaveLength(1);
+      const photos = result.recent_reviews[0].photos;
+      expect(photos).toHaveLength(5);
+      expect(photos.every((p) => p.startsWith('https://'))).toBe(true);
+      // First valid URL preserved, 6th dropped, insecure scheme removed.
+      expect(photos[0]).toBe('https://media.tarmoto.app/a.jpg');
+      expect(photos).not.toContain('http://insecure.example.com/b.jpg');
+      expect(photos).not.toContain('https://media.tarmoto.app/g.jpg');
+    });
+
     it('should drop a stale elevation_profile that does not match geometry length', async () => {
       segmentRepo
         .query!.mockResolvedValueOnce([
