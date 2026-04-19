@@ -75,6 +75,13 @@ export interface NavAnnouncement {
   type: NavAnnouncementType;
   maneuver?: Maneuver;
   distanceM?: number;
+  /**
+   * Name of the road the rider is currently on, if known. Used by the
+   * phrase builder to suppress "onto {roadName}" when the upcoming
+   * maneuver stays on the same road — announcing "Turn left onto Main St"
+   * while already on Main St is noise.
+   */
+  currentRoadName?: string;
 }
 
 export interface NavTick {
@@ -163,15 +170,13 @@ function classifyHeadingChange(deg: number): ManeuverType | null {
 }
 
 /**
- * Extract maneuvers from a polyline. Returns a list always bracketed by
- * `depart` at index 0 and `arrive` at the last vertex, with inferred turns
- * in between. `roadNames` (if supplied, same length as the polyline) is
- * used to attach the name of the road ahead to each turn.
+ * Cumulative haversine distances along a polyline, in meters.
+ * `result[i]` is the distance from `polyline[0]` to `polyline[i]`; for an
+ * empty polyline the result is `[]`. Exported so `NavSession` can cache
+ * its route's distances once at construction instead of recomputing on
+ * every GPS tick.
  */
-export function extractManeuvers(
-  polyline: LatLng[],
-  roadNames?: Array<string | undefined>,
-): Maneuver[] {
+export function buildCumulativeDistances(polyline: LatLng[]): number[] {
   if (polyline.length === 0) return [];
   const cumulative: number[] = [0];
   for (let i = 1; i < polyline.length; i++) {
@@ -185,6 +190,21 @@ export function extractManeuvers(
         ),
     );
   }
+  return cumulative;
+}
+
+/**
+ * Extract maneuvers from a polyline. Returns a list always bracketed by
+ * `depart` at index 0 and `arrive` at the last vertex, with inferred turns
+ * in between. `roadNames` (if supplied, same length as the polyline) is
+ * used to attach the name of the road ahead to each turn.
+ */
+export function extractManeuvers(
+  polyline: LatLng[],
+  roadNames?: Array<string | undefined>,
+): Maneuver[] {
+  if (polyline.length === 0) return [];
+  const cumulative = buildCumulativeDistances(polyline);
 
   const maneuvers: Maneuver[] = [];
 
@@ -272,6 +292,11 @@ export interface Projection {
 export function projectOnPolyline(
   polyline: LatLng[],
   point: LatLng,
+  // Optional precomputed cumulative distances; callers on a hot path
+  // (NavSession.update) pass the cached array so we don't rebuild O(n)
+  // haversines on every GPS tick. When omitted we fall back to computing
+  // them here so one-off callers (tests, UI helpers) stay ergonomic.
+  cumulativeDistances?: number[],
 ): Projection | null {
   if (polyline.length === 0) return null;
   if (polyline.length === 1) {
@@ -288,18 +313,7 @@ export function projectOnPolyline(
     };
   }
 
-  const cumulative: number[] = [0];
-  for (let i = 1; i < polyline.length; i++) {
-    cumulative.push(
-      cumulative[i - 1] +
-        haversineM(
-          polyline[i - 1].lat,
-          polyline[i - 1].lng,
-          polyline[i].lat,
-          polyline[i].lng,
-        ),
-    );
-  }
+  const cumulative = cumulativeDistances ?? buildCumulativeDistances(polyline);
 
   let best: Projection | null = null;
   for (let i = 0; i < polyline.length - 1; i++) {
@@ -325,7 +339,14 @@ function closestOnSegment(
   // cosine of the shared latitude so the tangent plane is roughly isotropic
   // across the segment.
   const latRef = ((a.lat + b.lat) / 2) * (Math.PI / 180);
-  const scale = Math.cos(latRef);
+  const rawScale = Math.cos(latRef);
+  // Floor the scale away from zero so a segment sitting exactly on a pole
+  // can't divide by zero when we unwind `cx / scale` below. The lower bound
+  // is deliberately tiny — real rider polylines never sit near the poles,
+  // but the guard keeps the projection total rather than letting NaN/Infinity
+  // leak into `distanceM` and blow up the off-route check.
+  const scale =
+    Math.abs(rawScale) < 1e-12 ? (rawScale < 0 ? -1e-12 : 1e-12) : rawScale;
   const ax = a.lng * scale;
   const ay = a.lat;
   const bx = b.lng * scale;
@@ -359,6 +380,7 @@ interface ManeuverThresholdState {
  */
 export class NavSession {
   private readonly route: LatLng[];
+  private readonly routeCumulative: number[];
   private readonly maneuvers: Maneuver[];
   private readonly totalM: number;
   private readonly thresholds: ManeuverThresholdState[];
@@ -368,6 +390,10 @@ export class NavSession {
 
   constructor(route: LatLng[], maneuvers: Maneuver[]) {
     this.route = route;
+    // Compute the route's cumulative distances once and reuse on every tick.
+    // `projectOnPolyline` would otherwise rebuild them per-call and rerun
+    // O(n) haversines per GPS fix — a noticeable cost on dense polylines.
+    this.routeCumulative = buildCumulativeDistances(route);
     this.maneuvers = maneuvers;
     this.totalM =
       maneuvers.length > 0
@@ -381,7 +407,11 @@ export class NavSession {
   }
 
   update(location: LatLng): NavTick {
-    const projection = projectOnPolyline(this.route, location);
+    const projection = projectOnPolyline(
+      this.route,
+      location,
+      this.routeCumulative,
+    );
     if (!projection) {
       return {
         nextManeuver: null,
@@ -420,9 +450,21 @@ export class NavSession {
         ? 0
         : Math.max(0, nextManeuver.distanceFromStartM - projection.progressM);
 
+    // Road the rider is currently on — whichever most-recently-passed
+    // maneuver carries a name. Threaded onto each announcement so the
+    // phrase builder can suppress "onto {road}" when the upcoming turn
+    // stays on the same road (common at minor intersections where the
+    // heading change trips our threshold but the street name doesn't
+    // change).
+    const currentRoadName = this.getCurrentRoadName(projection.progressM);
+
     if (!offRoute) {
       if (!this.departFired) {
-        announcements.push({ type: "depart", maneuver: this.maneuvers[0] });
+        announcements.push({
+          type: "depart",
+          maneuver: this.maneuvers[0],
+          currentRoadName,
+        });
         this.departFired = true;
       }
 
@@ -435,6 +477,7 @@ export class NavSession {
               type: "warning-far",
               maneuver: nextManeuver,
               distanceM: distanceToNextM,
+              currentRoadName,
             });
           }
           if (!state.nearFired && distanceToNextM <= WARNING_NEAR_M) {
@@ -443,6 +486,7 @@ export class NavSession {
               type: "warning-near",
               maneuver: nextManeuver,
               distanceM: distanceToNextM,
+              currentRoadName,
             });
           }
           if (!state.executeFired && distanceToNextM <= EXECUTE_M) {
@@ -451,6 +495,7 @@ export class NavSession {
               type: "execute",
               maneuver: nextManeuver,
               distanceM: distanceToNextM,
+              currentRoadName,
             });
           }
         }
@@ -461,7 +506,7 @@ export class NavSession {
         this.totalM - projection.progressM <= ARRIVED_M
       ) {
         this.arrivedFired = true;
-        announcements.push({ type: "arrived" });
+        announcements.push({ type: "arrived", currentRoadName });
       }
     }
 
@@ -494,6 +539,22 @@ export class NavSession {
     }
     return { nextManeuver: null, nextIndex: null };
   }
+
+  /**
+   * Name of the road the rider is currently on, inferred from the most
+   * recently passed maneuver that carries a `roadName`. Maneuvers mark
+   * the road AHEAD of them, so once the rider has rolled past a turn
+   * onto "Main St", every subsequent fix is "on Main St" until the next
+   * named turn.
+   */
+  private getCurrentRoadName(progressM: number): string | undefined {
+    let currentName: string | undefined;
+    for (const m of this.maneuvers) {
+      if (m.distanceFromStartM > progressM) break;
+      if (m.roadName !== undefined) currentName = m.roadName;
+    }
+    return currentName;
+  }
 }
 
 // ── Phrase building for TTS ───────────────────────────────────────────────
@@ -517,9 +578,9 @@ function maneuverPhrase(m: Maneuver): string {
 
 /**
  * Build the spoken phrase for a given announcement. Road name is appended
- * when available ("Turn left onto Hlavní") — we skip it when the road name
- * matches the current one to avoid "onto Hlavní" when the rider isn't
- * actually switching roads.
+ * when available ("Turn left onto Hlavní") — we skip it when the maneuver's
+ * roadName matches the rider's current road (case/whitespace insensitive)
+ * to avoid "onto Hlavní" when the turn stays on the same street.
  */
 export function phraseForAnnouncement(a: NavAnnouncement): string | null {
   switch (a.type) {
@@ -535,13 +596,13 @@ export function phraseForAnnouncement(a: NavAnnouncement): string | null {
       if (!a.maneuver) return null;
       const base = maneuverPhrase(a.maneuver);
       const dist = Math.round((a.distanceM ?? 0) / 50) * 50;
-      const onto = a.maneuver.roadName ? ` onto ${a.maneuver.roadName}` : "";
+      const onto = ontoPhrase(a.maneuver.roadName, a.currentRoadName);
       return `In ${dist} meters, ${base.toLowerCase()}${onto}.`;
     }
     case "warning-near": {
       if (!a.maneuver) return null;
       const base = maneuverPhrase(a.maneuver);
-      const onto = a.maneuver.roadName ? ` onto ${a.maneuver.roadName}` : "";
+      const onto = ontoPhrase(a.maneuver.roadName, a.currentRoadName);
       return `${base} now${onto}.`;
     }
     case "execute":
@@ -551,4 +612,15 @@ export function phraseForAnnouncement(a: NavAnnouncement): string | null {
     default:
       return null;
   }
+}
+
+function ontoPhrase(
+  target: string | undefined,
+  current: string | undefined,
+): string {
+  if (!target) return "";
+  if (current && target.trim().toLowerCase() === current.trim().toLowerCase()) {
+    return "";
+  }
+  return ` onto ${target}`;
 }

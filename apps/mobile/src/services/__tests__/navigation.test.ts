@@ -289,6 +289,18 @@ describe("phraseForAnnouncement", () => {
     ).toBe("Turn left now.");
   });
 
+  it("suppresses 'onto {road}' when the turn stays on the current road", () => {
+    // Case/whitespace-insensitive so "hlavní " == "Hlavní".
+    expect(
+      phraseForAnnouncement({
+        type: "warning-far",
+        maneuver: sampleManeuver,
+        distanceM: 280,
+        currentRoadName: "hlavní ",
+      }),
+    ).toBe("In 300 meters, turn left.");
+  });
+
   it("returns null for execute so TTS doesn't fire during the turn itself", () => {
     expect(
       phraseForAnnouncement({
