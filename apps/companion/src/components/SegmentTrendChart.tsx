@@ -123,12 +123,12 @@ export function SegmentTrendChart({
                   }}
                   labelStyle={{ color: "#e2e8f0" }}
                   labelFormatter={(value: string) => value}
-                  formatter={(value, key) => {
+                  formatter={(value, name) => {
                     const numeric =
                       typeof value === "number"
                         ? value
                         : Number.parseFloat(String(value));
-                    const label = formatSeriesLabel(String(key));
+                    const label = String(name);
                     if (!Number.isFinite(numeric)) return ["—", label];
                     return [numeric.toFixed(2), label];
                   }}
@@ -297,12 +297,6 @@ function ChartLegend({
       )}
     </ul>
   );
-}
-
-function formatSeriesLabel(key: string): string {
-  if (key === "score") return "This segment";
-  if (key === "regional") return "Regional avg";
-  return key;
 }
 
 function formatDateTick(value: string): string {

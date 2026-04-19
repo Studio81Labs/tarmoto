@@ -97,11 +97,11 @@ function rangeCutoff(range: TrendRange, now: Date): Date | null {
       return subtractMonths(now, 3);
     case "6m":
       return subtractMonths(now, 6);
-    case "1y": {
-      const cutoff = new Date(now);
-      cutoff.setFullYear(cutoff.getFullYear() - 1);
-      return cutoff;
-    }
+    case "1y":
+      // Also routed through subtractMonths to avoid a symmetric overflow:
+      // raw `setFullYear` on Feb 29 of a leap year rolls to March 1 of the
+      // target year, shrinking the window by a day.
+      return subtractMonths(now, 12);
     case "all":
       return null;
   }
