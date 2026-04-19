@@ -163,7 +163,10 @@ export default function RoadPreviewScreen() {
       <QualityCard segment={segment} minQuality={minQuality} />
       <CurvinessCard segment={segment} />
       <ElevationCard segment={segment} />
-      <HazardsCard hazards={segment.active_hazards} />
+      <HazardsCard
+        hazards={segment.active_hazards}
+        totalCount={segment.active_hazard_count}
+      />
       <ReviewsCard
         reviews={segment.recent_reviews}
         avgRating={segment.avg_review_rating}
@@ -461,18 +464,39 @@ function ElevationProfileChart({ profile }: { profile: number[] }) {
   );
 }
 
-function HazardsCard({ hazards }: { hazards: Hazard[] }) {
+function HazardsCard({
+  hazards,
+  totalCount,
+}: {
+  hazards: Hazard[];
+  totalCount: number;
+}) {
+  // The array is capped server-side at ACTIVE_HAZARD_LIMIT; show the full
+  // count in the badge so a segment with 30 reports doesn't misleadingly
+  // render "10". Fall back to the array length if the DTO is missing the
+  // count (older cached response shape).
+  const badgeCount = totalCount > 0 ? totalCount : hazards.length;
+  const truncated = totalCount > hazards.length;
   return (
     <View style={styles.card}>
       <SectionTitle
         icon="alert"
         title="Active hazards"
-        rightLabel={hazards.length ? `${hazards.length}` : undefined}
+        rightLabel={badgeCount ? `${badgeCount}` : undefined}
       />
-      {hazards.length === 0 ? (
+      {badgeCount === 0 ? (
         <Text style={styles.empty}>No active hazards reported.</Text>
       ) : (
-        hazards.map((h) => <HazardRow key={h.id} hazard={h} />)
+        <>
+          {hazards.map((h) => (
+            <HazardRow key={h.id} hazard={h} />
+          ))}
+          {truncated ? (
+            <Text style={styles.emptyInline}>
+              Showing the {hazards.length} most recent of {totalCount}.
+            </Text>
+          ) : null}
+        </>
       )}
     </View>
   );
