@@ -17,6 +17,7 @@ import {
   ChevronLeft,
   ChevronRight,
   MapPin,
+  Trophy,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -30,9 +31,7 @@ const NAV_SECTIONS = [
   },
   {
     label: "Planning",
-    items: [
-      { href: "/trips", icon: Route, label: "Trips" },
-    ],
+    items: [{ href: "/trips", icon: Route, label: "Trips" }],
   },
   {
     label: "Riding",
@@ -46,6 +45,7 @@ const NAV_SECTIONS = [
     label: "Community",
     items: [
       { href: "/community", icon: Users, label: "Community" },
+      { href: "/gamification", icon: Trophy, label: "Achievements" },
     ],
   },
   {
