@@ -11,10 +11,11 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { TrendingDown, TrendingUp, Wrench } from "lucide-react";
+import { Minus, TrendingDown, TrendingUp, Wrench } from "lucide-react";
 import {
   TREND_RANGES,
   TREND_RANGE_LABEL,
+  clampScore,
   type QualityPoint,
   type TrendRange,
   buildChartPoints,
@@ -67,13 +68,7 @@ export function SegmentTrendChart({
     [filteredHistory, filteredRegional, events],
   );
 
-  if (filteredHistory.length < 2) {
-    return (
-      <p className="text-slate-500">
-        Not enough readings in this range to plot a trend yet.
-      </p>
-    );
-  }
+  const hasTrend = filteredHistory.length >= 2;
 
   return (
     <div>
@@ -86,90 +81,103 @@ export function SegmentTrendChart({
         />
       </div>
 
-      <div className="h-48" data-testid={`segment-trend-chart-${segmentId}`}>
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart
-            data={data}
-            margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
+      {!hasTrend ? (
+        <p className="text-slate-500">
+          Not enough readings in this range to plot a trend yet.
+        </p>
+      ) : (
+        <>
+          <div
+            className="h-48"
+            data-testid={`segment-trend-chart-${segmentId}`}
           >
-            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-            <XAxis
-              dataKey="date"
-              stroke="#64748b"
-              fontSize={10}
-              tickLine={false}
-              tickFormatter={formatDateTick}
-              minTickGap={24}
-            />
-            <YAxis
-              domain={[1, 5]}
-              ticks={[1, 2, 3, 4, 5]}
-              stroke="#64748b"
-              fontSize={10}
-              tickLine={false}
-              axisLine={false}
-              width={24}
-            />
-            <Tooltip
-              contentStyle={{
-                background: "#0f172a",
-                border: "1px solid #1e293b",
-                borderRadius: 8,
-                fontSize: 12,
-              }}
-              labelStyle={{ color: "#e2e8f0" }}
-              labelFormatter={(value: string) => value}
-              formatter={(value, key) => {
-                const numeric =
-                  typeof value === "number"
-                    ? value
-                    : Number.parseFloat(String(value));
-                const label = formatSeriesLabel(String(key));
-                if (!Number.isFinite(numeric)) return ["—", label];
-                return [numeric.toFixed(2), label];
-              }}
-            />
-            <Line
-              type="monotone"
-              dataKey="score"
-              stroke="#22d3ee"
-              strokeWidth={2}
-              dot={{ r: 2, fill: "#22d3ee" }}
-              activeDot={{ r: 4 }}
-              isAnimationActive={false}
-              connectNulls
-              name="This segment"
-            />
-            {filteredRegional.length > 0 && (
-              <Line
-                type="monotone"
-                dataKey="regional"
-                stroke="#94a3b8"
-                strokeWidth={1.5}
-                strokeDasharray="4 4"
-                dot={false}
-                isAnimationActive={false}
-                connectNulls
-                name="Regional avg"
-              />
-            )}
-            {events.map((event) => (
-              <ReferenceDot
-                key={`${event.kind}-${event.date}`}
-                x={event.date}
-                y={event.score}
-                r={5}
-                fill={event.kind === "repair" ? "#34d399" : "#f87171"}
-                stroke="#0f172a"
-                strokeWidth={2}
-                ifOverflow="extendDomain"
-              />
-            ))}
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-
-      <ChartLegend hasRegional={filteredRegional.length > 0} events={events} />
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart
+                data={data}
+                margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                <XAxis
+                  dataKey="date"
+                  stroke="#64748b"
+                  fontSize={10}
+                  tickLine={false}
+                  tickFormatter={formatDateTick}
+                  minTickGap={24}
+                />
+                <YAxis
+                  domain={[1, 5]}
+                  ticks={[1, 2, 3, 4, 5]}
+                  stroke="#64748b"
+                  fontSize={10}
+                  tickLine={false}
+                  axisLine={false}
+                  width={24}
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: "#0f172a",
+                    border: "1px solid #1e293b",
+                    borderRadius: 8,
+                    fontSize: 12,
+                  }}
+                  labelStyle={{ color: "#e2e8f0" }}
+                  labelFormatter={(value: string) => value}
+                  formatter={(value, key) => {
+                    const numeric =
+                      typeof value === "number"
+                        ? value
+                        : Number.parseFloat(String(value));
+                    const label = formatSeriesLabel(String(key));
+                    if (!Number.isFinite(numeric)) return ["—", label];
+                    return [numeric.toFixed(2), label];
+                  }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="score"
+                  stroke="#22d3ee"
+                  strokeWidth={2}
+                  dot={{ r: 2, fill: "#22d3ee" }}
+                  activeDot={{ r: 4 }}
+                  isAnimationActive={false}
+                  connectNulls
+                  name="This segment"
+                />
+                {filteredRegional.length > 0 && (
+                  <Line
+                    type="monotone"
+                    dataKey="regional"
+                    stroke="#94a3b8"
+                    strokeWidth={1.5}
+                    strokeDasharray="4 4"
+                    dot={false}
+                    isAnimationActive={false}
+                    connectNulls
+                    name="Regional avg"
+                  />
+                )}
+                {events.map((event) => (
+                  <ReferenceDot
+                    key={`${event.kind}-${event.date}`}
+                    x={event.date}
+                    y={clampScore(event.score)}
+                    r={5}
+                    fill={event.kind === "repair" ? "#34d399" : "#f87171"}
+                    stroke="#0f172a"
+                    strokeWidth={2}
+                    ifOverflow="extendDomain"
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <ChartLegend
+            hasRegional={filteredRegional.length > 0}
+            events={events}
+          />
+        </>
+      )}
     </div>
   );
 }
@@ -233,7 +241,7 @@ function TrendSummaryBadge({
       label: "Declining",
     },
     stable: {
-      icon: <TrendingUp size={12} />,
+      icon: <Minus size={12} />,
       color: "text-slate-400",
       label: "Stable",
     },

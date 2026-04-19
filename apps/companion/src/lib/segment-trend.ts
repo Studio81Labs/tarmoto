@@ -16,7 +16,13 @@ export interface QualityPoint {
 }
 
 export interface TrendChangeEvent {
-  /** Index of the later point in the input array — the one marked on the chart. */
+  /**
+   * Index of the later point in the **date-sorted** series used by
+   * `detectChangeEvents` for diffing — not the original caller-supplied
+   * input order. `detectChangeEvents` sorts internally before pair-wise
+   * comparison, so consumers should not use this to look up into the
+   * original array.
+   */
   index: number;
   date: string;
   score: number;
@@ -64,18 +70,38 @@ export function clampScore(score: number): number {
   return score;
 }
 
+/**
+ * Shift a date backwards by whole months without the `setMonth` overflow
+ * quirk: on end-of-month anchors (e.g. May 31 minus 3 months) the naive
+ * `setMonth` lands on March 3 instead of February 28, which silently
+ * shrinks the window by a few days and drops valid points. We clamp to
+ * the last day of the target month instead.
+ */
+function subtractMonths(date: Date, months: number): Date {
+  const result = new Date(date);
+  const originalDay = result.getDate();
+  result.setDate(1);
+  result.setMonth(result.getMonth() - months);
+  const daysInTargetMonth = new Date(
+    result.getFullYear(),
+    result.getMonth() + 1,
+    0,
+  ).getDate();
+  result.setDate(Math.min(originalDay, daysInTargetMonth));
+  return result;
+}
+
 function rangeCutoff(range: TrendRange, now: Date): Date | null {
-  const cutoff = new Date(now);
   switch (range) {
     case "3m":
-      cutoff.setMonth(cutoff.getMonth() - 3);
-      return cutoff;
+      return subtractMonths(now, 3);
     case "6m":
-      cutoff.setMonth(cutoff.getMonth() - 6);
-      return cutoff;
-    case "1y":
+      return subtractMonths(now, 6);
+    case "1y": {
+      const cutoff = new Date(now);
       cutoff.setFullYear(cutoff.getFullYear() - 1);
       return cutoff;
+    }
     case "all":
       return null;
   }

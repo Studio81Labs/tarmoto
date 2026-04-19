@@ -58,6 +58,18 @@ describe("filterByRange", () => {
     const result = filterByRange(HISTORY, "3m", new Date("2030-01-01"));
     expect(result).toEqual([]);
   });
+
+  it("handles end-of-month anchors without day overflow", () => {
+    // May 31 - 3 months should be Feb 28, not Mar 3 (setMonth overflow).
+    // Feb 28 is included, so a point on that date must pass the filter.
+    const may31 = new Date("2026-05-31T12:00:00Z");
+    const result = filterByRange(
+      [{ date: "2026-02-28", score: 3.5 }],
+      "3m",
+      may31,
+    );
+    expect(result).toHaveLength(1);
+  });
 });
 
 describe("detectChangeEvents", () => {
@@ -113,6 +125,17 @@ describe("summariseTrend", () => {
     const summary = summariseTrend(HISTORY);
     expect(summary?.direction).toBe("improving");
     expect(summary?.delta).toBeCloseTo(0.6, 5);
+  });
+
+  it("labels a clear downward trajectory as declining", () => {
+    const down: QualityPoint[] = [
+      { date: "2025-07-01", score: 4.2 },
+      { date: "2025-10-01", score: 3.9 },
+      { date: "2026-01-01", score: 3.5 },
+    ];
+    const summary = summariseTrend(down);
+    expect(summary?.direction).toBe("declining");
+    expect(summary?.delta).toBeCloseTo(-0.7, 5);
   });
 
   it("labels deltas under the stable threshold as stable", () => {
