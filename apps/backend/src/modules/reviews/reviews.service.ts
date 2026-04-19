@@ -7,8 +7,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RoadReview } from '../../entities/road-review.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
-import { CreateReviewDto } from './dto/review.dto.js';
-import { ReviewResponseDto } from './dto/review.dto.js';
+import {
+  CreateReviewDto,
+  ReviewResponseDto,
+  sanitizeReviewPhotos,
+} from './dto/review.dto.js';
 
 @Injectable()
 export class ReviewsService {
@@ -116,7 +119,7 @@ export class ReviewsService {
       rating: review.rating,
       comment: review.comment,
       bike_model: review.bike_model,
-      photos: review.photos ?? [],
+      photos: sanitizeReviewPhotos(review.photos),
       created_at: review.created_at.toISOString(),
     };
   }

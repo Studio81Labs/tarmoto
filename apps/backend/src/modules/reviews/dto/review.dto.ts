@@ -13,6 +13,24 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export const MAX_REVIEW_PHOTOS = 5;
 
+/**
+ * Coerce a raw photos value from the DB into the DTO contract: keep only
+ * plain `https://` strings and cap at `MAX_REVIEW_PHOTOS`. The
+ * `road_reviews.photos` column is `text[]` with no per-element validation,
+ * and legacy rows may predate the HTTPS-only `CreateReviewDto` rule; both
+ * response mappers (`reviews.service.toResponse` and
+ * `roads.service.mapReviewRows`) must go through this so /roads/:id and
+ * /roads/:id/reviews can't disagree on what's valid.
+ */
+export function sanitizeReviewPhotos(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return (raw as unknown[])
+    .filter(
+      (p): p is string => typeof p === 'string' && p.startsWith('https://'),
+    )
+    .slice(0, MAX_REVIEW_PHOTOS);
+}
+
 export class CreateReviewDto {
   @ApiProperty({ minimum: 1, maximum: 5 })
   @IsInt()

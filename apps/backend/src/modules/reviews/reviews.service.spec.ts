@@ -304,5 +304,35 @@ describe('ReviewsService', () => {
 
       expect(result[0].photos).toEqual([]);
     });
+
+    it('should sanitize photos: drop non-https and cap at 5', async () => {
+      // /reviews and /roads/:id serve the same DTO — both paths must strip
+      // legacy http:// or file:// URLs and cap oversize galleries, so a row
+      // predating the HTTPS-only CreateReviewDto rule can't leak through.
+      const freshReview = {
+        ...mockReview,
+        photos: [
+          'https://media.tarmoto.app/a.jpg',
+          'http://insecure.example.com/b.jpg',
+          'file:///etc/passwd',
+          42,
+          null,
+          'https://media.tarmoto.app/c.jpg',
+          'https://media.tarmoto.app/d.jpg',
+          'https://media.tarmoto.app/e.jpg',
+          'https://media.tarmoto.app/f.jpg',
+          'https://media.tarmoto.app/g.jpg', // 6th valid — dropped
+        ],
+      } as unknown as RoadReview;
+      reviewRepo.find!.mockResolvedValueOnce([freshReview]);
+
+      const result = await service.listForSegment('seg-1');
+
+      expect(result[0].photos).toHaveLength(5);
+      expect(result[0].photos.every((p) => p.startsWith('https://'))).toBe(
+        true,
+      );
+      expect(result[0].photos).not.toContain('https://media.tarmoto.app/g.jpg');
+    });
   });
 });
