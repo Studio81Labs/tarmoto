@@ -95,6 +95,10 @@ function sortTrips(trips: Trip[], sort: TripSortKey): Trip[] {
     case "distance":
       copy.sort((a, b) => tripDistanceKm(b) - tripDistanceKm(a));
       return copy;
+    default:
+      // Exhaustive over TripSortKey today; the default keeps the return type
+      // honest if a new sort key is added without updating this switch.
+      return copy;
   }
 }
 

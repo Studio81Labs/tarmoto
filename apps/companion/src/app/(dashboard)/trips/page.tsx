@@ -105,12 +105,13 @@ export default function TripListPage() {
   };
 
   useEffect(() => {
-    // Guard against stale responses from a previous userId landing after a
-    // user switch/sign-out. Also clear any residual trip list immediately
-    // so the prior user's data never flashes to the new one.
+    // Clear trips every time userId changes (sign-out, sign-in, account
+    // switch). Without this the new user would briefly see the previous
+    // user's trips between the userId change and the fetch completing.
     let cancelled = false;
+    setTrips([]);
+    setErrorBanner(null);
     if (!userId) {
-      setTrips([]);
       setLoading(false);
       return () => {
         cancelled = true;
@@ -126,6 +127,7 @@ export default function TripListPage() {
       })
       .catch(() => {
         if (cancelled) return;
+        setTrips([]);
         setErrorBanner("Couldn't load your trips. Check your connection.");
       })
       .finally(() => {
