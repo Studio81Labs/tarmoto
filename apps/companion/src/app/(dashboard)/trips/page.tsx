@@ -204,10 +204,18 @@ export default function TripListPage() {
     setBusyTripId(trip.id);
     try {
       const { data } = await tripsApi.create(duplicateTripPayload(trip));
-      const created = (data as unknown as Trip) ?? null;
+      // Match the list-endpoint handling: the server sometimes wraps
+      // responses in `{ data: ... }`, so unwrap if present.
+      const body = data as unknown as { data?: Trip } | Trip | null;
+      const created =
+        body && typeof body === "object" && "data" in body && body.data
+          ? (body.data as Trip)
+          : (body as Trip | null);
       // Read the fresh trip list from the store — concurrent deletes or
       // moves made during the await shouldn't be silently reverted.
-      if (created) setTrips([created, ...useTripStore.getState().trips]);
+      if (created && created.id) {
+        setTrips([created, ...useTripStore.getState().trips]);
+      }
     } catch {
       setErrorBanner("Couldn't duplicate the trip. Try again.");
     } finally {
