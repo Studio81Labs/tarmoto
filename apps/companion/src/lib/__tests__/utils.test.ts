@@ -93,6 +93,19 @@ describe("formatDistanceFromMeters", () => {
     expect(formatDistanceFromMeters(-10)).toBe("0 m");
     expect(formatDistanceFromMeters(0, "imperial")).toBe("0 ft");
   });
+
+  it("locks the metric metres/km cutover at 1000 m", () => {
+    expect(formatDistanceFromMeters(999)).toBe("999 m");
+    expect(formatDistanceFromMeters(1000)).toBe("1.0 km");
+  });
+
+  it("locks the imperial feet/miles cutover at ~0.1 mi", () => {
+    // 0.1 mi ≈ 160.934 m — just under uses feet, just over switches to miles.
+    expect(formatDistanceFromMeters(160, "imperial")).toMatch(/ft$/);
+    expect(formatDistanceFromMeters(161, "imperial")).toMatch(/mi$/);
+    expect(formatDistance(0.16, "imperial")).toMatch(/ft$/);
+    expect(formatDistance(0.161, "imperial")).toMatch(/mi$/);
+  });
 });
 
 describe("formatDuration", () => {

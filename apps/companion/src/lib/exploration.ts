@@ -130,9 +130,12 @@ export function groupUnriddenByRegion(
     bucket.totalLengthKm += toNumber(seg.length_m) / 1000;
     buckets.set(key, bucket);
   }
-  return [...buckets.values()].sort(
-    (a, b) => b.totalLengthKm - a.totalLengthKm,
-  );
+  // Sort by total length descending, then by label alphabetically so equal
+  // buckets stay in a stable, predictable order across renders and tests.
+  return [...buckets.values()].sort((a, b) => {
+    const byLength = b.totalLengthKm - a.totalLengthKm;
+    return byLength !== 0 ? byLength : a.label.localeCompare(b.label);
+  });
 }
 
 function regionLabelFor(roadName: string | null | undefined): string {

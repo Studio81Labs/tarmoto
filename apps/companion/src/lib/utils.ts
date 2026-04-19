@@ -80,6 +80,11 @@ export const HAZARD_CONFIG: Record<
 
 // ── Formatting ──
 
+// Single cutover point between feet and miles in imperial mode, expressed in
+// metres so both distance formatters can reference it directly. 160.934 m is
+// exactly 0.1 mi.
+const IMPERIAL_FEET_CUTOFF_M = 160.934;
+
 /**
  * Distance formatter used across the companion dashboard. The metric branch
  * matches the pre-existing `formatDistance(km)` output exactly so callers
@@ -102,8 +107,11 @@ export function formatDistance(
 ): string {
   if (units === "imperial") {
     if (!Number.isFinite(km) || km <= 0) return "0 mi";
+    const meters = km * 1000;
+    if (meters < IMPERIAL_FEET_CUTOFF_M) {
+      return `${metersToFeet(meters)} ft`;
+    }
     const mi = kmToMiles(km);
-    if (mi < 0.1) return `${metersToFeet(km * 1000)} ft`;
     if (mi < 10) return `${mi.toFixed(1)} mi`;
     return `${mi.toFixed(0)} mi`;
   }
@@ -124,7 +132,7 @@ export function formatDistanceFromMeters(
   if (!Number.isFinite(meters) || meters <= 0) {
     return units === "imperial" ? "0 ft" : "0 m";
   }
-  if (units === "imperial" && meters < 160) {
+  if (units === "imperial" && meters < IMPERIAL_FEET_CUTOFF_M) {
     return `${metersToFeet(meters)} ft`;
   }
   if (units === "metric" && meters < 1000) {
