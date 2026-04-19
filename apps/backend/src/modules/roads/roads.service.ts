@@ -111,7 +111,11 @@ export class RoadsService {
       geometry.length,
     );
 
-    // Run all six independent queries in parallel
+    // Run all six independent queries in parallel. Share a single `asOf`
+    // cutoff for the hazard count + hazard-rows queries so a report that
+    // expires between the two Promise.all statements can't drift the count
+    // away from what's in the returned array.
+    const asOf = new Date();
     /* eslint-disable @typescript-eslint/no-unsafe-assignment */
     const [
       breakdownRows,
@@ -133,8 +137,8 @@ export class RoadsService {
         `SELECT COUNT(*)::int AS count
         FROM hazard_reports
         WHERE road_segment_id = $1
-          AND is_active = true AND expires_at > NOW()`,
-        [segmentId],
+          AND is_active = true AND expires_at > $2`,
+        [segmentId, asOf],
       ),
       // Top-N most-recent active hazards with reporter + road name. Joining
       // on road_segments here so the response shape matches the standalone
@@ -151,10 +155,10 @@ export class RoadsService {
         LEFT JOIN users u ON u.id = h.user_id
         LEFT JOIN road_segments rs ON rs.id = h.road_segment_id
         WHERE h.road_segment_id = $1
-          AND h.is_active = true AND h.expires_at > NOW()
+          AND h.is_active = true AND h.expires_at > $2
         ORDER BY h.created_at DESC
-        LIMIT $2`,
-        [segmentId, ACTIVE_HAZARD_LIMIT],
+        LIMIT $3`,
+        [segmentId, asOf, ACTIVE_HAZARD_LIMIT],
       ),
       this.segmentRepo.query(
         `SELECT COUNT(*)::int AS count, AVG(rating)::float AS avg_rating

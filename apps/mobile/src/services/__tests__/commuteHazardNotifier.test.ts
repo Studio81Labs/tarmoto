@@ -389,13 +389,15 @@ describe("checkCommuteHazardsAndNotify", () => {
   });
 
   it("short-circuits a concurrent call with reason 'check-in-progress'", async () => {
-    let resolveRoutes: (value: CommuteRoute[]) => void;
-    mockApi.getCommuteRoutes.mockImplementation(
-      () =>
-        new Promise<CommuteRoute[]>((resolve) => {
-          resolveRoutes = resolve;
-        }),
-    );
+    // Use a one-shot `Deferred` instead of a shared `resolveRoutes` closure
+    // so the second (short-circuiting) call can't silently overwrite the
+    // first call's resolver. `mockImplementationOnce` binds the pending
+    // promise to just the first invocation; any follow-up call to
+    // getCommuteRoutes gets the empty-array value we set below.
+    const firstRoutes = createDeferred<CommuteRoute[]>();
+    mockApi.getCommuteRoutes
+      .mockImplementationOnce(() => firstRoutes.promise)
+      .mockResolvedValue([makeRoute()]);
     mockApi.getCommuteStatus.mockResolvedValue(
       makeStatus([makeHazard({ id: "h1" })]),
     );
@@ -408,7 +410,7 @@ describe("checkCommuteHazardsAndNotify", () => {
 
     // Complete the first check — it should still notify normally and
     // release the guard for future calls.
-    resolveRoutes!([makeRoute()]);
+    firstRoutes.resolve([makeRoute()]);
     const firstResult = await first;
     expect(firstResult.notified).toBe(true);
     expect(fake.calls).toHaveLength(1);
@@ -423,6 +425,22 @@ describe("checkCommuteHazardsAndNotify", () => {
     expect(third.reason).toBe("all-notified");
   });
 });
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason?: unknown) => void;
+}
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 // ── Monitor lifecycle ──
 
