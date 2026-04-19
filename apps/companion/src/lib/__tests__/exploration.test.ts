@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   buildShareSummary,
   computePeriodStats,
-  filterRidesByPeriod,
   groupUnriddenByRegion,
   periodStartDate,
   type TimePeriod,
@@ -64,63 +63,82 @@ describe("periodStartDate", () => {
   });
 });
 
-describe("filterRidesByPeriod", () => {
+describe("computePeriodStats — window selection", () => {
   const now = new Date("2026-04-19T12:00:00Z");
   const rides: RideForStats[] = [
-    ride({ id: "r-today", started_at: "2026-04-19T09:00:00Z" }),
-    ride({ id: "r-60d", started_at: "2026-02-18T09:00:00Z" }),
-    ride({ id: "r-lastyear", started_at: "2025-12-01T09:00:00Z" }),
-    ride({ id: "r-2years", started_at: "2024-06-01T09:00:00Z" }),
+    ride({
+      id: "r-today",
+      started_at: "2026-04-19T09:00:00Z",
+      distance_km: 10,
+    }),
+    ride({ id: "r-60d", started_at: "2026-02-18T09:00:00Z", distance_km: 20 }),
+    ride({
+      id: "r-lastyear",
+      started_at: "2025-12-01T09:00:00Z",
+      distance_km: 30,
+    }),
+    ride({
+      id: "r-2years",
+      started_at: "2024-06-01T09:00:00Z",
+      distance_km: 40,
+    }),
   ];
 
-  it("'all' returns every ride regardless of age", () => {
-    expect(filterRidesByPeriod(rides, "all", now).map((r) => r.id)).toEqual([
-      "r-today",
-      "r-60d",
-      "r-lastyear",
-      "r-2years",
-    ]);
+  it("'all' counts every ride regardless of age", () => {
+    const stats = computePeriodStats(rides, "all", now);
+    expect(stats.rideCount).toBe(4);
+    expect(stats.distanceKm).toBeCloseTo(100);
   });
 
-  it("'year' keeps only the current calendar year", () => {
-    expect(filterRidesByPeriod(rides, "year", now).map((r) => r.id)).toEqual([
-      "r-today",
-      "r-60d",
-    ]);
+  it("'year' keeps only rides in the current calendar year", () => {
+    const stats = computePeriodStats(rides, "year", now);
+    expect(stats.rideCount).toBe(2);
+    expect(stats.distanceKm).toBeCloseTo(30);
   });
 
   it("'90d' keeps rides inside the rolling window", () => {
-    expect(filterRidesByPeriod(rides, "90d", now).map((r) => r.id)).toEqual([
-      "r-today",
-      "r-60d",
-    ]);
+    const stats = computePeriodStats(rides, "90d", now);
+    expect(stats.rideCount).toBe(2);
+    expect(stats.distanceKm).toBeCloseTo(30);
   });
 
-  it("'30d' only keeps the most recent ride", () => {
-    expect(filterRidesByPeriod(rides, "30d", now).map((r) => r.id)).toEqual([
-      "r-today",
-    ]);
+  it("'30d' keeps only the most recent ride", () => {
+    const stats = computePeriodStats(rides, "30d", now);
+    expect(stats.rideCount).toBe(1);
+    expect(stats.distanceKm).toBeCloseTo(10);
   });
 
-  it("ignores rides with an unparseable timestamp across every period", () => {
-    const broken = [...rides, ride({ id: "r-bad", started_at: "not-a-date" })];
-    expect(
-      filterRidesByPeriod(broken, "all", now).map((r) => r.id),
-    ).not.toContain("r-bad");
-    expect(
-      filterRidesByPeriod(broken, "30d", now).map((r) => r.id),
-    ).not.toContain("r-bad");
+  it("drops rides with an unparseable timestamp across every period", () => {
+    const broken = [
+      ...rides,
+      ride({
+        id: "r-bad",
+        started_at: "not-a-date",
+        distance_km: 999,
+      }),
+    ];
+    for (const period of ["all", "year", "90d", "30d"] as const) {
+      const stats = computePeriodStats(broken, period, now);
+      expect(stats.distanceKm).not.toBeCloseTo(
+        computePeriodStats(rides, period, now).distanceKm + 999,
+      );
+    }
   });
 
   it("excludes rides started in the future from every period", () => {
     const withFuture = [
       ...rides,
-      ride({ id: "r-future", started_at: "2027-01-01T09:00:00Z" }),
+      ride({
+        id: "r-future",
+        started_at: "2027-01-01T09:00:00Z",
+        distance_km: 500,
+      }),
     ];
     for (const period of ["all", "year", "90d", "30d"] as const) {
-      expect(
-        filterRidesByPeriod(withFuture, period, now).map((r) => r.id),
-      ).not.toContain("r-future");
+      const statsWith = computePeriodStats(withFuture, period, now);
+      const statsWithout = computePeriodStats(rides, period, now);
+      expect(statsWith.rideCount).toBe(statsWithout.rideCount);
+      expect(statsWith.distanceKm).toBeCloseTo(statsWithout.distanceKm);
     }
   });
 });

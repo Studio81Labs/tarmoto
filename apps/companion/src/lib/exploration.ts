@@ -76,29 +76,15 @@ export function periodStartDate(
   }
 }
 
-export function filterRidesByPeriod(
-  rides: readonly RideForStats[],
-  period: TimePeriod,
-  now: Date = new Date(),
-): RideForStats[] {
-  const lowerBound = periodStartDate(period, now);
-  return rides.filter((ride) => {
-    const date = parseStartedAt(ride.started_at);
-    if (date === null) return false;
-    // Future-dated rides (clock skew or bad data) would otherwise inflate the
-    // period totals, so we cap the window at `now`.
-    if (date > now) return false;
-    return lowerBound === null || date >= lowerBound;
-  });
-}
-
 export function computePeriodStats(
   rides: readonly RideForStats[],
   period: TimePeriod,
   now: Date = new Date(),
 ): PeriodStats {
-  // Inlined filter + parse so each ride's timestamp is parsed once instead of
-  // twice (once in `filterRidesByPeriod`, then again for `localDateKey`).
+  // Single pass: parse the timestamp once, apply the period window, and fold
+  // into the running totals. Combining the filter + reduce avoids both a
+  // second parse inside the active-days loop and a separate exported
+  // `filterRidesByPeriod` that would risk drifting out of sync with this one.
   const lowerBound = periodStartDate(period, now);
   const activeDayKeys = new Set<string>();
   let distanceKm = 0;
