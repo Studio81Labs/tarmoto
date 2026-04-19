@@ -11,12 +11,24 @@ import Icon from "@react-native-vector-icons/material-design-icons";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
+import { useCommute } from "@/hooks/useCommute";
 import type { HomeStackParamList } from "@/navigation/RootNavigator";
 
 type HomeNav = NativeStackNavigationProp<HomeStackParamList, "Home">;
 
 export default function HomeScreen() {
   const navigation = useNavigation<HomeNav>();
+  // US-15 AC #3: surface the hazard diff at the app entry point so a rider
+  // who lands on Home before opening the Commute tab can still see at a
+  // glance that their regular route has unseen hazards. The badge clears
+  // the moment they open CommuteScreen and tap "Mark all seen" — same
+  // acknowledge flow that drives the in-list NEW markers.
+  const { phase, newHazardCount } = useCommute();
+  const showBadge = phase === "ready" && newHazardCount > 0;
+  // Cap the displayed count at 99+ so the badge stays visually compact,
+  // and reuse the same string in the accessibility label so VoiceOver
+  // announces the same value a sighted rider sees.
+  const displayCount = newHazardCount > 99 ? "99+" : String(newHazardCount);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -28,7 +40,13 @@ export default function HomeScreen() {
           style={styles.card}
           onPress={() => navigation.navigate("Commute")}
           accessibilityRole="button"
-          accessibilityLabel="Open commute hazard check"
+          accessibilityLabel={
+            showBadge
+              ? `Open commute hazard check. ${displayCount} new ${
+                  newHazardCount === 1 ? "hazard" : "hazards"
+                } since your last check.`
+              : "Open commute hazard check"
+          }
         >
           <View style={styles.cardIcon}>
             <Icon name="map-marker-path" size={22} color={colors.primary} />
@@ -39,6 +57,18 @@ export default function HomeScreen() {
               See active hazards and weather on your regular route.
             </Text>
           </View>
+          {showBadge ? (
+            <View
+              style={styles.newBadge}
+              // Hide from a11y: the count is already part of the card's
+              // accessibilityLabel above, so an extra node would make
+              // VoiceOver read the number twice.
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+            >
+              <Text style={styles.newBadgeText}>{displayCount} NEW</Text>
+            </View>
+          ) : null}
           <Icon name="chevron-right" size={22} color={colors.textTertiary} />
         </TouchableOpacity>
       </ScrollView>
@@ -94,5 +124,17 @@ const styles = StyleSheet.create({
   cardBodyText: {
     color: colors.textSecondary,
     fontSize: fontSize.sm,
+  },
+  newBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.pill,
+    backgroundColor: colors.danger,
+  },
+  newBadgeText: {
+    color: colors.white,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.bold,
+    letterSpacing: 0.4,
   },
 });
