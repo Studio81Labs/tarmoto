@@ -197,9 +197,12 @@ export default function TripListPage() {
     ) {
       setFilters({ ...filters, folderScope: { kind: "all" } });
     }
-    const affected = trips.filter((t) => t.folderId === folder.id);
+    // Read fresh store state so rapid successive actions from the same
+    // render cycle don't clobber each other's optimistic updates.
+    const current = useTripStore.getState().trips;
+    const affected = current.filter((t) => t.folderId === folder.id);
     setTrips(
-      trips.map((t) =>
+      current.map((t) =>
         t.folderId === folder.id ? { ...t, folderId: undefined } : t,
       ),
     );
@@ -215,10 +218,14 @@ export default function TripListPage() {
 
   const moveTripToFolder = async (trip: Trip, folderId: string | null) => {
     const previousFolderId = trip.folderId;
+    // Read fresh state so concurrent optimistic updates don't clobber each
+    // other when two actions fire in the same render.
     setTrips(
-      trips.map((t) =>
-        t.id === trip.id ? { ...t, folderId: folderId ?? undefined } : t,
-      ),
+      useTripStore
+        .getState()
+        .trips.map((t) =>
+          t.id === trip.id ? { ...t, folderId: folderId ?? undefined } : t,
+        ),
     );
     markBusy(trip.id);
     try {
@@ -264,8 +271,11 @@ export default function TripListPage() {
 
   const deleteTrip = async (trip: Trip) => {
     if (!confirm(`Delete "${trip.name}"? This cannot be undone.`)) return;
-    const indexBefore = trips.findIndex((t) => t.id === trip.id);
-    setTrips(trips.filter((t) => t.id !== trip.id));
+    // Read fresh state so concurrent optimistic updates don't clobber each
+    // other when two actions fire in the same render.
+    const before = useTripStore.getState().trips;
+    const indexBefore = before.findIndex((t) => t.id === trip.id);
+    setTrips(before.filter((t) => t.id !== trip.id));
     markBusy(trip.id);
     try {
       await tripsApi.delete(trip.id);
