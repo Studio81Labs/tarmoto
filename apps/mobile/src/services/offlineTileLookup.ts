@@ -51,11 +51,16 @@ export function findBestOfflineRegion(
   center: LatLng,
   zoom: number,
 ): OfflineRegion | null {
+  // MapLibre's `zoomLevel` is a continuous float (fractional during pinch
+  // gestures) but its tile requests are keyed on the integer zoom. Compare
+  // on the floor so a rider at zoom 14.3 still matches a region whose
+  // `maxZoom` is 14 — the z=14 tiles MapLibre will request are on disk.
+  const integerZoom = Math.floor(zoom);
   let best: OfflineRegion | null = null;
   let bestTs = -Infinity;
   for (const region of regions) {
     if (region.status !== "complete") continue;
-    if (zoom < region.minZoom || zoom > region.maxZoom) continue;
+    if (integerZoom < region.minZoom || integerZoom > region.maxZoom) continue;
     if (!bboxContains(region.bbox, center.lng, center.lat)) continue;
     // `lastUpdatedAt` is `null` for regions that never ticked progress
     // (shouldn't happen for a complete region, but don't trust it) — fall

@@ -125,6 +125,11 @@ export default function MapScreen() {
     try {
       const docsDir = getDefaultDocsDir();
       return {
+        // `regionId` (not `regionName`) drives the VectorSource remount key:
+        // rider-chosen names are not guaranteed unique, so two same-named
+        // regions on different bboxes would leave MapLibre pointed at the
+        // old tile URL when the rider pans from one to the other.
+        regionId: region.id,
         regionName: region.name,
         template: offlineTileUrlTemplate(docsDir, region.id),
       };
@@ -315,7 +320,7 @@ export default function MapScreen() {
           // leave the native side pointing at the old tile URL even after
           // React updated the prop.
           <VectorSource
-            key={`quality-${offlineSource?.regionName ?? "online"}`}
+            key={`quality-${offlineSource?.regionId ?? "online"}`}
             id="tarmoto-quality"
             tileUrlTemplates={[tileUrl]}
             minZoomLevel={0}

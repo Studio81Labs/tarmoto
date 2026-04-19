@@ -75,6 +75,19 @@ describe("findBestOfflineRegion", () => {
     expect(findBestOfflineRegion([narrow], center, 8)).toBeNull();
   });
 
+  it("matches on the integer zoom so fractional camera zooms still resolve", () => {
+    // MapLibre's zoom is a float during pinch/settle, but tile requests
+    // use the floor of it. A region capped at maxZoom=14 must still match
+    // a camera at 14.3 because MapLibre asks for z=14 tiles either way.
+    const upperEdge = makeRegion({ minZoom: 8, maxZoom: 14 });
+    expect(findBestOfflineRegion([upperEdge], center, 14.3)).toBe(upperEdge);
+    // Symmetric check on the lower bound: 8.9 floors to 8, which is in-range.
+    const lowerEdge = makeRegion({ minZoom: 8, maxZoom: 14 });
+    expect(findBestOfflineRegion([lowerEdge], center, 8.9)).toBe(lowerEdge);
+    // 7.9 floors to 7 — below the region's minZoom — so no match.
+    expect(findBestOfflineRegion([lowerEdge], center, 7.9)).toBeNull();
+  });
+
   it("skips regions whose bbox doesn't contain the map centre", () => {
     const elsewhere = makeRegion({
       bbox: { west: 10, south: 50, east: 11, north: 51 },
