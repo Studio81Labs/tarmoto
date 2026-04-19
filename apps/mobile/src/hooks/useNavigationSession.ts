@@ -96,6 +96,17 @@ export function useNavigationSession(
     ttsService.setMuted(!voiceEnabled);
   }, [voiceEnabled]);
 
+  // Reset the singleton's mute flag when the session tears down so a rider
+  // who muted mid-nav doesn't leak silence to every future TTS consumer
+  // (commute alerts, future crash detection, etc.). The voice-enabled
+  // effect above only cleans itself on flag transitions, so we need this
+  // mount-only cleanup for the unmount case.
+  useEffect(() => {
+    return () => {
+      ttsService.setMuted(false);
+    };
+  }, []);
+
   useEffect(() => {
     if (!trackLocation) return undefined;
 

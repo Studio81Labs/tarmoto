@@ -235,8 +235,25 @@ describe("NavSession", () => {
     );
     expect(near.announcements.map((a) => a.type)).toContain("warning-near");
 
+    // Arrival requires TWO consecutive in-zone ticks (guard against a
+    // cold-start projection snapping to the tail on loop routes). The
+    // first end-of-polyline tick primes prevInArrivalZone; the second
+    // actually fires.
+    const firstAtEnd = s.update(poly[poly.length - 1]);
+    expect(firstAtEnd.announcements.map((a) => a.type)).not.toContain(
+      "arrived",
+    );
     const arrival = s.update(poly[poly.length - 1]);
     expect(arrival.announcements.map((a) => a.type)).toContain("arrived");
+  });
+
+  it("does not fire arrived on a single cold-start tick at the tail (loop-route guard)", () => {
+    // Simulate the loop-route failure mode: the rider is at the start but
+    // the projection snaps them to the end segment. A single tick must not
+    // trigger the arrival announcement — the two-tick gate swallows it.
+    const s = new NavSession(poly, maneuvers);
+    const coldStart = s.update(poly[poly.length - 1]);
+    expect(coldStart.announcements.map((a) => a.type)).not.toContain("arrived");
   });
 
   it("flags off-route when > 50m perpendicular and recovers on return", () => {

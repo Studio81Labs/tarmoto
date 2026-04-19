@@ -392,6 +392,14 @@ export class NavSession {
   private arrivedFired = false;
   private departFired = false;
   private wasOffRoute = false;
+  // Tracks whether the rider was in the arrival zone on the previous tick.
+  // Arrival fires only on TWO consecutive in-zone ticks to rule out a
+  // cold-start projection accidentally snapping to the route's tail on
+  // loop / out-and-back polylines: on such routes a nearest-segment
+  // projection can pick the end segment while the rider is still at the
+  // start, and a single-tick arrival would say "you have arrived"
+  // before the rider has even departed.
+  private prevInArrivalZone = false;
 
   constructor(
     route: LatLng[],
@@ -526,13 +534,12 @@ export class NavSession {
         }
       }
 
-      if (
-        !this.arrivedFired &&
-        this.totalM - projection.progressM <= ARRIVED_M
-      ) {
+      const inArrivalZone = this.totalM - projection.progressM <= ARRIVED_M;
+      if (!this.arrivedFired && inArrivalZone && this.prevInArrivalZone) {
         this.arrivedFired = true;
         announcements.push({ type: "arrived", currentRoadName });
       }
+      this.prevInArrivalZone = inArrivalZone;
     }
 
     return {
