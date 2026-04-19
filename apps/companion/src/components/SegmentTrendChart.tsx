@@ -59,21 +59,24 @@ export function SegmentTrendChart({
     () => detectChangeEvents(filteredHistory),
     [filteredHistory],
   );
-  const summary = useMemo(
-    () => summariseTrend(filteredHistory),
-    [filteredHistory],
-  );
   const data = useMemo(
     () => buildChartPoints(filteredHistory, filteredRegional, events),
     [filteredHistory, filteredRegional, events],
   );
 
   const hasTrend = filteredHistory.length >= 2;
+  // Only summarise when there are at least two points — a single reading
+  // would otherwise render as "Stable (+0.00)", which is misleading when
+  // the companion panel already shows a "not enough readings" message.
+  const summary = useMemo(
+    () => (hasTrend ? summariseTrend(filteredHistory) : null),
+    [filteredHistory, hasTrend],
+  );
 
   return (
     <div>
       <div className="flex items-center justify-between gap-2 mb-3">
-        <TrendSummaryBadge summary={summary} />
+        {hasTrend ? <TrendSummaryBadge summary={summary} /> : <span />}
         <RangeSelector
           segmentId={segmentId}
           range={range}
