@@ -17,7 +17,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { RouteProp, useRoute } from "@react-navigation/native";
+import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import {
   borderRadius,
@@ -54,10 +55,12 @@ import {
 } from "./TripScreens.helpers";
 
 type DayRoute = RouteProp<TripsStackParamList, "TripDay">;
+type Nav = NativeStackNavigationProp<TripsStackParamList, "TripDay">;
 type IconName = ComponentProps<typeof Icon>["name"];
 
 export default function TripDayScreen() {
   const { params } = useRoute<DayRoute>();
+  const navigation = useNavigation<Nav>();
   const { tripId, dayNumber } = params;
 
   const cachedTrip = useTripStore((s) => s.activeTrip);
@@ -180,6 +183,16 @@ export default function TripDayScreen() {
         </View>
       </View>
 
+      <StartNavigationButton
+        disabled={day.route_geometry.length < 2}
+        onPress={() =>
+          navigation.navigate("Navigate", {
+            tripId: trip.id,
+            dayNumber: day.day_number,
+          })
+        }
+      />
+
       <HighlightsCard
         fuelStops={summary.fuelStops}
         overnightStops={summary.overnightStops}
@@ -218,6 +231,31 @@ export default function TripDayScreen() {
         )}
       </View>
     </ScrollView>
+  );
+}
+
+function StartNavigationButton({
+  disabled,
+  onPress,
+}: {
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  // US-16 entry point. Disabled when the planner hasn't filled in a
+  // polyline for this day (e.g., a half-generated draft) — starting a nav
+  // session over < 2 points has nothing to project onto.
+  return (
+    <TouchableOpacity
+      style={[styles.navigateBtn, disabled && styles.navigateBtnDisabled]}
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel="Start navigation"
+      accessibilityState={{ disabled }}
+    >
+      <Icon name="navigation-variant" size={22} color={colors.textInverse} />
+      <Text style={styles.navigateLabel}>Start navigation</Text>
+    </TouchableOpacity>
   );
 }
 
@@ -904,6 +942,23 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     fontWeight: fontWeight.bold,
     letterSpacing: 0.5,
+  },
+  navigateBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.lg,
+    borderRadius: borderRadius.pill,
+    backgroundColor: colors.primary,
+  },
+  navigateBtnDisabled: {
+    opacity: 0.5,
+  },
+  navigateLabel: {
+    color: colors.textInverse,
+    fontSize: fontSize.lg,
+    fontWeight: fontWeight.bold,
   },
   fuelWarningCard: {
     backgroundColor: colors.qualityAlpha.fair,

@@ -25,6 +25,7 @@ import RoadPreviewScreen from "@/screens/RoadPreviewScreen";
 import TripDetailScreen from "@/screens/TripDetailScreen";
 import TripDayScreen from "@/screens/TripDayScreen";
 import TripCreateScreen from "@/screens/TripCreateScreen";
+import NavigationScreen from "@/screens/NavigationScreen";
 import CommuteScreen from "@/screens/CommuteScreen";
 import RideDetailScreen from "@/screens/RideDetailScreen";
 import SettingsScreen from "@/screens/SettingsScreen";
@@ -64,6 +65,7 @@ export type TripsStackParamList = {
   TripJoin: { tripId?: string; inviteCode?: string } | undefined;
   TripDetail: { tripId: string };
   TripDay: { tripId: string; dayNumber: number };
+  Navigate: { tripId: string; dayNumber: number };
   RoadPreview: { segmentId: string };
 };
 
@@ -173,6 +175,11 @@ function TripsNavigator() {
         name="TripDay"
         component={TripDayScreen}
         options={{ title: "Day Route" }}
+      />
+      <TripsStack.Screen
+        name="Navigate"
+        component={NavigationScreen}
+        options={{ headerShown: false, presentation: "fullScreenModal" }}
       />
       <TripsStack.Screen
         name="RoadPreview"
