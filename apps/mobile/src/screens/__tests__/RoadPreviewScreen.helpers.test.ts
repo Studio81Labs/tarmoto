@@ -6,7 +6,9 @@
  * normalization dropping empty buckets.
  */
 
+import type { LatLng } from "@/types";
 import {
+  computeCurveCount,
   curvinessLabel,
   formatHazardType,
   formatLengthKm,
@@ -108,6 +110,101 @@ describe("formatHazardType", () => {
   it("turns snake_case into title-cased words", () => {
     expect(formatHazardType("oil_spill")).toBe("Oil Spill");
     expect(formatHazardType("pothole")).toBe("Pothole");
+  });
+});
+
+describe("computeCurveCount", () => {
+  // Build a polyline starting due-east from an origin with `turnCount`
+  // pivots, each separated by a few straight legs. The straight stretches
+  // reset the detector's "in turn" state so each pivot is treated as a
+  // distinct curve instead of coalescing into one continuous arc — which
+  // is what we want when the test's intent is "N separate bends".
+  function polylineWithTurns(turnCount: number, turnDeg: number): LatLng[] {
+    const origin: LatLng = { lat: 50, lng: 15 };
+    const points: LatLng[] = [origin];
+    let heading = 90;
+    const stepLatDeg = 0.001;
+    const STRAIGHT_LEGS_BETWEEN_TURNS = 3;
+    const step = () => {
+      const last = points[points.length - 1];
+      const rad = (heading * Math.PI) / 180;
+      const dLat = Math.cos(rad) * stepLatDeg;
+      const dLng =
+        (Math.sin(rad) * stepLatDeg) / Math.cos((last.lat * Math.PI) / 180);
+      points.push({ lat: last.lat + dLat, lng: last.lng + dLng });
+    };
+    for (let i = 0; i < turnCount; i++) {
+      for (let j = 0; j < STRAIGHT_LEGS_BETWEEN_TURNS; j++) step();
+      heading += turnDeg;
+    }
+    for (let j = 0; j < STRAIGHT_LEGS_BETWEEN_TURNS; j++) step();
+    return points;
+  }
+
+  it("returns 0 for empty or near-empty geometries", () => {
+    expect(computeCurveCount([])).toBe(0);
+    expect(computeCurveCount([{ lat: 50, lng: 15 }])).toBe(0);
+    expect(
+      computeCurveCount([
+        { lat: 50, lng: 15 },
+        { lat: 50.001, lng: 15.001 },
+      ]),
+    ).toBe(0);
+  });
+
+  it("returns 0 for a straight line", () => {
+    const line: LatLng[] = Array.from({ length: 10 }, (_, i) => ({
+      lat: 50,
+      lng: 15 + i * 0.001,
+    }));
+    expect(computeCurveCount(line)).toBe(0);
+  });
+
+  it("counts each distinct sharp turn as one curve", () => {
+    expect(computeCurveCount(polylineWithTurns(5, 45))).toBe(5);
+  });
+
+  it("ignores gentle heading jitter below the threshold", () => {
+    expect(computeCurveCount(polylineWithTurns(10, 10))).toBe(0);
+  });
+
+  it("coalesces consecutive turning vertices into a single curve", () => {
+    // A hairpin sampled as four consecutive 30° bends: the detector should
+    // call it one curve, not four, because there's no straight leg between
+    // the pivots.
+    const origin: LatLng = { lat: 50, lng: 15 };
+    const pts: LatLng[] = [origin];
+    let heading = 90;
+    const stepLatDeg = 0.0005;
+    for (let i = 0; i < 5; i++) {
+      const last = pts[pts.length - 1];
+      const rad = (heading * Math.PI) / 180;
+      const dLat = Math.cos(rad) * stepLatDeg;
+      const dLng =
+        (Math.sin(rad) * stepLatDeg) / Math.cos((last.lat * Math.PI) / 180);
+      pts.push({ lat: last.lat + dLat, lng: last.lng + dLng });
+      heading += 30;
+    }
+    expect(computeCurveCount(pts)).toBe(1);
+  });
+
+  it("skips duplicate GPS samples without splitting a turn", () => {
+    const pivot: LatLng = { lat: 50, lng: 15 };
+    const geometry: LatLng[] = [
+      { lat: 50, lng: 14.999 },
+      pivot,
+      pivot,
+      { lat: 50.001, lng: 15 },
+    ];
+    expect(computeCurveCount(geometry)).toBe(1);
+  });
+
+  it("honours a custom turn threshold", () => {
+    // Five 20° pivots separated by straight legs: none qualify at the
+    // stricter 25° threshold, all five qualify at a more permissive 15°.
+    const geometry = polylineWithTurns(5, 20);
+    expect(computeCurveCount(geometry, 25)).toBe(0);
+    expect(computeCurveCount(geometry, 15)).toBe(5);
   });
 });
 

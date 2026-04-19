@@ -1,4 +1,10 @@
-import React, { ComponentProps, useCallback, useEffect, useState } from "react";
+import React, {
+  ComponentProps,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -25,6 +31,7 @@ import { api } from "@/services/api";
 import { usePreferencesStore } from "@/stores";
 import type { Hazard, RoadReview, RoadSegmentDetail } from "@/types";
 import {
+  computeCurveCount,
   curvinessLabel,
   formatHazardType,
   formatLengthKm,
@@ -307,9 +314,24 @@ function QualityBreakdownBar({
 function CurvinessCard({ segment }: { segment: RoadSegmentDetail }) {
   const { curviness_score } = segment;
   const filled = Math.round(Math.max(0, Math.min(5, curviness_score)));
+  // US-9 AC: "Curviness score + curve count". Backend doesn't expose a
+  // count on road segments, so derive it geometrically — stable, cheap,
+  // and good enough to give riders a rough sense of "how many bends".
+  const curveCount = useMemo(
+    () => computeCurveCount(segment.geometry),
+    [segment.geometry],
+  );
   return (
     <View style={styles.card}>
-      <SectionTitle icon="sine-wave" title="Curviness" />
+      <SectionTitle
+        icon="sine-wave"
+        title="Curviness"
+        rightLabel={
+          curveCount > 0
+            ? `${curveCount} ${curveCount === 1 ? "turn" : "turns"}`
+            : undefined
+        }
+      />
       <View style={styles.curvinessRow}>
         <Text style={styles.curvinessScore}>{curviness_score.toFixed(1)}</Text>
         <View style={styles.curvinessPips}>
