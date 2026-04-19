@@ -275,6 +275,36 @@ describe("NavSession", () => {
     expect(recovered.announcements.map((a) => a.type)).toContain("on-route");
   });
 
+  it("resets the arrival-zone history when off-route so recovery still needs two ticks", () => {
+    // In-zone → off-route → in-zone must not fire `arrived` on the
+    // single recovery tick. Without the reset, prevInArrivalZone would
+    // stay true across the off-route gap and the two-tick gate would be
+    // bypassed.
+    const s = new NavSession(poly, maneuvers);
+    s.update(poly[0]); // depart
+    const end = poly[poly.length - 1];
+    // Tick 1: at the end (in-zone). Sets prevInArrivalZone=true but
+    // doesn't fire since the prev was still false.
+    const first = s.update(end);
+    expect(first.announcements.map((a) => a.type)).not.toContain("arrived");
+
+    // Tick 2: far north of the polyline — off-route. Should clear the
+    // arrival-zone history.
+    const offRoute = s.update({ lat: end.lat + 0.01, lng: end.lng });
+    expect(offRoute.offRoute).toBe(true);
+
+    // Tick 3: back on-route in the arrival zone. If the guard is
+    // working, this alone is not enough to fire arrived.
+    const recovery = s.update(end);
+    expect(recovery.offRoute).toBe(false);
+    expect(recovery.announcements.map((a) => a.type)).not.toContain("arrived");
+
+    // Tick 4: still in the arrival zone — this is the second consecutive
+    // on-route in-zone tick, so arrived finally fires.
+    const arrival = s.update(end);
+    expect(arrival.announcements.map((a) => a.type)).toContain("arrived");
+  });
+
   it("collapses stacked thresholds on a cold-start fix inside the near window", () => {
     // Rider's first GPS fix lands 30m before the turn — below both the far
     // (300m) and near (50m) thresholds. We should hear ONE prompt (the most

@@ -540,6 +540,13 @@ export class NavSession {
         announcements.push({ type: "arrived", currentRoadName });
       }
       this.prevInArrivalZone = inArrivalZone;
+    } else {
+      // Off-route: clear the arrival-zone history so a recovery tick in
+      // the arrival zone has to pair with another on-route in-zone tick
+      // before we fire `arrived`. Without this, an in-zone → off-route →
+      // in-zone sequence keeps `prevInArrivalZone = true` across the gap
+      // and the single recovery tick would bypass the two-tick gate.
+      this.prevInArrivalZone = false;
     }
 
     return {
