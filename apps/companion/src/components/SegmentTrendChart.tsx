@@ -64,10 +64,15 @@ export function SegmentTrendChart({
     [filteredHistory, filteredRegional, events],
   );
 
-  const hasTrend = filteredHistory.length >= 2;
-  // Only summarise when there are at least two points — a single reading
-  // would otherwise render as "Stable (+0.00)", which is misleading when
-  // the companion panel already shows a "not enough readings" message.
+  // `buildChartPoints` collapses same-date readings to a single x-point, so
+  // we gate on the count of distinct dates rather than raw reading count —
+  // otherwise two readings on the same day would flip the trend UI on
+  // without actually plotting a second point.
+  const uniqueDateCount = useMemo(
+    () => new Set(filteredHistory.map((p) => p.date)).size,
+    [filteredHistory],
+  );
+  const hasTrend = uniqueDateCount >= 2;
   const summary = useMemo(
     () => (hasTrend ? summariseTrend(filteredHistory) : null),
     [filteredHistory, hasTrend],
