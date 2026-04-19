@@ -235,7 +235,7 @@ function RoutePreview({
 }) {
   const firstDay = trip.days[0];
   const maxSegmentKm =
-    firstDay?.segments?.reduce((m, seg) => Math.max(m, seg.distanceKm), 0) ?? 1;
+    firstDay?.segments?.reduce((m, seg) => Math.max(m, seg.distanceKm), 0) || 1;
 
   return (
     <div className="space-y-4">
