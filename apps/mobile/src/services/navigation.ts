@@ -198,13 +198,18 @@ export function buildCumulativeDistances(polyline: LatLng[]): number[] {
  * `depart` at index 0 and `arrive` at the last vertex, with inferred turns
  * in between. `roadNames` (if supplied, same length as the polyline) is
  * used to attach the name of the road ahead to each turn.
+ *
+ * `cumulativeDistances` is optional — hot callers (NavSession init) pass
+ * the array they've already computed so we don't run haversines twice
+ * against the same polyline.
  */
 export function extractManeuvers(
   polyline: LatLng[],
   roadNames?: Array<string | undefined>,
+  cumulativeDistances?: number[],
 ): Maneuver[] {
   if (polyline.length === 0) return [];
-  const cumulative = buildCumulativeDistances(polyline);
+  const cumulative = cumulativeDistances ?? buildCumulativeDistances(polyline);
 
   const maneuvers: Maneuver[] = [];
 
@@ -388,12 +393,19 @@ export class NavSession {
   private departFired = false;
   private wasOffRoute = false;
 
-  constructor(route: LatLng[], maneuvers: Maneuver[]) {
+  constructor(
+    route: LatLng[],
+    maneuvers: Maneuver[],
+    cumulativeDistances?: number[],
+  ) {
     this.route = route;
     // Compute the route's cumulative distances once and reuse on every tick.
     // `projectOnPolyline` would otherwise rebuild them per-call and rerun
     // O(n) haversines per GPS fix — a noticeable cost on dense polylines.
-    this.routeCumulative = buildCumulativeDistances(route);
+    // Callers that already computed the array (e.g. to feed into
+    // `extractManeuvers`) pass it through so we don't repeat the work.
+    this.routeCumulative =
+      cumulativeDistances ?? buildCumulativeDistances(route);
     this.maneuvers = maneuvers;
     this.totalM =
       maneuvers.length > 0

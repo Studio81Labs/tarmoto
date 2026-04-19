@@ -17,11 +17,12 @@
  *   - Fire haptic feedback at `warning-near` and `execute` so the rider
  *     gets a tactile cue even with the helmet audio muted.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ReactNativeHapticFeedback from "react-native-haptic-feedback";
 import { locationService, type LocationUpdate } from "@/services/location";
 import {
   NavSession,
+  buildCumulativeDistances,
   extractManeuvers,
   phraseForAnnouncement,
   type Maneuver,
@@ -55,19 +56,32 @@ export function useNavigationSession(
 ): NavigationState {
   const { polyline, roadNames, voiceEnabled, trackLocation = true } = options;
 
-  const maneuvers = useMemo(
-    () => extractManeuvers(polyline, roadNames),
-    [polyline, roadNames],
-  );
+  // Keep the `NavSession` in a ref rather than `useMemo`. useMemo is a
+  // performance hint — React is allowed to drop the cached value (e.g. for
+  // offscreen renders), which would hand us a fresh session mid-ride and
+  // re-announce every maneuver the rider has already passed. A ref is
+  // guaranteed stable across renders; we rebuild only when the input
+  // polyline or road-name array identity changes, and we dedupe the
+  // cumulative-distance haversines across `extractManeuvers` and the
+  // `NavSession` constructor while we're building both.
+  const sessionRef = useRef<{
+    polyline: LatLng[];
+    roadNames: Array<string | undefined> | undefined;
+    session: NavSession;
+    maneuvers: Maneuver[];
+  } | null>(null);
 
-  // Recreate the session when the polyline identity changes — different
-  // routes need different distance offsets. useMemo (not useState) is
-  // intentional: a route change mid-session is a programmatic event, not
-  // a user action that should preserve announcement state.
-  const session = useMemo(
-    () => new NavSession(polyline, maneuvers),
-    [polyline, maneuvers],
-  );
+  if (
+    sessionRef.current === null ||
+    sessionRef.current.polyline !== polyline ||
+    sessionRef.current.roadNames !== roadNames
+  ) {
+    const cumulative = buildCumulativeDistances(polyline);
+    const maneuvers = extractManeuvers(polyline, roadNames, cumulative);
+    const session = new NavSession(polyline, maneuvers, cumulative);
+    sessionRef.current = { polyline, roadNames, session, maneuvers };
+  }
+  const { session, maneuvers } = sessionRef.current;
 
   const [tick, setTick] = useState<NavTick | null>(null);
   const [liveLocation, setLiveLocation] = useState<LatLng | null>(null);
