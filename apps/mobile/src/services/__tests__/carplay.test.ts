@@ -256,7 +256,10 @@ describe("ride status board lifecycle", () => {
     expect(mountRideStatusBoard(makeBoard())).toBe(false);
     expect(offlineBridge.setRoot).not.toHaveBeenCalled();
 
-    updateRideStatusBoard(makeBoard({ speedKmh: 80 }));
+    // Subsequent ride-tick while still disconnected — same short-
+    // circuit, so neither setRoot nor updateItems should fire.
+    expect(mountRideStatusBoard(makeBoard({ speedKmh: 80 }))).toBe(false);
+    expect(offlineBridge.setRoot).not.toHaveBeenCalled();
     expect(offlineBridge.updateItems).not.toHaveBeenCalled();
 
     unmountRideStatusBoard();
