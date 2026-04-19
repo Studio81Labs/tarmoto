@@ -12,7 +12,12 @@
  * the user flips a period chip.
  */
 
-import type { RideForStats } from "./ride-stats";
+import {
+  localDateKey,
+  parseStartedAt,
+  toNumber,
+  type RideForStats,
+} from "./ride-stats";
 import type { ExplorationStats, UnriddenSegment } from "./api";
 
 export const TIME_PERIODS = ["all", "year", "90d", "30d"] as const;
@@ -46,15 +51,6 @@ export function isTimePeriod(value: unknown): value is TimePeriod {
     typeof value === "string" &&
     (TIME_PERIODS as readonly string[]).includes(value)
   );
-}
-
-function parseStartedAt(value: string): Date | null {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function toNumber(value: number | null | undefined): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 /**
@@ -96,13 +92,6 @@ export function filterRidesByPeriod(
     const date = parseStartedAt(ride.started_at);
     return date !== null && date >= lowerBound;
   });
-}
-
-function localDateKey(date: Date): string {
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
 }
 
 export function computePeriodStats(

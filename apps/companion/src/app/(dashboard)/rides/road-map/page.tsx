@@ -110,28 +110,36 @@ export default function RoadMapPage() {
     };
   }, []);
 
-  const fetchNearby = useCallback(async (lat: number, lng: number) => {
+  // `cancelled` guards against stale responses when the centre changes faster
+  // than the network round-trip (e.g. pasting coordinates, then immediately
+  // clicking "Use my location"). Without it, a late-resolving request would
+  // overwrite fresher results.
+  useEffect(() => {
+    let cancelled = false;
     setNearbyLoading(true);
     setNearbyError(null);
-    try {
-      const { data } = await explorationApi.getNearbyUnridden({
-        lat,
-        lng,
+    explorationApi
+      .getNearbyUnridden({
+        lat: center.lat,
+        lng: center.lng,
         radius_km: NEARBY_DEFAULT_RADIUS_KM,
         limit: NEARBY_LIMIT,
+      })
+      .then(({ data }) => {
+        if (cancelled) return;
+        setNearby(data);
+        setNearbyLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setNearbyError("Could not load nearby unridden roads");
+        setNearby([]);
+        setNearbyLoading(false);
       });
-      setNearby(data);
-    } catch {
-      setNearbyError("Could not load nearby unridden roads");
-      setNearby([]);
-    } finally {
-      setNearbyLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void fetchNearby(center.lat, center.lng);
-  }, [center.lat, center.lng, fetchNearby]);
+    return () => {
+      cancelled = true;
+    };
+  }, [center.lat, center.lng]);
 
   const periodStats = useMemo(
     () => computePeriodStats(rides, period),
@@ -303,6 +311,8 @@ export default function RoadMapPage() {
             />
             {nearbyLoading ? (
               <LoaderRow label="Loading unridden roads…" />
+            ) : nearbyError ? (
+              <p className="text-sm text-red-300">{nearbyError}</p>
             ) : regionBuckets.length === 0 ? (
               <EmptyState label="No unridden roads found nearby. You've explored this area well!" />
             ) : (

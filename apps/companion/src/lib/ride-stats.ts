@@ -86,16 +86,19 @@ export function isRideType(value: unknown): value is RideType {
   );
 }
 
-function toNumber(value: number | null | undefined): number {
+// Shared across this module and `exploration.ts` — any fix here (e.g. timezone
+// handling in `localDateKey`) needs to be consistent between stats and the
+// personal road map.
+export function toNumber(value: number | null | undefined): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-function parseStartedAt(value: string): Date | null {
+export function parseStartedAt(value: string): Date | null {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function localDateKey(date: Date): string {
+export function localDateKey(date: Date): string {
   const yyyy = date.getFullYear();
   const mm = String(date.getMonth() + 1).padStart(2, "0");
   const dd = String(date.getDate()).padStart(2, "0");
