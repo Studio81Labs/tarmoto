@@ -334,6 +334,48 @@ describe('RoadsService', () => {
       expect(photos).not.toContain('https://media.tarmoto.app/g.jpg');
     });
 
+    it('should drop an elevation_profile containing a NULL sample', async () => {
+      // Postgres array columns can contain NULL elements. `Number(null) === 0`
+      // would silently turn a missing sample into a sea-level reading, so the
+      // service must treat the whole profile as unusable rather than render
+      // a phantom drop to zero.
+      segmentRepo
+        .query!.mockResolvedValueOnce([
+          {
+            id: 'seg-null-sample',
+            road_name: null,
+            road_number: null,
+            quality_score: 3.0,
+            curviness_score: 2.0,
+            surface_type: 'asphalt',
+            length_m: 150,
+            confidence: 50,
+            reading_count: 4,
+            last_updated: new Date('2026-04-13T10:00:00Z'),
+            elevation_min: 350,
+            elevation_max: 420,
+            elevation_profile: [350, null, 420],
+            geojson: {
+              coordinates: [
+                [16.7, 49.1],
+                [16.71, 49.105],
+                [16.72, 49.11],
+              ],
+            },
+          },
+        ])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ count: 0 }])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ count: 0, avg_rating: null }])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ count: 0 }]);
+
+      const result = await service.findById('seg-null-sample');
+
+      expect(result.elevation_profile).toBeNull();
+    });
+
     it('should drop a stale elevation_profile that does not match geometry length', async () => {
       segmentRepo
         .query!.mockResolvedValueOnce([

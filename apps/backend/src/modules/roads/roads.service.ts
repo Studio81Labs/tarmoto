@@ -329,7 +329,11 @@ function normalizeElevationProfile(
   if (raw.length !== geometryLength) return null;
   const profile: number[] = [];
   for (const v of raw) {
-    const n = Number(v);
+    // Reject null/undefined explicitly: `Number(null) === 0` would otherwise
+    // pass the isFinite check and turn a missing sample into a sea-level
+    // reading, producing a phantom drop-to-zero on any alpine segment.
+    if (v === null || v === undefined) return null;
+    const n = typeof v === 'number' ? v : Number(v);
     if (!Number.isFinite(n)) return null;
     profile.push(n);
   }
