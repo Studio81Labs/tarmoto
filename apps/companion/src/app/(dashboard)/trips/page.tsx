@@ -45,6 +45,7 @@ import {
   type TripFolder,
 } from "@/lib/trip-folders";
 import { duplicateTripPayload } from "@/lib/trip-duplicate";
+import { formatRelativeTime } from "@/lib/utils";
 import type { Trip } from "@/lib/types";
 
 const STATUS_LABEL: Record<TripStatus, string> = {
@@ -84,21 +85,57 @@ export default function TripListPage() {
   const [folderModal, setFolderModal] = useState<
     { mode: "create" } | { mode: "rename"; folder: TripFolder } | null
   >(null);
-  const [busyTripId, setBusyTripId] = useState<string | null>(null);
+  const [busyTripIds, setBusyTripIds] = useState<Set<string>>(() => new Set());
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
+  const markBusy = (id: string) => {
+    setBusyTripIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  };
+  const clearBusy = (id: string) => {
+    setBusyTripIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
   useEffect(() => {
+    // Guard against stale responses from a previous userId landing after a
+    // user switch/sign-out. Also clear any residual trip list immediately
+    // so the prior user's data never flashes to the new one.
+    let cancelled = false;
+    if (!userId) {
+      setTrips([]);
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+    setLoading(true);
     tripsApi
       .list()
       .then(({ data }) => {
+        if (cancelled) return;
         const body = data as unknown as { data?: Trip[] } | Trip[];
         setTrips(Array.isArray(body) ? body : (body?.data ?? []));
       })
       .catch(() => {
+        if (cancelled) return;
         setErrorBanner("Couldn't load your trips. Check your connection.");
       })
-      .finally(() => setLoading(false));
-  }, [setTrips]);
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [setTrips, userId]);
 
   useEffect(() => {
     if (!userId) {
@@ -181,7 +218,7 @@ export default function TripListPage() {
         t.id === trip.id ? { ...t, folderId: folderId ?? undefined } : t,
       ),
     );
-    setBusyTripId(trip.id);
+    markBusy(trip.id);
     try {
       await tripsApi.update(trip.id, { folderId });
     } catch {
@@ -196,12 +233,12 @@ export default function TripListPage() {
       );
       setErrorBanner("Couldn't move the trip. Try again.");
     } finally {
-      setBusyTripId(null);
+      clearBusy(trip.id);
     }
   };
 
   const duplicateTrip = async (trip: Trip) => {
-    setBusyTripId(trip.id);
+    markBusy(trip.id);
     try {
       const { data } = await tripsApi.create(duplicateTripPayload(trip));
       // Match the list-endpoint handling: the server sometimes wraps
@@ -219,7 +256,7 @@ export default function TripListPage() {
     } catch {
       setErrorBanner("Couldn't duplicate the trip. Try again.");
     } finally {
-      setBusyTripId(null);
+      clearBusy(trip.id);
     }
   };
 
@@ -227,7 +264,7 @@ export default function TripListPage() {
     if (!confirm(`Delete "${trip.name}"? This cannot be undone.`)) return;
     const indexBefore = trips.findIndex((t) => t.id === trip.id);
     setTrips(trips.filter((t) => t.id !== trip.id));
-    setBusyTripId(trip.id);
+    markBusy(trip.id);
     try {
       await tripsApi.delete(trip.id);
     } catch {
@@ -240,7 +277,7 @@ export default function TripListPage() {
       setTrips(restored);
       setErrorBanner("Couldn't delete the trip. Try again.");
     } finally {
-      setBusyTripId(null);
+      clearBusy(trip.id);
     }
   };
 
@@ -332,7 +369,7 @@ export default function TripListPage() {
                   key={trip.id}
                   trip={trip}
                   folders={folders}
-                  busy={busyTripId === trip.id}
+                  busy={busyTripIds.has(trip.id)}
                   onDuplicate={() => duplicateTrip(trip)}
                   onDelete={() => deleteTrip(trip)}
                   onMove={(folderId) => moveTripToFolder(trip, folderId)}
@@ -706,7 +743,7 @@ function TripCard({
         </div>
 
         <p className="mt-3 text-[11px] text-slate-600">
-          Updated {formatRelativeDate(trip.updatedAt)}
+          Updated {formatRelativeTime(trip.updatedAt)}
         </p>
       </Link>
 
@@ -1006,19 +1043,4 @@ function MenuItem({
       {trailing}
     </button>
   );
-}
-
-function formatRelativeDate(iso: string): string {
-  const now = Date.now();
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "recently";
-  const diffSec = Math.max(0, Math.floor((now - then) / 1000));
-  if (diffSec < 60) return "just now";
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDay = Math.floor(diffHr / 24);
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return new Date(iso).toLocaleDateString();
 }
