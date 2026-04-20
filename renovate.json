@@ -62,6 +62,12 @@
       "matchPackageNames": ["react-native", "react"],
       "matchUpdateTypes": ["major"],
       "enabled": false
+    },
+    {
+      "description": "Never auto-bump Ruby major — breaks CocoaPods / native tooling",
+      "matchPackageNames": ["ruby"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
     }
   ]
 }
