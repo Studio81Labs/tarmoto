@@ -45,8 +45,11 @@ jobs:
       - name: Build shared package
         run: pnpm build:shared
 
-      - name: Lint
-        run: pnpm --filter @tarmoto/companion lint
+      # TODO: re-enable once companion has a proper ESLint 9 flat config.
+      # Currently `next lint` prompts interactively when no config exists
+      # and hangs CI. See follow-up work on companion's ESLint setup.
+      # - name: Lint
+      #   run: pnpm --filter @tarmoto/companion lint
 
       - name: Typecheck
         run: pnpm --filter @tarmoto/companion typecheck
