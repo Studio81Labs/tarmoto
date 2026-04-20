@@ -8,6 +8,7 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import Icon from "@react-native-vector-icons/material-design-icons";
+type IconName = React.ComponentProps<typeof Icon>["name"];
 import { colors } from "@/theme";
 import CarPlayRideMirror from "@/components/CarPlayRideMirror";
 
@@ -210,7 +211,7 @@ function ProfileNavigator() {
 
 // ── Tab icons ──
 
-const tabIcons: Record<string, string> = {
+const tabIcons: Record<string, IconName> = {
   HomeTab: "home",
   MapTab: "map",
   RideTab: "play-circle",
