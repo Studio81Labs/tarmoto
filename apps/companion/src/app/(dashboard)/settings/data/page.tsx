@@ -79,7 +79,7 @@ export default function DataPage() {
               Download my data
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              We'll prepare a ZIP archive with everything tied to your account
+              We&apos;ll prepare a ZIP archive with everything tied to your account
               and email you a download link. The link stays valid for 7 days.
             </p>
           </div>
@@ -232,7 +232,7 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
         <div className="p-5 space-y-4">
           <p className="text-sm text-slate-300">
             This will schedule your account and all associated personal data for
-            deletion within 30 days. We'll email you a confirmation.
+            deletion within 30 days. We&apos;ll email you a confirmation.
           </p>
           <p className="text-sm text-slate-400">
             To confirm, type your email address{" "}

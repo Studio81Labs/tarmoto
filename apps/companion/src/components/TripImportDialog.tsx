@@ -259,7 +259,7 @@ function RoutePreview({
         </div>
         <p className="text-[11px] text-slate-500 mt-3 leading-relaxed">
           Road quality shown is a deterministic preview until your route is
-          matched against Tarmoto's tile data (#6, #79). Each segment bar below
+          matched against Tarmoto&apos;s tile data (#6, #79). Each segment bar below
           uses the same colour scale as the planner overlay.
         </p>
       </div>

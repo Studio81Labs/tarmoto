@@ -28,7 +28,7 @@ export default function RegisterPage() {
       } else {
         window.location.href = "/";
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Registration failed");
     } finally {
       setLoading(false);

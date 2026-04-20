@@ -56,7 +56,7 @@ export function sendCursorPosition(tripId: string, position: { lng: number; lat:
   socket?.emit('trip:cursor', { tripId, position });
 }
 
-export function onTripUpdate(callback: (data: any) => void) {
+export function onTripUpdate(callback: (data: unknown) => void) {
   socket?.on('trip:updated', callback);
   return () => { socket?.off('trip:updated', callback); };
 }
@@ -68,7 +68,7 @@ export function onCollaboratorCursor(callback: (data: { userId: string; position
 
 // ── Hazard alerts ──
 
-export function onHazardAlert(callback: (hazard: any) => void) {
+export function onHazardAlert(callback: (hazard: unknown) => void) {
   socket?.on('hazard:new', callback);
   return () => { socket?.off('hazard:new', callback); };
 }
