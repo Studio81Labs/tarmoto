@@ -19,7 +19,7 @@ const SOURCE_ID = "tarmoto-roads";
 const QUALITY_LAYER = "tarmoto-quality";
 const SURFACE_LAYER = "tarmoto-surface";
 const HAZARD_LAYER = "tarmoto-hazards";
-const HAZARD_CLUSTER_LAYER = "tarmoto-hazards-cluster";
+const HAZARD_OVERVIEW_LAYER = "tarmoto-hazards-cluster";
 
 const DIMMED_OPACITY = 0.15;
 const ACTIVE_OPACITY = 0.9;
@@ -185,8 +185,13 @@ export function QualityMap({
         },
       });
 
+      // Low-zoom overview pass — small uniform red dots so the user can see
+      // hazard density without visual clutter. NOT clustering: MapLibre vector
+      // sources can't cluster client-side. Real aggregation would need a
+      // GeoJSON hazards endpoint or server-side preclustering in the MVT
+      // pipeline; tracked as a follow-up under #79.
       map.addLayer({
-        id: HAZARD_CLUSTER_LAYER,
+        id: HAZARD_OVERVIEW_LAYER,
         type: "circle",
         source: SOURCE_ID,
         "source-layer": "hazards",
@@ -340,7 +345,7 @@ export function QualityMap({
     setVisibility(map, QUALITY_LAYER, showQuality);
     setVisibility(map, SURFACE_LAYER, showSurface);
     setVisibility(map, HAZARD_LAYER, showHazards);
-    setVisibility(map, HAZARD_CLUSTER_LAYER, showHazards);
+    setVisibility(map, HAZARD_OVERVIEW_LAYER, showHazards);
   }, [ready, showQuality, showSurface, showHazards]);
 
   return (
