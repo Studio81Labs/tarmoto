@@ -3,24 +3,23 @@
 import { Suspense, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMapStore } from "@/stores/map";
-import { Layers, Filter, Search, RotateCcw } from "lucide-react";
+import { Filter, Search, RotateCcw } from "lucide-react";
 import {
   DEFAULT_MAP_FILTERS,
-  FILTERABLE_SURFACES,
-  QUALITY_TIERS,
   filtersEqual,
   filtersFromSearchParams,
   filtersToSearchParams,
   type FilterableSurface,
   type QualityTier,
 } from "@/lib/map-filters";
+import { QualityMap } from "./_components/QualityMap";
 
 /**
  * ExplorerPage — Full-screen road quality map explorer
  *
  * Filter state is mirrored to the URL (?q=...&s=...&c=...) so the view is
- * shareable. The map layer (INFRA #79) consumes the store's `filters` and
- * dims non-matching segments rather than hiding them.
+ * shareable. QualityMap consumes the store's `filters` and dims non-matching
+ * segments via MapLibre paint expressions rather than hiding them outright.
  */
 
 const QUALITY_OPTIONS: { key: QualityTier; label: string; color: string }[] = [
@@ -51,6 +50,8 @@ function ExplorerPageInner() {
   const searchParams = useSearchParams();
 
   const {
+    center,
+    zoom,
     showQualityOverlay,
     showHazardOverlay,
     showSurfaceOverlay,
@@ -62,6 +63,8 @@ function ExplorerPageInner() {
     toggleSurfaceType,
     setMinCurviness,
     setFilters,
+    setCenter,
+    setZoom,
     resetFilters,
   } = useMapStore();
 
@@ -246,20 +249,67 @@ function ExplorerPageInner() {
 
         {/* Map */}
         <div className="flex-1 relative bg-slate-900">
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-center">
-              <Layers size={64} className="mx-auto text-slate-700 mb-4" />
-              <p className="text-slate-500 text-lg font-medium">
-                Road Quality Explorer
-              </p>
-              <p className="text-slate-600 text-sm mt-1">
-                MapLibre GL JS • Quality heatmap • Hazard markers • Click any
-                segment for details
-              </p>
-            </div>
-          </div>
+          <QualityMap
+            center={center}
+            zoom={zoom}
+            filters={filters}
+            showQuality={showQualityOverlay}
+            showSurface={showSurfaceOverlay}
+            showHazards={showHazardOverlay}
+            onViewChange={(view) => {
+              setCenter({ lng: view.lng, lat: view.lat });
+              setZoom(view.zoom);
+            }}
+          />
+          <MapLegend
+            showQuality={showQualityOverlay}
+            showSurface={showSurfaceOverlay}
+          />
         </div>
       </div>
+    </div>
+  );
+}
+
+interface MapLegendProps {
+  showQuality: boolean;
+  showSurface: boolean;
+}
+
+function MapLegend({ showQuality, showSurface }: MapLegendProps) {
+  if (!showQuality && !showSurface) return null;
+  return (
+    <div className="absolute bottom-10 left-4 z-10 rounded-xl bg-slate-950/80 border border-slate-800 backdrop-blur px-3 py-2.5 text-xs text-slate-300 space-y-2 pointer-events-none">
+      {showQuality && (
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">
+            Road quality
+          </p>
+          <div className="flex items-center gap-2">
+            {QUALITY_OPTIONS.map((opt) => (
+              <div key={opt.key} className="flex items-center gap-1">
+                <span className={`h-1.5 w-3 rounded-full ${opt.color}`} />
+                <span className="text-[10px]">{opt.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {showSurface && (
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">
+            Surface
+          </p>
+          <div className="flex items-center gap-2">
+            {SURFACE_OPTIONS.map((opt) => (
+              <div key={opt.key} className="flex items-center gap-1">
+                <span className={`h-1.5 w-3 rounded-full ${opt.color}`} />
+                <span className="text-[10px]">{opt.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

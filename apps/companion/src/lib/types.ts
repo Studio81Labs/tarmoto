@@ -69,7 +69,7 @@ export interface SegmentReview {
 export type HazardType =
   | "pothole"
   | "gravel"
-  | "oil"
+  | "oil_spill"
   | "roadworks"
   | "animals"
   | "police"

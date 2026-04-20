@@ -70,7 +70,7 @@ export const HAZARD_CONFIG: Record<
 > = {
   pothole: { label: "Pothole", emoji: "🕳️" },
   gravel: { label: "Gravel", emoji: "🪨" },
-  oil: { label: "Oil spill", emoji: "🛢️" },
+  oil_spill: { label: "Oil spill", emoji: "🛢️" },
   roadworks: { label: "Roadworks", emoji: "🚧" },
   animals: { label: "Animals", emoji: "🦌" },
   police: { label: "Police", emoji: "👮" },

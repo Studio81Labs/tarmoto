@@ -100,6 +100,9 @@ export class TilesService {
   }
 
   private buildQualityLayer(): LayerQuery {
+    // The client filters segments by surface_type and curviness_score on top of
+    // quality_score — so we include all three in the quality layer rather than
+    // forcing the map to render a second source just to apply filters.
     return {
       sql: `(
         SELECT ST_AsMVT(q, 'quality', 4096, 'geom') FROM (
@@ -108,6 +111,8 @@ export class TilesService {
             rs.quality_score,
             rs.confidence,
             rs.reading_count,
+            rs.surface_type,
+            rs.curviness_score,
             ST_AsMVTGeom(
               rs.geom,
               ST_MakeEnvelope($1, $2, $3, $4, 4326),
