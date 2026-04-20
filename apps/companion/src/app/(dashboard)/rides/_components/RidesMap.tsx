@@ -35,6 +35,14 @@ export function RidesMap({
   const hoverRef = useRef<string | null>(null);
   const fittedOnceRef = useRef(false);
 
+  // Keep the latest onSelect in a ref so the click handler registered in
+  // the init-once effect always calls the current callback, even if the
+  // parent passes a new closure.
+  const onSelectRef = useRef(onSelect);
+  useEffect(() => {
+    onSelectRef.current = onSelect;
+  }, [onSelect]);
+
   // ── init map once ──
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -89,7 +97,7 @@ export function RidesMap({
       map.on("click", LAYER_ID, (e: MapLayerMouseEvent) => {
         const f = e.features?.[0];
         if (!f?.properties?.id) return;
-        onSelect(String(f.properties.id));
+        onSelectRef.current(String(f.properties.id));
       });
       map.on("mouseenter", LAYER_ID, () => {
         map.getCanvas().style.cursor = "pointer";
@@ -127,7 +135,6 @@ export function RidesMap({
       ready.current = false;
       fittedOnceRef.current = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── push tracks → source ──
