@@ -51,7 +51,6 @@ export class RoadsService {
     if (query.surface_type) {
       sql += ` AND rs.surface_type = $${paramIdx}`;
       params.push(query.surface_type);
-      paramIdx++;
     }
 
     sql += ` ORDER BY distance_m LIMIT 200`;
