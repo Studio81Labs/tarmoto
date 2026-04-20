@@ -165,6 +165,24 @@ export class RidesService {
     };
   }
 
+  async rename(
+    userId: string,
+    rideId: string,
+    name: string | null | undefined,
+  ): Promise<RideSummaryDto> {
+    const ride = await this.rideRepo.findOne({
+      where: { id: rideId, user_id: userId },
+    });
+    if (!ride) {
+      throw new NotFoundException('Ride not found');
+    }
+
+    const trimmed = typeof name === 'string' ? name.trim() : '';
+    ride.name = trimmed.length > 0 ? trimmed : null;
+    const saved = await this.rideRepo.save(ride);
+    return this.toSummary(saved);
+  }
+
   async exportGpx(userId: string, rideId: string): Promise<string> {
     const ride = await this.rideRepo.findOne({
       where: { id: rideId, user_id: userId },

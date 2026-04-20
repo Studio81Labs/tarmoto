@@ -257,6 +257,48 @@ describe('RidesService', () => {
     });
   });
 
+  describe('rename', () => {
+    it('updates the name and returns the summary', async () => {
+      const existing = { ...mockRide, name: null } as unknown as Ride;
+      (rideRepo.findOne as jest.Mock).mockResolvedValueOnce(existing);
+      (rideRepo.save as jest.Mock).mockImplementationOnce((r) =>
+        Promise.resolve(r),
+      );
+
+      const result = await service.rename('user-1', 'ride-1', 'Sunday loop');
+
+      expect(rideRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'ride-1', user_id: 'user-1' },
+      });
+      expect(rideRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'Sunday loop' }),
+      );
+      expect(result.name).toBe('Sunday loop');
+    });
+
+    it('trims whitespace and coerces empty to null', async () => {
+      const existing = { ...mockRide, name: 'old' } as unknown as Ride;
+      (rideRepo.findOne as jest.Mock).mockResolvedValueOnce(existing);
+      (rideRepo.save as jest.Mock).mockImplementationOnce((r) =>
+        Promise.resolve(r),
+      );
+
+      const result = await service.rename('user-1', 'ride-1', '   ');
+
+      expect(rideRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ name: null }),
+      );
+      expect(result.name).toBeNull();
+    });
+
+    it('throws NotFound when ride missing', async () => {
+      (rideRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
+      await expect(
+        service.rename('user-1', 'nope', 'x'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
   describe('exportGpx', () => {
     it('should generate valid GPX XML', async () => {
       rideRepo.findOne!.mockResolvedValueOnce({

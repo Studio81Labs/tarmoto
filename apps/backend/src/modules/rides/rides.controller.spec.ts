@@ -29,6 +29,7 @@ describe('RidesController', () => {
       stop: jest.fn().mockResolvedValue({ ...mockRide, status: 'completed' }),
       list: jest.fn().mockResolvedValue({ rides: [mockRide], total: 1 }),
       getDetail: jest.fn().mockResolvedValue(mockRide),
+      rename: jest.fn(),
       exportGpx: jest.fn().mockResolvedValue('<gpx></gpx>'),
       exportRideCsv: jest.fn().mockResolvedValue('header\r\ndata\r\n'),
       exportAllCsv: jest.fn().mockResolvedValue('header\r\nd1\r\nd2\r\n'),
@@ -88,6 +89,24 @@ describe('RidesController', () => {
       await expect(controller.getDetail(mockReq, 'missing')).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('PATCH /rides/:rideId', () => {
+    it('calls service.rename with the user and new name', async () => {
+      service.rename.mockResolvedValue({
+        ...mockRide,
+        name: 'Renamed',
+      } as never);
+      const result = await controller.rename(mockReq, 'ride-1', {
+        name: 'Renamed',
+      });
+      expect(service.rename).toHaveBeenCalledWith(
+        'user-1',
+        'ride-1',
+        'Renamed',
+      );
+      expect(result.name).toBe('Renamed');
     });
   });
 
