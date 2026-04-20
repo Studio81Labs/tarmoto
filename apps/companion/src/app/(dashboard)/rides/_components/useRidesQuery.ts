@@ -153,6 +153,16 @@ export function useRidesQuery() {
   const params = useSearchParams();
   const state = useMemo(() => parseQuery(params), [params]);
 
+  // Keep the latest state in a ref so `update` merges against the current
+  // snapshot even when callers hold a stale closure — e.g. a setTimeout
+  // debounce in RidesFilters that captured the `update` identity from a
+  // previous render. Without this, a concurrent filter change during the
+  // debounce window would be clobbered by the merge.
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
   // ── list fetch ──
   const [list, setList] = useState<ListResult>({
     rides: [],
@@ -263,16 +273,19 @@ export function useRidesQuery() {
   }, [tracksKey]);
 
   function update(patch: Partial<RidesQueryState>) {
-    // Any update other than a bare page-click resets to page 1. Filter,
+    // Read the freshest state via the ref so stale-closure callers still
+    // merge against the current snapshot (see `stateRef` comment above).
+    // Any update other than a bare page-click resets to page 1: filter,
     // sort, and order changes all mean the current page number is stale —
     // e.g. going from 5 pages of started_at DESC to 2 pages of distance_km
     // ASC would leave the user staring at an empty page.
+    const current = stateRef.current;
     const keys = Object.keys(patch);
     const isBarePageChange = keys.length === 1 && keys[0] === "page";
     const next: RidesQueryState = {
-      ...state,
+      ...current,
       ...patch,
-      page: isBarePageChange ? (patch.page ?? state.page) : 1,
+      page: isBarePageChange ? (patch.page ?? current.page) : 1,
     };
     const qs = serializeQuery(next);
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
