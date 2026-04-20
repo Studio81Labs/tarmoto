@@ -41,7 +41,7 @@ import type { Trip } from "@/lib/types";
 type VisibilityFilter = "all" | "public" | "private";
 
 export default function RouteCollectionsPage() {
-  const { tripById, loading: loadingTrips } = useUserTrips();
+  const { tripById, loading: loadingTrips, error: tripsError } = useUserTrips();
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const { collections, hydrated, persist } = useCollections(userId);
 
@@ -156,6 +156,7 @@ export default function RouteCollectionsPage() {
               collection={collection}
               tripById={tripById}
               loadingTrips={loadingTrips}
+              tripsError={tripsError}
               onEdit={() => setModal({ mode: "edit", collection })}
               onDelete={() => deleteCollection(collection)}
             />
@@ -257,12 +258,14 @@ function CollectionCard({
   collection,
   tripById,
   loadingTrips,
+  tripsError,
   onEdit,
   onDelete,
 }: {
   collection: StoredRouteCollection;
   tripById: Map<string, Trip>;
   loadingTrips: boolean;
+  tripsError: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -308,14 +311,17 @@ function CollectionCard({
             <span>
               {collection.tripIds.length} route
               {collection.tripIds.length === 1 ? "" : "s"}
-              {missingCount > 0 && !loadingTrips && (
+              {missingCount > 0 && !loadingTrips && !tripsError && (
+                // Gate on `!tripsError` too — an API failure leaves
+                // `tripById` empty, and without this every saved member
+                // would be labelled "unavailable" as if it were deleted.
                 <span className="ml-2 text-[11px] text-amber-400">
                   {missingCount} unavailable
                 </span>
               )}
             </span>
           </div>
-          {presentTrips.length > 0 && (
+          {presentTrips.length > 0 && !tripsError && (
             <div className="flex items-center gap-2">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-tarmoto-cyan" />
               <span>{formatDistance(totalDistance)} total</span>

@@ -231,6 +231,7 @@ export default function CollectionDetailPage() {
         <RoutePickerModal
           trips={availableTrips}
           loading={loadingTrips}
+          error={tripsError}
           hasAnyTrips={trips.length > 0}
           onClose={() => setShowPicker(false)}
           onAdd={handleAddTrips}
@@ -388,6 +389,7 @@ function LoadingTripRow() {
 function RoutePickerModal({
   trips,
   loading,
+  error,
   hasAnyTrips,
   onClose,
   onAdd,
@@ -395,6 +397,11 @@ function RoutePickerModal({
 }: {
   trips: Trip[];
   loading: boolean;
+  // Signals a trip-API failure; the modal must surface a retry-able error
+  // state instead of its "no trips" / "everything already added" empty
+  // states, otherwise an outage reads as "the user has no trips" and drives
+  // them toward creating a duplicate.
+  error: boolean;
   // `trips` is already filtered to exclude members of this collection, so
   // `trips.length === 0` alone can't distinguish "user has no trips" from
   // "every trip is already here". Caller passes the unfiltered count so we
@@ -470,6 +477,18 @@ function RoutePickerModal({
                 className="animate-spin inline-block mr-2 align-[-3px]"
               />
               Loading your trips…
+            </div>
+          ) : error ? (
+            // Check the error branch before the empty-state branches —
+            // otherwise a failed trips fetch lands in "you have no trips
+            // yet" or "all already added", both of which imply we know the
+            // real state.
+            <div
+              role="alert"
+              className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-6 text-center text-sm text-amber-200"
+            >
+              Couldn&apos;t load your trips right now. Close this and try again
+              in a moment.
             </div>
           ) : trips.length === 0 ? (
             hasAnyTrips ? (
