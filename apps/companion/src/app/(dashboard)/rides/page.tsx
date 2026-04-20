@@ -50,6 +50,13 @@ function RidesPageInner() {
   const mergedRides = list.rides
     .map((r) => patched[r.id] ?? r)
     .filter((r) => !qLower || (r.name ?? "").toLowerCase().includes(qLower));
+  // Adjust the server-reported total by the number of rides the rename
+  // filter dropped on this page, so the table footer and `Page X of Y`
+  // stay in sync with what's actually rendered.
+  const adjustedTotal = Math.max(
+    0,
+    list.total - (list.rides.length - mergedRides.length),
+  );
 
   function onSort(sort: SortField) {
     if (state.sort === sort) {
@@ -126,7 +133,7 @@ function RidesPageInner() {
           <RidesTable
             state={state}
             rides={mergedRides}
-            total={list.total}
+            total={adjustedTotal}
             pageSize={pageSize}
             loading={list.loading}
             selectedId={selectedId}
