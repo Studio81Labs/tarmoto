@@ -543,8 +543,8 @@ describe('RidesService', () => {
 
       await service.getTracks('user-1', {} as never);
 
-      const predicates = (qb.andWhere as jest.Mock).mock.calls.map(
-        (c) => c[0] as string,
+      const predicates = qb.andWhere.mock.calls.map(
+        (c: unknown[]) => c[0] as string,
       );
       expect(predicates).toEqual(
         expect.arrayContaining([
