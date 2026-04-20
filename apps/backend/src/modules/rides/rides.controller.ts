@@ -38,6 +38,7 @@ import {
   RideSummaryDto,
   RideDetailDto,
   RideListResponseDto,
+  RideTracksResponseDto,
 } from './dto/ride-response.dto.js';
 
 @ApiTags('rides')
@@ -137,6 +138,18 @@ export class RidesController {
       `attachment; filename="tarmoto-rides-${stamp}.gpx"`,
     );
     res.send(gpx);
+  }
+
+  @Get('tracks')
+  @ApiOperation({
+    summary: 'List simplified track geometries for map overlay',
+  })
+  @ApiResponse({ status: 200, type: RideTracksResponseDto })
+  async tracks(
+    @Req() req: express.Request,
+    @Query() query: ListRidesDto,
+  ): Promise<RideTracksResponseDto> {
+    return this.ridesService.getTracks(req.user!.userId, query);
   }
 
   @Patch(':rideId')

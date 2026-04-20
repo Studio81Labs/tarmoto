@@ -476,6 +476,84 @@ describe('RidesService', () => {
     });
   });
 
+  describe('getTracks', () => {
+    function makeTracksQbSpy(
+      rows: Array<{ id: string; geometry: string | null }>,
+      count: number,
+    ) {
+      const qb = {
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue(rows),
+        getCount: jest.fn().mockResolvedValue(count),
+      };
+      return qb;
+    }
+
+    it('returns simplified GeoJSON geometries and truncated=false below cap', async () => {
+      const qb = makeTracksQbSpy(
+        [
+          {
+            id: 'r1',
+            geometry: JSON.stringify({
+              type: 'LineString',
+              coordinates: [
+                [14, 50],
+                [14.1, 50.1],
+              ],
+            }),
+          },
+        ],
+        1,
+      );
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      const res = await service.getTracks('user-1', {} as never);
+
+      expect(res.tracks).toEqual([
+        {
+          id: 'r1',
+          geometry: {
+            type: 'LineString',
+            coordinates: [
+              [14, 50],
+              [14.1, 50.1],
+            ],
+          },
+        },
+      ]);
+      expect(res.truncated).toBe(false);
+    });
+
+    it('sets truncated=true when more than 500 rides match', async () => {
+      const qb = makeTracksQbSpy([], 501);
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      const res = await service.getTracks('user-1', {} as never);
+      expect(res.truncated).toBe(true);
+    });
+
+    it('excludes null-geometry rides at query level', async () => {
+      const qb = makeTracksQbSpy([], 0);
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      await service.getTracks('user-1', {} as never);
+
+      const predicates = (qb.andWhere as jest.Mock).mock.calls.map(
+        (c) => c[0] as string,
+      );
+      expect(predicates).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('route_geom IS NOT NULL'),
+        ]),
+      );
+    });
+  });
+
   describe('exportAllGpx', () => {
     it('emits an empty <gpx> wrapper when there are no rides', async () => {
       rideRepo.find!.mockResolvedValueOnce([]);

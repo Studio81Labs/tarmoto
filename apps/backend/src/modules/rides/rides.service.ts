@@ -15,6 +15,7 @@ import {
   RideSummaryDto,
   RideDetailDto,
   RideListResponseDto,
+  RideTracksResponseDto,
 } from './dto/ride-response.dto.js';
 import { CsvService } from './csv.service.js';
 
@@ -227,6 +228,84 @@ export class RidesService {
     ride.name = trimmed.length > 0 ? trimmed : null;
     const saved = await this.rideRepo.save(ride);
     return this.toSummary(saved);
+  }
+
+  async getTracks(
+    userId: string,
+    query: ListRidesDto,
+  ): Promise<RideTracksResponseDto> {
+    const CAP = 500;
+    const SIMPLIFY_TOLERANCE_DEG = 0.0005; // ~50 m at mid-latitudes
+
+    const qb = this.rideRepo
+      .createQueryBuilder('ride')
+      .select('ride.id', 'id')
+      .addSelect(
+        `ST_AsGeoJSON(ST_SimplifyPreserveTopology(ride.route_geom, ${SIMPLIFY_TOLERANCE_DEG}))`,
+        'geometry',
+      )
+      .where('ride.user_id = :userId', { userId })
+      .andWhere('ride.route_geom IS NOT NULL');
+
+    // Filter parity with list() — DRY by extracting a helper if this grows.
+    if (query.type) {
+      qb.andWhere('ride.ride_type = :type', { type: query.type });
+    }
+    if (query.started_from) {
+      qb.andWhere('ride.started_at >= :started_from', {
+        started_from: query.started_from,
+      });
+    }
+    if (query.started_to) {
+      const to = new Date(query.started_to);
+      to.setUTCDate(to.getUTCDate() + 1);
+      qb.andWhere('ride.started_at < :started_to_excl', {
+        started_to_excl: to.toISOString(),
+      });
+    }
+    if (query.min_distance_km !== undefined) {
+      qb.andWhere('ride.distance_km >= :min_distance_km', {
+        min_distance_km: query.min_distance_km,
+      });
+    }
+    if (query.max_distance_km !== undefined) {
+      qb.andWhere('ride.distance_km <= :max_distance_km', {
+        max_distance_km: query.max_distance_km,
+      });
+    }
+    if (query.min_quality !== undefined) {
+      qb.andWhere('ride.avg_road_quality >= :min_quality', {
+        min_quality: query.min_quality,
+      });
+    }
+    if (query.max_quality !== undefined) {
+      qb.andWhere('ride.avg_road_quality <= :max_quality', {
+        max_quality: query.max_quality,
+      });
+    }
+    if (query.q) {
+      qb.andWhere('ride.name ILIKE :q', { q: `%${query.q}%` });
+    }
+
+    const [rows, totalMatching] = await Promise.all([
+      qb
+        .orderBy('ride.started_at', 'DESC')
+        .limit(CAP)
+        .getRawMany<{ id: string; geometry: string | null }>(),
+      qb.getCount(),
+    ]);
+
+    const tracks = rows.map((r) => ({
+      id: r.id,
+      geometry: r.geometry
+        ? (JSON.parse(r.geometry) as {
+            type: 'LineString';
+            coordinates: number[][];
+          })
+        : null,
+    }));
+
+    return { tracks, truncated: totalMatching > CAP };
   }
 
   async exportGpx(userId: string, rideId: string): Promise<string> {

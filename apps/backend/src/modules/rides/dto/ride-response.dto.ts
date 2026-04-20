@@ -73,3 +73,19 @@ export class RideListResponseDto {
   @ApiProperty()
   total!: number;
 }
+
+export class RideTrackDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty({ type: 'object', nullable: true, additionalProperties: true })
+  geometry!: { type: 'LineString'; coordinates: number[][] } | null;
+}
+
+export class RideTracksResponseDto {
+  @ApiProperty({ type: [RideTrackDto] })
+  tracks!: RideTrackDto[];
+
+  @ApiProperty({ description: 'true when the 500-row cap was hit' })
+  truncated!: boolean;
+}

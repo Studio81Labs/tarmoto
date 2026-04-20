@@ -34,6 +34,7 @@ describe('RidesController', () => {
       exportRideCsv: jest.fn().mockResolvedValue('header\r\ndata\r\n'),
       exportAllCsv: jest.fn().mockResolvedValue('header\r\nd1\r\nd2\r\n'),
       exportAllGpx: jest.fn().mockResolvedValue('<gpx></gpx>'),
+      getTracks: jest.fn().mockResolvedValue({ tracks: [], truncated: false }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -144,6 +145,18 @@ describe('RidesController', () => {
         /^attachment; filename="tarmoto-rides-\d{4}-\d{2}-\d{2}\.csv"$/,
       );
       expect(res.sendMock).toHaveBeenCalledWith('header\r\nd1\r\nd2\r\n');
+    });
+  });
+
+  describe('GET /rides/tracks', () => {
+    it('forwards the user and filters to the service', async () => {
+      const result = await controller.tracks(mockReq, {
+        type: 'trip',
+      } as never);
+      expect(service.getTracks).toHaveBeenCalledWith('user-1', {
+        type: 'trip',
+      });
+      expect(result.truncated).toBe(false);
     });
   });
 
