@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import maplibregl, {
   type LngLatBoundsLike,
   type Map as MapLibreMap,
@@ -31,7 +31,10 @@ export function RidesMap({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
-  const ready = useRef(false);
+  // `ready` is state, not a ref, so the tracks/selection effects re-run once
+  // the map's `load` event lands — otherwise a payload that arrives before
+  // the style finishes loading would be silently dropped.
+  const [ready, setReady] = useState(false);
   const hoverRef = useRef<string | null>(null);
   const fittedOnceRef = useRef(false);
 
@@ -125,14 +128,22 @@ export function RidesMap({
         }
       });
 
-      ready.current = true;
+      setReady(true);
     });
 
     mapRef.current = map;
+
+    // When the container shows/resizes (mobile tab switch, desktop layout
+    // change), MapLibre needs an explicit resize — otherwise it keeps the
+    // size it measured at init and renders blank or clipped.
+    const ro = new ResizeObserver(() => map.resize());
+    ro.observe(containerRef.current);
+
     return () => {
+      ro.disconnect();
       map.remove();
       mapRef.current = null;
-      ready.current = false;
+      setReady(false);
       fittedOnceRef.current = false;
     };
   }, []);
@@ -140,7 +151,7 @@ export function RidesMap({
   // ── push tracks → source ──
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !ready.current) return;
+    if (!map || !ready) return;
     const src = map.getSource(SOURCE_ID) as
       | maplibregl.GeoJSONSource
       | undefined;
@@ -173,13 +184,13 @@ export function RidesMap({
       }
       fittedOnceRef.current = true;
     }
-  }, [tracks]);
+  }, [ready, tracks]);
 
   // ── reflect selection via feature-state + fly-to ──
   const selectedRef = useRef<string | null>(null);
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !ready.current) return;
+    if (!map || !ready) return;
     const prev = selectedRef.current;
     if (prev && prev !== selectedId) {
       map.setFeatureState({ source: SOURCE_ID, id: prev }, { selected: false });
@@ -205,7 +216,7 @@ export function RidesMap({
       }
     }
     selectedRef.current = selectedId;
-  }, [selectedId, tracks]);
+  }, [ready, selectedId, tracks]);
 
   return (
     <div className="relative w-full h-full rounded-xl overflow-hidden border border-slate-800">

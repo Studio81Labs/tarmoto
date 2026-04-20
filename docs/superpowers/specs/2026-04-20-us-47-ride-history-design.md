@@ -72,8 +72,8 @@ Migration adds a nullable `name varchar(120)` column to `rides`. Populated via r
 Adds optional params alongside the existing `limit`, `offset`, `type`:
 
 ```ts
-started_from?:  string   // ISO date
-started_to?:    string   // ISO date (inclusive end-of-day)
+started_from?:  string   // ISO date (UTC); inclusive lower bound
+started_to?:    string   // ISO date (UTC); inclusive end-of-day (see below)
 min_distance_km?: number
 max_distance_km?: number
 min_quality?:   number   // 1..5
@@ -84,6 +84,10 @@ order?: 'asc' | 'desc'   // default 'desc'
 ```
 
 `RidesService.list()` extends the existing `createQueryBuilder` with an `andWhere` per provided filter and an `orderBy` derived from `sort`/`order` (default `started_at DESC`, matching current behavior). Existing `idx_rides_started` index covers the default sort. No new indexes for v1 — revisit if query plans warrant it.
+
+**Date-range semantics.** `started_from` and `started_to` are treated as UTC calendar dates. The upper bound is implemented as an exclusive comparison against the next UTC midnight (`started_at < DATE(started_to) + INTERVAL '1 day'`) so the entire `started_to` day is included regardless of DST boundaries. This avoids the `23:59:59.999` precision footgun.
+
+**NULLS ordering.** Sorts on nullable metrics (`distance_km`, `avg_road_quality`, and the derived `duration_min`) use `NULLS LAST` in both directions so rides with missing data don't bubble to the top of DESC queries. Non-nullable sorts (`started_at`) use Postgres defaults.
 
 #### 3. New endpoint — `GET /api/v1/rides/tracks`
 
@@ -125,7 +129,7 @@ Accepts the same filter params as `list` (ignores `limit`/`offset`/`sort`/`order
 
 - Date range: two native `<input type="date">`.
 - Distance: dual-range slider (km), 0–500 default extent.
-- Quality: 1–5 dot/chip selector (min / max).
+- Quality: two independent 1–5 dot/chip selectors — one for "Min quality" and one for "Max quality" — each with an "Any" option (unbounded). They map directly to the backend's `min_quality` / `max_quality` params.
 - Search: text box, debounced 300 ms, matches ride name.
 - Type: pill row (`free`, `commute`, `trip`, `tracked`, `all`).
 - Reset button clears every filter and returns the URL to `/rides`.

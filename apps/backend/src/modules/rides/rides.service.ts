@@ -100,6 +100,13 @@ export class RidesService {
       // still in progress (ended_at IS NULL) sort to the end in both
       // directions so the open ride doesn't dominate either extreme.
       qb.orderBy('(ride.ended_at - ride.started_at)', order, 'NULLS LAST');
+    } else if (
+      sortField === 'distance_km' ||
+      sortField === 'avg_road_quality'
+    ) {
+      // Nullable metrics — keep rides with no recorded value at the bottom
+      // in both directions so they don't dominate DESC pages.
+      qb.orderBy(`ride.${sortField}`, order, 'NULLS LAST');
     } else {
       qb.orderBy(`ride.${sortField}`, order);
     }

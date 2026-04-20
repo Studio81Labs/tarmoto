@@ -41,8 +41,15 @@ function RidesPageInner() {
   // renamed row, so the merge becomes a no-op naturally. Patches scoped to
   // rides no longer in `list.rides` just sit idle — cheap, and avoids
   // clobbering a rename completed during an unrelated refetch.
+  //
+  // If a name-search filter is active, we also re-evaluate the patched row
+  // against `state.q` client-side — a rename that no longer matches the
+  // search would otherwise stay visible until the next refetch.
   const [patched, setPatched] = useState<Record<string, RideSummary>>({});
-  const mergedRides = list.rides.map((r) => patched[r.id] ?? r);
+  const qLower = state.q?.toLowerCase();
+  const mergedRides = list.rides
+    .map((r) => patched[r.id] ?? r)
+    .filter((r) => !qLower || (r.name ?? "").toLowerCase().includes(qLower));
 
   function onSort(sort: SortField) {
     if (state.sort === sort) {

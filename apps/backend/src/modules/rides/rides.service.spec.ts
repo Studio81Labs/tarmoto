@@ -255,16 +255,36 @@ describe('RidesService', () => {
         order: 'asc',
       } as never);
 
-      expect(orderBy).toHaveBeenCalledWith('ride.distance_km', 'ASC');
+      expect(orderBy).toHaveBeenCalledWith(
+        'ride.distance_km',
+        'ASC',
+        'NULLS LAST',
+      );
     });
 
-    it('defaults sort to started_at DESC', async () => {
+    it('defaults sort to started_at DESC without NULLS clause', async () => {
       const { qb, orderBy } = makeQbSpy();
       (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
 
       await service.list('user-1', {} as never);
 
       expect(orderBy).toHaveBeenCalledWith('ride.started_at', 'DESC');
+    });
+
+    it('sorts avg_road_quality with NULLS LAST', async () => {
+      const { qb, orderBy } = makeQbSpy();
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      await service.list('user-1', {
+        sort: 'avg_road_quality',
+        order: 'desc',
+      } as never);
+
+      expect(orderBy).toHaveBeenCalledWith(
+        'ride.avg_road_quality',
+        'DESC',
+        'NULLS LAST',
+      );
     });
 
     it('sorts duration via timestamp expression, NULLS LAST', async () => {
