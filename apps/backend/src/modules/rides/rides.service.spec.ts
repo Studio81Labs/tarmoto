@@ -9,6 +9,20 @@ import { Ride } from '../../entities/ride.entity.js';
 import { RideStats } from '../../entities/ride-stats.entity.js';
 import { RideSegment } from '../../entities/ride-segment.entity.js';
 
+function makeQbSpy() {
+  const andWhere = jest.fn().mockReturnThis();
+  const orderBy = jest.fn().mockReturnThis();
+  const qb = {
+    where: jest.fn().mockReturnThis(),
+    andWhere,
+    orderBy,
+    skip: jest.fn().mockReturnThis(),
+    take: jest.fn().mockReturnThis(),
+    getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+  };
+  return { qb, andWhere, orderBy };
+}
+
 describe('RidesService', () => {
   let service: RidesService;
   let rideRepo: Partial<jest.Mocked<Repository<Ride>>>;
@@ -196,6 +210,61 @@ describe('RidesService', () => {
 
       expect(qb.skip).toHaveBeenCalledWith(10);
       expect(qb.take).toHaveBeenCalledWith(5);
+    });
+  });
+
+  describe('list filters and sort', () => {
+    it('applies date, distance, quality, type, and search filters', async () => {
+      const { qb, andWhere } = makeQbSpy();
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      await service.list('user-1', {
+        started_from: '2026-01-01',
+        started_to: '2026-04-20',
+        min_distance_km: 10,
+        max_distance_km: 500,
+        min_quality: 2,
+        max_quality: 5,
+        type: 'trip',
+        q: 'sunday',
+      } as never);
+
+      const predicates = andWhere.mock.calls.map(
+        (c: unknown[]) => c[0] as string,
+      );
+      expect(predicates).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('started_at >='),
+          expect.stringContaining('started_at <'),
+          expect.stringContaining('distance_km >='),
+          expect.stringContaining('distance_km <='),
+          expect.stringContaining('avg_road_quality >='),
+          expect.stringContaining('avg_road_quality <='),
+          expect.stringContaining('ride_type ='),
+          expect.stringContaining('name ILIKE'),
+        ]),
+      );
+    });
+
+    it('sorts by distance_km asc when requested', async () => {
+      const { qb, orderBy } = makeQbSpy();
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      await service.list('user-1', {
+        sort: 'distance_km',
+        order: 'asc',
+      } as never);
+
+      expect(orderBy).toHaveBeenCalledWith('ride.distance_km', 'ASC');
+    });
+
+    it('defaults sort to started_at DESC', async () => {
+      const { qb, orderBy } = makeQbSpy();
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      await service.list('user-1', {} as never);
+
+      expect(orderBy).toHaveBeenCalledWith('ride.started_at', 'DESC');
     });
   });
 

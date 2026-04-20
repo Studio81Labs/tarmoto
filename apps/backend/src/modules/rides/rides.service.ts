@@ -87,13 +87,58 @@ export class RidesService {
     const qb = this.rideRepo
       .createQueryBuilder('ride')
       .where('ride.user_id = :userId', { userId })
-      .orderBy('ride.started_at', 'DESC')
       .skip(offset)
       .take(limit);
 
     if (query.type) {
       qb.andWhere('ride.ride_type = :type', { type: query.type });
     }
+    if (query.started_from) {
+      qb.andWhere('ride.started_at >= :started_from', {
+        started_from: query.started_from,
+      });
+    }
+    if (query.started_to) {
+      // inclusive end-of-day — add one day, compare with <
+      const to = new Date(query.started_to);
+      to.setUTCDate(to.getUTCDate() + 1);
+      qb.andWhere('ride.started_at < :started_to_excl', {
+        started_to_excl: to.toISOString(),
+      });
+    }
+    if (query.min_distance_km !== undefined) {
+      qb.andWhere('ride.distance_km >= :min_distance_km', {
+        min_distance_km: query.min_distance_km,
+      });
+    }
+    if (query.max_distance_km !== undefined) {
+      qb.andWhere('ride.distance_km <= :max_distance_km', {
+        max_distance_km: query.max_distance_km,
+      });
+    }
+    if (query.min_quality !== undefined) {
+      qb.andWhere('ride.avg_road_quality >= :min_quality', {
+        min_quality: query.min_quality,
+      });
+    }
+    if (query.max_quality !== undefined) {
+      qb.andWhere('ride.avg_road_quality <= :max_quality', {
+        max_quality: query.max_quality,
+      });
+    }
+    if (query.q) {
+      qb.andWhere('ride.name ILIKE :q', { q: `%${query.q}%` });
+    }
+
+    const sortField = query.sort ?? 'started_at';
+    const order = (query.order ?? 'desc').toUpperCase() as 'ASC' | 'DESC';
+    // duration_min is derived (ended_at - started_at); sort via started_at as
+    // a proxy when sort=duration_min is requested — ride lengths in minutes
+    // aren't stored on the ride row, so DB-side sort by the literal field
+    // isn't available without a computed column. Spec calls this out as
+    // acceptable for v1.
+    const column = sortField === 'duration_min' ? 'started_at' : sortField;
+    qb.orderBy(`ride.${column}`, order);
 
     const [rides, total] = await qb.getManyAndCount();
 
