@@ -15,8 +15,6 @@ import {
   Thermometer,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { API_BASE } from "@/lib/config";
-import { useAuthStore } from "@/stores/auth";
 import type { QualityTier } from "@/lib/types";
 import { formatDuration, QUALITY_CONFIG } from "@/lib/utils";
 import {
@@ -26,6 +24,7 @@ import {
   readingToTier,
   type RideSegmentLike,
 } from "@/lib/ride-detail";
+import { downloadRideExport, type RideExportFormat } from "@/lib/ride-export";
 
 interface RideDetail {
   id: string;
@@ -53,7 +52,7 @@ export default function RideDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<RideExportFormat | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [shareCopied, setShareCopied] = useState(false);
 
@@ -104,31 +103,18 @@ export default function RideDetailPage() {
     );
   }, [ride]);
 
-  async function handleExportGpx() {
+  async function handleExport(format: RideExportFormat) {
     if (!ride || exporting) return;
-    setExporting(true);
+    setExporting(format);
     setExportError(null);
     try {
-      const token = useAuthStore.getState().accessToken;
-      const res = await fetch(`${API_BASE}/rides/${ride.id}/gpx`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-      if (!res.ok) throw new Error(`Export failed (${res.status})`);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `tarmoto-ride-${ride.id}.gpx`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      await downloadRideExport(ride.id, format);
     } catch (err) {
       // Keep this separate from the page-level `error` state so a transient
       // export failure doesn't replace the whole ride view with an error card.
       setExportError(err instanceof Error ? err.message : "Export failed");
     } finally {
-      setExporting(false);
+      setExporting(null);
     }
   }
 
@@ -215,16 +201,29 @@ export default function RideDetailPage() {
           </button>
           <button
             type="button"
-            onClick={handleExportGpx}
-            disabled={exporting}
+            onClick={() => handleExport("gpx")}
+            disabled={exporting !== null}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
           >
-            {exporting ? (
+            {exporting === "gpx" ? (
               <Loader2 size={14} className="animate-spin" />
             ) : (
               <Download size={14} />
             )}
             Export GPX
+          </button>
+          <button
+            type="button"
+            onClick={() => handleExport("csv")}
+            disabled={exporting !== null}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+          >
+            {exporting === "csv" ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Download size={14} />
+            )}
+            Export CSV
           </button>
         </div>
       }
@@ -234,7 +233,7 @@ export default function RideDetailPage() {
           role="alert"
           className="mb-6 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-300 flex items-center justify-between gap-3"
         >
-          <span>GPX export failed: {exportError}</span>
+          <span>Export failed: {exportError}</span>
           <button
             type="button"
             onClick={() => setExportError(null)}

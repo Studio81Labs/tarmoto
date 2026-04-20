@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import {
@@ -10,16 +10,14 @@ import {
   Gauge,
   ChevronRight,
   Scale,
+  Download,
+  Loader2,
 } from "lucide-react";
-import type { Ride, QualityTier } from "@/lib/types";
-
-const QUALITY_COLORS: Record<QualityTier, string> = {
-  excellent: "text-quality-excellent",
-  good: "text-quality-good",
-  fair: "text-quality-fair",
-  poor: "text-quality-poor",
-  "very-poor": "text-quality-very-poor",
-};
+import type { Ride } from "@/lib/types";
+import {
+  downloadAllRidesExport,
+  type RideExportFormat,
+} from "@/lib/ride-export";
 
 export default function RideListPage() {
   const [rides, setRides] = useState<Ride[]>([]);
@@ -44,14 +42,17 @@ export default function RideListPage() {
     <div className="p-6 max-w-6xl mx-auto animate-fade-in">
       <div className="flex items-center justify-between mb-6 gap-4">
         <h1 className="text-2xl font-bold">Ride History</h1>
-        {rides.length >= 2 && (
-          <Link
-            href="/rides/compare"
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm hover:bg-slate-700 transition"
-          >
-            <Scale size={14} /> Compare rides
-          </Link>
-        )}
+        <div className="flex items-center gap-2">
+          {rides.length > 0 && <BulkExportMenu />}
+          {rides.length >= 2 && (
+            <Link
+              href="/rides/compare"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm hover:bg-slate-700 transition"
+            >
+              <Scale size={14} /> Compare rides
+            </Link>
+          )}
+        </div>
       </div>
 
       {loading ? (
@@ -101,6 +102,91 @@ export default function RideListPage() {
             </Link>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+function BulkExportMenu() {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState<RideExportFormat | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDown(ev: MouseEvent) {
+      if (!containerRef.current?.contains(ev.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  async function handleExport(format: RideExportFormat) {
+    if (busy) return;
+    setBusy(format);
+    setError(null);
+    try {
+      await downloadAllRidesExport(format);
+      setOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Export failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        disabled={busy !== null}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+      >
+        {busy ? (
+          <Loader2 size={14} className="animate-spin" />
+        ) : (
+          <Download size={14} />
+        )}
+        Export all
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-full mt-1 w-44 rounded-lg bg-slate-900 border border-slate-800 shadow-lg overflow-hidden z-10"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => handleExport("csv")}
+            disabled={busy !== null}
+            className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition"
+          >
+            CSV (stats)
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => handleExport("gpx")}
+            disabled={busy !== null}
+            className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition border-t border-slate-800"
+          >
+            GPX (tracks)
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <p
+          role="alert"
+          className="absolute right-0 top-full mt-2 text-xs text-red-400 whitespace-nowrap"
+        >
+          Export failed: {error}
+        </p>
       )}
     </div>
   );
