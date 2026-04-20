@@ -394,7 +394,11 @@ ${tracks.join('\n')}
       });
     }
     if (query.q) {
-      qb.andWhere('ride.name ILIKE :q', { q: `%${query.q}%` });
+      // Escape SQL wildcards (%, _, \) so user-typed characters are treated
+      // as literals. Parameter binding protects against injection; this only
+      // fixes substring-search semantics.
+      const escaped = query.q.replace(/[\\%_]/g, '\\$&');
+      qb.andWhere('ride.name ILIKE :q', { q: `%${escaped}%` });
     }
     return qb;
   }

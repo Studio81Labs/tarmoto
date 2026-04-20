@@ -246,6 +246,20 @@ describe('RidesService', () => {
       );
     });
 
+    it('escapes SQL wildcards in the q filter value', async () => {
+      const { qb, andWhere } = makeQbSpy();
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      await service.list('user-1', { q: '50%_\\off' } as never);
+
+      const ilikeCall = andWhere.mock.calls.find(
+        (c: unknown[]) =>
+          typeof c[0] === 'string' && (c[0] as string).includes('name ILIKE'),
+      ) as [string, { q: string }] | undefined;
+      expect(ilikeCall).toBeDefined();
+      expect(ilikeCall![1].q).toBe('%50\\%\\_\\\\off%');
+    });
+
     it('sorts by distance_km asc when requested', async () => {
       const { qb, orderBy } = makeQbSpy();
       (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
