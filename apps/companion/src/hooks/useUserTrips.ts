@@ -13,8 +13,11 @@ import type { Trip } from "@/lib/types";
  * sign-out reset that would otherwise be copy-pasted into every consumer —
  * and which were already drifting across the two collection pages.
  *
- * Returns `trips`, a loading flag, and a `tripById` lookup — the two pieces
- * every consumer ended up deriving on their own.
+ * Returns `trips`, a loading flag, a `tripById` lookup, and an `error` flag.
+ * Consumers that do destructive things based on trip presence (the
+ * collection detail "missing trip" row, for instance) must not act while
+ * `error` is true — otherwise a transient API outage would look
+ * indistinguishable from every trip having been deleted.
  *
  * NOTE: `trips/page.tsx` also inlines this pattern and predates the hook;
  * migrate it in a follow-up PR to keep this change scoped to collections.
@@ -22,17 +25,20 @@ import type { Trip } from "@/lib/types";
 export function useUserTrips(): {
   trips: Trip[];
   loading: boolean;
+  error: boolean;
   tripById: Map<string, Trip>;
 } {
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const trips = useTripStore((s) => s.trips);
   const setTrips = useTripStore((s) => s.setTrips);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     // Clear the store on every userId change so the *previous* user's trips
     // can't briefly leak after sign-in/out or account switch.
     setTrips([]);
+    setError(false);
     if (!userId) {
       setLoading(false);
       return;
@@ -48,7 +54,11 @@ export function useUserTrips(): {
       })
       .catch(() => {
         if (cancelled) return;
-        setTrips([]);
+        // Deliberately leave `trips` untouched here — a transient API
+        // failure mustn't masquerade as "every trip deleted" or consumers
+        // will offer destructive actions (e.g. the collection detail's
+        // MissingTripRow) against perfectly valid references.
+        setError(true);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -64,5 +74,5 @@ export function useUserTrips(): {
     return map;
   }, [trips]);
 
-  return { trips, loading, tripById };
+  return { trips, loading, error, tripById };
 }

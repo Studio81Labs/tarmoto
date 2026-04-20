@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   loadCollections,
   saveCollections,
@@ -20,6 +20,10 @@ import {
  * `hydrated` flips to `true` once the first `userId`-driven load has run, so
  * detail pages can wait before deciding a collection is missing — otherwise
  * the empty initial state would flash "not found" on every navigation.
+ *
+ * On `userId` change we reset state *before* reading the new user's data so
+ * a sign-out/account-switch doesn't momentarily expose the previous user's
+ * collections (or let `persist` write them into the new user's slot).
  */
 export function useCollections(userId: string | null): {
   collections: StoredRouteCollection[];
@@ -29,9 +33,16 @@ export function useCollections(userId: string | null): {
   const [collections, setCollections] = useState<StoredRouteCollection[]>([]);
   const [hydrated, setHydrated] = useState(false);
 
+  // Track the userId the in-memory state is associated with. `persist` reads
+  // this instead of the effect-closed `userId` so a write that races with an
+  // account switch can't slip into the new account's storage slot.
+  const activeUserIdRef = useRef<string | null>(userId);
+
   useEffect(() => {
+    activeUserIdRef.current = userId;
+    setHydrated(false);
+    setCollections([]);
     if (!userId) {
-      setCollections([]);
       setHydrated(true);
       return;
     }
@@ -42,7 +53,8 @@ export function useCollections(userId: string | null): {
   const persist = (next: readonly StoredRouteCollection[]) => {
     const sorted = sortCollectionsByName(next);
     setCollections(sorted);
-    if (userId) saveCollections(userId, sorted);
+    const owner = activeUserIdRef.current;
+    if (owner) saveCollections(owner, sorted);
   };
 
   return { collections, hydrated, persist };

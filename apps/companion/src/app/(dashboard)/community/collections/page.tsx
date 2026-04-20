@@ -1,6 +1,13 @@
 "use client";
 
-import { useMemo, useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useMemo,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
 import {
   FolderOpen,
@@ -36,7 +43,7 @@ type VisibilityFilter = "all" | "public" | "private";
 export default function RouteCollectionsPage() {
   const { tripById, loading: loadingTrips } = useUserTrips();
   const userId = useAuthStore((s) => s.user?.id ?? null);
-  const { collections, persist } = useCollections(userId);
+  const { collections, hydrated, persist } = useCollections(userId);
 
   const [search, setSearch] = useState("");
   const [visibility, setVisibility] = useState<VisibilityFilter>("all");
@@ -109,7 +116,22 @@ export default function RouteCollectionsPage() {
         }}
       />
 
-      {collections.length === 0 ? (
+      {!hydrated ? (
+        // Skip empty-state UI until localStorage has been read — without
+        // this, saved collections flash as "No collections yet" on first
+        // paint before useCollections finishes hydrating.
+        <div
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-5"
+          aria-busy="true"
+        >
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="h-44 rounded-2xl border border-slate-800 bg-slate-900 animate-pulse"
+            />
+          ))}
+        </div>
+      ) : collections.length === 0 ? (
         <EmptyState
           title="No collections yet"
           body="Curate your favourite roads into shareable collections."
@@ -521,7 +543,7 @@ function VisibilityOption({
 }: {
   selected: boolean;
   onClick: () => void;
-  icon: React.ReactNode;
+  icon: ReactNode;
   title: string;
   body: string;
 }) {
@@ -591,7 +613,7 @@ function CardMenu({
   children,
 }: {
   onClose: () => void;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   const menuRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -630,7 +652,7 @@ function CardMenuItem({
   onClick,
   tone = "default",
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   onClick: () => void;
   tone?: "default" | "danger";

@@ -32,7 +32,12 @@ export default function CollectionDetailPage() {
   const { collectionId } = useParams<{ collectionId: string }>();
   const router = useRouter();
   const userId = useAuthStore((s) => s.user?.id ?? null);
-  const { trips, tripById, loading: loadingTrips } = useUserTrips();
+  const {
+    trips,
+    tripById,
+    loading: loadingTrips,
+    error: tripsError,
+  } = useUserTrips();
   const { collections, hydrated, persist } = useCollections(userId);
 
   const [showPicker, setShowPicker] = useState(false);
@@ -181,16 +186,27 @@ export default function CollectionDetailPage() {
         </h2>
         {memberTrips.length === 0 ? (
           <EmptyRoutes onAdd={() => setShowPicker(true)} />
-        ) : loadingTrips ? (
-          // Until the trips API has responded, `tripById` is empty and every
-          // member would otherwise render as "missing" with an active remove
-          // button. Show skeleton rows instead so users don't accidentally
-          // drop valid references on slow networks or API failures.
-          <ul className="space-y-3">
-            {memberTrips.map((entry) => (
-              <LoadingTripRow key={entry.id} />
-            ))}
-          </ul>
+        ) : loadingTrips || tripsError ? (
+          // Until the trips API has responded successfully, `tripById` is
+          // empty and every member would otherwise render as "missing" with
+          // an active remove button. Skeleton rows during load; also keep
+          // them on API error — a transient outage mustn't trick users into
+          // pruning valid references. An inline banner surfaces the error.
+          <>
+            {tripsError && (
+              <div
+                role="alert"
+                className="mb-3 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm text-amber-200"
+              >
+                Couldn&apos;t load your trips right now. Try again in a moment.
+              </div>
+            )}
+            <ul className="space-y-3">
+              {memberTrips.map((entry) => (
+                <LoadingTripRow key={entry.id} />
+              ))}
+            </ul>
+          </>
         ) : (
           <ul className="space-y-3">
             {memberTrips.map((entry) =>
