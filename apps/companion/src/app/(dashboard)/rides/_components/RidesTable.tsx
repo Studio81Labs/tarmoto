@@ -23,6 +23,7 @@ const COLUMNS: Array<{ key: SortField | null; label: string }> = [
   { key: "distance_km", label: "Distance" },
   { key: "duration_min", label: "Duration" },
   { key: "avg_road_quality", label: "Avg quality" },
+  { key: null, label: "" }, // open-detail column
 ];
 
 export function RidesTable({
@@ -78,7 +79,7 @@ export function RidesTable({
             {loading && rides.length === 0 ? (
               Array.from({ length: 6 }).map((_, i) => (
                 <tr key={i} className="animate-pulse">
-                  <td colSpan={5} className="px-3 py-3">
+                  <td colSpan={6} className="px-3 py-3">
                     <div className="h-5 bg-slate-800 rounded" />
                   </td>
                 </tr>
@@ -86,7 +87,7 @@ export function RidesTable({
             ) : rides.length === 0 ? (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={6}
                   className="px-3 py-10 text-center text-slate-500"
                 >
                   No rides match these filters.

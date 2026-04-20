@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, Loader2, Pencil, X } from "lucide-react";
+import Link from "next/link";
+import { ArrowUpRight, Check, Loader2, Pencil, X } from "lucide-react";
 import { api } from "@/lib/api";
 import type { RideSummary } from "./useRidesQuery";
 
@@ -159,6 +160,16 @@ export function RideRow({ ride, selected, onSelect, onRenamed }: Props) {
         ) : (
           <span className="text-slate-500">—</span>
         )}
+      </td>
+      <td className="px-3 py-2 text-right">
+        <Link
+          href={`/rides/${ride.id}`}
+          onClick={(e) => e.stopPropagation()}
+          aria-label="Open ride"
+          className="inline-flex items-center justify-center w-7 h-7 rounded-md text-slate-400 hover:text-tarmoto-cyan hover:bg-slate-800 transition"
+        >
+          <ArrowUpRight size={14} />
+        </Link>
       </td>
     </tr>
   );

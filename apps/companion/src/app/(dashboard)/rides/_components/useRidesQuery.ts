@@ -257,8 +257,10 @@ export function useRidesQuery() {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       ctrl.abort();
     };
-    // Re-run on any filter change (not just object identity).
-  }, [tracksKey, state]);
+    // tracksKey captures every param that affects this fetch; state is
+    // intentionally excluded so pagination/sort changes don't re-trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tracksKey]);
 
   function update(patch: Partial<RidesQueryState>) {
     // Any filter change (anything other than page/sort/order) resets page to 1.

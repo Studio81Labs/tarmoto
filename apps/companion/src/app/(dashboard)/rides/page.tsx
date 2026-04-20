@@ -37,10 +37,11 @@ function RidesPageInner() {
   const [mobileTab, setMobileTab] = useState<"map" | "list">("list");
 
   // Optimistic updates after rename — merge into the current list snapshot.
+  // We let patches persist across refetches; the server ultimately ships the
+  // renamed row, so the merge becomes a no-op naturally. Patches scoped to
+  // rides no longer in `list.rides` just sit idle — cheap, and avoids
+  // clobbering a rename completed during an unrelated refetch.
   const [patched, setPatched] = useState<Record<string, RideSummary>>({});
-  useEffect(() => {
-    setPatched({});
-  }, [list.rides]);
   const mergedRides = list.rides.map((r) => patched[r.id] ?? r);
 
   function onSort(sort: SortField) {
