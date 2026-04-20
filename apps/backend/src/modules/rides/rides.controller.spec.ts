@@ -30,6 +30,9 @@ describe('RidesController', () => {
       list: jest.fn().mockResolvedValue({ rides: [mockRide], total: 1 }),
       getDetail: jest.fn().mockResolvedValue(mockRide),
       exportGpx: jest.fn().mockResolvedValue('<gpx></gpx>'),
+      exportRideCsv: jest.fn().mockResolvedValue('header\r\ndata\r\n'),
+      exportAllCsv: jest.fn().mockResolvedValue('header\r\nd1\r\nd2\r\n'),
+      exportAllGpx: jest.fn().mockResolvedValue('<gpx></gpx>'),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -87,4 +90,78 @@ describe('RidesController', () => {
       );
     });
   });
+
+  describe('GET /rides/:rideId/csv', () => {
+    it('writes CSV with correct headers and filename', async () => {
+      const res = mockResponse();
+
+      await controller.exportRideCsv(mockReq, res.response, 'ride-1');
+
+      expect(service.exportRideCsv).toHaveBeenCalledWith('user-1', 'ride-1');
+      expect(res.setMock).toHaveBeenCalledWith(
+        'Content-Type',
+        'text/csv; charset=utf-8',
+      );
+      expect(res.setMock).toHaveBeenCalledWith(
+        'Content-Disposition',
+        'attachment; filename="tarmoto-ride-ride-1.csv"',
+      );
+      expect(res.sendMock).toHaveBeenCalledWith('header\r\ndata\r\n');
+    });
+  });
+
+  describe('GET /rides/export.csv', () => {
+    it('writes CSV with a date-stamped filename', async () => {
+      const res = mockResponse();
+
+      await controller.exportAllCsv(mockReq, res.response);
+
+      expect(service.exportAllCsv).toHaveBeenCalledWith('user-1');
+      expect(res.setMock).toHaveBeenCalledWith(
+        'Content-Type',
+        'text/csv; charset=utf-8',
+      );
+      expect(res.dispositionHeader()).toMatch(
+        /^attachment; filename="tarmoto-rides-\d{4}-\d{2}-\d{2}\.csv"$/,
+      );
+      expect(res.sendMock).toHaveBeenCalledWith('header\r\nd1\r\nd2\r\n');
+    });
+  });
+
+  describe('GET /rides/export.gpx', () => {
+    it('writes GPX with a date-stamped filename', async () => {
+      const res = mockResponse();
+
+      await controller.exportAllGpx(mockReq, res.response);
+
+      expect(service.exportAllGpx).toHaveBeenCalledWith('user-1');
+      expect(res.setMock).toHaveBeenCalledWith(
+        'Content-Type',
+        'application/gpx+xml',
+      );
+      expect(res.dispositionHeader()).toMatch(
+        /^attachment; filename="tarmoto-rides-\d{4}-\d{2}-\d{2}\.gpx"$/,
+      );
+    });
+  });
 });
+
+function mockResponse() {
+  const setMock = jest.fn<void, [string, string]>();
+  const sendMock = jest.fn<void, [unknown]>();
+  const response = {
+    set: setMock,
+    send: sendMock,
+  } as unknown as import('express').Response;
+  return {
+    response,
+    setMock,
+    sendMock,
+    dispositionHeader(): string | undefined {
+      const call = setMock.mock.calls.find(
+        ([name]) => name === 'Content-Disposition',
+      );
+      return call?.[1];
+    },
+  };
+}

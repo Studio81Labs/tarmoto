@@ -4,6 +4,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { RidesService } from './rides.service.js';
+import { CsvService } from './csv.service.js';
 import { Ride } from '../../entities/ride.entity.js';
 import { RideStats } from '../../entities/ride-stats.entity.js';
 import { RideSegment } from '../../entities/ride-segment.entity.js';
@@ -30,6 +31,7 @@ describe('RidesService', () => {
 
   beforeEach(async () => {
     rideRepo = {
+      find: jest.fn().mockResolvedValue([]),
       findOne: jest.fn().mockResolvedValue(null),
       create: jest
         .fn()
@@ -45,6 +47,7 @@ describe('RidesService', () => {
       }),
     };
     statsRepo = {
+      find: jest.fn().mockResolvedValue([]),
       findOne: jest.fn().mockResolvedValue(null),
     };
     segmentRepo = {
@@ -54,6 +57,7 @@ describe('RidesService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RidesService,
+        CsvService,
         { provide: getRepositoryToken(Ride), useValue: rideRepo },
         { provide: getRepositoryToken(RideStats), useValue: statsRepo },
         { provide: getRepositoryToken(RideSegment), useValue: segmentRepo },
@@ -273,6 +277,114 @@ describe('RidesService', () => {
       await expect(service.exportGpx('user-1', 'ride-1')).rejects.toThrow(
         BadRequestException,
       );
+    });
+  });
+
+  describe('exportRideCsv', () => {
+    it('returns header + one row for an existing ride', async () => {
+      rideRepo.findOne!.mockResolvedValueOnce({
+        ...mockRide,
+        ended_at: new Date('2026-04-14T11:30:00Z'),
+        distance_km: 42,
+      } as Ride);
+      statsRepo.findOne!.mockResolvedValueOnce({
+        elevation_gain: 100,
+      } as RideStats);
+
+      const csv = await service.exportRideCsv('user-1', 'ride-1');
+      const lines = csv.trimEnd().split('\r\n');
+
+      expect(lines).toHaveLength(2);
+      expect(lines[1]).toContain('ride-1');
+      expect(lines[1]).toContain('42');
+    });
+
+    it('throws NotFoundException for missing ride', async () => {
+      await expect(service.exportRideCsv('user-1', 'missing')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('exportAllCsv', () => {
+    it('returns only the header when the user has no rides', async () => {
+      rideRepo.find!.mockResolvedValueOnce([]);
+
+      const csv = await service.exportAllCsv('user-1');
+      const lines = csv.trimEnd().split('\r\n');
+
+      expect(lines).toHaveLength(1);
+      expect(statsRepo.find).not.toHaveBeenCalled();
+    });
+
+    it('joins rides with their stats by ride_id', async () => {
+      rideRepo.find!.mockResolvedValueOnce([
+        { ...mockRide, id: 'ride-1' } as Ride,
+        { ...mockRide, id: 'ride-2' } as Ride,
+      ]);
+      statsRepo.find!.mockResolvedValueOnce([
+        { ride_id: 'ride-1', elevation_gain: 100 } as RideStats,
+      ]);
+
+      const csv = await service.exportAllCsv('user-1');
+      const lines = csv.trimEnd().split('\r\n');
+
+      expect(lines).toHaveLength(3);
+      // ride-1 has stats (elevation_gain = 100)
+      expect(lines[1]).toContain('100');
+      // ride-2 has no stats — elevation column should be empty
+      expect(lines[2]).toContain('ride-2');
+    });
+  });
+
+  describe('exportAllGpx', () => {
+    it('emits an empty <gpx> wrapper when there are no rides', async () => {
+      rideRepo.find!.mockResolvedValueOnce([]);
+
+      const gpx = await service.exportAllGpx('user-1');
+
+      expect(gpx).toContain('<gpx version="1.1"');
+      expect(gpx).not.toContain('<trk>');
+    });
+
+    it('skips rides without route_geom', async () => {
+      rideRepo.find!.mockResolvedValueOnce([
+        { ...mockRide, id: 'ride-1', route_geom: null } as Ride,
+        {
+          ...mockRide,
+          id: 'ride-2',
+          route_geom: {
+            coordinates: [
+              [16.75, 49.1],
+              [16.76, 49.11],
+            ],
+          },
+        } as unknown as Ride,
+      ]);
+
+      const gpx = await service.exportAllGpx('user-1');
+
+      expect(gpx.match(/<trk>/g)).toHaveLength(1);
+      expect(gpx).toContain('lat="49.1" lon="16.75"');
+    });
+
+    it('emits one <trk> per ride with route_geom', async () => {
+      rideRepo.find!.mockResolvedValueOnce([
+        {
+          ...mockRide,
+          id: 'ride-1',
+          route_geom: { coordinates: [[16.75, 49.1]] },
+        } as unknown as Ride,
+        {
+          ...mockRide,
+          id: 'ride-2',
+          route_geom: { coordinates: [[17.0, 50.0]] },
+        } as unknown as Ride,
+      ]);
+
+      const gpx = await service.exportAllGpx('user-1');
+
+      expect(gpx.match(/<trk>/g)).toHaveLength(2);
     });
   });
 });

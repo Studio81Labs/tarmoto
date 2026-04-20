@@ -69,29 +69,6 @@ export class RidesController {
     return this.ridesService.start(req.user!.userId, dto);
   }
 
-  @Post(':rideId/stop')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Stop an active ride' })
-  @ApiResponse({ status: 200, type: RideResponseDto })
-  @ApiResponse({ status: 404, description: 'Ride not found' })
-  async stop(
-    @Req() req: express.Request,
-    @Param('rideId', ParseUUIDPipe) rideId: string,
-  ): Promise<RideResponseDto> {
-    return this.ridesService.stop(req.user!.userId, rideId);
-  }
-
-  @Get(':rideId')
-  @ApiOperation({ summary: 'Get ride details with stats' })
-  @ApiResponse({ status: 200, type: RideDetailDto })
-  @ApiResponse({ status: 404, description: 'Ride not found' })
-  async getDetail(
-    @Req() req: express.Request,
-    @Param('rideId', ParseUUIDPipe) rideId: string,
-  ): Promise<RideDetailDto> {
-    return this.ridesService.getDetail(req.user!.userId, rideId);
-  }
-
   @Post('import')
   @UseInterceptors(
     FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }), // 10 MB max
@@ -119,6 +96,70 @@ export class RidesController {
     return this.ridesService.toSummary(ride);
   }
 
+  // Literal bulk-export paths must be declared before the `:rideId` routes,
+  // otherwise Nest matches `:rideId` first and `ParseUUIDPipe` rejects the
+  // request with 400.
+  @Get('export.csv')
+  @ApiOperation({ summary: "Export all of the caller's rides as a CSV sheet" })
+  @ApiProduces('text/csv')
+  @ApiResponse({ status: 200, description: 'CSV file' })
+  async exportAllCsv(
+    @Req() req: express.Request,
+    @Res() res: express.Response,
+  ): Promise<void> {
+    const csv = await this.ridesService.exportAllCsv(req.user!.userId);
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.set('Content-Type', 'text/csv; charset=utf-8');
+    res.set(
+      'Content-Disposition',
+      `attachment; filename="tarmoto-rides-${stamp}.csv"`,
+    );
+    res.send(csv);
+  }
+
+  @Get('export.gpx')
+  @ApiOperation({
+    summary: "Export all of the caller's rides as a multi-track GPX",
+  })
+  @ApiProduces('application/gpx+xml')
+  @ApiResponse({ status: 200, description: 'GPX file' })
+  async exportAllGpx(
+    @Req() req: express.Request,
+    @Res() res: express.Response,
+  ): Promise<void> {
+    const gpx = await this.ridesService.exportAllGpx(req.user!.userId);
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.set('Content-Type', 'application/gpx+xml');
+    res.set(
+      'Content-Disposition',
+      `attachment; filename="tarmoto-rides-${stamp}.gpx"`,
+    );
+    res.send(gpx);
+  }
+
+  @Post(':rideId/stop')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Stop an active ride' })
+  @ApiResponse({ status: 200, type: RideResponseDto })
+  @ApiResponse({ status: 404, description: 'Ride not found' })
+  async stop(
+    @Req() req: express.Request,
+    @Param('rideId', ParseUUIDPipe) rideId: string,
+  ): Promise<RideResponseDto> {
+    return this.ridesService.stop(req.user!.userId, rideId);
+  }
+
+  @Get(':rideId')
+  @ApiOperation({ summary: 'Get ride details with stats' })
+  @ApiResponse({ status: 200, type: RideDetailDto })
+  @ApiResponse({ status: 404, description: 'Ride not found' })
+  async getDetail(
+    @Req() req: express.Request,
+    @Param('rideId', ParseUUIDPipe) rideId: string,
+  ): Promise<RideDetailDto> {
+    return this.ridesService.getDetail(req.user!.userId, rideId);
+  }
+
   @Get(':rideId/gpx')
   @ApiOperation({ summary: 'Export ride as GPX' })
   @ApiProduces('application/gpx+xml')
@@ -136,5 +177,24 @@ export class RidesController {
       `attachment; filename="tarmoto-ride-${rideId}.gpx"`,
     );
     res.send(gpx);
+  }
+
+  @Get(':rideId/csv')
+  @ApiOperation({ summary: 'Export ride stats as CSV' })
+  @ApiProduces('text/csv')
+  @ApiResponse({ status: 200, description: 'CSV file' })
+  @ApiResponse({ status: 404, description: 'Ride not found' })
+  async exportRideCsv(
+    @Req() req: express.Request,
+    @Res() res: express.Response,
+    @Param('rideId', ParseUUIDPipe) rideId: string,
+  ): Promise<void> {
+    const csv = await this.ridesService.exportRideCsv(req.user!.userId, rideId);
+    res.set('Content-Type', 'text/csv; charset=utf-8');
+    res.set(
+      'Content-Disposition',
+      `attachment; filename="tarmoto-ride-${rideId}.csv"`,
+    );
+    res.send(csv);
   }
 }

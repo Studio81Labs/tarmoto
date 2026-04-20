@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Ride } from '../../entities/ride.entity.js';
 import { RideStats } from '../../entities/ride-stats.entity.js';
 import { RideSegment } from '../../entities/ride-segment.entity.js';
@@ -16,6 +16,7 @@ import {
   RideDetailDto,
   RideListResponseDto,
 } from './dto/ride-response.dto.js';
+import { CsvService } from './csv.service.js';
 
 @Injectable()
 export class RidesService {
@@ -26,6 +27,7 @@ export class RidesService {
     private readonly statsRepo: Repository<RideStats>,
     @InjectRepository(RideSegment)
     private readonly segmentRepo: Repository<RideSegment>,
+    private readonly csvService: CsvService,
   ) {}
 
   async start(userId: string, dto: StartRideDto): Promise<RideResponseDto> {
@@ -173,19 +175,67 @@ export class RidesService {
       throw new BadRequestException('Ride has no recorded route');
     }
 
+    return this.wrapGpx([this.rideToTrack(ride)]);
+  }
+
+  async exportRideCsv(userId: string, rideId: string): Promise<string> {
+    const ride = await this.rideRepo.findOne({
+      where: { id: rideId, user_id: userId },
+    });
+    if (!ride) {
+      throw new NotFoundException('Ride not found');
+    }
+    const stats = await this.statsRepo.findOne({ where: { ride_id: rideId } });
+    return this.csvService.buildRideCsv(ride, stats);
+  }
+
+  async exportAllCsv(userId: string): Promise<string> {
+    const rides = await this.rideRepo.find({
+      where: { user_id: userId },
+      order: { started_at: 'DESC' },
+    });
+    const rideIds = rides.map((r) => r.id);
+    const statsRows = rideIds.length
+      ? await this.statsRepo.find({ where: { ride_id: In(rideIds) } })
+      : [];
+    const statsByRideId = new Map(statsRows.map((s) => [s.ride_id, s]));
+
+    return this.csvService.buildRidesCsv(
+      rides.map((ride) => ({
+        ride,
+        stats: statsByRideId.get(ride.id) ?? null,
+      })),
+    );
+  }
+
+  async exportAllGpx(userId: string): Promise<string> {
+    const rides = await this.rideRepo.find({
+      where: { user_id: userId },
+      order: { started_at: 'DESC' },
+    });
+    const tracks = rides
+      .filter((r) => r.route_geom)
+      .map((r) => this.rideToTrack(r));
+    return this.wrapGpx(tracks);
+  }
+
+  private rideToTrack(ride: Ride): string {
     const geom = ride.route_geom as unknown as { coordinates: number[][] };
     const points = geom.coordinates
       .map((c) => `      <trkpt lat="${c[1]}" lon="${c[0]}"></trkpt>`)
       .join('\n');
-
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="Tarmoto">
-  <trk>
+    return `  <trk>
     <name>Tarmoto Ride ${ride.started_at.toISOString().slice(0, 10)}</name>
     <trkseg>
 ${points}
     </trkseg>
-  </trk>
+  </trk>`;
+  }
+
+  private wrapGpx(tracks: string[]): string {
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Tarmoto">
+${tracks.join('\n')}
 </gpx>`;
   }
 
