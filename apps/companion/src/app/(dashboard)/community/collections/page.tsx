@@ -11,8 +11,6 @@ import {
 import Link from "next/link";
 import {
   FolderOpen,
-  Globe,
-  Lock,
   MoreVertical,
   Pencil,
   Plus,
@@ -38,7 +36,10 @@ import { tripDistanceKm } from "@/lib/trip-filters";
 import { formatDistance, formatRelativeTime } from "@/lib/utils";
 import type { Trip } from "@/lib/types";
 
-type VisibilityFilter = "all" | "public" | "private";
+// Public/private visibility, share buttons, and the visibility filter are
+// intentionally hidden until the backend grows a collections endpoint —
+// today `isPublic` has no externally visible effect. `isPublic` still lives
+// in the storage schema so preferences survive once sharing ships.
 
 export default function RouteCollectionsPage() {
   const { tripById, loading: loadingTrips, error: tripsError } = useUserTrips();
@@ -46,7 +47,6 @@ export default function RouteCollectionsPage() {
   const { collections, hydrated, persist } = useCollections(userId);
 
   const [search, setSearch] = useState("");
-  const [visibility, setVisibility] = useState<VisibilityFilter>("all");
   const [modal, setModal] = useState<
     | { mode: "create" }
     | { mode: "edit"; collection: StoredRouteCollection }
@@ -77,13 +77,11 @@ export default function RouteCollectionsPage() {
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return collections.filter((c) => {
-      if (visibility === "public" && !c.isPublic) return false;
-      if (visibility === "private" && c.isPublic) return false;
       if (!needle) return true;
       const hay = `${c.name} ${c.description ?? ""}`.toLowerCase();
       return hay.includes(needle);
     });
-  }, [collections, search, visibility]);
+  }, [collections, search]);
 
   return (
     <div className="p-6 max-w-6xl mx-auto animate-fade-in">
@@ -104,17 +102,7 @@ export default function RouteCollectionsPage() {
         </button>
       </div>
 
-      <Toolbar
-        search={search}
-        onSearch={setSearch}
-        visibility={visibility}
-        onVisibility={setVisibility}
-        counts={{
-          all: collections.length,
-          public: collections.filter((c) => c.isPublic).length,
-          private: collections.filter((c) => !c.isPublic).length,
-        }}
-      />
+      <Toolbar search={search} onSearch={setSearch} />
 
       {!hydrated ? (
         // Skip empty-state UI until localStorage has been read — without
@@ -141,12 +129,9 @@ export default function RouteCollectionsPage() {
       ) : visible.length === 0 ? (
         <EmptyState
           title="No collections match your filters"
-          body="Try clearing the search or switching visibility."
-          actionLabel="Clear filters"
-          onAction={() => {
-            setSearch("");
-            setVisibility("all");
-          }}
+          body="Try clearing the search."
+          actionLabel="Clear search"
+          onAction={() => setSearch("")}
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-5">
@@ -193,24 +178,13 @@ export default function RouteCollectionsPage() {
 function Toolbar({
   search,
   onSearch,
-  visibility,
-  onVisibility,
-  counts,
 }: {
   search: string;
   onSearch: (value: string) => void;
-  visibility: VisibilityFilter;
-  onVisibility: (value: VisibilityFilter) => void;
-  counts: Record<VisibilityFilter, number>;
 }) {
-  const options: { key: VisibilityFilter; label: string }[] = [
-    { key: "all", label: "All" },
-    { key: "public", label: "Public" },
-    { key: "private", label: "Private" },
-  ];
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="relative flex-1 max-w-md">
+    <div className="max-w-md">
+      <div className="relative flex-1">
         <Search
           size={14}
           className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
@@ -222,29 +196,6 @@ function Toolbar({
           placeholder="Search collections…"
           className="w-full pl-9 pr-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan transition"
         />
-      </div>
-      <div className="flex items-center gap-1">
-        {options.map((opt) => {
-          const active = visibility === opt.key;
-          return (
-            <button
-              key={opt.key}
-              type="button"
-              onClick={() => onVisibility(opt.key)}
-              aria-pressed={active}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
-                active
-                  ? "bg-slate-800 text-white border border-slate-700"
-                  : "bg-transparent text-slate-500 border border-slate-800 hover:text-slate-300"
-              }`}
-            >
-              {opt.label}{" "}
-              <span className="tabular-nums text-slate-500">
-                {counts[opt.key]}
-              </span>
-            </button>
-          );
-        })}
       </div>
     </div>
   );
@@ -292,12 +243,9 @@ function CollectionCard({
         href={`/community/collections/${collection.id}`}
         className="block p-5 pr-12 group"
       >
-        <div className="flex items-start justify-between gap-3 mb-3">
-          <h3 className="font-semibold text-white group-hover:text-tarmoto-cyan transition line-clamp-2">
-            {collection.name}
-          </h3>
-          <VisibilityBadge isPublic={collection.isPublic} />
-        </div>
+        <h3 className="font-semibold text-white group-hover:text-tarmoto-cyan transition line-clamp-2 mb-3">
+          {collection.name}
+        </h3>
 
         {collection.description && (
           <p className="text-xs text-slate-500 line-clamp-2 mb-3">
@@ -373,21 +321,6 @@ function CollectionCard({
   );
 }
 
-function VisibilityBadge({ isPublic }: { isPublic: boolean }) {
-  return (
-    <span
-      className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide ${
-        isPublic
-          ? "bg-tarmoto-cyan/10 text-tarmoto-cyan"
-          : "bg-slate-800 text-slate-400"
-      }`}
-    >
-      {isPublic ? <Globe size={10} /> : <Lock size={10} />}
-      {isPublic ? "Public" : "Private"}
-    </span>
-  );
-}
-
 // ─────────────────────────────────────────────────────────
 // Create / edit modal
 // ─────────────────────────────────────────────────────────
@@ -409,7 +342,10 @@ function CollectionModal({
 }) {
   const [name, setName] = useState(initial.name);
   const [description, setDescription] = useState(initial.description);
-  const [isPublic, setIsPublic] = useState(initial.isPublic);
+  // `isPublic` isn't editable in the UI today (see note on the modal form
+  // below) but we carry the initial value through so edit mode round-trips
+  // without stomping an already-saved visibility preference.
+  const isPublic = initial.isPublic;
   const [error, setError] = useState<string | null>(null);
 
   const onCloseRef = useRef(onClose);
@@ -503,25 +439,12 @@ function CollectionModal({
             </p>
           </div>
 
-          <fieldset className="rounded-lg border border-slate-800 p-3">
-            <legend className="px-1 text-xs text-slate-500">Visibility</legend>
-            <div className="flex flex-col gap-2 text-sm">
-              <VisibilityOption
-                selected={!isPublic}
-                onClick={() => setIsPublic(false)}
-                icon={<Lock size={14} />}
-                title="Private"
-                body="Only you can see this collection."
-              />
-              <VisibilityOption
-                selected={isPublic}
-                onClick={() => setIsPublic(true)}
-                icon={<Globe size={14} />}
-                title="Public"
-                body="Anyone with the link can view this collection."
-              />
-            </div>
-          </fieldset>
+          {/*
+            Visibility toggle is intentionally omitted — with no backend
+            sharing yet, "Public" would be a promise we can't keep. The
+            stored `isPublic` preference is preserved below so it survives
+            round-tripping an existing collection through the edit form.
+          */}
         </div>
 
         {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
@@ -543,49 +466,6 @@ function CollectionModal({
         </div>
       </form>
     </div>
-  );
-}
-
-function VisibilityOption({
-  selected,
-  onClick,
-  icon,
-  title,
-  body,
-}: {
-  selected: boolean;
-  onClick: () => void;
-  icon: ReactNode;
-  title: string;
-  body: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={selected}
-      className={`flex items-start gap-3 px-3 py-2 rounded-lg text-left transition border ${
-        selected
-          ? "border-tarmoto-cyan/40 bg-tarmoto-cyan/5"
-          : "border-slate-800 bg-slate-950 hover:border-slate-700"
-      }`}
-    >
-      <span
-        className={
-          selected ? "text-tarmoto-cyan mt-0.5" : "text-slate-500 mt-0.5"
-        }
-      >
-        {icon}
-      </span>
-      <span className="flex-1">
-        <span
-          className={`block text-sm font-medium ${selected ? "text-white" : "text-slate-300"}`}
-        >
-          {title}
-        </span>
-        <span className="block text-[11px] text-slate-500">{body}</span>
-      </span>
-    </button>
   );
 }
 

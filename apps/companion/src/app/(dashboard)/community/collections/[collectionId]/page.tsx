@@ -6,10 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Calendar,
-  Globe,
-  Link as LinkIcon,
   Loader2,
-  Lock,
   MapPin,
   Plus,
   Route as RouteIcon,
@@ -111,42 +108,22 @@ export default function CollectionDetailPage() {
 
       <header className="flex flex-wrap items-start justify-between gap-3 mb-2">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <h1 className="text-2xl font-bold break-words">
-              {collection.name}
-            </h1>
-            <span
-              className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide ${
-                collection.isPublic
-                  ? "bg-tarmoto-cyan/10 text-tarmoto-cyan"
-                  : "bg-slate-800 text-slate-400"
-              }`}
-            >
-              {collection.isPublic ? <Globe size={10} /> : <Lock size={10} />}
-              {collection.isPublic ? "Public" : "Private"}
-            </span>
-          </div>
+          <h1 className="text-2xl font-bold break-words mb-1">
+            {collection.name}
+          </h1>
           <p className="text-xs text-slate-500">
             Updated {formatRelativeTime(collection.updatedAt)}
           </p>
         </div>
         <div className="flex items-center gap-2">
           {/*
-            Share is disabled until the backend grows a collections endpoint.
-            The URL still points at a localStorage-keyed collection, so a
-            recipient would land on "not found" — better to hide the affordance
-            than to mislead. Keeping the public/private toggle stored so the
-            preference migrates once server-side sharing lands.
+            Share affordance + visibility pill are intentionally omitted
+            until the backend grows a collections endpoint. Today a URL
+            points at a localStorage-keyed collection so a recipient would
+            land on "not found"; marking a collection "Public" likewise
+            promises something we can't deliver. The `isPublic` preference
+            still lives in storage so it survives once sharing ships.
           */}
-          <button
-            type="button"
-            disabled
-            aria-disabled
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 text-slate-500 text-sm opacity-60 cursor-not-allowed transition"
-            title="Sharing will unlock once collections sync to your account"
-          >
-            <LinkIcon size={14} /> Share (soon)
-          </button>
           <button
             type="button"
             onClick={() => setShowPicker(true)}
