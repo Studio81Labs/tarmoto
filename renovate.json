@@ -68,6 +68,11 @@
       "matchPackageNames": ["ruby"],
       "matchUpdateTypes": ["major"],
       "enabled": false
+    },
+    {
+      "description": "Hold TypeScript on 5.x until we do the v6 migration manually",
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<6.0.0"
     }
   ]
 }
