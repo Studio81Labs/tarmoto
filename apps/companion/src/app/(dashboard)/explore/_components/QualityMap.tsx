@@ -105,6 +105,11 @@ export function QualityMap({
         maxzoom: 18,
       });
 
+      // Each layer's initial visibility is read from the current props so the
+      // map renders the user's stored toggle state immediately on load — the
+      // visibility-sync effect would otherwise correct it one frame later,
+      // briefly flashing the default.
+
       // Quality layer — the primary overlay. Color follows tier breakpoints
       // that mirror @/lib/utils#scoreToTier so legend and map agree.
       map.addLayer({
@@ -112,7 +117,11 @@ export function QualityMap({
         type: "line",
         source: SOURCE_ID,
         "source-layer": "quality",
-        layout: { "line-cap": "round", "line-join": "round" },
+        layout: {
+          "line-cap": "round",
+          "line-join": "round",
+          visibility: showQuality ? "visible" : "none",
+        },
         paint: {
           "line-color": [
             "step",
@@ -152,7 +161,7 @@ export function QualityMap({
         layout: {
           "line-cap": "round",
           "line-join": "round",
-          visibility: "none",
+          visibility: showSurface ? "visible" : "none",
         },
         paint: {
           "line-color": [
@@ -197,6 +206,7 @@ export function QualityMap({
         "source-layer": "hazards",
         minzoom: 6,
         maxzoom: 11,
+        layout: { visibility: showHazards ? "visible" : "none" },
         paint: {
           "circle-color": "#ef4444",
           "circle-opacity": 0.75,
@@ -220,6 +230,7 @@ export function QualityMap({
         source: SOURCE_ID,
         "source-layer": "hazards",
         minzoom: 11,
+        layout: { visibility: showHazards ? "visible" : "none" },
         paint: {
           "circle-color": [
             "match",
