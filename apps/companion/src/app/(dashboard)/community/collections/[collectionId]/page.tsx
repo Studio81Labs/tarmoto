@@ -168,16 +168,23 @@ export default function CollectionDetailPage() {
           label="Routes"
           value={`${collection.tripIds.length}`}
           hint={
-            collection.tripIds.length - presentTrips.length > 0 && !loadingTrips
+            collection.tripIds.length - presentTrips.length > 0 &&
+            !loadingTrips &&
+            !tripsError
               ? `${collection.tripIds.length - presentTrips.length} unavailable`
               : undefined
           }
         />
         <Stat
           label="Total distance"
-          value={loadingTrips ? "—" : formatDistance(totalDistance)}
+          value={
+            loadingTrips || tripsError ? "—" : formatDistance(totalDistance)
+          }
         />
-        <Stat label="Riding days" value={loadingTrips ? "—" : `${totalDays}`} />
+        <Stat
+          label="Riding days"
+          value={loadingTrips || tripsError ? "—" : `${totalDays}`}
+        />
       </section>
 
       <section className="mt-6">

@@ -439,6 +439,9 @@ function CollectionModal({
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="collection-modal-title"
       className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4"
       onClick={onClose}
     >
@@ -447,7 +450,10 @@ function CollectionModal({
         onSubmit={submit}
         className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-xl"
       >
-        <h2 className="text-sm font-semibold text-white mb-4">
+        <h2
+          id="collection-modal-title"
+          className="text-sm font-semibold text-white mb-4"
+        >
           {mode === "create" ? "New collection" : "Edit collection"}
         </h2>
 
