@@ -22,7 +22,6 @@ import { useCollections } from "@/hooks/useCollections";
 import {
   addTripsToCollection,
   removeTripFromCollection,
-  type StoredRouteCollection,
 } from "@/lib/route-collections";
 import { tripDistanceKm } from "@/lib/trip-filters";
 import { buildRoutePreview, type RoutePoint } from "@/lib/ride-detail";
