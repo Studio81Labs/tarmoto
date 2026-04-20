@@ -1,16 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { registerUser } from "@/lib/api";
+import { safeCallbackUrl } from "@/lib/callback-url";
 
-export default function RegisterPage() {
+function RegisterForm() {
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const searchParams = useSearchParams();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,7 +29,7 @@ export default function RegisterPage() {
       if (result?.error) {
         setError("Account created but sign-in failed. Please log in.");
       } else {
-        window.location.href = "/";
+        window.location.href = safeCallbackUrl(searchParams.get("callbackUrl"));
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Registration failed");
@@ -48,7 +51,9 @@ export default function RegisterPage() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-1.5">Display name</label>
+          <label className="block text-sm font-medium text-slate-300 mb-1.5">
+            Display name
+          </label>
           <input
             type="text"
             value={displayName}
@@ -60,7 +65,9 @@ export default function RegisterPage() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-1.5">Email</label>
+          <label className="block text-sm font-medium text-slate-300 mb-1.5">
+            Email
+          </label>
           <input
             type="email"
             value={email}
@@ -72,7 +79,9 @@ export default function RegisterPage() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-1.5">Password</label>
+          <label className="block text-sm font-medium text-slate-300 mb-1.5">
+            Password
+          </label>
           <input
             type="password"
             value={password}
@@ -100,5 +109,13 @@ export default function RegisterPage() {
         </Link>
       </p>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={null}>
+      <RegisterForm />
+    </Suspense>
   );
 }

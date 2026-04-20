@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { OAuthButtons } from "@/components/OAuthButtons";
+import { safeCallbackUrl } from "@/lib/callback-url";
 
 const oauthProviders: string[] = [];
 
@@ -20,7 +21,6 @@ function LoginForm() {
     setError("");
     setLoading(true);
     try {
-      const callbackUrl = searchParams.get("callbackUrl") ?? "/";
       const result = await signIn("credentials", {
         email,
         password,
@@ -29,7 +29,7 @@ function LoginForm() {
       if (result?.error) {
         setError("Invalid email or password");
       } else {
-        window.location.href = callbackUrl;
+        window.location.href = safeCallbackUrl(searchParams.get("callbackUrl"));
       }
     } catch {
       setError("An unexpected error occurred");
@@ -51,7 +51,9 @@ function LoginForm() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-1.5">Email</label>
+          <label className="block text-sm font-medium text-slate-300 mb-1.5">
+            Email
+          </label>
           <input
             type="email"
             value={email}
@@ -63,7 +65,9 @@ function LoginForm() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-1.5">Password</label>
+          <label className="block text-sm font-medium text-slate-300 mb-1.5">
+            Password
+          </label>
           <input
             type="password"
             value={password}
@@ -76,10 +80,16 @@ function LoginForm() {
 
         <div className="flex items-center justify-between text-sm">
           <label className="flex items-center gap-2 text-slate-400">
-            <input type="checkbox" className="rounded border-slate-600 bg-slate-800 text-tarmoto-cyan focus:ring-tarmoto-cyan" />
+            <input
+              type="checkbox"
+              className="rounded border-slate-600 bg-slate-800 text-tarmoto-cyan focus:ring-tarmoto-cyan"
+            />
             Remember me
           </label>
-          <Link href="/forgot-password" className="text-tarmoto-cyan hover:underline">
+          <Link
+            href="/forgot-password"
+            className="text-tarmoto-cyan hover:underline"
+          >
             Forgot password?
           </Link>
         </div>
