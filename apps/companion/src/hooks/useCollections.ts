@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   loadCollections,
   saveCollections,
@@ -50,12 +50,14 @@ export function useCollections(userId: string | null): {
     setHydrated(true);
   }, [userId]);
 
-  const persist = (next: readonly StoredRouteCollection[]) => {
+  // Memoise so consumers can safely put `persist` in effect dependency
+  // arrays. The ref read inside means no captured userId to go stale.
+  const persist = useCallback((next: readonly StoredRouteCollection[]) => {
     const sorted = sortCollectionsByName(next);
     setCollections(sorted);
     const owner = activeUserIdRef.current;
     if (owner) saveCollections(owner, sorted);
-  };
+  }, []);
 
   return { collections, hydrated, persist };
 }

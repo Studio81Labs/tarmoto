@@ -616,6 +616,11 @@ function CardMenu({
   children: ReactNode;
 }) {
   const menuRef = useRef<HTMLDivElement | null>(null);
+  // Stash onClose in a ref so the document-listener effect doesn't re-bind
+  // every render (the parent passes an inline arrow). Mirrors the pattern
+  // CollectionModal uses for its Escape handler.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
     function onDoc(e: MouseEvent) {
       const target = e.target as HTMLElement;
@@ -629,11 +634,11 @@ function CardMenu({
       ) {
         return;
       }
-      onClose();
+      onCloseRef.current();
     }
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
-  }, [onClose]);
+  }, []);
 
   return (
     <div
