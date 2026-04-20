@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, Repository, SelectQueryBuilder } from 'typeorm';
 import { Ride } from '../../entities/ride.entity.js';
 import { RideStats } from '../../entities/ride-stats.entity.js';
 import { RideSegment } from '../../entities/ride-segment.entity.js';
@@ -91,45 +91,7 @@ export class RidesService {
       .skip(offset)
       .take(limit);
 
-    if (query.type) {
-      qb.andWhere('ride.ride_type = :type', { type: query.type });
-    }
-    if (query.started_from) {
-      qb.andWhere('ride.started_at >= :started_from', {
-        started_from: query.started_from,
-      });
-    }
-    if (query.started_to) {
-      // inclusive end-of-day — add one day, compare with <
-      const to = new Date(query.started_to);
-      to.setUTCDate(to.getUTCDate() + 1);
-      qb.andWhere('ride.started_at < :started_to_excl', {
-        started_to_excl: to.toISOString(),
-      });
-    }
-    if (query.min_distance_km !== undefined) {
-      qb.andWhere('ride.distance_km >= :min_distance_km', {
-        min_distance_km: query.min_distance_km,
-      });
-    }
-    if (query.max_distance_km !== undefined) {
-      qb.andWhere('ride.distance_km <= :max_distance_km', {
-        max_distance_km: query.max_distance_km,
-      });
-    }
-    if (query.min_quality !== undefined) {
-      qb.andWhere('ride.avg_road_quality >= :min_quality', {
-        min_quality: query.min_quality,
-      });
-    }
-    if (query.max_quality !== undefined) {
-      qb.andWhere('ride.avg_road_quality <= :max_quality', {
-        max_quality: query.max_quality,
-      });
-    }
-    if (query.q) {
-      qb.andWhere('ride.name ILIKE :q', { q: `%${query.q}%` });
-    }
+    this.applyRidesFilters(qb, query);
 
     const sortField = query.sort ?? 'started_at';
     const order = (query.order ?? 'desc').toUpperCase() as 'ASC' | 'DESC';
@@ -247,45 +209,7 @@ export class RidesService {
       .where('ride.user_id = :userId', { userId })
       .andWhere('ride.route_geom IS NOT NULL');
 
-    // Filter parity with list() — DRY by extracting a helper if this grows.
-    if (query.type) {
-      qb.andWhere('ride.ride_type = :type', { type: query.type });
-    }
-    if (query.started_from) {
-      qb.andWhere('ride.started_at >= :started_from', {
-        started_from: query.started_from,
-      });
-    }
-    if (query.started_to) {
-      const to = new Date(query.started_to);
-      to.setUTCDate(to.getUTCDate() + 1);
-      qb.andWhere('ride.started_at < :started_to_excl', {
-        started_to_excl: to.toISOString(),
-      });
-    }
-    if (query.min_distance_km !== undefined) {
-      qb.andWhere('ride.distance_km >= :min_distance_km', {
-        min_distance_km: query.min_distance_km,
-      });
-    }
-    if (query.max_distance_km !== undefined) {
-      qb.andWhere('ride.distance_km <= :max_distance_km', {
-        max_distance_km: query.max_distance_km,
-      });
-    }
-    if (query.min_quality !== undefined) {
-      qb.andWhere('ride.avg_road_quality >= :min_quality', {
-        min_quality: query.min_quality,
-      });
-    }
-    if (query.max_quality !== undefined) {
-      qb.andWhere('ride.avg_road_quality <= :max_quality', {
-        max_quality: query.max_quality,
-      });
-    }
-    if (query.q) {
-      qb.andWhere('ride.name ILIKE :q', { q: `%${query.q}%` });
-    }
+    this.applyRidesFilters(qb, query);
 
     const [rows, totalMatching] = await Promise.all([
       qb
@@ -409,5 +333,51 @@ ${tracks.join('\n')}
     return Math.round(
       (ride.ended_at.getTime() - ride.started_at.getTime()) / 60000,
     );
+  }
+
+  private applyRidesFilters(
+    qb: SelectQueryBuilder<Ride>,
+    query: ListRidesDto,
+  ): SelectQueryBuilder<Ride> {
+    if (query.type) {
+      qb.andWhere('ride.ride_type = :type', { type: query.type });
+    }
+    if (query.started_from) {
+      qb.andWhere('ride.started_at >= :started_from', {
+        started_from: query.started_from,
+      });
+    }
+    if (query.started_to) {
+      // inclusive end-of-day — add one day, compare with <
+      const to = new Date(query.started_to);
+      to.setUTCDate(to.getUTCDate() + 1);
+      qb.andWhere('ride.started_at < :started_to_excl', {
+        started_to_excl: to.toISOString(),
+      });
+    }
+    if (query.min_distance_km !== undefined) {
+      qb.andWhere('ride.distance_km >= :min_distance_km', {
+        min_distance_km: query.min_distance_km,
+      });
+    }
+    if (query.max_distance_km !== undefined) {
+      qb.andWhere('ride.distance_km <= :max_distance_km', {
+        max_distance_km: query.max_distance_km,
+      });
+    }
+    if (query.min_quality !== undefined) {
+      qb.andWhere('ride.avg_road_quality >= :min_quality', {
+        min_quality: query.min_quality,
+      });
+    }
+    if (query.max_quality !== undefined) {
+      qb.andWhere('ride.avg_road_quality <= :max_quality', {
+        max_quality: query.max_quality,
+      });
+    }
+    if (query.q) {
+      qb.andWhere('ride.name ILIKE :q', { q: `%${query.q}%` });
+    }
+    return qb;
   }
 }
