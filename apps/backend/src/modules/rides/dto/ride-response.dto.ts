@@ -28,6 +28,9 @@ export class RideResponseDto {
 
 export class RideSummaryDto extends RideResponseDto {
   @ApiProperty({ nullable: true })
+  name!: string | null;
+
+  @ApiProperty({ nullable: true })
   duration_min!: number | null;
 }
 

@@ -127,6 +127,18 @@ describe('RidesService', () => {
     });
   });
 
+  describe('toSummary', () => {
+    it('includes name (null when unset)', () => {
+      const r = { ...mockRide, name: null } as unknown as Ride;
+      expect(service.toSummary(r).name).toBeNull();
+    });
+
+    it('includes name when set', () => {
+      const r = { ...mockRide, name: 'Sunday loop' } as unknown as Ride;
+      expect(service.toSummary(r).name).toBe('Sunday loop');
+    });
+  });
+
   describe('list', () => {
     it('should return paginated rides', async () => {
       const qb = {

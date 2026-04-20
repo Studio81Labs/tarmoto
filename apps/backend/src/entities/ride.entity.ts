@@ -54,6 +54,9 @@ export class Ride {
   @Column({ type: 'varchar', length: 20, default: 'free' })
   ride_type!: string;
 
+  @Column({ type: 'varchar', length: 120, nullable: true })
+  name!: string | null;
+
   @Column({ type: 'varchar', length: 20, default: 'active' })
   status!: string;
 

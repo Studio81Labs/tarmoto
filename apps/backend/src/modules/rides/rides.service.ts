@@ -147,6 +147,7 @@ export class RidesService {
       avg_speed: ride.avg_speed,
       max_speed: ride.max_speed,
       avg_road_quality: ride.avg_road_quality,
+      name: ride.name ?? null,
       duration_min: durationMin,
       route_geometry: routeGeometry,
       elevation_gain: stats?.elevation_gain ?? null,
@@ -255,6 +256,7 @@ ${tracks.join('\n')}
   toSummary(ride: Ride): RideSummaryDto {
     return {
       ...this.toRideResponse(ride),
+      name: ride.name ?? null,
       duration_min: this.calcDurationMin(ride),
     };
   }
