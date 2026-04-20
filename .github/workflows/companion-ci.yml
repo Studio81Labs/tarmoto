@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "apps/companion/**"
+      - "apps/backend/**"
       - "packages/shared/**"
       - "packages/openapi/**"
       - ".github/workflows/companion-ci.yml"
@@ -12,6 +13,7 @@ on:
     branches: [main]
     paths:
       - "apps/companion/**"
+      - "apps/backend/**"
       - "packages/shared/**"
       - "packages/openapi/**"
       - ".github/workflows/companion-ci.yml"
@@ -45,8 +47,12 @@ jobs:
       - name: Build shared package
         run: pnpm build:shared
 
-      # ESLint 9 flat config lives at apps/companion/eslint.config.mjs.
-      # Re-enabled now that it exists.
+      - name: Generate OpenAPI client
+        # Companion imports from @tarmoto/openapi, whose types.ts is
+        # generated from the backend's swagger spec (both types.ts and
+        # openapi.yaml are gitignored). Without this step the companion
+        # typecheck fails with "Cannot find module './types.js'".
+        run: pnpm generate:api
 
       - name: Lint
         run: pnpm --filter @tarmoto/companion lint
