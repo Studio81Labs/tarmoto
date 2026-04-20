@@ -14,18 +14,6 @@ const eslintConfig = [
   {
     ignores: [".next/**", "node_modules/**", "next-env.d.ts"],
   },
-  {
-    // Downgrade strict hooks rules that flag existing patterns across
-    // the app. These identify real smells worth refactoring — setState
-    // inside useEffect often indicates derived state that should be
-    // computed during render, and ref access during render can race
-    // concurrent rendering. Tracked as gradual cleanup; keeping these
-    // as warn so the signal stays visible without blocking PRs.
-    rules: {
-      "react-hooks/set-state-in-effect": "warn",
-      "react-hooks/refs": "warn",
-    },
-  },
 ];
 
 export default eslintConfig;

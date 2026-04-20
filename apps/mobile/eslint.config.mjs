@@ -49,7 +49,20 @@ export default [
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
+      // React Native legitimately uses require() for native modules and
+      // bundled image assets (`require('./logo.png')`). ES imports don't
+      // work for those at runtime.
+      "@typescript-eslint/no-require-imports": "off",
       "no-empty": ["error", { allowEmptyCatch: true }],
+    },
+  },
+  {
+    // Silently drop any `/* eslint-disable import/... */` directives
+    // left over from the old RN eslint-config. We don't ship
+    // eslint-plugin-import on this config, so references to its rules
+    // would otherwise report as "Definition for rule X was not found".
+    linterOptions: {
+      reportUnusedDisableDirectives: "off",
     },
   },
 ];
