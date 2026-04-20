@@ -6,7 +6,6 @@ import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Calendar,
-  Check,
   Globe,
   Link as LinkIcon,
   Loader2,
@@ -38,8 +37,6 @@ export default function CollectionDetailPage() {
   const { collections, hydrated, persist } = useCollections(userId);
 
   const [showPicker, setShowPicker] = useState(false);
-  const [shareCopied, setShareCopied] = useState(false);
-
   const collection = useMemo(
     () => collections.find((c) => c.id === collectionId) ?? null,
     [collections, collectionId],
@@ -55,17 +52,6 @@ export default function CollectionDetailPage() {
     if (!collection) return;
     persist(removeTripFromCollection(collections, collection.id, tripId));
   };
-
-  async function handleShare() {
-    if (typeof window === "undefined") return;
-    try {
-      await navigator.clipboard.writeText(window.location.href);
-      setShareCopied(true);
-      setTimeout(() => setShareCopied(false), 2000);
-    } catch {
-      // Clipboard API can reject on insecure origins; fall back silently.
-    }
-  }
 
   if (!hydrated) {
     return (
@@ -141,28 +127,21 @@ export default function CollectionDetailPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/*
+            Share is disabled until the backend grows a collections endpoint.
+            The URL still points at a localStorage-keyed collection, so a
+            recipient would land on "not found" — better to hide the affordance
+            than to mislead. Keeping the public/private toggle stored so the
+            preference migrates once server-side sharing lands.
+          */}
           <button
             type="button"
-            onClick={handleShare}
-            disabled={!collection.isPublic}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
-            title={
-              collection.isPublic
-                ? shareCopied
-                  ? "Link copied"
-                  : "Copy share link"
-                : "Make the collection public to share it"
-            }
+            disabled
+            aria-disabled
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 text-slate-500 text-sm opacity-60 cursor-not-allowed transition"
+            title="Sharing will unlock once collections sync to your account"
           >
-            {shareCopied ? (
-              <>
-                <Check size={14} /> Copied
-              </>
-            ) : (
-              <>
-                <LinkIcon size={14} /> Share
-              </>
-            )}
+            <LinkIcon size={14} /> Share (soon)
           </button>
           <button
             type="button"
@@ -190,8 +169,11 @@ export default function CollectionDetailPage() {
               : undefined
           }
         />
-        <Stat label="Total distance" value={formatDistance(totalDistance)} />
-        <Stat label="Riding days" value={`${totalDays}`} />
+        <Stat
+          label="Total distance"
+          value={loadingTrips ? "—" : formatDistance(totalDistance)}
+        />
+        <Stat label="Riding days" value={loadingTrips ? "—" : `${totalDays}`} />
       </section>
 
       <section className="mt-6">
