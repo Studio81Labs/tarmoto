@@ -24,22 +24,27 @@ export const MAX_REVIEW_PHOTOS = 5;
  */
 export function sanitizeReviewPhotos(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
-  return (raw as unknown[])
-    .filter((p): p is string => {
-      if (typeof p !== 'string') return false;
-      // Parse via URL instead of a `startsWith` prefix check so whitespace-
-      // padded or otherwise malformed strings (e.g. "https:// invalid") are
-      // rejected, not just wrong schemes. Trim first because some legacy
-      // rows have trailing newlines from copy/paste.
-      const candidate = p.trim();
-      try {
-        const parsed = new URL(candidate);
-        return parsed.protocol === 'https:' && parsed.hostname.length > 0;
-      } catch {
-        return false;
+  const out: string[] = [];
+  for (const p of raw as unknown[]) {
+    if (typeof p !== 'string') continue;
+    // Parse via URL instead of a `startsWith` prefix check so whitespace-
+    // padded or otherwise malformed strings (e.g. "https:// invalid") are
+    // rejected, not just wrong schemes. Return the trimmed form so the
+    // mobile `Image` source.uri doesn't receive leading/trailing whitespace
+    // that the network stack would reject.
+    const candidate = p.trim();
+    try {
+      const parsed = new URL(candidate);
+      if (parsed.protocol !== 'https:' || parsed.hostname.length === 0) {
+        continue;
       }
-    })
-    .slice(0, MAX_REVIEW_PHOTOS);
+    } catch {
+      continue;
+    }
+    out.push(candidate);
+    if (out.length >= MAX_REVIEW_PHOTOS) break;
+  }
+  return out;
 }
 
 export class CreateReviewDto {

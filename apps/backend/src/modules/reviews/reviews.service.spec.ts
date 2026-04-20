@@ -354,7 +354,10 @@ describe('ReviewsService', () => {
       const result = await service.listForSegment('seg-1');
 
       expect(result[0].photos).toEqual([
-        '  https://padded.tarmoto.app/ok.jpg  ',
+        // Stored value came with surrounding whitespace — sanitizer must
+        // return the trimmed URL so `Image.source.uri` on the client can
+        // actually fetch it.
+        'https://padded.tarmoto.app/ok.jpg',
         'https://good.tarmoto.app/ok.jpg',
       ]);
     });
