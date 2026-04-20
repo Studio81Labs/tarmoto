@@ -19,7 +19,7 @@ export function PublicExploreHeader() {
           Sign in
         </Link>
         <Link
-          href="/register"
+          href="/register?callbackUrl=/explore"
           className="px-3 py-1.5 rounded-lg text-sm font-medium bg-tarmoto-cyan/10 text-tarmoto-cyan hover:bg-tarmoto-cyan/20 transition"
         >
           Create account
