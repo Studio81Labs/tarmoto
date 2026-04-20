@@ -18,6 +18,7 @@ import {
   ChevronRight,
   MapPin,
   Trophy,
+  FolderOpen,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -45,6 +46,11 @@ const NAV_SECTIONS = [
     label: "Community",
     items: [
       { href: "/community", icon: Users, label: "Community" },
+      {
+        href: "/community/collections",
+        icon: FolderOpen,
+        label: "Collections",
+      },
       { href: "/gamification", icon: Trophy, label: "Achievements" },
     ],
   },
