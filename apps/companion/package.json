@@ -26,7 +26,8 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.2.0",
+    "@eslint/js": "^10.0.0",
+    "@next/eslint-plugin-next": "^15.0.0",
     "@tailwindcss/postcss": "^4.0.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -35,11 +36,12 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^6.0.1",
-    "eslint": "^9.18.0",
-    "eslint-config-next": "^15.0.0",
+    "eslint": "^10.0.0",
+    "eslint-plugin-react-hooks": "^7.0.0",
     "jsdom": "^29.0.2",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0",
+    "typescript-eslint": "^8.20.0",
     "vitest": "^4.1.4"
   }
 }
