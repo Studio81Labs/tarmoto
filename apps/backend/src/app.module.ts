@@ -29,7 +29,13 @@ import { PoiModule } from './modules/poi/index.js';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ThrottlerModule.forRoot({
-      throttlers: [{ ttl: 60_000, limit: 60 }],
+      throttlers: [
+        { name: 'default', ttl: 60_000, limit: 60 },
+        // Vector tile fetches are bursty (map pan/zoom) — a single user easily
+        // requests 50+ tiles per viewport change. 600/min/IP is generous for
+        // real usage while still bounding abuse via tile enumeration scrapes.
+        { name: 'tiles', ttl: 60_000, limit: 600 },
+      ],
     }),
     DatabaseModule,
     AuthModule,

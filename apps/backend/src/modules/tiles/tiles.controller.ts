@@ -5,14 +5,17 @@ import {
   ApiResponse,
   ApiProduces,
 } from '@nestjs/swagger';
-import { SkipThrottle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import * as express from 'express';
 import { TilesService } from './tiles.service.js';
 import { TileParamsDto, TileQueryDto } from './dto/tile-params.dto.js';
 
 @ApiTags('tiles')
 @Controller('roads/tiles')
-@SkipThrottle()
+// Opt out of the default 60/min throttle and apply the tile-specific budget
+// configured in app.module (600/min/IP).
+@SkipThrottle({ default: true })
+@Throttle({ tiles: { ttl: 60_000, limit: 600 } })
 export class TilesController {
   constructor(private readonly tilesService: TilesService) {}
 
