@@ -206,24 +206,35 @@ export class RidesService {
     const CAP = 500;
     const SIMPLIFY_TOLERANCE_DEG = 0.0005; // ~50 m at mid-latitudes
 
-    const qb = this.rideRepo
-      .createQueryBuilder('ride')
+    // Build two independent query builders: one for the geometry-bearing
+    // rows (has .select/.addSelect + order + limit) and one for the count
+    // (plain shape — avoids any ambiguity around getCount() wrapping the
+    // LIMIT'd raw query as a subquery, and avoids evaluating the expensive
+    // ST_SimplifyPreserveTopology expression for the count path).
+    const baseWhere = (
+      qb: SelectQueryBuilder<Ride>,
+    ): SelectQueryBuilder<Ride> =>
+      this.applyRidesFilters(
+        qb
+          .where('ride.user_id = :userId', { userId })
+          .andWhere('ride.route_geom IS NOT NULL'),
+        query,
+      );
+
+    const dataQb = baseWhere(this.rideRepo.createQueryBuilder('ride'))
       .select('ride.id', 'id')
       .addSelect(
         `ST_AsGeoJSON(ST_SimplifyPreserveTopology(ride.route_geom, ${SIMPLIFY_TOLERANCE_DEG}))`,
         'geometry',
       )
-      .where('ride.user_id = :userId', { userId })
-      .andWhere('ride.route_geom IS NOT NULL');
+      .orderBy('ride.started_at', 'DESC')
+      .limit(CAP);
 
-    this.applyRidesFilters(qb, query);
+    const countQb = baseWhere(this.rideRepo.createQueryBuilder('ride'));
 
     const [rows, totalMatching] = await Promise.all([
-      qb
-        .orderBy('ride.started_at', 'DESC')
-        .limit(CAP)
-        .getRawMany<{ id: string; geometry: string | null }>(),
-      qb.getCount(),
+      dataQb.getRawMany<{ id: string; geometry: string | null }>(),
+      countQb.getCount(),
     ]);
 
     const tracks = rows.map((r) => ({

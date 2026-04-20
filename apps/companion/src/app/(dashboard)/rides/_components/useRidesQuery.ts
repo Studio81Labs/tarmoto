@@ -263,14 +263,16 @@ export function useRidesQuery() {
   }, [tracksKey]);
 
   function update(patch: Partial<RidesQueryState>) {
-    // Any filter change (anything other than page/sort/order) resets page to 1.
-    const isFilterChange = Object.keys(patch).some(
-      (k) => k !== "page" && k !== "sort" && k !== "order",
-    );
+    // Any update other than a bare page-click resets to page 1. Filter,
+    // sort, and order changes all mean the current page number is stale —
+    // e.g. going from 5 pages of started_at DESC to 2 pages of distance_km
+    // ASC would leave the user staring at an empty page.
+    const keys = Object.keys(patch);
+    const isBarePageChange = keys.length === 1 && keys[0] === "page";
     const next: RidesQueryState = {
       ...state,
       ...patch,
-      page: isFilterChange ? 1 : (patch.page ?? state.page),
+      page: isBarePageChange ? (patch.page ?? state.page) : 1,
     };
     const qs = serializeQuery(next);
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
