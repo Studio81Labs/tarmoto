@@ -266,6 +266,22 @@ describe('RidesService', () => {
 
       expect(orderBy).toHaveBeenCalledWith('ride.started_at', 'DESC');
     });
+
+    it('sorts duration via timestamp expression, NULLS LAST', async () => {
+      const { qb, orderBy } = makeQbSpy();
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      await service.list('user-1', {
+        sort: 'duration_min',
+        order: 'asc',
+      } as never);
+
+      expect(orderBy).toHaveBeenCalledWith(
+        '(ride.ended_at - ride.started_at)',
+        'ASC',
+        'NULLS LAST',
+      );
+    });
   });
 
   describe('getDetail', () => {

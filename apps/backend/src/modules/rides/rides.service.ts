@@ -132,13 +132,14 @@ export class RidesService {
 
     const sortField = query.sort ?? 'started_at';
     const order = (query.order ?? 'desc').toUpperCase() as 'ASC' | 'DESC';
-    // duration_min is derived (ended_at - started_at); sort via started_at as
-    // a proxy when sort=duration_min is requested — ride lengths in minutes
-    // aren't stored on the ride row, so DB-side sort by the literal field
-    // isn't available without a computed column. Spec calls this out as
-    // acceptable for v1.
-    const column = sortField === 'duration_min' ? 'started_at' : sortField;
-    qb.orderBy(`ride.${column}`, order);
+    if (sortField === 'duration_min') {
+      // Duration isn't stored — derive via timestamp subtraction. Rides
+      // still in progress (ended_at IS NULL) sort to the end in both
+      // directions so the open ride doesn't dominate either extreme.
+      qb.orderBy('(ride.ended_at - ride.started_at)', order, 'NULLS LAST');
+    } else {
+      qb.orderBy(`ride.${sortField}`, order);
+    }
 
     const [rides, total] = await qb.getManyAndCount();
 
