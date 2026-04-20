@@ -334,5 +334,29 @@ describe('ReviewsService', () => {
       );
       expect(result[0].photos).not.toContain('https://media.tarmoto.app/g.jpg');
     });
+
+    it('should reject malformed https strings that prefix-pass but fail URL parsing', async () => {
+      // Prefix-only `startsWith('https://')` would let these through — the
+      // URL-parse + hostname check must catch space-after-scheme, missing
+      // hostname, and outright non-URL text, not just wrong schemes.
+      const freshReview = {
+        ...mockReview,
+        photos: [
+          'https:// media.tarmoto.app/a.jpg', // space after scheme
+          'https://', // no hostname
+          'not a url',
+          '  https://padded.tarmoto.app/ok.jpg  ', // kept: trimmed + parsed
+          'https://good.tarmoto.app/ok.jpg',
+        ],
+      } as unknown as RoadReview;
+      reviewRepo.find!.mockResolvedValueOnce([freshReview]);
+
+      const result = await service.listForSegment('seg-1');
+
+      expect(result[0].photos).toEqual([
+        '  https://padded.tarmoto.app/ok.jpg  ',
+        'https://good.tarmoto.app/ok.jpg',
+      ]);
+    });
   });
 });
