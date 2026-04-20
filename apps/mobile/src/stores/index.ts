@@ -10,12 +10,9 @@ import type {
   Hazard,
   Trip,
   TripSummary,
-  CommuteRoute,
   LatLng,
-  QualityClass,
-  SurfaceType,
 } from "@/types";
-import type { ClassificationResult, WindowFeatures } from "@/services/sensors";
+import type { ClassificationResult } from "@/services/sensors";
 import type { LocationUpdate } from "@/services/location";
 import type {
   OfflineRegion,

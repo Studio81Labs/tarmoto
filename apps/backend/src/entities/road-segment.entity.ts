@@ -51,6 +51,9 @@ export class RoadSegment {
   @Column({ type: 'float', nullable: true })
   elevation_max!: number | null;
 
+  @Column({ type: 'float', array: true, nullable: true })
+  elevation_profile!: number[] | null;
+
   @Column({ type: 'timestamptz', default: () => 'NOW()' })
   last_updated!: Date;
 

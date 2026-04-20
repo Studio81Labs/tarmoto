@@ -33,7 +33,7 @@ export interface User {
 }
 
 export interface UserPreferences {
-  units: "metric" | "imperial";
+  units: 'metric' | 'imperial';
   daily_km: number;
   min_quality: number;
   road_types: string[];
@@ -51,13 +51,13 @@ export interface EmergencyContact {
 // ── Road Segments ──
 
 export type SurfaceType =
-  | "asphalt"
-  | "concrete"
-  | "cobblestone"
-  | "gravel"
-  | "dirt"
-  | "unknown";
-export type QualityClass = "excellent" | "good" | "fair" | "poor" | "very_poor";
+  | 'asphalt'
+  | 'concrete'
+  | 'cobblestone'
+  | 'gravel'
+  | 'dirt'
+  | 'unknown';
+export type QualityClass = 'excellent' | 'good' | 'fair' | 'poor' | 'very_poor';
 
 export interface RoadSegment {
   id: string;
@@ -74,8 +74,14 @@ export interface RoadSegment {
 
 export interface RoadSegmentDetail extends RoadSegment {
   geometry: LatLng[];
-  elevation_min: number;
-  elevation_max: number;
+  elevation_min: number | null;
+  elevation_max: number | null;
+  /**
+   * Per-vertex elevation in meters, aligned 1:1 with `geometry`. Null when
+   * the backend hasn't ingested an elevation profile for this segment yet —
+   * callers should fall back to min/max stats only.
+   */
+  elevation_profile: number[] | null;
   quality_breakdown: {
     excellent: number;
     good: number;
@@ -83,10 +89,15 @@ export interface RoadSegmentDetail extends RoadSegment {
     poor: number;
     very_poor: number;
   };
+  /** Top-N most-recent active hazards on this segment. */
   active_hazards: Hazard[];
+  /** Total active hazard count (>= active_hazards.length when truncated). */
+  active_hazard_count: number;
+  /** Top-N most-recent reviews — full collection lives at /roads/:id/reviews. */
   recent_reviews: RoadReview[];
+  review_count: number;
   riders_per_month: number;
-  avg_review_rating: number;
+  avg_review_rating: number | null;
 }
 
 export interface FunZone {
@@ -102,8 +113,8 @@ export interface FunZone {
 
 // ── Rides ──
 
-export type RideType = "free" | "commute" | "trip" | "tracked";
-export type RideStatus = "active" | "completed" | "cancelled";
+export type RideType = 'free' | 'commute' | 'trip' | 'tracked';
+export type RideStatus = 'active' | 'completed' | 'cancelled';
 
 export interface RideSummary {
   id: string;
@@ -139,17 +150,17 @@ export interface RideSegment {
 // ── Hazards ──
 
 export type HazardType =
-  | "pothole"
-  | "gravel"
-  | "oil_spill"
-  | "roadworks"
-  | "animals"
-  | "police"
-  | "flooding"
-  | "ice"
-  | "other";
+  | 'pothole'
+  | 'gravel'
+  | 'oil_spill'
+  | 'roadworks'
+  | 'animals'
+  | 'police'
+  | 'flooding'
+  | 'ice'
+  | 'other';
 
-export type Severity = "low" | "medium" | "high";
+export type Severity = 'low' | 'medium' | 'high';
 
 export interface Hazard {
   id: string;
@@ -167,17 +178,17 @@ export interface Hazard {
 
 // ── Trips ──
 
-export type TripStatus = "draft" | "planned" | "active" | "completed";
-export type RoadPreference = "curvy" | "scenic" | "fast" | "mixed";
+export type TripStatus = 'draft' | 'planned' | 'active' | 'completed';
+export type RoadPreference = 'curvy' | 'scenic' | 'fast' | 'mixed';
 export type WaypointType =
-  | "start"
-  | "via"
-  | "fuel"
-  | "food"
-  | "coffee"
-  | "hotel"
-  | "photo"
-  | "end";
+  | 'start'
+  | 'via'
+  | 'fuel'
+  | 'food'
+  | 'coffee'
+  | 'hotel'
+  | 'photo'
+  | 'end';
 
 export interface TripSummary {
   id: string;
@@ -226,7 +237,7 @@ export interface Waypoint {
 export interface TripMember {
   user_id: string;
   display_name: string;
-  role: "owner" | "admin" | "member";
+  role: 'owner' | 'admin' | 'member';
   joined_at: string;
 }
 
@@ -236,8 +247,14 @@ export interface RoadReview {
   id: string;
   user_display_name: string;
   rating: number;
-  comment?: string;
-  bike_model?: string;
+  // Matches `ReviewResponseDto`: both fields are always present in the
+  // response, but `null` when the rider left the field blank. Using
+  // `string | null` (not `string | undefined`) so `JSON.stringify` /
+  // equality checks against the wire format line up with backend.
+  comment: string | null;
+  bike_model: string | null;
+  /** HTTPS URLs of photos uploaded with the review. Empty array when none. */
+  photos: string[];
   created_at: string;
 }
 
@@ -261,28 +278,28 @@ export interface CommuteStatus {
   weather: Weather;
   estimated_time_min: number;
   route_quality: number;
-  status: "clear" | "hazards" | "weather_warning" | "delays";
+  status: 'clear' | 'hazards' | 'weather_warning' | 'delays';
 }
 
 export interface Weather {
   temperature_c: number;
-  condition: "clear" | "cloudy" | "rain" | "storm" | "snow" | "fog" | "ice";
+  condition: 'clear' | 'cloudy' | 'rain' | 'storm' | 'snow' | 'fog' | 'ice';
   wind_kmh: number;
   precipitation_chance: number;
-  road_condition: "dry" | "wet" | "icy" | "unknown";
+  road_condition: 'dry' | 'wet' | 'icy' | 'unknown';
   description: string;
 }
 
 // ── Accommodations (US-10) ──
 
 export type AccommodationKind =
-  | "hotel"
-  | "motel"
-  | "hostel"
-  | "guest_house"
-  | "apartment"
-  | "chalet"
-  | "camp_site";
+  | 'hotel'
+  | 'motel'
+  | 'hostel'
+  | 'guest_house'
+  | 'apartment'
+  | 'chalet'
+  | 'camp_site';
 
 export interface Accommodation {
   external_id: string;
@@ -303,7 +320,7 @@ export interface AccommodationList {
 
 // ── Along-route POIs (US-10) ──
 
-export type PoiKind = "restaurant" | "viewpoint" | "cafe";
+export type PoiKind = 'restaurant' | 'viewpoint' | 'cafe';
 
 export interface Poi {
   external_id: string;
@@ -325,7 +342,7 @@ export interface PoiList {
 
 // ── Mountain Passes (US-11) ──
 
-export type PassStatus = "open" | "closed" | "unknown";
+export type PassStatus = 'open' | 'closed' | 'unknown';
 
 export interface MountainPass {
   id: string;
@@ -382,7 +399,7 @@ export interface SegmentClassification {
 // ── Route Calculation ──
 
 export interface RoutePreferences {
-  road_preference: "fastest" | "curvy" | "scenic" | "balanced";
+  road_preference: 'fastest' | 'curvy' | 'scenic' | 'balanced';
   min_quality: number;
   avoid_highway: boolean;
   avoid_toll: boolean;

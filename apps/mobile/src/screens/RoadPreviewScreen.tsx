@@ -4,18 +4,21 @@ import React, {
   useEffect,
   useMemo,
   useState,
-} from "react";
+} from 'react';
 import {
   ActivityIndicator,
+  Image,
+  LayoutChangeEvent,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-} from "react-native";
-import { RouteProp, useRoute } from "@react-navigation/native";
-import Icon from "@react-native-vector-icons/material-design-icons";
+} from 'react-native';
+import { RouteProp, useRoute } from '@react-navigation/native';
+import Icon from '@react-native-vector-icons/material-design-icons';
+import Svg, { Path } from 'react-native-svg';
 import {
   borderRadius,
   colors,
@@ -26,36 +29,42 @@ import {
   qualityColorWithThreshold,
   qualityLabel,
   spacing,
-} from "@/theme";
-import { api } from "@/services/api";
-import { usePreferencesStore } from "@/stores";
-import type { Hazard, RoadReview, RoadSegmentDetail } from "@/types";
+} from '@/theme';
+import { api } from '@/services/api';
+import { usePreferencesStore } from '@/stores';
+import type { Hazard, RoadReview, RoadSegmentDetail } from '@/types';
 import {
+  buildElevationChartPaths,
   computeCurveCount,
+  computeElevationStats,
   curvinessLabel,
   formatHazardType,
   formatLengthKm,
   formatRelativeTime,
   formatSurface,
+  isFlatElevationProfile,
   normalizeBreakdown,
-} from "./RoadPreviewScreen.helpers";
+} from './RoadPreviewScreen.helpers';
+
+const ELEVATION_CHART_HEIGHT = 80;
+const REVIEW_PHOTO_SIZE = 84;
 
 type RoadPreviewRoute = RouteProp<
   { RoadPreview: { segmentId: string } },
-  "RoadPreview"
+  'RoadPreview'
 >;
-type IconName = ComponentProps<typeof Icon>["name"];
+type IconName = ComponentProps<typeof Icon>['name'];
 
 const QUALITY_BUCKETS: Array<{
-  key: keyof RoadSegmentDetail["quality_breakdown"];
+  key: keyof RoadSegmentDetail['quality_breakdown'];
   label: string;
   color: string;
 }> = [
-  { key: "excellent", label: "Excellent", color: colors.quality.excellent },
-  { key: "good", label: "Good", color: colors.quality.good },
-  { key: "fair", label: "Fair", color: colors.quality.fair },
-  { key: "poor", label: "Poor", color: colors.quality.poor },
-  { key: "very_poor", label: "Very Poor", color: colors.quality.veryPoor },
+  { key: 'excellent', label: 'Excellent', color: colors.quality.excellent },
+  { key: 'good', label: 'Good', color: colors.quality.good },
+  { key: 'fair', label: 'Fair', color: colors.quality.fair },
+  { key: 'poor', label: 'Poor', color: colors.quality.poor },
+  { key: 'very_poor', label: 'Very Poor', color: colors.quality.veryPoor },
 ];
 
 export default function RoadPreviewScreen() {
@@ -71,7 +80,7 @@ export default function RoadPreviewScreen() {
 
   useEffect(() => {
     if (!segmentId) {
-      setError("Missing segment id");
+      setError('Missing segment id');
       setLoading(false);
       return;
     }
@@ -87,7 +96,7 @@ export default function RoadPreviewScreen() {
       } catch (e) {
         if (!ignore) {
           setError(
-            e instanceof Error ? e.message : "Failed to load road segment",
+            e instanceof Error ? e.message : 'Failed to load road segment',
           );
         }
       } finally {
@@ -154,7 +163,10 @@ export default function RoadPreviewScreen() {
       <QualityCard segment={segment} minQuality={minQuality} />
       <CurvinessCard segment={segment} />
       <ElevationCard segment={segment} />
-      <HazardsCard hazards={segment.active_hazards} />
+      <HazardsCard
+        hazards={segment.active_hazards}
+        totalCount={segment.active_hazard_count}
+      />
       <ReviewsCard
         reviews={segment.recent_reviews}
         avgRating={segment.avg_review_rating}
@@ -172,13 +184,13 @@ function HeaderCard({
   segment: RoadSegmentDetail;
   minQuality: number;
 }) {
-  const title = segment.road_name || segment.road_number || "Unnamed road";
+  const title = segment.road_name || segment.road_number || 'Unnamed road';
   const subtitle = [
     segment.road_number && segment.road_name ? segment.road_number : null,
     formatLengthKm(segment.length_m),
   ]
     .filter(Boolean)
-    .join(" · ");
+    .join(' · ');
   const belowThreshold = !meetsQualityThreshold(
     segment.quality_score,
     minQuality,
@@ -242,7 +254,7 @@ function QualityCard({
             {segment.quality_score.toFixed(1)}
           </Text>
           <Text style={styles.qualitySubtitle}>
-            {qualityLabel(segment.quality_score)} ·{" "}
+            {qualityLabel(segment.quality_score)} ·{' '}
             {formatSurface(segment.surface_type)}
           </Text>
         </View>
@@ -264,7 +276,7 @@ function QualityCard({
 function QualityBreakdownBar({
   breakdown,
 }: {
-  breakdown: RoadSegmentDetail["quality_breakdown"];
+  breakdown: RoadSegmentDetail['quality_breakdown'];
 }) {
   const segments = normalizeBreakdown(
     QUALITY_BUCKETS.map((b) => b.key),
@@ -328,7 +340,7 @@ function CurvinessCard({ segment }: { segment: RoadSegmentDetail }) {
         title="Curviness"
         rightLabel={
           curveCount > 0
-            ? `${curveCount} ${curveCount === 1 ? "turn" : "turns"}`
+            ? `${curveCount} ${curveCount === 1 ? 'turn' : 'turns'}`
             : undefined
         }
       />
@@ -338,7 +350,7 @@ function CurvinessCard({ segment }: { segment: RoadSegmentDetail }) {
           {[0, 1, 2, 3, 4].map((i) => (
             <Icon
               key={i}
-              name={i < filled ? "sine-wave" : "minus"}
+              name={i < filled ? 'sine-wave' : 'minus'}
               size={20}
               color={i < filled ? colors.primary : colors.textTertiary}
             />
@@ -353,39 +365,145 @@ function CurvinessCard({ segment }: { segment: RoadSegmentDetail }) {
 }
 
 function ElevationCard({ segment }: { segment: RoadSegmentDetail }) {
-  const { elevation_min, elevation_max } = segment;
-  const range = Math.max(0, elevation_max - elevation_min);
+  const { elevation_min, elevation_max, elevation_profile } = segment;
+  // Show "—" instead of "0 m" when the segment has no elevation data so the
+  // card doesn't claim a sea-level reading we never actually measured.
+  const hasMin = elevation_min !== null && Number.isFinite(elevation_min);
+  const hasMax = elevation_max !== null && Number.isFinite(elevation_max);
+  const range =
+    hasMin && hasMax ? Math.max(0, elevation_max! - elevation_min!) : null;
+
+  const stats = useMemo(
+    () => (elevation_profile ? computeElevationStats(elevation_profile) : null),
+    [elevation_profile],
+  );
+  // Only label a profile "flat" when it has enough finite samples to be
+  // renderable AND they're all equal. Single-sample or NaN-heavy inputs
+  // would leave the chart empty anyway — we skip the block entirely rather
+  // than mislabeling insufficient data as a level road.
+  const isFlatProfile = useMemo(
+    () =>
+      elevation_profile !== null && isFlatElevationProfile(elevation_profile),
+    [elevation_profile],
+  );
+
   return (
     <View style={styles.card}>
-      <SectionTitle icon="terrain" title="Elevation" />
+      <SectionTitle
+        icon="terrain"
+        title="Elevation"
+        rightLabel={
+          stats && (stats.ascent > 0 || stats.descent > 0)
+            ? `↑${Math.round(stats.ascent)} m  ↓${Math.round(stats.descent)} m`
+            : undefined
+        }
+      />
+      {elevation_profile && !isFlatProfile ? (
+        <ElevationProfileChart profile={elevation_profile} />
+      ) : null}
+      {isFlatProfile ? (
+        <Text style={styles.emptyInline}>Flat profile.</Text>
+      ) : null}
       <View style={styles.elevationRow}>
-        <ElevationStat label="Min" value={`${Math.round(elevation_min)} m`} />
-        <ElevationStat label="Max" value={`${Math.round(elevation_max)} m`} />
-        <ElevationStat label="Range" value={`${Math.round(range)} m`} />
+        <ElevationStat
+          label="Min"
+          value={hasMin ? `${Math.round(elevation_min!)} m` : '—'}
+        />
+        <ElevationStat
+          label="Max"
+          value={hasMax ? `${Math.round(elevation_max!)} m` : '—'}
+        />
+        <ElevationStat
+          label="Range"
+          value={range !== null ? `${Math.round(range)} m` : '—'}
+        />
       </View>
     </View>
   );
 }
 
-function HazardsCard({ hazards }: { hazards: Hazard[] }) {
+function ElevationProfileChart({ profile }: { profile: number[] }) {
+  const [width, setWidth] = useState(0);
+  const onLayout = useCallback((e: LayoutChangeEvent) => {
+    setWidth(e.nativeEvent.layout.width);
+  }, []);
+
+  const paths = useMemo(
+    () => buildElevationChartPaths(profile, width, ELEVATION_CHART_HEIGHT),
+    [profile, width],
+  );
+
+  // Once we know the layout width, only render the sized container when we
+  // actually have a path to draw — otherwise an unrenderable profile (flat
+  // or too few finite samples) would leave a fixed-height empty box behind.
+  if (width > 0 && !paths) return null;
+
+  return (
+    <View onLayout={onLayout} style={styles.elevationChartWrap}>
+      {paths ? (
+        <Svg
+          width={width}
+          height={ELEVATION_CHART_HEIGHT}
+          // Disable accessibility focus on the SVG itself; the SectionTitle
+          // already announces ascent/descent which is the actionable info.
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
+          <Path d={paths.area} fill={colors.primaryAlpha15} />
+          <Path
+            d={paths.line}
+            stroke={colors.primary}
+            strokeWidth={2}
+            fill="none"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
+        </Svg>
+      ) : null}
+    </View>
+  );
+}
+
+function HazardsCard({
+  hazards,
+  totalCount,
+}: {
+  hazards: Hazard[];
+  totalCount: number;
+}) {
+  // The array is capped server-side at ACTIVE_HAZARD_LIMIT; show the full
+  // count in the badge so a segment with 30 reports doesn't misleadingly
+  // render "10". Fall back to the array length if the DTO is missing the
+  // count (older cached response shape).
+  const badgeCount = totalCount > 0 ? totalCount : hazards.length;
+  const truncated = totalCount > hazards.length;
   return (
     <View style={styles.card}>
       <SectionTitle
         icon="alert"
         title="Active hazards"
-        rightLabel={hazards.length ? `${hazards.length}` : undefined}
+        rightLabel={badgeCount ? `${badgeCount}` : undefined}
       />
-      {hazards.length === 0 ? (
+      {badgeCount === 0 ? (
         <Text style={styles.empty}>No active hazards reported.</Text>
       ) : (
-        hazards.map((h) => <HazardRow key={h.id} hazard={h} />)
+        <>
+          {hazards.map((h) => (
+            <HazardRow key={h.id} hazard={h} />
+          ))}
+          {truncated ? (
+            <Text style={styles.emptyInline}>
+              Showing the {hazards.length} most recent of {totalCount}.
+            </Text>
+          ) : null}
+        </>
       )}
     </View>
   );
 }
 
 function HazardRow({ hazard }: { hazard: Hazard }) {
-  const icon = (hazardIcons[hazard.hazard_type] || "alert-circle") as IconName;
+  const icon = (hazardIcons[hazard.hazard_type] || 'alert-circle') as IconName;
   return (
     <View style={styles.hazardRow}>
       <View
@@ -406,7 +524,7 @@ function HazardRow({ hazard }: { hazard: Hazard }) {
           </Text>
         ) : null}
         <Text style={styles.hazardMeta}>
-          {hazard.confirmations} confirmations ·{" "}
+          {hazard.confirmations} confirmations ·{' '}
           {formatRelativeTime(hazard.created_at)}
         </Text>
       </View>
@@ -419,14 +537,15 @@ function ReviewsCard({
   avgRating,
 }: {
   reviews: RoadReview[];
-  avgRating: number;
+  avgRating: number | null;
 }) {
+  const showAvg = reviews.length > 0 && avgRating !== null;
   return (
     <View style={styles.card}>
       <SectionTitle
         icon="star-outline"
         title="Recent reviews"
-        rightLabel={reviews.length ? `${avgRating.toFixed(1)} ★` : undefined}
+        rightLabel={showAvg ? `${avgRating!.toFixed(1)} ★` : undefined}
       />
       {reviews.length === 0 ? (
         <Text style={styles.empty}>
@@ -440,17 +559,19 @@ function ReviewsCard({
 }
 
 function ReviewRow({ review }: { review: RoadReview }) {
+  const photos = Array.isArray(review.photos) ? review.photos : [];
   return (
     <View style={styles.reviewRow}>
       <View style={styles.reviewHeader}>
         <Text style={styles.reviewAuthor}>{review.user_display_name}</Text>
         <Text style={styles.reviewRating}>
-          {"★".repeat(Math.max(0, Math.min(5, Math.round(review.rating))))}
+          {'★'.repeat(Math.max(0, Math.min(5, Math.round(review.rating))))}
         </Text>
       </View>
       {review.comment ? (
         <Text style={styles.reviewComment}>{review.comment}</Text>
       ) : null}
+      {photos.length > 0 ? <ReviewPhotos photos={photos} /> : null}
       <View style={styles.reviewFooter}>
         {review.bike_model ? (
           <View style={styles.reviewMetaRow}>
@@ -463,6 +584,32 @@ function ReviewRow({ review }: { review: RoadReview }) {
         </Text>
       </View>
     </View>
+  );
+}
+
+function ReviewPhotos({ photos }: { photos: string[] }) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.reviewPhotosRow}
+      // Allow scrolling photos without fighting the parent vertical scroll;
+      // RN handles the gesture handoff but we hint it explicitly here.
+      directionalLockEnabled
+      accessibilityLabel={`${photos.length} review photo${
+        photos.length === 1 ? '' : 's'
+      }`}
+    >
+      {photos.map((uri, idx) => (
+        <Image
+          key={`${uri}-${idx}`}
+          source={{ uri }}
+          style={styles.reviewPhoto}
+          resizeMode="cover"
+          accessibilityIgnoresInvertColors
+        />
+      ))}
+    </ScrollView>
   );
 }
 
@@ -508,15 +655,15 @@ function ElevationStat({ label, value }: { label: string; value: string }) {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function severityBg(severity: Hazard["severity"]): string {
-  if (severity === "high") return colors.qualityAlpha.veryPoor;
-  if (severity === "medium") return colors.qualityAlpha.poor;
+function severityBg(severity: Hazard['severity']): string {
+  if (severity === 'high') return colors.qualityAlpha.veryPoor;
+  if (severity === 'medium') return colors.qualityAlpha.poor;
   return colors.qualityAlpha.fair;
 }
 
-function severityFg(severity: Hazard["severity"]): string {
-  if (severity === "high") return colors.quality.veryPoor;
-  if (severity === "medium") return colors.quality.poor;
+function severityFg(severity: Hazard['severity']): string {
+  if (severity === 'high') return colors.quality.veryPoor;
+  if (severity === 'medium') return colors.quality.poor;
   return colors.quality.fair;
 }
 
@@ -535,8 +682,8 @@ const styles = StyleSheet.create({
   centered: {
     flex: 1,
     backgroundColor: colors.bg,
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: 'center',
+    justifyContent: 'center',
     padding: spacing.xl,
   },
   errorTitle: {
@@ -549,7 +696,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: fontSize.sm,
     marginTop: spacing.xs,
-    textAlign: "center",
+    textAlign: 'center',
   },
   retryButton: {
     marginTop: spacing.lg,
@@ -580,9 +727,9 @@ const styles = StyleSheet.create({
     borderColor: colors.borderLight,
   },
   thresholdBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "flex-start",
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
     gap: spacing.xs,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
@@ -597,7 +744,7 @@ const styles = StyleSheet.create({
   thresholdHint: {
     color: colors.textTertiary,
     fontSize: fontSize.xs,
-    fontStyle: "italic",
+    fontStyle: 'italic',
   },
   headerTitle: {
     color: colors.textPrimary,
@@ -609,14 +756,14 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
   },
   metaRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.xs,
     marginTop: spacing.xs,
   },
   metaPill: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.xs,
     backgroundColor: colors.bgElevated,
     borderRadius: borderRadius.pill,
@@ -630,15 +777,15 @@ const styles = StyleSheet.create({
   },
 
   sectionTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.xs,
   },
   sectionTitle: {
     color: colors.textSecondary,
     fontSize: fontSize.sm,
     fontWeight: fontWeight.semibold,
-    textTransform: "uppercase",
+    textTransform: 'uppercase',
     letterSpacing: 0.6,
     flex: 1,
   },
@@ -649,9 +796,9 @@ const styles = StyleSheet.create({
   },
 
   qualityHeader: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
   },
   qualityScore: {
     fontSize: fontSize.hero,
@@ -672,21 +819,21 @@ const styles = StyleSheet.create({
   },
 
   breakdownBar: {
-    flexDirection: "row",
+    flexDirection: 'row',
     height: 10,
     borderRadius: borderRadius.sm,
-    overflow: "hidden",
+    overflow: 'hidden',
     backgroundColor: colors.bgElevated,
   },
   breakdownLegend: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm,
     marginTop: spacing.sm,
   },
   legendItem: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.xs,
   },
   legendDot: {
@@ -700,9 +847,9 @@ const styles = StyleSheet.create({
   },
 
   curvinessRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   curvinessScore: {
     color: colors.textPrimary,
@@ -710,7 +857,7 @@ const styles = StyleSheet.create({
     fontWeight: fontWeight.black,
   },
   curvinessPips: {
-    flexDirection: "row",
+    flexDirection: 'row',
     gap: spacing.xs,
   },
   curvinessHint: {
@@ -718,12 +865,19 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
   },
 
+  elevationChartWrap: {
+    width: '100%',
+    height: ELEVATION_CHART_HEIGHT,
+    backgroundColor: colors.bgElevated,
+    borderRadius: borderRadius.sm,
+    overflow: 'hidden',
+  },
   elevationRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
   elevationStat: {
-    alignItems: "center",
+    alignItems: 'center',
     flex: 1,
   },
   elevationValue: {
@@ -735,12 +889,12 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontSize: fontSize.xs,
     marginTop: spacing.xs,
-    textTransform: "uppercase",
+    textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
 
   hazardRow: {
-    flexDirection: "row",
+    flexDirection: 'row',
     gap: spacing.md,
     paddingVertical: spacing.xs,
   },
@@ -748,8 +902,8 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   hazardBody: {
     flex: 1,
@@ -776,9 +930,9 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   reviewHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   reviewAuthor: {
     color: colors.textPrimary,
@@ -795,15 +949,25 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     lineHeight: 20,
   },
+  reviewPhotosRow: {
+    gap: spacing.sm,
+    paddingTop: spacing.xs,
+  },
+  reviewPhoto: {
+    width: REVIEW_PHOTO_SIZE,
+    height: REVIEW_PHOTO_SIZE,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.bgElevated,
+  },
   reviewFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginTop: spacing.xs,
   },
   reviewMetaRow: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.xs,
   },
   reviewMeta: {
@@ -814,11 +978,11 @@ const styles = StyleSheet.create({
   empty: {
     color: colors.textTertiary,
     fontSize: fontSize.sm,
-    fontStyle: "italic",
+    fontStyle: 'italic',
   },
   emptyInline: {
     color: colors.textTertiary,
     fontSize: fontSize.xs,
-    fontStyle: "italic",
+    fontStyle: 'italic',
   },
 });
