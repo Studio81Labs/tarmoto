@@ -224,6 +224,11 @@ describe("checkCommuteHazardsAndNotify", () => {
 
   beforeEach(() => {
     __resetCommuteHazardNotifierForTest();
+    // Reset both the in-memory cache AND the MMKV-backed storage shim.
+    // setState alone would leave stale seen-sets readable via the
+    // decodeSeen fallback, leaking between tests.
+    const { seenHazardsByRoute, clearRoute } = useCommuteStore.getState();
+    for (const routeId of Object.keys(seenHazardsByRoute)) clearRoute(routeId);
     useCommuteStore.setState({ seenHazardsByRoute: {} });
     fake = createFakeNotifier();
     __setNotifierForTest(fake);
@@ -409,6 +414,10 @@ describe("checkCommuteHazardsAndNotify", () => {
     expect(fake.calls).toHaveLength(1);
 
     // A subsequent call after `first` finishes runs normally again.
+    // Swap the hanging mockImplementation for a resolved one — otherwise
+    // the third call would await a never-resolved routes promise and
+    // time out instead of returning the expected dedup reason.
+    mockApi.getCommuteRoutes.mockResolvedValue([makeRoute()]);
     const third = await checkCommuteHazardsAndNotify();
     // h1 was notified on `first`, so this is a dedup hit — not in-progress.
     expect(third.reason).toBe("all-notified");

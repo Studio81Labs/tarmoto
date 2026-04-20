@@ -7,7 +7,7 @@ module.exports = {
     "**/?(*.)+(spec|test).[jt]s?(x)",
   ],
   transformIgnorePatterns: [
-    "node_modules/(?!(?:.pnpm/)?((jest-)?@react-native|react-native|@testing-library|react-native-.*)/)",
+    "node_modules/(?!(?:\\.pnpm/)?((jest-)?@react-native|react-native|@testing-library|react-native-.*)[/+@])",
   ],
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/src/$1",
