@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "4cfda4bf-0fc0-47d2-88f9-06d9c56eed5d",
+    "_postman_id": "985acd2a-640a-452d-9989-2d5c2a07531b",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -31,13 +31,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1"]
             }
           }
         }
@@ -58,15 +53,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/auth/register",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "auth",
-                "register"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "register"]
             },
             "body": {
               "mode": "raw",
@@ -91,15 +79,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/auth/login",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "auth",
-                "login"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
             },
             "body": {
               "mode": "raw",
@@ -124,15 +105,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/auth/refresh",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "auth",
-                "refresh"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "refresh"]
             },
             "body": {
               "mode": "raw",
@@ -162,15 +136,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/me",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "users",
-                "me"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "me"]
             }
           }
         },
@@ -186,15 +153,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/me",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "users",
-                "me"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "me"]
             },
             "body": {
               "mode": "raw",
@@ -219,16 +179,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/me/contacts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "users",
-                "me",
-                "contacts"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "me", "contacts"]
             }
           }
         },
@@ -244,16 +196,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/me/contacts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "users",
-                "me",
-                "contacts"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "me", "contacts"]
             },
             "body": {
               "mode": "raw",
@@ -278,17 +222,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/me/contacts/:contactId",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "users",
-                "me",
-                "contacts",
-                ":contactId"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "me", "contacts", ":contactId"],
               "variable": [
                 {
                   "key": "contactId",
@@ -315,14 +250,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/hazards",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "hazards"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "hazards"],
               "query": [
                 {
                   "key": "lat",
@@ -364,14 +293,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/hazards",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "hazards"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "hazards"]
             },
             "body": {
               "mode": "raw",
@@ -396,16 +319,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/hazards/:hazardId/confirm",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "hazards",
-                ":hazardId",
-                "confirm"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "hazards", ":hazardId", "confirm"],
               "variable": [
                 {
                   "key": "hazardId",
@@ -427,16 +342,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/hazards/:hazardId/dismiss",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "hazards",
-                ":hazardId",
-                "dismiss"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "hazards", ":hazardId", "dismiss"],
               "variable": [
                 {
                   "key": "hazardId",
@@ -458,15 +365,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/hazards/route",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "hazards",
-                "route"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "hazards", "route"]
             },
             "body": {
               "mode": "raw",
@@ -496,15 +396,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/sensor/upload",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "sensor",
-                "upload"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sensor", "upload"]
             },
             "body": {
               "mode": "raw",
@@ -534,15 +427,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/nearby",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "roads",
-                "nearby"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roads", "nearby"],
               "query": [
                 {
                   "key": "lat",
@@ -590,15 +476,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/fun-zones",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "roads",
-                "fun-zones"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roads", "fun-zones"],
               "query": [
                 {
                   "key": "bbox",
@@ -622,15 +501,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/:segmentId",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "roads",
-                ":segmentId"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roads", ":segmentId"],
               "variable": [
                 {
                   "key": "segmentId",
@@ -657,16 +529,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/:rideId/share",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "rides",
-                ":rideId",
-                "share"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", ":rideId", "share"],
               "variable": [
                 {
                   "key": "rideId",
@@ -697,16 +561,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/:rideId/share",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "rides",
-                ":rideId",
-                "share"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", ":rideId", "share"],
               "variable": [
                 {
                   "key": "rideId",
@@ -728,16 +584,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/shared/:token",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "rides",
-                "shared",
-                ":token"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", "shared", ":token"],
               "variable": [
                 {
                   "key": "token",
@@ -759,15 +607,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/community",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "rides",
-                "community"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", "community"],
               "query": [
                 {
                   "key": "lat",
@@ -814,14 +655,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "rides"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides"],
               "query": [
                 {
                   "key": "limit",
@@ -837,6 +672,60 @@
                 },
                 {
                   "key": "type",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "started_from",
+                  "value": "",
+                  "description": "ISO 8601 date (inclusive)",
+                  "disabled": true
+                },
+                {
+                  "key": "started_to",
+                  "value": "",
+                  "description": "ISO 8601 date (inclusive end-of-day)",
+                  "disabled": true
+                },
+                {
+                  "key": "min_distance_km",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "max_distance_km",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "min_quality",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "max_quality",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "q",
+                  "value": "",
+                  "description": "Case-insensitive substring match against ride name",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "order",
                   "value": "",
                   "description": "",
                   "disabled": true
@@ -857,15 +746,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/start",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "rides",
-                "start"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", "start"]
             },
             "body": {
               "mode": "raw",
@@ -875,67 +757,6 @@
                   "language": "json"
                 }
               }
-            }
-          }
-        },
-        {
-          "name": "Stop an active ride",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/rides/:rideId/stop",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "rides",
-                ":rideId",
-                "stop"
-              ],
-              "variable": [
-                {
-                  "key": "rideId",
-                  "value": ""
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Get ride details with stats",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/rides/:rideId",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "rides",
-                ":rideId"
-              ],
-              "variable": [
-                {
-                  "key": "rideId",
-                  "value": ""
-                }
-              ]
             }
           }
         },
@@ -951,14 +772,210 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/import",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "rides",
-                "import"
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", "import"]
+            }
+          }
+        },
+        {
+          "name": "Export all of the caller's rides as a CSV sheet",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rides/export.csv",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", "export.csv"]
+            }
+          }
+        },
+        {
+          "name": "Export all of the caller's rides as a multi-track GPX",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rides/export.gpx",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", "export.gpx"]
+            }
+          }
+        },
+        {
+          "name": "List simplified track geometries for map overlay",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rides/tracks",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", "tracks"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "offset",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "type",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "started_from",
+                  "value": "",
+                  "description": "ISO 8601 date (inclusive)",
+                  "disabled": true
+                },
+                {
+                  "key": "started_to",
+                  "value": "",
+                  "description": "ISO 8601 date (inclusive end-of-day)",
+                  "disabled": true
+                },
+                {
+                  "key": "min_distance_km",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "max_distance_km",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "min_quality",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "max_quality",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "q",
+                  "value": "",
+                  "description": "Case-insensitive substring match against ride name",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "order",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Rename a ride",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rides/:rideId",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", ":rideId"],
+              "variable": [
+                {
+                  "key": "rideId",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Get ride details with stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rides/:rideId",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", ":rideId"],
+              "variable": [
+                {
+                  "key": "rideId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Stop an active ride",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rides/:rideId/stop",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", ":rideId", "stop"],
+              "variable": [
+                {
+                  "key": "rideId",
+                  "value": ""
+                }
               ]
             }
           }
@@ -975,16 +992,31 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/:rideId/gpx",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "rides",
-                ":rideId",
-                "gpx"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", ":rideId", "gpx"],
+              "variable": [
+                {
+                  "key": "rideId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Export ride stats as CSV",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rides/:rideId/csv",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", ":rideId", "csv"],
               "variable": [
                 {
                   "key": "rideId",
@@ -1011,15 +1043,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/safety/crash-alert",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "safety",
-                "crash-alert"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "safety", "crash-alert"]
             },
             "body": {
               "mode": "raw",
@@ -1049,18 +1074,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/tiles/:z/:x/:y.mvt",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "roads",
-                "tiles",
-                ":z",
-                ":x",
-                "{y}.mvt"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roads", "tiles", ":z", ":x", "{y}.mvt"],
               "variable": [
                 {
                   "key": "z",
@@ -1099,15 +1114,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/weather/current",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "weather",
-                "current"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "weather", "current"],
               "query": [
                 {
                   "key": "lat",
@@ -1137,15 +1145,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/weather/route",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "weather",
-                "route"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "weather", "route"]
             },
             "body": {
               "mode": "raw",
@@ -1175,15 +1176,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/commute/routes",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "commute",
-                "routes"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "commute", "routes"]
             }
           }
         },
@@ -1199,15 +1193,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/commute/routes",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "commute",
-                "routes"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "commute", "routes"]
             },
             "body": {
               "mode": "raw",
@@ -1232,16 +1219,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/commute/routes/:routeId",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "commute",
-                "routes",
-                ":routeId"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "commute", "routes", ":routeId"],
               "variable": [
                 {
                   "key": "routeId",
@@ -1263,15 +1242,25 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/commute/status",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "commute",
-                "status"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "commute", "status"]
+            }
+          }
+        },
+        {
+          "name": "Get alternative routes when primary has issues",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/commute/alternatives",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "commute", "alternatives"]
             }
           }
         },
@@ -1287,15 +1276,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/commute/stats",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "commute",
-                "stats"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "commute", "stats"],
               "query": [
                 {
                   "key": "period",
@@ -1324,16 +1306,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/:segmentId/reviews",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "roads",
-                ":segmentId",
-                "reviews"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roads", ":segmentId", "reviews"],
               "variable": [
                 {
                   "key": "segmentId",
@@ -1355,16 +1329,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/:segmentId/reviews",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "roads",
-                ":segmentId",
-                "reviews"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roads", ":segmentId", "reviews"],
               "variable": [
                 {
                   "key": "segmentId",
@@ -1374,7 +1340,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"rating\": 0,\n  \"comment\": \"\",\n  \"bike_model\": \"\"\n}",
+              "raw": "{\n  \"rating\": 0,\n  \"comment\": \"\",\n  \"bike_model\": \"\",\n  \"photos\": [\n    \"\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1395,16 +1361,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/:segmentId/reviews",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "roads",
-                ":segmentId",
-                "reviews"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roads", ":segmentId", "reviews"],
               "variable": [
                 {
                   "key": "segmentId",
@@ -1414,7 +1372,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"rating\": 0,\n  \"comment\": \"\",\n  \"bike_model\": \"\"\n}",
+              "raw": "{\n  \"rating\": 0,\n  \"comment\": \"\",\n  \"bike_model\": \"\",\n  \"photos\": [\n    \"\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1435,16 +1393,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/:segmentId/reviews",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "roads",
-                ":segmentId",
-                "reviews"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roads", ":segmentId", "reviews"],
               "variable": [
                 {
                   "key": "segmentId",
@@ -1471,16 +1421,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/:userId/follow",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "users",
-                ":userId",
-                "follow"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", ":userId", "follow"],
               "variable": [
                 {
                   "key": "userId",
@@ -1502,16 +1444,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/:userId/follow",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "users",
-                ":userId",
-                "follow"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", ":userId", "follow"],
               "variable": [
                 {
                   "key": "userId",
@@ -1533,16 +1467,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/:userId/followers",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "users",
-                ":userId",
-                "followers"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", ":userId", "followers"],
               "variable": [
                 {
                   "key": "userId",
@@ -1564,16 +1490,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/:userId/following",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "users",
-                ":userId",
-                "following"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", ":userId", "following"],
               "variable": [
                 {
                   "key": "userId",
@@ -1595,15 +1513,8 @@
             ],
             "url": {
               "raw": "{{baseUrl}}/api/v1/feed/rides",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "feed",
-                "rides"
-              ],
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "feed", "rides"],
               "query": [
                 {
                   "key": "lat",
@@ -1627,6 +1538,365 @@
                   "key": "limit",
                   "value": "",
                   "description": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "badges",
+      "item": [
+        {
+          "name": "List a user's badges with progress",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/:userId/badges",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", ":userId", "badges"],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Check and award new badges for current user",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/badges/check",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "badges", "check"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "challenges",
+      "item": [
+        {
+          "name": "List active challenges",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/challenges",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "challenges"]
+            }
+          }
+        },
+        {
+          "name": "Get challenge details with leaderboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/challenges/:challengeId",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "challenges", ":challengeId"],
+              "variable": [
+                {
+                  "key": "challengeId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Join a challenge",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/challenges/:challengeId/join",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "challenges", ":challengeId", "join"],
+              "variable": [
+                {
+                  "key": "challengeId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get your progress in a challenge",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/challenges/:challengeId/progress",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "challenges", ":challengeId", "progress"],
+              "variable": [
+                {
+                  "key": "challengeId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "exploration",
+      "item": [
+        {
+          "name": "Get exploration stats (ridden vs total)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/exploration/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "exploration", "stats"]
+            }
+          }
+        },
+        {
+          "name": "Get nearby unridden road segments",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/exploration/nearby-unridden",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "exploration", "nearby-unridden"],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "lng",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "radius_km",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get all ridden road segment IDs for map overlay",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/exploration/ridden-ids",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "exploration", "ridden-ids"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "passes",
+      "item": [
+        {
+          "name": "List mountain passes (optionally filtered by bbox)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/passes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "passes"],
+              "query": [
+                {
+                  "key": "bbox",
+                  "value": "",
+                  "description": "Bounding box filter \"minLng,minLat,maxLng,maxLat\". Omit to list all.",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Check which mountain passes a planned route crosses",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/passes/check-route",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "passes", "check-route"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ],\n  \"buffer_m\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "poi",
+      "item": [
+        {
+          "name": "Find accommodations near a point (US-10)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/poi/accommodations",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "poi", "accommodations"],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "lng",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "radius_km",
+                  "value": "",
+                  "description": "Search radius in km (defaulted to 5, capped at 25 by the service).",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Find along-route POIs near a point (US-10)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/poi/nearby",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "poi", "nearby"],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "lng",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "radius_km",
+                  "value": "",
+                  "description": "Search radius in km (defaulted to 5, capped at 25 by the service).",
+                  "disabled": true
+                },
+                {
+                  "key": "kinds",
+                  "value": "",
+                  "description": "Kinds to include. Omit to return all kinds. Accepts a repeated query param (`kinds=restaurant&kinds=cafe`) or a comma-separated value (`kinds=restaurant,cafe`).",
                   "disabled": true
                 }
               ]

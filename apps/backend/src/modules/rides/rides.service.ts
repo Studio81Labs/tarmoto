@@ -4,7 +4,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, Repository, SelectQueryBuilder } from 'typeorm';
 import { Ride } from '../../entities/ride.entity.js';
 import { RideStats } from '../../entities/ride-stats.entity.js';
 import { RideSegment } from '../../entities/ride-segment.entity.js';
@@ -15,6 +15,7 @@ import {
   RideSummaryDto,
   RideDetailDto,
   RideListResponseDto,
+  RideTracksResponseDto,
 } from './dto/ride-response.dto.js';
 import { CsvService } from './csv.service.js';
 
@@ -87,12 +88,27 @@ export class RidesService {
     const qb = this.rideRepo
       .createQueryBuilder('ride')
       .where('ride.user_id = :userId', { userId })
-      .orderBy('ride.started_at', 'DESC')
       .skip(offset)
       .take(limit);
 
-    if (query.type) {
-      qb.andWhere('ride.ride_type = :type', { type: query.type });
+    this.applyRidesFilters(qb, query);
+
+    const sortField = query.sort ?? 'started_at';
+    const order = (query.order ?? 'desc').toUpperCase() as 'ASC' | 'DESC';
+    if (sortField === 'duration_min') {
+      // Duration isn't stored — derive via timestamp subtraction. Rides
+      // still in progress (ended_at IS NULL) sort to the end in both
+      // directions so the open ride doesn't dominate either extreme.
+      qb.orderBy('(ride.ended_at - ride.started_at)', order, 'NULLS LAST');
+    } else if (
+      sortField === 'distance_km' ||
+      sortField === 'avg_road_quality'
+    ) {
+      // Nullable metrics — keep rides with no recorded value at the bottom
+      // in both directions so they don't dominate DESC pages.
+      qb.orderBy(`ride.${sortField}`, order, 'NULLS LAST');
+    } else {
+      qb.orderBy(`ride.${sortField}`, order);
     }
 
     const [rides, total] = await qb.getManyAndCount();
@@ -147,6 +163,7 @@ export class RidesService {
       avg_speed: ride.avg_speed,
       max_speed: ride.max_speed,
       avg_road_quality: ride.avg_road_quality,
+      name: ride.name ?? null,
       duration_min: durationMin,
       route_geometry: routeGeometry,
       elevation_gain: stats?.elevation_gain ?? null,
@@ -162,6 +179,75 @@ export class RidesService {
         lean_angle_max: s.lean_angle_max,
       })),
     };
+  }
+
+  async rename(
+    userId: string,
+    rideId: string,
+    name: string | null | undefined,
+  ): Promise<RideSummaryDto> {
+    const ride = await this.rideRepo.findOne({
+      where: { id: rideId, user_id: userId },
+    });
+    if (!ride) {
+      throw new NotFoundException('Ride not found');
+    }
+
+    const trimmed = typeof name === 'string' ? name.trim() : '';
+    ride.name = trimmed.length > 0 ? trimmed : null;
+    const saved = await this.rideRepo.save(ride);
+    return this.toSummary(saved);
+  }
+
+  async getTracks(
+    userId: string,
+    query: ListRidesDto,
+  ): Promise<RideTracksResponseDto> {
+    const CAP = 500;
+    const SIMPLIFY_TOLERANCE_DEG = 0.0005; // ~50 m at mid-latitudes
+
+    // Build two independent query builders: one for the geometry-bearing
+    // rows (has .select/.addSelect + order + limit) and one for the count
+    // (plain shape — avoids any ambiguity around getCount() wrapping the
+    // LIMIT'd raw query as a subquery, and avoids evaluating the expensive
+    // ST_SimplifyPreserveTopology expression for the count path).
+    const baseWhere = (
+      qb: SelectQueryBuilder<Ride>,
+    ): SelectQueryBuilder<Ride> =>
+      this.applyRidesFilters(
+        qb
+          .where('ride.user_id = :userId', { userId })
+          .andWhere('ride.route_geom IS NOT NULL'),
+        query,
+      );
+
+    const dataQb = baseWhere(this.rideRepo.createQueryBuilder('ride'))
+      .select('ride.id', 'id')
+      .addSelect(
+        `ST_AsGeoJSON(ST_SimplifyPreserveTopology(ride.route_geom, ${SIMPLIFY_TOLERANCE_DEG}))`,
+        'geometry',
+      )
+      .orderBy('ride.started_at', 'DESC')
+      .limit(CAP);
+
+    const countQb = baseWhere(this.rideRepo.createQueryBuilder('ride'));
+
+    const [rows, totalMatching] = await Promise.all([
+      dataQb.getRawMany<{ id: string; geometry: string | null }>(),
+      countQb.getCount(),
+    ]);
+
+    const tracks = rows.map((r) => ({
+      id: r.id,
+      geometry: r.geometry
+        ? (JSON.parse(r.geometry) as {
+            type: 'LineString';
+            coordinates: number[][];
+          })
+        : null,
+    }));
+
+    return { tracks, truncated: totalMatching > CAP };
   }
 
   async exportGpx(userId: string, rideId: string): Promise<string> {
@@ -255,6 +341,7 @@ ${tracks.join('\n')}
   toSummary(ride: Ride): RideSummaryDto {
     return {
       ...this.toRideResponse(ride),
+      name: ride.name ?? null,
       duration_min: this.calcDurationMin(ride),
     };
   }
@@ -264,5 +351,55 @@ ${tracks.join('\n')}
     return Math.round(
       (ride.ended_at.getTime() - ride.started_at.getTime()) / 60000,
     );
+  }
+
+  private applyRidesFilters(
+    qb: SelectQueryBuilder<Ride>,
+    query: ListRidesDto,
+  ): SelectQueryBuilder<Ride> {
+    if (query.type) {
+      qb.andWhere('ride.ride_type = :type', { type: query.type });
+    }
+    if (query.started_from) {
+      qb.andWhere('ride.started_at >= :started_from', {
+        started_from: query.started_from,
+      });
+    }
+    if (query.started_to) {
+      // inclusive end-of-day — add one day, compare with <
+      const to = new Date(query.started_to);
+      to.setUTCDate(to.getUTCDate() + 1);
+      qb.andWhere('ride.started_at < :started_to_excl', {
+        started_to_excl: to.toISOString(),
+      });
+    }
+    if (query.min_distance_km !== undefined) {
+      qb.andWhere('ride.distance_km >= :min_distance_km', {
+        min_distance_km: query.min_distance_km,
+      });
+    }
+    if (query.max_distance_km !== undefined) {
+      qb.andWhere('ride.distance_km <= :max_distance_km', {
+        max_distance_km: query.max_distance_km,
+      });
+    }
+    if (query.min_quality !== undefined) {
+      qb.andWhere('ride.avg_road_quality >= :min_quality', {
+        min_quality: query.min_quality,
+      });
+    }
+    if (query.max_quality !== undefined) {
+      qb.andWhere('ride.avg_road_quality <= :max_quality', {
+        max_quality: query.max_quality,
+      });
+    }
+    if (query.q) {
+      // Escape SQL wildcards (%, _, \) so user-typed characters are treated
+      // as literals. Parameter binding protects against injection; this only
+      // fixes substring-search semantics.
+      const escaped = query.q.replace(/[\\%_]/g, '\\$&');
+      qb.andWhere('ride.name ILIKE :q', { q: `%${escaped}%` });
+    }
+    return qb;
   }
 }

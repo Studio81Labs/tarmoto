@@ -9,6 +9,20 @@ import { Ride } from '../../entities/ride.entity.js';
 import { RideStats } from '../../entities/ride-stats.entity.js';
 import { RideSegment } from '../../entities/ride-segment.entity.js';
 
+function makeQbSpy() {
+  const andWhere = jest.fn().mockReturnThis();
+  const orderBy = jest.fn().mockReturnThis();
+  const qb = {
+    where: jest.fn().mockReturnThis(),
+    andWhere,
+    orderBy,
+    skip: jest.fn().mockReturnThis(),
+    take: jest.fn().mockReturnThis(),
+    getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+  };
+  return { qb, andWhere, orderBy };
+}
+
 describe('RidesService', () => {
   let service: RidesService;
   let rideRepo: Partial<jest.Mocked<Repository<Ride>>>;
@@ -127,6 +141,18 @@ describe('RidesService', () => {
     });
   });
 
+  describe('toSummary', () => {
+    it('includes name (null when unset)', () => {
+      const r = { ...mockRide, name: null } as unknown as Ride;
+      expect(service.toSummary(r).name).toBeNull();
+    });
+
+    it('includes name when set', () => {
+      const r = { ...mockRide, name: 'Sunday loop' } as unknown as Ride;
+      expect(service.toSummary(r).name).toBe('Sunday loop');
+    });
+  });
+
   describe('list', () => {
     it('should return paginated rides', async () => {
       const qb = {
@@ -187,6 +213,111 @@ describe('RidesService', () => {
     });
   });
 
+  describe('list filters and sort', () => {
+    it('applies date, distance, quality, type, and search filters', async () => {
+      const { qb, andWhere } = makeQbSpy();
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      await service.list('user-1', {
+        started_from: '2026-01-01',
+        started_to: '2026-04-20',
+        min_distance_km: 10,
+        max_distance_km: 500,
+        min_quality: 2,
+        max_quality: 5,
+        type: 'trip',
+        q: 'sunday',
+      } as never);
+
+      const predicates = andWhere.mock.calls.map(
+        (c: unknown[]) => c[0] as string,
+      );
+      expect(predicates).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('started_at >='),
+          expect.stringContaining('started_at <'),
+          expect.stringContaining('distance_km >='),
+          expect.stringContaining('distance_km <='),
+          expect.stringContaining('avg_road_quality >='),
+          expect.stringContaining('avg_road_quality <='),
+          expect.stringContaining('ride_type ='),
+          expect.stringContaining('name ILIKE'),
+        ]),
+      );
+    });
+
+    it('escapes SQL wildcards in the q filter value', async () => {
+      const { qb, andWhere } = makeQbSpy();
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      await service.list('user-1', { q: '50%_\\off' } as never);
+
+      const ilikeCall = andWhere.mock.calls.find(
+        (c: unknown[]) =>
+          typeof c[0] === 'string' && (c[0] as string).includes('name ILIKE'),
+      ) as [string, { q: string }] | undefined;
+      expect(ilikeCall).toBeDefined();
+      expect(ilikeCall![1].q).toBe('%50\\%\\_\\\\off%');
+    });
+
+    it('sorts by distance_km asc when requested', async () => {
+      const { qb, orderBy } = makeQbSpy();
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      await service.list('user-1', {
+        sort: 'distance_km',
+        order: 'asc',
+      } as never);
+
+      expect(orderBy).toHaveBeenCalledWith(
+        'ride.distance_km',
+        'ASC',
+        'NULLS LAST',
+      );
+    });
+
+    it('defaults sort to started_at DESC without NULLS clause', async () => {
+      const { qb, orderBy } = makeQbSpy();
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      await service.list('user-1', {} as never);
+
+      expect(orderBy).toHaveBeenCalledWith('ride.started_at', 'DESC');
+    });
+
+    it('sorts avg_road_quality with NULLS LAST', async () => {
+      const { qb, orderBy } = makeQbSpy();
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      await service.list('user-1', {
+        sort: 'avg_road_quality',
+        order: 'desc',
+      } as never);
+
+      expect(orderBy).toHaveBeenCalledWith(
+        'ride.avg_road_quality',
+        'DESC',
+        'NULLS LAST',
+      );
+    });
+
+    it('sorts duration via timestamp expression, NULLS LAST', async () => {
+      const { qb, orderBy } = makeQbSpy();
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      await service.list('user-1', {
+        sort: 'duration_min',
+        order: 'asc',
+      } as never);
+
+      expect(orderBy).toHaveBeenCalledWith(
+        '(ride.ended_at - ride.started_at)',
+        'ASC',
+        'NULLS LAST',
+      );
+    });
+  });
+
   describe('getDetail', () => {
     it('should return ride with stats and segments', async () => {
       rideRepo.findOne!.mockResolvedValueOnce({
@@ -242,6 +373,48 @@ describe('RidesService', () => {
       expect(result.elevation_gain).toBeNull();
       expect(result.route_geometry).toBeNull();
       expect(result.segments).toEqual([]);
+    });
+  });
+
+  describe('rename', () => {
+    it('updates the name and returns the summary', async () => {
+      const existing = { ...mockRide, name: null } as unknown as Ride;
+      (rideRepo.findOne as jest.Mock).mockResolvedValueOnce(existing);
+      (rideRepo.save as jest.Mock).mockImplementationOnce((r) =>
+        Promise.resolve(r),
+      );
+
+      const result = await service.rename('user-1', 'ride-1', 'Sunday loop');
+
+      expect(rideRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'ride-1', user_id: 'user-1' },
+      });
+      expect(rideRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'Sunday loop' }),
+      );
+      expect(result.name).toBe('Sunday loop');
+    });
+
+    it('trims whitespace and coerces empty to null', async () => {
+      const existing = { ...mockRide, name: 'old' } as unknown as Ride;
+      (rideRepo.findOne as jest.Mock).mockResolvedValueOnce(existing);
+      (rideRepo.save as jest.Mock).mockImplementationOnce((r) =>
+        Promise.resolve(r),
+      );
+
+      const result = await service.rename('user-1', 'ride-1', '   ');
+
+      expect(rideRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ name: null }),
+      );
+      expect(result.name).toBeNull();
+    });
+
+    it('throws NotFound when ride missing', async () => {
+      (rideRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
+      await expect(
+        service.rename('user-1', 'nope', 'x'),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
@@ -334,6 +507,84 @@ describe('RidesService', () => {
       expect(lines[1]).toContain('100');
       // ride-2 has no stats — elevation column should be empty
       expect(lines[2]).toContain('ride-2');
+    });
+  });
+
+  describe('getTracks', () => {
+    function makeTracksQbSpy(
+      rows: Array<{ id: string; geometry: string | null }>,
+      count: number,
+    ) {
+      const qb = {
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue(rows),
+        getCount: jest.fn().mockResolvedValue(count),
+      };
+      return qb;
+    }
+
+    it('returns simplified GeoJSON geometries and truncated=false below cap', async () => {
+      const qb = makeTracksQbSpy(
+        [
+          {
+            id: 'r1',
+            geometry: JSON.stringify({
+              type: 'LineString',
+              coordinates: [
+                [14, 50],
+                [14.1, 50.1],
+              ],
+            }),
+          },
+        ],
+        1,
+      );
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      const res = await service.getTracks('user-1', {} as never);
+
+      expect(res.tracks).toEqual([
+        {
+          id: 'r1',
+          geometry: {
+            type: 'LineString',
+            coordinates: [
+              [14, 50],
+              [14.1, 50.1],
+            ],
+          },
+        },
+      ]);
+      expect(res.truncated).toBe(false);
+    });
+
+    it('sets truncated=true when more than 500 rides match', async () => {
+      const qb = makeTracksQbSpy([], 501);
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      const res = await service.getTracks('user-1', {} as never);
+      expect(res.truncated).toBe(true);
+    });
+
+    it('excludes null-geometry rides at query level', async () => {
+      const qb = makeTracksQbSpy([], 0);
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      await service.getTracks('user-1', {} as never);
+
+      const predicates = qb.andWhere.mock.calls.map(
+        (c: unknown[]) => c[0] as string,
+      );
+      expect(predicates).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('route_geom IS NOT NULL'),
+        ]),
+      );
     });
   });
 

@@ -29,10 +29,12 @@ describe('RidesController', () => {
       stop: jest.fn().mockResolvedValue({ ...mockRide, status: 'completed' }),
       list: jest.fn().mockResolvedValue({ rides: [mockRide], total: 1 }),
       getDetail: jest.fn().mockResolvedValue(mockRide),
+      rename: jest.fn(),
       exportGpx: jest.fn().mockResolvedValue('<gpx></gpx>'),
       exportRideCsv: jest.fn().mockResolvedValue('header\r\ndata\r\n'),
       exportAllCsv: jest.fn().mockResolvedValue('header\r\nd1\r\nd2\r\n'),
       exportAllGpx: jest.fn().mockResolvedValue('<gpx></gpx>'),
+      getTracks: jest.fn().mockResolvedValue({ tracks: [], truncated: false }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -91,6 +93,24 @@ describe('RidesController', () => {
     });
   });
 
+  describe('PATCH /rides/:rideId', () => {
+    it('calls service.rename with the user and new name', async () => {
+      service.rename.mockResolvedValue({
+        ...mockRide,
+        name: 'Renamed',
+      } as never);
+      const result = await controller.rename(mockReq, 'ride-1', {
+        name: 'Renamed',
+      });
+      expect(service.rename).toHaveBeenCalledWith(
+        'user-1',
+        'ride-1',
+        'Renamed',
+      );
+      expect(result.name).toBe('Renamed');
+    });
+  });
+
   describe('GET /rides/:rideId/csv', () => {
     it('writes CSV with correct headers and filename', async () => {
       const res = mockResponse();
@@ -125,6 +145,18 @@ describe('RidesController', () => {
         /^attachment; filename="tarmoto-rides-\d{4}-\d{2}-\d{2}\.csv"$/,
       );
       expect(res.sendMock).toHaveBeenCalledWith('header\r\nd1\r\nd2\r\n');
+    });
+  });
+
+  describe('GET /rides/tracks', () => {
+    it('forwards the user and filters to the service', async () => {
+      const result = await controller.tracks(mockReq, {
+        type: 'trip',
+      } as never);
+      expect(service.getTracks).toHaveBeenCalledWith('user-1', {
+        type: 'trip',
+      });
+      expect(result.truncated).toBe(false);
     });
   });
 

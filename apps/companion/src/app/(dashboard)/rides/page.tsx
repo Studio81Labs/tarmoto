@@ -1,50 +1,78 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { api } from "@/lib/api";
 import {
-  History,
-  Calendar,
-  MapPin,
-  Gauge,
-  ChevronRight,
-  Scale,
   Download,
+  List as ListIcon,
   Loader2,
+  Map as MapIcon,
+  Scale,
 } from "lucide-react";
-import type { Ride } from "@/lib/types";
 import {
   downloadAllRidesExport,
   type RideExportFormat,
 } from "@/lib/ride-export";
+import { RidesFilters } from "./_components/RidesFilters";
+import { RidesMap } from "./_components/RidesMap";
+import { RidesTable } from "./_components/RidesTable";
+import {
+  useRidesQuery,
+  type RideSummary,
+  type SortField,
+} from "./_components/useRidesQuery";
 
-export default function RideListPage() {
-  const [rides, setRides] = useState<Ride[]>([]);
-  const [loading, setLoading] = useState(true);
+export default function RidesPage() {
+  // useSearchParams needs a Suspense boundary for Next.js static optimization.
+  return (
+    <Suspense fallback={null}>
+      <RidesPageInner />
+    </Suspense>
+  );
+}
 
-  useEffect(() => {
-    // The spec returns RideSummaryDto (snake_case) while the local Ride type
-    // uses camelCase. Cast through unknown until the local types are replaced
-    // with spec-generated types.
-    api
-      .GET("/api/v1/rides")
-      .then(({ data }) => {
-        if (data?.rides) {
-          setRides(data.rides as unknown as Ride[]);
-        }
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, []);
+function RidesPageInner() {
+  const { state, list, tracks, update, reset, pageSize } = useRidesQuery();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [mobileTab, setMobileTab] = useState<"map" | "list">("list");
+
+  // Optimistic updates after rename — merge into the current list snapshot.
+  // We let patches persist across refetches; the server ultimately ships the
+  // renamed row, so the merge becomes a no-op naturally. Patches scoped to
+  // rides no longer in `list.rides` just sit idle — cheap, and avoids
+  // clobbering a rename completed during an unrelated refetch.
+  //
+  // If a name-search filter is active, we also re-evaluate the patched row
+  // against `state.q` client-side — a rename that no longer matches the
+  // search would otherwise stay visible until the next refetch.
+  const [patched, setPatched] = useState<Record<string, RideSummary>>({});
+  const qLower = state.q?.toLowerCase();
+  const mergedRides = list.rides
+    .map((r) => patched[r.id] ?? r)
+    .filter((r) => !qLower || (r.name ?? "").toLowerCase().includes(qLower));
+  // Adjust the server-reported total by the number of rides the rename
+  // filter dropped on this page, so the table footer and `Page X of Y`
+  // stay in sync with what's actually rendered.
+  const adjustedTotal = Math.max(
+    0,
+    list.total - (list.rides.length - mergedRides.length),
+  );
+
+  function onSort(sort: SortField) {
+    if (state.sort === sort) {
+      update({ order: state.order === "asc" ? "desc" : "asc" });
+    } else {
+      update({ sort, order: "desc" });
+    }
+  }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto animate-fade-in">
-      <div className="flex items-center justify-between mb-6 gap-4">
+    <div className="flex flex-col h-[calc(100vh-4rem)] p-4 md:p-6 max-w-7xl mx-auto w-full animate-fade-in">
+      <div className="flex items-center justify-between mb-4 gap-4 flex-wrap">
         <h1 className="text-2xl font-bold">Ride History</h1>
         <div className="flex items-center gap-2">
-          {rides.length > 0 && <BulkExportMenu />}
-          {rides.length >= 2 && (
+          {list.rides.length > 0 && <BulkExportMenu />}
+          {list.total >= 2 && (
             <Link
               href="/rides/compare"
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm hover:bg-slate-700 transition"
@@ -55,54 +83,72 @@ export default function RideListPage() {
         </div>
       </div>
 
-      {loading ? (
-        <div className="space-y-3">
-          {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="h-20 rounded-xl bg-slate-900 border border-slate-800 animate-pulse"
-            />
-          ))}
+      <RidesFilters state={state} update={update} reset={reset} />
+
+      {/* Mobile tab toggle */}
+      <div className="flex md:hidden items-center rounded-lg bg-slate-900 border border-slate-800 p-0.5 mb-3 w-fit">
+        <button
+          type="button"
+          onClick={() => setMobileTab("map")}
+          className={`flex items-center gap-1 px-3 py-1 rounded-md text-sm ${
+            mobileTab === "map"
+              ? "bg-slate-800 text-slate-100"
+              : "text-slate-400"
+          }`}
+        >
+          <MapIcon size={14} /> Map
+        </button>
+        <button
+          type="button"
+          onClick={() => setMobileTab("list")}
+          className={`flex items-center gap-1 px-3 py-1 rounded-md text-sm ${
+            mobileTab === "list"
+              ? "bg-slate-800 text-slate-100"
+              : "text-slate-400"
+          }`}
+        >
+          <ListIcon size={14} /> List
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 flex-1 min-h-0">
+        <div
+          className={`md:col-span-3 min-h-[360px] md:min-h-0 ${
+            mobileTab === "map" ? "" : "hidden md:block"
+          }`}
+        >
+          <RidesMap
+            tracks={tracks.tracks}
+            truncated={tracks.truncated}
+            loading={tracks.loading}
+            selectedId={selectedId}
+            onSelect={(id) => setSelectedId(id)}
+          />
         </div>
-      ) : rides.length === 0 ? (
-        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-16 text-center">
-          <History size={48} className="mx-auto text-slate-600 mb-4" />
-          <p className="text-slate-400 text-lg mb-2">No rides recorded yet</p>
-          <p className="text-slate-500 text-sm">
-            Start riding with the Tarmoto mobile app to see your history here.
-          </p>
+        <div
+          className={`md:col-span-2 min-h-0 flex flex-col ${
+            mobileTab === "list" ? "" : "hidden md:flex"
+          }`}
+        >
+          <RidesTable
+            state={state}
+            rides={mergedRides}
+            total={adjustedTotal}
+            pageSize={pageSize}
+            loading={list.loading}
+            selectedId={selectedId}
+            onSelect={(id) => setSelectedId(id)}
+            onSort={onSort}
+            onPage={(page) => update({ page })}
+            onRenamed={(next) =>
+              setPatched((prev) => ({ ...prev, [next.id]: next }))
+            }
+          />
+          {list.error && (
+            <p className="text-xs text-red-400 mt-2">{list.error}</p>
+          )}
         </div>
-      ) : (
-        <div className="space-y-2">
-          {rides.map((ride) => (
-            <Link
-              key={ride.id}
-              href={`/rides/${ride.id}`}
-              className="flex items-center gap-4 p-4 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition group"
-            >
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-white group-hover:text-tarmoto-cyan truncate transition">
-                  {ride.name ??
-                    `Ride on ${new Date(ride.startedAt).toLocaleDateString()}`}
-                </p>
-                <div className="flex items-center gap-4 mt-1 text-sm text-slate-400">
-                  <span className="flex items-center gap-1">
-                    <Calendar size={12} />{" "}
-                    {new Date(ride.startedAt).toLocaleDateString()}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <MapPin size={12} /> {ride.distanceKm.toFixed(1)} km
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Gauge size={12} /> {ride.avgSpeedKmh.toFixed(0)} km/h avg
-                  </span>
-                </div>
-              </div>
-              <ChevronRight size={16} className="text-slate-600" />
-            </Link>
-          ))}
-        </div>
-      )}
+      </div>
     </div>
   );
 }

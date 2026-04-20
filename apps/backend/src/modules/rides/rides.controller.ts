@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Body,
   Param,
   Query,
@@ -31,11 +32,13 @@ import { RidesService } from './rides.service.js';
 import { GpxService } from './gpx.service.js';
 import { StartRideDto } from './dto/start-ride.dto.js';
 import { ListRidesDto } from './dto/list-rides.dto.js';
+import { RenameRideDto } from './dto/rename-ride.dto.js';
 import {
   RideResponseDto,
   RideSummaryDto,
   RideDetailDto,
   RideListResponseDto,
+  RideTracksResponseDto,
 } from './dto/ride-response.dto.js';
 
 @ApiTags('rides')
@@ -135,6 +138,30 @@ export class RidesController {
       `attachment; filename="tarmoto-rides-${stamp}.gpx"`,
     );
     res.send(gpx);
+  }
+
+  @Get('tracks')
+  @ApiOperation({
+    summary: 'List simplified track geometries for map overlay',
+  })
+  @ApiResponse({ status: 200, type: RideTracksResponseDto })
+  async tracks(
+    @Req() req: express.Request,
+    @Query() query: ListRidesDto,
+  ): Promise<RideTracksResponseDto> {
+    return this.ridesService.getTracks(req.user!.userId, query);
+  }
+
+  @Patch(':rideId')
+  @ApiOperation({ summary: 'Rename a ride' })
+  @ApiResponse({ status: 200, type: RideSummaryDto })
+  @ApiResponse({ status: 404, description: 'Ride not found' })
+  async rename(
+    @Req() req: express.Request,
+    @Param('rideId', ParseUUIDPipe) rideId: string,
+    @Body() dto: RenameRideDto,
+  ): Promise<RideSummaryDto> {
+    return this.ridesService.rename(req.user!.userId, rideId, dto.name ?? null);
   }
 
   @Post(':rideId/stop')
