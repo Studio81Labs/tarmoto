@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { registerUser } from "@/lib/api";
+import { safeCallbackUrl } from "@/lib/callback-url";
 
 function RegisterForm() {
   const [displayName, setDisplayName] = useState("");
@@ -28,11 +29,7 @@ function RegisterForm() {
       if (result?.error) {
         setError("Account created but sign-in failed. Please log in.");
       } else {
-        // Restrict to same-origin paths so a crafted ?callbackUrl=https://evil
-        // on any inbound link can't send the freshly-signed-in user offsite.
-        const raw = searchParams.get("callbackUrl") ?? "/";
-        window.location.href =
-          raw.startsWith("/") && !raw.startsWith("//") ? raw : "/";
+        window.location.href = safeCallbackUrl(searchParams.get("callbackUrl"));
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Registration failed");
