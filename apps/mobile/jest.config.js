@@ -1,15 +1,15 @@
 /** Jest config for the Tarmoto React Native mobile app. */
 module.exports = {
-  preset: 'react-native',
-  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
+  preset: "@react-native/jest-preset",
+  moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json"],
   testMatch: [
-    '**/__tests__/**/*.test.[jt]s?(x)',
-    '**/?(*.)+(spec|test).[jt]s?(x)',
+    "**/__tests__/**/*.test.[jt]s?(x)",
+    "**/?(*.)+(spec|test).[jt]s?(x)",
   ],
   transformIgnorePatterns: [
-    'node_modules/(?!(?:.pnpm/)?((jest-)?@react-native|react-native|@testing-library|react-native-.*)/)',
+    "node_modules/(?!(?:.pnpm/)?((jest-)?@react-native|react-native|@testing-library|react-native-.*)/)",
   ],
   moduleNameMapper: {
-    '^@/(.*)$': '<rootDir>/src/$1',
+    "^@/(.*)$": "<rootDir>/src/$1",
   },
 };
