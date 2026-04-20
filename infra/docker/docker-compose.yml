@@ -24,7 +24,7 @@ services:
 
   redis:
     container_name: tarmoto-redis
-    image: redis:7-alpine
+    image: redis:8-alpine
     restart: unless-stopped
     # Default host port is 6380 (not 6379) to avoid clashing with any
     # system-local Redis or another dev container on 6379.
