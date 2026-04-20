@@ -23,7 +23,6 @@ jest.mock("@/services/api", () => ({
 }));
 
 // Import AFTER the mock so the service binds to the mocked `api`.
-/* eslint-disable import/first */
 import { AppState } from "react-native";
 import { api } from "@/services/api";
 import {
@@ -35,7 +34,6 @@ import {
   type Notifier,
   type NotificationPayload,
 } from "../commuteHazardNotifier";
-/* eslint-enable import/first */
 
 const mockApi = api as jest.Mocked<typeof api>;
 
