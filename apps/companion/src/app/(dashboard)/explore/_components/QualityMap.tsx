@@ -24,16 +24,16 @@ const HAZARD_OVERVIEW_LAYER = "tarmoto-hazards-cluster";
 const DIMMED_OPACITY = 0.15;
 const ACTIVE_OPACITY = 0.9;
 
-// surface_type values that the backend emits. "unknown" matches anything the
-// user hasn't classified yet and is always shown so the map doesn't have blank
-// spots on fresh data.
+// Surface palette — must stay in sync with --color-surface-* in globals.css
+// so the legend swatches match what's painted on the map. "unknown" is not
+// user-filterable but always renders so the map doesn't blank fresh data.
 const SURFACE_COLORS: Record<FilterableSurface | "unknown", string> = {
-  asphalt: "#3b82f6", // blue-500
-  concrete: "#94a3b8", // slate-400
-  cobblestone: "#a855f7", // purple-500
-  gravel: "#f59e0b", // amber-500
-  dirt: "#78350f", // amber-900
-  unknown: "#64748b", // slate-500
+  asphalt: "#3B82F6",
+  concrete: "#6B7280",
+  cobblestone: "#A78BFA",
+  gravel: "#D97706",
+  dirt: "#92400E",
+  unknown: "#64748B",
 };
 
 const HAZARD_COLORS: Record<string, string> = {
