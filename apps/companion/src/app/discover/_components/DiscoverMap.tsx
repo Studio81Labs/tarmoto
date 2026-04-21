@@ -39,6 +39,23 @@ export function DiscoverMap({
   const [ready, setReady] = useState(false);
   const [drawMode, setDrawMode] = useState<"idle" | "drawing">("idle");
   const prevBboxKeyRef = useRef<string | null>(null);
+  const prevRetryNonceRef = useRef<number>(retryNonce);
+
+  // Callback refs so the fetch effect can depend only on stable values.
+  // Otherwise parent re-renders pass fresh inline callbacks and re-fire
+  // the effect on every render.
+  const onZonesLoadedRef = useRef(onZonesLoaded);
+  const onZonesErrorRef = useRef(onZonesError);
+  const onZonesLoadingRef = useRef(onZonesLoading);
+  useEffect(() => {
+    onZonesLoadedRef.current = onZonesLoaded;
+  }, [onZonesLoaded]);
+  useEffect(() => {
+    onZonesErrorRef.current = onZonesError;
+  }, [onZonesError]);
+  useEffect(() => {
+    onZonesLoadingRef.current = onZonesLoading;
+  }, [onZonesLoading]);
 
   const {
     center,
@@ -105,18 +122,21 @@ export function DiscoverMap({
   };
 
   // Debounced fetch of zones whenever the effective bbox changes (or the
-  // caller bumps retryNonce).
+  // caller bumps retryNonce). Skip the refetch when neither has changed
+  // since the last fetch so parent re-renders don't trigger a network
+  // loop.
   useEffect(() => {
     const map = handleRef.current?.map;
     if (!map || !ready || !effectiveBbox) return;
     const key = effectiveBbox.map((n) => n.toFixed(5)).join(",");
-    // Skip refetch on unchanged bbox UNLESS retry was requested.
-    if (key === prevBboxKeyRef.current && retryNonce === 0) return;
+    const retryChanged = retryNonce !== prevRetryNonceRef.current;
+    if (key === prevBboxKeyRef.current && !retryChanged) return;
     prevBboxKeyRef.current = key;
+    prevRetryNonceRef.current = retryNonce;
 
     const controller = new AbortController();
     let cancelled = false;
-    onZonesLoading?.(true);
+    onZonesLoadingRef.current?.(true);
     const timer = window.setTimeout(async () => {
       try {
         const zones = await fetchFunZonesInBbox(effectiveBbox, {
@@ -125,13 +145,13 @@ export function DiscoverMap({
         if (cancelled) return;
         zones.sort((a, b) => b.composite_score - a.composite_score);
         updateFunZoneLayerData(map, zones);
-        onZonesLoaded?.(zones);
+        onZonesLoadedRef.current?.(zones);
       } catch (err) {
         if ((err as { name?: string }).name === "AbortError") return;
         console.warn("[discover] zones fetch failed", err);
-        onZonesError?.("Couldn't load zones.");
+        onZonesErrorRef.current?.("Couldn't load zones.");
       } finally {
-        if (!cancelled) onZonesLoading?.(false);
+        if (!cancelled) onZonesLoadingRef.current?.(false);
       }
     }, FETCH_DEBOUNCE_MS);
 
@@ -140,14 +160,7 @@ export function DiscoverMap({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [
-    ready,
-    effectiveBbox,
-    retryNonce,
-    onZonesLoaded,
-    onZonesError,
-    onZonesLoading,
-  ]);
+  }, [ready, effectiveBbox, retryNonce]);
 
   // Keep the drawn-rectangle overlay in sync with URL-hydrated state.
   useEffect(() => {

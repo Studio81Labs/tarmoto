@@ -47,10 +47,11 @@ function DiscoverPageInner() {
 
     const bboxStr = searchParams.get("bbox");
     const bbox = parseBbox(bboxStr);
-    if (bbox) setDrawnBbox(bbox);
-    else if (bboxStr === null) {
-      // User arrived with no bbox param — clear any drawn state we might
-      // have carried over (e.g. client navigation within the app).
+    if (bbox) {
+      setDrawnBbox(bbox);
+    } else {
+      // Missing OR malformed bbox param — clear any drawn state we might
+      // have carried over so the UI matches the URL.
       clearDrawnBbox();
     }
 

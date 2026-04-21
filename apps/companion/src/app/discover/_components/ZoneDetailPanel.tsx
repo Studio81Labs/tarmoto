@@ -32,6 +32,10 @@ export function ZoneDetailPanel({ summary }: Props) {
       setError(null);
       return;
     }
+    // Clear the prior zone's detail so the panel falls back to the list
+    // summary (name + score) for the new zone while we refetch, instead
+    // of briefly showing the previous zone's top roads and stats.
+    setDetail(null);
     setLoading(true);
     setError(null);
     const controller = new AbortController();

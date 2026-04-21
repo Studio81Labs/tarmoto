@@ -35,7 +35,7 @@ export default async function BestRoadsLayout({
   }
   return (
     <div className="flex flex-col min-h-screen bg-slate-950">
-      <PublicExploreHeader />
+      <PublicExploreHeader callbackUrl="/roads/best" />
       <div className="flex-1">{children}</div>
     </div>
   );

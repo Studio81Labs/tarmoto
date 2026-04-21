@@ -37,7 +37,7 @@ export default async function DiscoverLayout({
   }
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-slate-950">
-      <PublicExploreHeader />
+      <PublicExploreHeader callbackUrl="/discover" />
       <div className="flex-1 overflow-hidden">{children}</div>
     </div>
   );

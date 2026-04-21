@@ -21,8 +21,10 @@ export async function fetchFunZonesInBbox(
   const res = await fetch(`${API_BASE}/roads/fun-zones?${query.toString()}`, {
     signal: init?.signal,
   });
-  if (res.status === 404) return [];
   if (!res.ok) {
+    // The list endpoint returns 200 with [] for "no zones in bbox"; any
+    // non-2xx is a real error (bad bbox param, misconfigured API base,
+    // backend down) and should surface to the user, not be coerced to [].
     throw new Error(`GET /roads/fun-zones failed (${res.status})`);
   }
   return (await res.json()) as FunZoneListItem[];
