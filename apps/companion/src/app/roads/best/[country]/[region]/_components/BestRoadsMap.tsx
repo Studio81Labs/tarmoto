@@ -60,12 +60,14 @@ export function BestRoadsMap({ bbox, center, defaultZoom, roads }: Props) {
     [roads],
   );
 
-  // flatMap (not filter → map) so a road with an empty geometry is skipped
-  // without renumbering the ranks of everything after it in the list.
+  // flatMap (not filter → map) so a road with a degenerate geometry is
+  // skipped without renumbering the ranks of everything after it in the
+  // list. Use the same `< 2` threshold as the feature collection so no
+  // marker is ever drawn without its polyline underneath.
   const markers = useMemo(
     () =>
       roads.flatMap((r, i) => {
-        if (r.geometry.length === 0) return [];
+        if (r.geometry.length < 2) return [];
         const mid = r.geometry[Math.floor(r.geometry.length / 2)];
         return [{ id: r.id, rank: i + 1, lat: mid.lat, lng: mid.lng }];
       }),
