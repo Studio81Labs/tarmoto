@@ -70,6 +70,10 @@ export function PlaceSearch({ value, onChange }: Props) {
     // user already picked.
     if (selectedLabel != null && draft === selectedLabel) {
       setMatches([]);
+      // Reset loading too — an earlier keystroke may have set it true
+      // before being aborted, and leaving it stuck would render a
+      // "Searching…" row under a place we've already matched.
+      setLoading(false);
       return;
     }
     const q = draft.trim();

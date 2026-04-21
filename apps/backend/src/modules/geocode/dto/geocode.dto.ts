@@ -20,6 +20,11 @@ export class GeocodeQueryDto {
     minLength: 2,
     maxLength: 200,
   })
+  // Trim before validation so `?q=%20%20` fails `@MinLength(2)` at the
+  // DTO boundary instead of slipping through to the service layer.
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   @IsString()
   @MinLength(2)
   @MaxLength(200)
