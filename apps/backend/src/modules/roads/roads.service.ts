@@ -8,6 +8,7 @@ import {
   ReviewResponseDto,
   sanitizeReviewPhotos,
 } from '../reviews/dto/review.dto.js';
+import { findRegion } from '@tarmoto/shared';
 import { QueryNearbyDto } from './dto/query-nearby.dto.js';
 import {
   RoadSegmentDto,
@@ -15,9 +16,14 @@ import {
 } from './dto/road-segment.dto.js';
 import { QueryFunZonesDto } from './dto/query-fun-zones.dto.js';
 import { FunZoneDto } from './dto/fun-zone.dto.js';
+import { QueryBestRoadsDto } from './dto/query-best-roads.dto.js';
+import { BestRoadsResponseDto, BestRoadDto } from './dto/best-roads.dto.js';
 
 const RECENT_REVIEW_LIMIT = 5;
 const ACTIVE_HAZARD_LIMIT = 10;
+const BEST_ROADS_MIN_CONFIDENCE = 3;
+const BEST_ROADS_MIN_LENGTH_M = 500;
+const BEST_ROADS_DEFAULT_LIMIT = 10;
 
 @Injectable()
 export class RoadsService {
@@ -238,6 +244,68 @@ export class RoadsService {
         ? Math.round(reviewStats.avg_rating * 10) / 10
         : null,
       riders_per_month: ridersPerMonth,
+    };
+  }
+
+  async findBest(query: QueryBestRoadsDto): Promise<BestRoadsResponseDto> {
+    const region = findRegion(query.country, query.region);
+    if (!region) {
+      throw new NotFoundException('Region not found');
+    }
+    const limit = query.limit ?? BEST_ROADS_DEFAULT_LIMIT;
+    const [w, s, e, n] = region.bbox;
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const rows = await this.segmentRepo.query(
+      `SELECT
+        rs.id, rs.road_name, rs.road_number,
+        rs.quality_score, rs.curviness_score, rs.surface_type,
+        rs.length_m, rs.confidence,
+        ST_AsGeoJSON(rs.geom)::json AS geojson,
+        (
+          rs.quality_score * 2.0
+          + rs.curviness_score * 1.0
+          + LEAST(rs.length_m / 1000.0, 20.0) * 0.1
+        ) AS best_score
+      FROM road_segments rs
+      WHERE ST_Intersects(
+        rs.geom,
+        ST_MakeEnvelope($1, $2, $3, $4, 4326)
+      )
+        AND rs.quality_score IS NOT NULL
+        AND rs.confidence >= $5
+        AND rs.length_m >= $6
+      ORDER BY best_score DESC NULLS LAST
+      LIMIT $7`,
+      [w, s, e, n, BEST_ROADS_MIN_CONFIDENCE, BEST_ROADS_MIN_LENGTH_M, limit],
+    );
+
+    const roads: BestRoadDto[] = (rows as Record<string, unknown>[]).map(
+      (row) => {
+        const geojson = row.geojson as { coordinates: number[][] };
+        return {
+          id: row.id as string,
+          road_name: (row.road_name as string) ?? null,
+          road_number: (row.road_number as string) ?? null,
+          quality_score: (row.quality_score as number) ?? null,
+          curviness_score: row.curviness_score as number,
+          surface_type: row.surface_type as string,
+          length_m: row.length_m as number,
+          confidence: row.confidence as number,
+          geometry: geojson.coordinates.map((c) => ({ lat: c[1], lng: c[0] })),
+          best_score: row.best_score as number,
+        };
+      },
+    );
+
+    return {
+      region: {
+        slug: region.slug,
+        country: region.country,
+        name: region.name,
+        bbox: region.bbox,
+      },
+      roads,
     };
   }
 

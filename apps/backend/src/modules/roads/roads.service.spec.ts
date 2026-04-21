@@ -460,4 +460,84 @@ describe('RoadsService', () => {
       expect(results[0].boundary[0]).toEqual({ lat: 49.4, lng: 18.1 });
     });
   });
+
+  describe('findBest', () => {
+    it('resolves the region and issues a bbox query with the composite score', async () => {
+      (segmentRepo.query as jest.Mock).mockResolvedValueOnce([]);
+
+      await service.findBest({ country: 'cz', region: 'beskydy' });
+
+      expect(segmentRepo.query).toHaveBeenCalledTimes(1);
+      const [sql, params] = (segmentRepo.query as jest.Mock).mock.calls[0] as [
+        string,
+        unknown[],
+      ];
+      expect(sql).toContain('ST_Intersects');
+      expect(sql).toContain('ST_MakeEnvelope');
+      expect(sql).toContain('best_score');
+      // bbox params for Beskydy from the regions catalog
+      expect(params.slice(0, 4)).toEqual([18.0, 49.3, 18.85, 49.7]);
+      // default limit (last param) = 10
+      expect(params[params.length - 1]).toBe(10);
+    });
+
+    it('honours a custom limit up to the DTO-validated max', async () => {
+      (segmentRepo.query as jest.Mock).mockResolvedValueOnce([]);
+      await service.findBest({ country: 'cz', region: 'beskydy', limit: 25 });
+      const [, params] = (segmentRepo.query as jest.Mock).mock.calls[0] as [
+        string,
+        unknown[],
+      ];
+      expect(params[params.length - 1]).toBe(25);
+    });
+
+    it('throws NotFoundException for an unknown region', async () => {
+      await expect(
+        service.findBest({ country: 'cz', region: 'does-not-exist' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(segmentRepo.query).not.toHaveBeenCalled();
+    });
+
+    it('maps SQL rows into BestRoadDto with geometry as {lat,lng}[]', async () => {
+      (segmentRepo.query as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'seg-1',
+          road_name: 'Test Road',
+          road_number: null,
+          quality_score: 4.5,
+          curviness_score: 3.2,
+          surface_type: 'asphalt',
+          length_m: 5400,
+          confidence: 42,
+          geojson: {
+            type: 'LineString',
+            coordinates: [
+              [18.4, 49.5],
+              [18.41, 49.51],
+            ],
+          },
+          best_score: 12.34,
+        },
+      ]);
+
+      const result = await service.findBest({
+        country: 'cz',
+        region: 'beskydy',
+      });
+
+      expect(result.region.slug).toBe('beskydy');
+      expect(result.region.bbox).toEqual([18.0, 49.3, 18.85, 49.7]);
+      expect(result.roads).toHaveLength(1);
+      expect(result.roads[0]).toMatchObject({
+        id: 'seg-1',
+        road_name: 'Test Road',
+        quality_score: 4.5,
+        surface_type: 'asphalt',
+      });
+      expect(result.roads[0].geometry).toEqual([
+        { lat: 49.5, lng: 18.4 },
+        { lat: 49.51, lng: 18.41 },
+      ]);
+    });
+  });
 });
