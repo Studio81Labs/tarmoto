@@ -9,6 +9,7 @@ import { AddUniqueActiveRide1713300000000 } from '../../migrations/1713300000000
 import { AddCommunityTables1713400000000 } from '../../migrations/1713400000000-AddCommunityTables.js';
 import { AddChallengeTables1713500000000 } from '../../migrations/1713500000000-AddChallengeTables.js';
 import { AddMountainPasses1713600000000 } from '../../migrations/1713600000000-AddMountainPasses.js';
+import { AddRoadReviewVotes1714000000000 } from '../../migrations/1714000000000-AddRoadReviewVotes.js';
 import {
   User,
   UserContact,
@@ -32,6 +33,7 @@ import {
   Challenge,
   ChallengeEntry,
   MountainPass,
+  RoadReviewVote,
 } from '../../entities/index.js';
 
 const entities = [
@@ -57,6 +59,7 @@ const entities = [
   Challenge,
   ChallengeEntry,
   MountainPass,
+  RoadReviewVote,
 ];
 
 @Module({
@@ -82,6 +85,7 @@ const entities = [
             AddCommunityTables1713400000000,
             AddChallengeTables1713500000000,
             AddMountainPasses1713600000000,
+            AddRoadReviewVotes1714000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.

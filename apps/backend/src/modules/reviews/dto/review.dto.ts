@@ -1,6 +1,7 @@
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsInt,
   IsString,
   IsOptional,
@@ -100,4 +101,39 @@ export class ReviewResponseDto {
 
   @ApiProperty()
   created_at!: string;
+
+  @ApiProperty({ description: 'Count of helpful votes from other riders' })
+  helpful_count!: number;
+
+  @ApiProperty({ description: 'Count of not-helpful votes from other riders' })
+  not_helpful_count!: number;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'The caller’s own vote: true = helpful, false = not helpful, ' +
+      'null when the caller has not voted or is anonymous.',
+  })
+  my_vote!: boolean | null;
+}
+
+export class ReviewVoteDto {
+  @ApiProperty({
+    description:
+      'true for a helpful vote, false for not-helpful. Resubmitting with ' +
+      'the opposite value flips the caller’s vote in place.',
+  })
+  @IsBoolean()
+  is_helpful!: boolean;
+}
+
+export class ReviewVoteResultDto {
+  @ApiProperty()
+  helpful_count!: number;
+
+  @ApiProperty()
+  not_helpful_count!: number;
+
+  @ApiProperty({ nullable: true })
+  my_vote!: boolean | null;
 }

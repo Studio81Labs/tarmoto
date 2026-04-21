@@ -20,8 +20,14 @@ import {
 } from '@nestjs/swagger';
 import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard.js';
 import { ReviewsService } from './reviews.service.js';
-import { CreateReviewDto, ReviewResponseDto } from './dto/review.dto.js';
+import {
+  CreateReviewDto,
+  ReviewResponseDto,
+  ReviewVoteDto,
+  ReviewVoteResultDto,
+} from './dto/review.dto.js';
 
 @ApiTags('reviews')
 @Controller('roads')
@@ -29,12 +35,17 @@ export class ReviewsController {
   constructor(private readonly reviewsService: ReviewsService) {}
 
   @Get(':segmentId/reviews')
+  @UseGuards(OptionalAuthGuard)
   @ApiOperation({ summary: 'Get reviews for a road segment' })
   @ApiResponse({ status: 200, type: [ReviewResponseDto] })
   async list(
+    @Req() req: express.Request,
     @Param('segmentId', ParseUUIDPipe) segmentId: string,
   ): Promise<ReviewResponseDto[]> {
-    return this.reviewsService.listForSegment(segmentId);
+    return this.reviewsService.listForSegment(
+      segmentId,
+      req.user?.userId ?? null,
+    );
   }
 
   @Post(':segmentId/reviews')
@@ -78,5 +89,41 @@ export class ReviewsController {
     @Param('segmentId', ParseUUIDPipe) segmentId: string,
   ): Promise<void> {
     return this.reviewsService.delete(req.user!.userId, segmentId);
+  }
+
+  @Post('reviews/:reviewId/vote')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Cast or flip a helpful / not-helpful vote on a review',
+  })
+  @ApiResponse({ status: 200, type: ReviewVoteResultDto })
+  @ApiResponse({ status: 404, description: 'Review not found' })
+  @ApiResponse({ status: 409, description: 'Cannot vote on your own review' })
+  async vote(
+    @Req() req: express.Request,
+    @Param('reviewId', ParseUUIDPipe) reviewId: string,
+    @Body() dto: ReviewVoteDto,
+  ): Promise<ReviewVoteResultDto> {
+    return this.reviewsService.castVote(
+      req.user!.userId,
+      reviewId,
+      dto.is_helpful,
+    );
+  }
+
+  @Delete('reviews/:reviewId/vote')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Withdraw your helpful vote on a review' })
+  @ApiResponse({ status: 200, type: ReviewVoteResultDto })
+  @ApiResponse({ status: 404, description: 'Review not found' })
+  async clearVote(
+    @Req() req: express.Request,
+    @Param('reviewId', ParseUUIDPipe) reviewId: string,
+  ): Promise<ReviewVoteResultDto> {
+    return this.reviewsService.clearVote(req.user!.userId, reviewId);
   }
 }

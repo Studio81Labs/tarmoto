@@ -33,7 +33,7 @@ export interface User {
 }
 
 export interface UserPreferences {
-  units: 'metric' | 'imperial';
+  units: "metric" | "imperial";
   daily_km: number;
   min_quality: number;
   road_types: string[];
@@ -51,13 +51,13 @@ export interface EmergencyContact {
 // ── Road Segments ──
 
 export type SurfaceType =
-  | 'asphalt'
-  | 'concrete'
-  | 'cobblestone'
-  | 'gravel'
-  | 'dirt'
-  | 'unknown';
-export type QualityClass = 'excellent' | 'good' | 'fair' | 'poor' | 'very_poor';
+  | "asphalt"
+  | "concrete"
+  | "cobblestone"
+  | "gravel"
+  | "dirt"
+  | "unknown";
+export type QualityClass = "excellent" | "good" | "fair" | "poor" | "very_poor";
 
 export interface RoadSegment {
   id: string;
@@ -113,8 +113,8 @@ export interface FunZone {
 
 // ── Rides ──
 
-export type RideType = 'free' | 'commute' | 'trip' | 'tracked';
-export type RideStatus = 'active' | 'completed' | 'cancelled';
+export type RideType = "free" | "commute" | "trip" | "tracked";
+export type RideStatus = "active" | "completed" | "cancelled";
 
 export interface RideSummary {
   id: string;
@@ -150,17 +150,17 @@ export interface RideSegment {
 // ── Hazards ──
 
 export type HazardType =
-  | 'pothole'
-  | 'gravel'
-  | 'oil_spill'
-  | 'roadworks'
-  | 'animals'
-  | 'police'
-  | 'flooding'
-  | 'ice'
-  | 'other';
+  | "pothole"
+  | "gravel"
+  | "oil_spill"
+  | "roadworks"
+  | "animals"
+  | "police"
+  | "flooding"
+  | "ice"
+  | "other";
 
-export type Severity = 'low' | 'medium' | 'high';
+export type Severity = "low" | "medium" | "high";
 
 export interface Hazard {
   id: string;
@@ -178,17 +178,17 @@ export interface Hazard {
 
 // ── Trips ──
 
-export type TripStatus = 'draft' | 'planned' | 'active' | 'completed';
-export type RoadPreference = 'curvy' | 'scenic' | 'fast' | 'mixed';
+export type TripStatus = "draft" | "planned" | "active" | "completed";
+export type RoadPreference = "curvy" | "scenic" | "fast" | "mixed";
 export type WaypointType =
-  | 'start'
-  | 'via'
-  | 'fuel'
-  | 'food'
-  | 'coffee'
-  | 'hotel'
-  | 'photo'
-  | 'end';
+  | "start"
+  | "via"
+  | "fuel"
+  | "food"
+  | "coffee"
+  | "hotel"
+  | "photo"
+  | "end";
 
 export interface TripSummary {
   id: string;
@@ -237,7 +237,7 @@ export interface Waypoint {
 export interface TripMember {
   user_id: string;
   display_name: string;
-  role: 'owner' | 'admin' | 'member';
+  role: "owner" | "admin" | "member";
   joined_at: string;
 }
 
@@ -256,6 +256,24 @@ export interface RoadReview {
   /** HTTPS URLs of photos uploaded with the review. Empty array when none. */
   photos: string[];
   created_at: string;
+  /** Helpful votes cast by other riders. Always present (zero when none). */
+  helpful_count: number;
+  /** Not-helpful votes cast by other riders. Always present (zero when none). */
+  not_helpful_count: number;
+  /**
+   * The signed-in viewer's own vote on this review. `null` when the viewer
+   * hasn't voted, or is anonymous — which is also the case on the
+   * embedded-reviews field of a road-detail response, since that endpoint
+   * doesn't personalise per viewer.
+   */
+  my_vote: boolean | null;
+}
+
+/** Result of POST / DELETE /roads/reviews/:reviewId/vote. */
+export interface ReviewVoteResult {
+  helpful_count: number;
+  not_helpful_count: number;
+  my_vote: boolean | null;
 }
 
 // ── Commute ──
@@ -278,28 +296,28 @@ export interface CommuteStatus {
   weather: Weather;
   estimated_time_min: number;
   route_quality: number;
-  status: 'clear' | 'hazards' | 'weather_warning' | 'delays';
+  status: "clear" | "hazards" | "weather_warning" | "delays";
 }
 
 export interface Weather {
   temperature_c: number;
-  condition: 'clear' | 'cloudy' | 'rain' | 'storm' | 'snow' | 'fog' | 'ice';
+  condition: "clear" | "cloudy" | "rain" | "storm" | "snow" | "fog" | "ice";
   wind_kmh: number;
   precipitation_chance: number;
-  road_condition: 'dry' | 'wet' | 'icy' | 'unknown';
+  road_condition: "dry" | "wet" | "icy" | "unknown";
   description: string;
 }
 
 // ── Accommodations (US-10) ──
 
 export type AccommodationKind =
-  | 'hotel'
-  | 'motel'
-  | 'hostel'
-  | 'guest_house'
-  | 'apartment'
-  | 'chalet'
-  | 'camp_site';
+  | "hotel"
+  | "motel"
+  | "hostel"
+  | "guest_house"
+  | "apartment"
+  | "chalet"
+  | "camp_site";
 
 export interface Accommodation {
   external_id: string;
@@ -320,7 +338,7 @@ export interface AccommodationList {
 
 // ── Along-route POIs (US-10) ──
 
-export type PoiKind = 'restaurant' | 'viewpoint' | 'cafe';
+export type PoiKind = "restaurant" | "viewpoint" | "cafe";
 
 export interface Poi {
   external_id: string;
@@ -342,7 +360,7 @@ export interface PoiList {
 
 // ── Mountain Passes (US-11) ──
 
-export type PassStatus = 'open' | 'closed' | 'unknown';
+export type PassStatus = "open" | "closed" | "unknown";
 
 export interface MountainPass {
   id: string;
@@ -399,7 +417,7 @@ export interface SegmentClassification {
 // ── Route Calculation ──
 
 export interface RoutePreferences {
-  road_preference: 'fastest' | 'curvy' | 'scenic' | 'balanced';
+  road_preference: "fastest" | "curvy" | "scenic" | "balanced";
   min_quality: number;
   avoid_highway: boolean;
   avoid_toll: boolean;
