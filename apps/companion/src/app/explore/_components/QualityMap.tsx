@@ -17,6 +17,9 @@ import {
   hazardFadeOpacity,
 } from "@/lib/utils";
 import { hazardsApi, type HazardResponse } from "@/lib/api";
+import { onHazardNew, subscribeHazards } from "@/lib/socket";
+import { mergeHazardsWithInFlightWsArrivals } from "@/lib/hazard-merge";
+import { useRealtimeStore } from "@/stores/realtime";
 import { haversineMeters, type HazardType } from "@tarmoto/shared";
 import { FILTERABLE_SURFACES, type MapFilters } from "@/lib/map-filters";
 
@@ -76,8 +79,12 @@ export function QualityMap({
   const [ready, setReady] = useState(false);
 
   const rawHazardsRef = useRef<HazardResponse[]>([]);
+  // Tracks when each WS-delivered hazard arrived, so an in-flight REST
+  // fetch whose snapshot predates the arrival doesn't overwrite it.
+  const wsHazardArrivalRef = useRef<Map<string, number>>(new Map());
   const [hazardsRevision, setHazardsRevision] = useState(0);
   const [hazardNow, setHazardNow] = useState(() => Date.now());
+  const realtimeStatus = useRealtimeStore((s) => s.status);
 
   const qualityOpacity = buildQualityOpacityExpression(filters);
   const surfaceOpacity = buildSurfaceOpacityExpression(filters);
@@ -280,6 +287,7 @@ export function QualityMap({
     if (!showHazards || zoom < HAZARD_MIN_ZOOM) {
       if (rawHazardsRef.current.length > 0) {
         rawHazardsRef.current = [];
+        wsHazardArrivalRef.current.clear();
         setHazardsRevision((r) => r + 1);
       } else {
         const src = map.getSource(HAZARDS_SOURCE) as GeoJSONSource | undefined;
@@ -291,6 +299,7 @@ export function QualityMap({
     let cancelled = false;
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
+      const fetchStartedAt = Date.now();
       try {
         const radius = viewportRadiusMeters(map);
         const { data } = await hazardsApi.findNearby(
@@ -298,7 +307,12 @@ export function QualityMap({
           { signal: controller.signal },
         );
         if (cancelled) return;
-        rawHazardsRef.current = data;
+        rawHazardsRef.current = mergeHazardsWithInFlightWsArrivals(
+          data,
+          rawHazardsRef.current,
+          wsHazardArrivalRef.current,
+          fetchStartedAt,
+        );
         setHazardsRevision((r) => r + 1);
       } catch (err) {
         if ((err as { name?: string }).name === "AbortError") return;
@@ -312,6 +326,42 @@ export function QualityMap({
       controller.abort();
     };
   }, [ready, showHazards, center.lat, center.lng, zoom]);
+
+  // ── real-time: subscribe to hazards in viewport + merge incoming events ──
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (
+      !map ||
+      !ready ||
+      !showHazards ||
+      zoom < HAZARD_MIN_ZOOM ||
+      realtimeStatus !== "connected"
+    ) {
+      return;
+    }
+
+    // Debounce the subscribe emit to match the REST fetch cadence — a rapid
+    // pan would otherwise spam subscribe:hazards, forcing the backend to
+    // leave/join rooms on every frame when only the final viewport matters.
+    const subscribeTimer = window.setTimeout(() => {
+      subscribeHazards(center.lat, center.lng, viewportRadiusMeters(map));
+    }, HAZARD_FETCH_DEBOUNCE_MS);
+
+    const unsubscribe = onHazardNew((hazard) => {
+      // Deduplicate against the existing list; the viewport REST fetch may
+      // race with the broadcast and return the same row.
+      const existing = rawHazardsRef.current;
+      if (existing.some((h) => h.id === hazard.id)) return;
+      wsHazardArrivalRef.current.set(hazard.id, Date.now());
+      rawHazardsRef.current = [...existing, hazard];
+      setHazardsRevision((r) => r + 1);
+    });
+
+    return () => {
+      window.clearTimeout(subscribeTimer);
+      unsubscribe();
+    };
+  }, [ready, showHazards, realtimeStatus, center.lat, center.lng, zoom]);
 
   return (
     <MapCanvas

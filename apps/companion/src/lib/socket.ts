@@ -1,74 +1,154 @@
-import { io, Socket } from 'socket.io-client';
-import { useAuthStore } from '@/stores/auth';
+import { io, type Socket } from "socket.io-client";
+import { API_HOST } from "@/lib/config";
+import { useRealtimeStore } from "@/stores/realtime";
+import type { HazardResponse } from "@/lib/api";
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? '';
+/**
+ * Socket.io client bound to the backend `/events` namespace (see
+ * `EventsGateway` in the backend). One shared connection per tab; consumers
+ * subscribe via the typed helpers below.
+ *
+ * Connection lifecycle is mirrored into `useRealtimeStore` so UI components
+ * (e.g. OfflineIndicator) can react without importing this module directly.
+ *
+ * Listeners registered via the `on*` helpers are tracked module-side and
+ * re-attached automatically if the underlying socket is replaced (e.g. on
+ * auth-token change). Consumers don't need to re-subscribe themselves.
+ */
+
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || API_HOST || "";
+const NAMESPACE = "/events";
+
+type SocketListener = (...args: unknown[]) => void;
+interface PersistentListener {
+  event: string;
+  handler: SocketListener;
+  /** Socket the handler is currently attached to — `null` while disconnected. */
+  socket: Socket | null;
+}
 
 let socket: Socket | null = null;
+let currentToken: string | null = null;
+const persistentListeners = new Set<PersistentListener>();
 
-export function connectSocket(): Socket {
-  if (socket?.connected) return socket;
+/** Hazard payload emitted by the backend on `hazard:new`. */
+export type HazardNewEvent = HazardResponse;
 
-  const token = useAuthStore.getState().accessToken;
+export function connectSocket(token: string | null = null): Socket {
+  if (socket) {
+    if (currentToken === token) return socket;
+    // Token changed (login / logout / refresh) — reconnect with new auth.
+    disconnectSocket();
+  }
 
-  socket = io(WS_URL, {
-    auth: { token },
-    transports: ['websocket'],
+  currentToken = token;
+  const { setStatus, setError } = useRealtimeStore.getState();
+  // Intentional transition — clear any stale error from a prior session so
+  // the UI doesn't show e.g. "auth failed" while we're actively reconnecting.
+  setError(null);
+  setStatus("connecting");
+
+  const url = WS_URL ? `${WS_URL}${NAMESPACE}` : NAMESPACE;
+  const next = io(url, {
+    auth: token ? { token } : undefined,
+    transports: ["websocket"],
     reconnection: true,
-    reconnectionAttempts: 10,
+    reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,
+    reconnectionDelayMax: 10_000,
+    autoConnect: true,
   });
 
-  socket.on('connect', () => {
-    console.log('[WS] Connected');
+  next.on("connect", () => {
+    setStatus("connected");
+    setError(null);
   });
 
-  socket.on('disconnect', (reason) => {
-    console.log('[WS] Disconnected:', reason);
+  // socket.active is true as long as socket.io will auto-reconnect — this
+  // avoids a status flip to "disconnected" between each failed attempt, which
+  // would make the OfflineIndicator flicker between "Offline" and
+  // "Reconnecting…" on every transport hiccup.
+  next.on("disconnect", (reason) => {
+    setStatus(next.active ? "connecting" : "disconnected");
+    // "io client disconnect" means we called disconnect() on purpose — not an error.
+    if (reason !== "io client disconnect") {
+      setError(reason);
+    }
   });
 
-  socket.on('connect_error', (err) => {
-    console.error('[WS] Connection error:', err.message);
+  next.on("connect_error", (err) => {
+    setStatus(next.active ? "connecting" : "disconnected");
+    setError(err.message);
   });
 
-  return socket;
+  // Re-attach any listeners consumers registered before this (re)connection,
+  // and update each registration's socket pointer so unsubscribe targets the
+  // exact socket the handler is attached to.
+  for (const registration of persistentListeners) {
+    next.on(registration.event, registration.handler);
+    registration.socket = next;
+  }
+
+  socket = next;
+  return next;
 }
 
-export function disconnectSocket() {
-  socket?.disconnect();
+export function disconnectSocket(): void {
+  if (!socket) return;
+  for (const registration of persistentListeners) {
+    registration.socket?.off(registration.event, registration.handler);
+    registration.socket = null;
+  }
+  socket.disconnect();
   socket = null;
-}
-
-export function getSocket(): Socket | null {
-  return socket;
-}
-
-// ── Trip collaboration events ──
-
-export function joinTripRoom(tripId: string) {
-  socket?.emit('trip:join', { tripId });
-}
-
-export function leaveTripRoom(tripId: string) {
-  socket?.emit('trip:leave', { tripId });
-}
-
-export function sendCursorPosition(tripId: string, position: { lng: number; lat: number }) {
-  socket?.emit('trip:cursor', { tripId, position });
-}
-
-export function onTripUpdate(callback: (data: unknown) => void) {
-  socket?.on('trip:updated', callback);
-  return () => { socket?.off('trip:updated', callback); };
-}
-
-export function onCollaboratorCursor(callback: (data: { userId: string; position: { lng: number; lat: number } }) => void) {
-  socket?.on('trip:cursor', callback);
-  return () => { socket?.off('trip:cursor', callback); };
+  currentToken = null;
+  const { setStatus, setError } = useRealtimeStore.getState();
+  setStatus("disconnected");
+  setError(null);
 }
 
 // ── Hazard alerts ──
 
-export function onHazardAlert(callback: (hazard: unknown) => void) {
-  socket?.on('hazard:new', callback);
-  return () => { socket?.off('hazard:new', callback); };
+/**
+ * Subscribe to new hazard alerts within the grid cell(s) covering a point.
+ * Replaces any previous hazard subscription on the same socket.
+ */
+export function subscribeHazards(
+  lat: number,
+  lng: number,
+  radiusMeters?: number,
+): void {
+  socket?.emit("subscribe:hazards", { lat, lng, radius_m: radiusMeters });
+}
+
+/**
+ * Listen for `hazard:new` broadcasts. Returns an unsubscribe function. The
+ * listener is re-attached automatically if the socket is recreated.
+ */
+export function onHazardNew(cb: (hazard: HazardNewEvent) => void): () => void {
+  const handler: SocketListener = (payload) => cb(payload as HazardNewEvent);
+  const registration: PersistentListener = {
+    event: "hazard:new",
+    handler,
+    socket,
+  };
+  persistentListeners.add(registration);
+  socket?.on("hazard:new", handler);
+  return () => {
+    persistentListeners.delete(registration);
+    // Detach from the exact socket the handler is attached to — if the
+    // socket was replaced since subscribe, connectSocket will have updated
+    // `registration.socket` to the new one.
+    registration.socket?.off(registration.event, handler);
+    registration.socket = null;
+  };
+}
+
+// ── Testing hook — reset module state between tests ──
+
+/** @internal Test-only: clear the cached socket/token without touching the store. */
+export function __resetSocketForTests(): void {
+  socket = null;
+  currentToken = null;
+  persistentListeners.clear();
 }

@@ -55,7 +55,13 @@ export class HazardsService {
     });
 
     const saved = await this.hazardRepo.save(hazard);
-    const response = this.toResponse(saved);
+    // Reload with user + road_segment joined so the response (and the
+    // WebSocket broadcast below) carry the reporter's display name and the
+    // road name. `save` doesn't hydrate relations, so without this step
+    // every freshly-broadcast hazard would show up on other clients as an
+    // anonymous report until the next REST refresh filled it in.
+    const hydrated = await this.findActiveHazard(saved.id);
+    const response = this.toResponse(hydrated);
 
     // Broadcast new hazard to nearby riders via WebSocket
     this.emitHazardEvent(response);
@@ -218,13 +224,7 @@ export class HazardsService {
   }
 
   private emitHazardEvent(response: HazardResponseDto): void {
-    this.eventsGateway.emitHazardAlert(response.lat, response.lng, {
-      id: response.id,
-      hazard_type: response.hazard_type,
-      severity: response.severity,
-      lat: response.lat,
-      lng: response.lng,
-    });
+    this.eventsGateway.emitHazardAlert(response.lat, response.lng, response);
   }
 
   private rowToResponse(row: Record<string, unknown>): HazardResponseDto {
