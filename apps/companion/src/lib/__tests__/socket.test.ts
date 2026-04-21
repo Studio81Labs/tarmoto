@@ -4,9 +4,10 @@ type SocketHandler = (...args: unknown[]) => void;
 
 interface FakeSocket {
   connected: boolean;
+  /** Mirrors socket.io's `socket.active` flag — true while auto-reconnect is pending. */
+  active: boolean;
   auth: { token: string } | undefined;
   handlers: Map<string, SocketHandler[]>;
-  ioHandlers: Map<string, SocketHandler[]>;
   emitted: Array<{ event: string; data: unknown }>;
   disconnected: boolean;
   allListenersRemoved: boolean;
@@ -15,22 +16,19 @@ interface FakeSocket {
   emit: (event: string, data?: unknown) => FakeSocket;
   disconnect: () => void;
   removeAllListeners: () => void;
-  io: { on: (event: string, cb: SocketHandler) => void };
   /** Test helper: fire a handler registered via `.on(event, …)`. */
   trigger: (event: string, ...args: unknown[]) => void;
-  triggerIo: (event: string, ...args: unknown[]) => void;
 }
 
 function createFakeSocket(): FakeSocket {
   const handlers = new Map<string, SocketHandler[]>();
-  const ioHandlers = new Map<string, SocketHandler[]>();
   const emitted: Array<{ event: string; data: unknown }> = [];
 
   const fake: FakeSocket = {
     connected: false,
+    active: true,
     auth: undefined,
     handlers,
-    ioHandlers,
     emitted,
     disconnected: false,
     allListenersRemoved: false,
@@ -52,24 +50,15 @@ function createFakeSocket(): FakeSocket {
     disconnect() {
       fake.disconnected = true;
       fake.connected = false;
+      fake.active = false;
       fake.trigger("disconnect", "io client disconnect");
     },
     removeAllListeners() {
       fake.allListenersRemoved = true;
       handlers.clear();
     },
-    io: {
-      on(event, cb) {
-        const list = ioHandlers.get(event) ?? [];
-        list.push(cb);
-        ioHandlers.set(event, list);
-      },
-    },
     trigger(event, ...args) {
       for (const cb of handlers.get(event) ?? []) cb(...args);
-    },
-    triggerIo(event, ...args) {
-      for (const cb of ioHandlers.get(event) ?? []) cb(...args);
     },
   };
 
@@ -141,15 +130,35 @@ describe("lib/socket", () => {
     expect(secondFake.auth).toEqual({ token: "token-2" });
   });
 
-  it("records the last error on connect_error but keeps status disconnected", async () => {
+  it("stays in 'connecting' during reconnect attempts (active=true)", async () => {
     const { connectSocket } = await import("../socket");
     const { useRealtimeStore } = await import("@/stores/realtime");
 
     connectSocket(null);
-    fake.trigger("connect_error", new Error("boom"));
+    fake.trigger("connect");
+    expect(useRealtimeStore.getState().status).toBe("connected");
+
+    // Socket dropped but auto-reconnect still pending.
+    fake.active = true;
+    fake.trigger("disconnect", "transport close");
+    expect(useRealtimeStore.getState().status).toBe("connecting");
+
+    // Each failed reconnect fires connect_error; status must stay "connecting".
+    fake.trigger("connect_error", new Error("ECONNREFUSED"));
+    expect(useRealtimeStore.getState().status).toBe("connecting");
+    expect(useRealtimeStore.getState().lastError).toBe("ECONNREFUSED");
+  });
+
+  it("transitions to 'disconnected' when the server denies the connection (active=false)", async () => {
+    const { connectSocket } = await import("../socket");
+    const { useRealtimeStore } = await import("@/stores/realtime");
+
+    connectSocket(null);
+    fake.active = false;
+    fake.trigger("connect_error", new Error("auth failed"));
 
     expect(useRealtimeStore.getState().status).toBe("disconnected");
-    expect(useRealtimeStore.getState().lastError).toBe("boom");
+    expect(useRealtimeStore.getState().lastError).toBe("auth failed");
   });
 
   it("does not set lastError when the disconnect was client-initiated", async () => {

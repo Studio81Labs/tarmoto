@@ -21,16 +21,6 @@ let currentToken: string | null = null;
 /** Hazard payload emitted by the backend on `hazard:new`. */
 export type HazardNewEvent = HazardResponse;
 
-/** Group-ride position update emitted on `rider:location`. */
-export interface RiderLocationEvent {
-  user_id: string;
-  lat: number;
-  lng: number;
-  speed?: number;
-  heading?: number;
-  timestamp: string;
-}
-
 export function connectSocket(token: string | null = null): Socket {
   if (socket) {
     if (currentToken === token) return socket;
@@ -58,8 +48,12 @@ export function connectSocket(token: string | null = null): Socket {
     setError(null);
   });
 
+  // socket.active is true as long as socket.io will auto-reconnect — this
+  // avoids a status flip to "disconnected" between each failed attempt, which
+  // would make the OfflineIndicator flicker between "Offline" and
+  // "Reconnecting…" on every transport hiccup.
   next.on("disconnect", (reason) => {
-    setStatus("disconnected");
+    setStatus(next.active ? "connecting" : "disconnected");
     // "io client disconnect" means we called disconnect() on purpose — not an error.
     if (reason !== "io client disconnect") {
       setError(reason);
@@ -67,11 +61,9 @@ export function connectSocket(token: string | null = null): Socket {
   });
 
   next.on("connect_error", (err) => {
-    setStatus("disconnected");
+    setStatus(next.active ? "connecting" : "disconnected");
     setError(err.message);
   });
-
-  next.io.on("reconnect_attempt", () => setStatus("connecting"));
 
   socket = next;
   return next;
@@ -84,10 +76,6 @@ export function disconnectSocket(): void {
   socket = null;
   currentToken = null;
   useRealtimeStore.getState().setStatus("disconnected");
-}
-
-export function getSocket(): Socket | null {
-  return socket;
 }
 
 // ── Hazard alerts ──
@@ -112,32 +100,6 @@ export function onHazardNew(cb: (hazard: HazardNewEvent) => void): () => void {
   socket?.on("hazard:new", handler);
   return () => {
     socket?.off("hazard:new", handler);
-  };
-}
-
-// ── Group-ride location sharing (US-35 uses this pattern) ──
-
-export function subscribeGroupRide(rideId: string): void {
-  socket?.emit("subscribe:group-ride", { ride_id: rideId });
-}
-
-export function sendLocationUpdate(data: {
-  ride_id: string;
-  lat: number;
-  lng: number;
-  speed?: number;
-  heading?: number;
-}): void {
-  socket?.emit("location:update", data);
-}
-
-export function onRiderLocation(
-  cb: (event: RiderLocationEvent) => void,
-): () => void {
-  const handler = (payload: RiderLocationEvent) => cb(payload);
-  socket?.on("rider:location", handler);
-  return () => {
-    socket?.off("rider:location", handler);
   };
 }
 
