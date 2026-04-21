@@ -11,6 +11,7 @@ import {
   ChevronRight,
   FileUp,
 } from "lucide-react";
+import { PassesPanel } from "@/components/PassesPanel";
 import { SegmentSidebar } from "@/components/SegmentSidebar";
 import { TripExportMenu } from "@/components/TripExportMenu";
 import { TripImportDialog } from "@/components/TripImportDialog";
@@ -210,6 +211,8 @@ export default function TripPlannerPage() {
                 Avoid unpaved roads
               </label>
             </div>
+
+            <PassesPanel />
           </div>
         )}
 
