@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "f5f5d51d-4b49-4687-85cd-100e6dc2194b",
+    "_postman_id": "b7a53e18-67ea-406b-bd8a-24f5596523ee",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -158,7 +158,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"display_name\": \"\",\n  \"phone\": \"\",\n  \"home_location\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"work_location\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"preferences\": {\n    \"units\": \"\",\n    \"daily_km\": 0,\n    \"min_quality\": 0,\n    \"road_types\": [\n      \"\"\n    ],\n    \"record_gps\": false,\n    \"crash_detection\": false\n  }\n}",
+              "raw": "{\n  \"display_name\": \"\",\n  \"phone\": \"\",\n  \"avatar_url\": \"\",\n  \"bio\": \"\",\n  \"home_region\": \"\",\n  \"home_location\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"work_location\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"preferences\": {\n    \"units\": \"\",\n    \"daily_km\": 0,\n    \"min_quality\": 0,\n    \"road_types\": [\n      \"\"\n    ],\n    \"record_gps\": false,\n    \"crash_detection\": false\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1883,6 +1883,12 @@
                   "value": "",
                   "description": "Bounding box filter \"minLng,minLat,maxLng,maxLat\". Omit to list all.",
                   "disabled": true
+                },
+                {
+                  "key": "for_month",
+                  "value": "",
+                  "description": "Month (1=January .. 12=December) to evaluate pass status for. Defaults to the current UTC month.",
+                  "disabled": true
                 }
               ]
             }
@@ -1905,7 +1911,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ],\n  \"buffer_m\": 0\n}",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ],\n  \"buffer_m\": 0,\n  \"for_month\": 0\n}",
               "options": {
                 "raw": {
                   "language": "json"

@@ -61,7 +61,7 @@ export class PassesService {
       : 'closed';
   }
 
-  async list(bbox?: string): Promise<MountainPassDto[]> {
+  async list(bbox?: string, forMonth?: number): Promise<MountainPassDto[]> {
     const qb = this.passRepo.createQueryBuilder('p').orderBy('p.name', 'ASC');
 
     if (bbox) {
@@ -73,7 +73,7 @@ export class PassesService {
     }
 
     const rows = await qb.getMany();
-    const month = this.currentMonthUtc();
+    const month = this.resolveMonth(forMonth);
     return rows.map((p) => this.toDto(p, month));
   }
 
@@ -111,7 +111,7 @@ export class PassesService {
       .orderBy('p.elevation_m', 'DESC')
       .getMany();
 
-    const month = this.currentMonthUtc();
+    const month = this.resolveMonth(dto.for_month);
     const passes: MountainPassDto[] = rows.map((p) => this.toDto(p, month));
 
     return {
@@ -125,6 +125,25 @@ export class PassesService {
 
   private currentMonthUtc(): number {
     return new Date().getUTCMonth() + 1;
+  }
+
+  /**
+   * Pick the month to derive pass statuses for: caller-supplied value
+   * when present and in range, otherwise the current UTC month. The DTO
+   * already constrains `forMonth` to 1..12, but we re-check here so the
+   * service stays safe if called from code that skipped DTO validation
+   * (e.g. future internal consumers).
+   */
+  private resolveMonth(forMonth: number | undefined): number {
+    if (
+      forMonth !== undefined &&
+      Number.isInteger(forMonth) &&
+      forMonth >= 1 &&
+      forMonth <= 12
+    ) {
+      return forMonth;
+    }
+    return this.currentMonthUtc();
   }
 
   private toDto(p: MountainPass, currentMonth: number): MountainPassDto {

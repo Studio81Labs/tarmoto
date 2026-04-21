@@ -49,14 +49,19 @@ describe('PassesController', () => {
 
   it('GET /passes returns the list', async () => {
     const result = await controller.list({});
-    expect(service.list).toHaveBeenCalledWith(undefined);
+    expect(service.list).toHaveBeenCalledWith(undefined, undefined);
     expect(result).toHaveLength(1);
     expect(result[0].name).toBe('Stelvio Pass');
   });
 
   it('GET /passes forwards bbox to the service', async () => {
     await controller.list({ bbox: '5,45,17,49' });
-    expect(service.list).toHaveBeenCalledWith('5,45,17,49');
+    expect(service.list).toHaveBeenCalledWith('5,45,17,49', undefined);
+  });
+
+  it('GET /passes forwards for_month to the service', async () => {
+    await controller.list({ for_month: 8 });
+    expect(service.list).toHaveBeenCalledWith(undefined, 8);
   });
 
   it('POST /passes/check-route forwards the body and returns counts', async () => {
@@ -76,5 +81,18 @@ describe('PassesController', () => {
     });
     expect(result.passes).toHaveLength(1);
     expect(result.closed_count).toBe(0);
+  });
+
+  it('POST /passes/check-route forwards for_month through unchanged', async () => {
+    await controller.checkRoute({
+      route: [
+        { lat: 46.5, lng: 10.4 },
+        { lat: 46.6, lng: 10.5 },
+      ],
+      for_month: 2,
+    });
+    expect(service.checkRoute).toHaveBeenCalledWith(
+      expect.objectContaining({ for_month: 2 }),
+    );
   });
 });
