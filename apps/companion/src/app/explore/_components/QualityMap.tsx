@@ -746,6 +746,3 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
-
-// Exported for tests.
-export { toHazardFeatures, buildHazardTypeFilter, viewportRadiusMeters };
