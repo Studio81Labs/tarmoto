@@ -326,10 +326,6 @@ inside a `useEffect`. US-31 follows the same pattern for consistency.
 the viewport stops driving zone queries; when they clear it, the
 viewport takes over again.
 
-`effectiveBbox = drawnBbox ?? viewportBbox`. When the user draws a region
-the viewport stops driving zone queries; when they clear it, the
-viewport takes over again.
-
 ### State: `useDiscoverStore` (Zustand)
 
 Parallels `useMapStore` (used by `/explore`) for consistency:
