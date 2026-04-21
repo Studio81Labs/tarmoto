@@ -1,0 +1,65 @@
+import { ApiProperty } from '@nestjs/swagger';
+
+export class BestRoadsRegionDto {
+  @ApiProperty({ example: 'beskydy' })
+  slug!: string;
+
+  @ApiProperty({ example: 'cz' })
+  country!: string;
+
+  @ApiProperty({ example: 'Beskydy' })
+  name!: string;
+
+  @ApiProperty({
+    type: [Number],
+    description: '[west, south, east, north] in WGS84 degrees',
+    example: [18.0, 49.3, 18.85, 49.7],
+  })
+  bbox!: [number, number, number, number];
+}
+
+export class BestRoadDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty({ nullable: true })
+  road_name!: string | null;
+
+  @ApiProperty({ nullable: true })
+  road_number!: string | null;
+
+  @ApiProperty({ description: '1-5 scale', nullable: true })
+  quality_score!: number | null;
+
+  @ApiProperty({ description: '0-5 scale' })
+  curviness_score!: number;
+
+  @ApiProperty()
+  surface_type!: string;
+
+  @ApiProperty({ description: 'Segment length in metres' })
+  length_m!: number;
+
+  @ApiProperty({ description: '0-100 confidence score' })
+  confidence!: number;
+
+  @ApiProperty({
+    type: [Object],
+    description:
+      'Polyline of { lat, lng } points, ordered along direction of travel',
+  })
+  geometry!: Array<{ lat: number; lng: number }>;
+
+  @ApiProperty({
+    description: 'Composite best-road ranking score (opaque, for debugging)',
+  })
+  best_score!: number;
+}
+
+export class BestRoadsResponseDto {
+  @ApiProperty({ type: BestRoadsRegionDto })
+  region!: BestRoadsRegionDto;
+
+  @ApiProperty({ type: [BestRoadDto] })
+  roads!: BestRoadDto[];
+}
