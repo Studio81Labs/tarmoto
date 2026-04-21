@@ -43,7 +43,6 @@ export function DiscoverMap({
   const {
     center,
     zoom,
-    showQuality,
     drawnBbox,
     viewportBbox,
     selectedZoneId,
@@ -221,7 +220,7 @@ export function DiscoverMap({
       ref={handleRef}
       center={center}
       zoom={zoom}
-      showQuality={showQuality}
+      showQuality={true}
       showSurface={false}
       onReady={handleReady}
       onViewChange={handleViewChange}

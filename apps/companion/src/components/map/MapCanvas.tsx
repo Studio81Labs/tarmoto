@@ -13,12 +13,16 @@ import maplibregl, {
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { API_BASE, MAP_STYLE_URL } from "@/lib/config";
+import { QUALITY_CONFIG } from "@/lib/utils";
 
 const SOURCE_ID = "tarmoto-roads";
 const QUALITY_LAYER = "tarmoto-quality";
 const SURFACE_LAYER = "tarmoto-surface";
 const ACTIVE_OPACITY = 0.9;
 
+// Surface palette — must stay in sync with --color-surface-* in globals.css
+// so the legend swatches match what's painted on the map. "unknown" is not
+// user-filterable but always renders so the map doesn't blank fresh data.
 const SURFACE_COLORS = {
   asphalt: "#3B82F6",
   concrete: "#6B7280",
@@ -26,14 +30,6 @@ const SURFACE_COLORS = {
   gravel: "#D97706",
   dirt: "#92400E",
   unknown: "#64748B",
-} as const;
-
-const QUALITY_COLORS = {
-  "very-poor": "#EF4444",
-  poor: "#F59E0B",
-  fair: "#EAB308",
-  good: "#22C55E",
-  excellent: "#0ED3CF",
 } as const;
 
 export interface MapCanvasHandle {
@@ -154,15 +150,15 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
           "line-color": [
             "step",
             ["coalesce", ["get", "quality_score"], 0],
-            QUALITY_COLORS["very-poor"],
+            QUALITY_CONFIG["very-poor"].hex,
             1.5,
-            QUALITY_COLORS.poor,
+            QUALITY_CONFIG.poor.hex,
             2.5,
-            QUALITY_COLORS.fair,
+            QUALITY_CONFIG.fair.hex,
             3.5,
-            QUALITY_COLORS.good,
+            QUALITY_CONFIG.good.hex,
             4.5,
-            QUALITY_COLORS.excellent,
+            QUALITY_CONFIG.excellent.hex,
           ] as ExpressionSpecification,
           "line-width": [
             "interpolate",

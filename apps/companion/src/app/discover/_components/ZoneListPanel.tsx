@@ -16,8 +16,7 @@ interface Props {
  * selects the zone and opens the detail panel.
  */
 export function ZoneListPanel({ zones, loading, error, onRetry }: Props) {
-  const { drawnBbox, selectedZoneId, setSelectedZoneId, setHoveredZoneId } =
-    useDiscoverStore();
+  const { drawnBbox, selectedZoneId, setSelectedZoneId } = useDiscoverStore();
 
   return (
     <aside className="w-[300px] border-r border-slate-800 bg-slate-950 overflow-y-auto flex flex-col">
@@ -76,8 +75,6 @@ export function ZoneListPanel({ zones, loading, error, onRetry }: Props) {
                 <button
                   type="button"
                   onClick={() => setSelectedZoneId(zone.id)}
-                  onMouseEnter={() => setHoveredZoneId(zone.id)}
-                  onMouseLeave={() => setHoveredZoneId(null)}
                   className={`w-full text-left px-4 py-3 transition flex gap-3 items-start ${
                     active
                       ? "bg-slate-900 border-l-2 border-tarmoto-cyan"
