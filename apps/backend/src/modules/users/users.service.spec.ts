@@ -204,11 +204,12 @@ describe('UsersService', () => {
       await service.updateProfile('user-1', { display_name: 'OnlyName' });
 
       const saved = userRepo.save!.mock.calls[0][0] as Record<string, unknown>;
-      // These keys are absent from the DTO, so the service must not overwrite
-      // whatever already exists on the entity.
-      expect(saved).not.toHaveProperty('avatar_url', undefined);
-      expect(saved).not.toHaveProperty('bio', undefined);
-      expect(saved).not.toHaveProperty('home_region', undefined);
+      // The DTO omits these keys, so the service must leave the fixture's
+      // values (null, from buildMockUser) intact — not blank them or
+      // replace them with undefined / empty strings.
+      expect(saved.avatar_url).toBeNull();
+      expect(saved.bio).toBeNull();
+      expect(saved.home_region).toBeNull();
     });
 
     it('should throw NotFoundException for missing user', async () => {
