@@ -1,5 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+import { GeometryPointDto } from './best-roads.dto.js';
+
 export class FunZoneDetailZoneDto {
   @ApiProperty()
   id!: string;
@@ -64,21 +66,21 @@ export class FunZoneRoadDto {
     nullable: true,
     type: [Number],
     description:
-      'Per-vertex elevation in meters, aligned with `geometry`. Null when stale or missing.',
+      'Per-vertex elevation in meters, aligned with `geometry`. Null when no elevation samples have been ingested yet.',
   })
   elevation_profile!: number[] | null;
 
   @ApiProperty({
-    type: [Object],
+    type: [GeometryPointDto],
     description:
       'Polyline of { lat, lng } points, ordered along direction of travel',
   })
-  geometry!: Array<{ lat: number; lng: number }>;
+  geometry!: GeometryPointDto[];
 
   @ApiProperty({
     nullable: true,
     description:
-      "This road's contribution to the zone's composite score. Null when not computed by the analytics pipeline yet.",
+      "Opaque score from the analytics pipeline ranking this road's contribution to the zone's composite score. Null when not yet computed.",
   })
   contribution_score!: number | null;
 }
