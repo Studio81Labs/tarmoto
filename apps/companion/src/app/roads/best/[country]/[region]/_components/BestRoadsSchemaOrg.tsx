@@ -13,6 +13,7 @@ interface Props {
   countryCode: string;
   regionSlug: string;
   parentSlug?: string;
+  parentName?: string;
   pageUrl: string;
   description: string;
   roads: Road[];
@@ -31,6 +32,7 @@ export function BestRoadsSchemaOrg({
   countryCode,
   regionSlug,
   parentSlug,
+  parentName,
   pageUrl,
   description,
   roads,
@@ -85,7 +87,7 @@ export function BestRoadsSchemaOrg({
           {
             "@type": "ListItem",
             position: 3,
-            name: parentSlug,
+            name: parentName ?? parentSlug,
             item: `${origin}/roads/best/${countryCode}/${parentSlug}`,
           },
           {

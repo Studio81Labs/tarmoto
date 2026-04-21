@@ -135,6 +135,7 @@ export default async function BestRoadsSubRegionPage({
         countryCode={countryMeta.code}
         regionSlug={regionMeta.slug}
         parentSlug={parentSlug}
+        parentName={parentMeta.name}
         pageUrl={pageUrl}
         description={regionMeta.description}
         roads={roads}

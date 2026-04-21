@@ -126,10 +126,6 @@ export function findCountryRegions(country: string): Region[] {
   return REGIONS.filter((r) => r.country === country && !r.parent);
 }
 
-export function findSubRegions(country: string, parent: string): Region[] {
-  return REGIONS.filter((r) => r.country === country && r.parent === parent);
-}
-
 export function listIndexableRegions(): Region[] {
   return [...REGIONS];
 }
