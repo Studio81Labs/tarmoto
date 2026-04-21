@@ -23,7 +23,10 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { country, region } = await params;
   const r = findRegion(country, region);
-  if (!r) return {};
+  // Sub-regions have their own 3-level page — refuse to render them here so a
+  // request like /roads/best/at/alpine-passes doesn't duplicate the canonical
+  // /roads/best/at/tyrol/alpine-passes page with conflicting metadata.
+  if (!r || r.parent) return {};
   const title = `Best motorcycle roads in ${r.name} — Tarmoto`;
   return {
     title,
@@ -46,7 +49,8 @@ export default async function BestRoadsRegionPage({
   const { country, region } = await params;
   const regionMeta = findRegion(country, region);
   const countryMeta = findCountry(country);
-  if (!regionMeta || !countryMeta) notFound();
+  // Mirror the generateMetadata guard: sub-regions live under a 3-level URL.
+  if (!regionMeta || !countryMeta || regionMeta.parent) notFound();
 
   const payload = await fetchBestRoads(country, region, 10);
   if (!payload) notFound();
