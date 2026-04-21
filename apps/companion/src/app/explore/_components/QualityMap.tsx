@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import maplibregl, {
   type ExpressionSpecification,
-  type FilterSpecification,
   type GeoJSONSource,
   type Map as MapLibreMap,
   type MapLayerMouseEvent,
@@ -102,6 +101,15 @@ export function QualityMap({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const [ready, setReady] = useState(false);
+
+  // Split the hazards pipeline into two stages: the fetch effect owns the raw
+  // payload (viewport-driven) and the render effect projects it onto the map
+  // (filter-driven). Clusters aggregate from the already-filtered source data,
+  // so toggling a type updates cluster counts without a refetch. `rawHazards`
+  // lives in a ref so a filter change doesn't reset the cache; a revision
+  // counter triggers the render effect when a fresh fetch arrives.
+  const rawHazardsRef = useRef<HazardResponse[]>([]);
+  const [hazardsRevision, setHazardsRevision] = useState(0);
 
   const onViewChangeRef = useRef(onViewChange);
   useEffect(() => {
@@ -425,14 +433,22 @@ export function QualityMap({
     }
   }, [ready, filters]);
 
-  // ── apply hazard type filter (hide non-matching markers; clusters unchanged) ──
+  // ── project raw hazards → filtered GeoJSON source ──
+  // Re-runs on filter changes and whenever a fresh fetch bumps the revision.
+  // Filtering at the source (rather than via layer filter expressions) means
+  // MapLibre's clustering aggregates only the selected types, so cluster
+  // counts stay consistent with the checkbox state.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    const typeFilter = buildHazardTypeFilter(filters.hazardTypes);
-    if (map.getLayer(HAZARD_BG)) map.setFilter(HAZARD_BG, typeFilter);
-    if (map.getLayer(HAZARD_ICON)) map.setFilter(HAZARD_ICON, typeFilter);
-  }, [ready, filters.hazardTypes]);
+    const src = map.getSource(HAZARDS_SOURCE) as GeoJSONSource | undefined;
+    if (!src) return;
+    src.setData(
+      toHazardFeatures(
+        selectHazards(rawHazardsRef.current, filters.hazardTypes),
+      ),
+    );
+  }, [ready, filters.hazardTypes, hazardsRevision]);
 
   // ── layer visibility from toggles ──
   useEffect(() => {
@@ -451,15 +467,23 @@ export function QualityMap({
   }, [ready, showQuality, showSurface, showHazards]);
 
   // ── fetch hazards when viewport settles (debounced, abortable) ──
+  // Intentionally does NOT depend on filters.hazardTypes — the render effect
+  // handles filter changes off the cached raw data, avoiding a network round
+  // trip on every checkbox toggle.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
 
-    // When hidden or zoomed-out, clear the source rather than hanging onto
-    // stale data the user can't see.
+    // When hidden or zoomed-out, clear the cache so a later filter toggle
+    // can't resurrect stale data the user can no longer see.
     if (!showHazards || zoom < HAZARD_MIN_ZOOM) {
-      const src = map.getSource(HAZARDS_SOURCE) as GeoJSONSource | undefined;
-      src?.setData(EMPTY_COLLECTION);
+      if (rawHazardsRef.current.length > 0) {
+        rawHazardsRef.current = [];
+        setHazardsRevision((r) => r + 1);
+      } else {
+        const src = map.getSource(HAZARDS_SOURCE) as GeoJSONSource | undefined;
+        src?.setData(EMPTY_COLLECTION);
+      }
       return;
     }
 
@@ -477,10 +501,8 @@ export function QualityMap({
           { signal: controller.signal },
         );
         if (cancelled) return;
-        const src = mapRef.current?.getSource(HAZARDS_SOURCE) as
-          | GeoJSONSource
-          | undefined;
-        src?.setData(toHazardFeatures(data));
+        rawHazardsRef.current = data;
+        setHazardsRevision((r) => r + 1);
       } catch (err) {
         if ((err as { name?: string }).name === "AbortError") return;
         // Intentionally swallow: the hazards overlay is a secondary signal —
@@ -598,21 +620,13 @@ function buildHazardColorExpression(): ExpressionSpecification {
   ] as unknown as ExpressionSpecification;
 }
 
-function buildHazardTypeFilter(types: Set<HazardType>): FilterSpecification {
-  // When every type is selected we still want to exclude the cluster points
-  // (handled by `filter` at layer definition); this filter ANDs the "not a
-  // cluster" check with the type match.
-  if (types.size === 0) {
-    return ["all", ["!", ["has", "point_count"]], false];
-  }
-  if (types.size === HAZARD_TYPES_UI.length) {
-    return ["!", ["has", "point_count"]];
-  }
-  return [
-    "all",
-    ["!", ["has", "point_count"]],
-    ["in", ["get", "hazard_type"], ["literal", [...types]]],
-  ] as FilterSpecification;
+function selectHazards(
+  raw: HazardResponse[],
+  types: Set<HazardType>,
+): HazardResponse[] {
+  if (types.size === HAZARD_TYPES_UI.length) return raw;
+  if (types.size === 0) return [];
+  return raw.filter((h) => types.has(h.hazard_type as HazardType));
 }
 
 function setVisibility(map: MapLibreMap, layerId: string, visible: boolean) {
