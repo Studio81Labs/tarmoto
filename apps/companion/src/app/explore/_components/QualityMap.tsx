@@ -9,9 +9,8 @@ import maplibregl, {
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Feature, FeatureCollection, Point } from "geojson";
-import { API_BASE, MAP_STYLE_URL } from "@/lib/config";
+import { MapCanvas, type MapCanvasHandle } from "@/components/map/MapCanvas";
 import {
-  QUALITY_CONFIG,
   HAZARD_CONFIG,
   HAZARD_TYPES_UI,
   formatRelativeTime,
@@ -19,15 +18,7 @@ import {
 } from "@/lib/utils";
 import { hazardsApi, type HazardResponse } from "@/lib/api";
 import { haversineMeters, type HazardType } from "@tarmoto/shared";
-import {
-  FILTERABLE_SURFACES,
-  type MapFilters,
-  type FilterableSurface,
-} from "@/lib/map-filters";
-
-const SOURCE_ID = "tarmoto-roads";
-const QUALITY_LAYER = "tarmoto-quality";
-const SURFACE_LAYER = "tarmoto-surface";
+import { FILTERABLE_SURFACES, type MapFilters } from "@/lib/map-filters";
 
 const HAZARDS_SOURCE = "hazards-src";
 const HAZARD_CLUSTERS = "tarmoto-hazard-clusters";
@@ -38,31 +29,14 @@ const HAZARD_ICON = "tarmoto-hazard-icon";
 const DIMMED_OPACITY = 0.15;
 const ACTIVE_OPACITY = 0.9;
 
-// Below this zoom the viewport covers more area than the backend's 50 km radius
-// cap can reasonably serve, so we skip fetching and render nothing rather than
-// a misleadingly-partial result. Users pan/zoom in before markers reappear.
 const HAZARD_MIN_ZOOM = 9;
 const HAZARD_FETCH_DEBOUNCE_MS = 300;
-// Backend caps radius at 50 km. We derive request radius from the viewport
-// diagonal so smaller viewports don't pull in off-screen hazards.
 const HAZARD_MAX_RADIUS_M = 50_000;
 const HAZARD_MIN_RADIUS_M = 500;
 
 const EMPTY_COLLECTION: FeatureCollection<Point, HazardProps> = {
   type: "FeatureCollection",
   features: [],
-};
-
-// Surface palette — must stay in sync with --color-surface-* in globals.css
-// so the legend swatches match what's painted on the map. "unknown" is not
-// user-filterable but always renders so the map doesn't blank fresh data.
-const SURFACE_COLORS: Record<FilterableSurface | "unknown", string> = {
-  asphalt: "#3B82F6",
-  concrete: "#6B7280",
-  cobblestone: "#A78BFA",
-  gravel: "#D97706",
-  dirt: "#92400E",
-  unknown: "#64748B",
 };
 
 interface HazardProps {
@@ -98,354 +72,173 @@ export function QualityMap({
   showHazards,
   onViewChange,
 }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<MapLibreMap | null>(null);
+  const handleRef = useRef<MapCanvasHandle>(null);
   const [ready, setReady] = useState(false);
 
-  // Split the hazards pipeline into two stages: the fetch effect owns the raw
-  // payload (viewport-driven) and the render effect projects it onto the map
-  // (filter-driven). Clusters aggregate from the already-filtered source data,
-  // so toggling a type updates cluster counts without a refetch. `rawHazards`
-  // lives in a ref so a filter change doesn't reset the cache; a revision
-  // counter triggers the render effect when a fresh fetch arrives.
   const rawHazardsRef = useRef<HazardResponse[]>([]);
   const [hazardsRevision, setHazardsRevision] = useState(0);
-  // Time snapshot that the render effect feeds to toHazardFeatures so fade
-  // opacity keeps aging while the user idles on the explorer. Ticks at minute
-  // granularity because the slowest-expiring hazards (72 h) move by ~0.01
-  // opacity per minute — finer resolution would be churn for no visible gain.
   const [hazardNow, setHazardNow] = useState(() => Date.now());
 
-  const onViewChangeRef = useRef(onViewChange);
-  useEffect(() => {
-    onViewChangeRef.current = onViewChange;
-  }, [onViewChange]);
+  const qualityOpacity = buildQualityOpacityExpression(filters);
+  const surfaceOpacity = buildSurfaceOpacityExpression(filters);
 
-  // ── init map once ──
-  useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: MAP_STYLE_URL,
-      center: [center.lng, center.lat],
-      zoom,
-      attributionControl: { compact: true },
+  const handleReady = (map: MapLibreMap) => {
+    map.addSource(HAZARDS_SOURCE, {
+      type: "geojson",
+      data: EMPTY_COLLECTION,
+      cluster: true,
+      clusterRadius: 50,
+      clusterMaxZoom: 13,
     });
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }));
-    map.addControl(
-      new maplibregl.GeolocateControl({
-        positionOptions: { enableHighAccuracy: true },
-        trackUserLocation: false,
-      }),
-    );
-    map.addControl(
-      new maplibregl.ScaleControl({ unit: "metric" }),
-      "bottom-left",
-    );
 
-    map.on("load", () => {
-      map.addSource(SOURCE_ID, {
-        type: "vector",
-        tiles: [`${originForTiles()}${API_BASE}/roads/tiles/{z}/{x}/{y}.mvt`],
-        minzoom: 6,
-        maxzoom: 18,
-      });
+    map.addLayer({
+      id: HAZARD_CLUSTERS,
+      type: "circle",
+      source: HAZARDS_SOURCE,
+      filter: ["has", "point_count"],
+      layout: { visibility: showHazards ? "visible" : "none" },
+      paint: {
+        "circle-color": "#0ED3CF",
+        "circle-opacity": 0.85,
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-width": 1.5,
+        "circle-radius": [
+          "step",
+          ["get", "point_count"],
+          14,
+          10,
+          18,
+          25,
+          24,
+        ] as ExpressionSpecification,
+      },
+    });
 
-      // Each layer's initial visibility is read from the current props so the
-      // map renders the user's stored toggle state immediately on load — the
-      // visibility-sync effect would otherwise correct it one frame later,
-      // briefly flashing the default.
+    map.addLayer({
+      id: HAZARD_CLUSTER_COUNT,
+      type: "symbol",
+      source: HAZARDS_SOURCE,
+      filter: ["has", "point_count"],
+      layout: {
+        visibility: showHazards ? "visible" : "none",
+        "text-field": ["get", "point_count_abbreviated"],
+        "text-size": 12,
+        "text-font": [
+          "Noto Sans Bold",
+          "Open Sans Bold",
+          "Arial Unicode MS Bold",
+        ],
+        "text-allow-overlap": true,
+      },
+      paint: { "text-color": "#0f172a" },
+    });
 
-      // Quality layer — the primary overlay. Color follows tier breakpoints
-      // that mirror @/lib/utils#scoreToTier so legend and map agree.
-      map.addLayer({
-        id: QUALITY_LAYER,
-        type: "line",
-        source: SOURCE_ID,
-        "source-layer": "quality",
-        layout: {
-          "line-cap": "round",
-          "line-join": "round",
-          visibility: showQuality ? "visible" : "none",
-        },
-        paint: {
-          "line-color": [
-            "step",
-            ["coalesce", ["get", "quality_score"], 0],
-            QUALITY_CONFIG["very-poor"].hex,
-            1.5,
-            QUALITY_CONFIG.poor.hex,
-            2.5,
-            QUALITY_CONFIG.fair.hex,
-            3.5,
-            QUALITY_CONFIG.good.hex,
-            4.5,
-            QUALITY_CONFIG.excellent.hex,
-          ] as ExpressionSpecification,
-          "line-width": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            8,
-            1.5,
-            12,
-            2.5,
-            16,
-            5,
-          ] as ExpressionSpecification,
-          "line-opacity": ACTIVE_OPACITY,
-        },
-      });
+    map.addLayer({
+      id: HAZARD_BG,
+      type: "circle",
+      source: HAZARDS_SOURCE,
+      filter: ["!", ["has", "point_count"]],
+      layout: { visibility: showHazards ? "visible" : "none" },
+      paint: {
+        "circle-color": buildHazardColorExpression(),
+        "circle-opacity": ["coalesce", ["get", "opacity"], 1],
+        "circle-radius": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          9,
+          10,
+          14,
+          14,
+          18,
+          18,
+        ] as ExpressionSpecification,
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-width": 1.5,
+        "circle-stroke-opacity": ["coalesce", ["get", "opacity"], 1],
+      },
+    });
 
-      // Surface layer — toggled on top of quality. When both are visible we
-      // want surface to dominate, so it renders above the quality layer.
-      map.addLayer({
-        id: SURFACE_LAYER,
-        type: "line",
-        source: SOURCE_ID,
-        "source-layer": "surface",
-        layout: {
-          "line-cap": "round",
-          "line-join": "round",
-          visibility: showSurface ? "visible" : "none",
-        },
-        paint: {
-          "line-color": [
-            "match",
-            ["get", "surface_type"],
-            "asphalt",
-            SURFACE_COLORS.asphalt,
-            "concrete",
-            SURFACE_COLORS.concrete,
-            "cobblestone",
-            SURFACE_COLORS.cobblestone,
-            "gravel",
-            SURFACE_COLORS.gravel,
-            "dirt",
-            SURFACE_COLORS.dirt,
-            SURFACE_COLORS.unknown,
-          ] as ExpressionSpecification,
-          "line-width": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            8,
-            1.5,
-            12,
-            2.5,
-            16,
-            5,
-          ] as ExpressionSpecification,
-          "line-opacity": 0.75,
-        },
-      });
+    map.addLayer({
+      id: HAZARD_ICON,
+      type: "symbol",
+      source: HAZARDS_SOURCE,
+      filter: ["!", ["has", "point_count"]],
+      layout: {
+        visibility: showHazards ? "visible" : "none",
+        "text-field": ["get", "emoji"],
+        "text-size": 16,
+        "text-allow-overlap": true,
+        "text-ignore-placement": true,
+      },
+      paint: { "text-opacity": ["coalesce", ["get", "opacity"], 1] },
+    });
 
-      // Hazards: GeoJSON source fed by /hazards REST endpoint. Cluster at low
-      // zoom so overlapping reports collapse into a single bubble; individual
-      // symbol markers take over once zoomed in.
-      map.addSource(HAZARDS_SOURCE, {
-        type: "geojson",
-        data: EMPTY_COLLECTION,
-        cluster: true,
-        clusterRadius: 50,
-        clusterMaxZoom: 13,
-      });
-
-      map.addLayer({
-        id: HAZARD_CLUSTERS,
-        type: "circle",
-        source: HAZARDS_SOURCE,
-        filter: ["has", "point_count"],
-        layout: { visibility: showHazards ? "visible" : "none" },
-        paint: {
-          "circle-color": "#0ED3CF",
-          "circle-opacity": 0.85,
-          "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 1.5,
-          "circle-radius": [
-            "step",
-            ["get", "point_count"],
-            14,
-            10,
-            18,
-            25,
-            24,
-          ] as ExpressionSpecification,
-        },
-      });
-
-      map.addLayer({
-        id: HAZARD_CLUSTER_COUNT,
-        type: "symbol",
-        source: HAZARDS_SOURCE,
-        filter: ["has", "point_count"],
-        layout: {
-          visibility: showHazards ? "visible" : "none",
-          "text-field": ["get", "point_count_abbreviated"],
-          "text-size": 12,
-          "text-font": [
-            "Noto Sans Bold",
-            "Open Sans Bold",
-            "Arial Unicode MS Bold",
-          ],
-          "text-allow-overlap": true,
-        },
-        paint: { "text-color": "#0f172a" },
-      });
-
-      // Individual hazard: background disc colored by type. Opacity is
-      // pre-computed per-feature in `toHazardFeatures` so the fade across a
-      // hazard's lifetime works without a live expression.
-      map.addLayer({
-        id: HAZARD_BG,
-        type: "circle",
-        source: HAZARDS_SOURCE,
-        filter: ["!", ["has", "point_count"]],
-        layout: { visibility: showHazards ? "visible" : "none" },
-        paint: {
-          "circle-color": buildHazardColorExpression(),
-          "circle-opacity": ["coalesce", ["get", "opacity"], 1],
-          "circle-radius": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            9,
-            10,
-            14,
-            14,
-            18,
-            18,
-          ] as ExpressionSpecification,
-          "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 1.5,
-          "circle-stroke-opacity": ["coalesce", ["get", "opacity"], 1],
-        },
-      });
-
-      // Emoji glyph on top of the disc. `text-allow-overlap` prevents the
-      // cluster-first placement pass from culling markers when they pile up
-      // just inside the cluster radius.
-      map.addLayer({
-        id: HAZARD_ICON,
-        type: "symbol",
-        source: HAZARDS_SOURCE,
-        filter: ["!", ["has", "point_count"]],
-        layout: {
-          visibility: showHazards ? "visible" : "none",
-          "text-field": ["get", "emoji"],
-          "text-size": 16,
-          "text-allow-overlap": true,
-          "text-ignore-placement": true,
-        },
-        paint: { "text-opacity": ["coalesce", ["get", "opacity"], 1] },
-      });
-
-      // Cluster click → expand.
-      map.on("click", HAZARD_CLUSTERS, (e: MapLayerMouseEvent) => {
-        const feature = e.features?.[0];
-        if (!feature) return;
-        const clusterId = feature.properties?.cluster_id as number | undefined;
-        if (clusterId == null) return;
-        const src = map.getSource(HAZARDS_SOURCE) as GeoJSONSource | undefined;
-        if (!src) return;
-        src
-          .getClusterExpansionZoom(clusterId)
-          .then((expZoom) => {
-            const geom = feature.geometry;
-            if (geom.type !== "Point") return;
-            map.easeTo({
-              center: geom.coordinates as [number, number],
-              zoom: expZoom,
-            });
-          })
-          .catch(() => {
-            // Cluster may have been superseded by a refetch between click and
-            // resolution; just drop the zoom-in rather than surfacing an error.
+    // Cluster click → expand.
+    map.on("click", HAZARD_CLUSTERS, (e: MapLayerMouseEvent) => {
+      const feature = e.features?.[0];
+      if (!feature) return;
+      const clusterId = feature.properties?.cluster_id as number | undefined;
+      if (clusterId == null) return;
+      const src = map.getSource(HAZARDS_SOURCE) as GeoJSONSource | undefined;
+      if (!src) return;
+      src
+        .getClusterExpansionZoom(clusterId)
+        .then((expZoom) => {
+          const geom = feature.geometry;
+          if (geom.type !== "Point") return;
+          map.easeTo({
+            center: geom.coordinates as [number, number],
+            zoom: expZoom,
           });
-      });
-
-      // Individual hazard click → popup with full details.
-      const onHazardClick = (e: MapLayerMouseEvent) => {
-        const feature = e.features?.[0];
-        if (!feature) return;
-        const props = feature.properties as HazardProps | null;
-        if (!props?.hazard_type) return;
-        new maplibregl.Popup({
-          closeButton: true,
-          offset: 12,
-          maxWidth: "280px",
         })
-          .setLngLat(e.lngLat)
-          .setHTML(renderHazardPopup(props))
-          .addTo(map);
-      };
-      map.on("click", HAZARD_BG, onHazardClick);
-      map.on("click", HAZARD_ICON, onHazardClick);
-
-      const setPointer = () => {
-        map.getCanvas().style.cursor = "pointer";
-      };
-      const unsetPointer = () => {
-        map.getCanvas().style.cursor = "";
-      };
-      for (const id of [HAZARD_BG, HAZARD_ICON, HAZARD_CLUSTERS]) {
-        map.on("mouseenter", id, setPointer);
-        map.on("mouseleave", id, unsetPointer);
-      }
-
-      map.on("moveend", () => {
-        const c = map.getCenter();
-        onViewChangeRef.current?.({
-          lng: Number(c.lng.toFixed(5)),
-          lat: Number(c.lat.toFixed(5)),
-          zoom: Number(map.getZoom().toFixed(2)),
+        .catch(() => {
+          // Cluster may have been superseded by a refetch; drop the zoom-in.
         });
-      });
-
-      setReady(true);
     });
 
-    mapRef.current = map;
-
-    const ro = new ResizeObserver(() => map.resize());
-    ro.observe(containerRef.current);
-
-    return () => {
-      ro.disconnect();
-      map.remove();
-      mapRef.current = null;
-      setReady(false);
+    const onHazardClick = (e: MapLayerMouseEvent) => {
+      const feature = e.features?.[0];
+      if (!feature) return;
+      const props = feature.properties as HazardProps | null;
+      if (!props?.hazard_type) return;
+      new maplibregl.Popup({
+        closeButton: true,
+        offset: 12,
+        maxWidth: "280px",
+      })
+        .setLngLat(e.lngLat)
+        .setHTML(renderHazardPopup(props))
+        .addTo(map);
     };
-    // Init center/zoom read once at mount; subsequent updates come from the
-    // moveend handler and a separate effect so the map doesn't yank the user's
-    // view when they pan.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    map.on("click", HAZARD_BG, onHazardClick);
+    map.on("click", HAZARD_ICON, onHazardClick);
 
-  // ── apply filters to line-opacity (dim non-matching quality/surface) ──
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !ready) return;
-
-    const qualityOpacity = buildQualityOpacityExpression(filters);
-    const surfaceOpacity = buildSurfaceOpacityExpression(filters);
-
-    if (map.getLayer(QUALITY_LAYER)) {
-      map.setPaintProperty(QUALITY_LAYER, "line-opacity", qualityOpacity);
+    const setPointer = () => {
+      map.getCanvas().style.cursor = "pointer";
+    };
+    const unsetPointer = () => {
+      map.getCanvas().style.cursor = "";
+    };
+    for (const id of [HAZARD_BG, HAZARD_ICON, HAZARD_CLUSTERS]) {
+      map.on("mouseenter", id, setPointer);
+      map.on("mouseleave", id, unsetPointer);
     }
-    if (map.getLayer(SURFACE_LAYER)) {
-      map.setPaintProperty(SURFACE_LAYER, "line-opacity", surfaceOpacity);
-    }
-  }, [ready, filters]);
+
+    setReady(true);
+  };
+
+  const handleViewChange = (view: {
+    lng: number;
+    lat: number;
+    zoom: number;
+  }) => {
+    onViewChange?.({ lng: view.lng, lat: view.lat, zoom: view.zoom });
+  };
 
   // ── project raw hazards → filtered GeoJSON source ──
-  // Re-runs on filter changes, after a fresh fetch (revision bump), and on
-  // each hazardNow tick so the fade-by-age opacity keeps progressing while
-  // the user sits idle. Filtering at the source (rather than via layer
-  // filter expressions) means clustering aggregates only selected types, so
-  // cluster counts stay consistent with the checkbox state.
   useEffect(() => {
-    const map = mapRef.current;
+    const map = handleRef.current?.map;
     if (!map || !ready) return;
     const src = map.getSource(HAZARDS_SOURCE) as GeoJSONSource | undefined;
     if (!src) return;
@@ -465,12 +258,10 @@ export function QualityMap({
     return () => window.clearInterval(id);
   }, [ready, showHazards, hazardsRevision]);
 
-  // ── layer visibility from toggles ──
+  // ── hazard layer visibility ──
   useEffect(() => {
-    const map = mapRef.current;
+    const map = handleRef.current?.map;
     if (!map || !ready) return;
-    setVisibility(map, QUALITY_LAYER, showQuality);
-    setVisibility(map, SURFACE_LAYER, showSurface);
     for (const id of [
       HAZARD_CLUSTERS,
       HAZARD_CLUSTER_COUNT,
@@ -479,18 +270,13 @@ export function QualityMap({
     ]) {
       setVisibility(map, id, showHazards);
     }
-  }, [ready, showQuality, showSurface, showHazards]);
+  }, [ready, showHazards]);
 
-  // ── fetch hazards when viewport settles (debounced, abortable) ──
-  // Intentionally does NOT depend on filters.hazardTypes — the render effect
-  // handles filter changes off the cached raw data, avoiding a network round
-  // trip on every checkbox toggle.
+  // ── fetch hazards when viewport settles ──
   useEffect(() => {
-    const map = mapRef.current;
+    const map = handleRef.current?.map;
     if (!map || !ready) return;
 
-    // When hidden or zoomed-out, clear the cache so a later filter toggle
-    // can't resurrect stale data the user can no longer see.
     if (!showHazards || zoom < HAZARD_MIN_ZOOM) {
       if (rawHazardsRef.current.length > 0) {
         rawHazardsRef.current = [];
@@ -502,10 +288,6 @@ export function QualityMap({
       return;
     }
 
-    // `cancelled` guards the async write after the await: AbortController
-    // signals the fetch to stop, but if the response has already resolved the
-    // continuation still runs. Without this flag a slow prior fetch could
-    // overwrite fresh data from the next viewport.
     let cancelled = false;
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
@@ -520,9 +302,6 @@ export function QualityMap({
         setHazardsRevision((r) => r + 1);
       } catch (err) {
         if ((err as { name?: string }).name === "AbortError") return;
-        // Intentionally swallow: the hazards overlay is a secondary signal —
-        // a transient fetch failure shouldn't blow up the explorer. Next
-        // moveend will retry.
         console.warn("[explore] hazards fetch failed", err);
       }
     }, HAZARD_FETCH_DEBOUNCE_MS);
@@ -535,9 +314,17 @@ export function QualityMap({
   }, [ready, showHazards, center.lat, center.lng, zoom]);
 
   return (
-    <div className="relative w-full h-full">
-      <div ref={containerRef} className="absolute inset-0" />
-    </div>
+    <MapCanvas
+      ref={handleRef}
+      center={center}
+      zoom={zoom}
+      showQuality={showQuality}
+      showSurface={showSurface}
+      qualityOpacityExpression={qualityOpacity}
+      surfaceOpacityExpression={surfaceOpacity}
+      onReady={handleReady}
+      onViewChange={handleViewChange}
+    />
   );
 }
 
@@ -546,7 +333,6 @@ export function QualityMap({
 function buildQualityOpacityExpression(
   filters: MapFilters,
 ): ExpressionSpecification {
-  // Quality tier match via the same breakpoints as scoreToTier.
   const qualityMatch: ExpressionSpecification = [
     "case",
     [">=", ["coalesce", ["get", "quality_score"], 0], 4.5],
@@ -563,8 +349,6 @@ function buildQualityOpacityExpression(
   const surfaceValues = FILTERABLE_SURFACES.filter((s) =>
     filters.surface.has(s),
   );
-  // "unknown" isn't user-filterable but still counts as a match so the map
-  // doesn't blank segments while surface classification catches up.
   const surfaceMatch: ExpressionSpecification = [
     "any",
     ["==", ["coalesce", ["get", "surface_type"], "unknown"], "unknown"],
@@ -619,10 +403,6 @@ function buildSurfaceOpacityExpression(
 }
 
 function buildHazardColorExpression(): ExpressionSpecification {
-  // `match` expects alternating value/output pairs. HAZARD_CONFIG is the
-  // source of truth so the popup, legend, and map stay aligned.
-  // The MapLibre tuple type can't be expressed with a spread, so we cast via
-  // `unknown` after confirming the runtime shape matches the spec.
   const pairs = HAZARD_TYPES_UI.flatMap((type) => [
     type,
     HAZARD_CONFIG[type].hex,
@@ -635,10 +415,6 @@ function buildHazardColorExpression(): ExpressionSpecification {
   ] as unknown as ExpressionSpecification;
 }
 
-// Maps any server-sent hazard_type into the UI's known set. Unrecognised
-// values (e.g. a new backend type the client hasn't shipped yet) collapse to
-// "other" so they still render and still respond to the "Other" filter
-// checkbox — rather than being silently dropped.
 function normalizeHazardType(raw: string): HazardType {
   return HAZARD_CONFIG[raw as HazardType] ? (raw as HazardType) : "other";
 }
@@ -655,17 +431,6 @@ function selectHazards(
 function setVisibility(map: MapLibreMap, layerId: string, visible: boolean) {
   if (!map.getLayer(layerId)) return;
   map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
-}
-
-// MapLibre expects absolute tile URLs. Running in the browser we resolve the
-// API host from config; during SSR this module doesn't execute (the component
-// is "use client").
-function originForTiles(): string {
-  if (typeof window === "undefined") return "";
-  // API_BASE can be same-origin ("/api/v1") — in that case we prepend the
-  // current origin to form an absolute URL.
-  if (API_BASE.startsWith("http")) return "";
-  return window.location.origin;
 }
 
 function toHazardFeatures(
@@ -700,9 +465,6 @@ function viewportRadiusMeters(map: MapLibreMap): number {
   const center = map.getCenter();
   const ne = bounds.getNorthEast();
   const sw = bounds.getSouthWest();
-  // Radius that circumscribes the viewport — the larger of the two diagonals
-  // from center to a corner. NE and SW usually agree, but tilted viewports
-  // (and near-antimeridian bounds) can skew the distances.
   const diagonal = Math.max(
     haversineMeters(center.lat, center.lng, ne.lat, ne.lng),
     haversineMeters(center.lat, center.lng, sw.lat, sw.lng),

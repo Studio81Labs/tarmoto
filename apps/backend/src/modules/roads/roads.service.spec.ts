@@ -540,4 +540,186 @@ describe('RoadsService', () => {
       ]);
     });
   });
+
+  describe('findZoneById', () => {
+    const boundaryCoords = [
+      [18.1, 49.4],
+      [18.6, 49.4],
+      [18.6, 49.7],
+      [18.1, 49.7],
+      [18.1, 49.4],
+    ];
+
+    it('returns the zone and top roads ordered by contribution_score DESC', async () => {
+      (funZoneRepo.query as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'fz-1',
+          name: 'Beskydy',
+          composite_score: 4.5,
+          road_count: 25,
+          total_curve_km: 120,
+          avg_quality: 4.2,
+          best_season: 'summer',
+          geojson: { coordinates: [boundaryCoords] },
+        },
+      ]);
+      (funZoneRepo.query as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'seg-a',
+          road_name: 'D56',
+          road_number: null,
+          quality_score: 4.5,
+          curviness_score: 3.2,
+          surface_type: 'asphalt',
+          length_m: 5400,
+          confidence: 80,
+          elevation_min: 350,
+          elevation_max: 420,
+          elevation_profile: [350, 380, 420],
+          geojson: {
+            coordinates: [
+              [18.4, 49.5],
+              [18.41, 49.51],
+              [18.42, 49.52],
+            ],
+          },
+          contribution_score: 9.9,
+        },
+        {
+          id: 'seg-b',
+          road_name: 'D57',
+          road_number: null,
+          quality_score: 4.0,
+          curviness_score: 2.9,
+          surface_type: 'asphalt',
+          length_m: 3200,
+          confidence: 70,
+          elevation_min: null,
+          elevation_max: null,
+          elevation_profile: null,
+          geojson: {
+            coordinates: [
+              [18.45, 49.55],
+              [18.46, 49.56],
+            ],
+          },
+          contribution_score: 7.5,
+        },
+      ]);
+
+      const result = await service.findZoneById('fz-1');
+
+      expect(funZoneRepo.query).toHaveBeenCalledTimes(2);
+      const [firstSql, firstParams] = (funZoneRepo.query as jest.Mock).mock
+        .calls[0] as [string, unknown[]];
+      expect(firstSql).toContain('FROM fun_zones');
+      expect(firstSql).toContain('ST_AsGeoJSON');
+      expect(firstParams).toEqual(['fz-1']);
+
+      const [secondSql, secondParams] = (funZoneRepo.query as jest.Mock).mock
+        .calls[1] as [string, unknown[]];
+      expect(secondSql).toContain('FROM fun_zone_roads');
+      expect(secondSql).toContain('contribution_score DESC NULLS LAST');
+      expect(secondParams[0]).toBe('fz-1');
+
+      expect(result.zone.id).toBe('fz-1');
+      expect(result.zone.name).toBe('Beskydy');
+      expect(result.zone.composite_score).toBe(4.5);
+      expect(result.zone.boundary).toHaveLength(5);
+      expect(result.zone.boundary[0]).toEqual({ lat: 49.4, lng: 18.1 });
+
+      expect(result.top_roads).toHaveLength(2);
+      expect(result.top_roads[0]).toMatchObject({
+        id: 'seg-a',
+        contribution_score: 9.9,
+        elevation_profile: [350, 380, 420],
+      });
+      expect(result.top_roads[0].geometry).toEqual([
+        { lat: 49.5, lng: 18.4 },
+        { lat: 49.51, lng: 18.41 },
+        { lat: 49.52, lng: 18.42 },
+      ]);
+      expect(result.top_roads[1]).toMatchObject({
+        id: 'seg-b',
+        contribution_score: 7.5,
+        elevation_profile: null,
+      });
+    });
+
+    it('throws NotFoundException when the zone does not exist', async () => {
+      (funZoneRepo.query as jest.Mock).mockResolvedValueOnce([]);
+
+      await expect(service.findZoneById('missing')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      // Second query (roads) must not run when the zone isn't found.
+      expect(funZoneRepo.query).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns top_roads: [] when the zone has no contributing roads', async () => {
+      (funZoneRepo.query as jest.Mock)
+        .mockResolvedValueOnce([
+          {
+            id: 'fz-empty',
+            name: null,
+            composite_score: 3.0,
+            road_count: 0,
+            total_curve_km: null,
+            avg_quality: null,
+            best_season: null,
+            geojson: { coordinates: [boundaryCoords] },
+          },
+        ])
+        .mockResolvedValueOnce([]);
+
+      const result = await service.findZoneById('fz-empty');
+
+      expect(result.zone.id).toBe('fz-empty');
+      expect(result.zone.name).toBeNull();
+      expect(result.top_roads).toEqual([]);
+    });
+
+    it('drops a stale elevation_profile that does not match geometry length', async () => {
+      (funZoneRepo.query as jest.Mock)
+        .mockResolvedValueOnce([
+          {
+            id: 'fz-3',
+            name: 'Mismatch',
+            composite_score: 3.2,
+            road_count: 1,
+            total_curve_km: null,
+            avg_quality: null,
+            best_season: null,
+            geojson: { coordinates: [boundaryCoords] },
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: 'seg-mismatch',
+            road_name: null,
+            road_number: null,
+            quality_score: 3.0,
+            curviness_score: 2.0,
+            surface_type: 'asphalt',
+            length_m: 150,
+            confidence: 50,
+            elevation_min: 100,
+            elevation_max: 150,
+            elevation_profile: [100, 150], // geometry has 3 points
+            geojson: {
+              coordinates: [
+                [18.4, 49.5],
+                [18.41, 49.51],
+                [18.42, 49.52],
+              ],
+            },
+            contribution_score: 1.0,
+          },
+        ]);
+
+      const result = await service.findZoneById('fz-3');
+
+      expect(result.top_roads[0].elevation_profile).toBeNull();
+    });
+  });
 });
