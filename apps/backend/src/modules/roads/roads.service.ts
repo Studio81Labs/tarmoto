@@ -18,12 +18,14 @@ import { QueryFunZonesDto } from './dto/query-fun-zones.dto.js';
 import { FunZoneDto } from './dto/fun-zone.dto.js';
 import { QueryBestRoadsDto } from './dto/query-best-roads.dto.js';
 import { BestRoadsResponseDto, BestRoadDto } from './dto/best-roads.dto.js';
+import { FunZoneDetailDto, FunZoneRoadDto } from './dto/fun-zone-detail.dto.js';
 
 const RECENT_REVIEW_LIMIT = 5;
 const ACTIVE_HAZARD_LIMIT = 10;
 const BEST_ROADS_MIN_CONFIDENCE = 3;
 const BEST_ROADS_MIN_LENGTH_M = 500;
 const BEST_ROADS_DEFAULT_LIMIT = 10;
+const FUN_ZONE_TOP_ROADS_LIMIT = 10;
 
 @Injectable()
 export class RoadsService {
@@ -345,6 +347,92 @@ export class RoadsService {
         boundary,
       };
     });
+  }
+
+  async findZoneById(zoneId: string): Promise<FunZoneDetailDto> {
+    // Resolve the zone first so we can 404 without issuing a useless join
+    // against fun_zone_roads for an id that doesn't exist.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const zoneRows = await this.funZoneRepo.query(
+      `SELECT
+        fz.id, fz.name, fz.composite_score, fz.road_count,
+        fz.total_curve_km, fz.avg_quality, fz.best_season,
+        ST_AsGeoJSON(fz.boundary)::json AS geojson
+      FROM fun_zones fz
+      WHERE fz.id = $1`,
+      [zoneId],
+    );
+
+    const zoneList = zoneRows as Record<string, unknown>[];
+    if (zoneList.length === 0) {
+      throw new NotFoundException('Fun zone not found');
+    }
+    const zoneRow = zoneList[0];
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const roadRows = await this.funZoneRepo.query(
+      `SELECT
+        rs.id, rs.road_name, rs.road_number,
+        rs.quality_score, rs.curviness_score, rs.surface_type,
+        rs.length_m, rs.confidence,
+        rs.elevation_min, rs.elevation_max, rs.elevation_profile,
+        ST_AsGeoJSON(rs.geom)::json AS geojson,
+        fzr.contribution_score
+      FROM fun_zone_roads fzr
+      INNER JOIN road_segments rs ON rs.id = fzr.road_segment_id
+      WHERE fzr.fun_zone_id = $1
+      ORDER BY fzr.contribution_score DESC NULLS LAST,
+               rs.quality_score DESC NULLS LAST
+      LIMIT $2`,
+      [zoneId, FUN_ZONE_TOP_ROADS_LIMIT],
+    );
+    const zoneGeo = zoneRow.geojson as { coordinates: number[][][] };
+    const boundary = zoneGeo.coordinates[0].map((coord) => ({
+      lat: coord[1],
+      lng: coord[0],
+    }));
+
+    const top_roads: FunZoneRoadDto[] = (
+      roadRows as Record<string, unknown>[]
+    ).map((row) => {
+      const geojson = row.geojson as { coordinates: number[][] };
+      const geometry = geojson.coordinates.map((c) => ({
+        lat: c[1],
+        lng: c[0],
+      }));
+      return {
+        id: row.id as string,
+        road_name: (row.road_name as string) ?? null,
+        road_number: (row.road_number as string) ?? null,
+        quality_score: (row.quality_score as number) ?? null,
+        curviness_score: row.curviness_score as number,
+        surface_type: row.surface_type as string,
+        length_m: row.length_m as number,
+        confidence: row.confidence as number,
+        elevation_min: (row.elevation_min as number) ?? null,
+        elevation_max: (row.elevation_max as number) ?? null,
+        elevation_profile: normalizeElevationProfile(
+          row.elevation_profile,
+          geometry.length,
+        ),
+        geometry,
+        contribution_score: (row.contribution_score as number) ?? null,
+      };
+    });
+
+    return {
+      zone: {
+        id: zoneRow.id as string,
+        name: (zoneRow.name as string) ?? null,
+        composite_score: zoneRow.composite_score as number,
+        road_count: zoneRow.road_count as number,
+        total_curve_km: (zoneRow.total_curve_km as number) ?? null,
+        avg_quality: (zoneRow.avg_quality as number) ?? null,
+        best_season: (zoneRow.best_season as string) ?? null,
+        boundary,
+      },
+      top_roads,
+    };
   }
 }
 
