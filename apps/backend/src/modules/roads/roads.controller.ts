@@ -37,7 +37,9 @@ export class RoadsController {
   })
   @ApiResponse({ status: 200, type: FunZoneDetailDto })
   @ApiResponse({ status: 404, description: 'Fun zone not found' })
-  async findZoneById(@Param('id') id: string): Promise<FunZoneDetailDto> {
+  async findZoneById(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<FunZoneDetailDto> {
     return this.roadsService.findZoneById(id);
   }
 
