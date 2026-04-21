@@ -235,4 +235,37 @@ describe("lib/socket", () => {
 
     expect(useRealtimeStore.getState().lastError).toBeNull();
   });
+
+  it("unsubscribe detaches from the current socket after a reconnect", async () => {
+    const { connectSocket, onHazardNew } = await import("../socket");
+
+    connectSocket("token-1");
+    const received: unknown[] = [];
+    const unsubscribe = onHazardNew((h) => received.push(h));
+
+    // Socket is replaced (token change). Handler is re-attached to the new socket.
+    const secondFake = createFakeSocket();
+    fake = secondFake;
+    connectSocket("token-2");
+
+    // Unsubscribe must target the *new* socket where the handler actually lives.
+    unsubscribe();
+    secondFake.trigger("hazard:new", { id: "should-not-fire" });
+    expect(received).toHaveLength(0);
+  });
+
+  it("disconnectSocket detaches persistent listeners from the old socket", async () => {
+    const { connectSocket, onHazardNew, disconnectSocket } =
+      await import("../socket");
+
+    connectSocket(null);
+    const received: unknown[] = [];
+    onHazardNew((h) => received.push(h));
+    disconnectSocket();
+
+    // The old socket reference still exists in the test; firing events on it
+    // must not reach the consumer (handler was explicitly .off'd).
+    fake.trigger("hazard:new", { id: "stale" });
+    expect(received).toHaveLength(0);
+  });
 });

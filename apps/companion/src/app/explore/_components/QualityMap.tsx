@@ -340,7 +340,12 @@ export function QualityMap({
       return;
     }
 
-    subscribeHazards(center.lat, center.lng, viewportRadiusMeters(map));
+    // Debounce the subscribe emit to match the REST fetch cadence — a rapid
+    // pan would otherwise spam subscribe:hazards, forcing the backend to
+    // leave/join rooms on every frame when only the final viewport matters.
+    const subscribeTimer = window.setTimeout(() => {
+      subscribeHazards(center.lat, center.lng, viewportRadiusMeters(map));
+    }, HAZARD_FETCH_DEBOUNCE_MS);
 
     const unsubscribe = onHazardNew((hazard) => {
       // Deduplicate against the existing list; the viewport REST fetch may
@@ -352,7 +357,10 @@ export function QualityMap({
       setHazardsRevision((r) => r + 1);
     });
 
-    return unsubscribe;
+    return () => {
+      window.clearTimeout(subscribeTimer);
+      unsubscribe();
+    };
   }, [ready, showHazards, realtimeStatus, center.lat, center.lng, zoom]);
 
   return (

@@ -23,6 +23,8 @@ type SocketListener = (...args: unknown[]) => void;
 interface PersistentListener {
   event: string;
   handler: SocketListener;
+  /** Socket the handler is currently attached to — `null` while disconnected. */
+  socket: Socket | null;
 }
 
 let socket: Socket | null = null;
@@ -79,9 +81,12 @@ export function connectSocket(token: string | null = null): Socket {
     setError(err.message);
   });
 
-  // Re-attach any listeners consumers registered before this (re)connection.
-  for (const { event, handler } of persistentListeners) {
-    next.on(event, handler);
+  // Re-attach any listeners consumers registered before this (re)connection,
+  // and update each registration's socket pointer so unsubscribe targets the
+  // exact socket the handler is attached to.
+  for (const registration of persistentListeners) {
+    next.on(registration.event, registration.handler);
+    registration.socket = next;
   }
 
   socket = next;
@@ -90,7 +95,10 @@ export function connectSocket(token: string | null = null): Socket {
 
 export function disconnectSocket(): void {
   if (!socket) return;
-  socket.removeAllListeners();
+  for (const registration of persistentListeners) {
+    registration.socket?.off(registration.event, registration.handler);
+    registration.socket = null;
+  }
   socket.disconnect();
   socket = null;
   currentToken = null;
@@ -119,12 +127,20 @@ export function subscribeHazards(
  */
 export function onHazardNew(cb: (hazard: HazardNewEvent) => void): () => void {
   const handler: SocketListener = (payload) => cb(payload as HazardNewEvent);
-  const registration: PersistentListener = { event: "hazard:new", handler };
+  const registration: PersistentListener = {
+    event: "hazard:new",
+    handler,
+    socket,
+  };
   persistentListeners.add(registration);
   socket?.on("hazard:new", handler);
   return () => {
     persistentListeners.delete(registration);
-    socket?.off("hazard:new", handler);
+    // Detach from the exact socket the handler is attached to — if the
+    // socket was replaced since subscribe, connectSocket will have updated
+    // `registration.socket` to the new one.
+    registration.socket?.off(registration.event, handler);
+    registration.socket = null;
   };
 }
 
