@@ -167,9 +167,15 @@ export function PlaceSearch({ value, onChange }: Props) {
               <div className="px-3 py-2 text-xs text-slate-500">No matches</div>
             )}
             {!loading &&
-              matches.map((m) => (
+              matches.map((m, i) => (
                 <button
-                  key={`${m.lat},${m.lng}`}
+                  // Composite key: lat/lng alone collides when Nominatim
+                  // returns overlapping admin levels (a city and its
+                  // county can share the centroid). Adding the label and
+                  // index makes the key unique even for dual-tagged hits
+                  // while staying stable across re-renders of the same
+                  // result set.
+                  key={`${m.lat},${m.lng}|${m.label}|${i}`}
                   type="button"
                   onClick={() => pick(m)}
                   className="block w-full text-left px-3 py-1.5 text-sm text-slate-100 hover:bg-slate-700 truncate"

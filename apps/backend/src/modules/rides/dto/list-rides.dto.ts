@@ -22,13 +22,15 @@ export type RidesSortField = (typeof SORTABLE)[number];
 
 /**
  * Transform function that coerces a query param to a number, but maps
- * empty/null/undefined to `undefined` so `@IsOptional()` still behaves
- * as "not provided" for the `?foo=` edge case. Plain `Number('')`
- * silently returns `0`, which would defeat the intent for the near_*
- * proximity filter (a blank lat/lng would become the Gulf of Guinea).
+ * blank/whitespace/nullish values to `undefined` so `@IsOptional()`
+ * still behaves as "not provided" for edge cases like `?foo=` or
+ * `?foo=%20`. Plain `Number('')` and `Number('  ')` both silently
+ * return `0`, which would defeat the intent for the near_* proximity
+ * filter (a blank lat/lng would become the Gulf of Guinea).
  */
 const toOptionalNumber = ({ value }: { value: unknown }): unknown => {
-  if (value === '' || value === null || value === undefined) return undefined;
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === 'string' && value.trim() === '') return undefined;
   return Number(value);
 };
 
