@@ -1,0 +1,87 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { COUNTRIES, findCountry, findCountryRegions } from "@tarmoto/shared";
+
+export const revalidate = 604800;
+
+export function generateStaticParams() {
+  return COUNTRIES.map((c) => ({ country: c.code }));
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ country: string }>;
+}): Promise<Metadata> {
+  const { country } = await params;
+  const c = findCountry(country);
+  if (!c) return {};
+  const title = `Best motorcycle roads in ${c.name} — Tarmoto`;
+  const description = `Ranked lists of the top-rated motorcycle roads in ${c.name}, scored by quality and curviness.`;
+  return {
+    title,
+    description,
+    alternates: { canonical: `/roads/best/${c.code}` },
+    openGraph: {
+      title,
+      description,
+      url: `/roads/best/${c.code}`,
+      type: "website",
+    },
+  };
+}
+
+export default async function BestRoadsCountryPage({
+  params,
+}: {
+  params: Promise<{ country: string }>;
+}) {
+  const { country } = await params;
+  const c = findCountry(country);
+  if (!c) notFound();
+  const regions = findCountryRegions(c.code);
+
+  return (
+    <main className="mx-auto max-w-5xl px-6 py-10 text-slate-100">
+      <nav className="mb-4 text-sm text-slate-400">
+        <Link href="/roads/best" className="hover:text-white">
+          Best roads
+        </Link>
+        <span className="mx-2">/</span>
+        <span>{c.name}</span>
+      </nav>
+
+      <header className="mb-8">
+        <h1 className="text-3xl font-bold tracking-tight">
+          Best motorcycle roads in {c.name}
+        </h1>
+        <p className="mt-2 text-slate-400">
+          {regions.length} curated region{regions.length === 1 ? "" : "s"} — tap
+          through for ranked roads, quality scores and a map preview.
+        </p>
+      </header>
+
+      <ul className="grid gap-4 sm:grid-cols-2">
+        {regions.map((r) => (
+          <li key={r.slug}>
+            <Link
+              href={`/roads/best/${c.code}/${r.slug}`}
+              className="block rounded-xl border border-slate-800 bg-slate-900/60 p-5 hover:bg-slate-800/60 transition"
+            >
+              <h2 className="text-xl font-semibold">{r.name}</h2>
+              <p className="mt-1 text-sm text-slate-400 line-clamp-2">
+                {r.description}
+              </p>
+              {r.bestSeason && (
+                <p className="mt-2 text-xs text-slate-500">
+                  Best season: {r.bestSeason}
+                </p>
+              )}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </main>
+  );
+}
