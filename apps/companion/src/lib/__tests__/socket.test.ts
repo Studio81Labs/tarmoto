@@ -198,4 +198,41 @@ describe("lib/socket", () => {
     fake.trigger("hazard:new", { id: "h-2", hazard_type: "gravel" });
     expect(received).toHaveLength(1);
   });
+
+  it("re-attaches persistent listeners when the socket is recreated on token change", async () => {
+    const { connectSocket, onHazardNew } = await import("../socket");
+
+    connectSocket("token-1");
+    const received: unknown[] = [];
+    onHazardNew((h) => received.push(h));
+
+    // Token changes — new socket instance — listener must survive.
+    const secondFake = createFakeSocket();
+    fake = secondFake;
+    connectSocket("token-2");
+
+    secondFake.trigger("hazard:new", { id: "h-after-reauth" });
+    expect(received).toEqual([{ id: "h-after-reauth" }]);
+  });
+
+  it("clears lastError on intentional (re)connect so stale errors don't persist", async () => {
+    const { connectSocket } = await import("../socket");
+    const { useRealtimeStore } = await import("@/stores/realtime");
+
+    useRealtimeStore.getState().setError("auth failed");
+    connectSocket("fresh-token");
+
+    expect(useRealtimeStore.getState().lastError).toBeNull();
+  });
+
+  it("clears lastError on explicit disconnectSocket", async () => {
+    const { connectSocket, disconnectSocket } = await import("../socket");
+    const { useRealtimeStore } = await import("@/stores/realtime");
+
+    connectSocket(null);
+    useRealtimeStore.getState().setError("network blip");
+    disconnectSocket();
+
+    expect(useRealtimeStore.getState().lastError).toBeNull();
+  });
 });

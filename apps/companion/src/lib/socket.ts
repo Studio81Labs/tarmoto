@@ -10,13 +10,24 @@ import type { HazardResponse } from "@/lib/api";
  *
  * Connection lifecycle is mirrored into `useRealtimeStore` so UI components
  * (e.g. OfflineIndicator) can react without importing this module directly.
+ *
+ * Listeners registered via the `on*` helpers are tracked module-side and
+ * re-attached automatically if the underlying socket is replaced (e.g. on
+ * auth-token change). Consumers don't need to re-subscribe themselves.
  */
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || API_HOST || "";
 const NAMESPACE = "/events";
 
+type SocketListener = (...args: unknown[]) => void;
+interface PersistentListener {
+  event: string;
+  handler: SocketListener;
+}
+
 let socket: Socket | null = null;
 let currentToken: string | null = null;
+const persistentListeners = new Set<PersistentListener>();
 
 /** Hazard payload emitted by the backend on `hazard:new`. */
 export type HazardNewEvent = HazardResponse;
@@ -30,6 +41,9 @@ export function connectSocket(token: string | null = null): Socket {
 
   currentToken = token;
   const { setStatus, setError } = useRealtimeStore.getState();
+  // Intentional transition — clear any stale error from a prior session so
+  // the UI doesn't show e.g. "auth failed" while we're actively reconnecting.
+  setError(null);
   setStatus("connecting");
 
   const url = WS_URL ? `${WS_URL}${NAMESPACE}` : NAMESPACE;
@@ -65,6 +79,11 @@ export function connectSocket(token: string | null = null): Socket {
     setError(err.message);
   });
 
+  // Re-attach any listeners consumers registered before this (re)connection.
+  for (const { event, handler } of persistentListeners) {
+    next.on(event, handler);
+  }
+
   socket = next;
   return next;
 }
@@ -75,7 +94,9 @@ export function disconnectSocket(): void {
   socket.disconnect();
   socket = null;
   currentToken = null;
-  useRealtimeStore.getState().setStatus("disconnected");
+  const { setStatus, setError } = useRealtimeStore.getState();
+  setStatus("disconnected");
+  setError(null);
 }
 
 // ── Hazard alerts ──
@@ -93,12 +114,16 @@ export function subscribeHazards(
 }
 
 /**
- * Listen for `hazard:new` broadcasts. Returns an unsubscribe function.
+ * Listen for `hazard:new` broadcasts. Returns an unsubscribe function. The
+ * listener is re-attached automatically if the socket is recreated.
  */
 export function onHazardNew(cb: (hazard: HazardNewEvent) => void): () => void {
-  const handler = (payload: HazardNewEvent) => cb(payload);
+  const handler: SocketListener = (payload) => cb(payload as HazardNewEvent);
+  const registration: PersistentListener = { event: "hazard:new", handler };
+  persistentListeners.add(registration);
   socket?.on("hazard:new", handler);
   return () => {
+    persistentListeners.delete(registration);
     socket?.off("hazard:new", handler);
   };
 }
@@ -109,4 +134,5 @@ export function onHazardNew(cb: (hazard: HazardNewEvent) => void): () => void {
 export function __resetSocketForTests(): void {
   socket = null;
   currentToken = null;
+  persistentListeners.clear();
 }
