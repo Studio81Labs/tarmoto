@@ -19,6 +19,25 @@ import { createClient } from 'redis';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { Ride } from '../../entities/ride.entity.js';
 
+/**
+ * Wire shape of the `hazard:new` WebSocket event. Must stay structurally
+ * compatible with HazardResponseDto so clients can render markers directly
+ * from the event without a follow-up REST fetch.
+ */
+export interface HazardAlertPayload {
+  id: string;
+  lat: number;
+  lng: number;
+  hazard_type: string;
+  severity: string;
+  note: string | null;
+  confirmations: number;
+  reporter: string | null;
+  road_name: string | null;
+  created_at: string;
+  expires_at: string;
+}
+
 @SkipThrottle()
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -216,22 +235,12 @@ export class EventsGateway
   // ── Server-side emit methods (called by other services) ──
 
   /**
-   * Broadcast a new hazard alert to all clients in the area.
-   * Callers should pass the full hazard response DTO so clients can render
-   * markers (note, confirmations, created_at, expires_at, …) without a
-   * follow-up REST fetch.
+   * Broadcast a new hazard alert to all clients in the area. The payload is
+   * the full hazard response — clients render markers (note, confirmations,
+   * created_at, expires_at, …) directly from this event without a
+   * follow-up REST fetch, so every field must be present.
    */
-  emitHazardAlert(
-    lat: number,
-    lng: number,
-    hazard: {
-      id: string;
-      hazard_type: string;
-      severity: string;
-      lat: number;
-      lng: number;
-    },
-  ): void {
+  emitHazardAlert(lat: number, lng: number, hazard: HazardAlertPayload): void {
     const cellId = this.toGridCell(lat, lng);
     this.server.to(`hazards:${cellId}`).emit('hazard:new', hazard);
   }

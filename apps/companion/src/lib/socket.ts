@@ -1,6 +1,5 @@
 import { io, type Socket } from "socket.io-client";
 import { API_HOST } from "@/lib/config";
-import { useAuthStore } from "@/stores/auth";
 import { useRealtimeStore } from "@/stores/realtime";
 import type { HazardResponse } from "@/lib/api";
 
@@ -148,13 +147,4 @@ export function onRiderLocation(
 export function __resetSocketForTests(): void {
   socket = null;
   currentToken = null;
-}
-
-/**
- * Helper used to bind the socket to the auth store. Reads the current token
- * and connects/reconnects as needed. Safe to call repeatedly.
- */
-export function syncSocketWithAuth(): void {
-  const token = useAuthStore.getState().accessToken;
-  connectSocket(token);
 }
