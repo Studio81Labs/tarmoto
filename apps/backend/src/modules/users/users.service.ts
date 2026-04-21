@@ -43,6 +43,15 @@ export class UsersService {
     if (dto.phone !== undefined) {
       user.phone = dto.phone;
     }
+    if (dto.avatar_url !== undefined) {
+      user.avatar_url = dto.avatar_url;
+    }
+    if (dto.bio !== undefined) {
+      user.bio = dto.bio;
+    }
+    if (dto.home_region !== undefined) {
+      user.home_region = dto.home_region;
+    }
     if (dto.home_location !== undefined) {
       user.home_location = dto.home_location
         ? {
@@ -105,6 +114,9 @@ export class UsersService {
       email: user.email,
       display_name: user.display_name,
       phone: user.phone,
+      avatar_url: user.avatar_url,
+      bio: user.bio,
+      home_region: user.home_region,
       home_location: pointToLatLng(user.home_location),
       work_location: pointToLatLng(user.work_location),
       preferences: user.preferences,

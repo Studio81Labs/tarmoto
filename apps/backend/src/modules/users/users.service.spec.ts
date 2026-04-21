@@ -12,17 +12,24 @@ describe('UsersService', () => {
   let userRepo: Partial<jest.Mocked<Repository<User>>>;
   let contactRepo: Partial<jest.Mocked<Repository<UserContact>>>;
 
-  const mockUser = {
-    id: 'user-1',
-    email: 'rider@tarmoto.app',
-    display_name: 'TestRider',
-    phone: null,
-    home_location: null,
-    work_location: null,
-    preferences: { units: 'metric' },
-    created_at: new Date('2026-04-13T10:00:00Z'),
-    updated_at: new Date('2026-04-13T10:00:00Z'),
-  } as unknown as User;
+  // Factory, not a shared instance — updateProfile mutates the entity it
+  // loads via findOne, so any two tests sharing the same object would leak
+  // state (and make ordering matter).
+  const buildMockUser = (): User =>
+    ({
+      id: 'user-1',
+      email: 'rider@tarmoto.app',
+      display_name: 'TestRider',
+      phone: null,
+      avatar_url: null,
+      bio: null,
+      home_region: null,
+      home_location: null,
+      work_location: null,
+      preferences: { units: 'metric' },
+      created_at: new Date('2026-04-13T10:00:00Z'),
+      updated_at: new Date('2026-04-13T10:00:00Z'),
+    }) as unknown as User;
 
   const mockContact = {
     id: 'contact-1',
@@ -35,7 +42,9 @@ describe('UsersService', () => {
 
   beforeEach(async () => {
     userRepo = {
-      findOne: jest.fn().mockResolvedValue(mockUser),
+      findOne: jest
+        .fn()
+        .mockImplementation(() => Promise.resolve(buildMockUser())),
       save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
     };
     contactRepo = {
@@ -79,7 +88,7 @@ describe('UsersService', () => {
 
     it('should convert geometry Point to lat/lng', async () => {
       userRepo.findOne!.mockResolvedValueOnce({
-        ...mockUser,
+        ...buildMockUser(),
         home_location: { type: 'Point', coordinates: [16.75, 49.1] },
       } as User);
 
@@ -154,6 +163,53 @@ describe('UsersService', () => {
           preferences: { units: 'metric', daily_km: 300 },
         }),
       );
+    });
+
+    it('should update avatar_url, bio, and home_region together', async () => {
+      const result = await service.updateProfile('user-1', {
+        avatar_url: 'https://cdn.example.com/u/1.png',
+        bio: 'Weekend rider, Beskydy regular.',
+        home_region: 'Beskydy, Czech Republic',
+      });
+
+      expect(userRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          avatar_url: 'https://cdn.example.com/u/1.png',
+          bio: 'Weekend rider, Beskydy regular.',
+          home_region: 'Beskydy, Czech Republic',
+        }),
+      );
+      expect(result.avatar_url).toBe('https://cdn.example.com/u/1.png');
+      expect(result.bio).toBe('Weekend rider, Beskydy regular.');
+      expect(result.home_region).toBe('Beskydy, Czech Republic');
+    });
+
+    it('should clear bio and home_region when null is sent', async () => {
+      await service.updateProfile('user-1', {
+        bio: null,
+        home_region: null,
+        avatar_url: null,
+      });
+
+      expect(userRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bio: null,
+          home_region: null,
+          avatar_url: null,
+        }),
+      );
+    });
+
+    it('should leave profile fields untouched when the dto omits them', async () => {
+      await service.updateProfile('user-1', { display_name: 'OnlyName' });
+
+      const saved = userRepo.save!.mock.calls[0][0] as Record<string, unknown>;
+      // The DTO omits these keys, so the service must leave the fixture's
+      // values (null, from buildMockUser) intact — not blank them or
+      // replace them with undefined / empty strings.
+      expect(saved.avatar_url).toBeNull();
+      expect(saved.bio).toBeNull();
+      expect(saved.home_region).toBeNull();
     });
 
     it('should throw NotFoundException for missing user', async () => {

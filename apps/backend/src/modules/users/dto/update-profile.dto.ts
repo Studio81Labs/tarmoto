@@ -57,6 +57,24 @@ export class UpdateProfileDto {
   @MaxLength(20)
   phone?: string;
 
+  @ApiProperty({ required: false, nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  avatar_url?: string | null;
+
+  @ApiProperty({ required: false, nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  bio?: string | null;
+
+  @ApiProperty({ required: false, nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  home_region?: string | null;
+
   @ApiProperty({ required: false, type: LatLngDto })
   @IsOptional()
   @ValidateNested()
