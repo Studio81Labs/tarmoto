@@ -25,9 +25,9 @@ export async function generateMetadata({
 }: {
   params: Promise<{ country: string; region: string; subregion: string }>;
 }): Promise<Metadata> {
-  const { country, subregion } = await params;
+  const { country, region, subregion } = await params;
   const r = findRegion(country, subregion);
-  if (!r) return {};
+  if (!r || r.parent !== region) return {};
   return {
     title: `Best motorcycle roads in ${r.name} — Tarmoto`,
     description: r.description,
