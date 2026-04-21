@@ -56,11 +56,19 @@ export function PlaceSearch({ value, onChange }: Props) {
   }, []);
 
   // Debounced geocode.
+  //
+  // Depend on primitives (draft + current place label) rather than the
+  // `value` object. RidesFilters builds `value` fresh on every render,
+  // so taking an object-identity dep here would reset the debounce
+  // timer on every unrelated parent re-render — e.g. when the rides
+  // list/tracks fetches resolve — and delay (or starve) the geocode
+  // fetch while the rider is still typing.
+  const selectedLabel = value?.label;
   useEffect(() => {
     // If the input still matches the currently-selected place, suppress
     // the fetch: the dropdown would just re-offer the same match the
     // user already picked.
-    if (value && draft === value.label) {
+    if (selectedLabel != null && draft === selectedLabel) {
       setMatches([]);
       return;
     }
@@ -102,7 +110,7 @@ export function PlaceSearch({ value, onChange }: Props) {
       // state after the draft has moved on (or the component unmounted).
       abortRef.current?.abort();
     };
-  }, [draft, value]);
+  }, [draft, selectedLabel]);
 
   function pick(match: Match) {
     onChange({
