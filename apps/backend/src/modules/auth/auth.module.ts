@@ -6,6 +6,7 @@ import { User } from '../../entities/user.entity.js';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import { AuthGuard } from './auth.guard.js';
+import { OptionalAuthGuard } from './optional-auth.guard.js';
 
 @Module({
   imports: [
@@ -27,7 +28,7 @@ import { AuthGuard } from './auth.guard.js';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, AuthGuard],
-  exports: [AuthGuard, JwtModule],
+  providers: [AuthService, AuthGuard, OptionalAuthGuard],
+  exports: [AuthGuard, OptionalAuthGuard, JwtModule],
 })
 export class AuthModule {}

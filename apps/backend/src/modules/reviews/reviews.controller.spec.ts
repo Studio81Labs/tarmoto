@@ -26,6 +26,16 @@ describe('ReviewsController', () => {
       create: jest.fn().mockResolvedValue(mockReview),
       update: jest.fn().mockResolvedValue(mockReview),
       delete: jest.fn().mockResolvedValue(undefined),
+      castVote: jest.fn().mockResolvedValue({
+        helpful_count: 1,
+        not_helpful_count: 0,
+        my_vote: true,
+      }),
+      clearVote: jest.fn().mockResolvedValue({
+        helpful_count: 0,
+        not_helpful_count: 0,
+        my_vote: null,
+      }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -40,12 +50,36 @@ describe('ReviewsController', () => {
     service = module.get(ReviewsService);
   });
 
-  it('GET /roads/:segmentId/reviews should list reviews', async () => {
-    const result = await controller.list('seg-1');
+  it('GET /roads/:segmentId/reviews should list reviews anonymously', async () => {
+    const anonReq = {} as never;
+    const result = await controller.list(anonReq, 'seg-1');
 
-    expect(service.listForSegment).toHaveBeenCalledWith('seg-1');
+    expect(service.listForSegment).toHaveBeenCalledWith('seg-1', null);
     expect(result).toHaveLength(1);
     expect(result[0].rating).toBe(4);
+  });
+
+  it('GET /roads/:segmentId/reviews should pass viewer id when authenticated', async () => {
+    await controller.list(mockReq, 'seg-1');
+
+    expect(service.listForSegment).toHaveBeenCalledWith('seg-1', 'user-1');
+  });
+
+  it('POST /roads/reviews/:reviewId/vote should cast a helpful vote', async () => {
+    const result = await controller.vote(mockReq, 'review-1', {
+      is_helpful: true,
+    });
+
+    expect(service.castVote).toHaveBeenCalledWith('user-1', 'review-1', true);
+    expect(result.helpful_count).toBe(1);
+    expect(result.my_vote).toBe(true);
+  });
+
+  it('DELETE /roads/reviews/:reviewId/vote should clear a vote', async () => {
+    const result = await controller.clearVote(mockReq, 'review-1');
+
+    expect(service.clearVote).toHaveBeenCalledWith('user-1', 'review-1');
+    expect(result.my_vote).toBeNull();
   });
 
   it('POST /roads/:segmentId/reviews should create review', async () => {

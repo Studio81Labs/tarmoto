@@ -5,12 +5,23 @@ import { NotFoundException, ConflictException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { ReviewsService } from './reviews.service.js';
 import { RoadReview } from '../../entities/road-review.entity.js';
+import { RoadReviewVote } from '../../entities/road-review-vote.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
+
+interface VoteRow {
+  road_review_id: string;
+  helpful_count: number;
+  not_helpful_count: number;
+}
 
 describe('ReviewsService', () => {
   let service: ReviewsService;
   let reviewRepo: Partial<jest.Mocked<Repository<RoadReview>>>;
   let segmentRepo: Partial<jest.Mocked<Repository<RoadSegment>>>;
+  let voteRepo: Partial<jest.Mocked<Repository<RoadReviewVote>>>;
+  let voteInsert: { execute: jest.Mock };
+  let voteGroupRows: VoteRow[];
+  let viewerVotes: Array<{ road_review_id: string; is_helpful: boolean }>;
 
   const mockUser = { display_name: 'John Rider' };
 
@@ -42,11 +53,49 @@ describe('ReviewsService', () => {
       findOne: jest.fn().mockResolvedValue(mockSegment),
     };
 
+    voteGroupRows = [];
+    viewerVotes = [];
+    voteInsert = { execute: jest.fn().mockResolvedValue(undefined) };
+
+    // Mock the query builder chain used in `aggregateVotes`. The builder
+    // exposes only the methods the service actually calls; each terminal
+    // method returns a Promise so the `await` in the service resolves
+    // without going to a real DB.
+    const selectQb = {
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      getRawMany: jest.fn().mockImplementation(() => voteGroupRows),
+    };
+    const insertQb = {
+      insert: jest.fn().mockReturnThis(),
+      into: jest.fn().mockReturnThis(),
+      values: jest.fn().mockReturnThis(),
+      orUpdate: jest.fn().mockReturnThis(),
+      setParameter: jest.fn().mockReturnThis(),
+      execute: voteInsert.execute,
+    };
+    voteRepo = {
+      createQueryBuilder: jest.fn().mockImplementation(() => {
+        // Each call returns a fresh chain; `aggregateVotes` uses the
+        // select/where chain, `castVote` uses the insert chain. Both
+        // coexist on one proxy.
+        return {
+          ...selectQb,
+          ...insertQb,
+        };
+      }),
+      find: jest.fn().mockImplementation(() => viewerVotes),
+      delete: jest.fn().mockResolvedValue({ affected: 1 }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ReviewsService,
         { provide: getRepositoryToken(RoadReview), useValue: reviewRepo },
         { provide: getRepositoryToken(RoadSegment), useValue: segmentRepo },
+        { provide: getRepositoryToken(RoadReviewVote), useValue: voteRepo },
       ],
     }).compile();
 
@@ -66,6 +115,43 @@ describe('ReviewsService', () => {
       expect(result[0].id).toBe('review-1');
       expect(result[0].rating).toBe(4);
       expect(result[0].user_display_name).toBe('John Rider');
+      // No votes seeded → zeros + null caller vote.
+      expect(result[0].helpful_count).toBe(0);
+      expect(result[0].not_helpful_count).toBe(0);
+      expect(result[0].my_vote).toBeNull();
+    });
+
+    it("should surface vote counts and the caller's own vote when authenticated", async () => {
+      voteGroupRows = [
+        {
+          road_review_id: 'review-1',
+          helpful_count: 7,
+          not_helpful_count: 2,
+        },
+      ];
+      viewerVotes = [{ road_review_id: 'review-1', is_helpful: false }];
+
+      const result = await service.listForSegment('seg-1', 'viewer-1');
+
+      expect(result[0].helpful_count).toBe(7);
+      expect(result[0].not_helpful_count).toBe(2);
+      expect(result[0].my_vote).toBe(false);
+    });
+
+    it('should skip viewer-vote lookup when anonymous', async () => {
+      voteGroupRows = [
+        {
+          road_review_id: 'review-1',
+          helpful_count: 3,
+          not_helpful_count: 0,
+        },
+      ];
+
+      await service.listForSegment('seg-1');
+
+      // The anonymous path must not hit `voteRepo.find`; that call is
+      // only for resolving the authenticated viewer's own votes.
+      expect(voteRepo.find).not.toHaveBeenCalled();
     });
 
     it('should return empty array when no reviews', async () => {
@@ -290,6 +376,9 @@ describe('ReviewsService', () => {
         bike_model: 'BMW R1250GS',
         photos: ['https://media.tarmoto.app/r/abc.jpg'],
         created_at: '2026-04-14T10:00:00.000Z',
+        helpful_count: 0,
+        not_helpful_count: 0,
+        my_vote: null,
       });
     });
 
@@ -360,6 +449,96 @@ describe('ReviewsService', () => {
         'https://padded.tarmoto.app/ok.jpg',
         'https://good.tarmoto.app/ok.jpg',
       ]);
+    });
+  });
+
+  describe('castVote', () => {
+    const otherAuthorReview = {
+      id: 'review-2',
+      user_id: 'author-2',
+    } as unknown as RoadReview;
+
+    it('should upsert a helpful vote and return the updated counts', async () => {
+      reviewRepo.findOne!.mockResolvedValueOnce(otherAuthorReview);
+      voteGroupRows = [
+        {
+          road_review_id: 'review-2',
+          helpful_count: 4,
+          not_helpful_count: 1,
+        },
+      ];
+      viewerVotes = [{ road_review_id: 'review-2', is_helpful: true }];
+
+      const result = await service.castVote('viewer-1', 'review-2', true);
+
+      expect(voteInsert.execute).toHaveBeenCalled();
+      expect(result).toEqual({
+        helpful_count: 4,
+        not_helpful_count: 1,
+        my_vote: true,
+      });
+    });
+
+    it('should throw NotFoundException when review does not exist', async () => {
+      reviewRepo.findOne!.mockResolvedValueOnce(null);
+
+      await expect(
+        service.castVote('viewer-1', 'missing', true),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw ConflictException when voting on own review', async () => {
+      // The backend owns the self-vote rule so a crafted client request
+      // can't bypass the UI guard and pad helpful counts for its author.
+      reviewRepo.findOne!.mockResolvedValueOnce({
+        id: 'review-self',
+        user_id: 'viewer-1',
+      } as unknown as RoadReview);
+
+      await expect(
+        service.castVote('viewer-1', 'review-self', true),
+      ).rejects.toThrow(ConflictException);
+      expect(voteInsert.execute).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('clearVote', () => {
+    it('should delete the vote and return refreshed counts with null my_vote', async () => {
+      reviewRepo.findOne!.mockResolvedValueOnce({
+        id: 'review-2',
+        user_id: 'author-2',
+      } as unknown as RoadReview);
+      voteGroupRows = [
+        {
+          road_review_id: 'review-2',
+          helpful_count: 3,
+          not_helpful_count: 1,
+        },
+      ];
+      // Viewer's row was just deleted, so the `find` lookup returns
+      // nothing and `my_vote` collapses back to null.
+      viewerVotes = [];
+
+      const result = await service.clearVote('viewer-1', 'review-2');
+
+      expect(voteRepo.delete).toHaveBeenCalledWith({
+        user_id: 'viewer-1',
+        road_review_id: 'review-2',
+      });
+      expect(result).toEqual({
+        helpful_count: 3,
+        not_helpful_count: 1,
+        my_vote: null,
+      });
+    });
+
+    it('should throw NotFoundException when review does not exist', async () => {
+      reviewRepo.findOne!.mockResolvedValueOnce(null);
+
+      await expect(service.clearVote('viewer-1', 'missing')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(voteRepo.delete).not.toHaveBeenCalled();
     });
   });
 });

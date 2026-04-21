@@ -26,6 +26,7 @@ import type {
   RoutePreferences,
   LatLng,
   RoadReview,
+  ReviewVoteResult,
   MountainPass,
   CheckRouteForPassesResponse,
   SensorReading,
@@ -385,6 +386,24 @@ class ApiService {
     const { data } = await this.client.post<RoadReview>(
       `/roads/${segmentId}/reviews`,
       { rating, comment, bike_model: bikeModel },
+    );
+    return data;
+  }
+
+  async voteOnReview(
+    reviewId: string,
+    isHelpful: boolean,
+  ): Promise<ReviewVoteResult> {
+    const { data } = await this.client.post<ReviewVoteResult>(
+      `/roads/reviews/${reviewId}/vote`,
+      { is_helpful: isHelpful },
+    );
+    return data;
+  }
+
+  async clearReviewVote(reviewId: string): Promise<ReviewVoteResult> {
+    const { data } = await this.client.delete<ReviewVoteResult>(
+      `/roads/reviews/${reviewId}/vote`,
     );
     return data;
   }

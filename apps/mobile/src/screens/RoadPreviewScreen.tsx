@@ -4,7 +4,7 @@ import React, {
   useEffect,
   useMemo,
   useState,
-} from 'react';
+} from "react";
 import {
   ActivityIndicator,
   Image,
@@ -15,10 +15,10 @@ import {
   Text,
   TouchableOpacity,
   View,
-} from 'react-native';
-import { RouteProp, useRoute } from '@react-navigation/native';
-import Icon from '@react-native-vector-icons/material-design-icons';
-import Svg, { Path } from 'react-native-svg';
+} from "react-native";
+import { RouteProp, useRoute } from "@react-navigation/native";
+import Icon from "@react-native-vector-icons/material-design-icons";
+import Svg, { Path } from "react-native-svg";
 import {
   borderRadius,
   colors,
@@ -29,11 +29,12 @@ import {
   qualityColorWithThreshold,
   qualityLabel,
   spacing,
-} from '@/theme';
-import { api } from '@/services/api';
-import { usePreferencesStore } from '@/stores';
-import type { Hazard, RoadReview, RoadSegmentDetail } from '@/types';
+} from "@/theme";
+import { api } from "@/services/api";
+import { usePreferencesStore } from "@/stores";
+import type { Hazard, RoadReview, RoadSegmentDetail } from "@/types";
 import {
+  applyVoteDelta,
   buildElevationChartPaths,
   computeCurveCount,
   computeElevationStats,
@@ -44,27 +45,27 @@ import {
   formatSurface,
   isFlatElevationProfile,
   normalizeBreakdown,
-} from './RoadPreviewScreen.helpers';
+} from "./RoadPreviewScreen.helpers";
 
 const ELEVATION_CHART_HEIGHT = 80;
 const REVIEW_PHOTO_SIZE = 84;
 
 type RoadPreviewRoute = RouteProp<
   { RoadPreview: { segmentId: string } },
-  'RoadPreview'
+  "RoadPreview"
 >;
-type IconName = ComponentProps<typeof Icon>['name'];
+type IconName = ComponentProps<typeof Icon>["name"];
 
 const QUALITY_BUCKETS: Array<{
-  key: keyof RoadSegmentDetail['quality_breakdown'];
+  key: keyof RoadSegmentDetail["quality_breakdown"];
   label: string;
   color: string;
 }> = [
-  { key: 'excellent', label: 'Excellent', color: colors.quality.excellent },
-  { key: 'good', label: 'Good', color: colors.quality.good },
-  { key: 'fair', label: 'Fair', color: colors.quality.fair },
-  { key: 'poor', label: 'Poor', color: colors.quality.poor },
-  { key: 'very_poor', label: 'Very Poor', color: colors.quality.veryPoor },
+  { key: "excellent", label: "Excellent", color: colors.quality.excellent },
+  { key: "good", label: "Good", color: colors.quality.good },
+  { key: "fair", label: "Fair", color: colors.quality.fair },
+  { key: "poor", label: "Poor", color: colors.quality.poor },
+  { key: "very_poor", label: "Very Poor", color: colors.quality.veryPoor },
 ];
 
 export default function RoadPreviewScreen() {
@@ -80,7 +81,7 @@ export default function RoadPreviewScreen() {
 
   useEffect(() => {
     if (!segmentId) {
-      setError('Missing segment id');
+      setError("Missing segment id");
       setLoading(false);
       return;
     }
@@ -96,7 +97,7 @@ export default function RoadPreviewScreen() {
       } catch (e) {
         if (!ignore) {
           setError(
-            e instanceof Error ? e.message : 'Failed to load road segment',
+            e instanceof Error ? e.message : "Failed to load road segment",
           );
         }
       } finally {
@@ -184,13 +185,13 @@ function HeaderCard({
   segment: RoadSegmentDetail;
   minQuality: number;
 }) {
-  const title = segment.road_name || segment.road_number || 'Unnamed road';
+  const title = segment.road_name || segment.road_number || "Unnamed road";
   const subtitle = [
     segment.road_number && segment.road_name ? segment.road_number : null,
     formatLengthKm(segment.length_m),
   ]
     .filter(Boolean)
-    .join(' · ');
+    .join(" · ");
   const belowThreshold = !meetsQualityThreshold(
     segment.quality_score,
     minQuality,
@@ -254,7 +255,7 @@ function QualityCard({
             {segment.quality_score.toFixed(1)}
           </Text>
           <Text style={styles.qualitySubtitle}>
-            {qualityLabel(segment.quality_score)} ·{' '}
+            {qualityLabel(segment.quality_score)} ·{" "}
             {formatSurface(segment.surface_type)}
           </Text>
         </View>
@@ -276,7 +277,7 @@ function QualityCard({
 function QualityBreakdownBar({
   breakdown,
 }: {
-  breakdown: RoadSegmentDetail['quality_breakdown'];
+  breakdown: RoadSegmentDetail["quality_breakdown"];
 }) {
   const segments = normalizeBreakdown(
     QUALITY_BUCKETS.map((b) => b.key),
@@ -340,7 +341,7 @@ function CurvinessCard({ segment }: { segment: RoadSegmentDetail }) {
         title="Curviness"
         rightLabel={
           curveCount > 0
-            ? `${curveCount} ${curveCount === 1 ? 'turn' : 'turns'}`
+            ? `${curveCount} ${curveCount === 1 ? "turn" : "turns"}`
             : undefined
         }
       />
@@ -350,7 +351,7 @@ function CurvinessCard({ segment }: { segment: RoadSegmentDetail }) {
           {[0, 1, 2, 3, 4].map((i) => (
             <Icon
               key={i}
-              name={i < filled ? 'sine-wave' : 'minus'}
+              name={i < filled ? "sine-wave" : "minus"}
               size={20}
               color={i < filled ? colors.primary : colors.textTertiary}
             />
@@ -407,15 +408,15 @@ function ElevationCard({ segment }: { segment: RoadSegmentDetail }) {
       <View style={styles.elevationRow}>
         <ElevationStat
           label="Min"
-          value={hasMin ? `${Math.round(elevation_min!)} m` : '—'}
+          value={hasMin ? `${Math.round(elevation_min!)} m` : "—"}
         />
         <ElevationStat
           label="Max"
-          value={hasMax ? `${Math.round(elevation_max!)} m` : '—'}
+          value={hasMax ? `${Math.round(elevation_max!)} m` : "—"}
         />
         <ElevationStat
           label="Range"
-          value={range !== null ? `${Math.round(range)} m` : '—'}
+          value={range !== null ? `${Math.round(range)} m` : "—"}
         />
       </View>
     </View>
@@ -503,7 +504,7 @@ function HazardsCard({
 }
 
 function HazardRow({ hazard }: { hazard: Hazard }) {
-  const icon = (hazardIcons[hazard.hazard_type] || 'alert-circle') as IconName;
+  const icon = (hazardIcons[hazard.hazard_type] || "alert-circle") as IconName;
   return (
     <View style={styles.hazardRow}>
       <View
@@ -524,7 +525,7 @@ function HazardRow({ hazard }: { hazard: Hazard }) {
           </Text>
         ) : null}
         <Text style={styles.hazardMeta}>
-          {hazard.confirmations} confirmations ·{' '}
+          {hazard.confirmations} confirmations ·{" "}
           {formatRelativeTime(hazard.created_at)}
         </Text>
       </View>
@@ -533,12 +534,31 @@ function HazardRow({ hazard }: { hazard: Hazard }) {
 }
 
 function ReviewsCard({
-  reviews,
+  reviews: embeddedReviews,
   avgRating,
 }: {
   reviews: RoadReview[];
   avgRating: number | null;
 }) {
+  // Local mirror so helpful-vote taps can update the row immediately
+  // without waiting for a full segment refetch. Seeded from the embedded
+  // `recent_reviews` array (which always has `my_vote: null`, since the
+  // /roads/:id endpoint is anonymous); if we later decide to fetch from
+  // /roads/:id/reviews we'll pick up per-viewer state for free.
+  const [reviews, setReviews] = useState<RoadReview[]>(embeddedReviews);
+  useEffect(() => {
+    setReviews(embeddedReviews);
+  }, [embeddedReviews]);
+
+  const handleVoteChange = useCallback(
+    (reviewId: string, next: Partial<RoadReview>) => {
+      setReviews((prev) =>
+        prev.map((r) => (r.id === reviewId ? { ...r, ...next } : r)),
+      );
+    },
+    [],
+  );
+
   const showAvg = reviews.length > 0 && avgRating !== null;
   return (
     <View style={styles.card}>
@@ -552,20 +572,28 @@ function ReviewsCard({
           No reviews yet — be the first to review this road.
         </Text>
       ) : (
-        reviews.map((r) => <ReviewRow key={r.id} review={r} />)
+        reviews.map((r) => (
+          <ReviewRow key={r.id} review={r} onVoteChange={handleVoteChange} />
+        ))
       )}
     </View>
   );
 }
 
-function ReviewRow({ review }: { review: RoadReview }) {
+function ReviewRow({
+  review,
+  onVoteChange,
+}: {
+  review: RoadReview;
+  onVoteChange: (reviewId: string, next: Partial<RoadReview>) => void;
+}) {
   const photos = Array.isArray(review.photos) ? review.photos : [];
   return (
     <View style={styles.reviewRow}>
       <View style={styles.reviewHeader}>
         <Text style={styles.reviewAuthor}>{review.user_display_name}</Text>
         <Text style={styles.reviewRating}>
-          {'★'.repeat(Math.max(0, Math.min(5, Math.round(review.rating))))}
+          {"★".repeat(Math.max(0, Math.min(5, Math.round(review.rating))))}
         </Text>
       </View>
       {review.comment ? (
@@ -583,6 +611,121 @@ function ReviewRow({ review }: { review: RoadReview }) {
           {formatRelativeTime(review.created_at)}
         </Text>
       </View>
+      <ReviewHelpfulRow review={review} onVoteChange={onVoteChange} />
+    </View>
+  );
+}
+
+/**
+ * Helpful / not-helpful controls (US-55). Updates optimistically on tap
+ * and reconciles against the server response so the thumb count matches
+ * what the next reader will see. Tapping the current vote direction
+ * again clears it — matching the YouTube / Reddit pattern riders expect.
+ */
+function ReviewHelpfulRow({
+  review,
+  onVoteChange,
+}: {
+  review: RoadReview;
+  onVoteChange: (reviewId: string, next: Partial<RoadReview>) => void;
+}) {
+  const [pending, setPending] = useState(false);
+
+  const vote = useCallback(
+    async (isHelpful: boolean) => {
+      if (pending) return;
+      const wasSame = review.my_vote === isHelpful;
+      setPending(true);
+
+      // Optimistic update: adjust counts locally assuming the call
+      // succeeds. If it fails we roll back to the previous values.
+      const prevSnapshot: Partial<RoadReview> = {
+        helpful_count: review.helpful_count,
+        not_helpful_count: review.not_helpful_count,
+        my_vote: review.my_vote,
+      };
+      const optimistic = applyVoteDelta(review, wasSame ? null : isHelpful);
+      onVoteChange(review.id, optimistic);
+
+      try {
+        const result = wasSame
+          ? await api.clearReviewVote(review.id)
+          : await api.voteOnReview(review.id, isHelpful);
+        onVoteChange(review.id, {
+          helpful_count: result.helpful_count,
+          not_helpful_count: result.not_helpful_count,
+          my_vote: result.my_vote,
+        });
+      } catch {
+        onVoteChange(review.id, prevSnapshot);
+      } finally {
+        setPending(false);
+      }
+    },
+    [review, onVoteChange, pending],
+  );
+
+  const helpfulActive = review.my_vote === true;
+  const notHelpfulActive = review.my_vote === false;
+
+  return (
+    <View style={styles.reviewHelpfulRow}>
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={
+          helpfulActive ? "Remove helpful vote" : "Mark this review as helpful"
+        }
+        accessibilityState={{ selected: helpfulActive, busy: pending }}
+        style={[
+          styles.reviewHelpfulButton,
+          helpfulActive && styles.reviewHelpfulButtonActive,
+        ]}
+        onPress={() => vote(true)}
+        disabled={pending}
+      >
+        <Icon
+          name={helpfulActive ? "thumb-up" : "thumb-up-outline"}
+          size={14}
+          color={helpfulActive ? colors.primary : colors.textTertiary}
+        />
+        <Text
+          style={[
+            styles.reviewHelpfulCount,
+            helpfulActive && styles.reviewHelpfulCountActive,
+          ]}
+        >
+          {review.helpful_count}
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={
+          notHelpfulActive
+            ? "Remove not-helpful vote"
+            : "Mark this review as not helpful"
+        }
+        accessibilityState={{ selected: notHelpfulActive, busy: pending }}
+        style={[
+          styles.reviewHelpfulButton,
+          notHelpfulActive && styles.reviewHelpfulButtonActive,
+        ]}
+        onPress={() => vote(false)}
+        disabled={pending}
+      >
+        <Icon
+          name={notHelpfulActive ? "thumb-down" : "thumb-down-outline"}
+          size={14}
+          color={notHelpfulActive ? colors.danger : colors.textTertiary}
+        />
+        <Text
+          style={[
+            styles.reviewHelpfulCount,
+            notHelpfulActive && styles.reviewHelpfulCountActive,
+          ]}
+        >
+          {review.not_helpful_count}
+        </Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -597,7 +740,7 @@ function ReviewPhotos({ photos }: { photos: string[] }) {
       // RN handles the gesture handoff but we hint it explicitly here.
       directionalLockEnabled
       accessibilityLabel={`${photos.length} review photo${
-        photos.length === 1 ? '' : 's'
+        photos.length === 1 ? "" : "s"
       }`}
     >
       {photos.map((uri, idx) => (
@@ -655,15 +798,15 @@ function ElevationStat({ label, value }: { label: string; value: string }) {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function severityBg(severity: Hazard['severity']): string {
-  if (severity === 'high') return colors.qualityAlpha.veryPoor;
-  if (severity === 'medium') return colors.qualityAlpha.poor;
+function severityBg(severity: Hazard["severity"]): string {
+  if (severity === "high") return colors.qualityAlpha.veryPoor;
+  if (severity === "medium") return colors.qualityAlpha.poor;
   return colors.qualityAlpha.fair;
 }
 
-function severityFg(severity: Hazard['severity']): string {
-  if (severity === 'high') return colors.quality.veryPoor;
-  if (severity === 'medium') return colors.quality.poor;
+function severityFg(severity: Hazard["severity"]): string {
+  if (severity === "high") return colors.quality.veryPoor;
+  if (severity === "medium") return colors.quality.poor;
   return colors.quality.fair;
 }
 
@@ -682,8 +825,8 @@ const styles = StyleSheet.create({
   centered: {
     flex: 1,
     backgroundColor: colors.bg,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     padding: spacing.xl,
   },
   errorTitle: {
@@ -696,7 +839,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: fontSize.sm,
     marginTop: spacing.xs,
-    textAlign: 'center',
+    textAlign: "center",
   },
   retryButton: {
     marginTop: spacing.lg,
@@ -727,9 +870,9 @@ const styles = StyleSheet.create({
     borderColor: colors.borderLight,
   },
   thresholdBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
     gap: spacing.xs,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
@@ -744,7 +887,7 @@ const styles = StyleSheet.create({
   thresholdHint: {
     color: colors.textTertiary,
     fontSize: fontSize.xs,
-    fontStyle: 'italic',
+    fontStyle: "italic",
   },
   headerTitle: {
     color: colors.textPrimary,
@@ -756,14 +899,14 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
   },
   metaRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.xs,
     marginTop: spacing.xs,
   },
   metaPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: spacing.xs,
     backgroundColor: colors.bgElevated,
     borderRadius: borderRadius.pill,
@@ -777,15 +920,15 @@ const styles = StyleSheet.create({
   },
 
   sectionTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: spacing.xs,
   },
   sectionTitle: {
     color: colors.textSecondary,
     fontSize: fontSize.sm,
     fontWeight: fontWeight.semibold,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.6,
     flex: 1,
   },
@@ -796,9 +939,9 @@ const styles = StyleSheet.create({
   },
 
   qualityHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
   },
   qualityScore: {
     fontSize: fontSize.hero,
@@ -819,21 +962,21 @@ const styles = StyleSheet.create({
   },
 
   breakdownBar: {
-    flexDirection: 'row',
+    flexDirection: "row",
     height: 10,
     borderRadius: borderRadius.sm,
-    overflow: 'hidden',
+    overflow: "hidden",
     backgroundColor: colors.bgElevated,
   },
   breakdownLegend: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm,
     marginTop: spacing.sm,
   },
   legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: spacing.xs,
   },
   legendDot: {
@@ -847,9 +990,9 @@ const styles = StyleSheet.create({
   },
 
   curvinessRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   curvinessScore: {
     color: colors.textPrimary,
@@ -857,7 +1000,7 @@ const styles = StyleSheet.create({
     fontWeight: fontWeight.black,
   },
   curvinessPips: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: spacing.xs,
   },
   curvinessHint: {
@@ -866,18 +1009,18 @@ const styles = StyleSheet.create({
   },
 
   elevationChartWrap: {
-    width: '100%',
+    width: "100%",
     height: ELEVATION_CHART_HEIGHT,
     backgroundColor: colors.bgElevated,
     borderRadius: borderRadius.sm,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   elevationRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
   elevationStat: {
-    alignItems: 'center',
+    alignItems: "center",
     flex: 1,
   },
   elevationValue: {
@@ -889,12 +1032,12 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontSize: fontSize.xs,
     marginTop: spacing.xs,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.6,
   },
 
   hazardRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: spacing.md,
     paddingVertical: spacing.xs,
   },
@@ -902,8 +1045,8 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   hazardBody: {
     flex: 1,
@@ -930,9 +1073,9 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   reviewHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   reviewAuthor: {
     color: colors.textPrimary,
@@ -960,29 +1103,58 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgElevated,
   },
   reviewFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginTop: spacing.xs,
   },
   reviewMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: spacing.xs,
   },
   reviewMeta: {
     color: colors.textTertiary,
     fontSize: fontSize.xs,
   },
+  reviewHelpfulRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  reviewHelpfulButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.pill,
+    backgroundColor: colors.bgElevated,
+  },
+  reviewHelpfulButtonActive: {
+    backgroundColor: colors.bgCard,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  reviewHelpfulCount: {
+    color: colors.textTertiary,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.medium,
+    minWidth: 12,
+    textAlign: "center",
+  },
+  reviewHelpfulCountActive: {
+    color: colors.textPrimary,
+  },
 
   empty: {
     color: colors.textTertiary,
     fontSize: fontSize.sm,
-    fontStyle: 'italic',
+    fontStyle: "italic",
   },
   emptyInline: {
     color: colors.textTertiary,
     fontSize: fontSize.xs,
-    fontStyle: 'italic',
+    fontStyle: "italic",
   },
 });

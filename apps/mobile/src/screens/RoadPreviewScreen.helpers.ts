@@ -5,10 +5,10 @@
  * without pulling React Native, navigation, or theme into the module graph.
  */
 
-import type { LatLng } from '@/types';
+import type { LatLng, RoadReview } from "@/types";
 
 export function formatLengthKm(m: number): string {
-  if (!Number.isFinite(m) || m <= 0) return '';
+  if (!Number.isFinite(m) || m <= 0) return "";
   const rounded = Math.round(m);
   return rounded >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${rounded} m`;
 }
@@ -18,14 +18,14 @@ export function formatSurface(surface: string): string {
 }
 
 export function formatHazardType(type: string): string {
-  return type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  return type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 export function formatRelativeTime(iso: string): string {
   const t = Date.parse(iso);
-  if (Number.isNaN(t)) return '';
+  if (Number.isNaN(t)) return "";
   const diffS = Math.max(0, Math.floor((Date.now() - t) / 1000));
-  if (diffS < 60) return 'just now';
+  if (diffS < 60) return "just now";
   const mins = Math.floor(diffS / 60);
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
@@ -38,11 +38,11 @@ export function formatRelativeTime(iso: string): string {
 }
 
 export function curvinessLabel(score: number): string {
-  if (score >= 4.5) return 'Very twisty — a full-on playground.';
-  if (score >= 3.5) return 'Plenty of curves to lean into.';
-  if (score >= 2.5) return 'Mixed — sweepers with occasional straights.';
-  if (score >= 1.5) return 'Mostly straight with a few bends.';
-  return 'Straight, transit-style road.';
+  if (score >= 4.5) return "Very twisty — a full-on playground.";
+  if (score >= 3.5) return "Plenty of curves to lean into.";
+  if (score >= 2.5) return "Mixed — sweepers with occasional straights.";
+  if (score >= 1.5) return "Mostly straight with a few bends.";
+  return "Straight, transit-style road.";
 }
 
 /**
@@ -231,16 +231,44 @@ export function buildElevationChartPaths(
   }
 
   const line = points
-    .map((p, i) => `${i === 0 ? 'M' : 'L'}${fmt(p.x)} ${fmt(p.y)}`)
-    .join(' ');
+    .map((p, i) => `${i === 0 ? "M" : "L"}${fmt(p.x)} ${fmt(p.y)}`)
+    .join(" ");
   const area =
     `M${fmt(points[0].x)} ${fmt(height)} ` +
-    points.map((p) => `L${fmt(p.x)} ${fmt(p.y)}`).join(' ') +
+    points.map((p) => `L${fmt(p.x)} ${fmt(p.y)}`).join(" ") +
     ` L${fmt(points[points.length - 1].x)} ${fmt(height)} Z`;
 
   return { line, area, min, max };
 }
 
 function fmt(n: number): string {
-  return Number.isFinite(n) ? n.toFixed(2) : '0';
+  return Number.isFinite(n) ? n.toFixed(2) : "0";
+}
+
+/**
+ * Compute the optimistic helpful-count deltas for a vote transition on a
+ * review (US-55). `next === null` means the caller is clearing their vote
+ * (tapped the same direction twice). The previous direction's count
+ * drops by one only when the caller actually had that vote before, so
+ * anonymous first-tap doesn't double-count.
+ *
+ * Pure — extracted so the screen can use it for optimistic UI without
+ * leaking React into the helper module graph and so the transition
+ * matrix stays exhaustively testable.
+ */
+export function applyVoteDelta(
+  review: RoadReview,
+  next: boolean | null,
+): Pick<RoadReview, "helpful_count" | "not_helpful_count" | "my_vote"> {
+  let helpful = review.helpful_count;
+  let notHelpful = review.not_helpful_count;
+  if (review.my_vote === true) helpful = Math.max(0, helpful - 1);
+  if (review.my_vote === false) notHelpful = Math.max(0, notHelpful - 1);
+  if (next === true) helpful += 1;
+  if (next === false) notHelpful += 1;
+  return {
+    helpful_count: helpful,
+    not_helpful_count: notHelpful,
+    my_vote: next,
+  };
 }

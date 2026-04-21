@@ -175,11 +175,26 @@ export class RoadsService {
         [segmentId],
       ),
       this.segmentRepo.query(
+        // Left-join the helpful-vote counts via a lateral subquery so a
+        // review with zero votes still returns (0, 0) rather than being
+        // silently dropped. `my_vote` is intentionally omitted here — the
+        // embedded reviews on /roads/:id are served to anonymous callers,
+        // and the standalone /roads/:id/reviews endpoint is where the
+        // authenticated viewer personalisation lives.
         `SELECT
           rr.id, rr.rating, rr.comment, rr.bike_model, rr.photos, rr.created_at,
-          u.display_name
+          u.display_name,
+          COALESCE(vc.helpful_count, 0) AS helpful_count,
+          COALESCE(vc.not_helpful_count, 0) AS not_helpful_count
         FROM road_reviews rr
         LEFT JOIN users u ON u.id = rr.user_id
+        LEFT JOIN LATERAL (
+          SELECT
+            COUNT(*) FILTER (WHERE is_helpful = true)::int AS helpful_count,
+            COUNT(*) FILTER (WHERE is_helpful = false)::int AS not_helpful_count
+          FROM road_review_votes v
+          WHERE v.road_review_id = rr.id
+        ) vc ON true
         WHERE rr.road_segment_id = $1
         ORDER BY rr.created_at DESC
         LIMIT $2`,
@@ -463,6 +478,12 @@ function mapReviewRows(rows: unknown): ReviewResponseDto[] {
     bike_model: (r.bike_model as string) ?? null,
     photos: sanitizeReviewPhotos(r.photos),
     created_at: (r.created_at as Date).toISOString(),
+    helpful_count: (r.helpful_count as number) ?? 0,
+    not_helpful_count: (r.not_helpful_count as number) ?? 0,
+    // Embedded-reviews on /roads/:id is an anonymous-friendly endpoint;
+    // per-viewer state belongs on /roads/:id/reviews, which uses the
+    // OptionalAuthGuard.
+    my_vote: null,
   }));
 }
 
