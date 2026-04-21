@@ -635,13 +635,21 @@ function buildHazardColorExpression(): ExpressionSpecification {
   ] as unknown as ExpressionSpecification;
 }
 
+// Maps any server-sent hazard_type into the UI's known set. Unrecognised
+// values (e.g. a new backend type the client hasn't shipped yet) collapse to
+// "other" so they still render and still respond to the "Other" filter
+// checkbox — rather than being silently dropped.
+function normalizeHazardType(raw: string): HazardType {
+  return HAZARD_CONFIG[raw as HazardType] ? (raw as HazardType) : "other";
+}
+
 function selectHazards(
   raw: HazardResponse[],
   types: Set<HazardType>,
 ): HazardResponse[] {
   if (types.size === HAZARD_TYPES_UI.length) return raw;
   if (types.size === 0) return [];
-  return raw.filter((h) => types.has(h.hazard_type as HazardType));
+  return raw.filter((h) => types.has(normalizeHazardType(h.hazard_type)));
 }
 
 function setVisibility(map: MapLibreMap, layerId: string, visible: boolean) {
@@ -665,11 +673,7 @@ function toHazardFeatures(
   now: number = Date.now(),
 ): FeatureCollection<Point, HazardProps> {
   const features: Feature<Point, HazardProps>[] = hazards.map((h) => {
-    const type = (
-      HAZARD_CONFIG[h.hazard_type as HazardType]
-        ? (h.hazard_type as HazardType)
-        : "other"
-    ) as HazardType;
+    const type = normalizeHazardType(h.hazard_type);
     return {
       type: "Feature",
       geometry: { type: "Point", coordinates: [h.lng, h.lat] },
