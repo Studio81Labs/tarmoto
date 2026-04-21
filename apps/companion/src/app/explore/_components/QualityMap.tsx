@@ -110,6 +110,11 @@ export function QualityMap({
   // counter triggers the render effect when a fresh fetch arrives.
   const rawHazardsRef = useRef<HazardResponse[]>([]);
   const [hazardsRevision, setHazardsRevision] = useState(0);
+  // Time snapshot that the render effect feeds to toHazardFeatures so fade
+  // opacity keeps aging while the user idles on the explorer. Ticks at minute
+  // granularity because the slowest-expiring hazards (72 h) move by ~0.01
+  // opacity per minute — finer resolution would be churn for no visible gain.
+  const [hazardNow, setHazardNow] = useState(() => Date.now());
 
   const onViewChangeRef = useRef(onViewChange);
   useEffect(() => {
@@ -434,10 +439,11 @@ export function QualityMap({
   }, [ready, filters]);
 
   // ── project raw hazards → filtered GeoJSON source ──
-  // Re-runs on filter changes and whenever a fresh fetch bumps the revision.
-  // Filtering at the source (rather than via layer filter expressions) means
-  // MapLibre's clustering aggregates only the selected types, so cluster
-  // counts stay consistent with the checkbox state.
+  // Re-runs on filter changes, after a fresh fetch (revision bump), and on
+  // each hazardNow tick so the fade-by-age opacity keeps progressing while
+  // the user sits idle. Filtering at the source (rather than via layer
+  // filter expressions) means clustering aggregates only selected types, so
+  // cluster counts stay consistent with the checkbox state.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
@@ -446,9 +452,18 @@ export function QualityMap({
     src.setData(
       toHazardFeatures(
         selectHazards(rawHazardsRef.current, filters.hazardTypes),
+        hazardNow,
       ),
     );
-  }, [ready, filters.hazardTypes, hazardsRevision]);
+  }, [ready, filters.hazardTypes, hazardsRevision, hazardNow]);
+
+  // ── keep fade-opacity live while the map is open ──
+  useEffect(() => {
+    if (!ready || !showHazards) return;
+    if (rawHazardsRef.current.length === 0) return;
+    const id = window.setInterval(() => setHazardNow(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, [ready, showHazards, hazardsRevision]);
 
   // ── layer visibility from toggles ──
   useEffect(() => {
