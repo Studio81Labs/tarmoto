@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import { SessionProvider } from "next-auth/react";
 import { AuthSync } from "@/components/AuthSync";
+import { RealtimeProvider } from "@/components/RealtimeProvider";
 import "./globals.css";
 
 const jakarta = Plus_Jakarta_Sans({
@@ -19,12 +20,17 @@ export const metadata: Metadata = {
   description: "Know the road before you ride it",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en" className={`${jakarta.variable} ${jetbrains.variable}`}>
       <body className="bg-slate-950 text-slate-200 font-sans antialiased">
         <SessionProvider>
           <AuthSync />
+          <RealtimeProvider />
           {children}
         </SessionProvider>
       </body>

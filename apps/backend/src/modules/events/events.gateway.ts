@@ -217,6 +217,9 @@ export class EventsGateway
 
   /**
    * Broadcast a new hazard alert to all clients in the area.
+   * Callers should pass the full hazard response DTO so clients can render
+   * markers (note, confirmations, created_at, expires_at, …) without a
+   * follow-up REST fetch.
    */
   emitHazardAlert(
     lat: number,

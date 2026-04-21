@@ -218,13 +218,7 @@ export class HazardsService {
   }
 
   private emitHazardEvent(response: HazardResponseDto): void {
-    this.eventsGateway.emitHazardAlert(response.lat, response.lng, {
-      id: response.id,
-      hazard_type: response.hazard_type,
-      severity: response.severity,
-      lat: response.lat,
-      lng: response.lng,
-    });
+    this.eventsGateway.emitHazardAlert(response.lat, response.lng, response);
   }
 
   private rowToResponse(row: Record<string, unknown>): HazardResponseDto {

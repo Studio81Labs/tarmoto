@@ -17,6 +17,8 @@ import {
   hazardFadeOpacity,
 } from "@/lib/utils";
 import { hazardsApi, type HazardResponse } from "@/lib/api";
+import { onHazardNew, subscribeHazards } from "@/lib/socket";
+import { useRealtimeStore } from "@/stores/realtime";
 import { haversineMeters, type HazardType } from "@tarmoto/shared";
 import { FILTERABLE_SURFACES, type MapFilters } from "@/lib/map-filters";
 
@@ -78,6 +80,7 @@ export function QualityMap({
   const rawHazardsRef = useRef<HazardResponse[]>([]);
   const [hazardsRevision, setHazardsRevision] = useState(0);
   const [hazardNow, setHazardNow] = useState(() => Date.now());
+  const realtimeStatus = useRealtimeStore((s) => s.status);
 
   const qualityOpacity = buildQualityOpacityExpression(filters);
   const surfaceOpacity = buildSurfaceOpacityExpression(filters);
@@ -312,6 +315,33 @@ export function QualityMap({
       controller.abort();
     };
   }, [ready, showHazards, center.lat, center.lng, zoom]);
+
+  // ── real-time: subscribe to hazards in viewport + merge incoming events ──
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (
+      !map ||
+      !ready ||
+      !showHazards ||
+      zoom < HAZARD_MIN_ZOOM ||
+      realtimeStatus !== "connected"
+    ) {
+      return;
+    }
+
+    subscribeHazards(center.lat, center.lng, viewportRadiusMeters(map));
+
+    const unsubscribe = onHazardNew((hazard) => {
+      // Deduplicate against the existing list; the viewport REST fetch may
+      // race with the broadcast and return the same row.
+      const existing = rawHazardsRef.current;
+      if (existing.some((h) => h.id === hazard.id)) return;
+      rawHazardsRef.current = [...existing, hazard];
+      setHazardsRevision((r) => r + 1);
+    });
+
+    return unsubscribe;
+  }, [ready, showHazards, realtimeStatus, center.lat, center.lng, zoom]);
 
   return (
     <MapCanvas
