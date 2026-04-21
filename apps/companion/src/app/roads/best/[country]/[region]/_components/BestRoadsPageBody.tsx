@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { Country, Region } from "@tarmoto/shared";
+import { findSubRegions, type Country, type Region } from "@tarmoto/shared";
 import { BestRoadsMap } from "./BestRoadsMap";
 import { BestRoadsList } from "./BestRoadsList";
 import { BestRoadsSchemaOrg } from "./BestRoadsSchemaOrg";
@@ -39,6 +39,10 @@ export function BestRoadsPageBody({
   roads,
 }: Props) {
   const segmentIds = roads.map((r) => r.id).join(",");
+  // Sub-regions live at 3-level URLs, so a top-level region page links down
+  // to its children here — otherwise those sub-region pages are only
+  // reachable via the sitemap.
+  const subRegions = parent ? [] : findSubRegions(country.code, region.slug);
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10 text-slate-100">
@@ -90,6 +94,27 @@ export function BestRoadsPageBody({
         <h2 className="mb-4 text-xl font-semibold">Ranked roads</h2>
         <BestRoadsList roads={roads} />
       </section>
+
+      {subRegions.length > 0 && (
+        <section className="mb-8">
+          <h2 className="mb-4 text-xl font-semibold">Sub-regions</h2>
+          <ul className="grid gap-4 sm:grid-cols-2">
+            {subRegions.map((sr) => (
+              <li key={sr.slug}>
+                <Link
+                  href={`/roads/best/${country.code}/${region.slug}/${sr.slug}`}
+                  className="block rounded-xl border border-slate-800 bg-slate-900/60 p-5 hover:bg-slate-800/60 transition"
+                >
+                  <h3 className="text-lg font-semibold">{sr.name}</h3>
+                  <p className="mt-1 text-sm text-slate-400 line-clamp-2">
+                    {sr.description}
+                  </p>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {roads.length > 0 && (
         <section className="mb-12 rounded-xl border border-slate-800 bg-slate-900/60 p-6">
