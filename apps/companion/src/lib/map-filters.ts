@@ -1,11 +1,11 @@
-import type { SurfaceType } from "@tarmoto/shared";
-import { QUALITY_TIERS } from "@/lib/utils";
+import type { HazardType, SurfaceType } from "@tarmoto/shared";
+import { QUALITY_TIERS, HAZARD_TYPES_UI } from "@/lib/utils";
 
 export type QualityTier = "excellent" | "good" | "fair" | "poor" | "very-poor";
 
 export type FilterableSurface = Exclude<SurfaceType, "unknown">;
 
-export { QUALITY_TIERS };
+export { QUALITY_TIERS, HAZARD_TYPES_UI };
 
 export const FILTERABLE_SURFACES: readonly FilterableSurface[] = [
   "asphalt",
@@ -18,17 +18,20 @@ export const FILTERABLE_SURFACES: readonly FilterableSurface[] = [
 export interface MapFilters {
   quality: Set<QualityTier>;
   surface: Set<FilterableSurface>;
+  hazardTypes: Set<HazardType>;
   minCurviness: number;
 }
 
 export const DEFAULT_MAP_FILTERS: MapFilters = {
   quality: new Set(QUALITY_TIERS),
   surface: new Set(FILTERABLE_SURFACES),
+  hazardTypes: new Set(HAZARD_TYPES_UI),
   minCurviness: 0,
 };
 
 const QUALITY_PARAM = "q";
 const SURFACE_PARAM = "s";
+const HAZARD_PARAM = "h";
 const CURVINESS_PARAM = "c";
 
 // Sentinel emitted when the user has explicitly cleared every option in a set
@@ -44,6 +47,10 @@ export function isFilterableSurface(value: string): value is FilterableSurface {
   return (FILTERABLE_SURFACES as readonly string[]).includes(value);
 }
 
+export function isHazardType(value: string): value is HazardType {
+  return (HAZARD_TYPES_UI as readonly string[]).includes(value);
+}
+
 export function filtersToSearchParams(
   filters: MapFilters,
   base?: URLSearchParams,
@@ -51,6 +58,7 @@ export function filtersToSearchParams(
   const params = new URLSearchParams(base);
   params.delete(QUALITY_PARAM);
   params.delete(SURFACE_PARAM);
+  params.delete(HAZARD_PARAM);
   params.delete(CURVINESS_PARAM);
 
   const allQuality = QUALITY_TIERS.every((t) => filters.quality.has(t));
@@ -67,6 +75,14 @@ export function filtersToSearchParams(
   } else if (!allSurface) {
     const ordered = FILTERABLE_SURFACES.filter((s) => filters.surface.has(s));
     params.set(SURFACE_PARAM, ordered.join(","));
+  }
+
+  const allHazards = HAZARD_TYPES_UI.every((h) => filters.hazardTypes.has(h));
+  if (filters.hazardTypes.size === 0) {
+    params.set(HAZARD_PARAM, EMPTY_SENTINEL);
+  } else if (!allHazards) {
+    const ordered = HAZARD_TYPES_UI.filter((h) => filters.hazardTypes.has(h));
+    params.set(HAZARD_PARAM, ordered.join(","));
   }
 
   if (filters.minCurviness > 0) {
@@ -91,6 +107,11 @@ export function filtersFromSearchParams(
     FILTERABLE_SURFACES,
     isFilterableSurface,
   );
+  const hazardTypes = parseCsvSet(
+    params.get(HAZARD_PARAM),
+    HAZARD_TYPES_UI,
+    isHazardType,
+  );
 
   const rawCurviness = params.get(CURVINESS_PARAM);
   const minCurviness =
@@ -98,7 +119,7 @@ export function filtersFromSearchParams(
       ? 0
       : clampCurviness(Number.parseInt(rawCurviness, 10));
 
-  return { quality, surface, minCurviness };
+  return { quality, surface, hazardTypes, minCurviness };
 }
 
 export interface FilterableSegment {
@@ -123,6 +144,7 @@ export function filtersEqual(a: MapFilters, b: MapFilters): boolean {
   if (a.minCurviness !== b.minCurviness) return false;
   if (!setsEqual(a.quality, b.quality)) return false;
   if (!setsEqual(a.surface, b.surface)) return false;
+  if (!setsEqual(a.hazardTypes, b.hazardTypes)) return false;
   return true;
 }
 
@@ -130,6 +152,7 @@ export function cloneFilters(filters: MapFilters): MapFilters {
   return {
     quality: new Set(filters.quality),
     surface: new Set(filters.surface),
+    hazardTypes: new Set(filters.hazardTypes),
     minCurviness: filters.minCurviness,
   };
 }

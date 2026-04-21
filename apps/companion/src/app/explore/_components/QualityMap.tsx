@@ -3,12 +3,23 @@
 import { useEffect, useRef, useState } from "react";
 import maplibregl, {
   type ExpressionSpecification,
+  type FilterSpecification,
+  type GeoJSONSource,
   type Map as MapLibreMap,
   type MapLayerMouseEvent,
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import type { Feature, FeatureCollection, Point } from "geojson";
 import { API_BASE, MAP_STYLE_URL } from "@/lib/config";
-import { QUALITY_CONFIG, HAZARD_CONFIG } from "@/lib/utils";
+import {
+  QUALITY_CONFIG,
+  HAZARD_CONFIG,
+  HAZARD_TYPES_UI,
+  formatRelativeTime,
+  hazardFadeOpacity,
+} from "@/lib/utils";
+import { hazardsApi, type HazardResponse } from "@/lib/api";
+import type { HazardType } from "@tarmoto/shared";
 import {
   FILTERABLE_SURFACES,
   type MapFilters,
@@ -18,11 +29,30 @@ import {
 const SOURCE_ID = "tarmoto-roads";
 const QUALITY_LAYER = "tarmoto-quality";
 const SURFACE_LAYER = "tarmoto-surface";
-const HAZARD_LAYER = "tarmoto-hazards";
-const HAZARD_OVERVIEW_LAYER = "tarmoto-hazards-cluster";
+
+const HAZARDS_SOURCE = "hazards-src";
+const HAZARD_CLUSTERS = "tarmoto-hazard-clusters";
+const HAZARD_CLUSTER_COUNT = "tarmoto-hazard-cluster-count";
+const HAZARD_BG = "tarmoto-hazard-bg";
+const HAZARD_ICON = "tarmoto-hazard-icon";
 
 const DIMMED_OPACITY = 0.15;
 const ACTIVE_OPACITY = 0.9;
+
+// Below this zoom the viewport covers more area than the backend's 50 km radius
+// cap can reasonably serve, so we skip fetching and render nothing rather than
+// a misleadingly-partial result. Users pan/zoom in before markers reappear.
+const HAZARD_MIN_ZOOM = 9;
+const HAZARD_FETCH_DEBOUNCE_MS = 300;
+// Backend caps radius at 50 km. We derive request radius from the viewport
+// diagonal so smaller viewports don't pull in off-screen hazards.
+const HAZARD_MAX_RADIUS_M = 50_000;
+const HAZARD_MIN_RADIUS_M = 500;
+
+const EMPTY_COLLECTION: FeatureCollection<Point, HazardProps> = {
+  type: "FeatureCollection",
+  features: [],
+};
 
 // Surface palette — must stay in sync with --color-surface-* in globals.css
 // so the legend swatches match what's painted on the map. "unknown" is not
@@ -36,16 +66,19 @@ const SURFACE_COLORS: Record<FilterableSurface | "unknown", string> = {
   unknown: "#64748B",
 };
 
-const HAZARD_COLORS: Record<string, string> = {
-  pothole: "#ef4444",
-  gravel: "#f59e0b",
-  oil_spill: "#78350f",
-  roadworks: "#facc15",
-  animals: "#84cc16",
-  police: "#3b82f6",
-  flooding: "#0ea5e9",
-  ice: "#67e8f9",
-};
+interface HazardProps {
+  id: string;
+  hazard_type: HazardType;
+  severity: string;
+  note: string | null;
+  confirmations: number;
+  reporter: string | null;
+  road_name: string | null;
+  created_at: string;
+  expires_at: string;
+  emoji: string;
+  opacity: number;
+}
 
 interface Props {
   center: { lng: number; lat: number };
@@ -194,115 +227,152 @@ export function QualityMap({
         },
       });
 
-      // Low-zoom overview pass — small uniform red dots so the user can see
-      // hazard density without visual clutter. NOT clustering: MapLibre vector
-      // sources can't cluster client-side. Real aggregation would need a
-      // GeoJSON hazards endpoint or server-side preclustering in the MVT
-      // pipeline; tracked as a follow-up under #79.
+      // Hazards: GeoJSON source fed by /hazards REST endpoint. Cluster at low
+      // zoom so overlapping reports collapse into a single bubble; individual
+      // symbol markers take over once zoomed in.
+      map.addSource(HAZARDS_SOURCE, {
+        type: "geojson",
+        data: EMPTY_COLLECTION,
+        cluster: true,
+        clusterRadius: 50,
+        clusterMaxZoom: 13,
+      });
+
       map.addLayer({
-        id: HAZARD_OVERVIEW_LAYER,
+        id: HAZARD_CLUSTERS,
         type: "circle",
-        source: SOURCE_ID,
-        "source-layer": "hazards",
-        minzoom: 6,
-        maxzoom: 11,
+        source: HAZARDS_SOURCE,
+        filter: ["has", "point_count"],
         layout: { visibility: showHazards ? "visible" : "none" },
         paint: {
-          "circle-color": "#ef4444",
-          "circle-opacity": 0.75,
-          "circle-radius": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            6,
-            4,
-            11,
-            6,
-          ] as ExpressionSpecification,
+          "circle-color": "#0ED3CF",
+          "circle-opacity": 0.85,
           "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 1,
+          "circle-stroke-width": 1.5,
+          "circle-radius": [
+            "step",
+            ["get", "point_count"],
+            14,
+            10,
+            18,
+            25,
+            24,
+          ] as ExpressionSpecification,
         },
       });
 
       map.addLayer({
-        id: HAZARD_LAYER,
+        id: HAZARD_CLUSTER_COUNT,
+        type: "symbol",
+        source: HAZARDS_SOURCE,
+        filter: ["has", "point_count"],
+        layout: {
+          visibility: showHazards ? "visible" : "none",
+          "text-field": ["get", "point_count_abbreviated"],
+          "text-size": 12,
+          "text-font": [
+            "Noto Sans Bold",
+            "Open Sans Bold",
+            "Arial Unicode MS Bold",
+          ],
+          "text-allow-overlap": true,
+        },
+        paint: { "text-color": "#0f172a" },
+      });
+
+      // Individual hazard: background disc colored by type. Opacity is
+      // pre-computed per-feature in `toHazardFeatures` so the fade across a
+      // hazard's lifetime works without a live expression.
+      map.addLayer({
+        id: HAZARD_BG,
         type: "circle",
-        source: SOURCE_ID,
-        "source-layer": "hazards",
-        minzoom: 11,
+        source: HAZARDS_SOURCE,
+        filter: ["!", ["has", "point_count"]],
         layout: { visibility: showHazards ? "visible" : "none" },
         paint: {
-          "circle-color": [
-            "match",
-            ["get", "hazard_type"],
-            "pothole",
-            HAZARD_COLORS.pothole,
-            "gravel",
-            HAZARD_COLORS.gravel,
-            "oil_spill",
-            HAZARD_COLORS.oil_spill,
-            "roadworks",
-            HAZARD_COLORS.roadworks,
-            "animals",
-            HAZARD_COLORS.animals,
-            "police",
-            HAZARD_COLORS.police,
-            "flooding",
-            HAZARD_COLORS.flooding,
-            "ice",
-            HAZARD_COLORS.ice,
-            "#ef4444",
-          ] as ExpressionSpecification,
-          "circle-opacity": 0.9,
+          "circle-color": buildHazardColorExpression(),
+          "circle-opacity": ["coalesce", ["get", "opacity"], 1],
           "circle-radius": [
             "interpolate",
             ["linear"],
             ["zoom"],
-            11,
-            5,
-            16,
             9,
+            10,
+            14,
+            14,
+            18,
+            18,
           ] as ExpressionSpecification,
           "circle-stroke-color": "#ffffff",
           "circle-stroke-width": 1.5,
+          "circle-stroke-opacity": ["coalesce", ["get", "opacity"], 1],
         },
       });
 
-      // Hazard popup on click.
-      map.on("click", HAZARD_LAYER, (e: MapLayerMouseEvent) => {
-        const f = e.features?.[0];
-        if (!f) return;
-        const props = f.properties as {
-          hazard_type?: string;
-          severity?: string;
-          confirmations?: number;
-        } | null;
-        if (!props?.hazard_type) return;
-        const cfg =
-          HAZARD_CONFIG[props.hazard_type as keyof typeof HAZARD_CONFIG];
-        const label = cfg?.label ?? props.hazard_type;
-        const emoji = cfg?.emoji ?? "⚠️";
-        const html = `
-          <div style="font-family: system-ui, sans-serif; color: #0f172a;">
-            <div style="font-weight:600; font-size:14px;">${emoji} ${escapeHtml(label)}</div>
-            <div style="font-size:12px; color:#475569; margin-top:4px;">
-              Severity: ${escapeHtml(props.severity ?? "—")}<br/>
-              Confirmations: ${props.confirmations ?? 0}
-            </div>
-          </div>
-        `;
-        new maplibregl.Popup({ closeButton: true, offset: 10 })
-          .setLngLat(e.lngLat)
-          .setHTML(html)
-          .addTo(map);
+      // Emoji glyph on top of the disc. `text-allow-overlap` prevents the
+      // cluster-first placement pass from culling markers when they pile up
+      // just inside the cluster radius.
+      map.addLayer({
+        id: HAZARD_ICON,
+        type: "symbol",
+        source: HAZARDS_SOURCE,
+        filter: ["!", ["has", "point_count"]],
+        layout: {
+          visibility: showHazards ? "visible" : "none",
+          "text-field": ["get", "emoji"],
+          "text-size": 16,
+          "text-allow-overlap": true,
+          "text-ignore-placement": true,
+        },
+        paint: { "text-opacity": ["coalesce", ["get", "opacity"], 1] },
       });
 
-      map.on("mouseenter", HAZARD_LAYER, () => {
+      // Cluster click → expand.
+      map.on("click", HAZARD_CLUSTERS, (e: MapLayerMouseEvent) => {
+        const feature = e.features?.[0];
+        if (!feature) return;
+        const clusterId = feature.properties?.cluster_id as number | undefined;
+        if (clusterId == null) return;
+        const src = map.getSource(HAZARDS_SOURCE) as GeoJSONSource | undefined;
+        if (!src) return;
+        src.getClusterExpansionZoom(clusterId).then((expZoom) => {
+          const geom = feature.geometry;
+          if (geom.type !== "Point") return;
+          map.easeTo({
+            center: geom.coordinates as [number, number],
+            zoom: expZoom,
+          });
+        });
+      });
+
+      // Individual hazard click → popup with full details.
+      const onHazardClick = (e: MapLayerMouseEvent) => {
+        const feature = e.features?.[0];
+        if (!feature) return;
+        const props = feature.properties as HazardProps | null;
+        if (!props?.hazard_type) return;
+        new maplibregl.Popup({
+          closeButton: true,
+          offset: 12,
+          maxWidth: "280px",
+        })
+          .setLngLat(e.lngLat)
+          .setHTML(renderHazardPopup(props))
+          .addTo(map);
+      };
+      map.on("click", HAZARD_BG, onHazardClick);
+      map.on("click", HAZARD_ICON, onHazardClick);
+
+      const setPointer = () => {
         map.getCanvas().style.cursor = "pointer";
-      });
-      map.on("mouseleave", HAZARD_LAYER, () => {
+      };
+      const unsetPointer = () => {
         map.getCanvas().style.cursor = "";
-      });
+      };
+      for (const id of [HAZARD_BG, HAZARD_ICON, HAZARD_CLUSTERS]) {
+        map.on("mouseenter", id, setPointer);
+        map.on("mouseleave", id, unsetPointer);
+      }
 
       map.on("moveend", () => {
         const c = map.getCenter();
@@ -333,7 +403,7 @@ export function QualityMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── apply filters to line-opacity (dim non-matching) ──
+  // ── apply filters to line-opacity (dim non-matching quality/surface) ──
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
@@ -349,15 +419,77 @@ export function QualityMap({
     }
   }, [ready, filters]);
 
+  // ── apply hazard type filter (hide non-matching markers; clusters unchanged) ──
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const typeFilter = buildHazardTypeFilter(filters.hazardTypes);
+    if (map.getLayer(HAZARD_BG)) map.setFilter(HAZARD_BG, typeFilter);
+    if (map.getLayer(HAZARD_ICON)) map.setFilter(HAZARD_ICON, typeFilter);
+  }, [ready, filters.hazardTypes]);
+
   // ── layer visibility from toggles ──
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
     setVisibility(map, QUALITY_LAYER, showQuality);
     setVisibility(map, SURFACE_LAYER, showSurface);
-    setVisibility(map, HAZARD_LAYER, showHazards);
-    setVisibility(map, HAZARD_OVERVIEW_LAYER, showHazards);
+    for (const id of [
+      HAZARD_CLUSTERS,
+      HAZARD_CLUSTER_COUNT,
+      HAZARD_BG,
+      HAZARD_ICON,
+    ]) {
+      setVisibility(map, id, showHazards);
+    }
   }, [ready, showQuality, showSurface, showHazards]);
+
+  // ── fetch hazards when viewport settles (debounced, abortable) ──
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+
+    // When hidden or zoomed-out, clear the source rather than hanging onto
+    // stale data the user can't see.
+    if (!showHazards || zoom < HAZARD_MIN_ZOOM) {
+      const src = map.getSource(HAZARDS_SOURCE) as GeoJSONSource | undefined;
+      src?.setData(EMPTY_COLLECTION);
+      return;
+    }
+
+    // `cancelled` guards the async write after the await: AbortController
+    // signals the fetch to stop, but if the response has already resolved the
+    // continuation still runs. Without this flag a slow prior fetch could
+    // overwrite fresh data from the next viewport.
+    let cancelled = false;
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        const radius = viewportRadiusMeters(map);
+        const { data } = await hazardsApi.findNearby(
+          { lat: center.lat, lng: center.lng, radius },
+          { signal: controller.signal },
+        );
+        if (cancelled) return;
+        const src = mapRef.current?.getSource(HAZARDS_SOURCE) as
+          | GeoJSONSource
+          | undefined;
+        src?.setData(toHazardFeatures(data));
+      } catch (err) {
+        if ((err as { name?: string }).name === "AbortError") return;
+        // Intentionally swallow: the hazards overlay is a secondary signal —
+        // a transient fetch failure shouldn't blow up the explorer. Next
+        // moveend will retry.
+        console.warn("[explore] hazards fetch failed", err);
+      }
+    }, HAZARD_FETCH_DEBOUNCE_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [ready, showHazards, center.lat, center.lng, zoom]);
 
   return (
     <div className="relative w-full h-full">
@@ -443,6 +575,40 @@ function buildSurfaceOpacityExpression(
   ] as ExpressionSpecification;
 }
 
+function buildHazardColorExpression(): ExpressionSpecification {
+  // `match` expects alternating value/output pairs. HAZARD_CONFIG is the
+  // source of truth so the popup, legend, and map stay aligned.
+  // The MapLibre tuple type can't be expressed with a spread, so we cast via
+  // `unknown` after confirming the runtime shape matches the spec.
+  const pairs = HAZARD_TYPES_UI.flatMap((type) => [
+    type,
+    HAZARD_CONFIG[type].hex,
+  ]);
+  return [
+    "match",
+    ["get", "hazard_type"],
+    ...pairs,
+    HAZARD_CONFIG.other.hex,
+  ] as unknown as ExpressionSpecification;
+}
+
+function buildHazardTypeFilter(types: Set<HazardType>): FilterSpecification {
+  // When every type is selected we still want to exclude the cluster points
+  // (handled by `filter` at layer definition); this filter ANDs the "not a
+  // cluster" check with the type match.
+  if (types.size === 0) {
+    return ["all", ["!", ["has", "point_count"]], false];
+  }
+  if (types.size === HAZARD_TYPES_UI.length) {
+    return ["!", ["has", "point_count"]];
+  }
+  return [
+    "all",
+    ["!", ["has", "point_count"]],
+    ["in", ["get", "hazard_type"], ["literal", [...types]]],
+  ] as FilterSpecification;
+}
+
 function setVisibility(map: MapLibreMap, layerId: string, visible: boolean) {
   if (!map.getLayer(layerId)) return;
   map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
@@ -459,6 +625,113 @@ function originForTiles(): string {
   return window.location.origin;
 }
 
+function toHazardFeatures(
+  hazards: HazardResponse[],
+  now: number = Date.now(),
+): FeatureCollection<Point, HazardProps> {
+  const features: Feature<Point, HazardProps>[] = hazards.map((h) => {
+    const type = (
+      HAZARD_CONFIG[h.hazard_type as HazardType]
+        ? (h.hazard_type as HazardType)
+        : "other"
+    ) as HazardType;
+    return {
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [h.lng, h.lat] },
+      properties: {
+        id: h.id,
+        hazard_type: type,
+        severity: h.severity,
+        note: h.note,
+        confirmations: h.confirmations,
+        reporter: h.reporter,
+        road_name: h.road_name,
+        created_at: h.created_at,
+        expires_at: h.expires_at,
+        emoji: HAZARD_CONFIG[type].emoji,
+        opacity: hazardFadeOpacity(h.created_at, h.expires_at, now),
+      },
+    };
+  });
+  return { type: "FeatureCollection", features };
+}
+
+function viewportRadiusMeters(map: MapLibreMap): number {
+  const bounds = map.getBounds();
+  const center = map.getCenter();
+  const ne = bounds.getNorthEast();
+  const sw = bounds.getSouthWest();
+  // Radius that circumscribes the viewport — the larger of the two diagonals
+  // from center to a corner. NE and SW usually agree, but tilted viewports
+  // (and near-antimeridian bounds) can skew the distances.
+  const diagonal = Math.max(
+    haversineMeters(center.lat, center.lng, ne.lat, ne.lng),
+    haversineMeters(center.lat, center.lng, sw.lat, sw.lng),
+  );
+  return Math.max(
+    HAZARD_MIN_RADIUS_M,
+    Math.min(HAZARD_MAX_RADIUS_M, Math.round(diagonal)),
+  );
+}
+
+function haversineMeters(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number,
+): number {
+  const R = 6_371_000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+function renderHazardPopup(props: HazardProps): string {
+  const cfg = HAZARD_CONFIG[props.hazard_type] ?? HAZARD_CONFIG.other;
+  const severity = props.severity || "—";
+  const reporter = props.reporter ?? "Unknown rider";
+  const when = formatRelativeTime(props.created_at);
+  const road = props.road_name
+    ? `<div style="font-size:11px;color:#64748b;margin-top:2px;">${escapeHtml(props.road_name)}</div>`
+    : "";
+  const note = props.note
+    ? `<div style="font-size:12px;color:#334155;margin-top:8px;padding:6px 8px;background:#f1f5f9;border-radius:6px;">${escapeHtml(props.note)}</div>`
+    : "";
+  return `
+    <div style="font-family:system-ui,sans-serif;color:#0f172a;min-width:200px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:20px;line-height:1;">${cfg.emoji}</span>
+        <div style="flex:1;">
+          <div style="font-weight:600;font-size:14px;">${escapeHtml(cfg.label)}</div>
+          ${road}
+        </div>
+        <span style="font-size:10px;text-transform:uppercase;letter-spacing:0.05em;padding:2px 6px;border-radius:999px;background:${severityBg(severity)};color:${severityFg(severity)};">${escapeHtml(severity)}</span>
+      </div>
+      ${note}
+      <div style="font-size:12px;color:#475569;margin-top:8px;display:flex;justify-content:space-between;gap:8px;">
+        <span>${escapeHtml(reporter)} · ${escapeHtml(when)}</span>
+        <span>✓ ${props.confirmations}</span>
+      </div>
+    </div>
+  `;
+}
+
+function severityBg(severity: string): string {
+  if (severity === "high") return "#fee2e2";
+  if (severity === "low") return "#dcfce7";
+  return "#fef3c7";
+}
+
+function severityFg(severity: string): string {
+  if (severity === "high") return "#991b1b";
+  if (severity === "low") return "#166534";
+  return "#92400e";
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -467,3 +740,6 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
+
+// Exported for tests.
+export { toHazardFeatures, buildHazardTypeFilter, viewportRadiusMeters };
