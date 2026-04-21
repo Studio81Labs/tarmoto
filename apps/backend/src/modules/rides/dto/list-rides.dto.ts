@@ -11,6 +11,7 @@ import {
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import { toOptionalNumber } from '../../../common/dto-transforms.js';
 
 const SORTABLE = [
   'started_at',
@@ -19,20 +20,6 @@ const SORTABLE = [
   'avg_road_quality',
 ] as const;
 export type RidesSortField = (typeof SORTABLE)[number];
-
-/**
- * Transform function that coerces a query param to a number, but maps
- * blank/whitespace/nullish values to `undefined` so `@IsOptional()`
- * still behaves as "not provided" for edge cases like `?foo=` or
- * `?foo=%20`. Plain `Number('')` and `Number('  ')` both silently
- * return `0`, which would defeat the intent for the near_* proximity
- * filter (a blank lat/lng would become the Gulf of Guinea).
- */
-const toOptionalNumber = ({ value }: { value: unknown }): unknown => {
-  if (value === undefined || value === null) return undefined;
-  if (typeof value === 'string' && value.trim() === '') return undefined;
-  return Number(value);
-};
 
 export class ListRidesDto {
   @ApiProperty({ default: 20, required: false, maximum: 100 })

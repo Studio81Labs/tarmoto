@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type {
   GeocodeProvider,
@@ -27,7 +27,6 @@ const NOMINATIM_FETCH_TIMEOUT_MS = 8_000;
  */
 @Injectable()
 export class NominatimProvider implements GeocodeProvider {
-  private readonly logger = new Logger(NominatimProvider.name);
   private readonly endpoint: string;
   private readonly userAgent: string;
 
