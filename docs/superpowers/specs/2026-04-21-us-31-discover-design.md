@@ -65,7 +65,7 @@ New public route: **`/discover`**. Lives at the top level (not under
 Extract the base MapLibre setup from `QualityMap.tsx` into a reusable
 component:
 
-```
+```text
 apps/companion/src/components/map/MapCanvas.tsx
 ```
 
@@ -110,7 +110,7 @@ internal refactor with no behavior change.
 
 ### Discover page components
 
-```
+```text
 apps/companion/src/app/discover/
   layout.tsx
   page.tsx
@@ -215,8 +215,14 @@ Clear button removes `region-drawn-source` data and calls
 
 New endpoint on the existing `roads` module. Public, default throttle.
 
-**Query path** (`RoadsService.findZoneById(zoneId, limit = 10)`), two
-queries in parallel:
+**Query path** (`RoadsService.findZoneById(zoneId, limit = 10)`). The two
+queries run **sequentially**, not in parallel: the zone lookup resolves
+first, and a 404 short-circuits before the roads query fires. This
+trades a small latency cost (sum of both round trips instead of max) for
+a cleaner error path and avoids issuing a useless `fun_zone_roads` join
+for non-existent ids. If latency becomes a concern we can revisit —
+parallelizing is a mechanical change, but the current sequential shape
+is what the service's test contract asserts.
 
 ```sql
 -- 1. Zone itself
