@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "b7a53e18-67ea-406b-bd8a-24f5596523ee",
+    "_postman_id": "f43c7cb5-3741-466e-9eb6-3c0726cab167",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -1494,6 +1494,61 @@
               "variable": [
                 {
                   "key": "segmentId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Cast or flip a helpful / not-helpful vote on a review",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roads/reviews/:reviewId/vote",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roads", "reviews", ":reviewId", "vote"],
+              "variable": [
+                {
+                  "key": "reviewId",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_helpful\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Withdraw your helpful vote on a review",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roads/reviews/:reviewId/vote",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roads", "reviews", ":reviewId", "vote"],
+              "variable": [
+                {
+                  "key": "reviewId",
                   "value": ""
                 }
               ]
