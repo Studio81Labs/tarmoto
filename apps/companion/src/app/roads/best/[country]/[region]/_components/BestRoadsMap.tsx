@@ -73,7 +73,7 @@ export function BestRoadsMap({ bbox, center, defaultZoom, roads }: Props) {
         }}
         mapStyle={MAP_STYLE_URL}
         style={{ width: "100%", height: "100%" }}
-        attributionControl={{ compact: true }}
+        attributionControl={true}
         onLoad={() => {
           mapRef.current?.fitBounds(
             [

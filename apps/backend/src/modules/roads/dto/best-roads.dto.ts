@@ -1,5 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+export class GeometryPointDto {
+  @ApiProperty()
+  lat!: number;
+
+  @ApiProperty()
+  lng!: number;
+}
+
 export class BestRoadsRegionDto {
   @ApiProperty({ example: 'beskydy' })
   slug!: string;
@@ -44,11 +52,11 @@ export class BestRoadDto {
   confidence!: number;
 
   @ApiProperty({
-    type: [Object],
+    type: [GeometryPointDto],
     description:
       'Polyline of { lat, lng } points, ordered along direction of travel',
   })
-  geometry!: Array<{ lat: number; lng: number }>;
+  geometry!: GeometryPointDto[];
 
   @ApiProperty({
     description: 'Composite best-road ranking score (opaque, for debugging)',
