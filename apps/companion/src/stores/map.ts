@@ -8,6 +8,7 @@ import {
   type MapFilters,
   type QualityTier,
 } from "@/lib/map-filters";
+import type { HazardType } from "@tarmoto/shared";
 
 interface MapState {
   center: { lng: number; lat: number };
@@ -29,6 +30,7 @@ interface MapState {
   toggleSurface: () => void;
   toggleQualityTier: (tier: QualityTier) => void;
   toggleSurfaceType: (surface: FilterableSurface) => void;
+  toggleHazardType: (type: HazardType) => void;
   setMinCurviness: (value: number) => void;
   setFilters: (filters: MapFilters) => void;
   resetFilters: () => void;
@@ -65,6 +67,13 @@ export const useMapStore = create<MapState>((set) => ({
       if (next.has(surface)) next.delete(surface);
       else next.add(surface);
       return { filters: { ...s.filters, surface: next } };
+    }),
+  toggleHazardType: (type) =>
+    set((s) => {
+      const next = new Set(s.filters.hazardTypes);
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
+      return { filters: { ...s.filters, hazardTypes: next } };
     }),
   setMinCurviness: (value) =>
     set((s) => ({

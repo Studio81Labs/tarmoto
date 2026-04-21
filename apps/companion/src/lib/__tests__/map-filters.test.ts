@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_MAP_FILTERS,
   FILTERABLE_SURFACES,
+  HAZARD_TYPES_UI,
   QUALITY_TIERS,
   filtersEqual,
   filtersFromSearchParams,
@@ -14,6 +15,9 @@ function makeFilters(overrides: Partial<MapFilters> = {}): MapFilters {
   return {
     quality: new Set(overrides.quality ?? DEFAULT_MAP_FILTERS.quality),
     surface: new Set(overrides.surface ?? DEFAULT_MAP_FILTERS.surface),
+    hazardTypes: new Set(
+      overrides.hazardTypes ?? DEFAULT_MAP_FILTERS.hazardTypes,
+    ),
     minCurviness: overrides.minCurviness ?? DEFAULT_MAP_FILTERS.minCurviness,
   };
 }
@@ -73,10 +77,26 @@ describe("filtersToSearchParams", () => {
       makeFilters({
         quality: new Set(),
         surface: new Set(),
+        hazardTypes: new Set(),
       }),
     );
     expect(params.get("q")).toBe("none");
     expect(params.get("s")).toBe("none");
+    expect(params.get("h")).toBe("none");
+  });
+
+  it("serializes partial hazard type selection preserving canonical order", () => {
+    const params = filtersToSearchParams(
+      makeFilters({ hazardTypes: new Set(["ice", "pothole"]) }),
+    );
+    expect(params.get("h")).toBe("pothole,ice");
+    expect(params.get("q")).toBeNull();
+    expect(params.get("s")).toBeNull();
+  });
+
+  it("omits hazard param when all types are selected", () => {
+    const params = filtersToSearchParams(makeFilters());
+    expect(params.get("h")).toBeNull();
   });
 });
 
@@ -102,12 +122,28 @@ describe("filtersFromSearchParams", () => {
 
   it("ignores unknown values and falls back to defaults when all invalid", () => {
     const filters = filtersFromSearchParams(
-      new URLSearchParams("q=bogus&s=lava"),
+      new URLSearchParams("q=bogus&s=lava&h=dinosaur"),
     );
     expect([...filters.quality].sort()).toEqual([...QUALITY_TIERS].sort());
     expect([...filters.surface].sort()).toEqual(
       [...FILTERABLE_SURFACES].sort(),
     );
+    expect([...filters.hazardTypes].sort()).toEqual(
+      [...HAZARD_TYPES_UI].sort(),
+    );
+  });
+
+  it("parses hazard selection and round-trips", () => {
+    const original = makeFilters({
+      hazardTypes: new Set(["pothole", "ice"]),
+    });
+    const parsed = filtersFromSearchParams(filtersToSearchParams(original));
+    expect([...parsed.hazardTypes].sort()).toEqual(["ice", "pothole"]);
+  });
+
+  it("treats h=none sentinel as an empty set", () => {
+    const filters = filtersFromSearchParams(new URLSearchParams("h=none"));
+    expect(filters.hazardTypes.size).toBe(0);
   });
 
   it("keeps only valid values when mixed with unknown", () => {

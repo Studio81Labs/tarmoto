@@ -12,6 +12,8 @@ import {
   type FilterableSurface,
   type QualityTier,
 } from "@/lib/map-filters";
+import { HAZARD_CONFIG, HAZARD_TYPES_UI } from "@/lib/utils";
+import type { HazardType } from "@tarmoto/shared";
 import { QualityMap } from "./_components/QualityMap";
 
 /**
@@ -42,6 +44,18 @@ const SURFACE_OPTIONS: {
   { key: "dirt", label: "Dirt", color: "bg-surface-dirt" },
 ];
 
+const HAZARD_OPTIONS: {
+  key: HazardType;
+  label: string;
+  emoji: string;
+  hex: string;
+}[] = HAZARD_TYPES_UI.map((key) => ({
+  key,
+  label: HAZARD_CONFIG[key].label,
+  emoji: HAZARD_CONFIG[key].emoji,
+  hex: HAZARD_CONFIG[key].hex,
+}));
+
 function ExplorerPageInner() {
   const [filterOpen, setFilterOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -61,6 +75,7 @@ function ExplorerPageInner() {
     filters,
     toggleQualityTier,
     toggleSurfaceType,
+    toggleHazardType,
     setMinCurviness,
     setFilters,
     setCenter,
@@ -220,6 +235,35 @@ function ExplorerPageInner() {
             </div>
 
             <div>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">
+                Hazard type
+              </h3>
+              <div className="space-y-2">
+                {HAZARD_OPTIONS.map((opt) => (
+                  <label
+                    key={opt.key}
+                    className="flex items-center gap-2.5 text-sm text-slate-300 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={filters.hazardTypes.has(opt.key)}
+                      onChange={() => toggleHazardType(opt.key)}
+                      className="rounded border-slate-600 bg-slate-800 text-tarmoto-cyan focus:ring-tarmoto-cyan"
+                    />
+                    <span
+                      aria-hidden="true"
+                      className="inline-flex w-4 h-4 items-center justify-center text-[11px] leading-none rounded-full"
+                      style={{ backgroundColor: opt.hex }}
+                    >
+                      {opt.emoji}
+                    </span>
+                    {opt.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Curviness
@@ -264,6 +308,7 @@ function ExplorerPageInner() {
           <MapLegend
             showQuality={showQualityOverlay}
             showSurface={showSurfaceOverlay}
+            showHazards={showHazardOverlay}
           />
         </div>
       </div>
@@ -274,10 +319,11 @@ function ExplorerPageInner() {
 interface MapLegendProps {
   showQuality: boolean;
   showSurface: boolean;
+  showHazards: boolean;
 }
 
-function MapLegend({ showQuality, showSurface }: MapLegendProps) {
-  if (!showQuality && !showSurface) return null;
+function MapLegend({ showQuality, showSurface, showHazards }: MapLegendProps) {
+  if (!showQuality && !showSurface && !showHazards) return null;
   return (
     <div className="absolute bottom-10 left-4 z-10 rounded-xl bg-slate-950/80 border border-slate-800 backdrop-blur px-3 py-2.5 text-xs text-slate-300 space-y-2 pointer-events-none">
       {showQuality && (
@@ -308,6 +354,30 @@ function MapLegend({ showQuality, showSurface }: MapLegendProps) {
               </div>
             ))}
           </div>
+        </div>
+      )}
+      {showHazards && (
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">
+            Hazards
+          </p>
+          <div className="flex items-center gap-x-2 gap-y-1 flex-wrap max-w-[260px]">
+            {HAZARD_OPTIONS.map((opt) => (
+              <div key={opt.key} className="flex items-center gap-1">
+                <span
+                  aria-hidden="true"
+                  className="inline-flex w-3.5 h-3.5 items-center justify-center text-[10px] leading-none rounded-full"
+                  style={{ backgroundColor: opt.hex }}
+                >
+                  {opt.emoji}
+                </span>
+                <span className="text-[10px]">{opt.label}</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-[9px] text-slate-500 mt-1">
+            Opacity fades as reports age
+          </p>
         </div>
       )}
     </div>

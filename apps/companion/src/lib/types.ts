@@ -1,4 +1,10 @@
 import type * as GeoJSON from "geojson";
+import type { HazardType } from "@tarmoto/shared";
+
+// Re-export so callers that already import from `@/lib/types` keep working.
+// New code should import `HazardType` directly from `@tarmoto/shared` (the
+// canonical source, mirroring how `SurfaceType` is imported in map-filters).
+export type { HazardType };
 
 // ── User ──
 
@@ -65,16 +71,6 @@ export interface SegmentReview {
 }
 
 // ── Hazards ──
-
-export type HazardType =
-  | "pothole"
-  | "gravel"
-  | "oil_spill"
-  | "roadworks"
-  | "animals"
-  | "police"
-  | "flooding"
-  | "ice";
 
 export interface Hazard {
   id: string;

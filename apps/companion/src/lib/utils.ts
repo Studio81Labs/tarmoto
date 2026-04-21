@@ -64,19 +64,60 @@ export function scoreToColor(score: number): string {
 
 // ── Hazard Types ──
 
+// Canonical ordering for hazard UI (filter checkboxes, legend, URL encoding).
+// Keeps `other` last so the common types stay grouped at the top of lists.
+export const HAZARD_TYPES_UI = [
+  "pothole",
+  "gravel",
+  "oil_spill",
+  "roadworks",
+  "animals",
+  "police",
+  "flooding",
+  "ice",
+  "other",
+] as const satisfies readonly HazardType[];
+
+// Single source of truth for hazard labels, emoji, and fill colors — consumed
+// directly by the map layer expression, popup/legend renderers, and the
+// filter sidebar. Change here and everything follows.
 export const HAZARD_CONFIG: Record<
   HazardType,
-  { label: string; emoji: string }
+  { label: string; emoji: string; hex: string }
 > = {
-  pothole: { label: "Pothole", emoji: "🕳️" },
-  gravel: { label: "Gravel", emoji: "🪨" },
-  oil_spill: { label: "Oil spill", emoji: "🛢️" },
-  roadworks: { label: "Roadworks", emoji: "🚧" },
-  animals: { label: "Animals", emoji: "🦌" },
-  police: { label: "Police", emoji: "👮" },
-  flooding: { label: "Flooding", emoji: "🌊" },
-  ice: { label: "Ice", emoji: "🧊" },
+  pothole: { label: "Pothole", emoji: "🕳️", hex: "#ef4444" },
+  gravel: { label: "Gravel", emoji: "🪨", hex: "#f59e0b" },
+  oil_spill: { label: "Oil spill", emoji: "🛢️", hex: "#78350f" },
+  roadworks: { label: "Roadworks", emoji: "🚧", hex: "#facc15" },
+  animals: { label: "Animals", emoji: "🦌", hex: "#84cc16" },
+  police: { label: "Police", emoji: "👮", hex: "#3b82f6" },
+  flooding: { label: "Flooding", emoji: "🌊", hex: "#0ea5e9" },
+  ice: { label: "Ice", emoji: "🧊", hex: "#67e8f9" },
+  other: { label: "Other", emoji: "⚠️", hex: "#94a3b8" },
 };
+
+// Opacity for a hazard marker based on its age. Fresh reports render fully
+// opaque; opacity falls linearly toward `min` as the hazard approaches its
+// expiry timestamp. Returns `min` past expiry so stale rows stay visible but
+// muted. Expiry windows differ per hazard type on the backend (24–72 h), so we
+// interpolate against the actual `created_at` → `expires_at` span rather than
+// hard-coding a duration.
+export function hazardFadeOpacity(
+  createdAtIso: string,
+  expiresAtIso: string,
+  now: number = Date.now(),
+  min: number = 0.35,
+): number {
+  const created = new Date(createdAtIso).getTime();
+  const expires = new Date(expiresAtIso).getTime();
+  if (!Number.isFinite(created) || !Number.isFinite(expires)) return 1;
+  const span = expires - created;
+  if (span <= 0) return 1;
+  const age = now - created;
+  if (age <= 0) return 1;
+  if (age >= span) return min;
+  return 1 - (1 - min) * (age / span);
+}
 
 // ── Formatting ──
 
