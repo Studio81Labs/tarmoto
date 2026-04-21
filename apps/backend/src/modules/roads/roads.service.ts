@@ -263,7 +263,7 @@ export class RoadsService {
         rs.length_m, rs.confidence,
         ST_AsGeoJSON(rs.geom)::json AS geojson,
         (
-          COALESCE(rs.quality_score, 0) * 2.0
+          rs.quality_score * 2.0
           + rs.curviness_score * 1.0
           + LEAST(rs.length_m / 1000.0, 20.0) * 0.1
         ) AS best_score

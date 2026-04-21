@@ -34,21 +34,28 @@ const QUALITY_COLOR = (q: number | null): string => {
 export function BestRoadsMap({ bbox, center, defaultZoom, roads }: Props) {
   const mapRef = useRef<MapRef | null>(null);
 
+  // Skip roads with < 2 points: a LineString with one or zero coordinates is
+  // invalid per RFC 7946 and MapLibre rejects the whole source.
   const featureCollection = useMemo<FeatureCollection<LineString>>(
     () => ({
       type: "FeatureCollection",
-      features: roads.map((r, i) => ({
-        type: "Feature",
-        properties: {
-          id: r.id,
-          rank: i + 1,
-          color: QUALITY_COLOR(r.quality_score),
-        },
-        geometry: {
-          type: "LineString",
-          coordinates: r.geometry.map((p) => [p.lng, p.lat]),
-        },
-      })),
+      features: roads.flatMap((r, i) => {
+        if (r.geometry.length < 2) return [];
+        return [
+          {
+            type: "Feature" as const,
+            properties: {
+              id: r.id,
+              rank: i + 1,
+              color: QUALITY_COLOR(r.quality_score),
+            },
+            geometry: {
+              type: "LineString" as const,
+              coordinates: r.geometry.map((p) => [p.lng, p.lat]),
+            },
+          },
+        ];
+      }),
     }),
     [roads],
   );
