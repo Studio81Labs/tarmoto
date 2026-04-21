@@ -25,11 +25,17 @@ export async function generateMetadata({
   const { country, region, subregion } = await params;
   const r = findRegion(country, subregion);
   if (!r || r.parent !== region) return {};
+  const title = `Best motorcycle roads in ${r.name} — Tarmoto`;
+  const url = `/roads/best/${r.country}/${r.parent}/${r.slug}`;
   return {
-    title: `Best motorcycle roads in ${r.name} — Tarmoto`,
+    title,
     description: r.description,
-    alternates: {
-      canonical: `/roads/best/${r.country}/${r.parent}/${r.slug}`,
+    alternates: { canonical: url },
+    openGraph: {
+      title,
+      description: r.description,
+      url,
+      type: "website",
     },
   };
 }
