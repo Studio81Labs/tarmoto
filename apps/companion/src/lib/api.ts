@@ -164,6 +164,40 @@ export const hazardsApi = {
   },
 };
 
+// ── Users endpoints (US-59 profile) ──
+
+export interface UserProfileResponse {
+  id: string;
+  email: string;
+  display_name: string;
+  phone: string | null;
+  avatar_url: string | null;
+  bio: string | null;
+  home_region: string | null;
+  home_location: { lat: number; lng: number } | null;
+  work_location: { lat: number; lng: number } | null;
+  preferences: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface UpdateProfileInput {
+  display_name?: string;
+  phone?: string | null;
+  avatar_url?: string | null;
+  bio?: string | null;
+  home_region?: string | null;
+}
+
+export const usersApi = {
+  getMe: (init?: RequestInit) =>
+    apiFetch<UserProfileResponse>("/users/me", init),
+  updateMe: (data: UpdateProfileInput) =>
+    apiFetch<UserProfileResponse>("/users/me", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+};
+
 // ── Account endpoints (not yet in spec) ──
 export const accountApi = {
   updateProfile: (data: unknown) =>

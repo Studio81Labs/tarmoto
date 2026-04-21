@@ -31,6 +31,15 @@ export class User {
   @Column({ type: 'varchar', length: 20, nullable: true })
   phone!: string | null;
 
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  avatar_url!: string | null;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  bio!: string | null;
+
+  @Column({ type: 'varchar', length: 120, nullable: true })
+  home_region!: string | null;
+
   @Column({
     type: 'geometry',
     spatialFeatureType: 'Point',

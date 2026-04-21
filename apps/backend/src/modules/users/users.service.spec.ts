@@ -17,6 +17,9 @@ describe('UsersService', () => {
     email: 'rider@tarmoto.app',
     display_name: 'TestRider',
     phone: null,
+    avatar_url: null,
+    bio: null,
+    home_region: null,
     home_location: null,
     work_location: null,
     preferences: { units: 'metric' },
@@ -154,6 +157,52 @@ describe('UsersService', () => {
           preferences: { units: 'metric', daily_km: 300 },
         }),
       );
+    });
+
+    it('should update avatar_url, bio, and home_region together', async () => {
+      const result = await service.updateProfile('user-1', {
+        avatar_url: 'https://cdn.example.com/u/1.png',
+        bio: 'Weekend rider, Beskydy regular.',
+        home_region: 'Beskydy, Czech Republic',
+      });
+
+      expect(userRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          avatar_url: 'https://cdn.example.com/u/1.png',
+          bio: 'Weekend rider, Beskydy regular.',
+          home_region: 'Beskydy, Czech Republic',
+        }),
+      );
+      expect(result.avatar_url).toBe('https://cdn.example.com/u/1.png');
+      expect(result.bio).toBe('Weekend rider, Beskydy regular.');
+      expect(result.home_region).toBe('Beskydy, Czech Republic');
+    });
+
+    it('should clear bio and home_region when null is sent', async () => {
+      await service.updateProfile('user-1', {
+        bio: null,
+        home_region: null,
+        avatar_url: null,
+      });
+
+      expect(userRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bio: null,
+          home_region: null,
+          avatar_url: null,
+        }),
+      );
+    });
+
+    it('should leave profile fields untouched when the dto omits them', async () => {
+      await service.updateProfile('user-1', { display_name: 'OnlyName' });
+
+      const saved = userRepo.save!.mock.calls[0][0] as Record<string, unknown>;
+      // These keys are absent from the DTO, so the service must not overwrite
+      // whatever already exists on the entity.
+      expect(saved).not.toHaveProperty('avatar_url', undefined);
+      expect(saved).not.toHaveProperty('bio', undefined);
+      expect(saved).not.toHaveProperty('home_region', undefined);
     });
 
     it('should throw NotFoundException for missing user', async () => {

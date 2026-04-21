@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuthStore } from "@/stores/auth";
 import { usePreferencesStore } from "@/stores/preferences";
+import { usersApi, type UserProfileResponse } from "@/lib/api";
 import type { UnitSystem } from "@tarmoto/shared";
 import {
   User,
@@ -20,7 +21,7 @@ const SETTINGS_SECTIONS = [
     href: "/settings",
     icon: User,
     label: "Profile",
-    description: "Display name, avatar, home region",
+    description: "Display name, bio, home region",
   },
   {
     href: "/settings/subscription",
@@ -54,10 +55,17 @@ const SETTINGS_SECTIONS = [
   },
 ];
 
+type SaveState = "idle" | "saving" | "saved" | "error";
+
 export default function AccountPage() {
   const user = useAuthStore((s) => s.user);
+  const setAuthUser = useAuthStore((s) => s.setUser);
   const [displayName, setDisplayName] = useState(user?.displayName ?? "");
   const [homeRegion, setHomeRegion] = useState("");
+  const [bio, setBio] = useState("");
+  const [profile, setProfile] = useState<UserProfileResponse | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // `useState(user?.displayName ?? "")` only captures the value at first
   // render. When Auth.js finishes hydrating the session after mount, the
@@ -67,12 +75,63 @@ export default function AccountPage() {
     if (user?.displayName) setDisplayName(user.displayName);
   }, [user?.displayName]);
 
+  // Pull bio / home_region from the backend — they don't live on the
+  // NextAuth session (which intentionally keeps only ID-shaped fields).
+  useEffect(() => {
+    let cancelled = false;
+    usersApi
+      .getMe()
+      .then(({ data }) => {
+        if (cancelled) return;
+        setProfile(data);
+        setBio(data.bio ?? "");
+        setHomeRegion(data.home_region ?? "");
+      })
+      .catch(() => {
+        // Silent: the form is still usable — fields just stay empty until
+        // the user types. The PATCH-side error banner surfaces any write
+        // failure, which is what actually matters.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const setUnitSystem = usePreferencesStore((s) => s.setUnitSystem);
   const hydratePreferences = usePreferencesStore((s) => s.hydrate);
   useEffect(() => {
     hydratePreferences();
   }, [hydratePreferences]);
+
+  const handleSave = useCallback(async () => {
+    const trimmedName = displayName.trim();
+    if (!trimmedName) {
+      setSaveState("error");
+      setSaveError("Display name is required.");
+      return;
+    }
+    setSaveState("saving");
+    setSaveError(null);
+    try {
+      const { data } = await usersApi.updateMe({
+        display_name: trimmedName,
+        bio: bio.trim() || null,
+        home_region: homeRegion.trim() || null,
+      });
+      setProfile(data);
+      if (user) {
+        setAuthUser({ ...user, displayName: data.display_name });
+      }
+      setSaveState("saved");
+      window.setTimeout(() => setSaveState("idle"), 2000);
+    } catch (err) {
+      setSaveState("error");
+      setSaveError(
+        err instanceof Error ? err.message : "Could not save your profile.",
+      );
+    }
+  }, [displayName, bio, homeRegion, user, setAuthUser]);
 
   return (
     <div className="p-6 max-w-3xl mx-auto animate-fade-in">
@@ -103,10 +162,27 @@ export default function AccountPage() {
         <h2 className="text-lg font-semibold mb-4">Profile</h2>
 
         <div className="flex items-center gap-4 mb-6">
-          <div className="w-16 h-16 rounded-full bg-tarmoto-cyan/20 flex items-center justify-center text-tarmoto-cyan text-xl font-bold">
-            {displayName[0]?.toUpperCase() ?? "T"}
-          </div>
-          <button className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition">
+          {profile?.avatar_url ? (
+            // Browser-native <img>: avatar URLs come from arbitrary providers
+            // (social login, etc.), so we'd need to enumerate every domain in
+            // next.config.ts to use next/image — not practical here.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={profile.avatar_url}
+              alt=""
+              className="w-16 h-16 rounded-full object-cover"
+            />
+          ) : (
+            <div className="w-16 h-16 rounded-full bg-tarmoto-cyan/20 flex items-center justify-center text-tarmoto-cyan text-xl font-bold">
+              {displayName[0]?.toUpperCase() ?? "T"}
+            </div>
+          )}
+          <button
+            type="button"
+            disabled
+            title="Photo upload is coming in a follow-up (needs file storage)"
+            className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-500 text-sm cursor-not-allowed"
+          >
             Change photo
           </button>
         </div>
@@ -119,6 +195,7 @@ export default function AccountPage() {
             type="text"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
+            maxLength={100}
             className="w-full px-4 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:border-tarmoto-cyan transition"
           />
         </div>
@@ -134,6 +211,19 @@ export default function AccountPage() {
         </div>
 
         <div>
+          <label className="block text-sm text-slate-400 mb-1.5">Bio</label>
+          <textarea
+            value={bio}
+            onChange={(e) => setBio(e.target.value)}
+            maxLength={500}
+            rows={3}
+            placeholder="A short blurb about your riding — shown on your public profile."
+            className="w-full px-4 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan transition resize-none"
+          />
+          <p className="text-xs text-slate-500 mt-1">{bio.length}/500</p>
+        </div>
+
+        <div>
           <label className="block text-sm text-slate-400 mb-1.5">
             Home region
           </label>
@@ -141,14 +231,40 @@ export default function AccountPage() {
             type="text"
             value={homeRegion}
             onChange={(e) => setHomeRegion(e.target.value)}
+            maxLength={120}
             placeholder="e.g., Beskydy, Czech Republic"
             className="w-full px-4 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan transition"
           />
         </div>
 
-        <button className="px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition">
-          Save changes
-        </button>
+        <div className="flex items-center gap-3 pt-2">
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saveState === "saving"}
+            className="px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {saveState === "saving" ? "Saving…" : "Save changes"}
+          </button>
+          {saveState === "saved" && (
+            <span
+              role="status"
+              aria-live="polite"
+              className="text-sm text-emerald-400"
+            >
+              Saved
+            </span>
+          )}
+          {saveState === "error" && saveError && (
+            <span
+              role="alert"
+              aria-live="assertive"
+              className="text-sm text-rose-400"
+            >
+              {saveError}
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="rounded-2xl bg-slate-900 border border-slate-800 p-6 mt-4">

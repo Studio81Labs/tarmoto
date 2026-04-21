@@ -21,6 +21,15 @@ export class UserResponseDto {
   @ApiProperty({ nullable: true })
   phone!: string | null;
 
+  @ApiProperty({ nullable: true })
+  avatar_url!: string | null;
+
+  @ApiProperty({ nullable: true })
+  bio!: string | null;
+
+  @ApiProperty({ nullable: true })
+  home_region!: string | null;
+
   @ApiProperty({ nullable: true, type: LatLngResponse })
   home_location!: LatLngResponse | null;
 
