@@ -20,6 +20,18 @@ const SORTABLE = [
 ] as const;
 export type RidesSortField = (typeof SORTABLE)[number];
 
+/**
+ * Transform function that coerces a query param to a number, but maps
+ * empty/null/undefined to `undefined` so `@IsOptional()` still behaves
+ * as "not provided" for the `?foo=` edge case. Plain `Number('')`
+ * silently returns `0`, which would defeat the intent for the near_*
+ * proximity filter (a blank lat/lng would become the Gulf of Guinea).
+ */
+const toOptionalNumber = ({ value }: { value: unknown }): unknown => {
+  if (value === '' || value === null || value === undefined) return undefined;
+  return Number(value);
+};
+
 export class ListRidesDto {
   @ApiProperty({ default: 20, required: false, maximum: 100 })
   @IsOptional()
@@ -106,7 +118,7 @@ export class ListRidesDto {
       'All three near_* params must be supplied together.',
   })
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) => Number(value))
+  @Transform(toOptionalNumber)
   @IsNumber()
   @Min(-90)
   @Max(90)
@@ -119,7 +131,7 @@ export class ListRidesDto {
     description: 'Longitude of the reference point. See near_lat.',
   })
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) => Number(value))
+  @Transform(toOptionalNumber)
   @IsNumber()
   @Min(-180)
   @Max(180)
@@ -133,7 +145,7 @@ export class ListRidesDto {
       'Proximity radius in kilometres for the near_lat/near_lng filter.',
   })
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) => Number(value))
+  @Transform(toOptionalNumber)
   @IsNumber()
   @Min(0.1)
   @Max(200)

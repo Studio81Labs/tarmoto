@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   GEOCODE_PROVIDER,
   type GeocodeProvider,
+  type GeocodeResult,
 } from './geocode-provider.interface.js';
 import {
   GeocodeListDto,
@@ -25,17 +26,18 @@ export class GeocodeService {
       return { results: [] };
     }
 
-    let raw;
+    let raw: GeocodeResult[];
     try {
       raw = await this.provider.search(normalizedQ, normalizedLimit);
     } catch (err) {
       // Ride search must stay usable when geocoding is flaky. The
       // companion falls back to the dropdown showing "no matches" and
-      // existing filters keep working. Log the cause but not the query —
-      // place names can reveal rider intent.
-      this.logger.warn(
-        `Geocoder failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      // existing filters keep working. Log only the error class — we
+      // intentionally keep both the query and any provider-supplied
+      // message (which can embed the query in a request-URL echo) out
+      // of this warn path, since place names can reveal rider intent.
+      const errName = err instanceof Error ? err.name : 'unknown';
+      this.logger.warn(`Geocoder failed (${errName})`);
       return { results: [] };
     }
 

@@ -400,11 +400,24 @@ ${tracks.join('\n')}
       const escaped = query.q.replace(/[\\%_]/g, '\\$&');
       qb.andWhere('ride.name ILIKE :q', { q: `%${escaped}%` });
     }
-    if (
+    const hasAnyNear =
+      query.near_lat !== undefined ||
+      query.near_lng !== undefined ||
+      query.near_km !== undefined;
+    const hasAllNear =
       query.near_lat !== undefined &&
       query.near_lng !== undefined &&
-      query.near_km !== undefined
-    ) {
+      query.near_km !== undefined;
+    if (hasAnyNear && !hasAllNear) {
+      // Reject partial input rather than silently no-op the proximity
+      // filter — that's a client bug the rider won't notice otherwise,
+      // and a ride list that doesn't respect the intended "near" scope
+      // would be actively misleading.
+      throw new BadRequestException(
+        'near_lat, near_lng, and near_km must be supplied together',
+      );
+    }
+    if (hasAllNear) {
       // Cast both sides to geography so ST_DWithin measures in metres
       // across the surface of the earth — no regional projection to pick,
       // accurate enough for touring-range queries (up to a few hundred
@@ -415,7 +428,7 @@ ${tracks.join('\n')}
         {
           near_lng: query.near_lng,
           near_lat: query.near_lat,
-          near_m: query.near_km * 1000,
+          near_m: query.near_km! * 1000,
         },
       );
     }

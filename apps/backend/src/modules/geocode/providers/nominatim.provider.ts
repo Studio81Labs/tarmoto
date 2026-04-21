@@ -32,10 +32,15 @@ export class NominatimProvider implements GeocodeProvider {
   private readonly userAgent: string;
 
   constructor(config: ConfigService) {
-    this.endpoint = config.get<string>(
+    const raw = config.get<string>(
       'TARMOTO_NOMINATIM_URL',
       'https://nominatim.openstreetmap.org',
     );
+    // Normalize to a trailing slash so self-hosted deployments with a
+    // path prefix (e.g. `https://example.com/nominatim/`) resolve to
+    // `<prefix>/search` instead of the host root — `new URL('/search',
+    // base)` treats the leading slash as absolute and drops the prefix.
+    this.endpoint = raw.endsWith('/') ? raw : `${raw}/`;
     this.userAgent = config.get<string>(
       'TARMOTO_NOMINATIM_UA',
       'Tarmoto/1.0 (https://tarmoto.app)',
@@ -43,7 +48,7 @@ export class NominatimProvider implements GeocodeProvider {
   }
 
   async search(q: string, limit: number): Promise<GeocodeResult[]> {
-    const url = new URL('/search', this.endpoint);
+    const url = new URL('search', this.endpoint);
     url.searchParams.set('q', q);
     url.searchParams.set('format', 'jsonv2');
     url.searchParams.set('limit', String(limit));

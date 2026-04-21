@@ -96,7 +96,12 @@ export function PlaceSearch({ value, onChange }: Props) {
           if (err.name !== "AbortError") setMatches([]);
         });
     }, GEOCODE_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      // Cancel any in-flight request so a late resolution can't overwrite
+      // state after the draft has moved on (or the component unmounted).
+      abortRef.current?.abort();
+    };
   }, [draft, value]);
 
   function pick(match: Match) {

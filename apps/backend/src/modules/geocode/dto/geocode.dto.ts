@@ -5,6 +5,7 @@ import {
   IsOptional,
   IsString,
   Max,
+  MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
@@ -21,6 +22,7 @@ export class GeocodeQueryDto {
   })
   @IsString()
   @MinLength(2)
+  @MaxLength(200)
   q!: string;
 
   @ApiProperty({

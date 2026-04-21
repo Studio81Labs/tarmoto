@@ -272,14 +272,20 @@ describe('RidesService', () => {
       });
     });
 
-    it('skips the near filter when any of lat/lng/km is missing', async () => {
+    it('rejects a partial near_* set with BadRequest', async () => {
+      const { qb } = makeQbSpy();
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      await expect(
+        service.list('user-1', { near_lat: 49.2, near_lng: 16.6 } as never),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('skips the near filter when no near_* param is supplied', async () => {
       const { qb, andWhere } = makeQbSpy();
       (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
 
-      await service.list('user-1', {
-        near_lat: 49.2,
-        near_lng: 16.6,
-      } as never);
+      await service.list('user-1', {} as never);
 
       const calls = andWhere.mock.calls.map((c: unknown[]) => c[0] as string);
       expect(calls.some((p) => p.includes('ST_DWithin'))).toBe(false);
