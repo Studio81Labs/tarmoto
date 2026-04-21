@@ -38,8 +38,11 @@ export function DiscoverMap({
   const drawRef = useRef<RegionDrawControl | null>(null);
   const [ready, setReady] = useState(false);
   const [drawMode, setDrawMode] = useState<"idle" | "drawing">("idle");
-  const prevBboxKeyRef = useRef<string | null>(null);
-  const prevRetryNonceRef = useRef<number>(retryNonce);
+  const prevRequestKeyRef = useRef<string | null>(null);
+  // Bumps every time the fun-zones source data changes so the zone-fit
+  // effect can retry after a deep-linked `?zone=<id>` when the data
+  // wasn't loaded yet on the first pass.
+  const [sourceVersion, setSourceVersion] = useState(0);
 
   // Callback refs so the fetch effect can depend only on stable values.
   // Otherwise parent re-renders pass fresh inline callbacks and re-fire
@@ -122,17 +125,16 @@ export function DiscoverMap({
   };
 
   // Debounced fetch of zones whenever the effective bbox changes (or the
-  // caller bumps retryNonce). Skip the refetch when neither has changed
-  // since the last fetch so parent re-renders don't trigger a network
-  // loop.
+  // caller bumps retryNonce). The dedupe key combines bbox + nonce so
+  // identical requests (unchanged bbox, same nonce) are skipped while a
+  // retry bump forces a refetch exactly once.
   useEffect(() => {
     const map = handleRef.current?.map;
     if (!map || !ready || !effectiveBbox) return;
-    const key = effectiveBbox.map((n) => n.toFixed(5)).join(",");
-    const retryChanged = retryNonce !== prevRetryNonceRef.current;
-    if (key === prevBboxKeyRef.current && !retryChanged) return;
-    prevBboxKeyRef.current = key;
-    prevRetryNonceRef.current = retryNonce;
+    const bboxKey = effectiveBbox.map((n) => n.toFixed(5)).join(",");
+    const requestKey = `${bboxKey}:${retryNonce}`;
+    if (requestKey === prevRequestKeyRef.current) return;
+    prevRequestKeyRef.current = requestKey;
 
     const controller = new AbortController();
     let cancelled = false;
@@ -145,6 +147,7 @@ export function DiscoverMap({
         if (cancelled) return;
         zones.sort((a, b) => b.composite_score - a.composite_score);
         updateFunZoneLayerData(map, zones);
+        setSourceVersion((v) => v + 1);
         onZonesLoadedRef.current?.(zones);
       } catch (err) {
         if ((err as { name?: string }).name === "AbortError") return;
@@ -169,6 +172,8 @@ export function DiscoverMap({
   }, [ready, drawnBbox]);
 
   // Keep the selection outline in sync with state and pan/zoom to the zone.
+  // `sourceVersion` is a dep so deep-linked `?zone=<id>` URLs get fitted
+  // once the zones source is populated, not just on selection changes.
   useEffect(() => {
     const map = handleRef.current?.map;
     if (!map || !ready) return;
@@ -207,7 +212,7 @@ export function DiscoverMap({
       // Malformed boundary — log and move on rather than blow up the UI.
       console.warn("[discover] fitBounds failed", err);
     }
-  }, [ready, selectedZoneId]);
+  }, [ready, selectedZoneId, sourceVersion]);
 
   // Esc clears the selection so the user can dismiss the detail panel
   // without reaching for the mouse.
