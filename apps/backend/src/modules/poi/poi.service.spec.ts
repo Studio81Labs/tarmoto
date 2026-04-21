@@ -231,11 +231,21 @@ describe('PoiService', () => {
         anchor.lat,
         anchor.lng,
         5,
-        expect.arrayContaining<PoiKind>(['restaurant', 'viewpoint', 'cafe']),
+        expect.arrayContaining<PoiKind>([
+          'restaurant',
+          'viewpoint',
+          'cafe',
+          'fuel_station',
+        ]),
       );
       expect(result.radius_km).toBe(5);
       expect(result.kinds).toEqual(
-        expect.arrayContaining<PoiKind>(['restaurant', 'viewpoint', 'cafe']),
+        expect.arrayContaining<PoiKind>([
+          'restaurant',
+          'viewpoint',
+          'cafe',
+          'fuel_station',
+        ]),
       );
       expect(result.pois).toEqual([]);
     });
@@ -313,7 +323,12 @@ describe('PoiService', () => {
   });
 
   describe('rankPois', () => {
-    const allKinds: PoiKind[] = ['restaurant', 'viewpoint', 'cafe'];
+    const allKinds: PoiKind[] = [
+      'restaurant',
+      'viewpoint',
+      'cafe',
+      'fuel_station',
+    ];
 
     it('drops unnamed POIs with no website or phone', () => {
       const result = service.rankPois(
@@ -403,6 +418,37 @@ describe('PoiService', () => {
 
       expect(result[0].external_id).toBe('osm:node:close');
       expect(result[0].distance_km).toBeLessThan(result[1].distance_km);
+    });
+
+    it('keeps fuel stations in the ranked output alongside other kinds', () => {
+      // US-36: fuel stations must flow through the same ranker as the
+      // other kinds so they show up on the "Places near day end" card
+      // next to restaurants and viewpoints. A regression here — e.g. a
+      // missing entry in `POI_KIND_TAGS` — would silently drop them
+      // from the response even when the provider returns them.
+      const result = service.rankPois(
+        [
+          buildNearbyPoi({
+            external_id: 'osm:node:fuel',
+            kind: 'fuel_station',
+            name: 'Shell',
+            lat: anchor.lat + 0.002,
+          }),
+          buildNearbyPoi({
+            external_id: 'osm:node:rest',
+            kind: 'restaurant',
+            name: 'Trattoria',
+            lat: anchor.lat + 0.005,
+          }),
+        ],
+        anchor.lat,
+        anchor.lng,
+        allKinds,
+      );
+
+      const kinds = result.map((r) => r.kind);
+      expect(kinds).toContain('fuel_station');
+      expect(kinds).toContain('restaurant');
     });
   });
 });

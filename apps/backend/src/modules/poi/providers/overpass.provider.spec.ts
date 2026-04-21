@@ -51,10 +51,24 @@ describe('classifyPoiTags', () => {
     expect(classifyPoiTags({ tourism: 'viewpoint' })).toBe('viewpoint');
   });
 
+  it('classifies amenity=fuel as fuel_station', () => {
+    // OSM tags fuel stations as `amenity=fuel`; we remap to the
+    // rider-facing `fuel_station` kind so the mobile card label isn't
+    // ambiguous next to viewpoints and cafés.
+    expect(classifyPoiTags({ amenity: 'fuel' })).toBe('fuel_station');
+  });
+
   it('ignores unrelated amenities and tourism values', () => {
     expect(classifyPoiTags({ amenity: 'bar' })).toBeNull();
     expect(classifyPoiTags({ tourism: 'hotel' })).toBeNull();
     expect(classifyPoiTags({})).toBeNull();
+  });
+
+  it('returns null when amenity=fuel is not requested', () => {
+    // A highway-rest-stop fuel element leaking into a viewpoint-only
+    // query must still be dropped — same rationale as the amenity=cafe
+    // guard above.
+    expect(classifyPoiTags({ amenity: 'fuel' }, ['viewpoint'])).toBeNull();
   });
 
   it('defaults to amenity over tourism when no requested kinds are given', () => {
@@ -116,6 +130,24 @@ describe('extractPoiHint', () => {
     );
   });
 
+  it('returns brand then operator for fuel stations', () => {
+    // Brand is the rider-facing sign (`Shell`, `OMV`). Operator is the
+    // legal entity running the pumps and is usually the right fallback
+    // when brand is missing on small independent stations.
+    expect(extractPoiHint('fuel_station', { brand: 'Shell' })).toBe('Shell');
+    expect(extractPoiHint('fuel_station', { operator: 'Local Co-op' })).toBe(
+      'Local Co-op',
+    );
+    // Brand wins over operator when both are present so the label
+    // matches the pylon signage rather than the holding company.
+    expect(
+      extractPoiHint('fuel_station', {
+        brand: 'OMV',
+        operator: 'OMV Česká republika',
+      }),
+    ).toBe('OMV');
+  });
+
   it('normalizes semi-colon-separated cuisine lists', () => {
     expect(extractPoiHint('restaurant', { cuisine: 'pizza;pasta' })).toBe(
       'pizza pasta',
@@ -126,6 +158,9 @@ describe('extractPoiHint', () => {
     expect(extractPoiHint('restaurant', {})).toBeNull();
     expect(
       extractPoiHint('viewpoint', { name: 'Nameless Viewpoint' }),
+    ).toBeNull();
+    expect(
+      extractPoiHint('fuel_station', { name: 'Unnamed station' }),
     ).toBeNull();
   });
 });
