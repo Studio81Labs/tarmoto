@@ -67,6 +67,38 @@ For first-time setup see [../../README.md](../../README.md) and [../../CONTRIBUT
 3. Android: nuke `~/.gradle/caches` if build errors reference missing dependencies that are clearly declared.
 4. If sensors don't emit data in the simulator, that's expected — TF Lite inference requires real device sensor input.
 
+## Proxy & throttling
+
+`ThrottlerGuard` keys rate-limit buckets off the client IP it gets from
+`req.ip`. Behind any reverse proxy (CDN, load balancer, ingress), `req.ip`
+resolves to the proxy unless Express is told how many upstream hops to trust.
+Two failure modes to avoid:
+
+- **No trust set** → every client behind the proxy shares one bucket. One
+  noisy caller exhausts the limit for every legitimate user.
+- **`trust proxy: true`** → any upstream can spoof `X-Forwarded-For` and bypass
+  throttling entirely. **Never use this.**
+
+Configure the real hop count via `TARMOTO_TRUST_PROXY_HOPS`:
+
+| Deployment                      | Value          | Reason                             |
+| ------------------------------- | -------------- | ---------------------------------- |
+| Local dev, app exposed directly | unset (or `0`) | No proxies in front.               |
+| One CDN / LB in front           | `1`            | Walk X-Forwarded-For back one hop. |
+| CDN → LB → app (two tiers)      | `2`            | Two trusted hops.                  |
+
+Set the value to match the **actual** topology at the time of deploy. Every
+time a hop is added or removed (new CDN, extra ingress, sidecar), update the
+env var and redeploy — getting this wrong silently breaks throttling in one of
+the two failure modes above.
+
+Test locally with:
+
+```bash
+TARMOTO_TRUST_PROXY_HOPS=1 pnpm dev:backend
+curl -H "X-Forwarded-For: 1.2.3.4" -sS http://localhost:3000/api/v1/...
+```
+
 ## Incident response checklist (placeholder)
 
 When production deploys land, this section grows. Template for now:
