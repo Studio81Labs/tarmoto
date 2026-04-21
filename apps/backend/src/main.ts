@@ -2,12 +2,19 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
+import type { Express } from 'express';
 import { AppModule } from './app.module.js';
 import { createSwaggerConfig } from './config/swagger.config.js';
+import { loadTrustProxyConfig } from './config/trust-proxy.config.js';
 
 async function bootstrap() {
   const isProd = process.env.TARMOTO_NODE_ENV === 'production';
   const app = await NestFactory.create(AppModule);
+
+  const { hops } = loadTrustProxyConfig();
+  if (hops > 0) {
+    (app.getHttpAdapter().getInstance() as Express).set('trust proxy', hops);
+  }
 
   app.use(isProd ? helmet() : helmet({ contentSecurityPolicy: false }));
   app.setGlobalPrefix('api/v1');
