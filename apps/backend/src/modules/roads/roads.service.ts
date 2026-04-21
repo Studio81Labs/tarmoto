@@ -275,7 +275,7 @@ export class RoadsService {
         AND rs.quality_score IS NOT NULL
         AND rs.confidence >= $5
         AND rs.length_m >= $6
-      ORDER BY best_score DESC
+      ORDER BY best_score DESC NULLS LAST
       LIMIT $7`,
       [w, s, e, n, BEST_ROADS_MIN_CONFIDENCE, BEST_ROADS_MIN_LENGTH_M, limit],
     );
