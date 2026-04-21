@@ -335,14 +335,20 @@ export function QualityMap({
         if (clusterId == null) return;
         const src = map.getSource(HAZARDS_SOURCE) as GeoJSONSource | undefined;
         if (!src) return;
-        src.getClusterExpansionZoom(clusterId).then((expZoom) => {
-          const geom = feature.geometry;
-          if (geom.type !== "Point") return;
-          map.easeTo({
-            center: geom.coordinates as [number, number],
-            zoom: expZoom,
+        src
+          .getClusterExpansionZoom(clusterId)
+          .then((expZoom) => {
+            const geom = feature.geometry;
+            if (geom.type !== "Point") return;
+            map.easeTo({
+              center: geom.coordinates as [number, number],
+              zoom: expZoom,
+            });
+          })
+          .catch(() => {
+            // Cluster may have been superseded by a refetch between click and
+            // resolution; just drop the zoom-in rather than surfacing an error.
           });
-        });
       });
 
       // Individual hazard click → popup with full details.
