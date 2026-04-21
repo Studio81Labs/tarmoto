@@ -3,6 +3,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsInt,
   IsLatitude,
   IsLongitude,
   IsNumber,
@@ -78,6 +79,27 @@ export class ListPassesQueryDto {
     message: 'bbox must be "minLng,minLat,maxLng,maxLat"',
   })
   bbox?: string;
+
+  /**
+   * Month (1..12) to derive each pass's open/closed status for. Lets a
+   * rider planning a future trip preview which passes will be rideable in
+   * the target month rather than being stuck with "today". When omitted
+   * the service falls back to the current UTC month — the original
+   * behaviour.
+   */
+  @ApiPropertyOptional({
+    minimum: 1,
+    maximum: 12,
+    description:
+      'Month (1=January .. 12=December) to evaluate pass status for. ' +
+      'Defaults to the current UTC month.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  for_month?: number;
 }
 
 class RoutePointDto {
@@ -113,6 +135,24 @@ export class CheckRouteDto {
   @Min(100)
   @Max(20000)
   buffer_m?: number;
+
+  /**
+   * Month to evaluate pass status for on this route. Same semantics as
+   * the query parameter on `GET /passes` — omitted = current UTC month.
+   */
+  @ApiPropertyOptional({
+    minimum: 1,
+    maximum: 12,
+    description:
+      'Month (1=January .. 12=December) to evaluate pass status for. ' +
+      'Defaults to the current UTC month.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Type(() => Number)
+  @Min(1)
+  @Max(12)
+  for_month?: number;
 }
 
 export class CheckRouteResponseDto {

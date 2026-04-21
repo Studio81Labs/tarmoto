@@ -130,6 +130,28 @@ describe('PassesService', () => {
         { minLng: 5, minLat: 45, maxLng: 17, maxLat: 49 },
       );
     });
+
+    it('evaluates status for the supplied for_month instead of today', async () => {
+      // Stelvio: open Jun..Oct. Ask for January explicitly — must be
+      // closed even though "today" (mocked to August) would be open.
+      jest.spyOn(global.Date.prototype, 'getUTCMonth').mockReturnValue(7);
+      const result = await service.list(undefined, 1);
+      expect(result[0].status).toBe('closed');
+    });
+
+    it('falls back to the current UTC month when for_month is undefined', async () => {
+      jest.spyOn(global.Date.prototype, 'getUTCMonth').mockReturnValue(7); // August
+      const result = await service.list();
+      expect(result[0].status).toBe('open');
+    });
+
+    it('ignores an out-of-range for_month and falls back to current month', async () => {
+      // Defence-in-depth: DTO validation normally catches 0 / 13, but the
+      // service must not explode if an internal caller ever skips the DTO.
+      jest.spyOn(global.Date.prototype, 'getUTCMonth').mockReturnValue(0); // January
+      const result = await service.list(undefined, 13);
+      expect(result[0].status).toBe('closed');
+    });
   });
 
   describe('checkRoute', () => {
@@ -182,6 +204,22 @@ describe('PassesService', () => {
         expect.any(String),
         expect.objectContaining({ buffer: 1500 }),
       );
+    });
+
+    it('evaluates status for the supplied for_month', async () => {
+      mockQb.getMany.mockResolvedValueOnce([STELVIO]);
+      // Today = August (open) but the caller is planning a March trip —
+      // Stelvio must come back closed for the response.
+      jest.spyOn(global.Date.prototype, 'getUTCMonth').mockReturnValue(7);
+      const result = await service.checkRoute({
+        route: [
+          { lat: 46.5, lng: 10.4 },
+          { lat: 46.6, lng: 10.5 },
+        ],
+        for_month: 3,
+      });
+      expect(result.passes[0].status).toBe('closed');
+      expect(result.closed_count).toBe(1);
     });
   });
 });
