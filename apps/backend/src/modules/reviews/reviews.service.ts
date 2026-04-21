@@ -170,7 +170,6 @@ export class ReviewsService {
         is_helpful: isHelpful,
       })
       .orUpdate(['is_helpful', 'updated_at'], ['user_id', 'road_review_id'])
-      .setParameter('now', new Date())
       .execute();
 
     const voteMap = await this.aggregateVotes([reviewId], userId);
