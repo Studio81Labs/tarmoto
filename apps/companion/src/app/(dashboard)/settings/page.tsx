@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuthStore } from "@/stores/auth";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -64,8 +64,16 @@ export default function AccountPage() {
   const [homeRegion, setHomeRegion] = useState("");
   const [bio, setBio] = useState("");
   const [profile, setProfile] = useState<UserProfileResponse | null>(null);
+  const [didHydrateProfile, setDidHydrateProfile] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  // Per-field dirty flags — set on first keystroke so a late GET response
+  // can't clobber what the user just typed, and so an unhydrated save
+  // doesn't blindly send empty values that would blank the server row.
+  const bioDirtyRef = useRef(false);
+  const homeRegionDirtyRef = useRef(false);
+  const saveResetTimerRef = useRef<number | null>(null);
 
   // `useState(user?.displayName ?? "")` only captures the value at first
   // render. When Auth.js finishes hydrating the session after mount, the
@@ -84,16 +92,28 @@ export default function AccountPage() {
       .then(({ data }) => {
         if (cancelled) return;
         setProfile(data);
-        setBio(data.bio ?? "");
-        setHomeRegion(data.home_region ?? "");
+        // Don't overwrite a field the user has already started editing
+        // if the GET races with early typing.
+        if (!bioDirtyRef.current) setBio(data.bio ?? "");
+        if (!homeRegionDirtyRef.current) setHomeRegion(data.home_region ?? "");
+        setDidHydrateProfile(true);
       })
       .catch(() => {
-        // Silent: the form is still usable — fields just stay empty until
-        // the user types. The PATCH-side error banner surfaces any write
-        // failure, which is what actually matters.
+        // Silent on load — the form is still usable. But crucially keep
+        // didHydrateProfile=false so handleSave below won't blank server
+        // fields we never successfully read.
       });
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  // Clean up any pending "saved → idle" timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (saveResetTimerRef.current !== null) {
+        window.clearTimeout(saveResetTimerRef.current);
+      }
     };
   }, []);
 
@@ -113,25 +133,44 @@ export default function AccountPage() {
     }
     setSaveState("saving");
     setSaveError(null);
+
+    // Build a partial payload — only include fields we either confirmed
+    // (hydrated from the server) or the user has touched. This keeps a
+    // failed GET from turning into an accidental "save null over the top
+    // of the existing bio/home_region".
+    const payload: {
+      display_name: string;
+      bio?: string | null;
+      home_region?: string | null;
+    } = { display_name: trimmedName };
+    if (didHydrateProfile || bioDirtyRef.current) {
+      payload.bio = bio.trim() || null;
+    }
+    if (didHydrateProfile || homeRegionDirtyRef.current) {
+      payload.home_region = homeRegion.trim() || null;
+    }
+
     try {
-      const { data } = await usersApi.updateMe({
-        display_name: trimmedName,
-        bio: bio.trim() || null,
-        home_region: homeRegion.trim() || null,
-      });
+      const { data } = await usersApi.updateMe(payload);
       setProfile(data);
       if (user) {
         setAuthUser({ ...user, displayName: data.display_name });
       }
       setSaveState("saved");
-      window.setTimeout(() => setSaveState("idle"), 2000);
+      if (saveResetTimerRef.current !== null) {
+        window.clearTimeout(saveResetTimerRef.current);
+      }
+      saveResetTimerRef.current = window.setTimeout(() => {
+        setSaveState("idle");
+        saveResetTimerRef.current = null;
+      }, 2000);
     } catch (err) {
       setSaveState("error");
       setSaveError(
         err instanceof Error ? err.message : "Could not save your profile.",
       );
     }
-  }, [displayName, bio, homeRegion, user, setAuthUser]);
+  }, [displayName, bio, homeRegion, user, setAuthUser, didHydrateProfile]);
 
   return (
     <div className="p-6 max-w-3xl mx-auto animate-fade-in">
@@ -169,22 +208,39 @@ export default function AccountPage() {
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={profile.avatar_url}
-              alt=""
+              alt={
+                displayName
+                  ? `${displayName}'s profile photo`
+                  : "Your profile photo"
+              }
               className="w-16 h-16 rounded-full object-cover"
             />
           ) : (
-            <div className="w-16 h-16 rounded-full bg-tarmoto-cyan/20 flex items-center justify-center text-tarmoto-cyan text-xl font-bold">
+            <div
+              aria-hidden="true"
+              className="w-16 h-16 rounded-full bg-tarmoto-cyan/20 flex items-center justify-center text-tarmoto-cyan text-xl font-bold"
+            >
               {displayName[0]?.toUpperCase() ?? "T"}
             </div>
           )}
-          <button
-            type="button"
-            disabled
-            title="Photo upload is coming in a follow-up (needs file storage)"
-            className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-500 text-sm cursor-not-allowed"
-          >
-            Change photo
-          </button>
+          <div className="flex flex-col">
+            {/*
+              aria-disabled (rather than `disabled`) keeps the button in the
+              tab order so keyboard + screen-reader users can still reach the
+              "coming soon" helper text beneath it.
+            */}
+            <button
+              type="button"
+              aria-disabled="true"
+              onClick={(e) => e.preventDefault()}
+              className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-500 text-sm cursor-not-allowed w-fit"
+            >
+              Change photo
+            </button>
+            <p className="text-xs text-slate-500 mt-1">
+              Photo upload is coming in a follow-up.
+            </p>
+          </div>
         </div>
 
         <div>
@@ -214,7 +270,10 @@ export default function AccountPage() {
           <label className="block text-sm text-slate-400 mb-1.5">Bio</label>
           <textarea
             value={bio}
-            onChange={(e) => setBio(e.target.value)}
+            onChange={(e) => {
+              bioDirtyRef.current = true;
+              setBio(e.target.value);
+            }}
             maxLength={500}
             rows={3}
             placeholder="A short blurb about your riding — shown on your public profile."
@@ -230,7 +289,10 @@ export default function AccountPage() {
           <input
             type="text"
             value={homeRegion}
-            onChange={(e) => setHomeRegion(e.target.value)}
+            onChange={(e) => {
+              homeRegionDirtyRef.current = true;
+              setHomeRegion(e.target.value);
+            }}
             maxLength={120}
             placeholder="e.g., Beskydy, Czech Republic"
             className="w-full px-4 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan transition"

@@ -12,20 +12,24 @@ describe('UsersService', () => {
   let userRepo: Partial<jest.Mocked<Repository<User>>>;
   let contactRepo: Partial<jest.Mocked<Repository<UserContact>>>;
 
-  const mockUser = {
-    id: 'user-1',
-    email: 'rider@tarmoto.app',
-    display_name: 'TestRider',
-    phone: null,
-    avatar_url: null,
-    bio: null,
-    home_region: null,
-    home_location: null,
-    work_location: null,
-    preferences: { units: 'metric' },
-    created_at: new Date('2026-04-13T10:00:00Z'),
-    updated_at: new Date('2026-04-13T10:00:00Z'),
-  } as unknown as User;
+  // Factory, not a shared instance — updateProfile mutates the entity it
+  // loads via findOne, so any two tests sharing the same object would leak
+  // state (and make ordering matter).
+  const buildMockUser = (): User =>
+    ({
+      id: 'user-1',
+      email: 'rider@tarmoto.app',
+      display_name: 'TestRider',
+      phone: null,
+      avatar_url: null,
+      bio: null,
+      home_region: null,
+      home_location: null,
+      work_location: null,
+      preferences: { units: 'metric' },
+      created_at: new Date('2026-04-13T10:00:00Z'),
+      updated_at: new Date('2026-04-13T10:00:00Z'),
+    }) as unknown as User;
 
   const mockContact = {
     id: 'contact-1',
@@ -38,7 +42,9 @@ describe('UsersService', () => {
 
   beforeEach(async () => {
     userRepo = {
-      findOne: jest.fn().mockResolvedValue(mockUser),
+      findOne: jest
+        .fn()
+        .mockImplementation(() => Promise.resolve(buildMockUser())),
       save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
     };
     contactRepo = {
@@ -82,7 +88,7 @@ describe('UsersService', () => {
 
     it('should convert geometry Point to lat/lng', async () => {
       userRepo.findOne!.mockResolvedValueOnce({
-        ...mockUser,
+        ...buildMockUser(),
         home_location: { type: 'Point', coordinates: [16.75, 49.1] },
       } as User);
 
