@@ -10,6 +10,7 @@ import {
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import { toOptionalNumber } from '../../../common/dto-transforms.js';
 
 /**
  * Kinds of along-route POIs the mobile app surfaces in the trip-day view.
@@ -64,18 +65,6 @@ function toRequiredNumber(value: unknown): number {
   return Number(value);
 }
 
-/**
- * Coerce an optional numeric query string. Blank/whitespace/nullish
- * values fall through to `undefined` so `@IsOptional()` treats them as
- * "not provided" and the service layer applies its default, instead of
- * `Number('')` collapsing them to `0`.
- */
-function toOptionalNumber(value: unknown): number | undefined {
-  if (value === undefined || value === null) return undefined;
-  if (typeof value === 'string' && value.trim() === '') return undefined;
-  return Number(value);
-}
-
 export class PoiQueryDto {
   @ApiProperty({ example: 49.1 })
   @Transform(({ value }: { value: unknown }) => toRequiredNumber(value))
@@ -97,7 +86,7 @@ export class PoiQueryDto {
     description: `Search radius in km (defaulted to ${DEFAULT_RADIUS_KM}, capped at ${MAX_RADIUS_KM} by the service).`,
   })
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) => toOptionalNumber(value))
+  @Transform(toOptionalNumber)
   @IsNumber()
   radius_km?: number;
 

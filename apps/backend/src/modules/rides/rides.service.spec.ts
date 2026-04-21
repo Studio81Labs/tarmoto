@@ -246,6 +246,51 @@ describe('RidesService', () => {
       );
     });
 
+    it('applies ST_DWithin when all near_* params are supplied', async () => {
+      const { qb, andWhere } = makeQbSpy();
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      await service.list('user-1', {
+        near_lat: 49.2,
+        near_lng: 16.6,
+        near_km: 25,
+      } as never);
+
+      const call = andWhere.mock.calls.find(
+        (c: unknown[]) =>
+          typeof c[0] === 'string' && c[0].includes('ST_DWithin'),
+      ) as [string, Record<string, number>] | undefined;
+      expect(call).toBeDefined();
+      expect(call![0]).toContain('ride.route_geom::geography');
+      expect(call![0]).toContain(
+        'ST_SetSRID(ST_MakePoint(:near_lng, :near_lat), 4326)::geography',
+      );
+      expect(call![1]).toEqual({
+        near_lng: 16.6,
+        near_lat: 49.2,
+        near_m: 25_000,
+      });
+    });
+
+    it('rejects a partial near_* set with BadRequest', async () => {
+      const { qb } = makeQbSpy();
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      await expect(
+        service.list('user-1', { near_lat: 49.2, near_lng: 16.6 } as never),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('skips the near filter when no near_* param is supplied', async () => {
+      const { qb, andWhere } = makeQbSpy();
+      (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+
+      await service.list('user-1', {} as never);
+
+      const calls = andWhere.mock.calls.map((c: unknown[]) => c[0] as string);
+      expect(calls.some((p) => p.includes('ST_DWithin'))).toBe(false);
+    });
+
     it('escapes SQL wildcards in the q filter value', async () => {
       const { qb, andWhere } = makeQbSpy();
       (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
@@ -254,7 +299,7 @@ describe('RidesService', () => {
 
       const ilikeCall = andWhere.mock.calls.find(
         (c: unknown[]) =>
-          typeof c[0] === 'string' && (c[0] as string).includes('name ILIKE'),
+          typeof c[0] === 'string' && c[0].includes('name ILIKE'),
       ) as [string, { q: string }] | undefined;
       expect(ilikeCall).toBeDefined();
       expect(ilikeCall![1].q).toBe('%50\\%\\_\\\\off%');

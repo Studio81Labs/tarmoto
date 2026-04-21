@@ -5,11 +5,13 @@ This folder holds Architecture Decision Records. An ADR captures a non-obvious a
 ## When to write an ADR
 
 Write one when:
+
 - You make a choice that is **non-obvious** or could reasonably have gone another way.
 - The choice will **constrain future work** in a way that's not visible from reading the code.
 - You pick a technology, pattern, or tradeoff that someone onboarding would otherwise have to re-derive.
 
 Don't write one for:
+
 - Trivial or reversible decisions.
 - Details that are already obvious from the code or the product spec.
 - Things that are better captured as docs under `../reference/` or `../process/`.
@@ -46,6 +48,7 @@ Briefly: what else did we look at, and why not?
 ## Existing decisions
 
 - [0001 — TypeORM over Prisma for the backend](./0001-typeorm-over-prisma.md)
+- [0002 — Nominatim as the geocoding provider](./0002-geocoding-provider.md)
 
 ## Candidates worth writing up
 
