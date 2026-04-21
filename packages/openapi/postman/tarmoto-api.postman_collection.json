@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "985acd2a-640a-452d-9989-2d5c2a07531b",
+    "_postman_id": "f5f5d51d-4b49-4687-85cd-100e6dc2194b",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -490,6 +490,66 @@
           }
         },
         {
+          "name": "Get a Fun Zone with its top contributing roads",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roads/fun-zones/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roads", "fun-zones", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get top-ranked road segments for a curated region",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roads/best",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roads", "best"],
+              "query": [
+                {
+                  "key": "country",
+                  "value": "",
+                  "description": "ISO 3166-1 alpha-2 country code, lowercased",
+                  "disabled": false
+                },
+                {
+                  "key": "region",
+                  "value": "",
+                  "description": "Region slug (kebab-case)",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": "Maximum roads to return",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
           "name": "Get road segment details (Road Preview Card data)",
           "request": {
             "method": "GET",
@@ -719,6 +779,24 @@
                   "disabled": true
                 },
                 {
+                  "key": "near_lat",
+                  "value": "",
+                  "description": "Latitude of a reference point. Combined with near_lng + near_km, filters to rides whose route passes within near_km of the point. All three near_* params must be supplied together.",
+                  "disabled": true
+                },
+                {
+                  "key": "near_lng",
+                  "value": "",
+                  "description": "Longitude of the reference point. See near_lat.",
+                  "disabled": true
+                },
+                {
+                  "key": "near_km",
+                  "value": "",
+                  "description": "Proximity radius in kilometres for the near_lat/near_lng filter.",
+                  "disabled": true
+                },
+                {
                   "key": "sort",
                   "value": "",
                   "description": "",
@@ -884,6 +962,24 @@
                   "key": "q",
                   "value": "",
                   "description": "Case-insensitive substring match against ride name",
+                  "disabled": true
+                },
+                {
+                  "key": "near_lat",
+                  "value": "",
+                  "description": "Latitude of a reference point. Combined with near_lng + near_km, filters to rides whose route passes within near_km of the point. All three near_* params must be supplied together.",
+                  "disabled": true
+                },
+                {
+                  "key": "near_lng",
+                  "value": "",
+                  "description": "Longitude of the reference point. See near_lat.",
+                  "disabled": true
+                },
+                {
+                  "key": "near_km",
+                  "value": "",
+                  "description": "Proximity radius in kilometres for the near_lat/near_lng filter.",
                   "disabled": true
                 },
                 {
@@ -1897,6 +1993,42 @@
                   "key": "kinds",
                   "value": "",
                   "description": "Kinds to include. Omit to return all kinds. Accepts a repeated query param (`kinds=restaurant&kinds=cafe`) or a comma-separated value (`kinds=restaurant,cafe`).",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "geocode",
+      "item": [
+        {
+          "name": "Resolve a place name to coordinates",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/geocode",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "geocode"],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "",
+                  "description": "Place name to geocode (e.g. \"Tatra Mountains\", \"Brno\").",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": "Max number of matches to return.",
                   "disabled": true
                 }
               ]

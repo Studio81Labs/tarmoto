@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { RotateCcw, Search } from "lucide-react";
 import type { RidesQueryState } from "./useRidesQuery";
+import { PlaceSearch, type PlaceValue } from "./PlaceSearch";
 
 const RIDE_TYPES = ["free", "commute", "trip", "tracked"] as const;
 
@@ -36,8 +37,37 @@ export function RidesFilters({ state, update, reset }: Props) {
     state.minQuality != null ||
     state.maxQuality != null ||
     state.q ||
-    state.type,
+    state.type ||
+    state.nearLat != null,
   );
+
+  const placeValue: PlaceValue | null =
+    state.nearLat != null && state.nearLng != null && state.nearKm != null
+      ? {
+          label: state.nearPlace ?? "",
+          lat: state.nearLat,
+          lng: state.nearLng,
+          km: state.nearKm,
+        }
+      : null;
+
+  const handlePlaceChange = (next: PlaceValue | null) => {
+    if (next) {
+      update({
+        nearLat: next.lat,
+        nearLng: next.lng,
+        nearKm: next.km,
+        nearPlace: next.label || undefined,
+      });
+    } else {
+      update({
+        nearLat: undefined,
+        nearLng: undefined,
+        nearKm: undefined,
+        nearPlace: undefined,
+      });
+    }
+  };
 
   return (
     <div className="rounded-xl bg-slate-900 border border-slate-800 p-4 mb-4">
@@ -169,6 +199,8 @@ export function RidesFilters({ state, update, reset }: Props) {
             />
           </div>
         </label>
+
+        <PlaceSearch value={placeValue} onChange={handlePlaceChange} />
 
         {hasAny && (
           <button

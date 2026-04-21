@@ -20,6 +20,12 @@ export interface RidesFilters {
   maxQuality?: number;
   q?: string;
   type?: string;
+  // Location filter — all four fields move together. `nearPlace` is the
+  // resolved label we show in the UI; it doesn't travel to the backend.
+  nearLat?: number;
+  nearLng?: number;
+  nearKm?: number;
+  nearPlace?: string;
 }
 
 export interface RidesQueryState extends RidesFilters {
@@ -50,6 +56,14 @@ export function parseQuery(params: URLSearchParams): RidesQueryState {
   const order: SortOrder = orderRaw === "asc" ? "asc" : "desc";
   const pageNum = Math.max(1, Math.floor(num("page") ?? 1));
 
+  // Location filter is all-or-nothing: coords without a radius (or vice
+  // versa) would silently resolve to a no-op filter on the backend. Drop
+  // any partial set rather than surfacing an invalid half-state.
+  const nLat = num("nearLat");
+  const nLng = num("nearLng");
+  const nKm = num("nearKm");
+  const nearComplete = nLat != null && nLng != null && nKm != null;
+
   return {
     from: str("from"),
     to: str("to"),
@@ -59,6 +73,10 @@ export function parseQuery(params: URLSearchParams): RidesQueryState {
     maxQuality: num("maxQ"),
     q: str("q"),
     type: str("type"),
+    nearLat: nearComplete ? nLat : undefined,
+    nearLng: nearComplete ? nLng : undefined,
+    nearKm: nearComplete ? nKm : undefined,
+    nearPlace: nearComplete ? str("nearPlace") : undefined,
     sort,
     order,
     page: pageNum,
@@ -75,6 +93,12 @@ export function serializeQuery(state: Partial<RidesQueryState>): string {
   if (state.maxQuality != null) u.set("maxQ", String(state.maxQuality));
   if (state.q) u.set("q", state.q);
   if (state.type) u.set("type", state.type);
+  if (state.nearLat != null && state.nearLng != null && state.nearKm != null) {
+    u.set("nearLat", String(state.nearLat));
+    u.set("nearLng", String(state.nearLng));
+    u.set("nearKm", String(state.nearKm));
+    if (state.nearPlace) u.set("nearPlace", state.nearPlace);
+  }
   if (state.sort && state.sort !== "started_at") u.set("sort", state.sort);
   if (state.order && state.order !== "desc") u.set("order", state.order);
   if (state.page && state.page !== 1) u.set("page", String(state.page));
@@ -96,6 +120,11 @@ function toListParams(s: RidesQueryState): Record<string, string | number> {
   if (s.maxQuality != null) p.max_quality = s.maxQuality;
   if (s.q) p.q = s.q;
   if (s.type) p.type = s.type;
+  if (s.nearLat != null && s.nearLng != null && s.nearKm != null) {
+    p.near_lat = s.nearLat;
+    p.near_lng = s.nearLng;
+    p.near_km = s.nearKm;
+  }
   return p;
 }
 

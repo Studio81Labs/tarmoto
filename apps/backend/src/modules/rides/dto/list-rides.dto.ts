@@ -96,6 +96,49 @@ export class ListRidesDto {
   @MaxLength(120)
   q?: string;
 
+  @ApiProperty({
+    required: false,
+    minimum: -90,
+    maximum: 90,
+    description:
+      'Latitude of a reference point. Combined with near_lng + near_km, ' +
+      'filters to rides whose route passes within near_km of the point. ' +
+      'All three near_* params must be supplied together.',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => Number(value))
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  near_lat?: number;
+
+  @ApiProperty({
+    required: false,
+    minimum: -180,
+    maximum: 180,
+    description: 'Longitude of the reference point. See near_lat.',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => Number(value))
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  near_lng?: number;
+
+  @ApiProperty({
+    required: false,
+    minimum: 0.1,
+    maximum: 200,
+    description:
+      'Proximity radius in kilometres for the near_lat/near_lng filter.',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => Number(value))
+  @IsNumber()
+  @Min(0.1)
+  @Max(200)
+  near_km?: number;
+
   @ApiProperty({ required: false, enum: SORTABLE })
   @IsOptional()
   @IsIn(SORTABLE as unknown as string[])

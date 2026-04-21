@@ -400,6 +400,25 @@ ${tracks.join('\n')}
       const escaped = query.q.replace(/[\\%_]/g, '\\$&');
       qb.andWhere('ride.name ILIKE :q', { q: `%${escaped}%` });
     }
+    if (
+      query.near_lat !== undefined &&
+      query.near_lng !== undefined &&
+      query.near_km !== undefined
+    ) {
+      // Cast both sides to geography so ST_DWithin measures in metres
+      // across the surface of the earth — no regional projection to pick,
+      // accurate enough for touring-range queries (up to a few hundred
+      // km). ST_MakePoint returns SRID 0, so we ST_SetSRID(..., 4326)
+      // before the cast; otherwise the geography cast raises.
+      qb.andWhere(
+        `ST_DWithin(ride.route_geom::geography, ST_SetSRID(ST_MakePoint(:near_lng, :near_lat), 4326)::geography, :near_m)`,
+        {
+          near_lng: query.near_lng,
+          near_lat: query.near_lat,
+          near_m: query.near_km * 1000,
+        },
+      );
+    }
     return qb;
   }
 }
