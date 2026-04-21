@@ -50,15 +50,29 @@ export function curvinessLabel(score: number): string {
   return "Straight";
 }
 
-export function formatElevationRange(profile: readonly number[]): string {
-  if (profile.length === 0) return "—";
+/**
+ * Return the min and max of a profile using a for-loop so arrays larger
+ * than the JS argument limit (~65K in V8) can't crash with a spread-based
+ * `Math.min(...arr)`. Elevation profiles are aligned with segment geometry
+ * vertices, which can exceed that limit on long detailed roads.
+ */
+export function profileExtrema(
+  profile: readonly number[],
+): { min: number; max: number } | null {
+  if (profile.length === 0) return null;
   let min = profile[0]!;
   let max = profile[0]!;
   for (const v of profile) {
     if (v < min) min = v;
     if (v > max) max = v;
   }
-  return `${Math.round(min)} – ${Math.round(max)} m`;
+  return { min, max };
+}
+
+export function formatElevationRange(profile: readonly number[]): string {
+  const ext = profileExtrema(profile);
+  if (!ext) return "—";
+  return `${Math.round(ext.min)} – ${Math.round(ext.max)} m`;
 }
 
 export function segmentHazardSeverity(

@@ -3,6 +3,7 @@ import {
   buildSparklinePath,
   curvinessLabel,
   formatElevationRange,
+  profileExtrema,
   segmentHazardSeverity,
 } from "@/lib/segment-preview";
 import type { Hazard } from "@/lib/types";
@@ -74,6 +75,30 @@ describe("formatElevationRange", () => {
 
   it("rounds and formats min–max", () => {
     expect(formatElevationRange([412.3, 550.7, 488.1])).toBe("412 – 551 m");
+  });
+});
+
+describe("profileExtrema", () => {
+  it("returns null for empty profile", () => {
+    expect(profileExtrema([])).toBeNull();
+  });
+
+  it("returns min and max from a mixed profile", () => {
+    expect(profileExtrema([350, 380, 420, 390])).toEqual({
+      min: 350,
+      max: 420,
+    });
+  });
+
+  it("handles single-element profiles", () => {
+    expect(profileExtrema([42])).toEqual({ min: 42, max: 42 });
+  });
+
+  it("does not overflow the argument limit for very large profiles", () => {
+    // Math.min(...arr) throws RangeError around 65K elements in V8; the
+    // for-loop implementation must stay O(n) without spreading.
+    const big = Array.from({ length: 100_000 }, (_, i) => i);
+    expect(profileExtrema(big)).toEqual({ min: 0, max: 99_999 });
   });
 });
 

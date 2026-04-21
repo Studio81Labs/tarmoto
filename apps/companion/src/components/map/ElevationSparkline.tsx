@@ -1,4 +1,4 @@
-import { buildSparklinePath } from "@/lib/elevation-sparkline";
+import { buildSparklinePath, profileExtrema } from "@/lib/segment-preview";
 
 interface Props {
   profile: number[] | null;
@@ -23,7 +23,9 @@ export function ElevationSparkline({
   className,
 }: Props) {
   if (!profile || profile.length < 2) return null;
-  const { d, min, max } = buildSparklinePath(profile, width, height);
+  const d = buildSparklinePath(profile, width, height);
+  const ext = profileExtrema(profile);
+  if (!d || !ext) return null;
   const labelX = width - 2;
   return (
     <svg
@@ -31,7 +33,7 @@ export function ElevationSparkline({
       width={width}
       height={height}
       className={className}
-      aria-label={`Elevation profile from ${Math.round(min)}m to ${Math.round(max)}m`}
+      aria-label={`Elevation profile from ${Math.round(ext.min)}m to ${Math.round(ext.max)}m`}
     >
       <path
         d={d}
@@ -49,7 +51,7 @@ export function ElevationSparkline({
         textAnchor="end"
         className="tabular-nums"
       >
-        {Math.round(max)}m
+        {Math.round(ext.max)}m
       </text>
       <text
         x={labelX}
@@ -59,7 +61,7 @@ export function ElevationSparkline({
         textAnchor="end"
         className="tabular-nums"
       >
-        {Math.round(min)}m
+        {Math.round(ext.min)}m
       </text>
     </svg>
   );
