@@ -10,7 +10,6 @@ import {
 
 function pass(overrides: Partial<MountainPass> & { id: string }): MountainPass {
   return {
-    id: overrides.id,
     name: "Stelvio",
     country_code: "IT",
     region: "Lombardy",
