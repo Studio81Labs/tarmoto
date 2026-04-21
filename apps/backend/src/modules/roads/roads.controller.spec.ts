@@ -43,6 +43,19 @@ describe('RoadsController', () => {
         riders_per_month: 12,
       }),
       findFunZones: jest.fn().mockResolvedValue([]),
+      findZoneById: jest.fn().mockResolvedValue({
+        zone: {
+          id: 'fz-1',
+          name: 'Beskydy',
+          composite_score: 4.5,
+          road_count: 25,
+          total_curve_km: 120,
+          avg_quality: 4.2,
+          best_season: 'summer',
+          boundary: [{ lat: 49.4, lng: 18.1 }],
+        },
+        top_roads: [],
+      }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -92,6 +105,24 @@ describe('RoadsController', () => {
       expect(service.findFunZones).toHaveBeenCalledWith({
         bbox: '18.1,49.4,18.6,49.7',
       });
+    });
+  });
+
+  describe('GET /roads/fun-zones/:id', () => {
+    it('should delegate to findZoneById', async () => {
+      const result = await controller.findZoneById('fz-1');
+
+      expect(service.findZoneById).toHaveBeenCalledWith('fz-1');
+      expect(result.zone.id).toBe('fz-1');
+      expect(result.top_roads).toEqual([]);
+    });
+
+    it('should propagate NotFoundException', async () => {
+      service.findZoneById.mockRejectedValueOnce(new NotFoundException());
+
+      await expect(controller.findZoneById('missing')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

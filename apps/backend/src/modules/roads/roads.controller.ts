@@ -8,6 +8,7 @@ import {
 } from './dto/road-segment.dto.js';
 import { QueryFunZonesDto } from './dto/query-fun-zones.dto.js';
 import { FunZoneDto } from './dto/fun-zone.dto.js';
+import { FunZoneDetailDto } from './dto/fun-zone-detail.dto.js';
 import { QueryBestRoadsDto } from './dto/query-best-roads.dto.js';
 import { BestRoadsResponseDto } from './dto/best-roads.dto.js';
 
@@ -28,6 +29,16 @@ export class RoadsController {
   @ApiResponse({ status: 200, type: [FunZoneDto] })
   async findFunZones(@Query() query: QueryFunZonesDto): Promise<FunZoneDto[]> {
     return this.roadsService.findFunZones(query);
+  }
+
+  @Get('fun-zones/:id')
+  @ApiOperation({
+    summary: 'Get a Fun Zone with its top contributing roads',
+  })
+  @ApiResponse({ status: 200, type: FunZoneDetailDto })
+  @ApiResponse({ status: 404, description: 'Fun zone not found' })
+  async findZoneById(@Param('id') id: string): Promise<FunZoneDetailDto> {
+    return this.roadsService.findZoneById(id);
   }
 
   @Get('best')
