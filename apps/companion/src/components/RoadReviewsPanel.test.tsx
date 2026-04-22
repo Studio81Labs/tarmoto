@@ -96,6 +96,32 @@ describe("RoadReviewsPanel", () => {
     expect(await screen.findByText("4")).toBeInTheDocument();
   });
 
+  it("surfaces vote errors when the backend rejects the action", async () => {
+    getReviewsMock.mockResolvedValueOnce({
+      data: [review({ id: "review-1", helpful_count: 3, my_vote: null })],
+    });
+    voteOnReviewMock.mockRejectedValueOnce(
+      new Error("Cannot vote on your own review"),
+    );
+
+    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+    await screen.findByText("John Rider");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Mark this review as helpful" }),
+    );
+
+    await waitFor(() =>
+      expect(voteOnReviewMock).toHaveBeenCalledWith("review-1", true),
+    );
+
+    expect(
+      await screen.findByText("Cannot vote on your own review"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
+  });
+
   it("does not fetch reviews for synthetic planner segment ids", () => {
     render(<RoadReviewsPanel segmentId="seg-1-1" />);
 

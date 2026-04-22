@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Loader2, MessageSquareText, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Images, Loader2, ThumbsDown, ThumbsUp } from "lucide-react";
 import { roadsApi, type RoadReview } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/utils";
 
@@ -122,6 +122,7 @@ function ReviewCard({
   onChange: (next: Partial<RoadReview>) => void;
 }) {
   const [pendingVote, setPendingVote] = useState<"up" | "down" | null>(null);
+  const [voteError, setVoteError] = useState<string | null>(null);
   const photos = Array.isArray(review.photos) ? review.photos : [];
 
   const submitVote = async (isHelpful: boolean) => {
@@ -135,6 +136,7 @@ function ReviewCard({
     };
 
     setPendingVote(isHelpful ? "up" : "down");
+    setVoteError(null);
     onChange(applyVoteDelta(review, wasSame ? null : isHelpful));
 
     try {
@@ -142,8 +144,12 @@ function ReviewCard({
         ? await roadsApi.clearReviewVote(review.id)
         : await roadsApi.voteOnReview(review.id, isHelpful);
       onChange(data);
-    } catch {
+      setVoteError(null);
+    } catch (err) {
       onChange(previous);
+      setVoteError(
+        err instanceof Error ? err.message : "Could not submit vote.",
+      );
     } finally {
       setPendingVote(null);
     }
@@ -173,7 +179,7 @@ function ReviewCard({
         {review.bike_model && <span>{review.bike_model}</span>}
         {photos.length > 0 && (
           <span className="inline-flex items-center gap-1">
-            <MessageSquareText size={12} />
+            <Images size={12} />
             {photos.length} photo{photos.length === 1 ? "" : "s"}
           </span>
         )}
@@ -219,6 +225,12 @@ function ReviewCard({
           onClick={() => submitVote(false)}
         />
       </div>
+
+      {voteError && (
+        <p className="mt-2 text-xs text-rose-300" role="alert">
+          {voteError}
+        </p>
+      )}
     </article>
   );
 }
