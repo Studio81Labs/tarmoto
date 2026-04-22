@@ -14,6 +14,7 @@ const SAMPLE: RoadClosureDto = {
     { lng: 17.12, lat: 50.11 },
     { lng: 17.13, lat: 50.12 },
   ],
+  detour: null,
   country_code: 'CZ',
   region: 'Olomouc',
   starts_at: '2026-04-20T00:00:00.000Z',

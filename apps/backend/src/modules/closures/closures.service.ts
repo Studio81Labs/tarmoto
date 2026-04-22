@@ -141,12 +141,18 @@ export class ClosuresService {
     const starts = new Date(dto.starts_at);
     const ends = dto.ends_at ? new Date(dto.ends_at) : null;
     this.assertWindow(starts, ends);
+    if (dto.detour !== undefined && dto.reason !== 'roadworks') {
+      throw new BadRequestException(
+        'detour is only allowed when reason = "roadworks"',
+      );
+    }
 
     const entity = this.repo.create({
       title: dto.title,
       reason: dto.reason,
       severity: dto.severity,
       geom: this.toLineString(dto.geometry),
+      detour_geom: dto.detour ? this.toLineString(dto.detour) : null,
       country_code: dto.country_code.toUpperCase(),
       region: dto.region ?? null,
       starts_at: starts,
@@ -189,6 +195,20 @@ export class ClosuresService {
       row.ends_at = dto.ends_at === null ? null : new Date(dto.ends_at);
     }
     if (dto.notes !== undefined) row.notes = dto.notes;
+    if (dto.detour !== undefined) {
+      row.detour_geom =
+        dto.detour === null ? null : this.toLineString(dto.detour);
+    }
+
+    // Detours are a roadworks-only concept. If the resulting row would
+    // still carry a detour under a different reason, reject — forcing
+    // the caller to pass `detour: null` explicitly when they reclassify
+    // a closure away from roadworks.
+    if (row.detour_geom && row.reason !== 'roadworks') {
+      throw new BadRequestException(
+        'detour is only allowed when reason = "roadworks"',
+      );
+    }
 
     this.assertWindow(row.starts_at, row.ends_at);
 
@@ -216,6 +236,9 @@ export class ClosuresService {
       reason: r.reason,
       severity: r.severity,
       geometry: r.geom.coordinates.map(([lng, lat]) => ({ lng, lat })),
+      detour: r.detour_geom
+        ? r.detour_geom.coordinates.map(([lng, lat]) => ({ lng, lat }))
+        : null,
       country_code: r.country_code,
       region: r.region,
       starts_at: r.starts_at.toISOString(),

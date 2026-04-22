@@ -21,6 +21,7 @@ const SAMPLE_CLOSURE: RoadClosure = {
       [17.13, 50.12],
     ],
   },
+  detour_geom: null,
   country_code: 'CZ',
   region: 'Olomouc',
   starts_at: new Date('2026-04-20T00:00:00Z'),
@@ -30,6 +31,22 @@ const SAMPLE_CLOSURE: RoadClosure = {
   created_by: 'user-1',
   created_at: new Date('2026-04-20T00:00:00Z'),
   updated_at: new Date('2026-04-20T00:00:00Z'),
+};
+
+const ROADWORKS_CLOSURE: RoadClosure = {
+  ...SAMPLE_CLOSURE,
+  id: 'closure-roadworks',
+  title: 'Bridge resurfacing',
+  reason: 'roadworks',
+  severity: 'partial',
+  detour_geom: {
+    type: 'LineString',
+    coordinates: [
+      [17.1, 50.1],
+      [17.15, 50.15],
+      [17.2, 50.2],
+    ],
+  },
 };
 
 const ADVISORY_CLOSURE: RoadClosure = {
@@ -157,6 +174,17 @@ describe('ClosuresService', () => {
         { lng: 17.13, lat: 50.12 },
       ]);
     });
+
+    it('serialises a stored detour LineString into the DTO, null otherwise', async () => {
+      mockQb.getMany.mockResolvedValueOnce([SAMPLE_CLOSURE, ROADWORKS_CLOSURE]);
+      const [plain, roadworks] = await service.list({});
+      expect(plain.detour).toBeNull();
+      expect(roadworks.detour).toEqual([
+        { lng: 17.1, lat: 50.1 },
+        { lng: 17.15, lat: 50.15 },
+        { lng: 17.2, lat: 50.2 },
+      ]);
+    });
   });
 
   describe('getById', () => {
@@ -241,6 +269,73 @@ describe('ClosuresService', () => {
       });
       expect(dto.ends_at).toBeNull();
     });
+
+    it('persists a detour polyline for a roadworks closure', async () => {
+      await service.create('user-1', {
+        title: 'Bridge works',
+        reason: 'roadworks',
+        severity: 'partial',
+        geometry: [
+          { lat: 50, lng: 17 },
+          { lat: 50.1, lng: 17.1 },
+        ],
+        detour: [
+          { lat: 50.05, lng: 17.05 },
+          { lat: 50.06, lng: 17.06 },
+        ],
+        country_code: 'CZ',
+        starts_at: '2026-05-01T00:00:00Z',
+      });
+
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          detour_geom: {
+            type: 'LineString',
+            coordinates: [
+              [17.05, 50.05],
+              [17.06, 50.06],
+            ],
+          },
+        }),
+      );
+    });
+
+    it('rejects a detour on a non-roadworks closure', async () => {
+      await expect(
+        service.create('user-1', {
+          title: 'Not roadworks',
+          reason: 'closure',
+          severity: 'full',
+          geometry: [
+            { lat: 50, lng: 17 },
+            { lat: 50.1, lng: 17.1 },
+          ],
+          detour: [
+            { lat: 50.05, lng: 17.05 },
+            { lat: 50.06, lng: 17.06 },
+          ],
+          country_code: 'CZ',
+          starts_at: '2026-05-01T00:00:00Z',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('stores null detour_geom when no detour is supplied', async () => {
+      await service.create('user-1', {
+        title: 'Plain roadworks',
+        reason: 'roadworks',
+        severity: 'partial',
+        geometry: [
+          { lat: 50, lng: 17 },
+          { lat: 50.1, lng: 17.1 },
+        ],
+        country_code: 'CZ',
+        starts_at: '2026-05-01T00:00:00Z',
+      });
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ detour_geom: null }),
+      );
+    });
   });
 
   describe('update', () => {
@@ -285,6 +380,90 @@ describe('ClosuresService', () => {
           // existing ends_at is 2026-05-20 → would now be before starts_at
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('attaches a detour to an existing roadworks closure', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...SAMPLE_CLOSURE,
+        reason: 'roadworks',
+      });
+      const dto = await service.update('closure-1', 'user-1', {
+        detour: [
+          { lat: 50.05, lng: 17.05 },
+          { lat: 50.06, lng: 17.06 },
+        ],
+      });
+      expect(dto.detour).toEqual([
+        { lng: 17.05, lat: 50.05 },
+        { lng: 17.06, lat: 50.06 },
+      ]);
+    });
+
+    it('clears a detour when explicitly null', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...SAMPLE_CLOSURE,
+        reason: 'roadworks',
+        detour_geom: {
+          type: 'LineString',
+          coordinates: [
+            [17.05, 50.05],
+            [17.06, 50.06],
+          ],
+        },
+      });
+      const dto = await service.update('closure-1', 'user-1', {
+        detour: null,
+      });
+      expect(dto.detour).toBeNull();
+    });
+
+    it('rejects a detour on a non-roadworks closure', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({ ...SAMPLE_CLOSURE });
+      await expect(
+        service.update('closure-1', 'user-1', {
+          detour: [
+            { lat: 50.05, lng: 17.05 },
+            { lat: 50.06, lng: 17.06 },
+          ],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejects reclassifying a detoured closure away from roadworks without clearing the detour', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...SAMPLE_CLOSURE,
+        reason: 'roadworks',
+        detour_geom: {
+          type: 'LineString',
+          coordinates: [
+            [17.05, 50.05],
+            [17.06, 50.06],
+          ],
+        },
+      });
+      await expect(
+        service.update('closure-1', 'user-1', { reason: 'closure' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('allows reclassifying when the caller also clears the detour', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...SAMPLE_CLOSURE,
+        reason: 'roadworks',
+        detour_geom: {
+          type: 'LineString',
+          coordinates: [
+            [17.05, 50.05],
+            [17.06, 50.06],
+          ],
+        },
+      });
+      const dto = await service.update('closure-1', 'user-1', {
+        reason: 'closure',
+        detour: null,
+      });
+      expect(dto.reason).toBe('closure');
+      expect(dto.detour).toBeNull();
     });
   });
 
