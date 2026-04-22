@@ -91,9 +91,12 @@ export class SharingService {
    *
    * Filters and pagination are all optional — the default is "newest 20
    * public rides globally". When `lat`/`lng` are supplied the result set is
-   * narrowed to rides whose `route_geom` is within `radius_km` (default
-   * 25 km). When `sort = 'nearest'` the centre point is required and the
-   * result is ordered by distance from it.
+   * narrowed to rides with a stored `route_geom` within `radius_km` (default
+   * 25 km). When `sort = 'nearest'` the centre point is required (enforced
+   * by the DTO) and the result is ordered by distance from it.
+   *
+   * Each sort uses `ride.id` as a stable secondary key so paging is
+   * reproducible across requests when the primary sort key ties.
    *
    * Returns the same `total` count for the filter regardless of `limit` /
    * `offset` so the client can render "page X of N" cards.
@@ -111,11 +114,13 @@ export class SharingService {
       .createQueryBuilder('sr')
       .innerJoinAndSelect('sr.ride', 'ride')
       .innerJoinAndSelect('sr.user', 'user')
-      .where('sr.is_public = true')
-      .andWhere('ride.route_geom IS NOT NULL');
+      .where('sr.is_public = true');
 
     if (hasCentre) {
-      qb.andWhere(
+      // Only the spatial branch needs the geometry. The global feed
+      // intentionally keeps rides without a stored track so they can still
+      // appear as stats-only cards.
+      qb.andWhere('ride.route_geom IS NOT NULL').andWhere(
         'ST_DWithin(ride.route_geom::geography, ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography, :radius)',
         { lng: query.lng, lat: query.lat, radius: radiusKm * 1000 },
       );
@@ -142,7 +147,7 @@ export class SharingService {
       });
     }
 
-    this.applySort(qb, sort, hasCentre, query.lng, query.lat);
+    this.applySort(qb, sort, query.lng, query.lat);
 
     qb.skip(offset).take(limit);
 
@@ -163,41 +168,49 @@ export class SharingService {
   private applySort(
     qb: SelectQueryBuilder<SharedRide>,
     sort: CommunityRideSort,
-    hasCentre: boolean,
     lng: number | undefined,
     lat: number | undefined,
   ): void {
+    // `ride.id` acts as a stable secondary sort so paging stays reproducible
+    // when the primary key ties (common with `distance_km` and
+    // `avg_road_quality`; rare but possible on microsecond `started_at`).
     switch (sort) {
       case 'oldest':
-        qb.orderBy('ride.started_at', 'ASC');
+        qb.orderBy('ride.started_at', 'ASC').addOrderBy('ride.id', 'ASC');
         break;
       case 'longest':
         // NULLS LAST so rides that haven't computed a distance yet sink to
         // the bottom rather than masquerading as the longest.
-        qb.orderBy('ride.distance_km', 'DESC', 'NULLS LAST');
+        qb.orderBy('ride.distance_km', 'DESC', 'NULLS LAST').addOrderBy(
+          'ride.id',
+          'DESC',
+        );
         break;
       case 'shortest':
-        qb.orderBy('ride.distance_km', 'ASC', 'NULLS LAST');
+        qb.orderBy('ride.distance_km', 'ASC', 'NULLS LAST').addOrderBy(
+          'ride.id',
+          'ASC',
+        );
         break;
       case 'highest_quality':
-        qb.orderBy('ride.avg_road_quality', 'DESC', 'NULLS LAST');
+        qb.orderBy('ride.avg_road_quality', 'DESC', 'NULLS LAST').addOrderBy(
+          'ride.id',
+          'DESC',
+        );
         break;
       case 'nearest':
-        // Validated upstream by the DTO, but defend in depth: silently fall
-        // back to `newest` if the centre is missing so we don't issue an
-        // ST_Distance against null.
-        if (hasCentre) {
-          qb.orderBy(
-            'ST_Distance(ride.route_geom::geography, ST_SetSRID(ST_MakePoint(:sortLng, :sortLat), 4326)::geography)',
-            'ASC',
-          ).setParameters({ sortLng: lng, sortLat: lat });
-          break;
-        }
-        qb.orderBy('ride.started_at', 'DESC');
+        // DTO validation guarantees both coordinates are set when
+        // `sort = 'nearest'`, so we can go straight to the spatial ORDER BY.
+        qb.orderBy(
+          'ST_Distance(ride.route_geom::geography, ST_SetSRID(ST_MakePoint(:sortLng, :sortLat), 4326)::geography)',
+          'ASC',
+        )
+          .addOrderBy('ride.id', 'ASC')
+          .setParameters({ sortLng: lng, sortLat: lat });
         break;
       case 'newest':
       default:
-        qb.orderBy('ride.started_at', 'DESC');
+        qb.orderBy('ride.started_at', 'DESC').addOrderBy('ride.id', 'DESC');
     }
   }
 

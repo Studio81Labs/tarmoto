@@ -49,6 +49,7 @@ describe('SharingService', () => {
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
+    addOrderBy: jest.fn().mockReturnThis(),
     setParameters: jest.fn().mockReturnThis(),
     skip: jest.fn().mockReturnThis(),
     take: jest.fn().mockReturnThis(),
@@ -288,16 +289,25 @@ describe('SharingService', () => {
       expect(result.items[0].duration_min).toBe(90);
     });
 
-    it('skips the spatial filter when lat/lng are absent (global feed)', async () => {
+    it('skips the spatial filter and the route_geom guard on the global feed', async () => {
       await service.listCommunityRides({});
 
       expect(mockQueryBuilder.andWhere).not.toHaveBeenCalledWith(
         expect.stringContaining('ST_DWithin'),
         expect.anything(),
       );
-      // Default sort is newest.
+      // The global feed keeps rides without stored geometry so they can
+      // still appear as stats-only cards.
+      expect(mockQueryBuilder.andWhere).not.toHaveBeenCalledWith(
+        'ride.route_geom IS NOT NULL',
+      );
+      // Default sort is newest with a stable id tiebreaker.
       expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
         'ride.started_at',
+        'DESC',
+      );
+      expect(mockQueryBuilder.addOrderBy).toHaveBeenCalledWith(
+        'ride.id',
         'DESC',
       );
     });
@@ -332,7 +342,7 @@ describe('SharingService', () => {
       );
     });
 
-    it('sort=longest orders by distance DESC with NULLS LAST', async () => {
+    it('sort=longest orders by distance DESC with NULLS LAST + id tiebreaker', async () => {
       await service.listCommunityRides({ sort: 'longest' });
 
       expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
@@ -340,9 +350,13 @@ describe('SharingService', () => {
         'DESC',
         'NULLS LAST',
       );
+      expect(mockQueryBuilder.addOrderBy).toHaveBeenCalledWith(
+        'ride.id',
+        'DESC',
+      );
     });
 
-    it('sort=shortest orders by distance ASC with NULLS LAST', async () => {
+    it('sort=shortest orders by distance ASC with NULLS LAST + id tiebreaker', async () => {
       await service.listCommunityRides({ sort: 'shortest' });
 
       expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
@@ -350,9 +364,13 @@ describe('SharingService', () => {
         'ASC',
         'NULLS LAST',
       );
+      expect(mockQueryBuilder.addOrderBy).toHaveBeenCalledWith(
+        'ride.id',
+        'ASC',
+      );
     });
 
-    it('sort=highest_quality orders by avg_road_quality DESC', async () => {
+    it('sort=highest_quality orders by avg_road_quality DESC + id tiebreaker', async () => {
       await service.listCommunityRides({ sort: 'highest_quality' });
 
       expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
@@ -360,18 +378,26 @@ describe('SharingService', () => {
         'DESC',
         'NULLS LAST',
       );
+      expect(mockQueryBuilder.addOrderBy).toHaveBeenCalledWith(
+        'ride.id',
+        'DESC',
+      );
     });
 
-    it('sort=oldest orders by started_at ASC', async () => {
+    it('sort=oldest orders by started_at ASC + id tiebreaker', async () => {
       await service.listCommunityRides({ sort: 'oldest' });
 
       expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
         'ride.started_at',
         'ASC',
       );
+      expect(mockQueryBuilder.addOrderBy).toHaveBeenCalledWith(
+        'ride.id',
+        'ASC',
+      );
     });
 
-    it('sort=nearest orders by ST_Distance using the centre when provided', async () => {
+    it('sort=nearest orders by ST_Distance using the centre + id tiebreaker', async () => {
       await service.listCommunityRides({
         sort: 'nearest',
         lat: 49.2,
@@ -382,19 +408,14 @@ describe('SharingService', () => {
         expect.stringContaining('ST_Distance'),
         'ASC',
       );
+      expect(mockQueryBuilder.addOrderBy).toHaveBeenCalledWith(
+        'ride.id',
+        'ASC',
+      );
       expect(mockQueryBuilder.setParameters).toHaveBeenCalledWith({
         sortLng: 16.6,
         sortLat: 49.2,
       });
-    });
-
-    it('sort=nearest falls back to newest when the centre is missing (defence-in-depth)', async () => {
-      await service.listCommunityRides({ sort: 'nearest' });
-
-      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
-        'ride.started_at',
-        'DESC',
-      );
     });
 
     it('paginates via skip/take', async () => {
