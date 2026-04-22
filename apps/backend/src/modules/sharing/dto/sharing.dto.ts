@@ -25,6 +25,7 @@ export const COMMUNITY_RIDE_SORT_VALUES = [
   'longest',
   'shortest',
   'highest_quality',
+  'curviest',
   'most_popular',
   'nearest',
 ] as const;
@@ -110,6 +111,34 @@ export class CommunityRidesQueryDto {
   min_quality?: number;
 
   @ApiPropertyOptional({
+    description:
+      'Minimum length-weighted curviness. Rides without a computed ' +
+      '`avg_curviness` are excluded when this filter is set — "no value" ' +
+      'is not "low value", and silently including them would contaminate ' +
+      '"curvy rides" results.',
+    minimum: 0,
+    maximum: 10,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  @Min(0)
+  @Max(10)
+  min_curviness?: number;
+
+  @ApiPropertyOptional({
+    description: 'Maximum length-weighted curviness.',
+    minimum: 0,
+    maximum: 10,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  @Min(0)
+  @Max(10)
+  max_curviness?: number;
+
+  @ApiPropertyOptional({
     description: 'Restrict results to a single ride type.',
     enum: RIDE_TYPES,
   })
@@ -183,6 +212,13 @@ export class SharedRideDetailDto {
   @ApiProperty({ nullable: true })
   avg_road_quality!: number | null;
 
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Length-weighted average `curviness_score` across the road segments this ride crossed.',
+  })
+  avg_curviness!: number | null;
+
   @ApiProperty({ nullable: true })
   duration_min!: number | null;
 
@@ -220,6 +256,13 @@ export class CommunityRideDto {
 
   @ApiProperty({ nullable: true })
   avg_road_quality!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Length-weighted average `curviness_score` across the road segments this ride crossed. Drives the `curviest` sort.',
+  })
+  avg_curviness!: number | null;
 
   @ApiProperty({ nullable: true })
   duration_min!: number | null;

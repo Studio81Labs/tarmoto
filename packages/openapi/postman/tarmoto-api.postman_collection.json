@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "2fbe17fa-59a6-4f69-bfbb-43b188b14d6b",
+    "_postman_id": "4338f42b-23bf-446c-81c9-88d3342fd725",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -704,6 +704,18 @@
                   "key": "min_quality",
                   "value": "",
                   "description": "Minimum average road quality (0..5).",
+                  "disabled": true
+                },
+                {
+                  "key": "min_curviness",
+                  "value": "",
+                  "description": "Minimum length-weighted curviness. Rides without a computed `avg_curviness` are excluded when this filter is set — \"no value\" is not \"low value\", and silently including them would contaminate \"curvy rides\" results.",
+                  "disabled": true
+                },
+                {
+                  "key": "max_curviness",
+                  "value": "",
+                  "description": "Maximum length-weighted curviness.",
                   "disabled": true
                 },
                 {
