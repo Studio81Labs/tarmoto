@@ -290,7 +290,10 @@ export class SharingService {
   }
 
   private toCommunityDto(
-    sr: SharedRide & { ride: Ride; user: { display_name: string } },
+    sr: SharedRide & {
+      ride: Ride;
+      user: { display_name: string; avatar_url?: string | null };
+    },
   ): CommunityRideDto {
     const ride = sr.ride;
     return {
