@@ -144,4 +144,34 @@ describe("ClosuresPanel", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Rockfall")).toBeInTheDocument();
   });
+
+  it("surfaces detour details for roadworks closures that include a reroute", () => {
+    useClosuresMock.mockReturnValue({
+      closures: [
+        closure({
+          id: "closure-detour",
+          title: "Bridge resurfacing",
+          detour: [
+            { lat: 0, lng: 0 },
+            { lat: 0, lng: 0.01 },
+            { lat: 0, lng: 0.02 },
+          ],
+        }),
+      ],
+      routeClosures: [],
+      counts: { full: 0, partial: 1, advisory: 0, total: 1 },
+      routeCounts: { full: 0, partial: 0, advisory: 0, total: 0 },
+      loading: false,
+      routeLoading: false,
+      error: null,
+      routeError: null,
+      previewDate: new Date("2026-07-15T12:00:00Z"),
+    });
+
+    render(<ClosuresPanel month={7} routes={[]} />);
+
+    expect(
+      screen.getByText("Detour available · approx. 2.2 km"),
+    ).toBeInTheDocument();
+  });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildTripClosureRoutes,
   countClosuresBySeverity,
+  detourLengthKm,
   previewDateForMonth,
   type PlannerClosure,
 } from "../closures-summary";
@@ -69,6 +70,29 @@ describe("countClosuresBySeverity", () => {
       advisory: 1,
       total: 4,
     });
+  });
+});
+
+describe("detourLengthKm", () => {
+  it("measures the length of a closure detour polyline in kilometers", () => {
+    expect(
+      detourLengthKm(
+        closure({
+          id: "detour",
+          detour: [
+            { lat: 0, lng: 0 },
+            { lat: 0, lng: 0.01 },
+            { lat: 0, lng: 0.02 },
+          ],
+        }),
+      ),
+    ).toBeCloseTo(2.22, 2);
+  });
+
+  it("returns null when no detour polyline is present", () => {
+    expect(detourLengthKm(closure({ id: "no-detour", detour: null }))).toBe(
+      null,
+    );
   });
 });
 

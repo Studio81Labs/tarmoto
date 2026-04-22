@@ -3,11 +3,13 @@
 import { AlertTriangle, Route } from "lucide-react";
 import { useClosures } from "@/hooks/useClosures";
 import {
+  detourLengthKm,
   formatClosureWindow,
   type PlannerClosure,
   type PlannerClosureRoute,
 } from "@/lib/closures-summary";
 import { monthLabel } from "@/lib/passes-summary";
+import { formatDistance } from "@/lib/utils";
 
 const SEVERITY_CLASS: Record<PlannerClosure["severity"], string> = {
   full: "text-rose-400",
@@ -140,6 +142,9 @@ function ClosureRow({
   closure: PlannerClosure;
   compact?: boolean;
 }) {
+  const detourKm =
+    closure.reason === "roadworks" ? detourLengthKm(closure) : null;
+
   return (
     <li className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
       <div className="flex items-start justify-between gap-3">
@@ -160,6 +165,12 @@ function ClosureRow({
       <p className="mt-1 text-xs text-slate-400">
         {formatClosureWindow(closure)}
       </p>
+
+      {detourKm != null && (
+        <p className="mt-2 text-xs text-cyan-300">
+          Detour available · approx. {formatDistance(detourKm)}
+        </p>
+      )}
 
       {!compact && closure.notes && (
         <p className="mt-2 text-xs text-slate-400">{closure.notes}</p>

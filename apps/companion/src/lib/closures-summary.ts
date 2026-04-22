@@ -78,6 +78,20 @@ export function dedupeClosures(
   return [...unique.values()];
 }
 
+export function detourLengthKm(closure: PlannerClosure): number | null {
+  const detour = closure.detour;
+  if (!detour || detour.length < 2) return null;
+
+  let totalKm = 0;
+  for (let i = 1; i < detour.length; i += 1) {
+    const prev = detour[i - 1]!;
+    const next = detour[i]!;
+    totalKm += haversineKm(prev, next);
+  }
+
+  return totalKm;
+}
+
 export function buildTripClosureRoutes(
   trip: Trip | null,
 ): PlannerClosureRoute[] {
@@ -110,4 +124,24 @@ export function formatClosureWindow(closure: PlannerClosure): string {
   if (!closure.ends_at) return `${starts} onward`;
 
   return `${starts} - ${formatter.format(new Date(closure.ends_at))}`;
+}
+
+function haversineKm(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): number {
+  const earthRadiusKm = 6371;
+  const dLat = toRadians(b.lat - a.lat);
+  const dLng = toRadians(b.lng - a.lng);
+  const lat1 = toRadians(a.lat);
+  const lat2 = toRadians(b.lat);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+function toRadians(value: number): number {
+  return (value * Math.PI) / 180;
 }
