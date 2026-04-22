@@ -321,6 +321,47 @@ describe("RoadReviewsPanel", () => {
     ).toBeInTheDocument();
   });
 
+  it("sends an explicit empty photo list when an edit removes all photos", async () => {
+    setAuthenticatedViewer();
+    getReviewsMock.mockResolvedValueOnce({
+      data: [
+        review({
+          id: "review-photos",
+          comment: "Scenic section with a photo.",
+          photos: ["https://cdn.example.com/review-photo.jpg"],
+          is_mine: true,
+        }),
+      ],
+    });
+    updateReviewMock.mockResolvedValueOnce({
+      data: review({
+        id: "review-photos",
+        comment: "Scenic section with a photo.",
+        photos: [],
+        is_mine: true,
+      }),
+    });
+
+    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+    await screen.findByText("Scenic section with a photo.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit your review" }));
+    fireEvent.change(screen.getByLabelText("Photo URL 1"), {
+      target: { value: "" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save review" }));
+
+    await waitFor(() =>
+      expect(updateReviewMock).toHaveBeenCalledWith(firstSegmentId, {
+        rating: 4,
+        comment: "Scenic section with a photo.",
+        bike_model: "BMW R1250GS",
+        photos: [],
+      }),
+    );
+  });
+
   it("suppresses vote controls for reviews authored by the viewer", async () => {
     setAuthenticatedViewer();
     getReviewsMock.mockResolvedValueOnce({

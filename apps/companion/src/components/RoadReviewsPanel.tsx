@@ -170,10 +170,14 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
     const mutationAttempt = mutationAttemptRef.current;
 
     try {
+      const payload =
+        editorMode === "edit"
+          ? { ...normalized.data, photos: normalized.data.photos ?? [] }
+          : normalized.data;
       const { data } =
         editorMode === "edit"
-          ? await roadsApi.updateReview(segmentId, normalized.data)
-          : await roadsApi.createReview(segmentId, normalized.data);
+          ? await roadsApi.updateReview(segmentId, payload)
+          : await roadsApi.createReview(segmentId, payload);
 
       if (
         requestSegmentId !== activeSegmentRef.current ||
@@ -248,11 +252,7 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
       setError(null);
       setSubmitError(null);
       setReviews((current) =>
-        current.filter(
-          (review) =>
-            review.id !== reviewId &&
-            !(review.is_mine && review.id === reviewId),
-        ),
+        current.filter((review) => review.id !== reviewId),
       );
 
       if (!didReturnToSameSegment) {
