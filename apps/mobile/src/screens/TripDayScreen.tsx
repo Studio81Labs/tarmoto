@@ -35,6 +35,7 @@ import { usePreferencesStore, useTripStore } from "@/stores";
 import type {
   Accommodation,
   AccommodationKind,
+  AlongRoutePoi,
   Poi,
   PoiKind,
   Trip,
@@ -52,6 +53,7 @@ import {
   summarizeFuelRange,
   summarizeWaypoints,
   type FuelLeg,
+  type FuelStationAnchor,
 } from "./TripScreens.helpers";
 
 type DayRoute = RouteProp<TripsStackParamList, "TripDay">;
@@ -144,7 +146,8 @@ export default function TripDayScreen() {
   const belowThreshold =
     day.avg_quality > 0 && !meetsQualityThreshold(day.avg_quality, minQuality);
   const summary = summarizeWaypoints(day.waypoints);
-  const fuelRange = summarizeFuelRange(day, fuelRangeKm);
+  const fuelStations = useFuelStationsAlongRoute(day, fuelRangeKm);
+  const fuelRange = summarizeFuelRange(day, fuelRangeKm, fuelStations);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -259,6 +262,68 @@ function StartNavigationButton({
   );
 }
 
+/**
+ * Fetch live fuel stations along a day's route so `summarizeFuelRange`
+ * can annotate exceeding legs with actual refuel options (US-36).
+ *
+ * Only runs when the rider has a positive declared fuel range *and* at
+ * least one leg currently exceeds it — otherwise there's nothing to
+ * decorate and we avoid the network round-trip + provider load. When
+ * the endpoint errors (provider outage, offline) the hook silently
+ * returns an empty list so the existing warning card keeps working in
+ * its old waypoint-only shape.
+ */
+function useFuelStationsAlongRoute(
+  day: TripDay,
+  fuelRangeKm: number,
+): FuelStationAnchor[] {
+  const [stations, setStations] = useState<FuelStationAnchor[]>([]);
+  const route = day.route_geometry;
+  const routeLength = route.length;
+  // Quick client-side check so we only query when there is at least one
+  // over-range leg on the waypoint-only breakdown. `summarizeFuelRange`
+  // is pure and cheap, so reusing it here avoids duplicating the leg
+  // logic in this hook.
+  const needsStations =
+    fuelRangeKm > 0 &&
+    routeLength >= 2 &&
+    summarizeFuelRange(day, fuelRangeKm).exceedingCount > 0;
+
+  useEffect(() => {
+    if (!needsStations) {
+      setStations([]);
+      return;
+    }
+    let ignore = false;
+    (async () => {
+      try {
+        const res = await api.listPoisAlongRoute(route, {
+          kinds: ["fuel_station"],
+        });
+        if (ignore) return;
+        setStations(
+          res.pois.map((p: AlongRoutePoi) => ({
+            name: p.name,
+            hint: p.hint,
+            distanceAlongRouteKm: p.distance_along_route_km,
+            distanceFromRouteKm: p.distance_from_route_km,
+          })),
+        );
+      } catch {
+        if (!ignore) setStations([]);
+      }
+    })();
+    return () => {
+      ignore = true;
+    };
+    // Depth-equality for `route` would be expensive; key the effect on
+    // the day id + length so a geometry update still triggers a refetch
+    // (days are regenerated whole on trip edits, never patched in-place).
+  }, [day.id, routeLength, needsStations]);
+
+  return stations;
+}
+
 function FuelRangeWarning({
   legs,
   fuelRangeKm,
@@ -295,29 +360,51 @@ function FuelRangeWarning({
         range. Add a fuel stop or check that tank will make it.
       </Text>
       {legs.map((leg, idx) => (
-        <View
-          key={`${idx}-${leg.fromName}-${leg.toName}`}
-          style={styles.fuelLegRow}
-        >
-          <View
-            style={[
-              styles.fuelLegBullet,
-              leg.exceedsRange
-                ? styles.fuelLegBulletOver
-                : styles.fuelLegBulletOk,
-            ]}
-          />
-          <Text style={styles.fuelLegNames} numberOfLines={1}>
-            {leg.fromName} → {leg.toName}
-          </Text>
-          <Text
-            style={[
-              styles.fuelLegDistance,
-              leg.exceedsRange ? styles.fuelLegDistanceOver : null,
-            ]}
-          >
-            {formatKm(leg.distanceKm)}
-          </Text>
+        <View key={`${idx}-${leg.fromName}-${leg.toName}`}>
+          <View style={styles.fuelLegRow}>
+            <View
+              style={[
+                styles.fuelLegBullet,
+                leg.exceedsRange
+                  ? styles.fuelLegBulletOver
+                  : styles.fuelLegBulletOk,
+              ]}
+            />
+            <Text style={styles.fuelLegNames} numberOfLines={1}>
+              {leg.fromName} → {leg.toName}
+            </Text>
+            <Text
+              style={[
+                styles.fuelLegDistance,
+                leg.exceedsRange ? styles.fuelLegDistanceOver : null,
+              ]}
+            >
+              {formatKm(leg.distanceKm)}
+            </Text>
+          </View>
+          {leg.suggestedStops && leg.suggestedStops.length > 0 ? (
+            <View style={styles.fuelLegStations}>
+              <Text style={styles.fuelLegStationsLabel}>Refuel options</Text>
+              {leg.suggestedStops.map((stop, sIdx) => (
+                <View
+                  key={`${idx}-station-${sIdx}`}
+                  style={styles.fuelLegStationRow}
+                >
+                  <Icon
+                    name="gas-station"
+                    size={14}
+                    color={colors.textSecondary}
+                  />
+                  <Text style={styles.fuelLegStationName} numberOfLines={1}>
+                    {stop.hint ? `${stop.name} · ${stop.hint}` : stop.name}
+                  </Text>
+                  <Text style={styles.fuelLegStationDistance}>
+                    {formatKm(stop.distanceFromLegStartKm)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
         </View>
       ))}
     </View>
@@ -1017,6 +1104,33 @@ const styles = StyleSheet.create({
   },
   fuelLegDistanceOver: {
     color: colors.warning,
+  },
+  fuelLegStations: {
+    marginLeft: spacing.lg,
+    marginTop: spacing.xs,
+    gap: spacing.xs,
+  },
+  fuelLegStationsLabel: {
+    color: colors.textTertiary,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  fuelLegStationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  fuelLegStationName: {
+    flex: 1,
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
+  },
+  fuelLegStationDistance: {
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
   },
   accommodationsHeader: {
     flexDirection: "row",

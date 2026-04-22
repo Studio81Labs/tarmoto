@@ -1,11 +1,16 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { PoiService } from './poi.service.js';
 import {
   AccommodationListDto,
   AccommodationQueryDto,
 } from './dto/accommodation.dto.js';
-import { PoiListDto, PoiQueryDto } from './dto/point-of-interest.dto.js';
+import {
+  AlongRoutePoiListDto,
+  AlongRoutePoiQueryDto,
+  PoiListDto,
+  PoiQueryDto,
+} from './dto/point-of-interest.dto.js';
 
 @ApiTags('poi')
 @Controller('poi')
@@ -52,5 +57,24 @@ export class PoiController {
       query.radius_km,
       query.kinds,
     );
+  }
+
+  @Post('along-route')
+  @ApiOperation({
+    summary: 'Find POIs within a buffer of a route polyline (US-36)',
+    description:
+      'Given a route polyline, returns POIs (fuel stations, restaurants, ' +
+      'viewpoints, cafés) within `buffer_km` of any route vertex. Each ' +
+      'POI is annotated with its distance along the route (in km from ' +
+      'start) and its shortest distance to the route, so clients can ' +
+      'order them on a day timeline and judge reachability. Used by the ' +
+      'mobile fuel-range warning to surface live fuel stations inside ' +
+      'legs that exceed the rider’s declared range.',
+  })
+  @ApiResponse({ status: 200, type: AlongRoutePoiListDto })
+  async findPointsOfInterestAlongRoute(
+    @Body() dto: AlongRoutePoiQueryDto,
+  ): Promise<AlongRoutePoiListDto> {
+    return this.poiService.findPointsOfInterestAlongRoute(dto);
   }
 }

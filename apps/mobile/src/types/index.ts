@@ -358,6 +358,31 @@ export interface PoiList {
   kinds: PoiKind[];
 }
 
+/**
+ * POI matched against a route polyline (US-36). Unlike `Poi` the
+ * distance is expressed relative to the route: how far the POI sits
+ * along the route from its start, and how far it is off the route.
+ */
+export interface AlongRoutePoi {
+  external_id: string;
+  name: string | null;
+  kind: PoiKind;
+  lat: number;
+  lng: number;
+  distance_along_route_km: number;
+  distance_from_route_km: number;
+  website: string | null;
+  phone: string | null;
+  hint: string | null;
+}
+
+export interface AlongRoutePoiList {
+  pois: AlongRoutePoi[];
+  buffer_km: number;
+  kinds: PoiKind[];
+  route_length_km: number;
+}
+
 // ── Mountain Passes (US-11) ──
 
 export type PassStatus = "open" | "closed" | "unknown";

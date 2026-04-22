@@ -1,4 +1,9 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { haversineKm } from '@tarmoto/shared';
 import {
   POI_PROVIDER,
@@ -15,11 +20,16 @@ import {
   MAX_RADIUS_KM,
 } from './dto/accommodation.dto.js';
 import {
+  AlongRoutePoiDto,
+  AlongRoutePoiListDto,
+  AlongRoutePoiQueryDto,
   PoiDto,
   PoiListDto,
   POI_KINDS,
   type PoiKind,
+  DEFAULT_BUFFER_KM,
   DEFAULT_RADIUS_KM as POI_DEFAULT_RADIUS_KM,
+  MAX_BUFFER_KM,
   MAX_RADIUS_KM as POI_MAX_RADIUS_KM,
 } from './dto/point-of-interest.dto.js';
 
@@ -37,6 +47,16 @@ const MAX_RESULTS = 8;
  * out of the ranked top-N.
  */
 const MAX_POI_RESULTS_PER_KIND = 6;
+
+/**
+ * Per-kind cap for the route-wide POI response. A long multi-hour day
+ * can legitimately pass 20+ fuel stations; the value is wider than the
+ * point-anchored cap above because the mobile fuel-range warning only
+ * surfaces stations inside an exceeding leg rather than every station
+ * on the day. Restaurants/cafés use the same cap — noisy categories can
+ * be narrowed by the client later via `kinds`.
+ */
+const MAX_ALONG_ROUTE_RESULTS_PER_KIND = 25;
 
 @Injectable()
 export class PoiService {
@@ -237,8 +257,170 @@ export class PoiService {
     }));
   }
 
+  /**
+   * Find POIs within a buffer of a route polyline — primary driver of
+   * the mobile fuel-range warning (US-36) and the trip-day POI card.
+   *
+   * Algorithm:
+   *   1. Walk the polyline, sampling anchors so consecutive `around:`
+   *      circles at the Overpass provider overlap (stride = `bufferKm`,
+   *      plus the endpoints).
+   *   2. Query the provider once with all samples as centres.
+   *   3. For each returned POI, compute (a) the distance to its nearest
+   *      route vertex and (b) the cumulative distance-along-route at
+   *      that vertex. Drop POIs farther than the buffer — the provider's
+   *      union of circles can return points that are inside the nearest
+   *      circle but outside the polygon-ish corridor we actually care
+   *      about (e.g. a petrol station 2 km off a switchback).
+   *   4. Dedupe by `external_id`, keeping the closest instance.
+   *   5. Cap per-kind and sort by `distance_along_route_km` so the mobile
+   *      timeline renders naturally from start to end.
+   */
+  async findPointsOfInterestAlongRoute(
+    dto: AlongRoutePoiQueryDto,
+  ): Promise<AlongRoutePoiListDto> {
+    if (dto.route.length < 2) {
+      throw new BadRequestException('Route must have at least 2 points');
+    }
+    const bufferKm = this.clampBufferKm(dto.buffer_km);
+    const resolvedKinds = this.resolveKinds(dto.kinds);
+
+    const cumKm = cumulativeLengthKm(dto.route);
+    const totalKm = cumKm[cumKm.length - 1];
+    const samples = sampleRouteAnchors(dto.route, cumKm, bufferKm);
+
+    let raw: PointOfInterest[];
+    try {
+      raw = await this.provider.findPointsOfInterestAroundPoints(
+        samples,
+        bufferKm,
+        resolvedKinds,
+      );
+    } catch (err) {
+      // Same resilience pattern as the point endpoints: a provider
+      // outage collapses to an empty payload rather than breaking the
+      // trip planner's rendering.
+      this.logger.warn(
+        `POI provider failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return {
+        pois: [],
+        buffer_km: bufferKm,
+        kinds: resolvedKinds,
+        route_length_km: roundKmTenth(totalKm),
+      };
+    }
+
+    return {
+      pois: this.rankAlongRoute(raw, dto.route, cumKm, bufferKm, resolvedKinds),
+      buffer_km: bufferKm,
+      kinds: resolvedKinds,
+      route_length_km: roundKmTenth(totalKm),
+    };
+  }
+
+  /**
+   * Drop off-buffer POIs, dedupe by external id, cap per-kind, and sort
+   * by distance-along-route. Also filters to the caller's kinds —
+   * defence-in-depth in case a misbehaving provider ignores the `kinds`
+   * filter, same rule the point-anchored rankers apply.
+   */
+  rankAlongRoute(
+    raw: PointOfInterest[],
+    route: ReadonlyArray<{ lat: number; lng: number }>,
+    cumKm: number[],
+    bufferKm: number,
+    kinds: PoiKind[],
+  ): AlongRoutePoiDto[] {
+    const kindSet = new Set<PoiKind>(kinds);
+    type Annotated = {
+      poi: PointOfInterest;
+      distance_along_route_km: number;
+      distance_from_route_km: number;
+    };
+
+    const deduped = new Map<string, Annotated>();
+    for (const poi of raw) {
+      if (!kindSet.has(poi.kind)) continue;
+      if (!poi.name?.trim() && !poi.website && !poi.phone) continue;
+      // Find nearest route vertex by haversine. Exact point-to-polyline
+      // (perpendicular drop) would be more accurate, but for buffers of
+      // a few kilometres the vertex distance sits within noise of the
+      // upstream tag precision. Keeping this as a vertex sweep also
+      // means we can read the "distance along" straight out of `cumKm`.
+      let bestIdx = 0;
+      let bestKm = Infinity;
+      for (let i = 0; i < route.length; i++) {
+        const d = haversineKm(poi.lat, poi.lng, route[i].lat, route[i].lng);
+        if (d < bestKm) {
+          bestKm = d;
+          bestIdx = i;
+        }
+      }
+      if (bestKm > bufferKm) continue;
+
+      const entry: Annotated = {
+        poi,
+        distance_along_route_km: cumKm[bestIdx],
+        distance_from_route_km: bestKm,
+      };
+      const prev = deduped.get(poi.external_id);
+      if (!prev || entry.distance_from_route_km < prev.distance_from_route_km) {
+        deduped.set(poi.external_id, entry);
+      }
+    }
+
+    const byKind = new Map<PoiKind, Annotated[]>();
+    for (const entry of deduped.values()) {
+      const list = byKind.get(entry.poi.kind) ?? [];
+      list.push(entry);
+      byKind.set(entry.poi.kind, list);
+    }
+
+    const kept: Annotated[] = [];
+    for (const list of byKind.values()) {
+      // Within each kind, prefer rows closer to the route — unlike the
+      // point ranker we don't down-rank unnamed rows here because an
+      // unnamed fuel station right on the route is still useful for the
+      // fuel-range warning; the null-contact filter above already drops
+      // the truly opaque ones.
+      list.sort((a, b) => a.distance_from_route_km - b.distance_from_route_km);
+      for (const entry of list.slice(0, MAX_ALONG_ROUTE_RESULTS_PER_KIND)) {
+        kept.push(entry);
+      }
+    }
+
+    kept.sort((a, b) => a.distance_along_route_km - b.distance_along_route_km);
+
+    return kept.map(
+      ({ poi, distance_along_route_km, distance_from_route_km }) => ({
+        external_id: poi.external_id,
+        name: poi.name,
+        kind: poi.kind,
+        lat: poi.lat,
+        lng: poi.lng,
+        distance_along_route_km: roundKmTenth(distance_along_route_km),
+        distance_from_route_km: roundKmTenth(distance_from_route_km),
+        website: poi.website,
+        phone: poi.phone,
+        hint: poi.hint,
+      }),
+    );
+  }
+
   private clampRadiusKm(input: number | undefined): number {
     return clampRadius(input, DEFAULT_RADIUS_KM, MAX_RADIUS_KM);
+  }
+
+  private clampBufferKm(input: number | undefined): number {
+    // Lower bound of 0.5 km matches the DTO's `@Min(0.5)` — anything
+    // smaller is below the precision of the OSM coordinates we consume
+    // and would just filter out matches the provider already returned.
+    if (input === undefined || !Number.isFinite(input)) {
+      return DEFAULT_BUFFER_KM;
+    }
+    if (input < 0.5) return DEFAULT_BUFFER_KM;
+    return Math.min(input, MAX_BUFFER_KM);
   }
 
   private clampPoiRadiusKm(input: number | undefined): number {
@@ -274,4 +456,85 @@ function clampRadius(
   if (input === undefined || !Number.isFinite(input)) return defaultKm;
   if (input <= 0) return defaultKm;
   return Math.min(input, maxKm);
+}
+
+/**
+ * Build the per-vertex cumulative-distance table for a polyline. The
+ * service uses this twice: once to sample `around:` anchors at regular
+ * intervals, and once to look up a POI's distance-along-route from the
+ * index of its nearest vertex.
+ */
+export function cumulativeLengthKm(
+  route: ReadonlyArray<{ lat: number; lng: number }>,
+): number[] {
+  const cum = new Array<number>(route.length);
+  cum[0] = 0;
+  for (let i = 1; i < route.length; i++) {
+    cum[i] =
+      cum[i - 1] +
+      haversineKm(
+        route[i - 1].lat,
+        route[i - 1].lng,
+        route[i].lat,
+        route[i].lng,
+      );
+  }
+  return cum;
+}
+
+/**
+ * Pick a minimal set of anchor points along the polyline such that a
+ * `bufferKm`-radius circle at each anchor covers the entire route.
+ *
+ * Stride is `bufferKm`: adjacent circles then overlap by half a radius
+ * on either side, which means a rider running along the polyline never
+ * leaves the covered corridor even near sharp bends (where a naive
+ * `2 * bufferKm` stride can drop coverage on the inside of the turn).
+ * The route start and end are always included so the corridor doesn't
+ * trail off before the last vertex.
+ *
+ * Exported for tests — this is the function under test when validating
+ * that the samples reach the whole corridor.
+ */
+export function sampleRouteAnchors(
+  route: ReadonlyArray<{ lat: number; lng: number }>,
+  cumKm: number[],
+  bufferKm: number,
+): { lat: number; lng: number }[] {
+  if (route.length === 0) return [];
+  if (route.length === 1) return [{ lat: route[0].lat, lng: route[0].lng }];
+
+  const totalKm = cumKm[cumKm.length - 1];
+  const stride = Math.max(bufferKm, 0.5);
+  // +1 for the endpoint. For a 200 km day at 2 km buffer this is ~101
+  // samples — comfortably under Overpass's soft 256-element `around:`
+  // limit. The service layer clamps buffer ≥ 0.5 km (matches the DTO)
+  // so the worst case stays bounded.
+  const targetCount = Math.floor(totalKm / stride) + 1;
+
+  const anchors: { lat: number; lng: number }[] = [
+    { lat: route[0].lat, lng: route[0].lng },
+  ];
+  let nextBoundary = stride;
+  for (let i = 1; i < route.length && anchors.length <= targetCount; i++) {
+    if (cumKm[i] >= nextBoundary) {
+      anchors.push({ lat: route[i].lat, lng: route[i].lng });
+      // Advance past the vertex we just consumed rather than by a fixed
+      // stride so a cluster of close vertices (common on curvy mountain
+      // roads) doesn't duplicate the anchor.
+      nextBoundary = cumKm[i] + stride;
+    }
+  }
+  // Always include the final vertex so the tail of the route is covered
+  // even when the stride hasn't landed exactly on it.
+  const last = route[route.length - 1];
+  const lastAnchor = anchors[anchors.length - 1];
+  if (lastAnchor.lat !== last.lat || lastAnchor.lng !== last.lng) {
+    anchors.push({ lat: last.lat, lng: last.lng });
+  }
+  return anchors;
+}
+
+function roundKmTenth(km: number): number {
+  return Math.round(km * 10) / 10;
 }

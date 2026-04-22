@@ -67,6 +67,23 @@ export interface PoiProvider {
     radiusKm: number,
     kinds: PoiKind[],
   ): Promise<PointOfInterest[]>;
+
+  /**
+   * Find POIs within `radiusKm` of any of the supplied sample points —
+   * used by the route-aware lookup so a long day can be queried in one
+   * provider call rather than one-per-vertex. Implementations should
+   * union the circles (e.g. Overpass QL's multi-centre `around:`) so
+   * the service layer still pays one upstream round-trip.
+   *
+   * Short-circuits to `[]` on an empty `points` or `kinds` array. The
+   * service layer is responsible for downselecting samples to stay
+   * under any upstream query-size limits.
+   */
+  findPointsOfInterestAroundPoints(
+    points: readonly { lat: number; lng: number }[],
+    radiusKm: number,
+    kinds: PoiKind[],
+  ): Promise<PointOfInterest[]>;
 }
 
 /**

@@ -1,15 +1,19 @@
 import {
+  ArrayMinSize,
   ArrayNotEmpty,
   ArrayUnique,
   IsArray,
   IsIn,
+  IsLatitude,
+  IsLongitude,
   IsNumber,
   IsOptional,
   Max,
   Min,
+  ValidateNested,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
-import { ApiProperty } from '@nestjs/swagger';
+import { Transform, Type } from 'class-transformer';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { toOptionalNumber } from '../../../common/dto-transforms.js';
 
 /**
@@ -165,4 +169,136 @@ export class PoiListDto {
   kinds!: PoiKind[];
 }
 
-export { DEFAULT_RADIUS_KM, MAX_RADIUS_KM };
+const DEFAULT_BUFFER_KM = 2;
+const MAX_BUFFER_KM = 10;
+
+class RoutePointDto {
+  @ApiProperty()
+  @IsLatitude()
+  @Type(() => Number)
+  lat!: number;
+
+  @ApiProperty()
+  @IsLongitude()
+  @Type(() => Number)
+  lng!: number;
+}
+
+/**
+ * Body schema for `POST /poi/along-route`. POST (not GET) so a long
+ * day's polyline can't overflow the URL — same pattern as
+ * `/passes/check-route` and `/closures/check-route`.
+ */
+export class AlongRoutePoiQueryDto {
+  @ApiProperty({ type: [RoutePointDto], minItems: 2 })
+  @IsArray()
+  @ArrayMinSize(2)
+  @ValidateNested({ each: true })
+  @Type(() => RoutePointDto)
+  route!: RoutePointDto[];
+
+  @ApiPropertyOptional({
+    default: DEFAULT_BUFFER_KM,
+    minimum: 0.5,
+    maximum: MAX_BUFFER_KM,
+    description:
+      'Buffer in km around the route to consider a POI "on it". ' +
+      `Defaults to ${DEFAULT_BUFFER_KM} km, capped at ${MAX_BUFFER_KM} km.`,
+  })
+  @IsOptional()
+  @Transform(toOptionalNumber)
+  @IsNumber()
+  @Min(0.5)
+  @Max(MAX_BUFFER_KM)
+  buffer_km?: number;
+
+  @ApiPropertyOptional({
+    enum: POI_KINDS,
+    isArray: true,
+    description:
+      'Kinds to include. Omit to return all kinds. Accepts a repeated ' +
+      'query param (`kinds=fuel_station&kinds=cafe`) or a comma-separated ' +
+      'value (`kinds=fuel_station,cafe`).',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => parseKinds(value))
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayUnique()
+  @IsIn(POI_KINDS, { each: true })
+  kinds?: PoiKind[];
+}
+
+/**
+ * POI matched against a route polyline. Unlike `PoiDto`, distance is
+ * expressed relative to the route (how far along, how far off) rather
+ * than from a single anchor — clients use `distance_along_route_km` to
+ * place the POI on a day's timeline and `distance_from_route_km` to
+ * judge whether it's actually reachable.
+ */
+export class AlongRoutePoiDto {
+  @ApiProperty()
+  external_id!: string;
+
+  @ApiProperty({ nullable: true })
+  name!: string | null;
+
+  @ApiProperty({ enum: POI_KINDS })
+  kind!: PoiKind;
+
+  @ApiProperty()
+  lat!: number;
+
+  @ApiProperty()
+  lng!: number;
+
+  @ApiProperty({
+    description:
+      'Distance from the route start to the POI (measured along the ' +
+      'polyline up to the nearest vertex), km.',
+  })
+  distance_along_route_km!: number;
+
+  @ApiProperty({
+    description: 'Shortest distance between the POI and any route vertex, km.',
+  })
+  distance_from_route_km!: number;
+
+  @ApiProperty({ nullable: true })
+  website!: string | null;
+
+  @ApiProperty({ nullable: true })
+  phone!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Cuisine or description hint. For restaurants/cafés this is the ' +
+      '`cuisine` OSM tag; for viewpoints it is the `description` tag; ' +
+      'for fuel stations it is the `brand` tag (falling back to the ' +
+      '`operator` tag).',
+  })
+  hint!: string | null;
+}
+
+export class AlongRoutePoiListDto {
+  @ApiProperty({ type: [AlongRoutePoiDto] })
+  pois!: AlongRoutePoiDto[];
+
+  @ApiProperty({ description: 'Buffer actually used for the lookup, km.' })
+  buffer_km!: number;
+
+  @ApiProperty({
+    enum: POI_KINDS,
+    isArray: true,
+    description: 'Kinds that were actually queried for this response.',
+  })
+  kinds!: PoiKind[];
+
+  @ApiProperty({
+    description: 'Total length of the supplied route polyline, km.',
+  })
+  route_length_km!: number;
+}
+
+export { DEFAULT_RADIUS_KM, MAX_RADIUS_KM, DEFAULT_BUFFER_KM, MAX_BUFFER_KM };

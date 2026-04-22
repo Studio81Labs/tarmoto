@@ -1,6 +1,8 @@
+import { ConfigService } from '@nestjs/config';
 import {
   classifyPoiTags,
   extractPoiHint,
+  OverpassPoiProvider,
   parseStarsTag,
 } from './overpass.provider.js';
 
@@ -162,5 +164,70 @@ describe('extractPoiHint', () => {
     expect(
       extractPoiHint('fuel_station', { name: 'Unnamed station' }),
     ).toBeNull();
+  });
+});
+
+describe('OverpassPoiProvider.findPointsOfInterestAroundPoints', () => {
+  const config = {
+    get: (_key: string, fallback: string) => fallback,
+  } as unknown as ConfigService;
+
+  // Stub `fetch` so we can assert on the emitted Overpass QL without a
+  // real HTTP round-trip.
+  let originalFetch: typeof fetch;
+  let capturedBody: string | null;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    capturedBody = null;
+    globalThis.fetch = ((_url: string, init?: RequestInit) => {
+      capturedBody = typeof init?.body === 'string' ? init.body : '';
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ elements: [] }),
+      } as unknown as Response);
+    }) as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('emits a single multi-centre `around:` clause for all sample points', async () => {
+    const provider = new OverpassPoiProvider(config);
+    const points = [
+      { lat: 49.0, lng: 16.75 },
+      { lat: 49.5, lng: 16.75 },
+      { lat: 50.0, lng: 16.75 },
+    ];
+    await provider.findPointsOfInterestAroundPoints(points, 2, [
+      'fuel_station',
+    ]);
+
+    expect(capturedBody).not.toBeNull();
+    const decoded = decodeURIComponent(capturedBody!.replace(/^data=/, ''));
+    // One `around:` clause carrying every lat/lng pair — that's the
+    // cost saving over looping one provider call per sample.
+    expect(decoded).toContain('around:2000,49,16.75,49.5,16.75,50,16.75');
+    // Fuel stations live at `amenity=fuel`; confirm the kind → tag
+    // mapping still holds through the multi-point path.
+    expect(decoded).toContain('amenity');
+    expect(decoded).toContain('fuel');
+  });
+
+  it('short-circuits to an empty array on zero points or kinds', async () => {
+    const provider = new OverpassPoiProvider(config);
+    const none = await provider.findPointsOfInterestAroundPoints([], 2, [
+      'fuel_station',
+    ]);
+    const noKinds = await provider.findPointsOfInterestAroundPoints(
+      [{ lat: 49, lng: 16 }],
+      2,
+      [],
+    );
+    expect(none).toEqual([]);
+    expect(noKinds).toEqual([]);
+    // Neither case should have hit `fetch`.
+    expect(capturedBody).toBeNull();
   });
 });
