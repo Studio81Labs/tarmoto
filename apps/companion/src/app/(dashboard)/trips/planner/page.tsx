@@ -222,7 +222,11 @@ export default function TripPlannerPage() {
                 Avoid unpaved roads
               </label>
             </div>
-            <PassesPanel month={travelMonth} onMonthChange={setTravelMonth} />
+            <PassesPanel
+              month={travelMonth}
+              onMonthChange={setTravelMonth}
+              routes={closureRoutes}
+            />
             <ClosuresPanel month={travelMonth} routes={closureRoutes} />
             <TripStopsPanel trip={activeTrip} />
           </div>

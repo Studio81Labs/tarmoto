@@ -68,6 +68,14 @@ export function partitionByStatus(
   return groups;
 }
 
+export function dedupePasses(passes: readonly MountainPass[]): MountainPass[] {
+  const unique = new Map<string, MountainPass>();
+  for (const pass of passes) {
+    if (!unique.has(pass.id)) unique.set(pass.id, pass);
+  }
+  return [...unique.values()];
+}
+
 /**
  * Status ordering for the UI: closed first (the most actionable
  * information for trip planning), then unknown, then open.

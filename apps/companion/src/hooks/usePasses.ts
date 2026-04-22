@@ -1,11 +1,22 @@
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
-import type { MountainPass } from "@/lib/passes-summary";
+import { api, passesApi } from "@/lib/api";
+import {
+  countByStatus,
+  dedupePasses,
+  partitionByStatus,
+  type MountainPass,
+} from "@/lib/passes-summary";
+import type { PlannerClosureRoute } from "@/lib/closures-summary";
 
 export interface PassesQueryResult {
   passes: MountainPass[];
+  routePasses: MountainPass[];
+  routeClosedCount: number;
+  routeUnknownCount: number;
   loading: boolean;
+  routeLoading: boolean;
   error: string | null;
+  routeError: string | null;
 }
 
 /**
@@ -16,12 +27,113 @@ export interface PassesQueryResult {
  * Mirrors the AbortController pattern used by `useRidesQuery` so an in-flight
  * request from a stale month can't clobber a newer one.
  */
-export function usePasses(forMonth: number | undefined): PassesQueryResult {
+export function usePasses(
+  forMonth: number | undefined,
+  routes: PlannerClosureRoute[] = [],
+): PassesQueryResult {
   const [state, setState] = useState<PassesQueryResult>({
     passes: [],
+    routePasses: [],
+    routeClosedCount: 0,
+    routeUnknownCount: 0,
     loading: true,
+    routeLoading: routes.length > 0,
     error: null,
+    routeError: null,
   });
+
+  useEffect(() => {
+    if (routes.length === 0) {
+      setState((current) => ({
+        ...current,
+        routePasses: [],
+        routeClosedCount: 0,
+        routeUnknownCount: 0,
+        routeLoading: false,
+        routeError: null,
+      }));
+      return;
+    }
+
+    const ctrl = new AbortController();
+    setState((current) => ({
+      ...current,
+      routeLoading: true,
+      routeError: null,
+    }));
+
+    Promise.allSettled(
+      routes.map((route) =>
+        passesApi.checkRoute(
+          {
+            route: route.points,
+            for_month: forMonth,
+          },
+          { signal: ctrl.signal },
+        ),
+      ),
+    )
+      .then((results) => {
+        if (ctrl.signal.aborted) return;
+
+        const fulfilled = results.filter(
+          (
+            result,
+          ): result is PromiseFulfilledResult<
+            Awaited<ReturnType<typeof passesApi.checkRoute>>
+          > => result.status === "fulfilled",
+        );
+        const rejectedCount = results.length - fulfilled.length;
+
+        if (fulfilled.length === 0 && rejectedCount > 0) {
+          setState((current) => ({
+            ...current,
+            routePasses: [],
+            routeClosedCount: 0,
+            routeUnknownCount: 0,
+            routeLoading: false,
+            routeError: "Failed to check route passes",
+          }));
+          return;
+        }
+
+        const routePasses = dedupePasses(
+          fulfilled.flatMap(({ value }) => value.data.passes),
+        );
+        const grouped = partitionByStatus(routePasses);
+        const orderedRoutePasses = [
+          ...grouped.closed,
+          ...grouped.unknown,
+          ...grouped.open,
+        ];
+        const counts = countByStatus(routePasses);
+
+        setState((current) => ({
+          ...current,
+          routePasses: orderedRoutePasses,
+          routeClosedCount: counts.closed,
+          routeUnknownCount: counts.unknown,
+          routeLoading: false,
+          routeError:
+            rejectedCount > 0
+              ? "Some route segments could not be checked."
+              : null,
+        }));
+      })
+      .catch((err: Error) => {
+        if (ctrl.signal.aborted) return;
+        setState((current) => ({
+          ...current,
+          routePasses: [],
+          routeClosedCount: 0,
+          routeUnknownCount: 0,
+          routeLoading: false,
+          routeError: err.message || "Failed to check route passes",
+        }));
+      });
+
+    return () => ctrl.abort();
+  }, [forMonth, routes]);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -37,22 +149,29 @@ export function usePasses(forMonth: number | undefined): PassesQueryResult {
       .then(({ data, error }) => {
         if (ctrl.signal.aborted) return;
         if (error || !data) {
-          setState({
+          setState((current) => ({
+            ...current,
             passes: [],
             loading: false,
             error: "Failed to load passes",
-          });
+          }));
           return;
         }
-        setState({
+        setState((current) => ({
+          ...current,
           passes: data as MountainPass[],
           loading: false,
           error: null,
-        });
+        }));
       })
       .catch((err: Error) => {
         if (ctrl.signal.aborted) return;
-        setState({ passes: [], loading: false, error: err.message });
+        setState((current) => ({
+          ...current,
+          passes: [],
+          loading: false,
+          error: err.message,
+        }));
       });
     return () => ctrl.abort();
   }, [forMonth]);
