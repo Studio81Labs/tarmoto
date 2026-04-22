@@ -50,6 +50,7 @@ export class ClosuresController {
   }
 
   @Post('check-route')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Check which road closures a planned route crosses',
     description:
