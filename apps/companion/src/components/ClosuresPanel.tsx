@@ -1,13 +1,18 @@
 "use client";
 
+import { useEffect } from "react";
+import type { UnitSystem } from "@tarmoto/shared";
 import { AlertTriangle, Route } from "lucide-react";
 import { useClosures } from "@/hooks/useClosures";
 import {
+  detourLengthKm,
   formatClosureWindow,
   type PlannerClosure,
   type PlannerClosureRoute,
 } from "@/lib/closures-summary";
 import { monthLabel } from "@/lib/passes-summary";
+import { formatDistance } from "@/lib/utils";
+import { usePreferencesStore } from "@/stores/preferences";
 
 const SEVERITY_CLASS: Record<PlannerClosure["severity"], string> = {
   full: "text-rose-400",
@@ -36,6 +41,8 @@ interface ClosuresPanelProps {
 }
 
 export function ClosuresPanel({ month, routes }: ClosuresPanelProps) {
+  const unitSystem = usePreferencesStore((s) => s.unitSystem);
+  const hydratePreferences = usePreferencesStore((s) => s.hydrate);
   const {
     closures,
     routeClosures,
@@ -47,6 +54,10 @@ export function ClosuresPanel({ month, routes }: ClosuresPanelProps) {
     routeError,
     previewDate,
   } = useClosures(month, routes);
+
+  useEffect(() => {
+    hydratePreferences();
+  }, [hydratePreferences]);
 
   const monthText = monthLabel(month);
   const previewDay = new Intl.DateTimeFormat("en-US", {
@@ -91,7 +102,12 @@ export function ClosuresPanel({ month, routes }: ClosuresPanelProps) {
             )}
             <ul className="space-y-2">
               {routeClosures.slice(0, 3).map((closure) => (
-                <ClosureRow key={closure.id} closure={closure} compact />
+                <ClosureRow
+                  key={closure.id}
+                  closure={closure}
+                  compact
+                  units={unitSystem}
+                />
               ))}
             </ul>
           </>
@@ -124,7 +140,11 @@ export function ClosuresPanel({ month, routes }: ClosuresPanelProps) {
 
           <ul className="space-y-2">
             {closures.slice(0, 5).map((closure) => (
-              <ClosureRow key={closure.id} closure={closure} />
+              <ClosureRow
+                key={closure.id}
+                closure={closure}
+                units={unitSystem}
+              />
             ))}
           </ul>
         </>
@@ -136,10 +156,15 @@ export function ClosuresPanel({ month, routes }: ClosuresPanelProps) {
 function ClosureRow({
   closure,
   compact = false,
+  units,
 }: {
   closure: PlannerClosure;
   compact?: boolean;
+  units: UnitSystem;
 }) {
+  const detourKm =
+    closure.reason === "roadworks" ? detourLengthKm(closure) : null;
+
   return (
     <li className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
       <div className="flex items-start justify-between gap-3">
@@ -160,6 +185,12 @@ function ClosureRow({
       <p className="mt-1 text-xs text-slate-400">
         {formatClosureWindow(closure)}
       </p>
+
+      {detourKm != null && (
+        <p className="mt-2 text-xs text-cyan-300">
+          Detour available · approx. {formatDistance(detourKm, units)}
+        </p>
+      )}
 
       {!compact && closure.notes && (
         <p className="mt-2 text-xs text-slate-400">{closure.notes}</p>

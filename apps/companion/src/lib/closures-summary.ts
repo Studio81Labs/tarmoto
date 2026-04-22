@@ -1,3 +1,4 @@
+import { haversineKm } from "@tarmoto/shared";
 import type { RoadClosure } from "./api";
 import type { Trip } from "./types";
 
@@ -76,6 +77,20 @@ export function dedupeClosures(
   }
 
   return [...unique.values()];
+}
+
+export function detourLengthKm(closure: PlannerClosure): number | null {
+  const detour = closure.detour;
+  if (!detour || detour.length < 2) return null;
+
+  let totalKm = 0;
+  for (let i = 1; i < detour.length; i += 1) {
+    const prev = detour[i - 1]!;
+    const next = detour[i]!;
+    totalKm += haversineKm(prev.lat, prev.lng, next.lat, next.lng);
+  }
+
+  return totalKm;
 }
 
 export function buildTripClosureRoutes(
