@@ -79,6 +79,7 @@ export default function AccountPage() {
   const bioDirtyRef = useRef(false);
   const homeRegionDirtyRef = useRef(false);
   const saveResetTimerRef = useRef<number | null>(null);
+  const copyResetTimerRef = useRef<number | null>(null);
 
   // `useState(user?.displayName ?? "")` only captures the value at first
   // render. When Auth.js finishes hydrating the session after mount, the
@@ -113,11 +114,14 @@ export default function AccountPage() {
     };
   }, []);
 
-  // Clean up any pending "saved → idle" timer on unmount.
+  // Clean up any pending transient status timers on unmount.
   useEffect(() => {
     return () => {
       if (saveResetTimerRef.current !== null) {
         window.clearTimeout(saveResetTimerRef.current);
+      }
+      if (copyResetTimerRef.current !== null) {
+        window.clearTimeout(copyResetTimerRef.current);
       }
     };
   }, []);
@@ -138,7 +142,7 @@ export default function AccountPage() {
       setSaveError("Display name is required.");
       return;
     }
-    if (avatarUrl.trim() && !previewAvatarUrl) {
+    if (avatarDirtyRef.current && avatarUrl.trim() && !previewAvatarUrl) {
       setSaveState("error");
       setSaveError("Avatar URL must be a valid http:// or https:// address.");
       return;
@@ -156,8 +160,8 @@ export default function AccountPage() {
       bio?: string | null;
       home_region?: string | null;
     } = { display_name: trimmedName };
-    if (didHydrateProfile || avatarDirtyRef.current) {
-      payload.avatar_url = avatarUrl.trim() ? avatarUrl.trim() : null;
+    if (avatarDirtyRef.current) {
+      payload.avatar_url = previewAvatarUrl;
     }
     if (didHydrateProfile || bioDirtyRef.current) {
       payload.bio = bio.trim() || null;
@@ -201,6 +205,13 @@ export default function AccountPage() {
     try {
       await navigator.clipboard.writeText(user.email);
       setCopyState("copied");
+      if (copyResetTimerRef.current !== null) {
+        window.clearTimeout(copyResetTimerRef.current);
+      }
+      copyResetTimerRef.current = window.setTimeout(() => {
+        setCopyState("idle");
+        copyResetTimerRef.current = null;
+      }, 2000);
     } catch {
       setCopyState("error");
     }

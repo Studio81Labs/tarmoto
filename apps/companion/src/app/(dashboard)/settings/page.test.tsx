@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import AccountPage from "./page";
 import { usersApi } from "@/lib/api";
 
@@ -45,6 +51,7 @@ describe("AccountPage", () => {
   const clipboardWriteText = vi.fn();
 
   beforeEach(() => {
+    vi.useRealTimers();
     getMeMock.mockReset();
     updateMeMock.mockReset();
     authState.setUser.mockReset();
@@ -58,7 +65,7 @@ describe("AccountPage", () => {
     });
   });
 
-  it("saves the avatar URL with the rest of the profile payload", async () => {
+  it("saves the normalized avatar URL with the rest of the profile payload", async () => {
     getMeMock.mockResolvedValueOnce({
       data: {
         id: "user-1",
@@ -97,7 +104,7 @@ describe("AccountPage", () => {
     ).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Avatar URL"), {
-      target: { value: "https://cdn.example.com/avatar.png" },
+      target: { value: " https://CDN.Example.com/avatar.png " },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
@@ -111,7 +118,59 @@ describe("AccountPage", () => {
     );
   });
 
-  it("copies the account email for mobile sign-in", async () => {
+  it("does not block unrelated profile saves when the untouched avatar is legacy invalid data", async () => {
+    getMeMock.mockResolvedValueOnce({
+      data: {
+        id: "user-1",
+        email: "rider@example.com",
+        display_name: "Rider One",
+        phone: null,
+        avatar_url: "not-a-valid-url",
+        bio: "Likes mountain passes",
+        home_region: "Beskydy",
+        home_location: null,
+        work_location: null,
+        preferences: {},
+        created_at: "2026-04-22T09:00:00.000Z",
+      },
+    });
+    updateMeMock.mockResolvedValueOnce({
+      data: {
+        id: "user-1",
+        email: "rider@example.com",
+        display_name: "Updated Rider",
+        phone: null,
+        avatar_url: "not-a-valid-url",
+        bio: "Likes mountain passes",
+        home_region: "Beskydy",
+        home_location: null,
+        work_location: null,
+        preferences: {},
+        created_at: "2026-04-22T09:00:00.000Z",
+      },
+    });
+
+    render(<AccountPage />);
+
+    expect(
+      await screen.findByDisplayValue("Likes mountain passes"),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Display name"), {
+      target: { value: "Updated Rider" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() =>
+      expect(updateMeMock).toHaveBeenCalledWith({
+        display_name: "Updated Rider",
+        bio: "Likes mountain passes",
+        home_region: "Beskydy",
+      }),
+    );
+  });
+
+  it("copies the account email for mobile sign-in and clears the banner after a delay", async () => {
     getMeMock.mockResolvedValueOnce({
       data: {
         id: "user-1",
@@ -135,13 +194,25 @@ describe("AccountPage", () => {
       await screen.findByDisplayValue("rider@example.com"),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Copy sign-in email" }));
+    vi.useFakeTimers();
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Copy sign-in email" }),
+      );
+      await Promise.resolve();
+    });
 
-    await waitFor(() =>
-      expect(clipboardWriteText).toHaveBeenCalledWith("rider@example.com"),
-    );
+    expect(clipboardWriteText).toHaveBeenCalledWith("rider@example.com");
     expect(
       screen.getByText("Email copied. Use it to sign in on mobile."),
     ).toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(
+      screen.queryByText("Email copied. Use it to sign in on mobile."),
+    ).not.toBeInTheDocument();
   });
 });
