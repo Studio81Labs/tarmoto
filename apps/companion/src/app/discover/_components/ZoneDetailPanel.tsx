@@ -67,7 +67,7 @@ export function ZoneDetailPanel({ summary }: Props) {
   if (!selectedZoneId) return null;
 
   const zone = detail?.zone ?? summary;
-  const topRoads = detail?.top_roads ?? [];
+  const topRoads: FunZoneDetail["top_roads"] = detail?.top_roads ?? [];
 
   return (
     <aside className="w-[360px] border-l border-slate-800 bg-slate-950 flex flex-col animate-slide-in-right">
@@ -129,7 +129,7 @@ export function ZoneDetailPanel({ summary }: Props) {
           </div>
         ) : (
           <ul className="divide-y divide-slate-800">
-            {topRoads.map((road) => (
+            {topRoads.map((road: FunZoneDetail["top_roads"][number]) => (
               <li key={road.id} className="p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">

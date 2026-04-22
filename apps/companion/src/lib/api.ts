@@ -9,6 +9,18 @@ export const api = createApiClient({
   onUnauthorized: () => useAuthStore.getState().clearSession(),
 });
 
+export class ApiError extends Error {
+  readonly status: number;
+  readonly body: unknown;
+
+  constructor(message: string, status: number, body: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
 // ── Auth helpers ──
 
 export async function forgotPassword(email: string) {
@@ -50,9 +62,11 @@ async function apiFetch<T>(
   if (!res.ok) {
     if (res.status === 401) useAuthStore.getState().clearSession();
     const body = await res.json().catch(() => ({}));
-    throw new Error(
+    throw new ApiError(
       (body as { message?: string }).message ??
         `Request failed (${res.status})`,
+      res.status,
+      body,
     );
   }
   if (res.status === 204 || res.headers.get("content-length") === "0") {
