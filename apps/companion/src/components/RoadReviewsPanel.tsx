@@ -228,7 +228,7 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
 
       {canLoadReviews && (
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          {isAuthenticated ? (
+          {loading ? null : isAuthenticated ? (
             myReview ? (
               <>
                 <button

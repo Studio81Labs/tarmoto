@@ -93,6 +93,62 @@ describe("RoadReviewsPanel", () => {
     expect(screen.getByText("2 reviews")).toBeInTheDocument();
   });
 
+  it("hides authoring controls until authenticated ownership data finishes loading", async () => {
+    useAuthStore.setState({
+      user: {
+        id: "user-1",
+        email: "rider@example.com",
+        displayName: "John Rider",
+      },
+      isAuthenticated: true,
+      accessToken: "token-1",
+    });
+
+    let resolveReviews: ((value: { data: RoadReview[] }) => void) | null = null;
+    getReviewsMock.mockImplementationOnce(
+      () =>
+        new Promise<{ data: RoadReview[] }>((resolve) => {
+          resolveReviews = resolve;
+        }),
+    );
+
+    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+    expect(screen.getByText("Loading reviews…")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Write a review for this road" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Edit your review" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Delete your review" }),
+    ).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveReviews?.({
+        data: [
+          review({
+            id: "review-1",
+            rating: 4,
+            comment: "Already reviewed from another session.",
+            is_mine: true,
+          }),
+        ],
+      });
+    });
+
+    expect(
+      await screen.findByRole("button", { name: "Edit your review" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Delete your review" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Write a review for this road" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("updates review vote counts when riders mark a review helpful", async () => {
     getReviewsMock.mockResolvedValueOnce({
       data: [review({ id: "review-1", helpful_count: 3, my_vote: null })],
