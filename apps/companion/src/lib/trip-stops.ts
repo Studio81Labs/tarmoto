@@ -21,7 +21,34 @@ export interface TripDayStops {
   pois: RoutePoiSuggestion[];
 }
 
+export interface TripStopsRequestDay {
+  dayNumber: number;
+  title: string | null;
+  endAnchor: { lat: number; lng: number } | null;
+  routePoints: Array<{ lat: number; lng: number }>;
+}
+
+export interface TripStopsRequestPlan {
+  tripId: string;
+  days: TripStopsRequestDay[];
+}
+
 export type StopSuggestion = AccommodationSuggestion | RoutePoiSuggestion;
+
+const ROUTING_WAYPOINT_TYPES: ReadonlySet<Waypoint["type"]> = new Set([
+  "start",
+  "via",
+  "end",
+]);
+
+function routingWaypoints(
+  waypoints: Pick<Waypoint, "type" | "location" | "name" | "id">[],
+) {
+  const filtered = waypoints.filter((waypoint) =>
+    ROUTING_WAYPOINT_TYPES.has(waypoint.type),
+  );
+  return filtered.length > 0 ? filtered : waypoints;
+}
 
 export function buildDayRoutePoints(
   day: Pick<TripDay, "routeGeometry" | "waypoints">,
@@ -31,8 +58,9 @@ export function buildDayRoutePoints(
     return coords.map(([lng, lat]) => ({ lat, lng }));
   }
 
-  if (day.waypoints.length >= 2) {
-    return day.waypoints.map((waypoint) => waypoint.location);
+  const routeWaypoints = routingWaypoints(day.waypoints);
+  if (routeWaypoints.length >= 2) {
+    return routeWaypoints.map((waypoint) => waypoint.location);
   }
 
   return [];
@@ -41,10 +69,16 @@ export function buildDayRoutePoints(
 export function buildDayEndAnchor(
   day: Pick<TripDay, "routeGeometry" | "waypoints">,
 ): { lat: number; lng: number } | null {
+  const routeWaypoints = routingWaypoints(day.waypoints);
+  const explicitEnd =
+    routeWaypoints.findLast?.((waypoint) => waypoint.type === "end") ??
+    [...routeWaypoints].reverse().find((waypoint) => waypoint.type === "end");
+  if (explicitEnd) return explicitEnd.location;
+
   const routePoints = buildDayRoutePoints(day);
   if (routePoints.length > 0)
     return routePoints[routePoints.length - 1] ?? null;
-  return day.waypoints[day.waypoints.length - 1]?.location ?? null;
+  return routeWaypoints[routeWaypoints.length - 1]?.location ?? null;
 }
 
 export function buildTripDayStops(
@@ -56,10 +90,36 @@ export function buildTripDayStops(
     dayNumber: day.dayNumber,
     title: day.title,
     routeAvailable: buildDayRoutePoints(day).length >= 2,
-    endLabel: day.waypoints[day.waypoints.length - 1]?.name ?? null,
+    endLabel:
+      routingWaypoints(day.waypoints).findLast?.(
+        (waypoint) => waypoint.type === "end",
+      )?.name ??
+      [...routingWaypoints(day.waypoints)]
+        .reverse()
+        .find((waypoint) => waypoint.type === "end")?.name ??
+      routingWaypoints(day.waypoints)[
+        routingWaypoints(day.waypoints).length - 1
+      ]?.name ??
+      null,
     accommodations: accommodationsByDay.get(day.dayNumber) ?? [],
     pois: poisByDay.get(day.dayNumber) ?? [],
   }));
+}
+
+export function buildTripStopsRequestPlan(
+  trip: Trip | null,
+): TripStopsRequestPlan | null {
+  if (!trip) return null;
+
+  return {
+    tripId: trip.id,
+    days: trip.days.map((day) => ({
+      dayNumber: day.dayNumber,
+      title: day.title ?? null,
+      endAnchor: buildDayEndAnchor(day),
+      routePoints: buildDayRoutePoints(day),
+    })),
+  };
 }
 
 export function buildSuggestionWaypoint(suggestion: StopSuggestion): Waypoint {

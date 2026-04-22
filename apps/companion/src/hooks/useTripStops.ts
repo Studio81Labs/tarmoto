@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { poiApi } from "@/lib/api";
 import {
-  buildDayEndAnchor,
-  buildDayRoutePoints,
   buildTripDayStops,
+  buildTripStopsRequestPlan,
   type TripDayStops,
   type TripStopsOptions,
 } from "@/lib/trip-stops";
@@ -33,8 +32,38 @@ export function useTripStops(
     [options.poiKinds],
   );
 
+  const nextRequestPlan = useMemo(
+    () => buildTripStopsRequestPlan(trip),
+    [trip],
+  );
+
+  const requestPlanKey = useMemo(
+    () => JSON.stringify(nextRequestPlan),
+    [nextRequestPlan],
+  );
+
+  const stableRequestRef = useRef<{
+    key: string;
+    trip: Trip | null;
+    plan: typeof nextRequestPlan;
+  }>({
+    key: requestPlanKey,
+    trip,
+    plan: nextRequestPlan,
+  });
+
+  if (stableRequestRef.current.key !== requestPlanKey) {
+    stableRequestRef.current = {
+      key: requestPlanKey,
+      trip,
+      plan: nextRequestPlan,
+    };
+  }
+
   useEffect(() => {
-    if (!trip) {
+    const stableTrip = stableRequestRef.current.trip;
+    const requestPlan = stableRequestRef.current.plan;
+    if (!stableTrip || !requestPlan) {
       setState({ days: [], loading: false, error: null });
       return;
     }
@@ -45,7 +74,7 @@ export function useTripStops(
       days:
         current.days.length > 0
           ? current.days
-          : buildTripDayStops(trip, new Map(), new Map()),
+          : buildTripDayStops(stableTrip, new Map(), new Map()),
       loading: true,
       error: null,
     }));
@@ -56,9 +85,8 @@ export function useTripStops(
       const failures: string[] = [];
 
       await Promise.all(
-        trip.days.map(async (day) => {
-          const endAnchor = buildDayEndAnchor(day);
-          const routePoints = buildDayRoutePoints(day);
+        requestPlan.days.map(async (day) => {
+          const { endAnchor, routePoints } = day;
 
           const [accommodationsResult, poisResult] = await Promise.allSettled([
             endAnchor
@@ -100,7 +128,7 @@ export function useTripStops(
       if (cancelled) return;
 
       setState({
-        days: buildTripDayStops(trip, accommodationsByDay, poisByDay),
+        days: buildTripDayStops(stableTrip, accommodationsByDay, poisByDay),
         loading: false,
         error:
           failures.length > 0
@@ -112,7 +140,7 @@ export function useTripStops(
     load().catch((err) => {
       if (cancelled) return;
       setState({
-        days: buildTripDayStops(trip, new Map(), new Map()),
+        days: buildTripDayStops(stableTrip, new Map(), new Map()),
         loading: false,
         error:
           err instanceof Error
@@ -124,7 +152,7 @@ export function useTripStops(
     return () => {
       cancelled = true;
     };
-  }, [trip, normalizedKinds, options.minAccommodationStars]);
+  }, [requestPlanKey, normalizedKinds, options.minAccommodationStars]);
 
   return state;
 }

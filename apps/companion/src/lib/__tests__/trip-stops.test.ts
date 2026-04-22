@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { TripDay, Waypoint } from "@/lib/types";
 import {
+  buildDayEndAnchor,
   buildDayRoutePoints,
   buildSuggestionWaypoint,
+  buildTripStopsRequestPlan,
   isSuggestionWaypointAdded,
   type AccommodationSuggestion,
   type RoutePoiSuggestion,
@@ -98,6 +100,95 @@ describe("trip-stops helpers", () => {
       { lat: 46.53, lng: 10.45 },
       { lat: 46.61, lng: 10.57 },
     ]);
+  });
+
+  it("keeps planner-only route fallbacks anchored to routing waypoints", () => {
+    const fuelStop = buildSuggestionWaypoint(
+      routePoi({ external_id: "fuel-1", kind: "fuel_station" }),
+    );
+
+    expect(
+      buildDayRoutePoints(
+        day({
+          waypoints: [
+            waypoint({ id: "start", lat: 46.47, lng: 10.37, type: "start" }),
+            waypoint({ id: "end", lat: 46.61, lng: 10.57, type: "end" }),
+            fuelStop,
+          ],
+        }),
+      ),
+    ).toEqual([
+      { lat: 46.47, lng: 10.37 },
+      { lat: 46.61, lng: 10.57 },
+    ]);
+
+    expect(
+      buildDayEndAnchor(
+        day({
+          waypoints: [
+            waypoint({ id: "start", lat: 46.47, lng: 10.37, type: "start" }),
+            waypoint({ id: "end", lat: 46.61, lng: 10.57, type: "end" }),
+            fuelStop,
+          ],
+        }),
+      ),
+    ).toEqual({ lat: 46.61, lng: 10.57 });
+  });
+
+  it("keeps the stop-fetch request plan stable when suggestions are appended", () => {
+    const fuelStop = buildSuggestionWaypoint(
+      routePoi({ external_id: "fuel-1", kind: "fuel_station" }),
+    );
+
+    expect(
+      buildTripStopsRequestPlan({
+        id: "trip-1",
+        name: "Planner trip",
+        status: "draft",
+        createdAt: "2026-04-01T09:00:00Z",
+        updatedAt: "2026-04-14T09:00:00Z",
+        parameters: {
+          days: 1,
+          dailyKmTarget: 240,
+          roadPreference: "curvy",
+          surfacePreference: ["asphalt"],
+          avoidHighways: true,
+          avoidTolls: false,
+          avoidUnpaved: true,
+          minQuality: 3,
+        },
+        collaborators: [],
+        days: [day()],
+      }),
+    ).toEqual(
+      buildTripStopsRequestPlan({
+        id: "trip-1",
+        name: "Planner trip",
+        status: "draft",
+        createdAt: "2026-04-01T09:00:00Z",
+        updatedAt: "2026-04-14T09:00:00Z",
+        parameters: {
+          days: 1,
+          dailyKmTarget: 240,
+          roadPreference: "curvy",
+          surfacePreference: ["asphalt"],
+          avoidHighways: true,
+          avoidTolls: false,
+          avoidUnpaved: true,
+          minQuality: 3,
+        },
+        collaborators: [],
+        days: [
+          day({
+            waypoints: [
+              waypoint({ id: "start", lat: 46.47, lng: 10.37, type: "start" }),
+              waypoint({ id: "end", lat: 46.61, lng: 10.57, type: "end" }),
+              fuelStop,
+            ],
+          }),
+        ],
+      }),
+    );
   });
 
   it("maps stay and poi suggestions into itinerary waypoint types", () => {
