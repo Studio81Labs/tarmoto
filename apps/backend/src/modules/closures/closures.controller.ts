@@ -23,6 +23,8 @@ import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { ClosuresService } from './closures.service.js';
 import {
+  CheckRouteClosuresDto,
+  CheckRouteClosuresResponseDto,
   CreateClosureDto,
   ListClosuresQueryDto,
   RoadClosureDto,
@@ -45,6 +47,25 @@ export class ClosuresController {
   @ApiResponse({ status: 200, type: [RoadClosureDto] })
   async list(@Query() query: ListClosuresQueryDto): Promise<RoadClosureDto[]> {
     return this.closures.list(query);
+  }
+
+  @Post('check-route')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Check which road closures a planned route crosses',
+    description:
+      'Given a route polyline returns the active closures within ' +
+      '`buffer_m` (default 100 m) of the line plus counts broken out ' +
+      'by severity. "Active" is evaluated at `active_on` or the ' +
+      'current instant when omitted — the planner calls this as the ' +
+      'rider draws a route so they can see up front whether their ' +
+      'plan crosses a closed stretch.',
+  })
+  @ApiResponse({ status: 200, type: CheckRouteClosuresResponseDto })
+  async checkRoute(
+    @Body() dto: CheckRouteClosuresDto,
+  ): Promise<CheckRouteClosuresResponseDto> {
+    return this.closures.checkRoute(dto);
   }
 
   @Get(':id')

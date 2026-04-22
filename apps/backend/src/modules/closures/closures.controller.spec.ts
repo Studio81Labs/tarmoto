@@ -38,6 +38,12 @@ describe('ClosuresController', () => {
         .fn()
         .mockResolvedValue({ ...SAMPLE, title: 'Updated title' }),
       remove: jest.fn().mockResolvedValue(undefined),
+      checkRoute: jest.fn().mockResolvedValue({
+        closures: [SAMPLE],
+        full_count: 1,
+        partial_count: 0,
+        advisory_count: 0,
+      }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -108,5 +114,22 @@ describe('ClosuresController', () => {
     >[0];
     await controller.remove(req, SAMPLE.id);
     expect(service.remove).toHaveBeenCalledWith(SAMPLE.id, 'user-1');
+  });
+
+  it('POST /closures/check-route forwards the body and returns counts', async () => {
+    const dto = {
+      route: [
+        { lat: 50, lng: 17 },
+        { lat: 50.1, lng: 17.1 },
+      ],
+      buffer_m: 150,
+      active_on: '2026-05-01T00:00:00Z',
+    };
+    const result = await controller.checkRoute(dto);
+    expect(service.checkRoute).toHaveBeenCalledWith(dto);
+    expect(result.closures).toHaveLength(1);
+    expect(result.full_count).toBe(1);
+    expect(result.partial_count).toBe(0);
+    expect(result.advisory_count).toBe(0);
   });
 });

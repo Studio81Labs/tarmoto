@@ -8,12 +8,22 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RoadClosure } from '../../entities/road-closure.entity.js';
 import {
+  CheckRouteClosuresDto,
+  CheckRouteClosuresResponseDto,
   ClosurePointDto,
   CreateClosureDto,
   ListClosuresQueryDto,
   RoadClosureDto,
+  RoadClosureSeverity,
   UpdateClosureDto,
 } from './dto/closures.dto.js';
+
+// Sort ranking for severity so the highest-impact closures appear first.
+const SEVERITY_RANK: Record<RoadClosureSeverity, number> = {
+  full: 0,
+  partial: 1,
+  advisory: 2,
+};
 
 interface BboxCoords {
   minLng: number;
@@ -60,6 +70,63 @@ export class ClosuresService {
 
     const rows = await qb.getMany();
     return rows.map((r) => this.toDto(r));
+  }
+
+  async checkRoute(
+    dto: CheckRouteClosuresDto,
+  ): Promise<CheckRouteClosuresResponseDto> {
+    if (dto.route.length < 2) {
+      throw new BadRequestException('Route must have at least 2 points');
+    }
+    const bufferM = dto.buffer_m ?? 100;
+    const activeOn = dto.active_on ? new Date(dto.active_on) : new Date();
+
+    // Build the LineString via TypeORM's named-parameter binding so each
+    // coordinate is passed as a real SQL parameter (no string
+    // interpolation of user input). Going through `createQueryBuilder`
+    // rather than `repo.query` also makes TypeORM hydrate the `geom`
+    // column back into a GeoJSON LineString — with raw `.query()` we'd
+    // get a WKB hex string and `toDto` would crash on `r.geom.coordinates`.
+    const params: Record<string, number | Date> = {
+      buffer: bufferM,
+      activeOn,
+    };
+    const pointsSql = dto.route
+      .map((p, i) => {
+        params[`lng${i}`] = p.lng;
+        params[`lat${i}`] = p.lat;
+        return `ST_MakePoint(:lng${i}, :lat${i})`;
+      })
+      .join(',');
+
+    const rows = await this.repo
+      .createQueryBuilder('c')
+      .andWhere(
+        `ST_DWithin(
+          c.geom::geography,
+          ST_SetSRID(ST_MakeLine(ARRAY[${pointsSql}]), 4326)::geography,
+          :buffer
+        )`,
+        params,
+      )
+      .andWhere('c.starts_at <= :activeOn', { activeOn })
+      .andWhere('(c.ends_at IS NULL OR c.ends_at >= :activeOn)', { activeOn })
+      .orderBy('c.starts_at', 'DESC')
+      .getMany();
+
+    const closures = rows
+      .map((r) => this.toDto(r))
+      .sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
+
+    const countBy = (s: RoadClosureSeverity): number =>
+      closures.reduce((n, c) => n + (c.severity === s ? 1 : 0), 0);
+
+    return {
+      closures,
+      full_count: countBy('full'),
+      partial_count: countBy('partial'),
+      advisory_count: countBy('advisory'),
+    };
   }
 
   async getById(id: string): Promise<RoadClosureDto> {

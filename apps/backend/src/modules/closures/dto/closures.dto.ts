@@ -9,11 +9,14 @@ import {
   IsISO8601,
   IsLatitude,
   IsLongitude,
+  IsNumber,
   IsOptional,
   IsString,
   Length,
   Matches,
+  Max,
   MaxLength,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { toOptionalBoolean } from '../../../common/dto-transforms.js';
@@ -268,4 +271,63 @@ export class UpdateClosureDto {
   @IsOptional()
   @IsString()
   notes?: string | null;
+}
+
+export class CheckRouteClosuresDto {
+  @ApiProperty({
+    type: [ClosurePointDto],
+    minItems: 2,
+    description: 'Planned route polyline (2+ points, WGS84 lat/lng).',
+  })
+  @IsArray()
+  @ArrayMinSize(2)
+  @ValidateNested({ each: true })
+  @Type(() => ClosurePointDto)
+  route!: ClosurePointDto[];
+
+  @ApiPropertyOptional({
+    default: 100,
+    minimum: 10,
+    maximum: 5000,
+    description:
+      'Buffer in meters around the route to treat a closure as "on it". ' +
+      'Smaller than the passes default (1500 m) because closures are ' +
+      'linestrings that already trace the affected road stretch.',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  @Min(10)
+  @Max(5000)
+  buffer_m?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'ISO 8601 instant. Only closures active on this instant are checked. ' +
+      'Defaults to now, so the planner gets the closures the rider would ' +
+      'hit if they left immediately.',
+    example: '2026-07-15T00:00:00Z',
+  })
+  @IsOptional()
+  @IsISO8601()
+  active_on?: string;
+}
+
+export class CheckRouteClosuresResponseDto {
+  @ApiProperty({
+    type: [RoadClosureDto],
+    description:
+      'Active closures within `buffer_m` of the route, ordered by ' +
+      'severity (full > partial > advisory), then by start date.',
+  })
+  closures!: RoadClosureDto[];
+
+  @ApiProperty({ description: 'Count of closures with severity = full.' })
+  full_count!: number;
+
+  @ApiProperty({ description: 'Count of closures with severity = partial.' })
+  partial_count!: number;
+
+  @ApiProperty({ description: 'Count of closures with severity = advisory.' })
+  advisory_count!: number;
 }
