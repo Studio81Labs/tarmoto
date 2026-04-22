@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuthStore } from "@/stores/auth";
 import { usePreferencesStore } from "@/stores/preferences";
-import { usersApi, type UserProfileResponse } from "@/lib/api";
+import { usersApi } from "@/lib/api";
 import type { UnitSystem } from "@tarmoto/shared";
 import {
   User,
@@ -14,6 +14,8 @@ import {
   Bike,
   ChevronRight,
   Database,
+  Copy,
+  Smartphone,
 } from "lucide-react";
 
 const SETTINGS_SECTIONS = [
@@ -56,21 +58,24 @@ const SETTINGS_SECTIONS = [
 ];
 
 type SaveState = "idle" | "saving" | "saved" | "error";
+type CopyState = "idle" | "copied" | "error";
 
 export default function AccountPage() {
   const user = useAuthStore((s) => s.user);
   const setAuthUser = useAuthStore((s) => s.setUser);
   const [displayName, setDisplayName] = useState(user?.displayName ?? "");
+  const [avatarUrl, setAvatarUrl] = useState("");
   const [homeRegion, setHomeRegion] = useState("");
   const [bio, setBio] = useState("");
-  const [profile, setProfile] = useState<UserProfileResponse | null>(null);
   const [didHydrateProfile, setDidHydrateProfile] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [copyState, setCopyState] = useState<CopyState>("idle");
 
   // Per-field dirty flags — set on first keystroke so a late GET response
   // can't clobber what the user just typed, and so an unhydrated save
   // doesn't blindly send empty values that would blank the server row.
+  const avatarDirtyRef = useRef(false);
   const bioDirtyRef = useRef(false);
   const homeRegionDirtyRef = useRef(false);
   const saveResetTimerRef = useRef<number | null>(null);
@@ -91,7 +96,7 @@ export default function AccountPage() {
       .getMe()
       .then(({ data }) => {
         if (cancelled) return;
-        setProfile(data);
+        if (!avatarDirtyRef.current) setAvatarUrl(data.avatar_url ?? "");
         // Don't overwrite a field the user has already started editing
         // if the GET races with early typing.
         if (!bioDirtyRef.current) setBio(data.bio ?? "");
@@ -124,11 +129,18 @@ export default function AccountPage() {
     hydratePreferences();
   }, [hydratePreferences]);
 
+  const previewAvatarUrl = normalizeAvatarUrl(avatarUrl);
+
   const handleSave = useCallback(async () => {
     const trimmedName = displayName.trim();
     if (!trimmedName) {
       setSaveState("error");
       setSaveError("Display name is required.");
+      return;
+    }
+    if (avatarUrl.trim() && !previewAvatarUrl) {
+      setSaveState("error");
+      setSaveError("Avatar URL must be a valid http:// or https:// address.");
       return;
     }
     setSaveState("saving");
@@ -140,9 +152,13 @@ export default function AccountPage() {
     // of the existing bio/home_region".
     const payload: {
       display_name: string;
+      avatar_url?: string | null;
       bio?: string | null;
       home_region?: string | null;
     } = { display_name: trimmedName };
+    if (didHydrateProfile || avatarDirtyRef.current) {
+      payload.avatar_url = avatarUrl.trim() ? avatarUrl.trim() : null;
+    }
     if (didHydrateProfile || bioDirtyRef.current) {
       payload.bio = bio.trim() || null;
     }
@@ -152,7 +168,6 @@ export default function AccountPage() {
 
     try {
       const { data } = await usersApi.updateMe(payload);
-      setProfile(data);
       if (user) {
         setAuthUser({ ...user, displayName: data.display_name });
       }
@@ -170,7 +185,26 @@ export default function AccountPage() {
         err instanceof Error ? err.message : "Could not save your profile.",
       );
     }
-  }, [displayName, bio, homeRegion, user, setAuthUser, didHydrateProfile]);
+  }, [
+    displayName,
+    avatarUrl,
+    previewAvatarUrl,
+    bio,
+    homeRegion,
+    user,
+    setAuthUser,
+    didHydrateProfile,
+  ]);
+
+  const handleCopySignInEmail = useCallback(async () => {
+    if (!user?.email) return;
+    try {
+      await navigator.clipboard.writeText(user.email);
+      setCopyState("copied");
+    } catch {
+      setCopyState("error");
+    }
+  }, [user?.email]);
 
   return (
     <div className="p-6 max-w-3xl mx-auto animate-fade-in">
@@ -201,13 +235,13 @@ export default function AccountPage() {
         <h2 className="text-lg font-semibold mb-4">Profile</h2>
 
         <div className="flex items-center gap-4 mb-6">
-          {profile?.avatar_url ? (
+          {previewAvatarUrl ? (
             // Browser-native <img>: avatar URLs come from arbitrary providers
             // (social login, etc.), so we'd need to enumerate every domain in
             // next.config.ts to use next/image — not practical here.
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={profile.avatar_url}
+              src={previewAvatarUrl}
               alt={
                 displayName
                   ? `${displayName}'s profile photo`
@@ -224,30 +258,58 @@ export default function AccountPage() {
             </div>
           )}
           <div className="flex flex-col">
-            {/*
-              aria-disabled (rather than `disabled`) keeps the button in the
-              tab order so keyboard + screen-reader users can still reach the
-              "coming soon" helper text beneath it.
-            */}
-            <button
-              type="button"
-              aria-disabled="true"
-              onClick={(e) => e.preventDefault()}
-              className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-500 text-sm cursor-not-allowed w-fit"
-            >
-              Change photo
-            </button>
             <p className="text-xs text-slate-500 mt-1">
-              Photo upload is coming in a follow-up.
+              Paste a hosted image URL to keep your web and mobile profile photo
+              in sync today.
             </p>
           </div>
         </div>
 
         <div>
-          <label className="block text-sm text-slate-400 mb-1.5">
+          <label
+            htmlFor="settings-avatar-url"
+            className="block text-sm text-slate-400 mb-1.5"
+          >
+            Avatar URL
+          </label>
+          <div className="flex gap-2">
+            <input
+              id="settings-avatar-url"
+              type="url"
+              value={avatarUrl}
+              onChange={(e) => {
+                avatarDirtyRef.current = true;
+                setAvatarUrl(e.target.value);
+              }}
+              placeholder="https://cdn.example.com/rider.jpg"
+              className="w-full px-4 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan transition"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                avatarDirtyRef.current = true;
+                setAvatarUrl("");
+              }}
+              className="px-3 py-2.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition"
+            >
+              Remove
+            </button>
+          </div>
+          <p className="text-xs text-slate-500 mt-1">
+            Use an `https://` image URL from your CDN, photo host, or social
+            profile.
+          </p>
+        </div>
+
+        <div>
+          <label
+            htmlFor="settings-display-name"
+            className="block text-sm text-slate-400 mb-1.5"
+          >
             Display name
           </label>
           <input
+            id="settings-display-name"
             type="text"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
@@ -257,8 +319,14 @@ export default function AccountPage() {
         </div>
 
         <div>
-          <label className="block text-sm text-slate-400 mb-1.5">Email</label>
+          <label
+            htmlFor="settings-email"
+            className="block text-sm text-slate-400 mb-1.5"
+          >
+            Email
+          </label>
           <input
+            id="settings-email"
             type="email"
             value={user?.email ?? ""}
             disabled
@@ -267,8 +335,14 @@ export default function AccountPage() {
         </div>
 
         <div>
-          <label className="block text-sm text-slate-400 mb-1.5">Bio</label>
+          <label
+            htmlFor="settings-bio"
+            className="block text-sm text-slate-400 mb-1.5"
+          >
+            Bio
+          </label>
           <textarea
+            id="settings-bio"
             value={bio}
             onChange={(e) => {
               bioDirtyRef.current = true;
@@ -283,10 +357,14 @@ export default function AccountPage() {
         </div>
 
         <div>
-          <label className="block text-sm text-slate-400 mb-1.5">
+          <label
+            htmlFor="settings-home-region"
+            className="block text-sm text-slate-400 mb-1.5"
+          >
             Home region
           </label>
           <input
+            id="settings-home-region"
             type="text"
             value={homeRegion}
             onChange={(e) => {
@@ -326,6 +404,50 @@ export default function AccountPage() {
               {saveError}
             </span>
           )}
+        </div>
+      </div>
+
+      <div className="rounded-2xl bg-slate-900 border border-slate-800 p-6 mt-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold mb-1">Link mobile app</h2>
+            <p className="text-sm text-slate-500">
+              Sign in on iPhone or Android with this same Tarmoto account to
+              sync your rides, bikes, and profile details across devices.
+            </p>
+          </div>
+          <div className="rounded-xl bg-slate-800/80 p-3 text-tarmoto-cyan">
+            <Smartphone size={20} />
+          </div>
+        </div>
+        <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+          <p className="text-xs uppercase tracking-widest text-slate-500">
+            Sign-in email
+          </p>
+          <p className="mt-1 break-all font-mono text-sm text-slate-200">
+            {user?.email ?? "No account email available"}
+          </p>
+          <div className="mt-4 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleCopySignInEmail}
+              disabled={!user?.email}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm font-medium hover:bg-slate-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Copy size={14} />
+              Copy sign-in email
+            </button>
+            {copyState === "copied" && (
+              <span role="status" className="text-sm text-emerald-400">
+                Email copied. Use it to sign in on mobile.
+              </span>
+            )}
+            {copyState === "error" && (
+              <span role="alert" className="text-sm text-rose-400">
+                Could not copy your email. Please copy it manually.
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -374,4 +496,19 @@ export default function AccountPage() {
       </div>
     </div>
   );
+}
+
+function normalizeAvatarUrl(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
 }
