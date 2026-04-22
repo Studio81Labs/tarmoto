@@ -22,6 +22,8 @@ export interface ClosuresQueryResult {
   previewDate: Date;
 }
 
+type ClosuresState = Omit<ClosuresQueryResult, "previewDate">;
+
 const EMPTY_COUNTS: ClosureSeverityCounts = {
   full: 0,
   partial: 0,
@@ -35,7 +37,7 @@ export function useClosures(
 ): ClosuresQueryResult {
   const previewDate = useMemo(() => previewDateForMonth(month), [month]);
   const previewIso = previewDate.toISOString();
-  const [state, setState] = useState<ClosuresQueryResult>({
+  const [state, setState] = useState<ClosuresState>({
     closures: [],
     routeClosures: [],
     counts: EMPTY_COUNTS,
@@ -44,7 +46,6 @@ export function useClosures(
     routeLoading: routes.length > 0,
     error: null,
     routeError: null,
-    previewDate,
   });
 
   useEffect(() => {
@@ -54,7 +55,6 @@ export function useClosures(
       ...current,
       loading: true,
       error: null,
-      previewDate,
     }));
 
     closuresApi
@@ -68,7 +68,6 @@ export function useClosures(
           counts: countClosuresBySeverity(closures),
           loading: false,
           error: null,
-          previewDate,
         }));
       })
       .catch((err: Error) => {
@@ -79,7 +78,6 @@ export function useClosures(
           counts: EMPTY_COUNTS,
           loading: false,
           error: err.message || "Failed to load closures",
-          previewDate,
         }));
       });
 
@@ -94,7 +92,6 @@ export function useClosures(
         routeCounts: EMPTY_COUNTS,
         routeLoading: false,
         routeError: null,
-        previewDate,
       }));
       return;
     }
@@ -105,7 +102,6 @@ export function useClosures(
       ...current,
       routeLoading: true,
       routeError: null,
-      previewDate,
     }));
 
     Promise.allSettled(
@@ -127,6 +123,17 @@ export function useClosures(
           > => result.status === "fulfilled",
         );
         const rejectedCount = results.length - fulfilled.length;
+        if (fulfilled.length === 0 && rejectedCount > 0) {
+          setState((current) => ({
+            ...current,
+            routeClosures: [],
+            routeCounts: EMPTY_COUNTS,
+            routeLoading: false,
+            routeError: "Failed to check route closures",
+          }));
+          return;
+        }
+
         const routeClosures = sortClosures(
           dedupeClosures(fulfilled.flatMap(({ value }) => value.data.closures)),
         );
@@ -139,7 +146,6 @@ export function useClosures(
             rejectedCount > 0
               ? "Some route segments could not be checked."
               : null,
-          previewDate,
         }));
       })
       .catch((err: Error) => {
@@ -150,7 +156,6 @@ export function useClosures(
           routeCounts: EMPTY_COUNTS,
           routeLoading: false,
           routeError: err.message || "Failed to check route closures",
-          previewDate,
         }));
       });
 
