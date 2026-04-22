@@ -14,6 +14,7 @@ import {
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import { PassesPanel } from "@/components/PassesPanel";
 import { SegmentSidebar } from "@/components/SegmentSidebar";
+import { TripStopsPanel } from "@/components/TripStopsPanel";
 import { TripExportMenu } from "@/components/TripExportMenu";
 import { TripImportDialog } from "@/components/TripImportDialog";
 import { buildTripClosureRoutes } from "@/lib/closures-summary";
@@ -223,6 +224,7 @@ export default function TripPlannerPage() {
             </div>
             <PassesPanel month={travelMonth} onMonthChange={setTravelMonth} />
             <ClosuresPanel month={travelMonth} routes={closureRoutes} />
+            <TripStopsPanel trip={activeTrip} />
           </div>
         )}
 
