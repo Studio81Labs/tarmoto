@@ -134,6 +134,7 @@ describe("RoadReviewsPanel", () => {
     expect(screen.queryByText("1 review")).not.toBeInTheDocument();
     expect(screen.queryByText("5.0 ★ average")).not.toBeInTheDocument();
 
-    resolveNext?.({ data: [] });
+    await waitFor(() => expect(resolveNext).not.toBeNull());
+    resolveNext!({ data: [] });
   });
 });
