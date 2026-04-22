@@ -83,8 +83,8 @@ export class SharingController {
     description:
       'Filter by region (`lat`/`lng`/`radius_km`), distance, road quality, ' +
       'or ride type, and sort by newest / oldest / longest / shortest / ' +
-      'highest_quality / nearest. `lat`/`lng` are optional for a global feed; ' +
-      '`sort = nearest` requires them.',
+      'highest_quality / most_popular / nearest. `lat`/`lng` are optional ' +
+      'for a global feed; `sort = nearest` requires them.',
   })
   @ApiResponse({ status: 200, type: CommunityRidesResponseDto })
   async listCommunityRides(
