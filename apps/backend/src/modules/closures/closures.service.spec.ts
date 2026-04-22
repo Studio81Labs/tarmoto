@@ -32,6 +32,22 @@ const SAMPLE_CLOSURE: RoadClosure = {
   updated_at: new Date('2026-04-20T00:00:00Z'),
 };
 
+const ADVISORY_CLOSURE: RoadClosure = {
+  ...SAMPLE_CLOSURE,
+  id: 'closure-2',
+  title: 'Gravel on shoulder',
+  reason: 'other',
+  severity: 'advisory',
+};
+
+const PARTIAL_CLOSURE: RoadClosure = {
+  ...SAMPLE_CLOSURE,
+  id: 'closure-3',
+  title: 'Single-lane works',
+  reason: 'roadworks',
+  severity: 'partial',
+};
+
 describe('ClosuresService', () => {
   let service: ClosuresService;
   let repo: Partial<jest.Mocked<Repository<RoadClosure>>>;
@@ -292,6 +308,163 @@ describe('ClosuresService', () => {
       await expect(service.remove('missing', 'user-1')).rejects.toBeInstanceOf(
         NotFoundException,
       );
+    });
+  });
+
+  describe('checkRoute', () => {
+    it('throws if the route has fewer than 2 points', async () => {
+      await expect(
+        service.checkRoute({ route: [{ lat: 50, lng: 17 }] }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('passes each coordinate as its own named parameter', async () => {
+      mockQb.getMany.mockResolvedValueOnce([SAMPLE_CLOSURE]);
+
+      await service.checkRoute({
+        route: [
+          { lat: 50.1, lng: 17.1 },
+          { lat: 50.2, lng: 17.2 },
+          { lat: 50.3, lng: 17.3 },
+        ],
+        buffer_m: 250,
+      });
+
+      const calls = mockQb.andWhere.mock.calls as [
+        string,
+        Record<string, unknown>,
+      ][];
+      const spatial = calls.find((c) => /ST_DWithin/.test(c[0]));
+      expect(spatial).toBeDefined();
+      expect(spatial![1]).toMatchObject({
+        buffer: 250,
+        lng0: 17.1,
+        lat0: 50.1,
+        lng1: 17.2,
+        lat1: 50.2,
+        lng2: 17.3,
+        lat2: 50.3,
+      });
+    });
+
+    it('defaults the buffer to 100 m', async () => {
+      mockQb.getMany.mockResolvedValueOnce([]);
+      await service.checkRoute({
+        route: [
+          { lat: 50, lng: 17 },
+          { lat: 50.1, lng: 17.1 },
+        ],
+      });
+      const calls = mockQb.andWhere.mock.calls as [
+        string,
+        Record<string, unknown>,
+      ][];
+      const spatial = calls.find((c) => /ST_DWithin/.test(c[0]));
+      expect(spatial![1]).toMatchObject({ buffer: 100 });
+    });
+
+    it('applies the active-on window by default (now)', async () => {
+      mockQb.getMany.mockResolvedValueOnce([]);
+      const before = Date.now();
+      await service.checkRoute({
+        route: [
+          { lat: 50, lng: 17 },
+          { lat: 50.1, lng: 17.1 },
+        ],
+      });
+      const after = Date.now();
+
+      const calls = mockQb.andWhere.mock.calls as [
+        string,
+        Record<string, unknown>,
+      ][];
+      expect(calls.some((c) => /starts_at <= :activeOn/.test(c[0]))).toBe(true);
+      expect(calls.some((c) => /ends_at IS NULL/.test(c[0]))).toBe(true);
+
+      const startsCall = calls.find((c) => /starts_at <= :activeOn/.test(c[0]));
+      const activeOn = (startsCall![1] as { activeOn: Date }).activeOn;
+      expect(activeOn).toBeInstanceOf(Date);
+      // The default should be "now" — bracketed by the timestamps we
+      // captured around the call.
+      expect(activeOn.getTime()).toBeGreaterThanOrEqual(before);
+      expect(activeOn.getTime()).toBeLessThanOrEqual(after);
+    });
+
+    it('uses the supplied active_on timestamp instead of now', async () => {
+      mockQb.getMany.mockResolvedValueOnce([]);
+      const when = '2026-12-24T12:00:00Z';
+      await service.checkRoute({
+        route: [
+          { lat: 50, lng: 17 },
+          { lat: 50.1, lng: 17.1 },
+        ],
+        active_on: when,
+      });
+      const calls = mockQb.andWhere.mock.calls as [
+        string,
+        { activeOn: Date },
+      ][];
+      const startsCall = calls.find((c) => /starts_at <= :activeOn/.test(c[0]));
+      expect(startsCall![1].activeOn.toISOString()).toBe(
+        new Date(when).toISOString(),
+      );
+    });
+
+    it('aggregates counts per severity', async () => {
+      mockQb.getMany.mockResolvedValueOnce([
+        SAMPLE_CLOSURE, // full
+        ADVISORY_CLOSURE, // advisory
+        PARTIAL_CLOSURE, // partial
+        { ...SAMPLE_CLOSURE, id: 'closure-4' }, // another full
+      ]);
+
+      const result = await service.checkRoute({
+        route: [
+          { lat: 50, lng: 17 },
+          { lat: 50.1, lng: 17.1 },
+        ],
+      });
+
+      expect(result.closures).toHaveLength(4);
+      expect(result.full_count).toBe(2);
+      expect(result.partial_count).toBe(1);
+      expect(result.advisory_count).toBe(1);
+    });
+
+    it('orders closures by severity (full > partial > advisory)', async () => {
+      // Intentionally out of order in the DB result.
+      mockQb.getMany.mockResolvedValueOnce([
+        ADVISORY_CLOSURE,
+        SAMPLE_CLOSURE,
+        PARTIAL_CLOSURE,
+      ]);
+
+      const result = await service.checkRoute({
+        route: [
+          { lat: 50, lng: 17 },
+          { lat: 50.1, lng: 17.1 },
+        ],
+      });
+
+      expect(result.closures.map((c) => c.severity)).toEqual([
+        'full',
+        'partial',
+        'advisory',
+      ]);
+    });
+
+    it('returns zero counts when no closures match the route', async () => {
+      mockQb.getMany.mockResolvedValueOnce([]);
+      const result = await service.checkRoute({
+        route: [
+          { lat: 50, lng: 17 },
+          { lat: 50.1, lng: 17.1 },
+        ],
+      });
+      expect(result.closures).toEqual([]);
+      expect(result.full_count).toBe(0);
+      expect(result.partial_count).toBe(0);
+      expect(result.advisory_count).toBe(0);
     });
   });
 });
