@@ -40,6 +40,8 @@ function review(overrides: Partial<RoadReview> & { id: string }): RoadReview {
   };
 }
 
+const LONG_REVIEW_COMMENT = "A".repeat(700);
+
 describe("RoadReviewsPanel", () => {
   const getReviewsMock = vi.mocked(roadsApi.getReviews);
   const createReviewMock = vi.mocked(roadsApi.createReview);
@@ -334,6 +336,78 @@ describe("RoadReviewsPanel", () => {
         "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("preserves full-length comments when editing an existing long review", async () => {
+    useAuthStore.setState({
+      user: {
+        id: "user-1",
+        email: "rider@example.com",
+        displayName: "John Rider",
+      },
+      isAuthenticated: true,
+      accessToken: "token-1",
+    });
+
+    const editedComment = `${LONG_REVIEW_COMMENT}!`;
+
+    getReviewsMock
+      .mockResolvedValueOnce({
+        data: [
+          review({
+            id: "review-1",
+            rating: 4,
+            comment: LONG_REVIEW_COMMENT,
+            bike_model: "BMW R1250GS",
+            is_mine: true,
+          }),
+        ],
+      })
+      .mockResolvedValueOnce({
+        data: [
+          review({
+            id: "review-1",
+            rating: 4,
+            comment: editedComment,
+            bike_model: "BMW R1250GS",
+            is_mine: true,
+          }),
+        ],
+      });
+    updateReviewMock.mockResolvedValueOnce({
+      data: review({
+        id: "review-1",
+        rating: 4,
+        comment: editedComment,
+        bike_model: "BMW R1250GS",
+        is_mine: true,
+      }),
+    });
+
+    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+    await screen.findByText(LONG_REVIEW_COMMENT);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit your review" }));
+
+    expect(screen.getByDisplayValue(LONG_REVIEW_COMMENT)).toBeInTheDocument();
+    expect(screen.getByText("700/1000")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Comment"), {
+      target: { value: editedComment },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save review" }));
+
+    await waitFor(() =>
+      expect(updateReviewMock).toHaveBeenCalledWith(firstSegmentId, {
+        rating: 4,
+        comment: editedComment,
+        bike_model: "BMW R1250GS",
+        photos: ["https://cdn.example.com/review-1.jpg"],
+      }),
+    );
+
+    expect(await screen.findByText(editedComment)).toBeInTheDocument();
   });
 
   it("closes the editor and clears stale drafts when the segment changes", async () => {

@@ -27,6 +27,8 @@ interface ReviewDraft {
   photos: string[];
 }
 
+const REVIEW_COMMENT_MAX_LENGTH = 1000;
+
 const EMPTY_DRAFT: ReviewDraft = {
   rating: 0,
   comment: "",
@@ -578,16 +580,20 @@ function ReviewEditor({
         <textarea
           value={draft.comment}
           onChange={(event) =>
-            onChange({ ...draft, comment: event.target.value.slice(0, 500) })
+            onChange({
+              ...draft,
+              comment: event.target.value.slice(0, REVIEW_COMMENT_MAX_LENGTH),
+            })
           }
           disabled={disabled}
           rows={4}
+          maxLength={REVIEW_COMMENT_MAX_LENGTH}
           aria-label="Comment"
           className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan disabled:cursor-not-allowed disabled:opacity-60"
           placeholder="What should other riders know about this road?"
         />
         <span className="mt-1 block text-right text-[11px] text-slate-500">
-          {draft.comment.length}/500
+          {draft.comment.length}/{REVIEW_COMMENT_MAX_LENGTH}
         </span>
       </label>
 
