@@ -239,6 +239,91 @@ export const closuresApi = {
     }),
 };
 
+// ── POI endpoints (US-36 / US-48 planner stops & stays) ──
+
+export type AccommodationKind =
+  | "hotel"
+  | "motel"
+  | "hostel"
+  | "guest_house"
+  | "apartment"
+  | "chalet"
+  | "camp_site";
+
+export interface AccommodationSuggestion {
+  external_id: string;
+  name: string | null;
+  kind: AccommodationKind;
+  lat: number;
+  lng: number;
+  distance_km: number;
+  website: string | null;
+  phone: string | null;
+  stars: number | null;
+}
+
+export interface AccommodationsResponse {
+  accommodations: AccommodationSuggestion[];
+  radius_km: number;
+  kinds: AccommodationKind[];
+}
+
+export type PoiKind = "restaurant" | "viewpoint" | "cafe" | "fuel_station";
+
+export interface RoutePoiSuggestion {
+  external_id: string;
+  name: string | null;
+  kind: PoiKind;
+  lat: number;
+  lng: number;
+  distance_along_route_km: number;
+  distance_from_route_km: number;
+  website: string | null;
+  phone: string | null;
+  hint: string | null;
+}
+
+export interface AlongRoutePoisResponse {
+  pois: RoutePoiSuggestion[];
+  buffer_km: number;
+  kinds: PoiKind[];
+  route_length_km: number;
+}
+
+export const poiApi = {
+  getAccommodations: (params: {
+    lat: number;
+    lng: number;
+    radius_km?: number;
+    min_stars?: number;
+    kinds?: AccommodationKind[];
+  }) => {
+    const query = new URLSearchParams({
+      lat: String(params.lat),
+      lng: String(params.lng),
+    });
+    if (params.radius_km != null)
+      query.set("radius_km", String(params.radius_km));
+    if (params.min_stars != null)
+      query.set("min_stars", String(params.min_stars));
+    if (params.kinds && params.kinds.length > 0) {
+      query.set("kinds", params.kinds.join(","));
+    }
+    return apiFetch<AccommodationsResponse>(
+      `/poi/accommodations?${query.toString()}`,
+    );
+  },
+  getAlongRoute: (data: {
+    route: Array<{ lat: number; lng: number }>;
+    buffer_km?: number;
+    kinds?: PoiKind[];
+  }) =>
+    apiFetch<AlongRoutePoisResponse>("/poi/along-route", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+};
+
 // ── Community feed endpoints (US-53 companion feed) ──
 
 export type CommunityRideSort =

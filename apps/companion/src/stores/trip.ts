@@ -20,6 +20,7 @@ interface TripState {
 
   // Waypoint management
   addWaypoint: (dayIndex: number, waypoint: Waypoint) => void;
+  insertWaypointBeforeEnd: (dayIndex: number, waypoint: Waypoint) => void;
   removeWaypoint: (dayIndex: number, waypointId: string) => void;
   reorderWaypoints: (
     dayIndex: number,
@@ -50,6 +51,22 @@ export const useTripStore = create<TripState>((set) => ({
       if (!day) return state;
       const days = [...state.activeTrip.days];
       days[dayIndex] = { ...day, waypoints: [...day.waypoints, waypoint] };
+      return { activeTrip: { ...state.activeTrip, days } };
+    }),
+
+  insertWaypointBeforeEnd: (dayIndex, waypoint) =>
+    set((state) => {
+      if (!state.activeTrip) return state;
+      const day = state.activeTrip.days[dayIndex];
+      if (!day) return state;
+      const days = [...state.activeTrip.days];
+      const waypoints = [...day.waypoints];
+      const endIndex = waypoints.findIndex(
+        (existing) => existing.type === "end",
+      );
+      const insertionIndex = endIndex >= 0 ? endIndex : waypoints.length;
+      waypoints.splice(insertionIndex, 0, waypoint);
+      days[dayIndex] = { ...day, waypoints };
       return { activeTrip: { ...state.activeTrip, days } };
     }),
 
