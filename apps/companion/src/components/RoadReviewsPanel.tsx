@@ -251,7 +251,6 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
 
     setSubmitting(true);
     setSubmitError(null);
-    const requestGeneration = requestGenerationRef.current;
     const requestSegmentId = segmentId;
     const requestViewerKey = viewerKey;
     const reviewId = myReview.id;
@@ -269,9 +268,6 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
         return;
       }
 
-      const didReturnToSameSegment =
-        requestGeneration !== requestGenerationRef.current;
-
       setError(null);
       setSubmitError(null);
       localMyReviewRef.current = null;
@@ -279,11 +275,8 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
       setReviews((current) =>
         current.filter((review) => review.id !== reviewId),
       );
-
-      if (!didReturnToSameSegment) {
-        setDraft(EMPTY_REVIEW_DRAFT);
-        setEditorMode(null);
-      }
+      setDraft(EMPTY_REVIEW_DRAFT);
+      setEditorMode(null);
     } catch (err) {
       if (
         requestSegmentId !== activeSegmentRef.current ||

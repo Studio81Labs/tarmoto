@@ -560,6 +560,76 @@ describe("RoadReviewsPanel", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("closes the editor when a delayed delete succeeds after returning to the same segment", async () => {
+    setAuthenticatedViewer();
+    let resolveDelete: ((value: { data: undefined }) => void) | null = null;
+
+    getReviewsMock.mockResolvedValueOnce({
+      data: [
+        review({
+          id: "review-delete-return",
+          comment: "Delete me after navigation.",
+          is_mine: true,
+        }),
+      ],
+    });
+    getReviewsMock.mockResolvedValueOnce({ data: [] }).mockResolvedValueOnce({
+      data: [
+        review({
+          id: "review-delete-return",
+          comment: "Delete me after navigation.",
+          is_mine: true,
+        }),
+      ],
+    });
+    deleteReviewMock.mockImplementationOnce(
+      () =>
+        new Promise<{ data: undefined }>((resolve) => {
+          resolveDelete = resolve;
+        }),
+    );
+
+    const { rerender } = render(
+      <RoadReviewsPanel segmentId={firstSegmentId} />,
+    );
+
+    await screen.findByText("Delete me after navigation.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete your review" }));
+
+    await waitFor(() =>
+      expect(deleteReviewMock).toHaveBeenCalledWith(firstSegmentId),
+    );
+
+    rerender(<RoadReviewsPanel segmentId={secondSegmentId} />);
+    await waitFor(() =>
+      expect(getReviewsMock).toHaveBeenLastCalledWith(secondSegmentId),
+    );
+
+    rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+    await waitFor(() =>
+      expect(getReviewsMock).toHaveBeenLastCalledWith(firstSegmentId),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit your review" }));
+    expect(
+      screen.getByRole("button", { name: "Save review" }),
+    ).toBeInTheDocument();
+
+    await act(async () => {
+      resolveDelete?.({ data: undefined });
+    });
+
+    expect(
+      screen.queryByRole("button", { name: "Save review" }),
+    ).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("sends an explicit empty photo list when an edit removes all photos", async () => {
     setAuthenticatedViewer();
     getReviewsMock.mockResolvedValueOnce({
