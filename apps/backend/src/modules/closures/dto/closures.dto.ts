@@ -1,8 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsIn,
   IsISO8601,
@@ -15,6 +16,7 @@ import {
   MaxLength,
   ValidateNested,
 } from 'class-validator';
+import { toOptionalBoolean } from '../../../common/dto-transforms.js';
 
 export const ROAD_CLOSURE_REASONS = [
   'closure',
@@ -152,7 +154,8 @@ export class ListClosuresQueryDto {
     default: false,
   })
   @IsOptional()
-  @Type(() => Boolean)
+  @Transform(toOptionalBoolean)
+  @IsBoolean()
   include_past?: boolean;
 }
 
@@ -179,7 +182,9 @@ export class CreateClosureDto {
 
   @ApiProperty({ description: 'ISO 3166-1 alpha-2 country code' })
   @IsString()
-  @Length(2, 2)
+  @Matches(/^[A-Za-z]{2}$/, {
+    message: 'country_code must be a 2-letter ISO 3166-1 alpha-2 code',
+  })
   country_code!: string;
 
   @ApiPropertyOptional({ nullable: true, maxLength: 120 })
@@ -235,7 +240,9 @@ export class UpdateClosureDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  @Length(2, 2)
+  @Matches(/^[A-Za-z]{2}$/, {
+    message: 'country_code must be a 2-letter ISO 3166-1 alpha-2 code',
+  })
   country_code?: string;
 
   @ApiPropertyOptional({ nullable: true, maxLength: 120 })

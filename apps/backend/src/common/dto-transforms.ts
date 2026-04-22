@@ -26,3 +26,27 @@ export const toOptionalNumber = ({ value }: { value: unknown }): unknown => {
   if (typeof value === 'string' && value.trim() === '') return undefined;
   return Number(value);
 };
+
+/**
+ * Coerce an optional boolean query-string value. Accepts `"true"`/`"1"`
+ * (true) and `"false"`/`"0"` (false), case-insensitive; blank, whitespace,
+ * and nullish inputs → `undefined`. Anything else is returned as-is so a
+ * downstream `@IsBoolean()` rejects it with a clear validation error.
+ *
+ * The stock `@Type(() => Boolean)` is unusable here because it invokes
+ * JavaScript's `Boolean(value)` constructor, which treats any non-empty
+ * string (including `"false"`) as `true`.
+ *
+ * Usage: `@Transform(toOptionalBoolean)` on an optional boolean field.
+ */
+export const toOptionalBoolean = ({ value }: { value: unknown }): unknown => {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const trimmed = value.trim().toLowerCase();
+    if (trimmed === '') return undefined;
+    if (trimmed === 'true' || trimmed === '1') return true;
+    if (trimmed === 'false' || trimmed === '0') return false;
+  }
+  return value;
+};
