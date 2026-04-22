@@ -453,4 +453,74 @@ describe("RoadReviewsPanel", () => {
       await screen.findByText("Could not delete your review right now."),
     ).toBeInTheDocument();
   });
+
+  it("skips the stale post-submit reload after the rider switches segments", async () => {
+    useAuthStore.setState({
+      user: {
+        id: "user-1",
+        email: "rider@example.com",
+        displayName: "John Rider",
+      },
+      isAuthenticated: true,
+      accessToken: "token-1",
+    });
+
+    let resolveCreate: ((value: { data: RoadReview }) => void) | null = null;
+
+    getReviewsMock
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValueOnce({ data: [] });
+    createReviewMock.mockImplementationOnce(
+      () =>
+        new Promise<{ data: RoadReview }>((resolve) => {
+          resolveCreate = resolve;
+        }),
+    );
+
+    const { rerender } = render(
+      <RoadReviewsPanel segmentId={firstSegmentId} />,
+    );
+
+    await screen.findByText(
+      "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Write a review for this road" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "5 stars" }));
+    fireEvent.change(screen.getByLabelText("Comment"), {
+      target: { value: "Worth the detour." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit review" }));
+
+    await waitFor(() =>
+      expect(createReviewMock).toHaveBeenCalledWith(firstSegmentId, {
+        rating: 5,
+        comment: "Worth the detour.",
+      }),
+    );
+
+    rerender(<RoadReviewsPanel segmentId={secondSegmentId} />);
+
+    await waitFor(() =>
+      expect(getReviewsMock).toHaveBeenLastCalledWith(secondSegmentId),
+    );
+
+    await act(async () => {
+      resolveCreate?.({
+        data: review({
+          id: "review-1",
+          rating: 5,
+          comment: "Worth the detour.",
+          is_mine: true,
+        }),
+      });
+    });
+
+    await waitFor(() => expect(getReviewsMock).toHaveBeenCalledTimes(2));
+    expect(
+      getReviewsMock.mock.calls.filter(([id]) => id === firstSegmentId),
+    ).toHaveLength(1);
+  });
 });
