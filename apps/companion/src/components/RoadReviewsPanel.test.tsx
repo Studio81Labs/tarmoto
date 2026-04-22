@@ -1,10 +1,5 @@
-import {
-  act,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import "@testing-library/jest-dom/vitest";
 import { RoadReviewsPanel } from "./RoadReviewsPanel";
 import { roadsApi, type RoadReview } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
@@ -16,8 +11,6 @@ vi.mock("@/lib/api", async () => {
     roadsApi: {
       getReviews: vi.fn(),
       createReview: vi.fn(),
-      updateReview: vi.fn(),
-      deleteReview: vi.fn(),
       voteOnReview: vi.fn(),
       clearReviewVote: vi.fn(),
     },
@@ -36,17 +29,12 @@ function review(overrides: Partial<RoadReview> & { id: string }): RoadReview {
     helpful_count: overrides.helpful_count ?? 3,
     not_helpful_count: overrides.not_helpful_count ?? 1,
     my_vote: overrides.my_vote ?? null,
-    is_mine: overrides.is_mine ?? false,
   };
 }
-
-const LONG_REVIEW_COMMENT = "A".repeat(700);
 
 describe("RoadReviewsPanel", () => {
   const getReviewsMock = vi.mocked(roadsApi.getReviews);
   const createReviewMock = vi.mocked(roadsApi.createReview);
-  const updateReviewMock = vi.mocked(roadsApi.updateReview);
-  const deleteReviewMock = vi.mocked(roadsApi.deleteReview);
   const voteOnReviewMock = vi.mocked(roadsApi.voteOnReview);
   const clearReviewVoteMock = vi.mocked(roadsApi.clearReviewVote);
   const firstSegmentId = "11111111-1111-4111-8111-111111111111";
@@ -54,14 +42,16 @@ describe("RoadReviewsPanel", () => {
 
   beforeEach(() => {
     useAuthStore.setState({
-      user: null,
-      isAuthenticated: false,
-      accessToken: null,
+      user: {
+        id: "user-1",
+        email: "rider@example.com",
+        displayName: "John Rider",
+      },
+      isAuthenticated: true,
+      accessToken: "token-123",
     });
     getReviewsMock.mockReset();
     createReviewMock.mockReset();
-    updateReviewMock.mockReset();
-    deleteReviewMock.mockReset();
     voteOnReviewMock.mockReset();
     clearReviewVoteMock.mockReset();
   });
@@ -93,18 +83,186 @@ describe("RoadReviewsPanel", () => {
     expect(screen.getByText("2 reviews")).toBeInTheDocument();
   });
 
-  it("hides authoring controls until authenticated ownership data finishes loading", async () => {
-    useAuthStore.setState({
-      user: {
-        id: "user-1",
-        email: "rider@example.com",
-        displayName: "John Rider",
-      },
-      isAuthenticated: true,
-      accessToken: "token-1",
+  it("submits a new review with photo URLs and prepends it to the panel", async () => {
+    getReviewsMock.mockResolvedValueOnce({ data: [] });
+    createReviewMock.mockResolvedValueOnce({
+      data: review({
+        id: "review-new",
+        rating: 5,
+        comment: "Worth the detour.",
+        bike_model: "Triumph Tiger 900",
+        photos: [
+          "https://cdn.example.com/review-new-1.jpg",
+          "https://cdn.example.com/review-new-2.jpg",
+        ],
+        helpful_count: 0,
+        not_helpful_count: 0,
+      }),
     });
 
+    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+    await screen.findByText(
+      "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "5 stars" }));
+    fireEvent.change(screen.getByLabelText("Your review"), {
+      target: { value: "Worth the detour." },
+    });
+    fireEvent.change(screen.getByLabelText("Bike model"), {
+      target: { value: "Triumph Tiger 900" },
+    });
+    fireEvent.change(screen.getByLabelText("Photo URL 1"), {
+      target: { value: "https://cdn.example.com/review-new-1.jpg" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add another photo" }));
+    fireEvent.change(screen.getByLabelText("Photo URL 2"), {
+      target: { value: "https://cdn.example.com/review-new-2.jpg" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Post review" }));
+
+    await waitFor(() =>
+      expect(createReviewMock).toHaveBeenCalledWith(firstSegmentId, {
+        rating: 5,
+        comment: "Worth the detour.",
+        bike_model: "Triumph Tiger 900",
+        photos: [
+          "https://cdn.example.com/review-new-1.jpg",
+          "https://cdn.example.com/review-new-2.jpg",
+        ],
+      }),
+    );
+
+    expect(await screen.findByText("Worth the detour.")).toBeInTheDocument();
+    expect(screen.getByText("1 review")).toBeInTheDocument();
+    expect(screen.getByText("5.0 ★ average")).toBeInTheDocument();
+  });
+
+  it("blocks invalid photo URLs before calling the backend", async () => {
+    getReviewsMock.mockResolvedValueOnce({ data: [] });
+
+    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+    await screen.findByText(
+      "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "4 stars" }));
+    fireEvent.change(screen.getByLabelText("Photo URL 1"), {
+      target: { value: "http://cdn.example.com/review-1.jpg" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Post review" }));
+
+    expect(createReviewMock).not.toHaveBeenCalled();
+    expect(
+      await screen.findByText("Photo URLs must start with https://"),
+    ).toBeInTheDocument();
+  });
+
+  it("resets the review composer when the segment changes", async () => {
+    getReviewsMock.mockResolvedValue({ data: [] });
+
+    const { rerender } = render(
+      <RoadReviewsPanel segmentId={firstSegmentId} />,
+    );
+
+    await screen.findByText(
+      "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "4 stars" }));
+    fireEvent.change(screen.getByLabelText("Your review"), {
+      target: { value: "Draft for the first road" },
+    });
+    fireEvent.change(screen.getByLabelText("Bike model"), {
+      target: { value: "Suzuki V-Strom 800" },
+    });
+    fireEvent.change(screen.getByLabelText("Photo URL 1"), {
+      target: { value: "https://cdn.example.com/first-road.jpg" },
+    });
+
+    rerender(<RoadReviewsPanel segmentId={secondSegmentId} />);
+
+    await waitFor(() =>
+      expect(getReviewsMock).toHaveBeenLastCalledWith(secondSegmentId),
+    );
+
+    expect(screen.getByRole("button", { name: "4 stars" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.getByLabelText("Your review")).toHaveValue("");
+    expect(screen.getByLabelText("Bike model")).toHaveValue("");
+    expect(screen.getByLabelText("Photo URL 1")).toHaveValue("");
+    expect(
+      screen.getByRole("button", { name: "Post review" }),
+    ).toHaveTextContent("Post review");
+  });
+
+  it("ignores stale create-review responses after the segment changes", async () => {
+    let resolveCreate: ((value: { data: RoadReview }) => void) | null = null;
+
+    getReviewsMock.mockResolvedValue({ data: [] });
+    createReviewMock.mockImplementationOnce(
+      () =>
+        new Promise<{ data: RoadReview }>((resolve) => {
+          resolveCreate = resolve;
+        }),
+    );
+
+    const { rerender } = render(
+      <RoadReviewsPanel segmentId={firstSegmentId} />,
+    );
+
+    await screen.findByText(
+      "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "5 stars" }));
+    fireEvent.change(screen.getByLabelText("Your review"), {
+      target: { value: "Slow response review" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Post review" }));
+
+    await waitFor(() =>
+      expect(createReviewMock).toHaveBeenCalledWith(firstSegmentId, {
+        rating: 5,
+        comment: "Slow response review",
+        bike_model: undefined,
+        photos: undefined,
+      }),
+    );
+
+    rerender(<RoadReviewsPanel segmentId={secondSegmentId} />);
+    await waitFor(() =>
+      expect(getReviewsMock).toHaveBeenLastCalledWith(secondSegmentId),
+    );
+
+    expect(resolveCreate).not.toBeNull();
+    resolveCreate!({
+      data: review({
+        id: "stale-review",
+        comment: "Slow response review",
+        helpful_count: 0,
+        not_helpful_count: 0,
+      }),
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Post review" }),
+      ).toHaveTextContent("Post review"),
+    );
+    expect(screen.queryByText("Slow response review")).not.toBeInTheDocument();
+    expect(screen.getByText("0 reviews")).toBeInTheDocument();
+  });
+
+  it("blocks posting while the initial review list is still loading", async () => {
     let resolveReviews: ((value: { data: RoadReview[] }) => void) | null = null;
+
     getReviewsMock.mockImplementationOnce(
       () =>
         new Promise<{ data: RoadReview[] }>((resolve) => {
@@ -115,38 +273,358 @@ describe("RoadReviewsPanel", () => {
     render(<RoadReviewsPanel segmentId={firstSegmentId} />);
 
     expect(screen.getByText("Loading reviews…")).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Write a review for this road" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Edit your review" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Delete your review" }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Post review" })).toBeDisabled();
 
-    await act(async () => {
-      resolveReviews?.({
-        data: [
-          review({
-            id: "review-1",
-            rating: 4,
-            comment: "Already reviewed from another session.",
-            is_mine: true,
-          }),
-        ],
-      });
+    fireEvent.click(screen.getByRole("button", { name: "5 stars" }));
+    fireEvent.change(screen.getByLabelText("Your review"), {
+      target: { value: "Should not submit yet" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Post review" }));
+
+    expect(createReviewMock).not.toHaveBeenCalled();
+
+    expect(resolveReviews).not.toBeNull();
+    resolveReviews!({ data: [] });
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Post review" }),
+      ).not.toBeDisabled(),
+    );
+  });
+
+  it("clears a stale load error after a successful review submit", async () => {
+    getReviewsMock.mockRejectedValueOnce(new Error("Could not load reviews."));
+    createReviewMock.mockResolvedValueOnce({
+      data: review({
+        id: "review-after-error",
+        rating: 5,
+        comment: "Recovered after load error",
+        helpful_count: 0,
+        not_helpful_count: 0,
+      }),
+    });
+
+    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+    expect(
+      await screen.findByText("Could not load reviews."),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "5 stars" }));
+    fireEvent.change(screen.getByLabelText("Your review"), {
+      target: { value: "Recovered after load error" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Post review" }));
+
+    await waitFor(() =>
+      expect(createReviewMock).toHaveBeenCalledWith(firstSegmentId, {
+        rating: 5,
+        comment: "Recovered after load error",
+        bike_model: undefined,
+        photos: undefined,
+      }),
+    );
+
+    expect(
+      screen.queryByText("Could not load reviews."),
+    ).not.toBeInTheDocument();
+    expect(
+      await screen.findByText("Recovered after load error"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("1 review")).toBeInTheDocument();
+  });
+
+  it("keeps a completed review after navigating away and back to the same segment", async () => {
+    let resolveCreate: ((value: { data: RoadReview }) => void) | null = null;
+
+    getReviewsMock.mockResolvedValue({ data: [] });
+    createReviewMock.mockImplementationOnce(
+      () =>
+        new Promise<{ data: RoadReview }>((resolve) => {
+          resolveCreate = resolve;
+        }),
+    );
+
+    const { rerender } = render(
+      <RoadReviewsPanel segmentId={firstSegmentId} />,
+    );
+
+    await screen.findByText(
+      "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "5 stars" }));
+    fireEvent.change(screen.getByLabelText("Your review"), {
+      target: { value: "Comes back after navigation" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Post review" }));
+
+    await waitFor(() =>
+      expect(createReviewMock).toHaveBeenCalledWith(firstSegmentId, {
+        rating: 5,
+        comment: "Comes back after navigation",
+        bike_model: undefined,
+        photos: undefined,
+      }),
+    );
+
+    rerender(<RoadReviewsPanel segmentId={secondSegmentId} />);
+    await waitFor(() =>
+      expect(getReviewsMock).toHaveBeenLastCalledWith(secondSegmentId),
+    );
+
+    rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+    await waitFor(() =>
+      expect(getReviewsMock).toHaveBeenLastCalledWith(firstSegmentId),
+    );
+
+    fireEvent.change(screen.getByLabelText("Your review"), {
+      target: { value: "New draft should stay put" },
+    });
+
+    expect(resolveCreate).not.toBeNull();
+    resolveCreate!({
+      data: review({
+        id: "review-returned",
+        rating: 5,
+        comment: "Comes back after navigation",
+        helpful_count: 0,
+        not_helpful_count: 0,
+      }),
     });
 
     expect(
-      await screen.findByRole("button", { name: "Edit your review" }),
+      await screen.findByText("Comes back after navigation"),
     ).toBeInTheDocument();
+    expect(screen.getByText("1 review")).toBeInTheDocument();
+    expect(screen.getByLabelText("Your review")).toHaveValue(
+      "New draft should stay put",
+    );
+  });
+
+  it("preserves a created review when the same-segment reload returns stale data", async () => {
+    let resolveCreate: ((value: { data: RoadReview }) => void) | null = null;
+    let resolveReturnedLoad: ((value: { data: RoadReview[] }) => void) | null =
+      null;
+
+    getReviewsMock
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValueOnce({ data: [] })
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ data: RoadReview[] }>((resolve) => {
+            resolveReturnedLoad = resolve;
+          }),
+      );
+    createReviewMock.mockImplementationOnce(
+      () =>
+        new Promise<{ data: RoadReview }>((resolve) => {
+          resolveCreate = resolve;
+        }),
+    );
+
+    const { rerender } = render(
+      <RoadReviewsPanel segmentId={firstSegmentId} />,
+    );
+
+    await screen.findByText(
+      "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "5 stars" }));
+    fireEvent.change(screen.getByLabelText("Your review"), {
+      target: { value: "Stays after stale reload" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Post review" }));
+
+    await waitFor(() =>
+      expect(createReviewMock).toHaveBeenCalledWith(firstSegmentId, {
+        rating: 5,
+        comment: "Stays after stale reload",
+        bike_model: undefined,
+        photos: undefined,
+      }),
+    );
+
+    rerender(<RoadReviewsPanel segmentId={secondSegmentId} />);
+    await waitFor(() =>
+      expect(getReviewsMock).toHaveBeenLastCalledWith(secondSegmentId),
+    );
+
+    rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+    await waitFor(() =>
+      expect(getReviewsMock).toHaveBeenLastCalledWith(firstSegmentId),
+    );
+
+    expect(resolveCreate).not.toBeNull();
+    resolveCreate!({
+      data: review({
+        id: "review-after-stale-load",
+        rating: 5,
+        comment: "Stays after stale reload",
+        helpful_count: 0,
+        not_helpful_count: 0,
+      }),
+    });
+
+    expect(resolveReturnedLoad).not.toBeNull();
+    resolveReturnedLoad!({ data: [] });
+
     expect(
-      screen.getByRole("button", { name: "Delete your review" }),
+      await screen.findByText("Stays after stale reload"),
     ).toBeInTheDocument();
+    expect(screen.getByText("1 review")).toBeInTheDocument();
+  });
+
+  it("surfaces a create failure after navigating away and back to the same segment", async () => {
+    let rejectCreate: ((reason?: unknown) => void) | null = null;
+
+    getReviewsMock.mockResolvedValue({ data: [] });
+    createReviewMock.mockImplementationOnce(
+      () =>
+        new Promise<{ data: RoadReview }>((_resolve, reject) => {
+          rejectCreate = reject;
+        }),
+    );
+
+    const { rerender } = render(
+      <RoadReviewsPanel segmentId={firstSegmentId} />,
+    );
+
+    await screen.findByText(
+      "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "5 stars" }));
+    fireEvent.change(screen.getByLabelText("Your review"), {
+      target: { value: "Fails after navigation" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Post review" }));
+
+    await waitFor(() =>
+      expect(createReviewMock).toHaveBeenCalledWith(firstSegmentId, {
+        rating: 5,
+        comment: "Fails after navigation",
+        bike_model: undefined,
+        photos: undefined,
+      }),
+    );
+
+    rerender(<RoadReviewsPanel segmentId={secondSegmentId} />);
+    await waitFor(() =>
+      expect(getReviewsMock).toHaveBeenLastCalledWith(secondSegmentId),
+    );
+
+    rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+    await waitFor(() =>
+      expect(getReviewsMock).toHaveBeenLastCalledWith(firstSegmentId),
+    );
+
+    fireEvent.change(screen.getByLabelText("Your review"), {
+      target: { value: "Draft after returning" },
+    });
+
+    expect(rejectCreate).not.toBeNull();
+    rejectCreate!(new Error("Could not post your review."));
+
     expect(
-      screen.queryByRole("button", { name: "Write a review for this road" }),
-    ).not.toBeInTheDocument();
+      await screen.findByText("Could not post your review."),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Your review")).toHaveValue(
+      "Draft after returning",
+    );
+  });
+
+  it("ignores a stale create failure after a newer same-segment submit succeeds", async () => {
+    let rejectFirstCreate: ((reason?: unknown) => void) | null = null;
+    let resolveSecondCreate: ((value: { data: RoadReview }) => void) | null =
+      null;
+
+    getReviewsMock.mockResolvedValue({ data: [] });
+    createReviewMock
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ data: RoadReview }>((_resolve, reject) => {
+            rejectFirstCreate = reject;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ data: RoadReview }>((resolve) => {
+            resolveSecondCreate = resolve;
+          }),
+      );
+
+    const { rerender } = render(
+      <RoadReviewsPanel segmentId={firstSegmentId} />,
+    );
+
+    await screen.findByText(
+      "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "5 stars" }));
+    fireEvent.change(screen.getByLabelText("Your review"), {
+      target: { value: "First attempt" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Post review" }));
+
+    await waitFor(() =>
+      expect(createReviewMock).toHaveBeenNthCalledWith(1, firstSegmentId, {
+        rating: 5,
+        comment: "First attempt",
+        bike_model: undefined,
+        photos: undefined,
+      }),
+    );
+
+    rerender(<RoadReviewsPanel segmentId={secondSegmentId} />);
+    await waitFor(() =>
+      expect(getReviewsMock).toHaveBeenLastCalledWith(secondSegmentId),
+    );
+
+    rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+    await waitFor(() =>
+      expect(getReviewsMock).toHaveBeenLastCalledWith(firstSegmentId),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "5 stars" }));
+    fireEvent.change(screen.getByLabelText("Your review"), {
+      target: { value: "Second attempt" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Post review" }));
+
+    await waitFor(() =>
+      expect(createReviewMock).toHaveBeenNthCalledWith(2, firstSegmentId, {
+        rating: 5,
+        comment: "Second attempt",
+        bike_model: undefined,
+        photos: undefined,
+      }),
+    );
+
+    expect(resolveSecondCreate).not.toBeNull();
+    resolveSecondCreate!({
+      data: review({
+        id: "second-attempt-review",
+        rating: 5,
+        comment: "Second attempt",
+        helpful_count: 0,
+        not_helpful_count: 0,
+      }),
+    });
+
+    expect(await screen.findByText("Second attempt")).toBeInTheDocument();
+
+    expect(rejectFirstCreate).not.toBeNull();
+    rejectFirstCreate!(new Error("Could not post your review."));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText("Could not post your review."),
+      ).not.toBeInTheDocument(),
+    );
   });
 
   it("updates review vote counts when riders mark a review helpful", async () => {
@@ -173,7 +651,11 @@ describe("RoadReviewsPanel", () => {
       expect(voteOnReviewMock).toHaveBeenCalledWith("review-1", true),
     );
 
-    expect(await screen.findByText("4")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Remove helpful vote" }),
+      ).toHaveTextContent("4"),
+    );
   });
 
   it("surfaces vote errors when the backend rejects the action", async () => {
@@ -199,7 +681,9 @@ describe("RoadReviewsPanel", () => {
     expect(
       await screen.findByText("Cannot vote on your own review"),
     ).toBeInTheDocument();
-    expect(screen.getByText("3")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Mark this review as helpful" }),
+    ).toHaveTextContent("3");
   });
 
   it("does not fetch reviews for synthetic planner segment ids", () => {
@@ -242,663 +726,5 @@ describe("RoadReviewsPanel", () => {
 
     await waitFor(() => expect(resolveNext).not.toBeNull());
     resolveNext!({ data: [] });
-  });
-
-  it("lets an authenticated rider write a review from the panel", async () => {
-    useAuthStore.setState({
-      user: {
-        id: "user-1",
-        email: "rider@example.com",
-        displayName: "John Rider",
-      },
-      isAuthenticated: true,
-      accessToken: "token-1",
-    });
-
-    getReviewsMock.mockResolvedValueOnce({ data: [] }).mockResolvedValueOnce({
-      data: [
-        review({
-          id: "review-1",
-          rating: 5,
-          comment: "Worth the detour.",
-          bike_model: "Ducati Monster",
-          is_mine: true,
-        }),
-      ],
-    });
-    createReviewMock.mockResolvedValueOnce({
-      data: review({
-        id: "review-1",
-        rating: 5,
-        comment: "Worth the detour.",
-        bike_model: "Ducati Monster",
-        is_mine: true,
-      }),
-    });
-
-    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
-
-    await screen.findByText(
-      "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
-    );
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Write a review for this road" }),
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "5 stars" }));
-    fireEvent.change(screen.getByLabelText("Comment"), {
-      target: { value: "Worth the detour." },
-    });
-    fireEvent.change(screen.getByLabelText("Bike model"), {
-      target: { value: "Ducati Monster" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Submit review" }));
-
-    await waitFor(() =>
-      expect(createReviewMock).toHaveBeenCalledWith(firstSegmentId, {
-        rating: 5,
-        comment: "Worth the detour.",
-        bike_model: "Ducati Monster",
-      }),
-    );
-    await waitFor(() => expect(getReviewsMock).toHaveBeenCalledTimes(2));
-
-    expect(await screen.findByText("Worth the detour.")).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Edit your review" }),
-    ).toBeInTheDocument();
-  });
-
-  it("lets an authenticated rider edit and delete their own review", async () => {
-    useAuthStore.setState({
-      user: {
-        id: "user-1",
-        email: "rider@example.com",
-        displayName: "John Rider",
-      },
-      isAuthenticated: true,
-      accessToken: "token-1",
-    });
-
-    getReviewsMock
-      .mockResolvedValueOnce({
-        data: [
-          review({
-            id: "review-1",
-            rating: 4,
-            comment: "Fresh asphalt and smooth sweepers.",
-            bike_model: "BMW R1250GS",
-            photos: ["https://cdn.example.com/review-1.jpg"],
-            is_mine: true,
-          }),
-        ],
-      })
-      .mockResolvedValueOnce({
-        data: [
-          review({
-            id: "review-1",
-            rating: 3,
-            comment: "Still good, but a few rough patches now.",
-            bike_model: "BMW R1250GS",
-            is_mine: true,
-          }),
-        ],
-      })
-      .mockResolvedValueOnce({ data: [] });
-    updateReviewMock.mockResolvedValueOnce({
-      data: review({
-        id: "review-1",
-        rating: 3,
-        comment: "Still good, but a few rough patches now.",
-        bike_model: "BMW R1250GS",
-        is_mine: true,
-      }),
-    });
-    deleteReviewMock.mockResolvedValueOnce({ data: undefined });
-
-    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
-
-    await screen.findByText("Fresh asphalt and smooth sweepers.");
-
-    fireEvent.click(screen.getByRole("button", { name: "Edit your review" }));
-    fireEvent.click(screen.getByRole("button", { name: "3 stars" }));
-    fireEvent.change(screen.getByLabelText("Comment"), {
-      target: { value: "Still good, but a few rough patches now." },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save review" }));
-
-    await waitFor(() =>
-      expect(updateReviewMock).toHaveBeenCalledWith(firstSegmentId, {
-        rating: 3,
-        comment: "Still good, but a few rough patches now.",
-        bike_model: "BMW R1250GS",
-        photos: ["https://cdn.example.com/review-1.jpg"],
-      }),
-    );
-
-    expect(
-      await screen.findByText("Still good, but a few rough patches now."),
-    ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Delete your review" }));
-
-    await waitFor(() =>
-      expect(deleteReviewMock).toHaveBeenCalledWith(firstSegmentId),
-    );
-    await waitFor(() => expect(getReviewsMock).toHaveBeenCalledTimes(3));
-    expect(
-      await screen.findByText(
-        "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
-      ),
-    ).toBeInTheDocument();
-  });
-
-  it("preserves full-length comments when editing an existing long review", async () => {
-    useAuthStore.setState({
-      user: {
-        id: "user-1",
-        email: "rider@example.com",
-        displayName: "John Rider",
-      },
-      isAuthenticated: true,
-      accessToken: "token-1",
-    });
-
-    const editedComment = `${LONG_REVIEW_COMMENT}!`;
-
-    getReviewsMock
-      .mockResolvedValueOnce({
-        data: [
-          review({
-            id: "review-1",
-            rating: 4,
-            comment: LONG_REVIEW_COMMENT,
-            bike_model: "BMW R1250GS",
-            is_mine: true,
-          }),
-        ],
-      })
-      .mockResolvedValueOnce({
-        data: [
-          review({
-            id: "review-1",
-            rating: 4,
-            comment: editedComment,
-            bike_model: "BMW R1250GS",
-            is_mine: true,
-          }),
-        ],
-      });
-    updateReviewMock.mockResolvedValueOnce({
-      data: review({
-        id: "review-1",
-        rating: 4,
-        comment: editedComment,
-        bike_model: "BMW R1250GS",
-        is_mine: true,
-      }),
-    });
-
-    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
-
-    await screen.findByText(LONG_REVIEW_COMMENT);
-
-    fireEvent.click(screen.getByRole("button", { name: "Edit your review" }));
-
-    expect(screen.getByDisplayValue(LONG_REVIEW_COMMENT)).toBeInTheDocument();
-    expect(screen.getByText("700/1000")).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText("Comment"), {
-      target: { value: editedComment },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save review" }));
-
-    await waitFor(() =>
-      expect(updateReviewMock).toHaveBeenCalledWith(firstSegmentId, {
-        rating: 4,
-        comment: editedComment,
-        bike_model: "BMW R1250GS",
-        photos: ["https://cdn.example.com/review-1.jpg"],
-      }),
-    );
-
-    expect(await screen.findByText(editedComment)).toBeInTheDocument();
-  });
-
-  it("closes the editor and clears stale drafts when the segment changes", async () => {
-    useAuthStore.setState({
-      user: {
-        id: "user-1",
-        email: "rider@example.com",
-        displayName: "John Rider",
-      },
-      isAuthenticated: true,
-      accessToken: "token-1",
-    });
-
-    getReviewsMock.mockResolvedValueOnce({ data: [] }).mockResolvedValueOnce({
-      data: [],
-    });
-
-    const { rerender } = render(
-      <RoadReviewsPanel segmentId={firstSegmentId} />,
-    );
-
-    await screen.findByText(
-      "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
-    );
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Write a review for this road" }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "4 stars" }));
-    fireEvent.change(screen.getByLabelText("Comment"), {
-      target: { value: "Stale draft that should not carry across roads." },
-    });
-
-    expect(
-      screen.getByRole("button", { name: "Submit review" }),
-    ).toBeInTheDocument();
-
-    rerender(<RoadReviewsPanel segmentId={secondSegmentId} />);
-
-    await waitFor(() =>
-      expect(getReviewsMock).toHaveBeenLastCalledWith(secondSegmentId),
-    );
-
-    expect(
-      screen.queryByRole("button", { name: "Submit review" }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Comment")).not.toBeInTheDocument();
-  });
-
-  it("refetches reviews when authentication changes while the panel is mounted", async () => {
-    getReviewsMock
-      .mockResolvedValueOnce({
-        data: [review({ id: "review-1", is_mine: false })],
-      })
-      .mockResolvedValueOnce({
-        data: [review({ id: "review-1", is_mine: true })],
-      });
-
-    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
-
-    await screen.findByText("John Rider");
-    expect(
-      screen.getByText("Sign in to rate this road and share your feedback."),
-    ).toBeInTheDocument();
-
-    act(() => {
-      useAuthStore.setState({
-        user: {
-          id: "user-1",
-          email: "rider@example.com",
-          displayName: "John Rider",
-        },
-        isAuthenticated: true,
-        accessToken: "token-1",
-      });
-    });
-
-    await waitFor(() => expect(getReviewsMock).toHaveBeenCalledTimes(2));
-    expect(
-      await screen.findByRole("button", { name: "Edit your review" }),
-    ).toBeInTheDocument();
-  });
-
-  it("shows delete failures even when the editor is closed", async () => {
-    useAuthStore.setState({
-      user: {
-        id: "user-1",
-        email: "rider@example.com",
-        displayName: "John Rider",
-      },
-      isAuthenticated: true,
-      accessToken: "token-1",
-    });
-
-    getReviewsMock.mockResolvedValueOnce({
-      data: [
-        review({
-          id: "review-1",
-          is_mine: true,
-        }),
-      ],
-    });
-    deleteReviewMock.mockRejectedValueOnce(
-      new Error("Could not delete your review right now."),
-    );
-
-    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
-
-    await screen.findByText("Fresh asphalt and smooth sweepers.");
-
-    fireEvent.click(screen.getByRole("button", { name: "Delete your review" }));
-
-    await waitFor(() =>
-      expect(deleteReviewMock).toHaveBeenCalledWith(firstSegmentId),
-    );
-    expect(
-      await screen.findByText("Could not delete your review right now."),
-    ).toBeInTheDocument();
-  });
-
-  it("skips the stale post-submit reload after the rider switches segments", async () => {
-    useAuthStore.setState({
-      user: {
-        id: "user-1",
-        email: "rider@example.com",
-        displayName: "John Rider",
-      },
-      isAuthenticated: true,
-      accessToken: "token-1",
-    });
-
-    let resolveCreate: ((value: { data: RoadReview }) => void) | null = null;
-
-    getReviewsMock
-      .mockResolvedValueOnce({ data: [] })
-      .mockResolvedValueOnce({ data: [] });
-    createReviewMock.mockImplementationOnce(
-      () =>
-        new Promise<{ data: RoadReview }>((resolve) => {
-          resolveCreate = resolve;
-        }),
-    );
-
-    const { rerender } = render(
-      <RoadReviewsPanel segmentId={firstSegmentId} />,
-    );
-
-    await screen.findByText(
-      "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
-    );
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Write a review for this road" }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "5 stars" }));
-    fireEvent.change(screen.getByLabelText("Comment"), {
-      target: { value: "Worth the detour." },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Submit review" }));
-
-    await waitFor(() =>
-      expect(createReviewMock).toHaveBeenCalledWith(firstSegmentId, {
-        rating: 5,
-        comment: "Worth the detour.",
-      }),
-    );
-
-    rerender(<RoadReviewsPanel segmentId={secondSegmentId} />);
-
-    await waitFor(() =>
-      expect(getReviewsMock).toHaveBeenLastCalledWith(secondSegmentId),
-    );
-
-    await act(async () => {
-      resolveCreate?.({
-        data: review({
-          id: "review-1",
-          rating: 5,
-          comment: "Worth the detour.",
-          is_mine: true,
-        }),
-      });
-    });
-
-    await waitFor(() => expect(getReviewsMock).toHaveBeenCalledTimes(2));
-    expect(
-      getReviewsMock.mock.calls.filter(([id]) => id === firstSegmentId),
-    ).toHaveLength(1);
-  });
-
-  it("ignores stale submit errors and keeps the active mutation disabled", async () => {
-    useAuthStore.setState({
-      user: {
-        id: "user-1",
-        email: "rider@example.com",
-        displayName: "John Rider",
-      },
-      isAuthenticated: true,
-      accessToken: "token-1",
-    });
-
-    let rejectFirstCreate: ((error: Error) => void) | null = null;
-    let resolveSecondCreate: ((value: { data: RoadReview }) => void) | null =
-      null;
-
-    getReviewsMock
-      .mockResolvedValueOnce({ data: [] })
-      .mockResolvedValueOnce({ data: [] })
-      .mockResolvedValueOnce({
-        data: [
-          review({
-            id: "review-2",
-            rating: 4,
-            comment: "Segment B review",
-            is_mine: true,
-          }),
-        ],
-      });
-    createReviewMock
-      .mockImplementationOnce(
-        () =>
-          new Promise<never>((_, reject) => {
-            rejectFirstCreate = reject;
-          }),
-      )
-      .mockImplementationOnce(
-        () =>
-          new Promise<{ data: RoadReview }>((resolve) => {
-            resolveSecondCreate = resolve;
-          }),
-      );
-
-    const { rerender } = render(
-      <RoadReviewsPanel segmentId={firstSegmentId} />,
-    );
-
-    await screen.findByText(
-      "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
-    );
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Write a review for this road" }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "5 stars" }));
-    fireEvent.change(screen.getByLabelText("Comment"), {
-      target: { value: "First segment review" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Submit review" }));
-
-    await waitFor(() =>
-      expect(createReviewMock).toHaveBeenNthCalledWith(1, firstSegmentId, {
-        rating: 5,
-        comment: "First segment review",
-      }),
-    );
-
-    rerender(<RoadReviewsPanel segmentId={secondSegmentId} />);
-
-    await screen.findByText(
-      "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
-    );
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Write a review for this road" }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "4 stars" }));
-    fireEvent.change(screen.getByLabelText("Comment"), {
-      target: { value: "Second segment review" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Submit review" }));
-
-    await waitFor(() =>
-      expect(createReviewMock).toHaveBeenNthCalledWith(2, secondSegmentId, {
-        rating: 4,
-        comment: "Second segment review",
-      }),
-    );
-
-    const submitButton = screen.getByRole("button", { name: "Submit review" });
-    expect(submitButton).toBeDisabled();
-
-    await act(async () => {
-      rejectFirstCreate?.(new Error("First segment timed out"));
-    });
-
-    expect(
-      screen.queryByText("First segment timed out"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Submit review" }),
-    ).toBeDisabled();
-
-    await act(async () => {
-      resolveSecondCreate?.({
-        data: review({
-          id: "review-2",
-          rating: 4,
-          comment: "Segment B review",
-          is_mine: true,
-        }),
-      });
-    });
-
-    expect(await screen.findByText("Segment B review")).toBeInTheDocument();
-  });
-
-  it("ignores stale submit errors after the rider returns to the same segment", async () => {
-    useAuthStore.setState({
-      user: {
-        id: "user-1",
-        email: "rider@example.com",
-        displayName: "John Rider",
-      },
-      isAuthenticated: true,
-      accessToken: "token-1",
-    });
-
-    let rejectFirstCreate: ((error: Error) => void) | null = null;
-    let resolveSecondCreate: ((value: { data: RoadReview }) => void) | null =
-      null;
-
-    getReviewsMock
-      .mockResolvedValueOnce({ data: [] })
-      .mockResolvedValueOnce({ data: [] })
-      .mockResolvedValueOnce({ data: [] })
-      .mockResolvedValueOnce({
-        data: [
-          review({
-            id: "review-3",
-            rating: 5,
-            comment: "Returned segment review",
-            is_mine: true,
-          }),
-        ],
-      });
-    createReviewMock
-      .mockImplementationOnce(
-        () =>
-          new Promise<never>((_, reject) => {
-            rejectFirstCreate = reject;
-          }),
-      )
-      .mockImplementationOnce(
-        () =>
-          new Promise<{ data: RoadReview }>((resolve) => {
-            resolveSecondCreate = resolve;
-          }),
-      );
-
-    const { rerender } = render(
-      <RoadReviewsPanel segmentId={firstSegmentId} />,
-    );
-
-    await screen.findByText(
-      "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
-    );
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Write a review for this road" }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "5 stars" }));
-    fireEvent.change(screen.getByLabelText("Comment"), {
-      target: { value: "Original segment review" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Submit review" }));
-
-    await waitFor(() =>
-      expect(createReviewMock).toHaveBeenNthCalledWith(1, firstSegmentId, {
-        rating: 5,
-        comment: "Original segment review",
-      }),
-    );
-
-    rerender(<RoadReviewsPanel segmentId={secondSegmentId} />);
-
-    await waitFor(() =>
-      expect(getReviewsMock).toHaveBeenLastCalledWith(secondSegmentId),
-    );
-    await screen.findByText(
-      "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
-    );
-
-    rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
-
-    await waitFor(() =>
-      expect(getReviewsMock).toHaveBeenLastCalledWith(firstSegmentId),
-    );
-    await screen.findByText(
-      "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
-    );
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Write a review for this road" }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "4 stars" }));
-    fireEvent.change(screen.getByLabelText("Comment"), {
-      target: { value: "Returned segment review" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Submit review" }));
-
-    await waitFor(() =>
-      expect(createReviewMock).toHaveBeenNthCalledWith(2, firstSegmentId, {
-        rating: 4,
-        comment: "Returned segment review",
-      }),
-    );
-
-    expect(
-      screen.getByRole("button", { name: "Submit review" }),
-    ).toBeDisabled();
-
-    await act(async () => {
-      rejectFirstCreate?.(new Error("Original segment timed out"));
-    });
-
-    expect(
-      screen.queryByText("Original segment timed out"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Submit review" }),
-    ).toBeDisabled();
-
-    await act(async () => {
-      resolveSecondCreate?.({
-        data: review({
-          id: "review-3",
-          rating: 5,
-          comment: "Returned segment review",
-          is_mine: true,
-        }),
-      });
-    });
-
-    expect(
-      await screen.findByText("Returned segment review"),
-    ).toBeInTheDocument();
   });
 });

@@ -1,108 +1,86 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Images,
   Loader2,
-  Pencil,
+  Plus,
+  Star,
   ThumbsDown,
   ThumbsUp,
-  Trash2,
+  X,
 } from "lucide-react";
 import { roadsApi, type RoadReview } from "@/lib/api";
-import { useAuthStore } from "@/stores/auth";
 import { formatRelativeTime } from "@/lib/utils";
 
-interface ReviewDraft {
+const MAX_REVIEW_PHOTOS = 5;
+
+type ReviewDraft = {
   rating: number;
   comment: string;
   bikeModel: string;
-  photos: string[];
-}
+  photoUrls: string[];
+};
 
-const REVIEW_COMMENT_MAX_LENGTH = 1000;
-
-const EMPTY_DRAFT: ReviewDraft = {
+const EMPTY_REVIEW_DRAFT: ReviewDraft = {
   rating: 0,
   comment: "",
   bikeModel: "",
-  photos: [],
+  photoUrls: [""],
 };
 
 export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
   const canLoadReviews = isUuid(segmentId);
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const viewerId = useAuthStore((s) => s.user?.id ?? null);
-  const viewerKey = isAuthenticated
-    ? (viewerId ?? "authenticated")
-    : "anonymous";
   const [reviews, setReviews] = useState<RoadReview[]>([]);
   const [loading, setLoading] = useState(canLoadReviews);
   const [error, setError] = useState<string | null>(null);
-  const [editorMode, setEditorMode] = useState<"create" | "edit" | null>(null);
-  const [draft, setDraft] = useState<ReviewDraft>(EMPTY_DRAFT);
+  const [draft, setDraft] = useState<ReviewDraft>(EMPTY_REVIEW_DRAFT);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const loadRequestRef = useRef(0);
-  const panelContextVersionRef = useRef(0);
-  const myReview = useMemo(
-    () => reviews.find((review) => review.is_mine) ?? null,
-    [reviews],
-  );
+  const activeSegmentRef = useRef(segmentId);
+  const requestGenerationRef = useRef(0);
+  const submitAttemptRef = useRef(0);
 
-  const resetEditorState = useCallback(() => {
-    setEditorMode(null);
-    setDraft(EMPTY_DRAFT);
+  useEffect(() => {
+    activeSegmentRef.current = segmentId;
+    requestGenerationRef.current += 1;
+    setDraft(EMPTY_REVIEW_DRAFT);
     setSubmitError(null);
     setSubmitting(false);
-  }, []);
-
-  const loadReviews = useCallback(async () => {
-    const requestId = ++loadRequestRef.current;
 
     if (!canLoadReviews) {
-      if (requestId !== loadRequestRef.current) return;
       setReviews([]);
       setError(null);
       setLoading(false);
       return;
     }
 
+    let cancelled = false;
     setReviews([]);
     setLoading(true);
     setError(null);
 
-    try {
-      const { data } = await roadsApi.getReviews(segmentId);
-      if (requestId !== loadRequestRef.current) return;
-      setReviews(data);
-    } catch (err) {
-      if (requestId !== loadRequestRef.current) return;
-      setReviews([]);
-      setError(err instanceof Error ? err.message : "Could not load reviews.");
-    } finally {
-      if (requestId === loadRequestRef.current) {
-        setLoading(false);
-      }
-    }
-  }, [canLoadReviews, segmentId]);
-
-  useEffect(() => {
-    panelContextVersionRef.current += 1;
-    resetEditorState();
-    void loadReviews();
+    roadsApi
+      .getReviews(segmentId)
+      .then(({ data }) => {
+        if (cancelled) return;
+        setReviews((current) => mergeFetchedReviews(data, current));
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setReviews([]);
+        setError(
+          err instanceof Error ? err.message : "Could not load reviews.",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
 
     return () => {
-      loadRequestRef.current += 1;
+      cancelled = true;
     };
-  }, [loadReviews, resetEditorState, segmentId, viewerKey]);
+  }, [canLoadReviews, segmentId]);
 
   const averageRating = useMemo(() => {
     if (reviews.length === 0) return null;
@@ -118,89 +96,70 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
     );
   };
 
-  const openCreate = () => {
-    setDraft(EMPTY_DRAFT);
-    setSubmitError(null);
-    setEditorMode("create");
-  };
+  const handleSubmitReview = async () => {
+    if (loading || submitting) return;
 
-  const openEdit = () => {
-    if (!myReview) return;
-    setDraft({
-      rating: myReview.rating,
-      comment: myReview.comment ?? "",
-      bikeModel: myReview.bike_model ?? "",
-      photos: Array.isArray(myReview.photos) ? [...myReview.photos] : [],
-    });
-    setSubmitError(null);
-    setEditorMode("edit");
-  };
-
-  const closeEditor = () => {
-    if (submitting) return;
-    setEditorMode(null);
-    setSubmitError(null);
-  };
-
-  const handleSubmit = async () => {
-    if (!canLoadReviews || submitting) return;
-
-    const normalized = normalizeDraft(draft);
-    if (!normalized.ok) {
-      setSubmitError(normalized.error);
+    const rating = draft.rating;
+    if (rating < 1 || rating > 5) {
+      setSubmitError("Choose a star rating before posting.");
       return;
     }
 
-    const mutationContextVersion = panelContextVersionRef.current;
-    setSubmitting(true);
-    setSubmitError(null);
-    try {
-      if (editorMode === "edit") {
-        await roadsApi.updateReview(segmentId, {
-          ...normalized.data,
-          photos: [...draft.photos],
-        });
-      } else {
-        await roadsApi.createReview(segmentId, normalized.data);
-      }
-
-      if (panelContextVersionRef.current !== mutationContextVersion) return;
-
-      setEditorMode(null);
-      await loadReviews();
-    } catch (err) {
-      if (panelContextVersionRef.current === mutationContextVersion) {
-        setSubmitError(
-          err instanceof Error ? err.message : "Could not save your review.",
-        );
-      }
-    } finally {
-      if (panelContextVersionRef.current === mutationContextVersion) {
-        setSubmitting(false);
-      }
+    const photoResult = sanitizePhotoUrls(draft.photoUrls);
+    if ("error" in photoResult) {
+      setSubmitError(photoResult.error);
+      return;
     }
-  };
 
-  const handleDelete = async () => {
-    if (!canLoadReviews || submitting || !myReview) return;
-    const mutationContextVersion = panelContextVersionRef.current;
     setSubmitting(true);
     setSubmitError(null);
+    const requestGeneration = requestGenerationRef.current;
+    const requestSegmentId = segmentId;
+    submitAttemptRef.current += 1;
+    const submitAttempt = submitAttemptRef.current;
+
     try {
-      await roadsApi.deleteReview(segmentId);
-
-      if (panelContextVersionRef.current !== mutationContextVersion) return;
-
-      setEditorMode(null);
-      await loadReviews();
-    } catch (err) {
-      if (panelContextVersionRef.current === mutationContextVersion) {
-        setSubmitError(
-          err instanceof Error ? err.message : "Could not delete your review.",
-        );
+      const { data } = await roadsApi.createReview(segmentId, {
+        rating,
+        comment: draft.comment.trim() || undefined,
+        bike_model: draft.bikeModel.trim() || undefined,
+        photos: photoResult.photos.length > 0 ? photoResult.photos : undefined,
+      });
+      if (requestSegmentId !== activeSegmentRef.current) {
+        return;
       }
+
+      const didReturnToSameSegment =
+        requestGeneration !== requestGenerationRef.current;
+      const isLatestSubmit = submitAttempt === submitAttemptRef.current;
+      setError(null);
+      setReviews((current) => [
+        data,
+        ...current.filter((r) => r.id !== data.id),
+      ]);
+
+      if (isLatestSubmit) {
+        setSubmitError(null);
+      }
+
+      if (isLatestSubmit && !didReturnToSameSegment) {
+        setDraft(EMPTY_REVIEW_DRAFT);
+      }
+    } catch (err) {
+      if (
+        requestSegmentId !== activeSegmentRef.current ||
+        submitAttempt !== submitAttemptRef.current
+      ) {
+        return;
+      }
+      setSubmitError(
+        err instanceof Error ? err.message : "Could not post your review.",
+      );
     } finally {
-      if (panelContextVersionRef.current === mutationContextVersion) {
+      if (
+        requestGeneration === requestGenerationRef.current &&
+        requestSegmentId === activeSegmentRef.current
+      ) {
         setSubmitting(false);
       }
     }
@@ -227,71 +186,51 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
       </div>
 
       {canLoadReviews && (
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          {loading ? null : isAuthenticated ? (
-            myReview ? (
-              <>
-                <button
-                  type="button"
-                  onClick={openEdit}
-                  disabled={submitting}
-                  className="inline-flex items-center gap-1 rounded-full border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-                  aria-label="Edit your review"
-                >
-                  <Pencil size={12} />
-                  Edit your review
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDelete}
-                  disabled={submitting}
-                  className="inline-flex items-center gap-1 rounded-full border border-rose-500/30 px-3 py-1.5 text-xs text-rose-300 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
-                  aria-label="Delete your review"
-                >
-                  {submitting && editorMode === null ? (
-                    <Loader2 size={12} className="animate-spin" />
-                  ) : (
-                    <Trash2 size={12} />
-                  )}
-                  Delete your review
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={openCreate}
-                disabled={submitting}
-                className="inline-flex items-center gap-1 rounded-full border border-tarmoto-cyan/40 bg-tarmoto-cyan/10 px-3 py-1.5 text-xs text-tarmoto-cyan transition hover:bg-tarmoto-cyan/15 disabled:cursor-not-allowed disabled:opacity-60"
-                aria-label="Write a review for this road"
-              >
-                <Pencil size={12} />
-                Write a review
-              </button>
-            )
-          ) : (
-            <p className="text-xs text-slate-500">
-              Sign in to rate this road and share your feedback.
-            </p>
-          )}
-        </div>
-      )}
-
-      {editorMode && (
-        <ReviewEditor
-          mode={editorMode}
+        <ReviewComposer
           draft={draft}
-          disabled={submitting}
+          loading={loading}
+          submitting={submitting}
           error={submitError}
-          onChange={setDraft}
-          onCancel={closeEditor}
-          onSubmit={handleSubmit}
+          onRatingChange={(rating) => {
+            setDraft((current) => ({ ...current, rating }));
+            setSubmitError(null);
+          }}
+          onCommentChange={(comment) => {
+            setDraft((current) => ({ ...current, comment }));
+            setSubmitError(null);
+          }}
+          onBikeModelChange={(bikeModel) => {
+            setDraft((current) => ({ ...current, bikeModel }));
+            setSubmitError(null);
+          }}
+          onPhotoChange={(index, value) => {
+            setDraft((current) => ({
+              ...current,
+              photoUrls: current.photoUrls.map((photo, idx) =>
+                idx === index ? value : photo,
+              ),
+            }));
+            setSubmitError(null);
+          }}
+          onAddPhoto={() => {
+            setDraft((current) => {
+              if (current.photoUrls.length >= MAX_REVIEW_PHOTOS) return current;
+              return { ...current, photoUrls: [...current.photoUrls, ""] };
+            });
+            setSubmitError(null);
+          }}
+          onRemovePhoto={(index) => {
+            setDraft((current) => ({
+              ...current,
+              photoUrls:
+                current.photoUrls.length === 1
+                  ? [""]
+                  : current.photoUrls.filter((_, idx) => idx !== index),
+            }));
+            setSubmitError(null);
+          }}
+          onSubmit={handleSubmitReview}
         />
-      )}
-
-      {!editorMode && submitError && (
-        <div className="mb-3 rounded-xl border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-xs text-rose-300">
-          {submitError}
-        </div>
       )}
 
       {!canLoadReviews ? (
@@ -325,6 +264,184 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
         </div>
       )}
     </div>
+  );
+}
+
+function mergeFetchedReviews(
+  fetched: RoadReview[],
+  current: RoadReview[],
+): RoadReview[] {
+  if (current.length === 0) {
+    return fetched;
+  }
+
+  const fetchedIds = new Set(fetched.map((review) => review.id));
+  const localOnlyReviews = current.filter(
+    (review) => !fetchedIds.has(review.id),
+  );
+
+  return [...localOnlyReviews, ...fetched];
+}
+
+function ReviewComposer({
+  draft,
+  loading,
+  submitting,
+  error,
+  onRatingChange,
+  onCommentChange,
+  onBikeModelChange,
+  onPhotoChange,
+  onAddPhoto,
+  onRemovePhoto,
+  onSubmit,
+}: {
+  draft: ReviewDraft;
+  loading: boolean;
+  submitting: boolean;
+  error: string | null;
+  onRatingChange: (rating: number) => void;
+  onCommentChange: (comment: string) => void;
+  onBikeModelChange: (bikeModel: string) => void;
+  onPhotoChange: (index: number, value: string) => void;
+  onAddPhoto: () => void;
+  onRemovePhoto: (index: number) => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <section className="mb-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-white">
+            Share your ride feedback
+          </p>
+          <p className="text-xs text-slate-500">
+            Rate this road and add quick notes for the next rider.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onSubmit}
+          disabled={loading || submitting}
+          className="rounded-lg bg-tarmoto-cyan px-3 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-tarmoto-cyan-light disabled:cursor-not-allowed disabled:opacity-60"
+          aria-label="Post review"
+        >
+          {submitting ? "Posting…" : "Post review"}
+        </button>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {[1, 2, 3, 4, 5].map((rating) => {
+          const active = draft.rating === rating;
+          return (
+            <button
+              key={rating}
+              type="button"
+              aria-label={`${rating} stars`}
+              aria-pressed={active}
+              onClick={() => onRatingChange(rating)}
+              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition ${
+                active
+                  ? "border-amber-300/60 bg-amber-300/10 text-amber-200"
+                  : "border-slate-700 text-slate-400 hover:border-slate-500 hover:text-white"
+              }`}
+            >
+              <Star size={12} className={active ? "fill-current" : ""} />
+              <span>{rating}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-3 space-y-3">
+        <div>
+          <label
+            htmlFor="road-review-comment"
+            className="mb-1 block text-xs font-medium text-slate-400"
+          >
+            Your review
+          </label>
+          <textarea
+            id="road-review-comment"
+            value={draft.comment}
+            onChange={(event) => onCommentChange(event.target.value)}
+            maxLength={1000}
+            rows={3}
+            placeholder="What stood out about this segment?"
+            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-tarmoto-cyan focus:outline-none"
+          />
+        </div>
+
+        <div>
+          <label
+            htmlFor="road-review-bike-model"
+            className="mb-1 block text-xs font-medium text-slate-400"
+          >
+            Bike model
+          </label>
+          <input
+            id="road-review-bike-model"
+            type="text"
+            value={draft.bikeModel}
+            onChange={(event) => onBikeModelChange(event.target.value)}
+            maxLength={100}
+            placeholder="Optional"
+            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-tarmoto-cyan focus:outline-none"
+          />
+        </div>
+
+        <div>
+          <div className="mb-1 flex items-center justify-between gap-3">
+            <label className="block text-xs font-medium text-slate-400">
+              Photo URLs
+            </label>
+            <button
+              type="button"
+              onClick={onAddPhoto}
+              disabled={draft.photoUrls.length >= MAX_REVIEW_PHOTOS}
+              className="inline-flex items-center gap-1 text-xs text-slate-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Add another photo"
+            >
+              <Plus size={12} />
+              Add another photo
+            </button>
+          </div>
+          <div className="space-y-2">
+            {draft.photoUrls.map((photo, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <input
+                  aria-label={`Photo URL ${index + 1}`}
+                  type="url"
+                  value={photo}
+                  onChange={(event) => onPhotoChange(index, event.target.value)}
+                  placeholder="https://cdn.example.com/road-shot.jpg"
+                  className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-tarmoto-cyan focus:outline-none"
+                />
+                {draft.photoUrls.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => onRemovePhoto(index)}
+                    className="rounded-md p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white"
+                    aria-label={`Remove photo URL ${index + 1}`}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Add up to {MAX_REVIEW_PHOTOS} hosted photos using secure HTTPS URLs.
+          </p>
+        </div>
+      </div>
+
+      {error && (
+        <p className="mt-3 text-xs text-rose-300" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -413,38 +530,32 @@ function ReviewCard({
         </div>
       )}
 
-      {review.is_mine ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-          <span>This is your review.</span>
-        </div>
-      ) : (
-        <div className="mt-3 flex items-center gap-2">
-          <VoteButton
-            label={
-              review.my_vote === true
-                ? "Remove helpful vote"
-                : "Mark this review as helpful"
-            }
-            count={review.helpful_count}
-            active={review.my_vote === true}
-            pending={pendingVote === "up"}
-            icon={<ThumbsUp size={12} />}
-            onClick={() => submitVote(true)}
-          />
-          <VoteButton
-            label={
-              review.my_vote === false
-                ? "Remove not-helpful vote"
-                : "Mark this review as not helpful"
-            }
-            count={review.not_helpful_count}
-            active={review.my_vote === false}
-            pending={pendingVote === "down"}
-            icon={<ThumbsDown size={12} />}
-            onClick={() => submitVote(false)}
-          />
-        </div>
-      )}
+      <div className="mt-3 flex items-center gap-2">
+        <VoteButton
+          label={
+            review.my_vote === true
+              ? "Remove helpful vote"
+              : "Mark this review as helpful"
+          }
+          count={review.helpful_count}
+          active={review.my_vote === true}
+          pending={pendingVote === "up"}
+          icon={<ThumbsUp size={12} />}
+          onClick={() => submitVote(true)}
+        />
+        <VoteButton
+          label={
+            review.my_vote === false
+              ? "Remove not-helpful vote"
+              : "Mark this review as not helpful"
+          }
+          count={review.not_helpful_count}
+          active={review.my_vote === false}
+          pending={pendingVote === "down"}
+          icon={<ThumbsDown size={12} />}
+          onClick={() => submitVote(false)}
+        />
+      </div>
 
       {voteError && (
         <p className="mt-2 text-xs text-rose-300" role="alert">
@@ -515,153 +626,25 @@ function isUuid(value: string): boolean {
   );
 }
 
-function ReviewEditor({
-  mode,
-  draft,
-  disabled,
-  error,
-  onChange,
-  onCancel,
-  onSubmit,
-}: {
-  mode: "create" | "edit";
-  draft: ReviewDraft;
-  disabled: boolean;
-  error: string | null;
-  onChange: (next: ReviewDraft) => void;
-  onCancel: () => void;
-  onSubmit: () => void;
-}) {
-  return (
-    <div className="mb-3 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium text-white">
-            {mode === "create" ? "Write a review" : "Edit your review"}
-          </p>
-          <p className="text-xs text-slate-500">
-            Rate this road from your own ride experience. Photo upload will land
-            once media storage is wired.
-          </p>
-        </div>
-      </div>
+function sanitizePhotoUrls(
+  values: string[],
+): { photos: string[] } | { error: string } {
+  const photos: string[] = [];
 
-      <div className="mb-3">
-        <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-slate-500">
-          Rating
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {Array.from({ length: 5 }, (_, index) => index + 1).map((rating) => {
-            const active = draft.rating === rating;
-            return (
-              <button
-                key={rating}
-                type="button"
-                onClick={() => onChange({ ...draft, rating })}
-                disabled={disabled}
-                aria-label={`${rating} ${rating === 1 ? "star" : "stars"}`}
-                className={`rounded-full border px-3 py-1.5 text-xs transition ${
-                  active
-                    ? "border-amber-400/60 bg-amber-400/10 text-amber-300"
-                    : "border-slate-700 text-slate-300 hover:border-slate-500"
-                } disabled:cursor-not-allowed disabled:opacity-60`}
-              >
-                {rating} ★
-              </button>
-            );
-          })}
-        </div>
-      </div>
+  for (const value of values) {
+    const trimmed = value.trim();
+    if (!trimmed) continue;
 
-      <label className="mb-3 block">
-        <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-slate-500">
-          Comment
-        </span>
-        <textarea
-          value={draft.comment}
-          onChange={(event) =>
-            onChange({
-              ...draft,
-              comment: event.target.value.slice(0, REVIEW_COMMENT_MAX_LENGTH),
-            })
-          }
-          disabled={disabled}
-          rows={4}
-          maxLength={REVIEW_COMMENT_MAX_LENGTH}
-          aria-label="Comment"
-          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan disabled:cursor-not-allowed disabled:opacity-60"
-          placeholder="What should other riders know about this road?"
-        />
-        <span className="mt-1 block text-right text-[11px] text-slate-500">
-          {draft.comment.length}/{REVIEW_COMMENT_MAX_LENGTH}
-        </span>
-      </label>
-
-      <label className="mb-3 block">
-        <span className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-slate-500">
-          Bike model
-        </span>
-        <input
-          type="text"
-          value={draft.bikeModel}
-          onChange={(event) =>
-            onChange({ ...draft, bikeModel: event.target.value.slice(0, 100) })
-          }
-          disabled={disabled}
-          aria-label="Bike model"
-          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan disabled:cursor-not-allowed disabled:opacity-60"
-          placeholder="Optional — e.g. BMW R1250GS"
-        />
-      </label>
-
-      {error && (
-        <p className="mb-3 rounded-lg border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-xs text-rose-300">
-          {error}
-        </p>
-      )}
-
-      <div className="flex items-center justify-end gap-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={disabled}
-          className="rounded-lg px-3 py-2 text-xs text-slate-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          onClick={onSubmit}
-          disabled={disabled}
-          className="inline-flex items-center gap-2 rounded-lg bg-tarmoto-cyan px-3 py-2 text-xs font-medium text-slate-950 transition hover:bg-tarmoto-cyan-light disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {disabled ? <Loader2 size={12} className="animate-spin" /> : null}
-          {mode === "create" ? "Submit review" : "Save review"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function normalizeDraft(draft: ReviewDraft):
-  | {
-      ok: true;
-      data: { rating: number; comment?: string; bike_model?: string };
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.protocol !== "https:") {
+        return { error: "Photo URLs must start with https://" };
+      }
+      photos.push(trimmed);
+    } catch {
+      return { error: "Photo URLs must start with https://" };
     }
-  | { ok: false; error: string } {
-  if (draft.rating < 1 || draft.rating > 5) {
-    return { ok: false, error: "Choose a star rating before you submit." };
   }
 
-  const comment = draft.comment.trim();
-  const bikeModel = draft.bikeModel.trim();
-
-  return {
-    ok: true,
-    data: {
-      rating: draft.rating,
-      ...(comment ? { comment } : {}),
-      ...(bikeModel ? { bike_model: bikeModel } : {}),
-    },
-  };
+  return { photos };
 }
