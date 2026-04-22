@@ -41,7 +41,7 @@ export function useClosures(
     counts: EMPTY_COUNTS,
     routeCounts: EMPTY_COUNTS,
     loading: true,
-    routeLoading: false,
+    routeLoading: routes.length > 0,
     error: null,
     routeError: null,
     previewDate,
@@ -108,7 +108,7 @@ export function useClosures(
       previewDate,
     }));
 
-    Promise.all(
+    Promise.allSettled(
       routes.map((route) =>
         closuresApi.checkRoute(
           { route: route.points, active_on: previewIso },
@@ -116,17 +116,29 @@ export function useClosures(
         ),
       ),
     )
-      .then((responses) => {
+      .then((results) => {
         if (ctrl.signal.aborted) return;
+
+        const fulfilled = results.filter(
+          (
+            result,
+          ): result is PromiseFulfilledResult<
+            Awaited<ReturnType<typeof closuresApi.checkRoute>>
+          > => result.status === "fulfilled",
+        );
+        const rejectedCount = results.length - fulfilled.length;
         const routeClosures = sortClosures(
-          dedupeClosures(responses.flatMap(({ data }) => data.closures)),
+          dedupeClosures(fulfilled.flatMap(({ value }) => value.data.closures)),
         );
         setState((current) => ({
           ...current,
           routeClosures,
           routeCounts: countClosuresBySeverity(routeClosures),
           routeLoading: false,
-          routeError: null,
+          routeError:
+            rejectedCount > 0
+              ? "Some route segments could not be checked."
+              : null,
           previewDate,
         }));
       })
@@ -145,5 +157,8 @@ export function useClosures(
     return () => ctrl.abort();
   }, [previewDate, previewIso, routes]);
 
-  return state;
+  return {
+    ...state,
+    previewDate,
+  };
 }

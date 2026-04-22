@@ -40,6 +40,18 @@ describe("previewDateForMonth", () => {
       previewDateForMonth(7, new Date("2026-04-22T09:00:00Z")).toISOString(),
     ).toBe("2026-07-15T12:00:00.000Z");
   });
+
+  it("rolls into the next year when the chosen month has already passed", () => {
+    expect(
+      previewDateForMonth(1, new Date("2026-10-22T09:00:00Z")).toISOString(),
+    ).toBe("2027-01-15T12:00:00.000Z");
+  });
+
+  it("rejects out-of-range or non-integer months", () => {
+    expect(() => previewDateForMonth(0)).toThrow(RangeError);
+    expect(() => previewDateForMonth(13)).toThrow(RangeError);
+    expect(() => previewDateForMonth(4.5)).toThrow(RangeError);
+  });
 });
 
 describe("countClosuresBySeverity", () => {

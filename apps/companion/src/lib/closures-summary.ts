@@ -23,7 +23,15 @@ const SEVERITY_ORDER: Record<PlannerClosure["severity"], number> = {
 };
 
 export function previewDateForMonth(month: number, now: Date = new Date()) {
-  return new Date(Date.UTC(now.getUTCFullYear(), month - 1, 15, 12, 0, 0));
+  if (!Number.isInteger(month) || month < 1 || month > 12) {
+    throw new RangeError("month must be an integer between 1 and 12");
+  }
+
+  const currentYear = now.getUTCFullYear();
+  const currentMonth = now.getUTCMonth() + 1;
+  const year = month < currentMonth ? currentYear + 1 : currentYear;
+
+  return new Date(Date.UTC(year, month - 1, 15, 12, 0, 0));
 }
 
 export function countClosuresBySeverity(
