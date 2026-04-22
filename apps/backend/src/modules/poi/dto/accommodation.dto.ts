@@ -34,36 +34,31 @@ export type AccommodationKind = (typeof ACCOMMODATION_KINDS)[number];
 const DEFAULT_RADIUS_KM = 5;
 const MAX_RADIUS_KM = 25;
 
-const ACCOMMODATION_KIND_SET: ReadonlySet<string> = new Set(
-  ACCOMMODATION_KINDS,
-);
-
-function isAccommodationKind(value: string): value is AccommodationKind {
-  return ACCOMMODATION_KIND_SET.has(value);
-}
-
 /**
- * Turn a `kinds=hotel,camp_site` query string into a deduplicated,
- * validated array. Tolerates repeated params and whitespace. Unknown
- * tokens are dropped here so the downstream `@IsIn` validator sees a
- * clean `AccommodationKind[]` — if every token is invalid the result is
- * still `undefined`, which lets the service apply the default (all kinds).
+ * Turn a `kinds=hotel,camp_site` query string into a deduplicated
+ * array. Tolerates repeated params and whitespace. Unknown tokens are
+ * preserved so the downstream `@IsIn` validator rejects the request
+ * with a 400 — we'd rather be loud about `?kinds=bogus` than silently
+ * broaden the query into "all kinds" and mislead the caller. Returns
+ * `undefined` only when the param is truly absent; an explicit empty
+ * value becomes `[]` so `@ArrayNotEmpty()` can flag it.
  *
- * Kept in sync with the POI DTO's `parseKinds` — the two endpoints accept
- * the same query-param shape so clients can reuse the same serializer.
+ * Deliberately stricter than the sibling helper in
+ * `point-of-interest.dto.ts`, which is lenient for historic reasons.
+ * New endpoints should prefer this behaviour.
  */
-function parseKinds(value: unknown): AccommodationKind[] | undefined {
+function parseKinds(value: unknown): string[] | undefined {
   if (value === undefined || value === null) return undefined;
   const raw = Array.isArray(value) ? value : [value];
-  const kinds = new Set<AccommodationKind>();
+  const kinds = new Set<string>();
   for (const item of raw) {
     if (typeof item !== 'string') continue;
     for (const token of item.split(',')) {
       const trimmed = token.trim();
-      if (trimmed && isAccommodationKind(trimmed)) kinds.add(trimmed);
+      if (trimmed) kinds.add(trimmed);
     }
   }
-  return kinds.size === 0 ? undefined : Array.from(kinds);
+  return Array.from(kinds);
 }
 
 export class AccommodationQueryDto {

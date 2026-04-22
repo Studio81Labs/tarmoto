@@ -20,7 +20,7 @@ export class PoiController {
       'from the configured POI provider. Used by the mobile trip planner ' +
       'to suggest overnight stops near each day-end waypoint. Optional ' +
       '`kinds` narrows by tourism type (e.g. hotels only) and optional ' +
-      '`min_stars` narrows by rider rating.',
+      '`min_stars` narrows by provider-reported star rating.',
   })
   @ApiResponse({ status: 200, type: AccommodationListDto })
   async findAccommodations(
