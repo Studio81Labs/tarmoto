@@ -215,4 +215,34 @@ describe("AccountPage", () => {
       screen.queryByText("Email copied. Use it to sign in on mobile."),
     ).not.toBeInTheDocument();
   });
+
+  it("renders the avatar helper text without literal markdown backticks", async () => {
+    getMeMock.mockResolvedValueOnce({
+      data: {
+        id: "user-1",
+        email: "rider@example.com",
+        display_name: "Rider One",
+        phone: null,
+        avatar_url: null,
+        bio: null,
+        home_region: null,
+        home_location: null,
+        work_location: null,
+        preferences: {},
+        created_at: "2026-04-22T09:00:00.000Z",
+      },
+    });
+
+    render(<AccountPage />);
+
+    expect(
+      await screen.findByDisplayValue("rider@example.com"),
+    ).toBeInTheDocument();
+
+    const helperText = screen.getByText(/image URL from your CDN/i);
+    expect(helperText).toHaveTextContent(
+      "Use an https:// image URL from your CDN, photo host, or social profile.",
+    );
+    expect(helperText).not.toHaveTextContent("`https://`");
+  });
 });

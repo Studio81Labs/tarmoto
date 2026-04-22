@@ -307,8 +307,8 @@ export default function AccountPage() {
             </button>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Use an `https://` image URL from your CDN, photo host, or social
-            profile.
+            Use an <code>https://</code> image URL from your CDN, photo host, or
+            social profile.
           </p>
         </div>
 
