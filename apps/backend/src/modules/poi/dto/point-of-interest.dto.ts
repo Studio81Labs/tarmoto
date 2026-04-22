@@ -199,16 +199,17 @@ export class AlongRoutePoiQueryDto {
 
   @ApiPropertyOptional({
     default: DEFAULT_BUFFER_KM,
-    minimum: 0.5,
     maximum: MAX_BUFFER_KM,
     description:
       'Buffer in km around the route to consider a POI "on it". ' +
-      `Defaults to ${DEFAULT_BUFFER_KM} km, capped at ${MAX_BUFFER_KM} km.`,
+      `Defaults to ${DEFAULT_BUFFER_KM} km, capped at ${MAX_BUFFER_KM} km. ` +
+      'Values below the provider precision (0.5 km) silently fall back to ' +
+      'the default rather than failing — matches `radius_km` on the point ' +
+      'endpoints, which lenient-handles 0 / negative the same way.',
   })
   @IsOptional()
   @Transform(toOptionalNumber)
   @IsNumber()
-  @Min(0.5)
   @Max(MAX_BUFFER_KM)
   buffer_km?: number;
 

@@ -100,6 +100,13 @@ export default function TripDayScreen() {
     };
   }, [tripId, trip, setActiveTrip]);
 
+  // Resolve the active day before any conditional return so the hook
+  // order below stays stable across the loading / error / not-found
+  // transitions (Rules of Hooks). `useFuelStationsAlongRoute` short-
+  // circuits internally when `day` is undefined.
+  const day = trip?.days.find((d) => d.day_number === dayNumber);
+  const fuelStations = useFuelStationsAlongRoute(day, fuelRangeKm);
+
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -118,7 +125,6 @@ export default function TripDayScreen() {
     );
   }
 
-  const day = trip.days.find((d) => d.day_number === dayNumber);
   if (!day) {
     return (
       <View style={styles.centered}>
@@ -146,7 +152,6 @@ export default function TripDayScreen() {
   const belowThreshold =
     day.avg_quality > 0 && !meetsQualityThreshold(day.avg_quality, minQuality);
   const summary = summarizeWaypoints(day.waypoints);
-  const fuelStations = useFuelStationsAlongRoute(day, fuelRangeKm);
   const fuelRange = summarizeFuelRange(day, fuelRangeKm, fuelStations);
 
   return (
@@ -268,32 +273,40 @@ function StartNavigationButton({
  *
  * Only runs when the rider has a positive declared fuel range *and* at
  * least one leg currently exceeds it — otherwise there's nothing to
- * decorate and we avoid the network round-trip + provider load. When
- * the endpoint errors (provider outage, offline) the hook silently
- * returns an empty list so the existing warning card keeps working in
- * its old waypoint-only shape.
+ * decorate and we avoid the network round-trip + provider load. Accepts
+ * an optional `day` so the caller can invoke this hook before the
+ * loading / error / not-found early returns without violating the
+ * Rules of Hooks (the hook short-circuits to `[]` internally when the
+ * day is missing). When the endpoint errors (provider outage, offline)
+ * the hook silently returns an empty list so the existing warning card
+ * keeps working in its old waypoint-only shape.
  */
 function useFuelStationsAlongRoute(
-  day: TripDay,
+  day: TripDay | undefined,
   fuelRangeKm: number,
 ): FuelStationAnchor[] {
   const [stations, setStations] = useState<FuelStationAnchor[]>([]);
-  const route = day.route_geometry;
+  const route = day?.route_geometry ?? [];
   const routeLength = route.length;
   // Quick client-side check so we only query when there is at least one
   // over-range leg on the waypoint-only breakdown. `summarizeFuelRange`
   // is pure and cheap, so reusing it here avoids duplicating the leg
   // logic in this hook.
   const needsStations =
+    !!day &&
     fuelRangeKm > 0 &&
     routeLength >= 2 &&
     summarizeFuelRange(day, fuelRangeKm).exceedingCount > 0;
 
   useEffect(() => {
-    if (!needsStations) {
+    if (!needsStations || !day) {
       setStations([]);
       return;
     }
+    // Clear eagerly so a day switch doesn't briefly annotate the new
+    // day's legs with the previous day's stops while the next fetch is
+    // still in flight.
+    setStations([]);
     let ignore = false;
     (async () => {
       try {
@@ -319,7 +332,7 @@ function useFuelStationsAlongRoute(
     // Depth-equality for `route` would be expensive; key the effect on
     // the day id + length so a geometry update still triggers a refetch
     // (days are regenerated whole on trip edits, never patched in-place).
-  }, [day.id, routeLength, needsStations]);
+  }, [day?.id, routeLength, needsStations]);
 
   return stations;
 }
