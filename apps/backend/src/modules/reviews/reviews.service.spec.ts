@@ -119,6 +119,7 @@ describe('ReviewsService', () => {
       expect(result[0].helpful_count).toBe(0);
       expect(result[0].not_helpful_count).toBe(0);
       expect(result[0].my_vote).toBeNull();
+      expect(result[0].is_mine).toBe(false);
     });
 
     it("should surface vote counts and the caller's own vote when authenticated", async () => {
@@ -136,6 +137,7 @@ describe('ReviewsService', () => {
       expect(result[0].helpful_count).toBe(7);
       expect(result[0].not_helpful_count).toBe(2);
       expect(result[0].my_vote).toBe(false);
+      expect(result[0].is_mine).toBe(false);
     });
 
     it('should skip viewer-vote lookup when anonymous', async () => {
@@ -204,6 +206,7 @@ describe('ReviewsService', () => {
       });
       expect(result.rating).toBe(5);
       expect(result.user_display_name).toBe('John Rider');
+      expect(result.is_mine).toBe(true);
     });
 
     it('should set optional fields to null when not provided', async () => {
@@ -379,6 +382,7 @@ describe('ReviewsService', () => {
         helpful_count: 0,
         not_helpful_count: 0,
         my_vote: null,
+        is_mine: false,
       });
     });
 

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { RoadReviewsPanel } from "./RoadReviewsPanel";
 import { roadsApi, type RoadReview } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth";
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -8,6 +9,9 @@ vi.mock("@/lib/api", async () => {
     ...actual,
     roadsApi: {
       getReviews: vi.fn(),
+      createReview: vi.fn(),
+      updateReview: vi.fn(),
+      deleteReview: vi.fn(),
       voteOnReview: vi.fn(),
       clearReviewVote: vi.fn(),
     },
@@ -26,18 +30,30 @@ function review(overrides: Partial<RoadReview> & { id: string }): RoadReview {
     helpful_count: overrides.helpful_count ?? 3,
     not_helpful_count: overrides.not_helpful_count ?? 1,
     my_vote: overrides.my_vote ?? null,
+    is_mine: overrides.is_mine ?? false,
   };
 }
 
 describe("RoadReviewsPanel", () => {
   const getReviewsMock = vi.mocked(roadsApi.getReviews);
+  const createReviewMock = vi.mocked(roadsApi.createReview);
+  const updateReviewMock = vi.mocked(roadsApi.updateReview);
+  const deleteReviewMock = vi.mocked(roadsApi.deleteReview);
   const voteOnReviewMock = vi.mocked(roadsApi.voteOnReview);
   const clearReviewVoteMock = vi.mocked(roadsApi.clearReviewVote);
   const firstSegmentId = "11111111-1111-4111-8111-111111111111";
   const secondSegmentId = "22222222-2222-4222-8222-222222222222";
 
   beforeEach(() => {
+    useAuthStore.setState({
+      user: null,
+      isAuthenticated: false,
+      accessToken: null,
+    });
     getReviewsMock.mockReset();
+    createReviewMock.mockReset();
+    updateReviewMock.mockReset();
+    deleteReviewMock.mockReset();
     voteOnReviewMock.mockReset();
     clearReviewVoteMock.mockReset();
   });
@@ -162,5 +178,153 @@ describe("RoadReviewsPanel", () => {
 
     await waitFor(() => expect(resolveNext).not.toBeNull());
     resolveNext!({ data: [] });
+  });
+
+  it("lets an authenticated rider write a review from the panel", async () => {
+    useAuthStore.setState({
+      user: {
+        id: "user-1",
+        email: "rider@example.com",
+        displayName: "John Rider",
+      },
+      isAuthenticated: true,
+      accessToken: "token-1",
+    });
+
+    getReviewsMock.mockResolvedValueOnce({ data: [] }).mockResolvedValueOnce({
+      data: [
+        review({
+          id: "review-1",
+          rating: 5,
+          comment: "Worth the detour.",
+          bike_model: "Ducati Monster",
+          is_mine: true,
+        }),
+      ],
+    });
+    createReviewMock.mockResolvedValueOnce({
+      data: review({
+        id: "review-1",
+        rating: 5,
+        comment: "Worth the detour.",
+        bike_model: "Ducati Monster",
+        is_mine: true,
+      }),
+    });
+
+    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+    await screen.findByText(
+      "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Write a review for this road" }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "5 stars" }));
+    fireEvent.change(screen.getByLabelText("Comment"), {
+      target: { value: "Worth the detour." },
+    });
+    fireEvent.change(screen.getByLabelText("Bike model"), {
+      target: { value: "Ducati Monster" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit review" }));
+
+    await waitFor(() =>
+      expect(createReviewMock).toHaveBeenCalledWith(firstSegmentId, {
+        rating: 5,
+        comment: "Worth the detour.",
+        bike_model: "Ducati Monster",
+      }),
+    );
+    await waitFor(() => expect(getReviewsMock).toHaveBeenCalledTimes(2));
+
+    expect(await screen.findByText("Worth the detour.")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Edit your review" }),
+    ).toBeInTheDocument();
+  });
+
+  it("lets an authenticated rider edit and delete their own review", async () => {
+    useAuthStore.setState({
+      user: {
+        id: "user-1",
+        email: "rider@example.com",
+        displayName: "John Rider",
+      },
+      isAuthenticated: true,
+      accessToken: "token-1",
+    });
+
+    getReviewsMock
+      .mockResolvedValueOnce({
+        data: [
+          review({
+            id: "review-1",
+            rating: 4,
+            comment: "Fresh asphalt and smooth sweepers.",
+            bike_model: "BMW R1250GS",
+            is_mine: true,
+          }),
+        ],
+      })
+      .mockResolvedValueOnce({
+        data: [
+          review({
+            id: "review-1",
+            rating: 3,
+            comment: "Still good, but a few rough patches now.",
+            bike_model: "BMW R1250GS",
+            is_mine: true,
+          }),
+        ],
+      })
+      .mockResolvedValueOnce({ data: [] });
+    updateReviewMock.mockResolvedValueOnce({
+      data: review({
+        id: "review-1",
+        rating: 3,
+        comment: "Still good, but a few rough patches now.",
+        bike_model: "BMW R1250GS",
+        is_mine: true,
+      }),
+    });
+    deleteReviewMock.mockResolvedValueOnce({ data: undefined });
+
+    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+    await screen.findByText("Fresh asphalt and smooth sweepers.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit your review" }));
+    fireEvent.click(screen.getByRole("button", { name: "3 stars" }));
+    fireEvent.change(screen.getByLabelText("Comment"), {
+      target: { value: "Still good, but a few rough patches now." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save review" }));
+
+    await waitFor(() =>
+      expect(updateReviewMock).toHaveBeenCalledWith(firstSegmentId, {
+        rating: 3,
+        comment: "Still good, but a few rough patches now.",
+        bike_model: "BMW R1250GS",
+      }),
+    );
+
+    expect(
+      await screen.findByText("Still good, but a few rough patches now."),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete your review" }));
+
+    await waitFor(() =>
+      expect(deleteReviewMock).toHaveBeenCalledWith(firstSegmentId),
+    );
+    await waitFor(() => expect(getReviewsMock).toHaveBeenCalledTimes(3));
+    expect(
+      await screen.findByText(
+        "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
+      ),
+    ).toBeInTheDocument();
   });
 });

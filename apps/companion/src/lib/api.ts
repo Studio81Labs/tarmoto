@@ -314,6 +314,7 @@ export interface RoadReview {
   helpful_count: number;
   not_helpful_count: number;
   my_vote: boolean | null;
+  is_mine: boolean;
 }
 
 export interface ReviewVoteResult {
@@ -322,12 +323,43 @@ export interface ReviewVoteResult {
   my_vote: boolean | null;
 }
 
+export interface UpsertRoadReviewInput {
+  rating: number;
+  comment?: string;
+  bike_model?: string;
+}
+
 export const roadsApi = {
   getReviews: (segmentId: string, init?: RequestInit) =>
     apiFetch<RoadReview[]>(
       `/roads/${encodeURIComponent(segmentId)}/reviews`,
       init,
     ),
+  createReview: (
+    segmentId: string,
+    data: UpsertRoadReviewInput,
+    init?: RequestInit,
+  ) =>
+    apiFetch<RoadReview>(`/roads/${encodeURIComponent(segmentId)}/reviews`, {
+      ...init,
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateReview: (
+    segmentId: string,
+    data: UpsertRoadReviewInput,
+    init?: RequestInit,
+  ) =>
+    apiFetch<RoadReview>(`/roads/${encodeURIComponent(segmentId)}/reviews`, {
+      ...init,
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  deleteReview: (segmentId: string, init?: RequestInit) =>
+    apiFetch<void>(`/roads/${encodeURIComponent(segmentId)}/reviews`, {
+      ...init,
+      method: "DELETE",
+    }),
   voteOnReview: (reviewId: string, isHelpful: boolean, init?: RequestInit) =>
     apiFetch<ReviewVoteResult>(
       `/roads/reviews/${encodeURIComponent(reviewId)}/vote`,

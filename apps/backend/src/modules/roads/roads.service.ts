@@ -484,6 +484,7 @@ function mapReviewRows(rows: unknown): ReviewResponseDto[] {
     // per-viewer state belongs on /roads/:id/reviews, which uses the
     // OptionalAuthGuard.
     my_vote: null,
+    is_mine: false,
   }));
 }
 
