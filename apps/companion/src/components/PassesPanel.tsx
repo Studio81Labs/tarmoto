@@ -14,6 +14,11 @@ import {
   type PassStatus,
 } from "@/lib/passes-summary";
 
+interface PassesPanelProps {
+  month?: number;
+  onMonthChange?: (month: number) => void;
+}
+
 const STATUS_DOT_CLASS: Record<PassStatus, string> = {
   open: "bg-emerald-400",
   closed: "bg-rose-400",
@@ -36,8 +41,22 @@ const MAX_PASSES_PER_GROUP = 5;
  * already preview which passes are open/closed in a target month. Once the
  * map layer ships, the selector here drives the layer's status colouring.
  */
-export function PassesPanel() {
-  const [month, setMonth] = useState<number>(() => currentUtcMonth());
+export function PassesPanel({
+  month: controlledMonth,
+  onMonthChange,
+}: PassesPanelProps) {
+  const [localMonth, setLocalMonth] = useState<number>(() => currentUtcMonth());
+  const isControlled =
+    controlledMonth !== undefined && onMonthChange !== undefined;
+  const isReadOnlyControlled =
+    controlledMonth !== undefined && onMonthChange === undefined;
+  const month = isControlled
+    ? controlledMonth
+    : (controlledMonth ?? localMonth);
+  const setMonth = (nextMonth: number) => {
+    if (isControlled) onMonthChange(nextMonth);
+    else setLocalMonth(nextMonth);
+  };
   const { passes, loading, error } = usePasses(month);
   const counts = useMemo(() => countByStatus(passes), [passes]);
   const groups = useMemo(() => partitionByStatus(passes), [passes]);
@@ -60,6 +79,7 @@ export function PassesPanel() {
           id="passes-month"
           value={month}
           onChange={(e) => setMonth(Number(e.target.value))}
+          disabled={isReadOnlyControlled}
           className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:border-tarmoto-cyan transition"
         >
           {MONTH_NAMES.map((name, idx) => (
