@@ -55,11 +55,15 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
   const activeViewerKeyRef = useRef(viewerKey);
   const requestGenerationRef = useRef(0);
   const mutationAttemptRef = useRef(0);
+  const localMyReviewRef = useRef<RoadReview | null>(null);
+  const deletedMyReviewIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     activeSegmentRef.current = segmentId;
     activeViewerKeyRef.current = viewerKey;
     requestGenerationRef.current += 1;
+    localMyReviewRef.current = null;
+    deletedMyReviewIdRef.current = null;
     setDraft(EMPTY_REVIEW_DRAFT);
     setEditorMode(null);
     setSubmitError(null);
@@ -81,7 +85,14 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
       .getReviews(segmentId)
       .then(({ data }) => {
         if (cancelled) return;
-        setReviews((current) => mergeFetchedReviews(data, current));
+        setReviews((current) =>
+          mergeFetchedReviews(
+            data,
+            current,
+            localMyReviewRef.current,
+            deletedMyReviewIdRef.current,
+          ),
+        );
       })
       .catch((err) => {
         if (cancelled) return;
@@ -195,6 +206,8 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
 
       setError(null);
       setSubmitError(null);
+      localMyReviewRef.current = data.is_mine ? data : null;
+      deletedMyReviewIdRef.current = null;
       setReviews((current) => upsertReview(current, data));
 
       if (!didReturnToSameSegment) {
@@ -259,6 +272,8 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
 
       setError(null);
       setSubmitError(null);
+      localMyReviewRef.current = null;
+      deletedMyReviewIdRef.current = reviewId;
       setReviews((current) =>
         current.filter((review) => review.id !== reviewId),
       );
@@ -457,17 +472,24 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
 function mergeFetchedReviews(
   fetched: RoadReview[],
   current: RoadReview[],
+  localMyReview: RoadReview | null,
+  deletedMyReviewId: string | null,
 ): RoadReview[] {
-  if (current.length === 0) {
-    return fetched;
+  const nextFetched = deletedMyReviewId
+    ? fetched.filter((review) => review.id !== deletedMyReviewId)
+    : fetched;
+
+  if (current.length === 0 && !localMyReview) {
+    return nextFetched;
   }
 
-  const fetchedIds = new Set(fetched.map((review) => review.id));
+  const fetchedIds = new Set(nextFetched.map((review) => review.id));
   const localOnlyReviews = current.filter(
-    (review) => !fetchedIds.has(review.id),
+    (review) => review.id !== deletedMyReviewId && !fetchedIds.has(review.id),
   );
 
-  return [...localOnlyReviews, ...fetched];
+  const merged = [...localOnlyReviews, ...nextFetched];
+  return localMyReview ? upsertReview(merged, localMyReview) : merged;
 }
 
 function upsertReview(current: RoadReview[], next: RoadReview): RoadReview[] {

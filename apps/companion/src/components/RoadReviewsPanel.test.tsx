@@ -391,6 +391,175 @@ describe("RoadReviewsPanel", () => {
     ).toBeInTheDocument();
   });
 
+  it("preserves an edited review when a same-segment reload returns stale data", async () => {
+    setAuthenticatedViewer();
+    let resolveUpdate: ((value: { data: RoadReview }) => void) | null = null;
+    let resolveReturnedLoad: ((value: { data: RoadReview[] }) => void) | null =
+      null;
+
+    getReviewsMock
+      .mockResolvedValueOnce({
+        data: [
+          review({
+            id: "review-edit-stale",
+            comment: "Original pavement report.",
+            is_mine: true,
+          }),
+        ],
+      })
+      .mockResolvedValueOnce({ data: [] })
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ data: RoadReview[] }>((resolve) => {
+            resolveReturnedLoad = resolve;
+          }),
+      );
+    updateReviewMock.mockImplementationOnce(
+      () =>
+        new Promise<{ data: RoadReview }>((resolve) => {
+          resolveUpdate = resolve;
+        }),
+    );
+
+    const { rerender } = render(
+      <RoadReviewsPanel segmentId={firstSegmentId} />,
+    );
+
+    await screen.findByText("Original pavement report.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit your review" }));
+    fireEvent.change(screen.getByLabelText("Comment"), {
+      target: { value: "Edited pavement report." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save review" }));
+
+    await waitFor(() =>
+      expect(updateReviewMock).toHaveBeenCalledWith(firstSegmentId, {
+        rating: 4,
+        comment: "Edited pavement report.",
+        bike_model: "BMW R1250GS",
+        photos: ["https://cdn.example.com/review-1.jpg"],
+      }),
+    );
+
+    rerender(<RoadReviewsPanel segmentId={secondSegmentId} />);
+    await waitFor(() =>
+      expect(getReviewsMock).toHaveBeenLastCalledWith(secondSegmentId),
+    );
+
+    rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+    await waitFor(() =>
+      expect(getReviewsMock).toHaveBeenLastCalledWith(firstSegmentId),
+    );
+
+    await act(async () => {
+      resolveUpdate?.({
+        data: review({
+          id: "review-edit-stale",
+          comment: "Edited pavement report.",
+          is_mine: true,
+        }),
+      });
+    });
+
+    await act(async () => {
+      resolveReturnedLoad?.({
+        data: [
+          review({
+            id: "review-edit-stale",
+            comment: "Original pavement report.",
+            is_mine: true,
+          }),
+        ],
+      });
+    });
+
+    expect(
+      await screen.findByText("Edited pavement report."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Original pavement report."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps a deleted review hidden when a same-segment reload returns stale data", async () => {
+    setAuthenticatedViewer();
+    let resolveDelete: ((value: { data: undefined }) => void) | null = null;
+    let resolveReturnedLoad: ((value: { data: RoadReview[] }) => void) | null =
+      null;
+
+    getReviewsMock
+      .mockResolvedValueOnce({
+        data: [
+          review({
+            id: "review-delete-stale",
+            comment: "Will be deleted before stale reload.",
+            is_mine: true,
+          }),
+        ],
+      })
+      .mockResolvedValueOnce({ data: [] })
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ data: RoadReview[] }>((resolve) => {
+            resolveReturnedLoad = resolve;
+          }),
+      );
+    deleteReviewMock.mockImplementationOnce(
+      () =>
+        new Promise<{ data: undefined }>((resolve) => {
+          resolveDelete = resolve;
+        }),
+    );
+
+    const { rerender } = render(
+      <RoadReviewsPanel segmentId={firstSegmentId} />,
+    );
+
+    await screen.findByText("Will be deleted before stale reload.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete your review" }));
+
+    await waitFor(() =>
+      expect(deleteReviewMock).toHaveBeenCalledWith(firstSegmentId),
+    );
+
+    rerender(<RoadReviewsPanel segmentId={secondSegmentId} />);
+    await waitFor(() =>
+      expect(getReviewsMock).toHaveBeenLastCalledWith(secondSegmentId),
+    );
+
+    rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+    await waitFor(() =>
+      expect(getReviewsMock).toHaveBeenLastCalledWith(firstSegmentId),
+    );
+
+    await act(async () => {
+      resolveDelete?.({ data: undefined });
+    });
+
+    await act(async () => {
+      resolveReturnedLoad?.({
+        data: [
+          review({
+            id: "review-delete-stale",
+            comment: "Will be deleted before stale reload.",
+            is_mine: true,
+          }),
+        ],
+      });
+    });
+
+    expect(
+      await screen.findByText(
+        "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Will be deleted before stale reload."),
+    ).not.toBeInTheDocument();
+  });
+
   it("sends an explicit empty photo list when an edit removes all photos", async () => {
     setAuthenticatedViewer();
     getReviewsMock.mockResolvedValueOnce({
