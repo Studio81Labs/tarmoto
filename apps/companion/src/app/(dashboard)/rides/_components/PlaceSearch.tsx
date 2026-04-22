@@ -14,6 +14,8 @@ export interface PlaceValue {
 interface Props {
   value: PlaceValue | null;
   onChange: (next: PlaceValue | null) => void;
+  label?: string;
+  placeholder?: string;
 }
 
 interface Match {
@@ -33,7 +35,12 @@ const DEFAULT_RADIUS_KM = 25;
 const GEOCODE_DEBOUNCE_MS = 350;
 const GEOCODE_MIN_CHARS = 2;
 
-export function PlaceSearch({ value, onChange }: Props) {
+export function PlaceSearch({
+  value,
+  onChange,
+  label = "Passes near place",
+  placeholder = "Tatra Mountains…",
+}: Props) {
   const [draft, setDraft] = useState(value?.label ?? "");
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(false);
@@ -135,7 +142,7 @@ export function PlaceSearch({ value, onChange }: Props) {
 
   return (
     <div className="flex flex-col gap-1 flex-1 min-w-[220px]">
-      <span className="text-xs text-slate-400">Passes near place</span>
+      <span className="text-xs text-slate-400">{label}</span>
       <div ref={containerRef} className="relative">
         <MapPin
           size={14}
@@ -149,7 +156,7 @@ export function PlaceSearch({ value, onChange }: Props) {
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
-          placeholder="Tatra Mountains…"
+          placeholder={placeholder}
           className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-7 pr-8 py-1.5 text-sm text-slate-100"
         />
         {(draft || value) && (

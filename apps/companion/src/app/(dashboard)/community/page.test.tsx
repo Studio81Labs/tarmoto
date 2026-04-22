@@ -1,11 +1,14 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import CommunityFeedPage from "./page";
-import { communityApi, type CommunityRidePage } from "@/lib/api";
+import { api, communityApi, type CommunityRidePage } from "@/lib/api";
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
     ...actual,
+    api: {
+      GET: vi.fn(),
+    },
     communityApi: {
       list: vi.fn(),
     },
@@ -43,9 +46,11 @@ function pageData(): CommunityRidePage {
 }
 
 describe("CommunityFeedPage", () => {
+  const geocodeMock = vi.mocked(api.GET);
   const listMock = vi.mocked(communityApi.list);
 
   beforeEach(() => {
+    geocodeMock.mockReset();
     listMock.mockReset();
   });
 
@@ -86,5 +91,41 @@ describe("CommunityFeedPage", () => {
         sort: "newest",
       }),
     );
+  });
+
+  it("includes distance filters in the API query", async () => {
+    listMock
+      .mockResolvedValueOnce({ data: pageData() })
+      .mockResolvedValueOnce({ data: pageData() })
+      .mockResolvedValueOnce({ data: pageData() });
+
+    render(<CommunityFeedPage />);
+
+    await waitFor(() => expect(listMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByLabelText("Minimum distance"), {
+      target: { value: "150" },
+    });
+    fireEvent.change(screen.getByLabelText("Maximum distance"), {
+      target: { value: "320" },
+    });
+
+    await waitFor(() =>
+      expect(listMock).toHaveBeenLastCalledWith({
+        limit: 9,
+        offset: 0,
+        sort: "most_popular",
+        min_distance_km: 150,
+        max_distance_km: 320,
+      }),
+    );
+  });
+
+  it("disables nearest sorting until a place is selected", async () => {
+    listMock.mockResolvedValueOnce({ data: pageData() });
+
+    render(<CommunityFeedPage />);
+
+    expect(screen.getByRole("option", { name: "Nearest" })).toBeDisabled();
   });
 });
