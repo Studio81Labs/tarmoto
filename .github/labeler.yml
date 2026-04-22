@@ -32,15 +32,17 @@ infra:
 
 docs:
   - changed-files:
-      - any-glob-to-any-file: "docs/**"
-      - any-glob-to-any-file: "README.md"
-      - any-glob-to-any-file: "CONTRIBUTING.md"
-      - any-glob-to-any-file: "AGENTS.md"
-      - any-glob-to-any-file: "CLAUDE.md"
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "README.md"
+          - "CONTRIBUTING.md"
+          - "AGENTS.md"
+          - "CLAUDE.md"
 
 deps:
   - changed-files:
-      - any-glob-to-any-file: "package.json"
-      - any-glob-to-any-file: "pnpm-lock.yaml"
-      - any-glob-to-any-file: "apps/**/package.json"
-      - any-glob-to-any-file: "packages/**/package.json"
+      - any-glob-to-any-file:
+          - "package.json"
+          - "pnpm-lock.yaml"
+          - "apps/**/package.json"
+          - "packages/**/package.json"
