@@ -25,6 +25,7 @@ import { ExplorationModule } from './modules/exploration/index.js';
 import { PassesModule } from './modules/passes/index.js';
 import { PoiModule } from './modules/poi/index.js';
 import { GeocodeModule } from './modules/geocode/index.js';
+import { ClosuresModule } from './modules/closures/index.js';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { GeocodeModule } from './modules/geocode/index.js';
     PassesModule,
     PoiModule,
     GeocodeModule,
+    ClosuresModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
