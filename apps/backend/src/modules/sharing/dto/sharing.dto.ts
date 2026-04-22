@@ -118,7 +118,7 @@ export class CommunityRidesQueryDto {
 
   @ApiPropertyOptional({
     description:
-      'Sort order. `nearest` requires `lat`/`lng`; otherwise it falls back to `newest`.',
+      'Sort order. `nearest` requires `lat`/`lng` (enforced above) — requests without a centre are rejected with 400 rather than silently re-sorted.',
     enum: COMMUNITY_RIDE_SORT_VALUES,
     default: 'newest',
   })
