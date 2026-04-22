@@ -137,4 +137,18 @@ describe('SharingController', () => {
       limit: 10,
     });
   });
+
+  it('GET /rides/community should forward curviness filter + curviest sort', async () => {
+    await controller.listCommunityRides({
+      min_curviness: 2.5,
+      max_curviness: 4,
+      sort: 'curviest',
+    });
+
+    expect(service.listCommunityRides).toHaveBeenCalledWith({
+      min_curviness: 2.5,
+      max_curviness: 4,
+      sort: 'curviest',
+    });
+  });
 });

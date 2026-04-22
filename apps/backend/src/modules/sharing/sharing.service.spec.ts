@@ -23,6 +23,7 @@ describe('SharingService', () => {
     avg_speed: 65.3,
     max_speed: 120.0,
     avg_road_quality: 4.2,
+    avg_curviness: 3.1,
     route_geom: {
       type: 'LineString',
       coordinates: [
@@ -190,6 +191,7 @@ describe('SharingService', () => {
       expect(result.id).toBe('ride-1');
       expect(result.rider_name).toBe('John Rider');
       expect(result.distance_km).toBe(42.5);
+      expect(result.avg_curviness).toBe(3.1);
       expect(result.duration_min).toBe(90);
       expect(result.route_geometry).toHaveLength(3);
       expect(result.route_geometry![0]).toEqual({ lat: 49.2, lng: 16.6 });
@@ -370,6 +372,44 @@ describe('SharingService', () => {
       );
     });
 
+    it('min_curviness filter drops rides with a null aggregate', async () => {
+      await service.listCommunityRides({ min_curviness: 2.5 });
+
+      // Explicit IS NOT NULL guard — "unknown" is not "not curvy", so
+      // including null rides in a "curvy rides" filter would be misleading.
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'ride.avg_curviness IS NOT NULL',
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'ride.avg_curviness >= :min_curviness',
+        { min_curviness: 2.5 },
+      );
+    });
+
+    it('max_curviness filter drops rides with a null aggregate', async () => {
+      await service.listCommunityRides({ max_curviness: 4 });
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'ride.avg_curviness IS NOT NULL',
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'ride.avg_curviness <= :max_curviness',
+        { max_curviness: 4 },
+      );
+    });
+
+    it('does not add curviness predicates when neither bound is set', async () => {
+      await service.listCommunityRides({});
+
+      expect(mockQueryBuilder.andWhere).not.toHaveBeenCalledWith(
+        'ride.avg_curviness IS NOT NULL',
+      );
+      expect(mockQueryBuilder.andWhere).not.toHaveBeenCalledWith(
+        expect.stringContaining('avg_curviness >='),
+        expect.anything(),
+      );
+    });
+
     it('honours the ride_type filter', async () => {
       await service.listCommunityRides({ ride_type: 'trip' });
 
@@ -419,6 +459,26 @@ describe('SharingService', () => {
         'ride.id',
         'DESC',
       );
+    });
+
+    it('sort=curviest orders by avg_curviness DESC NULLS LAST + id tiebreaker', async () => {
+      await service.listCommunityRides({ sort: 'curviest' });
+
+      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
+        'ride.avg_curviness',
+        'DESC',
+        'NULLS LAST',
+      );
+      expect(mockQueryBuilder.addOrderBy).toHaveBeenCalledWith(
+        'ride.id',
+        'DESC',
+      );
+    });
+
+    it('exposes avg_curviness on each community card', async () => {
+      const result = await service.listCommunityRides({});
+
+      expect(result.items[0].avg_curviness).toBe(3.1);
     });
 
     it('sort=most_popular orders by view_count DESC + id tiebreaker', async () => {

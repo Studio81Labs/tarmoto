@@ -75,7 +75,49 @@ export class RidesService {
     ride.ended_at = new Date();
 
     const saved = await this.rideRepo.save(ride);
+    // Recompute the length-weighted curviness aggregate now that the
+    // ride is terminal. Source data (`road_segments.curviness_score`,
+    // `length_m`) is backend-owned, so this can't live on the mobile
+    // upload. Runs post-save so `saved` can mirror the updated value
+    // without round-tripping a re-select.
+    saved.avg_curviness = await this.recomputeAvgCurviness(saved.id);
     return this.toRideResponse(saved);
+  }
+
+  /**
+   * Length-weighted average of `road_segments.curviness_score` over the
+   * ride's `ride_segments`. Returns `null` when the ride has no snapped
+   * segments yet (fresh completion before upload finished) or when every
+   * segment is degenerate (`length_m = 0`), so the column stays NULL
+   * and the `curviest` sort's `NULLS LAST` pushes it to the bottom
+   * rather than pretending the ride scored zero.
+   */
+  private async recomputeAvgCurviness(rideId: string): Promise<number | null> {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const rows = await this.rideRepo.query(
+      `SELECT
+         CASE
+           WHEN SUM(rs.length_m) > 0
+             THEN SUM(rs.curviness_score * rs.length_m) / SUM(rs.length_m)
+           ELSE NULL
+         END AS weighted_avg
+       FROM ride_segments rseg
+       JOIN road_segments rs ON rs.id = rseg.road_segment_id
+       WHERE rseg.ride_id = $1`,
+      [rideId],
+    );
+
+    const raw = (rows as Array<{ weighted_avg: number | string | null }>)[0]
+      ?.weighted_avg;
+    // pg returns FLOAT aggregates as number on this driver config, but
+    // guard against the occasional string (numeric-style aggregate) so
+    // we don't hand the DTO `"3.25"` and blow up a `min_curviness`
+    // comparison on the client side.
+    const weightedAvg =
+      typeof raw === 'string' ? Number.parseFloat(raw) : (raw ?? null);
+
+    await this.rideRepo.update({ id: rideId }, { avg_curviness: weightedAvg });
+    return weightedAvg;
   }
 
   async list(
@@ -163,6 +205,7 @@ export class RidesService {
       avg_speed: ride.avg_speed,
       max_speed: ride.max_speed,
       avg_road_quality: ride.avg_road_quality,
+      avg_curviness: ride.avg_curviness ?? null,
       name: ride.name ?? null,
       duration_min: durationMin,
       route_geometry: routeGeometry,
@@ -335,6 +378,7 @@ ${tracks.join('\n')}
       distance_km: ride.distance_km,
       avg_speed: ride.avg_speed,
       avg_road_quality: ride.avg_road_quality,
+      avg_curviness: ride.avg_curviness ?? null,
     };
   }
 

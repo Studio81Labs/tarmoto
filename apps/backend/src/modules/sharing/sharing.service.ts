@@ -157,6 +157,21 @@ export class SharingService {
         min_quality: query.min_quality,
       });
     }
+    if (query.min_curviness !== undefined) {
+      // Exclude rides without a computed aggregate — a null `avg_curviness`
+      // means "unknown", not "not curvy", and letting them through would
+      // contaminate "show me the twisty rides" results.
+      qb.andWhere('ride.avg_curviness IS NOT NULL').andWhere(
+        'ride.avg_curviness >= :min_curviness',
+        { min_curviness: query.min_curviness },
+      );
+    }
+    if (query.max_curviness !== undefined) {
+      qb.andWhere('ride.avg_curviness IS NOT NULL').andWhere(
+        'ride.avg_curviness <= :max_curviness',
+        { max_curviness: query.max_curviness },
+      );
+    }
     if (query.ride_type !== undefined) {
       qb.andWhere('ride.ride_type = :ride_type', {
         ride_type: query.ride_type,
@@ -210,6 +225,12 @@ export class SharingService {
         break;
       case 'highest_quality':
         qb.orderBy('ride.avg_road_quality', 'DESC', 'NULLS LAST').addOrderBy(
+          'ride.id',
+          'DESC',
+        );
+        break;
+      case 'curviest':
+        qb.orderBy('ride.avg_curviness', 'DESC', 'NULLS LAST').addOrderBy(
           'ride.id',
           'DESC',
         );
@@ -272,6 +293,7 @@ export class SharingService {
       avg_speed: ride.avg_speed,
       max_speed: ride.max_speed,
       avg_road_quality: ride.avg_road_quality,
+      avg_curviness: ride.avg_curviness ?? null,
       duration_min: durationMin,
       view_count: shared.view_count ?? 0,
       route_geometry: routeGeometry,
@@ -291,6 +313,7 @@ export class SharingService {
       distance_km: ride.distance_km,
       avg_speed: ride.avg_speed,
       avg_road_quality: ride.avg_road_quality,
+      avg_curviness: ride.avg_curviness ?? null,
       duration_min: this.calcDurationMin(ride),
       view_count: sr.view_count ?? 0,
     };
