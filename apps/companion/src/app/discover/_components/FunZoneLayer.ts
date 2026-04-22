@@ -109,12 +109,17 @@ export function updateFunZoneLayerData(
   if (!src) return;
   const features: Feature<Polygon, FunZoneFeatureProps>[] = zones.map(
     (zone, i) => ({
+      // OpenAPI generation currently types `boundary` as `Record<string, never>[]`
+      // even though the runtime payload is `{ lat, lng }[]`.
+      // Cast once here so the geometry mapping stays explicit.
       type: "Feature",
       id: zone.id,
       geometry: {
         type: "Polygon",
         coordinates: [
-          zone.boundary.map((p) => [p.lng, p.lat] as [number, number]),
+          (zone.boundary as unknown as Array<{ lng: number; lat: number }>).map(
+            (point) => [point.lng, point.lat],
+          ),
         ],
       },
       properties: {
