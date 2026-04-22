@@ -336,9 +336,9 @@ export interface AccommodationList {
   radius_km: number;
 }
 
-// ── Along-route POIs (US-10) ──
+// ── Along-route POIs (US-10, US-36) ──
 
-export type PoiKind = "restaurant" | "viewpoint" | "cafe";
+export type PoiKind = "restaurant" | "viewpoint" | "cafe" | "fuel_station";
 
 export interface Poi {
   external_id: string;

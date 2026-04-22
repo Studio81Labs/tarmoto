@@ -490,12 +490,14 @@ const POI_KIND_LABELS: Record<PoiKind, string> = {
   restaurant: "Restaurant",
   viewpoint: "Viewpoint",
   cafe: "Café",
+  fuel_station: "Fuel station",
 };
 
 const POI_KIND_ICONS: Record<PoiKind, IconName> = {
   restaurant: "silverware-fork-knife",
   viewpoint: "binoculars",
   cafe: "coffee",
+  fuel_station: "gas-station",
 };
 
 function NearbyPoisCard({ day }: { day: TripDay }) {
@@ -561,7 +563,8 @@ function NearbyPoisCard({ day }: { day: TripDay }) {
         <Text style={styles.accommodationsEmptyBody}>{error}</Text>
       ) : !items || items.length === 0 ? (
         <Text style={styles.accommodationsEmptyBody}>
-          No restaurants, viewpoints, or cafés found near the end of this day.
+          No restaurants, viewpoints, cafés, or fuel stations found near the end
+          of this day.
         </Text>
       ) : (
         items.map((p) => <PoiRow key={p.external_id} item={p} />)

@@ -29,9 +29,10 @@ const OVERPASS_FETCH_TIMEOUT_MS = 10_000;
 
 /**
  * Map our `PoiKind` to the OSM tag key + regex of allowed values that
- * identifies it. Restaurants and cafés are `amenity=*`; viewpoints are
- * `tourism=viewpoint`. We keep the mapping here (rather than in the DTO)
- * so the Overpass-specific detail doesn't leak out of the provider.
+ * identifies it. Restaurants, cafés, and fuel stations are `amenity=*`;
+ * viewpoints are `tourism=viewpoint`. We keep the mapping here (rather
+ * than in the DTO) so the Overpass-specific detail doesn't leak out of
+ * the provider.
  */
 const POI_KIND_TAGS: Record<
   PoiKind,
@@ -40,6 +41,7 @@ const POI_KIND_TAGS: Record<
   restaurant: { key: 'amenity', value: 'restaurant' },
   cafe: { key: 'amenity', value: 'cafe' },
   viewpoint: { key: 'tourism', value: 'viewpoint' },
+  fuel_station: { key: 'amenity', value: 'fuel' },
 };
 
 /**
@@ -240,6 +242,7 @@ export function classifyPoiTags(
   const matches: PoiKind[] = [];
   const amenity = tags.amenity;
   if (amenity === 'restaurant' || amenity === 'cafe') matches.push(amenity);
+  if (amenity === 'fuel') matches.push('fuel_station');
   if (tags.tourism === 'viewpoint') matches.push('viewpoint');
   if (matches.length === 0) return null;
 
@@ -259,10 +262,12 @@ export function classifyPoiTags(
  * Extract a one-line descriptor to render under the POI name. For
  * restaurants and cafés the `cuisine` tag is the best signal ("italian",
  * "pizza"); for viewpoints we fall back to `description` then `view_type`
- * (typical OSM tags for scenic spots). Normalizes underscore-separated
- * values ("fine_dining" → "fine dining") so the mobile card doesn't have
- * to do it. Strictly null-safe — the card hides the row when `hint` is
- * null.
+ * (typical OSM tags for scenic spots); for fuel stations we prefer
+ * `brand` ("Shell", "OMV") and fall back to `operator` because that's
+ * what a rider actually recognises on a fuel-station sign. Normalizes
+ * underscore-separated values ("fine_dining" → "fine dining") so the
+ * mobile card doesn't have to do it. Strictly null-safe — the card
+ * hides the row when `hint` is null.
  */
 export function extractPoiHint(
   kind: PoiKind,
@@ -271,6 +276,9 @@ export function extractPoiHint(
   const raw = (() => {
     if (kind === 'viewpoint') {
       return tags.description ?? tags.view_type ?? null;
+    }
+    if (kind === 'fuel_station') {
+      return tags.brand ?? tags.operator ?? null;
     }
     return tags.cuisine ?? null;
   })();

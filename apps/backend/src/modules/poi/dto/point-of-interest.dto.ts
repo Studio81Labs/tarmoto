@@ -16,11 +16,17 @@ import { toOptionalNumber } from '../../../common/dto-transforms.js';
  * Kinds of along-route POIs the mobile app surfaces in the trip-day view.
  * Mirrors the OSM tag subset we accept — anything outside this list is
  * dropped at the provider layer so client code doesn't need to deal with
- * unknown kinds. Kept deliberately small (restaurants + viewpoints +
- * cafés) because those are the only three the spec calls out and the mobile
- * card stays scannable with glove-sized rows.
+ * unknown kinds. Kept deliberately small (restaurants + viewpoints + cafés
+ * + fuel stations) because these are the kinds the spec calls out for
+ * US-10 pit-stop suggestions and US-36 fuel-stop markers; the mobile card
+ * stays scannable with glove-sized rows.
  */
-export const POI_KINDS = ['restaurant', 'viewpoint', 'cafe'] as const;
+export const POI_KINDS = [
+  'restaurant',
+  'viewpoint',
+  'cafe',
+  'fuel_station',
+] as const;
 
 export type PoiKind = (typeof POI_KINDS)[number];
 
@@ -137,7 +143,9 @@ export class PoiDto {
     nullable: true,
     description:
       'Cuisine or description hint. For restaurants/cafés this is the ' +
-      '`cuisine` OSM tag; for viewpoints it is the `description` tag.',
+      '`cuisine` OSM tag; for viewpoints it is the `description` tag; ' +
+      'for fuel stations it is the `brand` tag (falling back to the ' +
+      '`operator` tag).',
   })
   hint!: string | null;
 }
