@@ -16,6 +16,7 @@ import {
 } from "@/lib/segment-preview";
 import { HAZARD_CONFIG } from "@/lib/utils";
 import { SegmentTrendChart } from "@/components/SegmentTrendChart";
+import { RoadReviewsPanel } from "@/components/RoadReviewsPanel";
 
 const SEVERITY_COLOR: Record<"none" | "low" | "medium" | "high", string> = {
   none: "text-slate-500",
@@ -248,6 +249,8 @@ export function RoadPreviewCard({
               </ul>
             )}
           </div>
+
+          <RoadReviewsPanel segmentId={segment.id} />
 
           {segment.photos.length > 0 && (
             <div>

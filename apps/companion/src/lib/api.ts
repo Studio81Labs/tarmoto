@@ -301,6 +301,52 @@ export const communityApi = {
   },
 };
 
+// ── Road reviews endpoints (US-55) ──
+
+export interface RoadReview {
+  id: string;
+  user_display_name: string;
+  rating: number;
+  comment: string | null;
+  bike_model: string | null;
+  photos: string[];
+  created_at: string;
+  helpful_count: number;
+  not_helpful_count: number;
+  my_vote: boolean | null;
+}
+
+export interface ReviewVoteResult {
+  helpful_count: number;
+  not_helpful_count: number;
+  my_vote: boolean | null;
+}
+
+export const roadsApi = {
+  getReviews: (segmentId: string, init?: RequestInit) =>
+    apiFetch<RoadReview[]>(
+      `/roads/${encodeURIComponent(segmentId)}/reviews`,
+      init,
+    ),
+  voteOnReview: (reviewId: string, isHelpful: boolean, init?: RequestInit) =>
+    apiFetch<ReviewVoteResult>(
+      `/roads/reviews/${encodeURIComponent(reviewId)}/vote`,
+      {
+        ...init,
+        method: "POST",
+        body: JSON.stringify({ is_helpful: isHelpful }),
+      },
+    ),
+  clearReviewVote: (reviewId: string, init?: RequestInit) =>
+    apiFetch<ReviewVoteResult>(
+      `/roads/reviews/${encodeURIComponent(reviewId)}/vote`,
+      {
+        ...init,
+        method: "DELETE",
+      },
+    ),
+};
+
 // ── Users endpoints (US-59 profile) ──
 
 export interface UserProfileResponse {
