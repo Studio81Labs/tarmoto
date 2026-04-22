@@ -199,6 +199,7 @@ describe("RoadReviewsPanel", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Write a review for this road" }),
     );
+    expect(screen.getByRole("button", { name: "1 star" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "5 stars" }));
     fireEvent.change(screen.getByLabelText("Comment"), {
       target: { value: "Worth the detour." },
@@ -235,6 +236,75 @@ describe("RoadReviewsPanel", () => {
     expect(
       screen.getByRole("button", { name: "Delete your review" }),
     ).toBeInTheDocument();
+  });
+
+  it("ignores stale submit responses after the viewer changes on the same segment", async () => {
+    let resolveCreate: ((value: { data: RoadReview }) => void) | null = null;
+
+    setAuthenticatedViewer();
+    getReviewsMock.mockResolvedValueOnce({ data: [] }).mockResolvedValueOnce({
+      data: [],
+    });
+    createReviewMock.mockImplementationOnce(
+      () =>
+        new Promise<{ data: RoadReview }>((resolve) => {
+          resolveCreate = resolve;
+        }),
+    );
+
+    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+    await screen.findByRole("button", { name: "Write a review for this road" });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Write a review for this road" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "5 stars" }));
+    fireEvent.change(screen.getByLabelText("Comment"), {
+      target: { value: "User A review" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit review" }));
+
+    await waitFor(() =>
+      expect(createReviewMock).toHaveBeenCalledWith(firstSegmentId, {
+        rating: 5,
+        comment: "User A review",
+      }),
+    );
+
+    act(() => {
+      useAuthStore.setState({
+        user: {
+          id: "user-2",
+          email: "other-rider@example.com",
+          displayName: "Jane Rider",
+        },
+        isAuthenticated: true,
+        accessToken: "token-2",
+      });
+    });
+
+    await waitFor(() => expect(getReviewsMock).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      resolveCreate?.({
+        data: review({
+          id: "stale-user-review",
+          comment: "User A review",
+          helpful_count: 0,
+          not_helpful_count: 0,
+          is_mine: true,
+        }),
+      });
+    });
+
+    expect(screen.queryByText("User A review")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Write a review for this road" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Edit your review" }),
+    ).not.toBeInTheDocument();
   });
 
   it("blocks invalid photo URLs before calling the backend", async () => {

@@ -330,8 +330,6 @@ export interface UpsertRoadReviewInput {
   photos?: string[];
 }
 
-export type CreateRoadReviewInput = UpsertRoadReviewInput;
-
 export const roadsApi = {
   getReviews: (segmentId: string, init?: RequestInit) =>
     apiFetch<RoadReview[]>(

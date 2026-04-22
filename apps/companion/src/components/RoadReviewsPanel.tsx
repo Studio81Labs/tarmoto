@@ -52,11 +52,13 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const activeSegmentRef = useRef(segmentId);
+  const activeViewerKeyRef = useRef(viewerKey);
   const requestGenerationRef = useRef(0);
   const mutationAttemptRef = useRef(0);
 
   useEffect(() => {
     activeSegmentRef.current = segmentId;
+    activeViewerKeyRef.current = viewerKey;
     requestGenerationRef.current += 1;
     setDraft(EMPTY_REVIEW_DRAFT);
     setEditorMode(null);
@@ -166,6 +168,7 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
     setSubmitError(null);
     const requestGeneration = requestGenerationRef.current;
     const requestSegmentId = segmentId;
+    const requestViewerKey = viewerKey;
     mutationAttemptRef.current += 1;
     const mutationAttempt = mutationAttemptRef.current;
 
@@ -181,6 +184,7 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
 
       if (
         requestSegmentId !== activeSegmentRef.current ||
+        requestViewerKey !== activeViewerKeyRef.current ||
         mutationAttempt !== mutationAttemptRef.current
       ) {
         return;
@@ -200,6 +204,7 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
     } catch (err) {
       if (
         requestSegmentId !== activeSegmentRef.current ||
+        requestViewerKey !== activeViewerKeyRef.current ||
         mutationAttempt !== mutationAttemptRef.current
       ) {
         return;
@@ -210,6 +215,7 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
     } finally {
       if (
         requestSegmentId === activeSegmentRef.current &&
+        requestViewerKey === activeViewerKeyRef.current &&
         mutationAttempt === mutationAttemptRef.current
       ) {
         setSubmitting(false);
@@ -232,6 +238,7 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
     setSubmitError(null);
     const requestGeneration = requestGenerationRef.current;
     const requestSegmentId = segmentId;
+    const requestViewerKey = viewerKey;
     const reviewId = myReview.id;
     mutationAttemptRef.current += 1;
     const mutationAttempt = mutationAttemptRef.current;
@@ -241,6 +248,7 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
 
       if (
         requestSegmentId !== activeSegmentRef.current ||
+        requestViewerKey !== activeViewerKeyRef.current ||
         mutationAttempt !== mutationAttemptRef.current
       ) {
         return;
@@ -262,6 +270,7 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
     } catch (err) {
       if (
         requestSegmentId !== activeSegmentRef.current ||
+        requestViewerKey !== activeViewerKeyRef.current ||
         mutationAttempt !== mutationAttemptRef.current
       ) {
         return;
@@ -272,6 +281,7 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
     } finally {
       if (
         requestSegmentId === activeSegmentRef.current &&
+        requestViewerKey === activeViewerKeyRef.current &&
         mutationAttempt === mutationAttemptRef.current
       ) {
         setSubmitting(false);
@@ -533,7 +543,7 @@ function ReviewEditor({
             <button
               key={rating}
               type="button"
-              aria-label={`${rating} stars`}
+              aria-label={`${rating} ${rating === 1 ? "star" : "stars"}`}
               aria-pressed={active}
               disabled={disabled}
               onClick={() => onRatingChange(rating)}
