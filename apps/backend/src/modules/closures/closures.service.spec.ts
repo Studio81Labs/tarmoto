@@ -1,0 +1,297 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
+import { ClosuresService } from './closures.service.js';
+import { RoadClosure } from '../../entities/road-closure.entity.js';
+
+const SAMPLE_CLOSURE: RoadClosure = {
+  id: 'closure-1',
+  title: 'Rockfall on Road 44',
+  reason: 'closure',
+  severity: 'full',
+  geom: {
+    type: 'LineString',
+    coordinates: [
+      [17.12, 50.11],
+      [17.13, 50.12],
+    ],
+  },
+  country_code: 'CZ',
+  region: 'Olomouc',
+  starts_at: new Date('2026-04-20T00:00:00Z'),
+  ends_at: new Date('2026-05-20T00:00:00Z'),
+  notes: null,
+  source: 'operator',
+  created_by: 'user-1',
+  created_at: new Date('2026-04-20T00:00:00Z'),
+  updated_at: new Date('2026-04-20T00:00:00Z'),
+};
+
+describe('ClosuresService', () => {
+  let service: ClosuresService;
+  let repo: Partial<jest.Mocked<Repository<RoadClosure>>>;
+
+  const mockQb = {
+    andWhere: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    getMany: jest.fn().mockResolvedValue([SAMPLE_CLOSURE]),
+  };
+
+  beforeEach(async () => {
+    mockQb.andWhere.mockClear();
+    mockQb.orderBy.mockClear();
+    mockQb.getMany.mockReset().mockResolvedValue([SAMPLE_CLOSURE]);
+
+    repo = {
+      createQueryBuilder: jest.fn().mockReturnValue(mockQb),
+      findOne: jest.fn(),
+      create: jest
+        .fn()
+        .mockImplementation(
+          (data: Partial<RoadClosure>) => data as RoadClosure,
+        ),
+      save: jest.fn().mockImplementation((r: RoadClosure) =>
+        Promise.resolve({
+          ...SAMPLE_CLOSURE,
+          ...r,
+          id: r.id ?? 'closure-new',
+          created_at: r.created_at ?? SAMPLE_CLOSURE.created_at,
+          updated_at: new Date('2026-04-22T00:00:00Z'),
+        }),
+      ),
+      remove: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ClosuresService,
+        { provide: getRepositoryToken(RoadClosure), useValue: repo },
+      ],
+    }).compile();
+    service = module.get(ClosuresService);
+  });
+
+  describe('list', () => {
+    it('applies the active-on filter by default', async () => {
+      await service.list({});
+      const calls = mockQb.andWhere.mock.calls as [string, unknown][];
+      // starts_at <= activeOn and ends_at IS NULL OR ends_at >= activeOn
+      expect(calls.some((c) => /starts_at <= :activeOn/.test(c[0]))).toBe(true);
+      expect(calls.some((c) => /ends_at IS NULL/.test(c[0]))).toBe(true);
+    });
+
+    it('skips the active-on filter when include_past is true', async () => {
+      await service.list({ include_past: true });
+      const calls = mockQb.andWhere.mock.calls as [string, unknown][];
+      expect(calls.some((c) => /starts_at <= :activeOn/.test(c[0]))).toBe(
+        false,
+      );
+    });
+
+    it('passes the parsed bbox into the spatial filter', async () => {
+      await service.list({ bbox: '5,45,17,49' });
+      expect(mockQb.andWhere).toHaveBeenCalledWith(
+        expect.stringContaining('ST_Intersects'),
+        { minLng: 5, minLat: 45, maxLng: 17, maxLat: 49 },
+      );
+    });
+
+    it('rejects a malformed bbox', async () => {
+      await expect(service.list({ bbox: 'not,a,bbox' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      await expect(service.list({ bbox: '5,9,5,9' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('filters by severity and reason when given', async () => {
+      await service.list({ severity: 'full', reason: 'roadworks' });
+      expect(mockQb.andWhere).toHaveBeenCalledWith('c.severity = :severity', {
+        severity: 'full',
+      });
+      expect(mockQb.andWhere).toHaveBeenCalledWith('c.reason = :reason', {
+        reason: 'roadworks',
+      });
+    });
+
+    it('uses the supplied active_on timestamp instead of now', async () => {
+      const when = '2026-12-01T00:00:00Z';
+      await service.list({ active_on: when });
+      const calls = mockQb.andWhere.mock.calls as [
+        string,
+        { activeOn: Date },
+      ][];
+      const call = calls.find((c) => /starts_at <= :activeOn/.test(c[0]));
+      expect(call).toBeDefined();
+      expect(call![1].activeOn.toISOString()).toBe(
+        new Date(when).toISOString(),
+      );
+    });
+
+    it('serialises the LineString to lat/lng points in the DTO', async () => {
+      const [dto] = await service.list({});
+      expect(dto.geometry).toEqual([
+        { lng: 17.12, lat: 50.11 },
+        { lng: 17.13, lat: 50.12 },
+      ]);
+    });
+  });
+
+  describe('getById', () => {
+    it('returns the DTO when found', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValueOnce(SAMPLE_CLOSURE);
+      const dto = await service.getById('closure-1');
+      expect(dto.id).toBe('closure-1');
+    });
+
+    it('throws NotFound when missing', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValueOnce(null);
+      await expect(service.getById('missing')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('create', () => {
+    it('persists a new closure with creator set', async () => {
+      const dto = await service.create('user-1', {
+        title: 'Test',
+        reason: 'roadworks',
+        severity: 'partial',
+        geometry: [
+          { lat: 50.0, lng: 17.0 },
+          { lat: 50.1, lng: 17.1 },
+        ],
+        country_code: 'cz',
+        starts_at: '2026-05-01T00:00:00Z',
+        ends_at: '2026-05-10T00:00:00Z',
+      });
+
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Test',
+          reason: 'roadworks',
+          severity: 'partial',
+          // Country code uppercased.
+          country_code: 'CZ',
+          source: 'operator',
+          created_by: 'user-1',
+          geom: {
+            type: 'LineString',
+            coordinates: [
+              [17, 50],
+              [17.1, 50.1],
+            ],
+          },
+        }),
+      );
+      expect(dto.source).toBe('operator');
+    });
+
+    it('rejects ends_at earlier than starts_at', async () => {
+      await expect(
+        service.create('user-1', {
+          title: 'Bad',
+          reason: 'closure',
+          severity: 'full',
+          geometry: [
+            { lat: 50, lng: 17 },
+            { lat: 50.1, lng: 17.1 },
+          ],
+          country_code: 'CZ',
+          starts_at: '2026-05-10T00:00:00Z',
+          ends_at: '2026-05-01T00:00:00Z',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('accepts an indefinite closure (ends_at omitted)', async () => {
+      const dto = await service.create('user-1', {
+        title: 'Open-ended',
+        reason: 'seasonal',
+        severity: 'full',
+        geometry: [
+          { lat: 50, lng: 17 },
+          { lat: 50.1, lng: 17.1 },
+        ],
+        country_code: 'CZ',
+        starts_at: '2026-11-01T00:00:00Z',
+      });
+      expect(dto.ends_at).toBeNull();
+    });
+  });
+
+  describe('update', () => {
+    it('applies only the fields present in the DTO', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({ ...SAMPLE_CLOSURE });
+      const dto = await service.update('closure-1', 'user-1', {
+        title: 'Renamed',
+      });
+      expect(dto.title).toBe('Renamed');
+      // severity / reason untouched
+      expect(dto.severity).toBe('full');
+      expect(dto.reason).toBe('closure');
+    });
+
+    it('clears ends_at when explicitly null', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({ ...SAMPLE_CLOSURE });
+      const dto = await service.update('closure-1', 'user-1', {
+        ends_at: null,
+      });
+      expect(dto.ends_at).toBeNull();
+    });
+
+    it('rejects changes from a non-creator', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({ ...SAMPLE_CLOSURE });
+      await expect(
+        service.update('closure-1', 'other-user', { title: 'Hack' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('throws NotFound when the closure is missing', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValueOnce(null);
+      await expect(
+        service.update('missing', 'user-1', { title: 'x' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('rejects a window inversion caused by the update', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({ ...SAMPLE_CLOSURE });
+      await expect(
+        service.update('closure-1', 'user-1', {
+          starts_at: '2026-06-01T00:00:00Z',
+          // existing ends_at is 2026-05-20 → would now be before starts_at
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('remove', () => {
+    it('deletes when called by the creator', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({ ...SAMPLE_CLOSURE });
+      await service.remove('closure-1', 'user-1');
+      expect(repo.remove).toHaveBeenCalled();
+    });
+
+    it('rejects a non-creator', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({ ...SAMPLE_CLOSURE });
+      await expect(
+        service.remove('closure-1', 'someone-else'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repo.remove).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFound when missing', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValueOnce(null);
+      await expect(service.remove('missing', 'user-1')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+  });
+});
