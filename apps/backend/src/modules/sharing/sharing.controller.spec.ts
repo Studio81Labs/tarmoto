@@ -33,13 +33,18 @@ describe('SharingController', () => {
   const mockCommunityRide = {
     id: 'ride-1',
     share_token: 'abc123def456abc123def456abc12345',
+    rider_id: 'user-1',
     rider_name: 'John Rider',
+    rider_avatar_url: null,
     ride_type: 'free',
     started_at: '2026-04-14T09:00:00.000Z',
     distance_km: 42.5,
     avg_speed: 65.3,
     avg_road_quality: 4.2,
+    avg_curviness: 3.1,
     duration_min: 90,
+    view_count: 7,
+    route_geometry: [{ lat: 49.2, lng: 16.6 }],
   };
 
   const mockCommunityResponse = {

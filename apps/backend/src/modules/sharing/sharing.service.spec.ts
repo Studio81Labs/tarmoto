@@ -328,6 +328,34 @@ describe('SharingService', () => {
       expect(result.items[0].duration_min).toBe(90);
     });
 
+    it('includes rider identity and route geometry for mini-preview cards', async () => {
+      const result = await service.listCommunityRides({});
+
+      expect(result.items[0].rider_id).toBe('user-1');
+      expect(result.items[0].rider_avatar_url).toBeNull();
+      expect(result.items[0].route_geometry).toEqual([
+        { lat: 49.2, lng: 16.6 },
+        { lat: 49.15, lng: 16.7 },
+        { lat: 49.1, lng: 16.75 },
+      ]);
+    });
+
+    it('returns null route_geometry on cards when the ride has no stored track', async () => {
+      mockQueryBuilder.getManyAndCount.mockResolvedValueOnce([
+        [
+          {
+            ...mockShared,
+            ride: { ...mockRide, route_geom: null },
+          },
+        ],
+        1,
+      ]);
+
+      const result = await service.listCommunityRides({});
+
+      expect(result.items[0].route_geometry).toBeNull();
+    });
+
     it('skips the spatial filter and the route_geom guard on the global feed', async () => {
       await service.listCommunityRides({});
 

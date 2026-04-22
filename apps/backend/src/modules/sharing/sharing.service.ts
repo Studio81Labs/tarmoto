@@ -268,18 +268,7 @@ export class SharingService {
 
   private toDetailResponse(shared: SharedRide): SharedRideDetailDto {
     const ride = shared.ride;
-    let routeGeometry: Array<{ lat: number; lng: number }> | null = null;
-    if (ride.route_geom) {
-      const geom = ride.route_geom as unknown as {
-        coordinates: number[][];
-      };
-      if (geom.coordinates) {
-        routeGeometry = geom.coordinates.map((c) => ({
-          lat: c[1],
-          lng: c[0],
-        }));
-      }
-    }
+    const routeGeometry = this.toRouteGeometry(ride);
 
     const durationMin = this.calcDurationMin(ride);
 
@@ -307,7 +296,9 @@ export class SharingService {
     return {
       id: ride.id,
       share_token: sr.share_token,
+      rider_id: sr.user_id,
       rider_name: sr.user?.display_name ?? 'Unknown',
+      rider_avatar_url: sr.user?.avatar_url ?? null,
       ride_type: ride.ride_type,
       started_at: ride.started_at.toISOString(),
       distance_km: ride.distance_km,
@@ -316,7 +307,22 @@ export class SharingService {
       avg_curviness: ride.avg_curviness ?? null,
       duration_min: this.calcDurationMin(ride),
       view_count: sr.view_count ?? 0,
+      route_geometry: this.toRouteGeometry(ride),
     };
+  }
+
+  private toRouteGeometry(
+    ride: Ride,
+  ): Array<{ lat: number; lng: number }> | null {
+    if (!ride.route_geom) return null;
+    const geom = ride.route_geom as unknown as {
+      coordinates?: number[][];
+    };
+    if (!geom.coordinates) return null;
+    return geom.coordinates.map((c) => ({
+      lat: c[1],
+      lng: c[0],
+    }));
   }
 
   private calcDurationMin(ride: Ride): number | null {
