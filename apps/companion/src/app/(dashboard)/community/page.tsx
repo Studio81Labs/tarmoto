@@ -27,6 +27,7 @@ export default function CommunityFeedPage() {
   const [sort, setSort] = useState<CommunityRideSort>("most_popular");
   const [rideType, setRideType] = useState("all");
   const [minQuality, setMinQuality] = useState("all");
+  const [minPopularity, setMinPopularity] = useState("all");
   const [minCurviness, setMinCurviness] = useState("all");
   const [minDistanceKm, setMinDistanceKm] = useState("");
   const [maxDistanceKm, setMaxDistanceKm] = useState("");
@@ -43,6 +44,7 @@ export default function CommunityFeedPage() {
         sort,
         rideType,
         minQuality,
+        minPopularity,
         minCurviness,
         minDistanceKm,
         maxDistanceKm,
@@ -54,6 +56,7 @@ export default function CommunityFeedPage() {
       sort,
       rideType,
       minQuality,
+      minPopularity,
       minCurviness,
       minDistanceKm,
       maxDistanceKm,
@@ -151,6 +154,22 @@ export default function CommunityFeedPage() {
             { value: "all", label: "Any condition" },
             { value: "3", label: "3.0+/5" },
             { value: "4", label: "4.0+/5" },
+          ]}
+        />
+
+        <FilterSelect
+          id="min-popularity"
+          label="Minimum popularity"
+          value={minPopularity}
+          onChange={(value) => {
+            setMinPopularity(value);
+            setOffset(0);
+          }}
+          options={[
+            { value: "all", label: "Any reach" },
+            { value: "100", label: "100+ views" },
+            { value: "250", label: "250+ views" },
+            { value: "500", label: "500+ views" },
           ]}
         />
 

@@ -11,6 +11,7 @@ export interface CommunityFeedFormState {
   sort: CommunityRideSort;
   rideType: string;
   minQuality: string;
+  minPopularity: string;
   minCurviness: string;
   minDistanceKm: string;
   maxDistanceKm: string;
@@ -35,6 +36,9 @@ export function buildCommunityRideQuery(
 
   const minQuality = parseNumericField(state.minQuality);
   if (minQuality != null) query.min_quality = minQuality;
+
+  const minPopularity = parseNumericField(state.minPopularity);
+  if (minPopularity != null) query.min_popularity = minPopularity;
 
   const minCurviness = parseNumericField(state.minCurviness);
   if (minCurviness != null) query.min_curviness = minCurviness;

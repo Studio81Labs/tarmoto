@@ -367,6 +367,7 @@ export interface CommunityRideQuery {
   min_distance_km?: number;
   max_distance_km?: number;
   min_quality?: number;
+  min_popularity?: number;
   min_curviness?: number;
   max_curviness?: number;
   ride_type?: string;

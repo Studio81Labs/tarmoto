@@ -111,6 +111,18 @@ export class CommunityRidesQueryDto {
   min_quality?: number;
 
   @ApiPropertyOptional({
+    description: 'Minimum community popularity, measured as public view count.',
+    minimum: 0,
+    maximum: 1_000_000,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  @Min(0)
+  @Max(1_000_000)
+  min_popularity?: number;
+
+  @ApiPropertyOptional({
     description:
       'Minimum length-weighted curviness. Rides without a computed ' +
       '`avg_curviness` are excluded when this filter is set — "no value" ' +

@@ -121,6 +121,29 @@ describe("CommunityFeedPage", () => {
     );
   });
 
+  it("includes the minimum popularity filter in the API query", async () => {
+    listMock
+      .mockResolvedValueOnce({ data: pageData() })
+      .mockResolvedValueOnce({ data: pageData() });
+
+    render(<CommunityFeedPage />);
+
+    await waitFor(() => expect(listMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByLabelText("Minimum popularity"), {
+      target: { value: "250" },
+    });
+
+    await waitFor(() =>
+      expect(listMock).toHaveBeenLastCalledWith({
+        limit: 9,
+        offset: 0,
+        sort: "most_popular",
+        min_popularity: 250,
+      }),
+    );
+  });
+
   it("disables nearest sorting until a place is selected", async () => {
     listMock.mockResolvedValueOnce({ data: pageData() });
 

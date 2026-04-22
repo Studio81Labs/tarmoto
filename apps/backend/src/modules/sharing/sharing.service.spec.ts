@@ -382,12 +382,12 @@ describe('SharingService', () => {
 
       expect(result.items[0].route_geometry).toHaveLength(32);
       expect(result.items[0].route_geometry?.[0]).toEqual({
-        lat: coordinates[0]![1],
-        lng: coordinates[0]![0],
+        lat: coordinates[0][1],
+        lng: coordinates[0][0],
       });
       expect(result.items[0].route_geometry?.at(-1)).toEqual({
-        lat: coordinates.at(-1)![1],
-        lng: coordinates.at(-1)![0],
+        lat: coordinates.at(-1)?.[1],
+        lng: coordinates.at(-1)?.[0],
       });
     });
 
@@ -432,6 +432,15 @@ describe('SharingService', () => {
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
         'ride.avg_road_quality >= :min_quality',
         { min_quality: 3.5 },
+      );
+    });
+
+    it('honours the minimum popularity filter', async () => {
+      await service.listCommunityRides({ min_popularity: 250 });
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'sr.view_count >= :min_popularity',
+        { min_popularity: 250 },
       );
     });
 
