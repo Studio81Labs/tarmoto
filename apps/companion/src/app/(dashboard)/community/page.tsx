@@ -1,15 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Users } from "lucide-react";
+import { Loader2, Route, Users } from "lucide-react";
 import { RIDE_TYPES } from "@tarmoto/shared";
 import {
   communityApi,
   type CommunityRide,
-  type CommunityRideQuery,
   type CommunityRideSort,
 } from "@/lib/api";
 import { CommunityRideCard } from "@/components/community/CommunityRideCard";
+import { PlaceSearch, type PlaceValue } from "../rides/_components/PlaceSearch";
+import { buildCommunityRideQuery } from "@/lib/community-feed";
 
 const PAGE_SIZE = 9;
 
@@ -17,6 +18,7 @@ const SORT_OPTIONS: Array<{ value: CommunityRideSort; label: string }> = [
   { value: "most_popular", label: "Most popular" },
   { value: "newest", label: "Newest" },
   { value: "highest_quality", label: "Highest quality" },
+  { value: "nearest", label: "Nearest" },
   { value: "curviest", label: "Curviest" },
   { value: "longest", label: "Longest" },
 ];
@@ -26,23 +28,39 @@ export default function CommunityFeedPage() {
   const [rideType, setRideType] = useState("all");
   const [minQuality, setMinQuality] = useState("all");
   const [minCurviness, setMinCurviness] = useState("all");
+  const [minDistanceKm, setMinDistanceKm] = useState("");
+  const [maxDistanceKm, setMaxDistanceKm] = useState("");
+  const [location, setLocation] = useState<PlaceValue | null>(null);
   const [offset, setOffset] = useState(0);
   const [items, setItems] = useState<CommunityRide[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const query = useMemo<CommunityRideQuery>(() => {
-    const next: CommunityRideQuery = {
+  const query = useMemo(
+    () =>
+      buildCommunityRideQuery({
+        sort,
+        rideType,
+        minQuality,
+        minCurviness,
+        minDistanceKm,
+        maxDistanceKm,
+        location,
+        limit: PAGE_SIZE,
+        offset,
+      }),
+    [
       sort,
-      limit: PAGE_SIZE,
+      rideType,
+      minQuality,
+      minCurviness,
+      minDistanceKm,
+      maxDistanceKm,
+      location,
       offset,
-    };
-    if (rideType !== "all") next.ride_type = rideType;
-    if (minQuality !== "all") next.min_quality = Number(minQuality);
-    if (minCurviness !== "all") next.min_curviness = Number(minCurviness);
-    return next;
-  }, [sort, offset, rideType, minQuality, minCurviness]);
+    ],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -91,7 +109,7 @@ export default function CommunityFeedPage() {
         </p>
       </div>
 
-      <div className="mb-6 grid gap-3 rounded-2xl border border-slate-800 bg-slate-900/80 p-4 md:grid-cols-4">
+      <div className="mb-6 grid gap-3 rounded-2xl border border-slate-800 bg-slate-900/80 p-4 md:grid-cols-2 xl:grid-cols-3">
         <FilterSelect
           id="sort-feed"
           label="Sort feed"
@@ -101,6 +119,7 @@ export default function CommunityFeedPage() {
             setOffset(0);
           }}
           options={SORT_OPTIONS}
+          disabledOptions={location ? [] : ["nearest"]}
         />
 
         <FilterSelect
@@ -149,7 +168,77 @@ export default function CommunityFeedPage() {
             { value: "6", label: "6.0+" },
           ]}
         />
+
+        <label className="block">
+          <span className="mb-1 block text-xs text-slate-500">
+            Minimum distance
+          </span>
+          <div className="relative">
+            <Route
+              size={14}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+            />
+            <input
+              aria-label="Minimum distance"
+              type="number"
+              min={0}
+              step={10}
+              value={minDistanceKm}
+              onChange={(event) => {
+                setMinDistanceKm(event.target.value);
+                setOffset(0);
+              }}
+              placeholder="Any"
+              className="w-full rounded-lg border border-slate-700 bg-slate-950 py-2 pl-8 pr-3 text-sm text-white transition focus:border-tarmoto-cyan focus:outline-none"
+            />
+          </div>
+        </label>
+
+        <label className="block">
+          <span className="mb-1 block text-xs text-slate-500">
+            Maximum distance
+          </span>
+          <div className="relative">
+            <Route
+              size={14}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+            />
+            <input
+              aria-label="Maximum distance"
+              type="number"
+              min={0}
+              step={10}
+              value={maxDistanceKm}
+              onChange={(event) => {
+                setMaxDistanceKm(event.target.value);
+                setOffset(0);
+              }}
+              placeholder="Any"
+              className="w-full rounded-lg border border-slate-700 bg-slate-950 py-2 pl-8 pr-3 text-sm text-white transition focus:border-tarmoto-cyan focus:outline-none"
+            />
+          </div>
+        </label>
+
+        <PlaceSearch
+          value={location}
+          onChange={(next) => {
+            setLocation(next);
+            if (!next && sort === "nearest") {
+              setSort("most_popular");
+            }
+            setOffset(0);
+          }}
+          label="Region or place"
+          placeholder="Brno, Tyrol, Tatra Mountains…"
+        />
       </div>
+
+      {location && (
+        <p className="mb-6 text-sm text-slate-400">
+          Filtering within {location.km} km of{" "}
+          <span className="text-slate-200">{location.label}</span>.
+        </p>
+      )}
 
       {error ? (
         <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-300">
@@ -222,12 +311,14 @@ function FilterSelect({
   value,
   onChange,
   options,
+  disabledOptions = [],
 }: {
   id: string;
   label: string;
   value: string;
   onChange: (value: string) => void;
   options: Array<{ value: string; label: string }>;
+  disabledOptions?: string[];
 }) {
   return (
     <div>
@@ -242,7 +333,11 @@ function FilterSelect({
         className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white transition focus:border-tarmoto-cyan focus:outline-none"
       >
         {options.map((option) => (
-          <option key={option.value} value={option.value}>
+          <option
+            key={option.value}
+            value={option.value}
+            disabled={disabledOptions.includes(option.value)}
+          >
             {option.label}
           </option>
         ))}
