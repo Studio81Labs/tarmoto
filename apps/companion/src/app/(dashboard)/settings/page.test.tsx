@@ -65,6 +65,97 @@ describe("AccountPage", () => {
     });
   });
 
+  it("keeps the save button disabled while a second save is in flight after a prior success", async () => {
+    let resolveSecondSave:
+      | ((value: Awaited<ReturnType<typeof usersApi.updateMe>>) => void)
+      | undefined;
+    getMeMock.mockResolvedValueOnce({
+      data: {
+        id: "user-1",
+        email: "rider@example.com",
+        display_name: "Rider One",
+        phone: null,
+        avatar_url: null,
+        bio: "Likes mountain passes",
+        home_region: "Beskydy",
+        home_location: null,
+        work_location: null,
+        preferences: {},
+        created_at: "2026-04-22T09:00:00.000Z",
+      },
+    });
+    updateMeMock.mockResolvedValueOnce({
+      data: {
+        id: "user-1",
+        email: "rider@example.com",
+        display_name: "Rider One",
+        phone: null,
+        avatar_url: null,
+        bio: "Likes mountain passes",
+        home_region: "Beskydy",
+        home_location: null,
+        work_location: null,
+        preferences: {},
+        created_at: "2026-04-22T09:00:00.000Z",
+      },
+    });
+    updateMeMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSecondSave = resolve;
+        }),
+    );
+
+    render(<AccountPage />);
+
+    expect(
+      await screen.findByDisplayValue("Likes mountain passes"),
+    ).toBeInTheDocument();
+
+    vi.useFakeTimers();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Display name"), {
+      target: { value: "Rider Two" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    const saveButton = screen.getByRole("button", { name: "Saving…" });
+    expect(saveButton).toBeDisabled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(screen.getByRole("button", { name: "Saving…" })).toBeDisabled();
+
+    await act(async () => {
+      resolveSecondSave?.({
+        data: {
+          id: "user-1",
+          email: "rider@example.com",
+          display_name: "Rider Two",
+          phone: null,
+          avatar_url: null,
+          bio: "Likes mountain passes",
+          home_region: "Beskydy",
+          home_location: null,
+          work_location: null,
+          preferences: {},
+          created_at: "2026-04-22T09:00:00.000Z",
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+  });
+
   it("saves the normalized avatar URL with the rest of the profile payload", async () => {
     getMeMock.mockResolvedValueOnce({
       data: {
@@ -214,6 +305,65 @@ describe("AccountPage", () => {
     expect(
       screen.queryByText("Email copied. Use it to sign in on mobile."),
     ).not.toBeInTheDocument();
+  });
+
+  it("keeps the copy error visible when a previous success timer is still pending", async () => {
+    getMeMock.mockResolvedValueOnce({
+      data: {
+        id: "user-1",
+        email: "rider@example.com",
+        display_name: "Rider One",
+        phone: null,
+        avatar_url: null,
+        bio: null,
+        home_region: null,
+        home_location: null,
+        work_location: null,
+        preferences: {},
+        created_at: "2026-04-22T09:00:00.000Z",
+      },
+    });
+    clipboardWriteText.mockResolvedValueOnce(undefined);
+    clipboardWriteText.mockRejectedValueOnce(new Error("Clipboard denied"));
+
+    render(<AccountPage />);
+
+    expect(
+      await screen.findByDisplayValue("rider@example.com"),
+    ).toBeInTheDocument();
+
+    vi.useFakeTimers();
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Copy sign-in email" }),
+      );
+      await Promise.resolve();
+    });
+
+    expect(
+      screen.getByText("Email copied. Use it to sign in on mobile."),
+    ).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Copy sign-in email" }),
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(
+      screen.getByText("Could not copy your email. Please copy it manually."),
+    ).toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(
+      screen.getByText("Could not copy your email. Please copy it manually."),
+    ).toBeInTheDocument();
   });
 
   it("renders the avatar helper text without literal markdown backticks", async () => {

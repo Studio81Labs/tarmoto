@@ -136,6 +136,10 @@ export default function AccountPage() {
   const previewAvatarUrl = normalizeAvatarUrl(avatarUrl);
 
   const handleSave = useCallback(async () => {
+    if (saveResetTimerRef.current !== null) {
+      window.clearTimeout(saveResetTimerRef.current);
+      saveResetTimerRef.current = null;
+    }
     const trimmedName = displayName.trim();
     if (!trimmedName) {
       setSaveState("error");
@@ -184,6 +188,10 @@ export default function AccountPage() {
         saveResetTimerRef.current = null;
       }, 2000);
     } catch (err) {
+      if (saveResetTimerRef.current !== null) {
+        window.clearTimeout(saveResetTimerRef.current);
+        saveResetTimerRef.current = null;
+      }
       setSaveState("error");
       setSaveError(
         err instanceof Error ? err.message : "Could not save your profile.",
@@ -202,17 +210,22 @@ export default function AccountPage() {
 
   const handleCopySignInEmail = useCallback(async () => {
     if (!user?.email) return;
+    if (copyResetTimerRef.current !== null) {
+      window.clearTimeout(copyResetTimerRef.current);
+      copyResetTimerRef.current = null;
+    }
     try {
       await navigator.clipboard.writeText(user.email);
       setCopyState("copied");
-      if (copyResetTimerRef.current !== null) {
-        window.clearTimeout(copyResetTimerRef.current);
-      }
       copyResetTimerRef.current = window.setTimeout(() => {
         setCopyState("idle");
         copyResetTimerRef.current = null;
       }, 2000);
     } catch {
+      if (copyResetTimerRef.current !== null) {
+        window.clearTimeout(copyResetTimerRef.current);
+        copyResetTimerRef.current = null;
+      }
       setCopyState("error");
     }
   }, [user?.email]);
