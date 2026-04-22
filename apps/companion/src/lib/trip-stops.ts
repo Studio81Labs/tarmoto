@@ -41,6 +41,18 @@ const ROUTING_WAYPOINT_TYPES: ReadonlySet<Waypoint["type"]> = new Set([
   "end",
 ]);
 
+function findLastMatching<T>(
+  items: readonly T[],
+  predicate: (item: T) => boolean,
+): T | undefined {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item && predicate(item)) return item;
+  }
+
+  return undefined;
+}
+
 function routingWaypoints(
   waypoints: Pick<Waypoint, "type" | "location" | "name" | "id">[],
 ) {
@@ -70,9 +82,10 @@ export function buildDayEndAnchor(
   day: Pick<TripDay, "routeGeometry" | "waypoints">,
 ): { lat: number; lng: number } | null {
   const routeWaypoints = routingWaypoints(day.waypoints);
-  const explicitEnd =
-    routeWaypoints.findLast?.((waypoint) => waypoint.type === "end") ??
-    [...routeWaypoints].reverse().find((waypoint) => waypoint.type === "end");
+  const explicitEnd = findLastMatching(
+    routeWaypoints,
+    (waypoint) => waypoint.type === "end",
+  );
   if (explicitEnd) return explicitEnd.location;
 
   const routePoints = buildDayRoutePoints(day);
@@ -86,24 +99,25 @@ export function buildTripDayStops(
   accommodationsByDay: Map<number, AccommodationSuggestion[]>,
   poisByDay: Map<number, RoutePoiSuggestion[]>,
 ): TripDayStops[] {
-  return trip.days.map((day) => ({
-    dayNumber: day.dayNumber,
-    title: day.title,
-    routeAvailable: buildDayRoutePoints(day).length >= 2,
-    endLabel:
-      routingWaypoints(day.waypoints).findLast?.(
-        (waypoint) => waypoint.type === "end",
-      )?.name ??
-      [...routingWaypoints(day.waypoints)]
-        .reverse()
-        .find((waypoint) => waypoint.type === "end")?.name ??
-      routingWaypoints(day.waypoints)[
-        routingWaypoints(day.waypoints).length - 1
-      ]?.name ??
-      null,
-    accommodations: accommodationsByDay.get(day.dayNumber) ?? [],
-    pois: poisByDay.get(day.dayNumber) ?? [],
-  }));
+  return trip.days.map((day) => {
+    const routeWaypoints = routingWaypoints(day.waypoints);
+    const explicitEnd = findLastMatching(
+      routeWaypoints,
+      (waypoint) => waypoint.type === "end",
+    );
+
+    return {
+      dayNumber: day.dayNumber,
+      title: day.title,
+      routeAvailable: buildDayRoutePoints(day).length >= 2,
+      endLabel:
+        explicitEnd?.name ??
+        routeWaypoints[routeWaypoints.length - 1]?.name ??
+        null,
+      accommodations: accommodationsByDay.get(day.dayNumber) ?? [],
+      pois: poisByDay.get(day.dayNumber) ?? [],
+    };
+  });
 }
 
 export function buildTripStopsRequestPlan(
