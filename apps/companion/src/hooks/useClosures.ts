@@ -1,0 +1,149 @@
+import { useEffect, useMemo, useState } from "react";
+import { closuresApi } from "@/lib/api";
+import {
+  countClosuresBySeverity,
+  dedupeClosures,
+  previewDateForMonth,
+  sortClosures,
+  type ClosureSeverityCounts,
+  type PlannerClosure,
+  type PlannerClosureRoute,
+} from "@/lib/closures-summary";
+
+export interface ClosuresQueryResult {
+  closures: PlannerClosure[];
+  routeClosures: PlannerClosure[];
+  counts: ClosureSeverityCounts;
+  routeCounts: ClosureSeverityCounts;
+  loading: boolean;
+  routeLoading: boolean;
+  error: string | null;
+  routeError: string | null;
+  previewDate: Date;
+}
+
+const EMPTY_COUNTS: ClosureSeverityCounts = {
+  full: 0,
+  partial: 0,
+  advisory: 0,
+  total: 0,
+};
+
+export function useClosures(
+  month: number,
+  routes: PlannerClosureRoute[],
+): ClosuresQueryResult {
+  const previewDate = useMemo(() => previewDateForMonth(month), [month]);
+  const previewIso = previewDate.toISOString();
+  const [state, setState] = useState<ClosuresQueryResult>({
+    closures: [],
+    routeClosures: [],
+    counts: EMPTY_COUNTS,
+    routeCounts: EMPTY_COUNTS,
+    loading: true,
+    routeLoading: false,
+    error: null,
+    routeError: null,
+    previewDate,
+  });
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+
+    setState((current) => ({
+      ...current,
+      loading: true,
+      error: null,
+      previewDate,
+    }));
+
+    closuresApi
+      .list({ active_on: previewIso }, { signal: ctrl.signal })
+      .then(({ data }) => {
+        if (ctrl.signal.aborted) return;
+        const closures = sortClosures(data);
+        setState((current) => ({
+          ...current,
+          closures,
+          counts: countClosuresBySeverity(closures),
+          loading: false,
+          error: null,
+          previewDate,
+        }));
+      })
+      .catch((err: Error) => {
+        if (ctrl.signal.aborted) return;
+        setState((current) => ({
+          ...current,
+          closures: [],
+          counts: EMPTY_COUNTS,
+          loading: false,
+          error: err.message || "Failed to load closures",
+          previewDate,
+        }));
+      });
+
+    return () => ctrl.abort();
+  }, [previewDate, previewIso]);
+
+  useEffect(() => {
+    if (routes.length === 0) {
+      setState((current) => ({
+        ...current,
+        routeClosures: [],
+        routeCounts: EMPTY_COUNTS,
+        routeLoading: false,
+        routeError: null,
+        previewDate,
+      }));
+      return;
+    }
+
+    const ctrl = new AbortController();
+
+    setState((current) => ({
+      ...current,
+      routeLoading: true,
+      routeError: null,
+      previewDate,
+    }));
+
+    Promise.all(
+      routes.map((route) =>
+        closuresApi.checkRoute(
+          { route: route.points, active_on: previewIso },
+          { signal: ctrl.signal },
+        ),
+      ),
+    )
+      .then((responses) => {
+        if (ctrl.signal.aborted) return;
+        const routeClosures = sortClosures(
+          dedupeClosures(responses.flatMap(({ data }) => data.closures)),
+        );
+        setState((current) => ({
+          ...current,
+          routeClosures,
+          routeCounts: countClosuresBySeverity(routeClosures),
+          routeLoading: false,
+          routeError: null,
+          previewDate,
+        }));
+      })
+      .catch((err: Error) => {
+        if (ctrl.signal.aborted) return;
+        setState((current) => ({
+          ...current,
+          routeClosures: [],
+          routeCounts: EMPTY_COUNTS,
+          routeLoading: false,
+          routeError: err.message || "Failed to check route closures",
+          previewDate,
+        }));
+      });
+
+    return () => ctrl.abort();
+  }, [previewDate, previewIso, routes]);
+
+  return state;
+}

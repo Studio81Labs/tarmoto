@@ -1,0 +1,164 @@
+"use client";
+
+import { AlertTriangle, Route } from "lucide-react";
+import { useClosures } from "@/hooks/useClosures";
+import {
+  formatClosureWindow,
+  type PlannerClosure,
+  type PlannerClosureRoute,
+} from "@/lib/closures-summary";
+import { monthLabel } from "@/lib/passes-summary";
+
+const SEVERITY_CLASS: Record<PlannerClosure["severity"], string> = {
+  full: "text-rose-400",
+  partial: "text-amber-300",
+  advisory: "text-sky-300",
+};
+
+const SEVERITY_LABEL: Record<PlannerClosure["severity"], string> = {
+  full: "Full closure",
+  partial: "Partial closure",
+  advisory: "Advisory",
+};
+
+const REASON_LABEL: Record<PlannerClosure["reason"], string> = {
+  closure: "Closure",
+  roadworks: "Roadworks",
+  seasonal: "Seasonal",
+  weather: "Weather",
+  event: "Event",
+  other: "Other",
+};
+
+interface ClosuresPanelProps {
+  month: number;
+  routes: PlannerClosureRoute[];
+}
+
+export function ClosuresPanel({ month, routes }: ClosuresPanelProps) {
+  const {
+    closures,
+    routeClosures,
+    counts,
+    routeCounts,
+    loading,
+    routeLoading,
+    error,
+    routeError,
+    previewDate,
+  } = useClosures(month, routes);
+
+  const monthText = monthLabel(month);
+  const previewDay = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(previewDate);
+
+  return (
+    <div className="space-y-3 pt-2 border-t border-slate-800">
+      <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-300">
+        <AlertTriangle size={14} className="text-slate-500" />
+        Closures & roadworks
+      </div>
+
+      <p className="text-xs text-slate-500">
+        Previewing {monthText || "this month"} conditions on {previewDay}.
+      </p>
+
+      <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+        <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
+          <Route size={12} />
+          Route warnings
+        </div>
+
+        {routes.length === 0 ? (
+          <p className="text-xs text-slate-500">
+            Import or generate a route to check crossings.
+          </p>
+        ) : routeError ? (
+          <p className="text-xs text-rose-400">{routeError}</p>
+        ) : routeLoading ? (
+          <p className="text-xs text-slate-500">Checking route crossings…</p>
+        ) : routeCounts.total === 0 ? (
+          <p className="text-xs text-emerald-400">
+            No active closures intersect the current trip.
+          </p>
+        ) : (
+          <>
+            <p className="text-xs text-slate-300">
+              Current trip crosses {routeCounts.total} active{" "}
+              {routeCounts.total === 1 ? "closure" : "closures"}.
+            </p>
+            <ul className="space-y-2">
+              {routeClosures.slice(0, 3).map((closure) => (
+                <ClosureRow key={closure.id} closure={closure} compact />
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
+
+      {error ? (
+        <p className="text-xs text-rose-400">{error}</p>
+      ) : loading ? (
+        <p className="text-xs text-slate-500">Loading closures…</p>
+      ) : counts.total === 0 ? (
+        <p className="text-xs text-slate-500">
+          No active closures for this month yet.
+        </p>
+      ) : (
+        <>
+          <p className="text-xs text-slate-400">
+            <span className="text-rose-400">{counts.full} full</span>
+            {" • "}
+            <span className="text-amber-300">{counts.partial} partial</span>
+            {" • "}
+            <span className="text-sky-300">{counts.advisory} advisory</span>
+          </p>
+
+          <ul className="space-y-2">
+            {closures.slice(0, 5).map((closure) => (
+              <ClosureRow key={closure.id} closure={closure} />
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ClosureRow({
+  closure,
+  compact = false,
+}: {
+  closure: PlannerClosure;
+  compact?: boolean;
+}) {
+  return (
+    <li className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-slate-100">{closure.title}</p>
+          <p className="text-xs text-slate-500">
+            {REASON_LABEL[closure.reason]}
+            {closure.region ? ` · ${closure.region}` : ""}
+          </p>
+        </div>
+        <span
+          className={`shrink-0 text-[11px] font-medium ${SEVERITY_CLASS[closure.severity]}`}
+        >
+          {SEVERITY_LABEL[closure.severity]}
+        </span>
+      </div>
+
+      <p className="mt-1 text-xs text-slate-400">
+        {formatClosureWindow(closure)}
+      </p>
+
+      {!compact && closure.notes && (
+        <p className="mt-2 text-xs text-slate-400">{closure.notes}</p>
+      )}
+    </li>
+  );
+}

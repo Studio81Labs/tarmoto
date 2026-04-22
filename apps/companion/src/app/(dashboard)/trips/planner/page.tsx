@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useTripStore } from "@/stores/trip";
 import {
   Layers,
@@ -11,11 +11,14 @@ import {
   ChevronRight,
   FileUp,
 } from "lucide-react";
+import { ClosuresPanel } from "@/components/ClosuresPanel";
 import { PassesPanel } from "@/components/PassesPanel";
 import { SegmentSidebar } from "@/components/SegmentSidebar";
 import { TripExportMenu } from "@/components/TripExportMenu";
 import { TripImportDialog } from "@/components/TripImportDialog";
+import { buildTripClosureRoutes } from "@/lib/closures-summary";
 import { DEMO_TRIP } from "@/lib/demo-trip";
+import { currentUtcMonth } from "@/lib/passes-summary";
 
 /**
  * TripPlannerPage — Full-screen map-based trip planner
@@ -31,9 +34,16 @@ export default function TripPlannerPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [pendingImportFile, setPendingImportFile] = useState<File | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [travelMonth, setTravelMonth] = useState<number>(() =>
+    currentUtcMonth(),
+  );
   const activeTrip = useTripStore((s) => s.activeTrip);
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
   const isGenerating = useTripStore((s) => s.isGenerating);
+  const closureRoutes = useMemo(
+    () => buildTripClosureRoutes(activeTrip),
+    [activeTrip],
+  );
 
   const openImport = useCallback((file: File | null = null) => {
     setPendingImportFile(file);
@@ -211,8 +221,8 @@ export default function TripPlannerPage() {
                 Avoid unpaved roads
               </label>
             </div>
-
-            <PassesPanel />
+            <PassesPanel month={travelMonth} onMonthChange={setTravelMonth} />
+            <ClosuresPanel month={travelMonth} routes={closureRoutes} />
           </div>
         )}
 
