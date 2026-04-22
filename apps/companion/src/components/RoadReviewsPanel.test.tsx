@@ -626,6 +626,7 @@ describe("RoadReviewsPanel", () => {
       ).not.toBeInTheDocument(),
     );
   });
+
   it("updates review vote counts when riders mark a review helpful", async () => {
     getReviewsMock.mockResolvedValueOnce({
       data: [review({ id: "review-1", helpful_count: 3, my_vote: null })],
