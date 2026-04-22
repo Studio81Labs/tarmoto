@@ -639,4 +639,136 @@ describe("RoadReviewsPanel", () => {
 
     expect(await screen.findByText("Segment B review")).toBeInTheDocument();
   });
+
+  it("ignores stale submit errors after the rider returns to the same segment", async () => {
+    useAuthStore.setState({
+      user: {
+        id: "user-1",
+        email: "rider@example.com",
+        displayName: "John Rider",
+      },
+      isAuthenticated: true,
+      accessToken: "token-1",
+    });
+
+    let rejectFirstCreate: ((error: Error) => void) | null = null;
+    let resolveSecondCreate: ((value: { data: RoadReview }) => void) | null =
+      null;
+
+    getReviewsMock
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValueOnce({
+        data: [
+          review({
+            id: "review-3",
+            rating: 5,
+            comment: "Returned segment review",
+            is_mine: true,
+          }),
+        ],
+      });
+    createReviewMock
+      .mockImplementationOnce(
+        () =>
+          new Promise<never>((_, reject) => {
+            rejectFirstCreate = reject;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ data: RoadReview }>((resolve) => {
+            resolveSecondCreate = resolve;
+          }),
+      );
+
+    const { rerender } = render(
+      <RoadReviewsPanel segmentId={firstSegmentId} />,
+    );
+
+    await screen.findByText(
+      "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Write a review for this road" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "5 stars" }));
+    fireEvent.change(screen.getByLabelText("Comment"), {
+      target: { value: "Original segment review" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit review" }));
+
+    await waitFor(() =>
+      expect(createReviewMock).toHaveBeenNthCalledWith(1, firstSegmentId, {
+        rating: 5,
+        comment: "Original segment review",
+      }),
+    );
+
+    rerender(<RoadReviewsPanel segmentId={secondSegmentId} />);
+
+    await waitFor(() =>
+      expect(getReviewsMock).toHaveBeenLastCalledWith(secondSegmentId),
+    );
+    await screen.findByText(
+      "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
+    );
+
+    rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+    await waitFor(() =>
+      expect(getReviewsMock).toHaveBeenLastCalledWith(firstSegmentId),
+    );
+    await screen.findByText(
+      "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road.",
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Write a review for this road" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "4 stars" }));
+    fireEvent.change(screen.getByLabelText("Comment"), {
+      target: { value: "Returned segment review" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit review" }));
+
+    await waitFor(() =>
+      expect(createReviewMock).toHaveBeenNthCalledWith(2, firstSegmentId, {
+        rating: 4,
+        comment: "Returned segment review",
+      }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Submit review" }),
+    ).toBeDisabled();
+
+    await act(async () => {
+      rejectFirstCreate?.(new Error("Original segment timed out"));
+    });
+
+    expect(
+      screen.queryByText("Original segment timed out"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Submit review" }),
+    ).toBeDisabled();
+
+    await act(async () => {
+      resolveSecondCreate?.({
+        data: review({
+          id: "review-3",
+          rating: 5,
+          comment: "Returned segment review",
+          is_mine: true,
+        }),
+      });
+    });
+
+    expect(
+      await screen.findByText("Returned segment review"),
+    ).toBeInTheDocument();
+  });
 });

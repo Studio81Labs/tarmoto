@@ -41,7 +41,6 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
   const viewerKey = isAuthenticated
     ? (viewerId ?? "authenticated")
     : "anonymous";
-  const panelContextKey = `${segmentId}:${viewerKey}`;
   const [reviews, setReviews] = useState<RoadReview[]>([]);
   const [loading, setLoading] = useState(canLoadReviews);
   const [error, setError] = useState<string | null>(null);
@@ -50,8 +49,7 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const loadRequestRef = useRef(0);
-  const panelContextRef = useRef(panelContextKey);
-  panelContextRef.current = panelContextKey;
+  const panelContextVersionRef = useRef(0);
   const myReview = useMemo(
     () => reviews.find((review) => review.is_mine) ?? null,
     [reviews],
@@ -95,6 +93,7 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
   }, [canLoadReviews, segmentId]);
 
   useEffect(() => {
+    panelContextVersionRef.current += 1;
     resetEditorState();
     void loadReviews();
 
@@ -150,7 +149,7 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
       return;
     }
 
-    const mutationContextKey = panelContextRef.current;
+    const mutationContextVersion = panelContextVersionRef.current;
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -163,18 +162,18 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
         await roadsApi.createReview(segmentId, normalized.data);
       }
 
-      if (panelContextRef.current !== mutationContextKey) return;
+      if (panelContextVersionRef.current !== mutationContextVersion) return;
 
       setEditorMode(null);
       await loadReviews();
     } catch (err) {
-      if (panelContextRef.current === mutationContextKey) {
+      if (panelContextVersionRef.current === mutationContextVersion) {
         setSubmitError(
           err instanceof Error ? err.message : "Could not save your review.",
         );
       }
     } finally {
-      if (panelContextRef.current === mutationContextKey) {
+      if (panelContextVersionRef.current === mutationContextVersion) {
         setSubmitting(false);
       }
     }
@@ -182,24 +181,24 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
 
   const handleDelete = async () => {
     if (!canLoadReviews || submitting || !myReview) return;
-    const mutationContextKey = panelContextRef.current;
+    const mutationContextVersion = panelContextVersionRef.current;
     setSubmitting(true);
     setSubmitError(null);
     try {
       await roadsApi.deleteReview(segmentId);
 
-      if (panelContextRef.current !== mutationContextKey) return;
+      if (panelContextVersionRef.current !== mutationContextVersion) return;
 
       setEditorMode(null);
       await loadReviews();
     } catch (err) {
-      if (panelContextRef.current === mutationContextKey) {
+      if (panelContextVersionRef.current === mutationContextVersion) {
         setSubmitError(
           err instanceof Error ? err.message : "Could not delete your review.",
         );
       }
     } finally {
-      if (panelContextRef.current === mutationContextKey) {
+      if (panelContextVersionRef.current === mutationContextVersion) {
         setSubmitting(false);
       }
     }
