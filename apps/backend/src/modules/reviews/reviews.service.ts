@@ -45,7 +45,9 @@ export class ReviewsService {
       reviews.map((r) => r.id),
       viewerUserId,
     );
-    return reviews.map((r) => this.toResponse(r, voteMap.get(r.id)));
+    return reviews.map((r) =>
+      this.toResponse(r, voteMap.get(r.id), viewerUserId),
+    );
   }
 
   async create(
@@ -95,11 +97,15 @@ export class ReviewsService {
     });
 
     // Freshly created reviews have no votes yet.
-    return this.toResponse(full!, {
-      helpful_count: 0,
-      not_helpful_count: 0,
-      my_vote: null,
-    });
+    return this.toResponse(
+      full!,
+      {
+        helpful_count: 0,
+        not_helpful_count: 0,
+        my_vote: null,
+      },
+      userId,
+    );
   }
 
   async update(
@@ -122,7 +128,7 @@ export class ReviewsService {
 
     const saved = await this.reviewRepo.save(review);
     const voteMap = await this.aggregateVotes([saved.id], userId);
-    return this.toResponse(saved, voteMap.get(saved.id));
+    return this.toResponse(saved, voteMap.get(saved.id), userId);
   }
 
   async delete(userId: string, segmentId: string): Promise<void> {
@@ -282,6 +288,7 @@ export class ReviewsService {
   private toResponse(
     review: RoadReview,
     votes?: VoteAggregate,
+    viewerUserId: string | null = null,
   ): ReviewResponseDto {
     return {
       id: review.id,
@@ -294,6 +301,10 @@ export class ReviewsService {
       helpful_count: votes?.helpful_count ?? 0,
       not_helpful_count: votes?.not_helpful_count ?? 0,
       my_vote: votes?.my_vote ?? null,
+      is_mine:
+        review.user_id === undefined || viewerUserId === null
+          ? false
+          : review.user_id === viewerUserId,
     };
   }
 }

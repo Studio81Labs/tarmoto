@@ -115,6 +115,12 @@ export class ReviewResponseDto {
       'null when the caller has not voted or is anonymous.',
   })
   my_vote!: boolean | null;
+
+  @ApiProperty({
+    description:
+      'True when this review belongs to the authenticated caller, else false.',
+  })
+  is_mine!: boolean;
 }
 
 export class ReviewVoteDto {
