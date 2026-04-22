@@ -142,17 +142,19 @@ export function normalizeSubscriptionSnapshot(
   const root = asRecord(raw);
 
   const currentPlanRaw = asRecord(root.current_plan);
-  const currentTier =
-    normalizeTier(currentPlanRaw.tier) ?? fallback.currentPlan.tier;
+  const normalizedTier = normalizeTier(currentPlanRaw.tier);
+  const normalizedStatus = normalizeStatus(currentPlanRaw.status);
+  const normalizedPriceLabel = optionalString(currentPlanRaw.price_label);
+  const preview =
+    normalizedTier === null ||
+    normalizedStatus === null ||
+    normalizedPriceLabel === null;
+  const currentTier = normalizedTier ?? fallback.currentPlan.tier;
   const currentPlan: CurrentSubscriptionPlan = {
     tier: currentTier,
     name: stringOr(currentPlanRaw.name, tierLabel(currentTier)),
-    status:
-      normalizeStatus(currentPlanRaw.status) ?? fallback.currentPlan.status,
-    priceLabel: stringOr(
-      currentPlanRaw.price_label,
-      fallback.currentPlan.priceLabel,
-    ),
+    status: normalizedStatus ?? fallback.currentPlan.status,
+    priceLabel: normalizedPriceLabel ?? fallback.currentPlan.priceLabel,
     renewsAt: optionalString(currentPlanRaw.renews_at),
     cancelAtPeriodEnd: Boolean(currentPlanRaw.cancel_at_period_end),
     manageUrl: normalizeUrl(currentPlanRaw.manage_url),
@@ -168,7 +170,7 @@ export function normalizeSubscriptionSnapshot(
       : sortPlans([...plans, buildPlanFromCurrent(currentPlan)]),
     paymentMethod: normalizePaymentMethod(root.payment_method),
     billingHistory: normalizeInvoices(root.billing_history),
-    preview: false,
+    preview,
   };
 }
 
