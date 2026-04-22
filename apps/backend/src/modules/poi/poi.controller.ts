@@ -14,11 +14,13 @@ export class PoiController {
 
   @Get('accommodations')
   @ApiOperation({
-    summary: 'Find accommodations near a point (US-10)',
+    summary: 'Find accommodations near a point (US-10, US-36)',
     description:
       'Returns nearby hotels, guest houses, camp sites, etc. sourced ' +
       'from the configured POI provider. Used by the mobile trip planner ' +
-      'to suggest overnight stops near each day-end waypoint.',
+      'to suggest overnight stops near each day-end waypoint. Optional ' +
+      '`kinds` narrows by tourism type (e.g. hotels only) and optional ' +
+      '`min_stars` narrows by provider-reported star rating.',
   })
   @ApiResponse({ status: 200, type: AccommodationListDto })
   async findAccommodations(
@@ -28,6 +30,8 @@ export class PoiController {
       query.lat,
       query.lng,
       query.radius_km,
+      query.kinds,
+      query.min_stars,
     );
   }
 

@@ -7,8 +7,10 @@ import {
   type PointOfInterest,
 } from './poi-provider.interface.js';
 import {
+  ACCOMMODATION_KINDS,
   AccommodationDto,
   AccommodationListDto,
+  type AccommodationKind,
   DEFAULT_RADIUS_KM,
   MAX_RADIUS_KM,
 } from './dto/accommodation.dto.js';
@@ -49,11 +51,19 @@ export class PoiService {
     lat: number,
     lng: number,
     radiusKm?: number,
+    kinds?: AccommodationKind[],
+    minStars?: number,
   ): Promise<AccommodationListDto> {
     const radius = this.clampRadiusKm(radiusKm);
+    const resolvedKinds = this.resolveAccommodationKinds(kinds);
     let raw: AccommodationPoi[];
     try {
-      raw = await this.provider.findAccommodations(lat, lng, radius);
+      raw = await this.provider.findAccommodations(
+        lat,
+        lng,
+        radius,
+        resolvedKinds,
+      );
     } catch (err) {
       // Keep trip planning resilient: if the upstream provider is down or
       // rate-limited, the day card just shows an empty state instead of
@@ -64,12 +74,17 @@ export class PoiService {
       this.logger.warn(
         `POI provider failed: ${err instanceof Error ? err.message : String(err)}`,
       );
-      return { accommodations: [], radius_km: radius };
+      return {
+        accommodations: [],
+        radius_km: radius,
+        kinds: resolvedKinds,
+      };
     }
 
     return {
-      accommodations: this.rank(raw, lat, lng),
+      accommodations: this.rank(raw, lat, lng, resolvedKinds, minStars),
       radius_km: radius,
+      kinds: resolvedKinds,
     };
   }
 
@@ -78,9 +93,28 @@ export class PoiService {
    * drop unnamed POIs with no website or phone — they'd show up on the
    * card as "Unnamed hotel" with no way to act on them, which is worse
    * than showing fewer results.
+   *
+   * `kinds` and `minStars` are applied here (not in the provider) so all
+   * providers share the same filter semantics and the service is the
+   * single source of truth for "no star rating → drop when min_stars is
+   * set". Omit either to disable the corresponding filter.
    */
-  rank(raw: AccommodationPoi[], lat: number, lng: number): AccommodationDto[] {
+  rank(
+    raw: AccommodationPoi[],
+    lat: number,
+    lng: number,
+    kinds?: AccommodationKind[],
+    minStars?: number,
+  ): AccommodationDto[] {
+    const kindSet =
+      kinds && kinds.length > 0 ? new Set<AccommodationKind>(kinds) : undefined;
     const withDistance = raw
+      .filter((poi) => (kindSet ? kindSet.has(poi.kind) : true))
+      .filter((poi) =>
+        minStars === undefined
+          ? true
+          : poi.stars !== null && poi.stars >= minStars,
+      )
       .map((poi) => ({
         poi,
         distance_km: haversineKm(lat, lng, poi.lat, poi.lng),
@@ -213,6 +247,13 @@ export class PoiService {
 
   private resolveKinds(input: PoiKind[] | undefined): PoiKind[] {
     if (!input || input.length === 0) return [...POI_KINDS];
+    return Array.from(new Set(input));
+  }
+
+  private resolveAccommodationKinds(
+    input: AccommodationKind[] | undefined,
+  ): AccommodationKind[] {
+    if (!input || input.length === 0) return [...ACCOMMODATION_KINDS];
     return Array.from(new Set(input));
   }
 }
