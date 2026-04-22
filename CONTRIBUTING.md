@@ -34,13 +34,17 @@ Conventional commits. One logical change per commit.
 ```
 
 - **Types:** `feat`, `fix`, `chore`, `refactor`, `docs`, `test`, `style`
-- **Scopes:** `backend`, `mobile`, `companion`, `poc`, `shared`, `openapi`, `ci`, `infra`, `docs`. Omit for cross-cutting changes.
+- **Scopes:** `backend`, `mobile`, `companion`, `poc-sensor`, `shared`, `openapi`, `ci`, `infra`, `docs`, `deps`, `cross`
+- Scope is required on local commit messages and PR titles. `commitlint` enforces this on every commit via the husky `commit-msg` hook, and `lint-pr.yml` enforces it again on PR titles.
+- Use `cross` for genuinely cross-cutting changes instead of omitting the scope.
 - Subject must start **lowercase** (enforced by `lint-pr.yml`).
 
 Examples:
+
 - `feat(backend): add road segment review endpoint`
 - `fix(mobile): buffer GPS points during brief network loss`
 - `refactor(companion): extract trip planner map layer`
+- `chore(cross): align PR workflow docs and automation`
 
 ## Before opening a PR
 
@@ -63,11 +67,13 @@ Mobile and companion don't have tests yet — contribute tests alongside feature
 ## Pull request flow
 
 1. Push your branch and open a PR against `main`.
-2. PR title follows conventional-commits (same format as squash-merge commit). Example: `feat(backend): add hazard report endpoint`.
+2. PR title must follow conventional commits with a required scope (same format as the squash-merge commit). Example: `feat(backend): add hazard report endpoint`.
 3. Link the GitHub issue your PR resolves.
-4. Confirm everything in [docs/process/definition-of-done.md](./docs/process/definition-of-done.md) applies.
-5. Request human review. Address comments with follow-up commits — don't force-push to shared branches mid-review.
-6. Merge via **Squash and merge**. The squash commit message should be the final conventional-commit message.
+4. Make sure the PR has the right scope label(s). `actions/labeler` applies common path-based labels automatically; add any missing labels manually.
+5. Use the PR template fully: summarize the change, note the regression surface, record verification, and call out contract / schema / docs impact.
+6. Confirm everything in [docs/process/definition-of-done.md](./docs/process/definition-of-done.md) applies.
+7. Request human review. Address comments with follow-up commits — don't force-push to shared branches mid-review.
+8. Merge via **Squash and merge**. The squash commit message should be the final conventional-commit message.
 
 ## Testing
 
@@ -76,6 +82,7 @@ See [docs/process/testing-strategy.md](./docs/process/testing-strategy.md) for w
 ## Database changes
 
 See [docs/process/typeorm-migrations.md](./docs/process/typeorm-migrations.md). Key points:
+
 - Edit an entity in `apps/backend/src/entities/`.
 - Rebuild: `pnpm build:backend`.
 - Generate a migration: `pnpm --filter @tarmoto/backend typeorm migration:generate src/migrations/<Name> -d dist/data-source.js`.
@@ -86,12 +93,14 @@ See [docs/process/typeorm-migrations.md](./docs/process/typeorm-migrations.md). 
 ## Secrets and security
 
 **Never commit:**
+
 - Real `.env` files (only `.env.example` goes in git)
 - Database passwords, JWT secrets, OAuth client secrets
 - Cloudflare API tokens, AWS credentials, Firebase / APNs keys when added
 - Any file matching the rough pattern `*-token*`, `*-secret*`, `*.pem`, `*.key`
 
 **Rules of thumb:**
+
 - If it looks like a credential, it probably is. Reach for an env var with the `TARMOTO_` prefix.
 - Request production secrets via the team — don't copy them to your laptop.
 - If you accidentally commit a secret, rotate it immediately — even after reverting, assume it's public.

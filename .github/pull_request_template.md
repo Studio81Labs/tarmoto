@@ -2,9 +2,16 @@
 
 <!-- What does this PR do? Why? -->
 
+## Title
+
+<!-- Required format: <type>(<scope>): <short description> -->
+<!-- Example: feat(backend): add hazard report endpoint -->
+<!-- Use scope "cross" for genuinely cross-cutting work -->
+
 ## Type
 
 <!-- Check one -->
+
 - [ ] Feature (`type:feature`)
 - [ ] Bug fix (`type:bugfix`)
 - [ ] Refactor (`type:refactor`)
@@ -16,13 +23,44 @@
 
 <!-- Link issues: Closes #123, Relates to #456 -->
 
+## Risk / Regression Surface
+
+<!-- What could break? Call out user-facing, contract, data, and operational risk -->
+
 ## Changes
 
 <!-- Bullet list of what changed -->
+
 -
+
+## Verification
+
+<!-- Paste the commands you ran and the result -->
+
+- ``
+
+## Contract / Schema / Docs Impact
+
+<!-- Delete bullets that do not apply -->
+
+- [ ] No API contract change
+- [ ] OpenAPI updated
+- [ ] No database schema change
+- [ ] Migration included
+- [ ] No product / process docs change
+- [ ] Docs updated
+
+## Optional Codex Review Prompt
+
+<!-- Paste into a PR comment when you want a stricter Codex pass -->
+
+`@codex review for regressions, missing tests, API contract drift, security, and performance. Ignore pure style nits unless they hide a real defect.`
 
 ## Checklist
 
+- [ ] PR title uses conventional commit format with a scope
+- [ ] Scope label(s) are present on the PR (auto-applied or added manually)
+- [ ] Linked issue includes priority and scope labels
 - [ ] Code compiles without errors (`pnpm build:backend && pnpm build:shared`)
 - [ ] Tests pass (`pnpm test`)
 - [ ] Lint passes (`pnpm lint`)

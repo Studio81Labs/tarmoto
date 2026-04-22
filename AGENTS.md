@@ -63,3 +63,16 @@ pnpm lint                 # Lint all packages
 - Entities in `apps/backend/src/entities/`, feature modules in `apps/backend/src/modules/`
 - Docker services in `infra/docker/docker-compose.yml`
 - Units: backend stores and serves **metric only** (°C, km/h, meters, km). Clients convert for display using `@tarmoto/shared` unit helpers based on user preference
+
+## Review Guidance
+
+- During code review, do not limit findings to only obvious critical bugs. Surface medium-risk regressions when the user impact or cleanup cost is real.
+- Treat these as review-worthy findings, not optional nits:
+  - Missing or weak tests for behavior changes, edge cases, null/error paths, or regression-prone logic
+  - Contract drift between backend DTOs, OpenAPI output, shared types, mobile consumers, and companion consumers
+  - Missing migrations, docs, or follow-up contract updates when schema or API behavior changes
+  - Metric/unit mistakes, especially backend values that leak non-metric assumptions into persisted or served data
+  - Performance risks such as N+1 queries, unbounded queries/lists, repeated geospatial work, or avoidable map/render hot paths
+  - Error-handling, observability, auth, privacy, and secret-handling gaps that would make production incidents or data leaks more likely
+- Prefer high-signal findings with a concrete failure mode, regression path, or operational risk. Skip pure formatting/style comments unless they hide a real defect.
+- If the review surface supports lower-severity findings, use them. If it does not, still report medium-risk issues when they are concrete and actionable.

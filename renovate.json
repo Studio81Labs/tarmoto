@@ -36,9 +36,9 @@
       "addLabels": ["companion"]
     },
     {
-      "description": "Scope commits to poc when touching apps/poc-sensor",
+      "description": "Scope commits to poc-sensor when touching apps/poc-sensor",
       "matchFileNames": ["apps/poc-sensor/**"],
-      "semanticCommitScope": "poc",
+      "semanticCommitScope": "poc-sensor",
       "addLabels": ["poc-sensor"]
     },
     {

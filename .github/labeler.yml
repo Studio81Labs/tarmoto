@@ -1,27 +1,48 @@
 backend:
   - changed-files:
-      - any-glob-to-any-file: 'apps/backend/**'
+      - any-glob-to-any-file: "apps/backend/**"
 
 mobile:
   - changed-files:
-      - any-glob-to-any-file: 'apps/mobile/**'
+      - any-glob-to-any-file: "apps/mobile/**"
 
 poc-sensor:
   - changed-files:
-      - any-glob-to-any-file: 'apps/poc-sensor/**'
+      - any-glob-to-any-file: "apps/poc-sensor/**"
+
+companion:
+  - changed-files:
+      - any-glob-to-any-file: "apps/companion/**"
 
 shared:
   - changed-files:
-      - any-glob-to-any-file: 'packages/shared/**'
+      - any-glob-to-any-file: "packages/shared/**"
+
+openapi:
+  - changed-files:
+      - any-glob-to-any-file: "packages/openapi/**"
 
 ci:
   - changed-files:
-      - any-glob-to-any-file: '.github/workflows/**'
+      - any-glob-to-any-file: ".github/**"
 
 infra:
   - changed-files:
-      - any-glob-to-any-file: 'infra/**'
+      - any-glob-to-any-file: "infra/**"
 
 docs:
   - changed-files:
-      - any-glob-to-any-file: 'docs/**'
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "README.md"
+          - "CONTRIBUTING.md"
+          - "AGENTS.md"
+          - "CLAUDE.md"
+
+deps:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "package.json"
+          - "pnpm-lock.yaml"
+          - "apps/**/package.json"
+          - "packages/**/package.json"
