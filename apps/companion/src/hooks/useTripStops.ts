@@ -14,6 +14,10 @@ interface TripStopsResult {
   error: string | null;
 }
 
+interface TripStopsState extends TripStopsResult {
+  tripId: string | null;
+}
+
 const ACCOMMODATION_RADIUS_KM = 12;
 const ALONG_ROUTE_BUFFER_KM = 2;
 
@@ -21,10 +25,11 @@ export function useTripStops(
   trip: Trip | null,
   options: TripStopsOptions,
 ): TripStopsResult {
-  const [state, setState] = useState<TripStopsResult>({
+  const [state, setState] = useState<TripStopsState>({
     days: [],
     loading: false,
     error: null,
+    tripId: null,
   });
 
   const normalizedKinds = useMemo(
@@ -64,7 +69,7 @@ export function useTripStops(
     const stableTrip = stableRequestRef.current.trip;
     const requestPlan = stableRequestRef.current.plan;
     if (!stableTrip || !requestPlan) {
-      setState({ days: [], loading: false, error: null });
+      setState({ days: [], loading: false, error: null, tripId: null });
       return;
     }
 
@@ -72,11 +77,12 @@ export function useTripStops(
 
     setState((current) => ({
       days:
-        current.days.length > 0
+        current.tripId === stableTrip.id && current.days.length > 0
           ? current.days
           : buildTripDayStops(stableTrip, new Map(), new Map()),
       loading: true,
       error: null,
+      tripId: stableTrip.id,
     }));
 
     const load = async () => {
@@ -134,6 +140,7 @@ export function useTripStops(
           failures.length > 0
             ? `Some planner stop suggestions could not be loaded (${failures.join(", ")}).`
             : null,
+        tripId: stableTrip.id,
       });
     };
 
@@ -146,6 +153,7 @@ export function useTripStops(
           err instanceof Error
             ? err.message
             : "Failed to load planner stop suggestions.",
+        tripId: stableTrip.id,
       });
     });
 
@@ -154,5 +162,9 @@ export function useTripStops(
     };
   }, [requestPlanKey, normalizedKinds, options.minAccommodationStars]);
 
-  return state;
+  return {
+    days: state.days,
+    loading: state.loading,
+    error: state.error,
+  };
 }
