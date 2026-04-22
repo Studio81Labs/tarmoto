@@ -168,11 +168,15 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
       setEditorMode(null);
       await loadReviews();
     } catch (err) {
-      setSubmitError(
-        err instanceof Error ? err.message : "Could not save your review.",
-      );
+      if (panelContextRef.current === mutationContextKey) {
+        setSubmitError(
+          err instanceof Error ? err.message : "Could not save your review.",
+        );
+      }
     } finally {
-      setSubmitting(false);
+      if (panelContextRef.current === mutationContextKey) {
+        setSubmitting(false);
+      }
     }
   };
 
@@ -189,11 +193,15 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
       setEditorMode(null);
       await loadReviews();
     } catch (err) {
-      setSubmitError(
-        err instanceof Error ? err.message : "Could not delete your review.",
-      );
+      if (panelContextRef.current === mutationContextKey) {
+        setSubmitError(
+          err instanceof Error ? err.message : "Could not delete your review.",
+        );
+      }
     } finally {
-      setSubmitting(false);
+      if (panelContextRef.current === mutationContextKey) {
+        setSubmitting(false);
+      }
     }
   };
 
