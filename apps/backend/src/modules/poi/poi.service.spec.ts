@@ -4,6 +4,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import {
   cumulativeLengthKm,
   PoiService,
+  projectOntoRoute,
   sampleRouteAnchors,
 } from './poi.service.js';
 import {
@@ -867,14 +868,16 @@ describe('sampleRouteAnchors', () => {
       const a = anchors[i - 1];
       const b = anchors[i];
       // Re-derive the distance from their lat values since we only need
-      // to assert the spacing bound.
-      spacings.push(Math.abs(b.lat - a.lat) * 111);
+      // to assert the spacing bound. `111.2` matches the mean km-per-
+      // degree-of-latitude used by the interpolator — stricter than the
+      // textbook 111 km so the rounded bound doesn't sag below stride.
+      spacings.push(Math.abs(b.lat - a.lat) * 111.2);
     }
-    // Every interior spacing sits within [bufferKm, 2 * bufferKm] — the
-    // algorithm advances past each boundary by at most one vertex (11 km
-    // here), so the stride never balloons past 2× the buffer.
+    // Every interior spacing sits at ~bufferKm (the interpolator lands
+    // on exact cumulative-km boundaries). Allow a little slack for the
+    // haversine/flat-earth conversion plus a 2× upper bound for safety.
     for (const s of spacings.slice(0, -1)) {
-      expect(s).toBeGreaterThanOrEqual(bufferKm - 0.01);
+      expect(s).toBeGreaterThanOrEqual(bufferKm - 0.05);
       expect(s).toBeLessThan(bufferKm * 2);
     }
   });
@@ -882,5 +885,65 @@ describe('sampleRouteAnchors', () => {
   it('returns a single anchor for a single-vertex input', () => {
     const single = sampleRouteAnchors([{ lat: 49, lng: 16 }], [0], 5);
     expect(single).toEqual([{ lat: 49, lng: 16 }]);
+  });
+
+  it('interpolates anchors inside long sparse segments', () => {
+    // Only two vertices, ~111 km apart — vertex-only sampling would
+    // produce just the endpoints and leave the middle of the segment
+    // uncovered. The interpolating sampler should emit intermediate
+    // anchors at each stride boundary.
+    const sparseRoute = [
+      { lat: 49, lng: 16 },
+      { lat: 50, lng: 16 },
+    ];
+    const sparseCum = cumulativeLengthKm(sparseRoute);
+    const bufferKm = 10;
+    const anchors = sampleRouteAnchors(sparseRoute, sparseCum, bufferKm);
+
+    // With 10 km stride over ~111 km, expect ≥ 10 interior anchors plus
+    // the endpoints. Every interior anchor must sit strictly between the
+    // two vertices (i.e. not be equal to either endpoint).
+    expect(anchors.length).toBeGreaterThan(10);
+    for (const a of anchors.slice(1, -1)) {
+      expect(a.lat).toBeGreaterThan(49);
+      expect(a.lat).toBeLessThan(50);
+    }
+  });
+});
+
+describe('projectOntoRoute', () => {
+  // Two-vertex 111 km segment along a meridian, matching the sparse
+  // polyline shape that breaks a nearest-vertex implementation.
+  const route = [
+    { lat: 49, lng: 16 },
+    { lat: 50, lng: 16 },
+  ];
+  const cum = cumulativeLengthKm(route);
+
+  it('projects a mid-segment point onto the segment, not the nearest vertex', () => {
+    // Station at the exact midpoint of the segment, right on the route.
+    // Nearest-vertex distance would be ~55 km; segment projection must
+    // return ~0 km.
+    const result = projectOntoRoute({ lat: 49.5, lng: 16 }, route, cum);
+    expect(result.distance_from_route_km).toBeLessThan(0.1);
+    expect(result.distance_along_route_km).toBeGreaterThan(54);
+    expect(result.distance_along_route_km).toBeLessThan(57);
+  });
+
+  it('measures the perpendicular offset from a mid-segment point off to the side', () => {
+    // 1 km east of the midpoint (~0.014° lng at lat 49.5).
+    const result = projectOntoRoute({ lat: 49.5, lng: 16 + 0.014 }, route, cum);
+    expect(result.distance_from_route_km).toBeGreaterThan(0.9);
+    expect(result.distance_from_route_km).toBeLessThan(1.1);
+    expect(result.distance_along_route_km).toBeGreaterThan(54);
+    expect(result.distance_along_route_km).toBeLessThan(57);
+  });
+
+  it('clamps to the nearest endpoint when the projection falls outside the segment', () => {
+    // Point beyond the end vertex — projection clamps to t=1 so the
+    // along-route distance maxes out at the total route length.
+    const totalKm = cum[cum.length - 1];
+    const result = projectOntoRoute({ lat: 50.5, lng: 16 }, route, cum);
+    expect(result.distance_along_route_km).toBeCloseTo(totalKm, 5);
   });
 });

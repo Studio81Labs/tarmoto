@@ -65,12 +65,15 @@ function parseKinds(value: unknown): PoiKind[] | undefined {
 }
 
 /**
- * Coerce a required numeric query string. A blank or whitespace-only
- * value becomes NaN so `@IsNumber()` rejects it — `Number('')` on its
- * own returns `0`, which would silently validate `?lat=&lng=` as the
- * coordinate origin.
+ * Coerce a required numeric value (query string or JSON body). A blank,
+ * whitespace-only, or `null` value becomes NaN so `@IsNumber`,
+ * `@IsLatitude`, and `@IsLongitude` reject it — `Number('')` and
+ * `Number(null)` both return `0` on their own, which would silently
+ * validate `?lat=&lng=` or `{"lat":null,"lng":null}` as the coordinate
+ * origin.
  */
 function toRequiredNumber(value: unknown): number {
+  if (value === null) return Number.NaN;
   if (typeof value === 'string' && value.trim() === '') return Number.NaN;
   return Number(value);
 }
@@ -174,13 +177,13 @@ const MAX_BUFFER_KM = 10;
 
 class RoutePointDto {
   @ApiProperty()
+  @Transform(({ value }: { value: unknown }) => toRequiredNumber(value))
   @IsLatitude()
-  @Type(() => Number)
   lat!: number;
 
   @ApiProperty()
+  @Transform(({ value }: { value: unknown }) => toRequiredNumber(value))
   @IsLongitude()
-  @Type(() => Number)
   lng!: number;
 }
 
@@ -217,9 +220,9 @@ export class AlongRoutePoiQueryDto {
     enum: POI_KINDS,
     isArray: true,
     description:
-      'Kinds to include. Omit to return all kinds. Accepts a repeated ' +
-      'query param (`kinds=fuel_station&kinds=cafe`) or a comma-separated ' +
-      'value (`kinds=fuel_station,cafe`).',
+      'Kinds to include. Omit to return all kinds. Accepts either a JSON ' +
+      'array (`["fuel_station", "cafe"]`) or a comma-separated string ' +
+      '(`"fuel_station,cafe"`).',
   })
   @IsOptional()
   @Transform(({ value }: { value: unknown }) => parseKinds(value))
@@ -256,12 +259,15 @@ export class AlongRoutePoiDto {
   @ApiProperty({
     description:
       'Distance from the route start to the POI (measured along the ' +
-      'polyline up to the nearest vertex), km.',
+      'polyline up to the point where the POI projects onto its nearest ' +
+      'segment), km.',
   })
   distance_along_route_km!: number;
 
   @ApiProperty({
-    description: 'Shortest distance between the POI and any route vertex, km.',
+    description:
+      'Perpendicular distance between the POI and its nearest point on ' +
+      'the route polyline, km.',
   })
   distance_from_route_km!: number;
 

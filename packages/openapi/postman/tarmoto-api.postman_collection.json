@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "282448d2-7e70-46fe-ba6c-84c0a36c891f",
+    "_postman_id": "13369e54-9e4a-4b7c-b7fe-db8901aec283",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -370,7 +370,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ],\n  \"buffer_m\": 0\n}",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_m\": 0\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1294,7 +1294,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ]\n}",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2014,7 +2014,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ],\n  \"buffer_m\": 0,\n  \"for_month\": 0\n}",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_m\": 0,\n  \"for_month\": 0\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2137,7 +2137,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ],\n  \"buffer_km\": 0,\n  \"kinds\": [\n    \"restaurant\"\n  ]\n}",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_km\": 0,\n  \"kinds\": [\n    \"restaurant\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2253,7 +2253,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"\",\n  \"reason\": \"closure\",\n  \"severity\": \"advisory\",\n  \"geometry\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ],\n  \"detour\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ],\n  \"country_code\": \"\",\n  \"region\": \"\",\n  \"starts_at\": \"\",\n  \"ends_at\": \"\",\n  \"notes\": \"\"\n}",
+              "raw": "{\n  \"title\": \"\",\n  \"reason\": \"closure\",\n  \"severity\": \"advisory\",\n  \"geometry\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"detour\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"country_code\": \"\",\n  \"region\": \"\",\n  \"starts_at\": \"\",\n  \"ends_at\": \"\",\n  \"notes\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2279,7 +2279,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ],\n  \"buffer_m\": 0,\n  \"active_on\": \"\"\n}",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_m\": 0,\n  \"active_on\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2334,7 +2334,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"\",\n  \"reason\": \"closure\",\n  \"severity\": \"advisory\",\n  \"geometry\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ],\n  \"detour\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ],\n  \"country_code\": \"\",\n  \"region\": \"\",\n  \"starts_at\": \"\",\n  \"ends_at\": \"\",\n  \"notes\": \"\"\n}",
+              "raw": "{\n  \"title\": \"\",\n  \"reason\": \"closure\",\n  \"severity\": \"advisory\",\n  \"geometry\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"detour\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"country_code\": \"\",\n  \"region\": \"\",\n  \"starts_at\": \"\",\n  \"ends_at\": \"\",\n  \"notes\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"

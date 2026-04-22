@@ -262,16 +262,19 @@ export class PoiService {
    * the mobile fuel-range warning (US-36) and the trip-day POI card.
    *
    * Algorithm:
-   *   1. Walk the polyline, sampling anchors so consecutive `around:`
-   *      circles at the Overpass provider overlap (stride = `bufferKm`,
-   *      plus the endpoints).
+   *   1. Walk the polyline, sampling anchors at exact `bufferKm`
+   *      cumulative-km boundaries (interpolating inside segments rather
+   *      than just picking vertices) so consecutive `around:` circles at
+   *      the Overpass provider overlap even on sparse polylines.
    *   2. Query the provider once with all samples as centres.
-   *   3. For each returned POI, compute (a) the distance to its nearest
-   *      route vertex and (b) the cumulative distance-along-route at
-   *      that vertex. Drop POIs farther than the buffer — the provider's
-   *      union of circles can return points that are inside the nearest
-   *      circle but outside the polygon-ish corridor we actually care
-   *      about (e.g. a petrol station 2 km off a switchback).
+   *   3. For each returned POI, project it onto its nearest route
+   *      segment (closest point on segment, not nearest vertex). The
+   *      perpendicular distance is its off-route distance; the cumulative
+   *      distance to the projection is its along-route distance. Drop
+   *      POIs farther than the buffer — the provider's union of circles
+   *      can return points that are inside the nearest circle but outside
+   *      the corridor we actually care about (e.g. a petrol station 2 km
+   *      off a switchback).
    *   4. Dedupe by `external_id`, keeping the closest instance.
    *   5. Cap per-kind and sort by `distance_along_route_km` so the mobile
    *      timeline renders naturally from start to end.
@@ -343,26 +346,18 @@ export class PoiService {
     for (const poi of raw) {
       if (!kindSet.has(poi.kind)) continue;
       if (!poi.name?.trim() && !poi.website && !poi.phone) continue;
-      // Find nearest route vertex by haversine. Exact point-to-polyline
-      // (perpendicular drop) would be more accurate, but for buffers of
-      // a few kilometres the vertex distance sits within noise of the
-      // upstream tag precision. Keeping this as a vertex sweep also
-      // means we can read the "distance along" straight out of `cumKm`.
-      let bestIdx = 0;
-      let bestKm = Infinity;
-      for (let i = 0; i < route.length; i++) {
-        const d = haversineKm(poi.lat, poi.lng, route[i].lat, route[i].lng);
-        if (d < bestKm) {
-          bestKm = d;
-          bestIdx = i;
-        }
-      }
-      if (bestKm > bufferKm) continue;
+      // Project the POI onto the nearest polyline segment (closest point
+      // on segment, not nearest vertex) so a station sitting halfway
+      // along a long sparse segment is measured against the actual route
+      // geometry rather than against whichever vertex happens to be
+      // closest.
+      const projected = projectOntoRoute(poi, route, cumKm);
+      if (projected.distance_from_route_km > bufferKm) continue;
 
       const entry: Annotated = {
         poi,
-        distance_along_route_km: cumKm[bestIdx],
-        distance_from_route_km: bestKm,
+        distance_along_route_km: projected.distance_along_route_km,
+        distance_from_route_km: projected.distance_from_route_km,
       };
       const prev = deduped.get(poi.external_id);
       if (!prev || entry.distance_from_route_km < prev.distance_from_route_km) {
@@ -483,15 +478,16 @@ export function cumulativeLengthKm(
 }
 
 /**
- * Pick a minimal set of anchor points along the polyline such that a
- * `bufferKm`-radius circle at each anchor covers the entire route.
+ * Pick anchor points along the polyline at exact `bufferKm`-cumulative
+ * boundaries such that a `bufferKm`-radius circle at each anchor covers
+ * the entire route.
  *
- * Stride is `bufferKm`: adjacent circles then overlap by half a radius
- * on either side, which means a rider running along the polyline never
- * leaves the covered corridor even near sharp bends (where a naive
- * `2 * bufferKm` stride can drop coverage on the inside of the turn).
- * The route start and end are always included so the corridor doesn't
- * trail off before the last vertex.
+ * Anchors are interpolated on the segment that spans each boundary
+ * rather than snapped to the nearest existing vertex — on sparse
+ * polylines (long segments between vertices) a vertex-only sampler
+ * would leave gaps in the middle of those segments, dropping real
+ * matches. The route start and end are always included so the corridor
+ * doesn't trail off before the last vertex.
  *
  * Exported for tests — this is the function under test when validating
  * that the samples reach the whole corridor.
@@ -506,24 +502,30 @@ export function sampleRouteAnchors(
 
   const totalKm = cumKm[cumKm.length - 1];
   const stride = Math.max(bufferKm, 0.5);
-  // +1 for the endpoint. For a 200 km day at 2 km buffer this is ~101
-  // samples — comfortably under Overpass's soft 256-element `around:`
-  // limit. The service layer clamps buffer ≥ 0.5 km (matches the DTO)
-  // so the worst case stays bounded.
-  const targetCount = Math.floor(totalKm / stride) + 1;
 
   const anchors: { lat: number; lng: number }[] = [
     { lat: route[0].lat, lng: route[0].lng },
   ];
-  let nextBoundary = stride;
-  for (let i = 1; i < route.length && anchors.length <= targetCount; i++) {
-    if (cumKm[i] >= nextBoundary) {
-      anchors.push({ lat: route[i].lat, lng: route[i].lng });
-      // Advance past the vertex we just consumed rather than by a fixed
-      // stride so a cluster of close vertices (common on curvy mountain
-      // roads) doesn't duplicate the anchor.
-      nextBoundary = cumKm[i] + stride;
+  // Advance a cursor through segments and emit an anchor each time the
+  // cumulative-km boundary `k * stride` crosses the current segment.
+  // For a 200 km day at 2 km buffer this is ~100 samples — comfortably
+  // under Overpass's soft 256-element `around:` limit.
+  let segmentIdx = 1;
+  for (let boundary = stride; boundary < totalKm; boundary += stride) {
+    while (segmentIdx < route.length && cumKm[segmentIdx] < boundary) {
+      segmentIdx++;
     }
+    if (segmentIdx >= route.length) break;
+    const segStartKm = cumKm[segmentIdx - 1];
+    const segEndKm = cumKm[segmentIdx];
+    const segLenKm = segEndKm - segStartKm;
+    const t = segLenKm > 0 ? (boundary - segStartKm) / segLenKm : 0;
+    const a = route[segmentIdx - 1];
+    const b = route[segmentIdx];
+    anchors.push({
+      lat: a.lat + t * (b.lat - a.lat),
+      lng: a.lng + t * (b.lng - a.lng),
+    });
   }
   // Always include the final vertex so the tail of the route is covered
   // even when the stride hasn't landed exactly on it.
@@ -533,6 +535,68 @@ export function sampleRouteAnchors(
     anchors.push({ lat: last.lat, lng: last.lng });
   }
   return anchors;
+}
+
+/**
+ * Mean km per degree of latitude. Longitude km per degree scales by
+ * `cos(lat)`; used to build a local flat-earth frame for projection.
+ */
+const LAT_KM_PER_DEGREE = 111.132;
+
+/**
+ * Project `point` onto the nearest segment of `route` and return both
+ * the perpendicular distance (km) and the cumulative distance-along-
+ * route at the projected point (km).
+ *
+ * Uses a local equirectangular frame scaled by `cos(point.lat)` — for
+ * the few-km buffers this endpoint operates on this is accurate to well
+ * below the precision of the upstream OSM coordinates. The returned
+ * distance is computed via haversine against the interpolated lat/lng,
+ * not via the flat-earth distance, so the reported off-route km matches
+ * the spherical distance riders expect.
+ */
+export function projectOntoRoute(
+  point: { lat: number; lng: number },
+  route: ReadonlyArray<{ lat: number; lng: number }>,
+  cumKm: number[],
+): { distance_from_route_km: number; distance_along_route_km: number } {
+  const cosLat = Math.cos((point.lat * Math.PI) / 180);
+  const lngScale = LAT_KM_PER_DEGREE * cosLat;
+  const px = point.lng * lngScale;
+  const py = point.lat * LAT_KM_PER_DEGREE;
+
+  let bestDistanceKm = Infinity;
+  let bestAlongKm = 0;
+
+  for (let i = 1; i < route.length; i++) {
+    const a = route[i - 1];
+    const b = route[i];
+    const ax = a.lng * lngScale;
+    const ay = a.lat * LAT_KM_PER_DEGREE;
+    const bx = b.lng * lngScale;
+    const by = b.lat * LAT_KM_PER_DEGREE;
+    const dx = bx - ax;
+    const dy = by - ay;
+    const segLenSq = dx * dx + dy * dy;
+    let t = 0;
+    if (segLenSq > 0) {
+      t = ((px - ax) * dx + (py - ay) * dy) / segLenSq;
+      if (t < 0) t = 0;
+      else if (t > 1) t = 1;
+    }
+    const projLat = a.lat + t * (b.lat - a.lat);
+    const projLng = a.lng + t * (b.lng - a.lng);
+    const distKm = haversineKm(point.lat, point.lng, projLat, projLng);
+    if (distKm < bestDistanceKm) {
+      bestDistanceKm = distKm;
+      const segLengthKm = cumKm[i] - cumKm[i - 1];
+      bestAlongKm = cumKm[i - 1] + t * segLengthKm;
+    }
+  }
+  return {
+    distance_from_route_km: bestDistanceKm,
+    distance_along_route_km: bestAlongKm,
+  };
 }
 
 function roundKmTenth(km: number): number {
