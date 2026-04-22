@@ -83,6 +83,13 @@ export class SharingService {
       throw new NotFoundException('Shared ride not found');
     }
 
+    // Atomic UPDATE ... SET view_count = view_count + 1 — safe under
+    // concurrent fetches, unlike read-modify-write. The in-memory `shared`
+    // is already loaded so we bump its `view_count` by one for the
+    // response rather than round-tripping a re-select.
+    await this.sharedRideRepo.increment({ id: shared.id }, 'view_count', 1);
+    shared.view_count = (shared.view_count ?? 0) + 1;
+
     return this.toDetailResponse(shared);
   }
 
@@ -198,6 +205,13 @@ export class SharingService {
           'DESC',
         );
         break;
+      case 'most_popular':
+        // `view_count` is NOT NULL (defaulted to 0 in the migration) so no
+        // NULLS LAST is needed here. Unshared-then-reshared rides restart
+        // at 0, which matches the intuition: popularity follows the
+        // current share token.
+        qb.orderBy('sr.view_count', 'DESC').addOrderBy('ride.id', 'DESC');
+        break;
       case 'nearest':
         // DTO validation guarantees both coordinates are set when
         // `sort = 'nearest'`, so we can go straight to the spatial ORDER BY.
@@ -250,6 +264,7 @@ export class SharingService {
       max_speed: ride.max_speed,
       avg_road_quality: ride.avg_road_quality,
       duration_min: durationMin,
+      view_count: shared.view_count ?? 0,
       route_geometry: routeGeometry,
     };
   }
@@ -268,6 +283,7 @@ export class SharingService {
       avg_speed: ride.avg_speed,
       avg_road_quality: ride.avg_road_quality,
       duration_min: this.calcDurationMin(ride),
+      view_count: sr.view_count ?? 0,
     };
   }
 

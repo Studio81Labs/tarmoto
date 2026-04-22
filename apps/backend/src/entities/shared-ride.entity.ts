@@ -31,6 +31,9 @@ export class SharedRide {
   @Column({ type: 'boolean', default: true })
   is_public!: boolean;
 
+  @Column({ type: 'int', default: 0 })
+  view_count!: number;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
 

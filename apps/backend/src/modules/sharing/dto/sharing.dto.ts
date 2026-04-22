@@ -25,6 +25,7 @@ export const COMMUNITY_RIDE_SORT_VALUES = [
   'longest',
   'shortest',
   'highest_quality',
+  'most_popular',
   'nearest',
 ] as const;
 export type CommunityRideSort = (typeof COMMUNITY_RIDE_SORT_VALUES)[number];
@@ -185,6 +186,12 @@ export class SharedRideDetailDto {
   @ApiProperty({ nullable: true })
   duration_min!: number | null;
 
+  @ApiProperty({
+    description:
+      'Number of times this shared ride has been viewed via its token. Incremented on each fetch.',
+  })
+  view_count!: number;
+
   @ApiProperty({ nullable: true, type: [Object] })
   route_geometry!: Array<{ lat: number; lng: number }> | null;
 }
@@ -216,6 +223,12 @@ export class CommunityRideDto {
 
   @ApiProperty({ nullable: true })
   duration_min!: number | null;
+
+  @ApiProperty({
+    description:
+      'Number of times this shared ride has been viewed via its token. Drives the `most_popular` sort.',
+  })
+  view_count!: number;
 }
 
 export class CommunityRidesResponseDto {

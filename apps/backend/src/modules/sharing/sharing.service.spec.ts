@@ -39,6 +39,7 @@ describe('SharingService', () => {
     user_id: 'user-1',
     share_token: 'abc123def456abc123def456abc12345',
     is_public: true,
+    view_count: 7,
     created_at: new Date('2026-04-14T11:00:00Z'),
     ride: mockRide,
     user: { display_name: 'John Rider' },
@@ -57,6 +58,11 @@ describe('SharingService', () => {
   };
 
   beforeEach(async () => {
+    // Reset view_count because the service mutates the loaded row in
+    // `getByToken` to reflect the post-increment value, and the mock row
+    // is shared by reference across the `findOne` return values.
+    mockShared.view_count = 7;
+
     sharedRideRepo = {
       findOne: jest.fn().mockResolvedValue(mockShared),
       create: jest
@@ -64,6 +70,7 @@ describe('SharingService', () => {
         .mockImplementation((data) => ({ ...mockShared, ...data })),
       save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
       remove: jest.fn().mockResolvedValue(undefined),
+      increment: jest.fn().mockResolvedValue({ affected: 1 }),
       createQueryBuilder: jest.fn().mockReturnValue(mockQueryBuilder),
     };
     rideRepo = {
@@ -181,6 +188,31 @@ describe('SharingService', () => {
       expect(result.duration_min).toBe(90);
       expect(result.route_geometry).toHaveLength(3);
       expect(result.route_geometry![0]).toEqual({ lat: 49.2, lng: 16.6 });
+    });
+
+    it('atomically increments view_count and reflects the new value in the response', async () => {
+      const result = await service.getByToken(
+        'abc123def456abc123def456abc12345',
+      );
+
+      expect(sharedRideRepo.increment).toHaveBeenCalledWith(
+        { id: 'shared-1' },
+        'view_count',
+        1,
+      );
+      expect(result.view_count).toBe(8);
+    });
+
+    it('treats a missing view_count as 0 before incrementing', async () => {
+      const noCountShared = {
+        ...mockShared,
+        view_count: undefined,
+      } as unknown as SharedRide;
+      sharedRideRepo.findOne!.mockResolvedValueOnce(noCountShared);
+
+      const result = await service.getByToken('abc');
+
+      expect(result.view_count).toBe(1);
     });
 
     it('should return private shared rides by token', async () => {
@@ -382,6 +414,25 @@ describe('SharingService', () => {
         'ride.id',
         'DESC',
       );
+    });
+
+    it('sort=most_popular orders by view_count DESC + id tiebreaker', async () => {
+      await service.listCommunityRides({ sort: 'most_popular' });
+
+      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
+        'sr.view_count',
+        'DESC',
+      );
+      expect(mockQueryBuilder.addOrderBy).toHaveBeenCalledWith(
+        'ride.id',
+        'DESC',
+      );
+    });
+
+    it('exposes view_count on each community card', async () => {
+      const result = await service.listCommunityRides({});
+
+      expect(result.items[0].view_count).toBe(7);
     });
 
     it('sort=oldest orders by started_at ASC + id tiebreaker', async () => {
