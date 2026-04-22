@@ -327,6 +327,7 @@ export interface UpsertRoadReviewInput {
   rating: number;
   comment?: string;
   bike_model?: string;
+  photos?: string[];
 }
 
 export const roadsApi = {

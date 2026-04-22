@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -23,17 +24,23 @@ interface ReviewDraft {
   rating: number;
   comment: string;
   bikeModel: string;
+  photos: string[];
 }
 
 const EMPTY_DRAFT: ReviewDraft = {
   rating: 0,
   comment: "",
   bikeModel: "",
+  photos: [],
 };
 
 export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
   const canLoadReviews = isUuid(segmentId);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const viewerId = useAuthStore((s) => s.user?.id ?? null);
+  const viewerKey = isAuthenticated
+    ? (viewerId ?? "authenticated")
+    : "anonymous";
   const [reviews, setReviews] = useState<RoadReview[]>([]);
   const [loading, setLoading] = useState(canLoadReviews);
   const [error, setError] = useState<string | null>(null);
@@ -41,13 +48,24 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
   const [draft, setDraft] = useState<ReviewDraft>(EMPTY_DRAFT);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const loadRequestRef = useRef(0);
   const myReview = useMemo(
     () => reviews.find((review) => review.is_mine) ?? null,
     [reviews],
   );
 
+  const resetEditorState = useCallback(() => {
+    setEditorMode(null);
+    setDraft(EMPTY_DRAFT);
+    setSubmitError(null);
+    setSubmitting(false);
+  }, []);
+
   const loadReviews = useCallback(async () => {
+    const requestId = ++loadRequestRef.current;
+
     if (!canLoadReviews) {
+      if (requestId !== loadRequestRef.current) return;
       setReviews([]);
       setError(null);
       setLoading(false);
@@ -60,48 +78,27 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
 
     try {
       const { data } = await roadsApi.getReviews(segmentId);
+      if (requestId !== loadRequestRef.current) return;
       setReviews(data);
     } catch (err) {
+      if (requestId !== loadRequestRef.current) return;
       setReviews([]);
       setError(err instanceof Error ? err.message : "Could not load reviews.");
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestRef.current) {
+        setLoading(false);
+      }
     }
   }, [canLoadReviews, segmentId]);
 
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      if (!canLoadReviews) {
-        setReviews([]);
-        setError(null);
-        setLoading(false);
-        return;
-      }
-
-      setReviews([]);
-      setLoading(true);
-      setError(null);
-
-      try {
-        const { data } = await roadsApi.getReviews(segmentId);
-        if (!cancelled) setReviews(data);
-      } catch (err) {
-        if (!cancelled) {
-          setReviews([]);
-          setError(
-            err instanceof Error ? err.message : "Could not load reviews.",
-          );
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
+    resetEditorState();
+    void loadReviews();
 
     return () => {
-      cancelled = true;
+      loadRequestRef.current += 1;
     };
-  }, [canLoadReviews, segmentId]);
+  }, [loadReviews, resetEditorState, segmentId, viewerKey]);
 
   const averageRating = useMemo(() => {
     if (reviews.length === 0) return null;
@@ -129,6 +126,7 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
       rating: myReview.rating,
       comment: myReview.comment ?? "",
       bikeModel: myReview.bike_model ?? "",
+      photos: Array.isArray(myReview.photos) ? [...myReview.photos] : [],
     });
     setSubmitError(null);
     setEditorMode("edit");
@@ -153,7 +151,10 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
     setSubmitError(null);
     try {
       if (editorMode === "edit") {
-        await roadsApi.updateReview(segmentId, normalized.data);
+        await roadsApi.updateReview(segmentId, {
+          ...normalized.data,
+          photos: [...draft.photos],
+        });
       } else {
         await roadsApi.createReview(segmentId, normalized.data);
       }
@@ -265,6 +266,12 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
           onCancel={closeEditor}
           onSubmit={handleSubmit}
         />
+      )}
+
+      {!editorMode && submitError && (
+        <div className="mb-3 rounded-xl border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-xs text-rose-300">
+          {submitError}
+        </div>
       )}
 
       {!canLoadReviews ? (
