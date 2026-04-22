@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "f43c7cb5-3741-466e-9eb6-3c0726cab167",
+    "_postman_id": "841adf05-56e5-4346-9374-81af9a8ac0e8",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -673,61 +673,73 @@
                 {
                   "key": "lat",
                   "value": "",
-                  "description": "Latitude of the search centre. Required when lng is set or sort=nearest.",
+                  "description": "Latitude of the search centre. Required when `lng` is set or when `sort = nearest`.",
                   "disabled": true
                 },
                 {
                   "key": "lng",
                   "value": "",
-                  "description": "Longitude of the search centre. Required when lat is set or sort=nearest.",
+                  "description": "Longitude of the search centre. Required when `lat` is set or when `sort = nearest`.",
                   "disabled": true
                 },
                 {
                   "key": "radius_km",
                   "value": "",
-                  "description": "Search radius in km (default 25). Only applied when lat/lng are set.",
+                  "description": "Search radius in km. Only applied when `lat` and `lng` are set.",
                   "disabled": true
                 },
                 {
                   "key": "min_distance_km",
                   "value": "",
-                  "description": "Minimum ride distance in km",
+                  "description": "Minimum ride distance in km.",
                   "disabled": true
                 },
                 {
                   "key": "max_distance_km",
                   "value": "",
-                  "description": "Maximum ride distance in km",
+                  "description": "Maximum ride distance in km.",
                   "disabled": true
                 },
                 {
                   "key": "min_quality",
                   "value": "",
-                  "description": "Minimum average road quality (0..5)",
+                  "description": "Minimum average road quality (0..5).",
+                  "disabled": true
+                },
+                {
+                  "key": "min_curviness",
+                  "value": "",
+                  "description": "Minimum length-weighted curviness. Rides without a computed `avg_curviness` are excluded when this filter is set — \"no value\" is not \"low value\", and silently including them would contaminate \"curvy rides\" results.",
+                  "disabled": true
+                },
+                {
+                  "key": "max_curviness",
+                  "value": "",
+                  "description": "Maximum length-weighted curviness.",
                   "disabled": true
                 },
                 {
                   "key": "ride_type",
                   "value": "",
-                  "description": "free | commute | trip | tracked",
+                  "description": "Restrict results to a single ride type.",
                   "disabled": true
                 },
                 {
                   "key": "sort",
                   "value": "",
-                  "description": "newest (default) | oldest | longest | shortest | highest_quality | nearest",
+                  "description": "Sort order. `nearest` requires `lat`/`lng` (enforced above) — requests without a centre are rejected with 400 rather than silently re-sorted.",
                   "disabled": true
                 },
                 {
                   "key": "limit",
                   "value": "",
-                  "description": "Page size (default 20, max 50)",
+                  "description": "",
                   "disabled": true
                 },
                 {
                   "key": "offset",
                   "value": "",
-                  "description": "Pagination offset (default 0)",
+                  "description": "",
                   "disabled": true
                 }
               ]
@@ -2127,6 +2139,190 @@
                   "value": "",
                   "description": "Max number of matches to return.",
                   "disabled": true
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "closures",
+      "item": [
+        {
+          "name": "List road closures",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/closures",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "closures"],
+              "query": [
+                {
+                  "key": "bbox",
+                  "value": "",
+                  "description": "Bounding box filter \"minLng,minLat,maxLng,maxLat\". Omit to list all.",
+                  "disabled": true
+                },
+                {
+                  "key": "active_on",
+                  "value": "",
+                  "description": "ISO 8601 instant. Only closures active on this instant are returned. Defaults to now.",
+                  "disabled": true
+                },
+                {
+                  "key": "severity",
+                  "value": "",
+                  "description": "Filter by severity.",
+                  "disabled": true
+                },
+                {
+                  "key": "reason",
+                  "value": "",
+                  "description": "Filter by reason.",
+                  "disabled": true
+                },
+                {
+                  "key": "include_past",
+                  "value": "",
+                  "description": "When true, ignore `active_on` and return all closures regardless of window.",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create a road closure",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/closures",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "closures"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"\",\n  \"reason\": \"closure\",\n  \"severity\": \"advisory\",\n  \"geometry\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ],\n  \"detour\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ],\n  \"country_code\": \"\",\n  \"region\": \"\",\n  \"starts_at\": \"\",\n  \"ends_at\": \"\",\n  \"notes\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Check which road closures a planned route crosses",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/closures/check-route",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "closures", "check-route"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ],\n  \"buffer_m\": 0,\n  \"active_on\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Get a single road closure by id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/closures/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "closures", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update a road closure",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/closures/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "closures", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"\",\n  \"reason\": \"closure\",\n  \"severity\": \"advisory\",\n  \"geometry\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ],\n  \"detour\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ],\n  \"country_code\": \"\",\n  \"region\": \"\",\n  \"starts_at\": \"\",\n  \"ends_at\": \"\",\n  \"notes\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Delete a road closure",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/closures/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "closures", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
                 }
               ]
             }

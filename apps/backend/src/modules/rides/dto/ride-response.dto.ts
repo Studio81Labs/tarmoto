@@ -24,6 +24,13 @@ export class RideResponseDto {
 
   @ApiProperty({ nullable: true })
   avg_road_quality!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Length-weighted average `curviness_score` of the road segments this ride crossed. `null` when no segments are snapped yet.',
+  })
+  avg_curviness!: number | null;
 }
 
 export class RideSummaryDto extends RideResponseDto {

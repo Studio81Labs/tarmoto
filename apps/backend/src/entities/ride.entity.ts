@@ -51,6 +51,9 @@ export class Ride {
   @Column({ type: 'float', nullable: true })
   avg_road_quality!: number | null;
 
+  @Column({ type: 'float', nullable: true })
+  avg_curviness!: number | null;
+
   @Column({ type: 'varchar', length: 20, default: 'free' })
   ride_type!: string;
 

@@ -51,6 +51,10 @@ describe('RidesService', () => {
         .fn()
         .mockImplementation((data) => ({ ...mockRide, ...data })),
       save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
+      // Default: no segments → aggregate is null. Individual tests
+      // override this when they want to exercise a concrete value.
+      query: jest.fn().mockResolvedValue([{ weighted_avg: null }]),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
       createQueryBuilder: jest.fn().mockReturnValue({
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
@@ -138,6 +142,51 @@ describe('RidesService', () => {
       await expect(service.stop('user-1', 'ride-1')).rejects.toThrow(
         BadRequestException,
       );
+    });
+
+    it('recomputes avg_curviness and writes it back to the ride on stop', async () => {
+      rideRepo.findOne!.mockResolvedValueOnce({ ...mockRide });
+      rideRepo.query!.mockResolvedValueOnce([{ weighted_avg: 3.4 }]);
+
+      const result = await service.stop('user-1', 'ride-1');
+
+      expect(rideRepo.query).toHaveBeenCalledWith(
+        expect.stringContaining('curviness_score * rs.length_m'),
+        ['ride-1'],
+      );
+      expect(rideRepo.update).toHaveBeenCalledWith(
+        { id: 'ride-1' },
+        { avg_curviness: 3.4 },
+      );
+      expect(result.avg_curviness).toBe(3.4);
+    });
+
+    it('leaves avg_curviness null when no ride_segments exist yet', async () => {
+      rideRepo.findOne!.mockResolvedValueOnce({ ...mockRide });
+      // Empty result set — the ride has no snapped segments at all, so
+      // the SELECT returns a single row with `weighted_avg = null`.
+      rideRepo.query!.mockResolvedValueOnce([{ weighted_avg: null }]);
+
+      const result = await service.stop('user-1', 'ride-1');
+
+      expect(rideRepo.update).toHaveBeenCalledWith(
+        { id: 'ride-1' },
+        { avg_curviness: null },
+      );
+      expect(result.avg_curviness).toBeNull();
+    });
+
+    it('coerces string numerics from pg back to float', async () => {
+      rideRepo.findOne!.mockResolvedValueOnce({ ...mockRide });
+      rideRepo.query!.mockResolvedValueOnce([{ weighted_avg: '2.75' }]);
+
+      const result = await service.stop('user-1', 'ride-1');
+
+      expect(rideRepo.update).toHaveBeenCalledWith(
+        { id: 'ride-1' },
+        { avg_curviness: 2.75 },
+      );
+      expect(result.avg_curviness).toBe(2.75);
     });
   });
 
