@@ -68,9 +68,14 @@ export class OverpassPoiProvider implements PoiProvider {
     lat: number,
     lng: number,
     radiusKm: number,
+    kinds: AccommodationKind[],
   ): Promise<AccommodationPoi[]> {
+    if (kinds.length === 0) return [];
     const radiusM = Math.round(radiusKm * 1000);
-    const tourismFilter = ACCOMMODATION_KINDS.join('|');
+    // Dedup defensively — the service layer already does it, but the
+    // Overpass regex rejects duplicate alternatives, so a caller that
+    // short-circuits the service would otherwise fail the upstream query.
+    const tourismFilter = Array.from(new Set(kinds)).join('|');
     // Overpass QL: search nodes + ways + relations so we pick up both
     // single-point POIs (common for camp sites) and building-shaped hotels.
     const query =
@@ -84,9 +89,10 @@ export class OverpassPoiProvider implements PoiProvider {
 
     const data = await this.runQuery(query);
     const pois: AccommodationPoi[] = [];
+    const requested = new Set<AccommodationKind>(kinds);
     for (const element of data.elements ?? []) {
       const poi = this.normalizeAccommodation(element);
-      if (poi) pois.push(poi);
+      if (poi && requested.has(poi.kind)) pois.push(poi);
     }
     return pois;
   }

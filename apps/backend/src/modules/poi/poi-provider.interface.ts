@@ -39,14 +39,19 @@ export interface PointOfInterest {
  */
 export interface PoiProvider {
   /**
-   * Find accommodations within `radiusKm` of a point.
-   * Implementations should fail fast and leave filtering/sorting to the
-   * service layer so different providers stay interchangeable.
+   * Find accommodations within `radiusKm` of a point. `kinds` selects
+   * which subset of the tourism tag to fetch; implementations
+   * short-circuit to `[]` on an empty array, but the service layer
+   * normally substitutes the default so callers don't have to.
+   * Implementations should fail fast and leave further filtering /
+   * sorting (star rating, distance) to the service layer so different
+   * providers stay interchangeable.
    */
   findAccommodations(
     lat: number,
     lng: number,
     radiusKm: number,
+    kinds: AccommodationKind[],
   ): Promise<AccommodationPoi[]>;
 
   /**

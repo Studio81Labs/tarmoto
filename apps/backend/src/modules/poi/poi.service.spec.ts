@@ -8,6 +8,7 @@ import {
   type PointOfInterest,
 } from './poi-provider.interface.js';
 import type { PoiKind } from './dto/point-of-interest.dto.js';
+import type { AccommodationKind } from './dto/accommodation.dto.js';
 
 describe('PoiService', () => {
   let service: PoiService;
@@ -57,7 +58,7 @@ describe('PoiService', () => {
   });
 
   describe('findAccommodationsNear', () => {
-    it('uses the default radius when none is supplied', async () => {
+    it('uses the default radius + all kinds when none are supplied', async () => {
       provider.findAccommodations.mockResolvedValue([]);
 
       const result = await service.findAccommodationsNear(
@@ -69,9 +70,29 @@ describe('PoiService', () => {
         anchor.lat,
         anchor.lng,
         5,
+        expect.arrayContaining<AccommodationKind>([
+          'hotel',
+          'motel',
+          'hostel',
+          'guest_house',
+          'apartment',
+          'chalet',
+          'camp_site',
+        ]),
       );
       expect(result.radius_km).toBe(5);
       expect(result.accommodations).toEqual([]);
+      expect(result.kinds).toEqual(
+        expect.arrayContaining<AccommodationKind>([
+          'hotel',
+          'motel',
+          'hostel',
+          'guest_house',
+          'apartment',
+          'chalet',
+          'camp_site',
+        ]),
+      );
     });
 
     it('caps radius at 25 km', async () => {
@@ -87,6 +108,7 @@ describe('PoiService', () => {
         anchor.lat,
         anchor.lng,
         25,
+        expect.any(Array),
       );
       expect(result.radius_km).toBe(25);
     });
@@ -113,6 +135,102 @@ describe('PoiService', () => {
 
       expect(result.accommodations).toEqual([]);
       expect(result.radius_km).toBe(5);
+    });
+
+    it('forwards an explicit kinds filter to the provider', async () => {
+      provider.findAccommodations.mockResolvedValue([]);
+
+      const result = await service.findAccommodationsNear(
+        anchor.lat,
+        anchor.lng,
+        7,
+        ['hotel', 'camp_site'],
+      );
+
+      expect(provider.findAccommodations).toHaveBeenCalledWith(
+        anchor.lat,
+        anchor.lng,
+        7,
+        ['hotel', 'camp_site'],
+      );
+      expect(result.kinds).toEqual(['hotel', 'camp_site']);
+    });
+
+    it('deduplicates repeated kinds before hitting the provider', async () => {
+      provider.findAccommodations.mockResolvedValue([]);
+
+      await service.findAccommodationsNear(anchor.lat, anchor.lng, undefined, [
+        'hotel',
+        'hotel',
+        'motel',
+      ]);
+
+      expect(provider.findAccommodations).toHaveBeenCalledWith(
+        anchor.lat,
+        anchor.lng,
+        5,
+        ['hotel', 'motel'],
+      );
+    });
+
+    it('filters provider results by min_stars and drops unrated entries', async () => {
+      // Ratings range across "null" (no tag), 2, 4, 5. Rider asks for
+      // ≥ 4 — the unrated entry must be dropped rather than optimistically
+      // kept, otherwise "3★-and-up" silently includes the long tail of
+      // untagged rows and the filter is meaningless.
+      provider.findAccommodations.mockResolvedValue([
+        buildPoi({
+          external_id: 'osm:node:unrated',
+          name: 'Unrated',
+          stars: null,
+        }),
+        buildPoi({ external_id: 'osm:node:2star', name: '2-star', stars: 2 }),
+        buildPoi({ external_id: 'osm:node:4star', name: '4-star', stars: 4 }),
+        buildPoi({ external_id: 'osm:node:5star', name: '5-star', stars: 5 }),
+      ]);
+
+      const result = await service.findAccommodationsNear(
+        anchor.lat,
+        anchor.lng,
+        undefined,
+        undefined,
+        4,
+      );
+
+      expect(result.accommodations.map((a) => a.external_id).sort()).toEqual([
+        'osm:node:4star',
+        'osm:node:5star',
+      ]);
+    });
+
+    it('filters out kinds the provider returned that the rider did not request', async () => {
+      // Belt-and-suspenders: even if a provider ignores the kinds filter
+      // (a stubbed provider, a misbehaving one), the service still drops
+      // off-kind rows so the contract with the client stays "you only
+      // get what you asked for".
+      provider.findAccommodations.mockResolvedValue([
+        buildPoi({
+          external_id: 'osm:node:hotel',
+          kind: 'hotel',
+          name: 'Hotel',
+        }),
+        buildPoi({
+          external_id: 'osm:node:camp',
+          kind: 'camp_site',
+          name: 'Camp',
+        }),
+      ]);
+
+      const result = await service.findAccommodationsNear(
+        anchor.lat,
+        anchor.lng,
+        undefined,
+        ['hotel'],
+      );
+
+      expect(result.accommodations.map((a) => a.external_id)).toEqual([
+        'osm:node:hotel',
+      ]);
     });
 
     it('returns normalized and distance-sorted results', async () => {
