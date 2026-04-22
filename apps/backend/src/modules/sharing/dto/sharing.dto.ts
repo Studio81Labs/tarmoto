@@ -1,6 +1,17 @@
-import { IsBoolean, IsOptional, IsNumber, Min, Max } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsLatitude,
+  IsLongitude,
+  IsNumber,
+  IsOptional,
+  Max,
+  Min,
+  ValidateIf,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { RIDE_TYPES, type RideType } from '@tarmoto/shared';
 
 export class ToggleShareDto {
   @ApiProperty({ description: 'Whether the ride should be publicly visible' })
@@ -8,29 +19,112 @@ export class ToggleShareDto {
   is_public!: boolean;
 }
 
-export class CommunityRidesQueryDto {
-  @ApiProperty({ description: 'Latitude of search center' })
-  @IsNumber()
-  @Type(() => Number)
-  lat!: number;
+export const COMMUNITY_RIDE_SORT_VALUES = [
+  'newest',
+  'oldest',
+  'longest',
+  'shortest',
+  'highest_quality',
+  'nearest',
+] as const;
+export type CommunityRideSort = (typeof COMMUNITY_RIDE_SORT_VALUES)[number];
 
-  @ApiProperty({ description: 'Longitude of search center' })
-  @IsNumber()
+export class CommunityRidesQueryDto {
+  /**
+   * Latitude / longitude of the search centre. Optional — when both are
+   * omitted the feed is global, sorted by `sort` (default `newest`). When
+   * one is supplied the other is required so we never run a half-defined
+   * spatial query. Required when `sort = nearest`.
+   */
+  @ApiPropertyOptional({
+    description:
+      'Latitude of the search centre. Required when `lng` is set or when `sort = nearest`.',
+  })
+  @ValidateIf(
+    (o: CommunityRidesQueryDto) => o.lng !== undefined || o.sort === 'nearest',
+  )
+  @IsLatitude()
   @Type(() => Number)
-  lng!: number;
+  lat?: number;
 
   @ApiPropertyOptional({
-    description: 'Search radius in km',
+    description:
+      'Longitude of the search centre. Required when `lat` is set or when `sort = nearest`.',
+  })
+  @ValidateIf(
+    (o: CommunityRidesQueryDto) => o.lat !== undefined || o.sort === 'nearest',
+  )
+  @IsLongitude()
+  @Type(() => Number)
+  lng?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Search radius in km. Only applied when `lat` and `lng` are set.',
     default: 25,
     minimum: 1,
-    maximum: 100,
+    maximum: 500,
   })
   @IsOptional()
   @IsNumber()
   @Type(() => Number)
   @Min(1)
-  @Max(100)
+  @Max(500)
   radius_km?: number;
+
+  @ApiPropertyOptional({
+    description: 'Minimum ride distance in km.',
+    minimum: 0,
+    maximum: 10_000,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  @Min(0)
+  @Max(10_000)
+  min_distance_km?: number;
+
+  @ApiPropertyOptional({
+    description: 'Maximum ride distance in km.',
+    minimum: 0,
+    maximum: 10_000,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  @Min(0)
+  @Max(10_000)
+  max_distance_km?: number;
+
+  @ApiPropertyOptional({
+    description: 'Minimum average road quality (0..5).',
+    minimum: 0,
+    maximum: 5,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  @Min(0)
+  @Max(5)
+  min_quality?: number;
+
+  @ApiPropertyOptional({
+    description: 'Restrict results to a single ride type.',
+    enum: RIDE_TYPES,
+  })
+  @IsOptional()
+  @IsIn(RIDE_TYPES)
+  ride_type?: RideType;
+
+  @ApiPropertyOptional({
+    description:
+      'Sort order. `nearest` requires `lat`/`lng`; otherwise it falls back to `newest`.',
+    enum: COMMUNITY_RIDE_SORT_VALUES,
+    default: 'newest',
+  })
+  @IsOptional()
+  @IsIn(COMMUNITY_RIDE_SORT_VALUES)
+  sort?: CommunityRideSort;
 
   @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 50 })
   @IsOptional()
@@ -39,6 +133,14 @@ export class CommunityRidesQueryDto {
   @Min(1)
   @Max(50)
   limit?: number;
+
+  @ApiPropertyOptional({ default: 0, minimum: 0, maximum: 10_000 })
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  @Min(0)
+  @Max(10_000)
+  offset?: number;
 }
 
 export class SharedRideResponseDto {
@@ -114,4 +216,21 @@ export class CommunityRideDto {
 
   @ApiProperty({ nullable: true })
   duration_min!: number | null;
+}
+
+export class CommunityRidesResponseDto {
+  @ApiProperty({ type: [CommunityRideDto] })
+  items!: CommunityRideDto[];
+
+  @ApiProperty({
+    description:
+      'Total number of public rides matching the filter set (ignores limit/offset). Lets clients render "page X of N".',
+  })
+  total!: number;
+
+  @ApiProperty()
+  limit!: number;
+
+  @ApiProperty()
+  offset!: number;
 }

@@ -5,13 +5,16 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, SelectQueryBuilder } from 'typeorm';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
 import {
   SharedRideResponseDto,
   SharedRideDetailDto,
   CommunityRideDto,
+  CommunityRidesResponseDto,
+  CommunityRidesQueryDto,
+  type CommunityRideSort,
 } from './dto/sharing.dto.js';
 
 @Injectable()
@@ -83,31 +86,119 @@ export class SharingService {
     return this.toDetailResponse(shared);
   }
 
+  /**
+   * Browse the public community feed (US-53).
+   *
+   * Filters and pagination are all optional — the default is "newest 20
+   * public rides globally". When `lat`/`lng` are supplied the result set is
+   * narrowed to rides whose `route_geom` is within `radius_km` (default
+   * 25 km). When `sort = 'nearest'` the centre point is required and the
+   * result is ordered by distance from it.
+   *
+   * Returns the same `total` count for the filter regardless of `limit` /
+   * `offset` so the client can render "page X of N" cards.
+   */
   async listCommunityRides(
-    lat: number,
-    lng: number,
-    radiusKm: number,
-    limit: number,
-  ): Promise<CommunityRideDto[]> {
-    const radiusM = radiusKm * 1000;
+    query: CommunityRidesQueryDto,
+  ): Promise<CommunityRidesResponseDto> {
+    const limit = query.limit ?? 20;
+    const offset = query.offset ?? 0;
+    const sort: CommunityRideSort = query.sort ?? 'newest';
+    const radiusKm = query.radius_km ?? 25;
+    const hasCentre = query.lat !== undefined && query.lng !== undefined;
 
-    const results: Array<
-      SharedRide & { ride: Ride; user: { display_name: string } }
-    > = await this.sharedRideRepo
+    const qb = this.sharedRideRepo
       .createQueryBuilder('sr')
       .innerJoinAndSelect('sr.ride', 'ride')
       .innerJoinAndSelect('sr.user', 'user')
       .where('sr.is_public = true')
-      .andWhere('ride.route_geom IS NOT NULL')
-      .andWhere(
-        'ST_DWithin(ride.route_geom::geography, ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography, :radius)',
-        { lng, lat, radius: radiusM },
-      )
-      .orderBy('ride.started_at', 'DESC')
-      .limit(limit)
-      .getMany();
+      .andWhere('ride.route_geom IS NOT NULL');
 
-    return results.map((sr) => this.toCommunityDto(sr));
+    if (hasCentre) {
+      qb.andWhere(
+        'ST_DWithin(ride.route_geom::geography, ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography, :radius)',
+        { lng: query.lng, lat: query.lat, radius: radiusKm * 1000 },
+      );
+    }
+
+    if (query.min_distance_km !== undefined) {
+      qb.andWhere('ride.distance_km >= :min_distance', {
+        min_distance: query.min_distance_km,
+      });
+    }
+    if (query.max_distance_km !== undefined) {
+      qb.andWhere('ride.distance_km <= :max_distance', {
+        max_distance: query.max_distance_km,
+      });
+    }
+    if (query.min_quality !== undefined) {
+      qb.andWhere('ride.avg_road_quality >= :min_quality', {
+        min_quality: query.min_quality,
+      });
+    }
+    if (query.ride_type !== undefined) {
+      qb.andWhere('ride.ride_type = :ride_type', {
+        ride_type: query.ride_type,
+      });
+    }
+
+    this.applySort(qb, sort, hasCentre, query.lng, query.lat);
+
+    qb.skip(offset).take(limit);
+
+    const [rows, total] = await qb.getManyAndCount();
+
+    return {
+      items: rows.map((sr) =>
+        this.toCommunityDto(
+          sr as SharedRide & { ride: Ride; user: { display_name: string } },
+        ),
+      ),
+      total,
+      limit,
+      offset,
+    };
+  }
+
+  private applySort(
+    qb: SelectQueryBuilder<SharedRide>,
+    sort: CommunityRideSort,
+    hasCentre: boolean,
+    lng: number | undefined,
+    lat: number | undefined,
+  ): void {
+    switch (sort) {
+      case 'oldest':
+        qb.orderBy('ride.started_at', 'ASC');
+        break;
+      case 'longest':
+        // NULLS LAST so rides that haven't computed a distance yet sink to
+        // the bottom rather than masquerading as the longest.
+        qb.orderBy('ride.distance_km', 'DESC', 'NULLS LAST');
+        break;
+      case 'shortest':
+        qb.orderBy('ride.distance_km', 'ASC', 'NULLS LAST');
+        break;
+      case 'highest_quality':
+        qb.orderBy('ride.avg_road_quality', 'DESC', 'NULLS LAST');
+        break;
+      case 'nearest':
+        // Validated upstream by the DTO, but defend in depth: silently fall
+        // back to `newest` if the centre is missing so we don't issue an
+        // ST_Distance against null.
+        if (hasCentre) {
+          qb.orderBy(
+            'ST_Distance(ride.route_geom::geography, ST_SetSRID(ST_MakePoint(:sortLng, :sortLat), 4326)::geography)',
+            'ASC',
+          ).setParameters({ sortLng: lng, sortLat: lat });
+          break;
+        }
+        qb.orderBy('ride.started_at', 'DESC');
+        break;
+      case 'newest':
+      default:
+        qb.orderBy('ride.started_at', 'DESC');
+    }
   }
 
   private toShareResponse(shared: SharedRide): SharedRideResponseDto {

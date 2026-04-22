@@ -42,12 +42,19 @@ describe('SharingController', () => {
     duration_min: 90,
   };
 
+  const mockCommunityResponse = {
+    items: [mockCommunityRide],
+    total: 1,
+    limit: 20,
+    offset: 0,
+  };
+
   beforeEach(async () => {
     const mockService = {
       toggleShare: jest.fn().mockResolvedValue(mockShareResponse),
       unshare: jest.fn().mockResolvedValue(undefined),
       getByToken: jest.fn().mockResolvedValue(mockDetail),
-      listCommunityRides: jest.fn().mockResolvedValue([mockCommunityRide]),
+      listCommunityRides: jest.fn().mockResolvedValue(mockCommunityResponse),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -84,7 +91,7 @@ describe('SharingController', () => {
     expect(result.rider_name).toBe('John Rider');
   });
 
-  it('GET /rides/community should list nearby rides', async () => {
+  it('GET /rides/community should forward the full query through to the service', async () => {
     const result = await controller.listCommunityRides({
       lat: 49.2,
       lng: 16.6,
@@ -92,16 +99,42 @@ describe('SharingController', () => {
       limit: 20,
     });
 
-    expect(service.listCommunityRides).toHaveBeenCalledWith(49.2, 16.6, 25, 20);
-    expect(result).toHaveLength(1);
-  });
-
-  it('GET /rides/community should use defaults', async () => {
-    await controller.listCommunityRides({
+    expect(service.listCommunityRides).toHaveBeenCalledWith({
       lat: 49.2,
       lng: 16.6,
+      radius_km: 25,
+      limit: 20,
+    });
+    expect(result.items).toHaveLength(1);
+    expect(result.total).toBe(1);
+  });
+
+  it('GET /rides/community should accept an empty query (global feed)', async () => {
+    const result = await controller.listCommunityRides({});
+
+    expect(service.listCommunityRides).toHaveBeenCalledWith({});
+    expect(result.items).toHaveLength(1);
+  });
+
+  it('GET /rides/community should forward filter / sort / pagination params', async () => {
+    await controller.listCommunityRides({
+      min_distance_km: 50,
+      max_distance_km: 300,
+      min_quality: 3.5,
+      ride_type: 'trip',
+      sort: 'highest_quality',
+      offset: 40,
+      limit: 10,
     });
 
-    expect(service.listCommunityRides).toHaveBeenCalledWith(49.2, 16.6, 25, 20);
+    expect(service.listCommunityRides).toHaveBeenCalledWith({
+      min_distance_km: 50,
+      max_distance_km: 300,
+      min_quality: 3.5,
+      ride_type: 'trip',
+      sort: 'highest_quality',
+      offset: 40,
+      limit: 10,
+    });
   });
 });
