@@ -154,7 +154,7 @@ export function isSuggestionWaypointAdded(
   return day.waypoints.some((waypoint) => waypoint.id === id);
 }
 
-export function suggestionWaypointId(suggestion: StopSuggestion): string {
+function suggestionWaypointId(suggestion: StopSuggestion): string {
   const scope = "stars" in suggestion ? "accommodation" : suggestion.kind;
   return `suggestion-${scope}-${suggestion.external_id}`;
 }

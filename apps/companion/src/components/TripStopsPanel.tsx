@@ -54,6 +54,9 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
   const hydratePreferences = usePreferencesStore((s) => s.hydrate);
   const activeTrip = useTripStore((s) => s.activeTrip);
   const addWaypoint = useTripStore((s) => s.addWaypoint);
+  const insertWaypointBeforeEnd = useTripStore(
+    (s) => s.insertWaypointBeforeEnd,
+  );
   const { days, loading, error } = useTripStops(trip, {
     poiKinds,
     minAccommodationStars,
@@ -234,7 +237,10 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
                           addLabel={`Add ${poi.name ?? "suggestion"} to day ${day.dayNumber} itinerary`}
                           addedLabel={`Added ${poi.name ?? "suggestion"} to day ${day.dayNumber} itinerary`}
                           onAdd={() =>
-                            addWaypoint(dayIndex, buildSuggestionWaypoint(poi))
+                            insertWaypointBeforeEnd(
+                              dayIndex,
+                              buildSuggestionWaypoint(poi),
+                            )
                           }
                         />
                       );

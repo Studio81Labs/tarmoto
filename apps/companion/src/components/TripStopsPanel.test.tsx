@@ -158,6 +158,28 @@ describe("TripStopsPanel", () => {
     ).toBeDisabled();
   });
 
+  it("inserts route-side stops before the day end waypoint", async () => {
+    const activeTrip = useTripStore.getState().activeTrip;
+    render(<TripStopsPanel trip={activeTrip} />);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Add Shell Bormio to day 1 itinerary",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(useTripStore.getState().activeTrip?.days[0]?.waypoints).toEqual([
+        expect.objectContaining({ id: "start", type: "start" }),
+        expect.objectContaining({
+          id: "suggestion-fuel_station-fuel-1",
+          type: "fuel",
+        }),
+        expect.objectContaining({ id: "end", type: "end" }),
+      ]),
+    );
+  });
+
   it("refetches suggestions when riders narrow stay rating and poi types", async () => {
     const activeTrip = useTripStore.getState().activeTrip;
     render(<TripStopsPanel trip={activeTrip} />);
