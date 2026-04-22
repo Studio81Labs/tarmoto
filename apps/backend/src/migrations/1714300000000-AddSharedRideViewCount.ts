@@ -8,8 +8,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * so the sort can scan backwards without a full table sort once the feed
  * grows. `NULLS LAST` isn't needed — the column is NOT NULL.
  */
-export class AddSharedRideViewCount1714200000000 implements MigrationInterface {
-  name = 'AddSharedRideViewCount1714200000000';
+export class AddSharedRideViewCount1714300000000 implements MigrationInterface {
+  name = 'AddSharedRideViewCount1714300000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
