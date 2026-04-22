@@ -49,6 +49,20 @@ export class RoadClosure {
   @Column({ type: 'geometry', spatialFeatureType: 'LineString', srid: 4326 })
   geom!: GeoJSON.LineString;
 
+  /**
+   * Optional detour polyline surfaced when the planner map shows a
+   * roadworks closure. Only meaningful when `reason = 'roadworks'` — the
+   * service enforces that on write. Null for every other closure type
+   * and for roadworks where no detour has been captured.
+   */
+  @Column({
+    type: 'geometry',
+    spatialFeatureType: 'LineString',
+    srid: 4326,
+    nullable: true,
+  })
+  detour_geom!: GeoJSON.LineString | null;
+
   @Column({ type: 'varchar', length: 2 })
   country_code!: string;
 

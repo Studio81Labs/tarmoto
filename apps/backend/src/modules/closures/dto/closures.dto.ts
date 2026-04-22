@@ -68,6 +68,15 @@ export class RoadClosureDto {
   })
   geometry!: ClosurePointDto[];
 
+  @ApiProperty({
+    type: [ClosurePointDto],
+    nullable: true,
+    description:
+      'Optional detour polyline for roadworks. Null for closures ' +
+      'without a captured detour, and for every non-roadworks reason.',
+  })
+  detour!: ClosurePointDto[] | null;
+
   @ApiProperty({ description: 'ISO 3166-1 alpha-2 country code' })
   country_code!: string;
 
@@ -183,6 +192,21 @@ export class CreateClosureDto {
   @Type(() => ClosurePointDto)
   geometry!: ClosurePointDto[];
 
+  @ApiPropertyOptional({
+    type: [ClosurePointDto],
+    minItems: 2,
+    description:
+      'Optional detour polyline (2+ points). Only permitted when ' +
+      '`reason = "roadworks"` — the service rejects a detour on any ' +
+      'other reason.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(2)
+  @ValidateNested({ each: true })
+  @Type(() => ClosurePointDto)
+  detour?: ClosurePointDto[];
+
   @ApiProperty({ description: 'ISO 3166-1 alpha-2 country code' })
   @IsString()
   @Matches(/^[A-Za-z]{2}$/, {
@@ -239,6 +263,22 @@ export class UpdateClosureDto {
   @ValidateNested({ each: true })
   @Type(() => ClosurePointDto)
   geometry?: ClosurePointDto[];
+
+  @ApiPropertyOptional({
+    type: [ClosurePointDto],
+    minItems: 2,
+    nullable: true,
+    description:
+      'Optional detour polyline. Pass `null` explicitly to clear an ' +
+      'existing detour. When set, `reason` must be (or become) ' +
+      '"roadworks".',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(2)
+  @ValidateNested({ each: true })
+  @Type(() => ClosurePointDto)
+  detour?: ClosurePointDto[] | null;
 
   @ApiPropertyOptional()
   @IsOptional()
