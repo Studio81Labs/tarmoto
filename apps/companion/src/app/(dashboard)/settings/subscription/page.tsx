@@ -172,6 +172,7 @@ export default function SubscriptionPage() {
 
           {cancelDialogOpen ? (
             <RetentionDialog
+              planName={snapshot.currentPlan.name}
               renewalLabel={renewalLabel}
               manageUrl={snapshot.currentPlan.manageUrl}
               preview={snapshot.preview}
@@ -451,11 +452,13 @@ function CancelPlanCard({
 }
 
 function RetentionDialog({
+  planName,
   renewalLabel,
   manageUrl,
   preview,
   onClose,
 }: {
+  planName: string;
   renewalLabel: string;
   manageUrl: string | null;
   preview: boolean;
@@ -481,7 +484,7 @@ function RetentionDialog({
           </p>
           <p className="mt-1 text-sm text-slate-400">
             {renewalLabel}. Your shared rides and account settings stay intact,
-            while Premium-only perks switch off after the current cycle ends.
+            while {planName}-only perks switch off after the current cycle ends.
           </p>
         </div>
 
@@ -491,7 +494,7 @@ function RetentionDialog({
             onClick={onClose}
             className="rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-200 transition hover:bg-slate-800"
           >
-            Keep Premium
+            {`Keep ${planName}`}
           </button>
 
           {manageUrl ? (

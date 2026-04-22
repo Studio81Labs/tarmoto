@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import SubscriptionPage from "./page";
-import { accountApi } from "@/lib/api";
+import { ApiError, accountApi } from "@/lib/api";
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -81,7 +81,9 @@ describe("SubscriptionPage", () => {
   });
 
   it("falls back to a preview snapshot when the subscription endpoint is unavailable", async () => {
-    getSubscriptionMock.mockRejectedValueOnce(new Error("Not Found"));
+    getSubscriptionMock.mockRejectedValueOnce(
+      new ApiError("Not Found", 404, {}),
+    );
 
     render(<SubscriptionPage />);
 
@@ -94,13 +96,27 @@ describe("SubscriptionPage", () => {
     expect(screen.getByText("Visa ending in 4242")).toBeInTheDocument();
   });
 
-  it("opens a retention dialog from the cancel section", async () => {
+  it("shows an error state instead of preview data for non-404 failures", async () => {
+    getSubscriptionMock.mockRejectedValueOnce(new Error("Failed to fetch"));
+
+    render(<SubscriptionPage />);
+
+    expect(await screen.findByText("Failed to fetch")).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "Preview data shown while live billing management is still being wired up.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens a retention dialog with the active plan name", async () => {
     getSubscriptionMock.mockResolvedValueOnce({
       data: {
         current_plan: {
-          tier: "premium",
+          tier: "pro",
+          name: "Pro",
           status: "active",
-          price_label: "$29.99/yr",
+          price_label: "$49.99/yr",
           renews_at: "2026-11-15T00:00:00.000Z",
         },
         plans: [
@@ -146,7 +162,10 @@ describe("SubscriptionPage", () => {
       ),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Keep Premium" }),
+      screen.getByText(/while Pro-only perks switch off/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Keep Pro" }),
     ).toBeInTheDocument();
   });
 });

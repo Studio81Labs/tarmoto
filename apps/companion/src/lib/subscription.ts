@@ -1,3 +1,5 @@
+import { ApiError } from "@/lib/api";
+
 export type SubscriptionTier = "free" | "premium" | "pro";
 export type SubscriptionStatus =
   | "active"
@@ -171,9 +173,9 @@ export function normalizeSubscriptionSnapshot(
 }
 
 export function shouldUseSubscriptionPreview(error: unknown): boolean {
-  const message =
-    error instanceof Error ? error.message : String(error ?? "unknown");
-  return /404|not found|failed to fetch|load failed/i.test(message);
+  return (
+    (error instanceof ApiError ? error.status : getErrorStatus(error)) === 404
+  );
 }
 
 export function tierLabel(tier: SubscriptionTier): string {
@@ -379,8 +381,20 @@ function normalizeUrl(value: unknown): string | null {
   if (typeof value !== "string" || !value.trim()) return null;
   try {
     const url = new URL(value.trim());
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return null;
+    }
     return url.toString();
   } catch {
     return null;
   }
+}
+
+function getErrorStatus(error: unknown): number | null {
+  if (!error || typeof error !== "object" || !("status" in error)) {
+    return null;
+  }
+
+  const status = error.status;
+  return typeof status === "number" && Number.isFinite(status) ? status : null;
 }
