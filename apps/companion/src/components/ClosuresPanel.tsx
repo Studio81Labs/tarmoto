@@ -54,6 +54,8 @@ export function ClosuresPanel({ month, routes }: ClosuresPanelProps) {
     day: "numeric",
     timeZone: "UTC",
   }).format(previewDate);
+  const hasRouteClosures = routeCounts.total > 0;
+  const hasRouteFailure = Boolean(routeError);
 
   return (
     <div className="space-y-3 pt-2 border-t border-slate-800">
@@ -76,27 +78,30 @@ export function ClosuresPanel({ month, routes }: ClosuresPanelProps) {
           <p className="text-xs text-slate-500">
             Import or generate a route to check crossings.
           </p>
-        ) : routeError ? (
-          <p className="text-xs text-rose-400">{routeError}</p>
         ) : routeLoading ? (
           <p className="text-xs text-slate-500">Checking route crossings…</p>
-        ) : routeCounts.total === 0 ? (
-          <p className="text-xs text-emerald-400">
-            No active closures intersect the current trip.
-          </p>
-        ) : (
+        ) : hasRouteClosures ? (
           <>
             <p className="text-xs text-slate-300">
               Current trip crosses {routeCounts.total} active{" "}
               {routeCounts.total === 1 ? "closure" : "closures"}.
             </p>
+            {hasRouteFailure && (
+              <p className="text-xs text-amber-300">{routeError}</p>
+            )}
             <ul className="space-y-2">
               {routeClosures.slice(0, 3).map((closure) => (
                 <ClosureRow key={closure.id} closure={closure} compact />
               ))}
             </ul>
           </>
-        )}
+        ) : hasRouteFailure ? (
+          <p className="text-xs text-rose-400">{routeError}</p>
+        ) : routeCounts.total === 0 ? (
+          <p className="text-xs text-emerald-400">
+            No active closures intersect the current trip.
+          </p>
+        ) : null}
       </div>
 
       {error ? (

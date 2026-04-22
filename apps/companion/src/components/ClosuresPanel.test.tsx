@@ -104,4 +104,44 @@ describe("ClosuresPanel", () => {
     expect(screen.getByText("1 full")).toBeInTheDocument();
     expect(screen.getByText("1 partial")).toBeInTheDocument();
   });
+
+  it("keeps detected route closures visible when some route checks fail", () => {
+    useClosuresMock.mockReturnValue({
+      closures: [],
+      routeClosures: [
+        closure({ id: "closure-1", severity: "full", title: "Rockfall" }),
+      ],
+      counts: { full: 0, partial: 0, advisory: 0, total: 0 },
+      routeCounts: { full: 1, partial: 0, advisory: 0, total: 1 },
+      loading: false,
+      routeLoading: false,
+      error: null,
+      routeError: "Some route segments could not be checked.",
+      previewDate: new Date("2026-07-15T12:00:00Z"),
+    });
+
+    render(
+      <ClosuresPanel
+        month={7}
+        routes={[
+          {
+            id: "day-1",
+            label: "Day 1 · Stelvio",
+            points: [
+              { lat: 46.53, lng: 10.45 },
+              { lat: 46.54, lng: 10.46 },
+            ],
+          },
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByText("Current trip crosses 1 active closure."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Some route segments could not be checked."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Rockfall")).toBeInTheDocument();
+  });
 });
