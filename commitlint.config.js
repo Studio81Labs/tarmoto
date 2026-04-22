@@ -1,6 +1,6 @@
-// Enforces conventional commits on every commit (via husky commit-msg).
-// Matches the types and scopes enforced by .github/workflows/lint-pr.yml
-// and documented in CONTRIBUTING.md / AGENTS.md.
+// Enforces conventional commits on every local commit (via husky commit-msg).
+// Shares the same scope vocabulary as .github/workflows/lint-pr.yml and the
+// contributor docs, while also requiring a scope locally.
 module.exports = {
   extends: ["@commitlint/config-conventional"],
   rules: {
