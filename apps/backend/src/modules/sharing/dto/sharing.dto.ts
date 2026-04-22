@@ -240,7 +240,13 @@ export class CommunityRideDto {
   share_token!: string;
 
   @ApiProperty()
+  rider_id!: string;
+
+  @ApiProperty()
   rider_name!: string;
+
+  @ApiProperty({ nullable: true })
+  rider_avatar_url!: string | null;
 
   @ApiProperty()
   ride_type!: string;
@@ -272,6 +278,14 @@ export class CommunityRideDto {
       'Number of times this shared ride has been viewed via its token. Drives the `most_popular` sort.',
   })
   view_count!: number;
+
+  @ApiProperty({
+    nullable: true,
+    type: [Object],
+    description:
+      'Polyline used for feed-card mini-previews. Null when the ride has no stored route geometry.',
+  })
+  route_geometry!: Array<{ lat: number; lng: number }> | null;
 }
 
 export class CommunityRidesResponseDto {

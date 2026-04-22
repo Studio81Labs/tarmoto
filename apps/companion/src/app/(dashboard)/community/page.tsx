@@ -1,59 +1,252 @@
 "use client";
 
-import { useState } from 'react';
-import { Users, Search, TrendingUp, Clock, MapPin } from 'lucide-react';
+import { useEffect, useMemo, useState } from "react";
+import { Loader2, Users } from "lucide-react";
+import { RIDE_TYPES } from "@tarmoto/shared";
+import {
+  communityApi,
+  type CommunityRide,
+  type CommunityRideQuery,
+  type CommunityRideSort,
+} from "@/lib/api";
+import { CommunityRideCard } from "@/components/community/CommunityRideCard";
 
-/**
- * CommunityFeedPage — Browse shared routes and rides
- *
- * TODO: Fetch /community/feed from API
- * TODO: Route/ride cards with mini-map preview
- * TODO: Filter by region, distance, curviness, quality, popularity
- * TODO: Sort by newest, most popular, highest rated, nearest
- */
+const PAGE_SIZE = 9;
+
+const SORT_OPTIONS: Array<{ value: CommunityRideSort; label: string }> = [
+  { value: "most_popular", label: "Most popular" },
+  { value: "newest", label: "Newest" },
+  { value: "highest_quality", label: "Highest quality" },
+  { value: "curviest", label: "Curviest" },
+  { value: "longest", label: "Longest" },
+];
 
 export default function CommunityFeedPage() {
-  const [sort, setSort] = useState<'newest' | 'popular' | 'rated' | 'nearest'>('popular');
+  const [sort, setSort] = useState<CommunityRideSort>("most_popular");
+  const [rideType, setRideType] = useState("all");
+  const [minQuality, setMinQuality] = useState("all");
+  const [minCurviness, setMinCurviness] = useState("all");
+  const [offset, setOffset] = useState(0);
+  const [items, setItems] = useState<CommunityRide[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const query = useMemo<CommunityRideQuery>(() => {
+    const next: CommunityRideQuery = {
+      sort,
+      limit: PAGE_SIZE,
+      offset,
+    };
+    if (rideType !== "all") next.ride_type = rideType;
+    if (minQuality !== "all") next.min_quality = Number(minQuality);
+    if (minCurviness !== "all") next.min_curviness = Number(minCurviness);
+    return next;
+  }, [sort, offset, rideType, minQuality, minCurviness]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    communityApi
+      .list(query)
+      .then(({ data }) => {
+        if (cancelled) return;
+        setItems(data.items);
+        setTotal(data.total);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setItems([]);
+        setTotal(0);
+        setError(err instanceof Error ? err.message : "Could not load rides.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [query]);
+
+  const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
+  const pageCount = Math.max(Math.ceil(total / PAGE_SIZE), 1);
 
   return (
-    <div className="p-6 max-w-6xl mx-auto animate-fade-in">
-      <h1 className="text-2xl font-bold mb-6">Community</h1>
+    <div className="mx-auto max-w-7xl animate-fade-in p-6">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Community</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            {total === 1
+              ? "1 ride found"
+              : `${total.toLocaleString()} rides found`}
+          </p>
+        </div>
 
-      {/* Filters */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="relative flex-1 max-w-sm">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-          <input
-            type="text"
-            placeholder="Search routes, riders, regions..."
-            className="w-full pl-9 pr-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan transition"
-          />
-        </div>
-        <div className="flex items-center gap-1">
-          {([
-            { key: 'popular', icon: TrendingUp, label: 'Popular' },
-            { key: 'newest', icon: Clock, label: 'Newest' },
-            { key: 'nearest', icon: MapPin, label: 'Nearest' },
-          ] as const).map((opt) => (
-            <button
-              key={opt.key}
-              onClick={() => setSort(opt.key)}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm transition ${
-                sort === opt.key ? 'bg-tarmoto-cyan/10 text-tarmoto-cyan' : 'text-slate-400 hover:bg-slate-800'
-              }`}
-            >
-              <opt.icon size={14} /> {opt.label}
-            </button>
-          ))}
-        </div>
+        <p className="text-sm text-slate-500">
+          Explore popular shared rides and discover routes worth repeating.
+        </p>
       </div>
 
-      {/* Empty state */}
-      <div className="rounded-2xl bg-slate-900 border border-slate-800 p-16 text-center">
-        <Users size={48} className="mx-auto text-slate-600 mb-4" />
-        <p className="text-slate-400 text-lg mb-2">Community is growing</p>
-        <p className="text-slate-500 text-sm">Shared routes and rides from the community will appear here.</p>
+      <div className="mb-6 grid gap-3 rounded-2xl border border-slate-800 bg-slate-900/80 p-4 md:grid-cols-4">
+        <FilterSelect
+          id="sort-feed"
+          label="Sort feed"
+          value={sort}
+          onChange={(value) => {
+            setSort(value as CommunityRideSort);
+            setOffset(0);
+          }}
+          options={SORT_OPTIONS}
+        />
+
+        <FilterSelect
+          id="ride-type"
+          label="Ride type"
+          value={rideType}
+          onChange={(value) => {
+            setRideType(value);
+            setOffset(0);
+          }}
+          options={[
+            { value: "all", label: "All rides" },
+            ...RIDE_TYPES.map((type) => ({
+              value: type,
+              label: type.charAt(0).toUpperCase() + type.slice(1),
+            })),
+          ]}
+        />
+
+        <FilterSelect
+          id="min-quality"
+          label="Minimum quality"
+          value={minQuality}
+          onChange={(value) => {
+            setMinQuality(value);
+            setOffset(0);
+          }}
+          options={[
+            { value: "all", label: "Any condition" },
+            { value: "3", label: "3.0+/5" },
+            { value: "4", label: "4.0+/5" },
+          ]}
+        />
+
+        <FilterSelect
+          id="min-curviness"
+          label="Minimum curviness"
+          value={minCurviness}
+          onChange={(value) => {
+            setMinCurviness(value);
+            setOffset(0);
+          }}
+          options={[
+            { value: "all", label: "Any road" },
+            { value: "4", label: "4.0+" },
+            { value: "6", label: "6.0+" },
+          ]}
+        />
       </div>
+
+      {error ? (
+        <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-300">
+          {error}
+        </div>
+      ) : loading ? (
+        <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900 p-4 text-sm text-slate-400">
+          <Loader2 size={16} className="animate-spin" />
+          Loading community rides…
+        </div>
+      ) : items.length === 0 ? (
+        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-16 text-center">
+          <Users size={48} className="mx-auto mb-4 text-slate-600" />
+          <p className="mb-2 text-lg text-slate-300">
+            No rides match these filters
+          </p>
+          <p className="text-sm text-slate-500">
+            Try broadening the feed or switching back to the most popular rides.
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {items.map((ride) => (
+              <CommunityRideCard key={ride.id} ride={ride} />
+            ))}
+          </div>
+
+          <div className="mt-6 flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
+            <p className="text-sm text-slate-400">
+              Page {currentPage} of {pageCount}
+            </p>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setOffset((current) => Math.max(current - PAGE_SIZE, 0))
+                }
+                disabled={offset === 0}
+                className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setOffset((current) =>
+                    current + PAGE_SIZE >= total
+                      ? current
+                      : current + PAGE_SIZE,
+                  )
+                }
+                disabled={offset + PAGE_SIZE >= total}
+                className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function FilterSelect({
+  id,
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; label: string }>;
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className="mb-1 block text-xs text-slate-500">
+        {label}
+      </label>
+      <select
+        id={id}
+        aria-label={label}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white transition focus:border-tarmoto-cyan focus:outline-none"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
