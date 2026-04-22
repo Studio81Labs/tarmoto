@@ -6,12 +6,21 @@ import { roadsApi, type RoadReview } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/utils";
 
 export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
+  const canLoadReviews = isUuid(segmentId);
   const [reviews, setReviews] = useState<RoadReview[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(canLoadReviews);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!canLoadReviews) {
+      setReviews([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
     let cancelled = false;
+    setReviews([]);
     setLoading(true);
     setError(null);
 
@@ -35,7 +44,7 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [segmentId]);
+  }, [canLoadReviews, segmentId]);
 
   const averageRating = useMemo(() => {
     if (reviews.length === 0) return null;
@@ -58,18 +67,25 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
           <p className="text-[11px] uppercase tracking-wider text-slate-500">
             Road reviews
           </p>
-          <p className="text-sm text-slate-300">
-            {reviews.length === 1 ? "1 review" : `${reviews.length} reviews`}
-          </p>
+          {!loading && canLoadReviews && (
+            <p className="text-sm text-slate-300">
+              {reviews.length === 1 ? "1 review" : `${reviews.length} reviews`}
+            </p>
+          )}
         </div>
-        {averageRating != null && (
+        {!loading && averageRating != null && (
           <p className="text-sm font-medium text-amber-300">
             {averageRating.toFixed(1)} ★ average
           </p>
         )}
       </div>
 
-      {loading ? (
+      {!canLoadReviews ? (
+        <div className="rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-4 text-xs text-slate-500">
+          Community reviews become available when this segment maps to a saved
+          Tarmoto road.
+        </div>
+      ) : loading ? (
         <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs text-slate-400">
           <Loader2 size={14} className="animate-spin" />
           Loading reviews…
@@ -259,4 +275,10 @@ function applyVoteDelta(
     not_helpful_count: notHelpful,
     my_vote: nextVote,
   };
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
 }

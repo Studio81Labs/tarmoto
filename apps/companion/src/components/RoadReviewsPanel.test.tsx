@@ -33,6 +33,8 @@ describe("RoadReviewsPanel", () => {
   const getReviewsMock = vi.mocked(roadsApi.getReviews);
   const voteOnReviewMock = vi.mocked(roadsApi.voteOnReview);
   const clearReviewVoteMock = vi.mocked(roadsApi.clearReviewVote);
+  const firstSegmentId = "11111111-1111-4111-8111-111111111111";
+  const secondSegmentId = "22222222-2222-4222-8222-222222222222";
 
   beforeEach(() => {
     getReviewsMock.mockReset();
@@ -53,12 +55,12 @@ describe("RoadReviewsPanel", () => {
       ],
     });
 
-    render(<RoadReviewsPanel segmentId="segment-1" />);
+    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
 
     expect(screen.getByText("Loading reviews…")).toBeInTheDocument();
 
     await waitFor(() =>
-      expect(getReviewsMock).toHaveBeenCalledWith("segment-1"),
+      expect(getReviewsMock).toHaveBeenCalledWith(firstSegmentId),
     );
 
     expect(await screen.findByText("John Rider")).toBeInTheDocument();
@@ -79,7 +81,7 @@ describe("RoadReviewsPanel", () => {
       },
     });
 
-    render(<RoadReviewsPanel segmentId="segment-1" />);
+    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
 
     await screen.findByText("John Rider");
 
@@ -92,5 +94,46 @@ describe("RoadReviewsPanel", () => {
     );
 
     expect(await screen.findByText("4")).toBeInTheDocument();
+  });
+
+  it("does not fetch reviews for synthetic planner segment ids", () => {
+    render(<RoadReviewsPanel segmentId="seg-1-1" />);
+
+    expect(getReviewsMock).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(
+        "Community reviews become available when this segment maps to a saved Tarmoto road.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("hides stale review summary while a new segment is loading", async () => {
+    let resolveNext: ((value: { data: RoadReview[] }) => void) | null = null;
+
+    getReviewsMock
+      .mockResolvedValueOnce({
+        data: [review({ id: "review-1", rating: 5 })],
+      })
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ data: RoadReview[] }>((resolve) => {
+            resolveNext = resolve;
+          }),
+      );
+
+    const { rerender } = render(
+      <RoadReviewsPanel segmentId={firstSegmentId} />,
+    );
+
+    await screen.findByText("1 review");
+    expect(screen.getByText("5.0 ★ average")).toBeInTheDocument();
+
+    rerender(<RoadReviewsPanel segmentId={secondSegmentId} />);
+
+    expect(screen.getByText("Loading reviews…")).toBeInTheDocument();
+    expect(screen.queryByText("1 review")).not.toBeInTheDocument();
+    expect(screen.queryByText("5.0 ★ average")).not.toBeInTheDocument();
+
+    resolveNext?.({ data: [] });
   });
 });
