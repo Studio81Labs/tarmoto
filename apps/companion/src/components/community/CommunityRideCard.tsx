@@ -131,17 +131,15 @@ function StatTile({
   value: string;
   accentClassName?: string;
 }) {
+  const valueClassName = accentClassName ?? "text-white";
+
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
       <div className="mb-2 flex items-center gap-1.5 text-xs text-slate-500">
         {icon}
         {label}
       </div>
-      <div
-        className={`text-sm font-semibold text-white ${accentClassName ?? ""}`}
-      >
-        {value}
-      </div>
+      <div className={`text-sm font-semibold ${valueClassName}`}>{value}</div>
     </div>
   );
 }

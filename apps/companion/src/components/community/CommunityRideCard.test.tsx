@@ -66,4 +66,12 @@ describe("CommunityRideCard", () => {
       "/community/rider%2Fwith%20spaces%3Fand%23hash",
     );
   });
+
+  it("prefers the quality accent color over the default white text class", () => {
+    render(<CommunityRideCard ride={ride()} />);
+
+    const qualityValue = screen.getByText("4.4/5");
+    expect(qualityValue.className).toMatch(/\btext-quality-/);
+    expect(qualityValue).not.toHaveClass("text-white");
+  });
 });
