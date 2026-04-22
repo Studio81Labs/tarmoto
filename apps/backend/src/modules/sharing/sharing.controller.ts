@@ -26,7 +26,7 @@ import {
   CommunityRidesQueryDto,
   SharedRideResponseDto,
   SharedRideDetailDto,
-  CommunityRideDto,
+  CommunityRidesResponseDto,
 } from './dto/sharing.dto.js';
 
 @ApiTags('sharing')
@@ -78,16 +78,18 @@ export class SharingController {
   }
 
   @Get('community')
-  @ApiOperation({ summary: 'Browse community rides nearby' })
-  @ApiResponse({ status: 200, type: [CommunityRideDto] })
+  @ApiOperation({
+    summary: 'Browse the public community ride feed',
+    description:
+      'Filter by region (`lat`/`lng`/`radius_km`), distance, road quality, ' +
+      'or ride type, and sort by newest / oldest / longest / shortest / ' +
+      'highest_quality / nearest. `lat`/`lng` are optional for a global feed; ' +
+      '`sort = nearest` requires them.',
+  })
+  @ApiResponse({ status: 200, type: CommunityRidesResponseDto })
   async listCommunityRides(
     @Query() query: CommunityRidesQueryDto,
-  ): Promise<CommunityRideDto[]> {
-    return this.sharingService.listCommunityRides(
-      query.lat,
-      query.lng,
-      query.radius_km ?? 25,
-      query.limit ?? 20,
-    );
+  ): Promise<CommunityRidesResponseDto> {
+    return this.sharingService.listCommunityRides(query);
   }
 }

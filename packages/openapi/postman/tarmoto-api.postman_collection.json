@@ -656,7 +656,7 @@
           }
         },
         {
-          "name": "Browse community rides nearby",
+          "name": "Browse the public community ride feed",
           "request": {
             "method": "GET",
             "header": [
@@ -673,25 +673,61 @@
                 {
                   "key": "lat",
                   "value": "",
-                  "description": "Latitude of search center",
-                  "disabled": false
+                  "description": "Latitude of the search centre. Required when lng is set or sort=nearest.",
+                  "disabled": true
                 },
                 {
                   "key": "lng",
                   "value": "",
-                  "description": "Longitude of search center",
-                  "disabled": false
+                  "description": "Longitude of the search centre. Required when lat is set or sort=nearest.",
+                  "disabled": true
                 },
                 {
                   "key": "radius_km",
                   "value": "",
-                  "description": "Search radius in km",
+                  "description": "Search radius in km (default 25). Only applied when lat/lng are set.",
+                  "disabled": true
+                },
+                {
+                  "key": "min_distance_km",
+                  "value": "",
+                  "description": "Minimum ride distance in km",
+                  "disabled": true
+                },
+                {
+                  "key": "max_distance_km",
+                  "value": "",
+                  "description": "Maximum ride distance in km",
+                  "disabled": true
+                },
+                {
+                  "key": "min_quality",
+                  "value": "",
+                  "description": "Minimum average road quality (0..5)",
+                  "disabled": true
+                },
+                {
+                  "key": "ride_type",
+                  "value": "",
+                  "description": "free | commute | trip | tracked",
+                  "disabled": true
+                },
+                {
+                  "key": "sort",
+                  "value": "",
+                  "description": "newest (default) | oldest | longest | shortest | highest_quality | nearest",
                   "disabled": true
                 },
                 {
                   "key": "limit",
                   "value": "",
-                  "description": "",
+                  "description": "Page size (default 20, max 50)",
+                  "disabled": true
+                },
+                {
+                  "key": "offset",
+                  "value": "",
+                  "description": "Pagination offset (default 0)",
                   "disabled": true
                 }
               ]

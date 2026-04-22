@@ -49,8 +49,11 @@ describe('SharingService', () => {
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
-    limit: jest.fn().mockReturnThis(),
-    getMany: jest.fn().mockResolvedValue([mockShared]),
+    addOrderBy: jest.fn().mockReturnThis(),
+    setParameters: jest.fn().mockReturnThis(),
+    skip: jest.fn().mockReturnThis(),
+    take: jest.fn().mockReturnThis(),
+    getManyAndCount: jest.fn().mockResolvedValue([[mockShared], 1]),
   };
 
   beforeEach(async () => {
@@ -228,8 +231,13 @@ describe('SharingService', () => {
   });
 
   describe('listCommunityRides', () => {
-    it('should query nearby public rides with spatial filter', async () => {
-      const result = await service.listCommunityRides(49.2, 16.6, 25, 20);
+    it('queries nearby public rides with the spatial filter when lat/lng are set', async () => {
+      const result = await service.listCommunityRides({
+        lat: 49.2,
+        lng: 16.6,
+        radius_km: 25,
+        limit: 20,
+      });
 
       expect(mockQueryBuilder.where).toHaveBeenCalledWith(
         'sr.is_public = true',
@@ -239,35 +247,182 @@ describe('SharingService', () => {
       );
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
         expect.stringContaining('ST_DWithin'),
-        { lng: 16.6, lat: 49.2, radius: 25000 },
+        { lng: 16.6, lat: 49.2, radius: 25_000 },
       );
-      expect(mockQueryBuilder.limit).toHaveBeenCalledWith(20);
-      expect(result).toHaveLength(1);
-      expect(result[0].rider_name).toBe('John Rider');
-      expect(result[0].share_token).toBe('abc123def456abc123def456abc12345');
+      expect(mockQueryBuilder.skip).toHaveBeenCalledWith(0);
+      expect(mockQueryBuilder.take).toHaveBeenCalledWith(20);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].rider_name).toBe('John Rider');
+      expect(result.items[0].share_token).toBe(
+        'abc123def456abc123def456abc12345',
+      );
+      expect(result.total).toBe(1);
+      expect(result.limit).toBe(20);
+      expect(result.offset).toBe(0);
     });
 
-    it('should return empty array when no rides nearby', async () => {
-      mockQueryBuilder.getMany.mockResolvedValueOnce([]);
+    it('returns an empty page when nothing matches', async () => {
+      mockQueryBuilder.getManyAndCount.mockResolvedValueOnce([[], 0]);
 
-      const result = await service.listCommunityRides(0, 0, 10, 20);
+      const result = await service.listCommunityRides({
+        lat: 0,
+        lng: 0,
+        radius_km: 10,
+      });
 
-      expect(result).toHaveLength(0);
+      expect(result.items).toHaveLength(0);
+      expect(result.total).toBe(0);
     });
 
-    it('should convert radius_km to meters', async () => {
-      await service.listCommunityRides(49.2, 16.6, 50, 10);
+    it('converts radius_km to meters in the spatial filter', async () => {
+      await service.listCommunityRides({ lat: 49.2, lng: 16.6, radius_km: 50 });
 
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
         expect.stringContaining('ST_DWithin'),
-        expect.objectContaining({ radius: 50000 }),
+        expect.objectContaining({ radius: 50_000 }),
       );
     });
 
-    it('should calculate duration_min correctly', async () => {
-      const result = await service.listCommunityRides(49.2, 16.6, 25, 20);
+    it('calculates duration_min on each card', async () => {
+      const result = await service.listCommunityRides({});
 
-      expect(result[0].duration_min).toBe(90);
+      expect(result.items[0].duration_min).toBe(90);
+    });
+
+    it('skips the spatial filter and the route_geom guard on the global feed', async () => {
+      await service.listCommunityRides({});
+
+      expect(mockQueryBuilder.andWhere).not.toHaveBeenCalledWith(
+        expect.stringContaining('ST_DWithin'),
+        expect.anything(),
+      );
+      // The global feed keeps rides without stored geometry so they can
+      // still appear as stats-only cards.
+      expect(mockQueryBuilder.andWhere).not.toHaveBeenCalledWith(
+        'ride.route_geom IS NOT NULL',
+      );
+      // Default sort is newest with a stable id tiebreaker.
+      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
+        'ride.started_at',
+        'DESC',
+      );
+      expect(mockQueryBuilder.addOrderBy).toHaveBeenCalledWith(
+        'ride.id',
+        'DESC',
+      );
+    });
+
+    it('honours min/max distance and min_quality filters', async () => {
+      await service.listCommunityRides({
+        min_distance_km: 50,
+        max_distance_km: 300,
+        min_quality: 3.5,
+      });
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'ride.distance_km >= :min_distance',
+        { min_distance: 50 },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'ride.distance_km <= :max_distance',
+        { max_distance: 300 },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'ride.avg_road_quality >= :min_quality',
+        { min_quality: 3.5 },
+      );
+    });
+
+    it('honours the ride_type filter', async () => {
+      await service.listCommunityRides({ ride_type: 'trip' });
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'ride.ride_type = :ride_type',
+        { ride_type: 'trip' },
+      );
+    });
+
+    it('sort=longest orders by distance DESC with NULLS LAST + id tiebreaker', async () => {
+      await service.listCommunityRides({ sort: 'longest' });
+
+      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
+        'ride.distance_km',
+        'DESC',
+        'NULLS LAST',
+      );
+      expect(mockQueryBuilder.addOrderBy).toHaveBeenCalledWith(
+        'ride.id',
+        'DESC',
+      );
+    });
+
+    it('sort=shortest orders by distance ASC with NULLS LAST + id tiebreaker', async () => {
+      await service.listCommunityRides({ sort: 'shortest' });
+
+      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
+        'ride.distance_km',
+        'ASC',
+        'NULLS LAST',
+      );
+      expect(mockQueryBuilder.addOrderBy).toHaveBeenCalledWith(
+        'ride.id',
+        'ASC',
+      );
+    });
+
+    it('sort=highest_quality orders by avg_road_quality DESC + id tiebreaker', async () => {
+      await service.listCommunityRides({ sort: 'highest_quality' });
+
+      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
+        'ride.avg_road_quality',
+        'DESC',
+        'NULLS LAST',
+      );
+      expect(mockQueryBuilder.addOrderBy).toHaveBeenCalledWith(
+        'ride.id',
+        'DESC',
+      );
+    });
+
+    it('sort=oldest orders by started_at ASC + id tiebreaker', async () => {
+      await service.listCommunityRides({ sort: 'oldest' });
+
+      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
+        'ride.started_at',
+        'ASC',
+      );
+      expect(mockQueryBuilder.addOrderBy).toHaveBeenCalledWith(
+        'ride.id',
+        'ASC',
+      );
+    });
+
+    it('sort=nearest orders by ST_Distance using the centre + id tiebreaker', async () => {
+      await service.listCommunityRides({
+        sort: 'nearest',
+        lat: 49.2,
+        lng: 16.6,
+      });
+
+      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
+        expect.stringContaining('ST_Distance'),
+        'ASC',
+      );
+      expect(mockQueryBuilder.addOrderBy).toHaveBeenCalledWith(
+        'ride.id',
+        'ASC',
+      );
+      expect(mockQueryBuilder.setParameters).toHaveBeenCalledWith({
+        sortLng: 16.6,
+        sortLat: 49.2,
+      });
+    });
+
+    it('paginates via skip/take', async () => {
+      await service.listCommunityRides({ offset: 40, limit: 10 });
+
+      expect(mockQueryBuilder.skip).toHaveBeenCalledWith(40);
+      expect(mockQueryBuilder.take).toHaveBeenCalledWith(10);
     });
   });
 });
