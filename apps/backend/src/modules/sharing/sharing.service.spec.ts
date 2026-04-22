@@ -69,6 +69,7 @@ describe('SharingService', () => {
         .fn()
         .mockImplementation((data) => ({ ...mockShared, ...data })),
       save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
       remove: jest.fn().mockResolvedValue(undefined),
       increment: jest.fn().mockResolvedValue({ affected: 1 }),
       createQueryBuilder: jest.fn().mockReturnValue(mockQueryBuilder),
@@ -114,9 +115,13 @@ describe('SharingService', () => {
       const result = await service.toggleShare('user-1', 'ride-1', false);
 
       expect(sharedRideRepo.create).not.toHaveBeenCalled();
-      expect(sharedRideRepo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ is_public: false }),
+      // Targeted `update` (not `save`) so a full-row write can't clobber
+      // concurrent `view_count` increments from `getByToken`.
+      expect(sharedRideRepo.update).toHaveBeenCalledWith(
+        { id: 'shared-1' },
+        { is_public: false },
       );
+      expect(sharedRideRepo.save).not.toHaveBeenCalled();
       expect(result.is_public).toBe(false);
     });
 
