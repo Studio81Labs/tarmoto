@@ -46,8 +46,17 @@ export function PassesPanel({
   onMonthChange,
 }: PassesPanelProps) {
   const [localMonth, setLocalMonth] = useState<number>(() => currentUtcMonth());
-  const month = controlledMonth ?? localMonth;
-  const setMonth = onMonthChange ?? setLocalMonth;
+  const isControlled =
+    controlledMonth !== undefined && onMonthChange !== undefined;
+  const isReadOnlyControlled =
+    controlledMonth !== undefined && onMonthChange === undefined;
+  const month = isControlled
+    ? controlledMonth
+    : (controlledMonth ?? localMonth);
+  const setMonth = (nextMonth: number) => {
+    if (isControlled) onMonthChange(nextMonth);
+    else setLocalMonth(nextMonth);
+  };
   const { passes, loading, error } = usePasses(month);
   const counts = useMemo(() => countByStatus(passes), [passes]);
   const groups = useMemo(() => partitionByStatus(passes), [passes]);
@@ -70,6 +79,7 @@ export function PassesPanel({
           id="passes-month"
           value={month}
           onChange={(e) => setMonth(Number(e.target.value))}
+          disabled={isReadOnlyControlled}
           className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:border-tarmoto-cyan transition"
         >
           {MONTH_NAMES.map((name, idx) => (
