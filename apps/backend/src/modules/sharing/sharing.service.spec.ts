@@ -356,6 +356,41 @@ describe('SharingService', () => {
       expect(result.items[0].route_geometry).toBeNull();
     });
 
+    it('downsamples long route geometry for feed-card previews', async () => {
+      const coordinates = Array.from({ length: 80 }, (_, index) => [
+        16.6 + index * 0.01,
+        49.2 - index * 0.005,
+      ]);
+
+      mockQueryBuilder.getManyAndCount.mockResolvedValueOnce([
+        [
+          {
+            ...mockShared,
+            ride: {
+              ...mockRide,
+              route_geom: {
+                type: 'LineString',
+                coordinates,
+              },
+            },
+          },
+        ],
+        1,
+      ]);
+
+      const result = await service.listCommunityRides({});
+
+      expect(result.items[0].route_geometry).toHaveLength(32);
+      expect(result.items[0].route_geometry?.[0]).toEqual({
+        lat: coordinates[0]![1],
+        lng: coordinates[0]![0],
+      });
+      expect(result.items[0].route_geometry?.at(-1)).toEqual({
+        lat: coordinates.at(-1)![1],
+        lng: coordinates.at(-1)![0],
+      });
+    });
+
     it('skips the spatial filter and the route_geom guard on the global feed', async () => {
       await service.listCommunityRides({});
 

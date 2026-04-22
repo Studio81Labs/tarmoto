@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Filter, Loader2, Users } from "lucide-react";
+import { Loader2, Users } from "lucide-react";
 import { RIDE_TYPES } from "@tarmoto/shared";
 import {
   communityApi,
@@ -86,10 +86,9 @@ export default function CommunityFeedPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-slate-400">
-          <Filter size={13} />
-          Feed cards now use real shared-ride data and route mini-previews.
-        </div>
+        <p className="text-sm text-slate-500">
+          Explore popular shared rides and discover routes worth repeating.
+        </p>
       </div>
 
       <div className="mb-6 grid gap-3 rounded-2xl border border-slate-800 bg-slate-900/80 p-4 md:grid-cols-4">

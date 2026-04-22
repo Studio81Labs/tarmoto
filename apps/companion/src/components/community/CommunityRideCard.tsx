@@ -49,7 +49,7 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
       <div className="space-y-4 p-4">
         <div className="flex items-start justify-between gap-3">
           <Link
-            href={`/community/${ride.rider_id}`}
+            href={`/community/${encodeURIComponent(ride.rider_id)}`}
             className="flex min-w-0 items-center gap-3 text-white transition hover:text-tarmoto-cyan"
           >
             {ride.rider_avatar_url ? (

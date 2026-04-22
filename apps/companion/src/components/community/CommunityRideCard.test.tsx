@@ -53,4 +53,17 @@ describe("CommunityRideCard", () => {
 
     expect(screen.getByText("Preview unavailable")).toBeInTheDocument();
   });
+
+  it("URL-encodes rider ids in profile links", () => {
+    render(
+      <CommunityRideCard
+        ride={ride({ rider_id: "rider/with spaces?and#hash" })}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: /john rider/i })).toHaveAttribute(
+      "href",
+      "/community/rider%2Fwith%20spaces%3Fand%23hash",
+    );
+  });
 });

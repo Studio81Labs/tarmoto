@@ -307,7 +307,7 @@ export class SharingService {
       avg_curviness: ride.avg_curviness ?? null,
       duration_min: this.calcDurationMin(ride),
       view_count: sr.view_count ?? 0,
-      route_geometry: this.toRouteGeometry(ride),
+      route_geometry: this.toRoutePreviewGeometry(ride),
     };
   }
 
@@ -323,6 +323,20 @@ export class SharingService {
       lat: c[1],
       lng: c[0],
     }));
+  }
+
+  private toRoutePreviewGeometry(
+    ride: Ride,
+    maxPoints = 32,
+  ): Array<{ lat: number; lng: number }> | null {
+    const geometry = this.toRouteGeometry(ride);
+    if (!geometry || geometry.length <= maxPoints) return geometry;
+
+    const step = (geometry.length - 1) / (maxPoints - 1);
+    return Array.from({ length: maxPoints }, (_, index) => {
+      const pointIndex = Math.round(index * step);
+      return geometry[pointIndex]!;
+    });
   }
 
   private calcDurationMin(ride: Ride): number | null {
