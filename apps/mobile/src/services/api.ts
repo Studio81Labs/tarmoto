@@ -31,6 +31,7 @@ import type {
   CheckRouteForPassesResponse,
   SensorReading,
   AccommodationList,
+  AlongRoutePoiList,
   PoiKind,
   PoiList,
 } from "@/types";
@@ -471,6 +472,21 @@ class ApiService {
         kinds: options.kinds?.length ? options.kinds.join(",") : undefined,
       },
     });
+    return data;
+  }
+
+  async listPoisAlongRoute(
+    route: LatLng[],
+    options: { bufferKm?: number; kinds?: PoiKind[] } = {},
+  ): Promise<AlongRoutePoiList> {
+    const { data } = await this.client.post<AlongRoutePoiList>(
+      "/poi/along-route",
+      {
+        route,
+        buffer_km: options.bufferKm,
+        kinds: options.kinds,
+      },
+    );
     return data;
   }
 

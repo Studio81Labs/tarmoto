@@ -103,8 +103,36 @@ export class OverpassPoiProvider implements PoiProvider {
     radiusKm: number,
     kinds: PoiKind[],
   ): Promise<PointOfInterest[]> {
-    if (kinds.length === 0) return [];
+    return this.runPoiQuery([{ lat, lng }], radiusKm, kinds, 80);
+  }
+
+  async findPointsOfInterestAroundPoints(
+    points: readonly { lat: number; lng: number }[],
+    radiusKm: number,
+    kinds: PoiKind[],
+  ): Promise<PointOfInterest[]> {
+    if (points.length === 0) return [];
+    // Wider cap for the along-route case: one ride day can easily hit
+    // dozens of fuel stations and restaurants. The service layer still
+    // ranks and caps per-kind, so we just need the upstream response to
+    // be large enough to rank from.
+    return this.runPoiQuery(points, radiusKm, kinds, 200);
+  }
+
+  private async runPoiQuery(
+    points: readonly { lat: number; lng: number }[],
+    radiusKm: number,
+    kinds: PoiKind[],
+    limit: number,
+  ): Promise<PointOfInterest[]> {
+    if (kinds.length === 0 || points.length === 0) return [];
     const radiusM = Math.round(radiusKm * 1000);
+    // Overpass QL's `around:` accepts a radius followed by any number of
+    // lat/lon pairs, which unions the circles into a single filter — so
+    // querying N sample points along a route costs one upstream round
+    // trip rather than N.
+    const aroundPairs = points.map((p) => `${p.lat},${p.lng}`).join(',');
+    const around = `around:${radiusM},${aroundPairs}`;
     // Group by OSM tag key so we emit one regex per key — mixing
     // `amenity` and `tourism` into a single filter would require an OR
     // over two keys, which Overpass QL doesn't express concisely.
@@ -122,12 +150,8 @@ export class OverpassPoiProvider implements PoiProvider {
       // Nodes + ways: restaurants and viewpoints show up both as single
       // points (most common) and as building polygons. Relations are rare
       // for these kinds, so we skip them to keep the response fast.
-      clauses.push(
-        `  node["${key}"~"^(${filter})$"](around:${radiusM},${lat},${lng});`,
-      );
-      clauses.push(
-        `  way["${key}"~"^(${filter})$"](around:${radiusM},${lat},${lng});`,
-      );
+      clauses.push(`  node["${key}"~"^(${filter})$"](${around});`);
+      clauses.push(`  way["${key}"~"^(${filter})$"](${around});`);
     }
 
     const query =
@@ -135,7 +159,7 @@ export class OverpassPoiProvider implements PoiProvider {
       `(` +
       clauses.join('') +
       `);` +
-      `out center tags 80;`;
+      `out center tags ${limit};`;
 
     const data = await this.runQuery(query);
     const pois: PointOfInterest[] = [];

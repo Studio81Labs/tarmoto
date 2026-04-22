@@ -366,6 +366,172 @@ describe("summarizeFuelRange", () => {
     expect(result.longestLegKm).toBe(0);
     expect(result.exceedingCount).toBe(0);
   });
+
+  describe("fuel-station annotations (US-36)", () => {
+    // 7 vertices spanning 49°–52° along the meridian → ~333 km total.
+    // With no fuel waypoints and a 150 km range, the single Start→End
+    // leg exceeds — which is exactly when the station hint is useful.
+    const longDay = () =>
+      dayFrom(vertexStrip([49, 49.5, 50, 50.5, 51, 51.5, 52]), []);
+
+    it("attaches suggested stops to exceeding legs when stations are supplied", () => {
+      const day = longDay();
+      const result = summarizeFuelRange(day, 150, [
+        {
+          name: "Shell Brno",
+          hint: "Shell",
+          distanceAlongRouteKm: 130,
+          distanceFromRouteKm: 0.4,
+        },
+        {
+          name: "OMV",
+          hint: null,
+          distanceAlongRouteKm: 250,
+          distanceFromRouteKm: 0.7,
+        },
+      ]);
+      expect(result.legs).toHaveLength(1);
+      const leg = result.legs[0];
+      expect(leg.exceedsRange).toBe(true);
+      expect(leg.suggestedStops).toEqual([
+        {
+          name: "Shell Brno",
+          hint: "Shell",
+          // Leg starts at 0 km — station distance-from-start equals
+          // its distance-along-route.
+          distanceFromLegStartKm: 130,
+          distanceFromRouteKm: 0.4,
+        },
+        {
+          name: "OMV",
+          hint: null,
+          distanceFromLegStartKm: 250,
+          distanceFromRouteKm: 0.7,
+        },
+      ]);
+    });
+
+    it("does not attach stops to legs that already sit within range", () => {
+      const day = longDay();
+      // Fuel waypoint at the midpoint splits the day into two 166 km
+      // halves — with a 200 km range, neither leg exceeds. Stations
+      // must NOT be attached even if they fall inside a leg because
+      // the card already shows "no problem" and adding a refuel hint
+      // would be noise.
+      day.waypoints.push({
+        id: "fuel",
+        sequence: 1,
+        lat: 50.5,
+        lng: MERIDIAN_LNG,
+        waypoint_type: "fuel",
+      });
+      const result = summarizeFuelRange(day, 200, [
+        {
+          name: "Shell Brno",
+          hint: null,
+          distanceAlongRouteKm: 80,
+          distanceFromRouteKm: 0.5,
+        },
+      ]);
+      expect(result.exceedingCount).toBe(0);
+      for (const leg of result.legs) {
+        expect(leg.suggestedStops).toBeUndefined();
+      }
+    });
+
+    it("buckets stations into the right exceeding leg by distance-along-route", () => {
+      // Fuel waypoint ~220 km in (lat 50.98 ≈ 1.98° north of 49).
+      // Leg 1 (0–220 km) fits in a 250 km tank. Leg 2 (220–333 km)
+      // also fits. Drop the range to 100 km so both legs exceed, and
+      // check stations get routed to whichever leg they fall in.
+      const day = longDay();
+      day.waypoints.push({
+        id: "fuel",
+        sequence: 1,
+        lat: 50.98,
+        lng: MERIDIAN_LNG,
+        waypoint_type: "fuel",
+        name: "BP",
+      });
+      const result = summarizeFuelRange(day, 100, [
+        // Inside leg 1 (0..~220 km).
+        {
+          name: "Station A",
+          hint: null,
+          distanceAlongRouteKm: 80,
+          distanceFromRouteKm: 0.3,
+        },
+        // Inside leg 2 (~220..333 km).
+        {
+          name: "Station B",
+          hint: null,
+          distanceAlongRouteKm: 280,
+          distanceFromRouteKm: 0.2,
+        },
+      ]);
+      expect(result.legs).toHaveLength(2);
+      expect(result.legs[0].suggestedStops?.map((s) => s.name)).toEqual([
+        "Station A",
+      ]);
+      expect(result.legs[1].suggestedStops?.map((s) => s.name)).toEqual([
+        "Station B",
+      ]);
+      // Leg 2 starts ~220 km in; Station B at 280 km is ~60 km in.
+      expect(
+        result.legs[1].suggestedStops![0].distanceFromLegStartKm,
+      ).toBeGreaterThan(55);
+      expect(
+        result.legs[1].suggestedStops![0].distanceFromLegStartKm,
+      ).toBeLessThan(65);
+    });
+
+    it("drops stations with blank names since the UI has nothing to render", () => {
+      const result = summarizeFuelRange(longDay(), 150, [
+        {
+          name: null,
+          hint: "Shell",
+          distanceAlongRouteKm: 150,
+          distanceFromRouteKm: 0.2,
+        },
+        {
+          name: "   ",
+          hint: null,
+          distanceAlongRouteKm: 175,
+          distanceFromRouteKm: 0.4,
+        },
+        {
+          name: "Named",
+          hint: null,
+          distanceAlongRouteKm: 200,
+          distanceFromRouteKm: 0.3,
+        },
+      ]);
+      expect(result.legs[0].suggestedStops?.map((s) => s.name)).toEqual([
+        "Named",
+      ]);
+    });
+
+    it("caps suggested stops per leg to stop the warning card from ballooning", () => {
+      const manyStations = Array.from({ length: 8 }, (_, i) => ({
+        name: `Station ${i}`,
+        hint: null,
+        distanceAlongRouteKm: 20 + i * 10,
+        distanceFromRouteKm: 0.5,
+      }));
+      const result = summarizeFuelRange(longDay(), 150, manyStations);
+      // MAX_SUGGESTED_STOPS_PER_LEG is a private constant inside the
+      // helper (3); assert the public contract rather than the value.
+      expect(result.legs[0].suggestedStops!.length).toBeLessThanOrEqual(3);
+    });
+
+    it("is a no-op when the station list is empty", () => {
+      const day = longDay();
+      const result = summarizeFuelRange(day, 150, []);
+      for (const leg of result.legs) {
+        expect(leg.suggestedStops).toBeUndefined();
+      }
+    });
+  });
 });
 
 describe("pickDayEndAnchor", () => {

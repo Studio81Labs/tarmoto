@@ -1,6 +1,12 @@
 /* eslint-disable @typescript-eslint/unbound-method */
+import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { PoiService } from './poi.service.js';
+import {
+  cumulativeLengthKm,
+  PoiService,
+  projectOntoRoute,
+  sampleRouteAnchors,
+} from './poi.service.js';
 import {
   POI_PROVIDER,
   type PoiProvider,
@@ -48,6 +54,7 @@ describe('PoiService', () => {
     provider = {
       findAccommodations: jest.fn(),
       findPointsOfInterest: jest.fn(),
+      findPointsOfInterestAroundPoints: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -568,5 +575,375 @@ describe('PoiService', () => {
       expect(kinds).toContain('fuel_station');
       expect(kinds).toContain('restaurant');
     });
+  });
+
+  describe('findPointsOfInterestAlongRoute', () => {
+    // A ~222 km south-to-north strip of vertices; lat-only movement so
+    // haversine stays ~111 km per degree. Two degrees of latitude
+    // across five vertices ⇒ ~222 km total.
+    const route = [
+      { lat: 49.0, lng: 16.75 },
+      { lat: 49.5, lng: 16.75 },
+      { lat: 50.0, lng: 16.75 },
+      { lat: 50.5, lng: 16.75 },
+      { lat: 51.0, lng: 16.75 },
+    ];
+
+    it('rejects a degenerate route with < 2 vertices', async () => {
+      await expect(
+        service.findPointsOfInterestAlongRoute({
+          route: [route[0]],
+        } as unknown as never),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('returns an empty list when the provider throws', async () => {
+      provider.findPointsOfInterestAroundPoints.mockRejectedValue(
+        new Error('overpass down'),
+      );
+
+      const result = await service.findPointsOfInterestAlongRoute({
+        route,
+        buffer_km: 3,
+      } as never);
+
+      expect(result.pois).toEqual([]);
+      expect(result.buffer_km).toBe(3);
+      // 2° of lat ≈ 222 km — just a sanity check that `route_length_km`
+      // is populated from the polyline even on a provider failure.
+      expect(result.route_length_km).toBeGreaterThan(220);
+      expect(result.route_length_km).toBeLessThan(224);
+    });
+
+    it('clamps buffer_km into [0.5, 10] with a sensible default', async () => {
+      provider.findPointsOfInterestAroundPoints.mockResolvedValue([]);
+
+      const zero = await service.findPointsOfInterestAlongRoute({
+        route,
+        buffer_km: 0,
+      } as never);
+      expect(zero.buffer_km).toBe(2);
+
+      const huge = await service.findPointsOfInterestAlongRoute({
+        route,
+        buffer_km: 999,
+      } as never);
+      expect(huge.buffer_km).toBe(10);
+    });
+
+    it('drops POIs outside the buffer after the provider returns them', async () => {
+      // One station right on the route, one station ~55 km off to the
+      // east (0.5° lng at lat 50 ≈ 35.7 km — still well outside a 2 km
+      // buffer). The first survives, the second gets filtered out.
+      provider.findPointsOfInterestAroundPoints.mockResolvedValue([
+        {
+          external_id: 'osm:node:on-route',
+          name: 'Shell Brno',
+          kind: 'fuel_station',
+          lat: 50.0,
+          lng: 16.75,
+          website: null,
+          phone: null,
+          hint: null,
+        },
+        {
+          external_id: 'osm:node:off-route',
+          name: 'Distant OMV',
+          kind: 'fuel_station',
+          lat: 50.0,
+          lng: 17.25,
+          website: null,
+          phone: null,
+          hint: null,
+        },
+      ]);
+
+      const result = await service.findPointsOfInterestAlongRoute({
+        route,
+        buffer_km: 2,
+      } as never);
+
+      expect(result.pois.map((p) => p.external_id)).toEqual([
+        'osm:node:on-route',
+      ]);
+      // On-route station sits 1° north of the start (lat 49 → lat 50)
+      // ≈ 111 km along the route.
+      const onRoute = result.pois[0];
+      expect(onRoute.distance_along_route_km).toBeGreaterThan(109);
+      expect(onRoute.distance_along_route_km).toBeLessThan(113);
+      expect(onRoute.distance_from_route_km).toBeLessThan(0.1);
+    });
+
+    it('dedupes POIs keyed by external_id, keeping the closest-to-route match', async () => {
+      // Same OSM id returned twice — once right on the route, once 1 km
+      // off. Service must keep the on-route instance.
+      provider.findPointsOfInterestAroundPoints.mockResolvedValue([
+        {
+          external_id: 'osm:node:dup',
+          name: 'OMV',
+          kind: 'fuel_station',
+          lat: 49.5,
+          lng: 16.7649, // ~1 km east of the route
+          website: null,
+          phone: null,
+          hint: null,
+        },
+        {
+          external_id: 'osm:node:dup',
+          name: 'OMV',
+          kind: 'fuel_station',
+          lat: 49.5,
+          lng: 16.75, // exactly on the route
+          website: null,
+          phone: null,
+          hint: null,
+        },
+      ]);
+
+      const result = await service.findPointsOfInterestAlongRoute({
+        route,
+        buffer_km: 2,
+      } as never);
+
+      expect(result.pois).toHaveLength(1);
+      expect(result.pois[0].distance_from_route_km).toBeLessThan(0.1);
+    });
+
+    it('samples anchors at roughly `bufferKm` spacing along the polyline', async () => {
+      // We don't assert the exact sampling strategy (that is tested
+      // against `sampleRouteAnchors` separately); we just confirm the
+      // service hands the provider multiple centre points for a long
+      // route — the whole reason the endpoint exists.
+      provider.findPointsOfInterestAroundPoints.mockResolvedValue([]);
+
+      await service.findPointsOfInterestAlongRoute({
+        route,
+        buffer_km: 25, // big enough to stride 2+ samples over ~440 km
+      } as never);
+
+      const passedSamples =
+        provider.findPointsOfInterestAroundPoints.mock.calls[0][0];
+      expect(Array.isArray(passedSamples)).toBe(true);
+      expect(passedSamples.length).toBeGreaterThan(1);
+    });
+
+    it('defaults kinds to the full POI_KINDS set when none are provided', async () => {
+      provider.findPointsOfInterestAroundPoints.mockResolvedValue([]);
+
+      await service.findPointsOfInterestAlongRoute({
+        route,
+      } as never);
+
+      const passedKinds =
+        provider.findPointsOfInterestAroundPoints.mock.calls[0][2];
+      expect(passedKinds).toEqual(
+        expect.arrayContaining<PoiKind>([
+          'restaurant',
+          'cafe',
+          'viewpoint',
+          'fuel_station',
+        ]),
+      );
+    });
+
+    it('respects a narrowing kinds filter', async () => {
+      provider.findPointsOfInterestAroundPoints.mockResolvedValue([
+        {
+          external_id: 'osm:node:rest',
+          name: 'Trattoria',
+          kind: 'restaurant',
+          lat: 50.0,
+          lng: 16.75,
+          website: null,
+          phone: null,
+          hint: null,
+        },
+        {
+          external_id: 'osm:node:fuel',
+          name: 'Shell',
+          kind: 'fuel_station',
+          lat: 50.5,
+          lng: 16.75,
+          website: null,
+          phone: null,
+          hint: null,
+        },
+      ]);
+
+      const result = await service.findPointsOfInterestAlongRoute({
+        route,
+        kinds: ['fuel_station'],
+      } as never);
+
+      // Belt-and-suspenders — defence against a misbehaving provider
+      // that ignores the kinds filter. The service still only returns
+      // fuel stations to the client.
+      expect(result.kinds).toEqual(['fuel_station']);
+      expect(result.pois.map((p) => p.kind)).toEqual(['fuel_station']);
+      expect(result.pois.map((p) => p.external_id)).toEqual(['osm:node:fuel']);
+    });
+
+    it('orders returned POIs by distance along the route', async () => {
+      // Stations sit exactly on route vertices so the nearest-vertex
+      // match is zero km off-route and the test doesn't turn into a
+      // buffer-clipping check.
+      provider.findPointsOfInterestAroundPoints.mockResolvedValue([
+        {
+          external_id: 'osm:node:late',
+          name: 'Shell Prerov',
+          kind: 'fuel_station',
+          lat: 50.5,
+          lng: 16.75,
+          website: null,
+          phone: null,
+          hint: null,
+        },
+        {
+          external_id: 'osm:node:early',
+          name: 'OMV Brno',
+          kind: 'fuel_station',
+          lat: 49.5,
+          lng: 16.75,
+          website: null,
+          phone: null,
+          hint: null,
+        },
+      ]);
+
+      const result = await service.findPointsOfInterestAlongRoute({
+        route,
+        buffer_km: 2,
+      } as never);
+
+      expect(result.pois.map((p) => p.external_id)).toEqual([
+        'osm:node:early',
+        'osm:node:late',
+      ]);
+    });
+  });
+});
+
+describe('cumulativeLengthKm', () => {
+  it('returns a zeroed head and monotonically non-decreasing values', () => {
+    const cum = cumulativeLengthKm([
+      { lat: 49, lng: 16 },
+      { lat: 49.5, lng: 16 },
+      { lat: 50, lng: 16 },
+    ]);
+    expect(cum[0]).toBe(0);
+    expect(cum[1]).toBeGreaterThan(cum[0]);
+    expect(cum[2]).toBeGreaterThan(cum[1]);
+    // ~111 km per degree of latitude — two half-degree hops ≈ 111 km.
+    expect(cum[2]).toBeGreaterThan(109);
+    expect(cum[2]).toBeLessThan(113);
+  });
+});
+
+describe('sampleRouteAnchors', () => {
+  const meridianRoute = Array.from({ length: 11 }, (_, i) => ({
+    lat: 49 + i * 0.1, // ~11 km per 0.1 degree
+    lng: 16,
+  }));
+  const cumKm = cumulativeLengthKm(meridianRoute);
+
+  it('always includes the start and end vertices', () => {
+    const anchors = sampleRouteAnchors(meridianRoute, cumKm, 5);
+    expect(anchors[0]).toEqual({
+      lat: meridianRoute[0].lat,
+      lng: meridianRoute[0].lng,
+    });
+    expect(anchors[anchors.length - 1]).toEqual({
+      lat: meridianRoute[meridianRoute.length - 1].lat,
+      lng: meridianRoute[meridianRoute.length - 1].lng,
+    });
+  });
+
+  it('spaces anchors roughly `bufferKm` apart so circles overlap', () => {
+    const bufferKm = 15;
+    const anchors = sampleRouteAnchors(meridianRoute, cumKm, bufferKm);
+    // Route is ~111 km long; stride 15 km ≈ 8 anchors including
+    // endpoints. Spacings are route-km between consecutive anchors.
+    const spacings: number[] = [];
+    for (let i = 1; i < anchors.length; i++) {
+      const a = anchors[i - 1];
+      const b = anchors[i];
+      // Re-derive the distance from their lat values since we only need
+      // to assert the spacing bound. `111.2` matches the mean km-per-
+      // degree-of-latitude used by the interpolator — stricter than the
+      // textbook 111 km so the rounded bound doesn't sag below stride.
+      spacings.push(Math.abs(b.lat - a.lat) * 111.2);
+    }
+    // Every interior spacing sits at ~bufferKm (the interpolator lands
+    // on exact cumulative-km boundaries). Allow a little slack for the
+    // haversine/flat-earth conversion plus a 2× upper bound for safety.
+    for (const s of spacings.slice(0, -1)) {
+      expect(s).toBeGreaterThanOrEqual(bufferKm - 0.05);
+      expect(s).toBeLessThan(bufferKm * 2);
+    }
+  });
+
+  it('returns a single anchor for a single-vertex input', () => {
+    const single = sampleRouteAnchors([{ lat: 49, lng: 16 }], [0], 5);
+    expect(single).toEqual([{ lat: 49, lng: 16 }]);
+  });
+
+  it('interpolates anchors inside long sparse segments', () => {
+    // Only two vertices, ~111 km apart — vertex-only sampling would
+    // produce just the endpoints and leave the middle of the segment
+    // uncovered. The interpolating sampler should emit intermediate
+    // anchors at each stride boundary.
+    const sparseRoute = [
+      { lat: 49, lng: 16 },
+      { lat: 50, lng: 16 },
+    ];
+    const sparseCum = cumulativeLengthKm(sparseRoute);
+    const bufferKm = 10;
+    const anchors = sampleRouteAnchors(sparseRoute, sparseCum, bufferKm);
+
+    // With 10 km stride over ~111 km, expect ≥ 10 interior anchors plus
+    // the endpoints. Every interior anchor must sit strictly between the
+    // two vertices (i.e. not be equal to either endpoint).
+    expect(anchors.length).toBeGreaterThan(10);
+    for (const a of anchors.slice(1, -1)) {
+      expect(a.lat).toBeGreaterThan(49);
+      expect(a.lat).toBeLessThan(50);
+    }
+  });
+});
+
+describe('projectOntoRoute', () => {
+  // Two-vertex 111 km segment along a meridian, matching the sparse
+  // polyline shape that breaks a nearest-vertex implementation.
+  const route = [
+    { lat: 49, lng: 16 },
+    { lat: 50, lng: 16 },
+  ];
+  const cum = cumulativeLengthKm(route);
+
+  it('projects a mid-segment point onto the segment, not the nearest vertex', () => {
+    // Station at the exact midpoint of the segment, right on the route.
+    // Nearest-vertex distance would be ~55 km; segment projection must
+    // return ~0 km.
+    const result = projectOntoRoute({ lat: 49.5, lng: 16 }, route, cum);
+    expect(result.distance_from_route_km).toBeLessThan(0.1);
+    expect(result.distance_along_route_km).toBeGreaterThan(54);
+    expect(result.distance_along_route_km).toBeLessThan(57);
+  });
+
+  it('measures the perpendicular offset from a mid-segment point off to the side', () => {
+    // 1 km east of the midpoint (~0.014° lng at lat 49.5).
+    const result = projectOntoRoute({ lat: 49.5, lng: 16 + 0.014 }, route, cum);
+    expect(result.distance_from_route_km).toBeGreaterThan(0.9);
+    expect(result.distance_from_route_km).toBeLessThan(1.1);
+    expect(result.distance_along_route_km).toBeGreaterThan(54);
+    expect(result.distance_along_route_km).toBeLessThan(57);
+  });
+
+  it('clamps to the nearest endpoint when the projection falls outside the segment', () => {
+    // Point beyond the end vertex — projection clamps to t=1 so the
+    // along-route distance maxes out at the total route length.
+    const totalKm = cum[cum.length - 1];
+    const result = projectOntoRoute({ lat: 50.5, lng: 16 }, route, cum);
+    expect(result.distance_along_route_km).toBeCloseTo(totalKm, 5);
   });
 });

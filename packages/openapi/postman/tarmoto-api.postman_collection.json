@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "841adf05-56e5-4346-9374-81af9a8ac0e8",
+    "_postman_id": "13369e54-9e4a-4b7c-b7fe-db8901aec283",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -370,7 +370,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ],\n  \"buffer_m\": 0\n}",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_m\": 0\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1294,7 +1294,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ]\n}",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2014,7 +2014,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ],\n  \"buffer_m\": 0,\n  \"for_month\": 0\n}",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_m\": 0,\n  \"for_month\": 0\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2029,7 +2029,7 @@
       "name": "poi",
       "item": [
         {
-          "name": "Find accommodations near a point (US-10)",
+          "name": "Find accommodations near a point (US-10, US-36)",
           "request": {
             "method": "GET",
             "header": [
@@ -2059,6 +2059,18 @@
                   "key": "radius_km",
                   "value": "",
                   "description": "Search radius in km (defaulted to 5, capped at 25 by the service).",
+                  "disabled": true
+                },
+                {
+                  "key": "kinds",
+                  "value": "",
+                  "description": "Kinds to include. Omit to return all kinds. Accepts a repeated query param (`kinds=hotel&kinds=camp_site`) or a comma-separated value (`kinds=hotel,camp_site`).",
+                  "disabled": true
+                },
+                {
+                  "key": "min_stars",
+                  "value": "",
+                  "description": "Keep only accommodations whose reported star rating is at least this value (1..5). Entries with no star rating are dropped when this filter is active so the response never mixes \"no rating\" in with ratings the rider explicitly asked for.",
                   "disabled": true
                 }
               ]
@@ -2105,6 +2117,32 @@
                   "disabled": true
                 }
               ]
+            }
+          }
+        },
+        {
+          "name": "Find POIs within a buffer of a route polyline (US-36)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/poi/along-route",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "poi", "along-route"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_km\": 0,\n  \"kinds\": [\n    \"restaurant\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           }
         }
@@ -2215,7 +2253,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"\",\n  \"reason\": \"closure\",\n  \"severity\": \"advisory\",\n  \"geometry\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ],\n  \"detour\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ],\n  \"country_code\": \"\",\n  \"region\": \"\",\n  \"starts_at\": \"\",\n  \"ends_at\": \"\",\n  \"notes\": \"\"\n}",
+              "raw": "{\n  \"title\": \"\",\n  \"reason\": \"closure\",\n  \"severity\": \"advisory\",\n  \"geometry\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"detour\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"country_code\": \"\",\n  \"region\": \"\",\n  \"starts_at\": \"\",\n  \"ends_at\": \"\",\n  \"notes\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2241,7 +2279,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ],\n  \"buffer_m\": 0,\n  \"active_on\": \"\"\n}",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_m\": 0,\n  \"active_on\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2296,7 +2334,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"\",\n  \"reason\": \"closure\",\n  \"severity\": \"advisory\",\n  \"geometry\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ],\n  \"detour\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    }\n  ],\n  \"country_code\": \"\",\n  \"region\": \"\",\n  \"starts_at\": \"\",\n  \"ends_at\": \"\",\n  \"notes\": \"\"\n}",
+              "raw": "{\n  \"title\": \"\",\n  \"reason\": \"closure\",\n  \"severity\": \"advisory\",\n  \"geometry\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"detour\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"country_code\": \"\",\n  \"region\": \"\",\n  \"starts_at\": \"\",\n  \"ends_at\": \"\",\n  \"notes\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"

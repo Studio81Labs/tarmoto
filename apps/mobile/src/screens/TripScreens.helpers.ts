@@ -167,12 +167,42 @@ function haversineKm(a: LatLng, b: LatLng): number {
  * One fuel-to-fuel leg of a day's route. Names default to "Start" / "End"
  * / "Fuel" when the source waypoint has no label — the UI renders them
  * literally so callers can feed them straight into JSX.
+ *
+ * `suggestedStops` carries live fuel-station POIs that fall *inside*
+ * the leg — only populated when the rider has pulled stations via
+ * `/poi/along-route` and the leg actually exceeds range, so the
+ * warning card can render a "refuel here" hint without the rider
+ * manually editing waypoints (US-36).
  */
 export interface FuelLeg {
   fromName: string;
   toName: string;
   distanceKm: number;
   exceedsRange: boolean;
+  suggestedStops?: FuelLegSuggestedStop[];
+}
+
+export interface FuelLegSuggestedStop {
+  name: string;
+  hint: string | null;
+  /** Distance from the leg start to the station, km. */
+  distanceFromLegStartKm: number;
+  /** Shortest distance between the station and the route, km. */
+  distanceFromRouteKm: number;
+}
+
+/**
+ * A fuel station along the day's route — the shape of a single entry
+ * from `/poi/along-route` once the UI has narrowed to fuel kinds. Kept
+ * separate from the POI type so the helper module stays free of the
+ * broader `Poi`/`AlongRoutePoi` imports and the unit tests can pass in
+ * minimal fixtures.
+ */
+export interface FuelStationAnchor {
+  name: string | null;
+  hint: string | null;
+  distanceAlongRouteKm: number;
+  distanceFromRouteKm: number;
 }
 
 /**
@@ -254,15 +284,112 @@ export function computeFuelRangeLegs(
 /**
  * Aggregate view of a day's fuel-leg breakdown — convenient when the UI
  * just wants "is there a problem, and how bad is the worst leg?"
+ *
+ * When `stations` is supplied, exceeding legs are annotated with the
+ * live fuel stations inside them so the warning card can offer a
+ * "refuel at X" hint rather than just shouting about the distance
+ * (US-36). Stations are only attached to over-range legs because a
+ * within-range leg already doesn't need them and cluttering the card
+ * with every pump on every leg defeats the purpose of the warning.
  */
 export function summarizeFuelRange(
   day: TripDay,
   fuelRangeKm: number,
+  stations: FuelStationAnchor[] = [],
 ): { legs: FuelLeg[]; longestLegKm: number; exceedingCount: number } {
-  const legs = computeFuelRangeLegs(day, fuelRangeKm);
+  const rawLegs = computeFuelRangeLegs(day, fuelRangeKm);
+  const legs = annotateLegsWithStations(rawLegs, day, stations);
   const longestLegKm = legs.reduce((m, l) => Math.max(m, l.distanceKm), 0);
   const exceedingCount = legs.filter((l) => l.exceedsRange).length;
   return { legs, longestLegKm, exceedingCount };
+}
+
+/**
+ * Maximum suggested stops attached per exceeding leg. Keeps the warning
+ * card scannable — a rider looking at 6 options on a single leg is a
+ * planning-app job, not a glove-friendly alert.
+ */
+const MAX_SUGGESTED_STOPS_PER_LEG = 3;
+
+/**
+ * Re-project the leg breakdown onto the polyline's cumulative-km axis
+ * so station positions (which arrive from the backend already indexed
+ * by distance-along-route) can be bucketed into the right leg. We
+ * re-compute the axis here rather than passing it down from
+ * `computeFuelRangeLegs` because the leg list is the stable public
+ * output; the vertex cumulative array is an implementation detail that
+ * would otherwise have to leak out to callers that don't care about
+ * stations.
+ */
+function annotateLegsWithStations(
+  legs: FuelLeg[],
+  day: TripDay,
+  stations: FuelStationAnchor[],
+): FuelLeg[] {
+  if (stations.length === 0) return legs;
+  if (!legs.some((l) => l.exceedsRange)) return legs;
+  const geom = day.route_geometry;
+  if (!Array.isArray(geom) || geom.length < 2) return legs;
+
+  // Reproduce the cumulative axis and anchor positions so we know where
+  // each leg starts along the route without changing the legs' public
+  // API. Fast to rebuild — O(n) over the geometry — and only runs when
+  // the caller has actually opted into stations.
+  const cumKm: number[] = new Array(geom.length);
+  cumKm[0] = 0;
+  for (let i = 1; i < geom.length; i++) {
+    cumKm[i] = cumKm[i - 1] + haversineKm(geom[i - 1], geom[i]);
+  }
+  const totalKm = cumKm[cumKm.length - 1];
+
+  const sortedWaypoints = [...day.waypoints].sort(
+    (a, b) => a.sequence - b.sequence,
+  );
+  const fuelAnchorKms = sortedWaypoints
+    .filter((w) => w.waypoint_type === "fuel")
+    .map((w) => {
+      let bestIdx = 0;
+      let bestDist = Infinity;
+      for (let i = 0; i < geom.length; i++) {
+        const d = haversineKm(w, geom[i]);
+        if (d < bestDist) {
+          bestDist = d;
+          bestIdx = i;
+        }
+      }
+      return cumKm[bestIdx];
+    })
+    .sort((a, b) => a - b);
+  const legBoundaries = [0, ...fuelAnchorKms, totalKm];
+
+  const sortedStations = [...stations].sort(
+    (a, b) => a.distanceAlongRouteKm - b.distanceAlongRouteKm,
+  );
+
+  return legs.map((leg, idx) => {
+    if (!leg.exceedsRange) return leg;
+    const startKm = legBoundaries[idx];
+    const endKm = legBoundaries[idx + 1];
+    const inside = sortedStations
+      .filter(
+        (s) =>
+          s.distanceAlongRouteKm > startKm && s.distanceAlongRouteKm < endKm,
+      )
+      .filter((s): s is FuelStationAnchor & { name: string } =>
+        Boolean(s.name?.trim()),
+      );
+    if (inside.length === 0) return leg;
+
+    const suggestedStops: FuelLegSuggestedStop[] = inside
+      .slice(0, MAX_SUGGESTED_STOPS_PER_LEG)
+      .map((s) => ({
+        name: s.name,
+        hint: s.hint,
+        distanceFromLegStartKm: s.distanceAlongRouteKm - startKm,
+        distanceFromRouteKm: s.distanceFromRouteKm,
+      }));
+    return { ...leg, suggestedStops };
+  });
 }
 
 /**
