@@ -810,6 +810,100 @@ describe("RoadReviewsPanel", () => {
     );
   });
 
+  it("switches a returned draft into edit mode after a delayed create establishes ownership", async () => {
+    setAuthenticatedViewer();
+    let resolveCreate: ((value: { data: RoadReview }) => void) | null = null;
+
+    getReviewsMock.mockResolvedValue({ data: [] });
+    createReviewMock.mockImplementationOnce(
+      () =>
+        new Promise<{ data: RoadReview }>((resolve) => {
+          resolveCreate = resolve;
+        }),
+    );
+    updateReviewMock.mockResolvedValueOnce({
+      data: review({
+        id: "review-after-return",
+        rating: 5,
+        comment: "Refined after the delayed create",
+        helpful_count: 0,
+        not_helpful_count: 0,
+        is_mine: true,
+      }),
+    });
+
+    const { rerender } = render(
+      <RoadReviewsPanel segmentId={firstSegmentId} />,
+    );
+
+    await screen.findByRole("button", { name: "Write a review for this road" });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Write a review for this road" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "5 stars" }));
+    fireEvent.change(screen.getByLabelText("Comment"), {
+      target: { value: "Original create request" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit review" }));
+
+    await waitFor(() =>
+      expect(createReviewMock).toHaveBeenCalledWith(firstSegmentId, {
+        rating: 5,
+        comment: "Original create request",
+      }),
+    );
+
+    rerender(<RoadReviewsPanel segmentId={secondSegmentId} />);
+    await waitFor(() =>
+      expect(getReviewsMock).toHaveBeenLastCalledWith(secondSegmentId),
+    );
+
+    rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+    await waitFor(() =>
+      expect(getReviewsMock).toHaveBeenLastCalledWith(firstSegmentId),
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Write a review for this road" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "5 stars" }));
+    fireEvent.change(screen.getByLabelText("Comment"), {
+      target: { value: "Refined after the delayed create" },
+    });
+
+    await act(async () => {
+      resolveCreate?.({
+        data: review({
+          id: "review-after-return",
+          rating: 5,
+          comment: "Original create request",
+          helpful_count: 0,
+          not_helpful_count: 0,
+          is_mine: true,
+        }),
+      });
+    });
+
+    expect(
+      await screen.findByRole("button", { name: "Save review" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Comment")).toHaveValue(
+      "Refined after the delayed create",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save review" }));
+
+    await waitFor(() =>
+      expect(updateReviewMock).toHaveBeenCalledWith(firstSegmentId, {
+        rating: 5,
+        comment: "Refined after the delayed create",
+        photos: [],
+      }),
+    );
+    expect(createReviewMock).toHaveBeenCalledTimes(1);
+  });
+
   it("preserves a created review when the same-segment reload returns stale data", async () => {
     setAuthenticatedViewer();
     let resolveCreate: ((value: { data: RoadReview }) => void) | null = null;

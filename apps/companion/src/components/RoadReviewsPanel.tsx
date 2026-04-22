@@ -213,6 +213,8 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
       if (!didReturnToSameSegment) {
         setDraft(EMPTY_REVIEW_DRAFT);
         setEditorMode(null);
+      } else if (data.is_mine) {
+        setEditorMode((current) => (current === "create" ? "edit" : current));
       }
     } catch (err) {
       if (
