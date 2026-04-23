@@ -1,6 +1,7 @@
 import { createApiClient } from "@tarmoto/openapi/client";
 import { useAuthStore } from "@/stores/auth";
 import { API_HOST, API_BASE } from "@/lib/config";
+import type { MountainPass } from "./passes-summary";
 
 // Typed openapi-fetch client for all spec-defined endpoints
 export const api = createApiClient({
@@ -399,6 +400,30 @@ export const communityApi = {
     const suffix = query.size > 0 ? `?${query.toString()}` : "";
     return apiFetch<CommunityRidePage>(`/rides/community${suffix}`);
   },
+};
+
+// ── Mountain passes endpoints (US-40 seasonal closures & pass status) ──
+
+export interface CheckRoutePassesResponse {
+  passes: MountainPass[];
+  closed_count: number;
+  unknown_count: number;
+}
+
+export const passesApi = {
+  checkRoute: (
+    data: {
+      route: Array<{ lat: number; lng: number }>;
+      buffer_m?: number;
+      for_month?: number;
+    },
+    init?: RequestInit,
+  ) =>
+    apiFetch<CheckRoutePassesResponse>("/passes/check-route", {
+      ...init,
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 };
 
 // ── Road reviews endpoints (US-55) ──
