@@ -88,7 +88,6 @@ export function BestRoadsMap({ bbox, center, defaultZoom, roads }: Props) {
         }}
         mapStyle={MAP_STYLE_URL}
         style={{ width: "100%", height: "100%" }}
-        attributionControl={true}
         onLoad={() => {
           const map = mapRef.current?.getMap();
           if (map) {
