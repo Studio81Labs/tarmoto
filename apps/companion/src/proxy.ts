@@ -11,7 +11,7 @@ const PUBLIC_PATHS = [
   "/embed/rides",
 ];
 
-export default auth((req) => {
+export const proxy = auth((req) => {
   const { nextUrl, auth: session } = req;
   const isAuthenticated = !!session?.user;
   const isAuthPage =
