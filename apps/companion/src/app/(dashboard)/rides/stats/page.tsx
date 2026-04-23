@@ -9,6 +9,7 @@ import {
   Line,
   LineChart,
   ResponsiveContainer,
+  type TooltipValueType,
   Tooltip,
   XAxis,
   YAxis,
@@ -45,6 +46,12 @@ const YOY_COLORS = [
   "#facc15",
   "#34d399",
 ] as const;
+
+function formatDistanceTooltipValue(value: TooltipValueType | undefined) {
+  const numeric =
+    typeof value === "number" ? value : Number.parseFloat(String(value));
+  return Number.isFinite(numeric) ? `${numeric.toFixed(0)} km` : "—";
+}
 
 export default function StatsPage() {
   const [rides, setRides] = useState<RideForStats[]>([]);
@@ -196,8 +203,8 @@ export default function StatsPage() {
                   fontSize: 12,
                 }}
                 labelStyle={{ color: "#e2e8f0" }}
-                formatter={(value: number) => [
-                  `${value.toFixed(0)} km`,
+                formatter={(value) => [
+                  formatDistanceTooltipValue(value),
                   "Distance",
                 ]}
               />
@@ -252,7 +259,7 @@ export default function StatsPage() {
                     fontSize: 12,
                   }}
                   labelStyle={{ color: "#e2e8f0" }}
-                  formatter={(value: number) => `${value.toFixed(0)} km`}
+                  formatter={formatDistanceTooltipValue}
                 />
                 <Legend
                   wrapperStyle={{ fontSize: 12, color: "#94a3b8" }}
