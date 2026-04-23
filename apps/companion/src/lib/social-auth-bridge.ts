@@ -1,5 +1,6 @@
 import { createHmac } from "crypto";
 import { API_BASE_SERVER } from "@/lib/config";
+import { SOCIAL_ACCOUNT_CONFLICT_MESSAGE } from "@/lib/auth-errors";
 
 export interface BackendAuthResponse {
   access_token: string;
@@ -108,6 +109,10 @@ export async function exchangeOAuthUserForBackendTokens(
 
   if (loginResponse.ok) {
     return (await loginResponse.json()) as BackendAuthResponse;
+  }
+
+  if (loginResponse.status === 401) {
+    throw new Error(SOCIAL_ACCOUNT_CONFLICT_MESSAGE);
   }
 
   const message = await readErrorMessage(loginResponse);

@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { OAuthButtons } from "@/components/OAuthButtons";
 import { safeCallbackUrl } from "@/lib/callback-url";
+import { getLoginErrorMessage } from "@/lib/auth-errors";
 import type { OAuthProvider } from "@/lib/oauth-providers";
 
 export function LoginForm({
@@ -15,9 +16,11 @@ export function LoginForm({
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const searchParams = useSearchParams();
+  const [error, setError] = useState(() =>
+    getLoginErrorMessage(searchParams.get("error")),
+  );
   const callbackUrl = safeCallbackUrl(searchParams.get("callbackUrl"));
 
   const handleSubmit = async (e: React.FormEvent) => {
