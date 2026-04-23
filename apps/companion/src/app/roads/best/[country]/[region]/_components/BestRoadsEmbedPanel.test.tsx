@@ -27,7 +27,7 @@ describe("BestRoadsEmbedPanel", () => {
     expect((snippet as HTMLTextAreaElement).value).toContain(
       "https://tarmoto.app/embed/roads/at/tyrol?variant=compact",
     );
-    expect((snippet as HTMLTextAreaElement).value).toContain("height:320px");
+    expect((snippet as HTMLTextAreaElement).value).toContain("height:640px");
   });
 
   it("updates the snippet and copies it after switching widget size", async () => {

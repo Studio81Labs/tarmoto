@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import { Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
-import { SessionProvider } from "next-auth/react";
-import { AuthSync } from "@/components/AuthSync";
-import { RealtimeProvider } from "@/components/RealtimeProvider";
+import { AppProviders } from "@/components/AppProviders";
 import "./globals.css";
 
 const jakarta = Plus_Jakarta_Sans({
@@ -28,11 +26,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${jakarta.variable} ${jetbrains.variable}`}>
       <body className="bg-slate-950 text-slate-200 font-sans antialiased">
-        <SessionProvider>
-          <AuthSync />
-          <RealtimeProvider />
-          {children}
-        </SessionProvider>
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
   );

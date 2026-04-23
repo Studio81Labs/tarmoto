@@ -43,7 +43,7 @@ export function BestRoadsEmbedWidget({
       : "space-y-5";
 
   return (
-    <main className="min-h-screen bg-slate-950 p-4 text-slate-100">
+    <main className="bg-slate-950 p-4 text-slate-100">
       <article className="mx-auto max-w-5xl overflow-hidden rounded-[24px] border border-slate-800 bg-slate-950 shadow-2xl shadow-black/40">
         <header className="border-b border-slate-800 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.18),_transparent_42%),linear-gradient(135deg,_rgba(15,23,42,0.98),_rgba(2,6,23,0.98))] px-5 py-4">
           <div className="flex flex-wrap items-start justify-between gap-3">

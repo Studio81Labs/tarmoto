@@ -55,17 +55,18 @@ describe("best-roads-embed", () => {
     const snippet = buildBestRoadsIframeCode("https://tarmoto.app", {
       country: "at",
       region: "tyrol",
-      regionName: "Tyrol",
-      variant: "landscape",
+      regionName: 'Tyrol "North" & South',
     });
 
     expect(snippet).toContain("<iframe");
     expect(snippet).toContain(
-      'src="https://tarmoto.app/embed/roads/at/tyrol?variant=landscape"',
+      'src="https://tarmoto.app/embed/roads/at/tyrol?variant=compact"',
     );
-    expect(snippet).toContain('title="Tarmoto best roads widget for Tyrol"');
+    expect(snippet).toContain(
+      'title="Tarmoto best roads widget for Tyrol &quot;North&quot; &amp; South"',
+    );
     expect(snippet).toContain("width:100%");
-    expect(snippet).toContain("height:420px");
+    expect(snippet).toContain("height:640px");
   });
 
   it("projects only valid roads into a bounded minimap coordinate space", () => {
@@ -90,5 +91,29 @@ describe("best-roads-embed", () => {
         expect(y).toBeLessThanOrEqual(164);
       }
     }
+  });
+
+  it("preserves original rank numbers after invalid geometries are filtered out", () => {
+    const map = projectRoadsToMiniMap(
+      [
+        roads[0]!,
+        {
+          id: "road-invalid",
+          quality_score: 4.1,
+          geometry: [{ lng: 10.7, lat: 46.7 }],
+        },
+        roads[1]!,
+      ],
+      {
+        width: 320,
+        height: 180,
+        padding: 16,
+      },
+    );
+
+    expect(map.markers).toEqual([
+      expect.objectContaining({ id: "road-1", rank: 1 }),
+      expect.objectContaining({ id: "road-2", rank: 3 }),
+    ]);
   });
 });

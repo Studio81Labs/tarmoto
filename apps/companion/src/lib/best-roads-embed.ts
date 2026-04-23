@@ -65,11 +65,13 @@ export function buildBestRoadsIframeCode(
   const variant = options.variant ?? "compact";
   const heightPx = widgetDimensions(variant).heightPx;
   const src = buildBestRoadsEmbedUrl(origin, { ...options, variant });
-  const title = `Tarmoto best roads widget for ${options.regionName}`;
+  const title = escapeHtmlAttribute(
+    `Tarmoto best roads widget for ${options.regionName}`,
+  );
 
   return [
     `<iframe`,
-    `  src="${src}"`,
+    `  src="${escapeHtmlAttribute(src)}"`,
     `  title="${title}"`,
     `  loading="lazy"`,
     `  referrerpolicy="strict-origin-when-cross-origin"`,
@@ -83,13 +85,13 @@ export function projectRoadsToMiniMap(
   options: MiniMapOptions,
 ): MiniMapProjection {
   const validRoads = roads
-    .filter((road) => road.geometry.length >= 2)
     .map((road, index) => ({
       id: road.id,
       rank: index + 1,
       color: qualityColor(road.quality_score),
       geometry: road.geometry,
-    }));
+    }))
+    .filter((road) => road.geometry.length >= 2);
 
   if (validRoads.length === 0) {
     return {
@@ -140,13 +142,9 @@ export function projectRoadsToMiniMap(
   };
 }
 
-export function widgetHeightPx(variant: BestRoadsWidgetVariant): number {
-  return widgetDimensions(variant).heightPx;
-}
-
 function widgetDimensions(variant: BestRoadsWidgetVariant): WidgetDimensions {
   if (variant === "landscape") return { heightPx: 420 };
-  return { heightPx: 320 };
+  return { heightPx: 640 };
 }
 
 function qualityColor(qualityScore: number | null): string {
@@ -160,4 +158,12 @@ function qualityColor(qualityScore: number | null): string {
 
 function round(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }
