@@ -7,7 +7,8 @@ import { signIn } from "next-auth/react";
 import { OAuthButtons } from "@/components/OAuthButtons";
 import { registerUser } from "@/lib/api";
 import { safeCallbackUrl } from "@/lib/callback-url";
-import { useOAuthProviders } from "@/hooks/useOAuthProviders";
+
+const oauthProviders: string[] = [];
 
 function RegisterForm() {
   const [displayName, setDisplayName] = useState("");
@@ -16,8 +17,6 @@ function RegisterForm() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const searchParams = useSearchParams();
-  const oauthProviders = useOAuthProviders();
-  const callbackUrl = safeCallbackUrl(searchParams.get("callbackUrl"));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,7 +32,7 @@ function RegisterForm() {
       if (result?.error) {
         setError("Account created but sign-in failed. Please log in.");
       } else {
-        window.location.href = callbackUrl;
+        window.location.href = safeCallbackUrl(searchParams.get("callbackUrl"));
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Registration failed");
@@ -106,7 +105,7 @@ function RegisterForm() {
         </button>
       </form>
 
-      <OAuthButtons providers={oauthProviders} callbackUrl={callbackUrl} />
+      <OAuthButtons providers={oauthProviders} />
 
       <p className="mt-6 text-center text-sm text-slate-400">
         Already have an account?{" "}

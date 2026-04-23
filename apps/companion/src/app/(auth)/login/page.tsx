@@ -6,7 +6,8 @@ import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { OAuthButtons } from "@/components/OAuthButtons";
 import { safeCallbackUrl } from "@/lib/callback-url";
-import { useOAuthProviders } from "@/hooks/useOAuthProviders";
+
+const oauthProviders: string[] = [];
 
 function LoginForm() {
   const [email, setEmail] = useState("");
@@ -14,8 +15,6 @@ function LoginForm() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const searchParams = useSearchParams();
-  const oauthProviders = useOAuthProviders();
-  const callbackUrl = safeCallbackUrl(searchParams.get("callbackUrl"));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,7 +29,7 @@ function LoginForm() {
       if (result?.error) {
         setError("Invalid email or password");
       } else {
-        window.location.href = callbackUrl;
+        window.location.href = safeCallbackUrl(searchParams.get("callbackUrl"));
       }
     } catch {
       setError("An unexpected error occurred");
@@ -104,7 +103,7 @@ function LoginForm() {
         </button>
       </form>
 
-      <OAuthButtons providers={oauthProviders} callbackUrl={callbackUrl} />
+      <OAuthButtons providers={oauthProviders} />
 
       <p className="mt-6 text-center text-sm text-slate-400">
         Don&apos;t have an account?{" "}

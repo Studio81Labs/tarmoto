@@ -2,14 +2,11 @@
 
 import { signIn } from "next-auth/react";
 
-export function OAuthButtons({
-  providers,
-  callbackUrl = "/",
-}: {
-  providers: string[];
-  callbackUrl?: string;
-}) {
-  if (providers.length === 0) return null;
+export function OAuthButtons({ providers }: { providers: string[] }) {
+  const renderGoogle = providers.includes("google");
+  const renderApple = providers.includes("apple");
+
+  if (!renderGoogle && !renderApple) return null;
 
   return (
     <>
@@ -25,9 +22,9 @@ export function OAuthButtons({
       </div>
 
       <div className="space-y-3">
-        {providers.includes("google") && (
+        {renderGoogle && (
           <button
-            onClick={() => signIn("google", { callbackUrl })}
+            onClick={() => signIn("google", { callbackUrl: "/" })}
             className="w-full flex items-center justify-center gap-3 py-2.5 rounded-lg border border-slate-700 bg-slate-800 text-white hover:bg-slate-700 transition"
           >
             <svg width="18" height="18" viewBox="0 0 24 24">
@@ -52,9 +49,9 @@ export function OAuthButtons({
           </button>
         )}
 
-        {providers.includes("apple") && (
+        {renderApple && (
           <button
-            onClick={() => signIn("apple", { callbackUrl })}
+            onClick={() => signIn("apple", { callbackUrl: "/" })}
             className="w-full flex items-center justify-center gap-3 py-2.5 rounded-lg border border-slate-700 bg-slate-800 text-white hover:bg-slate-700 transition"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="white">

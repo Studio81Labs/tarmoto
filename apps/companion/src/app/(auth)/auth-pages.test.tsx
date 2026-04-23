@@ -1,14 +1,12 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import LoginPage from "./login/page";
 import RegisterPage from "./register/page";
 
 const signInMock = vi.fn();
-const getProvidersMock = vi.fn();
 const registerUserMock = vi.fn();
 
 vi.mock("next-auth/react", () => ({
   signIn: (...args: unknown[]) => signInMock(...args),
-  getProviders: (...args: unknown[]) => getProvidersMock(...args),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -28,48 +26,32 @@ vi.mock("@/lib/api", async () => {
 describe("auth pages social sign-in", () => {
   beforeEach(() => {
     signInMock.mockReset();
-    getProvidersMock.mockReset();
     registerUserMock.mockReset();
   });
 
-  it("renders configured social providers on the login page and forwards the callback URL", async () => {
-    getProvidersMock.mockResolvedValueOnce({
-      credentials: { id: "credentials", name: "Email" },
-      google: { id: "google", name: "Google" },
-      apple: { id: "apple", name: "Apple" },
-    });
-
+  it("keeps the login page on the credentials flow only", async () => {
     render(<LoginPage />);
 
+    await screen.findByRole("button", { name: "Sign in" });
     expect(
-      await screen.findByRole("button", { name: "Continue with Google" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "Continue with Google" }),
+    ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Continue with Apple" }),
-    ).toBeInTheDocument();
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Continue with Google" }),
-    );
-
-    expect(signInMock).toHaveBeenCalledWith("google", {
-      callbackUrl: "/trips/planner",
-    });
+      screen.queryByRole("button", { name: "Continue with Apple" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("renders configured social providers on the registration page", async () => {
-    getProvidersMock.mockResolvedValueOnce({
-      credentials: { id: "credentials", name: "Email" },
-      google: { id: "google", name: "Google" },
-    });
-
+  it("keeps the registration page on the credentials flow only", async () => {
     render(<RegisterPage />);
 
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "Continue with Google" }),
+        screen.getByRole("button", { name: "Create account" }),
       ).toBeInTheDocument(),
     );
+    expect(
+      screen.queryByRole("button", { name: "Continue with Google" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Continue with Apple" }),
     ).not.toBeInTheDocument();
