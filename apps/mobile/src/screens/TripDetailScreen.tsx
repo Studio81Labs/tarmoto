@@ -13,7 +13,7 @@
  * header so the rider sees the problem before scrolling.
  */
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -46,6 +46,8 @@ import {
   formatDurationMin,
   formatKm,
   formatStatus,
+  routeGeometrySignature,
+  summarizeWaypoints,
   sumDistance,
 } from "./TripScreens.helpers";
 
@@ -57,6 +59,7 @@ export default function TripDetailScreen() {
   const navigation = useNavigation<DetailNav>();
   const tripId = params?.tripId;
 
+  const activeTrip = useTripStore((s) => s.activeTrip);
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
 
   const [trip, setTrip] = useState<Trip | null>(null);
@@ -64,6 +67,12 @@ export default function TripDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [closedPasses, setClosedPasses] = useState<MountainPass[]>([]);
+  const [passCheckVersion, setPassCheckVersion] = useState(0);
+
+  useEffect(() => {
+    if (activeTrip?.id !== tripId) return;
+    setTrip(activeTrip);
+  }, [activeTrip, tripId]);
 
   // Single source of truth for "fetch this trip and commit it to local +
   // store state". The mount effect, retry button, and pull-to-refresh all
@@ -80,6 +89,7 @@ export default function TripDetailScreen() {
         if (opts.signal?.cancelled) return;
         setTrip(next);
         setActiveTrip(next);
+        setPassCheckVersion((value) => value + 1);
         setError(null);
       } catch (e) {
         if (opts.signal?.cancelled) return;
@@ -110,25 +120,33 @@ export default function TripDetailScreen() {
     };
   }, [fetchTrip]);
 
+  const passRoute = useMemo(
+    () => (trip ? flattenTripRoute(trip.days) : []),
+    [trip?.days],
+  );
+  const passRouteSignature = useMemo(
+    () => (trip ? routeGeometrySignature(trip.days) : ""),
+    [trip?.days],
+  );
+
   // US-11: surface closed mountain passes that the planned route
   // crosses so the rider doesn't drive into a snowbank. We re-run the
-  // check whenever the trip days change (route regeneration, edits, or
-  // refresh-driven reload) — cheap because the pass dataset is tiny
-  // and the check is one PostGIS query. Soft-fails to "no warning" so
-  // the screen still renders if `/passes/check-route` is unavailable.
+  // check whenever the route geometry changes or a fresh backend fetch
+  // lands. That avoids re-querying `/passes/check-route` for waypoint-
+  // only client-side updates (like suggested overnight stays) while
+  // still refreshing pass status after a manual reload.
   useEffect(() => {
-    if (!trip) {
+    if (!trip || passRouteSignature.length === 0) {
       setClosedPasses([]);
       return;
     }
-    const route = flattenTripRoute(trip.days);
-    if (route.length < 2) {
+    if (passRoute.length < 2) {
       setClosedPasses([]);
       return;
     }
     let cancelled = false;
     void api
-      .checkRouteForPasses(route)
+      .checkRouteForPasses(passRoute)
       .then((res) => {
         if (cancelled) return;
         setClosedPasses(res.passes.filter((p) => p.status === "closed"));
@@ -139,7 +157,7 @@ export default function TripDetailScreen() {
     return () => {
       cancelled = true;
     };
-  }, [trip]);
+  }, [passCheckVersion, passRouteSignature, trip?.id]);
 
   const retry = useCallback(async () => {
     setLoading(true);
@@ -288,6 +306,7 @@ function HeaderCard({
 function DayCard({ day, onPress }: { day: TripDay; onPress: () => void }) {
   const qColor =
     day.avg_quality > 0 ? qualityColor(day.avg_quality) : colors.textTertiary;
+  const overnightStop = summarizeWaypoints(day.waypoints).overnightStops[0];
   return (
     <TouchableOpacity
       style={styles.card}
@@ -321,6 +340,14 @@ function DayCard({ day, onPress }: { day: TripDay; onPress: () => void }) {
           {day.waypoints.length === 1 ? "" : "s"}
         </Text>
       </View>
+      {overnightStop ? (
+        <View style={styles.overnightRow}>
+          <Icon name="bed-outline" size={15} color={colors.primary} />
+          <Text style={styles.overnightLabel} numberOfLines={1}>
+            Overnight: {overnightStop.name ?? "Suggested stay"}
+          </Text>
+        </View>
+      ) : null}
     </TouchableOpacity>
   );
 }
@@ -713,6 +740,16 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontSize: fontSize.xs,
     marginLeft: "auto",
+  },
+  overnightRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  overnightLabel: {
+    flex: 1,
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
   },
   emptyDaysTitle: {
     color: colors.textPrimary,

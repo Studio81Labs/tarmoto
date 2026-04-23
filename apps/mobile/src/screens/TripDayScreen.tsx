@@ -7,7 +7,13 @@
  * follow the generator's proposal as-is.
  */
 
-import React, { ComponentProps, useEffect, useMemo, useState } from "react";
+import React, {
+  ComponentProps,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   Linking,
@@ -52,6 +58,7 @@ import {
   pickDayEndAnchor,
   summarizeFuelRange,
   summarizeWaypoints,
+  withSuggestedOvernightStop,
   type FuelLeg,
   type FuelStationAnchor,
 } from "./TripScreens.helpers";
@@ -106,6 +113,16 @@ export default function TripDayScreen() {
   // circuits internally when `day` is undefined.
   const day = trip?.days.find((d) => d.day_number === dayNumber);
   const fuelStations = useFuelStationsAlongRoute(day, fuelRangeKm);
+  const handleAccommodationsLoaded = useCallback(
+    (items: Accommodation[]) => {
+      if (!trip) return;
+      const next = withSuggestedOvernightStop(trip, dayNumber, items);
+      if (next === trip) return;
+      setTrip(next);
+      setActiveTrip(next);
+    },
+    [dayNumber, setActiveTrip, trip],
+  );
 
   if (loading) {
     return (
@@ -215,7 +232,10 @@ export default function TripDayScreen() {
       ) : null}
 
       {!isLastDay(trip.days, day.day_number) ? (
-        <AccommodationsCard day={day} />
+        <AccommodationsCard
+          day={day}
+          onAccommodationsLoaded={handleAccommodationsLoaded}
+        />
       ) : null}
 
       <NearbyPoisCard day={day} />
@@ -478,7 +498,13 @@ const ACCOMMODATION_KIND_ICONS: Record<AccommodationKind, IconName> = {
   camp_site: "tent",
 };
 
-function AccommodationsCard({ day }: { day: TripDay }) {
+function AccommodationsCard({
+  day,
+  onAccommodationsLoaded,
+}: {
+  day: TripDay;
+  onAccommodationsLoaded?: (items: Accommodation[]) => void;
+}) {
   // US-10: suggest overnight stops near each day-end waypoint so planners
   // don't have to jump out to a hotel search app mid-plan. Anchor is the
   // day's end point (last waypoint, falling back to the last geometry
@@ -514,6 +540,11 @@ function AccommodationsCard({ day }: { day: TripDay }) {
       ignore = true;
     };
   }, [anchor?.lat, anchor?.lng]);
+
+  useEffect(() => {
+    if (!items || items.length === 0) return;
+    onAccommodationsLoaded?.(items);
+  }, [items, onAccommodationsLoaded]);
 
   if (!anchor) return null;
 
