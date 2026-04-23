@@ -79,4 +79,32 @@ describe("auth pages social sign-in", () => {
       ),
     ).toBeInTheDocument();
   });
+
+  it("clears the URL-driven login error when the error param is removed", async () => {
+    searchParamValues = new URLSearchParams({
+      callbackUrl: "/trips/planner",
+      error: "social_account_conflict",
+    });
+
+    const { rerender } = render(<LoginPage />);
+
+    expect(
+      await screen.findByText(
+        "This email already has a Tarmoto password account. Sign in with your password instead.",
+      ),
+    ).toBeInTheDocument();
+
+    searchParamValues = new URLSearchParams({
+      callbackUrl: "/trips/planner",
+    });
+    rerender(<LoginPage />);
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText(
+          "This email already has a Tarmoto password account. Sign in with your password instead.",
+        ),
+      ).not.toBeInTheDocument(),
+    );
+  });
 });

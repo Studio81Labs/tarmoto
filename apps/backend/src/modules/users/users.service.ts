@@ -45,6 +45,8 @@ function managedAvatarFilePath(avatarUrl: string | null): string | null {
 
     const filename = decodeURIComponent(encodedFilename);
     if (
+      filename === '.' ||
+      filename === '..' ||
       filename !== basename(filename) ||
       filename.includes('/') ||
       filename.includes('\\') ||

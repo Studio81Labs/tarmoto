@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
@@ -18,10 +18,13 @@ export function LoginForm({
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const searchParams = useSearchParams();
-  const [error, setError] = useState(() =>
-    getLoginErrorMessage(searchParams.get("error")),
-  );
+  const urlError = getLoginErrorMessage(searchParams.get("error"));
+  const [error, setError] = useState(urlError);
   const callbackUrl = safeCallbackUrl(searchParams.get("callbackUrl"));
+
+  useEffect(() => {
+    setError(urlError);
+  }, [urlError]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
