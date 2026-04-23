@@ -1,3 +1,9 @@
+import {
+  formatRoadLabel,
+  formatRoadLength,
+  formatRoadQuality,
+} from "@/lib/best-roads-format";
+
 interface Road {
   id: string;
   road_name: string | null;
@@ -11,14 +17,6 @@ interface Road {
 
 interface Props {
   roads: Road[];
-}
-
-function formatLength(m: number): string {
-  return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
-}
-
-function formatQuality(q: number | null): string {
-  return q == null ? "—" : q.toFixed(1);
 }
 
 export function BestRoadsList({ roads }: Props) {
@@ -37,11 +35,6 @@ export function BestRoadsList({ roads }: Props) {
   return (
     <ol className="divide-y divide-slate-800 rounded-xl border border-slate-800 bg-slate-900/60">
       {roads.map((r, i) => {
-        const name =
-          r.road_name ??
-          (r.road_number
-            ? `Road ${r.road_number}`
-            : `Segment ${r.id.slice(0, 6)}`);
         return (
           <li
             key={r.id}
@@ -52,9 +45,9 @@ export function BestRoadsList({ roads }: Props) {
               {i + 1}
             </span>
             <div className="min-w-0 flex-1">
-              <h3 className="truncate font-semibold">{name}</h3>
+              <h3 className="truncate font-semibold">{formatRoadLabel(r)}</h3>
               <p className="text-xs text-slate-400">
-                {formatLength(r.length_m)} · {r.surface_type}
+                {formatRoadLength(r.length_m)} · {r.surface_type}
               </p>
             </div>
             <dl className="hidden gap-6 sm:flex">
@@ -63,7 +56,7 @@ export function BestRoadsList({ roads }: Props) {
                   Quality
                 </dt>
                 <dd className="text-sm font-semibold tabular-nums">
-                  {formatQuality(r.quality_score)}
+                  {formatRoadQuality(r.quality_score)}
                 </dd>
               </div>
               <div className="text-center">
