@@ -9,6 +9,8 @@ import { forwardRef, useEffect, useImperativeHandle } from "react";
 import { TripPlannerMap } from "./TripPlannerMap";
 import type { Trip } from "@/lib/types";
 import { createRegionDrawControl } from "@/components/map/RegionDrawControl";
+import { useClosures } from "@/hooks/useClosures";
+import { usePasses } from "@/hooks/usePasses";
 
 const mockMap = {
   addSource: vi.fn(),
@@ -70,6 +72,14 @@ vi.mock("@/components/map/RegionDrawControl", () => ({
   }),
 }));
 
+vi.mock("@/hooks/useClosures", () => ({
+  useClosures: vi.fn(),
+}));
+
+vi.mock("@/hooks/usePasses", () => ({
+  usePasses: vi.fn(),
+}));
+
 function trip(): Trip {
   return {
     id: "trip-1",
@@ -110,12 +120,23 @@ function trip(): Trip {
             type: "end",
           },
         ],
+        routeGeometry: {
+          type: "LineString",
+          coordinates: [
+            [14.41, 50.08],
+            [14.49, 50.12],
+            [14.61, 50.19],
+          ],
+        },
       },
     ],
   };
 }
 
 describe("TripPlannerMap", () => {
+  const useClosuresMock = vi.mocked(useClosures);
+  const usePassesMock = vi.mocked(usePasses);
+
   beforeEach(() => {
     vi.mocked(createRegionDrawControl).mockClear();
     lastDrawOptions = null;
@@ -131,10 +152,33 @@ describe("TripPlannerMap", () => {
     mockMap.getLayer.mockReset();
     mockMap.setPaintProperty.mockReset();
     mockMap.fitBounds.mockReset();
+    useClosuresMock.mockReset();
+    useClosuresMock.mockReturnValue({
+      closures: [],
+      routeClosures: [],
+      counts: { full: 0, partial: 0, advisory: 0, total: 0 },
+      routeCounts: { full: 0, partial: 0, advisory: 0, total: 0 },
+      loading: false,
+      routeLoading: false,
+      error: null,
+      routeError: null,
+      previewDate: new Date("2026-07-15T12:00:00Z"),
+    });
+    usePassesMock.mockReset();
+    usePassesMock.mockReturnValue({
+      passes: [],
+      routePasses: [],
+      routeClosedCount: 0,
+      routeUnknownCount: 0,
+      loading: false,
+      routeLoading: false,
+      error: null,
+      routeError: null,
+    });
   });
 
   it("toggles the shared MapCanvas quality and surface overlays", () => {
-    render(<TripPlannerMap trip={trip()} />);
+    render(<TripPlannerMap trip={trip()} month={7} />);
 
     const canvas = screen.getByTestId("planner-map-canvas");
     expect(canvas).toHaveAttribute("data-show-quality", "true");
@@ -152,7 +196,7 @@ describe("TripPlannerMap", () => {
   });
 
   it("surfaces rectangle drawing controls and lets riders clear a drawn region", () => {
-    render(<TripPlannerMap trip={trip()} />);
+    render(<TripPlannerMap trip={trip()} month={7} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Draw region" }));
     expect(drawControl.start).toHaveBeenCalledTimes(1);
@@ -177,7 +221,7 @@ describe("TripPlannerMap", () => {
   });
 
   it("re-fits the map when trip bounds change on the same trip id", () => {
-    const { rerender } = render(<TripPlannerMap trip={trip()} />);
+    const { rerender } = render(<TripPlannerMap trip={trip()} month={7} />);
 
     return waitFor(() => {
       expect(mockMap.fitBounds).toHaveBeenCalledTimes(1);
@@ -205,9 +249,18 @@ describe("TripPlannerMap", () => {
                     type: "end",
                   },
                 ],
+                routeGeometry: {
+                  type: "LineString",
+                  coordinates: [
+                    [15.11, 50.58],
+                    [15.28, 50.67],
+                    [15.61, 50.79],
+                  ],
+                },
               },
             ],
           }}
+          month={7}
         />,
       );
 
@@ -229,17 +282,126 @@ describe("TripPlannerMap", () => {
   });
 
   it("destroys the previous draw control before reinitializing onReady", () => {
-    const { rerender } = render(<TripPlannerMap trip={trip()} />);
+    const { rerender } = render(<TripPlannerMap trip={trip()} month={7} />);
 
     const initialCreateCalls = vi.mocked(createRegionDrawControl).mock.calls
       .length;
     const initialDestroyCalls = drawControl.destroy.mock.calls.length;
 
-    rerender(<TripPlannerMap trip={trip()} />);
+    rerender(<TripPlannerMap trip={trip()} month={7} />);
 
     expect(drawControl.destroy.mock.calls.length).toBe(initialDestroyCalls + 1);
     expect(vi.mocked(createRegionDrawControl).mock.calls.length).toBe(
       initialCreateCalls + 1,
+    );
+  });
+
+  it("loads closures and passes for the selected month using the trip route", () => {
+    render(<TripPlannerMap trip={trip()} month={7} />);
+
+    expect(useClosuresMock).toHaveBeenCalledWith(7, [
+      {
+        id: "day-1",
+        label: "Day 1 · Day one",
+        points: [
+          { lng: 14.41, lat: 50.08 },
+          { lng: 14.49, lat: 50.12 },
+          { lng: 14.61, lat: 50.19 },
+        ],
+      },
+    ]);
+    expect(usePassesMock).toHaveBeenCalledWith(7, [
+      {
+        id: "day-1",
+        label: "Day 1 · Day one",
+        points: [
+          { lng: 14.41, lat: 50.08 },
+          { lng: 14.49, lat: 50.12 },
+          { lng: 14.61, lat: 50.19 },
+        ],
+      },
+    ]);
+  });
+
+  it("shows in-map seasonal condition details and registers closure/pass overlay sources", () => {
+    useClosuresMock.mockReturnValue({
+      closures: [
+        {
+          id: "closure-1",
+          title: "Stelvio summit roadworks",
+          reason: "roadworks",
+          severity: "partial",
+          geometry: [
+            { lng: 10.45, lat: 46.53 },
+            { lng: 10.47, lat: 46.55 },
+          ],
+          detour: [
+            { lng: 10.4, lat: 46.5 },
+            { lng: 10.42, lat: 46.52 },
+          ],
+          country_code: "IT",
+          region: "Lombardy",
+          starts_at: "2026-07-01T00:00:00Z",
+          ends_at: "2026-07-21T00:00:00Z",
+          notes: "Signal-controlled single-lane traffic",
+          source: "official",
+          created_by: null,
+          created_at: "2026-06-01T00:00:00Z",
+          updated_at: "2026-06-15T00:00:00Z",
+        },
+      ],
+      routeClosures: [],
+      counts: { full: 0, partial: 1, advisory: 0, total: 1 },
+      routeCounts: { full: 0, partial: 0, advisory: 0, total: 0 },
+      loading: false,
+      routeLoading: false,
+      error: null,
+      routeError: null,
+      previewDate: new Date("2026-07-15T12:00:00Z"),
+    });
+    usePassesMock.mockReturnValue({
+      passes: [
+        {
+          id: "pass-1",
+          name: "Stelvio Pass",
+          country_code: "IT",
+          region: "Lombardy",
+          lat: 46.53,
+          lng: 10.45,
+          elevation_m: 2757,
+          typical_open_month: 6,
+          typical_close_month: 10,
+          status: "open",
+          status_overridden: false,
+          notes: null,
+          last_updated: "2026-06-15T00:00:00Z",
+        },
+      ],
+      routePasses: [],
+      routeClosedCount: 0,
+      routeUnknownCount: 0,
+      loading: false,
+      routeLoading: false,
+      error: null,
+      routeError: null,
+    });
+
+    render(<TripPlannerMap trip={trip()} month={7} />);
+
+    expect(screen.getByText("Conditions for July")).toBeInTheDocument();
+    expect(screen.getByText("Stelvio summit roadworks")).toBeInTheDocument();
+    expect(screen.getByText("Roadworks")).toBeInTheDocument();
+    expect(screen.getByText("Jul 1 - Jul 21")).toBeInTheDocument();
+    expect(screen.getByText("Stelvio Pass")).toBeInTheDocument();
+    expect(screen.getByText("Open · 2,757 m")).toBeInTheDocument();
+
+    expect(mockMap.addSource).toHaveBeenCalledWith(
+      "trip-planner-closure-lines",
+      expect.objectContaining({ type: "geojson" }),
+    );
+    expect(mockMap.addSource).toHaveBeenCalledWith(
+      "trip-planner-pass-markers",
+      expect.objectContaining({ type: "geojson" }),
     );
   });
 });

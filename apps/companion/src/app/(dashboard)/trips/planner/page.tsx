@@ -239,7 +239,7 @@ export default function TripPlannerPage() {
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
-          <TripPlannerMap trip={activeTrip} />
+          <TripPlannerMap trip={activeTrip} month={travelMonth} />
 
           {/* Drop overlay */}
           {isDragOver && (
