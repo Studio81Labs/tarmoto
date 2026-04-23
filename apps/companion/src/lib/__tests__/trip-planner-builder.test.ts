@@ -113,4 +113,60 @@ describe("rebuildPlannerDay", () => {
       ),
     ).toBe(true);
   });
+
+  it("ignores non-routing suggestion stops when rebuilding route geometry", () => {
+    const rebuilt = rebuildPlannerDay(
+      {
+        dayNumber: 1,
+        title: "Suggestion stops",
+        distanceKm: 0,
+        durationMinutes: 0,
+        elevationGain: 0,
+        avgQuality: 0,
+        segments: [],
+        waypoints: [
+          {
+            id: "start",
+            name: "Start",
+            location: { lng: 14.41, lat: 50.08 },
+            type: "start",
+          },
+          {
+            id: "fuel",
+            name: "Fuel",
+            location: { lng: 14.47, lat: 50.14 },
+            type: "fuel",
+          },
+          {
+            id: "via",
+            name: "Via",
+            location: { lng: 14.52, lat: 50.16 },
+            type: "via",
+          },
+          {
+            id: "stay",
+            name: "Stay",
+            location: { lng: 14.58, lat: 50.22 },
+            type: "accommodation",
+          },
+          {
+            id: "end",
+            name: "End",
+            location: { lng: 14.61, lat: 50.19 },
+            type: "end",
+          },
+        ],
+      },
+      BASE_PARAMETERS,
+    );
+
+    expect(rebuilt.routeGeometry?.coordinates[0]).toEqual([14.41, 50.08]);
+    expect(rebuilt.routeGeometry?.coordinates.at(-1)).toEqual([14.61, 50.19]);
+    expect(rebuilt.routeGeometry?.coordinates).not.toContainEqual([
+      14.47, 50.14,
+    ]);
+    expect(rebuilt.routeGeometry?.coordinates).not.toContainEqual([
+      14.58, 50.22,
+    ]);
+  });
 });

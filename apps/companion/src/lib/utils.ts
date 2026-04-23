@@ -218,6 +218,10 @@ export function formatRelativeTime(iso: string): string {
   return formatDate(iso);
 }
 
+export function roundCoordinate(value: number): number {
+  return Math.round(value * 1_000_000) / 1_000_000;
+}
+
 export function formatRideType(value: string): string {
   if (!value) return "Ride";
   return value.charAt(0).toUpperCase() + value.slice(1);

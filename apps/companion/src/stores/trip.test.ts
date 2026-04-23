@@ -222,4 +222,18 @@ describe("useTripStore planner editing", () => {
       "end",
     ]);
   });
+
+  it("caps undo history so long edit sessions do not grow unbounded", () => {
+    const store = useTripStore.getState();
+
+    for (let index = 0; index < 60; index++) {
+      store.appendPlannerWaypoint(0, {
+        lng: 14.41 + index * 0.001,
+        lat: 50.08 + index * 0.001,
+      });
+    }
+
+    expect(useTripStore.getState().undoStack).toHaveLength(50);
+    expect(useTripStore.getState().canUndo).toBe(true);
+  });
 });

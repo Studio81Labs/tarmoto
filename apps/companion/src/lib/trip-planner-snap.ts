@@ -1,3 +1,5 @@
+import { roundCoordinate } from "./utils";
+
 type RoadLineString = {
   type: "LineString";
   coordinates: number[][];
@@ -70,7 +72,10 @@ export function snapWaypointToRoadFeatures(
   }
 
   if (!best) return null;
-  return { lng: round6(best.lng), lat: round6(best.lat) };
+  return {
+    lng: roundCoordinate(best.lng),
+    lat: roundCoordinate(best.lat),
+  };
 }
 
 function normalizeQualityScore(
@@ -119,7 +124,3 @@ function distanceSquared(a: [number, number], b: [number, number]): number {
 // equally close in map-coordinate space, so click placement still feels
 // anchored to the nearest visible road.
 const SNAP_DISTANCE_EPSILON = 1e-10;
-
-function round6(value: number): number {
-  return Math.round(value * 1_000_000) / 1_000_000;
-}

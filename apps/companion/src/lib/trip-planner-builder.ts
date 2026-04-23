@@ -10,6 +10,12 @@ import type {
 } from "./types";
 import { scoreToTier } from "./utils";
 
+const ROUTING_WAYPOINT_TYPES: ReadonlySet<Waypoint["type"]> = new Set([
+  "start",
+  "via",
+  "end",
+]);
+
 const DEFAULT_PARAMETERS: TripParameters = {
   days: 1,
   dailyKmTarget: 250,
@@ -79,7 +85,8 @@ export function rebuildPlannerDay(
   day: TripDay,
   parameters: TripParameters,
 ): TripDay {
-  if (day.waypoints.length < 2) {
+  const routeWaypoints = routingWaypoints(day.waypoints);
+  if (routeWaypoints.length < 2) {
     return {
       ...day,
       routeGeometry: undefined,
@@ -91,7 +98,7 @@ export function rebuildPlannerDay(
     };
   }
 
-  const routePoints = buildRoutePoints(day.waypoints, parameters);
+  const routePoints = buildRoutePoints(routeWaypoints, parameters);
   const routeGeometry: GeoJSON.LineString = {
     type: "LineString",
     coordinates: routePoints,
@@ -181,6 +188,12 @@ function buildRoutePoints(
   }
 
   return dedupeSequentialPoints(points);
+}
+
+function routingWaypoints(waypoints: Waypoint[]): Waypoint[] {
+  return waypoints.filter((waypoint) =>
+    ROUTING_WAYPOINT_TYPES.has(waypoint.type),
+  );
 }
 
 function buildLegPoints(

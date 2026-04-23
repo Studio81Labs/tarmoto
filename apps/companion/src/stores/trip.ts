@@ -53,6 +53,7 @@ const ROUTING_WAYPOINT_TYPES: ReadonlySet<Waypoint["type"]> = new Set([
   "via",
   "end",
 ]);
+const MAX_HISTORY_ENTRIES = 50;
 
 export const useTripStore = create<TripState & TripStoreHistory>((set) => ({
   trips: [],
@@ -197,7 +198,7 @@ export const useTripStore = create<TripState & TripStoreHistory>((set) => ({
       const previous = state.undoStack[state.undoStack.length - 1];
       if (previous === undefined) return state;
       const undoStack = state.undoStack.slice(0, -1);
-      const redoStack = [...state.redoStack, state.activeTrip];
+      const redoStack = trimHistory([...state.redoStack, state.activeTrip]);
       return {
         activeTrip: previous,
         undoStack,
@@ -212,7 +213,7 @@ export const useTripStore = create<TripState & TripStoreHistory>((set) => ({
       const next = state.redoStack[state.redoStack.length - 1];
       if (next === undefined) return state;
       const redoStack = state.redoStack.slice(0, -1);
-      const undoStack = [...state.undoStack, state.activeTrip];
+      const undoStack = trimHistory([...state.undoStack, state.activeTrip]);
       return {
         activeTrip: next,
         undoStack,
@@ -239,7 +240,7 @@ function commitTripChange(
 ): Partial<TripState & TripStoreHistory> | (TripState & TripStoreHistory) {
   const nextTrip = applyChange(state.activeTrip);
   if (!nextTrip || nextTrip === state.activeTrip) return state;
-  const undoStack = [...state.undoStack, state.activeTrip];
+  const undoStack = trimHistory([...state.undoStack, state.activeTrip]);
   return {
     activeTrip: nextTrip,
     undoStack,
@@ -282,4 +283,9 @@ function routingWaypointSignature(waypoints: Waypoint[]) {
     .filter((waypoint) => ROUTING_WAYPOINT_TYPES.has(waypoint.type))
     .map((waypoint) => waypoint.id)
     .join("|");
+}
+
+function trimHistory(history: Array<Trip | null>): Array<Trip | null> {
+  if (history.length <= MAX_HISTORY_ENTRIES) return history;
+  return history.slice(history.length - MAX_HISTORY_ENTRIES);
 }

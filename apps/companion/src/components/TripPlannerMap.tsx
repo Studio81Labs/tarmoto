@@ -39,7 +39,7 @@ import {
   type RoadSnapFeature,
 } from "@/lib/trip-planner-snap";
 import type { Trip } from "@/lib/types";
-import { formatDistance } from "@/lib/utils";
+import { formatDistance, roundCoordinate } from "@/lib/utils";
 import { usePreferencesStore } from "@/stores/preferences";
 
 const ROUTE_SOURCE = "trip-planner-route";
@@ -548,10 +548,6 @@ function TripPlannerMapContent({
       </div>
     </MapCanvas>
   );
-}
-
-function roundCoordinate(value: number): number {
-  return Math.round(value * 1_000_000) / 1_000_000;
 }
 
 function toggleClassName(active: boolean): string {
