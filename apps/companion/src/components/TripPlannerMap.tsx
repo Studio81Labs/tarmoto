@@ -2,27 +2,61 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
-import { Layers3, Route, Square, X } from "lucide-react";
+import {
+  AlertTriangle,
+  Layers3,
+  Mountain,
+  Route,
+  Square,
+  X,
+} from "lucide-react";
 import { MapCanvas, type MapCanvasHandle } from "@/components/map/MapCanvas";
 import {
   createRegionDrawControl,
   type RegionDrawControl,
   type RegionDrawBbox,
 } from "@/components/map/RegionDrawControl";
-import type { Trip } from "@/lib/types";
+import { useClosures } from "@/hooks/useClosures";
+import { usePasses } from "@/hooks/usePasses";
+import {
+  buildTripClosureRoutes,
+  detourLengthKm,
+  formatClosureWindow,
+} from "@/lib/closures-summary";
+import { monthLabel } from "@/lib/passes-summary";
+import {
+  buildPlannerClosureLineCollection,
+  buildPlannerClosureMarkerCollection,
+  buildPlannerPassMarkerCollection,
+} from "@/lib/trip-planner-overlays";
 import {
   buildTripPlannerRouteCollection,
   buildTripPlannerWaypointCollection,
   getTripPlannerBounds,
 } from "@/lib/trip-planner-map";
+import type { Trip } from "@/lib/types";
+import { formatDistance } from "@/lib/utils";
+import { usePreferencesStore } from "@/stores/preferences";
 
 const ROUTE_SOURCE = "trip-planner-route";
 const WAYPOINT_SOURCE = "trip-planner-waypoints";
 const ROUTE_LINE = "trip-planner-route-line";
 const WAYPOINT_CIRCLE = "trip-planner-waypoint-circle";
 const WAYPOINT_LABEL = "trip-planner-waypoint-label";
+const CLOSURE_LINE_SOURCE = "trip-planner-closure-lines";
+const CLOSURE_MARKER_SOURCE = "trip-planner-closure-markers";
+const PASS_MARKER_SOURCE = "trip-planner-pass-markers";
+const CLOSURE_LINE_LAYER = "trip-planner-closure-lines";
+const CLOSURE_MARKER_LAYER = "trip-planner-closure-markers";
+const PASS_MARKER_LAYER = "trip-planner-pass-markers";
 
-export function TripPlannerMap({ trip }: { trip: Trip | null }) {
+export function TripPlannerMap({
+  trip,
+  month,
+}: {
+  trip: Trip | null;
+  month: number;
+}) {
   const handleRef = useRef<MapCanvasHandle>(null);
   const drawRef = useRef<RegionDrawControl | null>(null);
   const fittedBoundsKeyRef = useRef<string | null>(null);
@@ -31,6 +65,8 @@ export function TripPlannerMap({ trip }: { trip: Trip | null }) {
   const [showSurface, setShowSurface] = useState(false);
   const [drawMode, setDrawMode] = useState<"idle" | "drawing">("idle");
   const [drawnRegion, setDrawnRegion] = useState<RegionDrawBbox | null>(null);
+  const unitSystem = usePreferencesStore((s) => s.unitSystem);
+  const hydratePreferences = usePreferencesStore((s) => s.hydrate);
 
   const routeCollection = useMemo(
     () => buildTripPlannerRouteCollection(trip),
@@ -46,6 +82,63 @@ export function TripPlannerMap({ trip }: { trip: Trip | null }) {
     [tripBounds],
   );
   const waypointCount = waypointCollection.features.length;
+  const closureRoutes = useMemo(() => buildTripClosureRoutes(trip), [trip]);
+  const {
+    closures,
+    routeClosures,
+    routeCounts,
+    loading: closuresLoading,
+    routeLoading: routeClosuresLoading,
+  } = useClosures(month, closureRoutes);
+  const {
+    passes,
+    routePasses,
+    routeClosedCount,
+    routeUnknownCount,
+    loading: passesLoading,
+    routeLoading: routePassesLoading,
+  } = usePasses(month, closureRoutes);
+  const closureLineCollection = useMemo(
+    () => buildPlannerClosureLineCollection(closures),
+    [closures],
+  );
+  const closureMarkerCollection = useMemo(
+    () => buildPlannerClosureMarkerCollection(closures),
+    [closures],
+  );
+  const passMarkerCollection = useMemo(
+    () => buildPlannerPassMarkerCollection(passes),
+    [passes],
+  );
+  const highlightedClosures =
+    routeClosures.length > 0 ? routeClosures : closures;
+  const highlightedPasses =
+    routePasses.length > 0
+      ? routePasses.filter((pass) => pass.status !== "open")
+      : passes;
+  const activeMonthLabel = monthLabel(month);
+  const conditionsLoading =
+    closuresLoading ||
+    routeClosuresLoading ||
+    passesLoading ||
+    routePassesLoading;
+  const routeWarningParts: string[] = [];
+
+  if (routeCounts.total > 0) {
+    routeWarningParts.push(
+      `${routeCounts.total} route ${routeCounts.total === 1 ? "closure" : "closures"}`,
+    );
+  }
+  if (routeClosedCount > 0) {
+    routeWarningParts.push(
+      `${routeClosedCount} closed ${routeClosedCount === 1 ? "pass" : "passes"}`,
+    );
+  }
+  if (routeUnknownCount > 0) {
+    routeWarningParts.push(
+      `${routeUnknownCount} unknown ${routeUnknownCount === 1 ? "pass" : "passes"}`,
+    );
+  }
 
   useEffect(() => {
     if (!tripBoundsKey) {
@@ -56,6 +149,10 @@ export function TripPlannerMap({ trip }: { trip: Trip | null }) {
       fittedBoundsKeyRef.current = null;
     }
   }, [tripBoundsKey]);
+
+  useEffect(() => {
+    hydratePreferences();
+  }, [hydratePreferences]);
 
   const handleReady = (map: MapLibreMap) => {
     ensurePlannerLayers(map);
@@ -72,7 +169,17 @@ export function TripPlannerMap({ trip }: { trip: Trip | null }) {
     if (!map || !ready) return;
     syncGeoJsonSource(map, ROUTE_SOURCE, routeCollection);
     syncGeoJsonSource(map, WAYPOINT_SOURCE, waypointCollection);
-  }, [ready, routeCollection, waypointCollection]);
+    syncGeoJsonSource(map, CLOSURE_LINE_SOURCE, closureLineCollection);
+    syncGeoJsonSource(map, CLOSURE_MARKER_SOURCE, closureMarkerCollection);
+    syncGeoJsonSource(map, PASS_MARKER_SOURCE, passMarkerCollection);
+  }, [
+    closureLineCollection,
+    closureMarkerCollection,
+    passMarkerCollection,
+    ready,
+    routeCollection,
+    waypointCollection,
+  ]);
 
   useEffect(() => {
     if (!ready) return;
@@ -193,6 +300,96 @@ export function TripPlannerMap({ trip }: { trip: Trip | null }) {
           Until route generation lands, the planner previews each day as a
           direct line between its ordered waypoints.
         </p>
+
+        <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/80 p-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-white">
+            <AlertTriangle size={14} className="text-amber-300" />
+            Conditions for {activeMonthLabel}
+          </div>
+
+          {conditionsLoading ? (
+            <p className="mt-2 text-xs text-slate-500">
+              Loading passes and closures…
+            </p>
+          ) : (
+            <>
+              {routeWarningParts.length > 0 ? (
+                <p className="mt-2 text-xs text-amber-200">
+                  Route warnings: {routeWarningParts.join(" · ")}.
+                </p>
+              ) : (
+                <p className="mt-2 text-xs text-emerald-300">
+                  No route closures or pass warnings for this month.
+                </p>
+              )}
+
+              {highlightedClosures.length > 0 ? (
+                <div className="mt-3">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                    <AlertTriangle size={12} />
+                    Closures
+                  </div>
+                  <ul className="mt-2 space-y-2">
+                    {highlightedClosures.slice(0, 2).map((closure) => {
+                      const detourKm =
+                        closure.reason === "roadworks"
+                          ? detourLengthKm(closure)
+                          : null;
+
+                      return (
+                        <li
+                          key={closure.id}
+                          className="rounded-lg border border-slate-800 bg-slate-950/70 p-2"
+                        >
+                          <p className="text-xs font-medium text-slate-100">
+                            {closure.title}
+                          </p>
+                          <p className="mt-1 text-[11px] text-slate-400">
+                            {reasonLabel(closure.reason)}
+                          </p>
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            {formatClosureWindow(closure)}
+                          </p>
+                          {detourKm != null ? (
+                            <p className="mt-1 text-[11px] text-cyan-300">
+                              Detour approx.{" "}
+                              {formatDistance(detourKm, unitSystem)}
+                            </p>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : null}
+
+              {highlightedPasses.length > 0 ? (
+                <div className="mt-3">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                    <Mountain size={12} />
+                    Passes
+                  </div>
+                  <ul className="mt-2 space-y-2">
+                    {highlightedPasses.slice(0, 2).map((pass) => (
+                      <li
+                        key={pass.id}
+                        className="rounded-lg border border-slate-800 bg-slate-950/70 p-2"
+                      >
+                        <p className="text-xs font-medium text-slate-100">
+                          {pass.name}
+                        </p>
+                        <p className="mt-1 text-[11px] text-slate-400">
+                          {statusLabel(pass.status)} ·{" "}
+                          {pass.elevation_m.toLocaleString()} m
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
       </div>
     </MapCanvas>
   );
@@ -279,6 +476,109 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       },
     });
   }
+
+  if (!map.getSource(CLOSURE_LINE_SOURCE)) {
+    map.addSource(CLOSURE_LINE_SOURCE, {
+      type: "geojson",
+      data: buildPlannerClosureLineCollection([]),
+    });
+  }
+  if (!map.getLayer(CLOSURE_LINE_LAYER)) {
+    map.addLayer({
+      id: CLOSURE_LINE_LAYER,
+      type: "line",
+      source: CLOSURE_LINE_SOURCE,
+      paint: {
+        "line-color": [
+          "match",
+          ["get", "severity"],
+          "full",
+          "#FB7185",
+          "partial",
+          "#FBBF24",
+          "#38BDF8",
+        ],
+        "line-width": ["interpolate", ["linear"], ["zoom"], 7, 2, 11, 4, 14, 6],
+        "line-opacity": 0.85,
+      },
+    });
+  }
+
+  if (!map.getSource(CLOSURE_MARKER_SOURCE)) {
+    map.addSource(CLOSURE_MARKER_SOURCE, {
+      type: "geojson",
+      data: buildPlannerClosureMarkerCollection([]),
+    });
+  }
+  if (!map.getLayer(CLOSURE_MARKER_LAYER)) {
+    map.addLayer({
+      id: CLOSURE_MARKER_LAYER,
+      type: "circle",
+      source: CLOSURE_MARKER_SOURCE,
+      paint: {
+        "circle-color": [
+          "match",
+          ["get", "severity"],
+          "full",
+          "#FB7185",
+          "partial",
+          "#FBBF24",
+          "#38BDF8",
+        ],
+        "circle-radius": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          7,
+          5,
+          12,
+          7,
+          15,
+          9,
+        ],
+        "circle-stroke-color": "#020617",
+        "circle-stroke-width": 2,
+      },
+    });
+  }
+
+  if (!map.getSource(PASS_MARKER_SOURCE)) {
+    map.addSource(PASS_MARKER_SOURCE, {
+      type: "geojson",
+      data: buildPlannerPassMarkerCollection([]),
+    });
+  }
+  if (!map.getLayer(PASS_MARKER_LAYER)) {
+    map.addLayer({
+      id: PASS_MARKER_LAYER,
+      type: "circle",
+      source: PASS_MARKER_SOURCE,
+      paint: {
+        "circle-color": [
+          "match",
+          ["get", "status"],
+          "open",
+          "#4ADE80",
+          "closed",
+          "#FB7185",
+          "#94A3B8",
+        ],
+        "circle-radius": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          7,
+          4,
+          12,
+          6,
+          15,
+          8,
+        ],
+        "circle-stroke-color": "#020617",
+        "circle-stroke-width": 2,
+      },
+    });
+  }
 }
 
 function syncGeoJsonSource(
@@ -296,4 +596,36 @@ function syncGeoJsonSource(
     type: "geojson",
     data,
   });
+}
+
+function reasonLabel(
+  reason: "closure" | "roadworks" | "seasonal" | "weather" | "event" | "other",
+): string {
+  switch (reason) {
+    case "roadworks":
+      return "Roadworks";
+    case "seasonal":
+      return "Seasonal";
+    case "weather":
+      return "Weather";
+    case "event":
+      return "Event";
+    case "other":
+      return "Other";
+    case "closure":
+    default:
+      return "Closure";
+  }
+}
+
+function statusLabel(status: "open" | "closed" | "unknown"): string {
+  switch (status) {
+    case "open":
+      return "Open";
+    case "closed":
+      return "Closed";
+    case "unknown":
+    default:
+      return "Unknown";
+  }
 }
