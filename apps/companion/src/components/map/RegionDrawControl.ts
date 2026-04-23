@@ -4,7 +4,6 @@ import type {
   MapMouseEvent,
 } from "maplibre-gl";
 import type { Feature, FeatureCollection, Polygon } from "geojson";
-import type { PlannerBbox } from "@/lib/trip-planner-map";
 
 const PREVIEW_SOURCE = "region-preview-src";
 const DRAWN_SOURCE = "region-drawn-src";
@@ -20,17 +19,19 @@ const EMPTY: FeatureCollection<Polygon> = {
   features: [],
 };
 
+export type RegionDrawBbox = [number, number, number, number];
+
 export interface RegionDrawControl {
   start(): void;
   cancel(): void;
   clearDrawn(): void;
-  setDrawn(bbox: PlannerBbox | null): void;
+  setDrawn(bbox: RegionDrawBbox | null): void;
   destroy(): void;
   getMode(): "idle" | "drawing";
 }
 
 interface Options {
-  onRegionDrawn: (bbox: PlannerBbox) => void;
+  onRegionDrawn: (bbox: RegionDrawBbox) => void;
   onModeChange?: (mode: "idle" | "drawing") => void;
 }
 
@@ -82,7 +83,7 @@ export function createRegionDrawControl(
       return;
     }
 
-    const bbox: PlannerBbox = [
+    const bbox: RegionDrawBbox = [
       Math.min(x1, x2),
       Math.min(y1, y2),
       Math.max(x1, x2),

@@ -108,7 +108,7 @@ export function getTripPlannerBounds(trip: Trip | null): PlannerBbox | null {
 
 function getDayRouteCoordinates(day: Trip["days"][number]): [number, number][] {
   if (day.routeGeometry?.coordinates.length) {
-    return day.routeGeometry.coordinates
+    const routeCoordinates = day.routeGeometry.coordinates
       .filter(
         (coordinate): coordinate is [number, number] =>
           Array.isArray(coordinate) &&
@@ -116,7 +116,8 @@ function getDayRouteCoordinates(day: Trip["days"][number]): [number, number][] {
           typeof coordinate[0] === "number" &&
           typeof coordinate[1] === "number",
       )
-      .map(([lng, lat]) => [lng, lat]);
+      .map(([lng, lat]): [number, number] => [lng, lat]);
+    if (routeCoordinates.length >= 2) return routeCoordinates;
   }
 
   return day.waypoints.map((waypoint) => [

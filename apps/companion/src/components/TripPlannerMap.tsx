@@ -7,13 +7,13 @@ import { MapCanvas, type MapCanvasHandle } from "@/components/map/MapCanvas";
 import {
   createRegionDrawControl,
   type RegionDrawControl,
+  type RegionDrawBbox,
 } from "@/components/map/RegionDrawControl";
 import type { Trip } from "@/lib/types";
 import {
   buildTripPlannerRouteCollection,
   buildTripPlannerWaypointCollection,
   getTripPlannerBounds,
-  type PlannerBbox,
 } from "@/lib/trip-planner-map";
 
 const ROUTE_SOURCE = "trip-planner-route";
@@ -25,12 +25,12 @@ const WAYPOINT_LABEL = "trip-planner-waypoint-label";
 export function TripPlannerMap({ trip }: { trip: Trip | null }) {
   const handleRef = useRef<MapCanvasHandle>(null);
   const drawRef = useRef<RegionDrawControl | null>(null);
-  const hasFittedTripRef = useRef(false);
+  const fittedBoundsKeyRef = useRef<string | null>(null);
   const [ready, setReady] = useState(false);
   const [showQuality, setShowQuality] = useState(true);
   const [showSurface, setShowSurface] = useState(false);
   const [drawMode, setDrawMode] = useState<"idle" | "drawing">("idle");
-  const [drawnRegion, setDrawnRegion] = useState<PlannerBbox | null>(null);
+  const [drawnRegion, setDrawnRegion] = useState<RegionDrawBbox | null>(null);
 
   const routeCollection = useMemo(
     () => buildTripPlannerRouteCollection(trip),
@@ -41,14 +41,25 @@ export function TripPlannerMap({ trip }: { trip: Trip | null }) {
     [trip],
   );
   const tripBounds = useMemo(() => getTripPlannerBounds(trip), [trip]);
+  const tripBoundsKey = useMemo(
+    () => (tripBounds ? tripBounds.join(",") : null),
+    [tripBounds],
+  );
   const waypointCount = waypointCollection.features.length;
 
   useEffect(() => {
-    hasFittedTripRef.current = false;
-  }, [trip?.id]);
+    if (!tripBoundsKey) {
+      fittedBoundsKeyRef.current = null;
+      return;
+    }
+    if (tripBoundsKey !== fittedBoundsKeyRef.current) {
+      fittedBoundsKeyRef.current = null;
+    }
+  }, [tripBoundsKey]);
 
   const handleReady = (map: MapLibreMap) => {
     ensurePlannerLayers(map);
+    drawRef.current?.destroy();
     drawRef.current = createRegionDrawControl(map, {
       onRegionDrawn: (bbox) => setDrawnRegion(bbox),
       onModeChange: setDrawMode,
@@ -70,8 +81,16 @@ export function TripPlannerMap({ trip }: { trip: Trip | null }) {
 
   useEffect(() => {
     const map = handleRef.current?.map;
-    if (!map || !ready || !tripBounds || hasFittedTripRef.current) return;
-    hasFittedTripRef.current = true;
+    if (
+      !map ||
+      !ready ||
+      !tripBounds ||
+      !tripBoundsKey ||
+      fittedBoundsKeyRef.current === tripBoundsKey
+    ) {
+      return;
+    }
+    fittedBoundsKeyRef.current = tripBoundsKey;
     map.fitBounds(
       [
         [tripBounds[0], tripBounds[1]],
@@ -83,7 +102,7 @@ export function TripPlannerMap({ trip }: { trip: Trip | null }) {
         maxZoom: 11,
       },
     );
-  }, [ready, tripBounds]);
+  }, [ready, tripBounds, tripBoundsKey]);
 
   useEffect(() => {
     return () => {

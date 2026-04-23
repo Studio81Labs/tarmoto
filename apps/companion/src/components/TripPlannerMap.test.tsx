@@ -1,7 +1,14 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
-import { useEffect } from "react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { forwardRef, useEffect, useImperativeHandle } from "react";
 import { TripPlannerMap } from "./TripPlannerMap";
 import type { Trip } from "@/lib/types";
+import { createRegionDrawControl } from "@/components/map/RegionDrawControl";
 
 const mockMap = {
   addSource: vi.fn(),
@@ -27,12 +34,19 @@ let lastDrawOptions: {
 } | null = null;
 
 vi.mock("@/components/map/MapCanvas", () => ({
-  MapCanvas: (props: {
-    showQuality: boolean;
-    showSurface: boolean;
-    onReady?: (map: typeof mockMap) => void;
-    children?: React.ReactNode;
-  }) => {
+  MapCanvas: forwardRef(function MockMapCanvas(
+    props: {
+      showQuality: boolean;
+      showSurface: boolean;
+      onReady?: (map: typeof mockMap) => void;
+      children?: React.ReactNode;
+    },
+    ref: React.ForwardedRef<{ map: typeof mockMap | null }>,
+  ) {
+    useImperativeHandle(ref, () => ({
+      map: mockMap,
+    }));
+
     useEffect(() => {
       props.onReady?.(mockMap);
     }, [props]);
@@ -46,7 +60,7 @@ vi.mock("@/components/map/MapCanvas", () => ({
         {props.children}
       </div>
     );
-  },
+  }),
 }));
 
 vi.mock("@/components/map/RegionDrawControl", () => ({
@@ -103,6 +117,7 @@ function trip(): Trip {
 
 describe("TripPlannerMap", () => {
   beforeEach(() => {
+    vi.mocked(createRegionDrawControl).mockClear();
     lastDrawOptions = null;
     drawControl.start.mockReset();
     drawControl.cancel.mockReset();
@@ -159,5 +174,72 @@ describe("TripPlannerMap", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Clear region" }));
     expect(drawControl.clearDrawn).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-fits the map when trip bounds change on the same trip id", () => {
+    const { rerender } = render(<TripPlannerMap trip={trip()} />);
+
+    return waitFor(() => {
+      expect(mockMap.fitBounds).toHaveBeenCalledTimes(1);
+    }).then(() => {
+      mockMap.fitBounds.mockClear();
+
+      rerender(
+        <TripPlannerMap
+          trip={{
+            ...trip(),
+            days: [
+              {
+                ...trip().days[0]!,
+                waypoints: [
+                  {
+                    id: "start-1",
+                    name: "Start",
+                    location: { lng: 15.11, lat: 50.58 },
+                    type: "start",
+                  },
+                  {
+                    id: "end-1",
+                    name: "End",
+                    location: { lng: 15.61, lat: 50.79 },
+                    type: "end",
+                  },
+                ],
+              },
+            ],
+          }}
+        />,
+      );
+
+      return waitFor(() => {
+        expect(mockMap.fitBounds).toHaveBeenCalledTimes(1);
+        expect(mockMap.fitBounds).toHaveBeenCalledWith(
+          [
+            [15.11, 50.58],
+            [15.61, 50.79],
+          ],
+          expect.objectContaining({
+            padding: 72,
+            duration: 0,
+            maxZoom: 11,
+          }),
+        );
+      });
+    });
+  });
+
+  it("destroys the previous draw control before reinitializing onReady", () => {
+    const { rerender } = render(<TripPlannerMap trip={trip()} />);
+
+    const initialCreateCalls = vi.mocked(createRegionDrawControl).mock.calls
+      .length;
+    const initialDestroyCalls = drawControl.destroy.mock.calls.length;
+
+    rerender(<TripPlannerMap trip={trip()} />);
+
+    expect(drawControl.destroy.mock.calls.length).toBe(initialDestroyCalls + 1);
+    expect(vi.mocked(createRegionDrawControl).mock.calls.length).toBe(
+      initialCreateCalls + 1,
+    );
   });
 });
