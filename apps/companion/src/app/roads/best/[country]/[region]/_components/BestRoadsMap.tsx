@@ -1,10 +1,12 @@
 "use client";
 
 import "maplibre-gl/dist/maplibre-gl.css";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { MapRef } from "react-map-gl/maplibre";
 import { Map, Layer, Source, Marker } from "react-map-gl/maplibre";
 import { MAP_STYLE_URL } from "@/lib/config";
+import { useMapColorScheme } from "@/hooks/useMapColorScheme";
+import { applyTarmotoMapTheme, type MapColorScheme } from "@/lib/map-style";
 import { formatRoadQualityColor } from "@/lib/best-roads-format";
 import type { FeatureCollection, LineString } from "geojson";
 
@@ -24,6 +26,8 @@ interface Props {
 
 export function BestRoadsMap({ bbox, center, defaultZoom, roads }: Props) {
   const mapRef = useRef<MapRef | null>(null);
+  const colorScheme = useMapColorScheme();
+  const appliedColorSchemeRef = useRef<MapColorScheme | null>(null);
 
   // Skip roads with < 2 points: a LineString with one or zero coordinates is
   // invalid per RFC 7946 and MapLibre rejects the whole source.
@@ -65,6 +69,13 @@ export function BestRoadsMap({ bbox, center, defaultZoom, roads }: Props) {
     [roads],
   );
 
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (!map || appliedColorSchemeRef.current === colorScheme) return;
+    applyTarmotoMapTheme(map, colorScheme);
+    appliedColorSchemeRef.current = colorScheme;
+  }, [colorScheme]);
+
   return (
     <div className="h-[420px] w-full overflow-hidden rounded-xl border border-slate-800">
       <Map
@@ -78,6 +89,11 @@ export function BestRoadsMap({ bbox, center, defaultZoom, roads }: Props) {
         style={{ width: "100%", height: "100%" }}
         attributionControl={true}
         onLoad={() => {
+          const map = mapRef.current?.getMap();
+          if (map && appliedColorSchemeRef.current !== colorScheme) {
+            applyTarmotoMapTheme(map, colorScheme);
+            appliedColorSchemeRef.current = colorScheme;
+          }
           mapRef.current?.fitBounds(
             [
               [bbox[0], bbox[1]],
