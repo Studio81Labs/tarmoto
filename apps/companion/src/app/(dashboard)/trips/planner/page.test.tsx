@@ -436,4 +436,75 @@ describe("TripPlannerPage", () => {
 
     vi.useRealTimers();
   });
+
+  it("drops delayed generation callbacks after the planner unmounts", async () => {
+    vi.useFakeTimers();
+    const { unmount } = render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+    unmount();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(180);
+    });
+
+    expect(generateTripOptionsMock).not.toHaveBeenCalled();
+    expect(setActiveTrip).not.toHaveBeenCalledWith(activeTrip);
+
+    vi.useRealTimers();
+  });
+
+  it("drops delayed day regeneration callbacks after the planner unmounts", async () => {
+    vi.useFakeTimers();
+    const { unmount } = render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(180);
+    });
+
+    setActiveTrip.mockClear();
+    regenerateTripDayMock.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "Regenerate day 1" }));
+    unmount();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120);
+    });
+
+    expect(regenerateTripDayMock).not.toHaveBeenCalled();
+    expect(setActiveTrip).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
+  });
+
+  it("shows a stable average-quality value for empty generated options", async () => {
+    generateTripOptionsMock.mockReturnValueOnce([
+      {
+        id: "empty",
+        label: "Empty option",
+        summary: "No generated days",
+        trip: {
+          ...activeTrip,
+          id: "empty-option",
+          name: "Empty option",
+          days: [],
+        },
+      },
+    ]);
+
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Empty option" }),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.getByText("0.0/5")).toBeInTheDocument();
+    expect(screen.queryByText("NaN")).not.toBeInTheDocument();
+  });
 });

@@ -247,7 +247,7 @@ function buildSegments(
   optionIndex: number,
   avgQuality: number,
 ): RoutePreviewSegment[] {
-  const allowedSurfaces = surfacePool(params);
+  const allowedSurfaces = params.surfacePreference;
   const sourceSegments =
     segments.length > 0 ? segments : (DEMO_TRIP.days[0]?.segments ?? []);
 

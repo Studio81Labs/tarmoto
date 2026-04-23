@@ -76,6 +76,8 @@ export default function TripPlannerPage() {
   >([]);
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const generationLockRef = useRef(false);
+  const requestTokenRef = useRef(0);
+  const isMountedRef = useRef(true);
   const activeTripIdRef = useRef<string | null>(null);
   const selectedOptionIdRef = useRef<string | null>(null);
   const activeTrip = useTripStore((s) => s.activeTrip);
@@ -162,6 +164,15 @@ export default function TripPlannerPage() {
   }, []);
 
   useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      requestTokenRef.current += 1;
+      generationLockRef.current = false;
+      setGenerating(false);
+    };
+  }, [setGenerating]);
+
+  useEffect(() => {
     activeTripIdRef.current = activeTrip?.id ?? null;
   }, [activeTrip]);
 
@@ -195,26 +206,44 @@ export default function TripPlannerPage() {
     }
     if (generationLockRef.current) return;
     const activeTripIdAtStart = activeTrip?.id ?? null;
+    const requestToken = requestTokenRef.current + 1;
+    requestTokenRef.current = requestToken;
 
     setGenerationError(null);
     generationLockRef.current = true;
     setGenerating(true);
     try {
       await delay(180);
+      if (!isMountedRef.current || requestTokenRef.current !== requestToken) {
+        return;
+      }
       const options = generateTripOptions(plannerParams);
-      if (activeTripIdRef.current !== activeTripIdAtStart) return;
+      if (
+        !isMountedRef.current ||
+        requestTokenRef.current !== requestToken ||
+        activeTripIdRef.current !== activeTripIdAtStart
+      ) {
+        return;
+      }
       setGeneratedOptions(options);
       setSelectedOptionId(options[0]?.id ?? null);
       setActiveTrip(options[0]?.trip ?? null);
     } catch (error) {
+      if (!isMountedRef.current || requestTokenRef.current !== requestToken) {
+        return;
+      }
       const message =
         error instanceof Error
           ? error.message
           : "Could not generate itinerary options right now.";
       setGenerationError(message);
     } finally {
-      generationLockRef.current = false;
-      setGenerating(false);
+      if (requestTokenRef.current === requestToken) {
+        generationLockRef.current = false;
+        if (isMountedRef.current) {
+          setGenerating(false);
+        }
+      }
     }
   }, [
     activeTrip,
@@ -239,12 +268,20 @@ export default function TripPlannerPage() {
       if (!canRegenerate || !displayedTrip || !selectedOptionId) return;
       if (generationLockRef.current) return;
       const regeneratingOptionId = selectedOptionId;
+      const requestToken = requestTokenRef.current + 1;
+      requestTokenRef.current = requestToken;
       setGenerationError(null);
       generationLockRef.current = true;
       setGenerating(true);
       try {
         await delay(120);
+        if (!isMountedRef.current || requestTokenRef.current !== requestToken) {
+          return;
+        }
         const regeneratedTrip = regenerateTripDay(displayedTrip, dayNumber);
+        if (!isMountedRef.current || requestTokenRef.current !== requestToken) {
+          return;
+        }
         setGeneratedOptions((current) =>
           current.map((option) =>
             option.id === regeneratingOptionId
@@ -256,14 +293,21 @@ export default function TripPlannerPage() {
           setActiveTrip(regeneratedTrip);
         }
       } catch (error) {
+        if (!isMountedRef.current || requestTokenRef.current !== requestToken) {
+          return;
+        }
         const message =
           error instanceof Error
             ? error.message
             : "Could not regenerate this day.";
         setGenerationError(message);
       } finally {
-        generationLockRef.current = false;
-        setGenerating(false);
+        if (requestTokenRef.current === requestToken) {
+          generationLockRef.current = false;
+          if (isMountedRef.current) {
+            setGenerating(false);
+          }
+        }
       }
     },
     [
@@ -371,10 +415,12 @@ export default function TripPlannerPage() {
                   0,
                 );
                 const averageQuality =
-                  option.trip.days.reduce(
-                    (sum, day) => sum + day.avgQuality,
-                    0,
-                  ) / option.trip.days.length;
+                  option.trip.days.length > 0
+                    ? option.trip.days.reduce(
+                        (sum, day) => sum + day.avgQuality,
+                        0,
+                      ) / option.trip.days.length
+                    : 0;
 
                 return (
                   <button
