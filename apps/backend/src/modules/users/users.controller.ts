@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Patch,
@@ -11,13 +12,18 @@ import {
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
+  ApiBody,
   ApiResponse,
   ApiBearerAuth,
+  ApiConsumes,
 } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
 import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { UsersService } from './users.service.js';
@@ -50,6 +56,38 @@ export class UsersController {
     @Body() dto: UpdateProfileDto,
   ): Promise<UserResponseDto> {
     return this.usersService.updateProfile(req.user!.userId, dto);
+  }
+
+  @Post('me/avatar')
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Upload a profile avatar' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @ApiResponse({ status: 201, type: UserResponseDto })
+  async uploadAvatar(
+    @Req() req: express.Request,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ): Promise<UserResponseDto> {
+    if (!file) {
+      throw new BadRequestException('Avatar image is required');
+    }
+
+    const publicBaseUrl = `${req.protocol}://${req.get('host')}`;
+    return this.usersService.uploadAvatar(
+      req.user!.userId,
+      file,
+      publicBaseUrl,
+    );
   }
 
   @Get('me/contacts')

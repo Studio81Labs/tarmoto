@@ -532,6 +532,30 @@ export interface UpdateProfileInput {
 export const usersApi = {
   getMe: (init?: RequestInit) =>
     apiFetch<UserProfileResponse>("/users/me", init),
+  uploadAvatar: async (file: File) => {
+    const token = useAuthStore.getState().accessToken;
+    const body = new FormData();
+    body.append("file", file);
+
+    const res = await fetch(`${API_BASE}/users/me/avatar`, {
+      method: "POST",
+      body,
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+
+    if (!res.ok) {
+      if (res.status === 401) useAuthStore.getState().clearSession();
+      const payload = await res.json().catch(() => ({}));
+      throw new ApiError(
+        (payload as { message?: string }).message ??
+          `Request failed (${res.status})`,
+        res.status,
+        payload,
+      );
+    }
+
+    return { data: (await res.json()) as UserProfileResponse };
+  },
   updateMe: (data: UpdateProfileInput) =>
     apiFetch<UserProfileResponse>("/users/me", {
       method: "PATCH",

@@ -23,25 +23,29 @@ vi.mock("@/lib/api", async () => {
   };
 });
 
+vi.mock("@/lib/oauth-providers", () => ({
+  getEnabledOAuthProviders: () => ["google", "apple"],
+}));
+
 describe("auth pages social sign-in", () => {
   beforeEach(() => {
     signInMock.mockReset();
     registerUserMock.mockReset();
   });
 
-  it("keeps the login page on the credentials flow only", async () => {
+  it("renders the configured social providers on the login page", async () => {
     render(<LoginPage />);
 
     await screen.findByRole("button", { name: "Sign in" });
     expect(
-      screen.queryByRole("button", { name: "Continue with Google" }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("button", { name: "Continue with Google" }),
+    ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Continue with Apple" }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("button", { name: "Continue with Apple" }),
+    ).toBeInTheDocument();
   });
 
-  it("keeps the registration page on the credentials flow only", async () => {
+  it("renders the configured social providers on the registration page", async () => {
     render(<RegisterPage />);
 
     await waitFor(() =>
@@ -50,10 +54,10 @@ describe("auth pages social sign-in", () => {
       ).toBeInTheDocument(),
     );
     expect(
-      screen.queryByRole("button", { name: "Continue with Google" }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("button", { name: "Continue with Google" }),
+    ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Continue with Apple" }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("button", { name: "Continue with Apple" }),
+    ).toBeInTheDocument();
   });
 });

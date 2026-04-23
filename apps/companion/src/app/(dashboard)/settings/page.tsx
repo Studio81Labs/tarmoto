@@ -61,6 +61,7 @@ const SETTINGS_SECTIONS = [
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 type CopyState = "idle" | "copied" | "error";
+type AvatarUploadState = "idle" | "uploading" | "uploaded" | "error";
 
 export default function AccountPage() {
   const user = useAuthStore((s) => s.user);
@@ -74,6 +75,11 @@ export default function AccountPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<CopyState>("idle");
   const [mobileLinkQrSrc, setMobileLinkQrSrc] = useState<string | null>(null);
+  const [avatarUploadState, setAvatarUploadState] =
+    useState<AvatarUploadState>("idle");
+  const [avatarUploadError, setAvatarUploadError] = useState<string | null>(
+    null,
+  );
 
   // Per-field dirty flags — set on first keystroke so a late GET response
   // can't clobber what the user just typed, and so an unhydrated save
@@ -233,6 +239,31 @@ export default function AccountPage() {
     }
   }, [user?.email]);
 
+  const handleAvatarFileChange = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+      if (!file) return;
+
+      setAvatarUploadState("uploading");
+      setAvatarUploadError(null);
+
+      try {
+        const { data } = await usersApi.uploadAvatar(file);
+        avatarDirtyRef.current = false;
+        setAvatarUrl(data.avatar_url ?? "");
+        setDidHydrateProfile(true);
+        setAvatarUploadState("uploaded");
+      } catch (err) {
+        setAvatarUploadState("error");
+        setAvatarUploadError(
+          err instanceof Error ? err.message : "Could not upload your photo.",
+        );
+      }
+    },
+    [],
+  );
+
   const mobileLinkHref = user?.email
     ? buildLinkAccountDeepLink(user.email)
     : null;
@@ -320,10 +351,59 @@ export default function AccountPage() {
           )}
           <div className="flex flex-col">
             <p className="text-xs text-slate-500 mt-1">
-              Paste a hosted image URL to keep your web and mobile profile photo
-              in sync today.
+              Upload a photo here, or paste a hosted image URL to keep your web
+              and mobile profile photo in sync today.
             </p>
           </div>
+        </div>
+
+        <div>
+          <label
+            htmlFor="settings-avatar-file"
+            className="block text-sm text-slate-400 mb-1.5"
+          >
+            Upload avatar
+          </label>
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              id="settings-avatar-file"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={handleAvatarFileChange}
+              className="block text-sm text-slate-300 file:mr-4 file:rounded-lg file:border-0 file:bg-slate-800 file:px-4 file:py-2.5 file:text-sm file:font-medium file:text-white hover:file:bg-slate-700"
+              aria-label="Upload avatar"
+            />
+            {avatarUploadState === "uploading" && (
+              <span
+                role="status"
+                aria-live="polite"
+                className="text-sm text-slate-400"
+              >
+                Uploading…
+              </span>
+            )}
+            {avatarUploadState === "uploaded" && (
+              <span
+                role="status"
+                aria-live="polite"
+                className="text-sm text-emerald-400"
+              >
+                Photo uploaded.
+              </span>
+            )}
+            {avatarUploadState === "error" && avatarUploadError && (
+              <span
+                role="alert"
+                aria-live="assertive"
+                className="text-sm text-rose-400"
+              >
+                {avatarUploadError}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-slate-500 mt-1">
+            PNG, JPEG, or WebP up to 5 MB.
+          </p>
         </div>
 
         <div>
@@ -340,6 +420,8 @@ export default function AccountPage() {
               value={avatarUrl}
               onChange={(e) => {
                 avatarDirtyRef.current = true;
+                setAvatarUploadState("idle");
+                setAvatarUploadError(null);
                 setAvatarUrl(e.target.value);
               }}
               placeholder="https://cdn.example.com/rider.jpg"
@@ -349,6 +431,8 @@ export default function AccountPage() {
               type="button"
               onClick={() => {
                 avatarDirtyRef.current = true;
+                setAvatarUploadState("idle");
+                setAvatarUploadError(null);
                 setAvatarUrl("");
               }}
               className="px-3 py-2.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition"

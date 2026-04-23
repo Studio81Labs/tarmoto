@@ -40,6 +40,7 @@ vi.mock("@/lib/api", async () => {
     ...actual,
     usersApi: {
       getMe: vi.fn(),
+      uploadAvatar: vi.fn(),
       updateMe: vi.fn(),
     },
   };
@@ -58,12 +59,14 @@ vi.mock("@/stores/preferences", () => ({
 
 describe("AccountPage", () => {
   const getMeMock = vi.mocked(usersApi.getMe);
+  const uploadAvatarMock = vi.mocked(usersApi.uploadAvatar);
   const updateMeMock = vi.mocked(usersApi.updateMe);
   const clipboardWriteText = vi.fn();
 
   beforeEach(() => {
     vi.useRealTimers();
     getMeMock.mockReset();
+    uploadAvatarMock.mockReset();
     updateMeMock.mockReset();
     qrToDataURLMock.mockClear();
     authState.setUser.mockReset();
@@ -451,5 +454,60 @@ describe("AccountPage", () => {
       "Use an https:// image URL from your CDN, photo host, or social profile.",
     );
     expect(helperText).not.toHaveTextContent("`https://`");
+  });
+
+  it("uploads an avatar file and swaps the profile preview", async () => {
+    getMeMock.mockResolvedValueOnce({
+      data: {
+        id: "user-1",
+        email: "rider@example.com",
+        display_name: "Rider One",
+        phone: null,
+        avatar_url: null,
+        bio: null,
+        home_region: null,
+        home_location: null,
+        work_location: null,
+        preferences: {},
+        created_at: "2026-04-22T09:00:00.000Z",
+      },
+    });
+    uploadAvatarMock.mockResolvedValueOnce({
+      data: {
+        id: "user-1",
+        email: "rider@example.com",
+        display_name: "Rider One",
+        phone: null,
+        avatar_url: "https://cdn.example.com/avatar-uploaded.png",
+        bio: null,
+        home_region: null,
+        home_location: null,
+        work_location: null,
+        preferences: {},
+        created_at: "2026-04-22T09:00:00.000Z",
+      },
+    });
+
+    render(<AccountPage />);
+
+    expect(
+      await screen.findByDisplayValue("rider@example.com"),
+    ).toBeInTheDocument();
+
+    const file = new File(["avatar"], "rider.png", { type: "image/png" });
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("Upload avatar"), {
+        target: { files: [file] },
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(uploadAvatarMock).toHaveBeenCalledWith(file));
+    expect(screen.getByAltText("Rider One's profile photo")).toHaveAttribute(
+      "src",
+      "https://cdn.example.com/avatar-uploaded.png",
+    );
+    expect(screen.getByText("Photo uploaded.")).toBeInTheDocument();
   });
 });

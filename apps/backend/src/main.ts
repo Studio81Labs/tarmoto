@@ -2,7 +2,8 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
-import type { Express } from 'express';
+import { static as serveStatic, type Express } from 'express';
+import { join } from 'node:path';
 import { AppModule } from './app.module.js';
 import { createSwaggerConfig } from './config/swagger.config.js';
 import { loadTrustProxyConfig } from './config/trust-proxy.config.js';
@@ -18,6 +19,7 @@ async function bootstrap() {
 
   app.use(isProd ? helmet() : helmet({ contentSecurityPolicy: false }));
   app.setGlobalPrefix('api/v1');
+  app.use('/uploads', serveStatic(join(process.cwd(), 'uploads')));
 
   app.useGlobalPipes(
     new ValidationPipe({

@@ -6,21 +6,14 @@ import type { NextAuthConfig } from "next-auth";
 import "./auth-types";
 
 import { API_BASE_SERVER } from "@/lib/config";
+import {
+  exchangeOAuthUserForBackendTokens,
+  type BackendAuthResponse,
+} from "@/lib/social-auth-bridge";
 
-interface BackendAuthResponse {
-  access_token: string;
-  refresh_token: string;
-  expires_in: number;
-  user: {
-    id: string;
-    email: string;
-    display_name: string;
-    phone?: string;
-    created_at: string;
-  };
-}
-
-async function refreshAccessToken(refreshToken: string): Promise<BackendAuthResponse> {
+async function refreshAccessToken(
+  refreshToken: string,
+): Promise<BackendAuthResponse> {
   const res = await fetch(`${API_BASE_SERVER}/auth/refresh`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -104,6 +97,31 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     maxAge: 90 * 24 * 60 * 60,
   },
   callbacks: {
+    async signIn({ user, account }) {
+      if (!account || account.provider === "credentials") return true;
+
+      try {
+        const data = await exchangeOAuthUserForBackendTokens({
+          email: user.email,
+          displayName: user.name ?? null,
+        });
+
+        Object.assign(user, {
+          id: data.user.id,
+          email: data.user.email,
+          displayName: data.user.display_name,
+          phone: data.user.phone,
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token,
+          expiresAt: Math.floor(Date.now() / 1000) + data.expires_in,
+        });
+
+        return true;
+      } catch {
+        return "/login?error=social_signin_failed";
+      }
+    },
+
     async jwt({ token, user }) {
       // Initial sign-in — store backend tokens
       if (user) {
