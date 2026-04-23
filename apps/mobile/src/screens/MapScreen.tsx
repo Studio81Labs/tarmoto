@@ -39,17 +39,22 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  type NativeSyntheticEvent,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import {
   Camera,
-  CircleLayer,
-  FillLayer,
-  LineLayer,
-  MapView,
-  type RegionPayload,
-  ShapeSource,
+  GeoJSONSource as ShapeSource,
+  Layer,
+  Map as MapView,
+  type PressEventWithFeatures,
   UserLocation,
   VectorSource,
+  type ViewStateChangeEvent,
 } from "@maplibre/maplibre-react-native";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import { api } from "@/services/api";
@@ -86,7 +91,6 @@ import {
 } from "./MapScreen.helpers";
 import { formatKm } from "./TripScreens.helpers";
 
-type RegionChangeFeature = GeoJSON.Feature<GeoJSON.Point, RegionPayload>;
 type IconName = ComponentProps<typeof Icon>["name"];
 
 // The quality legend grows when offline tiles are active (an extra row
@@ -235,17 +239,19 @@ export default function MapScreen() {
   // is on we piggyback a fetch here so the layer always matches what the
   // rider sees.
   const handleRegionDidChange = useCallback(
-    (feature: RegionChangeFeature) => {
-      const [lng, lat] = feature.geometry.coordinates;
+    (event: NativeSyntheticEvent<ViewStateChangeEvent>) => {
+      const [lng, lat] = event.nativeEvent.center;
       setCenter({ lat, lng });
-      setZoom(feature.properties.zoomLevel);
+      setZoom(event.nativeEvent.zoom);
 
       if (showFunZonesOverlay) {
-        const bounds = (feature.properties as { visibleBounds?: unknown })
-          .visibleBounds as [[number, number], [number, number]] | undefined;
-        if (bounds) {
-          void fetchFunZones(bboxFromVisibleBounds(bounds));
-        }
+        const [west, south, east, north] = event.nativeEvent.bounds;
+        void fetchFunZones(
+          bboxFromVisibleBounds([
+            [west, south],
+            [east, north],
+          ]),
+        );
       }
     },
     [setCenter, setZoom, showFunZonesOverlay, fetchFunZones],
@@ -309,8 +315,10 @@ export default function MapScreen() {
   );
 
   const handleFunZonePress = useCallback(
-    (event: { features: GeoJSON.Feature[] }) => {
-      const id = event.features[0]?.properties?.id as string | undefined;
+    (event: NativeSyntheticEvent<PressEventWithFeatures>) => {
+      const id = event.nativeEvent.features[0]?.properties?.id as
+        | string
+        | undefined;
       if (!id) return;
       const zone = funZones.find((z) => z.id === id);
       if (zone) setSelectedZone(zone);
@@ -324,16 +332,16 @@ export default function MapScreen() {
         style={styles.map}
         mapStyle={DEV_MAP_STYLE_URL}
         onRegionDidChange={handleRegionDidChange}
-        attributionEnabled
-        logoEnabled={false}
+        attribution
+        logo={false}
       >
         <Camera
-          defaultSettings={{
-            centerCoordinate: [center.lng, center.lat],
-            zoomLevel: zoom,
+          initialViewState={{
+            center: [center.lng, center.lat],
+            zoom,
           }}
         />
-        <UserLocation visible animated />
+        <UserLocation animated />
         {showQualityOverlay ? (
           // `key` includes the offline source so MapLibre fully remounts the
           // VectorSource when we swap between the backend URL and a cached
@@ -343,14 +351,15 @@ export default function MapScreen() {
           <VectorSource
             key={`quality-${offlineSource?.regionId ?? "online"}`}
             id="tarmoto-quality"
-            tileUrlTemplates={[tileUrl]}
-            minZoomLevel={0}
-            maxZoomLevel={22}
+            tiles={[tileUrl]}
+            minzoom={0}
+            maxzoom={22}
           >
-            <LineLayer
+            <Layer
+              type="line"
               id="tarmoto-quality-lines"
-              sourceID="tarmoto-quality"
-              sourceLayerID="quality"
+              source="tarmoto-quality"
+              source-layer="quality"
               style={qualityStyle}
             />
           </VectorSource>
@@ -359,11 +368,12 @@ export default function MapScreen() {
         {showPassesOverlay && passes.length > 0 ? (
           <ShapeSource
             id="tarmoto-passes"
-            shape={passesToFeatureCollection(passes)}
+            data={passesToFeatureCollection(passes)}
           >
-            <CircleLayer
+            <Layer
+              type="circle"
               id="tarmoto-passes-markers"
-              sourceID="tarmoto-passes"
+              source="tarmoto-passes"
               style={passMarkerStyle}
             />
           </ShapeSource>
@@ -372,18 +382,20 @@ export default function MapScreen() {
         {showFunZonesOverlay && funZoneFc.features.length > 0 ? (
           <ShapeSource
             id="tarmoto-fun-zones"
-            shape={funZoneFc}
+            data={funZoneFc}
             onPress={handleFunZonePress}
-            hitbox={{ width: 1, height: 1 }}
+            hitbox={{ top: 1, right: 1, bottom: 1, left: 1 }}
           >
-            <FillLayer
+            <Layer
+              type="fill"
               id="tarmoto-fun-zones-fill"
-              sourceID="tarmoto-fun-zones"
+              source="tarmoto-fun-zones"
               style={funZoneFillStyle}
             />
-            <LineLayer
+            <Layer
+              type="line"
               id="tarmoto-fun-zones-line"
-              sourceID="tarmoto-fun-zones"
+              source="tarmoto-fun-zones"
               style={funZoneLineStyle}
             />
           </ShapeSource>
