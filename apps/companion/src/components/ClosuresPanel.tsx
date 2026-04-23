@@ -43,7 +43,7 @@ interface ClosuresPanelProps {
 
 export function ClosuresPanel({ month, routes, data }: ClosuresPanelProps) {
   if (data) {
-    return <ClosuresPanelContent month={month} routes={routes} data={data} />;
+    return <ClosuresPanelBody month={month} routes={routes} data={data} />;
   }
 
   return <FetchedClosuresPanel month={month} routes={routes} />;
@@ -53,57 +53,22 @@ function FetchedClosuresPanel({
   month,
   routes,
 }: Omit<ClosuresPanelProps, "data">) {
-  const unitSystem = usePreferencesStore((s) => s.unitSystem);
-  const hydratePreferences = usePreferencesStore((s) => s.hydrate);
   const data = useClosures(month, routes);
 
-  useEffect(() => {
-    hydratePreferences();
-  }, [hydratePreferences]);
-
-  return (
-    <ClosuresPanelBody
-      month={month}
-      routes={routes}
-      data={data}
-      unitSystem={unitSystem}
-    />
-  );
-}
-
-function ClosuresPanelContent({
-  month,
-  routes,
-  data,
-}: Required<ClosuresPanelProps>) {
-  const unitSystem = usePreferencesStore((s) => s.unitSystem);
-  const hydratePreferences = usePreferencesStore((s) => s.hydrate);
-
-  useEffect(() => {
-    hydratePreferences();
-  }, [hydratePreferences]);
-
-  return (
-    <ClosuresPanelBody
-      month={month}
-      routes={routes}
-      data={data}
-      unitSystem={unitSystem}
-    />
-  );
+  return <ClosuresPanelBody month={month} routes={routes} data={data} />;
 }
 
 function ClosuresPanelBody({
   month,
   routes,
   data,
-  unitSystem,
 }: {
   month: number;
   routes: PlannerClosureRoute[];
   data: ClosuresQueryResult;
-  unitSystem: UnitSystem;
 }) {
+  const unitSystem = usePreferencesStore((s) => s.unitSystem);
+  const hydratePreferences = usePreferencesStore((s) => s.hydrate);
   const {
     closures,
     routeClosures,
@@ -115,6 +80,10 @@ function ClosuresPanelBody({
     routeError,
     previewDate,
   } = data;
+
+  useEffect(() => {
+    hydratePreferences();
+  }, [hydratePreferences]);
 
   const monthText = monthLabel(month);
   const previewDay = new Intl.DateTimeFormat("en-US", {
