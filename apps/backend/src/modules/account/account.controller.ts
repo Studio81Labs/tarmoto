@@ -19,6 +19,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import type { Request } from 'express';
+import { SkipThrottle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { AccountService } from './account.service.js';
 import { CreateCheckoutSessionDto } from './dto/create-checkout-session.dto.js';
@@ -71,6 +72,7 @@ export class AccountController {
   }
 
   @Post('subscription/webhook')
+  @SkipThrottle()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Receive Stripe Billing webhook events' })
   @ApiResponse({ status: 200 })

@@ -167,6 +167,12 @@ export default function SubscriptionPage() {
       return;
     }
 
+    if (planTier === "free") {
+      if (!snapshot.portalAvailable) return;
+      void openPortal("subscription_cancel");
+      return;
+    }
+
     if (!snapshot.portalAvailable) return;
     void openPortal("subscription_update");
   }
@@ -260,6 +266,7 @@ export default function SubscriptionPage() {
                   actionBusy={
                     actionState.kind === `checkout-${plan.tier}` ||
                     actionState.kind === "portal-manage" ||
+                    actionState.kind === "portal-cancel" ||
                     actionState.kind === "portal-update"
                   }
                   portalAvailable={snapshot.portalAvailable}

@@ -313,6 +313,70 @@ describe("SubscriptionPage", () => {
     );
   });
 
+  it("routes paid-to-free plan changes through the cancellation portal flow", async () => {
+    getSubscriptionMock.mockResolvedValueOnce({
+      data: {
+        current_plan: {
+          tier: "premium",
+          name: "Premium",
+          status: "active",
+          price_label: "$29.99/yr",
+          renews_at: "2026-11-15T00:00:00.000Z",
+          cancel_at_period_end: false,
+        },
+        plans: [
+          {
+            tier: "free",
+            name: "Free",
+            price_label: "$0",
+            features: ["Basic navigation"],
+          },
+          {
+            tier: "premium",
+            name: "Premium",
+            price_label: "$29.99/yr",
+            highlighted: true,
+            features: ["Unlimited trip planning"],
+          },
+          {
+            tier: "pro",
+            name: "Pro",
+            price_label: "$49.99/yr",
+            features: ["Advanced analytics"],
+          },
+        ],
+        payment_method: {
+          brand: "Visa",
+          last4: "4242",
+          exp_month: 8,
+          exp_year: 2028,
+        },
+        billing_history: [],
+        portal_available: true,
+      },
+    });
+    createPortalSessionMock.mockResolvedValueOnce({
+      data: { url: "https://billing.stripe.com/p/session/cancel-from-free" },
+    });
+
+    render(<SubscriptionPage />);
+
+    const freeCard = (await screen.findByText("Free")).closest("article");
+    expect(freeCard).not.toBeNull();
+    fireEvent.click(
+      within(freeCard!).getByRole("button", { name: "Downgrade" }),
+    );
+
+    await waitFor(() =>
+      expect(createPortalSessionMock).toHaveBeenCalledWith({
+        flow: "subscription_cancel",
+      }),
+    );
+    expect(assignMock).toHaveBeenCalledWith(
+      "https://billing.stripe.com/p/session/cancel-from-free",
+    );
+  });
+
   it("opens the cancellation portal flow from the retention dialog", async () => {
     getSubscriptionMock.mockResolvedValueOnce({
       data: {
