@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import {
   AlertTriangle,
@@ -34,6 +34,10 @@ import {
   buildTripPlannerWaypointCollection,
   getTripPlannerBounds,
 } from "@/lib/trip-planner-map";
+import {
+  snapWaypointToRoadFeatures,
+  type RoadSnapFeature,
+} from "@/lib/trip-planner-snap";
 import type { Trip } from "@/lib/types";
 import { formatDistance } from "@/lib/utils";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -55,6 +59,8 @@ interface TripPlannerMapProps {
   month: number;
   closuresData?: ClosuresQueryResult;
   passesData?: PassesQueryResult;
+  onAddWaypoint?: (location: { lng: number; lat: number }) => void;
+  selectedDayNumber?: number;
 }
 
 export function TripPlannerMap({
@@ -62,6 +68,8 @@ export function TripPlannerMap({
   month,
   closuresData,
   passesData,
+  onAddWaypoint,
+  selectedDayNumber,
 }: TripPlannerMapProps) {
   if (closuresData && passesData) {
     return (
@@ -70,19 +78,32 @@ export function TripPlannerMap({
         month={month}
         closuresData={closuresData}
         passesData={passesData}
+        onAddWaypoint={onAddWaypoint}
+        selectedDayNumber={selectedDayNumber}
       />
     );
   }
 
-  return <FetchedTripPlannerMap trip={trip} month={month} />;
+  return (
+    <FetchedTripPlannerMap
+      trip={trip}
+      month={month}
+      onAddWaypoint={onAddWaypoint}
+      selectedDayNumber={selectedDayNumber}
+    />
+  );
 }
 
 function FetchedTripPlannerMap({
   trip,
   month,
+  onAddWaypoint,
+  selectedDayNumber,
 }: {
   trip: Trip | null;
   month: number;
+  onAddWaypoint?: (location: { lng: number; lat: number }) => void;
+  selectedDayNumber?: number;
 }) {
   const closureRoutes = useMemo(() => buildTripClosureRoutes(trip), [trip]);
   const closuresData = useClosures(month, closureRoutes);
@@ -94,6 +115,8 @@ function FetchedTripPlannerMap({
       month={month}
       closuresData={closuresData}
       passesData={passesData}
+      onAddWaypoint={onAddWaypoint}
+      selectedDayNumber={selectedDayNumber}
     />
   );
 }
@@ -103,11 +126,15 @@ function TripPlannerMapContent({
   month,
   closuresData,
   passesData,
+  onAddWaypoint,
+  selectedDayNumber,
 }: {
   trip: Trip | null;
   month: number;
   closuresData: ClosuresQueryResult;
   passesData: PassesQueryResult;
+  onAddWaypoint?: (location: { lng: number; lat: number }) => void;
+  selectedDayNumber?: number;
 }) {
   const handleRef = useRef<MapCanvasHandle>(null);
   const drawRef = useRef<RegionDrawControl | null>(null);
@@ -218,6 +245,51 @@ function TripPlannerMapContent({
     hydratePreferences();
   }, [hydratePreferences]);
 
+  const handleMapClick = useCallback(
+    (event: {
+      point: { x: number; y: number };
+      lngLat: { lng: number; lat: number };
+    }) => {
+      if (!onAddWaypoint || drawMode !== "idle") return;
+      const map = handleRef.current?.map;
+      if (!map) return;
+      const features: RoadSnapFeature[] = map
+        .queryRenderedFeatures(
+          [
+            [event.point.x - 12, event.point.y - 12],
+            [event.point.x + 12, event.point.y + 12],
+          ],
+          {
+            layers: ["tarmoto-quality", "tarmoto-surface"],
+          },
+        )
+        .map((feature) => ({
+          geometry:
+            feature.geometry.type === "LineString" ||
+            feature.geometry.type === "MultiLineString"
+              ? feature.geometry
+              : null,
+          properties: {
+            quality_score: feature.properties?.quality_score,
+          },
+        }));
+      const snapped = snapWaypointToRoadFeatures(
+        {
+          lng: event.lngLat.lng,
+          lat: event.lngLat.lat,
+        },
+        features,
+      );
+      onAddWaypoint(
+        snapped ?? {
+          lng: roundCoordinate(event.lngLat.lng),
+          lat: roundCoordinate(event.lngLat.lat),
+        },
+      );
+    },
+    [drawMode, onAddWaypoint],
+  );
+
   const handleReady = (map: MapLibreMap) => {
     ensurePlannerLayers(map);
     drawRef.current?.destroy();
@@ -249,6 +321,15 @@ function TripPlannerMapContent({
     if (!ready) return;
     drawRef.current?.setDrawn(drawnRegion);
   }, [drawnRegion, ready]);
+
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready || !onAddWaypoint) return;
+    map.on("click", handleMapClick);
+    return () => {
+      map.off("click", handleMapClick);
+    };
+  }, [handleMapClick, onAddWaypoint, ready]);
 
   useEffect(() => {
     const map = handleRef.current?.map;
@@ -348,6 +429,12 @@ function TripPlannerMapContent({
             Clear region
           </button>
         ) : null}
+
+        <div className="rounded-lg border border-slate-700 bg-slate-950/85 px-3 py-2 text-xs text-slate-300 shadow-sm">
+          Click the map to add waypoints
+          {selectedDayNumber ? ` for Day ${selectedDayNumber}` : ""}. We snap to
+          nearby roads when visible.
+        </div>
       </div>
 
       <div className="absolute right-3 top-3 z-10 w-72 rounded-2xl border border-slate-800 bg-slate-950/90 p-4 shadow-lg backdrop-blur-sm">
@@ -461,6 +548,10 @@ function TripPlannerMapContent({
       </div>
     </MapCanvas>
   );
+}
+
+function roundCoordinate(value: number): number {
+  return Math.round(value * 1_000_000) / 1_000_000;
 }
 
 function toggleClassName(active: boolean): string {

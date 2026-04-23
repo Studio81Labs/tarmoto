@@ -153,6 +153,8 @@ type TripStoreSnapshot = {
   trips: Trip[];
   activeTrip: Trip | null;
   isGenerating: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
   focusedSegmentId: string | null;
   hoveredSegmentId: string | null;
   setTrips: (trips: Trip[]) => void;
@@ -161,6 +163,7 @@ type TripStoreSnapshot = {
   focusSegment: (segmentId: string | null) => void;
   hoverSegment: (segmentId: string | null) => void;
   addWaypoint: (dayIndex: number, waypoint: unknown) => void;
+  appendPlannerWaypoint: (dayIndex: number, waypoint: unknown) => void;
   insertWaypointBeforeEnd: (dayIndex: number, waypoint: unknown) => void;
   removeWaypoint: (dayIndex: number, waypointId: string) => void;
   reorderWaypoints: (
@@ -168,6 +171,8 @@ type TripStoreSnapshot = {
     fromIndex: number,
     toIndex: number,
   ) => void;
+  undo: () => void;
+  redo: () => void;
 };
 
 describe("TripPlannerPage", () => {
@@ -228,6 +233,8 @@ describe("TripPlannerPage", () => {
       trips: [],
       activeTrip: null,
       isGenerating: false,
+      canUndo: false,
+      canRedo: false,
       focusedSegmentId: null,
       hoveredSegmentId: null,
       setTrips: vi.fn(),
@@ -236,9 +243,12 @@ describe("TripPlannerPage", () => {
       focusSegment: vi.fn(),
       hoverSegment: vi.fn(),
       addWaypoint: vi.fn(),
+      appendPlannerWaypoint: vi.fn(),
       insertWaypointBeforeEnd: vi.fn(),
       removeWaypoint: vi.fn(),
       reorderWaypoints: vi.fn(),
+      undo: vi.fn(),
+      redo: vi.fn(),
     };
     useTripStoreMock.mockImplementation((selector) => selector(storeState));
     useClosuresMock.mockReturnValue(closuresData);
@@ -296,6 +306,21 @@ describe("TripPlannerPage", () => {
     expect(mockedPassesPanel).toHaveBeenCalledWith(
       expect.objectContaining({
         data: passesData,
+      }),
+    );
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Redo" })).toBeDisabled();
+  });
+
+  it("keeps placeholder timeline tabs non-interactive until a trip exists", () => {
+    render(<TripPlannerPage />);
+
+    expect(screen.getByRole("button", { name: /Day 1/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Day 2/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Day 3/i })).toBeDisabled();
+    expect(mockedTripPlannerMap).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selectedDayNumber: 1,
       }),
     );
   });
