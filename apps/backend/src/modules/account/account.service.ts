@@ -7,10 +7,11 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
-import Stripe from 'stripe';
 import { User } from '../../entities/user.entity.js';
 import {
   STRIPE_BILLING_CLIENT,
+  type StripeCheckoutSession,
+  type StripeSubscription,
   type BillingStatus,
   type BillingTier,
   type StripeBillingClient,
@@ -24,6 +25,7 @@ import type {
 } from './dto/subscription-response.dto.js';
 
 const INTRO_TRIAL_DAYS = 14;
+type UserUpdate = Parameters<Repository<User>['update']>[1];
 
 const PLAN_CATALOG: Record<
   BillingTier,
@@ -205,7 +207,7 @@ export class AccountService {
   }
 
   private async handleCheckoutCompleted(
-    session: Stripe.Checkout.Session,
+    session: StripeCheckoutSession,
   ): Promise<void> {
     const userId = session.metadata?.['user_id'];
     if (!userId) return;
@@ -221,13 +223,14 @@ export class AccountService {
 
     if (!nextCustomerId && !nextSubscriptionId) return;
 
-    if (nextCustomerId) user.stripe_customer_id = nextCustomerId;
-    if (nextSubscriptionId) user.stripe_subscription_id = nextSubscriptionId;
-    await this.userRepo.save(user);
+    const update: UserUpdate = { updated_at: new Date() };
+    if (nextCustomerId) update.stripe_customer_id = nextCustomerId;
+    if (nextSubscriptionId) update.stripe_subscription_id = nextSubscriptionId;
+    await this.userRepo.update(user.id, update);
   }
 
   private async handleSubscriptionUpdated(
-    subscription: Stripe.Subscription,
+    subscription: StripeSubscription,
     isDeleted: boolean,
   ): Promise<void> {
     const customerId =
@@ -239,37 +242,39 @@ export class AccountService {
     );
     if (!user) return;
 
-    if (customerId) {
-      user.stripe_customer_id = customerId;
-    }
+    const update: UserUpdate = { updated_at: new Date() };
+    if (customerId) update.stripe_customer_id = customerId;
 
     if (isDeleted) {
-      user.stripe_subscription_id = null;
-      user.subscription_tier = 'free';
-      user.subscription_status = 'canceled';
-      user.subscription_cancel_at_period_end = false;
-      user.subscription_current_period_end =
+      update.stripe_subscription_id = null;
+      update.subscription_tier = 'free';
+      update.subscription_status = 'canceled';
+      update.subscription_cancel_at_period_end = false;
+      update.subscription_current_period_end =
         subscriptionPeriodEnd(subscription) != null
           ? new Date(subscriptionPeriodEnd(subscription)! * 1000)
           : null;
-      await this.userRepo.save(user);
+      await this.userRepo.update(user.id, update);
       return;
     }
 
     const price = subscription.items.data[0]?.price;
-    user.stripe_subscription_id = subscription.id;
-    user.subscription_tier = this.tierFromPrice(price);
-    user.subscription_status = this.statusFromSubscription(subscription.status);
-    user.subscription_cancel_at_period_end = subscription.cancel_at_period_end;
-    user.subscription_current_period_end =
+    update.stripe_subscription_id = subscription.id;
+    update.subscription_tier = this.tierFromPrice(price);
+    update.subscription_status = this.statusFromSubscription(
+      subscription.status,
+    );
+    update.subscription_cancel_at_period_end =
+      subscription.cancel_at_period_end;
+    update.subscription_current_period_end =
       subscriptionPeriodEnd(subscription) != null
         ? new Date(subscriptionPeriodEnd(subscription)! * 1000)
         : null;
     if (subscription.status === 'trialing' && !user.billing_trial_used_at) {
-      user.billing_trial_used_at = new Date();
+      update.billing_trial_used_at = new Date();
     }
 
-    await this.userRepo.save(user);
+    await this.userRepo.update(user.id, update);
   }
 
   private async findUserForSubscriptionEvent(
@@ -380,7 +385,7 @@ export class AccountService {
   }
 
   private tierFromPrice(
-    price: Stripe.Price | Stripe.DeletedPrice | undefined,
+    price: StripeSubscription['items']['data'][number]['price'] | undefined,
   ): BillingTier {
     if (!price || ('deleted' in price && price.deleted)) return 'free';
     if (price.lookup_key === 'pro') return 'pro';
@@ -406,7 +411,7 @@ export class AccountService {
 }
 
 function subscriptionPeriodEnd(
-  subscription: Stripe.Subscription,
+  subscription: StripeSubscription,
 ): number | null {
   const ends = subscription.items.data
     .map((item) => item.current_period_end)
