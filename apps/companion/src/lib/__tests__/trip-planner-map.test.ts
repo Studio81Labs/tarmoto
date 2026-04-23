@@ -237,7 +237,6 @@ describe("buildTripPlannerWaypointCollection", () => {
             waypoints: [
               {
                 id: "unknown-1",
-                name: null,
                 location: { lng: 14.41, lat: 50.08 },
                 type: "" as "" & "start",
               },
