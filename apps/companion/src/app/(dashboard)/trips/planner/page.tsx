@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTripStore } from "@/stores/trip";
 import {
   Layers,
@@ -75,6 +75,7 @@ export default function TripPlannerPage() {
     GeneratedTripOption[]
   >([]);
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
+  const generationLockRef = useRef(false);
   const activeTrip = useTripStore((s) => s.activeTrip);
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
   const isGenerating = useTripStore((s) => s.isGenerating);
@@ -111,6 +112,10 @@ export default function TripPlannerPage() {
     () => buildTripClosureRoutes(displayedTrip),
     [displayedTrip],
   );
+  const canRegenerate =
+    displayedTrip != null &&
+    selectedOption != null &&
+    displayedTrip.id === selectedOption.trip.id;
   const closuresData = useClosures(travelMonth, closureRoutes);
   const passesData = usePasses(travelMonth, closureRoutes);
 
@@ -154,6 +159,20 @@ export default function TripPlannerPage() {
     });
   }, []);
 
+  useEffect(() => {
+    if (!activeTrip) return;
+    const matchingOption = generatedOptions.find(
+      (option) => option.trip.id === activeTrip.id,
+    );
+    if (!matchingOption) {
+      if (selectedOptionId !== null) setSelectedOptionId(null);
+      return;
+    }
+    if (matchingOption.id !== selectedOptionId) {
+      setSelectedOptionId(matchingOption.id);
+    }
+  }, [activeTrip, generatedOptions, selectedOptionId]);
+
   const handleGenerate = useCallback(async () => {
     if (surfacePreference.length === 0) {
       setGenerationError(
@@ -161,8 +180,10 @@ export default function TripPlannerPage() {
       );
       return;
     }
+    if (generationLockRef.current) return;
 
     setGenerationError(null);
+    generationLockRef.current = true;
     setGenerating(true);
     try {
       await delay(180);
@@ -177,6 +198,7 @@ export default function TripPlannerPage() {
           : "Could not generate itinerary options right now.";
       setGenerationError(message);
     } finally {
+      generationLockRef.current = false;
       setGenerating(false);
     }
   }, [plannerParams, setActiveTrip, setGenerating, surfacePreference.length]);
@@ -192,19 +214,21 @@ export default function TripPlannerPage() {
 
   const handleRegenerateDay = useCallback(
     async (dayNumber: number) => {
-      if (!selectedOption) return;
+      if (!canRegenerate || !displayedTrip || !selectedOptionId) return;
+      if (generationLockRef.current) return;
       setGenerationError(null);
+      generationLockRef.current = true;
       setGenerating(true);
       try {
         await delay(120);
         const regeneratedTrip = regenerateTripDay(
-          selectedOption.trip,
+          displayedTrip,
           plannerParams,
           dayNumber,
         );
         setGeneratedOptions((current) =>
           current.map((option) =>
-            option.id === selectedOption.id
+            option.id === selectedOptionId
               ? { ...option, trip: regeneratedTrip }
               : option,
           ),
@@ -217,10 +241,18 @@ export default function TripPlannerPage() {
             : "Could not regenerate this day.";
         setGenerationError(message);
       } finally {
+        generationLockRef.current = false;
         setGenerating(false);
       }
     },
-    [plannerParams, selectedOption, setActiveTrip, setGenerating],
+    [
+      canRegenerate,
+      displayedTrip,
+      plannerParams,
+      selectedOptionId,
+      setActiveTrip,
+      setGenerating,
+    ],
   );
 
   return (
@@ -646,11 +678,12 @@ export default function TripPlannerPage() {
                 </span>
                 <ChevronRight size={14} className="text-slate-500" />
               </button>
-              {displayedTrip && (
+              {canRegenerate && (
                 <button
                   type="button"
                   onClick={() => handleRegenerateDay(day.dayNumber)}
-                  className="rounded-md border border-slate-700 p-2 text-slate-400 transition hover:border-tarmoto-cyan hover:text-tarmoto-cyan"
+                  disabled={isGenerating}
+                  className="rounded-md border border-slate-700 p-2 text-slate-400 transition hover:border-tarmoto-cyan hover:text-tarmoto-cyan disabled:cursor-wait disabled:opacity-50"
                   aria-label={`Regenerate day ${day.dayNumber}`}
                 >
                   <RefreshCw size={12} />

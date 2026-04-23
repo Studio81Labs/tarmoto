@@ -177,6 +177,23 @@ describe("TripPlannerPage", () => {
   const activeTrip = buildTrip("Best fit");
   const scenicTrip = buildTrip("Scenic sweep");
   const fastTrip = buildTrip("Fastest line");
+  const importedTrip = buildTrip("Imported route");
+  let storeState: {
+    trips: Trip[];
+    activeTrip: Trip | null;
+    isGenerating: boolean;
+    focusedSegmentId: string | null;
+    hoveredSegmentId: string | null;
+    setTrips: ReturnType<typeof vi.fn>;
+    setActiveTrip: typeof setActiveTrip;
+    setGenerating: typeof setGenerating;
+    focusSegment: ReturnType<typeof vi.fn>;
+    hoverSegment: ReturnType<typeof vi.fn>;
+    addWaypoint: ReturnType<typeof vi.fn>;
+    insertWaypointBeforeEnd: ReturnType<typeof vi.fn>;
+    removeWaypoint: ReturnType<typeof vi.fn>;
+    reorderWaypoints: ReturnType<typeof vi.fn>;
+  };
 
   beforeEach(() => {
     mockedTripPlannerMap.mockClear();
@@ -188,23 +205,24 @@ describe("TripPlannerPage", () => {
     usePassesMock.mockReset();
     generateTripOptionsMock.mockReset();
     regenerateTripDayMock.mockReset();
+    storeState = {
+      trips: [],
+      activeTrip: null,
+      isGenerating: false,
+      focusedSegmentId: null,
+      hoveredSegmentId: null,
+      setTrips: vi.fn(),
+      setActiveTrip,
+      setGenerating,
+      focusSegment: vi.fn(),
+      hoverSegment: vi.fn(),
+      addWaypoint: vi.fn(),
+      insertWaypointBeforeEnd: vi.fn(),
+      removeWaypoint: vi.fn(),
+      reorderWaypoints: vi.fn(),
+    };
     useTripStoreMock.mockImplementation((selector) =>
-      selector({
-        trips: [],
-        activeTrip: null,
-        isGenerating: false,
-        focusedSegmentId: null,
-        hoveredSegmentId: null,
-        setTrips: vi.fn(),
-        setActiveTrip,
-        setGenerating,
-        focusSegment: vi.fn(),
-        hoverSegment: vi.fn(),
-        addWaypoint: vi.fn(),
-        insertWaypointBeforeEnd: vi.fn(),
-        removeWaypoint: vi.fn(),
-        reorderWaypoints: vi.fn(),
-      }),
+      selector(storeState as any),
     );
     useClosuresMock.mockReturnValue(closuresData);
     usePassesMock.mockReturnValue(passesData);
@@ -314,5 +332,39 @@ describe("TripPlannerPage", () => {
         days: [expect.objectContaining({ title: "Regen day" })],
       }),
     );
+  });
+
+  it("hides regenerate controls when the active trip no longer matches a generated option", async () => {
+    const { rerender } = render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() => expect(setActiveTrip).toHaveBeenCalledWith(activeTrip));
+    expect(
+      screen.getByRole("button", { name: "Regenerate day 1" }),
+    ).toBeInTheDocument();
+
+    storeState.activeTrip = importedTrip;
+    rerender(<TripPlannerPage />);
+
+    expect(
+      screen.queryByRole("button", { name: "Regenerate day 1" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("ignores rapid repeat regenerate clicks while generation is already running", async () => {
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() => expect(setActiveTrip).toHaveBeenCalledWith(activeTrip));
+
+    const regenerateButton = screen.getByRole("button", {
+      name: "Regenerate day 1",
+    });
+    fireEvent.click(regenerateButton);
+    fireEvent.click(regenerateButton);
+
+    await waitFor(() => expect(regenerateTripDayMock).toHaveBeenCalledTimes(1));
   });
 });
