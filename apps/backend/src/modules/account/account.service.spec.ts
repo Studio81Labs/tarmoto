@@ -195,15 +195,28 @@ describe('AccountService', () => {
       userRepo.findOne!.mockResolvedValueOnce(
         buildUser({
           stripe_customer_id: 'cus_123',
-          stripe_subscription_id: 'sub_123',
-          subscription_tier: 'premium',
-          subscription_status: 'active',
+          subscription_tier: 'free',
+          subscription_status: 'canceled',
         }),
       );
+      stripe.getBillingSnapshot.mockResolvedValueOnce({
+        currentPlan: {
+          tier: 'premium',
+          status: 'active',
+          renewsAt: '2026-05-23T12:00:00.000Z',
+          cancelAtPeriodEnd: false,
+        },
+        paymentMethod: null,
+        invoices: [],
+      });
 
       await expect(
         service.createCheckoutSession('user-1', { tier: 'pro' }),
       ).rejects.toThrow(BadRequestException);
+      expect(stripe.getBillingSnapshot).toHaveBeenCalledWith({
+        customerId: 'cus_123',
+        subscriptionId: null,
+      });
     });
   });
 

@@ -99,7 +99,22 @@ export class AccountService {
     dto: CreateCheckoutSessionDto,
   ): Promise<RedirectUrlResponseDto> {
     const user = await this.getUserById(userId);
-    if (user.subscription_tier !== 'free' && user.stripe_subscription_id) {
+    const liveSnapshot =
+      user.stripe_customer_id != null
+        ? await this.stripe.getBillingSnapshot({
+            customerId: user.stripe_customer_id,
+            subscriptionId: user.stripe_subscription_id,
+          })
+        : null;
+    const currentTier =
+      liveSnapshot?.currentPlan?.tier ?? user.subscription_tier;
+    const currentStatus =
+      liveSnapshot?.currentPlan?.status ?? user.subscription_status;
+
+    if (
+      currentTier !== 'free' &&
+      ['active', 'trialing', 'past_due'].includes(currentStatus)
+    ) {
       throw new BadRequestException(
         'Existing subscriptions must be changed in the billing portal',
       );
