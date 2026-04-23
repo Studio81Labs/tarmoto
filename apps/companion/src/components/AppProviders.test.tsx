@@ -3,35 +3,25 @@ import { AppProviders } from "./AppProviders";
 
 const mocks = vi.hoisted(() => ({
   usePathname: vi.fn(),
-  sessionProvider: vi.fn(({ children }: { children: React.ReactNode }) => (
-    <div data-testid="session-provider">{children}</div>
-  )),
-  authSync: vi.fn(() => <div data-testid="auth-sync" />),
-  realtimeProvider: vi.fn(() => <div data-testid="realtime-provider" />),
+  authenticatedProviders: vi.fn(
+    ({ children }: { children: React.ReactNode }) => {
+      return <div data-testid="authenticated-providers">{children}</div>;
+    },
+  ),
 }));
 
 vi.mock("next/navigation", () => ({
   usePathname: mocks.usePathname,
 }));
 
-vi.mock("next-auth/react", () => ({
-  SessionProvider: mocks.sessionProvider,
-}));
-
-vi.mock("./AuthSync", () => ({
-  AuthSync: mocks.authSync,
-}));
-
-vi.mock("./RealtimeProvider", () => ({
-  RealtimeProvider: mocks.realtimeProvider,
+vi.mock("next/dynamic", () => ({
+  default: () => mocks.authenticatedProviders,
 }));
 
 describe("AppProviders", () => {
   beforeEach(() => {
     mocks.usePathname.mockReset();
-    mocks.sessionProvider.mockClear();
-    mocks.authSync.mockClear();
-    mocks.realtimeProvider.mockClear();
+    mocks.authenticatedProviders.mockClear();
   });
 
   it("skips session and realtime providers on embed routes", () => {
@@ -44,9 +34,9 @@ describe("AppProviders", () => {
     );
 
     expect(screen.getByText("Embed child")).toBeInTheDocument();
-    expect(screen.queryByTestId("session-provider")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("auth-sync")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("realtime-provider")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("authenticated-providers"),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps providers enabled for non-embed routes with a similar prefix", () => {
@@ -58,9 +48,7 @@ describe("AppProviders", () => {
       </AppProviders>,
     );
 
-    expect(screen.getByTestId("session-provider")).toBeInTheDocument();
-    expect(screen.getByTestId("auth-sync")).toBeInTheDocument();
-    expect(screen.getByTestId("realtime-provider")).toBeInTheDocument();
+    expect(screen.getByTestId("authenticated-providers")).toBeInTheDocument();
     expect(screen.getByText("Similar prefix child")).toBeInTheDocument();
   });
 
@@ -73,9 +61,7 @@ describe("AppProviders", () => {
       </AppProviders>,
     );
 
-    expect(screen.getByTestId("session-provider")).toBeInTheDocument();
-    expect(screen.getByTestId("auth-sync")).toBeInTheDocument();
-    expect(screen.getByTestId("realtime-provider")).toBeInTheDocument();
+    expect(screen.getByTestId("authenticated-providers")).toBeInTheDocument();
     expect(screen.getByText("App child")).toBeInTheDocument();
   });
 });

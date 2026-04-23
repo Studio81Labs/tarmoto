@@ -1,9 +1,13 @@
 "use client";
 
-import { SessionProvider } from "next-auth/react";
+import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
-import { AuthSync } from "@/components/AuthSync";
-import { RealtimeProvider } from "@/components/RealtimeProvider";
+
+const AuthenticatedAppProviders = dynamic(() =>
+  import("./AuthenticatedAppProviders").then(
+    (module) => module.AuthenticatedAppProviders,
+  ),
+);
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -12,11 +16,5 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     return children;
   }
 
-  return (
-    <SessionProvider>
-      <AuthSync />
-      <RealtimeProvider />
-      {children}
-    </SessionProvider>
-  );
+  return <AuthenticatedAppProviders>{children}</AuthenticatedAppProviders>;
 }
