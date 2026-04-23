@@ -222,6 +222,33 @@ describe("buildTripPlannerWaypointCollection", () => {
       },
     });
   });
+
+  it("falls back to a stable label when waypoint type is an empty string", () => {
+    const collection = buildTripPlannerWaypointCollection(
+      trip({
+        days: [
+          {
+            dayNumber: 1,
+            title: "Day one",
+            distanceKm: 10,
+            durationMinutes: 20,
+            elevationGain: 50,
+            avgQuality: 4,
+            waypoints: [
+              {
+                id: "unknown-1",
+                name: null,
+                location: { lng: 14.41, lat: 50.08 },
+                type: "" as "" & "start",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(collection.features[0]?.properties.label).toBe("Waypoint");
+  });
 });
 
 describe("getTripPlannerBounds", () => {
