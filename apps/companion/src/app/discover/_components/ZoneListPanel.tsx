@@ -122,9 +122,14 @@ function fallbackName(zone: FunZoneListItem): string {
   // Use the polygon centroid as a rough placeholder name when the zone has
   // no human label yet. The `boundary` is a closed ring; averaging its
   // vertices is a cheap centroid approximation.
-  const points = zone.boundary;
+  const points = zone.boundary as unknown as Array<{
+    lat: number;
+    lng: number;
+  }>;
   if (points.length === 0) return "Unnamed zone";
-  const lat = points.reduce((s, p) => s + p.lat, 0) / points.length;
-  const lng = points.reduce((s, p) => s + p.lng, 0) / points.length;
+  const lat =
+    points.reduce((sum: number, point) => sum + point.lat, 0) / points.length;
+  const lng =
+    points.reduce((sum: number, point) => sum + point.lng, 0) / points.length;
   return `Zone near ${lat.toFixed(2)}, ${lng.toFixed(2)}`;
 }
