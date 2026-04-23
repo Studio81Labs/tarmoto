@@ -46,6 +46,7 @@ import {
   formatDurationMin,
   formatKm,
   formatStatus,
+  summarizeWaypoints,
   sumDistance,
 } from "./TripScreens.helpers";
 
@@ -57,6 +58,7 @@ export default function TripDetailScreen() {
   const navigation = useNavigation<DetailNav>();
   const tripId = params?.tripId;
 
+  const activeTrip = useTripStore((s) => s.activeTrip);
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
 
   const [trip, setTrip] = useState<Trip | null>(null);
@@ -64,6 +66,11 @@ export default function TripDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [closedPasses, setClosedPasses] = useState<MountainPass[]>([]);
+
+  useEffect(() => {
+    if (activeTrip?.id !== tripId) return;
+    setTrip(activeTrip);
+  }, [activeTrip, tripId]);
 
   // Single source of truth for "fetch this trip and commit it to local +
   // store state". The mount effect, retry button, and pull-to-refresh all
@@ -288,6 +295,7 @@ function HeaderCard({
 function DayCard({ day, onPress }: { day: TripDay; onPress: () => void }) {
   const qColor =
     day.avg_quality > 0 ? qualityColor(day.avg_quality) : colors.textTertiary;
+  const overnightStop = summarizeWaypoints(day.waypoints).overnightStops[0];
   return (
     <TouchableOpacity
       style={styles.card}
@@ -321,6 +329,14 @@ function DayCard({ day, onPress }: { day: TripDay; onPress: () => void }) {
           {day.waypoints.length === 1 ? "" : "s"}
         </Text>
       </View>
+      {overnightStop ? (
+        <View style={styles.overnightRow}>
+          <Icon name="bed-outline" size={15} color={colors.primary} />
+          <Text style={styles.overnightLabel} numberOfLines={1}>
+            Overnight: {overnightStop.name ?? "Suggested stay"}
+          </Text>
+        </View>
+      ) : null}
     </TouchableOpacity>
   );
 }
@@ -713,6 +729,16 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontSize: fontSize.xs,
     marginLeft: "auto",
+  },
+  overnightRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  overnightLabel: {
+    flex: 1,
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
   },
   emptyDaysTitle: {
     color: colors.textPrimary,

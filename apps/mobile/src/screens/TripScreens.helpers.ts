@@ -6,7 +6,10 @@
  */
 
 import type {
+  Accommodation,
+  AccommodationKind,
   LatLng,
+  Trip,
   TripDay,
   TripStatus,
   Waypoint,
@@ -32,6 +35,16 @@ export const ROAD_PREFERENCES = [
 export type RoadPreferenceValue = (typeof ROAD_PREFERENCES)[number]["value"];
 
 export const DAY_OPTIONS = [2, 3, 4, 5, 7, 10, 14] as const;
+const SUGGESTED_OVERNIGHT_PREFIX = "suggested-overnight:";
+const ACCOMMODATION_KIND_PRIORITY: Record<AccommodationKind, number> = {
+  hotel: 3,
+  apartment: 2.5,
+  guest_house: 2.5,
+  chalet: 2,
+  motel: 1.5,
+  hostel: 1,
+  camp_site: 0.5,
+};
 
 export function formatKm(km: number): string {
   if (!Number.isFinite(km)) return "0 km";
@@ -105,6 +118,112 @@ export function summarizeWaypoints(waypoints: Waypoint[]): {
   const start = sorted.find((w) => w.waypoint_type === "start") ?? null;
   const end = sorted.find((w) => w.waypoint_type === "end") ?? null;
   return { fuelStops, overnightStops, otherStops, start, end };
+}
+
+/**
+ * Pick the overnight stay that best fits the existing day end. Because the
+ * generator has already chosen a day-end area, proximity dominates: we avoid
+ * a second reroute pass by preferring stays that are close to the current end
+ * point, then using stars / kind / naming quality as tie-breakers.
+ */
+export function pickSuggestedAccommodation(
+  accommodations: Accommodation[],
+): Accommodation | null {
+  if (accommodations.length === 0) return null;
+  const sorted = [...accommodations].sort((a, b) => {
+    const scoreDelta = overnightFitScore(b) - overnightFitScore(a);
+    if (scoreDelta !== 0) return scoreDelta;
+    const distanceDelta = a.distance_km - b.distance_km;
+    if (distanceDelta !== 0) return distanceDelta;
+    return a.external_id.localeCompare(b.external_id);
+  });
+  return sorted[0] ?? null;
+}
+
+/**
+ * Materialize a UI-level overnight-stop selection into the trip itinerary.
+ *
+ * We keep the change local to the client-side trip snapshot: the selected stay
+ * appears in the day timeline and highlights, but we do not attempt a second
+ * route solve. Existing explicit hotel waypoints from the backend are left
+ * untouched.
+ */
+export function withSuggestedOvernightStop(
+  trip: Trip,
+  dayNumber: number,
+  accommodations: Accommodation[],
+): Trip {
+  const dayIndex = trip.days.findIndex((day) => day.day_number === dayNumber);
+  if (dayIndex < 0) return trip;
+
+  const day = trip.days[dayIndex];
+  if (isLastDay(trip.days, day.day_number)) return trip;
+
+  const explicitHotel = day.waypoints.some(
+    (waypoint) =>
+      waypoint.waypoint_type === "hotel" &&
+      !waypoint.id.startsWith(SUGGESTED_OVERNIGHT_PREFIX),
+  );
+  if (explicitHotel) return trip;
+
+  const choice = pickSuggestedAccommodation(accommodations);
+  if (!choice) return trip;
+
+  const suggestedId = `${SUGGESTED_OVERNIGHT_PREFIX}${day.id}:${choice.external_id}`;
+  const hotelWaypoint: Waypoint = {
+    id: suggestedId,
+    sequence: 0,
+    name: choice.name?.trim() || fallbackAccommodationName(choice.kind),
+    lat: choice.lat,
+    lng: choice.lng,
+    waypoint_type: "hotel",
+  };
+
+  const sorted = [...day.waypoints].sort((a, b) => a.sequence - b.sequence);
+  const existingSuggested = sorted.find((waypoint) =>
+    waypoint.id.startsWith(SUGGESTED_OVERNIGHT_PREFIX),
+  );
+  if (
+    existingSuggested &&
+    existingSuggested.id === hotelWaypoint.id &&
+    existingSuggested.name === hotelWaypoint.name &&
+    existingSuggested.lat === hotelWaypoint.lat &&
+    existingSuggested.lng === hotelWaypoint.lng
+  ) {
+    return trip;
+  }
+
+  const withoutSuggested = sorted.filter(
+    (waypoint) =>
+      !(
+        waypoint.waypoint_type === "hotel" &&
+        waypoint.id.startsWith(SUGGESTED_OVERNIGHT_PREFIX)
+      ),
+  );
+  const endIndex = withoutSuggested.findIndex(
+    (waypoint) => waypoint.waypoint_type === "end",
+  );
+  const insertionIndex =
+    endIndex >= 0 ? Math.max(0, endIndex) : withoutSuggested.length;
+
+  const nextWaypoints = [...withoutSuggested];
+  nextWaypoints.splice(insertionIndex, 0, hotelWaypoint);
+  const normalizedWaypoints = nextWaypoints.map((waypoint, index) => ({
+    ...waypoint,
+    sequence: index,
+  }));
+
+  const nextDay: TripDay = {
+    ...day,
+    waypoints: normalizedWaypoints,
+  };
+  const nextDays = [...trip.days];
+  nextDays[dayIndex] = nextDay;
+
+  return {
+    ...trip,
+    days: nextDays,
+  };
 }
 
 export function sumDistance(days: TripDay[]): number {
@@ -452,4 +571,19 @@ export function bboxAroundPoint(
   const maxLat = lat + latDelta;
   // West, South, East, North — the OGC convention the backend consumes.
   return `${minLng.toFixed(4)},${minLat.toFixed(4)},${maxLng.toFixed(4)},${maxLat.toFixed(4)}`;
+}
+
+function overnightFitScore(accommodation: Accommodation): number {
+  const nameBonus = accommodation.name?.trim() ? 0.75 : 0;
+  const starsBonus = (accommodation.stars ?? 0) * 0.6;
+  const kindBonus = ACCOMMODATION_KIND_PRIORITY[accommodation.kind] ?? 0;
+  const distancePenalty = accommodation.distance_km * 2.5;
+  return nameBonus + starsBonus + kindBonus - distancePenalty;
+}
+
+function fallbackAccommodationName(kind: AccommodationKind): string {
+  return kind
+    .split("_")
+    .map((part) => capitalize(part))
+    .join(" ");
 }

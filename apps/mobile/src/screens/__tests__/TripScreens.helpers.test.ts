@@ -9,11 +9,13 @@ import {
   formatWaypointType,
   isLastDay,
   pickDayEndAnchor,
+  pickSuggestedAccommodation,
   summarizeFuelRange,
   summarizeWaypoints,
   sumDistance,
+  withSuggestedOvernightStop,
 } from "../TripScreens.helpers";
-import type { LatLng, TripDay, Waypoint } from "@/types";
+import type { Accommodation, LatLng, Trip, TripDay, Waypoint } from "@/types";
 
 const wp = (
   id: string,
@@ -236,6 +238,43 @@ function dayFrom(
   };
 }
 
+function makeAccommodation(
+  external_id: string,
+  overrides: Partial<Accommodation> = {},
+): Accommodation {
+  return {
+    external_id,
+    name: "Hotel fixture",
+    kind: "hotel",
+    lat: 49,
+    lng: 18,
+    distance_km: 1,
+    website: null,
+    phone: null,
+    stars: 3,
+    ...overrides,
+  };
+}
+
+function tripWithDays(days: TripDay[]): Trip {
+  return {
+    id: "trip-1",
+    title: "Trip fixture",
+    region: "Moravia",
+    num_days: days.length,
+    status: "planned",
+    member_count: 1,
+    created_at: "2026-04-23T08:00:00.000Z",
+    daily_km_min: 150,
+    daily_km_max: 300,
+    min_quality: 3,
+    road_preference: "curvy",
+    invite_code: "INVITE",
+    days,
+    members: [],
+  };
+}
+
 function vertexStrip(lats: number[]): LatLng[] {
   return lats.map((lat) => ({ lat, lng: MERIDIAN_LNG }));
 }
@@ -345,6 +384,139 @@ describe("computeFuelRangeLegs", () => {
     const day = dayFrom(vertexStrip([49, 50, 51, 52]), []);
     expect(computeFuelRangeLegs(day, 0)[0].exceedsRange).toBe(false);
     expect(computeFuelRangeLegs(day, -200)[0].exceedsRange).toBe(false);
+  });
+});
+
+describe("pickSuggestedAccommodation", () => {
+  it("prefers a close, named stay over a farther higher-star option when no reroute is needed", () => {
+    const choice = pickSuggestedAccommodation([
+      makeAccommodation("far-luxury", {
+        name: "Grand Alpine",
+        distance_km: 4.8,
+        stars: 5,
+      }),
+      makeAccommodation("close-guesthouse", {
+        name: "Pension U Mostu",
+        kind: "guest_house",
+        distance_km: 0.6,
+        stars: 3,
+      }),
+    ]);
+
+    expect(choice?.external_id).toBe("close-guesthouse");
+  });
+
+  it("breaks near-distance ties by favouring stars and a named stay", () => {
+    const choice = pickSuggestedAccommodation([
+      makeAccommodation("unnamed", {
+        name: null,
+        distance_km: 1.1,
+        stars: 4,
+      }),
+      makeAccommodation("named", {
+        name: "Hotel Beskyd",
+        distance_km: 1.2,
+        stars: 4,
+      }),
+      makeAccommodation("better-stars", {
+        name: "Penzion Pod Lesem",
+        distance_km: 1.2,
+        stars: 5,
+      }),
+    ]);
+
+    expect(choice?.external_id).toBe("better-stars");
+  });
+
+  it("returns null when there are no accommodation candidates", () => {
+    expect(pickSuggestedAccommodation([])).toBeNull();
+  });
+});
+
+describe("withSuggestedOvernightStop", () => {
+  it("injects the best stay before the end waypoint and normalizes sequences", () => {
+    const trip = tripWithDays([
+      dayFrom(
+        vertexStrip([49, 49.4, 49.8]),
+        [wp("start", "start", 0), wp("end", "end", 4, { name: "Day 1 end" })],
+        { id: "day-1", day_number: 1 },
+      ),
+      dayFrom(vertexStrip([49.8, 50.1]), [wp("d2-start", "start", 0)], {
+        id: "day-2",
+        day_number: 2,
+      }),
+    ]);
+
+    const next = withSuggestedOvernightStop(trip, 1, [
+      makeAccommodation("stay-1", {
+        name: "Hotel Solan",
+        lat: 49.79,
+        lng: 18.02,
+        distance_km: 0.8,
+      }),
+    ]);
+
+    const day1 = next.days[0];
+    expect(day1.waypoints.map((waypoint) => waypoint.waypoint_type)).toEqual([
+      "start",
+      "hotel",
+      "end",
+    ]);
+    expect(day1.waypoints.map((waypoint) => waypoint.sequence)).toEqual([
+      0, 1, 2,
+    ]);
+    expect(day1.waypoints[1]).toMatchObject({
+      name: "Hotel Solan",
+      waypoint_type: "hotel",
+      lat: 49.79,
+      lng: 18.02,
+    });
+  });
+
+  it("preserves an explicit hotel waypoint that already came from the itinerary", () => {
+    const trip = tripWithDays([
+      dayFrom(
+        vertexStrip([49, 49.4, 49.8]),
+        [
+          wp("start", "start", 0),
+          wp("hotel-explicit", "hotel", 1, { name: "Booked stay" }),
+          wp("end", "end", 2),
+        ],
+        { id: "day-1", day_number: 1 },
+      ),
+      dayFrom(vertexStrip([49.8, 50.1]), [wp("d2-start", "start", 0)], {
+        id: "day-2",
+        day_number: 2,
+      }),
+    ]);
+
+    const next = withSuggestedOvernightStop(trip, 1, [
+      makeAccommodation("replacement", {
+        name: "Different stay",
+        distance_km: 0.4,
+      }),
+    ]);
+
+    expect(next.days[0].waypoints[1]).toMatchObject({
+      id: "hotel-explicit",
+      name: "Booked stay",
+      waypoint_type: "hotel",
+    });
+  });
+
+  it("skips the final day because the rider is arriving rather than needing another stay", () => {
+    const trip = tripWithDays([
+      dayFrom(vertexStrip([49, 49.4, 49.8]), [wp("start", "start", 0)], {
+        id: "day-1",
+        day_number: 1,
+      }),
+    ]);
+
+    const next = withSuggestedOvernightStop(trip, 1, [
+      makeAccommodation("stay-1", { name: "Hotel Solan" }),
+    ]);
+
+    expect(next).toBe(trip);
   });
 });
 
