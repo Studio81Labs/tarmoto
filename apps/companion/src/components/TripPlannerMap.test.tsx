@@ -11,6 +11,7 @@ import type { Trip } from "@/lib/types";
 import { createRegionDrawControl } from "@/components/map/RegionDrawControl";
 import { useClosures } from "@/hooks/useClosures";
 import { usePasses } from "@/hooks/usePasses";
+import { buildTripClosureRoutes } from "@/lib/closures-summary";
 
 const mockMap = {
   addSource: vi.fn(),
@@ -80,6 +81,17 @@ vi.mock("@/hooks/usePasses", () => ({
   usePasses: vi.fn(),
 }));
 
+vi.mock("@/lib/closures-summary", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/closures-summary")>(
+    "@/lib/closures-summary",
+  );
+
+  return {
+    ...actual,
+    buildTripClosureRoutes: vi.fn(actual.buildTripClosureRoutes),
+  };
+});
+
 function trip(): Trip {
   return {
     id: "trip-1",
@@ -136,6 +148,7 @@ function trip(): Trip {
 describe("TripPlannerMap", () => {
   const useClosuresMock = vi.mocked(useClosures);
   const usePassesMock = vi.mocked(usePasses);
+  const buildTripClosureRoutesMock = vi.mocked(buildTripClosureRoutes);
 
   beforeEach(() => {
     vi.mocked(createRegionDrawControl).mockClear();
@@ -152,6 +165,7 @@ describe("TripPlannerMap", () => {
     mockMap.getLayer.mockReset();
     mockMap.setPaintProperty.mockReset();
     mockMap.fitBounds.mockReset();
+    buildTripClosureRoutesMock.mockClear();
     useClosuresMock.mockReset();
     useClosuresMock.mockReturnValue({
       closures: [],
@@ -469,6 +483,7 @@ describe("TripPlannerMap", () => {
 
     expect(useClosuresMock).not.toHaveBeenCalled();
     expect(usePassesMock).not.toHaveBeenCalled();
+    expect(buildTripClosureRoutesMock).not.toHaveBeenCalled();
     expect(
       screen.getByText("No route closures or pass warnings for this month."),
     ).toBeInTheDocument();

@@ -63,8 +63,6 @@ export function TripPlannerMap({
   closuresData,
   passesData,
 }: TripPlannerMapProps) {
-  const closureRoutes = useMemo(() => buildTripClosureRoutes(trip), [trip]);
-
   if (closuresData && passesData) {
     return (
       <TripPlannerMapContent
@@ -76,24 +74,17 @@ export function TripPlannerMap({
     );
   }
 
-  return (
-    <FetchedTripPlannerMap
-      trip={trip}
-      month={month}
-      closureRoutes={closureRoutes}
-    />
-  );
+  return <FetchedTripPlannerMap trip={trip} month={month} />;
 }
 
 function FetchedTripPlannerMap({
   trip,
   month,
-  closureRoutes,
 }: {
   trip: Trip | null;
   month: number;
-  closureRoutes: ReturnType<typeof buildTripClosureRoutes>;
 }) {
+  const closureRoutes = useMemo(() => buildTripClosureRoutes(trip), [trip]);
   const closuresData = useClosures(month, closureRoutes);
   const passesData = usePasses(month, closureRoutes);
 
