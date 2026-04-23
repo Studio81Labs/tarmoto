@@ -157,6 +157,11 @@ export class SharingService {
         min_quality: query.min_quality,
       });
     }
+    if (query.min_popularity !== undefined) {
+      qb.andWhere('sr.view_count >= :min_popularity', {
+        min_popularity: query.min_popularity,
+      });
+    }
     if (query.min_curviness !== undefined) {
       // Exclude rides without a computed aggregate — a null `avg_curviness`
       // means "unknown", not "not curvy", and letting them through would
@@ -338,7 +343,7 @@ export class SharingService {
     const step = (geometry.length - 1) / (maxPoints - 1);
     return Array.from({ length: maxPoints }, (_, index) => {
       const pointIndex = Math.round(index * step);
-      return geometry[pointIndex]!;
+      return geometry[pointIndex];
     });
   }
 
