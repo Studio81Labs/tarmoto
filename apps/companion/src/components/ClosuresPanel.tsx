@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import type { UnitSystem } from "@tarmoto/shared";
 import { AlertTriangle, Route } from "lucide-react";
-import { useClosures } from "@/hooks/useClosures";
+import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
 import {
   detourLengthKm,
   formatClosureWindow,
@@ -38,11 +38,72 @@ const REASON_LABEL: Record<PlannerClosure["reason"], string> = {
 interface ClosuresPanelProps {
   month: number;
   routes: PlannerClosureRoute[];
+  data?: ClosuresQueryResult;
 }
 
-export function ClosuresPanel({ month, routes }: ClosuresPanelProps) {
+export function ClosuresPanel({ month, routes, data }: ClosuresPanelProps) {
+  if (data) {
+    return <ClosuresPanelContent month={month} routes={routes} data={data} />;
+  }
+
+  return <FetchedClosuresPanel month={month} routes={routes} />;
+}
+
+function FetchedClosuresPanel({
+  month,
+  routes,
+}: Omit<ClosuresPanelProps, "data">) {
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const hydratePreferences = usePreferencesStore((s) => s.hydrate);
+  const data = useClosures(month, routes);
+
+  useEffect(() => {
+    hydratePreferences();
+  }, [hydratePreferences]);
+
+  return (
+    <ClosuresPanelBody
+      month={month}
+      routes={routes}
+      data={data}
+      unitSystem={unitSystem}
+    />
+  );
+}
+
+function ClosuresPanelContent({
+  month,
+  routes,
+  data,
+}: Required<ClosuresPanelProps>) {
+  const unitSystem = usePreferencesStore((s) => s.unitSystem);
+  const hydratePreferences = usePreferencesStore((s) => s.hydrate);
+
+  useEffect(() => {
+    hydratePreferences();
+  }, [hydratePreferences]);
+
+  return (
+    <ClosuresPanelBody
+      month={month}
+      routes={routes}
+      data={data}
+      unitSystem={unitSystem}
+    />
+  );
+}
+
+function ClosuresPanelBody({
+  month,
+  routes,
+  data,
+  unitSystem,
+}: {
+  month: number;
+  routes: PlannerClosureRoute[];
+  data: ClosuresQueryResult;
+  unitSystem: UnitSystem;
+}) {
   const {
     closures,
     routeClosures,
@@ -53,11 +114,7 @@ export function ClosuresPanel({ month, routes }: ClosuresPanelProps) {
     error,
     routeError,
     previewDate,
-  } = useClosures(month, routes);
-
-  useEffect(() => {
-    hydratePreferences();
-  }, [hydratePreferences]);
+  } = data;
 
   const monthText = monthLabel(month);
   const previewDay = new Intl.DateTimeFormat("en-US", {

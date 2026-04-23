@@ -404,4 +404,73 @@ describe("TripPlannerMap", () => {
       expect.objectContaining({ type: "geojson" }),
     );
   });
+
+  it("shows route-check failures instead of a false safe-route message", () => {
+    useClosuresMock.mockReturnValue({
+      closures: [],
+      routeClosures: [],
+      counts: { full: 0, partial: 0, advisory: 0, total: 0 },
+      routeCounts: { full: 0, partial: 0, advisory: 0, total: 0 },
+      loading: false,
+      routeLoading: false,
+      error: null,
+      routeError: "Failed to check route closures",
+      previewDate: new Date("2026-07-15T12:00:00Z"),
+    });
+    usePassesMock.mockReturnValue({
+      passes: [],
+      routePasses: [],
+      routeClosedCount: 0,
+      routeUnknownCount: 0,
+      loading: false,
+      routeLoading: false,
+      error: null,
+      routeError: "Failed to check route passes",
+    });
+
+    render(<TripPlannerMap trip={trip()} month={7} />);
+
+    expect(
+      screen.getByText("Failed to check route closures"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("No route closures or pass warnings for this month."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reuses parent-loaded conditions without refetching route data", () => {
+    render(
+      <TripPlannerMap
+        trip={trip()}
+        month={7}
+        closuresData={{
+          closures: [],
+          routeClosures: [],
+          counts: { full: 0, partial: 0, advisory: 0, total: 0 },
+          routeCounts: { full: 0, partial: 0, advisory: 0, total: 0 },
+          loading: false,
+          routeLoading: false,
+          error: null,
+          routeError: null,
+          previewDate: new Date("2026-07-15T12:00:00Z"),
+        }}
+        passesData={{
+          passes: [],
+          routePasses: [],
+          routeClosedCount: 0,
+          routeUnknownCount: 0,
+          loading: false,
+          routeLoading: false,
+          error: null,
+          routeError: null,
+        }}
+      />,
+    );
+
+    expect(useClosuresMock).not.toHaveBeenCalled();
+    expect(usePassesMock).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("No route closures or pass warnings for this month."),
+    ).toBeInTheDocument();
+  });
 });

@@ -16,8 +16,8 @@ import {
   type RegionDrawControl,
   type RegionDrawBbox,
 } from "@/components/map/RegionDrawControl";
-import { useClosures } from "@/hooks/useClosures";
-import { usePasses } from "@/hooks/usePasses";
+import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
+import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
 import {
   buildTripClosureRoutes,
   detourLengthKm,
@@ -50,12 +50,73 @@ const CLOSURE_LINE_LAYER = "trip-planner-closure-lines";
 const CLOSURE_MARKER_LAYER = "trip-planner-closure-markers";
 const PASS_MARKER_LAYER = "trip-planner-pass-markers";
 
+interface TripPlannerMapProps {
+  trip: Trip | null;
+  month: number;
+  closuresData?: ClosuresQueryResult;
+  passesData?: PassesQueryResult;
+}
+
 export function TripPlannerMap({
   trip,
   month,
+  closuresData,
+  passesData,
+}: TripPlannerMapProps) {
+  const closureRoutes = useMemo(() => buildTripClosureRoutes(trip), [trip]);
+
+  if (closuresData && passesData) {
+    return (
+      <TripPlannerMapContent
+        trip={trip}
+        month={month}
+        closuresData={closuresData}
+        passesData={passesData}
+      />
+    );
+  }
+
+  return (
+    <FetchedTripPlannerMap
+      trip={trip}
+      month={month}
+      closureRoutes={closureRoutes}
+    />
+  );
+}
+
+function FetchedTripPlannerMap({
+  trip,
+  month,
+  closureRoutes,
 }: {
   trip: Trip | null;
   month: number;
+  closureRoutes: ReturnType<typeof buildTripClosureRoutes>;
+}) {
+  const closuresData = useClosures(month, closureRoutes);
+  const passesData = usePasses(month, closureRoutes);
+
+  return (
+    <TripPlannerMapContent
+      trip={trip}
+      month={month}
+      closuresData={closuresData}
+      passesData={passesData}
+    />
+  );
+}
+
+function TripPlannerMapContent({
+  trip,
+  month,
+  closuresData,
+  passesData,
+}: {
+  trip: Trip | null;
+  month: number;
+  closuresData: ClosuresQueryResult;
+  passesData: PassesQueryResult;
 }) {
   const handleRef = useRef<MapCanvasHandle>(null);
   const drawRef = useRef<RegionDrawControl | null>(null);
@@ -82,14 +143,14 @@ export function TripPlannerMap({
     [tripBounds],
   );
   const waypointCount = waypointCollection.features.length;
-  const closureRoutes = useMemo(() => buildTripClosureRoutes(trip), [trip]);
   const {
     closures,
     routeClosures,
     routeCounts,
     loading: closuresLoading,
     routeLoading: routeClosuresLoading,
-  } = useClosures(month, closureRoutes);
+    routeError: closuresRouteError,
+  } = closuresData;
   const {
     passes,
     routePasses,
@@ -97,7 +158,8 @@ export function TripPlannerMap({
     routeUnknownCount,
     loading: passesLoading,
     routeLoading: routePassesLoading,
-  } = usePasses(month, closureRoutes);
+    routeError: passesRouteError,
+  } = passesData;
   const closureLineCollection = useMemo(
     () => buildPlannerClosureLineCollection(closures),
     [closures],
@@ -123,6 +185,7 @@ export function TripPlannerMap({
     passesLoading ||
     routePassesLoading;
   const routeWarningParts: string[] = [];
+  const routeErrors = dedupeMessages([closuresRouteError, passesRouteError]);
 
   if (routeCounts.total > 0) {
     routeWarningParts.push(
@@ -317,11 +380,29 @@ export function TripPlannerMap({
                 <p className="mt-2 text-xs text-amber-200">
                   Route warnings: {routeWarningParts.join(" · ")}.
                 </p>
+              ) : routeErrors.length > 0 ? (
+                <div className="mt-2 space-y-1">
+                  {routeErrors.map((message) => (
+                    <p key={message} className="text-xs text-rose-300">
+                      {message}
+                    </p>
+                  ))}
+                </div>
               ) : (
                 <p className="mt-2 text-xs text-emerald-300">
                   No route closures or pass warnings for this month.
                 </p>
               )}
+
+              {routeWarningParts.length > 0 && routeErrors.length > 0 ? (
+                <div className="mt-2 space-y-1">
+                  {routeErrors.map((message) => (
+                    <p key={message} className="text-xs text-rose-300">
+                      {message}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
 
               {highlightedClosures.length > 0 ? (
                 <div className="mt-3">
@@ -401,6 +482,14 @@ function toggleClassName(active: boolean): string {
       ? "border-tarmoto-cyan bg-tarmoto-cyan/15 text-tarmoto-cyan"
       : "border-slate-700 bg-slate-900/90 text-slate-300 hover:bg-slate-800"
   }`;
+}
+
+function dedupeMessages(messages: Array<string | null>): string[] {
+  return [
+    ...new Set(
+      messages.filter((message): message is string => message !== null),
+    ),
+  ];
 }
 
 function ensurePlannerLayers(map: MapLibreMap): void {

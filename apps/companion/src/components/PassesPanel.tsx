@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Mountain, Route } from "lucide-react";
-import { usePasses } from "@/hooks/usePasses";
+import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
 import {
   MONTH_NAMES,
   STATUS_DISPLAY_ORDER,
@@ -19,6 +19,7 @@ interface PassesPanelProps {
   month?: number;
   onMonthChange?: (month: number) => void;
   routes?: PlannerClosureRoute[];
+  data?: PassesQueryResult;
 }
 
 const EMPTY_ROUTES: PlannerClosureRoute[] = [];
@@ -49,6 +50,7 @@ export function PassesPanel({
   month: controlledMonth,
   onMonthChange,
   routes = EMPTY_ROUTES,
+  data,
 }: PassesPanelProps) {
   const [localMonth, setLocalMonth] = useState<number>(() => currentUtcMonth());
   const isControlled =
@@ -62,6 +64,66 @@ export function PassesPanel({
     if (isControlled) onMonthChange(nextMonth);
     else setLocalMonth(nextMonth);
   };
+
+  if (data) {
+    return (
+      <PassesPanelBody
+        month={month}
+        setMonth={setMonth}
+        isReadOnlyControlled={isReadOnlyControlled}
+        routes={routes}
+        data={data}
+      />
+    );
+  }
+
+  return (
+    <FetchedPassesPanel
+      month={month}
+      setMonth={setMonth}
+      isReadOnlyControlled={isReadOnlyControlled}
+      routes={routes}
+    />
+  );
+}
+
+function FetchedPassesPanel({
+  month,
+  setMonth,
+  isReadOnlyControlled,
+  routes,
+}: {
+  month: number;
+  setMonth: (nextMonth: number) => void;
+  isReadOnlyControlled: boolean;
+  routes: PlannerClosureRoute[];
+}) {
+  const data = usePasses(month, routes);
+
+  return (
+    <PassesPanelBody
+      month={month}
+      setMonth={setMonth}
+      isReadOnlyControlled={isReadOnlyControlled}
+      routes={routes}
+      data={data}
+    />
+  );
+}
+
+function PassesPanelBody({
+  month,
+  setMonth,
+  isReadOnlyControlled,
+  routes,
+  data,
+}: {
+  month: number;
+  setMonth: (nextMonth: number) => void;
+  isReadOnlyControlled: boolean;
+  routes: PlannerClosureRoute[];
+  data: PassesQueryResult;
+}) {
   const {
     passes,
     routePasses,
@@ -71,7 +133,7 @@ export function PassesPanel({
     routeLoading,
     error,
     routeError,
-  } = usePasses(month, routes);
+  } = data;
   const counts = useMemo(() => countByStatus(passes), [passes]);
   const groups = useMemo(() => partitionByStatus(passes), [passes]);
   const hasRouteWarnings = routeClosedCount > 0 || routeUnknownCount > 0;

@@ -18,6 +18,8 @@ import { TripPlannerMap } from "@/components/TripPlannerMap";
 import { TripStopsPanel } from "@/components/TripStopsPanel";
 import { TripExportMenu } from "@/components/TripExportMenu";
 import { TripImportDialog } from "@/components/TripImportDialog";
+import { useClosures } from "@/hooks/useClosures";
+import { usePasses } from "@/hooks/usePasses";
 import { buildTripClosureRoutes } from "@/lib/closures-summary";
 import { DEMO_TRIP } from "@/lib/demo-trip";
 import { currentUtcMonth } from "@/lib/passes-summary";
@@ -45,6 +47,8 @@ export default function TripPlannerPage() {
     () => buildTripClosureRoutes(activeTrip),
     [activeTrip],
   );
+  const closuresData = useClosures(travelMonth, closureRoutes);
+  const passesData = usePasses(travelMonth, closureRoutes);
 
   const openImport = useCallback((file: File | null = null) => {
     setPendingImportFile(file);
@@ -226,8 +230,13 @@ export default function TripPlannerPage() {
               month={travelMonth}
               onMonthChange={setTravelMonth}
               routes={closureRoutes}
+              data={passesData}
             />
-            <ClosuresPanel month={travelMonth} routes={closureRoutes} />
+            <ClosuresPanel
+              month={travelMonth}
+              routes={closureRoutes}
+              data={closuresData}
+            />
             <TripStopsPanel trip={activeTrip} />
           </div>
         )}
@@ -239,7 +248,12 @@ export default function TripPlannerPage() {
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
-          <TripPlannerMap trip={activeTrip} month={travelMonth} />
+          <TripPlannerMap
+            trip={activeTrip}
+            month={travelMonth}
+            closuresData={closuresData}
+            passesData={passesData}
+          />
 
           {/* Drop overlay */}
           {isDragOver && (
