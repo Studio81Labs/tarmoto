@@ -138,6 +138,11 @@ export default function TripPlannerPage() {
   const closuresData = useClosures(travelMonth, closureRoutes);
   const passesData = usePasses(travelMonth, closureRoutes);
   const selectedDay = activeTrip?.days[selectedDayIndex] ?? null;
+  const timelineDays = activeTrip?.days ?? [
+    { dayNumber: 1 },
+    { dayNumber: 2 },
+    { dayNumber: 3 },
+  ];
 
   const openImport = useCallback((file: File | null = null) => {
     setPendingImportFile(file);
@@ -753,7 +758,7 @@ export default function TripPlannerPage() {
             month={travelMonth}
             closuresData={closuresData}
             passesData={passesData}
-            selectedDayNumber={selectedDay?.dayNumber ?? selectedDayIndex + 1}
+            selectedDayNumber={selectedDay?.dayNumber ?? 1}
             onAddWaypoint={(location) =>
               appendPlannerWaypoint(selectedDayIndex, location)
             }
@@ -796,13 +801,7 @@ export default function TripPlannerPage() {
 
       {/* Timeline strip */}
       <div className="flex items-center gap-2 px-4 py-3 border-t border-slate-800 bg-slate-950/90 overflow-x-auto">
-        {(
-          displayedTrip?.days ?? [
-            { dayNumber: 1 },
-            { dayNumber: 2 },
-            { dayNumber: 3 },
-          ]
-        ).map(
+        {timelineDays.map(
           (day: {
             dayNumber: number;
             distanceKm?: number;

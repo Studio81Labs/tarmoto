@@ -48,6 +48,12 @@ interface TripStoreHistory {
   redoStack: Array<Trip | null>;
 }
 
+const ROUTING_WAYPOINT_TYPES: ReadonlySet<Waypoint["type"]> = new Set([
+  "start",
+  "via",
+  "end",
+]);
+
 export const useTripStore = create<TripState & TripStoreHistory>((set) => ({
   trips: [],
   activeTrip: null,
@@ -82,8 +88,9 @@ export const useTripStore = create<TripState & TripStoreHistory>((set) => ({
         const day = activeTrip.days[dayIndex];
         if (!day) return activeTrip;
         const days = [...activeTrip.days];
-        days[dayIndex] = rebuildPlannerDay(
-          { ...day, waypoints: [...day.waypoints, waypoint] },
+        days[dayIndex] = updatePlannerDayRoute(
+          day,
+          [...day.waypoints, waypoint],
           activeTrip.parameters,
         );
         return {
@@ -127,8 +134,9 @@ export const useTripStore = create<TripState & TripStoreHistory>((set) => ({
         );
         const insertionIndex = endIndex >= 0 ? endIndex : waypoints.length;
         waypoints.splice(insertionIndex, 0, waypoint);
-        days[dayIndex] = rebuildPlannerDay(
-          { ...day, waypoints },
+        days[dayIndex] = updatePlannerDayRoute(
+          day,
+          waypoints,
           activeTrip.parameters,
         );
         return {
@@ -146,11 +154,9 @@ export const useTripStore = create<TripState & TripStoreHistory>((set) => ({
         const day = activeTrip.days[dayIndex];
         if (!day) return activeTrip;
         const days = [...activeTrip.days];
-        days[dayIndex] = rebuildPlannerDay(
-          {
-            ...day,
-            waypoints: day.waypoints.filter((w) => w.id !== waypointId),
-          },
+        days[dayIndex] = updatePlannerDayRoute(
+          day,
+          day.waypoints.filter((w) => w.id !== waypointId),
           activeTrip.parameters,
         );
         return {
@@ -173,8 +179,9 @@ export const useTripStore = create<TripState & TripStoreHistory>((set) => ({
         if (!moved) return activeTrip;
         waypoints.splice(fromIndex, 1);
         waypoints.splice(toIndex, 0, moved);
-        days[dayIndex] = rebuildPlannerDay(
-          { ...day, waypoints },
+        days[dayIndex] = updatePlannerDayRoute(
+          day,
+          waypoints,
           activeTrip.parameters,
         );
         return {
@@ -240,4 +247,39 @@ function commitTripChange(
     canUndo: undoStack.length > 0,
     canRedo: false,
   };
+}
+
+function updatePlannerDayRoute(
+  day: Trip["days"][number],
+  waypoints: Waypoint[],
+  parameters: Trip["parameters"],
+) {
+  return shouldPreserveExistingRoute(
+    day.waypoints,
+    waypoints,
+    day.routeGeometry,
+  )
+    ? { ...day, waypoints }
+    : rebuildPlannerDay({ ...day, waypoints }, parameters);
+}
+
+function shouldPreserveExistingRoute(
+  previousWaypoints: Waypoint[],
+  nextWaypoints: Waypoint[],
+  routeGeometry?: Trip["days"][number]["routeGeometry"],
+) {
+  if (!routeGeometry) return false;
+  // Imported/generated route lines stay authoritative unless the actual
+  // routing anchors change; suggestion stops should not rewrite them.
+  return (
+    routingWaypointSignature(previousWaypoints) ===
+    routingWaypointSignature(nextWaypoints)
+  );
+}
+
+function routingWaypointSignature(waypoints: Waypoint[]) {
+  return waypoints
+    .filter((waypoint) => ROUTING_WAYPOINT_TYPES.has(waypoint.type))
+    .map((waypoint) => waypoint.id)
+    .join("|");
 }

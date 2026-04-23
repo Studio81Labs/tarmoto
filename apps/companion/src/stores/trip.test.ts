@@ -124,4 +124,102 @@ describe("useTripStore planner editing", () => {
       { type: "end", lng: 14.81 },
     ]);
   });
+
+  it("preserves existing route geometry when adding stop suggestions", () => {
+    useTripStore.setState({
+      activeTrip: {
+        id: "trip-1",
+        name: "Imported trip",
+        status: "draft",
+        createdAt: "2026-04-01T09:00:00Z",
+        updatedAt: "2026-04-14T09:00:00Z",
+        parameters: {
+          days: 1,
+          dailyKmTarget: 240,
+          roadPreference: "curvy",
+          surfacePreference: ["asphalt"],
+          avoidHighways: true,
+          avoidTolls: false,
+          avoidUnpaved: true,
+          minQuality: 3,
+        },
+        collaborators: [],
+        days: [
+          {
+            dayNumber: 1,
+            title: "Imported day",
+            distanceKm: 248,
+            durationMinutes: 360,
+            elevationGain: 2640,
+            avgQuality: 4.1,
+            routeGeometry: {
+              type: "LineString",
+              coordinates: [
+                [10.37, 46.47],
+                [10.42, 46.5],
+                [10.57, 46.61],
+              ],
+            },
+            segments: [
+              {
+                id: "seg-1",
+                dayNumber: 1,
+                orderInDay: 1,
+                distanceKm: 12,
+                qualityScore: 4.2,
+                qualityTier: "good",
+                surfaceType: "asphalt",
+                curvinessScore: 78,
+                elevationProfile: [],
+                photos: [],
+                activeHazards: [],
+              },
+            ],
+            waypoints: [
+              {
+                id: "start",
+                name: "Bormio",
+                location: { lat: 46.47, lng: 10.37 },
+                type: "start",
+              },
+              {
+                id: "end",
+                name: "Prato allo Stelvio",
+                location: { lat: 46.61, lng: 10.57 },
+                type: "end",
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const originalDay = useTripStore.getState().activeTrip?.days[0];
+
+    useTripStore.getState().addWaypoint(0, {
+      id: "stay-1",
+      name: "Hotel Stelvio",
+      location: { lat: 46.62, lng: 10.58 },
+      type: "accommodation",
+    });
+
+    useTripStore.getState().insertWaypointBeforeEnd(0, {
+      id: "fuel-1",
+      name: "Fuel stop",
+      location: { lat: 46.53, lng: 10.45 },
+      type: "fuel",
+    });
+    useTripStore.getState().removeWaypoint(0, "stay-1");
+
+    const updatedDay = useTripStore.getState().activeTrip?.days[0];
+    expect(updatedDay?.routeGeometry).toEqual(originalDay?.routeGeometry);
+    expect(updatedDay?.distanceKm).toBe(originalDay?.distanceKm);
+    expect(updatedDay?.durationMinutes).toBe(originalDay?.durationMinutes);
+    expect(updatedDay?.segments).toEqual(originalDay?.segments);
+    expect(updatedDay?.waypoints.map((waypoint) => waypoint.id)).toEqual([
+      "start",
+      "fuel-1",
+      "end",
+    ]);
+  });
 });

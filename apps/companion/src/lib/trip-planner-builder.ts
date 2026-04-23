@@ -36,7 +36,7 @@ export function createPlannerDraftTrip(nowIso: string): Trip {
   };
 }
 
-export function createEmptyPlannerDay(dayNumber: number): TripDay {
+function createEmptyPlannerDay(dayNumber: number): TripDay {
   return {
     dayNumber,
     title: `Day ${dayNumber}`,
