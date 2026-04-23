@@ -126,6 +126,50 @@ describe("buildTripPlannerRouteCollection", () => {
     });
   });
 
+  it("falls back to waypoints when route geometry does not contain two valid points", () => {
+    const collection = buildTripPlannerRouteCollection(
+      trip({
+        days: [
+          {
+            dayNumber: 1,
+            title: "Broken geometry",
+            distanceKm: 120,
+            durationMinutes: 180,
+            elevationGain: 800,
+            avgQuality: 4.1,
+            routeGeometry: {
+              type: "LineString",
+              coordinates: [
+                [14.7, 50.25],
+                [14.8] as unknown as [number, number],
+              ],
+            },
+            waypoints: [
+              {
+                id: "start-1",
+                name: "Start",
+                location: { lng: 14.41, lat: 50.08 },
+                type: "start",
+              },
+              {
+                id: "end-1",
+                name: "End",
+                location: { lng: 14.61, lat: 50.19 },
+                type: "end",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(collection.features).toHaveLength(1);
+    expect(collection.features[0]?.geometry.coordinates).toEqual([
+      [14.41, 50.08],
+      [14.61, 50.19],
+    ]);
+  });
+
   it("skips days that do not have enough points to draw a line", () => {
     const collection = buildTripPlannerRouteCollection(
       trip({
