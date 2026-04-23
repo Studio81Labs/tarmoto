@@ -44,6 +44,7 @@ describe('AccountService', () => {
     userRepo = {
       findOne: jest.fn().mockResolvedValue(buildUser()),
       save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
 
     stripe = {
@@ -273,9 +274,10 @@ describe('AccountService', () => {
         Buffer.from('payload'),
         'stripe-signature',
       );
-      expect(userRepo.save).toHaveBeenCalledWith(
+      expect(userRepo.update).toHaveBeenCalledWith(
+        'user-1',
         expect.objectContaining({
-          id: 'user-1',
+          updated_at: expect.any(Date),
           stripe_customer_id: 'cus_123',
           stripe_subscription_id: 'sub_123',
         }),
@@ -299,6 +301,37 @@ describe('AccountService', () => {
         service.handleWebhook(Buffer.from('payload'), 'stripe-signature'),
       ).resolves.toBeUndefined();
       expect(userRepo.save).not.toHaveBeenCalled();
+      expect(userRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('updates checkout completion state without writing stale subscription fields', async () => {
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_existing',
+          subscription_tier: 'free',
+          subscription_status: 'canceled',
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'checkout.session.completed',
+        data: {
+          object: {
+            customer: 'cus_123',
+            subscription: 'sub_123',
+            metadata: { user_id: 'user-1' },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      const [, update] = userRepo.update!.mock.calls.at(-1)!;
+      expect(userRepo.update).toHaveBeenCalledWith('user-1', update);
+      expect(update).toEqual({
+        updated_at: expect.any(Date),
+        stripe_customer_id: 'cus_123',
+        stripe_subscription_id: 'sub_123',
+      });
     });
 
     it('updates the persisted billing state from subscription lifecycle events', async () => {
@@ -329,8 +362,11 @@ describe('AccountService', () => {
 
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
-      expect(userRepo.save).toHaveBeenCalledWith(
+      expect(userRepo.update).toHaveBeenCalledWith(
+        'user-1',
         expect.objectContaining({
+          updated_at: expect.any(Date),
+          stripe_customer_id: 'cus_123',
           stripe_subscription_id: 'sub_123',
           subscription_tier: 'pro',
           subscription_status: 'trialing',
