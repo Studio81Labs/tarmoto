@@ -325,14 +325,13 @@ describe('AccountService', () => {
 
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
-      expect(userRepo.update).toHaveBeenCalledWith(
-        'user-1',
-        expect.objectContaining({
-          updated_at: expect.any(Date),
-          stripe_customer_id: 'cus_123',
-          stripe_subscription_id: 'sub_123',
-        }),
-      );
+      const [, update] = userRepo.update!.mock.calls.at(-1)!;
+      expect(userRepo.update).toHaveBeenCalledWith('user-1', update);
+      expect(update).toEqual({
+        updated_at: expect.any(Date),
+        stripe_customer_id: 'cus_123',
+        stripe_subscription_id: 'sub_123',
+      });
     });
 
     it('updates the persisted billing state from subscription lifecycle events', async () => {
