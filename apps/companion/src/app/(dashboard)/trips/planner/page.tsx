@@ -76,6 +76,7 @@ export default function TripPlannerPage() {
   >([]);
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const generationLockRef = useRef(false);
+  const selectedOptionIdRef = useRef<string | null>(null);
   const activeTrip = useTripStore((s) => s.activeTrip);
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
   const isGenerating = useTripStore((s) => s.isGenerating);
@@ -160,6 +161,10 @@ export default function TripPlannerPage() {
   }, []);
 
   useEffect(() => {
+    selectedOptionIdRef.current = selectedOptionId;
+  }, [selectedOptionId]);
+
+  useEffect(() => {
     if (!activeTrip) return;
     const matchingOption = generatedOptions.find(
       (option) => option.trip.id === activeTrip.id,
@@ -205,6 +210,7 @@ export default function TripPlannerPage() {
 
   const handleSelectOption = useCallback(
     (option: GeneratedTripOption) => {
+      if (generationLockRef.current) return;
       setSelectedOptionId(option.id);
       setActiveTrip(option.trip);
       setGenerationError(null);
@@ -216,6 +222,7 @@ export default function TripPlannerPage() {
     async (dayNumber: number) => {
       if (!canRegenerate || !displayedTrip || !selectedOptionId) return;
       if (generationLockRef.current) return;
+      const regeneratingOptionId = selectedOptionId;
       setGenerationError(null);
       generationLockRef.current = true;
       setGenerating(true);
@@ -228,12 +235,14 @@ export default function TripPlannerPage() {
         );
         setGeneratedOptions((current) =>
           current.map((option) =>
-            option.id === selectedOptionId
+            option.id === regeneratingOptionId
               ? { ...option, trip: regeneratedTrip }
               : option,
           ),
         );
-        setActiveTrip(regeneratedTrip);
+        if (selectedOptionIdRef.current === regeneratingOptionId) {
+          setActiveTrip(regeneratedTrip);
+        }
       } catch (error) {
         const message =
           error instanceof Error
@@ -357,6 +366,7 @@ export default function TripPlannerPage() {
                     key={option.id}
                     type="button"
                     onClick={() => handleSelectOption(option)}
+                    disabled={isGenerating}
                     className={`rounded-2xl border px-4 py-3 text-left transition ${
                       option.id === selectedOptionId
                         ? "border-tarmoto-cyan bg-tarmoto-cyan/10"

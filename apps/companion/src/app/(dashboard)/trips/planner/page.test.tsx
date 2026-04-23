@@ -142,6 +142,27 @@ function buildTrip(name: string): Trip {
   };
 }
 
+type TripStoreSnapshot = {
+  trips: Trip[];
+  activeTrip: Trip | null;
+  isGenerating: boolean;
+  focusedSegmentId: string | null;
+  hoveredSegmentId: string | null;
+  setTrips: (trips: Trip[]) => void;
+  setActiveTrip: (trip: Trip | null) => void;
+  setGenerating: (isGenerating: boolean) => void;
+  focusSegment: (segmentId: string | null) => void;
+  hoverSegment: (segmentId: string | null) => void;
+  addWaypoint: (dayIndex: number, waypoint: unknown) => void;
+  insertWaypointBeforeEnd: (dayIndex: number, waypoint: unknown) => void;
+  removeWaypoint: (dayIndex: number, waypointId: string) => void;
+  reorderWaypoints: (
+    dayIndex: number,
+    fromIndex: number,
+    toIndex: number,
+  ) => void;
+};
+
 describe("TripPlannerPage", () => {
   const useClosuresMock = vi.mocked(useClosures);
   const usePassesMock = vi.mocked(usePasses);
@@ -172,28 +193,13 @@ describe("TripPlannerPage", () => {
     routeError: null,
   };
 
-  const setActiveTrip = vi.fn();
-  const setGenerating = vi.fn();
+  const setActiveTrip = vi.fn<(trip: Trip | null) => void>();
+  const setGenerating = vi.fn<(isGenerating: boolean) => void>();
   const activeTrip = buildTrip("Best fit");
   const scenicTrip = buildTrip("Scenic sweep");
   const fastTrip = buildTrip("Fastest line");
   const importedTrip = buildTrip("Imported route");
-  let storeState: {
-    trips: Trip[];
-    activeTrip: Trip | null;
-    isGenerating: boolean;
-    focusedSegmentId: string | null;
-    hoveredSegmentId: string | null;
-    setTrips: ReturnType<typeof vi.fn>;
-    setActiveTrip: typeof setActiveTrip;
-    setGenerating: typeof setGenerating;
-    focusSegment: ReturnType<typeof vi.fn>;
-    hoverSegment: ReturnType<typeof vi.fn>;
-    addWaypoint: ReturnType<typeof vi.fn>;
-    insertWaypointBeforeEnd: ReturnType<typeof vi.fn>;
-    removeWaypoint: ReturnType<typeof vi.fn>;
-    reorderWaypoints: ReturnType<typeof vi.fn>;
-  };
+  let storeState: TripStoreSnapshot;
 
   beforeEach(() => {
     mockedTripPlannerMap.mockClear();
@@ -205,6 +211,12 @@ describe("TripPlannerPage", () => {
     usePassesMock.mockReset();
     generateTripOptionsMock.mockReset();
     regenerateTripDayMock.mockReset();
+    setActiveTrip.mockImplementation((trip) => {
+      storeState.activeTrip = trip;
+    });
+    setGenerating.mockImplementation((isGenerating) => {
+      storeState.isGenerating = isGenerating;
+    });
     storeState = {
       trips: [],
       activeTrip: null,
@@ -221,9 +233,7 @@ describe("TripPlannerPage", () => {
       removeWaypoint: vi.fn(),
       reorderWaypoints: vi.fn(),
     };
-    useTripStoreMock.mockImplementation((selector) =>
-      selector(storeState as any),
-    );
+    useTripStoreMock.mockImplementation((selector) => selector(storeState));
     useClosuresMock.mockReturnValue(closuresData);
     usePassesMock.mockReturnValue(passesData);
     generateTripOptionsMock.mockReturnValue([
@@ -366,5 +376,20 @@ describe("TripPlannerPage", () => {
     fireEvent.click(regenerateButton);
 
     await waitFor(() => expect(regenerateTripDayMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("ignores option switches while a day regeneration is in flight", async () => {
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() => expect(setActiveTrip).toHaveBeenCalledWith(activeTrip));
+    setActiveTrip.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "Regenerate day 1" }));
+    fireEvent.click(screen.getByRole("button", { name: /Scenic sweep/ }));
+
+    await waitFor(() => expect(regenerateTripDayMock).toHaveBeenCalledTimes(1));
+    expect(setActiveTrip).not.toHaveBeenCalledWith(scenicTrip);
   });
 });

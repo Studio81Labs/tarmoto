@@ -110,6 +110,7 @@ export function regenerateTripDay(
   if (dayIndex < 0) return cloneTrip(trip);
 
   const currentDay = trip.days[dayIndex]!;
+  const preset = resolvePresetForTrip(trip);
   const templateIndex =
     (hashString(currentDay.title ?? `day-${dayNumber}`) + dayNumber) %
     DEMO_TRIP.days.length;
@@ -118,7 +119,7 @@ export function regenerateTripDay(
     dayNumber,
     params: normalizedParams,
     optionIndex: templateIndex,
-    preset: OPTION_PRESETS[templateIndex % OPTION_PRESETS.length]!,
+    preset,
     template,
     existingDay: currentDay,
   });
@@ -353,6 +354,19 @@ function buildOvernightStop(end: Waypoint, dayNumber: number): POI {
 
 function buildTripName(params: TripParameters, preset: OptionPreset): string {
   return `${params.days}-day ${params.roadPreference} ${preset.label.toLowerCase()}`;
+}
+
+function resolvePresetForTrip(trip: Trip): OptionPreset {
+  const presetFromId = OPTION_PRESETS.find(
+    (preset) => trip.id === `generated-${preset.id}`,
+  );
+  if (presetFromId) return presetFromId;
+
+  const normalizedName = trip.name.toLowerCase();
+  const presetFromName = OPTION_PRESETS.find((preset) =>
+    normalizedName.includes(preset.label.toLowerCase()),
+  );
+  return presetFromName ?? OPTION_PRESETS[0]!;
 }
 
 function buildTitle(

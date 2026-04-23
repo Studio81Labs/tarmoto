@@ -61,7 +61,10 @@ describe("trip-itinerary-generator", () => {
     expect(regenerated.days[0]).toEqual(originalFirstDay);
     expect(regenerated.days[2]).toEqual(originalThirdDay);
     expect(regenerated.days[1]?.dayNumber).toBe(2);
-    expect(regenerated.days[1]?.title).not.toBe(originalSecondDay.title);
+    expect(regenerated.days[1]).not.toEqual(originalSecondDay);
+    expect(regenerated.days[1]?.routeGeometry).not.toEqual(
+      originalSecondDay.routeGeometry,
+    );
     expect(regenerated.days[1]?.waypoints[0]).toEqual(
       originalSecondDay.waypoints[0],
     );
@@ -97,5 +100,17 @@ describe("trip-itinerary-generator", () => {
     expect(regenerated).not.toBe(DEMO_TRIP);
     expect(regenerated.days[0]).not.toBe(DEMO_TRIP.days[0]);
     expect(DEMO_TRIP.days[0]?.title).toBe("Passo dello Stelvio");
+  });
+
+  it("preserves the generated option preset when regenerating a day", () => {
+    const fastestTrip = generateTripOptions({
+      ...params,
+      days: 3,
+    })[2]!.trip;
+
+    const regenerated = regenerateTripDay(fastestTrip, params, 2);
+
+    expect(regenerated.days[1]?.title).toContain("Fastest line");
+    expect(regenerated.days[1]?.title).not.toContain("Scenic sweep");
   });
 });
