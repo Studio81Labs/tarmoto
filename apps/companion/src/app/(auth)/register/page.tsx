@@ -4,8 +4,10 @@ import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
+import { OAuthButtons } from "@/components/OAuthButtons";
 import { registerUser } from "@/lib/api";
 import { safeCallbackUrl } from "@/lib/callback-url";
+import { useOAuthProviders } from "@/hooks/useOAuthProviders";
 
 function RegisterForm() {
   const [displayName, setDisplayName] = useState("");
@@ -14,6 +16,8 @@ function RegisterForm() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const searchParams = useSearchParams();
+  const oauthProviders = useOAuthProviders();
+  const callbackUrl = safeCallbackUrl(searchParams.get("callbackUrl"));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,7 +33,7 @@ function RegisterForm() {
       if (result?.error) {
         setError("Account created but sign-in failed. Please log in.");
       } else {
-        window.location.href = safeCallbackUrl(searchParams.get("callbackUrl"));
+        window.location.href = callbackUrl;
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Registration failed");
@@ -101,6 +105,8 @@ function RegisterForm() {
           {loading ? "Creating account..." : "Create account"}
         </button>
       </form>
+
+      <OAuthButtons providers={oauthProviders} callbackUrl={callbackUrl} />
 
       <p className="mt-6 text-center text-sm text-slate-400">
         Already have an account?{" "}
