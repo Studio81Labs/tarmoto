@@ -19,9 +19,23 @@ import {
   formatRelativeTime,
 } from "@/lib/utils";
 
+type SharedRideWidgetData = Pick<
+  SharedRideDetail,
+  | "rider_name"
+  | "ride_type"
+  | "started_at"
+  | "distance_km"
+  | "duration_min"
+  | "avg_road_quality"
+  | "avg_curviness"
+  | "route_geometry"
+  | "view_count"
+  | "embed_click_count"
+>;
+
 interface Props {
   token: string;
-  ride: SharedRideDetail;
+  ride: SharedRideWidgetData;
   pageUrl: string;
   variant: RideWidgetVariant;
 }
