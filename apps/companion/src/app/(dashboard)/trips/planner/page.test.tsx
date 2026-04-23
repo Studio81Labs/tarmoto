@@ -1,8 +1,13 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import TripPlannerPage from "./page";
 import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
 import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
 import { useTripStore } from "@/stores/trip";
+import {
+  generateTripOptions,
+  regenerateTripDay,
+} from "@/lib/trip-itinerary-generator";
+import type { Trip } from "@/lib/types";
 
 const mockedTripPlannerMap = vi.fn((_props?: unknown) => (
   <div data-testid="trip-planner-map" />
@@ -24,6 +29,11 @@ vi.mock("@/hooks/usePasses", () => ({
 
 vi.mock("@/stores/trip", () => ({
   useTripStore: vi.fn(),
+}));
+
+vi.mock("@/lib/trip-itinerary-generator", () => ({
+  generateTripOptions: vi.fn(),
+  regenerateTripDay: vi.fn(),
 }));
 
 vi.mock("@/lib/closures-summary", async () => {
@@ -73,10 +83,71 @@ vi.mock("@/components/TripImportDialog", () => ({
   TripImportDialog: () => null,
 }));
 
+function buildTrip(name: string): Trip {
+  return {
+    id: name.toLowerCase().replace(/\s+/g, "-"),
+    name,
+    status: "draft",
+    createdAt: "2026-04-23T09:00:00Z",
+    updatedAt: "2026-04-23T09:00:00Z",
+    collaborators: [],
+    parameters: {
+      days: 3,
+      dailyKmTarget: 250,
+      roadPreference: "mixed",
+      surfacePreference: ["asphalt"],
+      avoidHighways: true,
+      avoidTolls: false,
+      avoidUnpaved: true,
+      minQuality: 3,
+    },
+    days: [
+      {
+        dayNumber: 1,
+        title: "Day 1",
+        distanceKm: 240,
+        durationMinutes: 310,
+        elevationGain: 1800,
+        avgQuality: 4,
+        overnightStop: {
+          id: "stay-1",
+          name: "Bormio",
+          type: "accommodation",
+          location: { lng: 10.37, lat: 46.47 },
+        },
+        routeGeometry: {
+          type: "LineString",
+          coordinates: [
+            [10.37, 46.47],
+            [10.57, 46.61],
+          ],
+        },
+        waypoints: [
+          {
+            id: "wp-1",
+            name: "Bormio",
+            type: "start",
+            location: { lng: 10.37, lat: 46.47 },
+          },
+          {
+            id: "wp-2",
+            name: "Prato allo Stelvio",
+            type: "end",
+            location: { lng: 10.57, lat: 46.61 },
+          },
+        ],
+        segments: [],
+      },
+    ],
+  };
+}
+
 describe("TripPlannerPage", () => {
   const useClosuresMock = vi.mocked(useClosures);
   const usePassesMock = vi.mocked(usePasses);
   const useTripStoreMock = vi.mocked(useTripStore);
+  const generateTripOptionsMock = vi.mocked(generateTripOptions);
+  const regenerateTripDayMock = vi.mocked(regenerateTripDay);
 
   const closuresData: ClosuresQueryResult = {
     closures: [],
@@ -101,12 +172,22 @@ describe("TripPlannerPage", () => {
     routeError: null,
   };
 
+  const setActiveTrip = vi.fn();
+  const setGenerating = vi.fn();
+  const activeTrip = buildTrip("Best fit");
+  const scenicTrip = buildTrip("Scenic sweep");
+  const fastTrip = buildTrip("Fastest line");
+
   beforeEach(() => {
     mockedTripPlannerMap.mockClear();
     mockedPassesPanel.mockClear();
     mockedClosuresPanel.mockClear();
+    setActiveTrip.mockReset();
+    setGenerating.mockReset();
     useClosuresMock.mockReset();
     usePassesMock.mockReset();
+    generateTripOptionsMock.mockReset();
+    regenerateTripDayMock.mockReset();
     useTripStoreMock.mockImplementation((selector) =>
       selector({
         trips: [],
@@ -115,8 +196,8 @@ describe("TripPlannerPage", () => {
         focusedSegmentId: null,
         hoveredSegmentId: null,
         setTrips: vi.fn(),
-        setActiveTrip: vi.fn(),
-        setGenerating: vi.fn(),
+        setActiveTrip,
+        setGenerating,
         focusSegment: vi.fn(),
         hoverSegment: vi.fn(),
         addWaypoint: vi.fn(),
@@ -127,6 +208,35 @@ describe("TripPlannerPage", () => {
     );
     useClosuresMock.mockReturnValue(closuresData);
     usePassesMock.mockReturnValue(passesData);
+    generateTripOptionsMock.mockReturnValue([
+      {
+        id: "best-fit",
+        label: "Best fit",
+        summary: "Balanced route",
+        trip: activeTrip,
+      },
+      {
+        id: "scenic",
+        label: "Scenic sweep",
+        summary: "More climbing",
+        trip: scenicTrip,
+      },
+      {
+        id: "fastest",
+        label: "Fastest line",
+        summary: "Lower transfer time",
+        trip: fastTrip,
+      },
+    ]);
+    regenerateTripDayMock.mockReturnValue({
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          title: "Regen day",
+        },
+      ],
+    });
   });
 
   it("fetches planner conditions once and shares the results with the map and sidebar panels", () => {
@@ -151,6 +261,57 @@ describe("TripPlannerPage", () => {
     expect(mockedPassesPanel).toHaveBeenCalledWith(
       expect.objectContaining({
         data: passesData,
+      }),
+    );
+  });
+
+  it("generates itinerary options from the planner parameters and selects the best-fit trip", async () => {
+    render(<TripPlannerPage />);
+
+    fireEvent.change(screen.getByLabelText("Number of days"), {
+      target: { value: "4" },
+    });
+    fireEvent.change(screen.getByLabelText("Daily km target"), {
+      target: { value: "320" },
+    });
+    fireEvent.click(screen.getByLabelText("Gravel"));
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() =>
+      expect(generateTripOptionsMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          days: 4,
+          dailyKmTarget: 320,
+          surfacePreference: ["asphalt", "gravel"],
+        }),
+      ),
+    );
+    expect(setGenerating).toHaveBeenNthCalledWith(1, true);
+    expect(setActiveTrip).toHaveBeenCalledWith(activeTrip);
+    expect(setGenerating).toHaveBeenLastCalledWith(false);
+    expect(screen.getByText("Scenic sweep")).toBeInTheDocument();
+    expect(screen.getByText("Fastest line")).toBeInTheDocument();
+  });
+
+  it("regenerates a single day without replacing the whole itinerary", async () => {
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() => expect(setActiveTrip).toHaveBeenCalledWith(activeTrip));
+
+    fireEvent.click(screen.getByRole("button", { name: "Regenerate day 1" }));
+
+    await waitFor(() =>
+      expect(regenerateTripDayMock).toHaveBeenCalledWith(
+        activeTrip,
+        expect.any(Object),
+        1,
+      ),
+    );
+    expect(setActiveTrip).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        days: [expect.objectContaining({ title: "Regen day" })],
       }),
     );
   });
