@@ -54,6 +54,7 @@ import type { LatLng, TripDay, Waypoint } from "@/types";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
 import type { Maneuver, ManeuverType } from "@/services/navigation";
 import { DEV_MAP_STYLE_URL } from "./MapScreen.helpers";
+import { navigationWaypointsForRoadNames } from "./TripScreens.helpers";
 
 type NavRoute = RouteProp<TripsStackParamList, "Navigate">;
 type Nav = NativeStackNavigationProp<TripsStackParamList, "Navigate">;
@@ -105,8 +106,14 @@ export default function NavigationScreen() {
   // the planner snaps waypoints onto polyline vertices, so an index-based
   // lookup is stable enough for spoken guidance. When no waypoint matches
   // we leave the slot undefined and let the phrase builder fall through.
+  // Client-only suggested overnight stays are excluded because they are
+  // not route-snapped planner waypoints and would skew maneuver naming.
   const roadNames = useMemo(
-    () => buildRoadNameLookup(polyline, day?.waypoints ?? []),
+    () =>
+      buildRoadNameLookup(
+        polyline,
+        navigationWaypointsForRoadNames(day?.waypoints ?? []),
+      ),
     [polyline, day?.waypoints],
   );
 

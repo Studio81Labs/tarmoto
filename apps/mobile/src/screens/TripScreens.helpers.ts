@@ -140,6 +140,23 @@ export function pickSuggestedAccommodation(
   return sorted[0] ?? null;
 }
 
+export function isSuggestedOvernightWaypoint(
+  waypoint: Pick<Waypoint, "id" | "waypoint_type">,
+): boolean {
+  return (
+    waypoint.waypoint_type === "hotel" &&
+    waypoint.id.startsWith(SUGGESTED_OVERNIGHT_PREFIX)
+  );
+}
+
+export function navigationWaypointsForRoadNames(
+  waypoints: Waypoint[],
+): Waypoint[] {
+  return waypoints.filter(
+    (waypoint) => !isSuggestedOvernightWaypoint(waypoint),
+  );
+}
+
 /**
  * Materialize a UI-level overnight-stop selection into the trip itinerary.
  *
@@ -162,7 +179,7 @@ export function withSuggestedOvernightStop(
   const explicitHotel = day.waypoints.some(
     (waypoint) =>
       waypoint.waypoint_type === "hotel" &&
-      !waypoint.id.startsWith(SUGGESTED_OVERNIGHT_PREFIX),
+      !isSuggestedOvernightWaypoint(waypoint),
   );
   if (explicitHotel) return trip;
 
@@ -180,9 +197,7 @@ export function withSuggestedOvernightStop(
   };
 
   const sorted = [...day.waypoints].sort((a, b) => a.sequence - b.sequence);
-  const existingSuggested = sorted.find((waypoint) =>
-    waypoint.id.startsWith(SUGGESTED_OVERNIGHT_PREFIX),
-  );
+  const existingSuggested = sorted.find(isSuggestedOvernightWaypoint);
   if (
     existingSuggested &&
     existingSuggested.id === hotelWaypoint.id &&
@@ -194,11 +209,7 @@ export function withSuggestedOvernightStop(
   }
 
   const withoutSuggested = sorted.filter(
-    (waypoint) =>
-      !(
-        waypoint.waypoint_type === "hotel" &&
-        waypoint.id.startsWith(SUGGESTED_OVERNIGHT_PREFIX)
-      ),
+    (waypoint) => !isSuggestedOvernightWaypoint(waypoint),
   );
   const endIndex = withoutSuggested.findIndex(
     (waypoint) => waypoint.waypoint_type === "end",

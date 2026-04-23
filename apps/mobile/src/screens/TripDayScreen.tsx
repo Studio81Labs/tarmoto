@@ -113,6 +113,19 @@ export default function TripDayScreen() {
   // circuits internally when `day` is undefined.
   const day = trip?.days.find((d) => d.day_number === dayNumber);
   const fuelStations = useFuelStationsAlongRoute(day, fuelRangeKm);
+  const handleAccommodationsLoaded = useCallback(
+    (items: Accommodation[]) => {
+      setTrip((current) => {
+        if (!current) return current;
+        const next = withSuggestedOvernightStop(current, dayNumber, items);
+        if (next !== current) {
+          setActiveTrip(next);
+        }
+        return next;
+      });
+    },
+    [dayNumber, setActiveTrip],
+  );
 
   if (loading) {
     return (
@@ -160,19 +173,6 @@ export default function TripDayScreen() {
     day.avg_quality > 0 && !meetsQualityThreshold(day.avg_quality, minQuality);
   const summary = summarizeWaypoints(day.waypoints);
   const fuelRange = summarizeFuelRange(day, fuelRangeKm, fuelStations);
-  const handleAccommodationsLoaded = useCallback(
-    (items: Accommodation[]) => {
-      setTrip((current) => {
-        if (!current) return current;
-        const next = withSuggestedOvernightStop(current, day.day_number, items);
-        if (next !== current) {
-          setActiveTrip(next);
-        }
-        return next;
-      });
-    },
-    [day.day_number, setActiveTrip],
-  );
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>

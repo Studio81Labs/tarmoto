@@ -8,6 +8,8 @@ import {
   formatStatus,
   formatWaypointType,
   isLastDay,
+  isSuggestedOvernightWaypoint,
+  navigationWaypointsForRoadNames,
   pickDayEndAnchor,
   pickSuggestedAccommodation,
   summarizeFuelRange,
@@ -517,6 +519,24 @@ describe("withSuggestedOvernightStop", () => {
     ]);
 
     expect(next).toBe(trip);
+  });
+});
+
+describe("navigationWaypointsForRoadNames", () => {
+  it("drops client-only suggested overnight stays so navigation keeps planner-aligned waypoints", () => {
+    const waypoints = [
+      wp("start", "start", 0, { name: "Start" }),
+      wp("suggested-overnight:day-1:stay-1", "hotel", 1, {
+        name: "Hotel Solan",
+      }),
+      wp("fuel-1", "fuel", 2, { name: "Fuel" }),
+      wp("end", "end", 3, { name: "Finish" }),
+    ];
+
+    expect(
+      navigationWaypointsForRoadNames(waypoints).map((waypoint) => waypoint.id),
+    ).toEqual(["start", "fuel-1", "end"]);
+    expect(isSuggestedOvernightWaypoint(waypoints[1])).toBe(true);
   });
 });
 
