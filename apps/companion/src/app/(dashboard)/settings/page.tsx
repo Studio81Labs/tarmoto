@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import QRCode from "qrcode";
 import { useAuthStore } from "@/stores/auth";
 import { usePreferencesStore } from "@/stores/preferences";
 import { usersApi } from "@/lib/api";
+import { buildLinkAccountDeepLink } from "@/lib/account-link";
 import type { UnitSystem } from "@tarmoto/shared";
 import {
   User,
@@ -71,6 +73,7 @@ export default function AccountPage() {
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<CopyState>("idle");
+  const [mobileLinkQrSrc, setMobileLinkQrSrc] = useState<string | null>(null);
 
   // Per-field dirty flags — set on first keystroke so a late GET response
   // can't clobber what the user just typed, and so an unhydrated save
@@ -229,6 +232,40 @@ export default function AccountPage() {
       setCopyState("error");
     }
   }, [user?.email]);
+
+  const mobileLinkHref = user?.email
+    ? buildLinkAccountDeepLink(user.email)
+    : null;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!mobileLinkHref) {
+      setMobileLinkQrSrc(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    QRCode.toDataURL(mobileLinkHref, {
+      margin: 1,
+      width: 176,
+      color: {
+        dark: "#0f172a",
+        light: "#f8fafc",
+      },
+    })
+      .then((src) => {
+        if (!cancelled) setMobileLinkQrSrc(src);
+      })
+      .catch(() => {
+        if (!cancelled) setMobileLinkQrSrc(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mobileLinkHref]);
 
   return (
     <div className="p-6 max-w-3xl mx-auto animate-fade-in">
@@ -445,6 +482,44 @@ export default function AccountPage() {
           </div>
         </div>
         <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+          <p className="text-sm text-slate-300">
+            Scan the QR code or open Tarmoto on this phone to jump into mobile
+            account linking, then sign in with the same credentials to keep
+            everything in sync.
+          </p>
+          <div className="mt-4 flex flex-wrap items-center gap-4">
+            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-3">
+              {mobileLinkQrSrc ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={mobileLinkQrSrc}
+                  alt="QR code to link the Tarmoto mobile app"
+                  className="h-36 w-36 rounded-lg"
+                />
+              ) : (
+                <div className="flex h-36 w-36 items-center justify-center rounded-lg bg-slate-950 text-xs text-slate-500">
+                  QR unavailable
+                </div>
+              )}
+            </div>
+            <div className="max-w-sm space-y-3">
+              <p className="text-xs text-slate-500">
+                Best on another device: open your phone camera, scan the code,
+                and Tarmoto will jump straight to account linking with your
+                email prefilled.
+              </p>
+              {mobileLinkHref ? (
+                <a
+                  href={mobileLinkHref}
+                  className="inline-flex items-center gap-2 rounded-lg border border-tarmoto-cyan/30 bg-tarmoto-cyan/10 px-4 py-2 text-sm font-medium text-tarmoto-cyan transition hover:border-tarmoto-cyan/50 hover:bg-tarmoto-cyan/15"
+                >
+                  <Smartphone size={14} />
+                  Open in Tarmoto mobile
+                </a>
+              ) : null}
+            </div>
+          </div>
+
           <p className="text-xs uppercase tracking-widest text-slate-500">
             Sign-in email
           </p>

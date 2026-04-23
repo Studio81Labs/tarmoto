@@ -4,7 +4,10 @@
  */
 
 import React from "react";
-import { NavigationContainer } from "@react-navigation/native";
+import {
+  NavigationContainer,
+  type LinkingOptions,
+} from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import Icon from "@react-native-vector-icons/material-design-icons";
@@ -31,6 +34,7 @@ import CommuteScreen from "@/screens/CommuteScreen";
 import RideDetailScreen from "@/screens/RideDetailScreen";
 import SettingsScreen from "@/screens/SettingsScreen";
 import JoinTripScreen from "@/screens/JoinTripScreen";
+import LinkAccountScreen from "@/screens/LinkAccountScreen";
 import OfflineRegionsScreen from "@/screens/OfflineRegionsScreen";
 
 // ── Type definitions ──
@@ -73,6 +77,7 @@ export type TripsStackParamList = {
 export type ProfileStackParamList = {
   Profile: undefined;
   Settings: undefined;
+  LinkAccount: { email?: string } | undefined;
   OfflineRegions: undefined;
 };
 
@@ -84,6 +89,24 @@ const MapStack = createNativeStackNavigator<MapStackParamList>();
 const RideStack = createNativeStackNavigator<RideStackParamList>();
 const TripsStack = createNativeStackNavigator<TripsStackParamList>();
 const ProfileStack = createNativeStackNavigator<ProfileStackParamList>();
+
+const linking: LinkingOptions<RootTabParamList> = {
+  prefixes: ["tarmoto://"],
+  config: {
+    screens: {
+      ProfileTab: {
+        screens: {
+          LinkAccount: "link-account",
+        },
+      },
+      TripsTab: {
+        screens: {
+          TripJoin: "trips/join",
+        },
+      },
+    },
+  },
+};
 
 const screenOptions = {
   headerStyle: { backgroundColor: colors.bgCard },
@@ -201,6 +224,11 @@ function ProfileNavigator() {
       />
       <ProfileStack.Screen name="Settings" component={SettingsScreen} />
       <ProfileStack.Screen
+        name="LinkAccount"
+        component={LinkAccountScreen}
+        options={{ title: "Link account" }}
+      />
+      <ProfileStack.Screen
         name="OfflineRegions"
         component={OfflineRegionsScreen}
         options={{ title: "Offline maps" }}
@@ -232,7 +260,7 @@ export default function RootNavigator() {
         don't re-render the whole navigator on every tick.
       */}
       <CarPlayRideMirror />
-      <NavigationContainer>
+      <NavigationContainer linking={linking}>
         <Tab.Navigator
           screenOptions={({ route }) => ({
             headerShown: false,

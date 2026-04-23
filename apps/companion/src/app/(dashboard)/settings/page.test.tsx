@@ -7,6 +7,17 @@ import {
 } from "@testing-library/react";
 import AccountPage from "./page";
 import { usersApi } from "@/lib/api";
+import { buildLinkAccountDeepLink } from "@/lib/account-link";
+
+const { qrToDataURLMock } = vi.hoisted(() => ({
+  qrToDataURLMock: vi.fn().mockResolvedValue("data:image/png;base64,qr"),
+}));
+
+vi.mock("qrcode", () => ({
+  default: {
+    toDataURL: qrToDataURLMock,
+  },
+}));
 
 const authState = {
   user: {
@@ -54,6 +65,7 @@ describe("AccountPage", () => {
     vi.useRealTimers();
     getMeMock.mockReset();
     updateMeMock.mockReset();
+    qrToDataURLMock.mockClear();
     authState.setUser.mockReset();
     preferencesState.setUnitSystem.mockReset();
     preferencesState.hydrate.mockReset();
@@ -305,6 +317,51 @@ describe("AccountPage", () => {
     expect(
       screen.queryByText("Email copied. Use it to sign in on mobile."),
     ).not.toBeInTheDocument();
+  });
+
+  it("renders a direct mobile linking handoff for the signed-in rider", async () => {
+    getMeMock.mockResolvedValueOnce({
+      data: {
+        id: "user-1",
+        email: "rider@example.com",
+        display_name: "Rider One",
+        phone: null,
+        avatar_url: null,
+        bio: null,
+        home_region: null,
+        home_location: null,
+        work_location: null,
+        preferences: {},
+        created_at: "2026-04-22T09:00:00.000Z",
+      },
+    });
+
+    render(<AccountPage />);
+
+    expect(
+      await screen.findByDisplayValue("rider@example.com"),
+    ).toBeInTheDocument();
+
+    expect(
+      screen.getByRole("link", { name: "Open in Tarmoto mobile" }),
+    ).toHaveAttribute("href", buildLinkAccountDeepLink("rider@example.com"));
+    expect(qrToDataURLMock).toHaveBeenCalledWith(
+      buildLinkAccountDeepLink("rider@example.com"),
+      {
+        margin: 1,
+        width: 176,
+        color: {
+          dark: "#0f172a",
+          light: "#f8fafc",
+        },
+      },
+    );
+    expect(
+      screen.getByAltText("QR code to link the Tarmoto mobile app"),
+    ).toHaveAttribute("src", "data:image/png;base64,qr");
+    expect(
+      screen.getByText(/scan the qr code or open tarmoto on this phone/i),
+    ).toBeInTheDocument();
   });
 
   it("keeps the copy error visible when a previous success timer is still pending", async () => {
