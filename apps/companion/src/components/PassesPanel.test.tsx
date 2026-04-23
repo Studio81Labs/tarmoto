@@ -109,4 +109,14 @@ describe("PassesPanel", () => {
 
     expect(usePassesMock).toHaveBeenCalledWith(9, [route]);
   });
+
+  it("reuses a stable empty routes reference when routes are omitted", () => {
+    const { rerender } = render(<PassesPanel month={7} />);
+    const firstRoutes = usePassesMock.mock.calls.at(-1)?.[1];
+
+    rerender(<PassesPanel month={7} />);
+    const secondRoutes = usePassesMock.mock.calls.at(-1)?.[1];
+
+    expect(firstRoutes).toBe(secondRoutes);
+  });
 });

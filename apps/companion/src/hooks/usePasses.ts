@@ -8,6 +8,9 @@ import {
 } from "@/lib/passes-summary";
 import type { PlannerClosureRoute } from "@/lib/closures-summary";
 
+const EMPTY_ROUTES: PlannerClosureRoute[] = [];
+const EMPTY_ROUTE_PASSES: MountainPass[] = [];
+
 export interface PassesQueryResult {
   passes: MountainPass[];
   routePasses: MountainPass[];
@@ -29,7 +32,7 @@ export interface PassesQueryResult {
  */
 export function usePasses(
   forMonth: number | undefined,
-  routes: PlannerClosureRoute[] = [],
+  routes: PlannerClosureRoute[] = EMPTY_ROUTES,
 ): PassesQueryResult {
   const [state, setState] = useState<PassesQueryResult>({
     passes: [],
@@ -44,14 +47,22 @@ export function usePasses(
 
   useEffect(() => {
     if (routes.length === 0) {
-      setState((current) => ({
-        ...current,
-        routePasses: [],
-        routeClosedCount: 0,
-        routeUnknownCount: 0,
-        routeLoading: false,
-        routeError: null,
-      }));
+      setState((current) =>
+        current.routePasses.length === 0 &&
+        current.routeClosedCount === 0 &&
+        current.routeUnknownCount === 0 &&
+        !current.routeLoading &&
+        current.routeError == null
+          ? current
+          : {
+              ...current,
+              routePasses: EMPTY_ROUTE_PASSES,
+              routeClosedCount: 0,
+              routeUnknownCount: 0,
+              routeLoading: false,
+              routeError: null,
+            },
+      );
       return;
     }
 
@@ -88,7 +99,7 @@ export function usePasses(
         if (fulfilled.length === 0 && rejectedCount > 0) {
           setState((current) => ({
             ...current,
-            routePasses: [],
+            routePasses: EMPTY_ROUTE_PASSES,
             routeClosedCount: 0,
             routeUnknownCount: 0,
             routeLoading: false,
@@ -124,7 +135,7 @@ export function usePasses(
         if (ctrl.signal.aborted) return;
         setState((current) => ({
           ...current,
-          routePasses: [],
+          routePasses: EMPTY_ROUTE_PASSES,
           routeClosedCount: 0,
           routeUnknownCount: 0,
           routeLoading: false,

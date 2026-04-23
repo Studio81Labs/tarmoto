@@ -21,6 +21,8 @@ interface PassesPanelProps {
   routes?: PlannerClosureRoute[];
 }
 
+const EMPTY_ROUTES: PlannerClosureRoute[] = [];
+
 const STATUS_DOT_CLASS: Record<PassStatus, string> = {
   open: "bg-emerald-400",
   closed: "bg-rose-400",
@@ -46,7 +48,7 @@ const MAX_PASSES_PER_GROUP = 5;
 export function PassesPanel({
   month: controlledMonth,
   onMonthChange,
-  routes = [],
+  routes = EMPTY_ROUTES,
 }: PassesPanelProps) {
   const [localMonth, setLocalMonth] = useState<number>(() => currentUtcMonth());
   const isControlled =
