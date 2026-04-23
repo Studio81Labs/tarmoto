@@ -8,6 +8,8 @@ import maplibregl, {
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MAP_STYLE_URL } from "@/lib/config";
+import { useMapColorScheme } from "@/hooks/useMapColorScheme";
+import { applyTarmotoMapTheme, type MapColorScheme } from "@/lib/map-style";
 import type { RideTrack } from "./useRidesQuery";
 
 interface Props {
@@ -37,6 +39,13 @@ export function RidesMap({
   const [ready, setReady] = useState(false);
   const hoverRef = useRef<string | null>(null);
   const fittedOnceRef = useRef(false);
+  const colorScheme = useMapColorScheme();
+  const colorSchemeRef = useRef(colorScheme);
+  const appliedColorSchemeRef = useRef<MapColorScheme | null>(null);
+
+  useEffect(() => {
+    colorSchemeRef.current = colorScheme;
+  }, [colorScheme]);
 
   // Keep the latest onSelect in a ref so the click handler registered in
   // the init-once effect always calls the current callback, even if the
@@ -59,6 +68,9 @@ export function RidesMap({
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }));
 
     map.on("load", () => {
+      applyTarmotoMapTheme(map, colorSchemeRef.current);
+      appliedColorSchemeRef.current = colorSchemeRef.current;
+
       map.addSource(SOURCE_ID, {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
@@ -143,6 +155,7 @@ export function RidesMap({
       ro.disconnect();
       map.remove();
       mapRef.current = null;
+      appliedColorSchemeRef.current = null;
       setReady(false);
       fittedOnceRef.current = false;
     };
@@ -217,6 +230,13 @@ export function RidesMap({
     }
     selectedRef.current = selectedId;
   }, [ready, selectedId, tracks]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || appliedColorSchemeRef.current === colorScheme) return;
+    applyTarmotoMapTheme(map, colorScheme);
+    appliedColorSchemeRef.current = colorScheme;
+  }, [colorScheme, ready]);
 
   return (
     <div className="relative w-full h-full rounded-xl overflow-hidden border border-slate-800">

@@ -19,9 +19,9 @@ export const API_BASE = `${API_HOST}/api/v1`;
 export const API_BASE_SERVER = `${API_HOST || "http://localhost:3000"}/api/v1`;
 
 /**
- * MapLibre style URL. Until INFRA #79 lands with the custom Tarmoto style
- * and tile pipeline, we use OpenFreeMap's free public Liberty style.
- * Override via NEXT_PUBLIC_MAP_STYLE_URL for staging/branding work.
+ * Base MapLibre style URL. Companion maps apply Tarmoto restyling and a
+ * dark-mode variant at runtime while this env still allows staging to point
+ * at a different hosted basemap when needed.
  */
 export const MAP_STYLE_URL =
   process.env.NEXT_PUBLIC_MAP_STYLE_URL ??

@@ -13,6 +13,8 @@ import maplibregl, {
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { API_BASE, MAP_STYLE_URL } from "@/lib/config";
+import { useMapColorScheme } from "@/hooks/useMapColorScheme";
+import { applyTarmotoMapTheme, type MapColorScheme } from "@/lib/map-style";
 import { QUALITY_CONFIG } from "@/lib/utils";
 
 const SOURCE_ID = "tarmoto-roads";
@@ -84,6 +86,13 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const [ready, setReady] = useState(false);
+  const colorScheme = useMapColorScheme();
+  const colorSchemeRef = useRef(colorScheme);
+  const appliedColorSchemeRef = useRef<MapColorScheme | null>(null);
+
+  useEffect(() => {
+    colorSchemeRef.current = colorScheme;
+  }, [colorScheme]);
 
   // Expose the raw map handle to parents so they can add custom sources/layers.
   useImperativeHandle(ref, () => ({
@@ -126,6 +135,9 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
     );
 
     map.on("load", () => {
+      applyTarmotoMapTheme(map, colorSchemeRef.current);
+      appliedColorSchemeRef.current = colorSchemeRef.current;
+
       map.addSource(SOURCE_ID, {
         type: "vector",
         tiles: [`${originForTiles()}${API_BASE}/roads/tiles/{z}/{x}/{y}.mvt`],
@@ -245,6 +257,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
       ro.disconnect();
       map.remove();
       mapRef.current = null;
+      appliedColorSchemeRef.current = null;
       setReady(false);
     };
     // Init center/zoom read once at mount; updates come from moveend so the
@@ -279,6 +292,14 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
       );
     }
   }, [ready, qualityOpacityExpression, surfaceOpacityExpression]);
+
+  // Keep the branded basemap aligned with the user's system theme.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || appliedColorSchemeRef.current === colorScheme) return;
+    applyTarmotoMapTheme(map, colorScheme);
+    appliedColorSchemeRef.current = colorScheme;
+  }, [colorScheme, ready]);
 
   return (
     <div className="relative w-full h-full">
