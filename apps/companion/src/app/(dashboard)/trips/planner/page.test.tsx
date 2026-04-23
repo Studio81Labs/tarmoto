@@ -337,11 +337,7 @@ describe("TripPlannerPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Regenerate day 1" }));
 
     await waitFor(() =>
-      expect(regenerateTripDayMock).toHaveBeenCalledWith(
-        activeTrip,
-        expect.any(Object),
-        1,
-      ),
+      expect(regenerateTripDayMock).toHaveBeenCalledWith(activeTrip, 1),
     );
     expect(setActiveTrip).toHaveBeenLastCalledWith(
       expect.objectContaining({

@@ -61,7 +61,7 @@ describe("trip-itinerary-generator", () => {
     const originalSecondDay = trip.days[1]!;
     const originalThirdDay = trip.days[2]!;
 
-    const regenerated = regenerateTripDay(trip, params, 2);
+    const regenerated = regenerateTripDay(trip, 2);
 
     expect(regenerated.days[0]).toEqual(originalFirstDay);
     expect(regenerated.days[2]).toEqual(originalThirdDay);
@@ -100,7 +100,7 @@ describe("trip-itinerary-generator", () => {
   });
 
   it("can regenerate a demo-derived trip without mutating the original object", () => {
-    const regenerated = regenerateTripDay(DEMO_TRIP, DEMO_TRIP.parameters, 1);
+    const regenerated = regenerateTripDay(DEMO_TRIP, 1);
 
     expect(regenerated).not.toBe(DEMO_TRIP);
     expect(regenerated.days[0]).not.toBe(DEMO_TRIP.days[0]);
@@ -119,7 +119,7 @@ describe("trip-itinerary-generator", () => {
       days: 3,
     })[2]!.trip;
 
-    const regenerated = regenerateTripDay(fastestTrip, params, 2);
+    const regenerated = regenerateTripDay(fastestTrip, 2);
 
     expect(regenerated.days[1]?.title).toContain("Fastest line");
     expect(regenerated.days[1]?.title).not.toContain("Scenic sweep");
@@ -133,16 +133,7 @@ describe("trip-itinerary-generator", () => {
       dailyKmTarget: 260,
     })[0]!.trip;
 
-    const regenerated = regenerateTripDay(
-      trip,
-      {
-        ...params,
-        days: 5,
-        dailyKmTarget: 340,
-        surfacePreference: ["asphalt", "gravel", "dirt"],
-      },
-      2,
-    );
+    const regenerated = regenerateTripDay(trip, 2);
 
     expect(regenerated.parameters).toEqual(trip.parameters);
     expect(regenerated.parameters).not.toBe(trip.parameters);

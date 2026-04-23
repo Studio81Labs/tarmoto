@@ -244,11 +244,7 @@ export default function TripPlannerPage() {
       setGenerating(true);
       try {
         await delay(120);
-        const regeneratedTrip = regenerateTripDay(
-          displayedTrip,
-          plannerParams,
-          dayNumber,
-        );
+        const regeneratedTrip = regenerateTripDay(displayedTrip, dayNumber);
         setGeneratedOptions((current) =>
           current.map((option) =>
             option.id === regeneratingOptionId
@@ -273,7 +269,6 @@ export default function TripPlannerPage() {
     [
       canRegenerate,
       displayedTrip,
-      plannerParams,
       selectedOptionId,
       setActiveTrip,
       setGenerating,
@@ -361,7 +356,11 @@ export default function TripPlannerPage() {
           ) : null}
 
           {generatedOptions.length > 0 && (
-            <div className="mt-3 grid gap-3 lg:grid-cols-3">
+            <div
+              className={`grid gap-3 lg:grid-cols-3 ${
+                generationError ? "mt-3" : ""
+              }`}
+            >
               {generatedOptions.map((option) => {
                 const totalDistance = option.trip.days.reduce(
                   (sum, day) => sum + day.distanceKm,

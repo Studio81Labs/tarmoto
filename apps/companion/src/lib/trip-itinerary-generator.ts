@@ -100,12 +100,8 @@ export function generateTripOptions(
   });
 }
 
-export function regenerateTripDay(
-  trip: Trip,
-  params: TripParameters,
-  dayNumber: number,
-): Trip {
-  const normalizedParams = normalizeParams(params);
+export function regenerateTripDay(trip: Trip, dayNumber: number): Trip {
+  const normalizedParams = normalizeParams(trip.parameters);
   const dayIndex = trip.days.findIndex((day) => day.dayNumber === dayNumber);
   if (dayIndex < 0) return cloneTrip(trip);
 
