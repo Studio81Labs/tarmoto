@@ -14,6 +14,7 @@ import {
 import { ClosuresPanel } from "@/components/ClosuresPanel";
 import { PassesPanel } from "@/components/PassesPanel";
 import { SegmentSidebar } from "@/components/SegmentSidebar";
+import { TripPlannerMap } from "@/components/TripPlannerMap";
 import { TripStopsPanel } from "@/components/TripStopsPanel";
 import { TripExportMenu } from "@/components/TripExportMenu";
 import { TripImportDialog } from "@/components/TripImportDialog";
@@ -24,7 +25,6 @@ import { currentUtcMonth } from "@/lib/passes-summary";
 /**
  * TripPlannerPage — Full-screen map-based trip planner
  *
- * TODO: Integrate MapLibre GL JS with draw controls (#79)
  * TODO: Connect to /trips/generate endpoint (US-34)
  * TODO: WebSocket collaboration (cursor sync, live edits) (US-35)
  */
@@ -239,21 +239,7 @@ export default function TripPlannerPage() {
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
-          {/* MapLibre GL JS will mount here */}
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="text-center">
-              <MapIcon size={64} className="mx-auto text-slate-700 mb-4" />
-              <p className="text-slate-500 text-lg font-medium">
-                MapLibre GL JS
-              </p>
-              <p className="text-slate-600 text-sm mt-1">
-                Road quality heatmap • Fun Zone clusters • Draggable waypoints
-              </p>
-              <p className="text-slate-600 text-xs mt-3">
-                Drop a GPX or KML file here to import a route
-              </p>
-            </div>
-          </div>
+          <TripPlannerMap trip={activeTrip} />
 
           {/* Drop overlay */}
           {isDragOver && (
@@ -326,24 +312,5 @@ export default function TripPlannerPage() {
         }}
       />
     </div>
-  );
-}
-
-// Placeholder for map icon used in canvas
-function MapIcon({ size, className }: { size: number; className: string }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      className={className}
-    >
-      <path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z" />
-      <path d="M8 2v16" />
-      <path d="M16 6v16" />
-    </svg>
   );
 }
