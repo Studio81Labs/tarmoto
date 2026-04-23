@@ -4,6 +4,60 @@ import Stripe from 'stripe';
 
 export const STRIPE_BILLING_CLIENT = Symbol('STRIPE_BILLING_CLIENT');
 
+type StripeClient = InstanceType<typeof Stripe>;
+type StripeWebhookEvent = ReturnType<
+  StripeClient['webhooks']['constructEvent']
+>;
+type StripeCheckoutCompletedEvent = Extract<
+  StripeWebhookEvent,
+  { type: 'checkout.session.completed' }
+>;
+export type StripeCheckoutSession =
+  StripeCheckoutCompletedEvent['data']['object'];
+type StripeSubscriptionLifecycleEvent = Extract<
+  StripeWebhookEvent,
+  {
+    type:
+      | 'customer.subscription.created'
+      | 'customer.subscription.updated'
+      | 'customer.subscription.deleted';
+  }
+>;
+export type StripeSubscription =
+  StripeSubscriptionLifecycleEvent['data']['object'];
+type StripeCustomer = Awaited<
+  ReturnType<StripeClient['customers']['retrieve']>
+>;
+type StripeInvoice = Awaited<
+  ReturnType<StripeClient['invoices']['list']>
+>['data'][number];
+type StripePrice = StripeSubscription['items']['data'][number]['price'];
+type StripePortalAfterCompletion = {
+  type: 'redirect';
+  redirect: { return_url: string };
+};
+type StripePortalFlowData =
+  | {
+      type: 'payment_method_update';
+      after_completion?: StripePortalAfterCompletion;
+    }
+  | {
+      type: 'subscription_cancel';
+      subscription_cancel: { subscription: string };
+      after_completion?: StripePortalAfterCompletion;
+    }
+  | {
+      type: 'subscription_update';
+      subscription_update: { subscription: string };
+      after_completion?: StripePortalAfterCompletion;
+    };
+type StripePortalSessionParams = {
+  customer: string;
+  return_url: string;
+  configuration?: string;
+  flow_data?: StripePortalFlowData;
+};
+
 export type BillingTier = 'free' | 'premium' | 'pro';
 export type BillingStatus = 'active' | 'trialing' | 'past_due' | 'canceled';
 export type InvoiceStatus = 'paid' | 'open' | 'refunded';
@@ -64,12 +118,12 @@ export interface StripeBillingClient {
       afterCompletionUrl?: string;
     };
   }): Promise<{ url: string }>;
-  constructWebhookEvent(payload: Buffer, signature: string): Stripe.Event;
+  constructWebhookEvent(payload: Buffer, signature: string): StripeWebhookEvent;
 }
 
 @Injectable()
 export class StripeNodeBillingClient implements StripeBillingClient {
-  private readonly stripe: Stripe | null;
+  private readonly stripe: StripeClient | null;
   private readonly webhookSecret: string | null;
   private readonly portalConfigurationId: string | null;
   private readonly premiumPriceId: string | null;
@@ -80,7 +134,7 @@ export class StripeNodeBillingClient implements StripeBillingClient {
       .get<string>('TARMOTO_STRIPE_SECRET_KEY')
       ?.trim();
     this.stripe = secretKey
-      ? new Stripe(secretKey, { apiVersion: '2025-08-27.basil' })
+      ? new Stripe(secretKey, { apiVersion: '2026-03-25.dahlia' })
       : null;
     this.webhookSecret =
       this.config.get<string>('TARMOTO_STRIPE_WEBHOOK_SECRET')?.trim() ?? null;
@@ -236,23 +290,26 @@ export class StripeNodeBillingClient implements StripeBillingClient {
     };
   }): Promise<{ url: string }> {
     const stripe = this.requireStripe();
-    const session = await stripe.billingPortal.sessions.create({
+    const params: StripePortalSessionParams = {
       customer: input.customerId,
       return_url: input.returnUrl,
-      ...(this.portalConfigurationId
-        ? { configuration: this.portalConfigurationId }
-        : {}),
-      ...(input.flow
-        ? {
-            flow_data: buildPortalFlowData(input.flow),
-          }
-        : {}),
-    });
+    };
+    if (this.portalConfigurationId) {
+      params.configuration = this.portalConfigurationId;
+    }
+    if (input.flow) {
+      params.flow_data = buildPortalFlowData(input.flow);
+    }
+
+    const session = await stripe.billingPortal.sessions.create(params);
 
     return { url: session.url };
   }
 
-  constructWebhookEvent(payload: Buffer, signature: string): Stripe.Event {
+  constructWebhookEvent(
+    payload: Buffer,
+    signature: string,
+  ): StripeWebhookEvent {
     const stripe = this.requireStripe();
     if (!this.webhookSecret) {
       throw new ServiceUnavailableException(
@@ -266,7 +323,7 @@ export class StripeNodeBillingClient implements StripeBillingClient {
     );
   }
 
-  private requireStripe(): Stripe {
+  private requireStripe(): StripeClient {
     if (!this.stripe) {
       throw new ServiceUnavailableException('Billing is not configured');
     }
@@ -278,7 +335,7 @@ function buildPortalFlowData(flow: {
   type: Exclude<BillingPortalFlowType, 'manage'>;
   subscriptionId?: string;
   afterCompletionUrl?: string;
-}): Stripe.BillingPortal.SessionCreateParams.FlowData {
+}): StripePortalFlowData {
   const afterCompletion =
     flow.afterCompletionUrl != null
       ? {
@@ -320,9 +377,9 @@ function buildPortalFlowData(flow: {
 }
 
 function pickCurrentSubscription(
-  subscriptions: Stripe.Subscription[],
+  subscriptions: StripeSubscription[],
   preferredId: string | null,
-): Stripe.Subscription | null {
+): StripeSubscription | null {
   if (preferredId) {
     const match = subscriptions.find(
       (subscription) => subscription.id === preferredId,
@@ -337,10 +394,9 @@ function pickCurrentSubscription(
 }
 
 function extractPaymentMethod(
-  paymentMethod: string | Stripe.PaymentMethod | null | undefined,
+  paymentMethod: unknown,
 ): StripeBillingSnapshot['paymentMethod'] {
-  if (!paymentMethod || typeof paymentMethod === 'string') return null;
-  if (paymentMethod.type !== 'card' || !paymentMethod.card) return null;
+  if (!isCardPaymentMethod(paymentMethod)) return null;
 
   return {
     brand: paymentMethod.card.brand,
@@ -351,7 +407,7 @@ function extractPaymentMethod(
 }
 
 function subscriptionPeriodEnd(
-  subscription: Stripe.Subscription,
+  subscription: StripeSubscription,
 ): number | null {
   const ends = subscription.items.data
     .map((item) => item.current_period_end)
@@ -368,7 +424,7 @@ function normalizeSubscriptionStatus(status: string): BillingStatus {
 }
 
 function normalizeInvoiceStatus(
-  status: Stripe.Invoice.Status | null,
+  status: StripeInvoice['status'],
 ): InvoiceStatus {
   if (status === 'void' || status === 'uncollectible') return 'refunded';
   if (status === 'open' || status === 'draft') return 'open';
@@ -376,7 +432,7 @@ function normalizeInvoiceStatus(
 }
 
 function priceToTier(
-  price: Stripe.Price | Stripe.DeletedPrice | undefined,
+  price: StripePrice | undefined,
   premiumPriceId: string | null,
   proPriceId: string | null,
 ): BillingTier {
@@ -402,7 +458,34 @@ function formatAmountLabel(amount: number, currency: string | null): string {
 }
 
 function isDeletedCustomer(
-  customer: Stripe.Customer | Stripe.DeletedCustomer,
-): customer is Stripe.DeletedCustomer {
+  customer: StripeCustomer,
+): customer is Extract<StripeCustomer, { deleted: true }> {
   return 'deleted' in customer && customer.deleted === true;
+}
+
+function isCardPaymentMethod(paymentMethod: unknown): paymentMethod is {
+  type: 'card';
+  card: {
+    brand: string;
+    last4: string;
+    exp_month: number;
+    exp_year: number;
+  };
+} {
+  if (paymentMethod == null || typeof paymentMethod !== 'object') return false;
+  if (!('type' in paymentMethod) || paymentMethod.type !== 'card') return false;
+  if (!('card' in paymentMethod) || paymentMethod.card == null) return false;
+
+  const card = paymentMethod.card;
+  return (
+    typeof card === 'object' &&
+    'brand' in card &&
+    typeof card.brand === 'string' &&
+    'last4' in card &&
+    typeof card.last4 === 'string' &&
+    'exp_month' in card &&
+    typeof card.exp_month === 'number' &&
+    'exp_year' in card &&
+    typeof card.exp_year === 'number'
+  );
 }

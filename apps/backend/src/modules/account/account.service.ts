@@ -7,10 +7,11 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
-import Stripe from 'stripe';
 import { User } from '../../entities/user.entity.js';
 import {
   STRIPE_BILLING_CLIENT,
+  type StripeCheckoutSession,
+  type StripeSubscription,
   type BillingStatus,
   type BillingTier,
   type StripeBillingClient,
@@ -206,7 +207,7 @@ export class AccountService {
   }
 
   private async handleCheckoutCompleted(
-    session: Stripe.Checkout.Session,
+    session: StripeCheckoutSession,
   ): Promise<void> {
     const userId = session.metadata?.['user_id'];
     if (!userId) return;
@@ -229,7 +230,7 @@ export class AccountService {
   }
 
   private async handleSubscriptionUpdated(
-    subscription: Stripe.Subscription,
+    subscription: StripeSubscription,
     isDeleted: boolean,
   ): Promise<void> {
     const customerId =
@@ -384,7 +385,7 @@ export class AccountService {
   }
 
   private tierFromPrice(
-    price: Stripe.Price | Stripe.DeletedPrice | undefined,
+    price: StripeSubscription['items']['data'][number]['price'] | undefined,
   ): BillingTier {
     if (!price || ('deleted' in price && price.deleted)) return 'free';
     if (price.lookup_key === 'pro') return 'pro';
@@ -410,7 +411,7 @@ export class AccountService {
 }
 
 function subscriptionPeriodEnd(
-  subscription: Stripe.Subscription,
+  subscription: StripeSubscription,
 ): number | null {
   const ends = subscription.items.data
     .map((item) => item.current_period_end)
