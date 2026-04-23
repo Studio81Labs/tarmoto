@@ -277,6 +277,7 @@ describe('AccountService', () => {
       expect(userRepo.update).toHaveBeenCalledWith(
         'user-1',
         expect.objectContaining({
+          updated_at: expect.any(Date),
           stripe_customer_id: 'cus_123',
           stripe_subscription_id: 'sub_123',
         }),
@@ -324,10 +325,14 @@ describe('AccountService', () => {
 
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
-      expect(userRepo.update).toHaveBeenCalledWith('user-1', {
-        stripe_customer_id: 'cus_123',
-        stripe_subscription_id: 'sub_123',
-      });
+      expect(userRepo.update).toHaveBeenCalledWith(
+        'user-1',
+        expect.objectContaining({
+          updated_at: expect.any(Date),
+          stripe_customer_id: 'cus_123',
+          stripe_subscription_id: 'sub_123',
+        }),
+      );
     });
 
     it('updates the persisted billing state from subscription lifecycle events', async () => {
@@ -361,6 +366,7 @@ describe('AccountService', () => {
       expect(userRepo.update).toHaveBeenCalledWith(
         'user-1',
         expect.objectContaining({
+          updated_at: expect.any(Date),
           stripe_customer_id: 'cus_123',
           stripe_subscription_id: 'sub_123',
           subscription_tier: 'pro',

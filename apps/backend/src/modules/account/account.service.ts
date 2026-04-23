@@ -222,7 +222,7 @@ export class AccountService {
 
     if (!nextCustomerId && !nextSubscriptionId) return;
 
-    const update: UserUpdate = {};
+    const update: UserUpdate = { updated_at: new Date() };
     if (nextCustomerId) update.stripe_customer_id = nextCustomerId;
     if (nextSubscriptionId) update.stripe_subscription_id = nextSubscriptionId;
     await this.userRepo.update(user.id, update);
@@ -241,7 +241,7 @@ export class AccountService {
     );
     if (!user) return;
 
-    const update: UserUpdate = {};
+    const update: UserUpdate = { updated_at: new Date() };
     if (customerId) update.stripe_customer_id = customerId;
 
     if (isDeleted) {
