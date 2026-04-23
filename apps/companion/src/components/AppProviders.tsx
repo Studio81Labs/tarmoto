@@ -8,7 +8,7 @@ import { RealtimeProvider } from "@/components/RealtimeProvider";
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
-  if (pathname.startsWith("/embed")) {
+  if (pathname === "/embed" || pathname.startsWith("/embed/")) {
     return children;
   }
 

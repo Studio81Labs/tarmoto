@@ -49,6 +49,21 @@ describe("AppProviders", () => {
     expect(screen.queryByTestId("realtime-provider")).not.toBeInTheDocument();
   });
 
+  it("keeps providers enabled for non-embed routes with a similar prefix", () => {
+    mocks.usePathname.mockReturnValue("/embeddings");
+
+    render(
+      <AppProviders>
+        <div>Similar prefix child</div>
+      </AppProviders>,
+    );
+
+    expect(screen.getByTestId("session-provider")).toBeInTheDocument();
+    expect(screen.getByTestId("auth-sync")).toBeInTheDocument();
+    expect(screen.getByTestId("realtime-provider")).toBeInTheDocument();
+    expect(screen.getByText("Similar prefix child")).toBeInTheDocument();
+  });
+
   it("wraps regular routes with the app providers", () => {
     mocks.usePathname.mockReturnValue("/roads/best/at/tyrol");
 

@@ -5,6 +5,11 @@ import {
   type BestRoadsEmbedRoad,
   type BestRoadsWidgetVariant,
 } from "@/lib/best-roads-embed";
+import {
+  formatRoadLabel,
+  formatRoadLength,
+  formatRoadQuality,
+} from "@/lib/best-roads-format";
 
 interface Road extends BestRoadsEmbedRoad {
   road_name: string | null;
@@ -165,11 +170,11 @@ export function BestRoadsEmbedWidget({
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-white">
-                        {roadLabel(road)}
+                        {formatRoadLabel(road)}
                       </p>
                       <p className="mt-0.5 text-xs text-slate-400">
-                        {formatLength(road.length_m)} · {road.surface_type} ·
-                        quality {formatQuality(road.quality_score)}
+                        {formatRoadLength(road.length_m)} · {road.surface_type}{" "}
+                        · quality {formatRoadQuality(road.quality_score)}
                       </p>
                     </div>
                     <p className="text-xs font-semibold text-slate-300">
@@ -183,23 +188,4 @@ export function BestRoadsEmbedWidget({
       </article>
     </main>
   );
-}
-
-function roadLabel(road: Road): string {
-  return (
-    road.road_name ??
-    (road.road_number
-      ? `Road ${road.road_number}`
-      : `Segment ${road.id.slice(0, 6)}`)
-  );
-}
-
-function formatLength(lengthM: number): string {
-  return lengthM >= 1000
-    ? `${(lengthM / 1000).toFixed(1)} km`
-    : `${Math.round(lengthM)} m`;
-}
-
-function formatQuality(qualityScore: number | null): string {
-  return qualityScore == null ? "—" : qualityScore.toFixed(1);
 }
