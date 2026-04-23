@@ -31,10 +31,13 @@
  *     the top.
  *
  * Bluetooth output (AC #1 — "Clear voice prompts via Bluetooth headset")
- * is handled by the OS: once the motorcycle headset is paired and audio
- * is routed to it, `react-native-tts` plays through whatever the current
- * output device is. No extra work here.
+ * now opts into the most headset-friendly policy the library exposes:
+ * iOS ignores the silent switch for navigation prompts, while Android
+ * speaks on the voice-call stream so helmet headsets that prefer HFP/SCO
+ * routing don't leave the prompt on the handset speaker.
  */
+
+import { Platform } from "react-native";
 
 type TtsEvent = "tts-finish" | "tts-cancel" | "tts-start";
 
@@ -47,7 +50,16 @@ type TtsModule = {
   setDefaultRate?: (rate: number, skipTransform?: boolean) => Promise<unknown>;
   setDefaultPitch?: (pitch: number) => Promise<unknown>;
   setDucking?: (enabled: boolean) => Promise<unknown>;
+  setIgnoreSilentSwitch?: (
+    mode: "inherit" | "ignore" | "obey",
+  ) => Promise<unknown>;
 };
+
+const ANDROID_TTS_OPTIONS = {
+  androidParams: {
+    KEY_PARAM_STREAM: "STREAM_VOICE_CALL",
+  },
+} as const;
 
 function loadTts(): TtsModule | null {
   try {
@@ -101,6 +113,9 @@ class TtsService {
     // Lower music/podcast volume while a prompt is speaking so the rider
     // doesn't miss a turn under loud audio. iOS-only; Android no-ops.
     void mod.setDucking?.(true);
+    // Keep nav prompts audible even when the handset mute switch is set.
+    // This lets the paired headset still receive turn cues on iOS.
+    void mod.setIgnoreSilentSwitch?.("ignore");
     // Both `tts-finish` and `tts-cancel` mean "the current utterance is
     // done" — let the drain pull the next phrase. We don't distinguish
     // them at the queue level since either way nothing is speaking.
@@ -164,7 +179,10 @@ class TtsService {
       // id immediately on every published version of the library. The
       // `tts-finish` / `tts-cancel` listener above is what drives the
       // next drain.
-      await mod.speak(next);
+      await mod.speak(
+        next,
+        Platform.OS === "android" ? ANDROID_TTS_OPTIONS : undefined,
+      );
     } catch {
       // If the native side throws synchronously (audio session denied,
       // invalid voice id, etc.) we'll never get a finish event for this
