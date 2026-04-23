@@ -44,8 +44,8 @@ interface TripState {
 }
 
 interface TripStoreHistory {
-  undoStack: Trip[];
-  redoStack: Trip[];
+  undoStack: Array<Trip | null>;
+  redoStack: Array<Trip | null>;
 }
 
 export const useTripStore = create<TripState & TripStoreHistory>((set) => ({
@@ -188,7 +188,7 @@ export const useTripStore = create<TripState & TripStoreHistory>((set) => ({
   undo: () =>
     set((state) => {
       const previous = state.undoStack[state.undoStack.length - 1];
-      if (!previous || !state.activeTrip) return state;
+      if (previous === undefined) return state;
       const undoStack = state.undoStack.slice(0, -1);
       const redoStack = [...state.redoStack, state.activeTrip];
       return {
@@ -203,7 +203,7 @@ export const useTripStore = create<TripState & TripStoreHistory>((set) => ({
   redo: () =>
     set((state) => {
       const next = state.redoStack[state.redoStack.length - 1];
-      if (!next || !state.activeTrip) return state;
+      if (next === undefined) return state;
       const redoStack = state.redoStack.slice(0, -1);
       const undoStack = [...state.undoStack, state.activeTrip];
       return {
@@ -232,9 +232,7 @@ function commitTripChange(
 ): Partial<TripState & TripStoreHistory> | (TripState & TripStoreHistory) {
   const nextTrip = applyChange(state.activeTrip);
   if (!nextTrip || nextTrip === state.activeTrip) return state;
-  const undoStack = state.activeTrip
-    ? [...state.undoStack, state.activeTrip]
-    : state.undoStack;
+  const undoStack = [...state.undoStack, state.activeTrip];
   return {
     activeTrip: nextTrip,
     undoStack,

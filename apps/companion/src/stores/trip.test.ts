@@ -37,6 +37,23 @@ describe("useTripStore planner editing", () => {
     expect(rebuiltDay?.distanceKm).toBeGreaterThan(twoPointDistance);
   });
 
+  it("lets riders undo the very first draft-creation click sequence", () => {
+    const store = useTripStore.getState();
+
+    store.appendPlannerWaypoint(0, { lng: 14.41, lat: 50.08 });
+    expect(useTripStore.getState().activeTrip).not.toBeNull();
+    expect(useTripStore.getState().canUndo).toBe(true);
+
+    useTripStore.getState().undo();
+    expect(useTripStore.getState().activeTrip).toBeNull();
+    expect(useTripStore.getState().canRedo).toBe(true);
+
+    useTripStore.getState().redo();
+    expect(useTripStore.getState().activeTrip?.days[0]?.waypoints).toHaveLength(
+      1,
+    );
+  });
+
   it("reorders intermediate waypoints and supports undo/redo", () => {
     const store = useTripStore.getState();
 

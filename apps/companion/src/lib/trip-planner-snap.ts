@@ -22,7 +22,8 @@ export function snapWaypointToRoadFeatures(
   let best: {
     lng: number;
     lat: number;
-    score: number;
+    distanceSquared: number;
+    qualityScore: number;
   } | null = null;
 
   for (const feature of features) {
@@ -44,15 +45,24 @@ export function snapWaypointToRoadFeatures(
           coordinates[index]!,
         );
         if (!snapped) continue;
-        const candidateScore =
-          qualityScore * 1000 -
-          distanceSquared([point.lng, point.lat], [snapped.lng, snapped.lat]);
+        const candidateDistanceSquared = distanceSquared(
+          [point.lng, point.lat],
+          [snapped.lng, snapped.lat],
+        );
 
-        if (!best || candidateScore > best.score) {
+        if (
+          !best ||
+          candidateDistanceSquared + SNAP_DISTANCE_EPSILON <
+            best.distanceSquared ||
+          (Math.abs(candidateDistanceSquared - best.distanceSquared) <=
+            SNAP_DISTANCE_EPSILON &&
+            qualityScore > best.qualityScore)
+        ) {
           best = {
             lng: snapped.lng,
             lat: snapped.lat,
-            score: candidateScore,
+            distanceSquared: candidateDistanceSquared,
+            qualityScore,
           };
         }
       }
@@ -104,6 +114,11 @@ function distanceSquared(a: [number, number], b: [number, number]): number {
   const dy = a[1] - b[1];
   return dx * dx + dy * dy;
 }
+
+// Treat quality as a tiebreaker only when the candidates are effectively
+// equally close in map-coordinate space, so click placement still feels
+// anchored to the nearest visible road.
+const SNAP_DISTANCE_EPSILON = 1e-6;
 
 function round6(value: number): number {
   return Math.round(value * 1_000_000) / 1_000_000;

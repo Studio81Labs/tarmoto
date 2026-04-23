@@ -51,6 +51,36 @@ describe("snapWaypointToRoadFeatures", () => {
     });
   });
 
+  it("keeps the closest road when a farther segment only wins on quality", () => {
+    const snapped = snapWaypointToRoadFeatures({ lng: 14.45, lat: 50.11 }, [
+      {
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [14.44, 50.1098],
+            [14.46, 50.1098],
+          ],
+        },
+        properties: { quality_score: 2.1 },
+      },
+      {
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [14.44, 50.1145],
+            [14.46, 50.1145],
+          ],
+        },
+        properties: { quality_score: 4.9 },
+      },
+    ]);
+
+    expect(snapped).toEqual({
+      lng: 14.45,
+      lat: 50.1098,
+    });
+  });
+
   it("returns null when no road geometry is available", () => {
     expect(snapWaypointToRoadFeatures({ lng: 14.45, lat: 50.11 }, [])).toBe(
       null,
