@@ -244,6 +244,19 @@ describe('UsersService', () => {
 
       expect(unlink).not.toHaveBeenCalled();
     });
+
+    it('should ignore decoded avatar filenames with null bytes', async () => {
+      userRepo.findOne!.mockResolvedValueOnce({
+        ...buildMockUser(),
+        avatar_url: '/uploads/avatars/%00avatar.png',
+      } as User);
+
+      await service.updateProfile('user-1', {
+        avatar_url: 'https://cdn.example.com/u/1.png',
+      });
+
+      expect(unlink).not.toHaveBeenCalled();
+    });
   });
 
   describe('uploadAvatar', () => {

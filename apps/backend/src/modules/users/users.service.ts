@@ -26,6 +26,13 @@ const ALLOWED_AVATAR_TYPES = new Map<string, string>([
   ['image/webp', '.webp'],
 ]);
 
+function hasControlCharacters(value: string): boolean {
+  return [...value].some((character) => {
+    const code = character.charCodeAt(0);
+    return code <= 31 || code === 127;
+  });
+}
+
 function managedAvatarFilePath(avatarUrl: string | null): string | null {
   if (!avatarUrl) return null;
 
@@ -40,7 +47,8 @@ function managedAvatarFilePath(avatarUrl: string | null): string | null {
     if (
       filename !== basename(filename) ||
       filename.includes('/') ||
-      filename.includes('\\')
+      filename.includes('\\') ||
+      hasControlCharacters(filename)
     ) {
       return null;
     }
