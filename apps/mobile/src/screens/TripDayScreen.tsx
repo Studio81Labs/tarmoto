@@ -115,16 +115,13 @@ export default function TripDayScreen() {
   const fuelStations = useFuelStationsAlongRoute(day, fuelRangeKm);
   const handleAccommodationsLoaded = useCallback(
     (items: Accommodation[]) => {
-      setTrip((current) => {
-        if (!current) return current;
-        const next = withSuggestedOvernightStop(current, dayNumber, items);
-        if (next !== current) {
-          setActiveTrip(next);
-        }
-        return next;
-      });
+      if (!trip) return;
+      const next = withSuggestedOvernightStop(trip, dayNumber, items);
+      if (next === trip) return;
+      setTrip(next);
+      setActiveTrip(next);
     },
-    [dayNumber, setActiveTrip],
+    [dayNumber, setActiveTrip, trip],
   );
 
   if (loading) {

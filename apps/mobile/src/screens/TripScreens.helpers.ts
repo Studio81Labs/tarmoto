@@ -278,6 +278,12 @@ export function flattenTripRoute(days: TripDay[]): LatLng[] {
   return out;
 }
 
+export function routeGeometrySignature(days: TripDay[]): string {
+  const route = flattenTripRoute(days);
+  if (route.length === 0) return "";
+  return route.map((point) => `${point.lat},${point.lng}`).join("|");
+}
+
 // Great-circle distance between two lat/lng pairs, in kilometres.
 // Inlined here so the helper module stays free of runtime deps — the
 // mobile app doesn't (yet) pull in `@tarmoto/shared` at build time.
@@ -525,21 +531,43 @@ function annotateLegsWithStations(
 /**
  * Pick the anchor point a day's accommodation suggestions should orbit
  * around (US-10). Riders need somewhere to sleep at the end of the day,
- * so we prefer the last waypoint by sequence — typically a "hotel" or
- * "end" marker produced by the trip generator. If that's missing, fall
- * back to the last vertex of the route geometry; if neither exists,
- * return `null` so the UI can hide the card entirely.
+ * so we prefer an explicit itinerary anchor first: the planner's `end`
+ * waypoint, then any non-synthetic hotel waypoint. Client-only suggested
+ * stays are intentionally ignored here so they cannot re-anchor the next
+ * accommodation fetch. If no explicit day-end anchor exists, fall back to
+ * the last vertex of the route geometry; if that's missing too, use the
+ * last non-suggested waypoint as a best-effort fallback.
  */
 export function pickDayEndAnchor(day: TripDay): LatLng | null {
-  if (day.waypoints.length > 0) {
-    const sorted = [...day.waypoints].sort((a, b) => a.sequence - b.sequence);
-    const last = sorted[sorted.length - 1];
-    if (last) return { lat: last.lat, lng: last.lng };
+  const sorted = [...day.waypoints].sort((a, b) => a.sequence - b.sequence);
+  const explicitEnd = [...sorted]
+    .reverse()
+    .find((waypoint) => waypoint.waypoint_type === "end");
+  if (explicitEnd) return { lat: explicitEnd.lat, lng: explicitEnd.lng };
+
+  const explicitHotel = [...sorted]
+    .reverse()
+    .find(
+      (waypoint) =>
+        waypoint.waypoint_type === "hotel" &&
+        !isSuggestedOvernightWaypoint(waypoint),
+    );
+  if (explicitHotel) {
+    return { lat: explicitHotel.lat, lng: explicitHotel.lng };
   }
+
   const geom = day.route_geometry;
   if (Array.isArray(geom) && geom.length > 0) {
     return geom[geom.length - 1];
   }
+
+  const lastNonSuggested = [...sorted]
+    .reverse()
+    .find((waypoint) => !isSuggestedOvernightWaypoint(waypoint));
+  if (lastNonSuggested) {
+    return { lat: lastNonSuggested.lat, lng: lastNonSuggested.lng };
+  }
+
   return null;
 }
 

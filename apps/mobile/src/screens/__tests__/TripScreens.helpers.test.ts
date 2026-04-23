@@ -12,6 +12,7 @@ import {
   navigationWaypointsForRoadNames,
   pickDayEndAnchor,
   pickSuggestedAccommodation,
+  routeGeometrySignature,
   summarizeFuelRange,
   summarizeWaypoints,
   sumDistance,
@@ -209,6 +210,33 @@ describe("flattenTripRoute", () => {
 
   it("returns an empty array when no day has usable geometry", () => {
     expect(flattenTripRoute([dayWith(1, []), dayWith(2, [])])).toEqual([]);
+  });
+});
+
+describe("routeGeometrySignature", () => {
+  it("stays stable for waypoint-only trip changes", () => {
+    const base = tripWithDays([
+      dayFrom(
+        vertexStrip([49, 49.5, 50]),
+        [wp("start", "start", 0), wp("end", "end", 1)],
+        { id: "day-1", day_number: 1 },
+      ),
+    ]);
+    const withSuggestedStay = tripWithDays([
+      dayFrom(
+        vertexStrip([49, 49.5, 50]),
+        [
+          wp("start", "start", 0),
+          wp("suggested-overnight:day-1:stay-1", "hotel", 1),
+          wp("end", "end", 2),
+        ],
+        { id: "day-1", day_number: 1 },
+      ),
+    ]);
+
+    expect(routeGeometrySignature(base.days)).toBe(
+      routeGeometrySignature(withSuggestedStay.days),
+    );
   });
 });
 
@@ -727,7 +755,7 @@ describe("summarizeFuelRange", () => {
 });
 
 describe("pickDayEndAnchor", () => {
-  it("prefers the last waypoint by sequence", () => {
+  it("prefers an explicit end waypoint", () => {
     const d = dayFrom(vertexStrip([49, 50]), [
       {
         id: "start",
@@ -741,7 +769,7 @@ describe("pickDayEndAnchor", () => {
     expect(pickDayEndAnchor(d)).toEqual({ lat: 50.0, lng: 11.0 });
   });
 
-  it("sorts waypoints by sequence even if they arrive in reverse", () => {
+  it("sorts explicit end waypoints by sequence even if they arrive in reverse", () => {
     const d = dayFrom(vertexStrip([49, 50]), [
       { id: "end", sequence: 2, lat: 50.0, lng: 11.0, waypoint_type: "end" },
       {
@@ -753,6 +781,53 @@ describe("pickDayEndAnchor", () => {
       },
     ]);
     expect(pickDayEndAnchor(d)).toEqual({ lat: 50.0, lng: 11.0 });
+  });
+
+  it("falls back to an explicit non-synthetic hotel when there is no end waypoint", () => {
+    const d = dayFrom(vertexStrip([49, 50]), [
+      {
+        id: "start",
+        sequence: 0,
+        lat: 49.0,
+        lng: 10.0,
+        waypoint_type: "start",
+      },
+      {
+        id: "hotel-explicit",
+        sequence: 1,
+        lat: 49.7,
+        lng: 10.7,
+        waypoint_type: "hotel",
+      },
+    ]);
+    expect(pickDayEndAnchor(d)).toEqual({ lat: 49.7, lng: 10.7 });
+  });
+
+  it("ignores a suggested overnight stay and falls back to route geometry when no explicit day-end anchor exists", () => {
+    const d = dayFrom(
+      [
+        { lat: 49, lng: 0 },
+        { lat: 49.5, lng: 0 },
+        { lat: 50, lng: 0 },
+      ],
+      [
+        {
+          id: "start",
+          sequence: 0,
+          lat: 49.0,
+          lng: 0,
+          waypoint_type: "start",
+        },
+        {
+          id: "suggested-overnight:day-1:stay-1",
+          sequence: 1,
+          lat: 49.6,
+          lng: 0.1,
+          waypoint_type: "hotel",
+        },
+      ],
+    );
+    expect(pickDayEndAnchor(d)).toEqual({ lat: 50, lng: 0 });
   });
 
   it("falls back to the last geometry vertex when no waypoints exist", () => {
