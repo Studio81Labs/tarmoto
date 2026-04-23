@@ -209,12 +209,15 @@ export class AccountService {
   ): Promise<void> {
     const userId = session.metadata?.['user_id'];
     if (!userId) return;
-
-    const user = await this.getUserById(userId);
     const nextCustomerId =
       typeof session.customer === 'string' ? session.customer : null;
     const nextSubscriptionId =
       typeof session.subscription === 'string' ? session.subscription : null;
+    const user = await this.findUserForSubscriptionEvent(
+      nextCustomerId,
+      userId,
+    );
+    if (!user) return;
 
     if (!nextCustomerId && !nextSubscriptionId) return;
 

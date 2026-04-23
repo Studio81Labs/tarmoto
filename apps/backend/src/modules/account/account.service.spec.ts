@@ -282,6 +282,25 @@ describe('AccountService', () => {
       );
     });
 
+    it('ignores checkout completion events for users that no longer exist', async () => {
+      userRepo.findOne!.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'checkout.session.completed',
+        data: {
+          object: {
+            customer: 'cus_missing',
+            subscription: 'sub_missing',
+            metadata: { user_id: 'missing-user' },
+          },
+        },
+      });
+
+      await expect(
+        service.handleWebhook(Buffer.from('payload'), 'stripe-signature'),
+      ).resolves.toBeUndefined();
+      expect(userRepo.save).not.toHaveBeenCalled();
+    });
+
     it('updates the persisted billing state from subscription lifecycle events', async () => {
       userRepo.findOne!.mockResolvedValueOnce(
         buildUser({ stripe_customer_id: 'cus_123' }),
