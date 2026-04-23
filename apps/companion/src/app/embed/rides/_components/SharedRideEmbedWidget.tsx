@@ -10,6 +10,7 @@ import {
   Route as RouteIcon,
   Wind,
 } from "lucide-react";
+import { API_BASE } from "@/lib/config";
 import { buildRoutePreview } from "@/lib/ride-detail";
 import { formatRideEmbedStat, type RideWidgetVariant } from "@/lib/ride-embed";
 import type { SharedRideDetail } from "@/lib/shared-rides";
@@ -17,6 +18,7 @@ import {
   formatDistance,
   formatDuration,
   formatRelativeTime,
+  formatRideType,
 } from "@/lib/utils";
 
 type SharedRideWidgetData = Pick<
@@ -53,7 +55,7 @@ export function SharedRideEmbedWidget({
   );
 
   function handleOutboundClick() {
-    void fetch(`/api/v1/rides/shared/${token}/embed-click`, {
+    void fetch(`${API_BASE}/rides/shared/${token}/embed-click`, {
       method: "POST",
       keepalive: true,
     });
@@ -211,9 +213,4 @@ function StatTile({
       <div className="text-sm font-semibold text-white">{value}</div>
     </div>
   );
-}
-
-function formatRideType(value: string): string {
-  if (!value) return "Ride";
-  return value.charAt(0).toUpperCase() + value.slice(1);
 }

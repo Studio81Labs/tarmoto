@@ -19,6 +19,7 @@ import {
   formatDistance,
   formatDuration,
   formatRelativeTime,
+  formatRideType,
 } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -178,9 +179,4 @@ function Pill({ icon, children }: { icon: ReactNode; children: ReactNode }) {
       {children}
     </span>
   );
-}
-
-function formatRideType(value: string): string {
-  if (!value) return "Ride";
-  return value.charAt(0).toUpperCase() + value.slice(1);
 }

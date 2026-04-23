@@ -16,11 +16,15 @@ import { TripWaypoint } from './entities/trip-waypoint.entity.js';
 import { FunZone } from './entities/fun-zone.entity.js';
 import { FunZoneRoad } from './entities/fun-zone-road.entity.js';
 import { CommuteRoute } from './entities/commute-route.entity.js';
+import { SharedRide } from './entities/shared-ride.entity.js';
 import { InitSchema1713000000000 } from './migrations/1713000000000-InitSchema.js';
 import { AddPasswordHash1713100000000 } from './migrations/1713100000000-AddPasswordHash.js';
 import { FixIsEmergencyDefault1713200000000 } from './migrations/1713200000000-FixIsEmergencyDefault.js';
 import { AddUniqueActiveRide1713300000000 } from './migrations/1713300000000-AddUniqueActiveRide.js';
+import { AddCommunityTables1713400000000 } from './migrations/1713400000000-AddCommunityTables.js';
 import { AddRideAvgCurviness1714400000000 } from './migrations/1714400000000-AddRideAvgCurviness.js';
+import { AddSharedRideViewCount1714300000000 } from './migrations/1714300000000-AddSharedRideViewCount.js';
+import { AddSharedRideEmbedClickCount1714400000000 } from './migrations/1714400000000-AddSharedRideEmbedClickCount.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -46,13 +50,17 @@ export const AppDataSource = new DataSource({
     FunZone,
     FunZoneRoad,
     CommuteRoute,
+    SharedRide,
   ],
   migrations: [
     InitSchema1713000000000,
     AddPasswordHash1713100000000,
     FixIsEmergencyDefault1713200000000,
     AddUniqueActiveRide1713300000000,
+    AddCommunityTables1713400000000,
+    AddSharedRideViewCount1714300000000,
     AddRideAvgCurviness1714400000000,
+    AddSharedRideEmbedClickCount1714400000000,
   ],
   synchronize: false,
 });

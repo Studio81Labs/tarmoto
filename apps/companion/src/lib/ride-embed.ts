@@ -1,3 +1,5 @@
+import { escapeHtmlAttribute } from "@/lib/embed-utils";
+
 export type RideWidgetVariant = "compact" | "landscape";
 
 interface WidgetDimensions {
@@ -49,12 +51,4 @@ export function formatRideEmbedStat(
 function widgetDimensions(variant: RideWidgetVariant): WidgetDimensions {
   if (variant === "landscape") return { heightPx: 520 };
   return { heightPx: 460 };
-}
-
-function escapeHtmlAttribute(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
 }

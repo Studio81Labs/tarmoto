@@ -10,6 +10,7 @@ import {
   formatDistance,
   formatDuration,
   formatRelativeTime,
+  formatRideType,
   scoreToTier,
 } from "@/lib/utils";
 
@@ -142,9 +143,4 @@ function StatTile({
       <div className={`text-sm font-semibold ${valueClassName}`}>{value}</div>
     </div>
   );
-}
-
-function formatRideType(value: string): string {
-  if (!value) return "Ride";
-  return value.charAt(0).toUpperCase() + value.slice(1);
 }

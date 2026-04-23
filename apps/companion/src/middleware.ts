@@ -3,7 +3,13 @@ import { auth } from "@/lib/auth";
 // Paths accessible without authentication. Public marketing / SEO pages
 // (road quality explorer, etc.) live here so search engines and visitors
 // can reach them without the login wall.
-const PUBLIC_PATHS = ["/explore", "/discover", "/roads/best"];
+const PUBLIC_PATHS = [
+  "/explore",
+  "/discover",
+  "/roads/best",
+  "/rides/shared",
+  "/embed/rides",
+];
 
 export default auth((req) => {
   const { nextUrl, auth: session } = req;

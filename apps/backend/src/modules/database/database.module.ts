@@ -14,6 +14,7 @@ import { AddRoadClosures1714100000000 } from '../../migrations/1714100000000-Add
 import { AddClosureDetourGeom1714200000000 } from '../../migrations/1714200000000-AddClosureDetourGeom.js';
 import { AddSharedRideViewCount1714300000000 } from '../../migrations/1714300000000-AddSharedRideViewCount.js';
 import { AddRideAvgCurviness1714400000000 } from '../../migrations/1714400000000-AddRideAvgCurviness.js';
+import { AddSharedRideEmbedClickCount1714400000000 } from '../../migrations/1714400000000-AddSharedRideEmbedClickCount.js';
 import {
   User,
   UserContact,
@@ -96,6 +97,7 @@ const entities = [
             AddClosureDetourGeom1714200000000,
             AddSharedRideViewCount1714300000000,
             AddRideAvgCurviness1714400000000,
+            AddSharedRideEmbedClickCount1714400000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.
