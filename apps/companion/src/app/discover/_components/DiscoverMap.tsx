@@ -14,7 +14,7 @@ import {
 import {
   createRegionDrawControl,
   type RegionDrawControl,
-} from "./RegionDrawControl";
+} from "@/components/map/RegionDrawControl";
 import { useDiscoverStore } from "./useDiscoverStore";
 import { Square, X } from "lucide-react";
 
