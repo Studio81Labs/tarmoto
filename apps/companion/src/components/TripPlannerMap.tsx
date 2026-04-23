@@ -177,6 +177,16 @@ function TripPlannerMapContent({
     routePassesLoading;
   const routeWarningParts: string[] = [];
   const routeErrors = dedupeMessages([closuresRouteError, passesRouteError]);
+  const routeErrorsBlock =
+    routeErrors.length > 0 ? (
+      <div className="mt-2 space-y-1">
+        {routeErrors.map((message) => (
+          <p key={message} className="text-xs text-rose-300">
+            {message}
+          </p>
+        ))}
+      </div>
+    ) : null;
 
   if (routeCounts.total > 0) {
     routeWarningParts.push(
@@ -372,28 +382,14 @@ function TripPlannerMapContent({
                   Route warnings: {routeWarningParts.join(" · ")}.
                 </p>
               ) : routeErrors.length > 0 ? (
-                <div className="mt-2 space-y-1">
-                  {routeErrors.map((message) => (
-                    <p key={message} className="text-xs text-rose-300">
-                      {message}
-                    </p>
-                  ))}
-                </div>
+                routeErrorsBlock
               ) : (
                 <p className="mt-2 text-xs text-emerald-300">
                   No route closures or pass warnings for this month.
                 </p>
               )}
 
-              {routeWarningParts.length > 0 && routeErrors.length > 0 ? (
-                <div className="mt-2 space-y-1">
-                  {routeErrors.map((message) => (
-                    <p key={message} className="text-xs text-rose-300">
-                      {message}
-                    </p>
-                  ))}
-                </div>
-              ) : null}
+              {routeWarningParts.length > 0 ? routeErrorsBlock : null}
 
               {highlightedClosures.length > 0 ? (
                 <div className="mt-3">
