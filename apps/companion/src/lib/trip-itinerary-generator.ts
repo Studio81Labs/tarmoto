@@ -110,7 +110,8 @@ export function regenerateTripDay(
   if (dayIndex < 0) return cloneTrip(trip);
 
   const currentDay = trip.days[dayIndex]!;
-  const preset = resolvePresetForTrip(trip);
+  const optionIndex = resolvePresetIndexForTrip(trip);
+  const preset = OPTION_PRESETS[optionIndex]!;
   const templateIndex =
     (hashString(currentDay.title ?? `day-${dayNumber}`) + dayNumber) %
     DEMO_TRIP.days.length;
@@ -118,7 +119,7 @@ export function regenerateTripDay(
   const regeneratedDay = buildGeneratedDay({
     dayNumber,
     params: normalizedParams,
-    optionIndex: templateIndex,
+    optionIndex,
     preset,
     template,
     existingDay: currentDay,
@@ -154,9 +155,15 @@ function buildGeneratedDay({
   template: TripDay;
   existingDay?: TripDay;
 }): TripDay {
+  const routingConstraints = routeConstraintProfile(params);
   const coordinates = existingDay
-    ? buildAnchoredRoute(existingDay, dayNumber, optionIndex)
-    : buildShiftedRoute(template, dayNumber, optionIndex);
+    ? buildAnchoredRoute(
+        existingDay,
+        dayNumber,
+        optionIndex,
+        routingConstraints,
+      )
+    : buildShiftedRoute(template, dayNumber, optionIndex, routingConstraints);
   const start = existingDay?.waypoints[0]
     ? cloneWaypoint(existingDay.waypoints[0]!)
     : buildWaypointFromCoordinate({
@@ -182,25 +189,35 @@ function buildGeneratedDay({
 
   const distanceKm = clamp(
     Math.round(
-      params.dailyKmTarget * preset.distanceMultiplier +
+      params.dailyKmTarget *
+        preset.distanceMultiplier *
+        routingConstraints.distanceMultiplier +
         dailyDistanceSkew(dayNumber, params.roadPreference),
     ),
     100,
     500,
   );
   const avgQuality = clampNumber(
-    Math.max(params.minQuality, template.avgQuality + preset.qualityDelta),
+    Math.max(
+      params.minQuality,
+      template.avgQuality +
+        preset.qualityDelta +
+        routingConstraints.qualityDelta,
+    ),
     1,
     5,
   );
   const elevationGain = Math.round(
     template.elevationGain *
       preset.elevationMultiplier *
-      elevationPreferenceFactor(params.roadPreference),
+      elevationPreferenceFactor(params.roadPreference) *
+      routingConstraints.elevationMultiplier,
   );
   const durationMinutes = Math.max(
     120,
-    Math.round((distanceKm / speedForPreference(params.roadPreference)) * 60),
+    Math.round(
+      (distanceKm / speedForPreference(params.roadPreference, params)) * 60,
+    ),
   );
   const segments = buildSegments(
     template.segments ?? [],
@@ -281,6 +298,7 @@ function buildShiftedRoute(
   template: TripDay,
   dayNumber: number,
   optionIndex: number,
+  routingConstraints: ReturnType<typeof routeConstraintProfile>,
 ): RouteCoordinate[] {
   const baseCoordinates =
     template.routeGeometry?.coordinates.length &&
@@ -291,8 +309,10 @@ function buildShiftedRoute(
           waypoint.location.lat,
         ]);
 
-  const lngOffset = 0.18 * (dayNumber - 1) + 0.04 * optionIndex;
-  const latOffset = 0.08 * (dayNumber - 1) + 0.03 * optionIndex;
+  const lngOffset =
+    0.18 * (dayNumber - 1) + 0.04 * optionIndex + routingConstraints.lngOffset;
+  const latOffset =
+    0.08 * (dayNumber - 1) + 0.03 * optionIndex + routingConstraints.latOffset;
 
   return baseCoordinates.map(([lng, lat], index) => [
     roundCoord(lng + lngOffset + index * 0.01),
@@ -304,13 +324,20 @@ function buildAnchoredRoute(
   existingDay: TripDay,
   dayNumber: number,
   optionIndex: number,
+  routingConstraints: ReturnType<typeof routeConstraintProfile>,
 ): RouteCoordinate[] {
   const start = existingDay.waypoints[0]!;
   const end = existingDay.waypoints.at(-1)!;
   const midLng =
-    (start.location.lng + end.location.lng) / 2 + 0.06 + optionIndex * 0.01;
+    (start.location.lng + end.location.lng) / 2 +
+    0.06 +
+    optionIndex * 0.01 +
+    routingConstraints.lngOffset;
   const midLat =
-    (start.location.lat + end.location.lat) / 2 + 0.04 + dayNumber * 0.005;
+    (start.location.lat + end.location.lat) / 2 +
+    0.04 +
+    dayNumber * 0.005 +
+    routingConstraints.latOffset;
 
   return [
     [start.location.lng, start.location.lat],
@@ -359,17 +386,17 @@ function buildTripName(params: TripParameters, preset: OptionPreset): string {
   return `${params.days}-day ${params.roadPreference} ${preset.label.toLowerCase()}`;
 }
 
-function resolvePresetForTrip(trip: Trip): OptionPreset {
-  const presetFromId = OPTION_PRESETS.find(
+function resolvePresetIndexForTrip(trip: Trip): number {
+  const presetIndexFromId = OPTION_PRESETS.findIndex(
     (preset) => trip.id === `generated-${preset.id}`,
   );
-  if (presetFromId) return presetFromId;
+  if (presetIndexFromId >= 0) return presetIndexFromId;
 
   const normalizedName = trip.name.toLowerCase();
-  const presetFromName = OPTION_PRESETS.find((preset) =>
+  const presetIndexFromName = OPTION_PRESETS.findIndex((preset) =>
     normalizedName.includes(preset.label.toLowerCase()),
   );
-  return presetFromName ?? OPTION_PRESETS[0]!;
+  return presetIndexFromName >= 0 ? presetIndexFromName : 0;
 }
 
 function buildTitle(
@@ -496,11 +523,35 @@ function elevationPreferenceFactor(
   return 1;
 }
 
-function speedForPreference(roadPreference: TripParameters["roadPreference"]) {
-  if (roadPreference === "curvy") return 52;
-  if (roadPreference === "scenic") return 56;
-  if (roadPreference === "direct") return 72;
-  return 62;
+function speedForPreference(
+  roadPreference: TripParameters["roadPreference"],
+  params: Pick<TripParameters, "avoidHighways" | "avoidTolls">,
+) {
+  let speed = 62;
+  if (roadPreference === "curvy") speed = 52;
+  else if (roadPreference === "scenic") speed = 56;
+  else if (roadPreference === "direct") speed = 72;
+
+  if (params.avoidHighways) speed -= 8;
+  if (params.avoidTolls) speed -= 3;
+
+  return Math.max(38, speed);
+}
+
+function routeConstraintProfile(
+  params: Pick<TripParameters, "avoidHighways" | "avoidTolls">,
+) {
+  return {
+    distanceMultiplier:
+      1 + (params.avoidHighways ? 0.08 : 0) + (params.avoidTolls ? 0.03 : 0),
+    elevationMultiplier:
+      1 + (params.avoidHighways ? 0.05 : 0) + (params.avoidTolls ? 0.02 : 0),
+    qualityDelta: params.avoidHighways ? 0.1 : 0,
+    lngOffset:
+      (params.avoidTolls ? 0.015 : 0) + (params.avoidHighways ? 0.01 : 0),
+    latOffset:
+      (params.avoidHighways ? 0.012 : 0) + (params.avoidTolls ? 0.008 : 0),
+  };
 }
 
 function roundCoord(value: number) {

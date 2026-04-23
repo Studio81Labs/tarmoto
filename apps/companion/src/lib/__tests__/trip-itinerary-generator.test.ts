@@ -123,6 +123,7 @@ describe("trip-itinerary-generator", () => {
 
     expect(regenerated.days[1]?.title).toContain("Fastest line");
     expect(regenerated.days[1]?.title).not.toContain("Scenic sweep");
+    expect(regenerated.days[1]?.segments?.[0]?.id).toContain("-2-0");
   });
 
   it("keeps the original trip-level parameters when regenerating a single day", () => {
@@ -148,5 +149,25 @@ describe("trip-itinerary-generator", () => {
     expect(regenerated.parameters.surfacePreference).not.toBe(
       trip.parameters.surfacePreference,
     );
+  });
+
+  it("applies highway and toll avoidance toggles to generated route heuristics", () => {
+    const unrestricted = generateTripOptions({
+      ...params,
+      avoidHighways: false,
+      avoidTolls: false,
+    })[0]!.trip.days[0]!;
+    const constrained = generateTripOptions({
+      ...params,
+      avoidHighways: true,
+      avoidTolls: true,
+    })[0]!.trip.days[0]!;
+
+    expect(constrained.distanceKm).toBeGreaterThan(unrestricted.distanceKm);
+    expect(constrained.durationMinutes).toBeGreaterThan(
+      unrestricted.durationMinutes,
+    );
+    expect(constrained.avgQuality).toBeGreaterThan(unrestricted.avgQuality);
+    expect(constrained.routeGeometry).not.toEqual(unrestricted.routeGeometry);
   });
 });
