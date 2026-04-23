@@ -62,4 +62,55 @@ describe("rebuildPlannerDay", () => {
     expect(rebuilt.routeGeometry?.coordinates).toHaveLength(5);
     expect(rebuilt.distanceKm).toBeLessThan(straightDistance * 1.6);
   });
+
+  it("keeps generated preview metadata valid when a segment seed would be negative", () => {
+    const rebuilt = rebuildPlannerDay(
+      {
+        dayNumber: 1,
+        title: "Seed regression",
+        distanceKm: 0,
+        durationMinutes: 0,
+        elevationGain: 0,
+        avgQuality: 0,
+        segments: [],
+        waypoints: [
+          {
+            id: "start",
+            name: "Start",
+            location: { lng: 19.70022407454256, lat: 45.51632164194439 },
+            type: "start",
+          },
+          {
+            id: "via",
+            name: "Via",
+            location: { lng: 19.80393561867295, lat: 45.647771249118705 },
+            type: "via",
+          },
+          {
+            id: "end",
+            name: "End",
+            location: { lng: 19.739153515865382, lat: 45.71547276223144 },
+            type: "end",
+          },
+        ],
+      },
+      {
+        ...BASE_PARAMETERS,
+        surfacePreference: [],
+        avoidUnpaved: false,
+      },
+    );
+
+    expect(rebuilt.segments?.length).toBeGreaterThan(0);
+    expect(
+      rebuilt.segments?.every((segment) =>
+        ["asphalt", "concrete", "gravel"].includes(segment.surfaceType),
+      ),
+    ).toBe(true);
+    expect(
+      rebuilt.segments?.every((segment) =>
+        segment.elevationProfile.every((value) => Number.isFinite(value)),
+      ),
+    ).toBe(true);
+  });
 });

@@ -349,7 +349,7 @@ function buildPreviewSegment(
       scenic: 0.35,
       curvy: 0.45,
     }[parameters.roadPreference];
-  const variance = ((seed % 80) - 40) / 100;
+  const variance = (positiveModulo(seed, 80) - 40) / 100;
   const qualityScore = clamp(round1(baseScore + variance), 1.8, 4.9);
 
   return {
@@ -383,13 +383,15 @@ function selectSurfaceType(
   const preferred = parameters.surfacePreference[0];
   if (preferred) return preferred;
   if (parameters.avoidUnpaved) return "asphalt";
-  return (["asphalt", "concrete", "gravel"] as SurfaceType[])[seed % 3]!;
+  return (["asphalt", "concrete", "gravel"] as SurfaceType[])[
+    positiveModulo(seed, 3)
+  ]!;
 }
 
 function buildElevationProfile(seed: number, distanceKm: number): number[] {
   const points = Math.min(8, Math.max(4, Math.round(distanceKm / 6)));
   const profile: number[] = [];
-  let current = 280 + (seed % 320);
+  let current = 280 + positiveModulo(seed, 320);
   for (let index = 0; index < points; index++) {
     current += ((seed >>> (index % 8)) % 35) - 10;
     profile.push(Math.max(120, current));
@@ -431,7 +433,11 @@ function hashPoints(points: Array<[number, number]>): number {
 
 function hashNumber(value: number): number {
   const normalized = Math.round(value * 1000);
-  return ((normalized * 2654435761) >>> 0) ^ 0x9e3779b9;
+  return (((normalized * 2654435761) >>> 0) ^ 0x9e3779b9) >>> 0;
+}
+
+function positiveModulo(value: number, divisor: number): number {
+  return ((value % divisor) + divisor) % divisor;
 }
 
 function clamp(value: number, min: number, max: number): number {

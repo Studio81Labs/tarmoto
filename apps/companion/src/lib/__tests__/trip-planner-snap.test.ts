@@ -81,6 +81,36 @@ describe("snapWaypointToRoadFeatures", () => {
     });
   });
 
+  it("does not treat roads tens of meters apart as equal-distance ties", () => {
+    const snapped = snapWaypointToRoadFeatures({ lng: 14.45, lat: 50.11 }, [
+      {
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [14.44, 50.1096],
+            [14.46, 50.1096],
+          ],
+        },
+        properties: { quality_score: 2.1 },
+      },
+      {
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [14.44, 50.1109],
+            [14.46, 50.1109],
+          ],
+        },
+        properties: { quality_score: 4.9 },
+      },
+    ]);
+
+    expect(snapped).toEqual({
+      lng: 14.45,
+      lat: 50.1096,
+    });
+  });
+
   it("returns null when no road geometry is available", () => {
     expect(snapWaypointToRoadFeatures({ lng: 14.45, lat: 50.11 }, [])).toBe(
       null,

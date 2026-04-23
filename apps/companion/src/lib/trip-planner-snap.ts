@@ -118,7 +118,7 @@ function distanceSquared(a: [number, number], b: [number, number]): number {
 // Treat quality as a tiebreaker only when the candidates are effectively
 // equally close in map-coordinate space, so click placement still feels
 // anchored to the nearest visible road.
-const SNAP_DISTANCE_EPSILON = 1e-6;
+const SNAP_DISTANCE_EPSILON = 1e-10;
 
 function round6(value: number): number {
   return Math.round(value * 1_000_000) / 1_000_000;
