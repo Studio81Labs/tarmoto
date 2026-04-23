@@ -1,3 +1,5 @@
+import { formatRoadQualityColor } from "@/lib/best-roads-format";
+
 export type BestRoadsWidgetVariant = "compact" | "landscape";
 
 export interface BestRoadsEmbedLocation {
@@ -88,7 +90,7 @@ export function projectRoadsToMiniMap(
     .map((road, index) => ({
       id: road.id,
       rank: index + 1,
-      color: qualityColor(road.quality_score),
+      color: formatRoadQualityColor(road.quality_score),
       geometry: road.geometry,
     }))
     .filter((road) => road.geometry.length >= 2);
@@ -143,17 +145,8 @@ export function projectRoadsToMiniMap(
 }
 
 function widgetDimensions(variant: BestRoadsWidgetVariant): WidgetDimensions {
-  if (variant === "landscape") return { heightPx: 420 };
+  if (variant === "landscape") return { heightPx: 640 };
   return { heightPx: 640 };
-}
-
-function qualityColor(qualityScore: number | null): string {
-  if (qualityScore == null) return "#64748B";
-  if (qualityScore >= 4.5) return "#22C55E";
-  if (qualityScore >= 3.5) return "#84CC16";
-  if (qualityScore >= 2.5) return "#EAB308";
-  if (qualityScore >= 1.5) return "#F97316";
-  return "#EF4444";
 }
 
 function round(value: number): number {

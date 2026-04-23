@@ -54,7 +54,7 @@ describe("BestRoadsEmbedPanel", () => {
       ),
     );
     expect(clipboardWriteText).toHaveBeenCalledWith(
-      expect.stringContaining("height:420px"),
+      expect.stringContaining("height:640px"),
     );
     expect(screen.getByText("Embed code copied")).toBeInTheDocument();
   });

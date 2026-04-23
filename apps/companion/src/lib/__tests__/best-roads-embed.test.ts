@@ -69,6 +69,21 @@ describe("best-roads-embed", () => {
     expect(snippet).toContain("height:640px");
   });
 
+  it("uses a taller landscape iframe snippet for narrow stacked embeds", () => {
+    const snippet = buildBestRoadsIframeCode("https://tarmoto.app", {
+      country: "at",
+      region: "tyrol",
+      subregion: "alpine-passes",
+      regionName: "Alpine passes",
+      variant: "landscape",
+    });
+
+    expect(snippet).toContain(
+      'src="https://tarmoto.app/embed/roads/at/tyrol/alpine-passes?variant=landscape"',
+    );
+    expect(snippet).toContain("height:640px");
+  });
+
   it("projects only valid roads into a bounded minimap coordinate space", () => {
     const map = projectRoadsToMiniMap(roads, {
       width: 320,
