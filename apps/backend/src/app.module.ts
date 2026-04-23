@@ -26,6 +26,7 @@ import { PassesModule } from './modules/passes/index.js';
 import { PoiModule } from './modules/poi/index.js';
 import { GeocodeModule } from './modules/geocode/index.js';
 import { ClosuresModule } from './modules/closures/index.js';
+import { AccountModule } from './modules/account/index.js';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { ClosuresModule } from './modules/closures/index.js';
     }),
     DatabaseModule,
     AuthModule,
+    AccountModule,
     UsersModule,
     HazardsModule,
     SensorModule,

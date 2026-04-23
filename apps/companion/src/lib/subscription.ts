@@ -47,6 +47,7 @@ export interface SubscriptionSnapshot {
   plans: SubscriptionPlanSummary[];
   paymentMethod: SubscriptionPaymentMethod | null;
   billingHistory: SubscriptionInvoice[];
+  portalAvailable: boolean;
   preview: boolean;
 }
 
@@ -131,6 +132,7 @@ export function buildFallbackSubscriptionSnapshot(): SubscriptionSnapshot {
         invoiceUrl: null,
       },
     ],
+    portalAvailable: false,
     preview: true,
   };
 }
@@ -170,6 +172,8 @@ export function normalizeSubscriptionSnapshot(
       : sortPlans([...plans, buildPlanFromCurrent(currentPlan)]),
     paymentMethod: normalizePaymentMethod(root.payment_method),
     billingHistory: normalizeInvoices(root.billing_history),
+    portalAvailable:
+      Boolean(root.portal_available) || currentPlan.manageUrl !== null,
     preview,
   };
 }
