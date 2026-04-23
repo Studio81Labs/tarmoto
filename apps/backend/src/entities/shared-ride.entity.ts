@@ -34,6 +34,9 @@ export class SharedRide {
   @Column({ type: 'int', default: 0 })
   view_count!: number;
 
+  @Column({ type: 'int', default: 0 })
+  embed_click_count!: number;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
 

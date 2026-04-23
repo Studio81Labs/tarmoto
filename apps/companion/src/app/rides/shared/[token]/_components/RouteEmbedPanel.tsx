@@ -1,0 +1,156 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { Check, Code2, Copy, MousePointerClick, Eye } from "lucide-react";
+import {
+  buildRideIframeCode,
+  formatRideEmbedStat,
+  type RideWidgetVariant,
+} from "@/lib/ride-embed";
+
+interface Props {
+  origin: string;
+  token: string;
+  rideLabel: string;
+  views: number;
+  clicks: number;
+}
+
+const VARIANTS: Array<{
+  value: RideWidgetVariant;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "compact",
+    label: "Compact",
+    description: "Best for sidebars and narrower community posts.",
+  },
+  {
+    value: "landscape",
+    label: "Landscape",
+    description: "Best for blog posts, forums, and full-width sections.",
+  },
+];
+
+export function RouteEmbedPanel({
+  origin,
+  token,
+  rideLabel,
+  views,
+  clicks,
+}: Props) {
+  const [variant, setVariant] = useState<RideWidgetVariant>("compact");
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">(
+    "idle",
+  );
+
+  const snippet = useMemo(
+    () => buildRideIframeCode(origin, { token, rideLabel, variant }),
+    [origin, token, rideLabel, variant],
+  );
+
+  useEffect(() => {
+    if (copyState !== "copied") return;
+    const timeout = window.setTimeout(() => setCopyState("idle"), 2000);
+    return () => window.clearTimeout(timeout);
+  }, [copyState]);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(snippet);
+      setCopyState("copied");
+    } catch {
+      setCopyState("error");
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-tarmoto-cyan/20 bg-tarmoto-cyan/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-tarmoto-cyan">
+            <Code2 size={14} />
+            Embed route
+          </div>
+          <h2 className="mt-3 text-lg font-semibold">
+            Share this ride as a route widget
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm text-slate-400">
+            Publish a branded ride preview with route stats, Tarmoto
+            attribution, and a link back to the full shared ride page.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="inline-flex items-center gap-2 rounded-lg bg-tarmoto-cyan px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-tarmoto-cyan/90"
+        >
+          {copyState === "copied" ? <Check size={16} /> : <Copy size={16} />}
+          Copy embed code
+        </button>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <div className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-300">
+          <Eye size={14} className="text-tarmoto-cyan" />
+          {formatRideEmbedStat(views, "view")}
+        </div>
+        <div className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-300">
+          <MousePointerClick size={14} className="text-tarmoto-cyan" />
+          {formatRideEmbedStat(clicks, "click")}
+        </div>
+      </div>
+
+      <div className="mt-5 flex flex-wrap gap-2">
+        {VARIANTS.map((option) => {
+          const active = option.value === variant;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              aria-label={option.label}
+              onClick={() => setVariant(option.value)}
+              className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
+                active
+                  ? "border-tarmoto-cyan bg-tarmoto-cyan/10 text-white"
+                  : "border-slate-700 bg-slate-950 text-slate-300 hover:border-slate-500"
+              }`}
+            >
+              <span className="block font-medium">{option.label}</span>
+              <span className="mt-0.5 block text-xs text-slate-400">
+                {option.description}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-4">
+        <label
+          htmlFor="ride-embed-code"
+          className="mb-2 block text-sm font-medium text-slate-300"
+        >
+          Embed code
+        </label>
+        <textarea
+          id="ride-embed-code"
+          aria-label="Embed code"
+          readOnly
+          value={snippet}
+          rows={7}
+          className="w-full rounded-xl border border-slate-800 bg-slate-950 px-4 py-3 font-mono text-xs text-slate-200 focus:outline-none"
+        />
+      </div>
+
+      {copyState === "copied" && (
+        <p className="mt-3 text-sm text-emerald-300">Embed code copied</p>
+      )}
+      {copyState === "error" && (
+        <p className="mt-3 text-sm text-rose-300">
+          Could not copy automatically. Select the code and copy it manually.
+        </p>
+      )}
+    </section>
+  );
+}

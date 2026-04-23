@@ -196,6 +196,14 @@ export class SharedRideResponseDto {
   share_url!: string;
 }
 
+class RouteGeometryPointDto {
+  @ApiProperty()
+  lat!: number;
+
+  @ApiProperty()
+  lng!: number;
+}
+
 export class SharedRideDetailDto {
   @ApiProperty()
   id!: string;
@@ -240,7 +248,13 @@ export class SharedRideDetailDto {
   })
   view_count!: number;
 
-  @ApiProperty({ nullable: true, type: [Object] })
+  @ApiProperty({
+    description:
+      'Number of outbound clicks from embeddable route widgets into the full Tarmoto ride page.',
+  })
+  embed_click_count!: number;
+
+  @ApiProperty({ nullable: true, type: [RouteGeometryPointDto] })
   route_geometry!: Array<{ lat: number; lng: number }> | null;
 }
 
@@ -293,7 +307,7 @@ export class CommunityRideDto {
 
   @ApiProperty({
     nullable: true,
-    type: [Object],
+    type: [RouteGeometryPointDto],
     description:
       'Polyline used for feed-card mini-previews. Null when the ride has no stored route geometry.',
   })

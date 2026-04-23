@@ -102,6 +102,21 @@ export class SharingService {
     return this.toDetailResponse(shared);
   }
 
+  async trackEmbedClick(token: string): Promise<void> {
+    const shared = await this.sharedRideRepo.findOne({
+      where: { share_token: token },
+    });
+    if (!shared) {
+      throw new NotFoundException('Shared ride not found');
+    }
+
+    await this.sharedRideRepo.increment(
+      { id: shared.id },
+      'embed_click_count',
+      1,
+    );
+  }
+
   /**
    * Browse the public community feed (US-53).
    *
@@ -290,6 +305,7 @@ export class SharingService {
       avg_curviness: ride.avg_curviness ?? null,
       duration_min: durationMin,
       view_count: shared.view_count ?? 0,
+      embed_click_count: shared.embed_click_count ?? 0,
       route_geometry: routeGeometry,
     };
   }
