@@ -6,7 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { pointToLatLng } from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
@@ -26,16 +26,38 @@ const ALLOWED_AVATAR_TYPES = new Map<string, string>([
   ['image/webp', '.webp'],
 ]);
 
+function hasControlCharacters(value: string): boolean {
+  return [...value].some((character) => {
+    const code = character.charCodeAt(0);
+    return code <= 31 || code === 127;
+  });
+}
+
 function managedAvatarFilePath(avatarUrl: string | null): string | null {
   if (!avatarUrl) return null;
 
   try {
-    const parsed = new URL(avatarUrl);
+    const parsed = new URL(avatarUrl, 'https://tarmoto.local');
     if (!parsed.pathname.startsWith(AVATAR_PATH_PREFIX)) return null;
-    return join(process.cwd(), parsed.pathname.slice(1));
+
+    const encodedFilename = parsed.pathname.slice(AVATAR_PATH_PREFIX.length);
+    if (!encodedFilename) return null;
+
+    const filename = decodeURIComponent(encodedFilename);
+    if (
+      filename === '.' ||
+      filename === '..' ||
+      filename !== basename(filename) ||
+      filename.includes('/') ||
+      filename.includes('\\') ||
+      hasControlCharacters(filename)
+    ) {
+      return null;
+    }
+
+    return join(AVATAR_UPLOAD_DIR, filename);
   } catch {
-    if (!avatarUrl.startsWith(AVATAR_PATH_PREFIX)) return null;
-    return join(process.cwd(), avatarUrl.slice(1));
+    return null;
   }
 }
 
@@ -147,15 +169,17 @@ export class UsersService {
 
     await writeFile(filePath, file.buffer);
 
+    let saved: User;
     try {
       user.avatar_url = nextAvatarUrl;
-      const saved = await this.userRepo.save(user);
-      await deleteManagedAvatar(previousAvatarUrl);
-      return this.toUserResponse(saved);
+      saved = await this.userRepo.save(user);
     } catch (error) {
       await deleteManagedAvatar(nextAvatarUrl);
       throw error;
     }
+
+    await deleteManagedAvatar(previousAvatarUrl);
+    return this.toUserResponse(saved);
   }
 
   async listContacts(userId: string): Promise<ContactResponseDto[]> {

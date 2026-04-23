@@ -10,6 +10,11 @@ import {
   exchangeOAuthUserForBackendTokens,
   type BackendAuthResponse,
 } from "@/lib/social-auth-bridge";
+import {
+  SOCIAL_ACCOUNT_CONFLICT_ERROR,
+  SOCIAL_ACCOUNT_CONFLICT_MESSAGE,
+  SOCIAL_SIGNIN_FAILED_ERROR,
+} from "@/lib/auth-errors";
 
 async function refreshAccessToken(
   refreshToken: string,
@@ -117,8 +122,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         });
 
         return true;
-      } catch {
-        return "/login?error=social_signin_failed";
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === SOCIAL_ACCOUNT_CONFLICT_MESSAGE
+        ) {
+          return `/login?error=${SOCIAL_ACCOUNT_CONFLICT_ERROR}`;
+        }
+
+        return `/login?error=${SOCIAL_SIGNIN_FAILED_ERROR}`;
       }
     },
 

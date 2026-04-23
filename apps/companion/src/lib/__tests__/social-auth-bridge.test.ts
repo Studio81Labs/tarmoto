@@ -127,4 +127,37 @@ describe("social auth bridge", () => {
     });
     expect(result.refresh_token).toBe("refresh-token");
   });
+
+  it("throws a clear collision error when the email already belongs to a password account", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ message: "Email already registered" }), {
+          status: 409,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ message: "Invalid credentials" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+    await expect(
+      exchangeOAuthUserForBackendTokens(
+        {
+          email: "rider@example.com",
+          displayName: "Rider One",
+        },
+        {
+          apiBaseServer: "https://api.example.com/api/v1",
+          bridgeSecret: "secret-key",
+        },
+      ),
+    ).rejects.toThrow(
+      "This email already has a Tarmoto password account. Sign in with your password instead.",
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

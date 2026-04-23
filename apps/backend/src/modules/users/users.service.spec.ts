@@ -1,8 +1,15 @@
 /* eslint-disable @typescript-eslint/no-unsafe-return */
+jest.mock('node:fs/promises', () => ({
+  mkdir: jest.fn(),
+  unlink: jest.fn(),
+  writeFile: jest.fn(),
+}));
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
+import { unlink, writeFile, mkdir } from 'node:fs/promises';
 import { UsersService } from './users.service.js';
 import { User } from '../../entities/user.entity.js';
 import { UserContact } from '../../entities/user-contact.entity.js';
@@ -41,6 +48,11 @@ describe('UsersService', () => {
   } as UserContact;
 
   beforeEach(async () => {
+    jest.clearAllMocks();
+    jest.mocked(mkdir).mockResolvedValue(undefined);
+    jest.mocked(unlink).mockResolvedValue(undefined);
+    jest.mocked(writeFile).mockResolvedValue(undefined);
+
     userRepo = {
       findOne: jest
         .fn()
@@ -218,6 +230,101 @@ describe('UsersService', () => {
       await expect(
         service.updateProfile('missing', { display_name: 'X' }),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should not delete files outside the managed avatar upload directory', async () => {
+      userRepo.findOne!.mockResolvedValueOnce({
+        ...buildMockUser(),
+        avatar_url: '/uploads/avatars/..%2F..%2Fsecrets.txt',
+      } as User);
+
+      await service.updateProfile('user-1', {
+        avatar_url: 'https://cdn.example.com/u/1.png',
+      });
+
+      expect(unlink).not.toHaveBeenCalled();
+    });
+
+    it('should ignore decoded avatar filenames with null bytes', async () => {
+      userRepo.findOne!.mockResolvedValueOnce({
+        ...buildMockUser(),
+        avatar_url: '/uploads/avatars/%00avatar.png',
+      } as User);
+
+      await service.updateProfile('user-1', {
+        avatar_url: 'https://cdn.example.com/u/1.png',
+      });
+
+      expect(unlink).not.toHaveBeenCalled();
+    });
+
+    it('should ignore decoded avatar filenames that resolve to dot segments', async () => {
+      userRepo.findOne!.mockResolvedValueOnce({
+        ...buildMockUser(),
+        avatar_url: '/uploads/avatars/%2e%2e',
+      } as User);
+
+      await service.updateProfile('user-1', {
+        avatar_url: 'https://cdn.example.com/u/1.png',
+      });
+
+      expect(unlink).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('uploadAvatar', () => {
+    const file = {
+      mimetype: 'image/png',
+      buffer: Buffer.from('avatar-bytes'),
+    } as Express.Multer.File;
+
+    it('should store the uploaded avatar and remove the previous managed file', async () => {
+      userRepo.findOne!.mockResolvedValueOnce({
+        ...buildMockUser(),
+        avatar_url: 'https://app.tarmoto.test/uploads/avatars/old-avatar.png',
+      } as User);
+
+      const result = await service.uploadAvatar(
+        'user-1',
+        file,
+        'https://app.tarmoto.test',
+      );
+
+      expect(writeFile).toHaveBeenCalledWith(
+        expect.stringContaining('/uploads/avatars/user-1-'),
+        file.buffer,
+      );
+      const savedUser = userRepo.save!.mock.calls[0]?.[0] as User;
+      expect(savedUser.avatar_url).toMatch(
+        /^https:\/\/app\.tarmoto\.test\/uploads\/avatars\/user-1-/,
+      );
+      expect(unlink).toHaveBeenCalledWith(
+        expect.stringContaining('/uploads/avatars/old-avatar.png'),
+      );
+      expect(result.avatar_url).toMatch(
+        /^https:\/\/app\.tarmoto\.test\/uploads\/avatars\/user-1-/,
+      );
+    });
+
+    it('should not delete the new avatar file when removing the previous avatar fails after save', async () => {
+      userRepo.findOne!.mockResolvedValueOnce({
+        ...buildMockUser(),
+        avatar_url: 'https://app.tarmoto.test/uploads/avatars/old-avatar.png',
+      } as User);
+      jest
+        .mocked(unlink)
+        .mockRejectedValueOnce(
+          Object.assign(new Error('permission denied'), { code: 'EACCES' }),
+        );
+
+      await expect(
+        service.uploadAvatar('user-1', file, 'https://app.tarmoto.test'),
+      ).rejects.toThrow('permission denied');
+
+      expect(unlink).toHaveBeenCalledTimes(1);
+      expect(unlink).toHaveBeenCalledWith(
+        expect.stringContaining('/uploads/avatars/old-avatar.png'),
+      );
     });
   });
 

@@ -4,6 +4,7 @@ import RegisterPage from "./register/page";
 
 const signInMock = vi.fn();
 const registerUserMock = vi.fn();
+let searchParamValues = new URLSearchParams();
 
 vi.mock("next-auth/react", () => ({
   signIn: (...args: unknown[]) => signInMock(...args),
@@ -11,7 +12,7 @@ vi.mock("next-auth/react", () => ({
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => ({
-    get: (key: string) => (key === "callbackUrl" ? "/trips/planner" : null),
+    get: (key: string) => searchParamValues.get(key),
   }),
 }));
 
@@ -31,6 +32,9 @@ describe("auth pages social sign-in", () => {
   beforeEach(() => {
     signInMock.mockReset();
     registerUserMock.mockReset();
+    searchParamValues = new URLSearchParams({
+      callbackUrl: "/trips/planner",
+    });
   });
 
   it("renders the configured social providers on the login page", async () => {
@@ -59,5 +63,48 @@ describe("auth pages social sign-in", () => {
     expect(
       screen.getByRole("button", { name: "Continue with Apple" }),
     ).toBeInTheDocument();
+  });
+
+  it("shows a helpful message when a social login collides with a password account", async () => {
+    searchParamValues = new URLSearchParams({
+      callbackUrl: "/trips/planner",
+      error: "social_account_conflict",
+    });
+
+    render(<LoginPage />);
+
+    expect(
+      await screen.findByText(
+        "This email already has a Tarmoto password account. Sign in with your password instead.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("clears the URL-driven login error when the error param is removed", async () => {
+    searchParamValues = new URLSearchParams({
+      callbackUrl: "/trips/planner",
+      error: "social_account_conflict",
+    });
+
+    const { rerender } = render(<LoginPage />);
+
+    expect(
+      await screen.findByText(
+        "This email already has a Tarmoto password account. Sign in with your password instead.",
+      ),
+    ).toBeInTheDocument();
+
+    searchParamValues = new URLSearchParams({
+      callbackUrl: "/trips/planner",
+    });
+    rerender(<LoginPage />);
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText(
+          "This email already has a Tarmoto password account. Sign in with your password instead.",
+        ),
+      ).not.toBeInTheDocument(),
+    );
   });
 });

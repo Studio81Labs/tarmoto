@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { OAuthButtons } from "@/components/OAuthButtons";
 import { safeCallbackUrl } from "@/lib/callback-url";
+import { getLoginErrorMessage } from "@/lib/auth-errors";
 import type { OAuthProvider } from "@/lib/oauth-providers";
 
 export function LoginForm({
@@ -15,10 +16,15 @@ export function LoginForm({
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const searchParams = useSearchParams();
+  const urlError = getLoginErrorMessage(searchParams.get("error"));
+  const [error, setError] = useState(urlError);
   const callbackUrl = safeCallbackUrl(searchParams.get("callbackUrl"));
+
+  useEffect(() => {
+    setError(urlError);
+  }, [urlError]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
