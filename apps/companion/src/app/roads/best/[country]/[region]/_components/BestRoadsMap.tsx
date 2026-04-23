@@ -1,7 +1,7 @@
 "use client";
 
 import "maplibre-gl/dist/maplibre-gl.css";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { MapRef } from "react-map-gl/maplibre";
 import { Map, Layer, Source, Marker } from "react-map-gl/maplibre";
 import { MAP_STYLE_URL } from "@/lib/config";
@@ -26,6 +26,7 @@ interface Props {
 
 export function BestRoadsMap({ bbox, center, defaultZoom, roads }: Props) {
   const mapRef = useRef<MapRef | null>(null);
+  const [ready, setReady] = useState(false);
   const colorScheme = useMapColorScheme();
   const appliedColorSchemeRef = useRef<MapColorScheme | null>(null);
 
@@ -71,10 +72,10 @@ export function BestRoadsMap({ bbox, center, defaultZoom, roads }: Props) {
 
   useEffect(() => {
     const map = mapRef.current?.getMap();
-    if (!map || appliedColorSchemeRef.current === colorScheme) return;
+    if (!map || !ready || appliedColorSchemeRef.current === colorScheme) return;
     applyTarmotoMapTheme(map, colorScheme);
     appliedColorSchemeRef.current = colorScheme;
-  }, [colorScheme]);
+  }, [colorScheme, ready]);
 
   return (
     <div className="h-[420px] w-full overflow-hidden rounded-xl border border-slate-800">
@@ -90,10 +91,11 @@ export function BestRoadsMap({ bbox, center, defaultZoom, roads }: Props) {
         attributionControl={true}
         onLoad={() => {
           const map = mapRef.current?.getMap();
-          if (map && appliedColorSchemeRef.current !== colorScheme) {
+          if (map) {
             applyTarmotoMapTheme(map, colorScheme);
             appliedColorSchemeRef.current = colorScheme;
           }
+          setReady(true);
           mapRef.current?.fitBounds(
             [
               [bbox[0], bbox[1]],
