@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import type { UnitSystem } from "@tarmoto/shared";
 import { AlertTriangle, Route } from "lucide-react";
-import { useClosures } from "@/hooks/useClosures";
+import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
 import {
   detourLengthKm,
   formatClosureWindow,
@@ -38,9 +38,35 @@ const REASON_LABEL: Record<PlannerClosure["reason"], string> = {
 interface ClosuresPanelProps {
   month: number;
   routes: PlannerClosureRoute[];
+  data?: ClosuresQueryResult;
 }
 
-export function ClosuresPanel({ month, routes }: ClosuresPanelProps) {
+export function ClosuresPanel({ month, routes, data }: ClosuresPanelProps) {
+  if (data) {
+    return <ClosuresPanelBody month={month} routes={routes} data={data} />;
+  }
+
+  return <FetchedClosuresPanel month={month} routes={routes} />;
+}
+
+function FetchedClosuresPanel({
+  month,
+  routes,
+}: Omit<ClosuresPanelProps, "data">) {
+  const data = useClosures(month, routes);
+
+  return <ClosuresPanelBody month={month} routes={routes} data={data} />;
+}
+
+function ClosuresPanelBody({
+  month,
+  routes,
+  data,
+}: {
+  month: number;
+  routes: PlannerClosureRoute[];
+  data: ClosuresQueryResult;
+}) {
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const hydratePreferences = usePreferencesStore((s) => s.hydrate);
   const {
@@ -53,7 +79,7 @@ export function ClosuresPanel({ month, routes }: ClosuresPanelProps) {
     error,
     routeError,
     previewDate,
-  } = useClosures(month, routes);
+  } = data;
 
   useEffect(() => {
     hydratePreferences();

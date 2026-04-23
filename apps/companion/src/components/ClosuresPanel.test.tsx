@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { ClosuresPanel } from "./ClosuresPanel";
-import { useClosures } from "@/hooks/useClosures";
+import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
 import type { PlannerClosure } from "@/lib/closures-summary";
 import { usePreferencesStore } from "@/stores/preferences";
 
@@ -206,6 +206,27 @@ describe("ClosuresPanel", () => {
 
     expect(
       screen.getByText("Detour available · approx. 1.4 mi"),
+    ).toBeInTheDocument();
+  });
+
+  it("reuses parent-loaded closure data without refetching", () => {
+    const data: ClosuresQueryResult = {
+      closures: [],
+      routeClosures: [],
+      counts: { full: 0, partial: 0, advisory: 0, total: 0 },
+      routeCounts: { full: 0, partial: 0, advisory: 0, total: 0 },
+      loading: false,
+      routeLoading: false,
+      error: null,
+      routeError: null,
+      previewDate: new Date("2026-07-15T12:00:00Z"),
+    };
+
+    render(<ClosuresPanel month={7} routes={[]} data={data} />);
+
+    expect(useClosuresMock).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("No active closures for this month yet."),
     ).toBeInTheDocument();
   });
 });

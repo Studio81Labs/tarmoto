@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { PassesPanel } from "./PassesPanel";
-import { usePasses } from "@/hooks/usePasses";
+import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
 import type { PlannerClosureRoute } from "@/lib/closures-summary";
 
 vi.mock("@/hooks/usePasses", () => ({
@@ -118,5 +118,25 @@ describe("PassesPanel", () => {
     const secondRoutes = usePassesMock.mock.calls.at(-1)?.[1];
 
     expect(firstRoutes).toBe(secondRoutes);
+  });
+
+  it("reuses parent-loaded pass data without refetching", () => {
+    const data: PassesQueryResult = {
+      passes: [],
+      routePasses: [],
+      routeClosedCount: 0,
+      routeUnknownCount: 0,
+      loading: false,
+      routeLoading: false,
+      error: null,
+      routeError: null,
+    };
+
+    render(<PassesPanel month={7} data={data} />);
+
+    expect(usePassesMock).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("No mountain passes seeded yet."),
+    ).toBeInTheDocument();
   });
 });
