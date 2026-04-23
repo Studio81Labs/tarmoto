@@ -129,9 +129,15 @@ export function regenerateTripDay(
   );
 
   return {
-    ...cloneTrip(trip),
+    ...trip,
     updatedAt: new Date().toISOString(),
-    parameters: normalizedParams,
+    parameters: {
+      ...normalizedParams,
+      surfacePreference: [...normalizedParams.surfacePreference],
+    },
+    collaborators: trip.collaborators.map((collaborator) => ({
+      ...collaborator,
+    })),
     days,
   };
 }
@@ -425,7 +431,12 @@ function cloneTrip(trip: Trip): Trip {
 function cloneDay(day: TripDay): TripDay {
   return {
     ...day,
-    overnightStop: day.overnightStop ? { ...day.overnightStop } : undefined,
+    overnightStop: day.overnightStop
+      ? {
+          ...day.overnightStop,
+          location: { ...day.overnightStop.location },
+        }
+      : undefined,
     routeGeometry: day.routeGeometry
       ? {
           type: "LineString",

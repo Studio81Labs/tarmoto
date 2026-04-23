@@ -99,6 +99,12 @@ describe("trip-itinerary-generator", () => {
 
     expect(regenerated).not.toBe(DEMO_TRIP);
     expect(regenerated.days[0]).not.toBe(DEMO_TRIP.days[0]);
+    expect(regenerated.days[0]?.overnightStop).not.toBe(
+      DEMO_TRIP.days[0]?.overnightStop,
+    );
+    expect(regenerated.days[0]?.overnightStop?.location).not.toBe(
+      DEMO_TRIP.days[0]?.overnightStop?.location,
+    );
     expect(DEMO_TRIP.days[0]?.title).toBe("Passo dello Stelvio");
   });
 
