@@ -10,7 +10,7 @@ import { loadTrustProxyConfig } from './config/trust-proxy.config.js';
 
 async function bootstrap() {
   const isProd = process.env.TARMOTO_NODE_ENV === 'production';
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { rawBody: true });
 
   const { hops } = loadTrustProxyConfig();
   if (hops > 0) {

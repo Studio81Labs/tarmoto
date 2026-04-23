@@ -59,6 +59,27 @@ export class User {
   @Column({ type: 'jsonb', default: '{}' })
   preferences!: Record<string, unknown>;
 
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  stripe_customer_id!: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  stripe_subscription_id!: string | null;
+
+  @Column({ type: 'varchar', length: 20, default: 'free' })
+  subscription_tier!: 'free' | 'premium' | 'pro';
+
+  @Column({ type: 'varchar', length: 20, default: 'canceled' })
+  subscription_status!: 'active' | 'trialing' | 'past_due' | 'canceled';
+
+  @Column({ type: 'boolean', default: false })
+  subscription_cancel_at_period_end!: boolean;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  subscription_current_period_end!: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  billing_trial_used_at!: Date | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
 

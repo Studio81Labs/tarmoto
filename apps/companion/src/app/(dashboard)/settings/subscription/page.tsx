@@ -36,6 +36,14 @@ type LoadState =
   | { kind: "loaded"; snapshot: SubscriptionSnapshot }
   | { kind: "error"; message: string };
 
+type BillingAction =
+  | "portal-manage"
+  | "portal-payment-method"
+  | "portal-cancel"
+  | "portal-update"
+  | "checkout-premium"
+  | "checkout-pro";
+
 const STATUS_STYLES: Record<SubscriptionStatus, string> = {
   active: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20",
   trialing: "bg-sky-500/10 text-sky-300 border-sky-500/20",
@@ -53,6 +61,10 @@ const STATUS_LABELS: Record<SubscriptionStatus, string> = {
 export default function SubscriptionPage() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [actionState, setActionState] = useState<{
+    kind: BillingAction | null;
+    error: string | null;
+  }>({ kind: null, error: null });
 
   useEffect(() => {
     let cancelled = false;
@@ -95,6 +107,72 @@ export default function SubscriptionPage() {
     [snapshot],
   );
 
+  async function openCheckout(tier: "premium" | "pro") {
+    setActionState({ kind: `checkout-${tier}`, error: null });
+    try {
+      const { data } = await accountApi.createCheckoutSession({ tier });
+      window.location.assign(data.url);
+    } catch (error) {
+      setActionState({
+        kind: null,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Could not start Stripe Checkout.",
+      });
+    }
+  }
+
+  async function openPortal(
+    flow:
+      | "manage"
+      | "payment_method_update"
+      | "subscription_cancel"
+      | "subscription_update",
+  ) {
+    const kind: BillingAction =
+      flow === "manage"
+        ? "portal-manage"
+        : flow === "payment_method_update"
+          ? "portal-payment-method"
+          : flow === "subscription_cancel"
+            ? "portal-cancel"
+            : "portal-update";
+
+    setActionState({ kind, error: null });
+    try {
+      const { data } = await accountApi.createPortalSession({ flow });
+      window.location.assign(data.url);
+    } catch (error) {
+      setActionState({
+        kind: null,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Could not open the billing portal.",
+      });
+    }
+  }
+
+  function handlePlanAction(planTier: SubscriptionTier) {
+    if (!snapshot) return;
+    if (planTier === snapshot.currentPlan.tier) {
+      if (!snapshot.portalAvailable) return;
+      void openPortal("manage");
+      return;
+    }
+
+    if (snapshot.currentPlan.tier === "free") {
+      void openCheckout(planTier as "premium" | "pro");
+      return;
+    }
+
+    if (!snapshot.portalAvailable) return;
+    void openPortal("subscription_update");
+  }
+
+  const billingBusy = actionState.kind !== null;
+
   return (
     <div className="mx-auto max-w-6xl animate-fade-in p-6">
       <Link
@@ -112,17 +190,32 @@ export default function SubscriptionPage() {
             choices from one place.
           </p>
         </div>
-        {snapshot?.currentPlan.manageUrl ? (
-          <Link
-            href={snapshot.currentPlan.manageUrl}
-            target="_blank"
-            rel="noreferrer"
+        {snapshot?.portalAvailable ? (
+          <button
+            type="button"
+            onClick={() => void openPortal("manage")}
+            disabled={billingBusy}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium text-slate-100 transition hover:border-slate-500 hover:bg-slate-800"
           >
-            Open billing portal <ExternalLink size={14} />
-          </Link>
+            {actionState.kind === "portal-manage" ? (
+              <>
+                <Loader2 size={14} className="animate-spin" />
+                Opening billing portal…
+              </>
+            ) : (
+              <>
+                Open billing portal <ExternalLink size={14} />
+              </>
+            )}
+          </button>
         ) : null}
       </div>
+
+      {actionState.error ? (
+        <div className="mb-6 rounded-2xl border border-rose-500/20 bg-rose-500/5 px-4 py-3 text-sm text-rose-200">
+          {actionState.error}
+        </div>
+      ) : null}
 
       {state.kind === "loading" ? (
         <LoadingState />
@@ -141,7 +234,15 @@ export default function SubscriptionPage() {
 
           <section className="mb-6 grid gap-4 lg:grid-cols-[1.25fr_0.95fr]">
             <CurrentPlanCard snapshot={snapshot} renewalLabel={renewalLabel} />
-            <PaymentMethodCard snapshot={snapshot} />
+            <PaymentMethodCard
+              snapshot={snapshot}
+              busy={billingBusy}
+              onUpdatePaymentMethod={() => {
+                if (!snapshot.portalAvailable) return;
+                void openPortal("payment_method_update");
+              }}
+              updateBusy={actionState.kind === "portal-payment-method"}
+            />
           </section>
 
           <section className="mb-6">
@@ -155,7 +256,14 @@ export default function SubscriptionPage() {
                   key={plan.tier}
                   plan={plan}
                   currentTier={snapshot.currentPlan.tier}
-                  manageUrl={snapshot.currentPlan.manageUrl}
+                  busy={billingBusy}
+                  actionBusy={
+                    actionState.kind === `checkout-${plan.tier}` ||
+                    actionState.kind === "portal-manage" ||
+                    actionState.kind === "portal-update"
+                  }
+                  portalAvailable={snapshot.portalAvailable}
+                  onSelect={() => handlePlanAction(plan.tier)}
                 />
               ))}
             </div>
@@ -174,8 +282,9 @@ export default function SubscriptionPage() {
             <RetentionDialog
               planName={snapshot.currentPlan.name}
               renewalLabel={renewalLabel}
-              manageUrl={snapshot.currentPlan.manageUrl}
-              preview={snapshot.preview}
+              canManage={snapshot.portalAvailable}
+              busy={actionState.kind === "portal-cancel"}
+              onOpenPortal={() => void openPortal("subscription_cancel")}
               onClose={() => setCancelDialogOpen(false)}
             />
           ) : null}
@@ -256,7 +365,17 @@ function CurrentPlanCard({
   );
 }
 
-function PaymentMethodCard({ snapshot }: { snapshot: SubscriptionSnapshot }) {
+function PaymentMethodCard({
+  snapshot,
+  onUpdatePaymentMethod,
+  busy,
+  updateBusy,
+}: {
+  snapshot: SubscriptionSnapshot;
+  onUpdatePaymentMethod: () => void;
+  busy: boolean;
+  updateBusy: boolean;
+}) {
   const paymentMethod = snapshot.paymentMethod;
 
   return (
@@ -287,12 +406,30 @@ function PaymentMethodCard({ snapshot }: { snapshot: SubscriptionSnapshot }) {
           Billing changes flow through the same portal used for upgrades,
           downgrades, and invoices so web and mobile stay in sync.
         </p>
-        {!snapshot.currentPlan.manageUrl ? (
+        {snapshot.portalAvailable ? (
+          <button
+            type="button"
+            onClick={onUpdatePaymentMethod}
+            disabled={busy}
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-100 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {updateBusy ? (
+              <>
+                <Loader2 size={14} className="animate-spin" />
+                Opening payment settings…
+              </>
+            ) : (
+              <>
+                Update payment method <ExternalLink size={14} />
+              </>
+            )}
+          </button>
+        ) : (
           <p className="rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-2 text-slate-300">
             Payment method editing will light up automatically as soon as the
             billing backend is available.
           </p>
-        ) : null}
+        )}
       </div>
     </section>
   );
@@ -301,14 +438,24 @@ function PaymentMethodCard({ snapshot }: { snapshot: SubscriptionSnapshot }) {
 function PlanCard({
   plan,
   currentTier,
-  manageUrl,
+  onSelect,
+  busy,
+  actionBusy,
+  portalAvailable,
 }: {
   plan: SubscriptionPlanSummary;
   currentTier: SubscriptionTier;
-  manageUrl: string | null;
+  onSelect: () => void;
+  busy: boolean;
+  actionBusy: boolean;
+  portalAvailable: boolean;
 }) {
   const actionLabel = planActionLabel(plan.tier, currentTier);
   const isCurrent = plan.tier === currentTier;
+  const disabled =
+    busy ||
+    (!isCurrent && currentTier !== "free" && !portalAvailable) ||
+    (isCurrent && !portalAvailable);
 
   return (
     <article
@@ -337,33 +484,29 @@ function PlanCard({
         ))}
       </ul>
 
-      {manageUrl ? (
-        <Link
-          href={manageUrl}
-          target="_blank"
-          rel="noreferrer"
-          className={`mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
-            isCurrent
-              ? "border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
-              : "bg-tarmoto-cyan text-slate-950 hover:bg-tarmoto-cyan-light"
-          }`}
-        >
-          {actionLabel}
-          {!isCurrent ? <ExternalLink size={14} /> : null}
-        </Link>
-      ) : (
-        <button
-          type="button"
-          disabled
-          className={`mt-6 w-full rounded-xl px-4 py-2.5 text-sm font-semibold ${
-            isCurrent
-              ? "border border-slate-700 bg-slate-800 text-slate-300"
-              : "bg-slate-800 text-slate-400"
-          }`}
-        >
-          {actionLabel}
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={onSelect}
+        disabled={disabled}
+        aria-busy={actionBusy}
+        className={`mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+          isCurrent
+            ? "border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
+            : "bg-tarmoto-cyan text-slate-950 hover:bg-tarmoto-cyan-light"
+        } disabled:cursor-not-allowed disabled:opacity-60`}
+      >
+        {actionBusy ? (
+          <>
+            <Loader2 size={14} className="animate-spin" />
+            Opening…
+          </>
+        ) : (
+          <>
+            {actionLabel}
+            {!isCurrent ? <ExternalLink size={14} /> : null}
+          </>
+        )}
+      </button>
     </article>
   );
 }
@@ -454,14 +597,16 @@ function CancelPlanCard({
 function RetentionDialog({
   planName,
   renewalLabel,
-  manageUrl,
-  preview,
+  canManage,
+  busy,
+  onOpenPortal,
   onClose,
 }: {
   planName: string;
   renewalLabel: string;
-  manageUrl: string | null;
-  preview: boolean;
+  canManage: boolean;
+  busy: boolean;
+  onOpenPortal: () => void;
   onClose: () => void;
 }) {
   return (
@@ -497,22 +642,31 @@ function RetentionDialog({
             {`Keep ${planName}`}
           </button>
 
-          {manageUrl ? (
-            <Link
-              href={manageUrl}
-              target="_blank"
-              rel="noreferrer"
+          {canManage ? (
+            <button
+              type="button"
+              onClick={onOpenPortal}
+              disabled={busy}
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-300 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-amber-200"
             >
-              Open billing portal <ExternalLink size={14} />
-            </Link>
+              {busy ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" />
+                  Opening billing portal…
+                </>
+              ) : (
+                <>
+                  Open billing portal <ExternalLink size={14} />
+                </>
+              )}
+            </button>
           ) : (
             <button
               type="button"
               disabled
               className="rounded-xl bg-amber-300/40 px-4 py-2.5 text-sm font-semibold text-slate-950"
             >
-              {preview ? "Portal coming soon" : "Billing portal unavailable"}
+              Billing portal unavailable
             </button>
           )}
         </div>

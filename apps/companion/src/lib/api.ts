@@ -571,6 +571,22 @@ export const accountApi = {
       body: JSON.stringify(data),
     }),
   getSubscription: () => apiFetch("/account/subscription"),
+  createCheckoutSession: (data: { tier: "premium" | "pro" }) =>
+    apiFetch<{ url: string }>("/account/subscription/checkout", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  createPortalSession: (data?: {
+    flow?:
+      | "manage"
+      | "payment_method_update"
+      | "subscription_cancel"
+      | "subscription_update";
+  }) =>
+    apiFetch<{ url: string }>("/account/subscription/portal", {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    }),
   getBikes: () => apiFetch("/account/bikes"),
   addBike: (data: unknown) =>
     apiFetch("/account/bikes", { method: "POST", body: JSON.stringify(data) }),
