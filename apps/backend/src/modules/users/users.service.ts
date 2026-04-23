@@ -1,6 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { pointToLatLng } from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
 import { UserContact } from '../../entities/user-contact.entity.js';
@@ -10,6 +17,38 @@ import {
   UserResponseDto,
   ContactResponseDto,
 } from './dto/user-response.dto.js';
+
+const AVATAR_PATH_PREFIX = '/uploads/avatars/';
+const AVATAR_UPLOAD_DIR = join(process.cwd(), 'uploads', 'avatars');
+const ALLOWED_AVATAR_TYPES = new Map<string, string>([
+  ['image/jpeg', '.jpg'],
+  ['image/png', '.png'],
+  ['image/webp', '.webp'],
+]);
+
+function managedAvatarFilePath(avatarUrl: string | null): string | null {
+  if (!avatarUrl) return null;
+
+  try {
+    const parsed = new URL(avatarUrl);
+    if (!parsed.pathname.startsWith(AVATAR_PATH_PREFIX)) return null;
+    return join(process.cwd(), parsed.pathname.slice(1));
+  } catch {
+    if (!avatarUrl.startsWith(AVATAR_PATH_PREFIX)) return null;
+    return join(process.cwd(), avatarUrl.slice(1));
+  }
+}
+
+async function deleteManagedAvatar(avatarUrl: string | null): Promise<void> {
+  const filePath = managedAvatarFilePath(avatarUrl);
+  if (!filePath) return;
+
+  try {
+    await unlink(filePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+}
 
 @Injectable()
 export class UsersService {
@@ -36,6 +75,7 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
+    const previousAvatarUrl = user.avatar_url;
 
     if (dto.display_name !== undefined) {
       user.display_name = dto.display_name;
@@ -73,7 +113,49 @@ export class UsersService {
     }
 
     const saved = await this.userRepo.save(user);
+    if (
+      dto.avatar_url !== undefined &&
+      previousAvatarUrl !== saved.avatar_url
+    ) {
+      await deleteManagedAvatar(previousAvatarUrl);
+    }
     return this.toUserResponse(saved);
+  }
+
+  async uploadAvatar(
+    userId: string,
+    file: Express.Multer.File,
+    publicBaseUrl: string,
+  ): Promise<UserResponseDto> {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const extension = ALLOWED_AVATAR_TYPES.get(file.mimetype);
+    if (!extension) {
+      throw new BadRequestException(
+        'Avatar must be a PNG, JPEG, or WebP image',
+      );
+    }
+
+    await mkdir(AVATAR_UPLOAD_DIR, { recursive: true });
+    const filename = `${userId}-${Date.now()}-${randomUUID()}${extension}`;
+    const filePath = join(AVATAR_UPLOAD_DIR, filename);
+    const previousAvatarUrl = user.avatar_url;
+    const nextAvatarUrl = `${publicBaseUrl}${AVATAR_PATH_PREFIX}${filename}`;
+
+    await writeFile(filePath, file.buffer);
+
+    try {
+      user.avatar_url = nextAvatarUrl;
+      const saved = await this.userRepo.save(user);
+      await deleteManagedAvatar(previousAvatarUrl);
+      return this.toUserResponse(saved);
+    } catch (error) {
+      await deleteManagedAvatar(nextAvatarUrl);
+      throw error;
+    }
   }
 
   async listContacts(userId: string): Promise<ContactResponseDto[]> {

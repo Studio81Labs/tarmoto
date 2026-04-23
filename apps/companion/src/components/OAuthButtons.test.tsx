@@ -3,7 +3,7 @@ import { OAuthButtons } from "./OAuthButtons";
 
 describe("OAuthButtons", () => {
   it("does not render the divider when only unsupported providers are present", () => {
-    render(<OAuthButtons providers={["github"]} />);
+    render(<OAuthButtons providers={[]} />);
 
     expect(screen.queryByText("or continue with")).not.toBeInTheDocument();
     expect(

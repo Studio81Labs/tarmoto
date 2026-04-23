@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UsersController } from './users.controller.js';
 import { UsersService } from './users.service.js';
@@ -9,7 +9,11 @@ describe('UsersController', () => {
   let controller: UsersController;
   let service: jest.Mocked<UsersService>;
 
-  const mockReq = { user: { userId: 'user-1' } } as never;
+  const mockReq = {
+    user: { userId: 'user-1' },
+    protocol: 'https',
+    get: jest.fn().mockReturnValue('api.tarmoto.test'),
+  } as never;
 
   const mockUser = {
     id: 'user-1',
@@ -34,6 +38,7 @@ describe('UsersController', () => {
     const mockService = {
       getProfile: jest.fn().mockResolvedValue(mockUser),
       updateProfile: jest.fn().mockResolvedValue(mockUser),
+      uploadAvatar: jest.fn().mockResolvedValue(mockUser),
       listContacts: jest.fn().mockResolvedValue([mockContact]),
       addContact: jest.fn().mockResolvedValue(mockContact),
       deleteContact: jest.fn().mockResolvedValue(undefined),
@@ -66,6 +71,31 @@ describe('UsersController', () => {
       await controller.updateProfile(mockReq, dto);
 
       expect(service.updateProfile).toHaveBeenCalledWith('user-1', dto);
+    });
+  });
+
+  describe('POST /users/me/avatar', () => {
+    it('should upload an avatar and return the updated profile', async () => {
+      const file = {
+        originalname: 'rider.png',
+        mimetype: 'image/png',
+        buffer: Buffer.from('avatar'),
+        size: 6,
+      } as Express.Multer.File;
+
+      await controller.uploadAvatar(mockReq, file);
+
+      expect(service.uploadAvatar).toHaveBeenCalledWith(
+        'user-1',
+        file,
+        'https://api.tarmoto.test',
+      );
+    });
+
+    it('should reject missing files', async () => {
+      await expect(controller.uploadAvatar(mockReq, undefined)).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 
