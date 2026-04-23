@@ -4,8 +4,11 @@ import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
+import { OAuthButtons } from "@/components/OAuthButtons";
 import { registerUser } from "@/lib/api";
 import { safeCallbackUrl } from "@/lib/callback-url";
+
+const oauthProviders: string[] = [];
 
 function RegisterForm() {
   const [displayName, setDisplayName] = useState("");
@@ -101,6 +104,8 @@ function RegisterForm() {
           {loading ? "Creating account..." : "Create account"}
         </button>
       </form>
+
+      <OAuthButtons providers={oauthProviders} />
 
       <p className="mt-6 text-center text-sm text-slate-400">
         Already have an account?{" "}
