@@ -23,6 +23,15 @@ function TestHarness({ routes }: { routes?: PlannerClosureRoute[] }) {
   );
 }
 
+const route: PlannerClosureRoute = {
+  id: "day-1",
+  label: "Day 1",
+  points: [
+    { lat: 46.5, lng: 10.4 },
+    { lat: 46.6, lng: 10.5 },
+  ],
+};
+
 describe("usePasses", () => {
   beforeEach(() => {
     vi.mocked(api.GET).mockReset();
@@ -43,5 +52,41 @@ describe("usePasses", () => {
     });
 
     expect(passesApi.checkRoute).not.toHaveBeenCalled();
+  });
+
+  it("keeps route loading active on the first render after routes appear", async () => {
+    let resolveRouteCheck:
+      | ((value: Awaited<ReturnType<typeof passesApi.checkRoute>>) => void)
+      | undefined;
+    const routeCheck = new Promise<
+      Awaited<ReturnType<typeof passesApi.checkRoute>>
+    >((resolve) => {
+      resolveRouteCheck = resolve;
+    });
+    vi.mocked(passesApi.checkRoute).mockReturnValue(routeCheck as never);
+
+    const { rerender } = render(<TestHarness />);
+
+    await waitFor(() => {
+      expect(screen.getByText("loaded")).toBeInTheDocument();
+      expect(screen.getByText("route-idle")).toBeInTheDocument();
+    });
+
+    rerender(<TestHarness routes={[route]} />);
+
+    expect(screen.getByText("route-loading")).toBeInTheDocument();
+    expect(screen.queryByText("route-idle")).not.toBeInTheDocument();
+
+    resolveRouteCheck?.({
+      data: {
+        closed_count: 0,
+        unknown_count: 0,
+        passes: [],
+      },
+    } as Awaited<ReturnType<typeof passesApi.checkRoute>>);
+
+    await waitFor(() => {
+      expect(screen.getByText("route-idle")).toBeInTheDocument();
+    });
   });
 });

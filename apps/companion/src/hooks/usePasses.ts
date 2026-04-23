@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, passesApi } from "@/lib/api";
 import {
   countByStatus,
@@ -22,6 +22,25 @@ export interface PassesQueryResult {
   routeError: string | null;
 }
 
+interface PassesState extends PassesQueryResult {
+  routeQueryKey: string | null;
+}
+
+function buildRouteQueryKey(
+  forMonth: number | undefined,
+  routes: PlannerClosureRoute[],
+): string | null {
+  if (routes.length === 0) return null;
+
+  return JSON.stringify({
+    forMonth: forMonth ?? null,
+    routes: routes.map((route) => ({
+      id: route.id,
+      points: route.points,
+    })),
+  });
+}
+
 /**
  * Fetches `/passes?for_month=<month>` and re-runs whenever `forMonth`
  * changes. `forMonth` is 1..12; omit (pass `undefined`) to let the backend
@@ -34,7 +53,11 @@ export function usePasses(
   forMonth: number | undefined,
   routes: PlannerClosureRoute[] = EMPTY_ROUTES,
 ): PassesQueryResult {
-  const [state, setState] = useState<PassesQueryResult>({
+  const routeQueryKey = useMemo(
+    () => buildRouteQueryKey(forMonth, routes),
+    [forMonth, routes],
+  );
+  const [state, setState] = useState<PassesState>({
     passes: [],
     routePasses: [],
     routeClosedCount: 0,
@@ -43,7 +66,11 @@ export function usePasses(
     routeLoading: routes.length > 0,
     error: null,
     routeError: null,
+    routeQueryKey,
   });
+
+  const hasPendingRouteCheck =
+    routeQueryKey != null && state.routeQueryKey !== routeQueryKey;
 
   useEffect(() => {
     if (routes.length === 0) {
@@ -52,7 +79,8 @@ export function usePasses(
         current.routeClosedCount === 0 &&
         current.routeUnknownCount === 0 &&
         !current.routeLoading &&
-        current.routeError == null
+        current.routeError == null &&
+        current.routeQueryKey == null
           ? current
           : {
               ...current,
@@ -61,6 +89,7 @@ export function usePasses(
               routeUnknownCount: 0,
               routeLoading: false,
               routeError: null,
+              routeQueryKey: null,
             },
       );
       return;
@@ -104,6 +133,7 @@ export function usePasses(
             routeUnknownCount: 0,
             routeLoading: false,
             routeError: "Failed to check route passes",
+            routeQueryKey,
           }));
           return;
         }
@@ -129,6 +159,7 @@ export function usePasses(
             rejectedCount > 0
               ? "Some route segments could not be checked."
               : null,
+          routeQueryKey,
         }));
       })
       .catch((err: Error) => {
@@ -140,11 +171,12 @@ export function usePasses(
           routeUnknownCount: 0,
           routeLoading: false,
           routeError: err.message || "Failed to check route passes",
+          routeQueryKey,
         }));
       });
 
     return () => ctrl.abort();
-  }, [forMonth, routes]);
+  }, [forMonth, routeQueryKey, routes]);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -187,5 +219,9 @@ export function usePasses(
     return () => ctrl.abort();
   }, [forMonth]);
 
-  return state;
+  return {
+    ...state,
+    routeLoading: state.routeLoading || hasPendingRouteCheck,
+    routeError: hasPendingRouteCheck ? null : state.routeError,
+  };
 }
