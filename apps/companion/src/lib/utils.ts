@@ -218,6 +218,11 @@ export function formatRelativeTime(iso: string): string {
   return formatDate(iso);
 }
 
+export function formatRideType(value: string): string {
+  if (!value) return "Ride";
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 // ── Confidence ──
 
 export function confidenceLabel(confidence: number): string {

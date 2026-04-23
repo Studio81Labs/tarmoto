@@ -1,4 +1,5 @@
 import { formatRoadQualityColor } from "@/lib/best-roads-format";
+import { escapeHtmlAttribute } from "@/lib/embed-utils";
 
 export type BestRoadsWidgetVariant = "compact" | "landscape";
 
@@ -151,12 +152,4 @@ function widgetDimensions(variant: BestRoadsWidgetVariant): WidgetDimensions {
 
 function round(value: number): number {
   return Math.round(value * 100) / 100;
-}
-
-function escapeHtmlAttribute(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
 }

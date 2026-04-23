@@ -27,6 +27,8 @@ describe('SharingController', () => {
     max_speed: 120.0,
     avg_road_quality: 4.2,
     duration_min: 90,
+    view_count: 7,
+    embed_click_count: 3,
     route_geometry: [{ lat: 49.2, lng: 16.6 }],
   };
 
@@ -59,6 +61,7 @@ describe('SharingController', () => {
       toggleShare: jest.fn().mockResolvedValue(mockShareResponse),
       unshare: jest.fn().mockResolvedValue(undefined),
       getByToken: jest.fn().mockResolvedValue(mockDetail),
+      trackEmbedClick: jest.fn().mockResolvedValue(undefined),
       listCommunityRides: jest.fn().mockResolvedValue(mockCommunityResponse),
     };
 
@@ -94,6 +97,12 @@ describe('SharingController', () => {
 
     expect(service.getByToken).toHaveBeenCalledWith('abc123');
     expect(result.rider_name).toBe('John Rider');
+  });
+
+  it('POST /rides/shared/:token/embed-click should track widget outbound clicks', async () => {
+    await controller.trackEmbedClick('abc123');
+
+    expect(service.trackEmbedClick).toHaveBeenCalledWith('abc123');
   });
 
   it('GET /rides/community should forward the full query through to the service', async () => {

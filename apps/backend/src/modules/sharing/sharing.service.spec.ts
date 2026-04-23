@@ -41,6 +41,7 @@ describe('SharingService', () => {
     share_token: 'abc123def456abc123def456abc12345',
     is_public: true,
     view_count: 7,
+    embed_click_count: 3,
     created_at: new Date('2026-04-14T11:00:00Z'),
     ride: mockRide,
     user: { display_name: 'John Rider' },
@@ -63,6 +64,7 @@ describe('SharingService', () => {
     // `getByToken` to reflect the post-increment value, and the mock row
     // is shared by reference across the `findOne` return values.
     mockShared.view_count = 7;
+    mockShared.embed_click_count = 3;
 
     sharedRideRepo = {
       findOne: jest.fn().mockResolvedValue(mockShared),
@@ -193,6 +195,7 @@ describe('SharingService', () => {
       expect(result.distance_km).toBe(42.5);
       expect(result.avg_curviness).toBe(3.1);
       expect(result.duration_min).toBe(90);
+      expect(result.embed_click_count).toBe(3);
       expect(result.route_geometry).toHaveLength(3);
       expect(result.route_geometry![0]).toEqual({ lat: 49.2, lng: 16.6 });
     });
@@ -266,6 +269,26 @@ describe('SharingService', () => {
       const result = await service.getByToken('abc123');
 
       expect(result.rider_name).toBe('Unknown');
+    });
+  });
+
+  describe('trackEmbedClick', () => {
+    it('atomically increments embed_click_count for a shared ride token', async () => {
+      await service.trackEmbedClick('abc123def456abc123def456abc12345');
+
+      expect(sharedRideRepo.increment).toHaveBeenCalledWith(
+        { id: 'shared-1' },
+        'embed_click_count',
+        1,
+      );
+    });
+
+    it('throws NotFoundException when the token does not exist', async () => {
+      sharedRideRepo.findOne!.mockResolvedValueOnce(null);
+
+      await expect(service.trackEmbedClick('missing')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
