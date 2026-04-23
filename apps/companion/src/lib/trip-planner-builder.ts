@@ -193,8 +193,10 @@ function buildLegPoints(
   const dy = end[1] - start[1];
   const magnitude = Math.hypot(dx, dy);
   if (magnitude < 1e-9) return [start, end];
+  if (parameters.roadPreference === "direct") {
+    return [start, end];
+  }
 
-  const distanceKm = pointsDistanceKm([start, end]);
   const scenicFactor =
     {
       direct: 0.08,
@@ -203,10 +205,7 @@ function buildLegPoints(
       curvy: 0.3,
     }[parameters.roadPreference] +
     Math.max(0, parameters.minQuality - 2) * 0.02;
-  const amplitude = Math.min(
-    0.11,
-    Math.max(0.01, distanceKm * scenicFactor * 0.015),
-  );
+  const amplitude = Math.min(0.11, magnitude * scenicFactor * 0.22);
   const offsetLng = (-dy / magnitude) * amplitude;
   const offsetLat = (dx / magnitude) * amplitude;
   const sign =
@@ -229,10 +228,6 @@ function buildLegPoints(
     offsetLng * 0.7,
     offsetLat * 0.7,
   );
-
-  if (parameters.roadPreference === "direct") {
-    return [start, p2, end];
-  }
 
   return [start, p1, p2, p3, end];
 }
