@@ -76,6 +76,7 @@ export default function TripPlannerPage() {
   >([]);
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const generationLockRef = useRef(false);
+  const activeTripIdRef = useRef<string | null>(null);
   const selectedOptionIdRef = useRef<string | null>(null);
   const activeTrip = useTripStore((s) => s.activeTrip);
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
@@ -161,11 +162,18 @@ export default function TripPlannerPage() {
   }, []);
 
   useEffect(() => {
+    activeTripIdRef.current = activeTrip?.id ?? null;
+  }, [activeTrip]);
+
+  useEffect(() => {
     selectedOptionIdRef.current = selectedOptionId;
   }, [selectedOptionId]);
 
   useEffect(() => {
-    if (!activeTrip) return;
+    if (!activeTrip) {
+      if (selectedOptionId !== null) setSelectedOptionId(null);
+      return;
+    }
     const matchingOption = generatedOptions.find(
       (option) => option.trip.id === activeTrip.id,
     );
@@ -186,6 +194,7 @@ export default function TripPlannerPage() {
       return;
     }
     if (generationLockRef.current) return;
+    const activeTripIdAtStart = activeTrip?.id ?? null;
 
     setGenerationError(null);
     generationLockRef.current = true;
@@ -193,6 +202,7 @@ export default function TripPlannerPage() {
     try {
       await delay(180);
       const options = generateTripOptions(plannerParams);
+      if (activeTripIdRef.current !== activeTripIdAtStart) return;
       setGeneratedOptions(options);
       setSelectedOptionId(options[0]?.id ?? null);
       setActiveTrip(options[0]?.trip ?? null);
@@ -206,7 +216,13 @@ export default function TripPlannerPage() {
       generationLockRef.current = false;
       setGenerating(false);
     }
-  }, [plannerParams, setActiveTrip, setGenerating, surfacePreference.length]);
+  }, [
+    activeTrip,
+    plannerParams,
+    setActiveTrip,
+    setGenerating,
+    surfacePreference.length,
+  ]);
 
   const handleSelectOption = useCallback(
     (option: GeneratedTripOption) => {

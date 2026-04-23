@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import TripPlannerPage from "./page";
 import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
 import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
@@ -362,6 +368,27 @@ describe("TripPlannerPage", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("clears the generated selection when the active trip is cleared", async () => {
+    const { rerender } = render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() => expect(setActiveTrip).toHaveBeenCalledWith(activeTrip));
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Best fit" }),
+    ).toBeInTheDocument();
+
+    storeState.activeTrip = null;
+    rerender(<TripPlannerPage />);
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "New Trip" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Regenerate day 1" }),
+    ).toBeNull();
+  });
+
   it("ignores rapid repeat regenerate clicks while generation is already running", async () => {
     render(<TripPlannerPage />);
 
@@ -391,5 +418,26 @@ describe("TripPlannerPage", () => {
 
     await waitFor(() => expect(regenerateTripDayMock).toHaveBeenCalledTimes(1));
     expect(setActiveTrip).not.toHaveBeenCalledWith(scenicTrip);
+  });
+
+  it("drops generated results when the active trip changes before generation finishes", async () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    storeState.activeTrip = importedTrip;
+    rerender(<TripPlannerPage />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(180);
+    });
+
+    expect(generateTripOptionsMock).toHaveBeenCalledTimes(1);
+    expect(setActiveTrip).not.toHaveBeenCalledWith(activeTrip);
+    expect(screen.queryByText("Scenic sweep")).not.toBeInTheDocument();
+    expect(screen.getByText("Imported route")).toBeInTheDocument();
+
+    vi.useRealTimers();
   });
 });

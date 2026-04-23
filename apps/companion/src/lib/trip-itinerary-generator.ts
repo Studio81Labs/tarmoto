@@ -92,7 +92,7 @@ export function generateTripOptions(
         status: "draft",
         createdAt: now,
         updatedAt: now,
-        parameters: normalizedParams,
+        parameters: cloneTripParameters(normalizedParams),
         collaborators: [],
         days,
       },
@@ -131,10 +131,7 @@ export function regenerateTripDay(
   return {
     ...trip,
     updatedAt: new Date().toISOString(),
-    parameters: {
-      ...normalizedParams,
-      surfacePreference: [...normalizedParams.surfacePreference],
-    },
+    parameters: cloneTripParameters(trip.parameters),
     collaborators: trip.collaborators.map((collaborator) => ({
       ...collaborator,
     })),
@@ -414,13 +411,17 @@ function normalizeParams(params: TripParameters): TripParameters {
   };
 }
 
+function cloneTripParameters(params: TripParameters): TripParameters {
+  return {
+    ...params,
+    surfacePreference: [...params.surfacePreference],
+  };
+}
+
 function cloneTrip(trip: Trip): Trip {
   return {
     ...trip,
-    parameters: {
-      ...trip.parameters,
-      surfacePreference: [...trip.parameters.surfacePreference],
-    },
+    parameters: cloneTripParameters(trip.parameters),
     collaborators: trip.collaborators.map((collaborator) => ({
       ...collaborator,
     })),

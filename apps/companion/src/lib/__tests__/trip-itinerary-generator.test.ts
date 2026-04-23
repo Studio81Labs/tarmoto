@@ -44,6 +44,11 @@ describe("trip-itinerary-generator", () => {
         ),
       ).toBe(true);
     }
+
+    expect(options[0]?.trip.parameters).not.toBe(options[1]?.trip.parameters);
+    expect(options[0]?.trip.parameters.surfacePreference).not.toBe(
+      options[1]?.trip.parameters.surfacePreference,
+    );
   });
 
   it("regenerates only the selected day while keeping the trip boundaries intact", () => {
@@ -118,5 +123,30 @@ describe("trip-itinerary-generator", () => {
 
     expect(regenerated.days[1]?.title).toContain("Fastest line");
     expect(regenerated.days[1]?.title).not.toContain("Scenic sweep");
+  });
+
+  it("keeps the original trip-level parameters when regenerating a single day", () => {
+    const trip = generateTripOptions({
+      ...params,
+      days: 3,
+      dailyKmTarget: 260,
+    })[0]!.trip;
+
+    const regenerated = regenerateTripDay(
+      trip,
+      {
+        ...params,
+        days: 5,
+        dailyKmTarget: 340,
+        surfacePreference: ["asphalt", "gravel", "dirt"],
+      },
+      2,
+    );
+
+    expect(regenerated.parameters).toEqual(trip.parameters);
+    expect(regenerated.parameters).not.toBe(trip.parameters);
+    expect(regenerated.parameters.surfacePreference).not.toBe(
+      trip.parameters.surfacePreference,
+    );
   });
 });
