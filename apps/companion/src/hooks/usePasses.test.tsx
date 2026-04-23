@@ -89,4 +89,39 @@ describe("usePasses", () => {
       expect(screen.getByText("route-idle")).toBeInTheDocument();
     });
   });
+
+  it("does not re-check routes when only non-query metadata changes", async () => {
+    vi.mocked(passesApi.checkRoute).mockResolvedValue({
+      data: {
+        closed_count: 0,
+        unknown_count: 0,
+        passes: [],
+      },
+    } as Awaited<ReturnType<typeof passesApi.checkRoute>>);
+
+    const { rerender } = render(<TestHarness routes={[route]} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("route-idle")).toBeInTheDocument();
+    });
+
+    expect(passesApi.checkRoute).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <TestHarness
+        routes={[
+          {
+            ...route,
+            label: "Renamed day 1",
+          },
+        ]}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("route-idle")).toBeInTheDocument();
+    });
+
+    expect(passesApi.checkRoute).toHaveBeenCalledTimes(1);
+  });
 });

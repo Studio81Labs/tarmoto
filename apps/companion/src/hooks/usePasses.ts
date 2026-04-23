@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, passesApi } from "@/lib/api";
 import {
   countByStatus,
@@ -10,6 +10,7 @@ import type { PlannerClosureRoute } from "@/lib/closures-summary";
 
 const EMPTY_ROUTES: PlannerClosureRoute[] = [];
 const EMPTY_ROUTE_PASSES: MountainPass[] = [];
+const EMPTY_ROUTE_POINTS: PlannerClosureRoute["points"][] = [];
 
 export interface PassesQueryResult {
   passes: MountainPass[];
@@ -57,6 +58,19 @@ export function usePasses(
     () => buildRouteQueryKey(forMonth, routes),
     [forMonth, routes],
   );
+  const routePointsRef =
+    useRef<PlannerClosureRoute["points"][]>(EMPTY_ROUTE_POINTS);
+  const routePointsQueryKeyRef = useRef<string | null>(null);
+
+  if (routePointsQueryKeyRef.current !== routeQueryKey) {
+    routePointsQueryKeyRef.current = routeQueryKey;
+    routePointsRef.current =
+      routeQueryKey == null
+        ? EMPTY_ROUTE_POINTS
+        : routes.map((route) => route.points);
+  }
+
+  const routePoints = routePointsRef.current;
   const [state, setState] = useState<PassesState>({
     passes: [],
     routePasses: [],
@@ -73,7 +87,7 @@ export function usePasses(
     routeQueryKey != null && state.routeQueryKey !== routeQueryKey;
 
   useEffect(() => {
-    if (routes.length === 0) {
+    if (routePoints.length === 0) {
       setState((current) =>
         current.routePasses.length === 0 &&
         current.routeClosedCount === 0 &&
@@ -103,10 +117,10 @@ export function usePasses(
     }));
 
     Promise.allSettled(
-      routes.map((route) =>
+      routePoints.map((points) =>
         passesApi.checkRoute(
           {
-            route: route.points,
+            route: points,
             for_month: forMonth,
           },
           { signal: ctrl.signal },
@@ -176,7 +190,7 @@ export function usePasses(
       });
 
     return () => ctrl.abort();
-  }, [forMonth, routeQueryKey, routes]);
+  }, [forMonth, routePoints, routeQueryKey]);
 
   useEffect(() => {
     const ctrl = new AbortController();
