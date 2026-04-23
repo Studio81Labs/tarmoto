@@ -7,6 +7,7 @@ import {
   LineChart,
   ReferenceDot,
   ResponsiveContainer,
+  type TooltipValueType,
   Tooltip,
   XAxis,
   YAxis,
@@ -38,6 +39,22 @@ interface SegmentTrendChartProps {
 }
 
 const DEFAULT_RANGE: TrendRange = "1y";
+
+function formatTrendTooltipLabel(value: React.ReactNode) {
+  return typeof value === "string" || typeof value === "number" ? value : "";
+}
+
+function formatTrendTooltipValue(
+  value: TooltipValueType | undefined,
+  name: React.ReactNode,
+) {
+  const numeric =
+    typeof value === "number" ? value : Number.parseFloat(String(value));
+  const label =
+    typeof name === "string" || typeof name === "number" ? String(name) : "";
+  if (!Number.isFinite(numeric)) return ["—", label] as const;
+  return [numeric.toFixed(2), label] as const;
+}
 
 export function SegmentTrendChart({
   segmentId,
@@ -130,16 +147,8 @@ export function SegmentTrendChart({
                     fontSize: 12,
                   }}
                   labelStyle={{ color: "#e2e8f0" }}
-                  labelFormatter={(value: string) => value}
-                  formatter={(value, name) => {
-                    const numeric =
-                      typeof value === "number"
-                        ? value
-                        : Number.parseFloat(String(value));
-                    const label = String(name);
-                    if (!Number.isFinite(numeric)) return ["—", label];
-                    return [numeric.toFixed(2), label];
-                  }}
+                  labelFormatter={formatTrendTooltipLabel}
+                  formatter={formatTrendTooltipValue}
                 />
                 <Line
                   type="monotone"
