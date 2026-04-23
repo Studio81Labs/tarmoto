@@ -251,8 +251,8 @@ export default function AccountPage() {
       margin: 1,
       width: 176,
       color: {
-        dark: "#f8fafc",
-        light: "#0f172a",
+        dark: "#0f172a",
+        light: "#f8fafc",
       },
     })
       .then((src) => {
