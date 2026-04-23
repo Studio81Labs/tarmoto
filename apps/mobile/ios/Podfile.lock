@@ -3,13 +3,28 @@ PODS:
   - hermes-engine (250829098.0.10):
     - hermes-engine/Pre-built (= 250829098.0.10)
   - hermes-engine/Pre-built (250829098.0.10)
-  - maplibre-react-native (10.4.2):
-    - maplibre-react-native/DynamicLibrary (= 10.4.2)
-    - React
+  - MapLibreReactNative (11.0.1):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
     - React-Core
-  - maplibre-react-native/DynamicLibrary (10.4.2):
-    - React
-    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - MMKVCore (2.4.0)
   - NitroMmkv (4.3.1):
     - hermes-engine
@@ -1515,7 +1530,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - react-native-vector-icons-material-design-icons (13.1.1)
+  - react-native-vector-icons-material-design-icons (12.5.0)
   - React-NativeModulesApple (0.85.1):
     - hermes-engine
     - React-callinvoker
@@ -2217,7 +2232,7 @@ PODS:
 DEPENDENCIES:
   - FBLazyVector (from `../node_modules/react-native/Libraries/FBLazyVector`)
   - hermes-engine (from `../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`)
-  - "maplibre-react-native (from `../node_modules/@maplibre/maplibre-react-native`)"
+  - "MapLibreReactNative (from `../node_modules/@maplibre/maplibre-react-native`)"
   - NitroMmkv (from `../node_modules/react-native-mmkv`)
   - NitroModules (from `../node_modules/react-native-nitro-modules`)
   - RCTDeprecation (from `../node_modules/react-native/ReactApple/Libraries/RCTFoundation/RCTDeprecation`)
@@ -2320,7 +2335,7 @@ EXTERNAL SOURCES:
   hermes-engine:
     :podspec: "../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec"
     :tag: hermes-v250829098.0.10
-  maplibre-react-native:
+  MapLibreReactNative:
     :path: "../node_modules/@maplibre/maplibre-react-native"
   NitroMmkv:
     :path: "../node_modules/react-native-mmkv"
@@ -2505,8 +2520,8 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   FBLazyVector: ed7eadee1965b0b918ca9d0f2c2328f7eb3fd095
-  hermes-engine: 97c7783f7cf29cc605b53f8cdae0b4d17f084e5b
-  maplibre-react-native: 37d86b5b7b04dedaceebc577644e67acd7b5f437
+  hermes-engine: 6d85087a04298d0081401aa8aa9da387e0ae59c0
+  MapLibreReactNative: 9678b56ba428d81084c9357ca0bc24e10e273577
   MMKVCore: 3d16ce9f7d411e135020915fde98a056859a1efa
   NitroMmkv: 4b4f95387a15161b346a6a93b9c7072c179e0e88
   NitroModules: bb964bd9a9e7e845569915d5cd2daafcc71bf8c4
@@ -2518,7 +2533,7 @@ SPEC CHECKSUMS:
   React: 6dbd7825a18782848e8c62f1feb16b344cb17ac6
   React-callinvoker: 90c70d14c7ca646fdae3e25e8d9fbb0fbb20459c
   React-Core: 9dce76263f670de254e896f317676e7e95369ac2
-  React-Core-prebuilt: 3c3bc6b876a145a90f3812b874a4f79616676b84
+  React-Core-prebuilt: 4023d5f97edcdb479a0e59e98c52732dd31bd393
   React-CoreModules: b9fadb43261b88cb0d3a2d59808603567e995095
   React-cxxreact: 6b36616248fea28ce6dfbffcf09322321eb96186
   React-debug: 8f85c5da52e386c83482e45744f6e61b39b9493d
@@ -2551,7 +2566,7 @@ SPEC CHECKSUMS:
   react-native-geolocation: c41d1ad8e832fa800b4e457c721e348bcc5aa147
   react-native-keep-awake: 21ff40767cde4bd81021ffee12480aee4b5b91bb
   react-native-safe-area-context: 6b4966397ada0f7dd481e4486a2ef936834861a1
-  react-native-vector-icons-material-design-icons: 99c750d15cbc5df6f240bf1e7a45a0c07d42a015
+  react-native-vector-icons-material-design-icons: 95914f2f6b18e26e5c9563afe33184e110afe674
   React-NativeModulesApple: 647d3ab78e02b3a40fedffd856744215219ff0a6
   React-networking: 8d40769c4823a7e26ae98ca5cd691edc87828743
   React-oscompat: 934d246490699f24fb70bbc5ca0da7e6808ab80c
@@ -2585,7 +2600,7 @@ SPEC CHECKSUMS:
   ReactAppDependencyProvider: 52da2413bc956c40a4de19ad32a92b87248f7ce8
   ReactCodegen: 412dce3842bee5e75304a3bcf25f9ec0bba56399
   ReactCommon: 66763e5bd1b778828ff6cb82d771b7162a5215c2
-  ReactNativeDependencies: 99f40f08229f8da1fa4696ae35da959991f1c956
+  ReactNativeDependencies: 6a65831703d709d48612b427bba518a54c55c6e5
   RNDeviceInfo: 4c852998208b60dc192ae3529e5867817719ad1e
   RNFS: 89de7d7f4c0f6bafa05343c578f61118c8282ed8
   RNGestureHandler: 187c5c7936abf427bc4d22d6c3b1ac80ad1f63c0
