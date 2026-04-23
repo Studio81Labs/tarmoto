@@ -1,4 +1,5 @@
 import { DEMO_TRIP } from "@/lib/demo-trip";
+import { clampScore } from "@/lib/segment-trend";
 import type {
   POI,
   RoutePreviewSegment,
@@ -24,6 +25,7 @@ type OptionPreset = {
   qualityDelta: number;
   elevationMultiplier: number;
   templateShift: number;
+  templateStride: number;
 };
 
 type RouteCoordinate = [number, number];
@@ -37,6 +39,7 @@ const OPTION_PRESETS: readonly OptionPreset[] = [
     qualityDelta: 0.15,
     elevationMultiplier: 1,
     templateShift: 0,
+    templateStride: 1,
   },
   {
     id: "scenic",
@@ -46,6 +49,7 @@ const OPTION_PRESETS: readonly OptionPreset[] = [
     qualityDelta: 0.25,
     elevationMultiplier: 1.14,
     templateShift: 1,
+    templateStride: 1,
   },
   {
     id: "fastest",
@@ -54,7 +58,8 @@ const OPTION_PRESETS: readonly OptionPreset[] = [
     distanceMultiplier: 0.88,
     qualityDelta: -0.1,
     elevationMultiplier: 0.86,
-    templateShift: 2,
+    templateShift: 1,
+    templateStride: 2,
   },
 ] as const;
 
@@ -67,17 +72,22 @@ export function generateTripOptions(
   const normalizedParams = normalizeParams(params);
 
   return OPTION_PRESETS.map((preset, optionIndex) => {
-    const days = Array.from({ length: normalizedParams.days }, (_, dayIndex) =>
-      buildGeneratedDay({
-        dayNumber: dayIndex + 1,
-        params: normalizedParams,
-        optionIndex,
-        preset,
-        template:
-          DEMO_TRIP.days[
-            (dayIndex + preset.templateShift) % DEMO_TRIP.days.length
-          ]!,
-      }),
+    const days = Array.from(
+      { length: normalizedParams.days },
+      (_, dayIndex) => {
+        const { template, variationSeed } = selectGeneratedTemplate(
+          dayIndex,
+          preset,
+        );
+        return buildGeneratedDay({
+          dayNumber: dayIndex + 1,
+          params: normalizedParams,
+          optionIndex,
+          preset,
+          template,
+          variationSeed,
+        });
+      },
     );
 
     const now = new Date().toISOString();
@@ -108,9 +118,11 @@ export function regenerateTripDay(trip: Trip, dayNumber: number): Trip {
   const currentDay = trip.days[dayIndex]!;
   const optionIndex = resolvePresetIndexForTrip(trip);
   const preset = OPTION_PRESETS[optionIndex]!;
+  const variationSeed = hashString(
+    `${trip.updatedAt}:${trip.id}:${dayNumber}:${currentDay.title ?? `day-${dayNumber}`}`,
+  );
   const templateIndex =
-    (hashString(currentDay.title ?? `day-${dayNumber}`) + dayNumber) %
-    DEMO_TRIP.days.length;
+    (variationSeed + optionIndex * 3 + dayNumber) % DEMO_TRIP.days.length;
   const template = DEMO_TRIP.days[templateIndex]!;
   const regeneratedDay = buildGeneratedDay({
     dayNumber,
@@ -119,6 +131,7 @@ export function regenerateTripDay(trip: Trip, dayNumber: number): Trip {
     preset,
     template,
     existingDay: currentDay,
+    variationSeed,
   });
 
   const days = trip.days.map((day, index) =>
@@ -143,6 +156,7 @@ function buildGeneratedDay({
   preset,
   template,
   existingDay,
+  variationSeed = 0,
 }: {
   dayNumber: number;
   params: TripParameters;
@@ -150,26 +164,41 @@ function buildGeneratedDay({
   preset: OptionPreset;
   template: TripDay;
   existingDay?: TripDay;
+  variationSeed?: number;
 }): TripDay {
   const routingConstraints = routeConstraintProfile(params);
+  const variationDelta = seededRange(variationSeed, 0, 2);
   const coordinates = existingDay
     ? buildAnchoredRoute(
         existingDay,
         dayNumber,
         optionIndex,
         routingConstraints,
+        variationSeed,
       )
-    : buildShiftedRoute(template, dayNumber, optionIndex, routingConstraints);
-  const start = existingDay?.waypoints[0]
-    ? cloneWaypoint(existingDay.waypoints[0]!)
+    : buildShiftedRoute(
+        template,
+        dayNumber,
+        optionIndex,
+        routingConstraints,
+        variationSeed,
+      );
+  const startBoundary = existingDay
+    ? resolveBoundaryWaypoint(existingDay, "start")
+    : undefined;
+  const endBoundary = existingDay
+    ? resolveBoundaryWaypoint(existingDay, "end")
+    : undefined;
+  const start = startBoundary
+    ? cloneWaypoint(startBoundary)
     : buildWaypointFromCoordinate({
         id: `day-${dayNumber}-start`,
         name: template.waypoints[0]?.name ?? `Day ${dayNumber} start`,
         type: "start",
         coordinate: coordinates[0]!,
       });
-  const end = existingDay?.waypoints.at(-1)
-    ? cloneWaypoint(existingDay.waypoints.at(-1)!)
+  const end = endBoundary
+    ? cloneWaypoint(endBoundary)
     : buildWaypointFromCoordinate({
         id: `day-${dayNumber}-end`,
         name: template.waypoints.at(-1)?.name ?? `Day ${dayNumber} finish`,
@@ -188,26 +217,27 @@ function buildGeneratedDay({
       params.dailyKmTarget *
         preset.distanceMultiplier *
         routingConstraints.distanceMultiplier +
-        dailyDistanceSkew(dayNumber, params.roadPreference),
+        dailyDistanceSkew(dayNumber, params.roadPreference) +
+        variationDelta * 7,
     ),
     100,
     500,
   );
-  const avgQuality = clampNumber(
+  const avgQuality = roundClampedScore(
     Math.max(
       params.minQuality,
       template.avgQuality +
         preset.qualityDelta +
-        routingConstraints.qualityDelta,
+        routingConstraints.qualityDelta +
+        variationDelta * 0.04,
     ),
-    1,
-    5,
   );
   const elevationGain = Math.round(
     template.elevationGain *
       preset.elevationMultiplier *
       elevationPreferenceFactor(params.roadPreference) *
-      routingConstraints.elevationMultiplier,
+      routingConstraints.elevationMultiplier *
+      (1 + variationDelta * 0.02),
   );
   const durationMinutes = Math.max(
     120,
@@ -221,6 +251,7 @@ function buildGeneratedDay({
     dayNumber,
     optionIndex,
     avgQuality,
+    variationSeed,
   );
 
   return {
@@ -246,20 +277,23 @@ function buildSegments(
   dayNumber: number,
   optionIndex: number,
   avgQuality: number,
+  variationSeed: number,
 ): RoutePreviewSegment[] {
   const allowedSurfaces = params.surfacePreference;
   const sourceSegments =
     segments.length > 0 ? segments : (DEMO_TRIP.days[0]?.segments ?? []);
 
   return sourceSegments.slice(0, 3).map((segment, index) => {
-    const qualityScore = clampNumber(
+    const qualityScore = roundClampedScore(
       Math.max(params.minQuality, avgQuality + (index - 1) * 0.15),
-      1,
-      5,
     );
     const surfaceType =
       allowedSurfaces[
-        (dayNumber + optionIndex + index) % allowedSurfaces.length
+        (dayNumber +
+          optionIndex +
+          index +
+          seededIndexOffset(variationSeed, 1, 1)) %
+          allowedSurfaces.length
       ]!;
     return {
       ...segment,
@@ -295,6 +329,7 @@ function buildShiftedRoute(
   dayNumber: number,
   optionIndex: number,
   routingConstraints: ReturnType<typeof routeConstraintProfile>,
+  variationSeed: number,
 ): RouteCoordinate[] {
   const baseCoordinates =
     template.routeGeometry?.coordinates.length &&
@@ -306,9 +341,15 @@ function buildShiftedRoute(
         ]);
 
   const lngOffset =
-    0.18 * (dayNumber - 1) + 0.04 * optionIndex + routingConstraints.lngOffset;
+    0.18 * (dayNumber - 1) +
+    0.04 * optionIndex +
+    routingConstraints.lngOffset +
+    seededRange(variationSeed, 2, 0.024);
   const latOffset =
-    0.08 * (dayNumber - 1) + 0.03 * optionIndex + routingConstraints.latOffset;
+    0.08 * (dayNumber - 1) +
+    0.03 * optionIndex +
+    routingConstraints.latOffset +
+    seededRange(variationSeed, 3, 0.018);
 
   return baseCoordinates.map(([lng, lat], index) => [
     roundCoord(lng + lngOffset + index * 0.01),
@@ -321,19 +362,23 @@ function buildAnchoredRoute(
   dayNumber: number,
   optionIndex: number,
   routingConstraints: ReturnType<typeof routeConstraintProfile>,
+  variationSeed: number,
 ): RouteCoordinate[] {
-  const start = existingDay.waypoints[0]!;
-  const end = existingDay.waypoints.at(-1)!;
+  const start = resolveBoundaryWaypoint(existingDay, "start");
+  const end = resolveBoundaryWaypoint(existingDay, "end");
+  if (!start || !end) return [];
   const midLng =
     (start.location.lng + end.location.lng) / 2 +
     0.06 +
     optionIndex * 0.01 +
-    routingConstraints.lngOffset;
+    routingConstraints.lngOffset +
+    seededRange(variationSeed, 4, 0.02);
   const midLat =
     (start.location.lat + end.location.lat) / 2 +
     0.04 +
     dayNumber * 0.005 +
-    routingConstraints.latOffset;
+    routingConstraints.latOffset +
+    seededRange(variationSeed, 5, 0.016);
 
   return [
     [start.location.lng, start.location.lat],
@@ -380,6 +425,14 @@ function buildOvernightStop(end: Waypoint, dayNumber: number): POI {
 
 function buildTripName(params: TripParameters, preset: OptionPreset): string {
   return `${params.days}-day ${params.roadPreference} ${preset.label.toLowerCase()}`;
+}
+
+function selectGeneratedTemplate(dayIndex: number, preset: OptionPreset) {
+  const rawIndex = dayIndex * preset.templateStride + preset.templateShift;
+  return {
+    template: DEMO_TRIP.days[rawIndex % DEMO_TRIP.days.length]!,
+    variationSeed: rawIndex,
+  };
 }
 
 function resolvePresetIndexForTrip(trip: Trip): number {
@@ -499,6 +552,21 @@ function cloneWaypoint(waypoint: Waypoint): Waypoint {
   };
 }
 
+function resolveBoundaryWaypoint(
+  day: Pick<TripDay, "waypoints">,
+  boundary: "start" | "end",
+): Waypoint | undefined {
+  const explicitIndex =
+    boundary === "start"
+      ? day.waypoints.findIndex((waypoint) => waypoint.type === boundary)
+      : findLastIndex(day.waypoints, (waypoint) => waypoint.type === boundary);
+
+  if (explicitIndex >= 0) return day.waypoints[explicitIndex];
+  return boundary === "start"
+    ? day.waypoints[0]
+    : day.waypoints[day.waypoints.length - 1];
+}
+
 function dailyDistanceSkew(
   dayNumber: number,
   roadPreference: TripParameters["roadPreference"],
@@ -550,6 +618,23 @@ function routeConstraintProfile(
   };
 }
 
+function normalizedSeed(seed: number, salt: number) {
+  const mixed = (seed * 48_271 + salt * 69_621) % 2_147_483_647;
+  return mixed / 2_147_483_647;
+}
+
+function seededRange(seed: number, salt: number, maxAbs: number) {
+  return (normalizedSeed(seed, salt) * 2 - 1) * maxAbs;
+}
+
+function seededIndexOffset(seed: number, salt: number, maxAbs: number) {
+  return Math.round(seededRange(seed, salt, maxAbs));
+}
+
+function roundClampedScore(value: number) {
+  return Number(clampScore(value).toFixed(2));
+}
+
 function roundCoord(value: number) {
   return Math.round(value * 10000) / 10000;
 }
@@ -558,8 +643,16 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function clampNumber(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, Number(value.toFixed(2))));
+function findLastIndex<T>(
+  items: readonly T[],
+  predicate: (item: T) => boolean,
+) {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item && predicate(item)) return index;
+  }
+
+  return -1;
 }
 
 function hashString(value: string) {

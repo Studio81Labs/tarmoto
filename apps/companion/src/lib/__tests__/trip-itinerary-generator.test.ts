@@ -49,6 +49,10 @@ describe("trip-itinerary-generator", () => {
     expect(options[0]?.trip.parameters.surfacePreference).not.toBe(
       options[1]?.trip.parameters.surfacePreference,
     );
+    expect(options[2]?.trip.days[0]?.title).toContain("Gavia & Mortirolo");
+    expect(options[2]?.trip.days[0]?.title).not.toEqual(
+      options[0]?.trip.days[0]?.title,
+    );
   });
 
   it("regenerates only the selected day while keeping the trip boundaries intact", () => {
@@ -126,6 +130,23 @@ describe("trip-itinerary-generator", () => {
     expect(regenerated.days[1]?.segments?.[0]?.id).toContain("-2-0");
   });
 
+  it("regenerates a different itinerary variant on repeated runs", () => {
+    const trip = generateTripOptions({
+      ...params,
+      days: 3,
+    })[0]!.trip;
+
+    const firstRegenerated = regenerateTripDay(trip, 2);
+    const secondRegenerated = regenerateTripDay(firstRegenerated, 2);
+
+    expect(secondRegenerated.days[1]?.routeGeometry).not.toEqual(
+      firstRegenerated.days[1]?.routeGeometry,
+    );
+    expect(secondRegenerated.days[1]?.distanceKm).not.toBe(
+      firstRegenerated.days[1]?.distanceKm,
+    );
+  });
+
   it("keeps the original trip-level parameters when regenerating a single day", () => {
     const trip = generateTripOptions({
       ...params,
@@ -160,5 +181,42 @@ describe("trip-itinerary-generator", () => {
     );
     expect(constrained.avgQuality).toBeGreaterThan(unrestricted.avgQuality);
     expect(constrained.routeGeometry).not.toEqual(unrestricted.routeGeometry);
+  });
+
+  it("keeps regeneration anchored to the explicit route end waypoint", () => {
+    const trip = generateTripOptions({
+      ...params,
+      days: 2,
+    })[0]!.trip;
+    const explicitEnd = trip.days[0]!.waypoints.find(
+      (waypoint) => waypoint.type === "end",
+    )!;
+    const tripWithTrailingStop = {
+      ...trip,
+      days: trip.days.map((day, index) =>
+        index === 0
+          ? {
+              ...day,
+              waypoints: [
+                ...day.waypoints,
+                {
+                  id: "suggestion-accommodation-1",
+                  name: "Hotel add-on",
+                  type: "accommodation" as const,
+                  location: { lng: 11.11, lat: 46.91 },
+                },
+              ],
+            }
+          : day,
+      ),
+    };
+
+    const regenerated = regenerateTripDay(tripWithTrailingStop, 1);
+
+    expect(regenerated.days[0]?.waypoints.at(-1)).toEqual(explicitEnd);
+    expect(regenerated.days[0]?.routeGeometry?.coordinates.at(-1)).toEqual([
+      explicitEnd.location.lng,
+      explicitEnd.location.lat,
+    ]);
   });
 });
