@@ -19,6 +19,7 @@ export type {
 } from "./useOfflineRegions";
 
 export { useCarPlayRideMirror } from "./useCarPlayRideMirror";
+export { useVehicleNavigationDisplay } from "./useVehicleNavigationDisplay";
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { AppState, AppStateStatus } from "react-native";

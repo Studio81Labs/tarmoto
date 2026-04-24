@@ -24,6 +24,8 @@ import {
   formatRideTypeTitle,
   formatSpeedKmh,
   mountRideStatusBoard,
+  resumeRideStatusBoard,
+  suspendRideStatusBoard,
   type RideStatusBoard,
   unmountRideStatusBoard,
 } from "../carplay";
@@ -311,6 +313,17 @@ describe("ride status board lifecycle", () => {
 
     __resetCarPlayStateForTest();
     mountRideStatusBoard(makeBoard());
+    expect(bridge.setRoot).toHaveBeenCalledTimes(1);
+  });
+
+  it("can suspend and later resume the ride-status board", () => {
+    suspendRideStatusBoard();
+
+    expect(mountRideStatusBoard(makeBoard())).toBe(false);
+    expect(bridge.setRoot).not.toHaveBeenCalled();
+
+    resumeRideStatusBoard();
+    expect(mountRideStatusBoard(makeBoard())).toBe(true);
     expect(bridge.setRoot).toHaveBeenCalledTimes(1);
   });
 });

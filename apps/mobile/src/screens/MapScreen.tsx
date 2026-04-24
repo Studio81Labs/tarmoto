@@ -39,22 +39,18 @@ import React, {
   useRef,
   useState,
 } from "react";
-import {
-  type NativeSyntheticEvent,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import {
   Camera,
-  GeoJSONSource as ShapeSource,
-  Layer,
-  Map as MapView,
-  type PressEventWithFeatures,
+  CircleLayer,
+  FillLayer,
+  LineLayer,
+  MapView,
+  type OnPressEvent,
+  type RegionPayload,
+  ShapeSource,
   UserLocation,
   VectorSource,
-  type ViewStateChangeEvent,
 } from "@maplibre/maplibre-react-native";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import { api } from "@/services/api";
@@ -239,17 +235,17 @@ export default function MapScreen() {
   // is on we piggyback a fetch here so the layer always matches what the
   // rider sees.
   const handleRegionDidChange = useCallback(
-    (event: NativeSyntheticEvent<ViewStateChangeEvent>) => {
-      const [lng, lat] = event.nativeEvent.center;
+    (event: GeoJSON.Feature<GeoJSON.Point, RegionPayload>) => {
+      const [lng, lat] = event.geometry.coordinates;
       setCenter({ lat, lng });
-      setZoom(event.nativeEvent.zoom);
+      setZoom(event.properties.zoomLevel);
 
       if (showFunZonesOverlay) {
-        const [west, south, east, north] = event.nativeEvent.bounds;
+        const [northEast, southWest] = event.properties.visibleBounds;
         void fetchFunZones(
           bboxFromVisibleBounds([
-            [west, south],
-            [east, north],
+            [northEast[0], northEast[1]],
+            [southWest[0], southWest[1]],
           ]),
         );
       }
@@ -315,10 +311,8 @@ export default function MapScreen() {
   );
 
   const handleFunZonePress = useCallback(
-    (event: NativeSyntheticEvent<PressEventWithFeatures>) => {
-      const id = event.nativeEvent.features[0]?.properties?.id as
-        | string
-        | undefined;
+    (event: OnPressEvent) => {
+      const id = event.features[0]?.properties?.id as string | undefined;
       if (!id) return;
       const zone = funZones.find((z) => z.id === id);
       if (zone) setSelectedZone(zone);
@@ -332,13 +326,13 @@ export default function MapScreen() {
         style={styles.map}
         mapStyle={DEV_MAP_STYLE_URL}
         onRegionDidChange={handleRegionDidChange}
-        attribution
-        logo={false}
+        attributionEnabled
+        logoEnabled={false}
       >
         <Camera
-          initialViewState={{
-            center: [center.lng, center.lat],
-            zoom,
+          defaultSettings={{
+            centerCoordinate: [center.lng, center.lat],
+            zoomLevel: zoom,
           }}
         />
         <UserLocation animated />
@@ -351,15 +345,14 @@ export default function MapScreen() {
           <VectorSource
             key={`quality-${offlineSource?.regionId ?? "online"}`}
             id="tarmoto-quality"
-            tiles={[tileUrl]}
-            minzoom={0}
-            maxzoom={22}
+            tileUrlTemplates={[tileUrl]}
+            minZoomLevel={0}
+            maxZoomLevel={22}
           >
-            <Layer
-              type="line"
+            <LineLayer
               id="tarmoto-quality-lines"
-              source="tarmoto-quality"
-              source-layer="quality"
+              sourceID="tarmoto-quality"
+              sourceLayerID="quality"
               style={qualityStyle}
             />
           </VectorSource>
@@ -368,12 +361,11 @@ export default function MapScreen() {
         {showPassesOverlay && passes.length > 0 ? (
           <ShapeSource
             id="tarmoto-passes"
-            data={passesToFeatureCollection(passes)}
+            shape={passesToFeatureCollection(passes)}
           >
-            <Layer
-              type="circle"
+            <CircleLayer
               id="tarmoto-passes-markers"
-              source="tarmoto-passes"
+              sourceID="tarmoto-passes"
               style={passMarkerStyle}
             />
           </ShapeSource>
@@ -382,20 +374,18 @@ export default function MapScreen() {
         {showFunZonesOverlay && funZoneFc.features.length > 0 ? (
           <ShapeSource
             id="tarmoto-fun-zones"
-            data={funZoneFc}
+            shape={funZoneFc}
             onPress={handleFunZonePress}
-            hitbox={{ top: 1, right: 1, bottom: 1, left: 1 }}
+            hitbox={{ width: 44, height: 44 }}
           >
-            <Layer
-              type="fill"
+            <FillLayer
               id="tarmoto-fun-zones-fill"
-              source="tarmoto-fun-zones"
+              sourceID="tarmoto-fun-zones"
               style={funZoneFillStyle}
             />
-            <Layer
-              type="line"
+            <LineLayer
               id="tarmoto-fun-zones-line"
-              source="tarmoto-fun-zones"
+              sourceID="tarmoto-fun-zones"
               style={funZoneLineStyle}
             />
           </ShapeSource>

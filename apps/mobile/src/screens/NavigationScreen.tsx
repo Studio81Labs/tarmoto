@@ -34,9 +34,9 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import {
   Camera,
-  GeoJSONSource as ShapeSource,
-  Layer,
-  Map as MapView,
+  LineLayer,
+  MapView,
+  ShapeSource,
   UserLocation,
 } from "@maplibre/maplibre-react-native";
 import {
@@ -49,6 +49,7 @@ import {
 } from "@/theme";
 import { useKeepAwake } from "@/hooks";
 import { useNavigationSession } from "@/hooks/useNavigationSession";
+import { useVehicleNavigationDisplay } from "@/hooks/useVehicleNavigationDisplay";
 import { useTripStore } from "@/stores";
 import type { LatLng, TripDay, Waypoint } from "@/types";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
@@ -151,6 +152,20 @@ export default function NavigationScreen() {
     [polyline],
   );
 
+  const vehicleNextManeuver =
+    tick?.nextManeuver ??
+    (tick !== null
+      ? (maneuvers[maneuvers.length - 1] ?? null)
+      : (maneuvers[1] ?? maneuvers[0] ?? null));
+
+  useVehicleNavigationDisplay({
+    title: day?.title ?? `Day ${params.dayNumber}`,
+    polyline,
+    tick,
+    liveLocation,
+    nextManeuver: vehicleNextManeuver,
+  });
+
   const handleEnd = useCallback(() => {
     nav.goBack();
   }, [nav]);
@@ -185,11 +200,7 @@ export default function NavigationScreen() {
   //      (or overshot the last maneuver), so show "Arrive" instead of
   //      stale "Turn right" copy from the start of the route.
   //   3. No tick yet (pre-GPS-fix) → preview the first real turn.
-  const nextManeuver: Maneuver =
-    tick?.nextManeuver ??
-    (tick !== null
-      ? (maneuvers[maneuvers.length - 1] ?? maneuvers[0])
-      : (maneuvers[1] ?? maneuvers[0]));
+  const nextManeuver: Maneuver = vehicleNextManeuver ?? maneuvers[0];
   const offRoute = tick?.offRoute ?? false;
   // Live count of interior maneuvers still ahead of the rider. Falls back
   // to the total interior count before the first GPS fix lands so the
@@ -209,23 +220,22 @@ export default function NavigationScreen() {
       <MapView
         style={styles.map}
         mapStyle={DEV_MAP_STYLE_URL}
-        attribution={false}
-        logo={false}
+        attributionEnabled={false}
+        logoEnabled={false}
       >
         <Camera
-          initialViewState={{
-            center: [startCenter.lng, startCenter.lat],
-            zoom: 14,
+          defaultSettings={{
+            centerCoordinate: [startCenter.lng, startCenter.lat],
+            zoomLevel: 14,
           }}
-          trackUserLocation="default"
-          zoom={16}
+          followUserLocation
+          followZoomLevel={16}
         />
         <UserLocation animated />
-        <ShapeSource id="nav-route" data={routeShape}>
-          <Layer
-            type="line"
+        <ShapeSource id="nav-route" shape={routeShape}>
+          <LineLayer
             id="nav-route-line"
-            source="nav-route"
+            sourceID="nav-route"
             style={{
               lineColor: colors.primary,
               lineWidth: 6,
