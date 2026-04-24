@@ -4,7 +4,7 @@ import { TripCollaborateModal } from "@/components/TripCollaborateModal";
 import type { Trip } from "@/lib/types";
 import type { TripActivityEntry, TripSuggestion } from "@/lib/api";
 
-const makeTrip = (): Trip => ({
+const makeTrip = (overrides: Partial<Trip> = {}): Trip => ({
   id: "trip-1",
   name: "Pyrenees Loop",
   status: "planned",
@@ -22,6 +22,7 @@ const makeTrip = (): Trip => ({
   days: [],
   createdAt: "2026-04-20T10:00:00.000Z",
   updatedAt: "2026-04-20T10:00:00.000Z",
+  ...overrides,
 });
 
 const hoisted = vi.hoisted(() => ({
@@ -244,6 +245,98 @@ describe("TripCollaborateModal — collab tabs", () => {
         expect.objectContaining({ title: "My alternative" }),
       );
     });
+  });
+
+  it("anchors the created suggestion at the trip's first waypoint so the map overlay can render it", async () => {
+    // Without a lat/lng, the buildSuggestionCollection builder drops
+    // the suggestion from the map overlay. Anchor at the start of the
+    // first day so members see the proposal as a marker by default.
+    hoisted.createSuggestion.mockResolvedValueOnce({
+      data: { ...baseSuggestion, id: "sug-new", lat: 42.7, lng: 0.7 },
+    });
+
+    const trip = makeTrip({
+      days: [
+        {
+          dayNumber: 1,
+          waypoints: [
+            {
+              id: "wp-start",
+              name: "Start",
+              location: { lat: 42.7, lng: 0.7 },
+              type: "start",
+            },
+            {
+              id: "wp-end",
+              name: "End",
+              location: { lat: 42.8, lng: 0.9 },
+              type: "end",
+            },
+          ],
+          distanceKm: 0,
+          durationMinutes: 0,
+          elevationGain: 0,
+          avgQuality: 0,
+        },
+      ],
+    });
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={trip}
+        serverTripId="server-trip-1"
+        currentUserId="member-1"
+        ownerId="owner-1"
+        onClose={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: /suggestions/i }));
+    await screen.findByText("Scenic pass alt");
+
+    fireEvent.change(screen.getByLabelText(/suggestion title/i), {
+      target: { value: "Via the pass" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /submit suggestion/i }));
+
+    await waitFor(() => {
+      expect(hoisted.createSuggestion).toHaveBeenCalledWith(
+        "server-trip-1",
+        expect.objectContaining({ lat: 42.7, lng: 0.7 }),
+      );
+    });
+  });
+
+  it("clears a parent-level invite error when switching tabs so it doesn't bleed into Suggestions/Activity", async () => {
+    // Reproduce the leak: invite tab fires handleGenerate, errors out,
+    // and the alert lives in the parent div next to the active tab.
+    // Switching tabs must drop the error; otherwise a user sees an
+    // out-of-context invite failure while browsing suggestions.
+    const { tripSharesApi } = await import("@/lib/api");
+    const createSpy = vi
+      .spyOn(tripSharesApi, "create")
+      .mockRejectedValueOnce(new Error("Invite API down"));
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="member-1"
+        ownerId="owner-1"
+        onClose={() => {}}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /create invite link/i }),
+    );
+    expect(await screen.findByText(/invite api down/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: /suggestions/i }));
+    expect(screen.queryByText(/invite api down/i)).not.toBeInTheDocument();
+    createSpy.mockRestore();
   });
 
   it("deduplicates when the broadcast landed the row before the POST resolved", async () => {
