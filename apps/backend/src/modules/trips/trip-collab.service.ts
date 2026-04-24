@@ -5,7 +5,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
+import { pointToLatLng } from '@tarmoto/shared';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
 import { TripSuggestionVote } from '../../entities/trip-suggestion-vote.entity.js';
@@ -78,8 +79,11 @@ export class TripCollabService {
     if (suggestions.length === 0) return [];
 
     const ids = suggestions.map((s) => s.id);
+    // Use `In(ids)` so TypeORM emits a single `IN (...)` predicate
+    // instead of expanding an OR-chain of N equality checks — cleaner
+    // plan and one bound-parameter slot regardless of suggestion count.
     const votes = await this.voteRepo.find({
-      where: ids.map((id) => ({ suggestion_id: id })),
+      where: { suggestion_id: In(ids) },
     });
 
     const tallies = new Map<string, { up: number; down: number }>();
@@ -262,12 +266,17 @@ export class TripCollabService {
     });
     if (!suggestion) throw new NotFoundException('Suggestion not found');
 
-    await this.voteRepo.delete({
+    const deleted = await this.voteRepo.delete({
       suggestion_id: suggestionId,
       user_id: userId,
     });
 
-    return this.emitAndReturnSuggestion(userId, tripId, suggestion);
+    // Only broadcast a new tally if an actual row was removed.
+    // Repeated unvote calls (double-tap, retry) after the first one
+    // succeeds would otherwise keep pinging every subscriber with the
+    // same numbers.
+    const hasChange = (deleted.affected ?? 0) > 0;
+    return this.emitAndReturnSuggestion(userId, tripId, suggestion, hasChange);
   }
 
   // ── Messages ─────────────────────────────────────────────────────
@@ -362,6 +371,7 @@ export class TripCollabService {
     userId: string,
     tripId: string,
     suggestion: TripSuggestion,
+    emit = true,
   ): Promise<SuggestionDto> {
     const votes = await this.voteRepo.find({
       where: { suggestion_id: suggestion.id },
@@ -376,11 +386,13 @@ export class TripCollabService {
     }
 
     const response = toSuggestionDto(suggestion, { up, down }, callerVote);
-    this.events.emitToTrip(tripId, 'trip:suggestion:voted', {
-      suggestion_id: suggestion.id,
-      up_votes: up,
-      down_votes: down,
-    });
+    if (emit) {
+      this.events.emitToTrip(tripId, 'trip:suggestion:voted', {
+        suggestion_id: suggestion.id,
+        up_votes: up,
+        down_votes: down,
+      });
+    }
     return response;
   }
 }
@@ -390,7 +402,7 @@ function toSuggestionDto(
   tally: { up: number; down: number },
   callerVote: 'up' | 'down' | null,
 ): SuggestionDto {
-  const latLng = pointFromGeometry(s.location);
+  const latLng = pointToLatLng(s.location);
   return {
     id: s.id,
     trip_id: s.trip_id,
@@ -420,19 +432,6 @@ function toMessageDto(m: TripMessage): MessageDto {
     body: m.body,
     created_at: m.created_at.toISOString(),
   };
-}
-
-function pointFromGeometry(geom: unknown): { lat: number; lng: number } | null {
-  if (!geom || typeof geom !== 'object') return null;
-  const coords = (geom as { coordinates?: unknown }).coordinates;
-  if (
-    !Array.isArray(coords) ||
-    typeof coords[0] !== 'number' ||
-    typeof coords[1] !== 'number'
-  ) {
-    return null;
-  }
-  return { lat: coords[1], lng: coords[0] };
 }
 
 function clamp(v: number, lo: number, hi: number): number {

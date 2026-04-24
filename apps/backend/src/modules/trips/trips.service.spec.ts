@@ -111,6 +111,8 @@ describe('TripsService', () => {
   let manager: {
     create: jest.Mock;
     save: jest.Mock;
+    findOne: jest.Mock;
+    update: jest.Mock;
   };
   // Pulled out alongside `manager` so tests can call `mockImplementation`
   // / `mockRejectedValue` on a properly-typed `jest.Mock` without lint
@@ -138,6 +140,8 @@ describe('TripsService', () => {
           joined_at: NOW,
         }),
       ),
+      findOne: jest.fn().mockResolvedValue(null),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
 
     transactionMock = jest
@@ -537,14 +541,17 @@ describe('TripsService', () => {
       memberRepo.findOne.mockResolvedValueOnce({
         role: 'owner',
       } as TripMember);
-      tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
+      manager.findOne.mockResolvedValueOnce(makeOwnedTrip());
       mockGetDetailReturns(makeOwnedTrip({ title: 'Renamed' }));
 
       const result = await service.update(OWNER_ID, TRIP_ID, {
         title: 'Renamed',
       });
 
-      expect(tripRepo.update).toHaveBeenCalledWith(
+      // The write runs inside the transactional manager so the
+      // pre-image read and the UPDATE are serialised on the row lock.
+      expect(manager.update).toHaveBeenCalledWith(
+        Trip,
         { id: TRIP_ID },
         expect.objectContaining({ title: 'Renamed' }),
       );
@@ -562,7 +569,8 @@ describe('TripsService', () => {
       await expect(
         service.update(OTHER_ID, TRIP_ID, { title: 'x' }),
       ).rejects.toBeInstanceOf(NotFoundException);
-      expect(tripRepo.update).not.toHaveBeenCalled();
+      expect(manager.update).not.toHaveBeenCalled();
+      expect(transactionMock).not.toHaveBeenCalled();
     });
 
     it('404s a plain member who is not owner/admin', async () => {
@@ -573,31 +581,51 @@ describe('TripsService', () => {
       await expect(
         service.update(OTHER_ID, TRIP_ID, { title: 'x' }),
       ).rejects.toBeInstanceOf(NotFoundException);
-      expect(tripRepo.update).not.toHaveBeenCalled();
+      expect(manager.update).not.toHaveBeenCalled();
     });
 
     it('rejects a partial patch that lands an invalid (min > max) pairing', async () => {
       memberRepo.findOne.mockResolvedValueOnce({
         role: 'owner',
       } as TripMember);
-      tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip()); // current 150/350
+      manager.findOne.mockResolvedValueOnce(makeOwnedTrip()); // current 150/350
 
       await expect(
         service.update(OWNER_ID, TRIP_ID, { daily_km_min: 500 }),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(tripRepo.update).not.toHaveBeenCalled();
+      expect(manager.update).not.toHaveBeenCalled();
     });
 
     it('allows admins to mutate trip metadata', async () => {
       memberRepo.findOne.mockResolvedValueOnce({
         role: 'admin',
       } as TripMember);
-      tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
+      manager.findOne.mockResolvedValueOnce(makeOwnedTrip());
       mockGetDetailReturns(makeOwnedTrip({ status: 'planned' }));
 
       await service.update(OTHER_ID, TRIP_ID, { status: 'planned' });
 
-      expect(tripRepo.update).toHaveBeenCalled();
+      expect(manager.update).toHaveBeenCalled();
+    });
+
+    it('reads the pre-image with a pessimistic row lock to close the min/max race', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      manager.findOne.mockResolvedValueOnce(makeOwnedTrip());
+      mockGetDetailReturns(makeOwnedTrip({ title: 'Renamed' }));
+
+      await service.update(OWNER_ID, TRIP_ID, { title: 'Renamed' });
+
+      // The lock mode must be pessimistic_write so a concurrent PATCH
+      // blocks and re-reads the post-commit state, catching partial-
+      // patch races that would otherwise leave min > max.
+      expect(manager.findOne).toHaveBeenCalledWith(
+        Trip,
+        expect.objectContaining({
+          lock: { mode: 'pessimistic_write' },
+        }),
+      );
     });
 
     it('writes ONLY the supplied delta — untouched fields are not clobbered by concurrent PATCHes', async () => {
@@ -608,44 +636,50 @@ describe('TripsService', () => {
       memberRepo.findOne.mockResolvedValueOnce({
         role: 'owner',
       } as TripMember);
-      tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
+      manager.findOne.mockResolvedValueOnce(makeOwnedTrip());
       mockGetDetailReturns(makeOwnedTrip({ title: 'Renamed' }));
 
       await service.update(OWNER_ID, TRIP_ID, { title: 'Renamed' });
 
-      expect(tripRepo.update).toHaveBeenCalledWith(
+      expect(manager.update).toHaveBeenCalledWith(
+        Trip,
         { id: TRIP_ID },
         { title: 'Renamed' },
       );
       // Crucially: region, num_days, status, etc. are NOT present.
-      const [, delta] = tripRepo.update.mock.calls[0];
+      const [, , delta] = manager.update.mock.calls[0];
       expect(Object.keys(delta as object)).toEqual(['title']);
     });
 
-    it('skips the UPDATE call entirely when the DTO carries no fields', async () => {
+    it('skips the UPDATE + trip:updated emit entirely when the DTO carries no fields', async () => {
+      // No-op PATCH shouldn't rattle every subscribed member's UI.
       memberRepo.findOne.mockResolvedValueOnce({
         role: 'owner',
       } as TripMember);
-      tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
+      tripRepo.findOne.mockResolvedValueOnce(
+        makeOwnedTrip() as unknown as Trip,
+      ); // empty-PATCH existence probe
       mockGetDetailReturns(makeOwnedTrip());
 
       await service.update(OWNER_ID, TRIP_ID, {});
 
-      expect(tripRepo.update).not.toHaveBeenCalled();
+      expect(manager.update).not.toHaveBeenCalled();
+      expect(transactionMock).not.toHaveBeenCalled();
+      expect(events.emitToTrip).not.toHaveBeenCalled();
     });
 
-    it('validates min/max against current row when only one side is supplied', async () => {
+    it('validates min/max against locked row when only one side is supplied', async () => {
       // Pre-patch: (150, 350). Supply only min=500 → effective max is
-      // still 350 from the current row, so the pair is invalid.
+      // still 350 from the locked row, so the pair is invalid.
       memberRepo.findOne.mockResolvedValueOnce({
         role: 'owner',
       } as TripMember);
-      tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
+      manager.findOne.mockResolvedValueOnce(makeOwnedTrip());
 
       await expect(
         service.update(OWNER_ID, TRIP_ID, { daily_km_min: 500 }),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(tripRepo.update).not.toHaveBeenCalled();
+      expect(manager.update).not.toHaveBeenCalled();
     });
   });
 

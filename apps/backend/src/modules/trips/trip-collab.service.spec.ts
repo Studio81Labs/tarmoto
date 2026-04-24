@@ -7,7 +7,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { TripCollabService } from './trip-collab.service.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
@@ -192,6 +192,14 @@ describe('TripCollabService', () => {
       ] as unknown as TripSuggestionVote[]);
 
       const result = await service.listSuggestions(USER_ID, TRIP_ID);
+
+      // Votes are fetched with a single `IN (...)` predicate instead
+      // of an OR-chain of per-id equality checks so the planner can
+      // hit the `suggestion_id` index in one scan regardless of how
+      // many suggestions the trip has.
+      expect(voteRepo.find).toHaveBeenCalledWith({
+        where: { suggestion_id: In(['sug-1', 'sug-2']) },
+      });
 
       expect(result[0]).toMatchObject({
         id: 'sug-1',
@@ -480,9 +488,10 @@ describe('TripCollabService', () => {
   });
 
   describe('unvoteSuggestion', () => {
-    it('removes the callers vote and re-emits the tally', async () => {
+    it('removes the callers vote and re-emits the tally when a row was actually deleted', async () => {
       memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
       suggestionRepo.findOne.mockResolvedValueOnce(makeSuggestion());
+      voteRepo.delete.mockResolvedValueOnce({ affected: 1, raw: [] });
       voteRepo.find.mockResolvedValueOnce([]);
 
       const result = await service.unvoteSuggestion(
@@ -501,6 +510,27 @@ describe('TripCollabService', () => {
         'trip:suggestion:voted',
         { suggestion_id: SUGGESTION_ID, up_votes: 0, down_votes: 0 },
       );
+    });
+
+    it('does NOT emit trip:suggestion:voted when there was no prior vote to delete', async () => {
+      // A no-op unvote (double-tap, retry after first success) shouldn't
+      // force every subscribed member to refetch a tally that didn't
+      // actually change.
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
+      suggestionRepo.findOne.mockResolvedValueOnce(makeSuggestion());
+      voteRepo.delete.mockResolvedValueOnce({ affected: 0, raw: [] });
+      voteRepo.find.mockResolvedValueOnce([]);
+
+      const result = await service.unvoteSuggestion(
+        USER_ID,
+        TRIP_ID,
+        SUGGESTION_ID,
+      );
+
+      // Caller still gets the current state back so they can reconcile,
+      // but no broadcast is fired.
+      expect(result.caller_vote).toBeNull();
+      expect(events.emitToTrip).not.toHaveBeenCalled();
     });
   });
 

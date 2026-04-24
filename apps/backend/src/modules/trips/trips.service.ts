@@ -149,28 +149,13 @@ export class TripsService {
       throw new NotFoundException('Trip not found');
     }
 
-    const trip = await this.tripRepo.findOne({ where: { id: tripId } });
-    if (!trip) throw new NotFoundException('Trip not found');
-
-    // Build the effective (min, max) pair from the supplied delta falling
-    // back to the current row, so cross-field validation still runs on a
-    // partial patch. We only use `trip` for VALIDATION here — the UPDATE
-    // below carries just the supplied delta so two concurrent PATCHes of
-    // different fields don't clobber each other's untouched values.
-    const effectiveMin = dto.daily_km_min ?? trip.daily_km_min;
-    const effectiveMax = dto.daily_km_max ?? trip.daily_km_max;
-    if (effectiveMin > effectiveMax) {
-      throw new BadRequestException(
-        'daily_km_min must be less than or equal to daily_km_max',
-      );
-    }
-
-    // Supplied-fields-only delta. Writing the full merged row would
+    // Build the supplied-fields-only delta once, outside the txn, so
+    // the lock window stays short. Writing the full merged row would
     // quietly revert concurrent edits: two privileged members PATCHing
     // different fields could both read the same pre-image and each
     // rewrite the untouched fields to their read-time values, so the
-    // loser of the race loses their co-planner's change even though the
-    // two updates don't actually conflict.
+    // loser of the race loses their co-planner's change even though
+    // the two updates don't actually conflict.
     const delta: Record<string, unknown> = {};
     if (dto.title !== undefined) delta.title = dto.title;
     if (dto.region !== undefined) delta.region = dto.region ?? null;
@@ -183,12 +168,51 @@ export class TripsService {
     }
     if (dto.status !== undefined) delta.status = dto.status;
 
-    if (Object.keys(delta).length > 0) {
-      await this.tripRepo.update({ id: tripId }, delta);
+    const hasChanges = Object.keys(delta).length > 0;
+
+    // Read-validate-write is serialised on a pessimistic row lock so
+    // the cross-field (min, max) check can't race against a concurrent
+    // PATCH. Without the lock, two callers each supplying one side
+    // could pass validation against the same pre-image and commit a
+    // row where min > max. The lock keeps the second PATCH blocked
+    // until the first commits, so the second reads (and validates
+    // against) the post-first state.
+    if (hasChanges) {
+      await this.tripRepo.manager.transaction(async (manager) => {
+        const locked = await manager.findOne(Trip, {
+          where: { id: tripId },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!locked) throw new NotFoundException('Trip not found');
+
+        const effectiveMin = dto.daily_km_min ?? locked.daily_km_min;
+        const effectiveMax = dto.daily_km_max ?? locked.daily_km_max;
+        if (effectiveMin > effectiveMax) {
+          throw new BadRequestException(
+            'daily_km_min must be less than or equal to daily_km_max',
+          );
+        }
+
+        await manager.update(Trip, { id: tripId }, delta);
+      });
+    } else {
+      // Empty PATCH — still verify the trip exists so the response is
+      // consistent with the hasChanges branch.
+      const exists = await this.tripRepo.findOne({
+        where: { id: tripId },
+        select: { id: true },
+      });
+      if (!exists) throw new NotFoundException('Trip not found');
     }
 
     const detail = await this.getDetail(userId, tripId);
-    this.events.emitToTrip(tripId, 'trip:updated', detail);
+    // Don't broadcast on a no-op PATCH — subscribed members shouldn't
+    // rerender or refetch just because an author submitted an empty
+    // DTO. The response still returns the current detail so the caller
+    // can confirm state.
+    if (hasChanges) {
+      this.events.emitToTrip(tripId, 'trip:updated', detail);
+    }
     return detail;
   }
 
