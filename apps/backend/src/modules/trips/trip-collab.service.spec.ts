@@ -599,6 +599,45 @@ describe('TripCollabService', () => {
       expect(txManager.insert).not.toHaveBeenCalled();
       expect(events.emitToTrip).not.toHaveBeenCalled();
     });
+
+    it('surfaces a resolve that committed in the post-tx window (response reflects the fresh status)', async () => {
+      // The vote tx committed while the suggestion was still 'open',
+      // but before we assemble the HTTP response an owner resolves the
+      // row to 'accepted'. Without the post-tx re-read the voter would
+      // get a DTO with status 'open' and their UI would briefly
+      // re-enable vote controls on a finalised row.
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
+      txManager.findOne
+        .mockResolvedValueOnce(makeSuggestion())
+        .mockResolvedValueOnce(null);
+      txManager.update.mockResolvedValueOnce({
+        affected: 0,
+        raw: [],
+        generatedMaps: [],
+      });
+      // Fresh re-read after the tx commits: status has flipped.
+      suggestionRepo.findOne.mockResolvedValueOnce(
+        makeSuggestion({ status: 'accepted' }),
+      );
+      voteRepo.find.mockResolvedValueOnce([
+        { suggestion_id: SUGGESTION_ID, user_id: USER_ID, vote: 'up' },
+      ] as unknown as TripSuggestionVote[]);
+
+      const result = await service.voteSuggestion(
+        USER_ID,
+        TRIP_ID,
+        SUGGESTION_ID,
+        'up',
+      );
+
+      expect(suggestionRepo.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: SUGGESTION_ID },
+          relations: { suggester: true },
+        }),
+      );
+      expect(result.status).toBe('accepted');
+    });
   });
 
   describe('unvoteSuggestion', () => {

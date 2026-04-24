@@ -329,7 +329,21 @@ export class TripCollabService {
       });
     }
 
-    return this.emitAndReturnSuggestion(userId, tripId, suggestion, hasChange);
+    // Re-read after the tx so a resolve that committed in the gap
+    // between our lock release and the HTTP response reflects in the
+    // DTO. Without this the voter's UI would keep rendering
+    // `status: 'open'` until the `trip:suggestion:resolved` broadcast
+    // arrives, briefly re-enabling vote controls on a finalised row.
+    const fresh = await this.suggestionRepo.findOne({
+      where: { id: suggestionId },
+      relations: { suggester: true },
+    });
+    return this.emitAndReturnSuggestion(
+      userId,
+      tripId,
+      fresh ?? suggestion,
+      hasChange,
+    );
   }
 
   /**
@@ -424,7 +438,20 @@ export class TripCollabService {
         { suggestion_id: suggestionId },
       );
     }
-    return this.emitAndReturnSuggestion(userId, tripId, suggestion, hasChange);
+
+    // Re-read: mirrors `voteSuggestion`. Close the post-tx window
+    // where a concurrent resolve can leave the response body stuck on
+    // `status: 'open'`.
+    const fresh = await this.suggestionRepo.findOne({
+      where: { id: suggestionId },
+      relations: { suggester: true },
+    });
+    return this.emitAndReturnSuggestion(
+      userId,
+      tripId,
+      fresh ?? suggestion,
+      hasChange,
+    );
   }
 
   // ── Messages ─────────────────────────────────────────────────────
