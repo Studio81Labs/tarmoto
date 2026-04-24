@@ -492,4 +492,93 @@ describe("TripCollaborateModal — collab tabs", () => {
 
     expect(await screen.findByText(/eve joined the trip/i)).toBeInTheDocument();
   });
+
+  it("keeps a live trip:activity entry that arrived before listActivity resolved", async () => {
+    // Reproduce the race: the socket listener fires while the REST
+    // fetch is still in flight. The pre-fix code used
+    // `setEntries(data.activity)` which wholesale-replaced the array,
+    // silently dropping the live entry until a user refresh.
+    let resolveFetch: (value: {
+      data: { activity: TripActivityEntry[] };
+    }) => void = () => {};
+    hoisted.listActivity.mockReset().mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+
+    let activityHandler: ((payload: unknown) => void) | null = null;
+    hoisted.onTripActivity.mockReset().mockImplementation((cb) => {
+      activityHandler = cb as (payload: unknown) => void;
+      return () => {};
+    });
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="member-1"
+        ownerId="owner-1"
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /activity/i }));
+
+    // Socket event lands DURING the fetch.
+    expect(activityHandler).not.toBeNull();
+    activityHandler!({
+      id: "a-live",
+      trip_id: "server-trip-1",
+      actor_id: "member-2",
+      actor_name: "Bob",
+      action: "suggestion_voted",
+      payload: { vote: "up" },
+      created_at: new Date().toISOString(),
+    });
+
+    // REST response lands AFTER the live event and carries an older
+    // historical entry that the live one isn't part of.
+    resolveFetch({ data: { activity: [baseActivity] } });
+
+    // Both entries must be visible — the live vote stays on top, the
+    // fetched historical entry renders below it.
+    expect(await screen.findByText(/bob voted up/i)).toBeInTheDocument();
+    expect(screen.getByText(/eve joined the trip/i)).toBeInTheDocument();
+  });
+
+  it("renders a readable fallback for an activity action the frontend does not know yet", async () => {
+    // Backend releases can introduce a new TripActivityAction value
+    // before the companion redeploys. Without a default case the
+    // switch returned undefined and the timeline row rendered blank.
+    hoisted.listActivity.mockReset().mockResolvedValue({
+      data: {
+        activity: [
+          {
+            ...baseActivity,
+            id: "a-future",
+            action: "suggestion_archived" as never,
+            payload: {},
+          },
+        ],
+      },
+    });
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="member-1"
+        ownerId="owner-1"
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /activity/i }));
+
+    expect(
+      await screen.findByText(/eve suggestion archived/i),
+    ).toBeInTheDocument();
+  });
 });

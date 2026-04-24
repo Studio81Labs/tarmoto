@@ -744,7 +744,17 @@ function ActivityTab({
       try {
         const { data } = await tripCollabApi.listActivity(serverTripId);
         if (cancelled) return;
-        setEntries(data.activity);
+        // Merge instead of replace: a `trip:activity` event that
+        // landed before this fetch resolved has already been
+        // prepended, and a naive `setEntries(data.activity)` would
+        // silently drop it until the user refreshed. Dedupe by id so
+        // an entry that appears in both sources (fetch + socket replay)
+        // doesn't show twice; newest (live) entries stay on top.
+        setEntries((prev) => {
+          const restIds = new Set(data.activity.map((e) => e.id));
+          const liveOnly = prev.filter((e) => !restIds.has(e.id));
+          return [...liveOnly, ...data.activity];
+        });
       } catch (err) {
         if (!cancelled) setError(describeError(err));
       } finally {
@@ -955,6 +965,12 @@ function describeActivity(entry: TripActivityEntry): string {
       return `${actor} accepted "${String(entry.payload.title ?? "a suggestion")}"`;
     case "suggestion_rejected":
       return `${actor} rejected "${String(entry.payload.title ?? "a suggestion")}"`;
+    default:
+      // A backend release can introduce a new action before the
+      // companion rolls out; fall back to a readable transliteration
+      // of the action key instead of letting the timeline render
+      // undefined/empty for the row.
+      return `${actor} ${String(entry.action).replace(/_/g, " ")}`;
   }
 }
 
