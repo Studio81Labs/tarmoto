@@ -16,13 +16,46 @@ export class AddTripInviteCode1714800000000 implements MigrationInterface {
         ADD COLUMN invite_code VARCHAR(12);
     `);
 
-    // Backfill any pre-existing rows with a unique 8-char base32 code.
-    // 8 chars from a 32-char alphabet ≈ 1.1e12 combinations — collision-
-    // free for any plausible historical dataset.
+    // Backfill any pre-existing rows from the same alphabet the runtime
+    // allocator uses (Crockford-style base32 minus 0/O/1/I/L/U). A
+    // pl/pgsql block lets us draw a fresh per-row code and retry on
+    // collision against the rows already backfilled in this same loop.
+    // In production this is a no-op — the trips table is empty until
+    // this PR — but dev/CI seed data goes through the same path the
+    // runtime would take, so the documented "easy to dictate" property
+    // holds for backfilled codes too.
     await queryRunner.query(`
-      UPDATE trips
-      SET invite_code = UPPER(SUBSTRING(REPLACE(gen_random_uuid()::text, '-', '') FROM 1 FOR 8))
-      WHERE invite_code IS NULL;
+      DO $migration$
+      DECLARE
+        alphabet CONSTANT TEXT := 'ABCDEFGHJKMNPQRSTVWXYZ23456789';
+        alphabet_len CONSTANT INT := length(alphabet);
+        code_len CONSTANT INT := 8;
+        target_id UUID;
+        candidate TEXT;
+        attempts INT;
+      BEGIN
+        FOR target_id IN SELECT id FROM trips WHERE invite_code IS NULL LOOP
+          attempts := 0;
+          LOOP
+            candidate := '';
+            FOR i IN 1..code_len LOOP
+              candidate := candidate
+                || substr(alphabet, 1 + floor(random() * alphabet_len)::int, 1);
+            END LOOP;
+            EXIT WHEN NOT EXISTS (
+              SELECT 1 FROM trips WHERE invite_code = candidate
+            );
+            attempts := attempts + 1;
+            IF attempts > 10 THEN
+              RAISE EXCEPTION
+                'AddTripInviteCode: failed to allocate a unique invite_code after 10 attempts for trip %',
+                target_id;
+            END IF;
+          END LOOP;
+          UPDATE trips SET invite_code = candidate WHERE id = target_id;
+        END LOOP;
+      END
+      $migration$;
     `);
 
     await queryRunner.query(`

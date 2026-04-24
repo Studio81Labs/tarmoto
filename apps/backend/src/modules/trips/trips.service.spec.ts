@@ -74,9 +74,43 @@ describe('TripsService', () => {
   let service: TripsService;
   let tripRepo: jest.Mocked<Repository<Trip>>;
   let memberRepo: jest.Mocked<Repository<TripMember>>;
+  let manager: {
+    create: jest.Mock;
+    save: jest.Mock;
+  };
 
   beforeEach(async () => {
+    // The transactional `create` flow calls `tripRepo.manager.transaction`
+    // and operates through that manager. Mock it as a callable that
+    // immediately invokes the callback with a manager that mirrors the
+    // repo create/save semantics, so we can keep observing inserts.
+    manager = {
+      create: jest
+        .fn()
+        .mockImplementation(
+          (_entity: unknown, data: Record<string, unknown>) => ({
+            ...data,
+          }),
+        ),
+      save: jest.fn().mockImplementation((entity: { id?: string }) =>
+        Promise.resolve({
+          ...entity,
+          id: entity.id ?? TRIP_ID,
+          created_at: NOW,
+          updated_at: NOW,
+          joined_at: NOW,
+        }),
+      ),
+    };
+
     tripRepo = {
+      manager: {
+        transaction: jest
+          .fn()
+          .mockImplementation(
+            async (cb: (m: typeof manager) => Promise<unknown>) => cb(manager),
+          ),
+      },
       create: jest.fn().mockImplementation((data: Partial<Trip>) => ({
         ...data,
       })),
@@ -129,7 +163,11 @@ describe('TripsService', () => {
         region: 'Dolomites',
       });
 
-      expect(tripRepo.create).toHaveBeenCalledWith(
+      // The trip + owner-membership writes both go through the
+      // transactional manager, not the per-entity repos.
+      expect(tripRepo.manager.transaction).toHaveBeenCalledTimes(1);
+      expect(manager.create).toHaveBeenCalledWith(
+        Trip,
         expect.objectContaining({
           owner_id: OWNER_ID,
           title: 'Big Italian Loop',
@@ -139,7 +177,8 @@ describe('TripsService', () => {
           invite_code: expect.stringMatching(/^[A-Z2-9]{8}$/),
         }),
       );
-      expect(memberRepo.save).toHaveBeenCalledWith(
+      expect(manager.create).toHaveBeenCalledWith(
+        TripMember,
         expect.objectContaining({
           trip_id: TRIP_ID,
           user_id: OWNER_ID,
@@ -156,7 +195,7 @@ describe('TripsService', () => {
       expect(result.days).toEqual([]);
     });
 
-    it('rejects daily_km_min > daily_km_max', async () => {
+    it('rejects daily_km_min > daily_km_max when both are provided', async () => {
       await expect(
         service.create(OWNER_ID, {
           title: 'Bad ranges',
@@ -165,7 +204,51 @@ describe('TripsService', () => {
           daily_km_max: 200,
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(tripRepo.save).not.toHaveBeenCalled();
+      expect(tripRepo.manager.transaction).not.toHaveBeenCalled();
+    });
+
+    it('rejects partial input where daily_km_min exceeds the default daily_km_max', async () => {
+      // Defaults are min=150, max=350. Passing min=500 alone means the
+      // effective row would be (500, 350) — invalid. The validation must
+      // run against effective values, not raw input.
+      await expect(
+        service.create(OWNER_ID, {
+          title: 'Half-specified',
+          num_days: 3,
+          daily_km_min: 500,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(tripRepo.manager.transaction).not.toHaveBeenCalled();
+    });
+
+    it('rejects partial input where the default daily_km_min exceeds the supplied daily_km_max', async () => {
+      // Mirror case: default min=150 vs supplied max=50 → (150, 50).
+      await expect(
+        service.create(OWNER_ID, {
+          title: 'Half-specified',
+          num_days: 3,
+          daily_km_max: 50,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(tripRepo.manager.transaction).not.toHaveBeenCalled();
+    });
+
+    it('rolls back the trip insert when the owner-membership insert fails', async () => {
+      // Membership write fails after the trip write succeeds. Because
+      // both run inside `manager.transaction`, the entire callback
+      // throws and the orphan trip is never committed — the caller sees
+      // the underlying error, not a phantom trip in subsequent lists.
+      tripRepo.findOne.mockResolvedValueOnce(null); // invite collision check
+      manager.save
+        .mockResolvedValueOnce({ id: TRIP_ID }) // trip insert
+        .mockRejectedValueOnce(new Error('membership insert exploded'));
+
+      await expect(
+        service.create(OWNER_ID, { title: 'Atomic', num_days: 2 }),
+      ).rejects.toThrow('membership insert exploded');
+      // getDetail (which would use tripRepo.findOne) should not have run
+      // — once for the collision check, never again.
+      expect(tripRepo.findOne).toHaveBeenCalledTimes(1);
     });
 
     it('retries invite-code allocation on collision', async () => {

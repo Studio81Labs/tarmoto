@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { pointToLatLng } from '@tarmoto/shared';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { CreateTripDto } from './dto/create-trip.dto.js';
@@ -24,6 +25,10 @@ import {
 const INVITE_ALPHABET = 'ABCDEFGHJKMNPQRSTVWXYZ23456789';
 const INVITE_LENGTH = 8;
 const MAX_INVITE_ALLOCATION_ATTEMPTS = 5;
+const DEFAULT_DAILY_KM_MIN = 150;
+const DEFAULT_DAILY_KM_MAX = 350;
+const DEFAULT_MIN_QUALITY = 3.0;
+const DEFAULT_ROAD_PREFERENCE = 'curvy';
 
 @Injectable()
 export class TripsService {
@@ -35,44 +40,51 @@ export class TripsService {
   ) {}
 
   async create(userId: string, dto: CreateTripDto): Promise<TripDetailDto> {
-    if (
-      dto.daily_km_min !== undefined &&
-      dto.daily_km_max !== undefined &&
-      dto.daily_km_min > dto.daily_km_max
-    ) {
+    // Validate against the EFFECTIVE values after defaults apply, so that
+    // a partial input like `{ daily_km_min: 500 }` is caught against the
+    // default `daily_km_max: 350` instead of silently persisting an
+    // invalid `min > max` row.
+    const dailyKmMin = dto.daily_km_min ?? DEFAULT_DAILY_KM_MIN;
+    const dailyKmMax = dto.daily_km_max ?? DEFAULT_DAILY_KM_MAX;
+    if (dailyKmMin > dailyKmMax) {
       throw new BadRequestException(
         'daily_km_min must be less than or equal to daily_km_max',
       );
     }
 
     const inviteCode = await this.allocateInviteCode();
-    const trip = this.tripRepo.create({
-      owner_id: userId,
-      title: dto.title,
-      region: dto.region ?? null,
-      num_days: dto.num_days,
-      daily_km_min: dto.daily_km_min ?? 150,
-      daily_km_max: dto.daily_km_max ?? 350,
-      min_quality: dto.min_quality ?? 3.0,
-      road_preference: dto.road_preference ?? 'curvy',
-      status: 'draft',
-      invite_code: inviteCode,
+
+    // Trip + owner-membership go in a single transaction so we can never
+    // commit an orphan trip the owner can't see (visibility is gated on
+    // the membership row). On any error inside the callback the entire
+    // unit rolls back.
+    const savedId = await this.tripRepo.manager.transaction(async (manager) => {
+      const trip = manager.create(Trip, {
+        owner_id: userId,
+        title: dto.title,
+        region: dto.region ?? null,
+        num_days: dto.num_days,
+        daily_km_min: dailyKmMin,
+        daily_km_max: dailyKmMax,
+        min_quality: dto.min_quality ?? DEFAULT_MIN_QUALITY,
+        road_preference: dto.road_preference ?? DEFAULT_ROAD_PREFERENCE,
+        status: 'draft',
+        invite_code: inviteCode,
+      });
+      const saved = await manager.save(trip);
+
+      await manager.save(
+        manager.create(TripMember, {
+          trip_id: saved.id,
+          user_id: userId,
+          role: 'owner',
+        }),
+      );
+
+      return saved.id;
     });
 
-    const saved = await this.tripRepo.save(trip);
-
-    // Record the owner as a member so the same `members` join powers
-    // both authorization (am I in this trip?) and the roster shown to
-    // collaborators.
-    await this.memberRepo.save(
-      this.memberRepo.create({
-        trip_id: saved.id,
-        user_id: userId,
-        role: 'owner',
-      }),
-    );
-
-    return this.getDetail(userId, saved.id);
+    return this.getDetail(userId, savedId);
   }
 
   async list(userId: string, query: ListTripsDto): Promise<TripSummaryDto[]> {
@@ -201,18 +213,24 @@ export class TripsService {
       elevation_gain: d.elevation_gain ?? 0,
       estimated_time_min: parseIntervalToMinutes(d.estimated_time),
       route_geometry: lineStringToLatLngs(d.route_geom),
-      waypoints: (d.waypoints ?? []).map(
-        (w): TripWaypointDto => ({
+      waypoints: (d.waypoints ?? []).map((w): TripWaypointDto => {
+        // `location` is NOT NULL in the schema, but the shared helper
+        // returns null defensively for unexpected shapes. Fall back to
+        // (0, 0) so the response stays well-typed instead of leaking a
+        // null lat/lng into a contract the mobile UI doesn't handle.
+        const latLng = pointToLatLng(w.location) ?? { lat: 0, lng: 0 };
+        return {
           id: w.id,
           sequence: w.sequence,
-          ...pointToLatLng(w.location),
+          lat: latLng.lat,
+          lng: latLng.lng,
           name: w.name,
           waypoint_type: w.waypoint_type,
           road_segment_id: w.road_segment_id,
           notes: w.notes,
           duration_min: w.duration_min,
-        }),
-      ),
+        };
+      }),
     }));
 
     return {
@@ -262,18 +280,6 @@ function lineStringToLatLngs(
     }
   }
   return out;
-}
-
-function pointToLatLng(geom: unknown): { lat: number; lng: number } {
-  const coords = (geom as { coordinates?: unknown })?.coordinates;
-  if (
-    Array.isArray(coords) &&
-    typeof coords[0] === 'number' &&
-    typeof coords[1] === 'number'
-  ) {
-    return { lat: coords[1], lng: coords[0] };
-  }
-  return { lat: 0, lng: 0 };
 }
 
 function parseIntervalToMinutes(value: unknown): number {
