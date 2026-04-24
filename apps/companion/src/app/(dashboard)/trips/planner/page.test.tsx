@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import {
   act,
   fireEvent,
@@ -431,6 +432,44 @@ describe("TripPlannerPage", () => {
     await waitFor(() => expect(regenerateTripDayMock).toHaveBeenCalledTimes(1));
   });
 
+  it("regenerates from the latest active trip snapshot after in-flight edits", async () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(180);
+    });
+
+    setActiveTrip.mockClear();
+    regenerateTripDayMock.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "Regenerate day 1" }));
+
+    const editedTrip = {
+      ...activeTrip,
+      updatedAt: "2026-04-23T10:15:00Z",
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          title: "Edited while regenerating",
+        },
+      ],
+    };
+
+    storeState.activeTrip = editedTrip;
+    rerender(<TripPlannerPage />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120);
+    });
+
+    expect(regenerateTripDayMock).toHaveBeenCalledWith(editedTrip, 1);
+
+    vi.useRealTimers();
+  });
+
   it("ignores option switches while a day regeneration is in flight", async () => {
     render(<TripPlannerPage />);
 
@@ -480,6 +519,27 @@ describe("TripPlannerPage", () => {
 
     expect(generateTripOptionsMock).not.toHaveBeenCalled();
     expect(setActiveTrip).not.toHaveBeenCalledWith(activeTrip);
+
+    vi.useRealTimers();
+  });
+
+  it("still generates after StrictMode remounts the planner effect", async () => {
+    vi.useFakeTimers();
+
+    render(
+      <StrictMode>
+        <TripPlannerPage />
+      </StrictMode>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(180);
+    });
+
+    expect(generateTripOptionsMock).toHaveBeenCalledTimes(1);
+    expect(setActiveTrip).toHaveBeenCalledWith(activeTrip);
 
     vi.useRealTimers();
   });

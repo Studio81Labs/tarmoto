@@ -33,7 +33,7 @@ import {
   type GeneratedTripOption,
 } from "@/lib/trip-itinerary-generator";
 import { currentUtcMonth } from "@/lib/passes-summary";
-import type { SurfaceType, TripParameters } from "@/lib/types";
+import type { SurfaceType, Trip, TripParameters } from "@/lib/types";
 import { formatDuration } from "@/lib/utils";
 
 /**
@@ -78,6 +78,7 @@ export default function TripPlannerPage() {
   const generationLockRef = useRef(false);
   const requestTokenRef = useRef(0);
   const isMountedRef = useRef(true);
+  const activeTripRef = useRef<Trip | null>(null);
   const activeTripIdRef = useRef<string | null>(null);
   const selectedOptionIdRef = useRef<string | null>(null);
   const activeTrip = useTripStore((s) => s.activeTrip);
@@ -164,6 +165,7 @@ export default function TripPlannerPage() {
   }, []);
 
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
       requestTokenRef.current += 1;
@@ -173,6 +175,7 @@ export default function TripPlannerPage() {
   }, [setGenerating]);
 
   useEffect(() => {
+    activeTripRef.current = activeTrip;
     activeTripIdRef.current = activeTrip?.id ?? null;
   }, [activeTrip]);
 
@@ -287,7 +290,11 @@ export default function TripPlannerPage() {
         if (!isMountedRef.current || requestTokenRef.current !== requestToken) {
           return;
         }
-        const regeneratedTrip = regenerateTripDay(displayedTrip, dayNumber);
+        const latestTrip = activeTripRef.current;
+        if (!latestTrip || latestTrip.id !== displayedTrip.id) {
+          return;
+        }
+        const regeneratedTrip = regenerateTripDay(latestTrip, dayNumber);
         if (!isMountedRef.current || requestTokenRef.current !== requestToken) {
           return;
         }
