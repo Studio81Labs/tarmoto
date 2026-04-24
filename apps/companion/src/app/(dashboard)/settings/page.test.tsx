@@ -360,7 +360,7 @@ describe("AccountPage", () => {
       },
     );
     expect(
-      screen.getByAltText("QR code to link the Tarmoto mobile app"),
+      await screen.findByAltText("QR code to link the Tarmoto mobile app"),
     ).toHaveAttribute("src", "data:image/png;base64,qr");
     expect(
       screen.getByText(/scan the qr code or open tarmoto on this phone/i),
