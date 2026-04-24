@@ -966,6 +966,7 @@ export default function TripPlannerPage() {
         currentUserId={currentUserId}
         suggestions={collabSession.suggestions}
         onSuggestionsChange={collabSession.setSuggestions}
+        suggestionsError={collabSession.suggestionsError}
         onPromoted={handlePromotedToServer}
         onClose={() => setCollaborateOpen(false)}
       />

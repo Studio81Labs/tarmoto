@@ -72,6 +72,12 @@ export function useTripCollabSession(serverTripId: string | null) {
     () => new Map(),
   );
   const [suggestions, setSuggestions] = useState<TripSuggestion[]>([]);
+  // When the shared list is fed into the modal via props, a silent
+  // fetch failure here would leave `suggestions` empty and the modal
+  // would render its "No suggestions yet" empty-state — indistinguish-
+  // able from a real empty list and hiding auth/network/server errors.
+  // Expose the failure so consumers can surface it as an alert.
+  const [suggestionsError, setSuggestionsError] = useState<string | null>(null);
   const lastEmitRef = useRef(0);
 
   const previousTripIdRef = useRef<string | null>(serverTripId);
@@ -81,6 +87,7 @@ export function useTripCollabSession(serverTripId: string | null) {
     setCursors(new Map());
     setPresence(new Map());
     setSuggestions([]);
+    setSuggestionsError(null);
   }, [serverTripId]);
 
   useEffect(() => {
@@ -185,9 +192,12 @@ export function useTripCollabSession(serverTripId: string | null) {
         const { data } = await tripCollabApi.listSuggestions(serverTripId);
         if (cancelled) return;
         setSuggestions(data);
-      } catch {
-        // Non-fatal — the modal surfaces a concrete error if it also
-        // fails its own action (e.g. submit, vote).
+        setSuggestionsError(null);
+      } catch (err) {
+        if (cancelled) return;
+        setSuggestionsError(
+          err instanceof Error ? err.message : "Failed to load suggestions",
+        );
       }
     })();
     return () => {
@@ -230,6 +240,8 @@ export function useTripCollabSession(serverTripId: string | null) {
     presence,
     suggestions,
     setSuggestions,
+    /** Last `listSuggestions` error, or null when the fetch succeeded. */
+    suggestionsError,
     emitCursor,
   };
 }

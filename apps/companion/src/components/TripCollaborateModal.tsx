@@ -39,6 +39,13 @@ interface TripCollaborateModalProps {
    */
   suggestions?: TripSuggestion[];
   onSuggestionsChange?: React.Dispatch<React.SetStateAction<TripSuggestion[]>>;
+  /**
+   * Error message from the shared `listSuggestions` fetch, if any. When
+   * the modal uses external state, the fetch happens in the hook and
+   * its failures need to surface here so they don't get rendered as a
+   * misleading empty-state message.
+   */
+  suggestionsError?: string | null;
   onPromoted?: (serverTripId: string) => void;
   onClose: () => void;
 }
@@ -61,6 +68,7 @@ export function TripCollaborateModal({
   ownerId = null,
   suggestions: externalSuggestions,
   onSuggestionsChange,
+  suggestionsError: externalSuggestionsError = null,
   onPromoted,
   onClose,
 }: TripCollaborateModalProps) {
@@ -228,6 +236,7 @@ export function TripCollaborateModal({
               isOwner={isOwner}
               externalSuggestions={externalSuggestions}
               onExternalChange={onSuggestionsChange}
+              externalError={externalSuggestionsError}
               onPromoted={onPromoted}
             />
           )}
@@ -348,6 +357,7 @@ function SuggestionsTab({
   isOwner,
   externalSuggestions,
   onExternalChange,
+  externalError,
   onPromoted,
 }: {
   trip: Trip | null;
@@ -356,6 +366,7 @@ function SuggestionsTab({
   isOwner: boolean;
   externalSuggestions?: TripSuggestion[];
   onExternalChange?: React.Dispatch<React.SetStateAction<TripSuggestion[]>>;
+  externalError?: string | null;
   onPromoted?: (id: string) => void;
 }) {
   const [localSuggestions, setLocalSuggestions] = useState<TripSuggestion[]>(
@@ -365,6 +376,9 @@ function SuggestionsTab({
     externalSuggestions !== undefined && onExternalChange !== undefined;
   const suggestions = usingExternal ? externalSuggestions : localSuggestions;
   const setSuggestions = usingExternal ? onExternalChange : setLocalSuggestions;
+  // Merge the hook-level fetch error (when using shared state) with any
+  // per-action error we produce locally. Render the load error first —
+  // it's the more important signal when the list is empty.
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -544,7 +558,19 @@ function SuggestionsTab({
         <p className="text-sm text-slate-500">Loading suggestions…</p>
       )}
 
-      {suggestions.length === 0 && !loading && (
+      {externalError && (
+        // Surface a load failure coming from the hook so a silently-
+        // swallowed `listSuggestions` error doesn't get rendered as
+        // an ambiguous "No suggestions yet" message.
+        <p
+          role="alert"
+          className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300"
+        >
+          {externalError}
+        </p>
+      )}
+
+      {suggestions.length === 0 && !loading && !externalError && (
         <p className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-400">
           No suggestions yet — be the first to propose a route change.
         </p>
@@ -812,14 +838,6 @@ function ActivityTab({
           </li>
         ))}
       </ol>
-      {error && (
-        <p
-          role="alert"
-          className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300"
-        >
-          {error}
-        </p>
-      )}
     </>
   );
 }

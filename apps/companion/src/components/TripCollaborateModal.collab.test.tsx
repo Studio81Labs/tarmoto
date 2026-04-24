@@ -336,6 +336,33 @@ describe("TripCollaborateModal — collab tabs", () => {
     ).toBeInTheDocument();
   });
 
+  it("surfaces the hook's suggestionsError through the SuggestionsTab instead of empty-state", async () => {
+    // When the modal reads shared suggestions from useTripCollabSession
+    // and that hook's fetch fails, it sets `suggestionsError`. Without
+    // surfacing it here the user would see "No suggestions yet" and
+    // silently miss auth/network/server failures.
+    render(
+      <TripCollaborateModal
+        open
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="member-1"
+        ownerId="owner-1"
+        suggestions={[]}
+        onSuggestionsChange={vi.fn()}
+        suggestionsError="Failed to load suggestions — 503"
+        onClose={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: /suggestions/i }));
+
+    expect(
+      await screen.findByText(/failed to load suggestions — 503/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/no suggestions yet/i)).not.toBeInTheDocument();
+  });
+
   it("surfaces activity fetch errors as an alert instead of the empty-state message", async () => {
     // Without this fix, a network / auth failure on initial load would
     // render "No activity yet" — indistinguishable from a genuinely

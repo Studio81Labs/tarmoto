@@ -425,4 +425,30 @@ describe("lib/socket", () => {
       ),
     ).toBe(false);
   });
+
+  it("preserves trip subscriptions across RealtimeProvider's disconnect+connect on token change", async () => {
+    // RealtimeProvider's effect cleanup calls disconnectSocket() on
+    // every token change, then the next render calls
+    // connectSocket(newToken). This flow must not silently drop trip
+    // memberships — otherwise `useTripCollabSession` only ever
+    // re-subscribes on `serverTripId` change, which doesn't fire
+    // during a token refresh.
+    const { connectSocket, disconnectSocket, subscribeTrip } =
+      await import("../socket");
+
+    connectSocket("token-1");
+    subscribeTrip("trip-keep-me");
+
+    // Simulate RealtimeProvider's token-refresh lifecycle.
+    disconnectSocket();
+    const secondFake = createFakeSocket();
+    fake = secondFake;
+    connectSocket("token-2");
+    secondFake.trigger("connect");
+
+    expect(secondFake.emitted).toContainEqual({
+      event: "subscribe:trip",
+      data: { trip_id: "trip-keep-me" },
+    });
+  });
 });

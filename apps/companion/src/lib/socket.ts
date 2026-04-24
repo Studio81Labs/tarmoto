@@ -46,11 +46,11 @@ export type HazardNewEvent = HazardResponse;
 export function connectSocket(token: string | null = null): Socket {
   if (socket) {
     if (currentToken === token) return socket;
-    // Token changed (login / logout / refresh) — reconnect with new auth.
-    // Preserve trip-room memberships across the swap so the `connect`
-    // handler below can replay them on the new socket; full disconnect
-    // (sign-out) clears them via the public `disconnectSocket` below.
-    disconnectSocketInternal({ preserveTripSubscriptions: true });
+    // Token changed (login / logout / refresh) — reconnect with new
+    // auth. `disconnectSocketInternal` preserves the trip-room
+    // membership set so the `connect` handler below can replay them
+    // on the new socket.
+    disconnectSocketInternal();
   }
 
   currentToken = token;
@@ -112,25 +112,25 @@ export function connectSocket(token: string | null = null): Socket {
   return next;
 }
 
+/**
+ * Close the underlying socket without clearing trip-room memberships.
+ * `subscribedTripIds` is owned by consumers (they add via
+ * `subscribeTrip` and remove via `unsubscribeTrip` on their own
+ * lifecycle); wiping it here broke token-refresh flows because the
+ * `RealtimeProvider` effect calls this on every token change, and
+ * `useTripCollabSession` only re-subscribes when `serverTripId`
+ * changes. Preserving the set lets the new socket's `connect` handler
+ * replay joins so live updates keep flowing after a refresh.
+ */
 export function disconnectSocket(): void {
-  disconnectSocketInternal({ preserveTripSubscriptions: false });
+  disconnectSocketInternal();
 }
 
-function disconnectSocketInternal({
-  preserveTripSubscriptions,
-}: {
-  preserveTripSubscriptions: boolean;
-}): void {
+function disconnectSocketInternal(): void {
   if (!socket) return;
   for (const registration of persistentListeners) {
     registration.socket?.off(registration.event, registration.handler);
     registration.socket = null;
-  }
-  // External callers want a clean slate (e.g. sign-out); the internal
-  // token-change path sets `preserveTripSubscriptions` so the new
-  // socket's `connect` handler can replay them.
-  if (!preserveTripSubscriptions) {
-    subscribedTripIds.clear();
   }
   socket.disconnect();
   socket = null;
