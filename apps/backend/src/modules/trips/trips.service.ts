@@ -25,6 +25,12 @@ import {
 const INVITE_ALPHABET = 'ABCDEFGHJKMNPQRSTVWXYZ23456789';
 const INVITE_LENGTH = 8;
 const MAX_INVITE_ALLOCATION_ATTEMPTS = 5;
+// Must match the unique index name in
+// `1714800000000-AddTripInviteCode.ts`. We disambiguate `23505` errors
+// by constraint name so a unique-violation on, say, `trip_members
+// (trip_id, user_id)` doesn't get silently retried as if it were an
+// invite-code collision.
+const INVITE_CODE_INDEX = 'idx_trips_invite_code';
 const DEFAULT_DAILY_KM_MIN = 150;
 const DEFAULT_DAILY_KM_MAX = 350;
 const DEFAULT_MIN_QUALITY = 3.0;
@@ -52,39 +58,72 @@ export class TripsService {
       );
     }
 
-    const inviteCode = await this.allocateInviteCode();
-
     // Trip + owner-membership go in a single transaction so we can never
     // commit an orphan trip the owner can't see (visibility is gated on
     // the membership row). On any error inside the callback the entire
     // unit rolls back.
-    const savedId = await this.tripRepo.manager.transaction(async (manager) => {
-      const trip = manager.create(Trip, {
-        owner_id: userId,
-        title: dto.title,
-        region: dto.region ?? null,
-        num_days: dto.num_days,
-        daily_km_min: dailyKmMin,
-        daily_km_max: dailyKmMax,
-        min_quality: dto.min_quality ?? DEFAULT_MIN_QUALITY,
-        road_preference: dto.road_preference ?? DEFAULT_ROAD_PREFERENCE,
-        status: 'draft',
-        invite_code: inviteCode,
-      });
-      const saved = await manager.save(trip);
-
-      await manager.save(
-        manager.create(TripMember, {
-          trip_id: saved.id,
-          user_id: userId,
-          role: 'owner',
-        }),
-      );
-
-      return saved.id;
+    //
+    // The invite code is generated inside the retry loop and the DB
+    // unique index is the source of truth for collisions. A pre-check
+    // would be racy: two concurrent creates can both pass it with the
+    // same code, then the loser hits `23505` after the trip insert and
+    // the caller gets a 500. With ~6.5e11 codes a real collision is
+    // vanishingly rare; this loop just keeps the failure mode invisible.
+    const savedId = await this.allocateAndPersistTrip(userId, dto, {
+      dailyKmMin,
+      dailyKmMax,
     });
 
     return this.getDetail(userId, savedId);
+  }
+
+  private async allocateAndPersistTrip(
+    userId: string,
+    dto: CreateTripDto,
+    bounds: { dailyKmMin: number; dailyKmMax: number },
+  ): Promise<string> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < MAX_INVITE_ALLOCATION_ATTEMPTS; attempt++) {
+      const inviteCode = generateInviteCode();
+      try {
+        return await this.tripRepo.manager.transaction(async (manager) => {
+          const trip = manager.create(Trip, {
+            owner_id: userId,
+            title: dto.title,
+            region: dto.region ?? null,
+            num_days: dto.num_days,
+            daily_km_min: bounds.dailyKmMin,
+            daily_km_max: bounds.dailyKmMax,
+            min_quality: dto.min_quality ?? DEFAULT_MIN_QUALITY,
+            road_preference: dto.road_preference ?? DEFAULT_ROAD_PREFERENCE,
+            status: 'draft',
+            invite_code: inviteCode,
+          });
+          const saved = await manager.save(trip);
+
+          await manager.save(
+            manager.create(TripMember, {
+              trip_id: saved.id,
+              user_id: userId,
+              role: 'owner',
+            }),
+          );
+
+          return saved.id;
+        });
+      } catch (err: unknown) {
+        // Only retry the specific 23505 we caused (invite_code unique
+        // index). Any other failure — including a 23505 from an
+        // unrelated constraint — propagates so we don't paper over a
+        // real bug as a code collision.
+        if (!isInviteCodeViolation(err)) throw err;
+        lastError = err;
+      }
+    }
+    throw new Error(
+      `Failed to allocate a unique trip invite code after ${MAX_INVITE_ALLOCATION_ATTEMPTS} attempts` +
+        (lastError instanceof Error ? `: ${lastError.message}` : ''),
+    );
   }
 
   async list(userId: string, query: ListTripsDto): Promise<TripSummaryDto[]> {
@@ -183,18 +222,6 @@ export class TripsService {
     }
 
     return this.getDetail(userId, tripId);
-  }
-
-  private async allocateInviteCode(): Promise<string> {
-    for (let attempt = 0; attempt < MAX_INVITE_ALLOCATION_ATTEMPTS; attempt++) {
-      const candidate = generateInviteCode();
-      const collision = await this.tripRepo.findOne({
-        where: { invite_code: candidate },
-        select: { id: true },
-      });
-      if (!collision) return candidate;
-    }
-    throw new Error('Failed to allocate a unique trip invite code');
   }
 
   private toSummary(trip: Trip): TripSummaryDto {
@@ -334,4 +361,10 @@ function isUniqueViolation(err: unknown): boolean {
     'code' in err &&
     (err as { code?: unknown }).code === '23505'
   );
+}
+
+function isInviteCodeViolation(err: unknown): boolean {
+  if (!isUniqueViolation(err)) return false;
+  const constraint = (err as { constraint?: unknown }).constraint;
+  return constraint === INVITE_CODE_INDEX;
 }

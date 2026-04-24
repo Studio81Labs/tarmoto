@@ -111,6 +111,10 @@ describe('TripsService', () => {
     create: jest.Mock;
     save: jest.Mock;
   };
+  // Pulled out alongside `manager` so tests can call `mockImplementation`
+  // / `mockRejectedValue` on a properly-typed `jest.Mock` without lint
+  // tripping on the deeply-nested mock cast on `tripRepo.manager.*`.
+  let transactionMock: jest.Mock;
 
   beforeEach(async () => {
     // The transactional `create` flow calls `tripRepo.manager.transaction`
@@ -134,14 +138,14 @@ describe('TripsService', () => {
       ),
     };
 
+    transactionMock = jest
+      .fn()
+      .mockImplementation(async (cb: (m: typeof manager) => Promise<unknown>) =>
+        cb(manager),
+      );
+
     tripRepo = {
-      manager: {
-        transaction: jest
-          .fn()
-          .mockImplementation(
-            async (cb: (m: typeof manager) => Promise<unknown>) => cb(manager),
-          ),
-      },
+      manager: { transaction: transactionMock },
       create: jest.fn().mockImplementation((data: Partial<Trip>) => ({
         ...data,
       })),
@@ -196,7 +200,6 @@ describe('TripsService', () => {
 
   describe('create', () => {
     it('persists trip + owner membership and returns the detail with an invite code', async () => {
-      tripRepo.findOne.mockResolvedValueOnce(null); // invite collision check
       mockGetDetailReturns(makeOwnedTrip()); // post-save reload
 
       const result = await service.create(OWNER_ID, {
@@ -207,7 +210,7 @@ describe('TripsService', () => {
 
       // Trip + owner-membership writes both go through the transactional
       // manager, not the per-entity repos.
-      expect(tripRepo.manager.transaction).toHaveBeenCalledTimes(1);
+      expect(transactionMock).toHaveBeenCalledTimes(1);
       expect(manager.create).toHaveBeenCalledWith(
         Trip,
         expect.objectContaining({
@@ -246,7 +249,7 @@ describe('TripsService', () => {
           daily_km_max: 200,
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(tripRepo.manager.transaction).not.toHaveBeenCalled();
+      expect(transactionMock).not.toHaveBeenCalled();
     });
 
     it('rejects partial input where daily_km_min exceeds the default daily_km_max', async () => {
@@ -259,7 +262,7 @@ describe('TripsService', () => {
           daily_km_min: 500,
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(tripRepo.manager.transaction).not.toHaveBeenCalled();
+      expect(transactionMock).not.toHaveBeenCalled();
     });
 
     it('rejects partial input where the default daily_km_min exceeds the supplied daily_km_max', async () => {
@@ -271,11 +274,10 @@ describe('TripsService', () => {
           daily_km_max: 50,
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(tripRepo.manager.transaction).not.toHaveBeenCalled();
+      expect(transactionMock).not.toHaveBeenCalled();
     });
 
     it('rolls back the trip insert when the owner-membership insert fails', async () => {
-      tripRepo.findOne.mockResolvedValueOnce(null); // invite collision check
       manager.save
         .mockResolvedValueOnce({ id: TRIP_ID }) // trip insert
         .mockRejectedValueOnce(new Error('membership insert exploded'));
@@ -288,21 +290,68 @@ describe('TripsService', () => {
       expect(tripRepo.createQueryBuilder).not.toHaveBeenCalled();
     });
 
-    it('retries invite-code allocation on collision', async () => {
-      const collidedTrip = { id: 'other' } as Trip;
-      tripRepo.findOne
-        .mockResolvedValueOnce(collidedTrip) // first candidate collides
-        .mockResolvedValueOnce(null); // second succeeds
+    it('retries the whole transaction with a fresh code on invite_code unique violation', async () => {
+      // Simulate a TOCTOU race: the first transaction's trip insert
+      // hits the `idx_trips_invite_code` unique constraint. The retry
+      // loop must catch only that specific violation and rerun the
+      // transaction with a freshly generated code.
+      const inviteCodeError = Object.assign(
+        new Error('duplicate invite_code'),
+        {
+          code: '23505',
+          constraint: 'idx_trips_invite_code',
+        },
+      );
+      let txnCount = 0;
+      transactionMock.mockImplementation(
+        async (cb: (m: typeof manager) => Promise<unknown>) => {
+          txnCount += 1;
+          if (txnCount === 1) throw inviteCodeError;
+          return cb(manager);
+        },
+      );
       mockGetDetailReturns(makeOwnedTrip());
 
       const result = await service.create(OWNER_ID, {
-        title: 't',
+        title: 'Race-safe',
         num_days: 2,
       });
 
+      expect(txnCount).toBe(2);
       expect(result.invite_code).toMatch(/^[A-Z2-9]{8}$/);
-      // Two collision lookups — getDetail uses the QB now, not findOne.
-      expect(tripRepo.findOne).toHaveBeenCalledTimes(2);
+    });
+
+    it('does NOT retry when a 23505 comes from a different constraint', async () => {
+      // A unique violation on, say, the trip_members (trip_id, user_id)
+      // index isn't a code collision — it would mean a real bug. Don't
+      // mask it by retrying with a fresh code.
+      const memberError = Object.assign(new Error('duplicate membership'), {
+        code: '23505',
+        constraint: 'trip_members_trip_id_user_id_unique',
+      });
+      transactionMock.mockRejectedValueOnce(memberError);
+
+      await expect(
+        service.create(OWNER_ID, { title: 't', num_days: 2 }),
+      ).rejects.toBe(memberError);
+      // Single attempt, no retry.
+      expect(transactionMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('gives up after MAX_INVITE_ALLOCATION_ATTEMPTS persistent collisions', async () => {
+      const inviteCodeError = Object.assign(
+        new Error('duplicate invite_code'),
+        {
+          code: '23505',
+          constraint: 'idx_trips_invite_code',
+        },
+      );
+      transactionMock.mockRejectedValue(inviteCodeError);
+
+      await expect(
+        service.create(OWNER_ID, { title: 't', num_days: 2 }),
+      ).rejects.toThrow(/Failed to allocate a unique trip invite code/);
+      expect(transactionMock).toHaveBeenCalledTimes(5);
     });
   });
 
