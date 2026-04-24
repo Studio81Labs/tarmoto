@@ -12,6 +12,7 @@ import { Repository } from 'typeorm';
 import { TripsService } from './trips.service.js';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
+import { EventsGateway } from '../events/events.gateway.js';
 
 const OWNER_ID = '00000000-0000-0000-0000-000000000001';
 const OTHER_ID = '00000000-0000-0000-0000-000000000002';
@@ -110,11 +111,14 @@ describe('TripsService', () => {
   let manager: {
     create: jest.Mock;
     save: jest.Mock;
+    findOne: jest.Mock;
+    update: jest.Mock;
   };
   // Pulled out alongside `manager` so tests can call `mockImplementation`
   // / `mockRejectedValue` on a properly-typed `jest.Mock` without lint
   // tripping on the deeply-nested mock cast on `tripRepo.manager.*`.
   let transactionMock: jest.Mock;
+  let events: jest.Mocked<Pick<EventsGateway, 'emitToTrip'>>;
 
   beforeEach(async () => {
     // The transactional `create` flow calls `tripRepo.manager.transaction`
@@ -136,6 +140,8 @@ describe('TripsService', () => {
           joined_at: NOW,
         }),
       ),
+      findOne: jest.fn().mockResolvedValue(null),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
 
     transactionMock = jest
@@ -158,6 +164,7 @@ describe('TripsService', () => {
         }),
       ),
       findOne: jest.fn().mockResolvedValue(null),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
       createQueryBuilder: jest.fn().mockReturnValue(makeQbMock()),
     } as unknown as jest.Mocked<Repository<Trip>>;
 
@@ -173,11 +180,14 @@ describe('TripsService', () => {
       findOne: jest.fn().mockResolvedValue(null),
     } as unknown as jest.Mocked<Repository<TripMember>>;
 
+    events = { emitToTrip: jest.fn() };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TripsService,
         { provide: getRepositoryToken(Trip), useValue: tripRepo },
         { provide: getRepositoryToken(TripMember), useValue: memberRepo },
+        { provide: EventsGateway, useValue: events },
       ],
     }).compile();
 
@@ -523,6 +533,153 @@ describe('TripsService', () => {
       await expect(service.join(OTHER_ID, TRIP_ID, 'ABCDEFGH')).rejects.toThrow(
         'boom',
       );
+    });
+  });
+
+  describe('update', () => {
+    it('applies partial updates, fires trip:updated, and returns the detail', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      manager.findOne.mockResolvedValueOnce(makeOwnedTrip());
+      mockGetDetailReturns(makeOwnedTrip({ title: 'Renamed' }));
+
+      const result = await service.update(OWNER_ID, TRIP_ID, {
+        title: 'Renamed',
+      });
+
+      // The write runs inside the transactional manager so the
+      // pre-image read and the UPDATE are serialised on the row lock.
+      expect(manager.update).toHaveBeenCalledWith(
+        Trip,
+        { id: TRIP_ID },
+        expect.objectContaining({ title: 'Renamed' }),
+      );
+      expect(events.emitToTrip).toHaveBeenCalledWith(
+        TRIP_ID,
+        'trip:updated',
+        expect.objectContaining({ id: TRIP_ID }),
+      );
+      expect(result.title).toBe('Renamed');
+    });
+
+    it('404s a non-member instead of leaking field-level validation', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(null);
+
+      await expect(
+        service.update(OTHER_ID, TRIP_ID, { title: 'x' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(manager.update).not.toHaveBeenCalled();
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('404s a plain member who is not owner/admin', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'member',
+      } as TripMember);
+
+      await expect(
+        service.update(OTHER_ID, TRIP_ID, { title: 'x' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(manager.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects a partial patch that lands an invalid (min > max) pairing', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      manager.findOne.mockResolvedValueOnce(makeOwnedTrip()); // current 150/350
+
+      await expect(
+        service.update(OWNER_ID, TRIP_ID, { daily_km_min: 500 }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(manager.update).not.toHaveBeenCalled();
+    });
+
+    it('allows admins to mutate trip metadata', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'admin',
+      } as TripMember);
+      manager.findOne.mockResolvedValueOnce(makeOwnedTrip());
+      mockGetDetailReturns(makeOwnedTrip({ status: 'planned' }));
+
+      await service.update(OTHER_ID, TRIP_ID, { status: 'planned' });
+
+      expect(manager.update).toHaveBeenCalled();
+    });
+
+    it('reads the pre-image with a pessimistic row lock to close the min/max race', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      manager.findOne.mockResolvedValueOnce(makeOwnedTrip());
+      mockGetDetailReturns(makeOwnedTrip({ title: 'Renamed' }));
+
+      await service.update(OWNER_ID, TRIP_ID, { title: 'Renamed' });
+
+      // The lock mode must be pessimistic_write so a concurrent PATCH
+      // blocks and re-reads the post-commit state, catching partial-
+      // patch races that would otherwise leave min > max.
+      expect(manager.findOne).toHaveBeenCalledWith(
+        Trip,
+        expect.objectContaining({
+          lock: { mode: 'pessimistic_write' },
+        }),
+      );
+    });
+
+    it('writes ONLY the supplied delta — untouched fields are not clobbered by concurrent PATCHes', async () => {
+      // Without this guarantee, two privileged members PATCHing
+      // different fields concurrently would each read the same pre-image
+      // and each rewrite the untouched fields to their read-time values,
+      // so the loser of the race would lose their co-planner's change.
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      manager.findOne.mockResolvedValueOnce(makeOwnedTrip());
+      mockGetDetailReturns(makeOwnedTrip({ title: 'Renamed' }));
+
+      await service.update(OWNER_ID, TRIP_ID, { title: 'Renamed' });
+
+      expect(manager.update).toHaveBeenCalledWith(
+        Trip,
+        { id: TRIP_ID },
+        { title: 'Renamed' },
+      );
+      // Crucially: region, num_days, status, etc. are NOT present.
+      const [, , delta] = manager.update.mock.calls[0];
+      expect(Object.keys(delta as object)).toEqual(['title']);
+    });
+
+    it('skips the UPDATE + trip:updated emit entirely when the DTO carries no fields', async () => {
+      // No-op PATCH shouldn't rattle every subscribed member's UI.
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      tripRepo.findOne.mockResolvedValueOnce(
+        makeOwnedTrip() as unknown as Trip,
+      ); // empty-PATCH existence probe
+      mockGetDetailReturns(makeOwnedTrip());
+
+      await service.update(OWNER_ID, TRIP_ID, {});
+
+      expect(manager.update).not.toHaveBeenCalled();
+      expect(transactionMock).not.toHaveBeenCalled();
+      expect(events.emitToTrip).not.toHaveBeenCalled();
+    });
+
+    it('validates min/max against locked row when only one side is supplied', async () => {
+      // Pre-patch: (150, 350). Supply only min=500 → effective max is
+      // still 350 from the locked row, so the pair is invalid.
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      manager.findOne.mockResolvedValueOnce(makeOwnedTrip());
+
+      await expect(
+        service.update(OWNER_ID, TRIP_ID, { daily_km_min: 500 }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(manager.update).not.toHaveBeenCalled();
     });
   });
 

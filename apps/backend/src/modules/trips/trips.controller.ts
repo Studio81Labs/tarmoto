@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Req,
@@ -21,6 +22,7 @@ import { TripsService } from './trips.service.js';
 import { CreateTripDto } from './dto/create-trip.dto.js';
 import { JoinTripDto } from './dto/join-trip.dto.js';
 import { ListTripsDto } from './dto/list-trips.dto.js';
+import { UpdateTripDto } from './dto/update-trip.dto.js';
 import { TripDetailDto, TripSummaryDto } from './dto/trip-response.dto.js';
 
 @ApiTags('trips')
@@ -59,6 +61,24 @@ export class TripsController {
     @Param('tripId', ParseUUIDPipe) tripId: string,
   ): Promise<TripDetailDto> {
     return this.tripsService.getDetail(req.user!.userId, tripId);
+  }
+
+  @Patch(':tripId')
+  @ApiOperation({
+    summary: 'Update trip metadata',
+    description:
+      'Owner/admin only. Supplied fields overwrite current values; omitted ' +
+      'fields are left untouched. Effective (post-patch) bounds are ' +
+      're-validated so partial updates cannot land an invalid row.',
+  })
+  @ApiResponse({ status: 200, type: TripDetailDto })
+  @ApiResponse({ status: 404, description: 'Trip not found or not visible' })
+  async update(
+    @Req() req: express.Request,
+    @Param('tripId', ParseUUIDPipe) tripId: string,
+    @Body() dto: UpdateTripDto,
+  ): Promise<TripDetailDto> {
+    return this.tripsService.update(req.user!.userId, tripId, dto);
   }
 
   @Post(':tripId/join')

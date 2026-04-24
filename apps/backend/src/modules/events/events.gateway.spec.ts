@@ -5,12 +5,14 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { EventsGateway } from './events.gateway.js';
 import { Ride } from '../../entities/ride.entity.js';
+import { TripMember } from '../../entities/trip-member.entity.js';
 import { Server, Socket } from 'socket.io';
 
 describe('EventsGateway', () => {
   let gateway: EventsGateway;
   let jwtService: jest.Mocked<JwtService>;
   let rideRepo: { findOne: jest.Mock };
+  let tripMemberRepo: { findOne: jest.Mock };
 
   const mockServer = {
     adapter: jest.fn(),
@@ -44,12 +46,19 @@ describe('EventsGateway', () => {
             findOne: jest.fn().mockResolvedValue(null),
           },
         },
+        {
+          provide: getRepositoryToken(TripMember),
+          useValue: {
+            findOne: jest.fn().mockResolvedValue(null),
+          },
+        },
       ],
     }).compile();
 
     gateway = module.get<EventsGateway>(EventsGateway);
     jwtService = module.get(JwtService);
     rideRepo = module.get(getRepositoryToken(Ride));
+    tripMemberRepo = module.get(getRepositoryToken(TripMember));
     gateway.server = mockServer;
   });
 
@@ -379,6 +388,133 @@ describe('EventsGateway', () => {
       expect(mockServer.emit).toHaveBeenCalledWith('global:event', {
         msg: 'hello',
       });
+    });
+
+    it('emitToTrip targets the trip room', () => {
+      gateway.emitToTrip('trip-1', 'trip:message', { body: 'hi' });
+
+      expect(mockServer.to).toHaveBeenCalledWith('trip:trip-1');
+      expect(mockServer.emit).toHaveBeenCalledWith('trip:message', {
+        body: 'hi',
+      });
+    });
+  });
+
+  describe('handleSubscribeTrip', () => {
+    it('rejects unauthenticated clients', async () => {
+      const client = {
+        id: 'c-1',
+        data: {},
+        join: jest.fn(),
+        emit: jest.fn(),
+      } as unknown as Socket;
+
+      await gateway.handleSubscribeTrip(client, { trip_id: 'trip-1' });
+
+      expect(client.join).not.toHaveBeenCalled();
+      expect(tripMemberRepo.findOne).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith('error', {
+        message: 'Authentication required',
+      });
+    });
+
+    it('rejects a missing trip_id', async () => {
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        join: jest.fn(),
+        emit: jest.fn(),
+      } as unknown as Socket;
+
+      await gateway.handleSubscribeTrip(client, {} as never);
+
+      expect(client.join).not.toHaveBeenCalled();
+      expect(tripMemberRepo.findOne).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith('error', {
+        message: 'trip_id is required',
+      });
+    });
+
+    it('rejects a non-UUID trip_id BEFORE hitting the DB — keeps Postgres "invalid input syntax" errors from leaking to clients', async () => {
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        join: jest.fn(),
+        emit: jest.fn(),
+      } as unknown as Socket;
+
+      await gateway.handleSubscribeTrip(client, { trip_id: 'abc' });
+
+      expect(client.join).not.toHaveBeenCalled();
+      expect(tripMemberRepo.findOne).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith('error', {
+        message: 'trip_id must be a UUID',
+      });
+    });
+
+    it('rejects a non-member with the same error as a missing trip', async () => {
+      tripMemberRepo.findOne.mockResolvedValueOnce(null);
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        join: jest.fn(),
+        emit: jest.fn(),
+      } as unknown as Socket;
+
+      await gateway.handleSubscribeTrip(client, {
+        trip_id: '123e4567-e89b-42d3-a456-556642440000',
+      });
+
+      expect(client.join).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith('error', {
+        message: 'Trip not found or access denied',
+      });
+    });
+
+    it('joins the trip room for a verified member', async () => {
+      tripMemberRepo.findOne.mockResolvedValueOnce({
+        trip_id: '123e4567-e89b-42d3-a456-556642440000',
+        user_id: 'user-1',
+      });
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        join: jest.fn(),
+        emit: jest.fn(),
+      } as unknown as Socket;
+
+      await gateway.handleSubscribeTrip(client, {
+        trip_id: '123e4567-e89b-42d3-a456-556642440000',
+      });
+
+      expect(client.join).toHaveBeenCalledWith(
+        'trip:123e4567-e89b-42d3-a456-556642440000',
+      );
+      expect(client.emit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleUnsubscribeTrip', () => {
+    it('leaves the trip room', () => {
+      const client = {
+        id: 'c-1',
+        leave: jest.fn(),
+      } as unknown as Socket;
+
+      gateway.handleUnsubscribeTrip(client, { trip_id: 'trip-1' });
+
+      expect(client.leave).toHaveBeenCalledWith('trip:trip-1');
+    });
+
+    it('ignores a missing trip_id rather than throwing', () => {
+      const client = {
+        id: 'c-1',
+        leave: jest.fn(),
+      } as unknown as Socket;
+
+      gateway.handleUnsubscribeTrip(client, {} as never);
+
+      expect(client.leave).not.toHaveBeenCalled();
     });
   });
 });

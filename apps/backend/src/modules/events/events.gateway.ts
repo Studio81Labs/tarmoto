@@ -18,6 +18,13 @@ import { Server, Socket } from 'socket.io';
 import { createClient } from 'redis';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { Ride } from '../../entities/ride.entity.js';
+import { TripMember } from '../../entities/trip-member.entity.js';
+
+// Shared between subscribe handlers so a malformed id never reaches a
+// UUID column and bubbles up as a Postgres "invalid input syntax"
+// error instead of a controlled socket error.
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Wire shape of the `hazard:new` WebSocket event. Must stay structurally
@@ -62,6 +69,8 @@ export class EventsGateway
     private readonly jwt: JwtService,
     @InjectRepository(Ride)
     private readonly rideRepo: Repository<Ride>,
+    @InjectRepository(TripMember)
+    private readonly tripMemberRepo: Repository<TripMember>,
   ) {}
 
   async afterInit(server: Server): Promise<void> {
@@ -232,6 +241,71 @@ export class EventsGateway
     });
   }
 
+  /**
+   * Subscribe the client to a trip room so they receive live updates
+   * when other members edit the trip, post suggestions, vote, or chat.
+   * Membership is enforced before the join — non-members get an error
+   * back rather than a silent success (which would look like the server
+   * accepted them but just never emit anything).
+   *
+   * Client sends: { trip_id }
+   */
+  @SubscribeMessage('subscribe:trip')
+  async handleSubscribeTrip(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { trip_id: string },
+  ): Promise<void> {
+    const userId = (client.data as Record<string, unknown>).userId as
+      | string
+      | undefined;
+    if (!userId) {
+      client.emit('error', { message: 'Authentication required' });
+      return;
+    }
+
+    if (!data?.trip_id || typeof data.trip_id !== 'string') {
+      client.emit('error', { message: 'trip_id is required' });
+      return;
+    }
+
+    // Reject anything that doesn't look like a UUID before we hit the
+    // DB — `trip_id` is a UUID column and a malformed value (e.g.
+    // "abc") would otherwise surface to the client as a server-side
+    // `invalid input syntax for type uuid` error instead of a
+    // controlled socket error.
+    if (!UUID_PATTERN.test(data.trip_id)) {
+      client.emit('error', { message: 'trip_id must be a UUID' });
+      return;
+    }
+
+    const membership = await this.tripMemberRepo.findOne({
+      where: { trip_id: data.trip_id, user_id: userId },
+    });
+    if (!membership) {
+      client.emit('error', { message: 'Trip not found or access denied' });
+      return;
+    }
+
+    client.join(`trip:${data.trip_id}`);
+    this.logger.debug(`Client ${client.id} joined trip ${data.trip_id}`);
+  }
+
+  /**
+   * Leave a trip room. Useful when the user navigates away from a trip
+   * detail screen so they don't accumulate updates for trips they're no
+   * longer viewing.
+   *
+   * Client sends: { trip_id }
+   */
+  @SubscribeMessage('unsubscribe:trip')
+  handleUnsubscribeTrip(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { trip_id: string },
+  ): void {
+    if (!data?.trip_id || typeof data.trip_id !== 'string') return;
+    client.leave(`trip:${data.trip_id}`);
+  }
+
   // ── Server-side emit methods (called by other services) ──
 
   /**
@@ -257,6 +331,16 @@ export class EventsGateway
    */
   broadcast(event: string, data: unknown): void {
     this.server.emit(event, data);
+  }
+
+  /**
+   * Emit an event to every member currently subscribed to a trip room.
+   * Generic over the event name so collab features (suggestions, votes,
+   * chat, metadata updates) can reuse the same transport without having
+   * to add one public method per event.
+   */
+  emitToTrip(tripId: string, event: string, data: unknown): void {
+    this.server.to(`trip:${tripId}`).emit(event, data);
   }
 
   // ── Helpers ──

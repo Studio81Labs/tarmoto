@@ -10,8 +10,10 @@ import { Repository } from 'typeorm';
 import { pointToLatLng } from '@tarmoto/shared';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
+import { EventsGateway } from '../events/events.gateway.js';
 import { CreateTripDto } from './dto/create-trip.dto.js';
 import { ListTripsDto } from './dto/list-trips.dto.js';
+import { UpdateTripDto } from './dto/update-trip.dto.js';
 import {
   TripDayDto,
   TripDetailDto,
@@ -36,6 +38,10 @@ const DEFAULT_DAILY_KM_MAX = 350;
 const DEFAULT_MIN_QUALITY = 3.0;
 const DEFAULT_ROAD_PREFERENCE = 'curvy';
 
+// Roles allowed to mutate trip-wide metadata. Keeping this in one place
+// so role checks stay consistent if we ever grow the role vocabulary.
+const PRIVILEGED_ROLES = new Set(['owner', 'admin']);
+
 @Injectable()
 export class TripsService {
   constructor(
@@ -43,6 +49,7 @@ export class TripsService {
     private readonly tripRepo: Repository<Trip>,
     @InjectRepository(TripMember)
     private readonly memberRepo: Repository<TripMember>,
+    private readonly events: EventsGateway,
   ) {}
 
   async create(userId: string, dto: CreateTripDto): Promise<TripDetailDto> {
@@ -124,6 +131,89 @@ export class TripsService {
       `Failed to allocate a unique trip invite code after ${MAX_INVITE_ALLOCATION_ATTEMPTS} attempts` +
         (lastError instanceof Error ? `: ${lastError.message}` : ''),
     );
+  }
+
+  async update(
+    userId: string,
+    tripId: string,
+    dto: UpdateTripDto,
+  ): Promise<TripDetailDto> {
+    // Role check first so a plain member probing the PATCH surface
+    // can't confirm field-level validation rules on trips they have no
+    // right to mutate. Non-members and regular members collapse into
+    // the same 404 regardless of body shape.
+    const membership = await this.memberRepo.findOne({
+      where: { trip_id: tripId, user_id: userId },
+    });
+    if (!membership || !PRIVILEGED_ROLES.has(membership.role)) {
+      throw new NotFoundException('Trip not found');
+    }
+
+    // Build the supplied-fields-only delta once, outside the txn, so
+    // the lock window stays short. Writing the full merged row would
+    // quietly revert concurrent edits: two privileged members PATCHing
+    // different fields could both read the same pre-image and each
+    // rewrite the untouched fields to their read-time values, so the
+    // loser of the race loses their co-planner's change even though
+    // the two updates don't actually conflict.
+    const delta: Record<string, unknown> = {};
+    if (dto.title !== undefined) delta.title = dto.title;
+    if (dto.region !== undefined) delta.region = dto.region ?? null;
+    if (dto.num_days !== undefined) delta.num_days = dto.num_days;
+    if (dto.daily_km_min !== undefined) delta.daily_km_min = dto.daily_km_min;
+    if (dto.daily_km_max !== undefined) delta.daily_km_max = dto.daily_km_max;
+    if (dto.min_quality !== undefined) delta.min_quality = dto.min_quality;
+    if (dto.road_preference !== undefined) {
+      delta.road_preference = dto.road_preference;
+    }
+    if (dto.status !== undefined) delta.status = dto.status;
+
+    const hasChanges = Object.keys(delta).length > 0;
+
+    // Read-validate-write is serialised on a pessimistic row lock so
+    // the cross-field (min, max) check can't race against a concurrent
+    // PATCH. Without the lock, two callers each supplying one side
+    // could pass validation against the same pre-image and commit a
+    // row where min > max. The lock keeps the second PATCH blocked
+    // until the first commits, so the second reads (and validates
+    // against) the post-first state.
+    if (hasChanges) {
+      await this.tripRepo.manager.transaction(async (manager) => {
+        const locked = await manager.findOne(Trip, {
+          where: { id: tripId },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!locked) throw new NotFoundException('Trip not found');
+
+        const effectiveMin = dto.daily_km_min ?? locked.daily_km_min;
+        const effectiveMax = dto.daily_km_max ?? locked.daily_km_max;
+        if (effectiveMin > effectiveMax) {
+          throw new BadRequestException(
+            'daily_km_min must be less than or equal to daily_km_max',
+          );
+        }
+
+        await manager.update(Trip, { id: tripId }, delta);
+      });
+    } else {
+      // Empty PATCH — still verify the trip exists so the response is
+      // consistent with the hasChanges branch.
+      const exists = await this.tripRepo.findOne({
+        where: { id: tripId },
+        select: { id: true },
+      });
+      if (!exists) throw new NotFoundException('Trip not found');
+    }
+
+    const detail = await this.getDetail(userId, tripId);
+    // Don't broadcast on a no-op PATCH — subscribed members shouldn't
+    // rerender or refetch just because an author submitted an empty
+    // DTO. The response still returns the current detail so the caller
+    // can confirm state.
+    if (hasChanges) {
+      this.events.emitToTrip(tripId, 'trip:updated', detail);
+    }
+    return detail;
   }
 
   async list(userId: string, query: ListTripsDto): Promise<TripSummaryDto[]> {
