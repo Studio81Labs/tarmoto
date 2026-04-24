@@ -245,4 +245,44 @@ describe("trip-itinerary-generator", () => {
       explicitEnd.location.lat,
     ]);
   });
+
+  it("preserves rider-added non-boundary waypoints when regenerating a day", () => {
+    const trip = generateTripOptions({
+      ...params,
+      days: 2,
+    })[0]!.trip;
+    const riderStop = {
+      id: "suggestion-accommodation-stay-1",
+      name: "Hotel Stelvio",
+      type: "accommodation" as const,
+      location: { lng: 10.502, lat: 46.421 },
+    };
+    const tripWithExtraStop = {
+      ...trip,
+      days: trip.days.map((currentDay, index) =>
+        index === 0
+          ? {
+              ...currentDay,
+              waypoints: [
+                ...currentDay.waypoints.slice(0, -1),
+                riderStop,
+                currentDay.waypoints.at(-1)!,
+              ],
+            }
+          : currentDay,
+      ),
+    };
+
+    const regenerated = regenerateTripDay(tripWithExtraStop, 1);
+    const regeneratedWaypoints = regenerated.days[0]!.waypoints;
+
+    expect(regeneratedWaypoints).toEqual(
+      expect.arrayContaining([expect.objectContaining(riderStop)]),
+    );
+    expect(
+      regeneratedWaypoints.filter((waypoint) => waypoint.id === `day-1-via`),
+    ).toHaveLength(1);
+    expect(regeneratedWaypoints[0]?.type).toBe("start");
+    expect(regeneratedWaypoints.at(-1)?.type).toBe("end");
+  });
 });

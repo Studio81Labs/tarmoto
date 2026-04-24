@@ -277,9 +277,52 @@ function buildGeneratedDay({
       type: "LineString",
       coordinates,
     },
-    waypoints: [start, viaWaypoint, end],
+    waypoints: buildRegeneratedWaypoints({
+      dayNumber,
+      existingDay,
+      start,
+      viaWaypoint,
+      end,
+    }),
     segments,
   };
+}
+
+function buildRegeneratedWaypoints({
+  dayNumber,
+  existingDay,
+  start,
+  viaWaypoint,
+  end,
+}: {
+  dayNumber: number;
+  existingDay?: TripDay;
+  start: Waypoint;
+  viaWaypoint: Waypoint;
+  end: Waypoint;
+}): Waypoint[] {
+  if (!existingDay) return [start, viaWaypoint, end];
+
+  const generatedViaId = `day-${dayNumber}-via`;
+  const middleWaypoints: Waypoint[] = [];
+  let viaInserted = false;
+
+  for (const waypoint of existingDay.waypoints) {
+    if (waypoint.type === "start" || waypoint.type === "end") continue;
+
+    if (waypoint.id === generatedViaId) {
+      if (!viaInserted) {
+        middleWaypoints.push(viaWaypoint);
+        viaInserted = true;
+      }
+      continue;
+    }
+
+    middleWaypoints.push(cloneWaypoint(waypoint));
+  }
+
+  if (!viaInserted) middleWaypoints.push(viaWaypoint);
+  return [start, ...middleWaypoints, end];
 }
 
 function buildSegments(
