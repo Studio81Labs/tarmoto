@@ -7,6 +7,10 @@ import {
   type VehicleNavigationSnapshot,
 } from "../vehicleDisplay";
 
+function makeReportHazardMock() {
+  return jest.fn<Promise<void>, [LatLng, HazardType]>().mockResolvedValue();
+}
+
 class FakeBridge implements VehicleDisplayBridge {
   mountNavigation = jest.fn();
   unmountNavigation = jest.fn();
@@ -175,5 +179,70 @@ describe("VehicleDisplayController", () => {
 
     expect(bridge.closeSearch).toHaveBeenCalledTimes(1);
     expect(bridge.unmountNavigation).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("vehicle display runtime bridge", () => {
+  afterEach(() => {
+    jest.resetModules();
+    jest.clearAllMocks();
+  });
+
+  it("removes CarPlay emitter subscriptions when navigation stops", () => {
+    const removeFns: jest.Mock[] = [];
+
+    jest.isolateModules(() => {
+      jest.doMock("react-native", () => ({
+        Platform: { OS: "ios" },
+      }));
+      jest.doMock("react-native-carplay", () => {
+        const addListener = jest.fn((_event: string, _handler: unknown) => {
+          const remove = jest.fn();
+          removeFns.push(remove);
+          return { remove };
+        });
+
+        return {
+          CarPlay: {
+            connected: true,
+            emitter: { addListener },
+            setRootTemplate: jest.fn(),
+            pushTemplate: jest.fn(),
+            popTemplate: jest.fn(),
+            bridge: {
+              reactToUpdatedSearchText: jest.fn(),
+              reactToSelectedResult: jest.fn(),
+            },
+          },
+          MapTemplate: class {
+            constructor(_: unknown) {}
+          },
+          SearchTemplate: class {
+            constructor(_: unknown) {}
+            updateTemplate(_: unknown) {}
+          },
+          InformationTemplate: class {
+            constructor(_: unknown) {}
+          },
+        };
+      });
+      jest.doMock("../carplay", () => ({
+        mountRideStatusBoard: jest.fn(),
+        resumeRideStatusBoard: jest.fn(),
+        suspendRideStatusBoard: jest.fn(),
+      }));
+      jest.doMock("@/components/VehicleDisplaySurface", () => "VehicleDisplay");
+
+      const { syncVehicleNavigationDisplay, stopVehicleNavigationDisplay } =
+        require("../vehicleDisplay") as typeof import("../vehicleDisplay");
+
+      syncVehicleNavigationDisplay(makeSnapshot(), makeReportHazardMock());
+      stopVehicleNavigationDisplay();
+    });
+
+    expect(removeFns).toHaveLength(5);
+    for (const remove of removeFns) {
+      expect(remove).toHaveBeenCalledTimes(1);
+    }
   });
 });

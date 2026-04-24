@@ -333,6 +333,13 @@ function createRuntimeBridge(snapshotRef: {
       );
     };
 
+    const removeListeners = () => {
+      while (subscriptions.length > 0) {
+        subscriptions.pop()?.remove();
+      }
+      listening = false;
+    };
+
     const ensureMapTemplate = () => {
       if (mapTemplate) return mapTemplate;
       mapTemplate = new MapTemplate({
@@ -385,6 +392,7 @@ function createRuntimeBridge(snapshotRef: {
       },
       unmountNavigation: () => {
         searchVisible = false;
+        removeListeners();
         store.setVisible(false);
         store.setSnapshot(null);
         store.setBanner(null);
