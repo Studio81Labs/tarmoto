@@ -175,7 +175,11 @@ export default async function SharedTripPage({
 
 function waypointLabel(wp: Waypoint, index: number): string {
   if (wp.name) return wp.name;
-  const typeLabel = wp.type[0].toUpperCase() + wp.type.slice(1);
+  // `parseTripSnapshot` validates `type` is one of the known strings, but
+  // belt-and-suspenders: if a future caller skips that validator we still
+  // want a readable label instead of a TypeError on `type[0]`.
+  const rawType = typeof wp.type === "string" && wp.type.length > 0 ? wp.type : "stop";
+  const typeLabel = rawType[0].toUpperCase() + rawType.slice(1);
   return `${typeLabel} ${index + 1}`;
 }
 

@@ -26,7 +26,7 @@ import { AddCommunityTables1713400000000 } from './migrations/1713400000000-AddC
 import { AddRideAvgCurviness1714400000000 } from './migrations/1714400000000-AddRideAvgCurviness.js';
 import { AddSharedRideViewCount1714300000000 } from './migrations/1714300000000-AddSharedRideViewCount.js';
 import { AddSharedRideEmbedClickCount1714500000000 } from './migrations/1714500000000-AddSharedRideEmbedClickCount.js';
-import { AddTripShares1714800000000 } from './migrations/1714800000000-AddTripShares.js';
+import { AddTripShares1714900000000 } from './migrations/1714900000000-AddTripShares.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -64,7 +64,7 @@ export const AppDataSource = new DataSource({
     AddSharedRideViewCount1714300000000,
     AddRideAvgCurviness1714400000000,
     AddSharedRideEmbedClickCount1714500000000,
-    AddTripShares1714800000000,
+    AddTripShares1714900000000,
   ],
   synchronize: false,
 });

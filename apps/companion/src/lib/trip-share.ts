@@ -1,16 +1,12 @@
 import { API_BASE_SERVER } from "@/lib/config";
+import type { TripSharePublic } from "@/lib/api";
 import type { RoutePoint } from "@/lib/ride-detail";
 import type { Trip, TripDay, Waypoint } from "@/lib/types";
 
-export interface TripSharePublic {
-  share_token: string;
-  title: string;
-  owner_name: string;
-  snapshot: Record<string, unknown>;
-  view_count: number;
-  created_at: string;
-  updated_at: string;
-}
+// Re-exported so server-side callers keep importing `TripSharePublic`
+// from this module (alongside `fetchSharedTrip`) without reaching into
+// the client-side `api.ts` module for a type definition.
+export type { TripSharePublic };
 
 export async function fetchSharedTrip(
   token: string,
@@ -53,12 +49,28 @@ function isTripDay(candidate: unknown): candidate is TripDay {
   return Array.isArray(waypoints) && waypoints.every(isWaypoint);
 }
 
+const WAYPOINT_TYPES: ReadonlySet<Waypoint["type"]> = new Set([
+  "start",
+  "via",
+  "end",
+  "fuel",
+  "rest",
+  "photo",
+  "accommodation",
+]);
+
 function isWaypoint(candidate: unknown): candidate is Waypoint {
   if (typeof candidate !== "object" || candidate === null) return false;
   const location = (candidate as { location?: unknown }).location;
   if (typeof location !== "object" || location === null) return false;
   const { lat, lng } = location as { lat?: unknown; lng?: unknown };
-  return typeof lat === "number" && typeof lng === "number";
+  if (typeof lat !== "number" || typeof lng !== "number") return false;
+  // `type` is required by the Waypoint contract and is read at render time
+  // (`waypointLabel` dereferences `type[0]`). Reject payloads that omit it
+  // or supply an unknown value so legacy/malformed snapshots route into the
+  // "unexpected format" viewer branch instead of crashing SSR.
+  const type = (candidate as { type?: unknown }).type;
+  return typeof type === "string" && WAYPOINT_TYPES.has(type as Waypoint["type"]);
 }
 
 /**

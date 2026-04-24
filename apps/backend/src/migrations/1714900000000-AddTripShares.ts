@@ -8,8 +8,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * feature (real-time cursors, suggestions, voting, activity log) is tracked
  * separately and will land in follow-up migrations.
  */
-export class AddTripShares1714800000000 implements MigrationInterface {
-  name = 'AddTripShares1714800000000';
+export class AddTripShares1714900000000 implements MigrationInterface {
+  name = 'AddTripShares1714900000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
