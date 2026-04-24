@@ -92,6 +92,46 @@ describe("parseTripSnapshot", () => {
     };
     expect(parseTripSnapshot(bad)).toBeNull();
   });
+
+  it("rejects days whose routeGeometry has non-pair coordinates", () => {
+    const bad = {
+      days: [
+        {
+          waypoints: [
+            {
+              id: "w-1",
+              type: "start",
+              location: { lat: 43.0, lng: 1.5 },
+            },
+          ],
+          routeGeometry: {
+            type: "LineString",
+            // Flat numbers instead of [lng, lat] pairs — would crash
+            // `flattenTripRoute`'s destructure without the guard.
+            coordinates: [1, 2, 3],
+          },
+        },
+      ],
+    };
+    expect(parseTripSnapshot(bad)).toBeNull();
+  });
+
+  it("accepts days whose routeGeometry is absent or has empty coordinates", () => {
+    const okNoGeometry = {
+      days: [
+        {
+          waypoints: [
+            {
+              id: "w-1",
+              type: "start",
+              location: { lat: 43.0, lng: 1.5 },
+            },
+          ],
+        },
+      ],
+    };
+    expect(parseTripSnapshot(okNoGeometry)).not.toBeNull();
+  });
 });
 
 describe("flattenTripRoute", () => {
@@ -122,6 +162,29 @@ describe("flattenTripRoute", () => {
     };
     const pts = flattenTripRoute(tripWithBad);
     expect(pts).toHaveLength(2);
+  });
+
+  it("skips non-pair entries in routeGeometry without throwing", () => {
+    // Bypasses `parseTripSnapshot` to mirror callers that hand in a trip
+    // directly (demo trips, imports): the flattener must not destructure
+    // a scalar as `[lng, lat]`.
+    const tripWithScalars = {
+      ...validTrip,
+      days: [
+        {
+          ...validTrip.days[0],
+          routeGeometry: {
+            type: "LineString",
+            coordinates: [[1.5, 43.0], 1, null, [1.8, 43.5]] as unknown as [
+              number,
+              number,
+            ][],
+          },
+        },
+      ],
+    } as Trip;
+    expect(() => flattenTripRoute(tripWithScalars)).not.toThrow();
+    expect(flattenTripRoute(tripWithScalars)).toHaveLength(2);
   });
 });
 

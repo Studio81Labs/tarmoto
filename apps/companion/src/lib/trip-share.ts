@@ -46,7 +46,34 @@ export function parseTripSnapshot(
 function isTripDay(candidate: unknown): candidate is TripDay {
   if (typeof candidate !== "object" || candidate === null) return false;
   const waypoints = (candidate as { waypoints?: unknown }).waypoints;
-  return Array.isArray(waypoints) && waypoints.every(isWaypoint);
+  if (!Array.isArray(waypoints) || !waypoints.every(isWaypoint)) return false;
+  // `routeGeometry` is optional (imported trips often lack it), but when
+  // present `flattenTripRoute` destructures each entry as `[lng, lat]`.
+  // Reject malformed coordinate arrays here so a payload like
+  // `{ coordinates: [1, 2, 3] }` routes to the "unexpected format" viewer
+  // branch instead of crashing SSR with a TypeError at render time.
+  const routeGeometry = (candidate as { routeGeometry?: unknown })
+    .routeGeometry;
+  if (routeGeometry !== undefined && !isLineStringGeometry(routeGeometry)) {
+    return false;
+  }
+  return true;
+}
+
+function isLineStringGeometry(candidate: unknown): boolean {
+  if (typeof candidate !== "object" || candidate === null) return false;
+  const coordinates = (candidate as { coordinates?: unknown }).coordinates;
+  // Geometry is only consumed when coordinates exist; absent/empty coords
+  // are allowed — `flattenTripRoute` already falls back to waypoints.
+  if (coordinates === undefined) return true;
+  if (!Array.isArray(coordinates)) return false;
+  return coordinates.every(
+    (entry) =>
+      Array.isArray(entry) &&
+      entry.length >= 2 &&
+      typeof entry[0] === "number" &&
+      typeof entry[1] === "number",
+  );
 }
 
 const WAYPOINT_TYPES: ReadonlySet<Waypoint["type"]> = new Set([
@@ -70,7 +97,9 @@ function isWaypoint(candidate: unknown): candidate is Waypoint {
   // or supply an unknown value so legacy/malformed snapshots route into the
   // "unexpected format" viewer branch instead of crashing SSR.
   const type = (candidate as { type?: unknown }).type;
-  return typeof type === "string" && WAYPOINT_TYPES.has(type as Waypoint["type"]);
+  return (
+    typeof type === "string" && WAYPOINT_TYPES.has(type as Waypoint["type"])
+  );
 }
 
 /**
@@ -82,7 +111,13 @@ export function flattenTripRoute(trip: Trip): RoutePoint[] {
   const out: RoutePoint[] = [];
   for (const day of trip.days) {
     if (day.routeGeometry?.coordinates?.length) {
-      for (const [lng, lat] of day.routeGeometry.coordinates) {
+      for (const entry of day.routeGeometry.coordinates) {
+        // `parseTripSnapshot` already validates the coord shape, but this
+        // function is callable from other paths (e.g. demo trips) where
+        // the snapshot may not have been validated — skip non-pair entries
+        // rather than throwing at destructure time.
+        if (!Array.isArray(entry) || entry.length < 2) continue;
+        const [lng, lat] = entry;
         if (Number.isFinite(lat) && Number.isFinite(lng)) {
           out.push({ lat, lng });
         }
