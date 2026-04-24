@@ -67,11 +67,27 @@ describe('TripCollabService', () => {
   let roadSegmentRepo: jest.Mocked<Repository<RoadSegment>>;
   let events: jest.Mocked<Pick<EventsGateway, 'emitToTrip'>>;
   let activity: jest.Mocked<Pick<TripActivityService, 'recordSafe'>>;
+  // Stand-in for the TypeORM EntityManager handed to the callback by
+  // `suggestionRepo.manager.transaction`. Vote/unvote reads + writes
+  // go through this so tests can assert the suggestion-row lock path.
+  let txManager: {
+    findOne: jest.Mock;
+    update: jest.Mock;
+    insert: jest.Mock;
+    delete: jest.Mock;
+  };
 
   beforeEach(async () => {
     memberRepo = {
       findOne: jest.fn(),
     } as unknown as jest.Mocked<Repository<TripMember>>;
+
+    txManager = {
+      findOne: jest.fn(),
+      update: jest.fn().mockResolvedValue({ affected: 0 }),
+      insert: jest.fn().mockResolvedValue({ identifiers: [{ id: 'v-1' }] }),
+      delete: jest.fn().mockResolvedValue({ affected: 1 }),
+    };
 
     suggestionRepo = {
       find: jest.fn(),
@@ -87,7 +103,16 @@ describe('TripCollabService', () => {
           updated_at: NOW,
         }),
       ),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
+      manager: {
+        transaction: jest
+          .fn()
+          .mockImplementation(
+            async (cb: (m: typeof txManager) => Promise<unknown>) =>
+              cb(txManager),
+          ),
+      },
     } as unknown as jest.Mocked<Repository<TripSuggestion>>;
 
     voteRepo = {
@@ -384,10 +409,11 @@ describe('TripCollabService', () => {
   describe('voteSuggestion', () => {
     it('inserts a fresh vote when no row exists (update affects 0 rows)', async () => {
       memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
-      suggestionRepo.findOne.mockResolvedValueOnce(makeSuggestion());
-      // Pre-read: no prior vote.
-      voteRepo.findOne.mockResolvedValueOnce(null);
-      voteRepo.update.mockResolvedValueOnce({
+      // Locked suggestion row, then priorVote read (null = no prior).
+      txManager.findOne
+        .mockResolvedValueOnce(makeSuggestion())
+        .mockResolvedValueOnce(null);
+      txManager.update.mockResolvedValueOnce({
         affected: 0,
         raw: [],
         generatedMaps: [],
@@ -403,11 +429,23 @@ describe('TripCollabService', () => {
         'up',
       );
 
-      expect(voteRepo.update).toHaveBeenCalledWith(
+      // Lock acquired via pessimistic_write so a concurrent resolve
+      // can't slip the suggestion into `accepted`/`rejected` between
+      // our status check and the upsert.
+      expect(txManager.findOne).toHaveBeenNthCalledWith(
+        1,
+        expect.anything(),
+        expect.objectContaining({
+          where: { id: SUGGESTION_ID, trip_id: TRIP_ID },
+          lock: { mode: 'pessimistic_write' },
+        }),
+      );
+      expect(txManager.update).toHaveBeenCalledWith(
+        expect.anything(),
         { suggestion_id: SUGGESTION_ID, user_id: USER_ID },
         { vote: 'up' },
       );
-      expect(voteRepo.insert).toHaveBeenCalledWith({
+      expect(txManager.insert).toHaveBeenCalledWith(expect.anything(), {
         suggestion_id: SUGGESTION_ID,
         user_id: USER_ID,
         vote: 'up',
@@ -427,13 +465,14 @@ describe('TripCollabService', () => {
       // stale tally out to every subscriber — consistent with
       // unvoteSuggestion's same-state no-op behaviour.
       memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
-      suggestionRepo.findOne.mockResolvedValueOnce(makeSuggestion());
-      voteRepo.findOne.mockResolvedValueOnce({
-        suggestion_id: SUGGESTION_ID,
-        user_id: USER_ID,
-        vote: 'up',
-      } as unknown as TripSuggestionVote);
-      voteRepo.update.mockResolvedValueOnce({
+      txManager.findOne
+        .mockResolvedValueOnce(makeSuggestion())
+        .mockResolvedValueOnce({
+          suggestion_id: SUGGESTION_ID,
+          user_id: USER_ID,
+          vote: 'up',
+        } as unknown as TripSuggestionVote);
+      txManager.update.mockResolvedValueOnce({
         affected: 1,
         raw: [],
         generatedMaps: [],
@@ -455,14 +494,14 @@ describe('TripCollabService', () => {
 
     it('flips an existing vote with a single UPDATE (no INSERT)', async () => {
       memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
-      suggestionRepo.findOne.mockResolvedValueOnce(makeSuggestion());
-      // Pre-read: prior vote was 'up'.
-      voteRepo.findOne.mockResolvedValueOnce({
-        suggestion_id: SUGGESTION_ID,
-        user_id: USER_ID,
-        vote: 'up',
-      } as unknown as TripSuggestionVote);
-      voteRepo.update.mockResolvedValueOnce({
+      txManager.findOne
+        .mockResolvedValueOnce(makeSuggestion())
+        .mockResolvedValueOnce({
+          suggestion_id: SUGGESTION_ID,
+          user_id: USER_ID,
+          vote: 'up',
+        } as unknown as TripSuggestionVote);
+      txManager.update.mockResolvedValueOnce({
         affected: 1,
         raw: [],
         generatedMaps: [],
@@ -478,11 +517,12 @@ describe('TripCollabService', () => {
         'down',
       );
 
-      expect(voteRepo.update).toHaveBeenCalledWith(
+      expect(txManager.update).toHaveBeenCalledWith(
+        expect.anything(),
         { suggestion_id: SUGGESTION_ID, user_id: USER_ID },
         { vote: 'down' },
       );
-      expect(voteRepo.insert).not.toHaveBeenCalled();
+      expect(txManager.insert).not.toHaveBeenCalled();
       expect(result.caller_vote).toBe('down');
       // A real flip → broadcast.
       expect(events.emitToTrip).toHaveBeenCalled();
@@ -492,12 +532,13 @@ describe('TripCollabService', () => {
       // Both requests observe affected:0 from UPDATE, both try INSERT,
       // the second catches 23505 and overwrites with a final UPDATE.
       memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
-      suggestionRepo.findOne.mockResolvedValueOnce(makeSuggestion());
-      voteRepo.findOne.mockResolvedValueOnce(null);
-      voteRepo.update
+      txManager.findOne
+        .mockResolvedValueOnce(makeSuggestion())
+        .mockResolvedValueOnce(null);
+      txManager.update
         .mockResolvedValueOnce({ affected: 0, raw: [], generatedMaps: [] })
         .mockResolvedValueOnce({ affected: 1, raw: [], generatedMaps: [] });
-      voteRepo.insert.mockRejectedValueOnce(
+      txManager.insert.mockRejectedValueOnce(
         Object.assign(new Error('duplicate key'), {
           code: '23505',
           constraint: 'uq_trip_suggestion_votes_member',
@@ -516,21 +557,22 @@ describe('TripCollabService', () => {
 
       // Two UPDATEs: first returns affected:0, fallback after the
       // caught 23505 returns affected:1.
-      expect(voteRepo.update).toHaveBeenCalledTimes(2);
-      expect(voteRepo.insert).toHaveBeenCalledTimes(1);
+      expect(txManager.update).toHaveBeenCalledTimes(2);
+      expect(txManager.insert).toHaveBeenCalledTimes(1);
       expect(result.caller_vote).toBe('up');
     });
 
     it('rethrows non-unique-violation errors from the INSERT', async () => {
       memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
-      suggestionRepo.findOne.mockResolvedValueOnce(makeSuggestion());
-      voteRepo.findOne.mockResolvedValueOnce(null);
-      voteRepo.update.mockResolvedValueOnce({
+      txManager.findOne
+        .mockResolvedValueOnce(makeSuggestion())
+        .mockResolvedValueOnce(null);
+      txManager.update.mockResolvedValueOnce({
         affected: 0,
         raw: [],
         generatedMaps: [],
       });
-      voteRepo.insert.mockRejectedValueOnce(
+      txManager.insert.mockRejectedValueOnce(
         Object.assign(new Error('boom'), { code: '99999' }),
       );
 
@@ -541,11 +583,11 @@ describe('TripCollabService', () => {
 
     it('rejects votes on a resolved suggestion (accepted / rejected)', async () => {
       // Once the owner resolves a suggestion the UI closes voting. The
-      // server has to enforce this too or a stale/scripted client can
-      // keep flipping tallies and fanning out `trip:suggestion:voted`
-      // broadcasts on a row that the UI shows as finalised.
+      // check happens UNDER the row lock so a concurrent resolve
+      // committing mid-vote forces our status read to see the final
+      // value — no vote row is written and no broadcast fires.
       memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
-      suggestionRepo.findOne.mockResolvedValueOnce(
+      txManager.findOne.mockResolvedValueOnce(
         makeSuggestion({ status: 'accepted' }),
       );
 
@@ -553,8 +595,8 @@ describe('TripCollabService', () => {
         service.voteSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID, 'up'),
       ).rejects.toBeInstanceOf(BadRequestException);
 
-      expect(voteRepo.update).not.toHaveBeenCalled();
-      expect(voteRepo.insert).not.toHaveBeenCalled();
+      expect(txManager.update).not.toHaveBeenCalled();
+      expect(txManager.insert).not.toHaveBeenCalled();
       expect(events.emitToTrip).not.toHaveBeenCalled();
     });
   });
@@ -562,8 +604,8 @@ describe('TripCollabService', () => {
   describe('unvoteSuggestion', () => {
     it('removes the callers vote and re-emits the tally when a row was actually deleted', async () => {
       memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
-      suggestionRepo.findOne.mockResolvedValueOnce(makeSuggestion());
-      voteRepo.delete.mockResolvedValueOnce({ affected: 1, raw: [] });
+      txManager.findOne.mockResolvedValueOnce(makeSuggestion());
+      txManager.delete.mockResolvedValueOnce({ affected: 1, raw: [] });
       voteRepo.find.mockResolvedValueOnce([]);
 
       const result = await service.unvoteSuggestion(
@@ -572,7 +614,13 @@ describe('TripCollabService', () => {
         SUGGESTION_ID,
       );
 
-      expect(voteRepo.delete).toHaveBeenCalledWith({
+      expect(txManager.findOne).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          lock: { mode: 'pessimistic_write' },
+        }),
+      );
+      expect(txManager.delete).toHaveBeenCalledWith(expect.anything(), {
         suggestion_id: SUGGESTION_ID,
         user_id: USER_ID,
       });
@@ -589,8 +637,8 @@ describe('TripCollabService', () => {
       // force every subscribed member to refetch a tally that didn't
       // actually change.
       memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
-      suggestionRepo.findOne.mockResolvedValueOnce(makeSuggestion());
-      voteRepo.delete.mockResolvedValueOnce({ affected: 0, raw: [] });
+      txManager.findOne.mockResolvedValueOnce(makeSuggestion());
+      txManager.delete.mockResolvedValueOnce({ affected: 0, raw: [] });
       voteRepo.find.mockResolvedValueOnce([]);
 
       const result = await service.unvoteSuggestion(
@@ -606,11 +654,11 @@ describe('TripCollabService', () => {
     });
 
     it('rejects unvote on a resolved suggestion', async () => {
-      // Mirrors voteSuggestion: once resolved the vote row represents
-      // historical state on a finalised row and a late retry must not
-      // mutate it.
+      // Mirrors voteSuggestion: under the row lock the status read
+      // reflects any concurrent resolve, so a late retry can't delete
+      // a vote row on a now-closed suggestion.
       memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
-      suggestionRepo.findOne.mockResolvedValueOnce(
+      txManager.findOne.mockResolvedValueOnce(
         makeSuggestion({ status: 'rejected' }),
       );
 
@@ -618,8 +666,93 @@ describe('TripCollabService', () => {
         service.unvoteSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID),
       ).rejects.toBeInstanceOf(BadRequestException);
 
-      expect(voteRepo.delete).not.toHaveBeenCalled();
+      expect(txManager.delete).not.toHaveBeenCalled();
       expect(events.emitToTrip).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resolveSuggestion', () => {
+    it('flips status via conditional UPDATE and broadcasts trip:suggestion:resolved', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('owner'));
+      suggestionRepo.update.mockResolvedValueOnce({
+        affected: 1,
+        raw: [],
+        generatedMaps: [],
+      });
+      suggestionRepo.findOne.mockResolvedValueOnce(
+        makeSuggestion({ status: 'accepted' }),
+      );
+      voteRepo.find.mockResolvedValueOnce([]);
+
+      const result = await service.resolveSuggestion(
+        USER_ID,
+        TRIP_ID,
+        SUGGESTION_ID,
+        'accepted',
+      );
+
+      // Atomic WHERE status = 'open' guarantees at most one resolver
+      // wins even under concurrent owner/admin requests.
+      expect(suggestionRepo.update).toHaveBeenCalledWith(
+        { id: SUGGESTION_ID, trip_id: TRIP_ID, status: 'open' },
+        { status: 'accepted' },
+      );
+      expect(events.emitToTrip).toHaveBeenCalledWith(
+        TRIP_ID,
+        'trip:suggestion:resolved',
+        { suggestion_id: SUGGESTION_ID, status: 'accepted' },
+      );
+      expect(result.status).toBe('accepted');
+    });
+
+    it('rejects a concurrent second resolve (affected = 0, already resolved)', async () => {
+      // Simulate the loser of a resolve race: the conditional UPDATE
+      // finds no row matching `status = 'open'` because the winner has
+      // already committed. Instead of silently overwriting the winner's
+      // decision and emitting a conflicting broadcast, we disambiguate
+      // via a second read and 400 with the now-authoritative status.
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('owner'));
+      suggestionRepo.update.mockResolvedValueOnce({
+        affected: 0,
+        raw: [],
+        generatedMaps: [],
+      });
+      suggestionRepo.findOne.mockResolvedValueOnce(
+        makeSuggestion({ status: 'rejected' }),
+      );
+
+      await expect(
+        service.resolveSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID, 'accepted'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(events.emitToTrip).not.toHaveBeenCalled();
+    });
+
+    it('404s a suggestion that does not exist (affected = 0 with no follow-up row)', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('owner'));
+      suggestionRepo.update.mockResolvedValueOnce({
+        affected: 0,
+        raw: [],
+        generatedMaps: [],
+      });
+      suggestionRepo.findOne.mockResolvedValueOnce(null);
+
+      await expect(
+        service.resolveSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID, 'accepted'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(events.emitToTrip).not.toHaveBeenCalled();
+    });
+
+    it('forbids non-owner/admin members from resolving', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
+
+      await expect(
+        service.resolveSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID, 'accepted'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      // Guard short-circuits BEFORE the conditional UPDATE so a plain
+      // member can't even probe whether the row is open.
+      expect(suggestionRepo.update).not.toHaveBeenCalled();
     });
   });
 

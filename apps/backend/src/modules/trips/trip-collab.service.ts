@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { EntityManager, In, Repository } from 'typeorm';
 import { pointToLatLng } from '@tarmoto/shared';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
@@ -210,7 +210,7 @@ export class TripCollabService {
    * Resolve a pending suggestion by marking it `accepted` or `rejected`.
    * Owner/admin only — authors of the suggestion can delete their own
    * but cannot unilaterally resolve them. Re-resolving an already
-   * resolved row is a 409 so the UI can surface a clear error rather
+   * resolved row is a 400 so the UI can surface a clear error rather
    * than silently toggling status.
    */
   async resolveSuggestion(
@@ -226,19 +226,38 @@ export class TripCollabService {
       );
     }
 
-    const suggestion = await this.suggestionRepo.findOne({
-      where: { id: suggestionId, trip_id: tripId },
-      relations: { suggester: true },
-    });
-    if (!suggestion) throw new NotFoundException('Suggestion not found');
-    if (suggestion.status !== 'open') {
-      throw new BadRequestException(
-        `Suggestion is already ${suggestion.status}`,
-      );
+    // Atomic transition: UPDATE ... WHERE status = 'open' so two
+    // concurrent owner/admin resolves can't both observe 'open' and
+    // race to overwrite each other. Whoever flips first wins; the
+    // loser sees affected = 0 and returns 400 with the now-current
+    // status instead of silently clobbering the decision and fanning
+    // out a conflicting `trip:suggestion:resolved` broadcast.
+    const result = await this.suggestionRepo.update(
+      { id: suggestionId, trip_id: tripId, status: 'open' },
+      { status },
+    );
+    if ((result.affected ?? 0) === 0) {
+      // Disambiguate: missing row vs. already resolved.
+      const existing = await this.suggestionRepo.findOne({
+        where: { id: suggestionId, trip_id: tripId },
+        select: { id: true, status: true },
+      });
+      if (!existing) throw new NotFoundException('Suggestion not found');
+      throw new BadRequestException(`Suggestion is already ${existing.status}`);
     }
 
-    suggestion.status = status;
-    await this.suggestionRepo.save(suggestion);
+    // Reload with suggester relation for the response body. Safe to do
+    // after the UPDATE — the row is now `accepted`/`rejected` and our
+    // status check above was authoritative.
+    const suggestion = await this.suggestionRepo.findOne({
+      where: { id: suggestionId },
+      relations: { suggester: true },
+    });
+    if (!suggestion) {
+      // Would only happen if another request deleted the row between
+      // the UPDATE and this read — vanishingly rare, treat as transient.
+      throw new NotFoundException('Suggestion not found');
+    }
 
     const action =
       status === 'accepted' ? 'suggestion_accepted' : 'suggestion_rejected';
@@ -267,46 +286,41 @@ export class TripCollabService {
     vote: 'up' | 'down',
   ): Promise<SuggestionDto> {
     await this.requireMembership(userId, tripId);
-    const suggestion = await this.suggestionRepo.findOne({
-      where: { id: suggestionId, trip_id: tripId },
-      relations: { suggester: true },
-    });
-    if (!suggestion) throw new NotFoundException('Suggestion not found');
 
-    // Voting closes when the suggestion is resolved. Without this guard
-    // a stale or scripted client could keep flipping tallies and fan
-    // out `trip:suggestion:voted` broadcasts after accept/reject,
-    // undermining the finality the UI shows for closed rows.
-    if (suggestion.status !== 'open') {
-      throw new BadRequestException(
-        `Cannot vote on a ${suggestion.status} suggestion`,
-      );
-    }
+    // Serialize against `resolveSuggestion` via a pessimistic_write
+    // lock on the suggestion row. A naive read-then-write check would
+    // let a vote land between `SELECT status` and `INSERT/UPDATE vote`
+    // if the owner resolves mid-flight — the vote row would be written
+    // and `trip:suggestion:voted` broadcast on a now-closed suggestion.
+    // The lock blocks this handler until any in-flight resolve commits,
+    // at which point our status check reflects the final value.
+    const { suggestion, hasChange } =
+      await this.suggestionRepo.manager.transaction(async (manager) => {
+        const locked = await manager.findOne(TripSuggestion, {
+          where: { id: suggestionId, trip_id: tripId },
+          relations: { suggester: true },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!locked) throw new NotFoundException('Suggestion not found');
+        if (locked.status !== 'open') {
+          throw new BadRequestException(
+            `Cannot vote on a ${locked.status} suggestion`,
+          );
+        }
 
-    // Detect a same-value re-submit up front so a double-tap on the
-    // already-selected vote doesn't fan out a stale tally to every
-    // subscriber. The snapshot race (a concurrent flip between this
-    // read and the upsert) is acceptable — worst case a broadcast is
-    // missed, which clients already tolerate since they reconcile
-    // against the response body.
-    const priorVote = await this.voteRepo.findOne({
-      where: { suggestion_id: suggestionId, user_id: userId },
-      select: { vote: true },
-    });
-    const hasChange = priorVote?.vote !== vote;
+        // Detect a same-value re-submit up front so a double-tap on
+        // the already-selected vote doesn't fan out a stale tally to
+        // every subscriber.
+        const priorVote = await manager.findOne(TripSuggestionVote, {
+          where: { suggestion_id: suggestionId, user_id: userId },
+          select: { vote: true },
+        });
+        const change = priorVote?.vote !== vote;
 
-    // Upsert against (suggestion_id, user_id) — changing a vote is an
-    // UPDATE, not a new row, so the vote tally stays well-defined.
-    //
-    // The write path races against concurrent votes from the same user
-    // (double-tap, retry, multi-tab), so a naive read-then-insert can
-    // lose the race and surface a 500 from the unique constraint. Do an
-    // unconditional UPDATE first — if 0 rows were affected no vote
-    // existed yet, so INSERT, and if *that* races with another insert
-    // the unique violation is caught and we fall back to UPDATE one
-    // more time. This leaves at most one row per (suggestion, user) and
-    // never turns a normal retry into a server error.
-    await this.upsertVote(suggestionId, userId, vote);
+        await this.upsertVoteIn(manager, suggestionId, userId, vote);
+
+        return { suggestion: locked, hasChange: change };
+      });
 
     if (hasChange) {
       await this.activity.recordSafe(tripId, userId, 'suggestion_voted', {
@@ -318,19 +332,35 @@ export class TripCollabService {
     return this.emitAndReturnSuggestion(userId, tripId, suggestion, hasChange);
   }
 
-  private async upsertVote(
+  /**
+   * Upsert (suggestion_id, user_id) → vote inside the caller's
+   * transaction so the write shares the same lock/visibility boundary
+   * as the preceding status check.
+   *
+   * The write path races against concurrent votes from the same user
+   * (double-tap, retry, multi-tab), so a naive read-then-insert can
+   * lose the race and surface a 500 from the unique constraint. Do an
+   * unconditional UPDATE first — if 0 rows were affected no vote
+   * existed yet, so INSERT, and if *that* races with another insert
+   * the unique violation is caught and we fall back to UPDATE one more
+   * time. This leaves at most one row per (suggestion, user) and never
+   * turns a normal retry into a server error.
+   */
+  private async upsertVoteIn(
+    manager: EntityManager,
     suggestionId: string,
     userId: string,
     vote: 'up' | 'down',
   ): Promise<void> {
-    const updated = await this.voteRepo.update(
+    const updated = await manager.update(
+      TripSuggestionVote,
       { suggestion_id: suggestionId, user_id: userId },
       { vote },
     );
     if ((updated.affected ?? 0) > 0) return;
 
     try {
-      await this.voteRepo.insert({
+      await manager.insert(TripSuggestionVote, {
         suggestion_id: suggestionId,
         user_id: userId,
         vote,
@@ -340,7 +370,8 @@ export class TripCollabService {
       // Desired post-state is still "one row for this member"; just
       // overwrite what they inserted with our vote value.
       if (!isUniqueViolation(err)) throw err;
-      await this.voteRepo.update(
+      await manager.update(
+        TripSuggestionVote,
         { suggestion_id: suggestionId, user_id: userId },
         { vote },
       );
@@ -353,39 +384,44 @@ export class TripCollabService {
     suggestionId: string,
   ): Promise<SuggestionDto> {
     await this.requireMembership(userId, tripId);
-    const suggestion = await this.suggestionRepo.findOne({
-      where: { id: suggestionId, trip_id: tripId },
-      relations: { suggester: true },
-    });
-    if (!suggestion) throw new NotFoundException('Suggestion not found');
 
-    // Mirrors `voteSuggestion`: once resolved, the vote UI is closed
-    // and the server shouldn't let a late retry delete a row that now
-    // represents historical state on an accepted/rejected suggestion.
-    if (suggestion.status !== 'open') {
-      throw new BadRequestException(
-        `Cannot change votes on a ${suggestion.status} suggestion`,
-      );
-    }
+    // Mirrors `voteSuggestion`: pessimistic_write lock serializes
+    // against a concurrent resolve so a late retry can't delete a vote
+    // row (and fan out `trip:suggestion:voted`) on a now-closed
+    // suggestion.
+    const { suggestion, hasChange } =
+      await this.suggestionRepo.manager.transaction(async (manager) => {
+        const locked = await manager.findOne(TripSuggestion, {
+          where: { id: suggestionId, trip_id: tripId },
+          relations: { suggester: true },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!locked) throw new NotFoundException('Suggestion not found');
+        if (locked.status !== 'open') {
+          throw new BadRequestException(
+            `Cannot change votes on a ${locked.status} suggestion`,
+          );
+        }
 
-    const deleted = await this.voteRepo.delete({
-      suggestion_id: suggestionId,
-      user_id: userId,
-    });
+        const deleted = await manager.delete(TripSuggestionVote, {
+          suggestion_id: suggestionId,
+          user_id: userId,
+        });
 
-    // Only broadcast a new tally if an actual row was removed.
-    // Repeated unvote calls (double-tap, retry) after the first one
-    // succeeds would otherwise keep pinging every subscriber with the
-    // same numbers.
-    const hasChange = (deleted.affected ?? 0) > 0;
+        // Only broadcast a new tally if an actual row was removed.
+        // Repeated unvote calls (double-tap, retry) after the first
+        // one succeeds would otherwise keep pinging every subscriber
+        // with the same numbers.
+        const change = (deleted.affected ?? 0) > 0;
+        return { suggestion: locked, hasChange: change };
+      });
+
     if (hasChange) {
       await this.activity.recordSafe(
         tripId,
         userId,
         'suggestion_vote_removed',
-        {
-          suggestion_id: suggestionId,
-        },
+        { suggestion_id: suggestionId },
       );
     }
     return this.emitAndReturnSuggestion(userId, tripId, suggestion, hasChange);
