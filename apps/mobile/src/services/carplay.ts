@@ -286,6 +286,7 @@ function createNoopBridge(): CarPlayBridge {
  */
 let activeBridge: CarPlayBridge | null = null;
 let templateMounted = false;
+let rideStatusSuspended = false;
 /**
  * Remember the title that's currently on-screen so a ride-type change
  * mid-mount remounts the template (setRootTemplate replaces the root and
@@ -332,6 +333,7 @@ function attachDisconnectHandler(bridge: CarPlayBridge): void {
  */
 export function mountRideStatusBoard(board: RideStatusBoard): boolean {
   const bridge = getBridge();
+  if (rideStatusSuspended) return false;
   // Skip the native round-trip when CarPlay isn't connected — saves
   // bridge traffic on every ride-store tick while the rider's phone
   // sits unmounted, and keeps the no-op iOS / Android path symmetric.
@@ -392,6 +394,30 @@ export function __setCarPlayBridgeForTest(bridge: CarPlayBridge | null): void {
  * test wants to assert mount-vs-update behavior twice in the same case.
  */
 export function __resetCarPlayStateForTest(): void {
+  templateMounted = false;
+  mountedTitle = null;
+  rideStatusSuspended = false;
+}
+
+/**
+ * Temporarily suppress ride-board mounts while another CarPlay / Android
+ * Auto surface owns the vehicle display (e.g. the full navigation map).
+ * The board state is reset so the next post-resume mount re-issues the
+ * root template instead of trying to update an off-screen information
+ * template.
+ */
+export function suspendRideStatusBoard(): void {
+  rideStatusSuspended = true;
+  templateMounted = false;
+  mountedTitle = null;
+}
+
+/**
+ * Re-enable ride-board mounts after a different vehicle-display surface
+ * yields control back to the root information template.
+ */
+export function resumeRideStatusBoard(): void {
+  rideStatusSuspended = false;
   templateMounted = false;
   mountedTitle = null;
 }

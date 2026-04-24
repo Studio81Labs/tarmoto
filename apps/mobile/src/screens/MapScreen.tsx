@@ -48,13 +48,13 @@ import {
 } from "react-native";
 import {
   Camera,
-  GeoJSONSource as ShapeSource,
+  GeoJSONSource,
   Layer,
-  Map as MapView,
+  Map,
   type PressEventWithFeatures,
   UserLocation,
-  VectorSource,
   type ViewStateChangeEvent,
+  VectorSource,
 } from "@maplibre/maplibre-react-native";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import { api } from "@/services/api";
@@ -240,16 +240,16 @@ export default function MapScreen() {
   // rider sees.
   const handleRegionDidChange = useCallback(
     (event: NativeSyntheticEvent<ViewStateChangeEvent>) => {
-      const [lng, lat] = event.nativeEvent.center;
+      const { bounds, center: viewCenter, zoom: viewZoom } = event.nativeEvent;
+      const [lng, lat] = viewCenter;
       setCenter({ lat, lng });
-      setZoom(event.nativeEvent.zoom);
+      setZoom(viewZoom);
 
       if (showFunZonesOverlay) {
-        const [west, south, east, north] = event.nativeEvent.bounds;
         void fetchFunZones(
           bboxFromVisibleBounds([
-            [west, south],
-            [east, north],
+            [bounds[0], bounds[1]],
+            [bounds[2], bounds[3]],
           ]),
         );
       }
@@ -328,7 +328,7 @@ export default function MapScreen() {
 
   return (
     <View style={styles.container}>
-      <MapView
+      <Map
         style={styles.map}
         mapStyle={DEV_MAP_STYLE_URL}
         onRegionDidChange={handleRegionDidChange}
@@ -366,7 +366,7 @@ export default function MapScreen() {
         ) : null}
 
         {showPassesOverlay && passes.length > 0 ? (
-          <ShapeSource
+          <GeoJSONSource
             id="tarmoto-passes"
             data={passesToFeatureCollection(passes)}
           >
@@ -376,15 +376,15 @@ export default function MapScreen() {
               source="tarmoto-passes"
               style={passMarkerStyle}
             />
-          </ShapeSource>
+          </GeoJSONSource>
         ) : null}
 
         {showFunZonesOverlay && funZoneFc.features.length > 0 ? (
-          <ShapeSource
+          <GeoJSONSource
             id="tarmoto-fun-zones"
             data={funZoneFc}
             onPress={handleFunZonePress}
-            hitbox={{ top: 1, right: 1, bottom: 1, left: 1 }}
+            hitbox={{ top: 22, right: 22, bottom: 22, left: 22 }}
           >
             <Layer
               type="fill"
@@ -398,9 +398,9 @@ export default function MapScreen() {
               source="tarmoto-fun-zones"
               style={funZoneLineStyle}
             />
-          </ShapeSource>
+          </GeoJSONSource>
         ) : null}
-      </MapView>
+      </Map>
 
       <View style={styles.fabColumn}>
         <ToggleFab
