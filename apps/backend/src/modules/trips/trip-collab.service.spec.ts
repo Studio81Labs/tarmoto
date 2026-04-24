@@ -16,6 +16,7 @@ import { TripMessage } from '../../entities/trip-message.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { EventsGateway } from '../events/events.gateway.js';
+import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 
 const TRIP_ID = '11111111-1111-1111-1111-111111111111';
 const DAY_ID = '22222222-2222-2222-2222-222222222222';
@@ -65,6 +66,7 @@ describe('TripCollabService', () => {
   let dayRepo: jest.Mocked<Repository<TripDay>>;
   let roadSegmentRepo: jest.Mocked<Repository<RoadSegment>>;
   let events: jest.Mocked<Pick<EventsGateway, 'emitToTrip'>>;
+  let activity: jest.Mocked<Pick<TripActivityService, 'record'>>;
 
   beforeEach(async () => {
     memberRepo = {
@@ -132,6 +134,7 @@ describe('TripCollabService', () => {
     } as unknown as jest.Mocked<Repository<RoadSegment>>;
 
     events = { emitToTrip: jest.fn() };
+    activity = { record: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -152,6 +155,7 @@ describe('TripCollabService', () => {
           useValue: roadSegmentRepo,
         },
         { provide: EventsGateway, useValue: events },
+        { provide: TripActivityService, useValue: activity },
       ],
     }).compile();
 

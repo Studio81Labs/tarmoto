@@ -21,6 +21,7 @@ import { TripShare } from './entities/trip-share.entity.js';
 import { TripSuggestion } from './entities/trip-suggestion.entity.js';
 import { TripSuggestionVote } from './entities/trip-suggestion-vote.entity.js';
 import { TripMessage } from './entities/trip-message.entity.js';
+import { TripActivity } from './entities/trip-activity.entity.js';
 import { InitSchema1713000000000 } from './migrations/1713000000000-InitSchema.js';
 import { AddPasswordHash1713100000000 } from './migrations/1713100000000-AddPasswordHash.js';
 import { FixIsEmergencyDefault1713200000000 } from './migrations/1713200000000-FixIsEmergencyDefault.js';
@@ -32,6 +33,7 @@ import { AddSharedRideEmbedClickCount1714500000000 } from './migrations/17145000
 import { AddTripInviteCode1714800000000 } from './migrations/1714800000000-AddTripInviteCode.js';
 import { AddTripShares1714900000000 } from './migrations/1714900000000-AddTripShares.js';
 import { AddTripCollaboration1715000000000 } from './migrations/1715000000000-AddTripCollaboration.js';
+import { AddTripActivity1715100000000 } from './migrations/1715100000000-AddTripActivity.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -62,6 +64,7 @@ export const AppDataSource = new DataSource({
     TripSuggestion,
     TripSuggestionVote,
     TripMessage,
+    TripActivity,
   ],
   migrations: [
     InitSchema1713000000000,
@@ -75,6 +78,7 @@ export const AppDataSource = new DataSource({
     AddTripInviteCode1714800000000,
     AddTripShares1714900000000,
     AddTripCollaboration1715000000000,
+    AddTripActivity1715100000000,
   ],
   synchronize: false,
 });

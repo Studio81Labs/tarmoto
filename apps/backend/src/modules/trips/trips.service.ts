@@ -11,6 +11,7 @@ import { pointToLatLng } from '@tarmoto/shared';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { EventsGateway } from '../events/events.gateway.js';
+import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 import { CreateTripDto } from './dto/create-trip.dto.js';
 import { ListTripsDto } from './dto/list-trips.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
@@ -50,6 +51,7 @@ export class TripsService {
     @InjectRepository(TripMember)
     private readonly memberRepo: Repository<TripMember>,
     private readonly events: EventsGateway,
+    private readonly activity: TripActivityService,
   ) {}
 
   async create(userId: string, dto: CreateTripDto): Promise<TripDetailDto> {
@@ -212,6 +214,9 @@ export class TripsService {
     // can confirm state.
     if (hasChanges) {
       this.events.emitToTrip(tripId, 'trip:updated', detail);
+      await this.activity.record(tripId, userId, 'trip_updated', {
+        fields: Object.keys(delta),
+      });
     }
     return detail;
   }
@@ -295,6 +300,7 @@ export class TripsService {
       where: { trip_id: tripId, user_id: userId },
     });
 
+    let inserted = false;
     if (!existing) {
       try {
         await this.memberRepo.save(
@@ -304,11 +310,26 @@ export class TripsService {
             role: 'member',
           }),
         );
+        inserted = true;
       } catch (err: unknown) {
         // Concurrent join race — the unique (trip_id, user_id) index
-        // rejected the duplicate. Desired post-state still holds.
+        // rejected the duplicate. Desired post-state still holds, but
+        // the first winner will have already written the activity row
+        // for this membership so we leave that branch alone.
         if (!isUniqueViolation(err)) throw err;
       }
+    }
+
+    // Record the activity entry OUTSIDE the unique-violation catch so
+    // an audit write failure doesn't get swallowed alongside a race.
+    // The member row is already durable by the time we reach this line;
+    // a subsequent retry will short-circuit on `existing` and skip the
+    // save — without this separation a transient activity-DB blip could
+    // silently lose the `member_joined` entry forever.
+    if (inserted) {
+      await this.activity.record(tripId, userId, 'member_joined', {
+        role: 'member',
+      });
     }
 
     return this.getDetail(userId, tripId);

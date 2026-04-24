@@ -148,6 +148,113 @@ export const tripSharesApi = {
     apiFetch(`/trip-shares/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };
 
+// ── Trip collaboration (US-35: suggestions + votes + accept/reject + activity) ──
+
+export type SuggestionVote = "up" | "down";
+export type SuggestionStatus = "open" | "accepted" | "rejected";
+
+export interface TripSuggestion {
+  id: string;
+  trip_id: string;
+  trip_day_id: string | null;
+  suggested_by: string;
+  suggester_display_name: string;
+  road_segment_id: string | null;
+  title: string;
+  description: string | null;
+  lat: number | null;
+  lng: number | null;
+  status: SuggestionStatus;
+  up_votes: number;
+  down_votes: number;
+  /** Caller's own vote, or null if they haven't voted. */
+  caller_vote: SuggestionVote | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type TripActivityAction =
+  | "member_joined"
+  | "member_left"
+  | "trip_updated"
+  | "suggestion_created"
+  | "suggestion_deleted"
+  | "suggestion_voted"
+  | "suggestion_vote_removed"
+  | "suggestion_accepted"
+  | "suggestion_rejected";
+
+export interface TripActivityEntry {
+  id: string;
+  trip_id: string;
+  actor_id: string | null;
+  actor_name: string | null;
+  action: TripActivityAction;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface TripActivityListResponse {
+  activity: TripActivityEntry[];
+}
+
+export const tripCollabApi = {
+  listSuggestions: (tripId: string) =>
+    apiFetch<TripSuggestion[]>(
+      `/trips/${encodeURIComponent(tripId)}/suggestions`,
+    ),
+  createSuggestion: (
+    tripId: string,
+    payload: {
+      title: string;
+      description?: string;
+      trip_day_id?: string;
+      road_segment_id?: string;
+      lat?: number;
+      lng?: number;
+    },
+  ) =>
+    apiFetch<TripSuggestion>(
+      `/trips/${encodeURIComponent(tripId)}/suggestions`,
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+  deleteSuggestion: (tripId: string, suggestionId: string) =>
+    apiFetch<void>(
+      `/trips/${encodeURIComponent(tripId)}/suggestions/${encodeURIComponent(suggestionId)}`,
+      { method: "DELETE" },
+    ),
+  voteSuggestion: (
+    tripId: string,
+    suggestionId: string,
+    vote: SuggestionVote,
+  ) =>
+    apiFetch<TripSuggestion>(
+      `/trips/${encodeURIComponent(tripId)}/suggestions/${encodeURIComponent(suggestionId)}/vote`,
+      { method: "POST", body: JSON.stringify({ vote }) },
+    ),
+  unvoteSuggestion: (tripId: string, suggestionId: string) =>
+    apiFetch<TripSuggestion>(
+      `/trips/${encodeURIComponent(tripId)}/suggestions/${encodeURIComponent(suggestionId)}/vote`,
+      { method: "DELETE" },
+    ),
+  acceptSuggestion: (tripId: string, suggestionId: string) =>
+    apiFetch<TripSuggestion>(
+      `/trips/${encodeURIComponent(tripId)}/suggestions/${encodeURIComponent(suggestionId)}/accept`,
+      { method: "POST" },
+    ),
+  rejectSuggestion: (tripId: string, suggestionId: string) =>
+    apiFetch<TripSuggestion>(
+      `/trips/${encodeURIComponent(tripId)}/suggestions/${encodeURIComponent(suggestionId)}/reject`,
+      { method: "POST" },
+    ),
+  listActivity: (tripId: string, limit?: number) => {
+    const query = limit != null ? `?limit=${limit}` : "";
+    return apiFetch<TripActivityListResponse>(
+      `/trips/${encodeURIComponent(tripId)}/activity${query}`,
+    );
+  },
+};
+
 // ── Exploration endpoints (not yet in spec) ──
 export interface ExplorationStats {
   ridden_segments: number;

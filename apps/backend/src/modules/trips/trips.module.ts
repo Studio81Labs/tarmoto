@@ -9,6 +9,7 @@ import { TripSuggestionVote } from '../../entities/trip-suggestion-vote.entity.j
 import { TripMessage } from '../../entities/trip-message.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { EventsModule } from '../events/events.module.js';
+import { TripActivityModule } from '../trip-activity/index.js';
 import { TripsController } from './trips.controller.js';
 import { TripsService } from './trips.service.js';
 import { TripCollabController } from './trip-collab.controller.js';
@@ -27,6 +28,7 @@ import { TripCollabService } from './trip-collab.service.js';
       RoadSegment,
     ]),
     EventsModule,
+    TripActivityModule,
   ],
   controllers: [TripsController, TripCollabController],
   providers: [TripsService, TripCollabService],

@@ -471,7 +471,7 @@ describe('EventsGateway', () => {
       });
     });
 
-    it('joins the trip room for a verified member', async () => {
+    it('joins the trip room for a verified member and broadcasts presence', async () => {
       tripMemberRepo.findOne.mockResolvedValueOnce({
         trip_id: '123e4567-e89b-42d3-a456-556642440000',
         user_id: 'user-1',
@@ -490,7 +490,83 @@ describe('EventsGateway', () => {
       expect(client.join).toHaveBeenCalledWith(
         'trip:123e4567-e89b-42d3-a456-556642440000',
       );
-      expect(client.emit).not.toHaveBeenCalled();
+      // Presence broadcast so other collaborators see the new arrival.
+      expect(mockServer.to).toHaveBeenCalledWith(
+        'trip:123e4567-e89b-42d3-a456-556642440000',
+      );
+      expect(mockServer.emit).toHaveBeenCalledWith(
+        'trip:presence',
+        expect.objectContaining({
+          trip_id: '123e4567-e89b-42d3-a456-556642440000',
+          user_id: 'user-1',
+          online: true,
+        }),
+      );
+    });
+  });
+
+  describe('handleTripCursor', () => {
+    it('broadcasts the cursor to other members in the room (sender excluded)', () => {
+      const mockTo = jest.fn().mockReturnValue({ emit: jest.fn() });
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        rooms: new Set(['c-1', 'trip:trip-1']),
+        to: mockTo,
+      } as unknown as Socket;
+
+      gateway.handleTripCursor(client, {
+        trip_id: 'trip-1',
+        lat: 49.1,
+        lng: 16.75,
+      });
+
+      expect(mockTo).toHaveBeenCalledWith('trip:trip-1');
+      expect(mockTo('trip:trip-1').emit).toHaveBeenCalledWith(
+        'trip:cursor',
+        expect.objectContaining({
+          user_id: 'user-1',
+          trip_id: 'trip-1',
+          lat: 49.1,
+          lng: 16.75,
+        }),
+      );
+    });
+
+    it('silently drops cursors for rooms the client has not joined', () => {
+      const mockTo = jest.fn();
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        rooms: new Set(['c-1']),
+        to: mockTo,
+      } as unknown as Socket;
+
+      gateway.handleTripCursor(client, {
+        trip_id: 'trip-x',
+        lat: 0,
+        lng: 0,
+      });
+
+      expect(mockTo).not.toHaveBeenCalled();
+    });
+
+    it('ignores unauthenticated sockets', () => {
+      const mockTo = jest.fn();
+      const client = {
+        id: 'c-1',
+        data: {},
+        rooms: new Set(['c-1', 'trip:trip-1']),
+        to: mockTo,
+      } as unknown as Socket;
+
+      gateway.handleTripCursor(client, {
+        trip_id: 'trip-1',
+        lat: 0,
+        lng: 0,
+      });
+
+      expect(mockTo).not.toHaveBeenCalled();
     });
   });
 
@@ -498,17 +574,30 @@ describe('EventsGateway', () => {
     it('leaves the trip room', () => {
       const client = {
         id: 'c-1',
+        data: { userId: 'user-1', joinedTrips: new Set(['trip-1']) },
+        rooms: new Set(['c-1', 'trip:trip-1']),
         leave: jest.fn(),
       } as unknown as Socket;
 
       gateway.handleUnsubscribeTrip(client, { trip_id: 'trip-1' });
 
       expect(client.leave).toHaveBeenCalledWith('trip:trip-1');
+      // Presence broadcast on leave so other members see the departure.
+      expect(mockServer.emit).toHaveBeenCalledWith(
+        'trip:presence',
+        expect.objectContaining({
+          trip_id: 'trip-1',
+          user_id: 'user-1',
+          online: false,
+        }),
+      );
     });
 
     it('ignores a missing trip_id rather than throwing', () => {
       const client = {
         id: 'c-1',
+        data: {},
+        rooms: new Set(['c-1']),
         leave: jest.fn(),
       } as unknown as Socket;
 

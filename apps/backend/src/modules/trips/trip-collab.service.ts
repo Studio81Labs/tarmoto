@@ -14,6 +14,7 @@ import { TripMessage } from '../../entities/trip-message.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { EventsGateway } from '../events/events.gateway.js';
+import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 import { CreateSuggestionDto } from './dto/create-suggestion.dto.js';
 import { SuggestionDto } from './dto/suggestion-response.dto.js';
 import { MessageDto } from './dto/message-response.dto.js';
@@ -56,6 +57,7 @@ export class TripCollabService {
     @InjectRepository(RoadSegment)
     private readonly roadSegmentRepo: Repository<RoadSegment>,
     private readonly events: EventsGateway,
+    private readonly activity: TripActivityService,
   ) {}
 
   // ── Suggestions ──────────────────────────────────────────────────
@@ -167,6 +169,10 @@ export class TripCollabService {
 
     const response = toSuggestionDto(hydrated, { up: 0, down: 0 }, null);
     this.events.emitToTrip(tripId, 'trip:suggestion:created', response);
+    await this.activity.record(tripId, userId, 'suggestion_created', {
+      suggestion_id: saved.id,
+      title: saved.title,
+    });
     return response;
   }
 
@@ -194,6 +200,64 @@ export class TripCollabService {
     this.events.emitToTrip(tripId, 'trip:suggestion:deleted', {
       suggestion_id: suggestionId,
     });
+    await this.activity.record(tripId, userId, 'suggestion_deleted', {
+      suggestion_id: suggestionId,
+      title: suggestion.title,
+    });
+  }
+
+  /**
+   * Resolve a pending suggestion by marking it `accepted` or `rejected`.
+   * Owner/admin only — authors of the suggestion can delete their own
+   * but cannot unilaterally resolve them. Re-resolving an already
+   * resolved row is a 409 so the UI can surface a clear error rather
+   * than silently toggling status.
+   */
+  async resolveSuggestion(
+    userId: string,
+    tripId: string,
+    suggestionId: string,
+    status: 'accepted' | 'rejected',
+  ): Promise<SuggestionDto> {
+    const membership = await this.requireMembership(userId, tripId);
+    if (!PRIVILEGED_ROLES.has(membership.role)) {
+      throw new ForbiddenException(
+        'Only the trip owner or an admin can resolve a suggestion',
+      );
+    }
+
+    const suggestion = await this.suggestionRepo.findOne({
+      where: { id: suggestionId, trip_id: tripId },
+      relations: { suggester: true },
+    });
+    if (!suggestion) throw new NotFoundException('Suggestion not found');
+    if (suggestion.status !== 'open') {
+      throw new BadRequestException(
+        `Suggestion is already ${suggestion.status}`,
+      );
+    }
+
+    suggestion.status = status;
+    await this.suggestionRepo.save(suggestion);
+
+    const action =
+      status === 'accepted' ? 'suggestion_accepted' : 'suggestion_rejected';
+    await this.activity.record(tripId, userId, action, {
+      suggestion_id: suggestionId,
+      title: suggestion.title,
+    });
+
+    // Dedicated `trip:suggestion:resolved` broadcast — the vote-tally
+    // event doesn't carry `status` and clients need to re-render the
+    // accepted/rejected badge without a refetch.
+    this.events.emitToTrip(tripId, 'trip:suggestion:resolved', {
+      suggestion_id: suggestionId,
+      status,
+    });
+    // Reuse the vote-tally aggregator to build the response body so the
+    // shape matches the list endpoint. Pass `false` to skip the
+    // (wrong-event-name) vote broadcast the helper would otherwise emit.
+    return this.emitAndReturnSuggestion(userId, tripId, suggestion, false);
   }
 
   async voteSuggestion(
@@ -233,6 +297,13 @@ export class TripCollabService {
     // more time. This leaves at most one row per (suggestion, user) and
     // never turns a normal retry into a server error.
     await this.upsertVote(suggestionId, userId, vote);
+
+    if (hasChange) {
+      await this.activity.record(tripId, userId, 'suggestion_voted', {
+        suggestion_id: suggestionId,
+        vote,
+      });
+    }
 
     return this.emitAndReturnSuggestion(userId, tripId, suggestion, hasChange);
   }
@@ -288,6 +359,11 @@ export class TripCollabService {
     // succeeds would otherwise keep pinging every subscriber with the
     // same numbers.
     const hasChange = (deleted.affected ?? 0) > 0;
+    if (hasChange) {
+      await this.activity.record(tripId, userId, 'suggestion_vote_removed', {
+        suggestion_id: suggestionId,
+      });
+    }
     return this.emitAndReturnSuggestion(userId, tripId, suggestion, hasChange);
   }
 
