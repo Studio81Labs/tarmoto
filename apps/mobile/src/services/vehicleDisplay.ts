@@ -278,6 +278,13 @@ function createRuntimeBridge(snapshotRef: {
     let listening = false;
     let searchVisible = false;
     const subscriptions: NativeEventSubscription[] = [];
+    const clearSubscriptions = () => {
+      for (const subscription of subscriptions) {
+        subscription.remove();
+      }
+      subscriptions.length = 0;
+      listening = false;
+    };
 
     const ensureListeners = () => {
       if (listening) return;
@@ -379,6 +386,7 @@ function createRuntimeBridge(snapshotRef: {
         actions: [],
         onActionButtonPressed: () => undefined,
       });
+      if (!CarPlay.connected) return;
       CarPlay.setRootTemplate(idle, false);
     };
 
@@ -397,6 +405,7 @@ function createRuntimeBridge(snapshotRef: {
         store.setSnapshot(null);
         store.setBanner(null);
         restoreFallbackRoot();
+        clearSubscriptions();
       },
       openSearch: (items) => {
         if (!CarPlay.connected) return;
