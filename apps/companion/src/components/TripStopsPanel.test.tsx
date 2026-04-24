@@ -35,6 +35,14 @@ function trip(): Trip {
         durationMinutes: 360,
         elevationGain: 2640,
         avgQuality: 4.1,
+        routeGeometry: {
+          type: "LineString",
+          coordinates: [
+            [10.37, 46.47],
+            [10.42, 46.5],
+            [10.57, 46.61],
+          ],
+        },
         waypoints: [
           {
             id: "start",
@@ -160,6 +168,7 @@ describe("TripStopsPanel", () => {
 
   it("inserts route-side stops before the day end waypoint", async () => {
     const activeTrip = useTripStore.getState().activeTrip;
+    const originalGeometry = activeTrip?.days[0]?.routeGeometry;
     render(<TripStopsPanel trip={activeTrip} />);
 
     fireEvent.click(
@@ -177,6 +186,10 @@ describe("TripStopsPanel", () => {
         }),
         expect.objectContaining({ id: "end", type: "end" }),
       ]),
+    );
+
+    expect(useTripStore.getState().activeTrip?.days[0]?.routeGeometry).toEqual(
+      originalGeometry,
     );
   });
 

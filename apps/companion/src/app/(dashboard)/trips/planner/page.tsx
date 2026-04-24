@@ -3,7 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTripStore } from "@/stores/trip";
 import {
+  Clock3,
+  GripVertical,
   Layers,
+  Milestone,
+  MapPin,
+  ShieldCheck,
+  RotateCcw,
+  RotateCw,
   Sliders,
   Users,
   Upload,
@@ -90,6 +97,13 @@ export default function TripPlannerPage() {
       generatedOptions.find((option) => option.id === selectedOptionId) ?? null,
     [generatedOptions, selectedOptionId],
   );
+  const canUndo = useTripStore((s) => s.canUndo);
+  const canRedo = useTripStore((s) => s.canRedo);
+  const undo = useTripStore((s) => s.undo);
+  const redo = useTripStore((s) => s.redo);
+  const appendPlannerWaypoint = useTripStore((s) => s.appendPlannerWaypoint);
+  const reorderWaypoints = useTripStore((s) => s.reorderWaypoints);
+  const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   const displayedTrip = activeTrip ?? selectedOption?.trip ?? null;
   const plannerParams = useMemo<TripParameters>(
     () => ({
@@ -123,11 +137,27 @@ export default function TripPlannerPage() {
     displayedTrip.id === selectedOption.trip.id;
   const closuresData = useClosures(travelMonth, closureRoutes);
   const passesData = usePasses(travelMonth, closureRoutes);
+  const selectedDay = activeTrip?.days[selectedDayIndex] ?? null;
+  const timelineDays = activeTrip?.days ?? [
+    { dayNumber: 1 },
+    { dayNumber: 2 },
+    { dayNumber: 3 },
+  ];
 
   const openImport = useCallback((file: File | null = null) => {
     setPendingImportFile(file);
     setImportOpen(true);
   }, []);
+
+  useEffect(() => {
+    if (!activeTrip) {
+      setSelectedDayIndex(0);
+      return;
+    }
+    if (selectedDayIndex > activeTrip.days.length - 1) {
+      setSelectedDayIndex(Math.max(0, activeTrip.days.length - 1));
+    }
+  }, [activeTrip, selectedDayIndex]);
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     if (!Array.from(e.dataTransfer.types).includes("Files")) return;
@@ -349,6 +379,24 @@ export default function TripPlannerPage() {
           >
             <Sparkles size={14} />
             {isGenerating ? "Generating…" : "Generate"}
+          </button>
+          <button
+            type="button"
+            onClick={undo}
+            disabled={!canUndo}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <RotateCcw size={14} />
+            Undo
+          </button>
+          <button
+            type="button"
+            onClick={redo}
+            disabled={!canRedo}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <RotateCw size={14} />
+            Redo
           </button>
           <button
             type="button"
@@ -639,6 +687,50 @@ export default function TripPlannerPage() {
                 Avoid unpaved roads
               </label>
             </div>
+            <div className="space-y-3 pt-2 border-t border-slate-800">
+              <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-300">
+                <MapPin size={14} className="text-slate-500" />
+                Route builder
+              </div>
+              {selectedDay ? (
+                <>
+                  <div className="grid grid-cols-3 gap-2">
+                    <PlannerStat
+                      label="Distance"
+                      value={`${selectedDay.distanceKm.toFixed(1)} km`}
+                      icon={Milestone}
+                    />
+                    <PlannerStat
+                      label="Ride time"
+                      value={`${selectedDay.durationMinutes} min`}
+                      icon={Clock3}
+                    />
+                    <PlannerStat
+                      label="Quality"
+                      value={
+                        selectedDay.avgQuality
+                          ? selectedDay.avgQuality.toFixed(1)
+                          : "—"
+                      }
+                      icon={ShieldCheck}
+                    />
+                  </div>
+                  <WaypointEditor
+                    dayNumber={selectedDay.dayNumber}
+                    waypoints={selectedDay.waypoints}
+                    onReorder={(fromIndex, toIndex) =>
+                      reorderWaypoints(selectedDayIndex, fromIndex, toIndex)
+                    }
+                  />
+                </>
+              ) : (
+                <p className="text-xs text-slate-500">
+                  Click the map to place a start point for Day 1. The planner
+                  will add the finish on the second click, then insert extra via
+                  points before the end.
+                </p>
+              )}
+            </div>
             <PassesPanel
               month={travelMonth}
               onMonthChange={setTravelMonth}
@@ -666,6 +758,10 @@ export default function TripPlannerPage() {
             month={travelMonth}
             closuresData={closuresData}
             passesData={passesData}
+            selectedDayNumber={selectedDay?.dayNumber ?? 1}
+            onAddWaypoint={(location) =>
+              appendPlannerWaypoint(selectedDayIndex, location, plannerParams)
+            }
           />
 
           {/* Drop overlay */}
@@ -705,13 +801,7 @@ export default function TripPlannerPage() {
 
       {/* Timeline strip */}
       <div className="flex items-center gap-2 px-4 py-3 border-t border-slate-800 bg-slate-950/90 overflow-x-auto">
-        {(
-          displayedTrip?.days ?? [
-            { dayNumber: 1 },
-            { dayNumber: 2 },
-            { dayNumber: 3 },
-          ]
-        ).map(
+        {timelineDays.map(
           (day: {
             dayNumber: number;
             distanceKm?: number;
@@ -726,7 +816,13 @@ export default function TripPlannerPage() {
             >
               <button
                 type="button"
-                className="flex items-center gap-2 text-left"
+                onClick={() => {
+                  if (!activeTrip) return;
+                  setSelectedDayIndex(day.dayNumber - 1);
+                }}
+                disabled={!activeTrip}
+                aria-pressed={selectedDayIndex === day.dayNumber - 1}
+                className="flex items-center gap-2 text-left disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <span>
                   <span className="block font-medium text-white">
@@ -808,4 +904,93 @@ function delay(ms: number) {
   return new Promise<void>((resolve) => {
     window.setTimeout(resolve, ms);
   });
+}
+function PlannerStat({
+  label,
+  value,
+  icon: Icon,
+}: {
+  label: string;
+  value: string;
+  icon: typeof Clock3;
+}) {
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2">
+      <div className="text-[11px] uppercase tracking-wide text-slate-500">
+        {label}
+      </div>
+      <div className="mt-1 flex items-center gap-1.5 text-sm font-semibold text-slate-100">
+        <Icon size={12} className="text-slate-500" />
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function WaypointEditor({
+  dayNumber,
+  waypoints,
+  onReorder,
+}: {
+  dayNumber: number;
+  waypoints: Array<{ id: string; name?: string; type: string }>;
+  onReorder: (fromIndex: number, toIndex: number) => void;
+}) {
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+
+  if (waypoints.length === 0) {
+    return (
+      <p className="text-xs text-slate-500">
+        No waypoints yet for Day {dayNumber}. Click the map to begin the route.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-slate-500">
+        Drag via points to reorder them. Start and finish stay pinned.
+      </p>
+      {waypoints.map((waypoint, index) => {
+        const draggable = waypoint.type !== "start" && waypoint.type !== "end";
+        return (
+          <div
+            key={waypoint.id}
+            draggable={draggable}
+            onDragStart={() => {
+              if (!draggable) return;
+              setDragIndex(index);
+            }}
+            onDragOver={(event) => {
+              if (dragIndex === null || !draggable) return;
+              event.preventDefault();
+            }}
+            onDrop={() => {
+              if (dragIndex === null || dragIndex === index || !draggable) {
+                setDragIndex(null);
+                return;
+              }
+              onReorder(dragIndex, index);
+              setDragIndex(null);
+            }}
+            onDragEnd={() => setDragIndex(null)}
+            className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+              draggable
+                ? "border-slate-800 bg-slate-900/70 text-slate-200"
+                : "border-slate-800 bg-slate-950 text-slate-400"
+            }`}
+          >
+            <GripVertical
+              size={14}
+              className={draggable ? "text-slate-500" : "text-slate-700"}
+            />
+            <span className="min-w-12 text-xs uppercase tracking-wide text-slate-500">
+              {waypoint.type}
+            </span>
+            <span>{waypoint.name ?? `Waypoint ${index + 1}`}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
 }

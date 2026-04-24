@@ -18,6 +18,9 @@ const mockMap = {
   getSource: vi.fn(),
   addLayer: vi.fn(),
   getLayer: vi.fn(),
+  on: vi.fn(),
+  off: vi.fn(),
+  queryRenderedFeatures: vi.fn(),
   setPaintProperty: vi.fn(),
   fitBounds: vi.fn(),
 } as const;
@@ -163,6 +166,9 @@ describe("TripPlannerMap", () => {
     mockMap.getSource.mockReset();
     mockMap.addLayer.mockReset();
     mockMap.getLayer.mockReset();
+    mockMap.on.mockReset();
+    mockMap.off.mockReset();
+    mockMap.queryRenderedFeatures.mockReset();
     mockMap.setPaintProperty.mockReset();
     mockMap.fitBounds.mockReset();
     buildTripClosureRoutesMock.mockClear();
@@ -207,6 +213,53 @@ describe("TripPlannerMap", () => {
       screen.getByRole("button", { name: "Road quality overlay on" }),
     );
     expect(canvas).toHaveAttribute("data-show-quality", "false");
+  });
+
+  it("snaps map clicks onto nearby road geometry before adding a waypoint", () => {
+    const handleAddWaypoint = vi.fn();
+    const eventHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation((event, handler) => {
+      eventHandlers.set(event, handler);
+      return mockMap;
+    });
+    mockMap.off.mockImplementation((event) => {
+      eventHandlers.delete(event);
+      return mockMap;
+    });
+    mockMap.queryRenderedFeatures.mockReturnValue([
+      {
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [14.41, 50.1],
+            [14.47, 50.1],
+          ],
+        },
+        properties: {
+          quality_score: 4.5,
+        },
+      },
+    ]);
+
+    render(
+      <TripPlannerMap
+        trip={trip()}
+        month={7}
+        onAddWaypoint={handleAddWaypoint}
+      />,
+    );
+
+    act(() => {
+      eventHandlers.get("click")?.({
+        point: { x: 180, y: 140 },
+        lngLat: { lng: 14.435, lat: 50.106 },
+      });
+    });
+
+    expect(handleAddWaypoint).toHaveBeenCalledWith({
+      lng: 14.435,
+      lat: 50.1,
+    });
   });
 
   it("surfaces rectangle drawing controls and lets riders clear a drawn region", () => {

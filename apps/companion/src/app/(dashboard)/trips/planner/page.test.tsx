@@ -153,14 +153,23 @@ type TripStoreSnapshot = {
   trips: Trip[];
   activeTrip: Trip | null;
   isGenerating: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
   focusedSegmentId: string | null;
   hoveredSegmentId: string | null;
+  undoStack: Array<Trip | null>;
+  redoStack: Array<Trip | null>;
   setTrips: (trips: Trip[]) => void;
   setActiveTrip: (trip: Trip | null) => void;
   setGenerating: (isGenerating: boolean) => void;
   focusSegment: (segmentId: string | null) => void;
   hoverSegment: (segmentId: string | null) => void;
   addWaypoint: (dayIndex: number, waypoint: unknown) => void;
+  appendPlannerWaypoint: (
+    dayIndex: number,
+    waypoint: unknown,
+    parameters?: Trip["parameters"],
+  ) => void;
   insertWaypointBeforeEnd: (dayIndex: number, waypoint: unknown) => void;
   removeWaypoint: (dayIndex: number, waypointId: string) => void;
   reorderWaypoints: (
@@ -168,6 +177,8 @@ type TripStoreSnapshot = {
     fromIndex: number,
     toIndex: number,
   ) => void;
+  undo: () => void;
+  redo: () => void;
 };
 
 describe("TripPlannerPage", () => {
@@ -228,17 +239,24 @@ describe("TripPlannerPage", () => {
       trips: [],
       activeTrip: null,
       isGenerating: false,
+      canUndo: false,
+      canRedo: false,
       focusedSegmentId: null,
       hoveredSegmentId: null,
+      undoStack: [],
+      redoStack: [],
       setTrips: vi.fn(),
       setActiveTrip,
       setGenerating,
       focusSegment: vi.fn(),
       hoverSegment: vi.fn(),
       addWaypoint: vi.fn(),
+      appendPlannerWaypoint: vi.fn(),
       insertWaypointBeforeEnd: vi.fn(),
       removeWaypoint: vi.fn(),
       reorderWaypoints: vi.fn(),
+      undo: vi.fn(),
+      redo: vi.fn(),
     };
     useTripStoreMock.mockImplementation((selector) => selector(storeState));
     useClosuresMock.mockReturnValue(closuresData);
@@ -297,6 +315,65 @@ describe("TripPlannerPage", () => {
       expect.objectContaining({
         data: passesData,
       }),
+    );
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Redo" })).toBeDisabled();
+  });
+
+  it("keeps placeholder timeline tabs non-interactive until a trip exists", () => {
+    render(<TripPlannerPage />);
+
+    expect(screen.getByRole("button", { name: /Day 1/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Day 2/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Day 3/i })).toBeDisabled();
+    expect(mockedTripPlannerMap).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selectedDayNumber: 1,
+      }),
+    );
+  });
+
+  it("passes the live planner parameters into map-click waypoint creation", () => {
+    render(<TripPlannerPage />);
+
+    fireEvent.change(screen.getByLabelText("Number of days"), {
+      target: { value: "5" },
+    });
+    fireEvent.change(screen.getByLabelText("Daily km target"), {
+      target: { value: "180" },
+    });
+    fireEvent.change(screen.getByLabelText("Road preference"), {
+      target: { value: "direct" },
+    });
+    fireEvent.click(screen.getByLabelText("Gravel"));
+    fireEvent.click(screen.getByLabelText("Avoid highways"));
+    fireEvent.click(screen.getByLabelText("Avoid tolls"));
+
+    const latestMapProps = mockedTripPlannerMap.mock.calls.at(-1)?.[0] as
+      | { onAddWaypoint?: (location: { lng: number; lat: number }) => void }
+      | undefined;
+    const onAddWaypoint = latestMapProps?.onAddWaypoint;
+
+    expect(onAddWaypoint).toBeDefined();
+
+    onAddWaypoint?.({ lng: 14.41, lat: 50.08 });
+
+    expect(storeState.appendPlannerWaypoint).toHaveBeenCalledWith(
+      0,
+      {
+        lng: 14.41,
+        lat: 50.08,
+      },
+      {
+        days: 5,
+        dailyKmTarget: 180,
+        roadPreference: "direct",
+        surfacePreference: ["asphalt", "gravel"],
+        avoidHighways: false,
+        avoidTolls: true,
+        avoidUnpaved: true,
+        minQuality: 3,
+      },
     );
   });
 
