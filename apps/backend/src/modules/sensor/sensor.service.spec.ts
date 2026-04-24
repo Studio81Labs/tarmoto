@@ -137,6 +137,26 @@ describe('SensorService', () => {
       expect(result).not.toBeNull();
       expect(result!.surfaceType).toBe('gravel');
     });
+
+    it('should leave surface type inconclusive for smooth low-signal vibration', () => {
+      const readings: SensorReadingDto[] = Array.from(
+        { length: 50 },
+        (_, i) => ({
+          t: Date.now() + i * 20,
+          ax: 0.1,
+          ay: 0.2,
+          az: 9.8,
+          lat: 49.1,
+          lng: 16.75,
+          speed: 15,
+        }),
+      );
+
+      const result = service.processSegment(readings);
+
+      expect(result).not.toBeNull();
+      expect(result!.surfaceType).toBeNull();
+    });
   });
 
   describe('groupIntoSegments', () => {
@@ -324,7 +344,7 @@ describe('SensorService', () => {
       expect(aggregateCall).toBeUndefined();
 
       const createArg = (readingRepo.create as jest.Mock).mock.calls[0][0];
-      expect(createArg.surface_type).toBe('asphalt');
+      expect(createArg.surface_type).toBeNull();
     });
   });
 

@@ -29,7 +29,7 @@ const QUALITY_THRESHOLDS: Array<{
 interface ProcessedSegment {
   rms: number;
   classification: string;
-  surfaceType: string;
+  surfaceType: string | null;
   lat: number;
   lng: number;
   speedAvg: number | null;
@@ -239,8 +239,8 @@ function classify(rms: number): { classification: string; score: number } {
   return { classification: 'very_poor', score: 1 };
 }
 
-function inferSurfaceType(deviations: number[], rms: number): string {
-  if (deviations.length === 0) return 'unknown';
+function inferSurfaceType(deviations: number[], rms: number): string | null {
+  if (deviations.length === 0) return null;
 
   const mean =
     deviations.reduce((sum, value) => sum + value, 0) / deviations.length;
@@ -261,5 +261,5 @@ function inferSurfaceType(deviations: number[], rms: number): string {
   if (crestFactor > 5.0) {
     return 'cobblestone';
   }
-  return 'asphalt';
+  return null;
 }
