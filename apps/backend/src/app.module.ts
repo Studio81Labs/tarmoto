@@ -28,6 +28,7 @@ import { PoiModule } from './modules/poi/index.js';
 import { GeocodeModule } from './modules/geocode/index.js';
 import { ClosuresModule } from './modules/closures/index.js';
 import { AccountModule } from './modules/account/index.js';
+import { TripsModule } from './modules/trips/index.js';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { AccountModule } from './modules/account/index.js';
     SharingModule,
     TripSharesModule,
     RidesModule,
+    TripsModule,
     EventsModule,
     SafetyModule,
     TilesModule,
