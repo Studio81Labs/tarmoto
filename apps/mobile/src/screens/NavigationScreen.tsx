@@ -53,7 +53,11 @@ import { useVehicleNavigationDisplay } from "@/hooks/useVehicleNavigationDisplay
 import { useTripStore } from "@/stores";
 import type { LatLng, TripDay, Waypoint } from "@/types";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
-import type { Maneuver, ManeuverType } from "@/services/navigation";
+import {
+  MANEUVER_LABELS,
+  type Maneuver,
+  type ManeuverType,
+} from "@/services/navigation";
 import { DEV_MAP_STYLE_URL } from "./MapScreen.helpers";
 import { navigationWaypointsForRoadNames } from "./TripScreens.helpers";
 
@@ -72,19 +76,6 @@ const MANEUVER_ICONS: Record<ManeuverType, IconName> = {
   "turn-sharp-left": "arrow-left",
   "turn-sharp-right": "arrow-right",
   uturn: "backup-restore",
-};
-
-const MANEUVER_LABELS: Record<ManeuverType, string> = {
-  depart: "Depart",
-  arrive: "Arrive",
-  continue: "Continue",
-  "turn-slight-left": "Bear left",
-  "turn-slight-right": "Bear right",
-  "turn-left": "Turn left",
-  "turn-right": "Turn right",
-  "turn-sharp-left": "Sharp left",
-  "turn-sharp-right": "Sharp right",
-  uturn: "U-turn",
 };
 
 export default function NavigationScreen() {

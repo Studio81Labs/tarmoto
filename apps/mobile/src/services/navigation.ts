@@ -45,6 +45,19 @@ export interface Maneuver {
   roadName?: string;
 }
 
+export const MANEUVER_LABELS: Record<ManeuverType, string> = {
+  depart: "Depart",
+  arrive: "Arrive",
+  continue: "Continue",
+  "turn-slight-left": "Bear left",
+  "turn-slight-right": "Bear right",
+  "turn-left": "Turn left",
+  "turn-right": "Turn right",
+  "turn-sharp-left": "Sharp left",
+  "turn-sharp-right": "Sharp right",
+  uturn: "U-turn",
+};
+
 // Heading-change thresholds (degrees). Tuned to the planner's polyline
 // sampling: it simplifies to ~25m spacing so tiny zigzags below 25° almost
 // always come from snapping noise, not real turns.
