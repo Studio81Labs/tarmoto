@@ -484,48 +484,61 @@ function SuggestionsTab({
 
   return (
     <div className="space-y-5">
-      <section className="space-y-2 rounded-lg border border-slate-800 bg-slate-950/50 p-4">
-        <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-          <MessageSquarePlus size={14} className="text-tarmoto-cyan" />
-          Propose an alternative
-        </h3>
-        <p className="text-xs text-slate-400">
-          Share a route change idea with your group. Members can vote; the trip
-          owner can accept or reject.
+      {trip ? (
+        // Propose form is gated on a locally-loaded trip because we
+        // anchor the new suggestion at the first waypoint so it has a
+        // map marker. Callers who opened a shared `?tripId=` URL cold
+        // land here with `trip === null` and see the hint below — they
+        // can still view + vote on existing suggestions via the list
+        // further down.
+        <section className="space-y-2 rounded-lg border border-slate-800 bg-slate-950/50 p-4">
+          <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+            <MessageSquarePlus size={14} className="text-tarmoto-cyan" />
+            Propose an alternative
+          </h3>
+          <p className="text-xs text-slate-400">
+            Share a route change idea with your group. Members can vote; the
+            trip owner can accept or reject.
+          </p>
+          <input
+            type="text"
+            placeholder="Short title (e.g. 'Scenic loop via Passo Giau')"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            aria-label="Suggestion title"
+            maxLength={200}
+            className="w-full rounded-md bg-slate-900 border border-slate-800 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-tarmoto-cyan"
+          />
+          <textarea
+            placeholder="Optional context — why this route?"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            aria-label="Suggestion description"
+            rows={2}
+            maxLength={2000}
+            className="w-full resize-none rounded-md bg-slate-900 border border-slate-800 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-tarmoto-cyan"
+          />
+          <button
+            type="button"
+            onClick={handleCreate}
+            disabled={creating || !title.trim()}
+            className="flex items-center gap-2 rounded-md bg-tarmoto-cyan/10 px-3 py-1.5 text-sm font-medium text-tarmoto-cyan hover:bg-tarmoto-cyan/20 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {creating ? (
+              <>
+                <Loader2 size={12} className="animate-spin" /> Submitting…
+              </>
+            ) : (
+              "Submit suggestion"
+            )}
+          </button>
+        </section>
+      ) : (
+        <p className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-400">
+          Load the trip into the planner to propose a new suggestion. You can
+          still view and vote on existing suggestions below.
         </p>
-        <input
-          type="text"
-          placeholder="Short title (e.g. 'Scenic loop via Passo Giau')"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          aria-label="Suggestion title"
-          maxLength={200}
-          className="w-full rounded-md bg-slate-900 border border-slate-800 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-tarmoto-cyan"
-        />
-        <textarea
-          placeholder="Optional context — why this route?"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          aria-label="Suggestion description"
-          rows={2}
-          maxLength={2000}
-          className="w-full resize-none rounded-md bg-slate-900 border border-slate-800 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-tarmoto-cyan"
-        />
-        <button
-          type="button"
-          onClick={handleCreate}
-          disabled={creating || !title.trim()}
-          className="flex items-center gap-2 rounded-md bg-tarmoto-cyan/10 px-3 py-1.5 text-sm font-medium text-tarmoto-cyan hover:bg-tarmoto-cyan/20 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {creating ? (
-            <>
-              <Loader2 size={12} className="animate-spin" /> Submitting…
-            </>
-          ) : (
-            "Submit suggestion"
-          )}
-        </button>
-      </section>
+      )}
 
       {loading && (
         <p className="text-sm text-slate-500">Loading suggestions…</p>
@@ -721,6 +734,12 @@ function ActivityTab({
     if (!serverTripId) return;
     const off = onTripActivity((payload) => {
       const entry = payload as TripActivityEntry;
+      // Filter by trip_id — socket listeners are module-level and
+      // survive across trip switches. Without this guard a rogue
+      // event from another subscribed trip (e.g. during a brief
+      // trip-switch overlap) would be prepended to the visible feed
+      // and mix unrelated audit entries.
+      if (entry.trip_id !== serverTripId) return;
       setEntries((prev) => {
         // Dedupe by id — Redis-adapter replays can deliver the same
         // entry twice across reconnections. The feed is
@@ -745,6 +764,20 @@ function ActivityTab({
   }
 
   if (loading) return <p className="text-sm text-slate-500">Loading…</p>;
+  // Render the API error BEFORE the empty-state check so a failed fetch
+  // surfaces as an actionable alert rather than a misleading "No
+  // activity yet" message when auth/network/server issues prevent the
+  // list from loading at all.
+  if (error) {
+    return (
+      <p
+        role="alert"
+        className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300"
+      >
+        {error}
+      </p>
+    );
+  }
   if (entries.length === 0) {
     return (
       <p className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-400">

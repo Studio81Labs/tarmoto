@@ -32,6 +32,13 @@ export interface CollaboratorCursor {
 export interface CollaboratorPresence {
   userId: string;
   online: boolean;
+  /**
+   * Count of the user's currently-known open sockets. Tracked so
+   * closing a single tab / device doesn't flip `online` to false
+   * while another of their sockets is still connected — presence
+   * events are per-socket, not per-user.
+   */
+  sockets: number;
   lastSeenAt: number;
 }
 
@@ -101,23 +108,26 @@ export function useTripCollabSession(serverTripId: string | null) {
       if (evt.trip_id !== serverTripId) return;
       setPresence((prev) => {
         const next = new Map(prev);
+        // Track sockets per user so multi-tab / multi-device members
+        // don't get flagged offline when just one of their sockets
+        // disconnects. Presence events are per-socket, not per-user.
+        const existing = prev.get(evt.user_id);
+        const socketDelta = evt.online ? 1 : -1;
+        const nextSockets = Math.max(0, (existing?.sockets ?? 0) + socketDelta);
         next.set(evt.user_id, {
           userId: evt.user_id,
-          online: evt.online,
+          online: nextSockets > 0,
+          sockets: nextSockets,
           lastSeenAt: Date.now(),
         });
         return next;
       });
-      if (!evt.online) {
-        // Drop their cursor immediately rather than waiting for the TTL
-        // sweep — an "offline" signal is authoritative.
-        setCursors((prev) => {
-          if (!prev.has(evt.user_id)) return prev;
-          const next = new Map(prev);
-          next.delete(evt.user_id);
-          return next;
-        });
-      }
+      // Let the TTL sweep drop cursors instead of reacting to every
+      // "offline" event — a user with two tabs closing one shouldn't
+      // make their cursor flap on other collaborators' maps. If the
+      // other sockets keep emitting cursor updates the lastSeenAt will
+      // stay fresh; if they don't, the sweep cleans up within
+      // CURSOR_TTL_MS.
     });
     const offCreated = onTripSuggestionCreated((payload) => {
       const s = payload as TripSuggestion;

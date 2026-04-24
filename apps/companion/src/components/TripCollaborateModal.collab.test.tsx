@@ -308,6 +308,59 @@ describe("TripCollaborateModal — collab tabs", () => {
     });
   });
 
+  it("hides the propose form when trip is null so cold ?tripId= opens can't submit coordless suggestions", async () => {
+    render(
+      <TripCollaborateModal
+        open
+        trip={null}
+        serverTripId="server-trip-1"
+        currentUserId="member-1"
+        ownerId="owner-1"
+        onClose={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: /suggestions/i }));
+    await screen.findByText("Scenic pass alt");
+
+    // The form inputs must not be rendered at all — just the list +
+    // vote buttons + a hint pointing at the planner.
+    expect(
+      screen.queryByLabelText(/suggestion title/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /submit suggestion/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/load the trip into the planner to propose/i),
+    ).toBeInTheDocument();
+  });
+
+  it("surfaces activity fetch errors as an alert instead of the empty-state message", async () => {
+    // Without this fix, a network / auth failure on initial load would
+    // render "No activity yet" — indistinguishable from a genuinely
+    // empty timeline, giving the user no actionable feedback.
+    hoisted.listActivity
+      .mockReset()
+      .mockRejectedValueOnce(new Error("Activity API 500"));
+
+    render(
+      <TripCollaborateModal
+        open
+        trip={makeTrip()}
+        serverTripId="server-trip-1"
+        currentUserId="member-1"
+        ownerId="owner-1"
+        onClose={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: /activity/i }));
+
+    expect(await screen.findByText(/activity api 500/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no activity yet/i)).not.toBeInTheDocument();
+  });
+
   it("clears a parent-level invite error when switching tabs so it doesn't bleed into Suggestions/Activity", async () => {
     // Reproduce the leak: invite tab fires handleGenerate, errors out,
     // and the alert lives in the parent div next to the active tab.

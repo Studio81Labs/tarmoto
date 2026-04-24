@@ -179,4 +179,67 @@ describe("useTripCollabSession", () => {
     expect(result.current.cursors.size).toBe(0);
     expect(result.current.suggestions).toHaveLength(0);
   });
+
+  it("keeps a user online + cursor alive when only one of their sockets disconnects", async () => {
+    // Presence events are per-socket, not per-user. A collaborator
+    // with two tabs open closing one must NOT flap offline on other
+    // members' maps while the other tab is still connected.
+    hoisted.listSuggestions.mockResolvedValue({ data: [] });
+
+    const { result } = renderHook(() => useTripCollabSession("trip-a"));
+    await waitFor(() => expect(hoisted.subscribeTrip).toHaveBeenCalled());
+
+    // User u-1 connects from tab 1 and tab 2, then moves a cursor.
+    act(() => {
+      presenceCb?.({
+        user_id: "u-1",
+        trip_id: "trip-a",
+        online: true,
+        at: "2026-04-24T10:00:00Z",
+      });
+      presenceCb?.({
+        user_id: "u-1",
+        trip_id: "trip-a",
+        online: true,
+        at: "2026-04-24T10:00:01Z",
+      });
+      cursorCb?.({
+        user_id: "u-1",
+        trip_id: "trip-a",
+        lat: 1,
+        lng: 2,
+        at: "2026-04-24T10:00:02Z",
+      });
+    });
+    expect(result.current.presence.get("u-1")?.sockets).toBe(2);
+    expect(result.current.presence.get("u-1")?.online).toBe(true);
+    expect(result.current.cursors.has("u-1")).toBe(true);
+
+    // Tab 1 closes — one socket offline event. User must stay online
+    // (sockets drops to 1) and their cursor stays put for the TTL
+    // sweep to decide.
+    act(() => {
+      presenceCb?.({
+        user_id: "u-1",
+        trip_id: "trip-a",
+        online: false,
+        at: "2026-04-24T10:00:03Z",
+      });
+    });
+    expect(result.current.presence.get("u-1")?.sockets).toBe(1);
+    expect(result.current.presence.get("u-1")?.online).toBe(true);
+    expect(result.current.cursors.has("u-1")).toBe(true);
+
+    // Tab 2 also closes — now genuinely offline.
+    act(() => {
+      presenceCb?.({
+        user_id: "u-1",
+        trip_id: "trip-a",
+        online: false,
+        at: "2026-04-24T10:00:04Z",
+      });
+    });
+    expect(result.current.presence.get("u-1")?.sockets).toBe(0);
+    expect(result.current.presence.get("u-1")?.online).toBe(false);
+  });
 });
