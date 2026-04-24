@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "13369e54-9e4a-4b7c-b7fe-db8901aec283",
+    "_postman_id": "ab0d2d05-901d-4f90-831c-51c687008670",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -122,6 +122,97 @@
       ]
     },
     {
+      "name": "account",
+      "item": [
+        {
+          "name": "Load the current account subscription snapshot",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/account/subscription",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "account", "subscription"]
+            }
+          }
+        },
+        {
+          "name": "Create a Stripe Checkout session for a paid plan",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/account/subscription/checkout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "account", "subscription", "checkout"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tier\": \"premium\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Create a Stripe Customer Portal session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/account/subscription/portal",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "account", "subscription", "portal"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"flow\": \"manage\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Receive Stripe Billing webhook events",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/account/subscription/webhook",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "account", "subscription", "webhook"]
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "users",
       "item": [
         {
@@ -164,6 +255,23 @@
                   "language": "json"
                 }
               }
+            }
+          }
+        },
+        {
+          "name": "Upload a profile avatar",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/me/avatar",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "me", "avatar"]
             }
           }
         },
@@ -656,6 +764,29 @@
           }
         },
         {
+          "name": "Track an outbound click from an embeddable shared-ride widget",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/rides/shared/:token/embed-click",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "rides", "shared", ":token", "embed-click"],
+              "variable": [
+                {
+                  "key": "token",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
           "name": "Browse the public community ride feed",
           "request": {
             "method": "GET",
@@ -704,6 +835,12 @@
                   "key": "min_quality",
                   "value": "",
                   "description": "Minimum average road quality (0..5).",
+                  "disabled": true
+                },
+                {
+                  "key": "min_popularity",
+                  "value": "",
+                  "description": "Minimum community popularity, measured as public view count.",
                   "disabled": true
                 },
                 {
