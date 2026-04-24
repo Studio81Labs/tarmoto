@@ -155,6 +155,50 @@ describe("TripCollaborateModal", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps the generated share URL when the parent re-renders with a new onClose reference", async () => {
+    hoisted.create.mockResolvedValueOnce({
+      data: {
+        id: "share-1",
+        share_token: "a".repeat(32),
+        share_url: `/trips/shared/${"a".repeat(32)}`,
+        title: "Pyrenees Loop",
+        view_count: 0,
+        created_at: "2026-04-20T10:00:00.000Z",
+        updated_at: "2026-04-20T10:00:00.000Z",
+      },
+    });
+
+    // Each re-render creates a brand-new inline arrow for onClose, mirroring
+    // what `() => setCollaborateOpen(false)` in the planner page does on
+    // every parent render.
+    const { rerender } = render(
+      <TripCollaborateModal open trip={minimalTrip} onClose={() => {}} />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /create invite link/i }),
+    );
+
+    const input = (await screen.findByLabelText(
+      /shareable invite url/i,
+    )) as HTMLInputElement;
+    expect(input.value).toContain(`/trips/shared/${"a".repeat(32)}`);
+
+    // Parent re-renders (e.g. map interaction) — new onClose reference but
+    // `open` unchanged. The share URL must stay visible.
+    rerender(
+      <TripCollaborateModal open trip={minimalTrip} onClose={() => {}} />,
+    );
+    rerender(
+      <TripCollaborateModal open trip={minimalTrip} onClose={() => {}} />,
+    );
+
+    expect(
+      (screen.getByLabelText(/shareable invite url/i) as HTMLInputElement)
+        .value,
+    ).toContain(`/trips/shared/${"a".repeat(32)}`);
+  });
+
   it("drops a stale create result when the modal has been closed mid-fetch", async () => {
     let resolveCreate: ((value: unknown) => void) | undefined;
     hoisted.create.mockImplementationOnce(

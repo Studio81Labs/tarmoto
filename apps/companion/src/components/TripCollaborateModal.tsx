@@ -32,26 +32,37 @@ export function TripCollaborateModal({
   // started in one session can detect it's been superseded and drop its result
   // instead of writing into the next session's state.
   const sessionRef = useRef(0);
+  // Route Escape through a ref rather than the effect deps. Callers commonly
+  // pass an inline arrow (`() => setOpen(false)`), which would re-trigger any
+  // effect that depends on `onClose` on every parent render — wiping the
+  // generated share URL when the planner re-renders for an unrelated reason.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     // Reset on BOTH open and close so a stale error or share URL from a
     // previous session can't reappear when the modal is reopened. Closing
     // while a request is in flight can't be interrupted mid-fetch, so we
-    // bump `sessionRef` to tag the pending result as stale.
+    // bump `sessionRef` to tag the pending result as stale. Depends only on
+    // `open` so an unstable `onClose` reference from the parent can't retrigger
+    // the reset on every render.
     sessionRef.current += 1;
     setShare(null);
     setError(null);
     setCopied(false);
     setLoading(false);
+  }, [open]);
 
+  useEffect(() => {
     if (!open) return;
-
     function handleKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") onCloseRef.current();
     }
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
-  }, [open, onClose]);
+  }, [open]);
 
   useEffect(() => {
     if (!copied) return;

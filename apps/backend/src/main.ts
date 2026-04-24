@@ -3,26 +3,62 @@ import { NestFactory } from '@nestjs/core';
 import { type NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
-import { static as serveStatic } from 'express';
+import {
+  json as expressJson,
+  static as serveStatic,
+  urlencoded as expressUrlencoded,
+  type Request,
+  type Response,
+} from 'express';
 import { join } from 'node:path';
 import { AppModule } from './app.module.js';
 import { createSwaggerConfig } from './config/swagger.config.js';
 import { loadTrustProxyConfig } from './config/trust-proxy.config.js';
 import { MAX_TRIP_SNAPSHOT_BYTES } from './modules/trip-shares/dto/trip-share.dto.js';
 
+// Default JSON body limit, matching body-parser's built-in default. Every
+// endpoint except trip-share creation stays on this limit so we don't widen
+// the memory-pressure attack surface beyond what's actually needed.
+const DEFAULT_JSON_BODY_LIMIT = '100kb';
+
 async function bootstrap() {
   const isProd = process.env.TARMOTO_NODE_ENV === 'production';
+  // Disable Nest's auto-registered body parser so we can scope the larger
+  // JSON limit needed by trip-share snapshots to just that route prefix.
+  // `rawBody` is reimplemented below via the `verify` callback — keeping
+  // Stripe's webhook signature verification working without opening up the
+  // global JSON limit.
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
-    rawBody: true,
+    bodyParser: false,
   });
 
-  // Express/body-parser defaults to 100 kb for JSON, which is below the
-  // documented trip-shares snapshot cap (and realistic multi-day trips with
-  // full route geometry). Raise the JSON body limit to leave headroom for the
-  // DTO envelope (title + JSON punctuation) around the largest accepted
-  // snapshot, so the 413 that a too-large request gets comes from our
-  // validator's error message, not a generic Express rejection.
-  app.useBodyParser('json', { limit: MAX_TRIP_SNAPSHOT_BYTES * 2 });
+  const captureRawBody = (
+    req: Request & { rawBody?: Buffer },
+    _res: Response,
+    buf: Buffer,
+  ): void => {
+    if (buf?.length) req.rawBody = buf;
+  };
+
+  // POST /api/v1/trip-shares carries a full client-side trip snapshot which
+  // can realistically exceed the 100 kb default (multi-day trip + per-day
+  // route geometry). Accept up to 2× `MAX_TRIP_SNAPSHOT_BYTES` so the
+  // envelope overhead still fits and the validator's
+  // `SnapshotSizeConstraint` is what rejects oversized snapshots — not
+  // body-parser's generic 413. Other endpoints stay on the default limit.
+  app.use(
+    '/api/v1/trip-shares',
+    expressJson({
+      limit: MAX_TRIP_SNAPSHOT_BYTES * 2,
+      verify: captureRawBody,
+    }),
+  );
+  app.use(
+    expressJson({ limit: DEFAULT_JSON_BODY_LIMIT, verify: captureRawBody }),
+  );
+  app.use(
+    expressUrlencoded({ extended: true, limit: DEFAULT_JSON_BODY_LIMIT }),
+  );
 
   const { hops } = loadTrustProxyConfig();
   if (hops > 0) {
