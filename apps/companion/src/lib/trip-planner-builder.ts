@@ -80,7 +80,7 @@ export function rebuildPlannerDay(
   day: TripDay,
   parameters: TripParameters,
 ): TripDay {
-  const routeWaypoints = routingWaypoints(day.waypoints);
+  const routeWaypoints = filterRoutingWaypoints(day.waypoints);
   if (routeWaypoints.length < 2) {
     return {
       ...day,
@@ -194,10 +194,6 @@ function buildRoutePoints(
   }
 
   return dedupeSequentialPoints(points);
-}
-
-function routingWaypoints(waypoints: Waypoint[]): Waypoint[] {
-  return filterRoutingWaypoints(waypoints);
 }
 
 function buildLegPoints(
