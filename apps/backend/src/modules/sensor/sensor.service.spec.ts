@@ -302,7 +302,7 @@ describe('SensorService', () => {
       expect(createArg.speed_at_reading).toBeNull();
     });
 
-    it('refreshes the matched road segment with recency-weighted multi-rider aggregation', async () => {
+    it('does not duplicate road quality aggregation owned by the database trigger', async () => {
       const dto = {
         ride_id: 'ride-1',
         readings: Array.from({ length: 20 }, (_, i) => ({
@@ -321,13 +321,7 @@ describe('SensorService', () => {
       const aggregateCall = (segmentRepo.query as jest.Mock).mock.calls.find(
         ([sql]) => typeof sql === 'string' && sql.includes('weighted_readings'),
       );
-      expect(aggregateCall).toBeDefined();
-      expect(aggregateCall![0]).toContain('COUNT(DISTINCT user_id)');
-      expect(aggregateCall![0]).toContain("INTERVAL '30 days'");
-      expect(aggregateCall![0]).toContain("INTERVAL '90 days'");
-      expect(aggregateCall![0]).toContain("INTERVAL '180 days'");
-      expect(aggregateCall![0]).toContain('unique_rider_count >= 5');
-      expect(aggregateCall![1]).toEqual(['segment-1']);
+      expect(aggregateCall).toBeUndefined();
 
       const createArg = (readingRepo.create as jest.Mock).mock.calls[0][0];
       expect(createArg.surface_type).toBe('asphalt');
