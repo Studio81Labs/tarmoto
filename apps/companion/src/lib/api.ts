@@ -108,6 +108,46 @@ export const tripsApi = {
     }),
 };
 
+// ── Trip shares (US-35: read-only invite links, first slice) ──
+
+export interface TripShareResponse {
+  id: string;
+  share_token: string;
+  share_url: string;
+  title: string;
+  view_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TripSharePublic {
+  share_token: string;
+  title: string;
+  owner_name: string;
+  snapshot: Record<string, unknown>;
+  view_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TripShareListResponse {
+  items: TripShareResponse[];
+  total: number;
+}
+
+export const tripSharesApi = {
+  create: (payload: { title: string; snapshot: Record<string, unknown> }) =>
+    apiFetch<TripShareResponse>("/trip-shares", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  listMine: () => apiFetch<TripShareListResponse>("/trip-shares/mine"),
+  getByToken: (token: string) =>
+    apiFetch<TripSharePublic>(`/trip-shares/${encodeURIComponent(token)}`),
+  revoke: (id: string) =>
+    apiFetch(`/trip-shares/${encodeURIComponent(id)}`, { method: "DELETE" }),
+};
+
 // ── Exploration endpoints (not yet in spec) ──
 export interface ExplorationStats {
   ridden_segments: number;

@@ -17,6 +17,7 @@ import { FunZone } from './entities/fun-zone.entity.js';
 import { FunZoneRoad } from './entities/fun-zone-road.entity.js';
 import { CommuteRoute } from './entities/commute-route.entity.js';
 import { SharedRide } from './entities/shared-ride.entity.js';
+import { TripShare } from './entities/trip-share.entity.js';
 import { InitSchema1713000000000 } from './migrations/1713000000000-InitSchema.js';
 import { AddPasswordHash1713100000000 } from './migrations/1713100000000-AddPasswordHash.js';
 import { FixIsEmergencyDefault1713200000000 } from './migrations/1713200000000-FixIsEmergencyDefault.js';
@@ -25,6 +26,7 @@ import { AddCommunityTables1713400000000 } from './migrations/1713400000000-AddC
 import { AddRideAvgCurviness1714400000000 } from './migrations/1714400000000-AddRideAvgCurviness.js';
 import { AddSharedRideViewCount1714300000000 } from './migrations/1714300000000-AddSharedRideViewCount.js';
 import { AddSharedRideEmbedClickCount1714500000000 } from './migrations/1714500000000-AddSharedRideEmbedClickCount.js';
+import { AddTripShares1714800000000 } from './migrations/1714800000000-AddTripShares.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -51,6 +53,7 @@ export const AppDataSource = new DataSource({
     FunZoneRoad,
     CommuteRoute,
     SharedRide,
+    TripShare,
   ],
   migrations: [
     InitSchema1713000000000,
@@ -61,6 +64,7 @@ export const AppDataSource = new DataSource({
     AddSharedRideViewCount1714300000000,
     AddRideAvgCurviness1714400000000,
     AddSharedRideEmbedClickCount1714500000000,
+    AddTripShares1714800000000,
   ],
   synchronize: false,
 });

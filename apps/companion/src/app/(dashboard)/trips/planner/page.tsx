@@ -28,6 +28,7 @@ import { PassesPanel } from "@/components/PassesPanel";
 import { SegmentSidebar } from "@/components/SegmentSidebar";
 import { TripPlannerMap } from "@/components/TripPlannerMap";
 import { TripStopsPanel } from "@/components/TripStopsPanel";
+import { TripCollaborateModal } from "@/components/TripCollaborateModal";
 import { TripExportMenu } from "@/components/TripExportMenu";
 import { TripImportDialog } from "@/components/TripImportDialog";
 import { useClosures } from "@/hooks/useClosures";
@@ -61,6 +62,7 @@ export default function TripPlannerPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [paramsOpen, setParamsOpen] = useState(true);
   const [importOpen, setImportOpen] = useState(false);
+  const [collaborateOpen, setCollaborateOpen] = useState(false);
   const [pendingImportFile, setPendingImportFile] = useState<File | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [travelMonth, setTravelMonth] = useState<number>(() =>
@@ -430,7 +432,11 @@ export default function TripPlannerPage() {
             <Sliders size={14} />
             Parameters
           </button>
-          <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition">
+          <button
+            type="button"
+            onClick={() => setCollaborateOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition"
+          >
             <Users size={14} />
             Collaborate
           </button>
@@ -884,6 +890,12 @@ export default function TripPlannerPage() {
           setImportOpen(false);
           setPendingImportFile(null);
         }}
+      />
+
+      <TripCollaborateModal
+        open={collaborateOpen}
+        trip={displayedTrip}
+        onClose={() => setCollaborateOpen(false)}
       />
     </div>
   );
