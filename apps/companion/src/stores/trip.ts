@@ -32,6 +32,7 @@ interface TripState {
   appendPlannerWaypoint: (
     dayIndex: number,
     location: { lng: number; lat: number },
+    parameters?: Trip["parameters"],
   ) => void;
   insertWaypointBeforeEnd: (dayIndex: number, waypoint: Waypoint) => void;
   removeWaypoint: (dayIndex: number, waypointId: string) => void;
@@ -98,21 +99,27 @@ export const useTripStore = create<TripState & TripStoreHistory>((set) => ({
       }),
     ),
 
-  appendPlannerWaypoint: (dayIndex, location) =>
+  appendPlannerWaypoint: (dayIndex, location, parameters) =>
     set((state) =>
       commitTripChange(state, (activeTrip) => {
         const baseTrip =
-          activeTrip ?? createPlannerDraftTrip(new Date().toISOString());
+          activeTrip ??
+          createPlannerDraftTrip(new Date().toISOString(), parameters);
         const days = ensurePlannerDays(baseTrip.days, dayIndex + 1);
         const day = days[dayIndex]!;
+        const nextParameters = mergePlannerParameters(
+          baseTrip.parameters,
+          parameters,
+          days.length,
+        );
         days[dayIndex] = rebuildPlannerDay(
           appendPlannerWaypointToDay(day, location),
-          baseTrip.parameters,
+          nextParameters,
         );
         return {
           ...baseTrip,
           days,
-          parameters: { ...baseTrip.parameters, days: days.length },
+          parameters: nextParameters,
           updatedAt: new Date().toISOString(),
         };
       }),
@@ -197,6 +204,8 @@ export const useTripStore = create<TripState & TripStoreHistory>((set) => ({
       const redoStack = trimHistory([...state.redoStack, state.activeTrip]);
       return {
         activeTrip: previous,
+        focusedSegmentId: null,
+        hoveredSegmentId: null,
         undoStack,
         redoStack,
         canUndo: undoStack.length > 0,
@@ -212,6 +221,8 @@ export const useTripStore = create<TripState & TripStoreHistory>((set) => ({
       const undoStack = trimHistory([...state.undoStack, state.activeTrip]);
       return {
         activeTrip: next,
+        focusedSegmentId: null,
+        hoveredSegmentId: null,
         undoStack,
         redoStack,
         canUndo: undoStack.length > 0,
@@ -283,4 +294,16 @@ function routingWaypointSignature(waypoints: Waypoint[]) {
 function trimHistory(history: Array<Trip | null>): Array<Trip | null> {
   if (history.length <= MAX_HISTORY_ENTRIES) return history;
   return history.slice(history.length - MAX_HISTORY_ENTRIES);
+}
+
+function mergePlannerParameters(
+  existing: Trip["parameters"],
+  next: Trip["parameters"] | undefined,
+  dayCount: number,
+): Trip["parameters"] {
+  if (!next) return { ...existing, days: dayCount };
+  return {
+    ...next,
+    days: Math.max(next.days, dayCount),
+  };
 }

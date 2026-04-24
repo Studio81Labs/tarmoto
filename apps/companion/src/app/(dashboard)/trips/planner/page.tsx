@@ -760,7 +760,7 @@ export default function TripPlannerPage() {
             passesData={passesData}
             selectedDayNumber={selectedDay?.dayNumber ?? 1}
             onAddWaypoint={(location) =>
-              appendPlannerWaypoint(selectedDayIndex, location)
+              appendPlannerWaypoint(selectedDayIndex, location, plannerParams)
             }
           />
 

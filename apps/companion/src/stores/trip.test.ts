@@ -1,4 +1,5 @@
 import { useTripStore } from "./trip";
+import type { TripParameters } from "@/lib/types";
 
 describe("useTripStore planner editing", () => {
   beforeEach(() => {
@@ -52,6 +53,30 @@ describe("useTripStore planner editing", () => {
     expect(useTripStore.getState().activeTrip?.days[0]?.waypoints).toHaveLength(
       1,
     );
+  });
+
+  it("uses the current planner parameters when map clicks create and rebuild a draft", () => {
+    const store = useTripStore.getState();
+    const parameters: TripParameters = {
+      days: 2,
+      dailyKmTarget: 180,
+      roadPreference: "direct",
+      surfacePreference: ["gravel"],
+      avoidHighways: false,
+      avoidTolls: true,
+      avoidUnpaved: false,
+      minQuality: 4,
+    };
+
+    store.appendPlannerWaypoint(0, { lng: 14.41, lat: 50.08 }, parameters);
+    store.appendPlannerWaypoint(0, { lng: 14.61, lat: 50.19 }, parameters);
+
+    const activeTrip = useTripStore.getState().activeTrip;
+    expect(activeTrip?.parameters).toEqual(parameters);
+    expect(activeTrip?.days[0]?.routeGeometry?.coordinates).toEqual([
+      [14.41, 50.08],
+      [14.61, 50.19],
+    ]);
   });
 
   it("reorders intermediate waypoints and supports undo/redo", () => {
@@ -123,6 +148,31 @@ describe("useTripStore planner editing", () => {
       { type: "via", lng: 14.53 },
       { type: "end", lng: 14.81 },
     ]);
+  });
+
+  it("clears focused and hovered segments when undoing or redoing", () => {
+    const store = useTripStore.getState();
+
+    store.appendPlannerWaypoint(0, { lng: 14.41, lat: 50.08 });
+    store.appendPlannerWaypoint(0, { lng: 14.61, lat: 50.19 });
+
+    useTripStore.setState({
+      focusedSegmentId: "seg-1",
+      hoveredSegmentId: "seg-2",
+    });
+
+    useTripStore.getState().undo();
+    expect(useTripStore.getState().focusedSegmentId).toBeNull();
+    expect(useTripStore.getState().hoveredSegmentId).toBeNull();
+
+    useTripStore.setState({
+      focusedSegmentId: "seg-3",
+      hoveredSegmentId: "seg-4",
+    });
+
+    useTripStore.getState().redo();
+    expect(useTripStore.getState().focusedSegmentId).toBeNull();
+    expect(useTripStore.getState().hoveredSegmentId).toBeNull();
   });
 
   it("preserves existing route geometry when adding stop suggestions", () => {

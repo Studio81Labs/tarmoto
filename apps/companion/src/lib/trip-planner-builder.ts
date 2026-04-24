@@ -24,14 +24,17 @@ const DEFAULT_PARAMETERS: TripParameters = {
 
 const MAX_PREVIEW_SEGMENTS = 10;
 
-export function createPlannerDraftTrip(nowIso: string): Trip {
+export function createPlannerDraftTrip(
+  nowIso: string,
+  parameters: TripParameters = DEFAULT_PARAMETERS,
+): Trip {
   return {
     id: `planner-${slugFromIso(nowIso)}`,
     name: "New Trip",
     status: "draft",
     createdAt: nowIso,
     updatedAt: nowIso,
-    parameters: { ...DEFAULT_PARAMETERS },
+    parameters: { ...parameters },
     collaborators: [{ userId: "u-owner", displayName: "You", role: "owner" }],
     days: [createEmptyPlannerDay(1)],
   };
