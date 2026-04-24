@@ -5,6 +5,7 @@ import {
   ensurePlannerDays,
   rebuildPlannerDay,
 } from "@/lib/trip-planner-builder";
+import { filterRoutingWaypoints } from "@/lib/trip-routing";
 import type { RoutePreviewSegment, Trip, Waypoint } from "@/lib/types";
 
 interface TripState {
@@ -48,11 +49,6 @@ interface TripStoreHistory {
   redoStack: Array<Trip | null>;
 }
 
-const ROUTING_WAYPOINT_TYPES: ReadonlySet<Waypoint["type"]> = new Set([
-  "start",
-  "via",
-  "end",
-]);
 const MAX_HISTORY_ENTRIES = 50;
 
 export const useTripStore = create<TripState & TripStoreHistory>((set) => ({
@@ -279,8 +275,7 @@ function shouldPreserveExistingRoute(
 }
 
 function routingWaypointSignature(waypoints: Waypoint[]) {
-  return waypoints
-    .filter((waypoint) => ROUTING_WAYPOINT_TYPES.has(waypoint.type))
+  return filterRoutingWaypoints(waypoints)
     .map((waypoint) => waypoint.id)
     .join("|");
 }

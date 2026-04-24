@@ -3,6 +3,7 @@ import type {
   PoiKind,
   RoutePoiSuggestion,
 } from "@/lib/api";
+import { filterRoutingWaypoints } from "@/lib/trip-routing";
 import type { Trip, TripDay, Waypoint } from "@/lib/types";
 
 export type { AccommodationSuggestion, RoutePoiSuggestion, PoiKind };
@@ -35,12 +36,6 @@ export interface TripStopsRequestPlan {
 
 export type StopSuggestion = AccommodationSuggestion | RoutePoiSuggestion;
 
-const ROUTING_WAYPOINT_TYPES: ReadonlySet<Waypoint["type"]> = new Set([
-  "start",
-  "via",
-  "end",
-]);
-
 function findLastMatching<T>(
   items: readonly T[],
   predicate: (item: T) => boolean,
@@ -56,9 +51,7 @@ function findLastMatching<T>(
 function routingWaypoints(
   waypoints: Pick<Waypoint, "type" | "location" | "name" | "id">[],
 ) {
-  const filtered = waypoints.filter((waypoint) =>
-    ROUTING_WAYPOINT_TYPES.has(waypoint.type),
-  );
+  const filtered = filterRoutingWaypoints(waypoints);
   return filtered.length > 0 ? filtered : waypoints;
 }
 

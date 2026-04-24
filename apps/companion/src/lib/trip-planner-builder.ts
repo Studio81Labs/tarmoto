@@ -8,13 +8,8 @@ import type {
   TripParameters,
   Waypoint,
 } from "./types";
+import { filterRoutingWaypoints } from "./trip-routing";
 import { scoreToTier } from "./utils";
-
-const ROUTING_WAYPOINT_TYPES: ReadonlySet<Waypoint["type"]> = new Set([
-  "start",
-  "via",
-  "end",
-]);
 
 const DEFAULT_PARAMETERS: TripParameters = {
   days: 1,
@@ -191,9 +186,7 @@ function buildRoutePoints(
 }
 
 function routingWaypoints(waypoints: Waypoint[]): Waypoint[] {
-  return waypoints.filter((waypoint) =>
-    ROUTING_WAYPOINT_TYPES.has(waypoint.type),
-  );
+  return filterRoutingWaypoints(waypoints);
 }
 
 function buildLegPoints(
