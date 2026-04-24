@@ -134,7 +134,7 @@ export class StripeNodeBillingClient implements StripeBillingClient {
       .get<string>('TARMOTO_STRIPE_SECRET_KEY')
       ?.trim();
     this.stripe = secretKey
-      ? new Stripe(secretKey, { apiVersion: '2026-03-25.dahlia' })
+      ? new Stripe(secretKey, { apiVersion: '2026-04-22.dahlia' })
       : null;
     this.webhookSecret =
       this.config.get<string>('TARMOTO_STRIPE_WEBHOOK_SECRET')?.trim() ?? null;
