@@ -23,7 +23,12 @@ import { TripSuggestionVote } from './trip-suggestion-vote.entity.js';
  */
 @Entity('trip_suggestions')
 @Index('idx_trip_suggestions_trip', ['trip_id'])
-@Index('idx_trip_suggestions_day', ['trip_day_id'])
+// Partial index: matches the migration's `WHERE trip_day_id IS NOT NULL`
+// clause so `migration:generate` doesn't emit a spurious drop/recreate
+// that would lose the partial optimisation.
+@Index('idx_trip_suggestions_day', ['trip_day_id'], {
+  where: '"trip_day_id" IS NOT NULL',
+})
 @Index('idx_trip_suggestions_trip_status', ['trip_id', 'status'])
 export class TripSuggestion {
   @PrimaryGeneratedColumn('uuid')

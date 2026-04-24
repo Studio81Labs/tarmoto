@@ -7,7 +7,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { LessThan, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { TripCollabService } from './trip-collab.service.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
@@ -99,12 +99,15 @@ describe('TripCollabService', () => {
           id: entity.id ?? 'v-1',
         }),
       ),
+      update: jest.fn().mockResolvedValue({ affected: 0 }),
+      insert: jest.fn().mockResolvedValue({ identifiers: [{ id: 'v-1' }] }),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
     } as unknown as jest.Mocked<Repository<TripSuggestionVote>>;
 
     messageRepo = {
       find: jest.fn().mockResolvedValue([]),
       findOne: jest.fn(),
+      createQueryBuilder: jest.fn(),
       create: jest
         .fn()
         .mockImplementation((data: Partial<TripMessage>) => ({ ...data })),
@@ -326,11 +329,14 @@ describe('TripCollabService', () => {
   });
 
   describe('voteSuggestion', () => {
-    it('creates a fresh vote when the caller has not voted yet', async () => {
+    it('inserts a fresh vote when no row exists (update affects 0 rows)', async () => {
       memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
       suggestionRepo.findOne.mockResolvedValueOnce(makeSuggestion());
-      voteRepo.findOne.mockResolvedValueOnce(null);
-      // Second find is for the post-vote tally.
+      voteRepo.update.mockResolvedValueOnce({
+        affected: 0,
+        raw: [],
+        generatedMaps: [],
+      });
       voteRepo.find.mockResolvedValueOnce([
         { suggestion_id: SUGGESTION_ID, user_id: USER_ID, vote: 'up' },
       ] as unknown as TripSuggestionVote[]);
@@ -342,32 +348,27 @@ describe('TripCollabService', () => {
         'up',
       );
 
-      expect(voteRepo.save).toHaveBeenCalledWith(
-        expect.objectContaining({
-          suggestion_id: SUGGESTION_ID,
-          user_id: USER_ID,
-          vote: 'up',
-        }),
+      expect(voteRepo.update).toHaveBeenCalledWith(
+        { suggestion_id: SUGGESTION_ID, user_id: USER_ID },
+        { vote: 'up' },
       );
-      expect(result.up_votes).toBe(1);
-      expect(result.caller_vote).toBe('up');
-      expect(events.emitToTrip).toHaveBeenCalledWith(
-        TRIP_ID,
-        'trip:suggestion:voted',
-        { suggestion_id: SUGGESTION_ID, up_votes: 1, down_votes: 0 },
-      );
-    });
-
-    it('flips an existing vote without creating a second row', async () => {
-      memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
-      suggestionRepo.findOne.mockResolvedValueOnce(makeSuggestion());
-      const existing = {
-        id: 'v-1',
+      expect(voteRepo.insert).toHaveBeenCalledWith({
         suggestion_id: SUGGESTION_ID,
         user_id: USER_ID,
         vote: 'up',
-      } as unknown as TripSuggestionVote;
-      voteRepo.findOne.mockResolvedValueOnce(existing);
+      });
+      expect(result.up_votes).toBe(1);
+      expect(result.caller_vote).toBe('up');
+    });
+
+    it('flips an existing vote with a single UPDATE (no INSERT)', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
+      suggestionRepo.findOne.mockResolvedValueOnce(makeSuggestion());
+      voteRepo.update.mockResolvedValueOnce({
+        affected: 1,
+        raw: [],
+        generatedMaps: [],
+      });
       voteRepo.find.mockResolvedValueOnce([
         { suggestion_id: SUGGESTION_ID, user_id: USER_ID, vote: 'down' },
       ] as unknown as TripSuggestionVote[]);
@@ -379,30 +380,61 @@ describe('TripCollabService', () => {
         'down',
       );
 
-      expect(voteRepo.save).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 'v-1', vote: 'down' }),
+      expect(voteRepo.update).toHaveBeenCalledWith(
+        { suggestion_id: SUGGESTION_ID, user_id: USER_ID },
+        { vote: 'down' },
       );
-      // It should UPDATE, not INSERT — so the call should have carried the
-      // existing row's id.
+      expect(voteRepo.insert).not.toHaveBeenCalled();
       expect(result.caller_vote).toBe('down');
     });
 
-    it('is a no-op when the caller re-votes the same direction', async () => {
+    it('recovers from a concurrent first-time vote race (23505 on INSERT)', async () => {
+      // Both requests observe affected:0 from UPDATE, both try INSERT,
+      // the second catches 23505 and overwrites with a final UPDATE.
       memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
       suggestionRepo.findOne.mockResolvedValueOnce(makeSuggestion());
-      voteRepo.findOne.mockResolvedValueOnce({
-        id: 'v-1',
-        suggestion_id: SUGGESTION_ID,
-        user_id: USER_ID,
-        vote: 'up',
-      } as unknown as TripSuggestionVote);
+      voteRepo.update
+        .mockResolvedValueOnce({ affected: 0, raw: [], generatedMaps: [] })
+        .mockResolvedValueOnce({ affected: 1, raw: [], generatedMaps: [] });
+      voteRepo.insert.mockRejectedValueOnce(
+        Object.assign(new Error('duplicate key'), {
+          code: '23505',
+          constraint: 'uq_trip_suggestion_votes_member',
+        }),
+      );
       voteRepo.find.mockResolvedValueOnce([
         { suggestion_id: SUGGESTION_ID, user_id: USER_ID, vote: 'up' },
       ] as unknown as TripSuggestionVote[]);
 
-      await service.voteSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID, 'up');
+      const result = await service.voteSuggestion(
+        USER_ID,
+        TRIP_ID,
+        SUGGESTION_ID,
+        'up',
+      );
 
-      expect(voteRepo.save).not.toHaveBeenCalled();
+      // Two UPDATEs: first returns affected:0, fallback after the
+      // caught 23505 returns affected:1.
+      expect(voteRepo.update).toHaveBeenCalledTimes(2);
+      expect(voteRepo.insert).toHaveBeenCalledTimes(1);
+      expect(result.caller_vote).toBe('up');
+    });
+
+    it('rethrows non-unique-violation errors from the INSERT', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
+      suggestionRepo.findOne.mockResolvedValueOnce(makeSuggestion());
+      voteRepo.update.mockResolvedValueOnce({
+        affected: 0,
+        raw: [],
+        generatedMaps: [],
+      });
+      voteRepo.insert.mockRejectedValueOnce(
+        Object.assign(new Error('boom'), { code: '99999' }),
+      );
+
+      await expect(
+        service.voteSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID, 'up'),
+      ).rejects.toThrow('boom');
     });
   });
 
@@ -432,6 +464,40 @@ describe('TripCollabService', () => {
   });
 
   describe('listMessages', () => {
+    type MessagesQbMock = {
+      leftJoinAndSelect: jest.Mock;
+      where: jest.Mock;
+      andWhere: jest.Mock;
+      orderBy: jest.Mock;
+      addOrderBy: jest.Mock;
+      take: jest.Mock;
+      getMany: jest.Mock;
+    };
+
+    function mockMessagesQb(rows: TripMessage[] = []): MessagesQbMock {
+      const qb = {
+        leftJoinAndSelect: jest.fn(),
+        where: jest.fn(),
+        andWhere: jest.fn(),
+        orderBy: jest.fn(),
+        addOrderBy: jest.fn(),
+        take: jest.fn(),
+        getMany: jest.fn().mockResolvedValue(rows),
+      } as MessagesQbMock;
+      for (const fn of [
+        'leftJoinAndSelect',
+        'where',
+        'andWhere',
+        'orderBy',
+        'addOrderBy',
+        'take',
+      ] as const) {
+        (qb as unknown as Record<string, jest.Mock>)[fn].mockReturnValue(qb);
+      }
+      (messageRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
+      return qb;
+    }
+
     it("404s non-members so we don't leak that the trip exists", async () => {
       memberRepo.findOne.mockResolvedValueOnce(null);
 
@@ -440,44 +506,53 @@ describe('TripCollabService', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('applies the default page size for an unscoped list', async () => {
+    it('applies the default page size and no cursor predicate when none given', async () => {
       memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
-      messageRepo.find.mockResolvedValueOnce([]);
+      const qb = mockMessagesQb();
 
       await service.listMessages(USER_ID, TRIP_ID, {});
 
-      expect(messageRepo.find).toHaveBeenCalledWith(
-        expect.objectContaining({ take: 50 }),
-      );
+      expect(qb.take).toHaveBeenCalledWith(50);
+      expect(qb.andWhere).not.toHaveBeenCalled();
     });
 
     it('clamps limit to the server maximum', async () => {
       memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
-      messageRepo.find.mockResolvedValueOnce([]);
+      const qb = mockMessagesQb();
 
       await service.listMessages(USER_ID, TRIP_ID, { limit: 1000 });
 
-      expect(messageRepo.find).toHaveBeenCalledWith(
-        expect.objectContaining({ take: 100 }),
-      );
+      expect(qb.take).toHaveBeenCalledWith(100);
     });
 
-    it('passes the keyset cursor through to the query builder', async () => {
+    it('applies a composite (created_at, id) cursor when before + before_id are provided', async () => {
+      // Tuple comparison is what prevents messages with tied timestamps
+      // from being silently skipped at a page boundary.
       memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
-      messageRepo.find.mockResolvedValueOnce([]);
+      const qb = mockMessagesQb();
 
       await service.listMessages(USER_ID, TRIP_ID, {
         before: '2026-04-24T09:00:00.000Z',
+        before_id: '123e4567-e89b-42d3-a456-556642440000',
       });
 
-      expect(messageRepo.find).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: {
-            trip_id: TRIP_ID,
-            created_at: LessThan(new Date('2026-04-24T09:00:00.000Z')),
-          },
-        }),
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        '(m.created_at, m.id) < (:before, :beforeId)',
+        {
+          before: new Date('2026-04-24T09:00:00.000Z'),
+          beforeId: '123e4567-e89b-42d3-a456-556642440000',
+        },
       );
+    });
+
+    it('orders newest-first on (created_at DESC, id DESC) — matching the composite index', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
+      const qb = mockMessagesQb();
+
+      await service.listMessages(USER_ID, TRIP_ID, {});
+
+      expect(qb.orderBy).toHaveBeenCalledWith('m.created_at', 'DESC');
+      expect(qb.addOrderBy).toHaveBeenCalledWith('m.id', 'DESC');
     });
   });
 

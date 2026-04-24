@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
 import { TripSuggestionVote } from '../../entities/trip-suggestion-vote.entity.js';
@@ -191,25 +191,47 @@ export class TripCollabService {
 
     // Upsert against (suggestion_id, user_id) — changing a vote is an
     // UPDATE, not a new row, so the vote tally stays well-defined.
-    const existing = await this.voteRepo.findOne({
-      where: { suggestion_id: suggestionId, user_id: userId },
-    });
-    if (existing) {
-      if (existing.vote !== vote) {
-        existing.vote = vote;
-        await this.voteRepo.save(existing);
-      }
-    } else {
-      await this.voteRepo.save(
-        this.voteRepo.create({
-          suggestion_id: suggestionId,
-          user_id: userId,
-          vote,
-        }),
-      );
-    }
+    //
+    // The write path races against concurrent votes from the same user
+    // (double-tap, retry, multi-tab), so a naive read-then-insert can
+    // lose the race and surface a 500 from the unique constraint. Do an
+    // unconditional UPDATE first — if 0 rows were affected no vote
+    // existed yet, so INSERT, and if *that* races with another insert
+    // the unique violation is caught and we fall back to UPDATE one
+    // more time. This leaves at most one row per (suggestion, user) and
+    // never turns a normal retry into a server error.
+    await this.upsertVote(suggestionId, userId, vote);
 
     return this.emitAndReturnSuggestion(userId, tripId, suggestion);
+  }
+
+  private async upsertVote(
+    suggestionId: string,
+    userId: string,
+    vote: 'up' | 'down',
+  ): Promise<void> {
+    const updated = await this.voteRepo.update(
+      { suggestion_id: suggestionId, user_id: userId },
+      { vote },
+    );
+    if ((updated.affected ?? 0) > 0) return;
+
+    try {
+      await this.voteRepo.insert({
+        suggestion_id: suggestionId,
+        user_id: userId,
+        vote,
+      });
+    } catch (err: unknown) {
+      // A concurrent insert slipped in between our UPDATE and INSERT.
+      // Desired post-state is still "one row for this member"; just
+      // overwrite what they inserted with our vote value.
+      if (!isUniqueViolation(err)) throw err;
+      await this.voteRepo.update(
+        { suggestion_id: suggestionId, user_id: userId },
+        { vote },
+      );
+    }
   }
 
   async unvoteSuggestion(
@@ -247,20 +269,27 @@ export class TripCollabService {
       MAX_MESSAGE_PAGE_SIZE,
     );
 
-    // Keyset on created_at DESC: pass the oldest `created_at` from the
-    // previous page as `before` to get the next page. Cheaper than
-    // OFFSET because the index can seek straight to the cursor.
-    const where = query.before
-      ? { trip_id: tripId, created_at: LessThan(new Date(query.before)) }
-      : { trip_id: tripId };
+    // Keyset on (created_at DESC, id DESC). The cursor predicate is a
+    // composite tuple comparison: `(created_at, id) < (:before, :before_id)`
+    // so messages sharing a timestamp at a page boundary aren't dropped.
+    // Matches the sort order exactly and lets the index
+    // `(trip_id, created_at DESC, id DESC)` seek straight to the cursor.
+    const qb = this.messageRepo
+      .createQueryBuilder('m')
+      .leftJoinAndSelect('m.author', 'author')
+      .where('m.trip_id = :tripId', { tripId })
+      .orderBy('m.created_at', 'DESC')
+      .addOrderBy('m.id', 'DESC')
+      .take(limit);
 
-    const rows = await this.messageRepo.find({
-      where,
-      relations: { author: true },
-      order: { created_at: 'DESC', id: 'DESC' },
-      take: limit,
-    });
+    if (query.before && query.before_id) {
+      qb.andWhere('(m.created_at, m.id) < (:before, :beforeId)', {
+        before: new Date(query.before),
+        beforeId: query.before_id,
+      });
+    }
 
+    const rows = await qb.getMany();
     return rows.map((m) => toMessageDto(m));
   }
 
@@ -394,4 +423,13 @@ function clamp(v: number, lo: number, hi: number): number {
   if (v < lo) return lo;
   if (v > hi) return hi;
   return v;
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    (err as { code?: unknown }).code === '23505'
+  );
 }

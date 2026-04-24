@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "4caea66e-035e-450e-ac27-29f53517376d",
+    "_postman_id": "6faa3a58-e386-49fa-873f-2f9fc5bbefb8",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -1742,7 +1742,13 @@
                 {
                   "key": "before",
                   "value": "",
-                  "description": "Keyset cursor — return messages strictly older than this ISO-8601 timestamp. Use the oldest `created_at` in the previous page to fetch the next.",
+                  "description": "Keyset cursor — return messages strictly older than this ISO-8601 timestamp. Pair with `before_id` (the oldest message id in the previous page) so messages sharing the same `created_at` at a page boundary are not skipped.",
+                  "disabled": true
+                },
+                {
+                  "key": "before_id",
+                  "value": "",
+                  "description": "Tie-breaker for the keyset cursor — the id of the oldest message in the previous page. Required together with `before` to correctly page through messages that share a timestamp.",
                   "disabled": true
                 }
               ]

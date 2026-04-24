@@ -47,9 +47,14 @@ export class CreateSuggestionDto {
     description:
       'Optional map marker latitude. Must be paired with `lng` — a lone coordinate is rejected.',
   })
-  @IsOptional()
+  // Trigger validation whenever EITHER coordinate is supplied, so a
+  // lone `lat` or lone `lng` fails with a 400 instead of silently
+  // storing `location = null`. `@IsOptional` would short-circuit the
+  // check and mask the contract violation.
+  @ValidateIf(
+    (o: CreateSuggestionDto) => o.lat !== undefined || o.lng !== undefined,
+  )
   @IsLatitude()
-  @ValidateIf((o: CreateSuggestionDto) => o.lng !== undefined)
   lat?: number;
 
   @ApiProperty({
@@ -58,8 +63,9 @@ export class CreateSuggestionDto {
     description:
       'Optional map marker longitude. Must be paired with `lat` — a lone coordinate is rejected.',
   })
-  @IsOptional()
+  @ValidateIf(
+    (o: CreateSuggestionDto) => o.lat !== undefined || o.lng !== undefined,
+  )
   @IsLongitude()
-  @ValidateIf((o: CreateSuggestionDto) => o.lat !== undefined)
   lng?: number;
 }
