@@ -503,6 +503,31 @@ describe('EventsGateway', () => {
         }),
       );
     });
+
+    it('is idempotent per socket — a duplicate subscribe does NOT re-emit presence or re-query membership', async () => {
+      // Simulates the client-side reconnect replay (`subscribe:trip`
+      // fired on every `connect`) landing on a socket that already has
+      // the room in its rooms set. Without the guard this would emit a
+      // second `online: true` while only one `online: false` goes out
+      // on disconnect — the client's per-user socket counter would
+      // drift positive and never flip `online` back to false.
+      const room = 'trip:123e4567-e89b-42d3-a456-556642440000';
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        rooms: new Set(['c-1', room]),
+        join: jest.fn(),
+        emit: jest.fn(),
+      } as unknown as Socket;
+
+      await gateway.handleSubscribeTrip(client, {
+        trip_id: '123e4567-e89b-42d3-a456-556642440000',
+      });
+
+      expect(tripMemberRepo.findOne).not.toHaveBeenCalled();
+      expect(client.join).not.toHaveBeenCalled();
+      expect(mockServer.emit).not.toHaveBeenCalled();
+    });
   });
 
   describe('handleTripCursor', () => {

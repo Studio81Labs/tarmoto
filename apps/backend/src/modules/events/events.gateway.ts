@@ -324,6 +324,15 @@ export class EventsGateway
       return;
     }
 
+    // Idempotent per socket. Clients replay `subscribe:trip` on every
+    // `connect` (see companion `lib/socket.ts#subscribedTripIds`) and
+    // can also issue duplicate subscribes mid-flight. Without this
+    // guard a second subscribe would emit another `online: true` while
+    // `handleDisconnect` only emits one `online: false`, leaving the
+    // client-side per-user socket counter permanently above zero.
+    const room = `trip:${data.trip_id}`;
+    if (client.rooms?.has(room)) return;
+
     const membership = await this.tripMemberRepo.findOne({
       where: { trip_id: data.trip_id, user_id: userId },
     });
@@ -332,7 +341,7 @@ export class EventsGateway
       return;
     }
 
-    client.join(`trip:${data.trip_id}`);
+    client.join(room);
     // Record the joined trips on the socket so `handleDisconnect` can
     // emit `trip:presence { online: false }` to every room without
     // having to parse the room name set. Using the socket's `data` bag
@@ -350,7 +359,7 @@ export class EventsGateway
       online: true,
       at: new Date().toISOString(),
     };
-    this.server.to(`trip:${data.trip_id}`).emit('trip:presence', presence);
+    this.server.to(room).emit('trip:presence', presence);
     this.logger.debug(`Client ${client.id} joined trip ${data.trip_id}`);
   }
 

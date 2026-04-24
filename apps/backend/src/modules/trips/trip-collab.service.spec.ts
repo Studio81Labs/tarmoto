@@ -538,6 +538,25 @@ describe('TripCollabService', () => {
         service.voteSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID, 'up'),
       ).rejects.toThrow('boom');
     });
+
+    it('rejects votes on a resolved suggestion (accepted / rejected)', async () => {
+      // Once the owner resolves a suggestion the UI closes voting. The
+      // server has to enforce this too or a stale/scripted client can
+      // keep flipping tallies and fanning out `trip:suggestion:voted`
+      // broadcasts on a row that the UI shows as finalised.
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
+      suggestionRepo.findOne.mockResolvedValueOnce(
+        makeSuggestion({ status: 'accepted' }),
+      );
+
+      await expect(
+        service.voteSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID, 'up'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(voteRepo.update).not.toHaveBeenCalled();
+      expect(voteRepo.insert).not.toHaveBeenCalled();
+      expect(events.emitToTrip).not.toHaveBeenCalled();
+    });
   });
 
   describe('unvoteSuggestion', () => {
@@ -583,6 +602,23 @@ describe('TripCollabService', () => {
       // Caller still gets the current state back so they can reconcile,
       // but no broadcast is fired.
       expect(result.caller_vote).toBeNull();
+      expect(events.emitToTrip).not.toHaveBeenCalled();
+    });
+
+    it('rejects unvote on a resolved suggestion', async () => {
+      // Mirrors voteSuggestion: once resolved the vote row represents
+      // historical state on a finalised row and a late retry must not
+      // mutate it.
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
+      suggestionRepo.findOne.mockResolvedValueOnce(
+        makeSuggestion({ status: 'rejected' }),
+      );
+
+      await expect(
+        service.unvoteSuggestion(USER_ID, TRIP_ID, SUGGESTION_ID),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(voteRepo.delete).not.toHaveBeenCalled();
       expect(events.emitToTrip).not.toHaveBeenCalled();
     });
   });

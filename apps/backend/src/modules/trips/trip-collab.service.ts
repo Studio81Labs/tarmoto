@@ -273,6 +273,16 @@ export class TripCollabService {
     });
     if (!suggestion) throw new NotFoundException('Suggestion not found');
 
+    // Voting closes when the suggestion is resolved. Without this guard
+    // a stale or scripted client could keep flipping tallies and fan
+    // out `trip:suggestion:voted` broadcasts after accept/reject,
+    // undermining the finality the UI shows for closed rows.
+    if (suggestion.status !== 'open') {
+      throw new BadRequestException(
+        `Cannot vote on a ${suggestion.status} suggestion`,
+      );
+    }
+
     // Detect a same-value re-submit up front so a double-tap on the
     // already-selected vote doesn't fan out a stale tally to every
     // subscriber. The snapshot race (a concurrent flip between this
@@ -348,6 +358,15 @@ export class TripCollabService {
       relations: { suggester: true },
     });
     if (!suggestion) throw new NotFoundException('Suggestion not found');
+
+    // Mirrors `voteSuggestion`: once resolved, the vote UI is closed
+    // and the server shouldn't let a late retry delete a row that now
+    // represents historical state on an accepted/rejected suggestion.
+    if (suggestion.status !== 'open') {
+      throw new BadRequestException(
+        `Cannot change votes on a ${suggestion.status} suggestion`,
+      );
+    }
 
     const deleted = await this.voteRepo.delete({
       suggestion_id: suggestionId,
