@@ -64,4 +64,12 @@ export class Trip {
 
   @OneToMany(() => TripDay, (d) => d.trip)
   days!: TripDay[];
+
+  /**
+   * Transient — populated only by `TripsService.list` via TypeORM's
+   * `loadRelationCountAndMap`. Not a database column. Lets the list
+   * endpoint surface the member count without hydrating every membership
+   * row for every trip in the result set.
+   */
+  member_count?: number;
 }

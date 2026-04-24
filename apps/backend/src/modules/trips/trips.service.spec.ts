@@ -50,8 +50,8 @@ function makeOwnedTrip(overrides: Partial<Trip> = {}): Trip {
 
 function makeJoinedTrip(): Trip {
   // The post-join `getDetail` reload must include the joining user's
-  // membership row, otherwise the visibility check would 404 the very
-  // response we just earned by joining.
+  // membership row, otherwise the SQL-level membership filter would
+  // 404 the very response we just earned by joining.
   return makeOwnedTrip({
     members: [
       {
@@ -70,6 +70,39 @@ function makeJoinedTrip(): Trip {
   });
 }
 
+type QbMock = {
+  innerJoin: jest.Mock;
+  leftJoinAndSelect: jest.Mock;
+  loadRelationCountAndMap: jest.Mock;
+  where: jest.Mock;
+  andWhere: jest.Mock;
+  orderBy: jest.Mock;
+  addOrderBy: jest.Mock;
+  getMany: jest.Mock;
+  getOne: jest.Mock;
+};
+
+function makeQbMock(
+  returns: { getMany?: Trip[]; getOne?: Trip | null } = {},
+): QbMock {
+  const qb = {} as QbMock;
+  const chainables = [
+    'innerJoin',
+    'leftJoinAndSelect',
+    'loadRelationCountAndMap',
+    'where',
+    'andWhere',
+    'orderBy',
+    'addOrderBy',
+  ] as const;
+  for (const m of chainables) {
+    (qb as Record<string, jest.Mock>)[m] = jest.fn().mockReturnValue(qb);
+  }
+  qb.getMany = jest.fn().mockResolvedValue(returns.getMany ?? []);
+  qb.getOne = jest.fn().mockResolvedValue(returns.getOne ?? null);
+  return qb;
+}
+
 describe('TripsService', () => {
   let service: TripsService;
   let tripRepo: jest.Mocked<Repository<Trip>>;
@@ -83,14 +116,12 @@ describe('TripsService', () => {
     // The transactional `create` flow calls `tripRepo.manager.transaction`
     // and operates through that manager. Mock it as a callable that
     // immediately invokes the callback with a manager that mirrors the
-    // repo create/save semantics, so we can keep observing inserts.
+    // repo create/save semantics.
     manager = {
       create: jest
         .fn()
         .mockImplementation(
-          (_entity: unknown, data: Record<string, unknown>) => ({
-            ...data,
-          }),
+          (_entity: unknown, data: Record<string, unknown>) => ({ ...data }),
         ),
       save: jest.fn().mockImplementation((entity: { id?: string }) =>
         Promise.resolve({
@@ -123,7 +154,7 @@ describe('TripsService', () => {
         }),
       ),
       findOne: jest.fn().mockResolvedValue(null),
-      createQueryBuilder: jest.fn(),
+      createQueryBuilder: jest.fn().mockReturnValue(makeQbMock()),
     } as unknown as jest.Mocked<Repository<Trip>>;
 
     memberRepo = {
@@ -149,13 +180,24 @@ describe('TripsService', () => {
     service = module.get(TripsService);
   });
 
+  /** Wire `createQueryBuilder` to return a fresh QB whose `getOne` resolves to `trip`. */
+  function mockGetDetailReturns(trip: Trip | null): QbMock {
+    const qb = makeQbMock({ getOne: trip });
+    tripRepo.createQueryBuilder.mockReturnValue(qb as never);
+    return qb;
+  }
+
+  /** Wire `createQueryBuilder` to return a fresh QB whose `getMany` resolves to `trips`. */
+  function mockListReturns(trips: Trip[]): QbMock {
+    const qb = makeQbMock({ getMany: trips });
+    tripRepo.createQueryBuilder.mockReturnValue(qb as never);
+    return qb;
+  }
+
   describe('create', () => {
     it('persists trip + owner membership and returns the detail with an invite code', async () => {
-      // First findOne is the invite-code collision check (none), second is
-      // getDetail() reload after save.
-      tripRepo.findOne
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(makeOwnedTrip());
+      tripRepo.findOne.mockResolvedValueOnce(null); // invite collision check
+      mockGetDetailReturns(makeOwnedTrip()); // post-save reload
 
       const result = await service.create(OWNER_ID, {
         title: 'Big Italian Loop',
@@ -163,8 +205,8 @@ describe('TripsService', () => {
         region: 'Dolomites',
       });
 
-      // The trip + owner-membership writes both go through the
-      // transactional manager, not the per-entity repos.
+      // Trip + owner-membership writes both go through the transactional
+      // manager, not the per-entity repos.
       expect(tripRepo.manager.transaction).toHaveBeenCalledTimes(1);
       expect(manager.create).toHaveBeenCalledWith(
         Trip,
@@ -208,9 +250,8 @@ describe('TripsService', () => {
     });
 
     it('rejects partial input where daily_km_min exceeds the default daily_km_max', async () => {
-      // Defaults are min=150, max=350. Passing min=500 alone means the
-      // effective row would be (500, 350) — invalid. The validation must
-      // run against effective values, not raw input.
+      // Defaults: min=150, max=350. Passing min=500 alone means the
+      // effective row would be (500, 350) — invalid.
       await expect(
         service.create(OWNER_ID, {
           title: 'Half-specified',
@@ -222,7 +263,7 @@ describe('TripsService', () => {
     });
 
     it('rejects partial input where the default daily_km_min exceeds the supplied daily_km_max', async () => {
-      // Mirror case: default min=150 vs supplied max=50 → (150, 50).
+      // Mirror case: default min=150 vs supplied max=50.
       await expect(
         service.create(OWNER_ID, {
           title: 'Half-specified',
@@ -234,10 +275,6 @@ describe('TripsService', () => {
     });
 
     it('rolls back the trip insert when the owner-membership insert fails', async () => {
-      // Membership write fails after the trip write succeeds. Because
-      // both run inside `manager.transaction`, the entire callback
-      // throws and the orphan trip is never committed — the caller sees
-      // the underlying error, not a phantom trip in subsequent lists.
       tripRepo.findOne.mockResolvedValueOnce(null); // invite collision check
       manager.save
         .mockResolvedValueOnce({ id: TRIP_ID }) // trip insert
@@ -246,17 +283,17 @@ describe('TripsService', () => {
       await expect(
         service.create(OWNER_ID, { title: 'Atomic', num_days: 2 }),
       ).rejects.toThrow('membership insert exploded');
-      // getDetail (which would use tripRepo.findOne) should not have run
-      // — once for the collision check, never again.
-      expect(tripRepo.findOne).toHaveBeenCalledTimes(1);
+      // The post-save `getDetail` reload should never have run — its QB
+      // factory wasn't touched.
+      expect(tripRepo.createQueryBuilder).not.toHaveBeenCalled();
     });
 
     it('retries invite-code allocation on collision', async () => {
       const collidedTrip = { id: 'other' } as Trip;
       tripRepo.findOne
         .mockResolvedValueOnce(collidedTrip) // first candidate collides
-        .mockResolvedValueOnce(null) // second succeeds
-        .mockResolvedValueOnce(makeOwnedTrip()); // getDetail reload
+        .mockResolvedValueOnce(null); // second succeeds
+      mockGetDetailReturns(makeOwnedTrip());
 
       const result = await service.create(OWNER_ID, {
         title: 't',
@@ -264,13 +301,13 @@ describe('TripsService', () => {
       });
 
       expect(result.invite_code).toMatch(/^[A-Z2-9]{8}$/);
-      // Two collision lookups + one detail reload.
-      expect(tripRepo.findOne).toHaveBeenCalledTimes(3);
+      // Two collision lookups — getDetail uses the QB now, not findOne.
+      expect(tripRepo.findOne).toHaveBeenCalledTimes(2);
     });
   });
 
   describe('list', () => {
-    it('returns a summary per membership row, ordered newest-first', async () => {
+    it('returns a summary per visible trip, ordered newest-first', async () => {
       const trips = [
         makeOwnedTrip({ id: 't-1', title: 'A', created_at: NOW }),
         makeOwnedTrip({
@@ -279,23 +316,29 @@ describe('TripsService', () => {
           created_at: new Date('2026-04-23T10:00:00Z'),
         }),
       ];
-      const qb = {
-        innerJoin: jest.fn().mockReturnThis(),
-        leftJoinAndSelect: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        getMany: jest.fn().mockResolvedValue(trips),
-      };
-      tripRepo.createQueryBuilder.mockReturnValue(qb as never);
+      // The COUNT mapping is what `list` uses now; simulate the mapping
+      // by stamping `member_count` directly on the trip rows.
+      trips.forEach((t) => {
+        t.member_count = 1;
+      });
+      const qb = mockListReturns(trips);
 
       const result = await service.list(OWNER_ID, {});
 
+      // Membership filter is enforced at the SQL level via inner join.
       expect(qb.innerJoin).toHaveBeenCalledWith(
         TripMember,
         'm',
         'm.trip_id = trip.id AND m.user_id = :userId',
         { userId: OWNER_ID },
       );
+      // Member count is loaded via COUNT mapping, not by hydrating each
+      // member row — this is the fix for the P2 perf finding.
+      expect(qb.loadRelationCountAndMap).toHaveBeenCalledWith(
+        'trip.member_count',
+        'trip.members',
+      );
+      expect(qb.leftJoinAndSelect).not.toHaveBeenCalled();
       expect(qb.andWhere).not.toHaveBeenCalled();
       expect(result).toHaveLength(2);
       expect(result[0]).toMatchObject({
@@ -306,14 +349,7 @@ describe('TripsService', () => {
     });
 
     it('applies the optional status filter', async () => {
-      const qb = {
-        innerJoin: jest.fn().mockReturnThis(),
-        leftJoinAndSelect: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        getMany: jest.fn().mockResolvedValue([]),
-      };
-      tripRepo.createQueryBuilder.mockReturnValue(qb as never);
+      const qb = mockListReturns([]);
 
       await service.list(OWNER_ID, { status: 'planned' });
 
@@ -325,22 +361,30 @@ describe('TripsService', () => {
 
   describe('getDetail', () => {
     it('returns the detail for a member', async () => {
-      tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
+      const qb = mockGetDetailReturns(makeOwnedTrip());
+
       const result = await service.getDetail(OWNER_ID, TRIP_ID);
+
       expect(result.id).toBe(TRIP_ID);
       expect(result.invite_code).toBe('ABCDEFGH');
-    });
-
-    it('404s for non-members (without leaking existence)', async () => {
-      tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
-      await expect(service.getDetail(OTHER_ID, TRIP_ID)).rejects.toBeInstanceOf(
-        NotFoundException,
+      // Membership predicate is in the SQL, so non-members would never
+      // have hydrated the deep relations to begin with.
+      expect(qb.innerJoin).toHaveBeenCalledWith(
+        TripMember,
+        'caller',
+        'caller.trip_id = trip.id AND caller.user_id = :userId',
+        { userId: OWNER_ID },
       );
     });
 
-    it('404s when the trip does not exist', async () => {
-      tripRepo.findOne.mockResolvedValueOnce(null);
-      await expect(service.getDetail(OWNER_ID, TRIP_ID)).rejects.toBeInstanceOf(
+    it('404s when the SQL-level membership filter excludes the caller', async () => {
+      // `getOne` returning null mirrors the production behaviour: the
+      // inner join finds no caller-membership row, so no trip row is
+      // produced — non-member and missing-trip collapse into the same
+      // 404 without leaking existence.
+      mockGetDetailReturns(null);
+
+      await expect(service.getDetail(OTHER_ID, TRIP_ID)).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
@@ -348,10 +392,9 @@ describe('TripsService', () => {
 
   describe('join', () => {
     it('adds a member when the code matches', async () => {
-      tripRepo.findOne
-        .mockResolvedValueOnce(makeOwnedTrip()) // join lookup
-        .mockResolvedValueOnce(makeJoinedTrip()); // post-join detail
+      tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip()); // join lookup
       memberRepo.findOne.mockResolvedValueOnce(null);
+      mockGetDetailReturns(makeJoinedTrip()); // post-join detail
 
       const result = await service.join(OTHER_ID, TRIP_ID, 'abcdefgh');
 
@@ -366,10 +409,11 @@ describe('TripsService', () => {
     });
 
     it('normalizes the invite code (case + whitespace)', async () => {
-      tripRepo.findOne
-        .mockResolvedValueOnce(makeOwnedTrip({ invite_code: 'ABCDEFGH' }))
-        .mockResolvedValueOnce(makeJoinedTrip());
+      tripRepo.findOne.mockResolvedValueOnce(
+        makeOwnedTrip({ invite_code: 'ABCDEFGH' }),
+      );
       memberRepo.findOne.mockResolvedValueOnce(null);
+      mockGetDetailReturns(makeJoinedTrip());
 
       await expect(
         service.join(OTHER_ID, TRIP_ID, '  abcdefgh  '),
@@ -377,12 +421,11 @@ describe('TripsService', () => {
     });
 
     it('is idempotent for an existing member', async () => {
-      tripRepo.findOne
-        .mockResolvedValueOnce(makeOwnedTrip())
-        .mockResolvedValueOnce(makeOwnedTrip());
+      tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
       memberRepo.findOne.mockResolvedValueOnce({
         user_id: OWNER_ID,
       } as TripMember);
+      mockGetDetailReturns(makeOwnedTrip());
 
       await service.join(OWNER_ID, TRIP_ID, 'ABCDEFGH');
 
@@ -409,13 +452,12 @@ describe('TripsService', () => {
     });
 
     it('swallows a unique-violation race on duplicate insert', async () => {
-      tripRepo.findOne
-        .mockResolvedValueOnce(makeOwnedTrip())
-        .mockResolvedValueOnce(makeJoinedTrip());
+      tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
       memberRepo.findOne.mockResolvedValueOnce(null);
       memberRepo.save.mockRejectedValueOnce(
         Object.assign(new Error('duplicate key'), { code: '23505' }),
       );
+      mockGetDetailReturns(makeJoinedTrip());
 
       await expect(
         service.join(OTHER_ID, TRIP_ID, 'ABCDEFGH'),
@@ -423,9 +465,7 @@ describe('TripsService', () => {
     });
 
     it('rethrows non-unique-violation errors', async () => {
-      tripRepo.findOne
-        .mockResolvedValueOnce(makeOwnedTrip())
-        .mockResolvedValueOnce(makeOwnedTrip());
+      tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
       memberRepo.findOne.mockResolvedValueOnce(null);
       memberRepo.save.mockRejectedValueOnce(
         Object.assign(new Error('boom'), { code: '99999' }),
@@ -471,7 +511,7 @@ describe('TripsService', () => {
           } as never,
         ],
       });
-      tripRepo.findOne.mockResolvedValueOnce(trip);
+      mockGetDetailReturns(trip);
 
       const result = await service.getDetail(OWNER_ID, TRIP_ID);
 
@@ -508,7 +548,7 @@ describe('TripsService', () => {
           } as never,
         ],
       });
-      tripRepo.findOne.mockResolvedValueOnce(trip);
+      mockGetDetailReturns(trip);
 
       const result = await service.getDetail(OWNER_ID, TRIP_ID);
       expect(result.days[0]?.estimated_time_min).toBe(135);

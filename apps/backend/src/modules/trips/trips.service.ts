@@ -91,6 +91,10 @@ export class TripsService {
     // Trips visible to the caller = trips where they appear in
     // `trip_members` (the `create` flow inserts the owner as a member,
     // so a single membership join covers both owners and joiners).
+    //
+    // The summary response only needs `member_count`, so map a COUNT()
+    // subquery onto the transient `member_count` field instead of
+    // hydrating every membership row for every trip in the result set.
     const qb = this.tripRepo
       .createQueryBuilder('trip')
       .innerJoin(
@@ -99,7 +103,7 @@ export class TripsService {
         'm.trip_id = trip.id AND m.user_id = :userId',
         { userId },
       )
-      .leftJoinAndSelect('trip.members', 'allMembers')
+      .loadRelationCountAndMap('trip.member_count', 'trip.members')
       .orderBy('trip.created_at', 'DESC');
 
     if (query.status) {
@@ -111,24 +115,33 @@ export class TripsService {
   }
 
   async getDetail(userId: string, tripId: string): Promise<TripDetailDto> {
-    const trip = await this.tripRepo.findOne({
-      where: { id: tripId },
-      relations: {
-        members: { user: true },
-        days: { waypoints: true },
-      },
-      order: {
-        days: { day_number: 'ASC', waypoints: { sequence: 'ASC' } },
-      },
-    });
+    // Push the membership predicate into the SQL via an inner join on
+    // `trip_members` filtered by the caller. Non-members get `null`
+    // back from the query — and crucially never trigger the deep
+    // members/days/waypoints hydration below, which can be expensive
+    // for large group trips. The leftJoinAndSelects below still load
+    // the full member roster + days + waypoints for the response,
+    // because the inner join is an independent JOIN with its own alias.
+    const trip = await this.tripRepo
+      .createQueryBuilder('trip')
+      .innerJoin(
+        TripMember,
+        'caller',
+        'caller.trip_id = trip.id AND caller.user_id = :userId',
+        { userId },
+      )
+      .leftJoinAndSelect('trip.members', 'm')
+      .leftJoinAndSelect('m.user', 'mu')
+      .leftJoinAndSelect('trip.days', 'd')
+      .leftJoinAndSelect('d.waypoints', 'w')
+      .where('trip.id = :tripId', { tripId })
+      .addOrderBy('d.day_number', 'ASC')
+      .addOrderBy('w.sequence', 'ASC')
+      .getOne();
 
     if (!trip) {
-      throw new NotFoundException('Trip not found');
-    }
-
-    if (!trip.members.some((m) => m.user_id === userId)) {
-      // Don't leak existence to non-members — same response as a missing
-      // trip.
+      // Folds "no such trip" and "you're not a member" into the same
+      // 404 so the endpoint can't be used to enumerate trip ids.
       throw new NotFoundException('Trip not found');
     }
 
@@ -191,7 +204,11 @@ export class TripsService {
       region: trip.region,
       num_days: trip.num_days,
       status: trip.status,
-      member_count: trip.members?.length ?? 0,
+      // Prefer the COUNT mapped by `loadRelationCountAndMap` (set by
+      // `list`), and fall back to the hydrated relation length when
+      // `toSummary` is reached via `toDetail` (where we have the full
+      // members[] from the QueryBuilder hydration in `getDetail`).
+      member_count: trip.member_count ?? trip.members?.length ?? 0,
       created_at: trip.created_at.toISOString(),
     };
   }
