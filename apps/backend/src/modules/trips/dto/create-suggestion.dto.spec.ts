@@ -46,6 +46,40 @@ describe('CreateSuggestionDto coordinate pairing', () => {
     expect(latError).toBeDefined();
   });
 
+  it('rejects a lone null lat (lng entirely absent from payload)', async () => {
+    // The all-or-nothing rule means a single `null` without the
+    // paired key must 400 — otherwise a typo'd client eliding `lng`
+    // would be silently accepted as "no marker", masking a real bug.
+    const errors = await validatePayload({
+      title: 'Lone null',
+      lat: null,
+    });
+    expect(errors.length).toBeGreaterThan(0);
+    const lngError = errors.find((e) => e.property === 'lng');
+    expect(lngError).toBeDefined();
+  });
+
+  it('rejects a lone null lng (lat entirely absent from payload)', async () => {
+    const errors = await validatePayload({
+      title: 'Lone null',
+      lng: null,
+    });
+    expect(errors.length).toBeGreaterThan(0);
+    const latError = errors.find((e) => e.property === 'lat');
+    expect(latError).toBeDefined();
+  });
+
+  it('rejects a lat-value with explicit null lng (value/null mix)', async () => {
+    const errors = await validatePayload({
+      title: 'Value/null',
+      lat: 46.49,
+      lng: null,
+    });
+    expect(errors.length).toBeGreaterThan(0);
+    const lngError = errors.find((e) => e.property === 'lng');
+    expect(lngError).toBeDefined();
+  });
+
   it('rejects a lone lat without lng (would otherwise silently drop the coordinate)', async () => {
     const errors = await validatePayload({
       title: 'Marker',
