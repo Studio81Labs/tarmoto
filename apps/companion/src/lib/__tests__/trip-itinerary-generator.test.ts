@@ -55,6 +55,15 @@ describe("trip-itinerary-generator", () => {
     );
   });
 
+  it("does not collapse initial seeded variation to the negative max offset", () => {
+    const bestFitDay = generateTripOptions(params)[0]!.trip.days[0]!;
+    const baseLng = DEMO_TRIP.days[0]!.waypoints[0]!.location.lng;
+    const inferredSeedOffset =
+      bestFitDay.routeGeometry!.coordinates[0]![0] - baseLng - 0.01;
+
+    expect(inferredSeedOffset).not.toBeCloseTo(-0.024, 3);
+  });
+
   it("regenerates only the selected day while keeping the trip boundaries intact", () => {
     const trip = generateTripOptions({
       ...params,

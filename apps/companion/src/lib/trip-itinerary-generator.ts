@@ -119,7 +119,18 @@ export function regenerateTripDay(trip: Trip, dayNumber: number): Trip {
   const optionIndex = resolvePresetIndexForTrip(trip);
   const preset = OPTION_PRESETS[optionIndex]!;
   const variationSeed = hashString(
-    `${trip.updatedAt}:${trip.id}:${dayNumber}:${currentDay.title ?? `day-${dayNumber}`}`,
+    [
+      trip.id,
+      trip.updatedAt,
+      dayNumber,
+      currentDay.title ?? `day-${dayNumber}`,
+      currentDay.distanceKm,
+      currentDay.elevationGain,
+      currentDay.avgQuality,
+      currentDay.routeGeometry?.coordinates
+        .map(([lng, lat]) => `${lng}:${lat}`)
+        .join("|") ?? "",
+    ].join("::"),
   );
   const templateIndex =
     (variationSeed + optionIndex * 3 + dayNumber) % DEMO_TRIP.days.length;
@@ -458,24 +469,21 @@ function buildTitle(
   return `${base} · ${preset.label}`;
 }
 
-function surfacePool(params: TripParameters) {
-  const requested =
-    params.surfacePreference.length > 0
-      ? params.surfacePreference
-      : [...DEFAULT_SURFACES];
-  return requested.filter((surface) =>
-    params.avoidUnpaved ? !UNPAVED_SURFACES.has(surface) : true,
+function surfacePool(
+  surfacePreference: TripParameters["surfacePreference"],
+  avoidUnpaved: boolean,
+) {
+  return surfacePreference.filter((surface) =>
+    avoidUnpaved ? !UNPAVED_SURFACES.has(surface) : true,
   );
 }
 
 function normalizeParams(params: TripParameters): TripParameters {
-  const safeSurfaces = surfacePool({
-    ...params,
-    surfacePreference:
-      params.surfacePreference.length > 0
-        ? [...params.surfacePreference]
-        : [...DEFAULT_SURFACES],
-  });
+  const requestedSurfaces =
+    params.surfacePreference.length > 0
+      ? [...params.surfacePreference]
+      : [...DEFAULT_SURFACES];
+  const safeSurfaces = surfacePool(requestedSurfaces, params.avoidUnpaved);
 
   return {
     ...params,
@@ -619,8 +627,11 @@ function routeConstraintProfile(
 }
 
 function normalizedSeed(seed: number, salt: number) {
-  const mixed = (seed * 48_271 + salt * 69_621) % 2_147_483_647;
-  return mixed / 2_147_483_647;
+  let mixed = (seed ^ Math.imul(salt + 1, 0x9e3779b9)) >>> 0;
+  mixed = Math.imul(mixed ^ (mixed >>> 16), 0x21f0aaad) >>> 0;
+  mixed = Math.imul(mixed ^ (mixed >>> 15), 0x735a2d97) >>> 0;
+  mixed = (mixed ^ (mixed >>> 15)) >>> 0;
+  return mixed / 0xffff_ffff;
 }
 
 function seededRange(seed: number, salt: number, maxAbs: number) {

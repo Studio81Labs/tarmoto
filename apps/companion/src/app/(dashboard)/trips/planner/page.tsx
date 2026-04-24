@@ -192,6 +192,15 @@ export default function TripPlannerPage() {
       if (selectedOptionId !== null) setSelectedOptionId(null);
       return;
     }
+    if (matchingOption.trip !== activeTrip) {
+      setGeneratedOptions((current) =>
+        current.map((option) =>
+          option.id === matchingOption.id
+            ? { ...option, trip: activeTrip }
+            : option,
+        ),
+      );
+    }
     if (matchingOption.id !== selectedOptionId) {
       setSelectedOptionId(matchingOption.id);
     }

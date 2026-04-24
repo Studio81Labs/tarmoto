@@ -364,6 +364,36 @@ describe("TripPlannerPage", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("keeps the selected option snapshot aligned when the active trip is edited in place", async () => {
+    const { rerender } = render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() => expect(setActiveTrip).toHaveBeenCalledWith(activeTrip));
+
+    const editedTrip = {
+      ...activeTrip,
+      updatedAt: "2026-04-23T10:00:00Z",
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          title: "Edited best fit",
+        },
+      ],
+    };
+
+    storeState.activeTrip = editedTrip;
+    rerender(<TripPlannerPage />);
+
+    setActiveTrip.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: /Scenic sweep/i }));
+    expect(setActiveTrip).toHaveBeenCalledWith(scenicTrip);
+
+    fireEvent.click(screen.getByRole("button", { name: /Best fit/i }));
+    expect(setActiveTrip).toHaveBeenLastCalledWith(editedTrip);
+  });
+
   it("clears the generated selection when the active trip is cleared", async () => {
     const { rerender } = render(<TripPlannerPage />);
 
