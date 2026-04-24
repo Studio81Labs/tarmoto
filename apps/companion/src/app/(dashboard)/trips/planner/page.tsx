@@ -79,6 +79,7 @@ export default function TripPlannerPage() {
   const requestTokenRef = useRef(0);
   const isMountedRef = useRef(true);
   const activeTripRef = useRef<Trip | null>(null);
+  const generatedOptionsRef = useRef<GeneratedTripOption[]>([]);
   const selectedOptionIdRef = useRef<string | null>(null);
   const activeTrip = useTripStore((s) => s.activeTrip);
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
@@ -178,6 +179,10 @@ export default function TripPlannerPage() {
   }, [activeTrip]);
 
   useEffect(() => {
+    generatedOptionsRef.current = generatedOptions;
+  }, [generatedOptions]);
+
+  useEffect(() => {
     selectedOptionIdRef.current = selectedOptionId;
   }, [selectedOptionId]);
 
@@ -186,7 +191,7 @@ export default function TripPlannerPage() {
       if (selectedOptionId !== null) setSelectedOptionId(null);
       return;
     }
-    const matchingOption = generatedOptions.find(
+    const matchingOption = generatedOptionsRef.current.find(
       (option) => option.trip.id === activeTrip.id,
     );
     if (!matchingOption) {
@@ -205,7 +210,7 @@ export default function TripPlannerPage() {
     if (matchingOption.id !== selectedOptionId) {
       setSelectedOptionId(matchingOption.id);
     }
-  }, [activeTrip, generatedOptions, selectedOptionId]);
+  }, [activeTrip, selectedOptionId]);
 
   const handleGenerate = useCallback(async () => {
     if (surfacePreference.length === 0) {

@@ -129,6 +129,16 @@ describe("trip-itinerary-generator", () => {
     ).toBe(true);
   });
 
+  it("rejects contradictory surface constraints instead of silently overriding them", () => {
+    expect(() =>
+      generateTripOptions({
+        ...params,
+        surfacePreference: ["gravel"],
+        avoidUnpaved: true,
+      }),
+    ).toThrow('Selected surface filters conflict with "Avoid unpaved".');
+  });
+
   it("can regenerate a demo-derived trip without mutating the original object", () => {
     const regenerated = regenerateTripDay(DEMO_TRIP, 1);
 

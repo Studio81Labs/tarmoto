@@ -65,6 +65,8 @@ const OPTION_PRESETS: readonly OptionPreset[] = [
 
 const DEFAULT_SURFACES = ["asphalt"] as const;
 const UNPAVED_SURFACES = new Set(["gravel", "dirt"]);
+const CONTRADICTORY_SURFACES_ERROR =
+  'Selected surface filters conflict with "Avoid unpaved".';
 
 export function generateTripOptions(
   params: TripParameters,
@@ -539,6 +541,9 @@ function normalizeParams(params: TripParameters): TripParameters {
       ? [...params.surfacePreference]
       : [...DEFAULT_SURFACES];
   const safeSurfaces = surfacePool(requestedSurfaces, params.avoidUnpaved);
+  if (requestedSurfaces.length > 0 && safeSurfaces.length === 0) {
+    throw new Error(CONTRADICTORY_SURFACES_ERROR);
+  }
 
   return {
     ...params,
