@@ -66,7 +66,7 @@ describe('TripCollabService', () => {
   let dayRepo: jest.Mocked<Repository<TripDay>>;
   let roadSegmentRepo: jest.Mocked<Repository<RoadSegment>>;
   let events: jest.Mocked<Pick<EventsGateway, 'emitToTrip'>>;
-  let activity: jest.Mocked<Pick<TripActivityService, 'record'>>;
+  let activity: jest.Mocked<Pick<TripActivityService, 'recordSafe'>>;
 
   beforeEach(async () => {
     memberRepo = {
@@ -134,7 +134,7 @@ describe('TripCollabService', () => {
     } as unknown as jest.Mocked<Repository<RoadSegment>>;
 
     events = { emitToTrip: jest.fn() };
-    activity = { record: jest.fn().mockResolvedValue(undefined) };
+    activity = { recordSafe: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [

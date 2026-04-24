@@ -214,7 +214,7 @@ export class TripsService {
     // can confirm state.
     if (hasChanges) {
       this.events.emitToTrip(tripId, 'trip:updated', detail);
-      await this.activity.record(tripId, userId, 'trip_updated', {
+      await this.activity.recordSafe(tripId, userId, 'trip_updated', {
         fields: Object.keys(delta),
       });
     }
@@ -320,14 +320,14 @@ export class TripsService {
       }
     }
 
-    // Record the activity entry OUTSIDE the unique-violation catch so
-    // an audit write failure doesn't get swallowed alongside a race.
-    // The member row is already durable by the time we reach this line;
-    // a subsequent retry will short-circuit on `existing` and skip the
-    // save — without this separation a transient activity-DB blip could
-    // silently lose the `member_joined` entry forever.
+    // Keep the activity entry OUTSIDE the unique-violation catch so a
+    // non-23505 error from the activity path isn't misattributed to a
+    // join race — `recordSafe` routes audit failures through a dedicated
+    // Logger.warn instead. The member row is already durable by the
+    // time we reach this line; a subsequent retry will short-circuit on
+    // `existing` and skip the save.
     if (inserted) {
-      await this.activity.record(tripId, userId, 'member_joined', {
+      await this.activity.recordSafe(tripId, userId, 'member_joined', {
         role: 'member',
       });
     }

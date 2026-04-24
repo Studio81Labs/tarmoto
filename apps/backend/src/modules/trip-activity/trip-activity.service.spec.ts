@@ -111,6 +111,41 @@ describe('TripActivityService', () => {
     });
   });
 
+  describe('recordSafe', () => {
+    it('swallows persistence failures so the primary mutation response is not misreported', async () => {
+      // The domain mutation (suggestion create, vote, trip update, …)
+      // has already been saved and broadcast by the time its activity
+      // entry is attempted, so a transient failure on the audit write
+      // must not bubble out as a 500 — the caller would think the
+      // mutation itself failed and retry, producing duplicates.
+      activityRepo.save.mockRejectedValueOnce(new Error('db down'));
+
+      await expect(
+        service.recordSafe(TRIP_ID, USER_ID, 'suggestion_created', {
+          suggestion_id: 's-1',
+        }),
+      ).resolves.toBeUndefined();
+
+      // No broadcast when the persist fails.
+      expect(events.emitToTrip).not.toHaveBeenCalled();
+    });
+
+    it('delegates to record() on the happy path', async () => {
+      await service.recordSafe(TRIP_ID, USER_ID, 'suggestion_created', {
+        suggestion_id: 's-1',
+      });
+      expect(activityRepo.save).toHaveBeenCalled();
+      expect(events.emitToTrip).toHaveBeenCalledWith(
+        TRIP_ID,
+        'trip:activity',
+        expect.objectContaining({
+          action: 'suggestion_created',
+          actor_id: USER_ID,
+        }),
+      );
+    });
+  });
+
   describe('list', () => {
     it('404s non-members without leaking trip existence', async () => {
       memberRepo.findOne.mockResolvedValueOnce(null);

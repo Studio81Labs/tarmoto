@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -21,12 +21,24 @@ const DEFAULT_ACTIVITY_LIMIT = 100;
  * the entry to the live trip room via `EventsGateway.emitToTrip` so the
  * companion's activity tab updates without a refetch.
  *
- * The broadcast is best-effort — a socket failure must never fail the
- * underlying DB mutation, so callers wrap `record()` in their own
- * transaction if ordering matters.
+ * Two write entry points:
+ *
+ *   • `record()` — throws on persistence failure. Intended for internal
+ *     use and tests that need the return value or error signal.
+ *
+ *   • `recordSafe()` — the caller-facing default. Catches and logs any
+ *     failure from `record()` so a transient audit-DB blip doesn't fail
+ *     the API call the activity entry is describing. Every primary
+ *     mutation (suggestion create/vote/resolve, trip update, join)
+ *     uses this, because the domain row is already durable and
+ *     broadcast by the time the activity entry is attempted — returning
+ *     500 from the caller would just trigger client retries that
+ *     duplicate suggestions or spam the `trip:updated` room.
  */
 @Injectable()
 export class TripActivityService {
+  private readonly logger = new Logger(TripActivityService.name);
+
   constructor(
     @InjectRepository(TripActivity)
     private readonly activityRepo: Repository<TripActivity>,
@@ -61,6 +73,28 @@ export class TripActivityService {
       this.toDto(entry, actorName),
     );
     return entry;
+  }
+
+  /**
+   * Best-effort variant of `record()` — swallows and logs any failure
+   * so a transient audit-write blip never fails the caller's primary
+   * mutation (which has already persisted + broadcast by this point).
+   */
+  async recordSafe(
+    tripId: string,
+    actorId: string | null,
+    action: TripActivityAction,
+    payload: Record<string, unknown> = {},
+  ): Promise<void> {
+    try {
+      await this.record(tripId, actorId, action, payload);
+    } catch (err) {
+      this.logger.warn(
+        `Failed to record trip activity (trip=${tripId}, action=${action}): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   async list(

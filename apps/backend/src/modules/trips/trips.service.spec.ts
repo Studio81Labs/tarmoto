@@ -120,7 +120,7 @@ describe('TripsService', () => {
   // tripping on the deeply-nested mock cast on `tripRepo.manager.*`.
   let transactionMock: jest.Mock;
   let events: jest.Mocked<Pick<EventsGateway, 'emitToTrip'>>;
-  let activity: jest.Mocked<Pick<TripActivityService, 'record'>>;
+  let activity: jest.Mocked<Pick<TripActivityService, 'recordSafe'>>;
 
   beforeEach(async () => {
     // The transactional `create` flow calls `tripRepo.manager.transaction`
@@ -183,7 +183,7 @@ describe('TripsService', () => {
     } as unknown as jest.Mocked<Repository<TripMember>>;
 
     events = { emitToTrip: jest.fn() };
-    activity = { record: jest.fn().mockResolvedValue(undefined) };
+    activity = { recordSafe: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [

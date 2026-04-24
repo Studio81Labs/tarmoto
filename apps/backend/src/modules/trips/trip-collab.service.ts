@@ -169,7 +169,7 @@ export class TripCollabService {
 
     const response = toSuggestionDto(hydrated, { up: 0, down: 0 }, null);
     this.events.emitToTrip(tripId, 'trip:suggestion:created', response);
-    await this.activity.record(tripId, userId, 'suggestion_created', {
+    await this.activity.recordSafe(tripId, userId, 'suggestion_created', {
       suggestion_id: saved.id,
       title: saved.title,
     });
@@ -200,7 +200,7 @@ export class TripCollabService {
     this.events.emitToTrip(tripId, 'trip:suggestion:deleted', {
       suggestion_id: suggestionId,
     });
-    await this.activity.record(tripId, userId, 'suggestion_deleted', {
+    await this.activity.recordSafe(tripId, userId, 'suggestion_deleted', {
       suggestion_id: suggestionId,
       title: suggestion.title,
     });
@@ -242,7 +242,7 @@ export class TripCollabService {
 
     const action =
       status === 'accepted' ? 'suggestion_accepted' : 'suggestion_rejected';
-    await this.activity.record(tripId, userId, action, {
+    await this.activity.recordSafe(tripId, userId, action, {
       suggestion_id: suggestionId,
       title: suggestion.title,
     });
@@ -309,7 +309,7 @@ export class TripCollabService {
     await this.upsertVote(suggestionId, userId, vote);
 
     if (hasChange) {
-      await this.activity.record(tripId, userId, 'suggestion_voted', {
+      await this.activity.recordSafe(tripId, userId, 'suggestion_voted', {
         suggestion_id: suggestionId,
         vote,
       });
@@ -379,9 +379,14 @@ export class TripCollabService {
     // same numbers.
     const hasChange = (deleted.affected ?? 0) > 0;
     if (hasChange) {
-      await this.activity.record(tripId, userId, 'suggestion_vote_removed', {
-        suggestion_id: suggestionId,
-      });
+      await this.activity.recordSafe(
+        tripId,
+        userId,
+        'suggestion_vote_removed',
+        {
+          suggestion_id: suggestionId,
+        },
+      );
     }
     return this.emitAndReturnSuggestion(userId, tripId, suggestion, hasChange);
   }
