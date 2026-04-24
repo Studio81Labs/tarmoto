@@ -246,3 +246,41 @@ describe("vehicle display runtime bridge", () => {
     }
   });
 });
+
+describe("showVehicleDisplayBanner", () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it("resets the dismissal timer when a newer banner is shown", () => {
+    const setBanner = jest.fn();
+    const getState = jest.fn(() => ({ setBanner }));
+
+    jest.isolateModules(() => {
+      jest.doMock("@/stores/vehicleDisplay", () => ({
+        useVehicleDisplayStore: { getState },
+      }));
+
+      const { showVehicleDisplayBanner: showBanner } =
+        require("../vehicleDisplay") as typeof import("../vehicleDisplay");
+
+      showBanner("First", "success");
+      jest.advanceTimersByTime(2000);
+      showBanner("Second", "danger");
+      jest.advanceTimersByTime(2999);
+      expect(setBanner).toHaveBeenCalledTimes(2);
+
+      jest.advanceTimersByTime(1);
+    });
+
+    expect(setBanner.mock.calls).toEqual([
+      [{ message: "First", tone: "success" }],
+      [{ message: "Second", tone: "danger" }],
+      [null],
+    ]);
+  });
+});

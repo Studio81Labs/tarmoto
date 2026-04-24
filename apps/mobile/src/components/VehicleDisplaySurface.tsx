@@ -4,24 +4,11 @@ import Svg, { Circle, Path } from "react-native-svg";
 import { colors, fontSize, fontWeight, spacing } from "@/theme";
 import { useVehicleDisplayStore } from "@/stores/vehicleDisplay";
 import type { LatLng } from "@/types";
-import type { ManeuverType } from "@/services/navigation";
+import { MANEUVER_LABELS } from "@/services/navigation";
 
 const CARD_WIDTH = 320;
 const CARD_HEIGHT = 176;
 const CARD_PADDING = 16;
-
-const MANEUVER_LABELS: Record<ManeuverType, string> = {
-  depart: "Depart",
-  arrive: "Arrive",
-  continue: "Continue",
-  "turn-slight-left": "Bear left",
-  "turn-slight-right": "Bear right",
-  "turn-left": "Turn left",
-  "turn-right": "Turn right",
-  "turn-sharp-left": "Sharp left",
-  "turn-sharp-right": "Sharp right",
-  uturn: "U-turn",
-};
 
 interface CanvasPoint {
   x: number;

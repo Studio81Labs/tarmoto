@@ -229,6 +229,7 @@ type CarPlayLib = typeof import("react-native-carplay");
 
 let activeBridge: VehicleDisplayBridge | null = null;
 let activeController: VehicleDisplayController | null = null;
+let bannerClearTimeout: ReturnType<typeof setTimeout> | null = null;
 
 function buildRideBoard(snapshot: VehicleNavigationSnapshot): RideStatusBoard {
   return {
@@ -241,12 +242,24 @@ function buildRideBoard(snapshot: VehicleNavigationSnapshot): RideStatusBoard {
   };
 }
 
-function setBanner(message: string, tone: "success" | "danger"): void {
+function clearBannerTimeout(): void {
+  if (bannerClearTimeout !== null) {
+    clearTimeout(bannerClearTimeout);
+    bannerClearTimeout = null;
+  }
+}
+
+export function showVehicleDisplayBanner(
+  message: string,
+  tone: "success" | "danger",
+): void {
+  clearBannerTimeout();
   const store = useVehicleDisplayStore.getState();
   store.setBanner({ message, tone });
-  setTimeout(() => {
+  bannerClearTimeout = setTimeout(() => {
     const latest = useVehicleDisplayStore.getState();
     latest.setBanner(null);
+    bannerClearTimeout = null;
   }, 3000);
 }
 
@@ -262,7 +275,7 @@ function createRuntimeBridge(snapshotRef: {
       openSearch: () => undefined,
       updateSearch: () => undefined,
       closeSearch: () => undefined,
-      showBanner: setBanner,
+      showBanner: showVehicleDisplayBanner,
     };
   }
 
@@ -401,6 +414,7 @@ function createRuntimeBridge(snapshotRef: {
       unmountNavigation: () => {
         searchVisible = false;
         removeListeners();
+        clearBannerTimeout();
         store.setVisible(false);
         store.setSnapshot(null);
         store.setBanner(null);
@@ -454,7 +468,7 @@ function createRuntimeBridge(snapshotRef: {
         searchVisible = false;
         CarPlay.popTemplate(true);
       },
-      showBanner: setBanner,
+      showBanner: showVehicleDisplayBanner,
     };
   } catch {
     return {
@@ -463,7 +477,7 @@ function createRuntimeBridge(snapshotRef: {
       openSearch: () => undefined,
       updateSearch: () => undefined,
       closeSearch: () => undefined,
-      showBanner: setBanner,
+      showBanner: showVehicleDisplayBanner,
     };
   }
 }
@@ -496,4 +510,5 @@ export function stopVehicleNavigationDisplay(): void {
   activeController = null;
   activeBridge = null;
   runtimeSnapshotRef.current = null;
+  clearBannerTimeout();
 }
