@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "734c7ac7-2a9e-42b2-a035-6cf0ad8d9a6e",
+    "_postman_id": "19835d89-228c-487b-b630-f3e373aee0c7",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -878,6 +878,100 @@
                   "value": "",
                   "description": "",
                   "disabled": true
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "trip-shares",
+      "item": [
+        {
+          "name": "Create a shareable invite link for a trip snapshot (US-35)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trip-shares",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trip-shares"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"\",\n  \"snapshot\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List the caller's own trip shares",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trip-shares/mine",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trip-shares", "mine"]
+            }
+          }
+        },
+        {
+          "name": "View a shared trip by token (no auth required, read-only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trip-shares/:token",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trip-shares", ":token"],
+              "variable": [
+                {
+                  "key": "token",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Revoke a trip share (owner only)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trip-shares/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trip-shares", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
                 }
               ]
             }

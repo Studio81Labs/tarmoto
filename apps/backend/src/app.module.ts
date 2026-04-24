@@ -18,6 +18,7 @@ import { WeatherModule } from './modules/weather/index.js';
 import { CommuteModule } from './modules/commute/index.js';
 import { ReviewsModule } from './modules/reviews/index.js';
 import { SharingModule } from './modules/sharing/index.js';
+import { TripSharesModule } from './modules/trip-shares/index.js';
 import { FollowersModule } from './modules/followers/index.js';
 import { BadgesModule } from './modules/badges/index.js';
 import { ChallengesModule } from './modules/challenges/index.js';
@@ -43,6 +44,7 @@ import { TripsModule } from './modules/trips/index.js';
     SensorModule,
     RoadsModule,
     SharingModule,
+    TripSharesModule,
     RidesModule,
     TripsModule,
     EventsModule,
