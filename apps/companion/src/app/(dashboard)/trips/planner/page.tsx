@@ -79,7 +79,6 @@ export default function TripPlannerPage() {
   const requestTokenRef = useRef(0);
   const isMountedRef = useRef(true);
   const activeTripRef = useRef<Trip | null>(null);
-  const activeTripIdRef = useRef<string | null>(null);
   const selectedOptionIdRef = useRef<string | null>(null);
   const activeTrip = useTripStore((s) => s.activeTrip);
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
@@ -176,7 +175,6 @@ export default function TripPlannerPage() {
 
   useEffect(() => {
     activeTripRef.current = activeTrip;
-    activeTripIdRef.current = activeTrip?.id ?? null;
   }, [activeTrip]);
 
   useEffect(() => {
