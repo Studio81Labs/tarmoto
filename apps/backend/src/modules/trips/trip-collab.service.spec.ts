@@ -381,6 +381,8 @@ describe('TripCollabService', () => {
     it('inserts a fresh vote when no row exists (update affects 0 rows)', async () => {
       memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
       suggestionRepo.findOne.mockResolvedValueOnce(makeSuggestion());
+      // Pre-read: no prior vote.
+      voteRepo.findOne.mockResolvedValueOnce(null);
       voteRepo.update.mockResolvedValueOnce({
         affected: 0,
         raw: [],
@@ -408,11 +410,54 @@ describe('TripCollabService', () => {
       });
       expect(result.up_votes).toBe(1);
       expect(result.caller_vote).toBe('up');
+      // Fresh vote = real state change = broadcast to subscribers.
+      expect(events.emitToTrip).toHaveBeenCalledWith(
+        TRIP_ID,
+        'trip:suggestion:voted',
+        expect.any(Object),
+      );
+    });
+
+    it('does NOT emit trip:suggestion:voted when the caller re-submits the same vote value', async () => {
+      // A double-tap on the already-selected vote shouldn't fan a
+      // stale tally out to every subscriber — consistent with
+      // unvoteSuggestion's same-state no-op behaviour.
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
+      suggestionRepo.findOne.mockResolvedValueOnce(makeSuggestion());
+      voteRepo.findOne.mockResolvedValueOnce({
+        suggestion_id: SUGGESTION_ID,
+        user_id: USER_ID,
+        vote: 'up',
+      } as unknown as TripSuggestionVote);
+      voteRepo.update.mockResolvedValueOnce({
+        affected: 1,
+        raw: [],
+        generatedMaps: [],
+      });
+      voteRepo.find.mockResolvedValueOnce([
+        { suggestion_id: SUGGESTION_ID, user_id: USER_ID, vote: 'up' },
+      ] as unknown as TripSuggestionVote[]);
+
+      const result = await service.voteSuggestion(
+        USER_ID,
+        TRIP_ID,
+        SUGGESTION_ID,
+        'up',
+      );
+
+      expect(result.caller_vote).toBe('up');
+      expect(events.emitToTrip).not.toHaveBeenCalled();
     });
 
     it('flips an existing vote with a single UPDATE (no INSERT)', async () => {
       memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
       suggestionRepo.findOne.mockResolvedValueOnce(makeSuggestion());
+      // Pre-read: prior vote was 'up'.
+      voteRepo.findOne.mockResolvedValueOnce({
+        suggestion_id: SUGGESTION_ID,
+        user_id: USER_ID,
+        vote: 'up',
+      } as unknown as TripSuggestionVote);
       voteRepo.update.mockResolvedValueOnce({
         affected: 1,
         raw: [],
@@ -435,6 +480,8 @@ describe('TripCollabService', () => {
       );
       expect(voteRepo.insert).not.toHaveBeenCalled();
       expect(result.caller_vote).toBe('down');
+      // A real flip → broadcast.
+      expect(events.emitToTrip).toHaveBeenCalled();
     });
 
     it('recovers from a concurrent first-time vote race (23505 on INSERT)', async () => {
@@ -442,6 +489,7 @@ describe('TripCollabService', () => {
       // the second catches 23505 and overwrites with a final UPDATE.
       memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
       suggestionRepo.findOne.mockResolvedValueOnce(makeSuggestion());
+      voteRepo.findOne.mockResolvedValueOnce(null);
       voteRepo.update
         .mockResolvedValueOnce({ affected: 0, raw: [], generatedMaps: [] })
         .mockResolvedValueOnce({ affected: 1, raw: [], generatedMaps: [] });
@@ -472,6 +520,7 @@ describe('TripCollabService', () => {
     it('rethrows non-unique-violation errors from the INSERT', async () => {
       memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
       suggestionRepo.findOne.mockResolvedValueOnce(makeSuggestion());
+      voteRepo.findOne.mockResolvedValueOnce(null);
       voteRepo.update.mockResolvedValueOnce({
         affected: 0,
         raw: [],

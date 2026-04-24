@@ -22,6 +22,30 @@ describe('CreateSuggestionDto coordinate pairing', () => {
     expect(errors).toHaveLength(0);
   });
 
+  it('accepts an explicit null pair (clients clearing a marker by sending JSON nulls)', async () => {
+    // Contract says both fields are `nullable: true` — a client
+    // serializing "no marker" as `{ lat: null, lng: null }` must not
+    // fail DTO validation even though the previous `!== undefined`
+    // guard treated null as "present".
+    const errors = await validatePayload({
+      title: 'No marker',
+      lat: null,
+      lng: null,
+    });
+    expect(errors).toHaveLength(0);
+  });
+
+  it('rejects a mixed null/value pair (lat null, lng number)', async () => {
+    const errors = await validatePayload({
+      title: 'Mixed',
+      lat: null,
+      lng: 11.34,
+    });
+    expect(errors.length).toBeGreaterThan(0);
+    const latError = errors.find((e) => e.property === 'lat');
+    expect(latError).toBeDefined();
+  });
+
   it('rejects a lone lat without lng (would otherwise silently drop the coordinate)', async () => {
     const errors = await validatePayload({
       title: 'Marker',

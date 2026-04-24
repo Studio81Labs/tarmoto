@@ -45,27 +45,32 @@ export class CreateSuggestionDto {
     required: false,
     nullable: true,
     description:
-      'Optional map marker latitude. Must be paired with `lng` — a lone coordinate is rejected.',
+      'Optional map marker latitude. Must be paired with `lng` — a lone coordinate is rejected. ' +
+      'Pass `null` for both `lat` and `lng` to explicitly clear the marker.',
   })
-  // Trigger validation whenever EITHER coordinate is supplied, so a
-  // lone `lat` or lone `lng` fails with a 400 instead of silently
-  // storing `location = null`. `@IsOptional` would short-circuit the
-  // check and mask the contract violation.
-  @ValidateIf(
-    (o: CreateSuggestionDto) => o.lat !== undefined || o.lng !== undefined,
-  )
+  // Trigger validation only when at least one coordinate is a real
+  // VALUE (not missing, not null). That way:
+  //   - `{}` or `{lat: null, lng: null}`  → skipped → "no marker" ✓
+  //   - `{lat: 46, lng: 11}`              → both validated ✓
+  //   - `{lat: 46}` / `{lat: null, lng: 11}` → the missing/null side
+  //     fails @IsLatitude/@IsLongitude and the request is 400'd
+  //
+  // The previous `!== undefined` guard spuriously fired on an explicit
+  // null pair — which the OpenAPI contract describes as a valid
+  // "clear the marker" payload — and forced clients to elide the
+  // keys entirely.
+  @ValidateIf((o: CreateSuggestionDto) => o.lat != null || o.lng != null)
   @IsLatitude()
-  lat?: number;
+  lat?: number | null;
 
   @ApiProperty({
     required: false,
     nullable: true,
     description:
-      'Optional map marker longitude. Must be paired with `lat` — a lone coordinate is rejected.',
+      'Optional map marker longitude. Must be paired with `lat` — a lone coordinate is rejected. ' +
+      'Pass `null` for both `lat` and `lng` to explicitly clear the marker.',
   })
-  @ValidateIf(
-    (o: CreateSuggestionDto) => o.lat !== undefined || o.lng !== undefined,
-  )
+  @ValidateIf((o: CreateSuggestionDto) => o.lat != null || o.lng != null)
   @IsLongitude()
-  lng?: number;
+  lng?: number | null;
 }

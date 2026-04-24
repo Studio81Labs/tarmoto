@@ -209,6 +209,18 @@ export class TripCollabService {
     });
     if (!suggestion) throw new NotFoundException('Suggestion not found');
 
+    // Detect a same-value re-submit up front so a double-tap on the
+    // already-selected vote doesn't fan out a stale tally to every
+    // subscriber. The snapshot race (a concurrent flip between this
+    // read and the upsert) is acceptable — worst case a broadcast is
+    // missed, which clients already tolerate since they reconcile
+    // against the response body.
+    const priorVote = await this.voteRepo.findOne({
+      where: { suggestion_id: suggestionId, user_id: userId },
+      select: { vote: true },
+    });
+    const hasChange = priorVote?.vote !== vote;
+
     // Upsert against (suggestion_id, user_id) — changing a vote is an
     // UPDATE, not a new row, so the vote tally stays well-defined.
     //
@@ -222,7 +234,7 @@ export class TripCollabService {
     // never turns a normal retry into a server error.
     await this.upsertVote(suggestionId, userId, vote);
 
-    return this.emitAndReturnSuggestion(userId, tripId, suggestion);
+    return this.emitAndReturnSuggestion(userId, tripId, suggestion, hasChange);
   }
 
   private async upsertVote(

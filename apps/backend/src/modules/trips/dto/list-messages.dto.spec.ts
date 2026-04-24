@@ -35,4 +35,13 @@ describe('ListMessagesDto cursor pairing', () => {
     });
     expect(errors.length).toBeGreaterThan(0);
   });
+
+  it('rejects a lone `before_id` without `before` — would otherwise be silently ignored and loop the same page', async () => {
+    const errors = await validateQuery({
+      before_id: '123e4567-e89b-42d3-a456-556642440000',
+    });
+    expect(errors.length).toBeGreaterThan(0);
+    const err = errors.find((e) => e.property === 'before');
+    expect(err).toBeDefined();
+  });
 });

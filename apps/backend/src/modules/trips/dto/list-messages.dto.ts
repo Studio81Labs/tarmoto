@@ -32,7 +32,13 @@ export class ListMessagesDto {
       'Pair with `before_id` (the oldest message id in the previous page) so ' +
       'messages sharing the same `created_at` at a page boundary are not skipped.',
   })
-  @IsOptional()
+  // Symmetric pairing: `before` and `before_id` must be supplied
+  // together or not at all. `before_id` alone used to pass DTO
+  // validation but be silently ignored by the service — a client could
+  // then loop fetching the same page forever.
+  @ValidateIf(
+    (o: ListMessagesDto) => o.before !== undefined || o.before_id !== undefined,
+  )
   @IsISO8601()
   before?: string;
 
@@ -43,9 +49,9 @@ export class ListMessagesDto {
       'the previous page. Required together with `before` to correctly page ' +
       'through messages that share a timestamp.',
   })
-  // Require `before_id` iff `before` is provided — without the pairing a
-  // page boundary with tied timestamps would silently drop messages.
-  @ValidateIf((o: ListMessagesDto) => o.before !== undefined)
+  @ValidateIf(
+    (o: ListMessagesDto) => o.before !== undefined || o.before_id !== undefined,
+  )
   @IsUUID()
   before_id?: string;
 }

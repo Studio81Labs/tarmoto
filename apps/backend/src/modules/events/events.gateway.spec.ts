@@ -435,6 +435,23 @@ describe('EventsGateway', () => {
       });
     });
 
+    it('rejects a non-UUID trip_id BEFORE hitting the DB — keeps Postgres "invalid input syntax" errors from leaking to clients', async () => {
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        join: jest.fn(),
+        emit: jest.fn(),
+      } as unknown as Socket;
+
+      await gateway.handleSubscribeTrip(client, { trip_id: 'abc' });
+
+      expect(client.join).not.toHaveBeenCalled();
+      expect(tripMemberRepo.findOne).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith('error', {
+        message: 'trip_id must be a UUID',
+      });
+    });
+
     it('rejects a non-member with the same error as a missing trip', async () => {
       tripMemberRepo.findOne.mockResolvedValueOnce(null);
       const client = {
@@ -444,7 +461,9 @@ describe('EventsGateway', () => {
         emit: jest.fn(),
       } as unknown as Socket;
 
-      await gateway.handleSubscribeTrip(client, { trip_id: 'trip-1' });
+      await gateway.handleSubscribeTrip(client, {
+        trip_id: '123e4567-e89b-42d3-a456-556642440000',
+      });
 
       expect(client.join).not.toHaveBeenCalled();
       expect(client.emit).toHaveBeenCalledWith('error', {
@@ -454,7 +473,7 @@ describe('EventsGateway', () => {
 
     it('joins the trip room for a verified member', async () => {
       tripMemberRepo.findOne.mockResolvedValueOnce({
-        trip_id: 'trip-1',
+        trip_id: '123e4567-e89b-42d3-a456-556642440000',
         user_id: 'user-1',
       });
       const client = {
@@ -464,9 +483,13 @@ describe('EventsGateway', () => {
         emit: jest.fn(),
       } as unknown as Socket;
 
-      await gateway.handleSubscribeTrip(client, { trip_id: 'trip-1' });
+      await gateway.handleSubscribeTrip(client, {
+        trip_id: '123e4567-e89b-42d3-a456-556642440000',
+      });
 
-      expect(client.join).toHaveBeenCalledWith('trip:trip-1');
+      expect(client.join).toHaveBeenCalledWith(
+        'trip:123e4567-e89b-42d3-a456-556642440000',
+      );
       expect(client.emit).not.toHaveBeenCalled();
     });
   });

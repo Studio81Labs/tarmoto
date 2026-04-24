@@ -20,6 +20,12 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import { Ride } from '../../entities/ride.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 
+// Shared between subscribe handlers so a malformed id never reaches a
+// UUID column and bubbles up as a Postgres "invalid input syntax"
+// error instead of a controlled socket error.
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Wire shape of the `hazard:new` WebSocket event. Must stay structurally
  * compatible with HazardResponseDto so clients can render markers directly
@@ -259,6 +265,16 @@ export class EventsGateway
 
     if (!data?.trip_id || typeof data.trip_id !== 'string') {
       client.emit('error', { message: 'trip_id is required' });
+      return;
+    }
+
+    // Reject anything that doesn't look like a UUID before we hit the
+    // DB — `trip_id` is a UUID column and a malformed value (e.g.
+    // "abc") would otherwise surface to the client as a server-side
+    // `invalid input syntax for type uuid` error instead of a
+    // controlled socket error.
+    if (!UUID_PATTERN.test(data.trip_id)) {
+      client.emit('error', { message: 'trip_id must be a UUID' });
       return;
     }
 
