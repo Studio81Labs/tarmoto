@@ -191,8 +191,8 @@ export const useTripStore = create<TripState & TripStoreHistory>((set) => ({
 
   undo: () =>
     set((state) => {
-      const previous = state.undoStack[state.undoStack.length - 1];
-      if (previous === undefined) return state;
+      if (state.undoStack.length === 0) return state;
+      const previous = state.undoStack[state.undoStack.length - 1] ?? null;
       const undoStack = state.undoStack.slice(0, -1);
       const redoStack = trimHistory([...state.redoStack, state.activeTrip]);
       return {
@@ -206,8 +206,8 @@ export const useTripStore = create<TripState & TripStoreHistory>((set) => ({
 
   redo: () =>
     set((state) => {
-      const next = state.redoStack[state.redoStack.length - 1];
-      if (next === undefined) return state;
+      if (state.redoStack.length === 0) return state;
+      const next = state.redoStack[state.redoStack.length - 1] ?? null;
       const redoStack = state.redoStack.slice(0, -1);
       const undoStack = trimHistory([...state.undoStack, state.activeTrip]);
       return {
