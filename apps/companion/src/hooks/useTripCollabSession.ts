@@ -1,0 +1,247 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { tripCollabApi, type TripSuggestion } from "@/lib/api";
+import {
+  emitTripCursor as emitTripCursorSocket,
+  onTripCursor,
+  onTripPresence,
+  onTripSuggestionCreated,
+  onTripSuggestionDeleted,
+  onTripSuggestionResolved,
+  onTripSuggestionVoted,
+  subscribeTrip,
+  unsubscribeTrip,
+  type TripCursorEvent,
+  type TripPresenceEvent,
+  type TripSuggestionResolvedEvent,
+  type TripSuggestionVotedEvent,
+} from "@/lib/socket";
+
+/**
+ * Live state of another collaborator's cursor in the planner map.
+ * Stale cursors are expired after `CURSOR_TTL_MS` so a user who closes
+ * the tab doesn't leave a ghost dot on everyone else's map forever.
+ */
+export interface CollaboratorCursor {
+  userId: string;
+  lat: number;
+  lng: number;
+  lastSeenAt: number;
+}
+
+/** Online presence bookkeeping for the member list. */
+export interface CollaboratorPresence {
+  userId: string;
+  online: boolean;
+  /**
+   * Count of the user's currently-known open sockets. Tracked so
+   * closing a single tab / device doesn't flip `online` to false
+   * while another of their sockets is still connected — presence
+   * events are per-socket, not per-user.
+   */
+  sockets: number;
+  lastSeenAt: number;
+}
+
+const CURSOR_TTL_MS = 10_000;
+const CURSOR_EMIT_THROTTLE_MS = 150;
+const CURSOR_SWEEP_MS = 2_000;
+
+/**
+ * Hook that wires the planner page to the live trip-collaboration surface.
+ *
+ * Once `serverTripId` is non-null, it:
+ *   • joins the socket room `trip:<id>` (and leaves on unmount)
+ *   • maintains maps of live cursors and presence
+ *   • owns the shared `suggestions` list (map overlay + modal read from
+ *     the same state, avoiding a double-fetch / double-listener pair)
+ *   • exposes a throttled `emitCursor(lat, lng)` callback
+ *
+ * Broadcast payloads carry `caller_vote: null` (the backend can't know
+ * each recipient's vote); the merge logic preserves the locally-known
+ * `caller_vote` so another member's vote doesn't wipe the caller's own-
+ * vote highlight.
+ *
+ * Switching trips resets cursors/presence/suggestions so cross-trip data
+ * never leaks into the new session.
+ */
+export function useTripCollabSession(serverTripId: string | null) {
+  const [cursors, setCursors] = useState<Map<string, CollaboratorCursor>>(
+    () => new Map(),
+  );
+  const [presence, setPresence] = useState<Map<string, CollaboratorPresence>>(
+    () => new Map(),
+  );
+  const [suggestions, setSuggestions] = useState<TripSuggestion[]>([]);
+  // When the shared list is fed into the modal via props, a silent
+  // fetch failure here would leave `suggestions` empty and the modal
+  // would render its "No suggestions yet" empty-state — indistinguish-
+  // able from a real empty list and hiding auth/network/server errors.
+  // Expose the failure so consumers can surface it as an alert.
+  const [suggestionsError, setSuggestionsError] = useState<string | null>(null);
+  const lastEmitRef = useRef(0);
+
+  const previousTripIdRef = useRef<string | null>(serverTripId);
+  useEffect(() => {
+    if (previousTripIdRef.current === serverTripId) return;
+    previousTripIdRef.current = serverTripId;
+    setCursors(new Map());
+    setPresence(new Map());
+    setSuggestions([]);
+    setSuggestionsError(null);
+  }, [serverTripId]);
+
+  useEffect(() => {
+    if (!serverTripId) return;
+    subscribeTrip(serverTripId);
+    return () => unsubscribeTrip(serverTripId);
+  }, [serverTripId]);
+
+  useEffect(() => {
+    if (!serverTripId) return;
+    const offCursor = onTripCursor((evt: TripCursorEvent) => {
+      if (evt.trip_id !== serverTripId) return;
+      setCursors((prev) => {
+        const next = new Map(prev);
+        next.set(evt.user_id, {
+          userId: evt.user_id,
+          lat: evt.lat,
+          lng: evt.lng,
+          lastSeenAt: Date.now(),
+        });
+        return next;
+      });
+    });
+    const offPresence = onTripPresence((evt: TripPresenceEvent) => {
+      if (evt.trip_id !== serverTripId) return;
+      setPresence((prev) => {
+        const next = new Map(prev);
+        // Track sockets per user so multi-tab / multi-device members
+        // don't get flagged offline when just one of their sockets
+        // disconnects. Presence events are per-socket, not per-user.
+        const existing = prev.get(evt.user_id);
+        const socketDelta = evt.online ? 1 : -1;
+        const nextSockets = Math.max(0, (existing?.sockets ?? 0) + socketDelta);
+        next.set(evt.user_id, {
+          userId: evt.user_id,
+          online: nextSockets > 0,
+          sockets: nextSockets,
+          lastSeenAt: Date.now(),
+        });
+        return next;
+      });
+      // Let the TTL sweep drop cursors instead of reacting to every
+      // "offline" event — a user with two tabs closing one shouldn't
+      // make their cursor flap on other collaborators' maps. If the
+      // other sockets keep emitting cursor updates the lastSeenAt will
+      // stay fresh; if they don't, the sweep cleans up within
+      // CURSOR_TTL_MS.
+    });
+    const offCreated = onTripSuggestionCreated((payload) => {
+      const s = payload as TripSuggestion;
+      if (s.trip_id !== serverTripId) return;
+      setSuggestions((prev) => {
+        // Dedupe by id — if the REST response already prepended the row
+        // before the broadcast lands, replace in place instead of
+        // producing a double-card flicker.
+        const exists = prev.some((x) => x.id === s.id);
+        if (exists) return prev.map((x) => (x.id === s.id ? s : x));
+        return [s, ...prev];
+      });
+    });
+    const offDeleted = onTripSuggestionDeleted((payload) => {
+      const { suggestion_id } = payload as { suggestion_id: string };
+      setSuggestions((prev) => prev.filter((s) => s.id !== suggestion_id));
+    });
+    const offVoted = onTripSuggestionVoted((evt: TripSuggestionVotedEvent) => {
+      setSuggestions((prev) =>
+        prev.map((s) =>
+          s.id === evt.suggestion_id
+            ? {
+                ...s,
+                up_votes: evt.up_votes,
+                down_votes: evt.down_votes,
+              }
+            : s,
+        ),
+      );
+    });
+    const offResolved = onTripSuggestionResolved(
+      (evt: TripSuggestionResolvedEvent) => {
+        setSuggestions((prev) =>
+          prev.map((s) =>
+            s.id === evt.suggestion_id ? { ...s, status: evt.status } : s,
+          ),
+        );
+      },
+    );
+    return () => {
+      offCursor();
+      offPresence();
+      offCreated();
+      offDeleted();
+      offVoted();
+      offResolved();
+    };
+  }, [serverTripId]);
+
+  useEffect(() => {
+    if (!serverTripId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await tripCollabApi.listSuggestions(serverTripId);
+        if (cancelled) return;
+        setSuggestions(data);
+        setSuggestionsError(null);
+      } catch (err) {
+        if (cancelled) return;
+        setSuggestionsError(
+          err instanceof Error ? err.message : "Failed to load suggestions",
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [serverTripId]);
+
+  useEffect(() => {
+    if (!serverTripId) return;
+    const id = window.setInterval(() => {
+      const cutoff = Date.now() - CURSOR_TTL_MS;
+      setCursors((prev) => {
+        let mutated = false;
+        const next = new Map(prev);
+        for (const [key, value] of prev) {
+          if (value.lastSeenAt < cutoff) {
+            next.delete(key);
+            mutated = true;
+          }
+        }
+        return mutated ? next : prev;
+      });
+    }, CURSOR_SWEEP_MS);
+    return () => window.clearInterval(id);
+  }, [serverTripId]);
+
+  const emitCursor = useCallback(
+    (lat: number, lng: number) => {
+      if (!serverTripId) return;
+      const now = Date.now();
+      if (now - lastEmitRef.current < CURSOR_EMIT_THROTTLE_MS) return;
+      lastEmitRef.current = now;
+      emitTripCursorSocket(serverTripId, lat, lng);
+    },
+    [serverTripId],
+  );
+
+  return {
+    cursors,
+    presence,
+    suggestions,
+    setSuggestions,
+    /** Last `listSuggestions` error, or null when the fetch succeeded. */
+    suggestionsError,
+    emitCursor,
+  };
+}

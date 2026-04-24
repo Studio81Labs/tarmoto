@@ -33,6 +33,9 @@ import { TripExportMenu } from "@/components/TripExportMenu";
 import { TripImportDialog } from "@/components/TripImportDialog";
 import { useClosures } from "@/hooks/useClosures";
 import { usePasses } from "@/hooks/usePasses";
+import { useTripCollabSession } from "@/hooks/useTripCollabSession";
+import { useAuthStore } from "@/stores/auth";
+import { tripsApi } from "@/lib/api";
 import { buildTripClosureRoutes } from "@/lib/closures-summary";
 import { DEMO_TRIP } from "@/lib/demo-trip";
 import {
@@ -107,6 +110,66 @@ export default function TripPlannerPage() {
   const reorderWaypoints = useTripStore((s) => s.reorderWaypoints);
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   const displayedTrip = activeTrip ?? selectedOption?.trip ?? null;
+
+  // ── Collab session wiring (US-35) ─────────────────────────────────
+  // `?tripId=<uuid>` on the URL activates the collab surface: the
+  // socket joins `trip:<id>`, cursors + suggestions + activity start
+  // flowing, and the Suggestions / Activity tabs in the modal light up.
+  const [serverTripId, setServerTripId] = useState<string | null>(null);
+  const [serverTripOwnerId, setServerTripOwnerId] = useState<string | null>(
+    null,
+  );
+  const currentUserId = useAuthStore((s) => s.user?.id ?? null);
+  const collabSession = useTripCollabSession(serverTripId);
+
+  useEffect(() => {
+    // Read `?tripId=` in a client-only effect to keep the planner page
+    // statically prerenderable. `useSearchParams` would pull the whole
+    // tree into the dynamic render path.
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get("tripId");
+    // Skip the no-op null→null setState on first mount so we don't
+    // burn an extra render cycle through the planner's downstream
+    // data hooks (useClosures/usePasses).
+    if (fromUrl) setServerTripId(fromUrl);
+  }, []);
+
+  useEffect(() => {
+    if (!serverTripId) {
+      setServerTripOwnerId(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await tripsApi.get(serverTripId);
+        if (cancelled) return;
+        const ownerId = (
+          data as { members?: Array<{ role: string; user_id: string }> }
+        ).members?.find((m) => m.role === "owner")?.user_id;
+        setServerTripOwnerId(ownerId ?? null);
+      } catch {
+        // Non-fatal — modal / hook will surface concrete errors on
+        // their own actions if the trip really isn't accessible.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [serverTripId]);
+
+  const handlePromotedToServer = useCallback((newServerTripId: string) => {
+    setServerTripId(newServerTripId);
+    // Push the id into the URL so a reload preserves the live session.
+    // history.replaceState avoids depending on the Next router, keeping
+    // the page prerenderable (see comment on the URL read above).
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tripId", newServerTripId);
+      window.history.replaceState({}, "", `${url.pathname}${url.search}`);
+    }
+  }, []);
   const plannerParams = useMemo<TripParameters>(
     () => ({
       days,
@@ -768,6 +831,9 @@ export default function TripPlannerPage() {
             onAddWaypoint={(location) =>
               appendPlannerWaypoint(selectedDayIndex, location, plannerParams)
             }
+            collaboratorCursors={collabSession.cursors}
+            suggestions={collabSession.suggestions}
+            onCursorMove={serverTripId ? collabSession.emitCursor : undefined}
           />
 
           {/* Drop overlay */}
@@ -895,6 +961,13 @@ export default function TripPlannerPage() {
       <TripCollaborateModal
         open={collaborateOpen}
         trip={displayedTrip}
+        serverTripId={serverTripId}
+        ownerId={serverTripOwnerId}
+        currentUserId={currentUserId}
+        suggestions={collabSession.suggestions}
+        onSuggestionsChange={collabSession.setSuggestions}
+        suggestionsError={collabSession.suggestionsError}
+        onPromoted={handlePromotedToServer}
         onClose={() => setCollaborateOpen(false)}
       />
     </div>

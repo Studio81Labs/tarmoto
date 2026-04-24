@@ -13,6 +13,7 @@ import { TripsService } from './trips.service.js';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { EventsGateway } from '../events/events.gateway.js';
+import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 
 const OWNER_ID = '00000000-0000-0000-0000-000000000001';
 const OTHER_ID = '00000000-0000-0000-0000-000000000002';
@@ -119,6 +120,7 @@ describe('TripsService', () => {
   // tripping on the deeply-nested mock cast on `tripRepo.manager.*`.
   let transactionMock: jest.Mock;
   let events: jest.Mocked<Pick<EventsGateway, 'emitToTrip'>>;
+  let activity: jest.Mocked<Pick<TripActivityService, 'recordSafe'>>;
 
   beforeEach(async () => {
     // The transactional `create` flow calls `tripRepo.manager.transaction`
@@ -181,6 +183,7 @@ describe('TripsService', () => {
     } as unknown as jest.Mocked<Repository<TripMember>>;
 
     events = { emitToTrip: jest.fn() };
+    activity = { recordSafe: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -188,6 +191,7 @@ describe('TripsService', () => {
         { provide: getRepositoryToken(Trip), useValue: tripRepo },
         { provide: getRepositoryToken(TripMember), useValue: memberRepo },
         { provide: EventsGateway, useValue: events },
+        { provide: TripActivityService, useValue: activity },
       ],
     }).compile();
 

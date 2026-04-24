@@ -268,4 +268,187 @@ describe("lib/socket", () => {
     fake.trigger("hazard:new", { id: "stale" });
     expect(received).toHaveLength(0);
   });
+
+  // ── US-35 collab helpers ──
+
+  it("subscribeTrip / unsubscribeTrip emit the expected payloads", async () => {
+    const { connectSocket, subscribeTrip, unsubscribeTrip } =
+      await import("../socket");
+    connectSocket("token-1");
+
+    subscribeTrip("trip-99");
+    unsubscribeTrip("trip-99");
+
+    expect(fake.emitted).toContainEqual({
+      event: "subscribe:trip",
+      data: { trip_id: "trip-99" },
+    });
+    expect(fake.emitted).toContainEqual({
+      event: "unsubscribe:trip",
+      data: { trip_id: "trip-99" },
+    });
+  });
+
+  it("emitTripCursor sends the cursor payload", async () => {
+    const { connectSocket, emitTripCursor } = await import("../socket");
+    connectSocket(null);
+    emitTripCursor("trip-99", 49.1, 16.75);
+
+    expect(fake.emitted).toContainEqual({
+      event: "trip:cursor",
+      data: { trip_id: "trip-99", lat: 49.1, lng: 16.75 },
+    });
+  });
+
+  it("onTripCursor / onTripPresence / onTripSuggestion* / onTripActivity dispatch payloads", async () => {
+    const {
+      connectSocket,
+      onTripCursor,
+      onTripPresence,
+      onTripSuggestionCreated,
+      onTripSuggestionDeleted,
+      onTripSuggestionVoted,
+      onTripSuggestionResolved,
+      onTripActivity,
+    } = await import("../socket");
+
+    connectSocket(null);
+    const seen: Record<string, unknown[]> = {
+      cursor: [],
+      presence: [],
+      created: [],
+      deleted: [],
+      voted: [],
+      resolved: [],
+      activity: [],
+    };
+    onTripCursor((e) => seen.cursor.push(e));
+    onTripPresence((e) => seen.presence.push(e));
+    onTripSuggestionCreated((e) => seen.created.push(e));
+    onTripSuggestionDeleted((e) => seen.deleted.push(e));
+    onTripSuggestionVoted((e) => seen.voted.push(e));
+    onTripSuggestionResolved((e) => seen.resolved.push(e));
+    onTripActivity((e) => seen.activity.push(e));
+
+    fake.trigger("trip:cursor", { user_id: "u-1" });
+    fake.trigger("trip:presence", { user_id: "u-1", online: true });
+    fake.trigger("trip:suggestion:created", { id: "s-1" });
+    fake.trigger("trip:suggestion:deleted", { suggestion_id: "s-1" });
+    fake.trigger("trip:suggestion:voted", {
+      suggestion_id: "s-1",
+      up_votes: 1,
+      down_votes: 0,
+    });
+    fake.trigger("trip:suggestion:resolved", {
+      suggestion_id: "s-1",
+      status: "accepted",
+    });
+    fake.trigger("trip:activity", { id: "a-1" });
+
+    expect(seen.cursor).toHaveLength(1);
+    expect(seen.presence).toHaveLength(1);
+    expect(seen.created).toHaveLength(1);
+    expect(seen.deleted).toHaveLength(1);
+    expect(seen.voted).toHaveLength(1);
+    expect(seen.resolved).toHaveLength(1);
+    expect(seen.activity).toHaveLength(1);
+  });
+
+  it("trip listeners survive a token-change reconnect", async () => {
+    const { connectSocket, onTripSuggestionCreated } =
+      await import("../socket");
+
+    connectSocket("token-1");
+    const seen: unknown[] = [];
+    onTripSuggestionCreated((payload) => seen.push(payload));
+
+    const secondFake = createFakeSocket();
+    fake = secondFake;
+    connectSocket("token-2");
+
+    secondFake.trigger("trip:suggestion:created", { id: "s-after-reauth" });
+    expect(seen).toEqual([{ id: "s-after-reauth" }]);
+  });
+
+  it("replays trip-room subscriptions on a transport-level reconnect", async () => {
+    const { connectSocket, subscribeTrip } = await import("../socket");
+
+    connectSocket("token-1");
+    fake.trigger("connect"); // initial connect
+    subscribeTrip("trip-123");
+
+    // Socket drops and reconnects at the transport layer — same socket
+    // instance, just a new `connect` event. Backend room membership
+    // is gone; the client must replay `subscribe:trip`.
+    fake.emitted.length = 0;
+    fake.trigger("connect");
+
+    expect(fake.emitted).toContainEqual({
+      event: "subscribe:trip",
+      data: { trip_id: "trip-123" },
+    });
+  });
+
+  it("replays trip-room subscriptions across a token-change socket replacement", async () => {
+    const { connectSocket, subscribeTrip } = await import("../socket");
+
+    connectSocket("token-1");
+    subscribeTrip("trip-abc");
+
+    const secondFake = createFakeSocket();
+    fake = secondFake;
+    connectSocket("token-2");
+    secondFake.trigger("connect");
+
+    expect(secondFake.emitted).toContainEqual({
+      event: "subscribe:trip",
+      data: { trip_id: "trip-abc" },
+    });
+  });
+
+  it("does not replay trip subscriptions after an explicit unsubscribeTrip", async () => {
+    const { connectSocket, subscribeTrip, unsubscribeTrip } =
+      await import("../socket");
+
+    connectSocket("token-1");
+    subscribeTrip("trip-x");
+    unsubscribeTrip("trip-x");
+
+    fake.emitted.length = 0;
+    fake.trigger("connect");
+
+    expect(
+      fake.emitted.some(
+        (e) =>
+          e.event === "subscribe:trip" &&
+          (e.data as { trip_id: string }).trip_id === "trip-x",
+      ),
+    ).toBe(false);
+  });
+
+  it("preserves trip subscriptions across RealtimeProvider's disconnect+connect on token change", async () => {
+    // RealtimeProvider's effect cleanup calls disconnectSocket() on
+    // every token change, then the next render calls
+    // connectSocket(newToken). This flow must not silently drop trip
+    // memberships — otherwise `useTripCollabSession` only ever
+    // re-subscribes on `serverTripId` change, which doesn't fire
+    // during a token refresh.
+    const { connectSocket, disconnectSocket, subscribeTrip } =
+      await import("../socket");
+
+    connectSocket("token-1");
+    subscribeTrip("trip-keep-me");
+
+    // Simulate RealtimeProvider's token-refresh lifecycle.
+    disconnectSocket();
+    const secondFake = createFakeSocket();
+    fake = secondFake;
+    connectSocket("token-2");
+    secondFake.trigger("connect");
+
+    expect(secondFake.emitted).toContainEqual({
+      event: "subscribe:trip",
+      data: { trip_id: "trip-keep-me" },
+    });
+  });
 });

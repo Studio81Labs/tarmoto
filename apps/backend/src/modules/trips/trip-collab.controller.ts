@@ -85,6 +85,52 @@ export class TripCollabController {
     await this.collab.deleteSuggestion(req.user!.userId, tripId, suggestionId);
   }
 
+  @Post('suggestions/:suggestionId/accept')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Accept a suggestion (owner/admin only)',
+    description:
+      'Marks the suggestion as `accepted`. Only privileged roles may ' +
+      'resolve — authors can only delete their own. Re-accepting an ' +
+      'already-resolved row returns 400.',
+  })
+  @ApiResponse({ status: 200, type: SuggestionDto })
+  @ApiResponse({ status: 403, description: 'Not owner or admin' })
+  @ApiResponse({ status: 404, description: 'Suggestion not found' })
+  async acceptSuggestion(
+    @Req() req: express.Request,
+    @Param('tripId', ParseUUIDPipe) tripId: string,
+    @Param('suggestionId', ParseUUIDPipe) suggestionId: string,
+  ): Promise<SuggestionDto> {
+    return this.collab.resolveSuggestion(
+      req.user!.userId,
+      tripId,
+      suggestionId,
+      'accepted',
+    );
+  }
+
+  @Post('suggestions/:suggestionId/reject')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Reject a suggestion (owner/admin only)',
+  })
+  @ApiResponse({ status: 200, type: SuggestionDto })
+  @ApiResponse({ status: 403, description: 'Not owner or admin' })
+  @ApiResponse({ status: 404, description: 'Suggestion not found' })
+  async rejectSuggestion(
+    @Req() req: express.Request,
+    @Param('tripId', ParseUUIDPipe) tripId: string,
+    @Param('suggestionId', ParseUUIDPipe) suggestionId: string,
+  ): Promise<SuggestionDto> {
+    return this.collab.resolveSuggestion(
+      req.user!.userId,
+      tripId,
+      suggestionId,
+      'rejected',
+    );
+  }
+
   @Post('suggestions/:suggestionId/vote')
   @ApiOperation({
     summary: 'Cast or change a vote on a suggestion',

@@ -39,6 +39,8 @@ import {
   type RoadSnapFeature,
 } from "@/lib/trip-planner-snap";
 import type { Trip } from "@/lib/types";
+import type { TripSuggestion } from "@/lib/api";
+import type { CollaboratorCursor } from "@/hooks/useTripCollabSession";
 import { formatDistance, roundCoordinate } from "@/lib/utils";
 import { usePreferencesStore } from "@/stores/preferences";
 
@@ -53,6 +55,11 @@ const PASS_MARKER_SOURCE = "trip-planner-pass-markers";
 const CLOSURE_LINE_LAYER = "trip-planner-closure-lines";
 const CLOSURE_MARKER_LAYER = "trip-planner-closure-markers";
 const PASS_MARKER_LAYER = "trip-planner-pass-markers";
+const CURSOR_SOURCE = "trip-planner-collab-cursors";
+const CURSOR_LAYER = "trip-planner-collab-cursors";
+const CURSOR_LABEL_LAYER = "trip-planner-collab-cursor-labels";
+const SUGGESTION_SOURCE = "trip-planner-suggestions";
+const SUGGESTION_LAYER = "trip-planner-suggestion-marker";
 
 interface TripPlannerMapProps {
   trip: Trip | null;
@@ -61,6 +68,20 @@ interface TripPlannerMapProps {
   passesData?: PassesQueryResult;
   onAddWaypoint?: (location: { lng: number; lat: number }) => void;
   selectedDayNumber?: number;
+  /** Live cursors from other collaborators keyed by user id. */
+  collaboratorCursors?: Map<string, CollaboratorCursor>;
+  /**
+   * Suggestions to render as markers on the map. Accepted + rejected
+   * are filtered out at build time so only `status === 'open'` markers
+   * show — resolved proposals no longer need a map affordance.
+   */
+  suggestions?: TripSuggestion[];
+  /**
+   * Called on DOM-throttled map mousemove with the pointer's geographic
+   * position so the planner page can broadcast a `trip:cursor` event.
+   * Pass undefined to disable cursor sharing.
+   */
+  onCursorMove?: (lat: number, lng: number) => void;
 }
 
 export function TripPlannerMap({
@@ -70,6 +91,9 @@ export function TripPlannerMap({
   passesData,
   onAddWaypoint,
   selectedDayNumber,
+  collaboratorCursors,
+  suggestions,
+  onCursorMove,
 }: TripPlannerMapProps) {
   if (closuresData && passesData) {
     return (
@@ -80,6 +104,9 @@ export function TripPlannerMap({
         passesData={passesData}
         onAddWaypoint={onAddWaypoint}
         selectedDayNumber={selectedDayNumber}
+        collaboratorCursors={collaboratorCursors}
+        suggestions={suggestions}
+        onCursorMove={onCursorMove}
       />
     );
   }
@@ -90,6 +117,9 @@ export function TripPlannerMap({
       month={month}
       onAddWaypoint={onAddWaypoint}
       selectedDayNumber={selectedDayNumber}
+      collaboratorCursors={collaboratorCursors}
+      suggestions={suggestions}
+      onCursorMove={onCursorMove}
     />
   );
 }
@@ -99,11 +129,17 @@ function FetchedTripPlannerMap({
   month,
   onAddWaypoint,
   selectedDayNumber,
+  collaboratorCursors,
+  suggestions,
+  onCursorMove,
 }: {
   trip: Trip | null;
   month: number;
   onAddWaypoint?: (location: { lng: number; lat: number }) => void;
   selectedDayNumber?: number;
+  collaboratorCursors?: Map<string, CollaboratorCursor>;
+  suggestions?: TripSuggestion[];
+  onCursorMove?: (lat: number, lng: number) => void;
 }) {
   const closureRoutes = useMemo(() => buildTripClosureRoutes(trip), [trip]);
   const closuresData = useClosures(month, closureRoutes);
@@ -117,6 +153,9 @@ function FetchedTripPlannerMap({
       passesData={passesData}
       onAddWaypoint={onAddWaypoint}
       selectedDayNumber={selectedDayNumber}
+      collaboratorCursors={collaboratorCursors}
+      suggestions={suggestions}
+      onCursorMove={onCursorMove}
     />
   );
 }
@@ -128,6 +167,9 @@ function TripPlannerMapContent({
   passesData,
   onAddWaypoint,
   selectedDayNumber,
+  collaboratorCursors,
+  suggestions,
+  onCursorMove,
 }: {
   trip: Trip | null;
   month: number;
@@ -135,6 +177,9 @@ function TripPlannerMapContent({
   passesData: PassesQueryResult;
   onAddWaypoint?: (location: { lng: number; lat: number }) => void;
   selectedDayNumber?: number;
+  collaboratorCursors?: Map<string, CollaboratorCursor>;
+  suggestions?: TripSuggestion[];
+  onCursorMove?: (lat: number, lng: number) => void;
 }) {
   const handleRef = useRef<MapCanvasHandle>(null);
   const drawRef = useRef<RegionDrawControl | null>(null);
@@ -189,6 +234,14 @@ function TripPlannerMapContent({
   const passMarkerCollection = useMemo(
     () => buildPlannerPassMarkerCollection(passes),
     [passes],
+  );
+  const cursorCollection = useMemo(
+    () => buildCursorCollection(collaboratorCursors),
+    [collaboratorCursors],
+  );
+  const suggestionCollection = useMemo(
+    () => buildSuggestionCollection(suggestions),
+    [suggestions],
   );
   const highlightedClosures =
     routeClosures.length > 0 ? routeClosures : closures;
@@ -308,14 +361,46 @@ function TripPlannerMapContent({
     syncGeoJsonSource(map, CLOSURE_LINE_SOURCE, closureLineCollection);
     syncGeoJsonSource(map, CLOSURE_MARKER_SOURCE, closureMarkerCollection);
     syncGeoJsonSource(map, PASS_MARKER_SOURCE, passMarkerCollection);
+    syncGeoJsonSource(map, CURSOR_SOURCE, cursorCollection);
+    syncGeoJsonSource(map, SUGGESTION_SOURCE, suggestionCollection);
   }, [
     closureLineCollection,
     closureMarkerCollection,
+    cursorCollection,
     passMarkerCollection,
     ready,
     routeCollection,
+    suggestionCollection,
     waypointCollection,
   ]);
+
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready || !onCursorMove) return;
+    // Coalesce fast-fire mousemoves into at most one callback per paint
+    // via requestAnimationFrame. The hook-side throttle (150 ms) is a
+    // second gate for the socket emit itself, but without this
+    // DOM-layer throttle a 120 Hz mouse would trigger React callbacks
+    // at the same rate, defeating the point.
+    let rafId: number | null = null;
+    let pending: { lat: number; lng: number } | null = null;
+    const flush = () => {
+      rafId = null;
+      if (!pending) return;
+      const { lat, lng } = pending;
+      pending = null;
+      onCursorMove(lat, lng);
+    };
+    const handler = (event: { lngLat: { lng: number; lat: number } }) => {
+      pending = { lat: event.lngLat.lat, lng: event.lngLat.lng };
+      if (rafId === null) rafId = window.requestAnimationFrame(flush);
+    };
+    map.on("mousemove", handler);
+    return () => {
+      map.off("mousemove", handler);
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
+    };
+  }, [onCursorMove, ready]);
 
   useEffect(() => {
     if (!ready) return;
@@ -742,6 +827,111 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       },
     });
   }
+
+  // ── Collaboration overlays (US-35) ──
+  if (!map.getSource(SUGGESTION_SOURCE)) {
+    map.addSource(SUGGESTION_SOURCE, {
+      type: "geojson",
+      data: buildSuggestionCollection(undefined),
+    });
+  }
+  if (!map.getLayer(SUGGESTION_LAYER)) {
+    map.addLayer({
+      id: SUGGESTION_LAYER,
+      type: "circle",
+      source: SUGGESTION_SOURCE,
+      paint: {
+        "circle-radius": 6,
+        "circle-color": "#C084FC",
+        "circle-stroke-color": "#1E1B4B",
+        "circle-stroke-width": 2,
+      },
+    });
+  }
+
+  if (!map.getSource(CURSOR_SOURCE)) {
+    map.addSource(CURSOR_SOURCE, {
+      type: "geojson",
+      data: buildCursorCollection(undefined),
+    });
+  }
+  if (!map.getLayer(CURSOR_LAYER)) {
+    map.addLayer({
+      id: CURSOR_LAYER,
+      type: "circle",
+      source: CURSOR_SOURCE,
+      paint: {
+        "circle-radius": 6,
+        "circle-color": "#F472B6",
+        "circle-stroke-color": "#1E1B4B",
+        "circle-stroke-width": 2,
+      },
+    });
+  }
+  if (!map.getLayer(CURSOR_LABEL_LAYER)) {
+    map.addLayer({
+      id: CURSOR_LABEL_LAYER,
+      type: "symbol",
+      source: CURSOR_SOURCE,
+      layout: {
+        "text-field": ["get", "label"],
+        "text-offset": [0, 1.1],
+        "text-size": 10,
+        "text-anchor": "top",
+      },
+      paint: {
+        "text-color": "#F9A8D4",
+        "text-halo-color": "#020617",
+        "text-halo-width": 1,
+      },
+    });
+  }
+}
+
+function buildCursorCollection(
+  cursors: Map<string, CollaboratorCursor> | undefined,
+): GeoJSON.FeatureCollection<GeoJSON.Point, { userId: string; label: string }> {
+  const features: Array<
+    GeoJSON.Feature<GeoJSON.Point, { userId: string; label: string }>
+  > = [];
+  if (cursors) {
+    for (const cursor of cursors.values()) {
+      features.push({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [cursor.lng, cursor.lat] },
+        properties: {
+          userId: cursor.userId,
+          // Abbreviate so the label is readable but unique enough to
+          // tell collaborators apart at a glance.
+          label: cursor.userId.slice(0, 6),
+        },
+      });
+    }
+  }
+  return { type: "FeatureCollection", features };
+}
+
+function buildSuggestionCollection(
+  suggestions: TripSuggestion[] | undefined,
+): GeoJSON.FeatureCollection<
+  GeoJSON.Point,
+  { suggestionId: string; title: string }
+> {
+  const features: Array<
+    GeoJSON.Feature<GeoJSON.Point, { suggestionId: string; title: string }>
+  > = [];
+  if (suggestions) {
+    for (const s of suggestions) {
+      if (s.status !== "open") continue;
+      if (s.lat == null || s.lng == null) continue;
+      features.push({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [s.lng, s.lat] },
+        properties: { suggestionId: s.id, title: s.title },
+      });
+    }
+  }
+  return { type: "FeatureCollection", features };
 }
 
 function syncGeoJsonSource(

@@ -29,6 +29,7 @@ import { GeocodeModule } from './modules/geocode/index.js';
 import { ClosuresModule } from './modules/closures/index.js';
 import { AccountModule } from './modules/account/index.js';
 import { TripsModule } from './modules/trips/index.js';
+import { TripActivityModule } from './modules/trip-activity/index.js';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { TripsModule } from './modules/trips/index.js';
     TripSharesModule,
     RidesModule,
     TripsModule,
+    TripActivityModule,
     EventsModule,
     SafetyModule,
     TilesModule,

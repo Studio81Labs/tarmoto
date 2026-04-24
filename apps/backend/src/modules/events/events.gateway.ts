@@ -45,6 +45,28 @@ export interface HazardAlertPayload {
   expires_at: string;
 }
 
+/**
+ * Payload emitted on `trip:cursor` when a collaborator moves their
+ * pointer over the trip planner map. Ephemeral — never persisted.
+ * Identity comes from the authenticated socket so clients can't spoof
+ * each other.
+ */
+export interface TripCursorPayload {
+  user_id: string;
+  trip_id: string;
+  lat: number;
+  lng: number;
+  at: string;
+}
+
+/** Payload emitted when a member joins/leaves a trip's live room. */
+export interface TripPresencePayload {
+  trip_id: string;
+  user_id: string;
+  online: boolean;
+  at: string;
+}
+
 @SkipThrottle()
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -137,6 +159,30 @@ export class EventsGateway
   }
 
   handleDisconnect(client: Socket): void {
+    const userId = (client.data as Record<string, unknown>).userId as
+      | string
+      | undefined;
+    const joinedTrips = (client.data as Record<string, unknown>).joinedTrips as
+      | Set<string>
+      | undefined;
+
+    if (userId && joinedTrips && joinedTrips.size > 0) {
+      // Announce offline to every trip room this socket had joined.
+      // Other sockets for the same user may still be in the room — the
+      // client is responsible for de-duplicating presence by `user_id`
+      // and its own known-online socket count.
+      const at = new Date().toISOString();
+      for (const tripId of joinedTrips) {
+        const payload: TripPresencePayload = {
+          trip_id: tripId,
+          user_id: userId,
+          online: false,
+          at,
+        };
+        this.server.to(`trip:${tripId}`).emit('trip:presence', payload);
+      }
+    }
+
     this.logger.debug(`Client ${client.id} disconnected`);
   }
 
@@ -278,6 +324,15 @@ export class EventsGateway
       return;
     }
 
+    // Idempotent per socket. Clients replay `subscribe:trip` on every
+    // `connect` (see companion `lib/socket.ts#subscribedTripIds`) and
+    // can also issue duplicate subscribes mid-flight. Without this
+    // guard a second subscribe would emit another `online: true` while
+    // `handleDisconnect` only emits one `online: false`, leaving the
+    // client-side per-user socket counter permanently above zero.
+    const room = `trip:${data.trip_id}`;
+    if (client.rooms?.has(room)) return;
+
     const membership = await this.tripMemberRepo.findOne({
       where: { trip_id: data.trip_id, user_id: userId },
     });
@@ -286,7 +341,25 @@ export class EventsGateway
       return;
     }
 
-    client.join(`trip:${data.trip_id}`);
+    client.join(room);
+    // Record the joined trips on the socket so `handleDisconnect` can
+    // emit `trip:presence { online: false }` to every room without
+    // having to parse the room name set. Using the socket's `data` bag
+    // keeps the bookkeeping tied to the socket lifetime automatically.
+    const joinedTrips = (client.data as Record<string, unknown>).joinedTrips as
+      | Set<string>
+      | undefined;
+    const trips = joinedTrips ?? new Set<string>();
+    trips.add(data.trip_id);
+    (client.data as Record<string, unknown>).joinedTrips = trips;
+
+    const presence: TripPresencePayload = {
+      trip_id: data.trip_id,
+      user_id: userId,
+      online: true,
+      at: new Date().toISOString(),
+    };
+    this.server.to(room).emit('trip:presence', presence);
     this.logger.debug(`Client ${client.id} joined trip ${data.trip_id}`);
   }
 
@@ -303,7 +376,61 @@ export class EventsGateway
     @MessageBody() data: { trip_id: string },
   ): void {
     if (!data?.trip_id || typeof data.trip_id !== 'string') return;
-    client.leave(`trip:${data.trip_id}`);
+    const userId = (client.data as Record<string, unknown>).userId as
+      | string
+      | undefined;
+    const room = `trip:${data.trip_id}`;
+    if (!client.rooms.has(room)) return;
+
+    client.leave(room);
+    const joinedTrips = (client.data as Record<string, unknown>).joinedTrips as
+      | Set<string>
+      | undefined;
+    joinedTrips?.delete(data.trip_id);
+
+    if (userId) {
+      const presence: TripPresencePayload = {
+        trip_id: data.trip_id,
+        user_id: userId,
+        online: false,
+        at: new Date().toISOString(),
+      };
+      this.server.to(room).emit('trip:presence', presence);
+    }
+  }
+
+  /**
+   * Broadcast a live cursor position to other collaborators in the trip
+   * room. The sender is excluded via `client.to()` so they don't receive
+   * their own echoes. Identity is taken from the authenticated socket —
+   * clients cannot spoof `user_id`. Silently ignores cursors for rooms
+   * the client hasn't been granted membership to, to prevent cross-trip
+   * leakage if a misbehaving client emits to a room it was never in.
+   */
+  @SubscribeMessage('trip:cursor')
+  handleTripCursor(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    data: { trip_id: string; lat: number; lng: number },
+  ): void {
+    const userId = (client.data as Record<string, unknown>).userId as
+      | string
+      | undefined;
+    if (!userId) return;
+    if (!data?.trip_id) return;
+    if (typeof data.lat !== 'number' || typeof data.lng !== 'number') return;
+
+    const room = `trip:${data.trip_id}`;
+    if (!client.rooms.has(room)) return;
+
+    const payload: TripCursorPayload = {
+      user_id: userId,
+      trip_id: data.trip_id,
+      lat: data.lat,
+      lng: data.lng,
+      at: new Date().toISOString(),
+    };
+    client.to(room).emit('trip:cursor', payload);
   }
 
   // ── Server-side emit methods (called by other services) ──
