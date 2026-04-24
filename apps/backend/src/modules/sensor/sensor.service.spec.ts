@@ -117,6 +117,26 @@ describe('SensorService', () => {
       expect(result).not.toBeNull();
       expect(result!.speedAvg).toBeCloseTo(19.5, 0);
     });
+
+    it('should infer gravel surface from high-frequency rough vibration', () => {
+      const readings: SensorReadingDto[] = Array.from(
+        { length: 50 },
+        (_, i) => ({
+          t: Date.now() + i * 20,
+          ax: i % 2 === 0 ? 4.5 : -4.5,
+          ay: 0.2,
+          az: 9.81 + (i % 2 === 0 ? 3.8 : -3.8),
+          lat: 49.1,
+          lng: 16.75,
+          speed: 15,
+        }),
+      );
+
+      const result = service.processSegment(readings);
+
+      expect(result).not.toBeNull();
+      expect(result!.surfaceType).toBe('gravel');
+    });
   });
 
   describe('groupIntoSegments', () => {
@@ -280,6 +300,37 @@ describe('SensorService', () => {
       // speed_at_reading should be null, not 0
       const createArg = (readingRepo.create as jest.Mock).mock.calls[0][0];
       expect(createArg.speed_at_reading).toBeNull();
+    });
+
+    it('refreshes the matched road segment with recency-weighted multi-rider aggregation', async () => {
+      const dto = {
+        ride_id: 'ride-1',
+        readings: Array.from({ length: 20 }, (_, i) => ({
+          t: Date.now() + i * 20,
+          ax: 0.1,
+          ay: 0.2,
+          az: 9.8,
+          lat: 49.1 + i * 0.00001,
+          lng: 16.75,
+          speed: 15,
+        })),
+      };
+
+      await service.processUpload('user-1', dto);
+
+      const aggregateCall = (segmentRepo.query as jest.Mock).mock.calls.find(
+        ([sql]) => typeof sql === 'string' && sql.includes('weighted_readings'),
+      );
+      expect(aggregateCall).toBeDefined();
+      expect(aggregateCall![0]).toContain('COUNT(DISTINCT user_id)');
+      expect(aggregateCall![0]).toContain("INTERVAL '30 days'");
+      expect(aggregateCall![0]).toContain("INTERVAL '90 days'");
+      expect(aggregateCall![0]).toContain("INTERVAL '180 days'");
+      expect(aggregateCall![0]).toContain('unique_rider_count >= 5');
+      expect(aggregateCall![1]).toEqual(['segment-1']);
+
+      const createArg = (readingRepo.create as jest.Mock).mock.calls[0][0];
+      expect(createArg.surface_type).toBe('asphalt');
     });
   });
 

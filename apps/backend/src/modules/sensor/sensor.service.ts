@@ -29,6 +29,7 @@ const QUALITY_THRESHOLDS: Array<{
 interface ProcessedSegment {
   rms: number;
   classification: string;
+  surfaceType: string;
   lat: number;
   lng: number;
   speedAvg: number | null;
@@ -87,6 +88,7 @@ export class SensorService {
         user_id: userId,
         iri_value: segment.rms,
         classification: segment.classification,
+        surface_type: segment.surfaceType,
         vibration_rms: segment.rms,
         speed_at_reading:
           segment.speedAvg !== null ? segment.speedAvg * 3.6 : null,
@@ -95,6 +97,7 @@ export class SensorService {
       });
 
       await this.readingRepo.save(reading);
+      await this.refreshRoadSegmentAggregate(roadSegmentId);
       segmentsUpdated++;
     }
 
@@ -167,6 +170,7 @@ export class SensorService {
     );
 
     const { classification } = classify(rms);
+    const surfaceType = inferSurfaceType(deviations, rms);
 
     // Use centroid GPS position
     const gpsReadings = readings.filter(
@@ -186,6 +190,7 @@ export class SensorService {
     return {
       rms,
       classification,
+      surfaceType,
       lat: midpoint.lat!,
       lng: midpoint.lng!,
       speedAvg,
@@ -220,6 +225,67 @@ export class SensorService {
     const result = rows as Array<{ id: string }>;
     return result.length > 0 ? result[0].id : null;
   }
+
+  private async refreshRoadSegmentAggregate(
+    roadSegmentId: string,
+  ): Promise<void> {
+    await this.segmentRepo.query(
+      `WITH weighted_readings AS (
+         SELECT
+           CASE classification
+             WHEN 'excellent' THEN 5.0
+             WHEN 'good' THEN 4.0
+             WHEN 'fair' THEN 3.0
+             WHEN 'poor' THEN 2.0
+             WHEN 'very_poor' THEN 1.0
+           END AS quality_score,
+           CASE
+             WHEN recorded_at >= NOW() - INTERVAL '30 days' THEN 1.0
+             WHEN recorded_at >= NOW() - INTERVAL '90 days' THEN 0.7
+             WHEN recorded_at >= NOW() - INTERVAL '180 days' THEN 0.4
+             ELSE 0.2
+           END AS recency_weight,
+           surface_type,
+           user_id,
+           recorded_at
+         FROM surface_readings
+         WHERE road_segment_id = $1
+       ),
+       reading_stats AS (
+         SELECT
+           SUM(quality_score * recency_weight) / NULLIF(SUM(recency_weight), 0) AS quality_score,
+           COUNT(*)::int AS reading_count,
+           COUNT(DISTINCT user_id)::int AS unique_rider_count
+         FROM weighted_readings
+         WHERE quality_score IS NOT NULL
+       ),
+       surface_mode AS (
+         SELECT surface_type
+         FROM weighted_readings
+         WHERE surface_type IS NOT NULL
+         GROUP BY surface_type
+         ORDER BY COUNT(*) DESC, MAX(recorded_at) DESC, surface_type ASC
+         LIMIT 1
+       )
+       UPDATE road_segments rs
+       SET
+         quality_score = stats.quality_score,
+         reading_count = stats.reading_count,
+         confidence = CASE
+           WHEN stats.reading_count >= 20 AND stats.unique_rider_count >= 5 THEN 100
+           WHEN stats.reading_count >= 10 THEN 90
+           WHEN stats.reading_count >= 5 THEN 70
+           WHEN stats.reading_count >= 3 THEN 50
+           WHEN stats.reading_count >= 1 THEN 20
+           ELSE 0
+         END,
+         surface_type = COALESCE((SELECT surface_type FROM surface_mode), rs.surface_type),
+         last_updated = NOW()
+       FROM reading_stats stats
+       WHERE rs.id = $1`,
+      [roadSegmentId],
+    );
+  }
 }
 
 /** Classify road quality based on RMS vibration */
@@ -233,4 +299,29 @@ function classify(rms: number): { classification: string; score: number } {
     }
   }
   return { classification: 'very_poor', score: 1 };
+}
+
+function inferSurfaceType(deviations: number[], rms: number): string {
+  if (deviations.length === 0) return 'unknown';
+
+  const mean =
+    deviations.reduce((sum, value) => sum + value, 0) / deviations.length;
+  let zeroCrossings = 0;
+  for (let i = 1; i < deviations.length; i++) {
+    if ((deviations[i] - mean) * (deviations[i - 1] - mean) < 0) {
+      zeroCrossings++;
+    }
+  }
+
+  const zeroCrossingRate = zeroCrossings / deviations.length;
+  const peak = Math.max(...deviations);
+  const crestFactor = rms > 0 ? peak / rms : 0;
+
+  if (zeroCrossingRate > 0.4 && rms > 3.0) {
+    return 'gravel';
+  }
+  if (crestFactor > 5.0) {
+    return 'cobblestone';
+  }
+  return 'asphalt';
 }
