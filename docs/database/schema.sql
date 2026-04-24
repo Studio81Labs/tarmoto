@@ -189,11 +189,13 @@ CREATE TABLE trips (
     min_quality     FLOAT DEFAULT 3.0,
     road_preference VARCHAR(30) DEFAULT 'curvy', -- curvy, scenic, fast, mixed
     status          VARCHAR(20) DEFAULT 'draft', -- draft, planned, active, completed
+    invite_code     VARCHAR(12) NOT NULL,        -- short uppercase code for collaborator joins
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_trips_owner ON trips(owner_id);
+CREATE UNIQUE INDEX idx_trips_invite_code ON trips(invite_code);
 
 CREATE TABLE trip_members (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
