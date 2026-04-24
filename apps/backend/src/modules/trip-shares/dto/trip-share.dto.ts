@@ -23,9 +23,15 @@ class SnapshotSizeConstraint implements ValidatorConstraintInterface {
   validate(value: unknown): boolean {
     if (typeof value !== 'object' || value === null) return false;
     try {
-      // Serialised length is what we actually persist; measuring object
-      // shape is misleading once JSONB enters the picture.
-      return JSON.stringify(value).length <= MAX_TRIP_SNAPSHOT_BYTES;
+      // Measure UTF-8 byte length, not `.length` (UTF-16 code units). JSONB
+      // storage is byte-oriented, and a string's code-unit count undercounts
+      // non-ASCII content by up to 3× (a CJK character is one code unit but
+      // three UTF-8 bytes), which would let snapshots well over the cap
+      // slip through.
+      return (
+        Buffer.byteLength(JSON.stringify(value), 'utf8') <=
+        MAX_TRIP_SNAPSHOT_BYTES
+      );
     } catch {
       return false;
     }
