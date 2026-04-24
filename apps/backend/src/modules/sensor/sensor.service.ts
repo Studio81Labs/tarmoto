@@ -29,6 +29,7 @@ const QUALITY_THRESHOLDS: Array<{
 interface ProcessedSegment {
   rms: number;
   classification: string;
+  surfaceType: string | null;
   lat: number;
   lng: number;
   speedAvg: number | null;
@@ -87,6 +88,7 @@ export class SensorService {
         user_id: userId,
         iri_value: segment.rms,
         classification: segment.classification,
+        surface_type: segment.surfaceType,
         vibration_rms: segment.rms,
         speed_at_reading:
           segment.speedAvg !== null ? segment.speedAvg * 3.6 : null,
@@ -167,6 +169,7 @@ export class SensorService {
     );
 
     const { classification } = classify(rms);
+    const surfaceType = inferSurfaceType(deviations, rms);
 
     // Use centroid GPS position
     const gpsReadings = readings.filter(
@@ -186,6 +189,7 @@ export class SensorService {
     return {
       rms,
       classification,
+      surfaceType,
       lat: midpoint.lat!,
       lng: midpoint.lng!,
       speedAvg,
@@ -233,4 +237,29 @@ function classify(rms: number): { classification: string; score: number } {
     }
   }
   return { classification: 'very_poor', score: 1 };
+}
+
+function inferSurfaceType(deviations: number[], rms: number): string | null {
+  if (deviations.length === 0) return null;
+
+  const mean =
+    deviations.reduce((sum, value) => sum + value, 0) / deviations.length;
+  let zeroCrossings = 0;
+  for (let i = 1; i < deviations.length; i++) {
+    if ((deviations[i] - mean) * (deviations[i - 1] - mean) < 0) {
+      zeroCrossings++;
+    }
+  }
+
+  const zeroCrossingRate = zeroCrossings / deviations.length;
+  const peak = Math.max(...deviations);
+  const crestFactor = rms > 0 ? peak / rms : 0;
+
+  if (zeroCrossingRate > 0.4 && rms > 3.0) {
+    return 'gravel';
+  }
+  if (crestFactor > 5.0 && rms > 3.0) {
+    return 'cobblestone';
+  }
+  return null;
 }
