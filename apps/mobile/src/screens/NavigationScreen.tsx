@@ -34,9 +34,9 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import {
   Camera,
-  LineLayer,
-  MapView,
-  ShapeSource,
+  GeoJSONSource,
+  Layer,
+  Map,
   UserLocation,
 } from "@maplibre/maplibre-react-native";
 import {
@@ -217,25 +217,26 @@ export default function NavigationScreen() {
 
   return (
     <View style={styles.container}>
-      <MapView
+      <Map
         style={styles.map}
         mapStyle={DEV_MAP_STYLE_URL}
-        attributionEnabled={false}
-        logoEnabled={false}
+        attribution={false}
+        logo={false}
       >
         <Camera
-          defaultSettings={{
-            centerCoordinate: [startCenter.lng, startCenter.lat],
-            zoomLevel: 14,
+          initialViewState={{
+            center: [startCenter.lng, startCenter.lat],
+            zoom: 14,
           }}
-          followUserLocation
-          followZoomLevel={16}
+          trackUserLocation="course"
+          zoom={16}
         />
         <UserLocation animated />
-        <ShapeSource id="nav-route" shape={routeShape}>
-          <LineLayer
+        <GeoJSONSource id="nav-route" data={routeShape}>
+          <Layer
+            type="line"
             id="nav-route-line"
-            sourceID="nav-route"
+            source="nav-route"
             style={{
               lineColor: colors.primary,
               lineWidth: 6,
@@ -244,8 +245,8 @@ export default function NavigationScreen() {
               lineOpacity: offRoute ? 0.4 : 0.9,
             }}
           />
-        </ShapeSource>
-      </MapView>
+        </GeoJSONSource>
+      </Map>
 
       <View pointerEvents="box-none" style={styles.topOverlay}>
         {offRoute ? (
