@@ -94,6 +94,17 @@ export function rebuildPlannerDay(
   }
 
   const routePoints = buildRoutePoints(routeWaypoints, parameters);
+  if (routePoints.length < 2) {
+    return {
+      ...day,
+      routeGeometry: undefined,
+      distanceKm: 0,
+      durationMinutes: 0,
+      elevationGain: 0,
+      avgQuality: 0,
+      segments: [],
+    };
+  }
   const routeGeometry: GeoJSON.LineString = {
     type: "LineString",
     coordinates: routePoints,

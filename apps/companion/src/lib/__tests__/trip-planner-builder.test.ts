@@ -169,4 +169,41 @@ describe("rebuildPlannerDay", () => {
       14.58, 50.22,
     ]);
   });
+
+  it("drops invalid preview geometry when routing anchors collapse to one point", () => {
+    const rebuilt = rebuildPlannerDay(
+      {
+        dayNumber: 1,
+        title: "Collapsed anchors",
+        distanceKm: 0,
+        durationMinutes: 0,
+        elevationGain: 0,
+        avgQuality: 0,
+        segments: [],
+        waypoints: [
+          {
+            id: "start",
+            name: "Start",
+            location: { lng: 14.41, lat: 50.08 },
+            type: "start",
+          },
+          {
+            id: "end",
+            name: "End",
+            location: { lng: 14.41, lat: 50.08 },
+            type: "end",
+          },
+        ],
+      },
+      {
+        ...BASE_PARAMETERS,
+        roadPreference: "direct",
+      },
+    );
+
+    expect(rebuilt.routeGeometry).toBeUndefined();
+    expect(rebuilt.distanceKm).toBe(0);
+    expect(rebuilt.durationMinutes).toBe(0);
+    expect(rebuilt.segments).toEqual([]);
+  });
 });

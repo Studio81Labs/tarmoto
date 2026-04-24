@@ -1,6 +1,6 @@
 import type { Waypoint } from "./types";
 
-export const ROUTING_WAYPOINT_TYPES = [
+const ROUTING_WAYPOINT_TYPES = [
   "start",
   "via",
   "end",
@@ -10,7 +10,7 @@ const ROUTING_WAYPOINT_TYPE_SET: ReadonlySet<Waypoint["type"]> = new Set(
   ROUTING_WAYPOINT_TYPES,
 );
 
-export function isRoutingWaypoint(waypoint: Pick<Waypoint, "type">): boolean {
+function isRoutingWaypoint(waypoint: Pick<Waypoint, "type">): boolean {
   return ROUTING_WAYPOINT_TYPE_SET.has(waypoint.type);
 }
 
