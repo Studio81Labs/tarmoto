@@ -258,7 +258,7 @@ function inferSurfaceType(deviations: number[], rms: number): string | null {
   if (zeroCrossingRate > 0.4 && rms > 3.0) {
     return 'gravel';
   }
-  if (crestFactor > 5.0) {
+  if (crestFactor > 5.0 && rms > 3.0) {
     return 'cobblestone';
   }
   return null;

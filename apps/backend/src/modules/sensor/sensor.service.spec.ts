@@ -157,6 +157,26 @@ describe('SensorService', () => {
       expect(result).not.toBeNull();
       expect(result!.surfaceType).toBeNull();
     });
+
+    it('should ignore isolated spikes when surface vibration is otherwise low', () => {
+      const readings: SensorReadingDto[] = Array.from(
+        { length: 50 },
+        (_, i) => ({
+          t: Date.now() + i * 20,
+          ax: i === 25 ? 20 : 0.1,
+          ay: 0.2,
+          az: 9.8,
+          lat: 49.1,
+          lng: 16.75,
+          speed: 15,
+        }),
+      );
+
+      const result = service.processSegment(readings);
+
+      expect(result).not.toBeNull();
+      expect(result!.surfaceType).toBeNull();
+    });
   });
 
   describe('groupIntoSegments', () => {
