@@ -14,6 +14,7 @@ import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
 import { TripSuggestionVote } from '../../entities/trip-suggestion-vote.entity.js';
 import { TripMessage } from '../../entities/trip-message.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
+import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { EventsGateway } from '../events/events.gateway.js';
 
 const TRIP_ID = '11111111-1111-1111-1111-111111111111';
@@ -21,6 +22,7 @@ const DAY_ID = '22222222-2222-2222-2222-222222222222';
 const USER_ID = '00000000-0000-0000-0000-000000000001';
 const OTHER_ID = '00000000-0000-0000-0000-000000000002';
 const SUGGESTION_ID = '33333333-3333-3333-3333-333333333333';
+const SEGMENT_ID = '55555555-5555-5555-5555-555555555555';
 const NOW = new Date('2026-04-24T10:00:00Z');
 
 function makeMembership(role: string, userId = USER_ID): TripMember {
@@ -61,6 +63,7 @@ describe('TripCollabService', () => {
   let voteRepo: jest.Mocked<Repository<TripSuggestionVote>>;
   let messageRepo: jest.Mocked<Repository<TripMessage>>;
   let dayRepo: jest.Mocked<Repository<TripDay>>;
+  let roadSegmentRepo: jest.Mocked<Repository<RoadSegment>>;
   let events: jest.Mocked<Pick<EventsGateway, 'emitToTrip'>>;
 
   beforeEach(async () => {
@@ -124,6 +127,10 @@ describe('TripCollabService', () => {
       findOne: jest.fn(),
     } as unknown as jest.Mocked<Repository<TripDay>>;
 
+    roadSegmentRepo = {
+      findOne: jest.fn(),
+    } as unknown as jest.Mocked<Repository<RoadSegment>>;
+
     events = { emitToTrip: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -140,6 +147,10 @@ describe('TripCollabService', () => {
         },
         { provide: getRepositoryToken(TripMessage), useValue: messageRepo },
         { provide: getRepositoryToken(TripDay), useValue: dayRepo },
+        {
+          provide: getRepositoryToken(RoadSegment),
+          useValue: roadSegmentRepo,
+        },
         { provide: EventsGateway, useValue: events },
       ],
     }).compile();
@@ -255,6 +266,36 @@ describe('TripCollabService', () => {
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(suggestionRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('rejects a non-existent road_segment_id with a 400 instead of letting the FK 23503 bubble as a 500', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
+      roadSegmentRepo.findOne.mockResolvedValueOnce(null);
+
+      await expect(
+        service.createSuggestion(USER_ID, TRIP_ID, {
+          title: 'Bad segment',
+          road_segment_id: SEGMENT_ID,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(suggestionRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('accepts a road_segment_id that exists', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(makeMembership('member'));
+      roadSegmentRepo.findOne.mockResolvedValueOnce({
+        id: SEGMENT_ID,
+      } as RoadSegment);
+      suggestionRepo.findOne.mockResolvedValueOnce(
+        makeSuggestion({ road_segment_id: SEGMENT_ID }),
+      );
+
+      const result = await service.createSuggestion(USER_ID, TRIP_ID, {
+        title: 'Good segment',
+        road_segment_id: SEGMENT_ID,
+      });
+
+      expect(result.road_segment_id).toBe(SEGMENT_ID);
     });
 
     it('accepts a trip_day_id that belongs to the same trip', async () => {

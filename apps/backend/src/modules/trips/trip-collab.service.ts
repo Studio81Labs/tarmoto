@@ -11,6 +11,7 @@ import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
 import { TripSuggestionVote } from '../../entities/trip-suggestion-vote.entity.js';
 import { TripMessage } from '../../entities/trip-message.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
+import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { EventsGateway } from '../events/events.gateway.js';
 import { CreateSuggestionDto } from './dto/create-suggestion.dto.js';
 import { SuggestionDto } from './dto/suggestion-response.dto.js';
@@ -51,6 +52,8 @@ export class TripCollabService {
     private readonly messageRepo: Repository<TripMessage>,
     @InjectRepository(TripDay)
     private readonly dayRepo: Repository<TripDay>,
+    @InjectRepository(RoadSegment)
+    private readonly roadSegmentRepo: Repository<RoadSegment>,
     private readonly events: EventsGateway,
   ) {}
 
@@ -114,6 +117,19 @@ export class TripCollabService {
       });
       if (!day)
         throw new BadRequestException('trip_day_id is not a day of this trip');
+    }
+
+    if (dto.road_segment_id) {
+      // Mirror the trip_day_id check: validate the FK exists up front so
+      // a typo'd id surfaces as a 400 instead of a 500 from the DB's
+      // foreign-key constraint bubbling up as a \`23503\`. Existence-only
+      // check — any road segment is globally referenceable.
+      const segment = await this.roadSegmentRepo.findOne({
+        where: { id: dto.road_segment_id },
+        select: { id: true },
+      });
+      if (!segment)
+        throw new BadRequestException('road_segment_id does not exist');
     }
 
     const location =

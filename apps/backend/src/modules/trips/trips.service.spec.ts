@@ -599,6 +599,54 @@ describe('TripsService', () => {
 
       expect(tripRepo.update).toHaveBeenCalled();
     });
+
+    it('writes ONLY the supplied delta — untouched fields are not clobbered by concurrent PATCHes', async () => {
+      // Without this guarantee, two privileged members PATCHing
+      // different fields concurrently would each read the same pre-image
+      // and each rewrite the untouched fields to their read-time values,
+      // so the loser of the race would lose their co-planner's change.
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
+      mockGetDetailReturns(makeOwnedTrip({ title: 'Renamed' }));
+
+      await service.update(OWNER_ID, TRIP_ID, { title: 'Renamed' });
+
+      expect(tripRepo.update).toHaveBeenCalledWith(
+        { id: TRIP_ID },
+        { title: 'Renamed' },
+      );
+      // Crucially: region, num_days, status, etc. are NOT present.
+      const [, delta] = tripRepo.update.mock.calls[0];
+      expect(Object.keys(delta as object)).toEqual(['title']);
+    });
+
+    it('skips the UPDATE call entirely when the DTO carries no fields', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
+      mockGetDetailReturns(makeOwnedTrip());
+
+      await service.update(OWNER_ID, TRIP_ID, {});
+
+      expect(tripRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('validates min/max against current row when only one side is supplied', async () => {
+      // Pre-patch: (150, 350). Supply only min=500 → effective max is
+      // still 350 from the current row, so the pair is invalid.
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
+
+      await expect(
+        service.update(OWNER_ID, TRIP_ID, { daily_km_min: 500 }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(tripRepo.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('detail mapping', () => {

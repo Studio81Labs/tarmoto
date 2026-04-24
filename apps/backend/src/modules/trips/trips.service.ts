@@ -152,40 +152,40 @@ export class TripsService {
     const trip = await this.tripRepo.findOne({ where: { id: tripId } });
     if (!trip) throw new NotFoundException('Trip not found');
 
-    const next = { ...trip };
-    if (dto.title !== undefined) next.title = dto.title;
-    if (dto.region !== undefined) next.region = dto.region ?? null;
-    if (dto.num_days !== undefined) next.num_days = dto.num_days;
-    if (dto.daily_km_min !== undefined) next.daily_km_min = dto.daily_km_min;
-    if (dto.daily_km_max !== undefined) next.daily_km_max = dto.daily_km_max;
-    if (dto.min_quality !== undefined) next.min_quality = dto.min_quality;
-    if (dto.road_preference !== undefined) {
-      next.road_preference = dto.road_preference;
-    }
-    if (dto.status !== undefined) next.status = dto.status;
-
-    // Validate against the EFFECTIVE post-patch row so a partial update
-    // can't land an inconsistent (min > max) pairing even if each field
-    // passed isolated DTO validation. Same policy as `create`.
-    if (next.daily_km_min > next.daily_km_max) {
+    // Build the effective (min, max) pair from the supplied delta falling
+    // back to the current row, so cross-field validation still runs on a
+    // partial patch. We only use `trip` for VALIDATION here — the UPDATE
+    // below carries just the supplied delta so two concurrent PATCHes of
+    // different fields don't clobber each other's untouched values.
+    const effectiveMin = dto.daily_km_min ?? trip.daily_km_min;
+    const effectiveMax = dto.daily_km_max ?? trip.daily_km_max;
+    if (effectiveMin > effectiveMax) {
       throw new BadRequestException(
         'daily_km_min must be less than or equal to daily_km_max',
       );
     }
 
-    await this.tripRepo.update(
-      { id: tripId },
-      {
-        title: next.title,
-        region: next.region,
-        num_days: next.num_days,
-        daily_km_min: next.daily_km_min,
-        daily_km_max: next.daily_km_max,
-        min_quality: next.min_quality,
-        road_preference: next.road_preference,
-        status: next.status,
-      },
-    );
+    // Supplied-fields-only delta. Writing the full merged row would
+    // quietly revert concurrent edits: two privileged members PATCHing
+    // different fields could both read the same pre-image and each
+    // rewrite the untouched fields to their read-time values, so the
+    // loser of the race loses their co-planner's change even though the
+    // two updates don't actually conflict.
+    const delta: Record<string, unknown> = {};
+    if (dto.title !== undefined) delta.title = dto.title;
+    if (dto.region !== undefined) delta.region = dto.region ?? null;
+    if (dto.num_days !== undefined) delta.num_days = dto.num_days;
+    if (dto.daily_km_min !== undefined) delta.daily_km_min = dto.daily_km_min;
+    if (dto.daily_km_max !== undefined) delta.daily_km_max = dto.daily_km_max;
+    if (dto.min_quality !== undefined) delta.min_quality = dto.min_quality;
+    if (dto.road_preference !== undefined) {
+      delta.road_preference = dto.road_preference;
+    }
+    if (dto.status !== undefined) delta.status = dto.status;
+
+    if (Object.keys(delta).length > 0) {
+      await this.tripRepo.update({ id: tripId }, delta);
+    }
 
     const detail = await this.getDetail(userId, tripId);
     this.events.emitToTrip(tripId, 'trip:updated', detail);
