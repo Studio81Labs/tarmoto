@@ -111,32 +111,9 @@ export class TripSharePublicDto {
   updated_at!: string;
 }
 
-export class TripShareListItemDto {
-  @ApiProperty()
-  id!: string;
-
-  @ApiProperty()
-  share_token!: string;
-
-  @ApiProperty()
-  share_url!: string;
-
-  @ApiProperty()
-  title!: string;
-
-  @ApiProperty()
-  view_count!: number;
-
-  @ApiProperty()
-  created_at!: string;
-
-  @ApiProperty()
-  updated_at!: string;
-}
-
 export class TripShareListResponseDto {
-  @ApiProperty({ type: [TripShareListItemDto] })
-  items!: TripShareListItemDto[];
+  @ApiProperty({ type: [TripShareResponseDto] })
+  items!: TripShareResponseDto[];
 
   @ApiProperty()
   total!: number;

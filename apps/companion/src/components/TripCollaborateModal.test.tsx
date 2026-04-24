@@ -123,4 +123,90 @@ describe("TripCollaborateModal", () => {
 
     expect(handleClose).toHaveBeenCalled();
   });
+
+  it("does not leak a previous session's error when reopened", async () => {
+    hoisted.create.mockRejectedValueOnce(new Error("Network unavailable"));
+
+    const { rerender } = render(
+      <TripCollaborateModal open trip={minimalTrip} onClose={() => {}} />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /create invite link/i }),
+    );
+
+    expect(await screen.findByText(/network unavailable/i)).toBeInTheDocument();
+
+    // Close, then reopen — the previous session's error must not reappear.
+    rerender(
+      <TripCollaborateModal
+        open={false}
+        trip={minimalTrip}
+        onClose={() => {}}
+      />,
+    );
+    rerender(
+      <TripCollaborateModal open trip={minimalTrip} onClose={() => {}} />,
+    );
+
+    expect(screen.queryByText(/network unavailable/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /create invite link/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("drops a stale create result when the modal has been closed mid-fetch", async () => {
+    let resolveCreate: ((value: unknown) => void) | undefined;
+    hoisted.create.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveCreate = resolve;
+        }),
+    );
+
+    const { rerender } = render(
+      <TripCollaborateModal open trip={minimalTrip} onClose={() => {}} />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /create invite link/i }),
+    );
+
+    // Close the modal while the create call is still pending.
+    rerender(
+      <TripCollaborateModal
+        open={false}
+        trip={minimalTrip}
+        onClose={() => {}}
+      />,
+    );
+
+    // Now the request resolves — its result should be ignored because the
+    // session was closed.
+    resolveCreate!({
+      data: {
+        id: "share-stale",
+        share_token: "b".repeat(32),
+        share_url: `/trips/shared/${"b".repeat(32)}`,
+        title: "Pyrenees Loop",
+        view_count: 0,
+        created_at: "2026-04-20T10:00:00.000Z",
+        updated_at: "2026-04-20T10:00:00.000Z",
+      },
+    });
+
+    // Reopen — the stale share token must not have leaked into the UI.
+    rerender(
+      <TripCollaborateModal open trip={minimalTrip} onClose={() => {}} />,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /create invite link/i }),
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByLabelText(/shareable invite url/i),
+    ).not.toBeInTheDocument();
+  });
 });

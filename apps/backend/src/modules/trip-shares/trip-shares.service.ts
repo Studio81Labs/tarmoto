@@ -9,7 +9,6 @@ import { Repository } from 'typeorm';
 import { TripShare } from '../../entities/trip-share.entity.js';
 import {
   CreateTripShareDto,
-  TripShareListItemDto,
   TripShareListResponseDto,
   TripSharePublicDto,
   TripShareResponseDto,
@@ -62,7 +61,7 @@ export class TripSharesService {
       order: { created_at: 'DESC' },
     });
     return {
-      items: rows.map((row) => this.toListItem(row)),
+      items: rows.map((row) => this.toOwnerResponse(row)),
       total,
     };
   }
@@ -81,18 +80,6 @@ export class TripSharesService {
   }
 
   private toOwnerResponse(share: TripShare): TripShareResponseDto {
-    return {
-      id: share.id,
-      share_token: share.share_token,
-      share_url: this.buildShareUrl(share.share_token),
-      title: share.title,
-      view_count: share.view_count ?? 0,
-      created_at: share.created_at.toISOString(),
-      updated_at: share.updated_at.toISOString(),
-    };
-  }
-
-  private toListItem(share: TripShare): TripShareListItemDto {
     return {
       id: share.id,
       share_token: share.share_token,

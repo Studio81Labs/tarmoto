@@ -28,14 +28,24 @@ export function TripCollaborateModal({
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  // Incremented on every open/close transition so an in-flight `handleGenerate`
+  // started in one session can detect it's been superseded and drop its result
+  // instead of writing into the next session's state.
+  const sessionRef = useRef(0);
 
   useEffect(() => {
-    if (!open) {
-      setShare(null);
-      setError(null);
-      setCopied(false);
-      return;
-    }
+    // Reset on BOTH open and close so a stale error or share URL from a
+    // previous session can't reappear when the modal is reopened. Closing
+    // while a request is in flight can't be interrupted mid-fetch, so we
+    // bump `sessionRef` to tag the pending result as stale.
+    sessionRef.current += 1;
+    setShare(null);
+    setError(null);
+    setCopied(false);
+    setLoading(false);
+
+    if (!open) return;
+
     function handleKey(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
     }
@@ -51,6 +61,7 @@ export function TripCollaborateModal({
 
   const handleGenerate = useCallback(async () => {
     if (!trip) return;
+    const session = sessionRef.current;
     setLoading(true);
     setError(null);
     try {
@@ -58,8 +69,10 @@ export function TripCollaborateModal({
         title: trip.name || "Untitled trip",
         snapshot: trip as unknown as Record<string, unknown>,
       });
+      if (session !== sessionRef.current) return;
       setShare(data);
     } catch (err) {
+      if (session !== sessionRef.current) return;
       // ApiError exposes status/body; anything else is already a plain Error
       // message we can show.
       const message =
@@ -70,7 +83,7 @@ export function TripCollaborateModal({
             : "Unknown error";
       setError(message);
     } finally {
-      setLoading(false);
+      if (session === sessionRef.current) setLoading(false);
     }
   }, [trip]);
 
