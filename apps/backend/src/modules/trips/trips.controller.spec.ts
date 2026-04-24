@@ -37,6 +37,7 @@ describe('TripsController', () => {
       create: jest.fn().mockResolvedValue(mockDetail),
       getDetail: jest.fn().mockResolvedValue(mockDetail),
       join: jest.fn().mockResolvedValue(mockDetail),
+      update: jest.fn().mockResolvedValue(mockDetail),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -75,6 +76,13 @@ describe('TripsController', () => {
       invite_code: 'ABCDEFGH',
     });
     expect(service.join).toHaveBeenCalledWith('user-1', 'trip-1', 'ABCDEFGH');
+    expect(result.id).toBe('trip-1');
+  });
+
+  it('PATCH /trips/:tripId forwards the update DTO to the service', async () => {
+    const dto = { title: 'Renamed' };
+    const result = await controller.update(mockReq, 'trip-1', dto);
+    expect(service.update).toHaveBeenCalledWith('user-1', 'trip-1', dto);
     expect(result.id).toBe('trip-1');
   });
 });

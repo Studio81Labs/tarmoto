@@ -12,6 +12,7 @@ import { Repository } from 'typeorm';
 import { TripsService } from './trips.service.js';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
+import { EventsGateway } from '../events/events.gateway.js';
 
 const OWNER_ID = '00000000-0000-0000-0000-000000000001';
 const OTHER_ID = '00000000-0000-0000-0000-000000000002';
@@ -115,6 +116,7 @@ describe('TripsService', () => {
   // / `mockRejectedValue` on a properly-typed `jest.Mock` without lint
   // tripping on the deeply-nested mock cast on `tripRepo.manager.*`.
   let transactionMock: jest.Mock;
+  let events: jest.Mocked<Pick<EventsGateway, 'emitToTrip'>>;
 
   beforeEach(async () => {
     // The transactional `create` flow calls `tripRepo.manager.transaction`
@@ -158,6 +160,7 @@ describe('TripsService', () => {
         }),
       ),
       findOne: jest.fn().mockResolvedValue(null),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
       createQueryBuilder: jest.fn().mockReturnValue(makeQbMock()),
     } as unknown as jest.Mocked<Repository<Trip>>;
 
@@ -173,11 +176,14 @@ describe('TripsService', () => {
       findOne: jest.fn().mockResolvedValue(null),
     } as unknown as jest.Mocked<Repository<TripMember>>;
 
+    events = { emitToTrip: jest.fn() };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TripsService,
         { provide: getRepositoryToken(Trip), useValue: tripRepo },
         { provide: getRepositoryToken(TripMember), useValue: memberRepo },
+        { provide: EventsGateway, useValue: events },
       ],
     }).compile();
 
@@ -523,6 +529,75 @@ describe('TripsService', () => {
       await expect(service.join(OTHER_ID, TRIP_ID, 'ABCDEFGH')).rejects.toThrow(
         'boom',
       );
+    });
+  });
+
+  describe('update', () => {
+    it('applies partial updates, fires trip:updated, and returns the detail', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
+      mockGetDetailReturns(makeOwnedTrip({ title: 'Renamed' }));
+
+      const result = await service.update(OWNER_ID, TRIP_ID, {
+        title: 'Renamed',
+      });
+
+      expect(tripRepo.update).toHaveBeenCalledWith(
+        { id: TRIP_ID },
+        expect.objectContaining({ title: 'Renamed' }),
+      );
+      expect(events.emitToTrip).toHaveBeenCalledWith(
+        TRIP_ID,
+        'trip:updated',
+        expect.objectContaining({ id: TRIP_ID }),
+      );
+      expect(result.title).toBe('Renamed');
+    });
+
+    it('404s a non-member instead of leaking field-level validation', async () => {
+      memberRepo.findOne.mockResolvedValueOnce(null);
+
+      await expect(
+        service.update(OTHER_ID, TRIP_ID, { title: 'x' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(tripRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('404s a plain member who is not owner/admin', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'member',
+      } as TripMember);
+
+      await expect(
+        service.update(OTHER_ID, TRIP_ID, { title: 'x' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(tripRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects a partial patch that lands an invalid (min > max) pairing', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip()); // current 150/350
+
+      await expect(
+        service.update(OWNER_ID, TRIP_ID, { daily_km_min: 500 }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(tripRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('allows admins to mutate trip metadata', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'admin',
+      } as TripMember);
+      tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip());
+      mockGetDetailReturns(makeOwnedTrip({ status: 'planned' }));
+
+      await service.update(OTHER_ID, TRIP_ID, { status: 'planned' });
+
+      expect(tripRepo.update).toHaveBeenCalled();
     });
   });
 

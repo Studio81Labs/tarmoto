@@ -10,8 +10,10 @@ import { Repository } from 'typeorm';
 import { pointToLatLng } from '@tarmoto/shared';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
+import { EventsGateway } from '../events/events.gateway.js';
 import { CreateTripDto } from './dto/create-trip.dto.js';
 import { ListTripsDto } from './dto/list-trips.dto.js';
+import { UpdateTripDto } from './dto/update-trip.dto.js';
 import {
   TripDayDto,
   TripDetailDto,
@@ -36,6 +38,10 @@ const DEFAULT_DAILY_KM_MAX = 350;
 const DEFAULT_MIN_QUALITY = 3.0;
 const DEFAULT_ROAD_PREFERENCE = 'curvy';
 
+// Roles allowed to mutate trip-wide metadata. Keeping this in one place
+// so role checks stay consistent if we ever grow the role vocabulary.
+const PRIVILEGED_ROLES = new Set(['owner', 'admin']);
+
 @Injectable()
 export class TripsService {
   constructor(
@@ -43,6 +49,7 @@ export class TripsService {
     private readonly tripRepo: Repository<Trip>,
     @InjectRepository(TripMember)
     private readonly memberRepo: Repository<TripMember>,
+    private readonly events: EventsGateway,
   ) {}
 
   async create(userId: string, dto: CreateTripDto): Promise<TripDetailDto> {
@@ -124,6 +131,65 @@ export class TripsService {
       `Failed to allocate a unique trip invite code after ${MAX_INVITE_ALLOCATION_ATTEMPTS} attempts` +
         (lastError instanceof Error ? `: ${lastError.message}` : ''),
     );
+  }
+
+  async update(
+    userId: string,
+    tripId: string,
+    dto: UpdateTripDto,
+  ): Promise<TripDetailDto> {
+    // Role check first so a plain member probing the PATCH surface
+    // can't confirm field-level validation rules on trips they have no
+    // right to mutate. Non-members and regular members collapse into
+    // the same 404 regardless of body shape.
+    const membership = await this.memberRepo.findOne({
+      where: { trip_id: tripId, user_id: userId },
+    });
+    if (!membership || !PRIVILEGED_ROLES.has(membership.role)) {
+      throw new NotFoundException('Trip not found');
+    }
+
+    const trip = await this.tripRepo.findOne({ where: { id: tripId } });
+    if (!trip) throw new NotFoundException('Trip not found');
+
+    const next = { ...trip };
+    if (dto.title !== undefined) next.title = dto.title;
+    if (dto.region !== undefined) next.region = dto.region ?? null;
+    if (dto.num_days !== undefined) next.num_days = dto.num_days;
+    if (dto.daily_km_min !== undefined) next.daily_km_min = dto.daily_km_min;
+    if (dto.daily_km_max !== undefined) next.daily_km_max = dto.daily_km_max;
+    if (dto.min_quality !== undefined) next.min_quality = dto.min_quality;
+    if (dto.road_preference !== undefined) {
+      next.road_preference = dto.road_preference;
+    }
+    if (dto.status !== undefined) next.status = dto.status;
+
+    // Validate against the EFFECTIVE post-patch row so a partial update
+    // can't land an inconsistent (min > max) pairing even if each field
+    // passed isolated DTO validation. Same policy as `create`.
+    if (next.daily_km_min > next.daily_km_max) {
+      throw new BadRequestException(
+        'daily_km_min must be less than or equal to daily_km_max',
+      );
+    }
+
+    await this.tripRepo.update(
+      { id: tripId },
+      {
+        title: next.title,
+        region: next.region,
+        num_days: next.num_days,
+        daily_km_min: next.daily_km_min,
+        daily_km_max: next.daily_km_max,
+        min_quality: next.min_quality,
+        road_preference: next.road_preference,
+        status: next.status,
+      },
+    );
+
+    const detail = await this.getDetail(userId, tripId);
+    this.events.emitToTrip(tripId, 'trip:updated', detail);
+    return detail;
   }
 
   async list(userId: string, query: ListTripsDto): Promise<TripSummaryDto[]> {

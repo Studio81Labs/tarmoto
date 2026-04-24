@@ -18,6 +18,7 @@ import { AddSharedRideEmbedClickCount1714500000000 } from '../../migrations/1714
 import { AddStripeBillingToUsers1714600000000 } from '../../migrations/1714600000000-AddStripeBillingToUsers.js';
 import { AddTripInviteCode1714800000000 } from '../../migrations/1714800000000-AddTripInviteCode.js';
 import { AddTripShares1714900000000 } from '../../migrations/1714900000000-AddTripShares.js';
+import { AddTripCollaboration1715000000000 } from '../../migrations/1715000000000-AddTripCollaboration.js';
 import {
   User,
   UserContact,
@@ -37,6 +38,9 @@ import {
   CommuteRoute,
   SharedRide,
   TripShare,
+  TripSuggestion,
+  TripSuggestionVote,
+  TripMessage,
   UserFollow,
   UserBadge,
   Challenge,
@@ -65,6 +69,9 @@ const entities = [
   CommuteRoute,
   SharedRide,
   TripShare,
+  TripSuggestion,
+  TripSuggestionVote,
+  TripMessage,
   UserFollow,
   UserBadge,
   Challenge,
@@ -106,6 +113,7 @@ const entities = [
             AddStripeBillingToUsers1714600000000,
             AddTripInviteCode1714800000000,
             AddTripShares1714900000000,
+            AddTripCollaboration1715000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.

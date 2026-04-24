@@ -3,12 +3,13 @@ import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { redisConfig } from '../../config/redis.config.js';
 import { Ride } from '../../entities/ride.entity.js';
+import { TripMember } from '../../entities/trip-member.entity.js';
 import { EventsGateway } from './events.gateway.js';
 
 @Module({
   imports: [
     ConfigModule.forFeature(redisConfig),
-    TypeOrmModule.forFeature([Ride]),
+    TypeOrmModule.forFeature([Ride, TripMember]),
   ],
   providers: [EventsGateway],
   exports: [EventsGateway],
