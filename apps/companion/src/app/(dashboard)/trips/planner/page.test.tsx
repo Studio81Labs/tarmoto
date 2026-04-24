@@ -506,6 +506,41 @@ describe("TripPlannerPage", () => {
     vi.useRealTimers();
   });
 
+  it("drops generated results when the active trip is edited in place before generation finishes", async () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    const editedTrip = {
+      ...importedTrip,
+      id: "best-fit",
+      updatedAt: "2026-04-23T11:00:00Z",
+      days: [
+        {
+          ...importedTrip.days[0]!,
+          title: "Edited during generation",
+        },
+      ],
+    };
+
+    storeState.activeTrip = editedTrip;
+    rerender(<TripPlannerPage />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(180);
+    });
+
+    expect(generateTripOptionsMock).toHaveBeenCalledTimes(1);
+    expect(setActiveTrip).not.toHaveBeenCalledWith(activeTrip);
+    expect(screen.queryByText("Scenic sweep")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Imported route" }),
+    ).toBeInTheDocument();
+
+    vi.useRealTimers();
+  });
+
   it("drops delayed generation callbacks after the planner unmounts", async () => {
     vi.useFakeTimers();
     const { unmount } = render(<TripPlannerPage />);

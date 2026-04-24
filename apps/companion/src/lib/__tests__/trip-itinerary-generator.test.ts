@@ -64,6 +64,23 @@ describe("trip-itinerary-generator", () => {
     expect(inferredSeedOffset).not.toBeCloseTo(-0.024, 3);
   });
 
+  it("places the generated via waypoint between the start and end for two-point template routes", () => {
+    const day = generateTripOptions(params)[0]!.trip.days[0]!;
+    const start = day.waypoints[0]!;
+    const via = day.waypoints[1]!;
+    const end = day.waypoints[2]!;
+
+    expect(via.location).not.toEqual(end.location);
+    expect(via.location.lng).toBeCloseTo(
+      (start.location.lng + end.location.lng) / 2,
+      4,
+    );
+    expect(via.location.lat).toBeCloseTo(
+      (start.location.lat + end.location.lat) / 2,
+      4,
+    );
+  });
+
   it("regenerates only the selected day while keeping the trip boundaries intact", () => {
     const trip = generateTripOptions({
       ...params,

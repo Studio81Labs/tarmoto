@@ -220,7 +220,7 @@ function buildGeneratedDay({
     id: `day-${dayNumber}-via`,
     name: `${buildTitle(template, preset, dayNumber)} midpoint`,
     type: "via",
-    coordinate: coordinates[Math.floor(coordinates.length / 2)]!,
+    coordinate: resolveViaCoordinate(coordinates),
   });
 
   const distanceKm = clamp(
@@ -418,6 +418,18 @@ function buildWaypointFromCoordinate({
       lat: coordinate[1],
     },
   };
+}
+
+function resolveViaCoordinate(coordinates: RouteCoordinate[]): RouteCoordinate {
+  if (coordinates.length <= 1) return coordinates[0] ?? [0, 0];
+  if (coordinates.length === 2) {
+    const [start, end] = coordinates;
+    return [
+      roundCoord((start![0] + end![0]) / 2),
+      roundCoord((start![1] + end![1]) / 2),
+    ];
+  }
+  return coordinates[Math.floor(coordinates.length / 2)]!;
 }
 
 function buildOvernightStop(end: Waypoint, dayNumber: number): POI {

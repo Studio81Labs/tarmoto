@@ -217,7 +217,7 @@ export default function TripPlannerPage() {
       return;
     }
     if (generationLockRef.current) return;
-    const activeTripIdAtStart = activeTrip?.id ?? null;
+    const activeTripAtStart = activeTripRef.current;
     const requestToken = requestTokenRef.current + 1;
     requestTokenRef.current = requestToken;
 
@@ -233,7 +233,7 @@ export default function TripPlannerPage() {
       if (
         !isMountedRef.current ||
         requestTokenRef.current !== requestToken ||
-        activeTripIdRef.current !== activeTripIdAtStart
+        activeTripRef.current !== activeTripAtStart
       ) {
         return;
       }
@@ -257,13 +257,7 @@ export default function TripPlannerPage() {
         }
       }
     }
-  }, [
-    activeTrip,
-    plannerParams,
-    setActiveTrip,
-    setGenerating,
-    surfacePreference.length,
-  ]);
+  }, [plannerParams, setActiveTrip, setGenerating, surfacePreference.length]);
 
   const handleSelectOption = useCallback(
     (option: GeneratedTripOption) => {
