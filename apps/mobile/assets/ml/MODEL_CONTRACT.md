@@ -66,6 +66,11 @@ heuristic in `sensors.ts#classifyHeuristic` produced the labels
 
 The trained file is produced by the data-science pipeline tracked in
 research issue #7 (RMS validation across 3+ phone models, 5 road
-types). Until that lands, the file may be missing from the bundle —
-the runtime tolerates that and the app degrades to the heuristic with
-a single startup warning.
+types). Until that lands, the committed `road-surface-classifier.tflite`
+in this folder is an intentional non-flatbuffer placeholder — metro
+still bundles it (so `require(...)` and the build succeed), the
+native loader rejects it as invalid, and `mlClassifier.warmup()`
+latches `loadFailed`, logs one warning, and the app falls back to the
+v0 RMS heuristic in `sensors.ts#classifyHeuristic`. Replacing the
+placeholder with the trained artifact is a binary swap — no code
+changes required.
