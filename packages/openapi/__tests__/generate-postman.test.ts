@@ -44,4 +44,37 @@ describe("generate-postman", () => {
     const collection = JSON.parse(fs.readFileSync(collectionPath, "utf8"));
     expect(collection.auth.type).toBe("bearer");
   });
+
+  it("uses each DTO field's `example` over an empty-string placeholder", () => {
+    // Regression: the generator used to emit `""` for every string
+    // field, which 400'd against any field with a regex/length
+    // validator (e.g. `client_model_version` requires
+    // `^[A-Za-z0-9._-]+$`). Fields with `@ApiProperty({ example })`
+    // must round-trip through the generated payload so a copy/pasted
+    // smoke test doesn't fail validation.
+    const collection = JSON.parse(
+      fs.readFileSync(
+        path.join(PKG_DIR, "postman/tarmoto-api.postman_collection.json"),
+        "utf8",
+      ),
+    ) as {
+      item: {
+        item?: { name: string; request?: { body?: { raw: string } } }[];
+      }[];
+    };
+
+    const upload = collection.item
+      .flatMap((folder) => folder.item ?? [])
+      .find((req) => req.request?.body?.raw?.includes("client_model_version"));
+    expect(upload?.request?.body?.raw).toBeDefined();
+
+    const body = JSON.parse(upload!.request!.body!.raw) as {
+      device_model: string;
+      client_model_version: string;
+    };
+    // Both fields declare `example` on their DTO @ApiProperty — the
+    // generator must surface those, not the empty-string fallback.
+    expect(body.device_model).toBe("iPhone 15 Pro");
+    expect(body.client_model_version).toBe("rsc-v1.0.0");
+  });
 });
