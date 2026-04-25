@@ -182,7 +182,7 @@ describe("offlineQueue", () => {
       // succeed (if the 5xx was payload-specific) and ship before
       // older queued ones — breaking the chronological order the
       // backend's "newest data wins" aggregation relies on.
-      enqueueUpload("old-ride", [makeReading(1)], "iPhone");
+      enqueueUpload("old-ride", [makeReading(1)], "iPhone", null);
       const uploader = jest.fn<
         ReturnType<SensorUploader>,
         Parameters<SensorUploader>
@@ -194,6 +194,7 @@ describe("offlineQueue", () => {
         "new-ride",
         [makeReading(2)],
         "iPhone",
+        null,
         uploader,
       );
 
