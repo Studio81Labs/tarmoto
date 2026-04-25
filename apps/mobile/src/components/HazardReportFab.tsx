@@ -16,7 +16,12 @@
  * same params shape, so a generic constraint is enough.
  */
 
-import React, { type ComponentProps, useCallback, useState } from "react";
+import React, {
+  type ComponentProps,
+  useCallback,
+  useRef,
+  useState,
+} from "react";
 import {
   Modal,
   Pressable,
@@ -26,6 +31,7 @@ import {
   View,
 } from "react-native";
 import Icon from "@react-native-vector-icons/material-design-icons";
+import { HAZARD_TYPE_LABELS, HAZARD_TYPE_ORDER } from "@/constants/hazards";
 import {
   borderRadius,
   colors,
@@ -38,30 +44,6 @@ import {
 import type { HazardType } from "@/types";
 
 type IconName = ComponentProps<typeof Icon>["name"];
-
-const HAZARD_TYPE_LABELS: Record<HazardType, string> = {
-  pothole: "Pothole",
-  gravel: "Gravel",
-  oil_spill: "Oil spill",
-  roadworks: "Roadworks",
-  animals: "Animals",
-  police: "Police",
-  flooding: "Flooding",
-  ice: "Ice",
-  other: "Other",
-};
-
-const HAZARD_TYPE_ORDER: HazardType[] = [
-  "pothole",
-  "gravel",
-  "oil_spill",
-  "roadworks",
-  "animals",
-  "police",
-  "flooding",
-  "ice",
-  "other",
-];
 
 interface HazardReportFabProps {
   /**
@@ -79,12 +61,26 @@ export default function HazardReportFab({
   style,
 }: HazardReportFabProps) {
   const [menuVisible, setMenuVisible] = useState(false);
+  // RN's Pressability mostly suppresses `onPress` after a long-press,
+  // but the suppression is platform- and gesture-dependent: a fast
+  // release after the long-press threshold can still fire `onPress`,
+  // which would navigate to the form with no preselected type and
+  // immediately render under the just-opened quick-pick modal. The
+  // ref is the simplest reliable guard — we set it the moment
+  // `onLongPress` fires and consume it on the next `onPress` so the
+  // tap path is a no-op once per long-press cycle.
+  const longPressFiredRef = useRef(false);
 
   const handlePress = useCallback(() => {
+    if (longPressFiredRef.current) {
+      longPressFiredRef.current = false;
+      return;
+    }
     onOpenReport();
   }, [onOpenReport]);
 
   const handleLongPress = useCallback(() => {
+    longPressFiredRef.current = true;
     setMenuVisible(true);
   }, []);
 

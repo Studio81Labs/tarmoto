@@ -65,6 +65,7 @@ import {
   type PhotoSource,
 } from "@/services/photoCapture";
 import { useHazardStore } from "@/stores";
+import { HAZARD_TYPE_LABELS, HAZARD_TYPE_ORDER } from "@/constants/hazards";
 import type { HazardType, Severity } from "@/types";
 import type { RideStackParamList } from "@/navigation/RootNavigator";
 
@@ -78,23 +79,6 @@ type HazardReportNav = NativeStackNavigationProp<
   "HazardReport"
 >;
 
-interface HazardOption {
-  type: HazardType;
-  label: string;
-}
-
-const HAZARD_OPTIONS: HazardOption[] = [
-  { type: "pothole", label: "Pothole" },
-  { type: "gravel", label: "Gravel" },
-  { type: "oil_spill", label: "Oil spill" },
-  { type: "roadworks", label: "Roadworks" },
-  { type: "animals", label: "Animals" },
-  { type: "police", label: "Police" },
-  { type: "flooding", label: "Flooding" },
-  { type: "ice", label: "Ice" },
-  { type: "other", label: "Other" },
-];
-
 const SEVERITIES: { value: Severity; label: string; color: string }[] = [
   { value: "low", label: "Low", color: colors.quality.fair },
   { value: "medium", label: "Medium", color: colors.warning },
@@ -104,10 +88,20 @@ const SEVERITIES: { value: Severity; label: string; color: string }[] = [
 /** Sensible cap so the note stays a glanceable one-liner on the map card. */
 const NOTE_MAX_CHARS = 140;
 
+/**
+ * Treat fixes older than this as stale — the rider is moving, so a
+ * coordinate from minutes ago could be hundreds of metres off the
+ * actual hazard. The form blocks submission on stale data and the UI
+ * surfaces a "Refresh" affordance.
+ */
+const LOCATION_STALE_AFTER_MS = 30_000;
+
 interface ResolvedLocation {
   lat: number;
   lng: number;
   accuracy: number;
+  /** When the underlying GPS fix was acquired (ms epoch). */
+  timestamp: number;
 }
 
 export default function HazardReportScreen() {
@@ -124,37 +118,83 @@ export default function HazardReportScreen() {
   const [photoNotice, setPhotoNotice] = useState<string | null>(null);
   const [photoCapturing, setPhotoCapturing] = useState(false);
 
-  // Pull the current location once on mount and keep a snapshot so the
-  // rider can re-fetch on demand. Keeping a snapshot (not a live
-  // subscription) is intentional: location was already running before
-  // the modal opened, the value is fresh, and re-rendering on every
-  // GPS tick would distract the rider mid-form.
+  // Two-stage location strategy:
+  //   1. Seed with the cached `lastLocation` for instant feedback when
+  //      the modal opens during an active ride (the watch is running,
+  //      the value is fresh).
+  //   2. Always kick off a one-shot `getCurrentLocation()` to get a
+  //      brand-new fix. This is what saves the Map-tab path: the
+  //      location service isn't running there, so the cache may be
+  //      `null` or arbitrarily stale. The async refresh lands a real
+  //      coordinate before the rider taps Submit.
+  //
+  // We re-render on every fresh fix (just one per request, not a
+  // subscription) so the displayed coords / accuracy / staleness flag
+  // stay accurate without the live-watch re-render churn.
   const [location, setLocation] = useState<ResolvedLocation | null>(() => {
     const last = locationService.getLastLocation();
     return last
-      ? { lat: last.lat, lng: last.lng, accuracy: last.accuracy }
+      ? {
+          lat: last.lat,
+          lng: last.lng,
+          accuracy: last.accuracy,
+          timestamp: last.timestamp,
+        }
       : null;
   });
-  const refreshLocation = useCallback(() => {
-    const last = locationService.getLastLocation();
-    if (!last) return;
-    setLocation({ lat: last.lat, lng: last.lng, accuracy: last.accuracy });
+  const [locationLoading, setLocationLoading] = useState(false);
+
+  const refreshLocation = useCallback(async () => {
+    setLocationLoading(true);
+    try {
+      const fresh = await locationService.getCurrentLocation();
+      if (!fresh) return;
+      setLocation({
+        lat: fresh.lat,
+        lng: fresh.lng,
+        accuracy: fresh.accuracy,
+        timestamp: fresh.timestamp,
+      });
+    } finally {
+      setLocationLoading(false);
+    }
   }, []);
+
   useEffect(() => {
-    // Catch the case where the screen mounted before the first GPS fix
-    // landed. A single delayed snapshot is enough for ride mode (the
-    // service is already running); we don't subscribe to avoid the
-    // re-render churn from continuous updates.
-    if (location) return;
-    const timer = setTimeout(refreshLocation, 500);
-    return () => clearTimeout(timer);
-  }, [location, refreshLocation]);
+    // Always pull a fresh fix on open — even if we have a cached
+    // value, the rider may have moved since the watch last ticked
+    // (or there was no watch running on the Map tab). Cancel guards
+    // against a fast unmount; the resolver itself silently returns
+    // the cached value on GPS failure so this never throws.
+    let cancelled = false;
+    void locationService.getCurrentLocation().then((fresh) => {
+      if (cancelled || !fresh) return;
+      setLocation({
+        lat: fresh.lat,
+        lng: fresh.lng,
+        accuracy: fresh.accuracy,
+        timestamp: fresh.timestamp,
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const trimmedNote = note.trim();
-  const canSubmit = hazardType !== null && location !== null && !submitting;
+  // Staleness check uses wall-clock time against the GPS fix
+  // timestamp so a rider who left the modal open (or whose phone
+  // background-suspended the JS thread) doesn't accidentally submit
+  // a hazard at last hour's coordinate. Recomputed on every render
+  // off `Date.now()`, but the form is ephemeral so this is cheap.
+  const isLocationStale =
+    location !== null &&
+    Date.now() - location.timestamp > LOCATION_STALE_AFTER_MS;
+  const canSubmit =
+    hazardType !== null && location !== null && !isLocationStale && !submitting;
 
   const handleSelectType = useCallback((type: HazardType) => {
     setHazardType(type);
@@ -211,6 +251,10 @@ export default function HazardReportScreen() {
       setErrorMessage("Waiting for GPS — try again in a moment.");
       return;
     }
+    if (isLocationStale) {
+      setErrorMessage("Location is stale — refresh GPS before submitting.");
+      return;
+    }
     setSubmitting(true);
     setErrorMessage(null);
 
@@ -265,6 +309,7 @@ export default function HazardReportScreen() {
   }, [
     hazardType,
     location,
+    isLocationStale,
     severity,
     trimmedNote,
     photo,
@@ -279,13 +324,15 @@ export default function HazardReportScreen() {
   const noteCharsLeft = NOTE_MAX_CHARS - note.length;
 
   const locationLine = useMemo(() => {
-    if (!location) return "Waiting for GPS…";
+    if (!location) {
+      return locationLoading ? "Acquiring GPS…" : "Waiting for GPS…";
+    }
     const acc =
       Number.isFinite(location.accuracy) && location.accuracy > 0
         ? ` · ±${Math.round(location.accuracy)}m`
         : "";
     return `${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}${acc}`;
-  }, [location]);
+  }, [location, locationLoading]);
 
   return (
     <KeyboardAvoidingView
@@ -300,24 +347,23 @@ export default function HazardReportScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Hazard type</Text>
           <View style={styles.typeGrid}>
-            {HAZARD_OPTIONS.map((option) => {
-              const selected = hazardType === option.type;
+            {HAZARD_TYPE_ORDER.map((type) => {
+              const selected = hazardType === type;
+              const label = HAZARD_TYPE_LABELS[type];
               return (
                 <TouchableOpacity
-                  key={option.type}
+                  key={type}
                   style={[
                     styles.typeTile,
                     selected ? styles.typeTileSelected : null,
                   ]}
-                  onPress={() => handleSelectType(option.type)}
+                  onPress={() => handleSelectType(type)}
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
-                  accessibilityLabel={`Hazard type ${option.label}`}
+                  accessibilityLabel={`Hazard type ${label}`}
                 >
                   <Icon
-                    name={
-                      (hazardIcons[option.type] ?? "alert-circle") as IconName
-                    }
+                    name={(hazardIcons[type] ?? "alert-circle") as IconName}
                     size={28}
                     color={selected ? colors.textInverse : colors.primary}
                   />
@@ -327,7 +373,7 @@ export default function HazardReportScreen() {
                       selected ? styles.typeTileLabelSelected : null,
                     ]}
                   >
-                    {option.label}
+                    {label}
                   </Text>
                 </TouchableOpacity>
               );
@@ -374,20 +420,36 @@ export default function HazardReportScreen() {
             <Icon
               name="map-marker"
               size={20}
-              color={location ? colors.primary : colors.textTertiary}
+              color={
+                isLocationStale
+                  ? colors.warning
+                  : location
+                    ? colors.primary
+                    : colors.textTertiary
+              }
             />
             <Text style={styles.locationText} numberOfLines={1}>
               {locationLine}
             </Text>
-            <TouchableOpacity
-              onPress={refreshLocation}
-              accessibilityRole="button"
-              accessibilityLabel="Refresh location"
-              hitSlop={10}
-            >
-              <Icon name="refresh" size={20} color={colors.textSecondary} />
-            </TouchableOpacity>
+            {locationLoading ? (
+              <ActivityIndicator size="small" color={colors.textSecondary} />
+            ) : (
+              <TouchableOpacity
+                onPress={() => void refreshLocation()}
+                accessibilityRole="button"
+                accessibilityLabel="Refresh location"
+                hitSlop={10}
+              >
+                <Icon name="refresh" size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            )}
           </View>
+          {isLocationStale ? (
+            <Text style={styles.locationStaleNotice}>
+              Last fix is more than 30s old — refresh to use your current
+              position.
+            </Text>
+          ) : null}
         </View>
 
         <View style={styles.section}>
@@ -589,6 +651,11 @@ const styles = StyleSheet.create({
     flex: 1,
     color: colors.textPrimary,
     fontSize: fontSize.sm,
+  },
+  locationStaleNotice: {
+    color: colors.warning,
+    fontSize: fontSize.xs,
+    lineHeight: 16,
   },
   noteInput: {
     backgroundColor: colors.bgInput,

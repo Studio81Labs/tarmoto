@@ -46,6 +46,7 @@ jest.mock("@/services/api", () => ({
 jest.mock("@/services/location", () => ({
   locationService: {
     getLastLocation: jest.fn(),
+    getCurrentLocation: jest.fn(),
   },
 }));
 
@@ -81,6 +82,10 @@ const getLastLocationMock =
   locationService.getLastLocation as jest.MockedFunction<
     typeof locationService.getLastLocation
   >;
+const getCurrentLocationMock =
+  locationService.getCurrentLocation as jest.MockedFunction<
+    typeof locationService.getCurrentLocation
+  >;
 const capturePhotoMock = capturePhoto as jest.MockedFunction<
   typeof capturePhoto
 >;
@@ -89,14 +94,14 @@ const hapticTriggerMock =
     typeof ReactNativeHapticFeedback.trigger
   >;
 
-function makeLocation() {
+function makeLocation(timestamp = Date.now()) {
   return {
     lat: 49.82,
     lng: 18.26,
     speed: 0,
     accuracy: 8,
     altitude: 0,
-    timestamp: 1_700_000_000_000,
+    timestamp,
   };
 }
 
@@ -121,10 +126,15 @@ describe("HazardReportScreen", () => {
     mockAddHazard.mockReset();
     submitMock.mockReset();
     getLastLocationMock.mockReset();
+    getCurrentLocationMock.mockReset();
     capturePhotoMock.mockReset();
     hapticTriggerMock.mockReset();
     mockRouteParams = undefined;
+    // Default: cache has a fresh fix and the on-mount one-shot returns
+    // an even fresher one. Tests that exercise the Map-tab path (no
+    // cached fix, async resolves later) override these.
     getLastLocationMock.mockReturnValue(makeLocation());
+    getCurrentLocationMock.mockResolvedValue(makeLocation());
   });
 
   it("disables submit until a hazard type is selected", () => {
@@ -245,6 +255,67 @@ describe("HazardReportScreen", () => {
         photoUri: "file:///tmp/photo.jpg",
         hazardType: "roadworks",
       }),
+    );
+  });
+
+  it("acquires a fresh GPS fix when no cached location is available (Map tab path)", async () => {
+    // Map-tab open: location service isn't running, so getLastLocation
+    // returns null. The screen must call getCurrentLocation to land a
+    // real fix before the rider can submit.
+    getLastLocationMock.mockReturnValue(null);
+    getCurrentLocationMock.mockResolvedValueOnce(makeLocation());
+    submitMock.mockResolvedValueOnce({
+      status: "uploaded",
+      hazard: makeHazard(),
+      pending: 0,
+    });
+
+    render(<HazardReportScreen />);
+
+    fireEvent.press(screen.getByLabelText("Hazard type Pothole"));
+
+    // Submit becomes enabled only after the async fix resolves —
+    // accessibilityState reflects the current canSubmit boolean.
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText("Submit hazard report").props.accessibilityState,
+      ).toMatchObject({ disabled: false }),
+    );
+    expect(getCurrentLocationMock).toHaveBeenCalled();
+
+    fireEvent.press(screen.getByLabelText("Submit hazard report"));
+    await waitFor(() => expect(submitMock).toHaveBeenCalledTimes(1));
+    expect(submitMock).toHaveBeenCalledWith(
+      expect.objectContaining({ lat: 49.82, lng: 18.26 }),
+    );
+  });
+
+  it("blocks submit when the cached fix is stale until the rider refreshes", async () => {
+    const stale = Date.now() - 60_000; // 60s ago — past the 30s threshold
+    getLastLocationMock.mockReturnValue(makeLocation(stale));
+    // Async refresh on mount also returns a stale fix (the GPS chip
+    // hasn't seen movement yet); only the explicit Refresh tap pulls
+    // a fresh one.
+    getCurrentLocationMock.mockResolvedValueOnce(makeLocation(stale));
+    getCurrentLocationMock.mockResolvedValueOnce(makeLocation());
+
+    render(<HazardReportScreen />);
+
+    fireEvent.press(screen.getByLabelText("Hazard type Pothole"));
+
+    // Stale fix → submit stays disabled even with a hazard type chosen.
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText("Submit hazard report").props.accessibilityState,
+      ).toMatchObject({ disabled: true }),
+    );
+
+    // Tapping Refresh pulls the fresh fix (mock #2) → submit enables.
+    fireEvent.press(screen.getByLabelText("Refresh location"));
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText("Submit hazard report").props.accessibilityState,
+      ).toMatchObject({ disabled: false }),
     );
   });
 
