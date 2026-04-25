@@ -343,24 +343,27 @@ export class AddFunZoneClusteringSeed1715300000000 implements MigrationInterface
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    // Drop only the zones that were derived from at least one
-    // seed-tagged road. The `fun_zone_roads` rows for those zones go
-    // with them via `ON DELETE CASCADE` on `fun_zone_id`. We
-    // deliberately DON'T touch zones with no remaining members in
-    // general (a previous version of this migration did, which would
-    // have caught unrelated orphans from partial failures). In
-    // production, no seed roads exist so this is a no-op.
+    // Drop ONLY zones whose membership is entirely seed roads —
+    // those are zones the seed run created and that have no real
+    // (rider-driven) members. `bool_and(... LIKE 'seed:%')` is true
+    // only when every member matches the prefix. Mixed zones (seed +
+    // real members) are preserved here; the next step strips the
+    // seed memberships out of them so the real roads keep their
+    // zone associations. In production no seed roads exist, so the
+    // whole sequence is a no-op.
     await queryRunner.query(
       `DELETE FROM fun_zones WHERE id IN (
-         SELECT DISTINCT fzr.fun_zone_id
+         SELECT fzr.fun_zone_id
          FROM fun_zone_roads fzr
          JOIN road_segments rs ON rs.id = fzr.road_segment_id
-         WHERE rs.road_name LIKE 'seed:%'
+         GROUP BY fzr.fun_zone_id
+         HAVING bool_and(rs.road_name LIKE 'seed:%')
        )`,
     );
-    // Any remaining `fun_zone_roads` referencing seed segments belong
-    // to zones that mixed seed and real roads. Drop those rows so the
-    // FK on `road_segments` doesn't block the next step.
+    // For zones that survived above (i.e. had at least one real-road
+    // member), drop just the seed-road memberships. This keeps the
+    // mixed zones intact while freeing the FK on `road_segments` so
+    // the seed-segment delete below can run.
     await queryRunner.query(
       `DELETE FROM fun_zone_roads WHERE road_segment_id IN
          (SELECT id FROM road_segments WHERE road_name LIKE 'seed:%')`,
