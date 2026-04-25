@@ -9,10 +9,20 @@ export interface ParsedArgs {
 }
 
 function parseBbox(value: string): [number, number, number, number] {
-  const parts = value.split(',').map((s) => Number.parseFloat(s.trim()));
-  if (parts.length !== 4 || parts.some((n) => Number.isNaN(n))) {
+  // Strict parse via `Number(...)`. `Number.parseFloat` would accept
+  // partial garbage like `18.8oops` (returns 18.8) and `Infinity` —
+  // a typo would silently change clustering scope and, with pruning
+  // on by default, could delete zones outside the intended region.
+  const rawParts = value.split(',').map((s) => s.trim());
+  if (rawParts.length !== 4 || rawParts.some((s) => s.length === 0)) {
     throw new Error(
       `Invalid --bbox: ${value}. Expected "west,south,east,north".`,
+    );
+  }
+  const parts = rawParts.map(Number);
+  if (parts.some((n) => !Number.isFinite(n))) {
+    throw new Error(
+      `Invalid --bbox: ${value}. Each coordinate must be a finite number.`,
     );
   }
   const [w, s, e, n] = parts;
@@ -58,7 +68,17 @@ function parseFiniteNumber(
 export function parseArgs(argv: string[]): ParsedArgs {
   const options: FunZoneClusteringOptions = {};
   for (const raw of argv) {
-    if (!raw.startsWith('--')) continue;
+    // Reject any non-empty token that isn't an explicit `--flag`.
+    // The previous `if (!raw.startsWith('--')) continue;` silently
+    // dropped typos like `-no-prune` (single dash) and ran the job
+    // with defaults — which include destructive pruning. Fail fast
+    // instead so an operator can fix the typo before running.
+    if (raw.length === 0) continue;
+    if (!raw.startsWith('--')) {
+      throw new Error(
+        `Unknown argument: "${raw}". Flags must start with "--".`,
+      );
+    }
     // Split on the FIRST `=` only, so values containing `=` are kept
     // intact. `String.split('=', 2)` doesn't help — JS truncates
     // instead of joining the tail — so we slice manually.

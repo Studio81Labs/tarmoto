@@ -36,6 +36,31 @@ describe('cluster-fun-zones CLI parseArgs', () => {
     expect(() => parseArgs(['--bbox=10,46,9,47'])).toThrow(/min must be < max/);
   });
 
+  it('rejects partial-numeric bbox parts (no parseFloat permissiveness)', () => {
+    // `Number.parseFloat('18.8oops')` returns 18.8 — strict
+    // `Number(...)` returns NaN, so the parser should fail.
+    expect(() => parseArgs(['--bbox=18.0,49.3,18.8oops,49.7'])).toThrow(
+      /finite number/,
+    );
+  });
+
+  it('rejects Infinity coordinates in bbox', () => {
+    expect(() => parseArgs(['--bbox=0,0,Infinity,90'])).toThrow(
+      /finite number/,
+    );
+  });
+
+  it('rejects empty bbox parts', () => {
+    expect(() => parseArgs(['--bbox=10,46,,47'])).toThrow(/Expected/);
+  });
+
+  it('rejects positional/typo tokens that do not start with --', () => {
+    // A common typo (`-no-prune` with one dash) used to be silently
+    // dropped, leaving prune ON by default. Now it fails fast.
+    expect(() => parseArgs(['-no-prune'])).toThrow(/must start with "--"/);
+    expect(() => parseArgs(['somethingweird'])).toThrow(/must start with "--"/);
+  });
+
   it('combines flags including --no-prune', () => {
     const result = parseArgs([
       '--bbox=10,46,12,47',
