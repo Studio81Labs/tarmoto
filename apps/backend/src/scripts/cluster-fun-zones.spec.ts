@@ -83,6 +83,15 @@ describe('cluster-fun-zones CLI parseArgs', () => {
     expect(() => parseArgs(['--min-points=   '])).toThrow(/value is empty/);
   });
 
+  it('preserves equals signs inside flag values (no silent truncation)', () => {
+    // The parser must split on the FIRST `=` only. A naive
+    // `String.split('=')` paired with destructuring drops everything
+    // after the second `=`, which would mask typos in error messages.
+    // `parseBbox` echoes its input back in the error, so we can assert
+    // the whole `=`-containing value made it through intact.
+    expect(() => parseArgs(['--bbox=oops=bad,1,2'])).toThrow(/oops=bad,1,2/);
+  });
+
   it('still accepts well-formed numeric values', () => {
     const result = parseArgs([
       '--min-curviness=2.5',

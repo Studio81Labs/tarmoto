@@ -486,17 +486,29 @@ export class FunZoneClusteringService {
         conditions.push(`id NOT IN (${placeholders})`);
         params.push(...writtenIds);
       }
-      const where =
-        conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-      const sql = `DELETE FROM fun_zones ${where}`;
-      // typeorm returns [rows, affected] for some drivers; for pg the
-      // raw result on DELETE is an array of rowCount-like info. We don't
-      // strictly need an exact prune count for correctness — the
-      // result is best-effort observability.
-      const result = (await tx.query(sql, params)) as unknown;
-      const affected = (result as { affected?: number }).affected;
-      if (typeof affected === 'number') {
-        zonesPruned = affected;
+      // Guard against an empty-conditions DELETE — that would resolve
+      // to `DELETE FROM fun_zones` with no WHERE and nuke the whole
+      // table. This happens when the run produced zero candidates AND
+      // no bbox was supplied (e.g. a misconfigured threshold). The
+      // safe behaviour is to skip the prune, not to silently wipe
+      // everything. Operators who actually want a global reset can
+      // pass an empty bbox via `--bbox=...` or wipe manually.
+      if (conditions.length === 0) {
+        this.logger.warn(
+          'Skipping prune: clustering produced 0 candidates and no bbox was supplied. ' +
+            'This guards against a runaway DELETE — review your thresholds or pass --bbox.',
+        );
+      } else {
+        const sql = `DELETE FROM fun_zones WHERE ${conditions.join(' AND ')}`;
+        // typeorm returns [rows, affected] for some drivers; for pg the
+        // raw result on DELETE is an array of rowCount-like info. We
+        // don't strictly need an exact prune count for correctness —
+        // the result is best-effort observability.
+        const result = (await tx.query(sql, params)) as unknown;
+        const affected = (result as { affected?: number }).affected;
+        if (typeof affected === 'number') {
+          zonesPruned = affected;
+        }
       }
     }
 

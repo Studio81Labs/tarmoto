@@ -59,7 +59,13 @@ export function parseArgs(argv: string[]): ParsedArgs {
   const options: FunZoneClusteringOptions = {};
   for (const raw of argv) {
     if (!raw.startsWith('--')) continue;
-    const [keyRaw, valueRaw] = raw.replace(/^--/, '').split('=');
+    // Split on the FIRST `=` only, so values containing `=` are kept
+    // intact. `String.split('=', 2)` doesn't help — JS truncates
+    // instead of joining the tail — so we slice manually.
+    const stripped = raw.replace(/^--/, '');
+    const eqIdx = stripped.indexOf('=');
+    const keyRaw = eqIdx === -1 ? stripped : stripped.slice(0, eqIdx);
+    const valueRaw = eqIdx === -1 ? undefined : stripped.slice(eqIdx + 1);
     const key = keyRaw.toLowerCase();
     if (VALUELESS_FLAGS.has(key)) {
       if (valueRaw !== undefined) {
