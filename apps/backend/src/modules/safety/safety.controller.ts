@@ -13,6 +13,7 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { SafetyService } from './safety.service.js';
@@ -27,11 +28,18 @@ export class SafetyController {
 
   @Post('crash-alert')
   @HttpCode(HttpStatus.OK)
+  // Crash alerts are user-triggered after a hard countdown — bursts
+  // are abuse, not legitimate behaviour. Cap at 5/min per IP+user to
+  // contain runaway clients without blocking the second alert in a
+  // genuinely catastrophic ride.
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @ApiOperation({
     summary: 'Send crash alert to emergency contacts',
     description:
-      'Triggered by the app when crash detection activates and ' +
-      'the countdown timer expires without cancellation.',
+      'Triggered by the app when crash detection activates and the ' +
+      'countdown timer expires without cancellation. Dispatches SMS ' +
+      '(plus an automated voice call when severity=high) via the ' +
+      'configured CrashAlertNotifier. Idempotent on `alert_id`.',
   })
   @ApiResponse({ status: 200, type: CrashAlertResponseDto })
   async sendCrashAlert(
