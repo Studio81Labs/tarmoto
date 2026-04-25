@@ -161,8 +161,19 @@ export class AddFunZoneClusteringSeed1715300000000 implements MigrationInterface
 
         -- Prune zones that disappeared from the latest run so the
         -- table stays in sync with the input data.
-        DELETE FROM fun_zones
-        WHERE id NOT IN (SELECT zone_id FROM tmp_fz_clusters);
+        --
+        -- Guard against a zero-candidate run: with tmp_fz_clusters
+        -- empty, "id NOT IN (SELECT zone_id FROM tmp_fz_clusters)"
+        -- evaluates to TRUE for every row and nukes the whole table.
+        -- The TS service has the same guard in persistZones; the
+        -- stored function (ops escape hatch) needs to mirror it so a
+        -- bad parameter set can't cause silent data loss.
+        IF EXISTS (SELECT 1 FROM tmp_fz_clusters) THEN
+          DELETE FROM fun_zones
+          WHERE id NOT IN (SELECT zone_id FROM tmp_fz_clusters);
+        ELSE
+          RAISE WARNING 'cluster_fun_zones produced 0 candidates; skipping prune to avoid wiping fun_zones';
+        END IF;
 
         SELECT COUNT(*)::int INTO v_written FROM tmp_fz_clusters;
         DROP TABLE tmp_fz_clusters;

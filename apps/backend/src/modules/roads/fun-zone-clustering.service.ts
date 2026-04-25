@@ -497,16 +497,15 @@ export class FunZoneClusteringService {
             'This guards against a runaway DELETE — review your thresholds or pass --bbox.',
         );
       } else {
-        const sql = `DELETE FROM fun_zones WHERE ${conditions.join(' AND ')}`;
-        // typeorm returns [rows, affected] for some drivers; for pg the
-        // raw result on DELETE is an array of rowCount-like info. We
-        // don't strictly need an exact prune count for correctness —
-        // the result is best-effort observability.
-        const result = (await tx.query(sql, params)) as unknown;
-        const affected = (result as { affected?: number }).affected;
-        if (typeof affected === 'number') {
-          zonesPruned = affected;
-        }
+        // Use RETURNING id so the row count is correct regardless of
+        // driver. `tx.query` with the pg driver returns the raw row
+        // array; for a plain DELETE that's empty (no `affected`
+        // metadata is exposed), so the previous `(result).affected`
+        // read always saw `undefined` and reported `zonesPruned = 0`
+        // even when rows were deleted.
+        const sql = `DELETE FROM fun_zones WHERE ${conditions.join(' AND ')} RETURNING id`;
+        const deletedRows: Array<{ id: string }> = await tx.query(sql, params);
+        zonesPruned = deletedRows.length;
       }
     }
 
