@@ -50,4 +50,45 @@ describe('cluster-fun-zones CLI parseArgs', () => {
       pruneStaleZones: false,
     });
   });
+
+  it('rejects non-numeric values for numeric flags', () => {
+    expect(() => parseArgs(['--min-curviness=abc'])).toThrow(
+      /not a finite number/,
+    );
+    expect(() => parseArgs(['--eps=foo'])).toThrow(/not a finite number/);
+  });
+
+  it('rejects Infinity / -Infinity / NaN as numeric flag values', () => {
+    expect(() => parseArgs(['--eps=Infinity'])).toThrow(/not a finite number/);
+    expect(() => parseArgs(['--min-curviness=-Infinity'])).toThrow(
+      /not a finite number/,
+    );
+    expect(() => parseArgs(['--min-quality=NaN'])).toThrow(
+      /not a finite number/,
+    );
+  });
+
+  it('rejects fractional values for integer-only flags', () => {
+    expect(() => parseArgs(['--min-points=2.5'])).toThrow(/must be an integer/);
+    expect(() => parseArgs(['--min-roads-per-zone=3.7'])).toThrow(
+      /must be an integer/,
+    );
+  });
+
+  it('still accepts well-formed numeric values', () => {
+    const result = parseArgs([
+      '--min-curviness=2.5',
+      '--eps=0.06',
+      '--min-points=4',
+      '--min-roads-per-zone=5',
+      '--hull-buffer-m=300',
+    ]);
+    expect(result.options).toEqual({
+      minCurviness: 2.5,
+      epsDegrees: 0.06,
+      minPoints: 4,
+      minRoadsPerZone: 5,
+      hullBufferM: 300,
+    });
+  });
 });

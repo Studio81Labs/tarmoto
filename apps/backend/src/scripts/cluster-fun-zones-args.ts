@@ -26,6 +26,31 @@ function parseBbox(value: string): [number, number, number, number] {
 // Listed explicitly so an unknown valueless flag still errors out.
 const VALUELESS_FLAGS = new Set(['no-prune']);
 
+/**
+ * Parse a CLI flag value as a finite number. `Number(...)` happily
+ * returns `NaN` for `--min-curviness=abc` and `Infinity` for
+ * `--eps=Infinity`, both of which would silently skew clustering
+ * thresholds and — combined with default-on pruning — could lead to a
+ * typo destroying every zone in scope. Reject both up-front instead.
+ *
+ * `requireInteger` rejects fractional inputs for flags that index into
+ * counts (`--min-points`, `--min-roads-per-zone`).
+ */
+function parseFiniteNumber(
+  flag: string,
+  raw: string,
+  requireInteger = false,
+): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) {
+    throw new Error(`Invalid --${flag}: "${raw}" is not a finite number.`);
+  }
+  if (requireInteger && !Number.isInteger(n)) {
+    throw new Error(`Invalid --${flag}: "${raw}" must be an integer.`);
+  }
+  return n;
+}
+
 export function parseArgs(argv: string[]): ParsedArgs {
   const options: FunZoneClusteringOptions = {};
   for (const raw of argv) {
@@ -51,28 +76,28 @@ export function parseArgs(argv: string[]): ParsedArgs {
         options.bbox = parseBbox(valueRaw);
         break;
       case 'min-curviness':
-        options.minCurviness = Number(valueRaw);
+        options.minCurviness = parseFiniteNumber(key, valueRaw);
         break;
       case 'min-quality':
-        options.minQuality = Number(valueRaw);
+        options.minQuality = parseFiniteNumber(key, valueRaw);
         break;
       case 'min-confidence':
-        options.minConfidence = Number(valueRaw);
+        options.minConfidence = parseFiniteNumber(key, valueRaw);
         break;
       case 'min-segment-length-m':
-        options.minSegmentLengthM = Number(valueRaw);
+        options.minSegmentLengthM = parseFiniteNumber(key, valueRaw);
         break;
       case 'eps':
-        options.epsDegrees = Number(valueRaw);
+        options.epsDegrees = parseFiniteNumber(key, valueRaw);
         break;
       case 'min-points':
-        options.minPoints = Number(valueRaw);
+        options.minPoints = parseFiniteNumber(key, valueRaw, true);
         break;
       case 'min-roads-per-zone':
-        options.minRoadsPerZone = Number(valueRaw);
+        options.minRoadsPerZone = parseFiniteNumber(key, valueRaw, true);
         break;
       case 'hull-buffer-m':
-        options.hullBufferM = Number(valueRaw);
+        options.hullBufferM = parseFiniteNumber(key, valueRaw);
         break;
       default:
         throw new Error(`Unknown argument: ${raw}`);
