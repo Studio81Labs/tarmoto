@@ -19,6 +19,7 @@ import { AddStripeBillingToUsers1714600000000 } from '../../migrations/171460000
 import { AddTripInviteCode1714800000000 } from '../../migrations/1714800000000-AddTripInviteCode.js';
 import { AddTripShares1714900000000 } from '../../migrations/1714900000000-AddTripShares.js';
 import { AddTripCollaboration1715000000000 } from '../../migrations/1715000000000-AddTripCollaboration.js';
+import { AddFunZoneClusteringSeed1715300000000 } from '../../migrations/1715300000000-AddFunZoneClusteringSeed.js';
 import {
   User,
   UserContact,
@@ -114,6 +115,7 @@ const entities = [
             AddTripInviteCode1714800000000,
             AddTripShares1714900000000,
             AddTripCollaboration1715000000000,
+            AddFunZoneClusteringSeed1715300000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.
