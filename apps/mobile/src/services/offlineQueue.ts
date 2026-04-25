@@ -24,8 +24,12 @@
  *     drop 4xx items and keep going)
  */
 
-import type { AxiosError } from "axios";
 import type { SensorReading } from "@/types";
+import {
+  isNetworkDownError,
+  isRetriableError,
+  isTransientServerError,
+} from "./networkErrors";
 
 // ── Types ──
 
@@ -184,64 +188,9 @@ function nextId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-// ── Error classification ──
-//
-// Three buckets drive the drain's behavior:
-//
-//   - Network failures (no `response`) mean the link itself is down.
-//     Stop draining, flag `networkFailed` so callers skip their live
-//     call, and leave everything queued for next time.
-//
-//   - Transient server failures (5xx, 408, 429) reach the server but
-//     indicate a temporary condition — an outage, a cold cache, a
-//     rate limit. Dropping the payload would lose data that would
-//     almost certainly succeed on retry; treat them like network
-//     failures for queueing purposes (keep queued, stop draining) but
-//     don't flag `networkFailed` because the link is actually fine.
-//
-//   - Client errors (other 4xx: 400/401/403/404/…) are poison pills.
-//     The payload itself is wrong or the auth is gone; retrying the
-//     same bytes forever won't fix it. Bump attempts and drop after a
-//     conservative threshold so one bad ride can't starve the rest.
-
-function isNetworkDownError(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  const axiosErr = error as AxiosError;
-  // A response status means the request reached the server — not a
-  // connectivity problem regardless of the status value.
-  if (axiosErr.response) return false;
-  // Axios v1 surfaces disconnects as ERR_NETWORK / ECONNABORTED / ETIMEDOUT
-  // depending on whether the request reached the socket before failing.
-  const code = axiosErr.code ?? "";
-  if (
-    code === "ERR_NETWORK" ||
-    code === "ECONNABORTED" ||
-    code === "ETIMEDOUT" ||
-    code === "ENOTFOUND"
-  ) {
-    return true;
-  }
-  // Some error shapes (fetch polyfills, Android's NSURLErrorNotConnected)
-  // only surface a message. The substring check is conservative: a
-  // server-shaped error would have `response` set and exit earlier.
-  const message = typeof axiosErr.message === "string" ? axiosErr.message : "";
-  return /network|timeout|offline|disconnected/i.test(message);
-}
-
-function isTransientServerError(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  const status = (error as AxiosError).response?.status;
-  if (typeof status !== "number") return false;
-  // 408 Request Timeout and 429 Too Many Requests are explicitly
-  // retry-safe per RFC 9110. 5xx is the catch-all for server-side
-  // faults that aren't the client's doing.
-  return status === 408 || status === 429 || (status >= 500 && status < 600);
-}
-
-/** Either category counts as "don't lose the payload, try again later". */
-function isRetriableError(error: unknown): boolean {
-  return isNetworkDownError(error) || isTransientServerError(error);
-}
+// Error classification — see ./networkErrors.ts. Re-exporting nothing
+// here on purpose: the classifiers are an implementation detail of every
+// offline-aware queue, not part of this module's public contract.
 
 // ── Public API ──
 

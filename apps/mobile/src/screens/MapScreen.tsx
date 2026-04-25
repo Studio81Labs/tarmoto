@@ -57,7 +57,12 @@ import {
   VectorSource,
 } from "@maplibre/maplibre-react-native";
 import Icon from "@react-native-vector-icons/material-design-icons";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import HazardReportFab from "@/components/HazardReportFab";
 import { api } from "@/services/api";
+import type { MapStackParamList } from "@/navigation/RootNavigator";
+import type { HazardType } from "@/types";
 import { getDefaultDocsDir } from "@/services/offlineRegions";
 import {
   findBestOfflineRegion,
@@ -101,7 +106,19 @@ type IconName = ComponentProps<typeof Icon>["name"];
 const QUALITY_LEGEND_FALLBACK_HEIGHT = 76;
 const FUN_ZONE_CARD_PASSES_OFFSET = 60 + spacing.sm;
 
+type MapNav = NativeStackNavigationProp<MapStackParamList, "Map">;
+
 export default function MapScreen() {
+  const navigation = useNavigation<MapNav>();
+  const handleOpenReport = useCallback(
+    (preselectedType?: HazardType) => {
+      navigation.navigate(
+        "HazardReport",
+        preselectedType ? { preselectedType } : undefined,
+      );
+    },
+    [navigation],
+  );
   const center = useMapStore((s) => s.center);
   const zoom = useMapStore((s) => s.zoom);
   const showQualityOverlay = useMapStore((s) => s.showQualityOverlay);
@@ -451,6 +468,11 @@ export default function MapScreen() {
       ) : showFunZonesOverlay ? (
         <FunZonesLegend zoneCount={funZones.length} />
       ) : null}
+
+      <HazardReportFab
+        onOpenReport={handleOpenReport}
+        style={styles.hazardFab}
+      />
     </View>
   );
 }
@@ -957,5 +979,14 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     fontWeight: fontWeight.bold,
     marginTop: 2,
+  },
+  // Bottom-right thumb-reach for a quick "panic" tap. Offset above the
+  // bottom legends (Quality ≈ 76 px, Passes ≈ 60 px) so the FAB clears
+  // a single legend without overlap and keeps a comfortable gap above
+  // the screen edge when no overlay legends are visible.
+  hazardFab: {
+    position: "absolute",
+    right: spacing.lg,
+    bottom: spacing.xl + 100,
   },
 });
