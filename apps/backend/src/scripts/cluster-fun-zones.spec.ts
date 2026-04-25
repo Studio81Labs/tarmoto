@@ -75,6 +75,14 @@ describe('cluster-fun-zones CLI parseArgs', () => {
     );
   });
 
+  it('rejects empty / whitespace-only numeric flag values', () => {
+    // `Number('') === 0` would otherwise sneak past `isFinite` and turn a
+    // typo (`--eps=`) into a zero threshold + global prune.
+    expect(() => parseArgs(['--eps='])).toThrow(/value is empty/);
+    expect(() => parseArgs(['--min-curviness='])).toThrow(/value is empty/);
+    expect(() => parseArgs(['--min-points=   '])).toThrow(/value is empty/);
+  });
+
   it('still accepts well-formed numeric values', () => {
     const result = parseArgs([
       '--min-curviness=2.5',

@@ -28,10 +28,11 @@ const VALUELESS_FLAGS = new Set(['no-prune']);
 
 /**
  * Parse a CLI flag value as a finite number. `Number(...)` happily
- * returns `NaN` for `--min-curviness=abc` and `Infinity` for
- * `--eps=Infinity`, both of which would silently skew clustering
- * thresholds and — combined with default-on pruning — could lead to a
- * typo destroying every zone in scope. Reject both up-front instead.
+ * returns `NaN` for `--min-curviness=abc`, `Infinity` for
+ * `--eps=Infinity`, and the legacy `Number('') === 0` quirk turns an
+ * empty `--eps=` into a zero threshold. All three would silently skew
+ * clustering — combined with default-on pruning, a typo could destroy
+ * every zone in scope. Reject all of them up-front instead.
  *
  * `requireInteger` rejects fractional inputs for flags that index into
  * counts (`--min-points`, `--min-roads-per-zone`).
@@ -41,6 +42,9 @@ function parseFiniteNumber(
   raw: string,
   requireInteger = false,
 ): number {
+  if (raw.trim().length === 0) {
+    throw new Error(`Invalid --${flag}: value is empty.`);
+  }
   const n = Number(raw);
   if (!Number.isFinite(n)) {
     throw new Error(`Invalid --${flag}: "${raw}" is not a finite number.`);
