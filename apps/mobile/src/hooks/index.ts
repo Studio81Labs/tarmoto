@@ -21,7 +21,7 @@ export type {
 export { useCarPlayRideMirror } from "./useCarPlayRideMirror";
 export { useVehicleNavigationDisplay } from "./useVehicleNavigationDisplay";
 
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useState } from "react";
 import { AppState, AppStateStatus } from "react-native";
 import KeepAwake from "react-native-keep-awake";
 import { formatDurationSeconds } from "@/theme";
@@ -36,30 +36,6 @@ export function useKeepAwake(enabled: boolean = true) {
       return () => KeepAwake.deactivate();
     }
   }, [enabled]);
-}
-
-/**
- * Timer hook for ride duration
- */
-export function useTimer(running: boolean) {
-  const [seconds, setSeconds] = useState(0);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  useEffect(() => {
-    if (running) {
-      setSeconds(0);
-      intervalRef.current = setInterval(() => {
-        setSeconds((s) => s + 1);
-      }, 1000);
-    } else {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    }
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [running]);
-
-  return seconds;
 }
 
 /**

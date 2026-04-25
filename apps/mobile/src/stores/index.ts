@@ -52,6 +52,14 @@ interface RideState {
   activeRide: RideDetail | null;
   isRiding: boolean;
   rideType: "free" | "commute" | "trip";
+  /**
+   * Local wall-clock timestamp (ms since epoch) when the current ride
+   * started. The root-level `RideDurationTicker` derives `duration`
+   * from this so the count keeps advancing even when the live HUD
+   * isn't mounted (e.g. the rider backed out to the history list
+   * mid-ride). `null` when no ride is active.
+   */
+  startedAtMs: number | null;
 
   // Live data
   currentSpeed: number;
@@ -64,6 +72,7 @@ interface RideState {
   // Actions
   startRide: (type?: "free" | "commute" | "trip") => void;
   stopRide: () => void;
+  setActiveRide: (ride: RideDetail | null) => void;
   updateSpeed: (speed: number) => void;
   updateQuality: (quality: ClassificationResult) => void;
   updateLocation: (location: LocationUpdate) => void;
@@ -80,6 +89,7 @@ export const useRideStore = create<RideState>((set) => ({
   activeRide: null,
   isRiding: false,
   rideType: "free",
+  startedAtMs: null,
   currentSpeed: 0,
   currentQuality: null,
   location: null,
@@ -92,6 +102,11 @@ export const useRideStore = create<RideState>((set) => ({
     set({
       isRiding: true,
       rideType: type,
+      // Anchor for the root-level duration ticker. Picking a fresh
+      // timestamp on every startRide also resets `duration` to 0
+      // implicitly — the ticker reads `(Date.now() - startedAtMs)`
+      // not the previous duration field.
+      startedAtMs: Date.now(),
       distance: 0,
       duration: 0,
       segmentCount: 0,
@@ -101,9 +116,11 @@ export const useRideStore = create<RideState>((set) => ({
     set({
       isRiding: false,
       activeRide: null,
+      startedAtMs: null,
       currentQuality: null,
       currentSpeed: 0,
     }),
+  setActiveRide: (activeRide) => set({ activeRide }),
   updateSpeed: (currentSpeed) => set({ currentSpeed }),
   updateQuality: (currentQuality) => set({ currentQuality }),
   updateLocation: (location) => set({ location }),
