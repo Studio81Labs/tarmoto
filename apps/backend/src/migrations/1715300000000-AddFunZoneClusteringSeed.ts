@@ -333,17 +333,27 @@ export class AddFunZoneClusteringSeed1715300000000 implements MigrationInterface
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    // Drop only the zones that were derived from at least one
+    // seed-tagged road. The `fun_zone_roads` rows for those zones go
+    // with them via `ON DELETE CASCADE` on `fun_zone_id`. We
+    // deliberately DON'T touch zones with no remaining members in
+    // general (a previous version of this migration did, which would
+    // have caught unrelated orphans from partial failures). In
+    // production, no seed roads exist so this is a no-op.
+    await queryRunner.query(
+      `DELETE FROM fun_zones WHERE id IN (
+         SELECT DISTINCT fzr.fun_zone_id
+         FROM fun_zone_roads fzr
+         JOIN road_segments rs ON rs.id = fzr.road_segment_id
+         WHERE rs.road_name LIKE 'seed:%'
+       )`,
+    );
+    // Any remaining `fun_zone_roads` referencing seed segments belong
+    // to zones that mixed seed and real roads. Drop those rows so the
+    // FK on `road_segments` doesn't block the next step.
     await queryRunner.query(
       `DELETE FROM fun_zone_roads WHERE road_segment_id IN
          (SELECT id FROM road_segments WHERE road_name LIKE 'seed:%')`,
-    );
-    await queryRunner.query(
-      `DELETE FROM fun_zones WHERE id IN (
-         SELECT fz.id FROM fun_zones fz
-         WHERE NOT EXISTS (
-           SELECT 1 FROM fun_zone_roads fzr WHERE fzr.fun_zone_id = fz.id
-         )
-       )`,
     );
     await queryRunner.query(
       `DELETE FROM road_segments WHERE road_name LIKE 'seed:%'`,

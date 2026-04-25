@@ -401,18 +401,24 @@ export class FunZoneClusteringService {
         road_count: cand.road_count,
       });
 
+      // Note: `name` is intentionally omitted from both the INSERT
+      // column list and the ON CONFLICT SET clause. Names are
+      // operator-curated (and currently always NULL on first insert),
+      // so re-clustering MUST NOT overwrite them. The new-row default
+      // is the column default (NULL); existing rows keep whatever
+      // name they were given. This matches `cluster_fun_zones()` in
+      // migration 1715300000000.
       await tx.query(
         `INSERT INTO fun_zones
-           (id, boundary, name, composite_score, road_count,
+           (id, boundary, composite_score, road_count,
             total_curve_km, avg_quality, best_season, last_calculated)
          VALUES (
            $1::uuid,
            ST_GeomFromGeoJSON($2::text),
-           $3, $4, $5, $6, $7, $8, NOW()
+           $3, $4, $5, $6, $7, NOW()
          )
          ON CONFLICT (id) DO UPDATE SET
            boundary = EXCLUDED.boundary,
-           name = EXCLUDED.name,
            composite_score = EXCLUDED.composite_score,
            road_count = EXCLUDED.road_count,
            total_curve_km = EXCLUDED.total_curve_km,
@@ -422,7 +428,6 @@ export class FunZoneClusteringService {
         [
           zoneId,
           cand.boundary_geojson,
-          null,
           compositeScore,
           cand.road_count,
           cand.total_curve_km,
