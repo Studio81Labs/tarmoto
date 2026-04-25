@@ -41,6 +41,13 @@ import {
   type DrainResult,
   type SubmitResult,
 } from "./offlineQueue";
+import {
+  drainHazardQueue,
+  submitHazardReport,
+  type DrainHazardResult,
+  type HazardReportPayload,
+  type SubmitHazardResult,
+} from "./hazardQueue";
 
 const storage = createMMKV({ id: "tarmoto-auth" });
 
@@ -300,6 +307,31 @@ class ApiService {
       note,
     });
     return data;
+  }
+
+  /**
+   * Submit a hazard report through the offline-aware queue (US-4 AC #6).
+   * `reportHazard` stays public for the existing call sites that want
+   * the raw POST semantics, but every UI flow should funnel through
+   * this method so a tunnel-time tap doesn't drop the report.
+   *
+   * The optional `photoUri` is preserved on queued entries so a future
+   * drain can ship the attachment once the backend file-upload endpoint
+   * lands; today's POST ignores it.
+   */
+  async submitHazardReport(
+    payload: HazardReportPayload,
+  ): Promise<SubmitHazardResult> {
+    return submitHazardReport(payload, (p) =>
+      this.reportHazard(p.lat, p.lng, p.hazardType, p.severity, p.note),
+    );
+  }
+
+  /** Best-effort flush of any queued hazard reports. */
+  async flushPendingHazardReports(): Promise<DrainHazardResult> {
+    return drainHazardQueue((p) =>
+      this.reportHazard(p.lat, p.lng, p.hazardType, p.severity, p.note),
+    );
   }
 
   async confirmHazard(hazardId: string): Promise<Hazard> {

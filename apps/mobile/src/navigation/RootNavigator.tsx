@@ -13,6 +13,7 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import Icon from "@react-native-vector-icons/material-design-icons";
 type IconName = React.ComponentProps<typeof Icon>["name"];
 import { colors } from "@/theme";
+import type { HazardType } from "@/types";
 import CarPlayRideMirror from "@/components/CarPlayRideMirror";
 
 // Screens
@@ -56,12 +57,16 @@ export type HomeStackParamList = {
 export type MapStackParamList = {
   Map: undefined;
   RoadPreview: { segmentId: string };
+  // Mirrors the RideStack registration so the FAB on MapScreen stays
+  // inside its own tab; opening the modal cross-tab would land the
+  // rider on the Ride tab once they dismiss, which is a footgun.
+  HazardReport: { preselectedType?: HazardType } | undefined;
 };
 
 export type RideStackParamList = {
   RideStart: undefined;
   RideActive: { rideType: "free" | "commute" | "trip" };
-  HazardReport: undefined;
+  HazardReport: { preselectedType?: HazardType } | undefined;
 };
 
 export type TripsStackParamList = {
@@ -145,6 +150,11 @@ function MapNavigator() {
         name="RoadPreview"
         component={RoadPreviewScreen}
         options={{ title: "Road Preview" }}
+      />
+      <MapStack.Screen
+        name="HazardReport"
+        component={HazardReportScreen}
+        options={{ title: "Report Hazard", presentation: "modal" }}
       />
     </MapStack.Navigator>
   );
