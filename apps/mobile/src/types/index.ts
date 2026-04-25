@@ -46,6 +46,14 @@ export interface EmergencyContact {
   name: string;
   phone: string;
   is_emergency: boolean;
+  created_at: string;
+}
+
+/** Payload for creating or editing a contact. */
+export interface EmergencyContactInput {
+  name: string;
+  phone: string;
+  is_emergency?: boolean;
 }
 
 // ── Road Segments ──

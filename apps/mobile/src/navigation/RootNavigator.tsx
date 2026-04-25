@@ -16,6 +16,8 @@ import { colors } from "@/theme";
 import type { HazardType } from "@/types";
 import CarPlayRideMirror from "@/components/CarPlayRideMirror";
 import RideDurationTicker from "@/components/RideDurationTicker";
+import CrashDetectionRunner from "@/components/CrashDetectionRunner";
+import CrashAlertOverlay from "@/components/CrashAlertOverlay";
 
 // Screens
 import HomeScreen from "@/screens/HomeScreen";
@@ -38,6 +40,7 @@ import SettingsScreen from "@/screens/SettingsScreen";
 import JoinTripScreen from "@/screens/JoinTripScreen";
 import LinkAccountScreen from "@/screens/LinkAccountScreen";
 import OfflineRegionsScreen from "@/screens/OfflineRegionsScreen";
+import EmergencyContactsScreen from "@/screens/EmergencyContactsScreen";
 
 // ── Type definitions ──
 
@@ -86,6 +89,7 @@ export type ProfileStackParamList = {
   Settings: undefined;
   LinkAccount: { email?: string } | undefined;
   OfflineRegions: undefined;
+  EmergencyContacts: undefined;
 };
 
 // ── Navigators ──
@@ -250,6 +254,11 @@ function ProfileNavigator() {
         component={OfflineRegionsScreen}
         options={{ title: "Offline maps" }}
       />
+      <ProfileStack.Screen
+        name="EmergencyContacts"
+        component={EmergencyContactsScreen}
+        options={{ title: "Emergency contacts" }}
+      />
     </ProfileStack.Navigator>
   );
 }
@@ -285,6 +294,14 @@ export default function RootNavigator() {
         don't re-render the navigator tree.
       */}
       <RideDurationTicker />
+      {/*
+        US-12: the crash detector subscribes to the raw 50 Hz sensor
+        stream while a ride is active and the rider has crash detection
+        enabled. Mounted at the root so it survives tab switches mid-
+        ride. Same leaf-component pattern — returns null and only
+        manages side effects.
+      */}
+      <CrashDetectionRunner />
       <NavigationContainer linking={linking}>
         <Tab.Navigator
           screenOptions={({ route }) => ({
@@ -335,6 +352,14 @@ export default function RootNavigator() {
           />
         </Tab.Navigator>
       </NavigationContainer>
+      {/*
+        US-12: the full-screen crash alert overlay sits OUTSIDE the
+        NavigationContainer so it can take over the UI from any tab —
+        Modal renders at the application root regardless of where it's
+        declared, but keeping it here makes the takeover surface
+        explicit. Visibility is driven entirely by `useCrashStore.phase`.
+      */}
+      <CrashAlertOverlay />
     </>
   );
 }

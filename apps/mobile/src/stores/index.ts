@@ -130,6 +130,54 @@ export const useRideStore = create<RideState>((set) => ({
   setRecentRides: (recentRides) => set({ recentRides }),
 }));
 
+// ── Crash Alert Store ──
+//
+// Holds the live state of an in-progress crash alert (US-12). Three
+// states: idle (no alert), countdown (overlay visible, rider can
+// cancel), dispatched (sendCrashAlert posted). The store is mutated
+// by the crash detector runner and read by `CrashAlertOverlay` so the
+// UI can render the same source of truth from anywhere in the tree.
+
+export type CrashAlertPhase = "idle" | "countdown" | "dispatched" | "failed";
+
+interface CrashAlertSnapshot {
+  /** Trigger location at the moment of detection. May be null if GPS is offline. */
+  lat: number | null;
+  lng: number | null;
+  /** Active ride id captured at trigger time, if any. */
+  rideId: string | null;
+  /** Speed (km/h) recorded just before the impact spike. */
+  speedAtImpact: number | null;
+  /** Trigger wall-clock timestamp (ms). */
+  triggeredAt: number;
+}
+
+interface CrashState {
+  phase: CrashAlertPhase;
+  alert: CrashAlertSnapshot | null;
+  /** Error message from the last failed dispatch, if any. */
+  errorMessage: string | null;
+  startCountdown: (snapshot: CrashAlertSnapshot) => void;
+  /** Rider cancelled within the countdown — silent, no contacts notified. */
+  cancel: () => void;
+  markDispatched: () => void;
+  markFailed: (message: string) => void;
+  /** Dismiss after dispatched / failed terminal state. */
+  reset: () => void;
+}
+
+export const useCrashStore = create<CrashState>((set) => ({
+  phase: "idle",
+  alert: null,
+  errorMessage: null,
+  startCountdown: (alert) =>
+    set({ phase: "countdown", alert, errorMessage: null }),
+  cancel: () => set({ phase: "idle", alert: null, errorMessage: null }),
+  markDispatched: () => set({ phase: "dispatched", errorMessage: null }),
+  markFailed: (errorMessage) => set({ phase: "failed", errorMessage }),
+  reset: () => set({ phase: "idle", alert: null, errorMessage: null }),
+}));
+
 // ── Hazard Store ──
 
 interface HazardState {

@@ -54,6 +54,13 @@ type SensorCallback = (
   classification: ClassificationResult,
 ) => void;
 
+/**
+ * Per-sample listener invoked on every accelerometer reading (50 Hz).
+ * Used by the crash detector to evaluate spike + immobility thresholds
+ * at the raw sample rate, not the 1-second window cadence.
+ */
+export type ReadingListener = (reading: SensorReading) => void;
+
 class SensorService {
   private accelSub: Subscription | null = null;
   private gyroSub: Subscription | null = null;
@@ -64,6 +71,7 @@ class SensorService {
   private currentSpeed = 0;
   private currentLat = 0;
   private currentLng = 0;
+  private readingListeners = new Set<ReadingListener>();
 
   /**
    * Start recording sensor data
@@ -100,6 +108,20 @@ class SensorService {
 
       this.buffer.push(reading);
       this.rawReadings.push(reading);
+
+      // Forward the raw reading to subscribed listeners (US-12 crash
+      // detector). Errors in a listener must not break the sensor
+      // pipeline — swallow per-listener so a bug in the detector can't
+      // stop a ride from collecting road-quality data.
+      if (this.readingListeners.size > 0) {
+        for (const listener of this.readingListeners) {
+          try {
+            listener(reading);
+          } catch {
+            // ignore — listener is responsible for its own error handling
+          }
+        }
+      }
 
       // Process window when we have enough samples
       if (this.buffer.length >= WINDOW_SIZE) {
@@ -148,6 +170,19 @@ class SensorService {
     this.currentLat = lat;
     this.currentLng = lng;
     this.currentSpeed = speedKmh;
+  }
+
+  /**
+   * Subscribe to the raw 50 Hz reading stream. Returns an unsubscribe
+   * function. The crash detector uses this to evaluate the peak-g spike
+   * and immobility windows on the per-sample cadence — too fine-grained
+   * for the 1-second classifier window callback.
+   */
+  subscribeReadings(listener: ReadingListener): () => void {
+    this.readingListeners.add(listener);
+    return () => {
+      this.readingListeners.delete(listener);
+    };
   }
 
   /**

@@ -371,6 +371,53 @@ describe('UsersService', () => {
     });
   });
 
+  describe('updateContact', () => {
+    it('should update name only when name is provided', async () => {
+      const result = await service.updateContact('user-1', 'contact-1', {
+        name: 'Janet',
+      });
+
+      expect(contactRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'contact-1', user_id: 'user-1' },
+      });
+      expect(contactRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'contact-1',
+          name: 'Janet',
+          phone: '+420123456789',
+          is_emergency: true,
+        }),
+      );
+      expect(result.name).toBe('Janet');
+    });
+
+    it('should update is_emergency=false', async () => {
+      await service.updateContact('user-1', 'contact-1', {
+        is_emergency: false,
+      });
+
+      expect(contactRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ is_emergency: false }),
+      );
+    });
+
+    it('should throw NotFoundException for missing contact', async () => {
+      contactRepo.findOne!.mockResolvedValueOnce(null);
+
+      await expect(
+        service.updateContact('user-1', 'missing', { name: 'X' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should not update contact belonging to another user', async () => {
+      contactRepo.findOne!.mockResolvedValueOnce(null);
+
+      await expect(
+        service.updateContact('other-user', 'contact-1', { name: 'X' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
   describe('deleteContact', () => {
     it('should delete contact belonging to user', async () => {
       await service.deleteContact('user-1', 'contact-1');

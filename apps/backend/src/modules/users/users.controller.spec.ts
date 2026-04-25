@@ -41,6 +41,7 @@ describe('UsersController', () => {
       uploadAvatar: jest.fn().mockResolvedValue(mockUser),
       listContacts: jest.fn().mockResolvedValue([mockContact]),
       addContact: jest.fn().mockResolvedValue(mockContact),
+      updateContact: jest.fn().mockResolvedValue(mockContact),
       deleteContact: jest.fn().mockResolvedValue(undefined),
     };
 
@@ -114,6 +115,27 @@ describe('UsersController', () => {
       await controller.addContact(mockReq, dto);
 
       expect(service.addContact).toHaveBeenCalledWith('user-1', dto);
+    });
+  });
+
+  describe('PATCH /users/me/contacts/:contactId', () => {
+    it('should update contact', async () => {
+      const dto = { name: 'Janet', is_emergency: false };
+      await controller.updateContact(mockReq, 'contact-1', dto);
+
+      expect(service.updateContact).toHaveBeenCalledWith(
+        'user-1',
+        'contact-1',
+        dto,
+      );
+    });
+
+    it('should propagate NotFoundException', async () => {
+      service.updateContact.mockRejectedValueOnce(new NotFoundException());
+
+      await expect(
+        controller.updateContact(mockReq, 'missing', { name: 'X' }),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
