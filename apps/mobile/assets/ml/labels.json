@@ -1,0 +1,18 @@
+{
+  "model_version": "rsc-v1.0.0",
+  "input_features": [
+    "rms",
+    "std",
+    "peak_to_peak",
+    "crest_factor",
+    "zero_crossing_rate",
+    "percentile_95",
+    "kurtosis",
+    "skewness",
+    "gyro_rms",
+    "speed_kmh",
+    "speed_normalized_rms"
+  ],
+  "quality": ["excellent", "good", "fair", "poor", "very_poor"],
+  "surface": ["asphalt", "concrete", "cobblestone", "gravel", "dirt"]
+}

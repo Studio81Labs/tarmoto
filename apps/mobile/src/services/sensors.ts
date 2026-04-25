@@ -4,14 +4,20 @@
  * Handles feature extraction and on-device classification.
  */
 
-import { accelerometer, gyroscope, setUpdateIntervalForType, SensorTypes } from 'react-native-sensors';
-import { Subscription } from 'rxjs';
-import { map, bufferCount } from 'rxjs/operators';
-import type { SensorReading, QualityClass, SurfaceType } from '@/types';
+import {
+  accelerometer,
+  gyroscope,
+  setUpdateIntervalForType,
+  SensorTypes,
+} from "react-native-sensors";
+import { Subscription } from "rxjs";
+import { map, bufferCount } from "rxjs/operators";
+import type { SensorReading, QualityClass, SurfaceType } from "@/types";
+import * as mlClassifier from "./mlClassifier";
 
 const SAMPLE_RATE_MS = 20; // 50Hz
-const WINDOW_SIZE = 100;   // 2 seconds at 50Hz
-const WINDOW_STEP = 50;    // 50% overlap = 1 second step
+const WINDOW_SIZE = 100; // 2 seconds at 50Hz
+const WINDOW_STEP = 50; // 50% overlap = 1 second step
 
 export interface WindowFeatures {
   rms: number;
@@ -34,9 +40,19 @@ export interface ClassificationResult {
   surface_type: SurfaceType;
   rms: number;
   confidence: number;
+  /**
+   * Identifier of the on-device classifier that produced this result.
+   * `null` when the v0 RMS heuristic fired (model not loaded, load
+   * failed, or inference errored). Backend persists this so future
+   * aggregations can re-weight or ignore deprecated classifier output.
+   */
+  model_version: string | null;
 }
 
-type SensorCallback = (features: WindowFeatures, classification: ClassificationResult) => void;
+type SensorCallback = (
+  features: WindowFeatures,
+  classification: ClassificationResult,
+) => void;
 
 class SensorService {
   private accelSub: Subscription | null = null;
@@ -59,6 +75,12 @@ class SensorService {
     this.buffer = [];
     this.rawReadings = [];
 
+    // Kick off the model load in the background. The first windows
+    // arrive ~2s later, so the classifier is typically ready by then;
+    // any window that lands before warmup completes uses the heuristic
+    // (mlClassifier.classify returns null until the model is loaded).
+    void mlClassifier.warmup();
+
     setUpdateIntervalForType(SensorTypes.accelerometer, SAMPLE_RATE_MS);
     setUpdateIntervalForType(SensorTypes.gyroscope, SAMPLE_RATE_MS);
 
@@ -68,7 +90,9 @@ class SensorService {
 
       const reading: SensorReading = {
         t: timestamp || Date.now(),
-        ax: x, ay: y, az: z,
+        ax: x,
+        ay: y,
+        az: z,
         lat: this.currentLat,
         lng: this.currentLng,
         speed: this.currentSpeed / 3.6, // store as m/s
@@ -131,7 +155,7 @@ class SensorService {
    */
   private extractFeatures(window: SensorReading[]): WindowFeatures {
     // Calculate acceleration magnitude minus gravity
-    const deviations = window.map(r => {
+    const deviations = window.map((r) => {
       const mag = Math.sqrt(r.ax ** 2 + r.ay ** 2 + r.az ** 2);
       return Math.abs(mag - 9.81);
     });
@@ -139,7 +163,9 @@ class SensorService {
     const n = deviations.length;
     const mean = deviations.reduce((s, v) => s + v, 0) / n;
     const rms = Math.sqrt(deviations.reduce((s, v) => s + v * v, 0) / n);
-    const std = Math.sqrt(deviations.reduce((s, v) => s + (v - mean) ** 2, 0) / n);
+    const std = Math.sqrt(
+      deviations.reduce((s, v) => s + (v - mean) ** 2, 0) / n,
+    );
     const sorted = [...deviations].sort((a, b) => a - b);
     const min = sorted[0];
     const max = sorted[n - 1];
@@ -150,71 +176,112 @@ class SensorService {
     // Zero crossing rate
     let zeroCrossings = 0;
     for (let i = 1; i < n; i++) {
-      if ((deviations[i] - mean) * (deviations[i - 1] - mean) < 0) zeroCrossings++;
+      if ((deviations[i] - mean) * (deviations[i - 1] - mean) < 0)
+        zeroCrossings++;
     }
     const zero_crossing_rate = zeroCrossings / n;
 
     // Kurtosis
     const m4 = deviations.reduce((s, v) => s + (v - mean) ** 4, 0) / n;
-    const kurtosis = std > 0 ? m4 / (std ** 4) - 3 : 0;
+    const kurtosis = std > 0 ? m4 / std ** 4 - 3 : 0;
 
     // Skewness
     const m3 = deviations.reduce((s, v) => s + (v - mean) ** 3, 0) / n;
-    const skewness = std > 0 ? m3 / (std ** 3) : 0;
+    const skewness = std > 0 ? m3 / std ** 3 : 0;
 
     // Gyroscope RMS
     const gyroMags = window
-      .filter(r => r.gx !== undefined)
-      .map(r => Math.sqrt((r.gx || 0) ** 2 + (r.gy || 0) ** 2 + (r.gz || 0) ** 2));
-    const gyro_rms = gyroMags.length > 0
-      ? Math.sqrt(gyroMags.reduce((s, v) => s + v * v, 0) / gyroMags.length)
-      : 0;
+      .filter((r) => r.gx !== undefined)
+      .map((r) =>
+        Math.sqrt((r.gx || 0) ** 2 + (r.gy || 0) ** 2 + (r.gz || 0) ** 2),
+      );
+    const gyro_rms =
+      gyroMags.length > 0
+        ? Math.sqrt(gyroMags.reduce((s, v) => s + v * v, 0) / gyroMags.length)
+        : 0;
 
     // Speed
     const speed_kmh = this.currentSpeed;
     const speed_normalized_rms = speed_kmh > 10 ? rms / (speed_kmh / 50) : rms;
 
     return {
-      rms, std, peak_to_peak, crest_factor, zero_crossing_rate,
-      percentile_95, kurtosis, skewness, gyro_rms,
-      speed_kmh, speed_normalized_rms,
+      rms,
+      std,
+      peak_to_peak,
+      crest_factor,
+      zero_crossing_rate,
+      percentile_95,
+      kurtosis,
+      skewness,
+      gyro_rms,
+      speed_kmh,
+      speed_normalized_rms,
       timestamp: Date.now(),
     };
   }
 
   /**
-   * Classify road quality from features
-   * v0: Simple threshold-based (replaced by TF Lite model in v1)
+   * Classify road quality from features.
+   *
+   * Tries the on-device TF Lite model first (US-3); when the model
+   * isn't ready or inference fails, falls back to the v0 RMS heuristic
+   * so a missing/broken model never prevents a ride from contributing
+   * data.
    */
   private classify(features: WindowFeatures): ClassificationResult {
+    const ml = mlClassifier.classify(features);
+    if (ml) {
+      return {
+        quality_class: ml.quality_class,
+        quality_score: ml.quality_score,
+        surface_type: ml.surface_type,
+        rms: features.rms,
+        confidence: ml.confidence,
+        model_version: ml.model_version,
+      };
+    }
+    return this.classifyHeuristic(features);
+  }
+
+  /**
+   * v0 fallback classifier used when the TF Lite model isn't available
+   * (initial load not finished, load failed, or runtime error). RMS-only
+   * thresholds line up with `apps/backend/.../sensor.service.ts` so the
+   * client and server agree on labels even without ML output.
+   */
+  private classifyHeuristic(features: WindowFeatures): ClassificationResult {
     const rms = features.speed_normalized_rms;
 
     let quality_class: QualityClass;
     let quality_score: number;
 
     if (rms < 1.5) {
-      quality_class = 'excellent';
+      quality_class = "excellent";
       quality_score = 5.0 - (rms / 1.5) * 0.5;
     } else if (rms < 3.0) {
-      quality_class = 'good';
+      quality_class = "good";
       quality_score = 4.0 - ((rms - 1.5) / 1.5) * 1.0;
     } else if (rms < 5.5) {
-      quality_class = 'fair';
+      quality_class = "fair";
       quality_score = 3.0 - ((rms - 3.0) / 2.5) * 1.0;
     } else if (rms < 9.0) {
-      quality_class = 'poor';
+      quality_class = "poor";
       quality_score = 2.0 - ((rms - 5.5) / 3.5) * 1.0;
     } else {
-      quality_class = 'very_poor';
+      quality_class = "very_poor";
       quality_score = Math.max(0.5, 1.0 - ((rms - 9.0) / 5.0) * 0.5);
     }
 
-    // Surface type heuristic (replaced by ML model later)
-    let surface_type: SurfaceType = 'asphalt';
+    // Surface heuristic only emits asphalt / gravel / cobblestone — the
+    // remaining PRD tiers (concrete, dirt) need spectral features the
+    // RMS-only fallback can't separate. Marked `unknown` rather than
+    // misclassified so the backend can choose to discard low-confidence
+    // surface labels from heuristic uploads.
+    let surface_type: SurfaceType = "asphalt";
     if (features.zero_crossing_rate > 0.4 && rms > 3.0) {
-      surface_type = 'gravel';
+      surface_type = "gravel";
     } else if (features.crest_factor > 5.0) {
-      surface_type = 'cobblestone';
+      surface_type = "cobblestone";
     }
 
     return {
@@ -223,6 +290,7 @@ class SensorService {
       surface_type,
       rms: features.rms,
       confidence: features.speed_kmh > 20 ? 70 : 30, // Higher confidence at speed
+      model_version: null, // heuristic — backend treats null as v0
     };
   }
 

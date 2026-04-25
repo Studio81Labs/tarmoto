@@ -77,6 +77,7 @@ describe("offlineQueue", () => {
         "ride-1",
         [makeReading(1)],
         "iPhone",
+        "rsc-v1.0.0",
         uploader,
       );
 
@@ -89,6 +90,7 @@ describe("offlineQueue", () => {
         "ride-1",
         [makeReading(1)],
         "iPhone",
+        "rsc-v1.0.0",
       );
     });
 
@@ -101,6 +103,7 @@ describe("offlineQueue", () => {
         "ride-1",
         [makeReading(1)],
         "iPhone",
+        null,
         uploader,
       );
 
@@ -119,13 +122,19 @@ describe("offlineQueue", () => {
       });
 
       await expect(
-        submitSensorUpload("ride-1", [makeReading(1)], "iPhone", uploader),
+        submitSensorUpload(
+          "ride-1",
+          [makeReading(1)],
+          "iPhone",
+          null,
+          uploader,
+        ),
       ).rejects.toThrow("HTTP 400");
       expect(getPendingCount()).toBe(0);
     });
 
     it("flushes the backlog before the fresh upload so order is preserved", async () => {
-      enqueueUpload("old-ride", [makeReading(1)], "iPhone");
+      enqueueUpload("old-ride", [makeReading(1)], "iPhone", null);
       const calls: string[] = [];
       const uploader: SensorUploader = jest.fn(async (rideId) => {
         calls.push(rideId);
@@ -136,6 +145,7 @@ describe("offlineQueue", () => {
         "new-ride",
         [makeReading(2)],
         "iPhone",
+        null,
         uploader,
       );
 
@@ -156,6 +166,7 @@ describe("offlineQueue", () => {
         "ride-1",
         [makeReading(1)],
         "iPhone",
+        null,
         uploader,
       );
 
@@ -200,7 +211,7 @@ describe("offlineQueue", () => {
       // Backlog item pre-seeded. The uploader stays offline the entire
       // call — so neither the backlog item nor the fresh payload can go
       // live, and both should end up on the queue in order.
-      enqueueUpload("old-ride", [makeReading(1)], "iPhone");
+      enqueueUpload("old-ride", [makeReading(1)], "iPhone", null);
       const uploader: SensorUploader = jest.fn(async () => {
         throw makeNetworkError();
       });
@@ -209,6 +220,7 @@ describe("offlineQueue", () => {
         "new-ride",
         [makeReading(2)],
         "iPhone",
+        null,
         uploader,
       );
 
@@ -224,7 +236,7 @@ describe("offlineQueue", () => {
       // outage and queued perfectly-valid fresh payloads behind it.
       // A poison item just means the server rejected ONE bad payload —
       // the link is fine and new uploads should still go live.
-      enqueueUpload("poison", [makeReading(1)], "iPhone");
+      enqueueUpload("poison", [makeReading(1)], "iPhone", null);
       const uploader: SensorUploader = jest.fn(async (rideId) => {
         if (rideId === "poison") throw makeServerError(400);
         return { accepted: 7, segments_updated: 2 };
@@ -234,6 +246,7 @@ describe("offlineQueue", () => {
         "fresh",
         [makeReading(2)],
         "iPhone",
+        null,
         uploader,
       );
 
@@ -262,9 +275,9 @@ describe("offlineQueue", () => {
     });
 
     it("flushes items oldest-first and empties the queue", async () => {
-      enqueueUpload("a", [makeReading(1)], "iPhone");
-      enqueueUpload("b", [makeReading(2)], "iPhone");
-      enqueueUpload("c", [makeReading(3)], "iPhone");
+      enqueueUpload("a", [makeReading(1)], "iPhone", null);
+      enqueueUpload("b", [makeReading(2)], "iPhone", null);
+      enqueueUpload("c", [makeReading(3)], "iPhone", null);
       const calls: string[] = [];
       const uploader: SensorUploader = jest.fn(async (rideId) => {
         calls.push(rideId);
@@ -280,9 +293,9 @@ describe("offlineQueue", () => {
     });
 
     it("stops at the first network error and keeps the rest", async () => {
-      enqueueUpload("a", [makeReading(1)], "iPhone");
-      enqueueUpload("b", [makeReading(2)], "iPhone");
-      enqueueUpload("c", [makeReading(3)], "iPhone");
+      enqueueUpload("a", [makeReading(1)], "iPhone", null);
+      enqueueUpload("b", [makeReading(2)], "iPhone", null);
+      enqueueUpload("c", [makeReading(3)], "iPhone", null);
       let callIdx = 0;
       const uploader: SensorUploader = jest.fn(async () => {
         callIdx += 1;
@@ -299,7 +312,7 @@ describe("offlineQueue", () => {
     });
 
     it("does not flag networkFailed when only poison items remain", async () => {
-      enqueueUpload("poison", [makeReading(1)], "iPhone");
+      enqueueUpload("poison", [makeReading(1)], "iPhone", null);
       const uploader: SensorUploader = async () => {
         throw makeServerError(400);
       };
@@ -315,8 +328,8 @@ describe("offlineQueue", () => {
       // network error and dropped after 3, so 5xx/429/408 (which mean
       // "try again later") would eat a rider's sensor data. Transient
       // server faults must NOT bump attempts or drop the payload.
-      enqueueUpload("a", [makeReading(1)], "iPhone");
-      enqueueUpload("b", [makeReading(2)], "iPhone");
+      enqueueUpload("a", [makeReading(1)], "iPhone", null);
+      enqueueUpload("b", [makeReading(2)], "iPhone", null);
       const uploader = jest.fn<
         ReturnType<SensorUploader>,
         Parameters<SensorUploader>
@@ -346,7 +359,7 @@ describe("offlineQueue", () => {
     });
 
     it("treats 429 and 408 as retriable, not poison", async () => {
-      enqueueUpload("a", [makeReading(1)], "iPhone");
+      enqueueUpload("a", [makeReading(1)], "iPhone", null);
       let callIdx = 0;
       const uploader: SensorUploader = async () => {
         callIdx += 1;
@@ -373,8 +386,8 @@ describe("offlineQueue", () => {
       // the uploader should only see each payload once. A boolean lock
       // would return a synthetic no-op to the second caller, racing the
       // real flush and reporting a stale `remaining`.
-      enqueueUpload("a", [makeReading(1)], "iPhone");
-      enqueueUpload("b", [makeReading(2)], "iPhone");
+      enqueueUpload("a", [makeReading(1)], "iPhone", null);
+      enqueueUpload("b", [makeReading(2)], "iPhone", null);
       const uploader = jest.fn<
         ReturnType<SensorUploader>,
         Parameters<SensorUploader>
@@ -396,8 +409,8 @@ describe("offlineQueue", () => {
       // A 4xx keeps failing no matter how often we retry — without the
       // poison-pill drop it would block every other ride forever. Three
       // attempts matches the threshold in the service.
-      enqueueUpload("poison", [makeReading(1)], "iPhone");
-      enqueueUpload("healthy", [makeReading(2)], "iPhone");
+      enqueueUpload("poison", [makeReading(1)], "iPhone", null);
+      enqueueUpload("healthy", [makeReading(2)], "iPhone", null);
       const uploader = jest.fn<
         ReturnType<SensorUploader>,
         Parameters<SensorUploader>
@@ -425,7 +438,7 @@ describe("offlineQueue", () => {
       // retries inside the first drain and hammered the server with
       // rapid-fire 400s. The fix tracks ids already attempted this
       // pass so the retries are spread across drain calls.
-      enqueueUpload("poison", [makeReading(1)], "iPhone");
+      enqueueUpload("poison", [makeReading(1)], "iPhone", null);
       const poisonCalls = jest.fn();
       const uploader: SensorUploader = async (rideId) => {
         if (rideId === "poison") {
@@ -447,8 +460,8 @@ describe("offlineQueue", () => {
 
   describe("persistence + state", () => {
     it("survives a reload from the backing storage", () => {
-      enqueueUpload("ride-1", [makeReading(1)], "iPhone");
-      enqueueUpload("ride-2", [makeReading(2)], "iPhone");
+      enqueueUpload("ride-1", [makeReading(1)], "iPhone", null);
+      enqueueUpload("ride-2", [makeReading(2)], "iPhone", null);
 
       // Simulate process restart: keep the same underlying store, just
       // reset the in-flight flag + listeners via the test hook.
@@ -459,7 +472,7 @@ describe("offlineQueue", () => {
     });
 
     it("clearOfflineQueue wipes the backlog", () => {
-      enqueueUpload("ride-1", [makeReading(1)], "iPhone");
+      enqueueUpload("ride-1", [makeReading(1)], "iPhone", null);
       expect(getPendingCount()).toBe(1);
       clearOfflineQueue();
       expect(getPendingCount()).toBe(0);
@@ -471,14 +484,52 @@ describe("offlineQueue", () => {
       expect(getPendingUploads()).toEqual([]);
     });
 
+    it("forwards modelVersion through enqueue → drain → uploader", async () => {
+      // US-3: backend persists which classifier produced each batch so
+      // a deprecation step can ignore older outputs. The queue must not
+      // drop the field across the offline round-trip.
+      enqueueUpload("ride-ml", [makeReading(1)], "iPhone", "rsc-v1.0.0");
+      enqueueUpload("ride-heuristic", [makeReading(2)], "iPhone", null);
+
+      const calls: Array<string | null> = [];
+      const uploader: SensorUploader = async (_id, _r, _model, version) => {
+        calls.push(version);
+        return { accepted: 1, segments_updated: 0 };
+      };
+      await drainOfflineQueue(uploader);
+
+      expect(calls).toEqual(["rsc-v1.0.0", null]);
+    });
+
+    it("normalises pre-US-3 entries lacking modelVersion to null", () => {
+      // A persisted blob from an older app build is missing the field.
+      // Reading it back must round-trip cleanly with `modelVersion:
+      // null` rather than failing the shape guard and silently dropping
+      // the rider's queued ride.
+      const legacyEntry = {
+        id: "legacy-1",
+        rideId: "ride-1",
+        deviceModel: "iPhone",
+        readings: [makeReading(1)],
+        enqueuedAt: 1,
+        attempts: 0,
+      };
+      storage.raw.set("pending", JSON.stringify([legacyEntry]));
+
+      const restored = getPendingUploads();
+      expect(restored).toHaveLength(1);
+      expect(restored[0].rideId).toBe("ride-1");
+      expect(restored[0].modelVersion).toBeNull();
+    });
+
     it("notifies subscribers on enqueue and drain", async () => {
       const snapshots: number[] = [];
       const unsubscribe = subscribePending((n) => snapshots.push(n));
       // Initial fire on subscribe — ergonomic for React state init.
       expect(snapshots).toEqual([0]);
 
-      enqueueUpload("ride-1", [makeReading(1)], "iPhone");
-      enqueueUpload("ride-2", [makeReading(2)], "iPhone");
+      enqueueUpload("ride-1", [makeReading(1)], "iPhone", null);
+      enqueueUpload("ride-2", [makeReading(2)], "iPhone", null);
 
       const uploader: SensorUploader = async () => ({
         accepted: 1,

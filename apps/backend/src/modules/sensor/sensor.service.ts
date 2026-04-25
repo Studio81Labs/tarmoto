@@ -93,6 +93,10 @@ export class SensorService {
         speed_at_reading:
           segment.speedAvg !== null ? segment.speedAvg * 3.6 : null,
         device_model: dto.device_model ?? null,
+        // Persist the classifier identifier (US-3). Null means the
+        // mobile v0 heuristic produced the labels — useful when a
+        // future model retire/migrate has to filter rows by classifier.
+        model_version: dto.model_version ?? null,
         recorded_at: segment.timestamp,
       });
 

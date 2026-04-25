@@ -44,6 +44,16 @@ export class SurfaceReading {
   @Column({ type: 'varchar', length: 100, nullable: true })
   device_model!: string | null;
 
+  /**
+   * Identifier of the on-device TF Lite classifier that produced the
+   * window-level labels for the batch this row came from (US-3). Null
+   * when the v0 RMS heuristic ran instead (mobile fallback). The
+   * aggregator uses this to gate retired classifier output without
+   * dropping the row.
+   */
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  model_version!: string | null;
+
   @Column({ type: 'timestamptz', default: () => 'NOW()' })
   recorded_at!: Date;
 

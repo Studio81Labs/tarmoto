@@ -39,6 +39,14 @@ export interface PendingUpload {
   rideId: string;
   deviceModel: string;
   readings: SensorReading[];
+  /**
+   * On-device classifier identifier when the TF Lite model produced the
+   * window-level outputs in this batch (US-3). `null` means the v0 RMS
+   * heuristic fired for the whole batch. Optional in the persisted blob
+   * because rides queued before the field was introduced predate the
+   * ML rollout — they're treated as `null` on read.
+   */
+  modelVersion: string | null;
   enqueuedAt: number;
   attempts: number;
 }
@@ -84,6 +92,7 @@ export type SensorUploader = (
   rideId: string,
   readings: SensorReading[],
   deviceModel: string,
+  modelVersion: string | null,
 ) => Promise<{ accepted: number; segments_updated: number }>;
 
 interface QueueStorage {
@@ -153,7 +162,12 @@ function readQueue(): PendingUpload[] {
     // on next launch. Anything that doesn't look like a PendingUpload gets
     // dropped silently — the ride is already lost, logging it to the
     // rider would be noise they can't act on.
-    return parsed.filter(isPendingUpload);
+    return parsed.filter(isPendingUpload).map((entry) => ({
+      ...entry,
+      // Pre-US-3 entries are `undefined` here — normalise to `null`
+      // so the rest of the pipeline can rely on a strict shape.
+      modelVersion: entry.modelVersion ?? null,
+    }));
   } catch {
     return [];
   }
@@ -161,12 +175,20 @@ function readQueue(): PendingUpload[] {
 
 function isPendingUpload(value: unknown): value is PendingUpload {
   if (typeof value !== "object" || value === null) return false;
-  const v = value as Partial<PendingUpload>;
+  const v = value as Partial<PendingUpload> & { modelVersion?: unknown };
+  // `modelVersion` is tolerated as `undefined` so entries persisted by
+  // an older app build (pre-US-3) still round-trip — they're rewritten
+  // with `null` on the next read via `readQueue`.
+  const validModelVersion =
+    v.modelVersion === undefined ||
+    v.modelVersion === null ||
+    typeof v.modelVersion === "string";
   return (
     typeof v.id === "string" &&
     typeof v.rideId === "string" &&
     typeof v.deviceModel === "string" &&
     Array.isArray(v.readings) &&
+    validModelVersion &&
     typeof v.enqueuedAt === "number" &&
     typeof v.attempts === "number"
   );
@@ -220,6 +242,7 @@ export async function submitSensorUpload(
   rideId: string,
   readings: SensorReading[],
   deviceModel: string,
+  modelVersion: string | null,
   uploader: SensorUploader,
 ): Promise<SubmitResult> {
   // Flush the backlog first so rides stay chronologically ordered on the
@@ -240,7 +263,7 @@ export async function submitSensorUpload(
     //   - networkFailed → link is down
     //   - transientServerError → backend is struggling, and shipping a
     //     fresh ride past the older queued ones would also break FIFO
-    enqueueUpload(rideId, readings, deviceModel);
+    enqueueUpload(rideId, readings, deviceModel, modelVersion);
     return {
       status: "queued",
       accepted: 0,
@@ -254,6 +277,7 @@ export async function submitSensorUpload(
       rideId,
       readings,
       deviceModel,
+      modelVersion,
     );
     return {
       status: "uploaded",
@@ -266,7 +290,7 @@ export async function submitSensorUpload(
       // Both connectivity drops and transient server faults land here —
       // either way the correct move is to preserve the ride data and
       // retry later, not surface a blocking error to the rider.
-      enqueueUpload(rideId, readings, deviceModel);
+      enqueueUpload(rideId, readings, deviceModel, modelVersion);
       return {
         status: "queued",
         accepted: 0,
@@ -317,7 +341,12 @@ export function drainOfflineQueue(
       if (!next) break;
       attemptedThisDrain.add(next.id);
       try {
-        await uploader(next.rideId, next.readings, next.deviceModel);
+        await uploader(
+          next.rideId,
+          next.readings,
+          next.deviceModel,
+          next.modelVersion,
+        );
         // Matching by id is position-independent — if enqueueUpload ran
         // while we awaited, the freshly-added entry stays intact.
         removeById(next.id);
@@ -376,12 +405,14 @@ export function enqueueUpload(
   rideId: string,
   readings: SensorReading[],
   deviceModel: string,
+  modelVersion: string | null,
 ): PendingUpload {
   const entry: PendingUpload = {
     id: nextId(),
     rideId,
     deviceModel,
     readings,
+    modelVersion,
     enqueuedAt: Date.now(),
     attempts: 0,
   };

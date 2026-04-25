@@ -91,7 +91,7 @@ Located under `apps/mobile/src/`.
 | `theme/`      | Colors, typography, styling                                                                     |
 | `types/`      | Shared type definitions                                                                         |
 
-On-device: TensorFlow Lite classifier for road surface type using accelerometer input. Runs locally, no network roundtrip.
+On-device: TensorFlow Lite classifier (`services/mlClassifier.ts`) for road surface type using accelerometer input. Runs locally, no network roundtrip. The trained artifact lives at `apps/mobile/assets/ml/road-surface-classifier.tflite`; its input/output contract is documented in `apps/mobile/assets/ml/MODEL_CONTRACT.md`. When the artifact is unavailable the v0 RMS heuristic produces labels and the upload is tagged `model_version: null`.
 
 ## Companion (Next.js web)
 
@@ -131,14 +131,14 @@ None currently defined. If cron-style work lands (ride state reconciliation, haz
 
 ## External dependencies
 
-| Dependency                         | Purpose                                              | Failure behavior                                                                            |
-| ---------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| PostgreSQL 16 + PostGIS 3.4        | Primary store + geospatial queries                   | Migrations run manually via `pnpm db:migrate`; not auto on boot                             |
-| Redis                              | WebSocket pub/sub across backend instances           | Real-time features degrade; REST still works                                                |
-| Stripe Billing                     | Web subscription checkout, customer portal, invoices | Account billing actions fail closed; existing persisted subscription state remains readable |
-| TensorFlow Lite on device (mobile) | Road surface classification                          | Mobile falls back to "unknown" classification if the model fails to load                    |
-| MapLibre GL tile server (custom)   | Vector tiles for maps                                | Clients show a simplified base layer while tiles are unavailable                            |
-| Cloudflare Pages                   | PoC sensor hosting                                   | Only affects `apps/poc-sensor`                                                              |
+| Dependency                         | Purpose                                              | Failure behavior                                                                                                                                                                                                     |
+| ---------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PostgreSQL 16 + PostGIS 3.4        | Primary store + geospatial queries                   | Migrations run manually via `pnpm db:migrate`; not auto on boot                                                                                                                                                      |
+| Redis                              | WebSocket pub/sub across backend instances           | Real-time features degrade; REST still works                                                                                                                                                                         |
+| Stripe Billing                     | Web subscription checkout, customer portal, invoices | Account billing actions fail closed; existing persisted subscription state remains readable                                                                                                                          |
+| TensorFlow Lite on device (mobile) | Road surface classification                          | Mobile falls back to the v0 RMS heuristic in `services/sensors.ts` if the model fails to load (single warning logged); each upload tags rows with `model_version` so retired classifiers can be filtered server-side |
+| MapLibre GL tile server (custom)   | Vector tiles for maps                                | Clients show a simplified base layer while tiles are unavailable                                                                                                                                                     |
+| Cloudflare Pages                   | PoC sensor hosting                                   | Only affects `apps/poc-sensor`                                                                                                                                                                                       |
 
 No Firebase, no push notification service, no paid external APIs today.
 

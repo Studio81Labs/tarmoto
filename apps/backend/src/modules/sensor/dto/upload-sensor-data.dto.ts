@@ -7,6 +7,8 @@ import {
   IsInt,
   ValidateNested,
   ArrayMaxSize,
+  MaxLength,
+  Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
@@ -53,6 +55,32 @@ export class UploadSensorDataDto {
   @IsOptional()
   @IsString()
   device_model?: string;
+
+  /**
+   * Identifier of the on-device classifier that produced this batch's
+   * window-level outputs (US-3). Optional / absent when the v0 RMS
+   * heuristic on the mobile side fired (model not bundled, load
+   * failed, or runtime error). Persisted on each `surface_readings`
+   * row so a future deprecation can ignore older outputs.
+   *
+   * Constrained to `^[A-Za-z0-9._-]{1,32}$` so a malicious or buggy
+   * client can't inject control characters into log lines or DB
+   * indexes that key on the column.
+   */
+  @ApiProperty({
+    required: false,
+    example: 'rsc-v1.0.0',
+    description:
+      'Identifier of the on-device classifier that produced the labels in ' +
+      'this batch. Null/absent means the v0 RMS heuristic ran instead.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  @Matches(/^[A-Za-z0-9._-]+$/, {
+    message: 'model_version must be alphanumeric with optional ._- separators',
+  })
+  model_version?: string;
 
   @ApiProperty({ type: [SensorReadingDto], maxItems: 5000 })
   @IsArray()

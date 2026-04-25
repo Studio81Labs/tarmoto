@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "370ca2a2-00d6-4126-a40f-6076f97df26d",
+    "_postman_id": "1237f1e8-7a15-40bd-93b1-918c3c9a711a",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -509,7 +509,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"ride_id\": \"\",\n  \"device_model\": \"\",\n  \"readings\": [\n    {\n      \"t\": 0,\n      \"ax\": 0,\n      \"ay\": 0,\n      \"az\": 0,\n      \"lat\": 0,\n      \"lng\": 0,\n      \"speed\": 0\n    }\n  ]\n}",
+              "raw": "{\n  \"ride_id\": \"\",\n  \"device_model\": \"\",\n  \"model_version\": \"\",\n  \"readings\": [\n    {\n      \"t\": 0,\n      \"ax\": 0,\n      \"ay\": 0,\n      \"az\": 0,\n      \"lat\": 0,\n      \"lng\": 0,\n      \"speed\": 0\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"

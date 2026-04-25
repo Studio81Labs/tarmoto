@@ -85,6 +85,11 @@ android {
         versionCode 1
         versionName "1.0"
     }
+    // Keep the bundled TF Lite road-surface classifier (US-3) verbatim
+    // so `react-native-fast-tflite` can mmap it without a copy.
+    androidResources {
+        noCompress 'tflite'
+    }
     signingConfigs {
         debug {
             storeFile file('debug.keystore')

@@ -232,6 +232,7 @@ describe('SensorService', () => {
       const dto = {
         ride_id: 'ride-1',
         device_model: 'iPhone 15',
+        model_version: 'rsc-v1.0.0',
         readings: Array.from({ length: 50 }, (_, i) => ({
           t: Date.now() + i * 20,
           ax: 0.1,
@@ -257,6 +258,32 @@ describe('SensorService', () => {
       expect(createArg.user_id).toBe('user-1');
       expect(createArg.device_model).toBe('iPhone 15');
       expect(createArg.classification).toBe('excellent');
+      // US-3: classifier identifier propagates onto every persisted row.
+      expect(createArg.model_version).toBe('rsc-v1.0.0');
+    });
+
+    it('persists model_version=null when the heuristic fallback ran on the client', async () => {
+      const dto = {
+        ride_id: 'ride-1',
+        device_model: 'iPhone 15',
+        // model_version intentionally omitted — mobile sets it to null
+        // (and serialises as undefined) when the v0 RMS heuristic
+        // produced the labels.
+        readings: Array.from({ length: 50 }, (_, i) => ({
+          t: Date.now() + i * 20,
+          ax: 0.1,
+          ay: 0.2,
+          az: 9.8,
+          lat: 49.1 + i * 0.00001,
+          lng: 16.75,
+          speed: 15,
+        })),
+      };
+
+      await service.processUpload('user-1', dto);
+
+      const createArg = (readingRepo.create as jest.Mock).mock.calls[0][0];
+      expect(createArg.model_version).toBeNull();
     });
 
     it('should return zero when all readings lack GPS', async () => {
