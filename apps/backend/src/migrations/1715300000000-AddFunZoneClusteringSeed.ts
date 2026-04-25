@@ -182,10 +182,16 @@ export class AddFunZoneClusteringSeed1715300000000 implements MigrationInterface
       $$ LANGUAGE plpgsql;
     `);
 
-    // ── 2. Demo seed for dev/staging only. Production starts empty
-    // and gets fun zones from the rider-driven clustering CLI. ──
-    const env = process.env['TARMOTO_NODE_ENV'] ?? 'development';
-    if (env === 'production') {
+    // ── 2. Demo seed for dev/staging only. Default-safe: skip
+    // unless the operator has explicitly declared a non-production
+    // environment. A missing `TARMOTO_NODE_ENV` (common on a
+    // production restore that only sets DB credentials) MUST NOT
+    // be treated as "development" — that would let synthetic
+    // road_segments + a recluster mutate real production data. Only
+    // these explicit values turn the seed on. ──
+    const SEED_ENVS = new Set(['development', 'staging', 'test']);
+    const env = process.env['TARMOTO_NODE_ENV'];
+    if (!env || !SEED_ENVS.has(env)) {
       return;
     }
 

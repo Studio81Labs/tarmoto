@@ -443,20 +443,27 @@ export class FunZoneClusteringService {
         [zoneId],
       );
 
-      for (let i = 0; i < cand.member_ids.length; i += 1) {
-        const segmentId = cand.member_ids[i];
-        const contribution = FunZoneClusteringService.computeContributionScore(
+      // Batch insert all members for this zone in a single query.
+      // The previous per-member INSERT loop produced N round-trips per
+      // zone, which on a Tyrol-sized cluster (thousands of segments)
+      // dominated runtime and increased the chance of lock/timeout
+      // pressure under heavy contention. UNNEST + multi-values keeps
+      // the write cost bounded to one statement per zone.
+      const contributionScores = cand.member_ids.map((_, i) =>
+        FunZoneClusteringService.computeContributionScore(
           cand.curviness_scores[i],
           cand.quality_scores[i] ?? null,
           cand.lengths_m[i],
-        );
+        ),
+      );
+      if (cand.member_ids.length > 0) {
         await tx.query(
-          `INSERT INTO fun_zone_roads
-             (fun_zone_id, road_segment_id, contribution_score)
-           VALUES ($1::uuid, $2::uuid, $3)`,
-          [zoneId, segmentId, contribution],
+          `INSERT INTO fun_zone_roads (fun_zone_id, road_segment_id, contribution_score)
+           SELECT $1::uuid, sid::uuid, score
+           FROM UNNEST($2::text[], $3::float[]) AS t(sid, score)`,
+          [zoneId, cand.member_ids, contributionScores],
         );
-        membersWritten += 1;
+        membersWritten += cand.member_ids.length;
       }
 
       writtenIds.push(zoneId);
