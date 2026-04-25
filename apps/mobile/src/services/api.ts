@@ -193,6 +193,22 @@ class ApiService {
     return data;
   }
 
+  /**
+   * Fetch a ride's GPX export as raw XML text. Used by RideDetailScreen's
+   * share / export button — the bytes are written to a local file and
+   * handed to the system share sheet so the rider can forward to any GPX
+   * consumer (Garmin, Komoot, etc.).
+   */
+  async exportRideGpx(rideId: string): Promise<string> {
+    const { data } = await this.client.get<string>(`/rides/${rideId}/gpx`, {
+      responseType: "text",
+      // Override the JSON default so axios doesn't try to parse the
+      // GPX/XML body and end up with `[object Object]`.
+      headers: { Accept: "application/gpx+xml" },
+    });
+    return data;
+  }
+
   // ── Sensor Data ──
   //
   // The raw POST is intentionally private: every ride-stop flow must go

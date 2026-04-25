@@ -15,6 +15,7 @@ type IconName = React.ComponentProps<typeof Icon>["name"];
 import { colors } from "@/theme";
 import type { HazardType } from "@/types";
 import CarPlayRideMirror from "@/components/CarPlayRideMirror";
+import RideDurationTicker from "@/components/RideDurationTicker";
 
 // Screens
 import HomeScreen from "@/screens/HomeScreen";
@@ -66,6 +67,7 @@ export type MapStackParamList = {
 export type RideStackParamList = {
   RideStart: undefined;
   RideActive: { rideType: "free" | "commute" | "trip" };
+  RideDetail: { rideId: string };
   HazardReport: { preselectedType?: HazardType } | undefined;
 };
 
@@ -174,6 +176,11 @@ function RideNavigator() {
         options={{ headerShown: false }}
       />
       <RideStack.Screen
+        name="RideDetail"
+        component={RideDetailScreen}
+        options={{ title: "Ride Details" }}
+      />
+      <RideStack.Screen
         name="HazardReport"
         component={HazardReportScreen}
         options={{ title: "Report Hazard", presentation: "modal" }}
@@ -270,6 +277,14 @@ export default function RootNavigator() {
         don't re-render the whole navigator on every tick.
       */}
       <CarPlayRideMirror />
+      {/*
+        US-19: the ride-duration ticker is mounted at the root so the
+        elapsed count keeps advancing even when the live HUD isn't
+        focused (rider on the history list, on the map, etc). Same
+        leaf-component pattern as `CarPlayRideMirror` so its writes
+        don't re-render the navigator tree.
+      */}
+      <RideDurationTicker />
       <NavigationContainer linking={linking}>
         <Tab.Navigator
           screenOptions={({ route }) => ({
