@@ -40,17 +40,19 @@ Segments fall into three clusters separated by long gaps where the PoC stopped r
 
 3. **`smooth` / `rough` are relative, not absolute.** Cluster C was tagged `smooth` because it followed the rough stretch — but in absolute terms it's an average wavy country road. Production app should use absolute labels (`excellent / good / average / poor / bad`) or capture quick rider intent the app translates.
 
-4. **Current PoC thresholds compress everything to `fair`.** Real road quality on this ride spans RMS 1.76 – 5.78, but the PoC classifier (`good < 3 < fair < 5 < poor`) puts 9 of 13 segments into `fair`. Suggested rebalance based on this dataset:
+4. **Current PoC thresholds blur the road-type distinction.** Real PoC thresholds are `< 1.5 excellent`, `< 3 good`, `< 5.5 fair`, `< 9 poor` (see `apps/poc-sensor/src/PocSensor.tsx` `classify()`). Distribution on this ride: **4 `good`, 8 `fair`, 1 `poor`, 0 `excellent`**. Cluster A is all `good`, cluster C is all `fair`, but per ground truth they are the **same road type** — the difference is rider line choice. The PoC classifier inherits the line-choice noise as a class-boundary error.
 
-   | New tier    | RMS       | Maps to in this ride                       |
-   | ----------- | --------- | ------------------------------------------ |
-   | `excellent` | < 1.8     | (none — racing asphalt not in this ride)   |
-   | `good`      | 1.8 – 3.0 | cluster A — average road, rider chose line |
-   | `average`   | 3.0 – 4.5 | cluster C — average wavy/patched road      |
-   | `poor`      | 4.5 – 5.5 | seg 11 (4.77), seg 4 (3.63 borderline)     |
-   | `bad`       | > 5.5     | seg 5 (5.78)                               |
+   Suggested rebalance based on this dataset:
 
-   Treat these as a starting hypothesis from one ride / one rider / one bike. Validate on more rides before locking in.
+   | New tier    | RMS       | This ride                                                         |
+   | ----------- | --------- | ----------------------------------------------------------------- |
+   | `excellent` | < 1.8     | seg 3 (1.76) — but rider was stopped, not actually excellent road |
+   | `good`      | 1.8 – 3.0 | cluster A: segs 0–2 (2.16–2.94)                                   |
+   | `average`   | 3.0 – 4.5 | seg 4 (3.63) + cluster C minus seg 11: segs 6–10, 12 (3.27–3.93)  |
+   | `poor`      | 4.5 – 5.5 | seg 11 (4.77)                                                     |
+   | `bad`       | > 5.5     | seg 5 (5.78)                                                      |
+
+   Treat these as a starting hypothesis from one ride / one rider / one bike. Validate on more rides before locking in. Note that seg 3's low RMS comes from the rider being stopped — a real classifier needs a "stationary" guard so stops don't masquerade as excellent road.
 
 ## Why so little was captured (1.4 km / 3.7 h)
 
