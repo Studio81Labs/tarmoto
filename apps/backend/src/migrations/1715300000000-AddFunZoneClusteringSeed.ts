@@ -74,7 +74,6 @@ export class AddFunZoneClusteringSeed1715300000000 implements MigrationInterface
           array_agg(length_m ORDER BY id) AS lengths_m,
           AVG(curviness_score) AS avg_curviness,
           AVG(quality_score) AS avg_quality,
-          SUM(length_m) AS total_length_m,
           (SUM(CASE WHEN curviness_score >= 3.0 THEN length_m ELSE 0 END) / 1000.0)
             AS total_curve_km,
           COALESCE(MAX(elevation_max) - MIN(elevation_min), 0) AS elevation_range_m,

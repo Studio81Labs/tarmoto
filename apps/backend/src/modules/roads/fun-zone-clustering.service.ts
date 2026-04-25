@@ -308,7 +308,6 @@ export class FunZoneClusteringService {
         ARRAY_AGG(length_m ORDER BY id) AS lengths_m,
         AVG(curviness_score)::float AS avg_curviness,
         AVG(quality_score)::float AS avg_quality,
-        SUM(length_m)::float AS total_length_m,
         (SUM(CASE WHEN curviness_score >= 3.0 THEN length_m ELSE 0 END) / 1000.0)::float
           AS total_curve_km,
         COALESCE(MAX(elevation_max) - MIN(elevation_min), 0)::float AS elevation_range_m,
@@ -340,7 +339,6 @@ export class FunZoneClusteringService {
       lengths_m: (row.lengths_m as Array<number | string>).map(Number),
       avg_curviness: Number(row.avg_curviness),
       avg_quality: Number(row.avg_quality),
-      total_length_m: Number(row.total_length_m),
       total_curve_km: Number(row.total_curve_km),
       elevation_range_m: Number(row.elevation_range_m),
       road_count: Number(row.road_count),
@@ -527,7 +525,6 @@ interface ClusterRow {
   lengths_m: number[];
   avg_curviness: number;
   avg_quality: number;
-  total_length_m: number;
   total_curve_km: number;
   elevation_range_m: number;
   road_count: number;
