@@ -319,6 +319,39 @@ describe("HazardReportScreen", () => {
     );
   });
 
+  it("recomputes staleness at submit time so an idle form can't slip through with old GPS", async () => {
+    // Render-time isLocationStale boolean would be `false` (location is
+    // fresh on mount), so canSubmit is true. We then advance the wall
+    // clock past the 30s threshold WITHOUT triggering a re-render —
+    // the only authoritative gate is the submit-time recompute.
+    const realNow = Date.now;
+    const baseTime = realNow.call(Date);
+    getLastLocationMock.mockReturnValue(makeLocation(baseTime));
+    getCurrentLocationMock.mockResolvedValueOnce(makeLocation(baseTime));
+
+    render(<HazardReportScreen />);
+
+    fireEvent.press(screen.getByLabelText("Hazard type Pothole"));
+    // Wait for async on-mount fix to land so submit is enabled.
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText("Submit hazard report").props.accessibilityState,
+      ).toMatchObject({ disabled: false }),
+    );
+
+    // Advance the wall clock past the threshold; React doesn't
+    // re-render so isLocationStale stays `false` in the captured
+    // closure. The submit handler must re-check.
+    Date.now = jest.fn(() => baseTime + 60_000);
+    try {
+      fireEvent.press(screen.getByLabelText("Submit hazard report"));
+      expect(await screen.findByText(/location is stale/i)).toBeTruthy();
+      expect(submitMock).not.toHaveBeenCalled();
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
   it("shows an error banner if the API rejects the report", async () => {
     submitMock.mockRejectedValueOnce(new Error("Validation failed"));
 

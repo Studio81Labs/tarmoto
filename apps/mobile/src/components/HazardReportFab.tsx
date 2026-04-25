@@ -86,6 +86,12 @@ export default function HazardReportFab({
 
   const handleSelect = useCallback(
     (type: HazardType) => {
+      // Clearing the ref on every menu-close path matters because
+      // Pressability mostly DOESN'T fire the trailing `onPress` after
+      // a long-press — so without these resets the flag would stick
+      // at `true` and silently swallow the next legitimate tap on
+      // the FAB.
+      longPressFiredRef.current = false;
       setMenuVisible(false);
       onOpenReport(type);
     },
@@ -93,6 +99,9 @@ export default function HazardReportFab({
   );
 
   const closeMenu = useCallback(() => {
+    // Same reset reason as `handleSelect` — backdrop dismiss / system
+    // back button / Modal onRequestClose all funnel through here.
+    longPressFiredRef.current = false;
     setMenuVisible(false);
   }, []);
 

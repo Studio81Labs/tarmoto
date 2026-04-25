@@ -59,4 +59,36 @@ describe("HazardReportFab", () => {
     expect(onOpenReport).toHaveBeenCalledTimes(1);
     expect(onOpenReport).toHaveBeenCalledWith();
   });
+
+  it("does not swallow the next tap after a long-press → quick-pick select cycle", () => {
+    // Pressability mostly DOESN'T fire the trailing onPress on release,
+    // so the suppression flag would stick at true and silently swallow
+    // the next legitimate tap if it weren't reset on menu-close paths.
+    const onOpenReport = jest.fn();
+    render(<HazardReportFab onOpenReport={onOpenReport} />);
+
+    fireEvent(screen.getByLabelText("Report hazard"), "longPress");
+    fireEvent.press(screen.getByLabelText("Report Pothole"));
+    expect(onOpenReport).toHaveBeenLastCalledWith("pothole");
+
+    // Fresh tap on the FAB after the menu closed via tile select must
+    // still navigate (with no preselect). If the ref weren't reset on
+    // close, this call would be silently swallowed.
+    fireEvent.press(screen.getByLabelText("Report hazard"));
+    expect(onOpenReport).toHaveBeenCalledTimes(2);
+    expect(onOpenReport).toHaveBeenLastCalledWith();
+  });
+
+  it("does not swallow the next tap after a long-press → backdrop dismiss cycle", () => {
+    const onOpenReport = jest.fn();
+    render(<HazardReportFab onOpenReport={onOpenReport} />);
+
+    fireEvent(screen.getByLabelText("Report hazard"), "longPress");
+    fireEvent.press(screen.getByLabelText("Close hazard quick-pick"));
+
+    // Fresh tap on the FAB after backdrop dismiss must still navigate.
+    fireEvent.press(screen.getByLabelText("Report hazard"));
+    expect(onOpenReport).toHaveBeenCalledTimes(1);
+    expect(onOpenReport).toHaveBeenCalledWith();
+  });
 });

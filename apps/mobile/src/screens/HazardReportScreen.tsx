@@ -251,7 +251,13 @@ export default function HazardReportScreen() {
       setErrorMessage("Waiting for GPS — try again in a moment.");
       return;
     }
-    if (isLocationStale) {
+    // Recompute staleness against the wall clock at submit time. The
+    // render-time `isLocationStale` drives the disabled-state UI, but
+    // an idle-but-open form (preselected type, no further interaction)
+    // can sit past the 30s threshold without a re-render, so the
+    // captured boolean would lie. This second check is the
+    // authoritative gate.
+    if (Date.now() - location.timestamp > LOCATION_STALE_AFTER_MS) {
       setErrorMessage("Location is stale — refresh GPS before submitting.");
       return;
     }
@@ -309,7 +315,6 @@ export default function HazardReportScreen() {
   }, [
     hazardType,
     location,
-    isLocationStale,
     severity,
     trimmedNote,
     photo,
