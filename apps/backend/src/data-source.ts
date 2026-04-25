@@ -34,6 +34,7 @@ import { AddTripInviteCode1714800000000 } from './migrations/1714800000000-AddTr
 import { AddTripShares1714900000000 } from './migrations/1714900000000-AddTripShares.js';
 import { AddTripCollaboration1715000000000 } from './migrations/1715000000000-AddTripCollaboration.js';
 import { AddTripActivity1715100000000 } from './migrations/1715100000000-AddTripActivity.js';
+import { AddSurfaceReadingClientModelVersion1715200000000 } from './migrations/1715200000000-AddSurfaceReadingClientModelVersion.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -79,6 +80,7 @@ export const AppDataSource = new DataSource({
     AddTripShares1714900000000,
     AddTripCollaboration1715000000000,
     AddTripActivity1715100000000,
+    AddSurfaceReadingClientModelVersion1715200000000,
   ],
   synchronize: false,
 });

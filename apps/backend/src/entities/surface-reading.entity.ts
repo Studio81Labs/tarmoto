@@ -44,6 +44,21 @@ export class SurfaceReading {
   @Column({ type: 'varchar', length: 100, nullable: true })
   device_model!: string | null;
 
+  /**
+   * Identifier of the client-side TF Lite classifier active when this
+   * batch was uploaded (US-3). **Telemetry only** — the row's
+   * `classification` and `surface_type` are derived server-side from
+   * raw readings, not from any client labels. Stored so a future
+   * change that trusts client window-level outputs (or a fleet rollout
+   * gated on classifier version) can filter by this column without
+   * backfilling.
+   *
+   * `null` when the mobile fallback heuristic ran instead of the
+   * bundled TFLite model.
+   */
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  client_model_version!: string | null;
+
   @Column({ type: 'timestamptz', default: () => 'NOW()' })
   recorded_at!: Date;
 

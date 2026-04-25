@@ -21,6 +21,7 @@ export default [
       "babel.config.js",
       "jest.config.js",
       "metro.config.js",
+      "react-native.config.js",
       "lib/api/**",
     ],
   },

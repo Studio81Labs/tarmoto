@@ -110,8 +110,16 @@ function resolveExample(schema, seed = 0) {
     );
   }
 
-  // Primitives
-  if (schema.enum) return schema.default ?? schema.enum[0];
+  // Primitives — prefer the spec's declared example/default before
+  // falling back to a type-shaped placeholder. This matters when a
+  // field has a validation regex (e.g. `client_model_version` requires
+  // `^[A-Za-z0-9._-]+$`); the empty-string placeholder would 400, but
+  // the example baked into `@ApiProperty({ example: 'rsc-v1.0.0' })`
+  // round-trips cleanly. `default` is checked too so DTOs with sensible
+  // defaults don't need a redundant `example` line.
+  if (schema.example !== undefined) return schema.example;
+  if (schema.default !== undefined) return schema.default;
+  if (schema.enum) return schema.enum[0];
   if (schema.type === "string") return "";
   if (schema.type === "number" || schema.type === "integer") return seed;
   if (schema.type === "boolean") return false;

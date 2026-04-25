@@ -204,10 +204,17 @@ class ApiService {
     rideId: string,
     readings: SensorReading[],
     deviceModel: string,
+    modelVersion: string | null,
   ): Promise<{ accepted: number; segments_updated: number }> {
     const { data } = await this.client.post("/sensor/upload", {
       ride_id: rideId,
       device_model: deviceModel,
+      // Telemetry: which on-device classifier was active during this
+      // batch (US-3). Omit when the mobile fallback heuristic ran —
+      // backend treats missing as "no client model on that device".
+      // The backend re-derives `classification` / `surface_type`
+      // from raw readings regardless, so this never feeds the labels.
+      client_model_version: modelVersion ?? undefined,
       readings,
     });
     return data;
@@ -216,15 +223,21 @@ class ApiService {
   /**
    * Submit sensor readings via the offline-aware queue (US-18 AC #4).
    * This is the ride-stop flow's entry point — the raw POST is kept
-   * private so every caller goes through the queue.
+   * private so every caller goes through the queue. `modelVersion` is
+   * the active on-device classifier (null = v0 RMS heuristic).
    */
   async submitSensorData(
     rideId: string,
     readings: SensorReading[],
     deviceModel: string,
+    modelVersion: string | null,
   ): Promise<SubmitResult> {
-    return submitSensorUpload(rideId, readings, deviceModel, (id, r, model) =>
-      this.uploadSensorData(id, r, model),
+    return submitSensorUpload(
+      rideId,
+      readings,
+      deviceModel,
+      modelVersion,
+      (id, r, model, version) => this.uploadSensorData(id, r, model, version),
     );
   }
 
@@ -234,8 +247,8 @@ class ApiService {
    * connectivity watcher.
    */
   async flushPendingSensorUploads(): Promise<DrainResult> {
-    return drainOfflineQueue((id, r, model) =>
-      this.uploadSensorData(id, r, model),
+    return drainOfflineQueue((id, r, model, version) =>
+      this.uploadSensorData(id, r, model, version),
     );
   }
 

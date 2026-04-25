@@ -1,0 +1,4 @@
+TFLITE_PLACEHOLDER
+Replace with the trained artifact produced by research issue #7.
+The native TF Lite loader rejects this file and the runtime falls back
+to the v0 RMS heuristic in services/sensors.ts (single warning logged).

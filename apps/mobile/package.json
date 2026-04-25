@@ -27,6 +27,7 @@
     "react-native-background-actions": "^4.0.0",
     "react-native-carplay": "2.4.1-beta.0",
     "react-native-device-info": "^15.0.2",
+    "react-native-fast-tflite": "^3.0.1",
     "react-native-fs": "^2.20.0",
     "react-native-gesture-handler": "^2.20.0",
     "react-native-haptic-feedback": "^3.0.0",

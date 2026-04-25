@@ -93,6 +93,13 @@ export class SensorService {
         speed_at_reading:
           segment.speedAvg !== null ? segment.speedAvg * 3.6 : null,
         device_model: dto.device_model ?? null,
+        // Telemetry: which client-side classifier was active at upload
+        // time (US-3). The labels above were derived server-side from
+        // the raw readings, so this column does NOT describe how
+        // `classification` / `surface_type` were produced — it lets a
+        // future change that trusts client window-level outputs filter
+        // by classifier version. Null means the mobile fallback ran.
+        client_model_version: dto.client_model_version ?? null,
         recorded_at: segment.timestamp,
       });
 

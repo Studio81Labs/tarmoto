@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "370ca2a2-00d6-4126-a40f-6076f97df26d",
+    "_postman_id": "0a52bde7-c7ac-4081-a212-93bda1b1f747",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -58,7 +58,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"\",\n  \"password\": \"\",\n  \"display_name\": \"\"\n}",
+              "raw": "{\n  \"email\": \"rider@example.com\",\n  \"password\": \"securePassword123\",\n  \"display_name\": \"Martin_CZ\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -84,7 +84,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"\",\n  \"password\": \"\"\n}",
+              "raw": "{\n  \"email\": \"rider@example.com\",\n  \"password\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -309,7 +309,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"\",\n  \"phone\": \"\",\n  \"is_emergency\": false\n}",
+              "raw": "{\n  \"name\": \"Jane Doe\",\n  \"phone\": \"+420123456789\",\n  \"is_emergency\": true\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -406,7 +406,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"lat\": 0,\n  \"lng\": 0,\n  \"hazard_type\": \"pothole\",\n  \"severity\": \"medium\",\n  \"note\": \"\"\n}",
+              "raw": "{\n  \"lat\": 49.1,\n  \"lng\": 16.75,\n  \"hazard_type\": \"pothole\",\n  \"severity\": \"medium\",\n  \"note\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -478,7 +478,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_m\": 0\n}",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_m\": 200\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -509,7 +509,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"ride_id\": \"\",\n  \"device_model\": \"\",\n  \"readings\": [\n    {\n      \"t\": 0,\n      \"ax\": 0,\n      \"ay\": 0,\n      \"az\": 0,\n      \"lat\": 0,\n      \"lng\": 0,\n      \"speed\": 0\n    }\n  ]\n}",
+              "raw": "{\n  \"ride_id\": \"\",\n  \"device_model\": \"iPhone 15 Pro\",\n  \"client_model_version\": \"rsc-v1.0.0\",\n  \"readings\": [\n    {\n      \"t\": 0,\n      \"ax\": 0,\n      \"ay\": 0,\n      \"az\": 0,\n      \"lat\": 0,\n      \"lng\": 0,\n      \"speed\": 0\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1910,7 +1910,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"lat\": 0,\n  \"lng\": 0,\n  \"ride_id\": \"\",\n  \"speed_at_impact\": 0\n}",
+              "raw": "{\n  \"lat\": 49.1,\n  \"lng\": 16.75,\n  \"ride_id\": \"\",\n  \"speed_at_impact\": 0\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2060,7 +2060,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"\",\n  \"origin\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"destination\": {\n    \"lat\": 0,\n    \"lng\": 0\n  }\n}",
+              "raw": "{\n  \"name\": \"Default\",\n  \"origin\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"destination\": {\n    \"lat\": 0,\n    \"lng\": 0\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2202,7 +2202,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"rating\": 0,\n  \"comment\": \"\",\n  \"bike_model\": \"\",\n  \"photos\": [\n    \"\"\n  ]\n}",
+              "raw": "{\n  \"rating\": 0,\n  \"comment\": \"\",\n  \"bike_model\": \"BMW R1250GS\",\n  \"photos\": [\n    \"\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2234,7 +2234,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"rating\": 0,\n  \"comment\": \"\",\n  \"bike_model\": \"\",\n  \"photos\": [\n    \"\"\n  ]\n}",
+              "raw": "{\n  \"rating\": 0,\n  \"comment\": \"\",\n  \"bike_model\": \"BMW R1250GS\",\n  \"photos\": [\n    \"\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2732,7 +2732,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_m\": 0,\n  \"for_month\": 0\n}",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_m\": 1500,\n  \"for_month\": 0\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2855,7 +2855,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_km\": 0,\n  \"kinds\": [\n    \"restaurant\"\n  ]\n}",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_km\": 2,\n  \"kinds\": [\n    \"restaurant\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2997,7 +2997,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_m\": 0,\n  \"active_on\": \"\"\n}",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_m\": 100,\n  \"active_on\": \"2026-07-15T00:00:00Z\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
