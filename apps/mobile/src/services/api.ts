@@ -209,9 +209,12 @@ class ApiService {
     const { data } = await this.client.post("/sensor/upload", {
       ride_id: rideId,
       device_model: deviceModel,
-      // Omit when the heuristic produced the labels — backend treats
-      // missing/null as "v0 / pre-ML" rather than rejecting the upload.
-      model_version: modelVersion ?? undefined,
+      // Telemetry: which on-device classifier was active during this
+      // batch (US-3). Omit when the mobile fallback heuristic ran —
+      // backend treats missing as "no client model on that device".
+      // The backend re-derives `classification` / `surface_type`
+      // from raw readings regardless, so this never feeds the labels.
+      client_model_version: modelVersion ?? undefined,
       readings,
     });
     return data;

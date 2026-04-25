@@ -259,9 +259,10 @@ describe("warmup + classify integration", () => {
     expect(model.runSync).toHaveBeenCalledTimes(1);
   });
 
-  it("returns null when the model output shape is wrong", async () => {
-    // Pre-rollout sanity: a model file that passes the loader but
-    // emits a 4-D quality tensor must NOT poison the labels.
+  it("latches off when the model output shape doesn't match the contract", async () => {
+    // Output-shape mismatches are deterministic — the model file is
+    // wrong. Latching avoids paying for `runSync` + `parseModelOutput`
+    // on every subsequent window for the rest of the ride.
     const model = makeMockModel([
       new Float32Array([0.25, 0.25, 0.25, 0.25]),
       new Float32Array([0.2, 0.2, 0.2, 0.2, 0.2]),
@@ -270,6 +271,14 @@ describe("warmup + classify integration", () => {
     await warmup();
 
     expect(classify(makeFeatures())).toBeNull();
+    // Classifier disables itself; subsequent calls short-circuit
+    // without invoking the runtime — the caller falls through to the
+    // heuristic for the rest of the session.
+    expect(isReady()).toBe(false);
+    expect(getActiveModelVersion()).toBeNull();
+
+    expect(classify(makeFeatures())).toBeNull();
+    expect(model.runSync).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -232,7 +232,7 @@ describe('SensorService', () => {
       const dto = {
         ride_id: 'ride-1',
         device_model: 'iPhone 15',
-        model_version: 'rsc-v1.0.0',
+        client_model_version: 'rsc-v1.0.0',
         readings: Array.from({ length: 50 }, (_, i) => ({
           t: Date.now() + i * 20,
           ax: 0.1,
@@ -258,17 +258,19 @@ describe('SensorService', () => {
       expect(createArg.user_id).toBe('user-1');
       expect(createArg.device_model).toBe('iPhone 15');
       expect(createArg.classification).toBe('excellent');
-      // US-3: classifier identifier propagates onto every persisted row.
-      expect(createArg.model_version).toBe('rsc-v1.0.0');
+      // US-3: client classifier identifier propagates onto every
+      // persisted row as telemetry — the row's `classification` /
+      // `surface_type` are still server-derived above.
+      expect(createArg.client_model_version).toBe('rsc-v1.0.0');
     });
 
-    it('persists model_version=null when the heuristic fallback ran on the client', async () => {
+    it('persists client_model_version=null when the heuristic fallback ran on the client', async () => {
       const dto = {
         ride_id: 'ride-1',
         device_model: 'iPhone 15',
-        // model_version intentionally omitted — mobile sets it to null
-        // (and serialises as undefined) when the v0 RMS heuristic
-        // produced the labels.
+        // client_model_version intentionally omitted — mobile sets it
+        // to null (and serialises as undefined) when the v0 RMS
+        // heuristic produced the window-level outputs.
         readings: Array.from({ length: 50 }, (_, i) => ({
           t: Date.now() + i * 20,
           ax: 0.1,
@@ -283,7 +285,7 @@ describe('SensorService', () => {
       await service.processUpload('user-1', dto);
 
       const createArg = (readingRepo.create as jest.Mock).mock.calls[0][0];
-      expect(createArg.model_version).toBeNull();
+      expect(createArg.client_model_version).toBeNull();
     });
 
     it('should return zero when all readings lack GPS', async () => {

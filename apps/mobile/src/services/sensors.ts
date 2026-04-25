@@ -272,12 +272,14 @@ class SensorService {
       quality_score = Math.max(0.5, 1.0 - ((rms - 9.0) / 5.0) * 0.5);
     }
 
-    // Surface heuristic only emits asphalt / gravel / cobblestone — the
-    // remaining PRD tiers (concrete, dirt) need spectral features the
-    // RMS-only fallback can't separate. Marked `unknown` rather than
-    // misclassified so the backend can choose to discard low-confidence
-    // surface labels from heuristic uploads.
-    let surface_type: SurfaceType = "asphalt";
+    // Surface heuristic only separates gravel and cobblestone with any
+    // confidence — the remaining PRD tiers (asphalt, concrete, dirt)
+    // need spectral features the RMS-only fallback can't extract.
+    // Default to `unknown` rather than guessing 'asphalt' so the
+    // backend can choose to discard low-confidence surface labels
+    // from heuristic uploads instead of mistaking them for ground
+    // truth.
+    let surface_type: SurfaceType = "unknown";
     if (features.zero_crossing_rate > 0.4 && rms > 3.0) {
       surface_type = "gravel";
     } else if (features.crest_factor > 5.0) {

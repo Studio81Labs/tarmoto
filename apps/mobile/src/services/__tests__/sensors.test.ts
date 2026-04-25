@@ -130,6 +130,21 @@ describe("sensorService.classify — heuristic fallback", () => {
     expect(out.surface_type).toBe("cobblestone");
   });
 
+  it("defaults to 'unknown' when the heuristic can't separate the surface", () => {
+    // The heuristic only reliably separates gravel and cobblestone —
+    // claiming 'asphalt' for anything that isn't those two would
+    // poison the backend's surface aggregations with low-confidence
+    // labels. 'unknown' lets the backend choose to drop the field.
+    const out = callClassify(
+      makeFeatures({
+        speed_normalized_rms: 0.5,
+        zero_crossing_rate: 0.05,
+        crest_factor: 1.5,
+      }),
+    );
+    expect(out.surface_type).toBe("unknown");
+  });
+
   it("uses a higher confidence above 20 km/h", () => {
     const slow = callClassify(makeFeatures({ speed_kmh: 5 }));
     const fast = callClassify(makeFeatures({ speed_kmh: 50 }));

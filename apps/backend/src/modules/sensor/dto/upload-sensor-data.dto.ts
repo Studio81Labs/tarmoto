@@ -57,11 +57,17 @@ export class UploadSensorDataDto {
   device_model?: string;
 
   /**
-   * Identifier of the on-device classifier that produced this batch's
-   * window-level outputs (US-3). Optional / absent when the v0 RMS
-   * heuristic on the mobile side fired (model not bundled, load
-   * failed, or runtime error). Persisted on each `surface_readings`
-   * row so a future deprecation can ignore older outputs.
+   * Identifier of the on-device TF Lite classifier active when this
+   * batch was uploaded (US-3). **Telemetry only** — the backend
+   * re-derives `classification` and `surface_type` from the raw
+   * readings, so this field describes the *client's* state, not how
+   * the persisted labels were produced.
+   *
+   * Optional / absent when the mobile fallback heuristic ran (model
+   * not bundled, load failed, or runtime error). Persisted on each
+   * `surface_readings.client_model_version` so a future change that
+   * trusts client window-level outputs can filter by classifier
+   * version without backfilling.
    *
    * Constrained to `^[A-Za-z0-9._-]{1,32}$` so a malicious or buggy
    * client can't inject control characters into log lines or DB
@@ -71,16 +77,20 @@ export class UploadSensorDataDto {
     required: false,
     example: 'rsc-v1.0.0',
     description:
-      'Identifier of the on-device classifier that produced the labels in ' +
-      'this batch. Null/absent means the v0 RMS heuristic ran instead.',
+      'Identifier of the client-side TF Lite classifier active when this ' +
+      'batch was uploaded. Telemetry only — the backend always re-derives ' +
+      'labels from raw readings, so this does NOT describe how the ' +
+      'persisted classification was produced. Null/absent means the ' +
+      'mobile fallback heuristic ran instead of the bundled model.',
   })
   @IsOptional()
   @IsString()
   @MaxLength(32)
   @Matches(/^[A-Za-z0-9._-]+$/, {
-    message: 'model_version must be alphanumeric with optional ._- separators',
+    message:
+      'client_model_version must be alphanumeric with optional ._- separators',
   })
-  model_version?: string;
+  client_model_version?: string;
 
   @ApiProperty({ type: [SensorReadingDto], maxItems: 5000 })
   @IsArray()

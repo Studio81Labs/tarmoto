@@ -45,14 +45,19 @@ export class SurfaceReading {
   device_model!: string | null;
 
   /**
-   * Identifier of the on-device TF Lite classifier that produced the
-   * window-level labels for the batch this row came from (US-3). Null
-   * when the v0 RMS heuristic ran instead (mobile fallback). The
-   * aggregator uses this to gate retired classifier output without
-   * dropping the row.
+   * Identifier of the client-side TF Lite classifier active when this
+   * batch was uploaded (US-3). **Telemetry only** — the row's
+   * `classification` and `surface_type` are derived server-side from
+   * raw readings, not from any client labels. Stored so a future
+   * change that trusts client window-level outputs (or a fleet rollout
+   * gated on classifier version) can filter by this column without
+   * backfilling.
+   *
+   * `null` when the mobile fallback heuristic ran instead of the
+   * bundled TFLite model.
    */
   @Column({ type: 'varchar', length: 32, nullable: true })
-  model_version!: string | null;
+  client_model_version!: string | null;
 
   @Column({ type: 'timestamptz', default: () => 'NOW()' })
   recorded_at!: Date;

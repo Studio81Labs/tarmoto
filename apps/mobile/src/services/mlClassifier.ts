@@ -180,7 +180,21 @@ export function classify(features: WindowFeatures): MlClassification | null {
   }
 
   const parsed = parseModelOutput(raw);
-  if (!parsed) return null;
+  if (!parsed) {
+    // Output shape mismatch is deterministic — the model file itself
+    // is wrong (or the contract drifted). Latch the failure so we
+    // don't pay for `runSync` + `parseModelOutput` on every subsequent
+    // window for the rest of the ride; the caller uses the v0
+    // heuristic from here on out. Same one-warning policy as the load
+    // path so a long ride doesn't flood the device log.
+    loadFailed = true;
+    model = null;
+    console.warn(
+      "[MlClassifier] TF Lite output shape didn't match contract, " +
+        "disabling model for this session",
+    );
+    return null;
+  }
   return parsed;
 }
 
@@ -275,7 +289,17 @@ export function isReady(): boolean {
   return model !== null && !loadFailed;
 }
 
-/** Used by the upload path so the backend can tag rows by classifier version. */
+/**
+ * Returns `MODEL_VERSION` when the bundled classifier is loaded and
+ * healthy, or `null` when the heuristic fallback is in effect.
+ *
+ * Intended for callers that need to tag a *batch* — e.g. the upload
+ * payload's `client_model_version`, or telemetry — without inspecting
+ * each per-window `MlClassification.model_version`. The mobile sensor
+ * pipeline tags each window individually instead, but a future
+ * batch-level helper (e.g. when Settings exposes a "force fallback"
+ * toggle) will route through this helper.
+ */
 export function getActiveModelVersion(): string | null {
   return isReady() ? MODEL_VERSION : null;
 }
