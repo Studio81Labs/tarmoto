@@ -35,6 +35,7 @@ Each threshold is overridable via CLI flags or service options.
 
 - `eps` is in degrees of arc — `0.045°` is roughly **3.2km** east-west and **5.0km** north-south at 50°N. This produces fun-zone-sized clusters without merging entire mountain ranges into a single mega-zone.
 - `minpoints = 3` means a candidate must have at least 3 neighbours within `eps` to seed or extend a cluster; isolated curvy segments are noise and filtered out.
+- The window has an explicit `ORDER BY id` — without it, PostGIS warns that border points may be assigned to different clusters across runs, which would churn zone IDs even when source data hasn't changed.
 - After DBSCAN, clusters with fewer than `min_roads_per_zone` (default `3`) members are dropped.
 
 The boundary polygon for each zone is the **convex hull of the buffered union** of member geometries:

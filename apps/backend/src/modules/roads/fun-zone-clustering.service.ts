@@ -298,7 +298,7 @@ export class FunZoneClusteringService {
         SELECT
           id, geom, curviness_score, quality_score, length_m,
           elevation_min, elevation_max,
-          ST_ClusterDBSCAN(geom, eps := $5, minpoints := $6) OVER () AS cluster_seed
+          ST_ClusterDBSCAN(geom, eps := $5, minpoints := $6) OVER (ORDER BY id) AS cluster_seed
         FROM eligible
       )
       SELECT

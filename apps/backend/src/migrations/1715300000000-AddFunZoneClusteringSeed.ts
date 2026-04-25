@@ -60,7 +60,7 @@ export class AddFunZoneClusteringSeed1715300000000 implements MigrationInterface
             id, geom, curviness_score, quality_score, length_m,
             elevation_min, elevation_max,
             ST_ClusterDBSCAN(geom, eps := p_eps_degrees, minpoints := p_min_points)
-              OVER () AS cluster_seed
+              OVER (ORDER BY id) AS cluster_seed
           FROM eligible
         )
         SELECT
