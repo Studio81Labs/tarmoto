@@ -60,16 +60,6 @@ export interface FunZoneClusteringResult {
   duration_ms: number;
 }
 
-export interface ZoneAggregateRow {
-  member_ids: string[];
-  avg_curviness: number;
-  avg_quality: number;
-  total_length_m: number;
-  total_curve_km: number;
-  elevation_range_m: number;
-  road_count: number;
-}
-
 export interface CompositeScoreInput {
   avg_curviness: number;
   avg_quality: number;
@@ -247,7 +237,10 @@ export class FunZoneClusteringService {
         `Clustering produced ${aggregateRows.length} zone candidates`,
       );
 
-      const persisted = await this.persistZones(tx, aggregateRows, opts);
+      const persisted = await this.persistZones(tx, aggregateRows, {
+        pruneStaleZones: opts.pruneStaleZones,
+        bbox: opts.bbox,
+      });
 
       return {
         zones_written: persisted.zonesWritten,
@@ -364,7 +357,10 @@ export class FunZoneClusteringService {
   private async persistZones(
     tx: EntityManager,
     candidates: ClusterRow[],
-    opts: { pruneStaleZones: boolean },
+    opts: {
+      pruneStaleZones: boolean;
+      bbox?: [number, number, number, number];
+    },
   ): Promise<{
     zonesWritten: number;
     zonesPruned: number;
@@ -465,24 +461,35 @@ export class FunZoneClusteringService {
 
     let zonesPruned = 0;
     if (opts.pruneStaleZones) {
-      const result =
-        writtenIds.length === 0
-          ? ((await tx.query(`DELETE FROM fun_zones`)) as unknown as Array<
-              Record<string, unknown>
-            > & { length: number })
-          : ((await tx.query(
-              `DELETE FROM fun_zones WHERE id NOT IN (${writtenIds
-                .map((_, i) => `$${i + 1}::uuid`)
-                .join(',')})`,
-              writtenIds,
-            )) as unknown as Array<Record<string, unknown>> & {
-              length: number;
-            });
+      // Scope pruning to the bbox the run actually clustered. Without
+      // this, a regional re-cluster (with `bbox`) would delete every
+      // zone outside the bbox as collateral, since `writtenIds` only
+      // covers in-scope zones.
+      const conditions: string[] = [];
+      const params: (string | number)[] = [];
+      if (opts.bbox) {
+        const [w, s, e, n] = opts.bbox;
+        conditions.push(
+          `ST_Intersects(boundary, ST_MakeEnvelope($${params.length + 1}, $${params.length + 2}, $${params.length + 3}, $${params.length + 4}, 4326))`,
+        );
+        params.push(w, s, e, n);
+      }
+      if (writtenIds.length > 0) {
+        const placeholders = writtenIds
+          .map((_, i) => `$${params.length + i + 1}::uuid`)
+          .join(',');
+        conditions.push(`id NOT IN (${placeholders})`);
+        params.push(...writtenIds);
+      }
+      const where =
+        conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+      const sql = `DELETE FROM fun_zones ${where}`;
       // typeorm returns [rows, affected] for some drivers; for pg the
       // raw result on DELETE is an array of rowCount-like info. We don't
       // strictly need an exact prune count for correctness — the
       // result is best-effort observability.
-      const affected = (result as unknown as { affected?: number }).affected;
+      const result = (await tx.query(sql, params)) as unknown;
+      const affected = (result as { affected?: number }).affected;
       if (typeof affected === 'number') {
         zonesPruned = affected;
       }

@@ -102,7 +102,7 @@ uuid_generate_v5(NAMESPACE, sorted_member_segment_ids_csv)
 
 with `NAMESPACE = '47b1a8a9-8d67-4b28-9a1c-6cb72d6c4f01'`. The same input produces the same UUID, so two consecutive clustering runs against unchanged data yield zero churn on `fun_zones.id`. Small perturbations (a single segment flipping below the eligibility threshold) only change IDs for zones whose membership actually shifted, leaving the rest stable.
 
-After upserting all candidate zones, the run deletes `fun_zones` rows whose IDs aren't in the latest candidate set so stale zones don't accumulate. `fun_zone_roads` is wiped and rewritten per zone in the same transaction.
+After upserting all candidate zones, the run deletes `fun_zones` rows whose IDs aren't in the latest candidate set so stale zones don't accumulate. **When a `--bbox` is supplied the prune is scoped to zones whose `boundary` intersects the bbox**, so a regional re-cluster never deletes zones outside the requested region. `fun_zone_roads` is wiped and rewritten per zone in the same transaction.
 
 ## Running the job
 
