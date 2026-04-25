@@ -67,6 +67,16 @@ export interface DrainResult {
    * fine and fresh payloads should still go live.
    */
   networkFailed: boolean;
+  /**
+   * True when the drain stopped because the server returned a transient
+   * fault (5xx / 408 / 429) rather than because the link is down. The
+   * link itself is fine, but pushing a fresh live payload now would (a)
+   * pile on a struggling backend and (b) ship the new ride before the
+   * older queued ones, breaking the FIFO order the rest of the pipeline
+   * assumes. Callers should treat this the same as `networkFailed` for
+   * the purpose of "queue, don't go live".
+   */
+  transientServerError: boolean;
 }
 
 /** Callback used to actually POST one payload. Injected for testability. */
@@ -218,14 +228,18 @@ export async function submitSensorUpload(
   // evidence below newer. If the flush hits a network error mid-way, the
   // current payload falls through to the same enqueue path below.
   //
-  // Gate on `networkFailed`, not `remaining > 0`: poison pills (HTTP
-  // 4xx awaiting their 3rd attempt) sit in the queue without meaning the
-  // network is down, and a healthy fresh upload shouldn't be delayed
-  // behind them. If the link really is down, `networkFailed` is set.
+  // Gate on the drain's stop reasons (`networkFailed`,
+  // `transientServerError`), NOT on `remaining > 0`: poison pills (HTTP
+  // 4xx awaiting their 3rd attempt) sit in the queue without meaning
+  // the link or the server is unhealthy, so a healthy fresh upload
+  // shouldn't be delayed behind them.
   const drain = await drainOfflineQueue(uploader);
 
-  if (drain.networkFailed) {
-    // Don't even try the live call — we already know the network is down.
+  if (drain.networkFailed || drain.transientServerError) {
+    // Skip the live call:
+    //   - networkFailed → link is down
+    //   - transientServerError → backend is struggling, and shipping a
+    //     fresh ride past the older queued ones would also break FIFO
     enqueueUpload(rideId, readings, deviceModel);
     return {
       status: "queued",
@@ -284,6 +298,7 @@ export function drainOfflineQueue(
   const run = async (): Promise<DrainResult> => {
     let flushed = 0;
     let networkFailed = false;
+    let transientServerError = false;
     // Each drain touches every item at most once. Without this guard, a
     // poison pill (HTTP 4xx) would be retried three times back-to-back
     // in the same call — `replaceById` keeps the failed entry at index
@@ -318,10 +333,13 @@ export function drainOfflineQueue(
           // Server hiccup (5xx, rate limit, request timeout). The
           // payload is fine — retrying later is the right move. Stop
           // draining to avoid hammering a struggling backend, but keep
-          // everything queued and don't flag `networkFailed` because
-          // the link itself is working. `attempts` stays untouched so
-          // a temporarily unhappy server doesn't burn a payload's
-          // retry budget.
+          // everything queued and flag the stop reason so the submit
+          // path skips its live call (otherwise a fresh ride would
+          // ship before older queued ones, breaking FIFO). The link
+          // itself is fine, so `networkFailed` stays false. `attempts`
+          // is untouched so a temporarily unhappy server doesn't burn
+          // a payload's retry budget.
+          transientServerError = true;
           break;
         }
         // Poison pill (4xx client error): bump attempts; if we've seen
@@ -339,7 +357,12 @@ export function drainOfflineQueue(
         // next item might be healthy.
       }
     }
-    return { flushed, remaining: getPendingCount(), networkFailed };
+    return {
+      flushed,
+      remaining: getPendingCount(),
+      networkFailed,
+      transientServerError,
+    };
   };
 
   drainInFlight = run().finally(() => {

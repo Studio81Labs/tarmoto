@@ -164,6 +164,38 @@ describe("offlineQueue", () => {
       expect(getPendingUploads()[0].rideId).toBe("ride-1");
     });
 
+    it("queues the new payload (no live call) when the BACKLOG flush hits a 5xx", async () => {
+      // FIFO guard: when the drain stops on a transient server fault
+      // it now flags `transientServerError`, and the submit path
+      // skips the live POST. Without this, a fresh ride could
+      // succeed (if the 5xx was payload-specific) and ship before
+      // older queued ones — breaking the chronological order the
+      // backend's "newest data wins" aggregation relies on.
+      enqueueUpload("old-ride", [makeReading(1)], "iPhone");
+      const uploader = jest.fn<
+        ReturnType<SensorUploader>,
+        Parameters<SensorUploader>
+      >();
+      uploader.mockRejectedValueOnce(makeServerError(503));
+      uploader.mockResolvedValueOnce({ accepted: 9, segments_updated: 9 });
+
+      const result = await submitSensorUpload(
+        "new-ride",
+        [makeReading(2)],
+        "iPhone",
+        uploader,
+      );
+
+      expect(result.status).toBe("queued");
+      // Exactly one call: the drain attempt that hit 503. The live
+      // POST for "new-ride" must NOT be made.
+      expect(uploader).toHaveBeenCalledTimes(1);
+      expect(getPendingUploads().map((e) => e.rideId)).toEqual([
+        "old-ride",
+        "new-ride",
+      ]);
+    });
+
     it("queues the new payload if the backlog flush hits the network", async () => {
       // Backlog item pre-seeded. The uploader stays offline the entire
       // call — so neither the backlog item nor the fresh payload can go
@@ -224,6 +256,7 @@ describe("offlineQueue", () => {
         flushed: 0,
         remaining: 0,
         networkFailed: false,
+        transientServerError: false,
       });
       expect(uploader).not.toHaveBeenCalled();
     });

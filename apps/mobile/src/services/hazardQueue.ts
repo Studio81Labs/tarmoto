@@ -72,6 +72,16 @@ export interface DrainHazardResult {
    * could equally be a poison pill awaiting its retry budget.
    */
   networkFailed: boolean;
+  /**
+   * True when the drain stopped because the server returned a transient
+   * fault (5xx / 408 / 429) rather than because the link is down. The
+   * link is fine, but pushing a fresh live report now would (a) pile on
+   * a struggling backend and (b) ship the new hazard before the older
+   * queued ones, breaking the FIFO order the rest of the pipeline
+   * assumes. Callers should treat this the same as `networkFailed` for
+   * the purpose of "queue, don't go live".
+   */
+  transientServerError: boolean;
 }
 
 /** Callback used to actually POST one report. Injected for testability. */
@@ -196,12 +206,18 @@ export async function submitHazardReport(
   uploader: HazardUploader,
 ): Promise<SubmitHazardResult> {
   // Drain backlog first so reports stay in the order the rider tapped
-  // Submit. Gate on `networkFailed` rather than `remaining > 0` so a
-  // poison pill in the backlog (HTTP 4xx awaiting its 3rd attempt)
-  // doesn't block a healthy fresh report behind it.
+  // Submit. Gate on the drain's stop reasons (`networkFailed`,
+  // `transientServerError`), NOT on `remaining > 0` — a non-zero
+  // `remaining` could equally be a 4xx poison pill awaiting its retry
+  // budget, in which case the link and server are both fine and a
+  // healthy fresh report should still go live.
   const drain = await drainHazardQueue(uploader);
 
-  if (drain.networkFailed) {
+  if (drain.networkFailed || drain.transientServerError) {
+    // Skip the live call when the drain stopped on either of:
+    //   - networkFailed → link is down
+    //   - transientServerError → backend is struggling, and shipping a
+    //     fresh report past the older queued ones would also break FIFO
     enqueueHazardReport(payload);
     return { status: "queued", pending: getPendingCount() };
   }
@@ -228,6 +244,7 @@ export function drainHazardQueue(
   const run = async (): Promise<DrainHazardResult> => {
     let flushed = 0;
     let networkFailed = false;
+    let transientServerError = false;
     // Touch each item at most once per drain so a poison pill doesn't
     // burn its three attempts in a tight loop and starve healthy items
     // queued behind it.
@@ -247,8 +264,11 @@ export function drainHazardQueue(
           break;
         }
         if (isTransientServerError(error)) {
-          // Server hiccup: keep queued, stop draining, but don't burn
-          // a retry attempt.
+          // Server hiccup: keep queued, stop draining, don't burn a
+          // retry attempt, AND signal the stop reason so the submit
+          // path skips its live call (otherwise a fresh report would
+          // ship before older queued ones, breaking FIFO).
+          transientServerError = true;
           break;
         }
         next.attempts += 1;
@@ -259,7 +279,12 @@ export function drainHazardQueue(
         }
       }
     }
-    return { flushed, remaining: getPendingCount(), networkFailed };
+    return {
+      flushed,
+      remaining: getPendingCount(),
+      networkFailed,
+      transientServerError,
+    };
   };
 
   drainInFlight = run().finally(() => {

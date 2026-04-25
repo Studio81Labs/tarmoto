@@ -196,6 +196,62 @@ describe("hazardQueue", () => {
       expect(uploader).toHaveBeenCalledTimes(1);
       expect(getPendingCount()).toBe(2);
     });
+
+    it("queues fresh payload (no live call) when backlog drain hits a transient server error", async () => {
+      // Critical FIFO guard: the drain stops on 5xx/408/429 WITHOUT
+      // setting `networkFailed`, because the link is fine. Without the
+      // `transientServerError` flag the submit path would still try
+      // the live POST — and if it succeeded (e.g. the rate limit was
+      // payload-specific or a one-off), the new hazard would ship
+      // before the older queued ones, breaking FIFO.
+      enqueueHazardReport(makePayload({ note: "old report" }));
+      // First call (drain) throws 503, second call (the live POST that
+      // must NOT happen) would succeed if invoked — the test asserts
+      // it isn't.
+      const uploader = jest.fn<
+        ReturnType<HazardUploader>,
+        [HazardReportPayload]
+      >();
+      uploader.mockRejectedValueOnce(makeServerError(503));
+      uploader.mockResolvedValueOnce(makeHazard({ id: "should-not-ship" }));
+
+      const result = await submitHazardReport(
+        makePayload({ note: "new report" }),
+        uploader,
+      );
+
+      expect(result.status).toBe("queued");
+      // Exactly one call: the drain attempt that hit 503. The live POST
+      // for the fresh payload must NOT be made.
+      expect(uploader).toHaveBeenCalledTimes(1);
+      expect(getPendingCount()).toBe(2);
+    });
+  });
+
+  describe("drainHazardQueue stop reasons", () => {
+    it("flags transientServerError without networkFailed on 5xx", async () => {
+      enqueueHazardReport(makePayload());
+      const uploader: HazardUploader = jest.fn(async () => {
+        throw makeServerError(503);
+      });
+
+      const result = await drainHazardQueue(uploader);
+      expect(result.networkFailed).toBe(false);
+      expect(result.transientServerError).toBe(true);
+      expect(result.flushed).toBe(0);
+      expect(result.remaining).toBe(1);
+    });
+
+    it("flags networkFailed without transientServerError on link-down", async () => {
+      enqueueHazardReport(makePayload());
+      const uploader: HazardUploader = jest.fn(async () => {
+        throw makeNetworkError();
+      });
+
+      const result = await drainHazardQueue(uploader);
+      expect(result.networkFailed).toBe(true);
+      expect(result.transientServerError).toBe(false);
+    });
   });
 
   describe("drainHazardQueue", () => {
