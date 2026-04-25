@@ -48,16 +48,23 @@ function makeFeatures(overrides: Partial<WindowFeatures> = {}): WindowFeatures {
 
 /**
  * Minimal stand-in for a TFLite model that returns whatever the test
- * pre-stages. Two-tensor output is the canonical shape — the
- * single-concat-tensor path is exercised directly via parseModelOutput.
+ * pre-stages. Mirrors the `react-native-fast-tflite` v3 contract:
+ * `runSync` takes `ArrayBuffer[]` and returns `ArrayBuffer[]`. Tests
+ * stage Float32Arrays for ergonomics and we hand back their backing
+ * buffers — the production code wraps each output buffer in a
+ * Float32Array view before parsing.
  */
 function makeMockModel(
   outputs: Float32Array[] | (() => Float32Array[]) | Error,
 ) {
   return {
-    runSync: jest.fn(() => {
+    runSync: jest.fn((_inputs: ArrayBuffer[]): ArrayBuffer[] => {
       if (outputs instanceof Error) throw outputs;
-      return typeof outputs === "function" ? outputs() : outputs;
+      const tensors = typeof outputs === "function" ? outputs() : outputs;
+      // `Float32Array.buffer` is typed as the wider `ArrayBufferLike`
+      // to allow SharedArrayBuffer; the freshly-allocated arrays we
+      // build in tests are always backed by plain ArrayBuffer.
+      return tensors.map((t) => t.buffer as ArrayBuffer);
     }),
   };
 }
@@ -208,6 +215,36 @@ describe("warmup + classify integration", () => {
     expect(result!.model_version).toBe(MODEL_VERSION);
     expect(model.runSync).toHaveBeenCalledTimes(1);
     expect(getActiveModelVersion()).toBe(MODEL_VERSION);
+  });
+
+  it("hands runSync an ArrayBuffer, matching the v3 native contract", async () => {
+    // Regression: react-native-fast-tflite v3 takes/returns
+    // `ArrayBuffer[]`, not typed arrays. v1/v2 accepted Float32Arrays
+    // directly — pinning this test means a future binding bump that
+    // changes the shape can't silently break inference (which would
+    // latch the model off and disable ML for the whole session).
+    const quality = softmax([2.0, 0.1, 0.1, 0.1, 0.1]);
+    const surface = softmax([0.1, 0.1, 0.1, 2.0, 0.1]);
+    const model = makeMockModel([quality, surface]);
+    __setLoaderForTest(async () => model);
+    await warmup();
+
+    classify(makeFeatures({ rms: 1.7 }));
+
+    expect(model.runSync).toHaveBeenCalledTimes(1);
+    const inputs = model.runSync.mock.calls[0][0];
+    expect(Array.isArray(inputs)).toBe(true);
+    expect(inputs).toHaveLength(1);
+    // `instanceof ArrayBuffer` is unreliable across jest realms (the
+    // ArrayBuffer constructor in the source file's realm differs from
+    // the test's). Compare by tag + size instead — both checks would
+    // fail if the production code ever reverted to passing a typed
+    // array directly (a Float32Array reports `[object Float32Array]`
+    // and its byteLength is 4× the element count anyway).
+    expect(Object.prototype.toString.call(inputs[0])).toBe(
+      "[object ArrayBuffer]",
+    );
+    expect(inputs[0].byteLength).toBe(INPUT_FEATURES.length * 4);
   });
 
   it("returns null and stays unready when the loader rejects", async () => {

@@ -82,9 +82,18 @@ export interface MlClassification {
   model_version: string;
 }
 
-/** Minimal interface we actually use from `react-native-fast-tflite`. */
+/**
+ * Minimal interface we actually use from `react-native-fast-tflite` v3.
+ *
+ * v3 changed `runSync` to take and return `ArrayBuffer[]` (rather than
+ * typed arrays directly). Callers wrap their input in
+ * `Float32Array(...).buffer` and view each output buffer as a
+ * `Float32Array` to read float scores. We keep this interface narrow
+ * so swapping the native binding for a future version means updating
+ * one shape, not the entire module.
+ */
 interface TFLiteModelLike {
-  runSync(inputs: Float32Array[]): Float32Array[] | number[][];
+  runSync(inputs: ArrayBuffer[]): ArrayBuffer[];
 }
 
 type ModelLoader = () => Promise<TFLiteModelLike>;
@@ -161,9 +170,17 @@ export function classify(features: WindowFeatures): MlClassification | null {
   if (!model || loadFailed) return null;
 
   const input = featuresToInputVector(features);
-  let raw: Float32Array[] | number[][];
+  let raw: ArrayBuffer[];
   try {
-    raw = model.runSync([input]);
+    // v3 of `react-native-fast-tflite` takes ArrayBuffers, not typed
+    // arrays. `Float32Array.buffer` is the underlying buffer; using a
+    // freshly-allocated typed array (as `featuresToInputVector` does)
+    // means byteOffset is 0 and the backing store is always a plain
+    // ArrayBuffer (never SharedArrayBuffer in RN), so the cast below
+    // is sound — TypeScript's `Float32Array.buffer` is typed as the
+    // wider `ArrayBufferLike` to allow SharedArrayBuffer in browser
+    // contexts that we don't hit here.
+    raw = model.runSync([input.buffer as ArrayBuffer]);
   } catch (error) {
     // A runtime inference failure (e.g. tensor shape mismatch caused by
     // a bad model file) shouldn't bring down the ride. Latch the
@@ -179,7 +196,12 @@ export function classify(features: WindowFeatures): MlClassification | null {
     return null;
   }
 
-  const parsed = parseModelOutput(raw);
+  // v3 returns ArrayBuffers — view each as a float tensor before
+  // handing to the parser. `parseModelOutput` keeps its
+  // typed-array/number-array signature so it stays trivial to
+  // unit-test without faking the native I/O.
+  const tensors = raw.map((buf) => new Float32Array(buf));
+  const parsed = parseModelOutput(tensors);
   if (!parsed) {
     // Output shape mismatch is deterministic — the model file itself
     // is wrong (or the contract drifted). Latch the failure so we
