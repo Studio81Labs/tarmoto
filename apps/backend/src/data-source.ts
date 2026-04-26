@@ -27,14 +27,25 @@ import { AddPasswordHash1713100000000 } from './migrations/1713100000000-AddPass
 import { FixIsEmergencyDefault1713200000000 } from './migrations/1713200000000-FixIsEmergencyDefault.js';
 import { AddUniqueActiveRide1713300000000 } from './migrations/1713300000000-AddUniqueActiveRide.js';
 import { AddCommunityTables1713400000000 } from './migrations/1713400000000-AddCommunityTables.js';
-import { AddRideAvgCurviness1714400000000 } from './migrations/1714400000000-AddRideAvgCurviness.js';
+import { AddChallengeTables1713500000000 } from './migrations/1713500000000-AddChallengeTables.js';
+import { AddMountainPasses1713600000000 } from './migrations/1713600000000-AddMountainPasses.js';
+import { AddRoadSegmentElevationProfile1713700000000 } from './migrations/1713700000000-AddRoadSegmentElevationProfile.js';
+import { AddRideName1713800000000 } from './migrations/1713800000000-AddRideName.js';
+import { AddUserProfileFields1713900000000 } from './migrations/1713900000000-AddUserProfileFields.js';
+import { AddRoadReviewVotes1714000000000 } from './migrations/1714000000000-AddRoadReviewVotes.js';
+import { AddRoadClosures1714100000000 } from './migrations/1714100000000-AddRoadClosures.js';
+import { AddClosureDetourGeom1714200000000 } from './migrations/1714200000000-AddClosureDetourGeom.js';
 import { AddSharedRideViewCount1714300000000 } from './migrations/1714300000000-AddSharedRideViewCount.js';
+import { AddRideAvgCurviness1714400000000 } from './migrations/1714400000000-AddRideAvgCurviness.js';
 import { AddSharedRideEmbedClickCount1714500000000 } from './migrations/1714500000000-AddSharedRideEmbedClickCount.js';
+import { AddStripeBillingToUsers1714600000000 } from './migrations/1714600000000-AddStripeBillingToUsers.js';
+import { RecencyWeightedRoadQualityAggregation1714700000000 } from './migrations/1714700000000-RecencyWeightedRoadQualityAggregation.js';
 import { AddTripInviteCode1714800000000 } from './migrations/1714800000000-AddTripInviteCode.js';
 import { AddTripShares1714900000000 } from './migrations/1714900000000-AddTripShares.js';
 import { AddTripCollaboration1715000000000 } from './migrations/1715000000000-AddTripCollaboration.js';
 import { AddTripActivity1715100000000 } from './migrations/1715100000000-AddTripActivity.js';
 import { AddSurfaceReadingClientModelVersion1715200000000 } from './migrations/1715200000000-AddSurfaceReadingClientModelVersion.js';
+import { AddFunZoneClusteringSeed1715300000000 } from './migrations/1715300000000-AddFunZoneClusteringSeed.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -68,19 +79,37 @@ export const AppDataSource = new DataSource({
     TripActivity,
   ],
   migrations: [
+    // Listed in chronological order. Every migration in
+    // src/migrations/ MUST be registered here so `pnpm db:migrate`
+    // (typeorm migration:run) replays the full chain on a fresh DB.
+    // The fun-zone seed (171530) calls `cluster_fun_zones()` which
+    // queries `mountain_passes` (added by 171360), so the
+    // prerequisite chain has to be complete or `up` will fail with
+    // `relation "mountain_passes" does not exist`.
     InitSchema1713000000000,
     AddPasswordHash1713100000000,
     FixIsEmergencyDefault1713200000000,
     AddUniqueActiveRide1713300000000,
     AddCommunityTables1713400000000,
+    AddChallengeTables1713500000000,
+    AddMountainPasses1713600000000,
+    AddRoadSegmentElevationProfile1713700000000,
+    AddRideName1713800000000,
+    AddUserProfileFields1713900000000,
+    AddRoadReviewVotes1714000000000,
+    AddRoadClosures1714100000000,
+    AddClosureDetourGeom1714200000000,
     AddSharedRideViewCount1714300000000,
     AddRideAvgCurviness1714400000000,
     AddSharedRideEmbedClickCount1714500000000,
+    AddStripeBillingToUsers1714600000000,
+    RecencyWeightedRoadQualityAggregation1714700000000,
     AddTripInviteCode1714800000000,
     AddTripShares1714900000000,
     AddTripCollaboration1715000000000,
     AddTripActivity1715100000000,
     AddSurfaceReadingClientModelVersion1715200000000,
+    AddFunZoneClusteringSeed1715300000000,
   ],
   synchronize: false,
 });

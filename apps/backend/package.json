@@ -23,7 +23,8 @@
     "db:revert": "typeorm migration:revert -d dist/data-source.js",
     "db:up": "docker compose -f ../../infra/docker/docker-compose.yml up -d",
     "db:down": "docker compose -f ../../infra/docker/docker-compose.yml down",
-    "openapi:export": "nest build --config nest-cli.openapi.json && node dist/scripts/export-openapi.js"
+    "openapi:export": "nest build --config nest-cli.openapi.json && node dist/scripts/export-openapi.js",
+    "cluster:fun-zones": "node dist/scripts/cluster-fun-zones.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
