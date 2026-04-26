@@ -18,15 +18,14 @@ import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { SafetyService } from './safety.service.js';
 import { CrashAlertDto, CrashAlertResponseDto } from './dto/crash-alert.dto.js';
-import { UserScopedThrottlerGuard } from './user-scoped-throttler.guard.js';
 
 @ApiTags('safety')
 @Controller('safety')
-// AuthGuard runs first so `req.user.userId` is populated by the time
-// the throttler reads it. The user-scoped throttler buckets by
-// `(ip, user_id)` so riders behind shared NAT can't exhaust each
-// other's safety-endpoint budget.
-@UseGuards(AuthGuard, UserScopedThrottlerGuard)
+// `AuthGuard` populates `req.user.userId`. The app-wide throttler
+// (`UserScopedThrottlerGuard` registered as `APP_GUARD`) reads that
+// field to bucket by `(ip, user_id)` instead of plain IP, so riders
+// behind shared NAT can't exhaust each other's per-route budget.
+@UseGuards(AuthGuard)
 @ApiBearerAuth()
 export class SafetyController {
   constructor(private readonly safetyService: SafetyService) {}

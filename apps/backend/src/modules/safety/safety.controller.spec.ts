@@ -1,10 +1,8 @@
 /* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
-import { ThrottlerModule } from '@nestjs/throttler';
 import { SafetyController } from './safety.controller.js';
 import { SafetyService } from './safety.service.js';
-import { UserScopedThrottlerGuard } from './user-scoped-throttler.guard.js';
 
 describe('SafetyController', () => {
   let controller: SafetyController;
@@ -32,19 +30,10 @@ describe('SafetyController', () => {
     };
 
     const module: TestingModule = await Test.createTestingModule({
-      // ThrottlerModule populates the providers UserScopedThrottlerGuard
-      // depends on (THROTTLER:MODULE_OPTIONS, ThrottlerStorage). The
-      // values are arbitrary here — the guard is constructed via the
-      // controller's @UseGuards but this test only exercises the
-      // controller method.
-      imports: [
-        ThrottlerModule.forRoot({ throttlers: [{ ttl: 60_000, limit: 5 }] }),
-      ],
       controllers: [SafetyController],
       providers: [
         { provide: SafetyService, useValue: mockService },
         { provide: JwtService, useValue: { verifyAsync: jest.fn() } },
-        UserScopedThrottlerGuard,
       ],
     }).compile();
 
