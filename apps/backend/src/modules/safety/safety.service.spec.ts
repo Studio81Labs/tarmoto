@@ -51,7 +51,8 @@ describe('SafetyService', () => {
           ).driverError = { code: '23505' };
           throw err;
         }
-        alertStore.set(entity.id, { ...entity });
+        // Stamp created_at so stale-row detection can reason about age.
+        alertStore.set(entity.id, { ...entity, created_at: new Date() });
         return { identifiers: [{ id: entity.id }], generatedMaps: [], raw: [] };
       }),
       update: jest.fn(
@@ -384,9 +385,13 @@ describe('SafetyService', () => {
       expect(stored?.locale).toBe('en');
     });
 
-    it('falls back to log channel when notifier is unconfigured (env unset)', async () => {
+    it('records skipped (not sent) and 0 notified when notifier is unconfigured', async () => {
       // Simulate the production-with-no-creds path: the Twilio provider
-      // would log instead of calling the API and report channel='log'.
+      // logs instead of calling the API. The response must NOT claim the
+      // contacts were notified — no SMS / voice call ever leaves the
+      // system, so `contacts_notified` is 0 and per-contact `status`
+      // is `skipped`. This keeps a misconfigured deployment honest in
+      // a safety-critical flow.
       notifier.isConfigured.mockReturnValue(false);
       notifier.send.mockResolvedValue({
         channel: 'sms',
@@ -398,12 +403,78 @@ describe('SafetyService', () => {
         lng: 16.75,
       });
 
-      expect(result.contacts_notified).toBe(2);
+      expect(result.contacts_notified).toBe(0);
       result.contacts.forEach((c) => {
         expect(c.channel).toBe('log');
         expect(c.provider_message_id).toBeNull();
-        expect(c.status).toBe('sent');
+        expect(c.status).toBe('skipped');
+        expect(c.error).toContain('notifier not configured');
       });
+    });
+
+    it('reclaims a stale placeholder and re-dispatches when the original row never completed', async () => {
+      const sharedId = '00000000-0000-4000-8000-0000000000ff';
+
+      // First call inserts the placeholder, then we mutate the stored
+      // row to look like the original process died right after the
+      // insert: dispatch_completed_at stays null and created_at is
+      // pushed back beyond STALE_DISPATCH_MS (5 min).
+      notifier.send.mockRejectedValueOnce(new Error('process killed'));
+      notifier.send.mockRejectedValueOnce(new Error('process killed'));
+      await service.sendCrashAlert('user-1', {
+        lat: 49.1,
+        lng: 16.75,
+        alert_id: sharedId,
+      });
+
+      const stored = alertStore.get(sharedId)!;
+      // Simulate a process crash: erase completion + age the row.
+      alertStore.set(sharedId, {
+        ...stored,
+        dispatch_completed_at: null,
+        contacts_notified: 0,
+        contact_results: [],
+        created_at: new Date(Date.now() - 10 * 60 * 1000), // 10 min ago
+      });
+
+      // Retry — the stale row should be reclaimed and dispatch fresh.
+      notifier.send.mockResolvedValue({
+        channel: 'sms',
+        provider_message_id: 'SM-recovered',
+      });
+      const retry = await service.sendCrashAlert('user-1', {
+        lat: 49.1,
+        lng: 16.75,
+        alert_id: sharedId,
+      });
+
+      expect(retry.idempotent_replay).toBe(false);
+      expect(retry.dispatch_in_progress).toBe(false);
+      expect(retry.contacts_notified).toBe(2);
+
+      const finalRow = alertStore.get(sharedId)!;
+      expect(finalRow.dispatch_completed_at).toBeInstanceOf(Date);
+      expect(finalRow.contacts_notified).toBe(2);
+    });
+
+    it('still closes the audit row when dispatch throws mid-flight', async () => {
+      // Mock Promise.all to throw — emulates an unexpected error in the
+      // dispatch fan-out (out-of-memory, propagated DB hiccup, etc).
+      notifier.send.mockRejectedValue(new Error('boom'));
+
+      const result = await service
+        .sendCrashAlert('user-1', { lat: 49.1, lng: 16.75 })
+        .catch((e: Error) => e);
+
+      // Per-contact failures don't bubble — the request returns with
+      // status: 'failed' for every contact instead of throwing.
+      expect(result).not.toBeInstanceOf(Error);
+      const row = alertStore.get((result as { alert_id: string }).alert_id)!;
+      // Try/finally must always close the row, even when sends fail.
+      expect(row.dispatch_completed_at).toBeInstanceOf(Date);
+      expect(row.contacts_notified).toBe(0);
+      expect(row.contact_results).toHaveLength(2);
+      expect(row.contact_results[0].status).toBe('failed');
     });
 
     it('generates unique alert IDs when none provided', async () => {

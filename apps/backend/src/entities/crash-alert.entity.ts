@@ -37,12 +37,14 @@ export interface CrashAlertContactResult {
  * of re-sending SMS to every emergency contact.
  */
 @Entity('crash_alerts')
+// Composite index mirrors the migration's `(user_id, created_at DESC)`
+// so `migration:generate` does not see drift and emit a recreate.
+@Index('idx_crash_alerts_user', ['user_id', 'created_at'])
 export class CrashAlert {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
   @Column({ type: 'uuid' })
-  @Index('idx_crash_alerts_user')
   user_id!: string;
 
   @Column({ type: 'uuid', nullable: true })

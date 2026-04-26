@@ -1,6 +1,6 @@
 import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { IsNull, QueryFailedError, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
 import { UserContact } from '../../entities/user-contact.entity.js';
 import { User } from '../../entities/user.entity.js';
@@ -24,6 +24,14 @@ import {
 
 /** Postgres unique-violation SQLSTATE — used to detect idempotency replays. */
 const PG_UNIQUE_VIOLATION = '23505';
+
+/**
+ * After this many ms a placeholder row whose dispatch never completed
+ * is treated as abandoned (process crash, OOM, hard timeout) so a new
+ * request with the same `alert_id` can reclaim it instead of being
+ * locked into `dispatch_in_progress: true` forever.
+ */
+const STALE_DISPATCH_MS = 5 * 60 * 1000;
 
 @Injectable()
 export class SafetyService {
@@ -79,27 +87,16 @@ export class SafetyService {
     // unique-violation insert error that would bypass replay.
     const locale = normalizeCrashAlertLocale(rawLocale);
 
-    try {
-      await this.alertRepo.insert({
-        id: alertId,
-        user_id: userId,
-        ride_id: dto.ride_id ?? null,
-        lat: dto.lat,
-        lng: dto.lng,
-        speed_at_impact: dto.speed_at_impact ?? null,
-        severity,
-        locale,
-        contacts_notified: 0,
-        contacts_total: contacts.length,
-        contact_results: [],
-        dispatch_completed_at: null,
-      });
-    } catch (err) {
-      if (this.isUniqueViolation(err)) {
-        return this.replayExistingAlert(alertId, userId);
-      }
-      throw err;
-    }
+    const claim = await this.claimAlertRow(alertId, userId, {
+      rideId: dto.ride_id ?? null,
+      lat: dto.lat,
+      lng: dto.lng,
+      speedAtImpact: dto.speed_at_impact ?? null,
+      severity,
+      locale,
+      contactsTotal: contacts.length,
+    });
+    if (claim.replay) return claim.replay;
 
     const mapsLink = `https://maps.google.com/?q=${dto.lat},${dto.lng}`;
     const timestamp = new Date().toISOString();
@@ -118,29 +115,43 @@ export class SafetyService {
     const context: CrashAlertContext = { ...baseContext, message };
 
     const useVoice = severity === 'high';
-    const dispatchResults = await Promise.all(
-      contacts.map((contact) =>
-        this.dispatchToContact(contact, context, useVoice),
-      ),
-    );
 
-    const contactsNotified = dispatchResults.filter((r) =>
-      r.some((entry) => entry.status === 'sent'),
-    ).length;
+    let contactsNotified = 0;
+    let flatResults: CrashAlertContactResult[] = [];
+    try {
+      const dispatchResults = await Promise.all(
+        contacts.map((contact) =>
+          this.dispatchToContact(contact, context, useVoice),
+        ),
+      );
 
-    const flatResults: CrashAlertContactResult[] = dispatchResults.flat();
-
-    // Atomic completion: set dispatch_completed_at alongside the
-    // results so a concurrent retry can tell finished rows from
-    // in-flight placeholders.
-    await this.alertRepo.update(
-      { id: alertId, user_id: userId },
-      {
-        contacts_notified: contactsNotified,
-        contact_results: flatResults,
-        dispatch_completed_at: new Date(),
-      },
-    );
+      contactsNotified = dispatchResults.filter((r) =>
+        r.some((entry) => entry.status === 'sent'),
+      ).length;
+      flatResults = dispatchResults.flat();
+    } finally {
+      // Always close the row, even if dispatch threw, so retries don't
+      // see a permanent in-flight placeholder. A failure to write the
+      // completion is logged loudly — the stale-row recovery path in
+      // replayExistingAlert is the backstop for that case.
+      try {
+        await this.alertRepo.update(
+          { id: alertId, user_id: userId },
+          {
+            contacts_notified: contactsNotified,
+            contact_results: flatResults,
+            dispatch_completed_at: new Date(),
+          },
+        );
+      } catch (updateErr) {
+        const msg =
+          updateErr instanceof Error ? updateErr.message : String(updateErr);
+        this.logger.error(
+          `crash-alert ${alertId} completion update failed: ${msg} — ` +
+            `placeholder row may be stale until reclaimed by a retry`,
+        );
+      }
+    }
 
     this.eventsGateway.emitToUser(userId, 'crash:alert-sent', {
       alert_id: alertId,
@@ -172,6 +183,129 @@ export class SafetyService {
       })),
       idempotent_replay: false,
       dispatch_in_progress: false,
+    };
+  }
+
+  /**
+   * Insert the placeholder audit row, or — on a unique-violation —
+   * decide whether to replay an existing dispatch or reclaim a stale
+   * placeholder. Returns either a `replay` response (caller should
+   * return it directly) or `replay: null` (caller proceeds with
+   * dispatch). Cross-user collisions throw 409.
+   */
+  private async claimAlertRow(
+    alertId: string,
+    userId: string,
+    fields: {
+      rideId: string | null;
+      lat: number;
+      lng: number;
+      speedAtImpact: number | null;
+      severity: CrashAlertSeverity;
+      locale: string | null;
+      contactsTotal: number;
+    },
+  ): Promise<{ replay: CrashAlertResponseDto | null }> {
+    try {
+      await this.alertRepo.insert({
+        id: alertId,
+        user_id: userId,
+        ride_id: fields.rideId,
+        lat: fields.lat,
+        lng: fields.lng,
+        speed_at_impact: fields.speedAtImpact,
+        severity: fields.severity,
+        locale: fields.locale,
+        contacts_notified: 0,
+        contacts_total: fields.contactsTotal,
+        contact_results: [],
+        dispatch_completed_at: null,
+      });
+      return { replay: null };
+    } catch (err) {
+      if (!this.isUniqueViolation(err)) throw err;
+    }
+
+    const existing = await this.alertRepo.findOne({
+      where: { id: alertId, user_id: userId },
+    });
+    if (!existing) {
+      this.logger.warn(
+        `crash-alert idempotency collision id=${alertId} user=${userId} — ` +
+          'alert_id reused across users, refusing to dispatch or replay',
+      );
+      throw new ConflictException(
+        'alert_id is already in use; generate a new one',
+      );
+    }
+
+    if (existing.dispatch_completed_at !== null) {
+      return { replay: this.toReplayResponse(existing, false) };
+    }
+
+    const ageMs = Date.now() - existing.created_at.getTime();
+    if (ageMs <= STALE_DISPATCH_MS) {
+      this.logger.warn(
+        `crash-alert idempotent replay id=${alertId} — dispatch in progress`,
+      );
+      return {
+        replay: {
+          alert_id: existing.id,
+          contacts_notified: 0,
+          contacts: [],
+          idempotent_replay: true,
+          dispatch_in_progress: true,
+        },
+      };
+    }
+
+    // Stale placeholder: the original request died after the insert
+    // but before the completion update. Reclaim the row so this
+    // retry can dispatch fresh against the latest fields.
+    this.logger.warn(
+      `crash-alert reclaiming stale placeholder id=${alertId} ` +
+        `age=${Math.round(ageMs / 1000)}s — original dispatch never completed`,
+    );
+    await this.alertRepo.update(
+      // Constrain to still-incomplete rows so we don't accidentally
+      // overwrite a completion that landed between findOne and update.
+      { id: alertId, user_id: userId, dispatch_completed_at: IsNull() },
+      {
+        ride_id: fields.rideId,
+        lat: fields.lat,
+        lng: fields.lng,
+        speed_at_impact: fields.speedAtImpact,
+        severity: fields.severity,
+        locale: fields.locale,
+        contacts_notified: 0,
+        contacts_total: fields.contactsTotal,
+        contact_results: [],
+      },
+    );
+    return { replay: null };
+  }
+
+  private toReplayResponse(
+    existing: CrashAlert,
+    dispatchInProgress: boolean,
+  ): CrashAlertResponseDto {
+    this.logger.warn(
+      `crash-alert idempotent replay id=${existing.id} ` +
+        `notified=${existing.contacts_notified}/${existing.contacts_total}`,
+    );
+    return {
+      alert_id: existing.id,
+      contacts_notified: existing.contacts_notified,
+      contacts: existing.contact_results.map((r) => ({
+        contact_id: r.contact_id,
+        name: r.name,
+        channel: r.channel,
+        status: r.status,
+        provider_message_id: r.provider_message_id,
+        error: r.error,
+      })),
+      idempotent_replay: true,
+      dispatch_in_progress: dispatchInProgress,
     };
   }
 
@@ -213,11 +347,28 @@ export class SafetyService {
         },
         context,
       );
+      // Notifier-not-configured: the call returns successfully but
+      // only emitted a log line. Tag this as `skipped` (channel=log)
+      // so the response can't claim a contact was notified when no
+      // SMS/voice ever left the system. `contacts_notified` only
+      // counts `status: 'sent'` so unconfigured deployments stay
+      // honest in the response.
+      if (!this.notifier.isConfigured()) {
+        return {
+          contact_id: contact.id,
+          name: contact.name,
+          phone: contact.phone,
+          channel: 'log',
+          status: 'skipped',
+          provider_message_id: null,
+          error: 'notifier not configured (log-only fallback)',
+        };
+      }
       return {
         contact_id: contact.id,
         name: contact.name,
         phone: contact.phone,
-        channel: this.notifier.isConfigured() ? dispatch.channel : 'log',
+        channel: dispatch.channel,
         status: 'sent',
         provider_message_id: dispatch.provider_message_id,
         error: null,
@@ -238,63 +389,6 @@ export class SafetyService {
         error: message,
       };
     }
-  }
-
-  private async replayExistingAlert(
-    alertId: string,
-    userId: string,
-  ): Promise<CrashAlertResponseDto> {
-    // Scoped lookup: a row matching the unique-violation but owned by
-    // a different user must never leak its contact metadata back to
-    // the caller. Treat that as a Conflict so a malicious or buggy
-    // client gets a clear 409 instead of cross-tenant data.
-    const existing = await this.alertRepo.findOne({
-      where: { id: alertId, user_id: userId },
-    });
-    if (!existing) {
-      this.logger.warn(
-        `crash-alert idempotency collision id=${alertId} user=${userId} — ` +
-          'alert_id reused across users, refusing to dispatch or replay',
-      );
-      throw new ConflictException(
-        'alert_id is already in use; generate a new one',
-      );
-    }
-
-    if (existing.dispatch_completed_at === null) {
-      // Original request is still running. Don't return placeholder
-      // zeros as if dispatch had finished; signal in-flight so the
-      // client can wait or trust the original call's eventual result.
-      this.logger.warn(
-        `crash-alert idempotent replay id=${alertId} — dispatch in progress`,
-      );
-      return {
-        alert_id: existing.id,
-        contacts_notified: 0,
-        contacts: [],
-        idempotent_replay: true,
-        dispatch_in_progress: true,
-      };
-    }
-
-    this.logger.warn(
-      `crash-alert idempotent replay id=${alertId} ` +
-        `notified=${existing.contacts_notified}/${existing.contacts_total}`,
-    );
-    return {
-      alert_id: existing.id,
-      contacts_notified: existing.contacts_notified,
-      contacts: existing.contact_results.map((r) => ({
-        contact_id: r.contact_id,
-        name: r.name,
-        channel: r.channel,
-        status: r.status,
-        provider_message_id: r.provider_message_id,
-        error: r.error,
-      })),
-      idempotent_replay: true,
-      dispatch_in_progress: false,
-    };
   }
 
   private isUniqueViolation(err: unknown): boolean {
