@@ -376,7 +376,6 @@ export default function CrashAlertOverlay({
             <TouchableOpacity
               style={styles.cancelBtn}
               onPress={() => {
-                // Rotate the incident id so the backend treats this
                 // Only rotate the incident id when the previous
                 // failure was a backend-completed permanent failure
                 // (every contact's send rejected, dispatch_completed_at
