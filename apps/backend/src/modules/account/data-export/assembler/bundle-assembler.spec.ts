@@ -202,5 +202,20 @@ describe('BundleAssembler', () => {
     expect(trips.trips).toHaveLength(1);
     expect(trips.days).toHaveLength(2);
     expect(trips.memberships).toHaveLength(1);
+
+    // The trip-day query MUST be scoped to the user's trip ids — never
+    // an unfiltered scan of the whole table.
+    const tripDayCalls = repos.tripDays.find.mock.calls as unknown as Array<
+      [{ where?: { trip_id?: unknown } } | undefined]
+    >;
+    expect(tripDayCalls[0]?.[0]?.where?.trip_id).toBeDefined();
+  });
+
+  it('skips the trip_days query entirely when the user has no trips', async () => {
+    const user = makeUser();
+    const repos = emptyRepos();
+    const assembler = new BundleAssembler(repos as never);
+    await streamToBuffer(await assembler.assemble(user));
+    expect(repos.tripDays.find).not.toHaveBeenCalled();
   });
 });

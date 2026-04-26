@@ -1,7 +1,7 @@
 import type * as GeoJSON from 'geojson';
 import { Readable } from 'node:stream';
 import archiver from 'archiver';
-import type { Repository } from 'typeorm';
+import { In, type Repository } from 'typeorm';
 import type { User } from '../../../../entities/user.entity.js';
 import type { UserContact } from '../../../../entities/user-contact.entity.js';
 import type { Ride } from '../../../../entities/ride.entity.js';
@@ -41,7 +41,6 @@ export class BundleAssembler {
       contacts,
       rides,
       trips,
-      tripDays,
       tripMembers,
       reviews,
       hazards,
@@ -55,7 +54,6 @@ export class BundleAssembler {
         order: { started_at: 'DESC' },
       }),
       this.repos.trips.find({ where: { owner_id: userId } }),
-      this.repos.tripDays.find({}),
       this.repos.tripMembers.find({ where: { user_id: userId } }),
       this.repos.reviews.find({ where: { user_id: userId } }),
       this.repos.hazards.find({ where: { user_id: userId } }),
@@ -64,17 +62,22 @@ export class BundleAssembler {
       this.repos.commute.find({ where: { user_id: userId } }),
     ]);
 
-    const ownedTripIds = new Set(trips.map((t) => t.id));
-    const memberTripIds = new Set(tripMembers.map((m) => m.trip_id));
-    const allTripIds = new Set<string>([...ownedTripIds, ...memberTripIds]);
-    const visibleDays = tripDays.filter((d) => allTripIds.has(d.trip_id));
+    const allTripIds = Array.from(
+      new Set<string>([
+        ...trips.map((t) => t.id),
+        ...tripMembers.map((m) => m.trip_id),
+      ]),
+    );
 
     const rideIds = rides.map((r) => r.id);
-    const rideStats = rideIds.length
-      ? await this.repos.rideStats.find({
-          where: rideIds.map((id) => ({ ride_id: id })),
-        })
-      : [];
+    const [visibleDays, rideStats] = await Promise.all([
+      allTripIds.length
+        ? this.repos.tripDays.find({ where: { trip_id: In(allTripIds) } })
+        : Promise.resolve([]),
+      rideIds.length
+        ? this.repos.rideStats.find({ where: { ride_id: In(rideIds) } })
+        : Promise.resolve([]),
+    ]);
 
     const sanitizedProfile = sanitizeUserForExport(user);
     const generatedAt = new Date().toISOString();

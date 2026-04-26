@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataExportService } from './data-export.service.js';
 import { DataExportRequest } from '../../../entities/data-export-request.entity.js';
+import { EXPORT_STORAGE } from './storage/export-storage.interface.js';
 
 describe('DataExportService', () => {
   let service: DataExportService;
@@ -19,6 +20,11 @@ describe('DataExportService', () => {
     ),
     update: jest.fn(),
   };
+  const storage = {
+    write: jest.fn(),
+    read: jest.fn(),
+    delete: jest.fn().mockResolvedValue(undefined),
+  };
   const config = {
     get: jest.fn((k: string) => {
       if (k === 'TARMOTO_EXPORT_SIGNING_SECRET') return 'test-secret';
@@ -29,14 +35,24 @@ describe('DataExportService', () => {
 
   beforeEach(async () => {
     repo.findOne.mockReset();
-    repo.save.mockClear();
+    repo.save.mockReset();
+    repo.save.mockImplementation((x: Partial<DataExportRequest>) =>
+      Promise.resolve({
+        ...x,
+        id: x.id ?? 'req-new',
+        created_at: new Date(),
+        updated_at: new Date(),
+      }),
+    );
     repo.update.mockClear();
     repo.create.mockClear();
+    storage.delete.mockClear();
     const module = await Test.createTestingModule({
       providers: [
         DataExportService,
         { provide: getRepositoryToken(DataExportRequest), useValue: repo },
         { provide: ConfigService, useValue: config },
+        { provide: EXPORT_STORAGE, useValue: storage },
       ],
     }).compile();
     service = module.get(DataExportService);
@@ -72,7 +88,7 @@ describe('DataExportService', () => {
     expect(repo.save).not.toHaveBeenCalled();
   });
 
-  it('treats an expired active row as no-active and creates a new one', async () => {
+  it('expires + deletes the old file when the previous row is past TTL', async () => {
     const expired = {
       id: 'req-old',
       user_id: 'u1',
@@ -87,8 +103,67 @@ describe('DataExportService', () => {
     } as DataExportRequest;
     repo.findOne.mockResolvedValue(expired);
     const out = await service.requestExport('u1');
-    expect(out.created).toBe(true);
+    expect(storage.delete).toHaveBeenCalledWith('u1/req-old.zip');
+    expect(repo.update).toHaveBeenCalledWith(
+      { id: 'req-old' },
+      { status: 'expired' },
+    );
     expect(repo.save).toHaveBeenCalled();
+    expect(out.created).toBe(true);
+  });
+
+  it('still expires the row when the storage delete fails', async () => {
+    const expired = {
+      id: 'req-old',
+      user_id: 'u1',
+      status: 'ready',
+      expires_at: new Date(Date.now() - 1),
+      created_at: new Date(),
+      updated_at: new Date(),
+      completed_at: new Date(),
+      storage_key: 'u1/req-old.zip',
+      byte_size: '100',
+      error_message: null,
+    } as DataExportRequest;
+    repo.findOne.mockResolvedValue(expired);
+    storage.delete.mockRejectedValueOnce(new Error('disk gone'));
+    const out = await service.requestExport('u1');
+    expect(repo.update).toHaveBeenCalledWith(
+      { id: 'req-old' },
+      { status: 'expired' },
+    );
+    expect(out.created).toBe(true);
+  });
+
+  it('returns the winner when a concurrent insert wins the unique race', async () => {
+    repo.findOne.mockResolvedValueOnce(null);
+    repo.save.mockRejectedValueOnce(
+      Object.assign(new Error('duplicate key'), { code: '23505' }),
+    );
+    const winner = {
+      id: 'req-winner',
+      user_id: 'u1',
+      status: 'queued',
+      expires_at: new Date(Date.now() + 60_000),
+      created_at: new Date(),
+      updated_at: new Date(),
+      completed_at: null,
+      storage_key: null,
+      byte_size: null,
+      error_message: null,
+    } as DataExportRequest;
+    repo.findOne.mockResolvedValueOnce(winner);
+    const out = await service.requestExport('u1');
+    expect(out.created).toBe(false);
+    expect(out.request.id).toBe('req-winner');
+  });
+
+  it('rethrows non-unique-violation errors from save', async () => {
+    repo.findOne.mockResolvedValue(null);
+    repo.save.mockRejectedValueOnce(new Error('connection lost'));
+    await expect(service.requestExport('u1')).rejects.toThrow(
+      'connection lost',
+    );
   });
 
   it('emits a signed download URL when status is ready', () => {
@@ -106,7 +181,7 @@ describe('DataExportService', () => {
     } as DataExportRequest;
     const view = service.buildPublicView(req);
     expect(view.downloadUrl).toMatch(
-      /^https:\/\/api\.example\.com\/account\/data-export\/req-1\/download\?sig=[a-f0-9]+&exp=\d+$/,
+      /^https:\/\/api\.example\.com\/api\/v1\/account\/data-export\/req-1\/download\?sig=[a-f0-9]+&exp=\d+$/,
     );
     expect(view.byteSize).toBe(123);
   });

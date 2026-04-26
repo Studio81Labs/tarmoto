@@ -1,25 +1,43 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { DataExportRequest } from '../../../entities/data-export-request.entity.js';
 import { DataExportRequestDto } from './dto/data-export-request.dto.js';
 import { signDownloadUrl } from './signed-url.js';
+import {
+  EXPORT_STORAGE,
+  type ExportStorage,
+} from './storage/export-storage.interface.js';
 
 const ACTIVE: DataExportRequest['status'][] = ['queued', 'processing', 'ready'];
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const PG_UNIQUE_VIOLATION = '23505';
+
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { code?: unknown }).code === PG_UNIQUE_VIOLATION
+  );
+}
 
 @Injectable()
 export class DataExportService {
+  private readonly logger = new Logger(DataExportService.name);
+
   constructor(
     @InjectRepository(DataExportRequest)
     private readonly repo: Repository<DataExportRequest>,
     private readonly config: ConfigService,
+    @Inject(EXPORT_STORAGE)
+    private readonly storage: ExportStorage,
   ) {}
 
   async requestExport(
     userId: string,
   ): Promise<{ created: boolean; request: DataExportRequest }> {
+    // Fast path: an existing row inside its TTL is the answer.
     const active = await this.repo.findOne({
       where: { user_id: userId, status: In(ACTIVE) },
       order: { created_at: 'DESC' },
@@ -27,13 +45,50 @@ export class DataExportService {
     if (active && active.expires_at.getTime() > Date.now()) {
       return { created: false, request: active };
     }
+    // Past-TTL row — sweep it out so the partial unique index lets us
+    // insert a new one and so the stale ZIP doesn't linger on disk.
+    if (active) {
+      await this.expireAndCleanup(active);
+    }
+
     const draft = this.repo.create({
       user_id: userId,
       status: 'queued',
       expires_at: new Date(Date.now() + TTL_MS),
     });
-    const saved = await this.repo.save(draft);
-    return { created: true, request: saved };
+    try {
+      const saved = await this.repo.save(draft);
+      return { created: true, request: saved };
+    } catch (err) {
+      // Concurrent POST raced us through the unique index. Whoever won
+      // already has a queued/processing/ready row — return that.
+      if (isUniqueViolation(err)) {
+        const winner = await this.repo.findOne({
+          where: { user_id: userId, status: In(ACTIVE) },
+          order: { created_at: 'DESC' },
+        });
+        if (winner) {
+          return { created: false, request: winner };
+        }
+      }
+      throw err;
+    }
+  }
+
+  private async expireAndCleanup(row: DataExportRequest): Promise<void> {
+    if (row.storage_key) {
+      try {
+        await this.storage.delete(row.storage_key);
+      } catch (err) {
+        // Best-effort cleanup: log and continue. The DB transition still
+        // happens so future requests aren't blocked by the unique index.
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          `failed to delete expired export ${row.id} at ${row.storage_key}: ${msg}`,
+        );
+      }
+    }
+    await this.repo.update({ id: row.id }, { status: 'expired' });
   }
 
   async getRequest(
@@ -83,7 +138,9 @@ export class DataExportService {
         expiresAt: exp,
         secret: this.signingSecret(),
       });
-      downloadUrl = `${this.publicBaseUrl()}/account/data-export/${request.id}/download?sig=${sig}&exp=${exp}`;
+      // The backend mounts every route under setGlobalPrefix('api/v1');
+      // the public URL must include it or callers hit a 404.
+      downloadUrl = `${this.publicBaseUrl()}/api/v1/account/data-export/${request.id}/download?sig=${sig}&exp=${exp}`;
     }
     return {
       id: request.id,

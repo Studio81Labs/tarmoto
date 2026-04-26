@@ -25,9 +25,21 @@ export class AddDataExportRequests1715600000000 implements MigrationInterface {
     await queryRunner.query(
       `CREATE INDEX "idx_data_export_requests_user_status" ON "data_export_requests" ("user_id", "status");`,
     );
+    // DB-level guard for the "max one active export per user" rule.
+    // Without this, two concurrent POSTs from the same user can both
+    // pass the read-then-insert check and create duplicate rows that
+    // race in the worker.
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX "uq_data_export_requests_user_active"
+         ON "data_export_requests" ("user_id")
+         WHERE "status" IN ('queued', 'processing', 'ready');`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "uq_data_export_requests_user_active";`,
+    );
     await queryRunner.query(
       `DROP INDEX IF EXISTS "idx_data_export_requests_user_status";`,
     );
