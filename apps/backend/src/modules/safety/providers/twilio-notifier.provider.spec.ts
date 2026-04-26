@@ -224,5 +224,38 @@ describe('TwilioCrashAlertNotifier', () => {
       expect((err as Error).message).toContain('Twilio API timeout');
       jest.useRealTimers();
     });
+
+    it('aborts a stalled response body read and throws a timeout error', async () => {
+      // The previous version cleared the timeout right after the
+      // headers landed, so a Twilio response that streamed headers
+      // quickly but then stalled the body could hang `response.json()`
+      // indefinitely. The deadline now covers the whole exchange.
+      global.fetch = jest.fn((_url: string, init: { signal?: AbortSignal }) =>
+        Promise.resolve({
+          ok: true,
+          // json() never resolves on its own — only when the abort
+          // signal fires.
+          json: () =>
+            new Promise((_resolve, reject) => {
+              init.signal?.addEventListener('abort', () => {
+                const err = new Error('aborted') as Error & {
+                  name: string;
+                };
+                err.name = 'AbortError';
+                reject(err);
+              });
+            }),
+        }),
+      ) as unknown as typeof fetch;
+
+      jest.useFakeTimers();
+      const promise = provider.send('sms', baseRecipient, baseContext);
+      const captured = promise.catch((e: Error) => e);
+      await jest.advanceTimersByTimeAsync(11_000);
+      const err = await captured;
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).message).toContain('Twilio API timeout');
+      jest.useRealTimers();
+    });
   });
 });

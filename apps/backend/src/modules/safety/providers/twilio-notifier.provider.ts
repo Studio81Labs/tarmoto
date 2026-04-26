@@ -161,15 +161,21 @@ export class TwilioCrashAlertNotifier implements CrashAlertNotifier {
       'base64',
     );
 
+    // Timeout covers BOTH the connect/headers phase AND the response
+    // body read. A misbehaving upstream that streams response headers
+    // quickly but then stalls the body would otherwise hang
+    // `response.json()` past the deadline — the audit row would stay
+    // in-flight, blocking legitimate retries until the stale-reclaim
+    // window. Keeping the abort signal live across both phases makes
+    // the deadline an actual hard cap on the whole HTTP exchange.
     const controller = new AbortController();
     const timeout = setTimeout(
       () => controller.abort(),
       TWILIO_REQUEST_TIMEOUT_MS,
     );
 
-    let response: Response;
     try {
-      response = await fetch(url, {
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           Authorization: `Basic ${auth}`,
@@ -179,6 +185,23 @@ export class TwilioCrashAlertNotifier implements CrashAlertNotifier {
         body: params.toString(),
         signal: controller.signal,
       });
+
+      let body: TwilioMessageResponse = {};
+      try {
+        body = (await response.json()) as TwilioMessageResponse;
+      } catch (err) {
+        // A genuine abort during body read should not be swallowed —
+        // re-throw so the outer catch maps it to a timeout error.
+        if (controller.signal.aborted) throw err;
+        // Otherwise it's a non-JSON error body; fall through.
+      }
+
+      if (!response.ok) {
+        const detail =
+          body.message ?? `${response.status} ${response.statusText}`;
+        throw new Error(`Twilio API error: ${detail}`);
+      }
+      return body;
     } catch (err) {
       if (controller.signal.aborted) {
         throw new Error(
@@ -190,19 +213,5 @@ export class TwilioCrashAlertNotifier implements CrashAlertNotifier {
     } finally {
       clearTimeout(timeout);
     }
-
-    let body: TwilioMessageResponse = {};
-    try {
-      body = (await response.json()) as TwilioMessageResponse;
-    } catch {
-      // Non-JSON error body — fall through with empty object.
-    }
-
-    if (!response.ok) {
-      const detail =
-        body.message ?? `${response.status} ${response.statusText}`;
-      throw new Error(`Twilio API error: ${detail}`);
-    }
-    return body;
   }
 }

@@ -249,6 +249,7 @@ export class SafetyService {
         contact_results: [],
         dispatch_completed_at: null,
         claim_version: 0,
+        claimed_at: new Date(),
         previous_attempts: [],
       });
       return { replay: null, claimVersion: 0 };
@@ -273,7 +274,13 @@ export class SafetyService {
       return { replay: this.toReplayResponse(existing) };
     }
 
-    const ageMs = Date.now() - existing.created_at.getTime();
+    // Measure staleness from `claimed_at`, not `created_at`. A row
+    // that was reclaimed once already has its `created_at` stuck at
+    // the original incident time; if we measured from there, every
+    // retry arriving more than STALE_DISPATCH_MS after the incident
+    // would see "stale" and reclaim again, fanning out duplicate SMS
+    // even when a newer claim is healthily in flight.
+    const ageMs = Date.now() - existing.claimed_at.getTime();
     if (ageMs <= STALE_DISPATCH_MS) {
       this.logger.warn(
         `crash-alert idempotent replay id=${alertId} — dispatch in progress`,
@@ -325,6 +332,7 @@ export class SafetyService {
         contacts_total: fields.contactsTotal,
         contact_results: [],
         claim_version: nextClaimVersion,
+        claimed_at: new Date(),
         previous_attempts: [...existing.previous_attempts, archivedAttempt],
       },
     );

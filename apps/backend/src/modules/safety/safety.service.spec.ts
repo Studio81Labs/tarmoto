@@ -55,9 +55,11 @@ describe('SafetyService', () => {
         // default fills it. Honor an explicit value if a test seeded
         // one, else stamp now().
         const created_at = entity.created_at ?? new Date();
+        const claimed_at = entity.claimed_at ?? created_at;
         alertStore.set(entity.id, {
           ...entity,
           created_at,
+          claimed_at,
           claim_version: entity.claim_version ?? 0,
           previous_attempts: entity.previous_attempts ?? [],
         });
@@ -455,13 +457,15 @@ describe('SafetyService', () => {
       });
 
       const stored = alertStore.get(sharedId)!;
-      // Simulate a process crash: erase completion + age the row.
+      // Simulate a process crash: erase completion + age the claim
+      // (the staleness check measures from `claimed_at`, not the
+      // immutable `created_at`).
       alertStore.set(sharedId, {
         ...stored,
         dispatch_completed_at: null,
         contacts_notified: 0,
         contact_results: [],
-        created_at: new Date(Date.now() - 10 * 60 * 1000), // 10 min ago
+        claimed_at: new Date(Date.now() - 10 * 60 * 1000), // 10 min ago
       });
 
       // Retry — the stale row should be reclaimed and dispatch fresh.
@@ -482,6 +486,56 @@ describe('SafetyService', () => {
       const finalRow = alertStore.get(sharedId)!;
       expect(finalRow.dispatch_completed_at).toBeInstanceOf(Date);
       expect(finalRow.contacts_notified).toBe(2);
+    });
+
+    it('does not re-reclaim a freshly-reclaimed row even after the original incident is older than the stale window', async () => {
+      // The bug: stale-detection used to measure from `created_at`,
+      // which is anchored to the original incident. After a single
+      // reclaim, every subsequent retry would still see "stale" and
+      // reclaim AGAIN even though a healthy newer claim was actively
+      // dispatching — fanning out duplicate SMS. The fix measures
+      // staleness from `claimed_at`, which is refreshed on each
+      // successful reclaim.
+      const sharedId = '00000000-0000-4000-8000-0000000000bb';
+      const now = Date.now();
+      // Seed a row that's already been reclaimed once: created_at far
+      // in the past (>STALE), claimed_at recently bumped, in flight.
+      alertStore.set(sharedId, {
+        id: sharedId,
+        user_id: 'user-1',
+        ride_id: null,
+        lat: 0,
+        lng: 0,
+        speed_at_impact: null,
+        severity: 'medium',
+        locale: 'en',
+        contacts_notified: 0,
+        contacts_total: 2,
+        contact_results: [],
+        dispatch_completed_at: null,
+        claim_version: 1, // already reclaimed once
+        claimed_at: new Date(now - 30 * 1000), // 30 s ago — well within the 5-min window
+        previous_attempts: [
+          {
+            reclaimed_at: new Date(now - 30 * 1000).toISOString(),
+            contact_results: [],
+          },
+        ],
+        created_at: new Date(now - 10 * 60 * 1000), // 10 min ago — stale by created_at!
+      } as CrashAlert);
+
+      const result = await service.sendCrashAlert('user-1', {
+        lat: 49.1,
+        lng: 16.75,
+        alert_id: sharedId,
+      });
+
+      // The retry must see the active claim as in-flight (NOT stale)
+      // and skip the reclaim path entirely. claim_version stays at 1.
+      expect(result.idempotent_replay).toBe(true);
+      expect(result.dispatch_in_progress).toBe(true);
+      expect(notifier.send).not.toHaveBeenCalled();
+      expect(alertStore.get(sharedId)?.claim_version).toBe(1);
     });
 
     it('archives the abandoned attempt into previous_attempts on stale reclaim', async () => {
@@ -515,6 +569,9 @@ describe('SafetyService', () => {
         contact_results: [partialResult],
         dispatch_completed_at: null,
         claim_version: 0,
+        // Stale-detection reads `claimed_at`; aging it is what
+        // triggers the reclaim path. `created_at` stays anchored.
+        claimed_at: originalCreatedAt,
         previous_attempts: [],
         created_at: originalCreatedAt,
       } as CrashAlert);
@@ -561,6 +618,7 @@ describe('SafetyService', () => {
         contact_results: [],
         dispatch_completed_at: null,
         claim_version: 0,
+        claimed_at: new Date(Date.now() - 10 * 60 * 1000),
         previous_attempts: [],
         created_at: new Date(Date.now() - 10 * 60 * 1000),
       } as CrashAlert);
@@ -634,6 +692,7 @@ describe('SafetyService', () => {
         ],
         dispatch_completed_at: null,
         claim_version: 0,
+        claimed_at: originalCreatedAt,
         previous_attempts: [],
         created_at: originalCreatedAt,
       } as CrashAlert);

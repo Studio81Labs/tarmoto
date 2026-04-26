@@ -108,6 +108,17 @@ export class CrashAlert {
   claim_version!: number;
 
   /**
+   * When the CURRENT claim was taken. Refreshed on every successful
+   * reclaim — `created_at` stays anchored to the original incident,
+   * so a row that was reclaimed once must not look stale to retries
+   * arriving after `created_at + STALE_DISPATCH_MS` while the new
+   * claim is still actively dispatching. Stale-reclaim measures
+   * from this column.
+   */
+  @Column({ type: 'timestamptz' })
+  claimed_at!: Date;
+
+  /**
    * Append-only history of prior claims that were superseded by the
    * stale-reclaim path. Each entry captures what the abandoned claim
    * managed to record before it was taken over, so triage can find

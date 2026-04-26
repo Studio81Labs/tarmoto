@@ -34,6 +34,13 @@ export class AddCrashAlerts1715400000000 implements MigrationInterface {
         -- 'created_at' stable so the audit row reflects the actual
         -- incident timestamp (not the latest reclaim).
         claim_version INTEGER NOT NULL DEFAULT 0,
+        -- When the CURRENT claim was taken. Refreshed on every
+        -- successful reclaim, unlike 'created_at' which is anchored
+        -- to the original incident. The stale-reclaim staleness
+        -- check measures from this — without it, every retry past
+        -- 'created_at + STALE_DISPATCH_MS' would re-reclaim an
+        -- already-active newer claim and fan out duplicate SMS.
+        claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         -- Append-only history of prior claim attempts: timestamp the
         -- claim was reclaimed plus the contact_results captured at
         -- that point. Lets ops trace partial dispatches that landed
