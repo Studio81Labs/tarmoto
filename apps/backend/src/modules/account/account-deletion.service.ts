@@ -100,13 +100,30 @@ export class AccountDeletionService {
     // locked-but-unaudited (the audit trail is part of the GDPR
     // compliance surface). If the transaction rolls back, the rider
     // sees the request fail and can retry.
-    await this.dataSource.transaction(async (manager) => {
-      await manager.update(User, user.id, {
-        deleted_at: now,
-        deletion_scheduled_at: scheduledFor,
-        deletion_reason: dto.reason ?? null,
-        updated_at: now,
-      });
+    //
+    // The UPDATE is gated on `deleted_at IS NULL` to make the endpoint
+    // idempotent under concurrent submits (rider double-clicks, two
+    // tabs open). The pre-check above only catches an already-pending
+    // deletion that was committed BEFORE the read; two requests that
+    // both pass the pre-check would otherwise both UPDATE by PK,
+    // overwrite each other's `deletion_scheduled_at`, and append two
+    // `requested` audit rows. Conditional UPDATE → second one returns
+    // affected: 0 → audit row skipped → schedule the loser sees comes
+    // from re-reading the row the winner committed.
+    const wonRace = await this.dataSource.transaction(async (manager) => {
+      const result = await manager.update(
+        User,
+        { id: user.id, deleted_at: IsNull() },
+        {
+          deleted_at: now,
+          deletion_scheduled_at: scheduledFor,
+          deletion_reason: dto.reason ?? null,
+          updated_at: now,
+        },
+      );
+      if (!result.affected) {
+        return false;
+      }
 
       const log = manager.create(AccountDeletionLog, {
         user_id: user.id,
@@ -118,15 +135,32 @@ export class AccountDeletionService {
         details: dto.reason ? { reason: dto.reason } : {},
       });
       await manager.save(AccountDeletionLog, log);
+      return true;
     });
 
-    this.logger.log(
-      `Account ${user.id} scheduled for deletion at ${scheduledFor.toISOString()}`,
-    );
+    // If a parallel transaction beat us to the update, return the
+    // schedule it committed so both submits see the same answer.
+    let actualSchedule = scheduledFor;
+    if (!wonRace) {
+      const winner = await this.userRepo.findOne({
+        where: { id: user.id },
+        select: { id: true, deletion_scheduled_at: true },
+      });
+      if (winner?.deletion_scheduled_at) {
+        actualSchedule = winner.deletion_scheduled_at;
+      }
+      this.logger.log(
+        `Account ${user.id} deletion already scheduled by a concurrent request — returning existing schedule ${actualSchedule.toISOString()}`,
+      );
+    } else {
+      this.logger.log(
+        `Account ${user.id} scheduled for deletion at ${scheduledFor.toISOString()}`,
+      );
+    }
 
     return {
       status: 'scheduled',
-      scheduled_for: scheduledFor.toISOString(),
+      scheduled_for: actualSchedule.toISOString(),
       grace_period_days: graceDays,
     };
   }

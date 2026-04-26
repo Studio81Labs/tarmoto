@@ -167,11 +167,16 @@ describe('AccountDeletionService', () => {
 
       // Soft-delete + audit insert run inside the same transaction so a
       // failed audit write rolls the account-lock back. Both writes
-      // therefore land on the txManager, not on a top-level repo.
+      // therefore land on the txManager, not on a top-level repo. The
+      // UPDATE is gated on `deleted_at IS NULL` so a concurrent submit
+      // can't double-write the schedule or audit row.
       expect(dataSource.transaction).toHaveBeenCalledTimes(1);
       expect(txManager.update).toHaveBeenCalledWith(
         User,
-        'user-1',
+        expect.objectContaining({
+          id: 'user-1',
+          deleted_at: expect.objectContaining({ _type: 'isNull' }),
+        }),
         expect.objectContaining({
           deleted_at: expect.any(Date),
           deletion_scheduled_at: expect.any(Date),
@@ -187,6 +192,38 @@ describe('AccountDeletionService', () => {
           details: { reason: 'no longer riding' },
         }),
       );
+    });
+
+    it("is idempotent under concurrent submits — the loser returns the winner's schedule and writes no audit row", async () => {
+      // Two near-simultaneous DELETE /account requests both pass the
+      // pre-check, but only one wins the conditional UPDATE
+      // (deleted_at IS NULL). The loser sees affected: 0, skips the
+      // audit, and re-reads the row to return the winner's schedule.
+      const winningSchedule = new Date('2026-05-26T08:00:00.000Z');
+      userRepo.createQueryBuilder().getOne.mockResolvedValueOnce(buildUser());
+      // Simulate a parallel transaction having already committed.
+      txManager.update.mockResolvedValueOnce({ affected: 0 });
+      // The fall-back read returns the winner's committed schedule.
+      userRepo.findOne.mockResolvedValueOnce({
+        id: 'user-1',
+        deletion_scheduled_at: winningSchedule,
+      } as User);
+
+      const result = await service.requestDeletion('user-1', {
+        password: KNOWN_PASSWORD,
+        reason: 'duplicate submit',
+      });
+
+      // Both submits see the same `scheduled` response with the
+      // winner's schedule — the rider's experience is identical.
+      expect(result).toEqual({
+        status: 'scheduled',
+        scheduled_for: winningSchedule.toISOString(),
+        grace_period_days: 30,
+      });
+      // Critically: no second `requested` audit row, no overwritten
+      // schedule. The compliance log stays clean.
+      expect(txManager.save).not.toHaveBeenCalled();
     });
 
     it('rolls the soft-delete back if the audit insert fails', async () => {
