@@ -19,18 +19,24 @@ import {
 import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { TripsService } from './trips.service.js';
+import { TripGeneratorService } from './trip-generator.service.js';
 import { CreateTripDto } from './dto/create-trip.dto.js';
 import { JoinTripDto } from './dto/join-trip.dto.js';
 import { ListTripsDto } from './dto/list-trips.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
 import { TripDetailDto, TripSummaryDto } from './dto/trip-response.dto.js';
+import { GenerateTripDto } from './dto/generate-trip.dto.js';
+import { GenerateTripResponseDto } from './dto/generate-trip-response.dto.js';
 
 @ApiTags('trips')
 @Controller('trips')
 @UseGuards(AuthGuard)
 @ApiBearerAuth()
 export class TripsController {
-  constructor(private readonly tripsService: TripsService) {}
+  constructor(
+    private readonly tripsService: TripsService,
+    private readonly tripGenerator: TripGeneratorService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List trips the caller can see' })
@@ -79,6 +85,29 @@ export class TripsController {
     @Body() dto: UpdateTripDto,
   ): Promise<TripDetailDto> {
     return this.tripsService.update(req.user!.userId, tripId, dto);
+  }
+
+  @Post(':tripId/generate')
+  @ApiOperation({
+    summary: 'Auto-generate a multi-day itinerary for a trip',
+    description:
+      'Builds three preset options (Best fit / Scenic sweep / Fastest line) ' +
+      "using the trip's persisted parameters (num_days, daily_km bounds, " +
+      'min_quality, road_preference, region) plus per-request overrides ' +
+      '(start_location, optional bbox, avoidance flags, surface filter). The ' +
+      'selected option (default `best-fit`) is persisted to `trip_days`/' +
+      '`trip_waypoints` atomically — re-generating overwrites prior days in ' +
+      'a single transaction. The other two options are returned as preview ' +
+      'data for side-by-side comparison.',
+  })
+  @ApiResponse({ status: 201, type: GenerateTripResponseDto })
+  @ApiResponse({ status: 404, description: 'Trip not found or not visible' })
+  async generate(
+    @Req() req: express.Request,
+    @Param('tripId', ParseUUIDPipe) tripId: string,
+    @Body() dto: GenerateTripDto,
+  ): Promise<GenerateTripResponseDto> {
+    return this.tripGenerator.generate(req.user!.userId, tripId, dto);
   }
 
   @Post(':tripId/join')

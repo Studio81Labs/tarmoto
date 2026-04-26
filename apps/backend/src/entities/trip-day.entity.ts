@@ -43,6 +43,15 @@ export class TripDay {
   @Column({ type: 'float', nullable: true })
   elevation_gain!: number | null;
 
+  @Column({ type: 'float', nullable: true })
+  elevation_loss!: number | null;
+
+  @Column({ type: 'float', nullable: true })
+  curviness_score!: number | null;
+
+  @Column({ type: 'float', nullable: true })
+  scenic_score!: number | null;
+
   @Column({ type: 'interval', nullable: true })
   estimated_time!: string | null;
 

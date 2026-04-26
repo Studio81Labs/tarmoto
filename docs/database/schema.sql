@@ -215,6 +215,9 @@ CREATE TABLE trip_days (
     route_geom      GEOMETRY(LineString, 4326),
     avg_quality     FLOAT,
     elevation_gain  FLOAT,
+    elevation_loss  FLOAT,
+    curviness_score FLOAT,
+    scenic_score    FLOAT,
     estimated_time  INTERVAL,
     UNIQUE(trip_id, day_number)
 );

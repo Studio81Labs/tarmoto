@@ -88,6 +88,15 @@ export class TripDayDto {
   elevation_gain!: number;
 
   @ApiProperty()
+  elevation_loss!: number;
+
+  @ApiProperty()
+  curviness_score!: number;
+
+  @ApiProperty()
+  scenic_score!: number;
+
+  @ApiProperty()
   estimated_time_min!: number;
 
   @ApiProperty({

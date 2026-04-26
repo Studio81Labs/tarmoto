@@ -8,10 +8,12 @@ import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
 import { TripSuggestionVote } from '../../entities/trip-suggestion-vote.entity.js';
 import { TripMessage } from '../../entities/trip-message.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
+import { CommuteModule } from '../commute/index.js';
 import { EventsModule } from '../events/events.module.js';
 import { TripActivityModule } from '../trip-activity/index.js';
 import { TripsController } from './trips.controller.js';
 import { TripsService } from './trips.service.js';
+import { TripGeneratorService } from './trip-generator.service.js';
 import { TripCollabController } from './trip-collab.controller.js';
 import { TripCollabService } from './trip-collab.service.js';
 
@@ -29,9 +31,13 @@ import { TripCollabService } from './trip-collab.service.js';
     ]),
     EventsModule,
     TripActivityModule,
+    // CommuteModule re-exports ROUTING_PROVIDER so the trip generator
+    // can reuse the configured OSRM (or other) routing engine without
+    // re-registering the provider here.
+    CommuteModule,
   ],
   controllers: [TripsController, TripCollabController],
-  providers: [TripsService, TripCollabService],
-  exports: [TripsService, TripCollabService],
+  providers: [TripsService, TripGeneratorService, TripCollabService],
+  exports: [TripsService, TripGeneratorService, TripCollabService],
 })
 export class TripsModule {}

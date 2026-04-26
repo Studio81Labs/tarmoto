@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "bd14988c-b51d-4d09-802c-a4470c81db72",
+    "_postman_id": "bbdb9ba8-1e69-4887-8045-8971a3e3067b",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -310,38 +310,6 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"Jane Doe\",\n  \"phone\": \"+420123456789\",\n  \"is_emergency\": true\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Update emergency contact",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/users/me/contacts/:contactId",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "me", "contacts", ":contactId"],
-              "variable": [
-                {
-                  "key": "contactId",
-                  "value": ""
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Jane Doe\",\n  \"phone\": \"+420123456789\",\n  \"is_emergency\": false\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1545,6 +1513,38 @@
           }
         },
         {
+          "name": "Auto-generate a multi-day itinerary for a trip",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/generate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", ":tripId", "generate"],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"start_location\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"bbox\": \"11.0,46.0,12.5,47.0\",\n  \"option\": \"best-fit\",\n  \"avoid_highways\": false,\n  \"avoid_tolls\": false,\n  \"avoid_unpaved\": false,\n  \"surfaces\": [\n    \"asphalt\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
           "name": "Join a trip via its invite code",
           "request": {
             "method": "POST",
@@ -1923,139 +1923,6 @@
       ]
     },
     {
-      "name": "safety",
-      "item": [
-        {
-          "name": "Send crash alert to emergency contacts",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/safety/crash-alert",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "safety", "crash-alert"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"lat\": 49.1,\n  \"lng\": 16.75,\n  \"ride_id\": \"\",\n  \"speed_at_impact\": 0,\n  \"severity\": \"low\",\n  \"alert_id\": \"\",\n  \"locale\": \"cs-CZ\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "tiles",
-      "item": [
-        {
-          "name": "Get vector map tile with road quality overlay",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/roads/tiles/:z/:x/:y.mvt",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roads", "tiles", ":z", ":x", "{y}.mvt"],
-              "variable": [
-                {
-                  "key": "z",
-                  "value": ""
-                },
-                {
-                  "key": "x",
-                  "value": ""
-                }
-              ],
-              "query": [
-                {
-                  "key": "layers",
-                  "value": "",
-                  "description": "",
-                  "disabled": true
-                }
-              ]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "weather",
-      "item": [
-        {
-          "name": "Get current weather at a location",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/weather/current",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "weather", "current"],
-              "query": [
-                {
-                  "key": "lat",
-                  "value": "",
-                  "description": "",
-                  "disabled": false
-                },
-                {
-                  "key": "lng",
-                  "value": "",
-                  "description": "",
-                  "disabled": false
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Get weather conditions along a route",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/weather/route",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "weather", "route"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        }
-      ]
-    },
-    {
       "name": "commute",
       "item": [
         {
@@ -2180,6 +2047,139 @@
                   "disabled": true
                 }
               ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "safety",
+      "item": [
+        {
+          "name": "Send crash alert to emergency contacts",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/safety/crash-alert",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "safety", "crash-alert"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lat\": 49.1,\n  \"lng\": 16.75,\n  \"ride_id\": \"\",\n  \"speed_at_impact\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "tiles",
+      "item": [
+        {
+          "name": "Get vector map tile with road quality overlay",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roads/tiles/:z/:x/:y.mvt",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roads", "tiles", ":z", ":x", "{y}.mvt"],
+              "variable": [
+                {
+                  "key": "z",
+                  "value": ""
+                },
+                {
+                  "key": "x",
+                  "value": ""
+                }
+              ],
+              "query": [
+                {
+                  "key": "layers",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "weather",
+      "item": [
+        {
+          "name": "Get current weather at a location",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/weather/current",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "weather", "current"],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "lng",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get weather conditions along a route",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/weather/route",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "weather", "route"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           }
         }

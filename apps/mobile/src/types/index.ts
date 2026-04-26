@@ -225,9 +225,33 @@ export interface TripDay {
   distance_km: number;
   avg_quality: number;
   elevation_gain: number;
+  elevation_loss: number;
+  curviness_score: number;
+  scenic_score: number;
   estimated_time_min: number;
   route_geometry: LatLng[];
   waypoints: Waypoint[];
+}
+
+export type TripGenerationOptionId = "best-fit" | "scenic" | "fastest";
+
+export interface TripGenerationOption {
+  id: TripGenerationOptionId;
+  label: string;
+  summary: string;
+  total_distance_km: number;
+  total_duration_min: number;
+  avg_quality: number;
+  avg_curviness: number;
+  avg_scenic: number;
+  selected: boolean;
+  days: TripDay[];
+}
+
+export interface TripGenerationResult {
+  trip: Trip;
+  selected_option: TripGenerationOptionId;
+  options: TripGenerationOption[];
 }
 
 export interface Waypoint {

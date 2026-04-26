@@ -20,6 +20,7 @@ export type TripActivityAction =
   | 'member_joined'
   | 'member_left'
   | 'trip_updated'
+  | 'trip_generated'
   | 'suggestion_created'
   | 'suggestion_deleted'
   | 'suggestion_voted'
