@@ -270,7 +270,16 @@ describe('AccountDeletionService', () => {
       expect(stripe.cancelSubscription).toHaveBeenCalledWith('sub_abc');
       expect(stripe.deleteCustomer).toHaveBeenCalledWith('cus_abc');
       expect(surfaceUpdateExecute).toHaveBeenCalled();
-      expect(txManager.delete).toHaveBeenCalledWith(User, { id: 'expired-1' });
+      // The delete carries `deleted_at IS NOT NULL` so a concurrent
+      // restore (support clearing `deleted_at`) is preserved instead
+      // of being silently hard-deleted.
+      expect(txManager.delete).toHaveBeenCalledWith(
+        User,
+        expect.objectContaining({
+          id: 'expired-1',
+          deleted_at: expect.objectContaining({ _type: 'not' }),
+        }),
+      );
       expect(txManager.save).toHaveBeenCalledWith(
         AccountDeletionLog,
         expect.objectContaining({
@@ -401,6 +410,44 @@ describe('AccountDeletionService', () => {
       expect(dataSource.transaction).not.toHaveBeenCalled();
     });
 
+    it('skips Stripe and the purge when support restored the account between the snapshot and the pre-flight (deleted_at IS NOT NULL filter)', async () => {
+      // Same null-from-findOne path as the concurrent-sweeper case, but
+      // documenting the second cause: support clearing `deleted_at` to
+      // restore an account during the grace window. Pre-flight filters
+      // on `deleted_at IS NOT NULL`, so a restored row is treated as
+      // not-due and the sweeper bails before any irreversible side
+      // effect runs.
+      userRepo.findOne.mockResolvedValueOnce(null);
+      const restored = buildUser({
+        deleted_at: new Date(),
+        deletion_scheduled_at: new Date('2026-04-01T00:00:00Z'),
+        stripe_customer_id: 'cus_restored',
+        stripe_subscription_id: 'sub_restored',
+      });
+      userRepo.find.mockResolvedValueOnce([restored]);
+
+      const purged = await service.processDueDeletions(
+        new Date('2026-04-02T00:00:00Z'),
+      );
+
+      expect(purged).toBe(0);
+      // Verify the pre-flight query carries the restore-race filter,
+      // not just the existence check.
+      expect(userRepo.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            id: restored.id,
+            deleted_at: expect.objectContaining({ _type: 'not' }),
+            deletion_scheduled_at: expect.objectContaining({
+              _type: 'lessThanOrEqual',
+            }),
+          }),
+        }),
+      );
+      expect(stripe.cancelSubscription).not.toHaveBeenCalled();
+      expect(stripe.deleteCustomer).not.toHaveBeenCalled();
+    });
+
     it('skips the purge audit row when a concurrent sweeper already deleted the user', async () => {
       // Multiple backend instances run the same hourly cron. If worker A
       // deletes the row first, worker B's manager.delete returns
@@ -420,6 +467,41 @@ describe('AccountDeletionService', () => {
       // The user wasn't actually deleted by *this* worker, so it
       // doesn't count toward the purge tally and no audit row goes in.
       expect(purged).toBe(0);
+      expect(txManager.save).not.toHaveBeenCalled();
+    });
+
+    it('does not delete the user row when support restored the account mid-transaction (delete carries deleted_at IS NOT NULL)', async () => {
+      // Tightest race: pre-flight passed (deleted_at was still set),
+      // Stripe was called, but support cleared deleted_at before the
+      // transaction landed. The delete WHERE clause filters on
+      // `deleted_at IS NOT NULL`, so the now-active row is preserved.
+      // Stripe was wasted (a tiny window we accept; the alternative is
+      // holding a DB transaction open during slow Stripe HTTP calls).
+      txManager.delete.mockResolvedValueOnce({ affected: 0 });
+      const due = buildUser({
+        deleted_at: new Date(),
+        deletion_scheduled_at: new Date('2026-04-01T00:00:00Z'),
+        stripe_customer_id: 'cus_to_restore',
+        stripe_subscription_id: 'sub_to_restore',
+      });
+      userRepo.find.mockResolvedValueOnce([due]);
+
+      const purged = await service.processDueDeletions(
+        new Date('2026-04-02T00:00:00Z'),
+      );
+
+      expect(purged).toBe(0);
+      // Stripe was called (pre-flight passed) but the delete with
+      // deleted_at IS NOT NULL did not touch the row.
+      expect(stripe.cancelSubscription).toHaveBeenCalled();
+      expect(txManager.delete).toHaveBeenCalledWith(
+        User,
+        expect.objectContaining({
+          id: due.id,
+          deleted_at: expect.objectContaining({ _type: 'not' }),
+        }),
+      );
+      // No audit row for a row we didn't actually purge.
       expect(txManager.save).not.toHaveBeenCalled();
     });
 

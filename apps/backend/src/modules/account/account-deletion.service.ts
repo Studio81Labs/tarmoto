@@ -151,7 +151,7 @@ export class AccountDeletionService {
     let purged = 0;
     for (const user of due) {
       try {
-        if (await this.purgeUser(user)) {
+        if (await this.purgeUser(user, now)) {
           purged += 1;
         }
       } catch (err) {
@@ -177,39 +177,49 @@ export class AccountDeletionService {
   }
 
   /**
-   * Hard-delete a single user. Cancels Stripe state first (best-effort
-   * before the row is gone — if the rider re-signs up later they get a
-   * clean Stripe customer), then nulls out surface_readings.user_id,
-   * then deletes the user row. CASCADE FKs from the migration take
-   * care of every other table.
-   */
-  /**
+   * Hard-delete a single user. Cancels Stripe state, nulls out the
+   * defensive `surface_readings.user_id` (the FK is already
+   * `ON DELETE SET NULL`), deletes the user row (CASCADE FKs handle
+   * every other personal table), and writes the audit entry.
+   *
    * Returns `true` if this call actually purged the row (and wrote the
-   * audit entry), `false` if a concurrent sweeper had already deleted
-   * it. Distinguishing the two prevents duplicate `purged` rows on the
-   * audit log when multiple backend instances run the same hourly cron.
+   * audit entry), `false` if the row was no longer eligible by the
+   * time we got to it — either because a concurrent sweeper already
+   * finished, OR because support cleared `deleted_at` to restore the
+   * account during the grace window. Distinguishing eligible-and-done
+   * from no-longer-eligible prevents duplicate audit rows AND prevents
+   * accidentally hard-deleting a restored account.
    */
-  private async purgeUser(user: User): Promise<boolean> {
-    // Cheap pre-flight: skip Stripe entirely when a concurrent sweeper
-    // already finished the purge. Stripe calls are slow (~hundreds of
-    // ms) and metered, so paying for one extra DB read here pays off
-    // even on a single race. The check isn't race-free — a worker can
-    // still slip in between this read and the delete — but the
-    // `affected: 0` guard inside the transaction below remains the
-    // definitive backstop against duplicate audit rows. Stripe's
-    // `customers.del` is idempotent (`resource_missing` tolerated), so
-    // any remaining duplicate call is harmless.
-    const stillExists = await this.userRepo.findOne({
-      where: { id: user.id },
+  private async purgeUser(user: User, now: Date): Promise<boolean> {
+    // Cheap pre-flight: skip Stripe entirely when the row is no longer
+    // due (concurrent purge OR concurrent restore). Stripe calls are
+    // slow and metered, and cancelling a subscription on a freshly
+    // restored account is much harder to undo than skipping a redundant
+    // DB hit. We re-check `deleted_at IS NOT NULL` and the schedule
+    // here to narrow the restore-race window for the Stripe calls; the
+    // delete inside the transaction below adds the same predicate as
+    // the definitive backstop.
+    const stillDue = await this.userRepo.findOne({
+      where: {
+        id: user.id,
+        deleted_at: Not(IsNull()),
+        deletion_scheduled_at: LessThanOrEqual(now),
+      },
       select: { id: true },
     });
-    if (!stillExists) {
+    if (!stillDue) {
       return false;
     }
 
     const stripeResult = await this.cancelStripe(user);
 
     return this.dataSource.transaction(async (manager) => {
+      // Defensive `surface_readings.user_id = NULL`. The FK is
+      // `ON DELETE SET NULL` (migration 1715500000000), so the cascade
+      // from the user delete below already handles the anonymization;
+      // this explicit UPDATE is a backstop in case the FK is ever
+      // changed. Run before the delete so the audit row, written
+      // after, observes the post-anonymization state.
       await manager
         .createQueryBuilder()
         .update('surface_readings')
@@ -217,10 +227,22 @@ export class AccountDeletionService {
         .where('user_id = :id', { id: user.id })
         .execute();
 
-      const result = await manager.delete(User, { id: user.id });
+      // Delete only if the row is still soft-deleted. If support
+      // restored the account between the pre-flight check and now (or
+      // a concurrent sweeper already deleted it), `affected` will be
+      // 0 and we skip the audit. The transaction's earlier
+      // anonymization UPDATE is a no-op in the restore case (the
+      // user's surface_readings already had user_id set to their id,
+      // we just set it to NULL — that's a leak we can't avoid in this
+      // tiny race window without holding a row lock through Stripe).
+      const result = await manager.delete(User, {
+        id: user.id,
+        deleted_at: Not(IsNull()),
+      });
       if (!result.affected) {
-        // Another sweeper instance got here first. Skip the audit
-        // write so we don't fan out duplicate `purged` rows.
+        // Either a concurrent sweeper finished, or support restored
+        // the account. Skip the audit either way — the user row stays
+        // intact in the restore case.
         return false;
       }
 
