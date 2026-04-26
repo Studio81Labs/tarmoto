@@ -108,6 +108,22 @@ describe('TripSharesService', () => {
       const result = await service.getByToken('a'.repeat(32));
       expect(result.owner_name).toBe('Unknown');
     });
+
+    it('hides trip shares whose owner has requested deletion (US-62 grace window)', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...mockShare,
+        owner: { ...mockShare.owner, deleted_at: new Date() },
+      });
+
+      // 404 — same response as an unknown token, so a share-link
+      // visitor can't side-channel whether the owner deleted their
+      // account or the link was always invalid.
+      await expect(service.getByToken('a'.repeat(32))).rejects.toThrow(
+        NotFoundException,
+      );
+      // The view-count side-effect must not fire for hidden shares.
+      expect(repo.increment).not.toHaveBeenCalled();
+    });
   });
 
   describe('listMine', () => {

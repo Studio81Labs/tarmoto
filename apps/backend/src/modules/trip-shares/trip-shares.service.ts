@@ -41,7 +41,12 @@ export class TripSharesService {
       where: { share_token: token },
       relations: ['owner'],
     });
-    if (!share) {
+    // Soft-deleted owners (US-62) — pretend the share doesn't exist so
+    // share-link traffic during the grace window can't surface the
+    // owner's identity (`owner_name` / snapshot). 404 mirrors the
+    // unknown-token response so a visitor can't side-channel whether
+    // the owner deleted their account or the link was always invalid.
+    if (!share || share.owner?.deleted_at != null) {
       throw new NotFoundException('Trip share not found');
     }
 

@@ -108,8 +108,12 @@ export class SharingService {
   async trackEmbedClick(token: string): Promise<void> {
     const shared = await this.sharedRideRepo.findOne({
       where: { share_token: token },
+      relations: ['user'],
     });
-    if (!shared) {
+    // Same deleted-owner gate as `getByToken` (US-62) — without it a
+    // caller can probe `/embed-click` to side-channel whether a token
+    // belongs to a deleted owner vs. an unknown share.
+    if (!shared || shared.user?.deleted_at != null) {
       throw new NotFoundException('Shared ride not found');
     }
 
