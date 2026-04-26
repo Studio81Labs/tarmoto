@@ -150,13 +150,11 @@ export default function TripDetailPage() {
       await tripsApi.delete(loaded.detail.id);
       router.replace("/trips");
     } catch (err) {
+      // Backend deliberately folds non-owners into 404 to avoid role
+      // enumeration, so 403 isn't a path the delete endpoint produces.
       const message =
-        err instanceof ApiError
-          ? err.status === 404
-            ? "This trip no longer exists."
-            : err.status === 403
-              ? "Only the trip owner can delete it."
-              : "Couldn't delete the trip. Try again."
+        err instanceof ApiError && err.status === 404
+          ? "This trip no longer exists."
           : "Couldn't delete the trip. Try again.";
       setDeleteError(message);
       setDeleting(false);

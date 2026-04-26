@@ -234,13 +234,15 @@ export class TripsService {
       throw new NotFoundException('Trip not found');
     }
 
-    // Notify any live collaborators before the row disappears so their
-    // sockets can drop the subscription without a stale render. We do not
-    // write to `trip_activity` because the cascade would delete the row
-    // in the same transaction.
-    this.events.emitToTrip(tripId, 'trip:deleted', { trip_id: tripId });
-
     await this.tripRepo.delete({ id: tripId });
+
+    // Emit AFTER the delete commits so a failed delete (FK violation,
+    // dropped connection, etc.) doesn't broadcast a deletion that
+    // didn't actually happen — collaborators would otherwise tear down
+    // their subscriptions for a trip that still exists. We don't write
+    // to `trip_activity` because the cascade would delete the row in
+    // the same transaction.
+    this.events.emitToTrip(tripId, 'trip:deleted', { trip_id: tripId });
   }
 
   async list(userId: string, query: ListTripsDto): Promise<TripSummaryDto[]> {

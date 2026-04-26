@@ -363,7 +363,10 @@ describe("TripDetailPage — delete confirmation", () => {
 
   it("surfaces an inline error and stays on the page when DELETE fails", async () => {
     tripsApiGetMock.mockResolvedValue({ data: buildDetail() } as never);
-    tripsApiDeleteMock.mockRejectedValue(new ApiError("denied", 403, null));
+    // 5xx is the realistic transient failure to model. Non-owner deletes
+    // 404 by design (no role enumeration), so the 404 path lives in
+    // its own assertion below.
+    tripsApiDeleteMock.mockRejectedValue(new ApiError("boom", 500, null));
     render(<TripDetailPage />);
 
     fireEvent.click(
@@ -371,7 +374,24 @@ describe("TripDetailPage — delete confirmation", () => {
     );
 
     expect(
-      await screen.findByText(/only the trip owner can delete it/i),
+      await screen.findByText(/couldn't delete the trip/i),
+    ).toBeInTheDocument();
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("renders the 404-specific message when the trip no longer exists", async () => {
+    tripsApiGetMock.mockResolvedValue({ data: buildDetail() } as never);
+    tripsApiDeleteMock.mockRejectedValue(
+      new ApiError("Trip not found", 404, null),
+    );
+    render(<TripDetailPage />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /delete trip/i }),
+    );
+
+    expect(
+      await screen.findByText(/this trip no longer exists/i),
     ).toBeInTheDocument();
     expect(mockReplace).not.toHaveBeenCalled();
   });
