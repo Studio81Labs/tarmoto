@@ -195,7 +195,9 @@ export class AccountDeletionService {
           deletion_reason: user.deletion_reason,
           stripe_subscription_canceled: stripeResult.subscriptionCanceled,
           stripe_customer_deleted: stripeResult.customerDeleted,
-          ...(stripeResult.error ? { stripe_error: stripeResult.error } : {}),
+          ...(stripeResult.errors
+            ? { stripe_errors: stripeResult.errors }
+            : {}),
         },
       });
       await manager.save(AccountDeletionLog, log);
@@ -205,36 +207,55 @@ export class AccountDeletionService {
   private async cancelStripe(user: User): Promise<{
     subscriptionCanceled: boolean;
     customerDeleted: boolean;
-    error?: string;
+    errors?: string[];
   }> {
     if (!this.stripe.isConfigured()) {
       return { subscriptionCanceled: false, customerDeleted: false };
     }
 
+    // Each Stripe call gets its own try/catch — `customers.del` cascades
+    // subscription cancellation server-side, so even if our explicit
+    // `cancelSubscription` hits a transient 5xx we should still attempt
+    // the customer delete. Otherwise a single flake permanently orphans
+    // the Stripe customer (the DB row is gone after this returns, so
+    // the sweeper never retries).
     let subscriptionCanceled = false;
     let customerDeleted = false;
-    try {
-      if (user.stripe_subscription_id) {
+    const errors: string[] = [];
+
+    if (user.stripe_subscription_id) {
+      try {
         await this.stripe.cancelSubscription(user.stripe_subscription_id);
         subscriptionCanceled = true;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          `Stripe cancelSubscription(${user.stripe_subscription_id}) failed for user ${user.id}: ${message}. ` +
+            'Continuing to deleteCustomer — Stripe cascades subscription cancellation on customer deletion.',
+        );
+        errors.push(`cancelSubscription: ${message}`);
       }
-      if (user.stripe_customer_id) {
+    }
+
+    if (user.stripe_customer_id) {
+      try {
         await this.stripe.deleteCustomer(user.stripe_customer_id);
         customerDeleted = true;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          `Stripe deleteCustomer(${user.stripe_customer_id}) failed for user ${user.id}: ${message}. ` +
+            'Continuing with database purge — the customer record will need manual cleanup.',
+        );
+        errors.push(`deleteCustomer: ${message}`);
       }
-      return { subscriptionCanceled, customerDeleted };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.warn(
-        `Stripe cleanup failed for user ${user.id}: ${message}. ` +
-          'Continuing with database purge — the customer record will need manual cleanup.',
-      );
-      return {
-        subscriptionCanceled,
-        customerDeleted,
-        error: message,
-      };
     }
+
+    return {
+      subscriptionCanceled,
+      customerDeleted,
+      ...(errors.length > 0 ? { errors } : {}),
+    };
   }
 
   private async recordEvent(

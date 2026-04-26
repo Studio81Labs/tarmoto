@@ -290,7 +290,12 @@ describe('AccountDeletionService', () => {
       expect(txManager.delete).toHaveBeenCalled();
     });
 
-    it('still purges DB rows when Stripe cancellation fails (logged for ops)', async () => {
+    it('still attempts deleteCustomer when cancelSubscription fails (avoids orphaned Stripe customers)', async () => {
+      // Regression: previously a single try/catch wrapped both Stripe
+      // calls, so a transient cancelSubscription failure short-circuited
+      // deleteCustomer and permanently orphaned the Stripe customer
+      // (the user row is gone after this returns, so the sweeper can
+      // never retry). Each call now has its own try/catch.
       stripe.cancelSubscription.mockRejectedValueOnce(new Error('stripe down'));
       const due = buildUser({
         deleted_at: new Date(),
@@ -305,13 +310,54 @@ describe('AccountDeletionService', () => {
       );
 
       expect(purged).toBe(1);
+      // deleteCustomer must still run and succeed even though
+      // cancelSubscription threw — Stripe's customer.del cascades
+      // subscription cancellation server-side.
+      expect(stripe.cancelSubscription).toHaveBeenCalledWith('sub_abc');
+      expect(stripe.deleteCustomer).toHaveBeenCalledWith('cus_abc');
       expect(txManager.delete).toHaveBeenCalled();
       expect(txManager.save).toHaveBeenCalledWith(
         AccountDeletionLog,
         expect.objectContaining({
           details: expect.objectContaining({
             stripe_subscription_canceled: false,
-            stripe_error: 'stripe down',
+            stripe_customer_deleted: true,
+            stripe_errors: ['cancelSubscription: stripe down'],
+          }),
+        }),
+      );
+    });
+
+    it('records both Stripe errors when cancelSubscription and deleteCustomer both fail', async () => {
+      stripe.cancelSubscription.mockRejectedValueOnce(new Error('cancel fail'));
+      stripe.deleteCustomer.mockRejectedValueOnce(new Error('delete fail'));
+      const due = buildUser({
+        deleted_at: new Date(),
+        deletion_scheduled_at: new Date('2026-04-01T00:00:00Z'),
+        stripe_customer_id: 'cus_abc',
+        stripe_subscription_id: 'sub_abc',
+      });
+      userRepo.find.mockResolvedValueOnce([due]);
+
+      const purged = await service.processDueDeletions(
+        new Date('2026-04-02T00:00:00Z'),
+      );
+
+      // GDPR compliance wins over Stripe cleanup — the DB row still
+      // gets purged on schedule even when both Stripe calls fail.
+      // Audit log captures both errors so ops can manually clean up.
+      expect(purged).toBe(1);
+      expect(txManager.delete).toHaveBeenCalled();
+      expect(txManager.save).toHaveBeenCalledWith(
+        AccountDeletionLog,
+        expect.objectContaining({
+          details: expect.objectContaining({
+            stripe_subscription_canceled: false,
+            stripe_customer_deleted: false,
+            stripe_errors: [
+              'cancelSubscription: cancel fail',
+              'deleteCustomer: delete fail',
+            ],
           }),
         }),
       );
