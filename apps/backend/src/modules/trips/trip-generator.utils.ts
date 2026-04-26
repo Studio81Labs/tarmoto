@@ -109,16 +109,6 @@ export const OPTION_PRESETS: readonly OptionPreset[] =
   TRIP_GENERATION_OPTIONS.map((id) => PRESET_BY_ID[id]);
 
 /**
- * Look up the preset for a given option id. O(1) on the record so
- * `service.generate` doesn't have to scan `OPTION_PRESETS` to find
- * the selected option — and the lookup is total by construction
- * (every `TripGenerationOptionId` has a preset).
- */
-export function getOptionPreset(id: TripGenerationOptionId): OptionPreset {
-  return PRESET_BY_ID[id];
-}
-
-/**
  * Distance (km) between consecutive fuel waypoints. Conservative — most
  * adventure bikes have ~250–350 km of dependable range, so a 220 km cap
  * surfaces a fuel stop with margin even when the corridor's stations are
