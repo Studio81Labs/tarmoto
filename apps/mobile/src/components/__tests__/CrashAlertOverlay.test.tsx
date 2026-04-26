@@ -160,6 +160,86 @@ describe("CrashAlertOverlay", () => {
     expect(retryOpts?.alertId).toBe(firstAttemptOpts?.alertId);
   });
 
+  it("stays on the dispatching phase and re-polls when the backend reports an in-flight replay", async () => {
+    // Idempotent replay: the original POST is still being processed
+    // server-side, so the response carries `dispatch_in_progress: true`
+    // and zero notified contacts. The UI must NOT misclassify that as
+    // a failure — it should keep "ALERTING CONTACTS…" and re-poll for
+    // the eventual outcome. The follow-up poll resolves with the real
+    // success state.
+    mockedApi.sendCrashAlert
+      .mockResolvedValueOnce({
+        ...mockCrashAlertResponse,
+        contacts_notified: 0,
+        contacts: [],
+        idempotent_replay: true,
+        dispatch_in_progress: true,
+      })
+      .mockResolvedValueOnce({
+        ...mockCrashAlertResponse,
+        idempotent_replay: true,
+        dispatch_in_progress: false,
+      });
+
+    render(<CrashAlertOverlay countdownMs={1_000} />);
+    act(() => {
+      useCrashStore.getState().startCountdown(snapshot());
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(1_500);
+    });
+
+    // First call already returned in-flight; phase must still be
+    // dispatching, not failed.
+    await waitFor(() =>
+      expect(useCrashStore.getState().phase).toBe("dispatching"),
+    );
+
+    // Advance past the in-flight poll delay so the follow-up call
+    // fires and resolves with the completed state.
+    await act(async () => {
+      jest.advanceTimersByTime(3_500);
+    });
+
+    await waitFor(() =>
+      expect(useCrashStore.getState().phase).toBe("dispatched"),
+    );
+    expect(mockedApi.sendCrashAlert).toHaveBeenCalledTimes(2);
+  });
+
+  it("falls back to a 'still dispatching' failure after exhausting in-flight polls", async () => {
+    // If the backend gets stuck reporting in-flight, bound the polling
+    // so we don't loop forever. After MAX_IN_FLIGHT_POLLS (4) the UI
+    // surfaces a manual-retry message.
+    mockedApi.sendCrashAlert.mockResolvedValue({
+      ...mockCrashAlertResponse,
+      contacts_notified: 0,
+      contacts: [],
+      idempotent_replay: true,
+      dispatch_in_progress: true,
+    });
+
+    render(<CrashAlertOverlay countdownMs={1_000} />);
+    act(() => {
+      useCrashStore.getState().startCountdown(snapshot());
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(1_500);
+    });
+
+    // Drive 4 polls (each 3 s apart); the 5th attempt is suppressed.
+    for (let i = 0; i < 4; i += 1) {
+      await act(async () => {
+        jest.advanceTimersByTime(3_500);
+      });
+    }
+
+    await waitFor(() => expect(useCrashStore.getState().phase).toBe("failed"));
+    expect(useCrashStore.getState().errorMessage).toMatch(/still being sent/i);
+    // 1 initial + 4 polls = 5 calls; no further calls afterward.
+    expect(mockedApi.sendCrashAlert).toHaveBeenCalledTimes(5);
+  });
+
   it("shows ALERT FAILED when the backend reports zero contacts notified", async () => {
     // 200 OK but `contacts_notified: 0` (notifier unconfigured, every
     // send failed, no contacts on file). The rider must NOT see "HELP
