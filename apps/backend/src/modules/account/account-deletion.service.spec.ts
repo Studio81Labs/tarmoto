@@ -269,7 +269,12 @@ describe('AccountDeletionService', () => {
       expect(purged).toBe(1);
       expect(stripe.cancelSubscription).toHaveBeenCalledWith('sub_abc');
       expect(stripe.deleteCustomer).toHaveBeenCalledWith('cus_abc');
-      expect(surfaceUpdateExecute).toHaveBeenCalled();
+      // surface_readings anonymization happens via the `ON DELETE SET
+      // NULL` FK cascade triggered by the user delete below — the
+      // service must NOT run a separate UPDATE, otherwise a restore
+      // race (delete affected: 0) would orphan the user's telemetry
+      // even though the user row is preserved.
+      expect(surfaceUpdateExecute).not.toHaveBeenCalled();
       // The delete carries `deleted_at IS NOT NULL` so a concurrent
       // restore (support clearing `deleted_at`) is preserved instead
       // of being silently hard-deleted.
@@ -501,6 +506,14 @@ describe('AccountDeletionService', () => {
           deleted_at: expect.objectContaining({ _type: 'not' }),
         }),
       );
+      // Critically: surface_readings.user_id is NOT updated when the
+      // delete is skipped. An earlier version of this code ran the
+      // anonymization UPDATE before the delete, which would have
+      // permanently orphaned a restored user's telemetry. The
+      // ON DELETE SET NULL FK cascade only fires when the delete
+      // actually succeeds, so a no-op delete leaves the readings
+      // attached to the (now-active) user.
+      expect(surfaceUpdateExecute).not.toHaveBeenCalled();
       // No audit row for a row we didn't actually purge.
       expect(txManager.save).not.toHaveBeenCalled();
     });

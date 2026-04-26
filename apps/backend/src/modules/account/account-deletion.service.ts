@@ -214,27 +214,15 @@ export class AccountDeletionService {
     const stripeResult = await this.cancelStripe(user);
 
     return this.dataSource.transaction(async (manager) => {
-      // Defensive `surface_readings.user_id = NULL`. The FK is
-      // `ON DELETE SET NULL` (migration 1715500000000), so the cascade
-      // from the user delete below already handles the anonymization;
-      // this explicit UPDATE is a backstop in case the FK is ever
-      // changed. Run before the delete so the audit row, written
-      // after, observes the post-anonymization state.
-      await manager
-        .createQueryBuilder()
-        .update('surface_readings')
-        .set({ user_id: null })
-        .where('user_id = :id', { id: user.id })
-        .execute();
-
       // Delete only if the row is still soft-deleted. If support
       // restored the account between the pre-flight check and now (or
       // a concurrent sweeper already deleted it), `affected` will be
-      // 0 and we skip the audit. The transaction's earlier
-      // anonymization UPDATE is a no-op in the restore case (the
-      // user's surface_readings already had user_id set to their id,
-      // we just set it to NULL — that's a leak we can't avoid in this
-      // tiny race window without holding a row lock through Stripe).
+      // 0 and we skip the audit. The user delete cascades to every
+      // personal table via the FK rules from migration 1715500000000;
+      // `surface_readings.user_id` is anonymized atomically with this
+      // delete via its `ON DELETE SET NULL` FK — no separate UPDATE
+      // needed (and writing one before this delete would orphan
+      // telemetry of restored users in the affected: 0 case).
       const result = await manager.delete(User, {
         id: user.id,
         deleted_at: Not(IsNull()),
@@ -242,7 +230,7 @@ export class AccountDeletionService {
       if (!result.affected) {
         // Either a concurrent sweeper finished, or support restored
         // the account. Skip the audit either way — the user row stays
-        // intact in the restore case.
+        // intact in the restore case along with their surface readings.
         return false;
       }
 

@@ -22,9 +22,13 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *    `surface_readings.user_id` is the one exception: the user-facing
  *    delete copy promises that anonymized road-quality contributions
  *    stay in the community dataset, so its FK becomes ON DELETE SET
- *    NULL. The hard-delete service also nulls `user_id` explicitly
- *    before the user row goes (defensive — if the FK ever changes
- *    again, the anonymization step still runs).
+ *    NULL. Anonymization happens atomically with the user delete via
+ *    that cascade — `AccountDeletionService.purgeUser` does NOT run a
+ *    separate UPDATE, because doing so before the delete would orphan
+ *    a restored user's telemetry if the delete is skipped at the
+ *    `deleted_at IS NOT NULL` guard. If this FK is ever changed back
+ *    to RESTRICT/CASCADE, the service must add an explicit UPDATE
+ *    after the delete-affected check.
  *
  * 3. **`account_deletion_log` audit table.** Append-only audit row
  *    per deletion event (`requested`, `restored`, `purged`).
