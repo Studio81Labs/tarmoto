@@ -1,4 +1,10 @@
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { latLngToPoint } from '@tarmoto/shared';
@@ -193,6 +199,17 @@ export class TripGeneratorService {
     // candidate. Run in parallel; days don't depend on each other once
     // the anchor chain is fixed.
     const surfaceFilter = resolveSurfaceFilter(dto.surfaces, dto.avoid_unpaved);
+    // Reject the contradictory case (e.g. `surfaces: ['gravel', 'dirt']`
+    // + `avoid_unpaved: true`) up front rather than letting it silently
+    // collapse to "no candidates → fall back to primary," which would
+    // ignore the rider's filter without telling them. The companion's
+    // client-side validator already raises this; mirroring the rule
+    // here protects direct API callers.
+    if (surfaceFilter !== null && surfaceFilter.length === 0) {
+      throw new BadRequestException(
+        'Selected surface filters conflict with avoid_unpaved',
+      );
+    }
     const candidatesByDay = await Promise.all(
       chain.map(async (leg) => {
         const candidates = await this.candidatesForLeg(

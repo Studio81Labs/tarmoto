@@ -284,6 +284,13 @@ describe('resolveSurfaceFilter', () => {
       'asphalt',
     ]);
   });
+
+  it('returns an empty array when surfaces+avoid_unpaved are contradictory (caller validates)', () => {
+    // `resolveSurfaceFilter` stays pure — surfacing the empty array
+    // gives the caller (the service) the chance to throw a 400 with a
+    // clear message instead of silently rejecting every candidate.
+    expect(resolveSurfaceFilter(['gravel', 'dirt'], true)).toEqual([]);
+  });
 });
 
 describe('planFuelStopIndices (no fuel stops within range edge case)', () => {

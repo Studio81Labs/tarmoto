@@ -2,7 +2,7 @@
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { TripGeneratorService } from './trip-generator.service.js';
 import { TripsService } from './trips.service.js';
@@ -100,7 +100,9 @@ describe('TripGeneratorService', () => {
         }
         if (sql.includes('FROM road_segments')) {
           if (sql.includes('GROUP BY rs.surface_type')) {
-            return Promise.resolve([{ surface_type: 'asphalt', km: 40000 }]);
+            return Promise.resolve([
+              { surface_type: 'asphalt', length_m: 40000 },
+            ]);
           }
           return Promise.resolve([
             {
@@ -343,6 +345,24 @@ describe('TripGeneratorService', () => {
       });
 
       expect(result.selected_option).toBe('scenic');
+    });
+
+    it('rejects contradictory surface filters (gravel/dirt + avoid_unpaved) with 400', async () => {
+      // Without the explicit guard, an empty effective filter would
+      // silently reject every OSRM candidate and the fallback would
+      // re-add the primary route as if the rider's filter never ran.
+      // A 400 with a clear message tells the caller their inputs
+      // contradict each other.
+      await expect(
+        service.generate(USER_ID, TRIP_ID, {
+          start_location: { lat: 47.0, lng: 11.5 },
+          surfaces: ['gravel', 'dirt'],
+          avoid_unpaved: true,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(routingProvider.getAlternatives).not.toHaveBeenCalled();
+      expect(dataSource.transaction).not.toHaveBeenCalled();
     });
 
     it('survives an OSRM outage by falling back to a great-circle stub for the affected legs', async () => {
