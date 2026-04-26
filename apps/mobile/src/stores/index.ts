@@ -207,6 +207,15 @@ interface CrashState {
   cancel: () => void;
   markDispatched: () => void;
   markFailed: (message: string) => void;
+  /**
+   * Generate a fresh `alertId` on the current snapshot. Used by the
+   * overlay's RETRY button after a permanent backend failure (e.g.
+   * every contact's send rejected): without rotating the key, the
+   * next attempt would short-circuit to the recorded failure replay
+   * instead of actually re-dispatching, leaving the rider unable to
+   * recover in a safety-critical flow.
+   */
+  rotateIncidentId: () => void;
   /** Dismiss after dispatched / failed terminal state. */
   reset: () => void;
 }
@@ -239,6 +248,10 @@ export const useCrashStore = create<CrashState>((set) => ({
     ),
   markDispatched: () => set({ phase: "dispatched", errorMessage: null }),
   markFailed: (errorMessage) => set({ phase: "failed", errorMessage }),
+  rotateIncidentId: () =>
+    set((s) =>
+      s.alert ? { alert: { ...s.alert, alertId: makeIncidentId() } } : s,
+    ),
   reset: () => set({ phase: "idle", alert: null, errorMessage: null }),
 }));
 

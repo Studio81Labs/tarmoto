@@ -136,6 +136,32 @@ describe('TwilioCrashAlertNotifier', () => {
       });
     });
 
+    it('entity-encodes XML special characters in inline TwiML rather than stripping them', async () => {
+      // A rider's display name like `Jonas & Co` would otherwise be
+      // silently dropped from the spoken alert; the renderer now
+      // emits `&amp;` so Twilio reads it back faithfully.
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ sid: 'CA-amp' }),
+      });
+
+      await provider.send('voice', baseRecipient, {
+        ...baseContext,
+        message: 'Jonas & Co at <49.1,16.75> - "help"',
+      });
+
+      const [, init] = (fetch as jest.Mock).mock.calls[0];
+      const body = new URLSearchParams(init.body as string);
+      const twiml = body.get('Twiml') ?? '';
+      // Body content uses entities, the wrapping <Response>/<Say> tags
+      // remain literal so the XML still parses.
+      expect(twiml).toContain('Jonas &amp; Co');
+      expect(twiml).toContain('&lt;49.1,16.75&gt;');
+      expect(twiml).not.toContain('Jonas  Co'); // no whitespace stripping
+      expect(twiml.startsWith('<Response><Say>')).toBe(true);
+      expect(twiml.endsWith('</Say></Response>')).toBe(true);
+    });
+
     it('uses configured TwiML callback URL when provided', async () => {
       const module: TestingModule = await buildProvider({
         TARMOTO_TWILIO_ACCOUNT_SID: 'ACxxx',

@@ -46,9 +46,12 @@ const IN_FLIGHT_POLL_MS = 3_000;
 /**
  * Cap how many times we'll re-poll an in-flight replay before
  * surfacing a "still dispatching" failure with a manual retry button.
- * Bounded to avoid an infinite loop if the backend gets stuck.
+ * Sized so the auto-poll budget plus a couple of manual retries fits
+ * inside the backend's 5/min per-(ip,user) throttle: 1 initial send +
+ * 2 polls = 3 calls in ~6 s, leaving 2 manual RETRY attempts in the
+ * minute.
  */
-const MAX_IN_FLIGHT_POLLS = 4;
+const MAX_IN_FLIGHT_POLLS = 2;
 
 interface HapticTrigger {
   trigger: () => void;
@@ -80,12 +83,16 @@ export default function CrashAlertOverlay({
   countdownMs = CRASH_DEFAULTS.countdownMs,
 }: CrashAlertOverlayProps): React.ReactElement | null {
   const phase = useCrashStore((s) => s.phase);
-  const alert = useCrashStore((s) => s.alert);
+  // `dispatch` reads the alert via `useCrashStore.getState()` at call
+  // time so the manual-RETRY rotation lands before we POST. The hook
+  // selector isn't needed here because no JSX branch reads alert
+  // fields directly.
   const errorMessage = useCrashStore((s) => s.errorMessage);
   const cancel = useCrashStore((s) => s.cancel);
   const beginDispatch = useCrashStore((s) => s.beginDispatch);
   const markDispatched = useCrashStore((s) => s.markDispatched);
   const markFailed = useCrashStore((s) => s.markFailed);
+  const rotateIncidentId = useCrashStore((s) => s.rotateIncidentId);
   const resetAlert = useCrashStore((s) => s.reset);
 
   const [remainingMs, setRemainingMs] = useState(countdownMs);
@@ -152,6 +159,14 @@ export default function CrashAlertOverlay({
       // below clears it, so a double-tap on RETRY can't race past the
       // guard.
       if (inFlightRef.current) return;
+      // Read the alert directly from the store rather than the
+      // closure variable. The RETRY button rotates the alertId via
+      // `rotateIncidentId()` and immediately calls `dispatch()` —
+      // because React state updates are batched, the closure-captured
+      // `alert` would still hold the pre-rotation id at that point.
+      // Pulling from the store at call time guarantees we send the
+      // freshly-rotated id.
+      const alert = useCrashStore.getState().alert;
       if (!alert) {
         // Defensive: no snapshot means we have nothing to send. Surface as
         // a failure so the rider knows the alert didn't go out.
@@ -233,7 +248,7 @@ export default function CrashAlertOverlay({
         inFlightRef.current = false;
       }
     },
-    [alert, beginDispatch, markDispatched, markFailed],
+    [beginDispatch, markDispatched, markFailed],
   );
 
   useEffect(() => {
@@ -348,12 +363,23 @@ export default function CrashAlertOverlay({
             <TouchableOpacity
               style={styles.cancelBtn}
               onPress={() => {
+                // Rotate the incident id so the backend treats this
+                // tap as a fresh dispatch instead of replaying the
+                // recorded failure under the previous `alertId`. A
+                // permanent failure (every contact's send rejected)
+                // is recorded with `dispatch_completed_at != null`,
+                // so reusing the same id would short-circuit to the
+                // same failed response and the rider could never
+                // genuinely retry. Rotating accepts a small risk of
+                // double-notification if a stuck-in-flight original
+                // eventually succeeds — acceptable trade-off in a
+                // safety flow where the rider's intent is clearly
+                // "make sure the alert goes out". `dispatch()`'s own
+                // `inFlightRef` guard still dedupes a double-tap.
+                rotateIncidentId();
                 // Hop straight to dispatching so the failed UI hides
                 // immediately — re-running the 30-second countdown
                 // after an explicit retry tap would be worse UX.
-                // `dispatch()`'s own `inFlightRef` guard takes care of
-                // dedupe if the rider double-taps before the request
-                // resolves; we don't reset any flag here ourselves.
                 useCrashStore.setState({ phase: "dispatching" });
                 void dispatch();
               }}

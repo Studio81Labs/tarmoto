@@ -133,10 +133,15 @@ describe("CrashAlertOverlay", () => {
     expect(useCrashStore.getState().phase).toBe("dispatched");
   });
 
-  it("reuses the same alertId on RETRY so the backend can replay", async () => {
-    // First attempt fails so the rider can hit RETRY. Both attempts
-    // must carry the same incident-scoped UUID — otherwise the backend
-    // treats the retry as a brand-new alert and re-notifies contacts.
+  it("rotates the alertId on RETRY so a permanent backend failure can be re-attempted", async () => {
+    // The previous design reused the same alertId on RETRY; the
+    // backend then replayed the recorded failure under that key
+    // instead of actually re-dispatching, so the rider couldn't
+    // recover from a "every contact send rejected" outcome. The
+    // overlay now rotates the id on every manual retry — the trade
+    // is a small risk of double-notification if a stuck-in-flight
+    // original eventually succeeds, which is acceptable in a safety
+    // flow where the rider's intent is clearly "make sure it goes."
     mockedApi.sendCrashAlert.mockRejectedValueOnce(new Error("network down"));
     mockedApi.sendCrashAlert.mockResolvedValueOnce(mockCrashAlertResponse);
 
@@ -157,7 +162,46 @@ describe("CrashAlertOverlay", () => {
     const firstAttemptOpts = mockedApi.sendCrashAlert.mock.calls[0][2];
     const retryOpts = mockedApi.sendCrashAlert.mock.calls[1][2];
     expect(firstAttemptOpts?.alertId).toBeDefined();
-    expect(retryOpts?.alertId).toBe(firstAttemptOpts?.alertId);
+    expect(retryOpts?.alertId).toBeDefined();
+    expect(retryOpts?.alertId).not.toBe(firstAttemptOpts?.alertId);
+  });
+
+  it("keeps the same alertId across in-flight replay polls so the backend resolves a single dispatch", async () => {
+    // In-flight polling is the OPPOSITE of manual RETRY: the original
+    // dispatch is still working server-side, and we want to read its
+    // eventual outcome — not start a fresh one. So the auto-poll must
+    // reuse the same alertId.
+    mockedApi.sendCrashAlert
+      .mockResolvedValueOnce({
+        ...mockCrashAlertResponse,
+        contacts_notified: 0,
+        contacts: [],
+        idempotent_replay: true,
+        dispatch_in_progress: true,
+      })
+      .mockResolvedValueOnce({
+        ...mockCrashAlertResponse,
+        idempotent_replay: true,
+        dispatch_in_progress: false,
+      });
+
+    render(<CrashAlertOverlay countdownMs={1_000} />);
+    act(() => {
+      useCrashStore.getState().startCountdown(snapshot());
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(1_500);
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(3_500);
+    });
+    await waitFor(() =>
+      expect(useCrashStore.getState().phase).toBe("dispatched"),
+    );
+
+    const initial = mockedApi.sendCrashAlert.mock.calls[0][2];
+    const poll = mockedApi.sendCrashAlert.mock.calls[1][2];
+    expect(poll?.alertId).toBe(initial?.alertId);
   });
 
   it("stays on the dispatching phase and re-polls when the backend reports an in-flight replay", async () => {
@@ -209,8 +253,10 @@ describe("CrashAlertOverlay", () => {
 
   it("falls back to a 'still dispatching' failure after exhausting in-flight polls", async () => {
     // If the backend gets stuck reporting in-flight, bound the polling
-    // so we don't loop forever. After MAX_IN_FLIGHT_POLLS (4) the UI
-    // surfaces a manual-retry message.
+    // so we don't loop forever. The poll cap is sized to fit inside
+    // the backend's 5/min throttle alongside a couple of manual
+    // retries (initial + 2 polls = 3 calls in ~6s, leaving 2 in
+    // budget); after the cap the UI surfaces a manual-retry message.
     mockedApi.sendCrashAlert.mockResolvedValue({
       ...mockCrashAlertResponse,
       contacts_notified: 0,
@@ -227,8 +273,8 @@ describe("CrashAlertOverlay", () => {
       jest.advanceTimersByTime(1_500);
     });
 
-    // Drive 4 polls (each 3 s apart); the 5th attempt is suppressed.
-    for (let i = 0; i < 4; i += 1) {
+    // Drive 2 polls (each 3 s apart); the 3rd attempt is suppressed.
+    for (let i = 0; i < 2; i += 1) {
       await act(async () => {
         jest.advanceTimersByTime(3_500);
       });
@@ -236,8 +282,50 @@ describe("CrashAlertOverlay", () => {
 
     await waitFor(() => expect(useCrashStore.getState().phase).toBe("failed"));
     expect(useCrashStore.getState().errorMessage).toMatch(/still being sent/i);
-    // 1 initial + 4 polls = 5 calls; no further calls afterward.
-    expect(mockedApi.sendCrashAlert).toHaveBeenCalledTimes(5);
+    // 1 initial + 2 polls = 3 calls; no further calls afterward.
+    expect(mockedApi.sendCrashAlert).toHaveBeenCalledTimes(3);
+  });
+
+  it("recovers from a server-recorded permanent failure when the rider taps RETRY", async () => {
+    // First dispatch reaches the backend and completes with every
+    // contact's send rejected — the row is recorded as completed with
+    // `contacts_notified: 0`. Without rotating the alertId on RETRY,
+    // the next attempt would short-circuit to that recorded failure
+    // replay and the rider could never actually retry. The overlay
+    // rotates the id, so the second attempt is a fresh dispatch.
+    mockedApi.sendCrashAlert.mockResolvedValueOnce({
+      ...mockCrashAlertResponse,
+      contacts_notified: 0,
+      contacts: [
+        {
+          contact_id: "c-1",
+          name: "Jane",
+          channel: "sms",
+          status: "failed",
+          provider_message_id: null,
+          error: "Twilio 5xx",
+        },
+      ],
+    });
+    mockedApi.sendCrashAlert.mockResolvedValueOnce(mockCrashAlertResponse);
+
+    render(<CrashAlertOverlay countdownMs={1_000} />);
+    act(() => {
+      useCrashStore.getState().startCountdown(snapshot());
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(1_500);
+    });
+    await waitFor(() => expect(useCrashStore.getState().phase).toBe("failed"));
+
+    fireEvent.press(screen.getByLabelText(/retry crash alert/i));
+    await waitFor(() =>
+      expect(useCrashStore.getState().phase).toBe("dispatched"),
+    );
+
+    const firstAttemptOpts = mockedApi.sendCrashAlert.mock.calls[0][2];
+    const retryOpts = mockedApi.sendCrashAlert.mock.calls[1][2];
+    expect(retryOpts?.alertId).not.toBe(firstAttemptOpts?.alertId);
   });
 
   it("shows ALERT FAILED when the backend reports zero contacts notified", async () => {

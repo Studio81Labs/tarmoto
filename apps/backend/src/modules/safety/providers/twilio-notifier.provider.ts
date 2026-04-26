@@ -132,7 +132,13 @@ export class TwilioCrashAlertNotifier implements CrashAlertNotifier {
     } else {
       // Inline TwiML — Twilio accepts a `Twiml` parameter so we can
       // dispatch a voice alert without hosting a callback URL.
-      const safe = context.message.replace(/[<&]/g, ' ');
+      // Entity-encode XML special characters rather than dropping
+      // them: a rider whose display name is `Jonas & Co` deserves to
+      // have the ampersand spoken, not silently elided.
+      const safe = context.message
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
       params.set('Twiml', `<Response><Say>${safe}</Say></Response>`);
     }
 

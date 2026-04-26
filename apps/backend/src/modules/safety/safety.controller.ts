@@ -18,10 +18,15 @@ import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { SafetyService } from './safety.service.js';
 import { CrashAlertDto, CrashAlertResponseDto } from './dto/crash-alert.dto.js';
+import { UserScopedThrottlerGuard } from './user-scoped-throttler.guard.js';
 
 @ApiTags('safety')
 @Controller('safety')
-@UseGuards(AuthGuard)
+// AuthGuard runs first so `req.user.userId` is populated by the time
+// the throttler reads it. The user-scoped throttler buckets by
+// `(ip, user_id)` so riders behind shared NAT can't exhaust each
+// other's safety-endpoint budget.
+@UseGuards(AuthGuard, UserScopedThrottlerGuard)
 @ApiBearerAuth()
 export class SafetyController {
   constructor(private readonly safetyService: SafetyService) {}
@@ -29,9 +34,10 @@ export class SafetyController {
   @Post('crash-alert')
   @HttpCode(HttpStatus.OK)
   // Crash alerts are user-triggered after a hard countdown — bursts
-  // are abuse, not legitimate behaviour. Cap at 5/min per IP+user to
-  // contain runaway clients without blocking the second alert in a
-  // genuinely catastrophic ride.
+  // are abuse, not legitimate behaviour. Cap at 5/min per (IP, user)
+  // to contain runaway clients without blocking the second alert in
+  // a genuinely catastrophic ride and without one user starving
+  // another sharing the same upstream IP.
   @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @ApiOperation({
     summary: 'Send crash alert to emergency contacts',
