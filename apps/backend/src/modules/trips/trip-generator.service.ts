@@ -24,6 +24,8 @@ import {
 import { TripDayDto, TripWaypointDto } from './dto/trip-response.dto.js';
 import {
   buildDayChain,
+  chunkDistance,
+  defaultOptionForPreference,
   OPTION_PRESETS,
   type OptionPreset,
   pickAnchors,
@@ -169,9 +171,21 @@ export class TripGeneratorService {
     // Anchors are shared across options so we only need num_days OSRM
     // calls (each with maxAlternatives=3) instead of 3 * num_days. The
     // three option scorers then re-rank the same candidate set.
+    //
+    // Anchor count: a multi-day loop needs `numDays - 1` overnight
+    // points (the last day closes back to start). A 1-day trip still
+    // needs **one** anchor — the day's destination — otherwise the
+    // chain collapses to a degenerate start→start leg with 0 km.
     const numDays = trip.num_days;
+    const dailyTargets = chunkDistance(
+      numDays,
+      trip.daily_km_min,
+      trip.daily_km_max,
+      1.0,
+    );
+    const numAnchors = numDays === 1 ? 1 : numDays - 1;
     const funZones = await this.loadFunZoneCentroids(bbox);
-    const anchors = pickAnchors(start, bbox, funZones, numDays - 1);
+    const anchors = pickAnchors(start, bbox, funZones, numAnchors);
     const chain = buildDayChain(start, anchors, numDays);
 
     // Per-day candidate sets — one OSRM call per day, scored once per
@@ -202,12 +216,15 @@ export class TripGeneratorService {
     // share the same OSRM-returned alternatives so total cost stays
     // O(num_days) round-trips instead of O(3 * num_days).
     const builtOptions: BuiltOption[] = OPTION_PRESETS.map((preset) =>
-      this.buildOption(preset, candidatesByDay, trip.region),
+      this.buildOption(preset, candidatesByDay, dailyTargets, trip.region),
     );
 
-    // Default to "best-fit" when the caller doesn't specify an option.
-    // The other two are still returned in `options[]` for side-by-side.
-    const selectedId: TripGenerationOptionId = dto.option ?? 'best-fit';
+    // Default selected option from the trip's persisted
+    // `road_preference` so callers that don't pick explicitly still get
+    // a sensible itinerary biased toward the rider's saved choice.
+    // Explicit `dto.option` always wins.
+    const selectedId: TripGenerationOptionId =
+      dto.option ?? defaultOptionForPreference(trip.road_preference);
     const selected = builtOptions.find((o) => o.preset.id === selectedId);
     if (!selected) {
       // Should be impossible given the DTO @IsIn validator, but type
@@ -333,9 +350,19 @@ export class TripGeneratorService {
   private buildOption(
     preset: OptionPreset,
     candidatesByDay: ReadonlyArray<ReadonlyArray<Candidate>>,
+    baseDailyTargets: ReadonlyArray<number>,
     region: string | null,
   ): BuiltOption {
+    // Apply the preset's distance multiplier on top of the trip's own
+    // (min+max)/2 average — this is what wires the persisted daily-km
+    // bounds into route selection. Each preset still picks from the
+    // same OSRM candidate set, but `scoreRoute`'s `distanceFit` term
+    // pulls each option toward its own preferred per-day length.
+    const dailyTargets = baseDailyTargets.map(
+      (km) => km * preset.distanceMultiplier,
+    );
     const days: BuiltDay[] = candidatesByDay.map((candidates, dayIdx) => {
+      const targetKm = dailyTargets[dayIdx];
       const best = candidates.reduce<Candidate>(
         (acc, cand) =>
           scoreRoute(preset, {
@@ -343,12 +370,16 @@ export class TripGeneratorService {
             curvinessScore: cand.metrics.curvinessScore,
             scenicScore: cand.metrics.scenicScore,
             durationMin: cand.alt.duration_min,
+            distanceKm: cand.alt.distance_km,
+            targetKm,
           }) >
           scoreRoute(preset, {
             avgQuality: acc.metrics.avgQuality,
             curvinessScore: acc.metrics.curvinessScore,
             scenicScore: acc.metrics.scenicScore,
             durationMin: acc.alt.duration_min,
+            distanceKm: acc.alt.distance_km,
+            targetKm,
           })
             ? cand
             : acc,
@@ -538,11 +569,25 @@ export class TripGeneratorService {
     const curvinessScore = q?.avg_curviness ?? null;
     const zoneCount = s?.zone_count ?? 0;
     const scenicAvg = s?.avg_scenic ?? null;
-    // Map fun-zone aggregate into a 0..100 scenic score: zero zones →
-    // 0, multiple zones with strong composite → ~100.
+    // Map fun-zone aggregate into a 0..100 scenic score with a real
+    // gradient. The previous `avgScore * min(count, 4) * 25` formula
+    // saturated at 100 for any zone with composite_score >= 4 (US-6
+    // produces scores in roughly the 1..10 range), so an option that
+    // overlapped one good zone could not be distinguished from one
+    // overlapping five great zones — defeating the "scenic sweep"
+    // preset's whole job. Split the score into:
+    //   • up to 70 points from the *quality* of zones touched
+    //     (composite_score normalised against an expected ~10 ceiling)
+    //   • up to 30 points from the *count* of distinct zones touched
+    //     (capped at 5 so a single high-density region can't dominate)
+    // The sum is still clamped to 100 so the value stays comparable to
+    // `quality_score`/`curviness_score` in the same weight bands.
     const scenicScore =
       scenicAvg !== null && zoneCount > 0
-        ? Math.min(100, scenicAvg * Math.min(zoneCount, 4) * 25)
+        ? Math.min(
+            100,
+            Math.min(scenicAvg, 10) * 7 + Math.min(zoneCount, 5) * 6,
+          )
         : 0;
     const hazardCount = h?.count ?? 0;
 

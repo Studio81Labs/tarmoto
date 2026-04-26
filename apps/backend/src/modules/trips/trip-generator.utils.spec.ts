@@ -1,6 +1,7 @@
 import {
   buildDayChain,
   chunkDistance,
+  defaultOptionForPreference,
   MAX_DAILY_KM,
   MIN_DAILY_KM,
   OPTION_PRESETS,
@@ -190,6 +191,42 @@ describe('scoreRoute (quality weighting)', () => {
     // finite durationMin.
     expect(score).toBeGreaterThan(0);
     expect(score).toBeLessThan(0.2);
+  });
+
+  it('rewards distances closer to the daily target (wires daily_km bounds)', () => {
+    const preset = OPTION_PRESETS.find((p) => p.id === 'best-fit')!;
+    // Equal everything except distance: 250 km matches target exactly,
+    // 50 km is 80% off target, so the on-target route must score
+    // higher under best-fit's distanceFitWeight.
+    const onTarget = scoreRoute(preset, m({ distanceKm: 250, targetKm: 250 }));
+    const tooShort = scoreRoute(preset, m({ distanceKm: 50, targetKm: 250 }));
+    expect(onTarget).toBeGreaterThan(tooShort);
+  });
+
+  it('omits the distance-fit term when targetKm is missing (legacy callers)', () => {
+    const preset = OPTION_PRESETS.find((p) => p.id === 'best-fit')!;
+    // Without targetKm, distanceKm has no effect → both calls equal.
+    const a = scoreRoute(preset, m({ distanceKm: 100 }));
+    const b = scoreRoute(preset, m({ distanceKm: 500 }));
+    expect(a).toBeCloseTo(b, 10);
+  });
+});
+
+describe('defaultOptionForPreference', () => {
+  it('maps curvy and scenic preferences to scenic', () => {
+    expect(defaultOptionForPreference('curvy')).toBe('scenic');
+    expect(defaultOptionForPreference('scenic')).toBe('scenic');
+  });
+
+  it('maps fast preference to fastest', () => {
+    expect(defaultOptionForPreference('fast')).toBe('fastest');
+  });
+
+  it('falls back to best-fit for mixed, unknown, or null preferences', () => {
+    expect(defaultOptionForPreference('mixed')).toBe('best-fit');
+    expect(defaultOptionForPreference(null)).toBe('best-fit');
+    expect(defaultOptionForPreference(undefined)).toBe('best-fit');
+    expect(defaultOptionForPreference('not-a-real-option')).toBe('best-fit');
   });
 });
 

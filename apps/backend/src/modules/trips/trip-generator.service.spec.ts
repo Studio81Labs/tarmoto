@@ -213,15 +213,24 @@ describe('TripGeneratorService', () => {
       );
     });
 
-    it('defaults selected_option to best-fit', async () => {
+    it('defaults selected_option from road_preference (curvy → scenic)', async () => {
+      // Default fixture has road_preference='curvy', which the
+      // generator now maps to the 'scenic' option preset.
       const result = await service.generate(USER_ID, TRIP_ID, {
         start_location: { lat: 47.0, lng: 11.5 },
       });
 
-      expect(result.selected_option).toBe('best-fit');
+      expect(result.selected_option).toBe('scenic');
     });
 
     it('persists the selected option in a transaction and emits trip:generated', async () => {
+      // road_preference='mixed' falls through to the 'best-fit' default
+      // so this test pins both the persistence path and the default
+      // mapping for the catch-all case in one shot.
+      tripRepo.findOne.mockResolvedValue(
+        makeTrip({ road_preference: 'mixed' }),
+      );
+
       await service.generate(USER_ID, TRIP_ID, {
         start_location: { lat: 47.0, lng: 11.5 },
       });
@@ -285,6 +294,55 @@ describe('TripGeneratorService', () => {
 
       expect(routingProvider.getAlternatives).toHaveBeenCalledTimes(1);
       expect(result.options[0].days).toHaveLength(1);
+    });
+
+    it('does NOT generate a degenerate start→start leg for a 1-day trip when fun zones exist', async () => {
+      // Regression for the bug where `pickAnchors(.., numDays - 1)`
+      // collapsed to 0 anchors on a 1-day trip, producing a 0 km loop
+      // that ignored every available fun zone in the bbox.
+      tripRepo.findOne.mockResolvedValue(makeTrip({ num_days: 1 }));
+
+      await service.generate(USER_ID, TRIP_ID, {
+        start_location: { lat: 47.0, lng: 11.5 },
+      });
+
+      expect(routingProvider.getAlternatives).toHaveBeenCalledTimes(1);
+      const [originLat, originLng, destLat, destLng] = routingProvider
+        .getAlternatives.mock.calls[0] as [
+        number,
+        number,
+        number,
+        number,
+        number,
+      ];
+      // Origin is the supplied start; destination must be a real anchor
+      // (not the start) so the trip actually goes somewhere.
+      expect(originLat).toBe(47.0);
+      expect(originLng).toBe(11.5);
+      const isDegenerate = originLat === destLat && originLng === destLng;
+      expect(isDegenerate).toBe(false);
+    });
+
+    it('defaults selected_option from trip.road_preference when caller omits option', async () => {
+      tripRepo.findOne.mockResolvedValue(makeTrip({ road_preference: 'fast' }));
+
+      const result = await service.generate(USER_ID, TRIP_ID, {
+        start_location: { lat: 47.0, lng: 11.5 },
+      });
+
+      // road_preference=fast → fastest preset is selected by default.
+      expect(result.selected_option).toBe('fastest');
+    });
+
+    it('explicit dto.option always wins over road_preference default', async () => {
+      tripRepo.findOne.mockResolvedValue(makeTrip({ road_preference: 'fast' }));
+
+      const result = await service.generate(USER_ID, TRIP_ID, {
+        start_location: { lat: 47.0, lng: 11.5 },
+        option: 'scenic',
+      });
+
+      expect(result.selected_option).toBe('scenic');
     });
 
     it('survives an OSRM outage by falling back to a great-circle stub for the affected legs', async () => {

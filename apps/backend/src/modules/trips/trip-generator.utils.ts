@@ -31,6 +31,13 @@ export interface OptionPreset {
   scenicWeight: number;
   /** Weight on `1 / duration_min` so faster routes float up for `fastest`. */
   speedWeight: number;
+  /**
+   * Weight on a 1 - |distance - target| / target term so each preset
+   * favours alternatives closest to the trip's daily-km target after
+   * `distanceMultiplier` is applied. Without this, the trip's
+   * `daily_km_min` / `daily_km_max` bounds would be ignored entirely.
+   */
+  distanceFitWeight: number;
 }
 
 export const OPTION_PRESETS: readonly OptionPreset[] = [
@@ -39,35 +46,35 @@ export const OPTION_PRESETS: readonly OptionPreset[] = [
     label: 'Best fit',
     summary: 'Balanced route closest to your trip settings.',
     distanceMultiplier: 1.0,
-    qualityWeight: 0.4,
-    curvinessWeight: 0.3,
-    scenicWeight: 0.2,
+    qualityWeight: 0.3,
+    curvinessWeight: 0.2,
+    scenicWeight: 0.15,
     speedWeight: 0.1,
+    distanceFitWeight: 0.25,
   },
   {
     id: 'scenic',
     label: 'Scenic sweep',
     summary: 'Longer, twistier days with more fun-zone time.',
     distanceMultiplier: 1.12,
-    qualityWeight: 0.25,
-    curvinessWeight: 0.4,
-    scenicWeight: 0.3,
+    qualityWeight: 0.2,
+    curvinessWeight: 0.35,
+    scenicWeight: 0.25,
     speedWeight: 0.05,
+    distanceFitWeight: 0.15,
   },
   {
     id: 'fastest',
     label: 'Fastest line',
     summary: 'Shorter, more direct days that still keep good roads.',
     distanceMultiplier: 0.88,
-    qualityWeight: 0.3,
+    qualityWeight: 0.2,
     curvinessWeight: 0.1,
     scenicWeight: 0.05,
-    speedWeight: 0.55,
+    speedWeight: 0.45,
+    distanceFitWeight: 0.2,
   },
 ];
-
-/** Approximate paved/road km per great-circle km for a typical mountain region. */
-const ROAD_DETOUR_FACTOR = 1.35;
 
 /**
  * Distance (km) between consecutive fuel waypoints. Conservative — most
@@ -243,6 +250,12 @@ export function buildDayChain(
  * `durationMin` which is converted to `1 / (1 + min/120)` so a 0-minute
  * route saturates at 1 and a 4-hour route lands near 0.5.
  *
+ * `targetKm` is the day's preset-adjusted target distance — when set,
+ * routes whose `distanceKm` lands close to it earn a `distanceFit`
+ * bonus weighted by `preset.distanceFitWeight`. This is what wires the
+ * trip's persisted `daily_km_min` / `daily_km_max` bounds into route
+ * selection (without it, the bounds are ignored).
+ *
  * Pure — exported for tests so the AC's "quality weighting" coverage
  * is straightforward to assert.
  */
@@ -253,18 +266,56 @@ export function scoreRoute(
     curvinessScore: number | null; // 0..100
     scenicScore: number | null; // 0..100
     durationMin: number; // > 0
+    distanceKm?: number; // total day distance, when scoring a real OSRM route
+    targetKm?: number; // preset-adjusted day target from chunkDistance
   },
 ): number {
   const q = (metrics.avgQuality ?? 0) / 5; // 0..1
   const c = (metrics.curvinessScore ?? 0) / 100;
   const s = (metrics.scenicScore ?? 0) / 100;
   const speed = 1 / (1 + Math.max(metrics.durationMin, 0) / 120);
+  // `distanceFit` collapses to 0 if either distance side is missing —
+  // makes the term a no-op for legacy callers (and the tests that don't
+  // pass either field) and naturally penalises a 0 km fallback against
+  // a non-zero target.
+  const distanceFit =
+    metrics.distanceKm !== undefined &&
+    metrics.targetKm !== undefined &&
+    metrics.targetKm > 0
+      ? Math.max(
+          0,
+          1 -
+            Math.abs(metrics.distanceKm - metrics.targetKm) / metrics.targetKm,
+        )
+      : 0;
   return (
     preset.qualityWeight * q +
     preset.curvinessWeight * c +
     preset.scenicWeight * s +
-    preset.speedWeight * speed
+    preset.speedWeight * speed +
+    preset.distanceFitWeight * distanceFit
   );
+}
+
+/**
+ * Map the trip's persisted `road_preference` to a default option id so
+ * the generator honours rider intent when the caller doesn't pass an
+ * explicit `option`. `curvy`/`scenic` map to `scenic`, `fast` maps to
+ * `fastest`, anything else (`mixed` or unknown) falls back to
+ * `best-fit` so the response stays predictable for legacy data.
+ */
+export function defaultOptionForPreference(
+  roadPreference: string | null | undefined,
+): TripGenerationOptionId {
+  switch (roadPreference) {
+    case 'scenic':
+    case 'curvy':
+      return 'scenic';
+    case 'fast':
+      return 'fastest';
+    default:
+      return 'best-fit';
+  }
 }
 
 /**
@@ -401,6 +452,3 @@ function pointAtBearing(
     lng: (((λ2 * 180) / Math.PI + 540) % 360) - 180,
   };
 }
-
-/** Re-exported so consumers don't need to reach back into `@tarmoto/shared`. */
-export { ROAD_DETOUR_FACTOR };
