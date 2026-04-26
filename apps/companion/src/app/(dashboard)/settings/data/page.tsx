@@ -79,8 +79,9 @@ export default function DataPage() {
               Download my data
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              We&apos;ll prepare a ZIP archive with everything tied to your account
-              and email you a download link. The link stays valid for 7 days.
+              We&apos;ll prepare a ZIP archive with everything tied to your
+              account and email you a download link. The link stays valid for 7
+              days.
             </p>
           </div>
         </div>
@@ -178,16 +179,18 @@ interface DeleteConfirmModalProps {
 
 function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
   const [typed, setTyped] = useState("");
+  const [password, setPassword] = useState("");
   const [state, setState] = useState<DeleteState>({ kind: "idle" });
 
   const confirmed = isDeletionConfirmed(typed, email);
+  const canSubmit = confirmed && password.length > 0;
   const busy = state.kind === "deleting";
 
   async function confirmDelete() {
-    if (!confirmed || busy) return;
+    if (!canSubmit || busy) return;
     setState({ kind: "deleting" });
     try {
-      await accountApi.deleteAccount();
+      await accountApi.deleteAccount({ password });
       // AuthSync clears the Zustand store when next-auth transitions to
       // unauthenticated, so we only need to signOut here. Clearing the store
       // ourselves would unmount this modal (gated on user?.email) mid-await
@@ -256,6 +259,23 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
               className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:border-red-400 transition disabled:opacity-50"
             />
           </div>
+          <div>
+            <label
+              htmlFor="delete-confirm-password"
+              className="block text-xs text-slate-500 mb-1.5"
+            >
+              Your password
+            </label>
+            <input
+              id="delete-confirm-password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={busy}
+              className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:border-red-400 transition disabled:opacity-50"
+            />
+          </div>
           {state.kind === "error" && (
             <p role="alert" className="text-sm text-red-400">
               {state.message}
@@ -275,7 +295,7 @@ function DeleteConfirmModal({ email, onClose }: DeleteConfirmModalProps) {
           <button
             type="button"
             onClick={confirmDelete}
-            disabled={!confirmed || busy}
+            disabled={!canSubmit || busy}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500 text-white text-sm font-semibold hover:bg-red-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {busy ? (

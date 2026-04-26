@@ -1,5 +1,7 @@
 export { User } from './user.entity.js';
 export { UserContact } from './user-contact.entity.js';
+export { AccountDeletionLog } from './account-deletion-log.entity.js';
+export type { AccountDeletionEvent } from './account-deletion-log.entity.js';
 export { CrashAlert } from './crash-alert.entity.js';
 export type {
   CrashAlertSeverity,

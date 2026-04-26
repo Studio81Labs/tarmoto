@@ -52,6 +52,9 @@ describe('AccountService', () => {
       getBillingSnapshot: jest.fn(),
       createCheckoutSession: jest.fn(),
       createPortalSession: jest.fn(),
+      cancelSubscription: jest.fn(),
+      deleteCustomer: jest.fn(),
+      isConfigured: jest.fn().mockReturnValue(true),
       constructWebhookEvent: jest.fn(),
     };
 

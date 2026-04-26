@@ -38,7 +38,7 @@ export class FollowersService {
     const target = await this.userRepo.findOne({
       where: { id: followingId },
     });
-    if (!target) {
+    if (!target || target.deleted_at != null) {
       throw new NotFoundException('User not found');
     }
 
@@ -85,11 +85,13 @@ export class FollowersService {
       order: { created_at: 'DESC' },
     });
 
-    return follows.map((f) => ({
-      user_id: f.follower_id,
-      display_name: f.follower?.display_name ?? 'Unknown',
-      followed_at: f.created_at.toISOString(),
-    }));
+    return follows
+      .filter((f) => f.follower != null && f.follower.deleted_at == null)
+      .map((f) => ({
+        user_id: f.follower_id,
+        display_name: f.follower.display_name,
+        followed_at: f.created_at.toISOString(),
+      }));
   }
 
   async listFollowing(userId: string): Promise<FollowingDto[]> {
@@ -99,11 +101,13 @@ export class FollowersService {
       order: { created_at: 'DESC' },
     });
 
-    return follows.map((f) => ({
-      user_id: f.following_id,
-      display_name: f.following?.display_name ?? 'Unknown',
-      followed_at: f.created_at.toISOString(),
-    }));
+    return follows
+      .filter((f) => f.following != null && f.following.deleted_at == null)
+      .map((f) => ({
+        user_id: f.following_id,
+        display_name: f.following.display_name,
+        followed_at: f.created_at.toISOString(),
+      }));
   }
 
   async getFeed(
@@ -132,6 +136,7 @@ export class FollowersService {
       .innerJoinAndSelect('sr.ride', 'ride')
       .innerJoinAndSelect('sr.user', 'user')
       .where('sr.is_public = true')
+      .andWhere('user.deleted_at IS NULL')
       .andWhere('sr.user_id IN (:...followingIds)', { followingIds });
 
     if (lat != null && lng != null) {
