@@ -12,11 +12,16 @@ describe('OsrmProvider', () => {
     } as unknown as ConfigService;
     provider = new OsrmProvider(config);
 
-    fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ code: 'Ok', routes: [] }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
+    // Build a fresh Response per call — `Response` bodies are
+    // single-shot streams, so a single shared instance would throw on
+    // the second test that reuses the default mock.
+    fetchMock = jest.spyOn(globalThis, 'fetch').mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ code: 'Ok', routes: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
     );
   });
 
@@ -94,6 +99,26 @@ describe('OsrmProvider', () => {
     expect(out).toHaveLength(2);
     expect(out[0].distance_km).toBe(1.1);
     expect(out[1].distance_km).toBe(1.2);
+  });
+
+  it('asks OSRM for one fewer alternative when includePrimary is set (preserves count budget)', async () => {
+    // Regression: when `includePrimary=true` we want `maxAlternatives`
+    // candidates *including* the primary. OSRM's `alternatives=N`
+    // computes N alts in addition to the primary, so we have to ask
+    // for N-1 to get back N total — otherwise the slice silently
+    // drops the last alternative OSRM computed.
+    await provider.getAlternatives(47.0, 11.5, 47.2, 11.7, 3, {
+      includePrimary: true,
+    });
+    const calls = fetchMock.mock.calls as Array<[string]>;
+    expect(calls[0][0]).toContain('alternatives=2');
+
+    // Sanity: without includePrimary, the parameter is unchanged.
+    fetchMock.mockClear();
+    await provider.getAlternatives(47.0, 11.5, 47.2, 11.7, 3);
+    expect((fetchMock.mock.calls as Array<[string]>)[0][0]).toContain(
+      'alternatives=3',
+    );
   });
 
   it('keeps the primary route when includePrimary is set (trip-generator semantic)', async () => {

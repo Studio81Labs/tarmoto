@@ -335,17 +335,24 @@ export class TripGeneratorService {
       ];
     }
 
-    const candidates: Candidate[] = [];
-    // Cache the per-route metrics enriched in the first pass so the
-    // last-resort fallback below can reuse them without re-issuing the
-    // four PostGIS round-trips that `aggregateRouteMetrics` does. Keyed
-    // by the route alternative reference so the lookup stays O(1)
-    // regardless of geometry size.
+    // Enrich every alternative in parallel — each `aggregateRouteMetrics`
+    // call already runs four PostGIS queries concurrently, but the
+    // alternatives themselves used to be awaited sequentially, which
+    // multiplied the per-day latency by `alts.length`. The endpoint's
+    // <10s budget can't afford that on a multi-day trip with 3 alts
+    // per day. Cache the result by route reference so the fallback
+    // path below can reuse it.
+    const enrichable = alts.filter((alt) => alt.geometry.length >= 2);
+    const enrichedList = await Promise.all(
+      enrichable.map((alt) => this.aggregateRouteMetrics(alt.geometry)),
+    );
     const enriched = new Map<RouteAlternative, RouteMetrics>();
-    for (const alt of alts) {
-      if (alt.geometry.length < 2) continue;
-      const metrics = await this.aggregateRouteMetrics(alt.geometry);
-      enriched.set(alt, metrics);
+    enrichable.forEach((alt, i) => enriched.set(alt, enrichedList[i]));
+
+    const candidates: Candidate[] = [];
+    for (const alt of enrichable) {
+      const metrics = enriched.get(alt);
+      if (!metrics) continue;
       // Apply the trip-level quality and per-request surface filters
       // here rather than in SQL: with only a handful of candidates per
       // day, an in-memory drop is simpler than rewriting the spatial

@@ -61,8 +61,20 @@ export class OsrmProvider implements RoutingProvider {
     // would be silently ignored. The values here are all known-safe
     // (numbers and a fixed enum of OSRM exclusion classes), so direct
     // concatenation is unambiguous.
+    // `alternatives=N` tells OSRM to compute *N alternatives in
+    // addition to the primary*, so the response contains up to `N + 1`
+    // routes. The trip generator's `includePrimary: true` wants
+    // `maxAlternatives` candidates including the primary, so we ask
+    // for `maxAlternatives - 1` extras. The commute module uses
+    // `includePrimary: false` and wants `maxAlternatives` *true*
+    // alternatives, so we ask for `maxAlternatives` extras and skip
+    // the primary at index 0 below.
+    const includePrimary = options?.includePrimary === true;
+    const osrmAlternatives = includePrimary
+      ? Math.max(0, maxAlternatives - 1)
+      : maxAlternatives;
     const queryParts: string[] = [
-      `alternatives=${maxAlternatives}`,
+      `alternatives=${osrmAlternatives}`,
       `overview=full`,
       `geometries=geojson`,
     ];
@@ -94,7 +106,7 @@ export class OsrmProvider implements RoutingProvider {
     // every candidate scored equally — otherwise a leg where OSRM
     // found only one route would yield an empty set and fall through
     // to a synthetic 0 km stub day.
-    const start = options?.includePrimary ? 0 : 1;
+    const start = includePrimary ? 0 : 1;
     return data.routes.slice(start, start + maxAlternatives).map((route) => ({
       distance_km: Math.round((route.distance / 1000) * 100) / 100,
       duration_min: Math.round(route.duration / 60),
