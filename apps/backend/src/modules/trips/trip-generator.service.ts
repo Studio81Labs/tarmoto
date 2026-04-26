@@ -255,12 +255,10 @@ export class TripGeneratorService {
     // Explicit `dto.option` always wins.
     const selectedId: TripGenerationOptionId =
       dto.option ?? defaultOptionForPreference(trip.road_preference);
-    const selected = builtOptions.find((o) => o.preset.id === selectedId);
-    if (!selected) {
-      // Should be impossible given the DTO @IsIn validator, but type
-      // safety still wants a refinement here.
-      throw new NotFoundException('Unknown generation option');
-    }
+    // `OPTION_PRESETS` is derived from a `Record<TripGenerationOptionId, …>`
+    // so every option id has a preset by construction; the find here is
+    // a total lookup, no defensive 404 needed.
+    const selected = builtOptions.find((o) => o.preset.id === selectedId)!;
 
     await this.persistSelected(tripId, selected);
 
@@ -684,11 +682,17 @@ export class TripGeneratorService {
     // waypoints), insert the new ones, flip the trip's status to
     // `planned`. The unique (trip_id, day_number) index would otherwise
     // reject a second-run of generate before the delete completes.
+    //
+    // Save shape: 3 round-trips total instead of `1 + numDays + Σ
+    // waypoints` — bulk-insert all days first, capture their generated
+    // ids, then bulk-insert every waypoint with the right `trip_day_id`
+    // in one final call. A 14-day trip with ~4 waypoints/day previously
+    // issued ~70 sequential INSERTs inside the txn.
     await this.dataSource.transaction(async (manager) => {
       await manager.delete(TripDay, { trip_id: tripId });
 
-      for (const day of option.days) {
-        const dayRow = manager.create(TripDay, {
+      const dayRows = option.days.map((day) =>
+        manager.create(TripDay, {
           trip_id: tripId,
           day_number: day.dayNumber,
           title: day.title,
@@ -706,21 +710,25 @@ export class TripGeneratorService {
             type: 'LineString',
             coordinates: day.geometry.map((p) => [p.lng, p.lat]),
           },
-        });
-        const savedDay = await manager.save(dayRow);
+        }),
+      );
+      const savedDays = await manager.save(dayRows);
 
-        for (const w of day.waypoints) {
-          const wpRow = manager.create(TripWaypoint, {
-            trip_day_id: savedDay.id,
+      const waypointRows = option.days.flatMap((day, dayIdx) =>
+        day.waypoints.map((w) =>
+          manager.create(TripWaypoint, {
+            trip_day_id: savedDays[dayIdx].id,
             sequence: w.sequence,
             location: latLngToPoint({ lat: w.lat, lng: w.lng }),
             name: w.name,
             waypoint_type: w.waypoint_type,
             duration_min: w.duration_min,
             notes: w.notes,
-          });
-          await manager.save(wpRow);
-        }
+          }),
+        ),
+      );
+      if (waypointRows.length > 0) {
+        await manager.save(waypointRows);
       }
 
       await manager.update(

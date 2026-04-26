@@ -1,6 +1,7 @@
 import { haversineKm, REGIONS } from '@tarmoto/shared';
 import {
   ALLOWED_SURFACES,
+  TRIP_GENERATION_OPTIONS,
   type AllowedSurface,
   type TripGenerationOptionId,
 } from './dto/generate-trip.dto.js';
@@ -48,8 +49,19 @@ export interface OptionPreset {
   hazardPenaltyWeight: number;
 }
 
-export const OPTION_PRESETS: readonly OptionPreset[] = [
-  {
+/**
+ * Per-option preset descriptors keyed by `TripGenerationOptionId`. The
+ * `Record` constraint is what enforces the invariant: TypeScript
+ * refuses to compile if `TRIP_GENERATION_OPTIONS` gains a new id
+ * without a matching preset (or vice versa, since `id: K` must equal
+ * the key). Earlier revisions duplicated the option list across
+ * `TRIP_GENERATION_OPTIONS` and an `OPTION_PRESETS` array, allowing
+ * silent divergence to surface at runtime as a confusing 404.
+ */
+const PRESET_BY_ID: {
+  readonly [K in TripGenerationOptionId]: OptionPreset & { id: K };
+} = {
+  'best-fit': {
     id: 'best-fit',
     label: 'Best fit',
     summary: 'Balanced route closest to your trip settings.',
@@ -61,7 +73,7 @@ export const OPTION_PRESETS: readonly OptionPreset[] = [
     distanceFitWeight: 0.25,
     hazardPenaltyWeight: 0.2,
   },
-  {
+  scenic: {
     id: 'scenic',
     label: 'Scenic sweep',
     summary: 'Longer, twistier days with more fun-zone time.',
@@ -73,7 +85,7 @@ export const OPTION_PRESETS: readonly OptionPreset[] = [
     distanceFitWeight: 0.15,
     hazardPenaltyWeight: 0.15,
   },
-  {
+  fastest: {
     id: 'fastest',
     label: 'Fastest line',
     summary: 'Shorter, more direct days that still keep good roads.',
@@ -85,7 +97,26 @@ export const OPTION_PRESETS: readonly OptionPreset[] = [
     distanceFitWeight: 0.2,
     hazardPenaltyWeight: 0.25,
   },
-];
+};
+
+/**
+ * Iteration order matches `TRIP_GENERATION_OPTIONS` so the response's
+ * `options[]` stays stable across releases. Derived from the keyed
+ * record above so callers never hit a missing preset for a valid
+ * option id.
+ */
+export const OPTION_PRESETS: readonly OptionPreset[] =
+  TRIP_GENERATION_OPTIONS.map((id) => PRESET_BY_ID[id]);
+
+/**
+ * Look up the preset for a given option id. O(1) on the record so
+ * `service.generate` doesn't have to scan `OPTION_PRESETS` to find
+ * the selected option — and the lookup is total by construction
+ * (every `TripGenerationOptionId` has a preset).
+ */
+export function getOptionPreset(id: TripGenerationOptionId): OptionPreset {
+  return PRESET_BY_ID[id];
+}
 
 /**
  * Distance (km) between consecutive fuel waypoints. Conservative — most
