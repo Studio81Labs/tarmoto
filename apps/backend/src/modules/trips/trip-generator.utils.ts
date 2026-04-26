@@ -38,6 +38,14 @@ export interface OptionPreset {
    * `daily_km_min` / `daily_km_max` bounds would be ignored entirely.
    */
   distanceFitWeight: number;
+  /**
+   * Penalty weight subtracted from the score per normalised hazard
+   * unit (`min(hazardCount / 10, 1)`). Implements the "hazard density"
+   * input the AC calls out alongside quality/curviness/scenic — a
+   * route that crosses a dozen active hazards is downranked even if
+   * its surface and curviness numbers look good.
+   */
+  hazardPenaltyWeight: number;
 }
 
 export const OPTION_PRESETS: readonly OptionPreset[] = [
@@ -51,6 +59,7 @@ export const OPTION_PRESETS: readonly OptionPreset[] = [
     scenicWeight: 0.15,
     speedWeight: 0.1,
     distanceFitWeight: 0.25,
+    hazardPenaltyWeight: 0.2,
   },
   {
     id: 'scenic',
@@ -62,6 +71,7 @@ export const OPTION_PRESETS: readonly OptionPreset[] = [
     scenicWeight: 0.25,
     speedWeight: 0.05,
     distanceFitWeight: 0.15,
+    hazardPenaltyWeight: 0.15,
   },
   {
     id: 'fastest',
@@ -73,6 +83,7 @@ export const OPTION_PRESETS: readonly OptionPreset[] = [
     scenicWeight: 0.05,
     speedWeight: 0.45,
     distanceFitWeight: 0.2,
+    hazardPenaltyWeight: 0.25,
   },
 ];
 
@@ -305,6 +316,13 @@ export function buildDayChain(
  * trip's persisted `daily_km_min` / `daily_km_max` bounds into route
  * selection (without it, the bounds are ignored).
  *
+ * `hazardCount` is the number of active hazard reports inside the
+ * route's geometry buffer. It's normalised to [0..1] via
+ * `min(count / 10, 1)` (≥10 hazards saturates) and *subtracted* via
+ * `preset.hazardPenaltyWeight` so a heavily-flagged corridor is
+ * downranked against an otherwise-equivalent clean alternative. Omit
+ * the field for callers that don't track hazards (legacy tests).
+ *
  * Pure — exported for tests so the AC's "quality weighting" coverage
  * is straightforward to assert.
  */
@@ -317,6 +335,7 @@ export function scoreRoute(
     durationMin: number; // > 0
     distanceKm?: number; // total day distance, when scoring a real OSRM route
     targetKm?: number; // preset-adjusted day target from chunkDistance
+    hazardCount?: number; // active hazards intersecting the route buffer
   },
 ): number {
   const q = (metrics.avgQuality ?? 0) / 5; // 0..1
@@ -337,12 +356,17 @@ export function scoreRoute(
             Math.abs(metrics.distanceKm - metrics.targetKm) / metrics.targetKm,
         )
       : 0;
+  const hazardPenalty =
+    metrics.hazardCount !== undefined
+      ? Math.min(Math.max(metrics.hazardCount, 0) / 10, 1)
+      : 0;
   return (
     preset.qualityWeight * q +
     preset.curvinessWeight * c +
     preset.scenicWeight * s +
     preset.speedWeight * speed +
-    preset.distanceFitWeight * distanceFit
+    preset.distanceFitWeight * distanceFit -
+    preset.hazardPenaltyWeight * hazardPenalty
   );
 }
 

@@ -280,6 +280,27 @@ describe('scoreRoute (quality weighting)', () => {
     const b = scoreRoute(preset, m({ distanceKm: 500 }));
     expect(a).toBeCloseTo(b, 10);
   });
+
+  it('subtracts a hazard penalty so a high-hazard route ranks below a clean one', () => {
+    const preset = OPTION_PRESETS.find((p) => p.id === 'best-fit')!;
+    const clean = scoreRoute(preset, m({ hazardCount: 0 }));
+    const dangerous = scoreRoute(preset, m({ hazardCount: 8 }));
+    expect(clean).toBeGreaterThan(dangerous);
+  });
+
+  it('saturates the hazard penalty at 10 active hazards', () => {
+    const preset = OPTION_PRESETS.find((p) => p.id === 'best-fit')!;
+    const tenHazards = scoreRoute(preset, m({ hazardCount: 10 }));
+    const fiftyHazards = scoreRoute(preset, m({ hazardCount: 50 }));
+    expect(tenHazards).toBeCloseTo(fiftyHazards, 10);
+  });
+
+  it('omits the hazard penalty when hazardCount is missing (legacy callers)', () => {
+    const preset = OPTION_PRESETS.find((p) => p.id === 'best-fit')!;
+    const undef = scoreRoute(preset, m());
+    const zero = scoreRoute(preset, m({ hazardCount: 0 }));
+    expect(undef).toBeCloseTo(zero, 10);
+  });
 });
 
 describe('defaultOptionForPreference', () => {

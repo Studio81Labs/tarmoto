@@ -347,6 +347,30 @@ describe('TripGeneratorService', () => {
       expect(result.selected_option).toBe('scenic');
     });
 
+    it('plumbs avoid_highways and avoid_tolls through to the routing provider', async () => {
+      // Regression: the DTO accepted these flags and the API documented
+      // them, but earlier revisions never forwarded them — riders got
+      // routes with motorways/tolls regardless of preference. The
+      // RoutingOptions argument is the 6th positional param.
+      await service.generate(USER_ID, TRIP_ID, {
+        start_location: { lat: 47.0, lng: 11.5 },
+        avoid_highways: true,
+        avoid_tolls: true,
+      });
+
+      expect(routingProvider.getAlternatives).toHaveBeenCalled();
+      const calls = routingProvider.getAlternatives.mock.calls as Array<
+        [number, number, number, number, number, Record<string, unknown>]
+      >;
+      for (const call of calls) {
+        // call shape: (originLat, originLng, destLat, destLng, max, options)
+        expect(call[5]).toMatchObject({
+          avoidHighways: true,
+          avoidTolls: true,
+        });
+      }
+    });
+
     it('rejects contradictory surface filters (gravel/dirt + avoid_unpaved) with 400', async () => {
       // Without the explicit guard, an empty effective filter would
       // silently reject every OSRM candidate and the fallback would

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import type {
   RoutingProvider,
   RouteAlternative,
+  RoutingOptions,
 } from '../routing-provider.interface.js';
 
 interface OsrmRoute {
@@ -42,9 +43,28 @@ export class OsrmProvider implements RoutingProvider {
     destLat: number,
     destLng: number,
     maxAlternatives: number,
+    options?: RoutingOptions,
   ): Promise<RouteAlternative[]> {
     const coords = `${originLng},${originLat};${destLng},${destLat}`;
-    const url = `${this.baseUrl}/route/v1/driving/${coords}?alternatives=${maxAlternatives}&overview=full&geometries=geojson`;
+    const params = new URLSearchParams({
+      alternatives: String(maxAlternatives),
+      overview: 'full',
+      geometries: 'geojson',
+    });
+    // OSRM's `driving` profile honours `exclude=motorway`. `toll`
+    // exclusion is only available on profiles that have been compiled
+    // with toll metadata — the public demo doesn't, but a custom
+    // self-hosted OSRM can. We pass it through anyway: an upstream
+    // that doesn't recognise the value still routes correctly (it's
+    // not strictly invalid), and a self-hosted backend that does
+    // recognise it gets the avoidance the rider asked for. Multiple
+    // exclusions go in a single comma-separated parameter per the
+    // OSRM API spec.
+    const exclude: string[] = [];
+    if (options?.avoidHighways) exclude.push('motorway');
+    if (options?.avoidTolls) exclude.push('toll');
+    if (exclude.length > 0) params.set('exclude', exclude.join(','));
+    const url = `${this.baseUrl}/route/v1/driving/${coords}?${params.toString()}`;
 
     const response = await fetch(url);
     if (!response.ok) {

@@ -16,6 +16,7 @@ import {
   ROUTING_PROVIDER,
   type RoutingProvider,
   type RouteAlternative,
+  type RoutingOptions,
 } from '../commute/routing-provider.interface.js';
 import { EventsGateway } from '../events/events.gateway.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
@@ -210,6 +211,16 @@ export class TripGeneratorService {
         'Selected surface filters conflict with avoid_unpaved',
       );
     }
+    // Per-request routing avoidance — passed through to the
+    // `RoutingProvider` so OSRM can drop motorway / toll edges from the
+    // alternatives. Honour depends on the upstream profile (the public
+    // OSRM demo honours `motorway`; toll exclusion needs a custom
+    // build), but we always plumb the flags so a self-hosted backend
+    // gets the rider's intent.
+    const routingOptions: RoutingOptions = {
+      avoidHighways: dto.avoid_highways,
+      avoidTolls: dto.avoid_tolls,
+    };
     const candidatesByDay = await Promise.all(
       chain.map(async (leg) => {
         const candidates = await this.candidatesForLeg(
@@ -217,6 +228,7 @@ export class TripGeneratorService {
           leg.to,
           surfaceFilter,
           trip.min_quality,
+          routingOptions,
         );
         if (candidates.length === 0) {
           // Defensive: if even the primary OSRM route can't be enriched,
@@ -278,6 +290,7 @@ export class TripGeneratorService {
     to: { lat: number; lng: number },
     surfaceFilter: AllowedSurface[] | null,
     minQuality: number,
+    routingOptions: RoutingOptions,
   ): Promise<Candidate[]> {
     let alts: RouteAlternative[];
     try {
@@ -287,6 +300,7 @@ export class TripGeneratorService {
         to.lat,
         to.lng,
         3,
+        routingOptions,
       );
     } catch (err) {
       this.logger.warn(
@@ -399,6 +413,7 @@ export class TripGeneratorService {
         durationMin: best.alt.duration_min,
         distanceKm: best.alt.distance_km,
         targetKm,
+        hazardCount: best.metrics.hazardCount,
       });
       for (let i = 1; i < candidates.length; i++) {
         const cand = candidates[i];
@@ -409,6 +424,7 @@ export class TripGeneratorService {
           durationMin: cand.alt.duration_min,
           distanceKm: cand.alt.distance_km,
           targetKm,
+          hazardCount: cand.metrics.hazardCount,
         });
         if (score > bestScore) {
           best = cand;
