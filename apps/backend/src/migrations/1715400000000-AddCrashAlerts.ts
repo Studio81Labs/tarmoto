@@ -27,6 +27,7 @@ export class AddCrashAlerts1715400000000 implements MigrationInterface {
         contacts_notified INTEGER NOT NULL DEFAULT 0,
         contacts_total INTEGER NOT NULL DEFAULT 0,
         contact_results JSONB NOT NULL DEFAULT '[]'::jsonb,
+        dispatch_completed_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
     `);

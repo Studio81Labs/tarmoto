@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
@@ -17,7 +17,10 @@ import {
   type CrashAlertContext,
   type CrashAlertNotifier,
 } from './crash-alert-notifier.interface.js';
-import { renderCrashAlertMessage } from './crash-alert-message.js';
+import {
+  normalizeCrashAlertLocale,
+  renderCrashAlertMessage,
+} from './crash-alert-message.js';
 
 /** Postgres unique-violation SQLSTATE — used to detect idempotency replays. */
 const PG_UNIQUE_VIOLATION = '23505';
@@ -58,17 +61,23 @@ export class SafetyService {
         alert_id: alertId,
         contacts: [],
         idempotent_replay: false,
+        dispatch_in_progress: false,
       };
     }
 
     // Idempotency gate: insert the audit row first. Postgres' PK
     // unique-violation tells us the same alert_id was already
-    // dispatched, in which case we replay the original outcome.
-    const locale =
+    // dispatched, in which case we replay the original outcome
+    // (scoped to the current user — see replayExistingAlert).
+    const rawLocale =
       dto.locale ??
       (typeof user.preferences?.['locale'] === 'string'
         ? user.preferences['locale']
         : null);
+    // Persist the canonical short tag so a long BCP-47 input never
+    // overflows `crash_alerts.locale VARCHAR(16)` and trips a non-
+    // unique-violation insert error that would bypass replay.
+    const locale = normalizeCrashAlertLocale(rawLocale);
 
     try {
       await this.alertRepo.insert({
@@ -83,10 +92,11 @@ export class SafetyService {
         contacts_notified: 0,
         contacts_total: contacts.length,
         contact_results: [],
+        dispatch_completed_at: null,
       });
     } catch (err) {
       if (this.isUniqueViolation(err)) {
-        return this.replayExistingAlert(alertId);
+        return this.replayExistingAlert(alertId, userId);
       }
       throw err;
     }
@@ -104,7 +114,7 @@ export class SafetyService {
       severity,
       timestamp,
     } as const;
-    const message = renderCrashAlertMessage(baseContext, locale);
+    const message = renderCrashAlertMessage(baseContext, rawLocale);
     const context: CrashAlertContext = { ...baseContext, message };
 
     const useVoice = severity === 'high';
@@ -120,11 +130,15 @@ export class SafetyService {
 
     const flatResults: CrashAlertContactResult[] = dispatchResults.flat();
 
+    // Atomic completion: set dispatch_completed_at alongside the
+    // results so a concurrent retry can tell finished rows from
+    // in-flight placeholders.
     await this.alertRepo.update(
-      { id: alertId },
+      { id: alertId, user_id: userId },
       {
         contacts_notified: contactsNotified,
         contact_results: flatResults,
+        dispatch_completed_at: new Date(),
       },
     );
 
@@ -157,6 +171,7 @@ export class SafetyService {
         error: r.error,
       })),
       idempotent_replay: false,
+      dispatch_in_progress: false,
     };
   }
 
@@ -227,19 +242,41 @@ export class SafetyService {
 
   private async replayExistingAlert(
     alertId: string,
+    userId: string,
   ): Promise<CrashAlertResponseDto> {
-    const existing = await this.alertRepo.findOne({ where: { id: alertId } });
+    // Scoped lookup: a row matching the unique-violation but owned by
+    // a different user must never leak its contact metadata back to
+    // the caller. Treat that as a Conflict so a malicious or buggy
+    // client gets a clear 409 instead of cross-tenant data.
+    const existing = await this.alertRepo.findOne({
+      where: { id: alertId, user_id: userId },
+    });
     if (!existing) {
-      // Race: another request lost the insert but its row vanished
-      // before we could read it. Surface as not-replayed with zero
-      // notifications rather than re-dispatching.
+      this.logger.warn(
+        `crash-alert idempotency collision id=${alertId} user=${userId} — ` +
+          'alert_id reused across users, refusing to dispatch or replay',
+      );
+      throw new ConflictException(
+        'alert_id is already in use; generate a new one',
+      );
+    }
+
+    if (existing.dispatch_completed_at === null) {
+      // Original request is still running. Don't return placeholder
+      // zeros as if dispatch had finished; signal in-flight so the
+      // client can wait or trust the original call's eventual result.
+      this.logger.warn(
+        `crash-alert idempotent replay id=${alertId} — dispatch in progress`,
+      );
       return {
-        alert_id: alertId,
+        alert_id: existing.id,
         contacts_notified: 0,
         contacts: [],
         idempotent_replay: true,
+        dispatch_in_progress: true,
       };
     }
+
     this.logger.warn(
       `crash-alert idempotent replay id=${alertId} ` +
         `notified=${existing.contacts_notified}/${existing.contacts_total}`,
@@ -256,6 +293,7 @@ export class SafetyService {
         error: r.error,
       })),
       idempotent_replay: true,
+      dispatch_in_progress: false,
     };
   }
 

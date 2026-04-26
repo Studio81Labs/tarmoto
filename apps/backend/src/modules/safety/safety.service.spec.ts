@@ -55,17 +55,31 @@ describe('SafetyService', () => {
         return { identifiers: [{ id: entity.id }], generatedMaps: [], raw: [] };
       }),
       update: jest.fn(
-        async (criteria: { id: string }, patch: Partial<CrashAlert>) => {
+        async (
+          criteria: { id: string; user_id?: string },
+          patch: Partial<CrashAlert>,
+        ) => {
           const existing = alertStore.get(criteria.id);
-          if (existing) {
+          if (
+            existing &&
+            (!criteria.user_id || existing.user_id === criteria.user_id)
+          ) {
             alertStore.set(criteria.id, { ...existing, ...patch });
+            return { affected: 1, raw: [], generatedMaps: [] };
           }
-          return { affected: 1, raw: [], generatedMaps: [] };
+          return { affected: 0, raw: [], generatedMaps: [] };
         },
       ),
-      findOne: jest.fn(async (opts: { where: { id: string } }) => {
-        return alertStore.get(opts.where.id) ?? null;
-      }),
+      findOne: jest.fn(
+        async (opts: { where: { id: string; user_id?: string } }) => {
+          const row = alertStore.get(opts.where.id);
+          if (!row) return null;
+          if (opts.where.user_id && row.user_id !== opts.where.user_id) {
+            return null;
+          }
+          return row;
+        },
+      ),
     };
     eventsGateway = {
       emitToUser: jest.fn(),
@@ -259,6 +273,7 @@ describe('SafetyService', () => {
         alert_id: sharedId,
       });
       expect(first.idempotent_replay).toBe(false);
+      expect(first.dispatch_in_progress).toBe(false);
       expect(notifier.send).toHaveBeenCalledTimes(2);
 
       notifier.send.mockClear();
@@ -270,9 +285,103 @@ describe('SafetyService', () => {
       });
 
       expect(second.idempotent_replay).toBe(true);
+      expect(second.dispatch_in_progress).toBe(false);
       expect(second.alert_id).toBe(sharedId);
       expect(second.contacts_notified).toBe(first.contacts_notified);
       expect(notifier.send).not.toHaveBeenCalled();
+    });
+
+    it('rejects cross-user replay with 409 instead of leaking another user audit row', async () => {
+      const sharedId = '00000000-0000-4000-8000-000000000999';
+
+      // user-1 dispatches the alert and the audit row is keyed off the
+      // shared UUID.
+      await service.sendCrashAlert('user-1', {
+        lat: 49.1,
+        lng: 16.75,
+        alert_id: sharedId,
+      });
+
+      // user-2 reuses the same alert_id. This collides on the PK, but
+      // tenant scoping means the replay lookup misses and we refuse
+      // with a Conflict instead of returning user-1's contacts.
+      userRepo.findOne!.mockResolvedValueOnce({
+        id: 'user-2',
+        display_name: 'OtherRider',
+        preferences: {},
+      } as unknown as User);
+
+      await expect(
+        service.sendCrashAlert('user-2', {
+          lat: 49.1,
+          lng: 16.75,
+          alert_id: sharedId,
+        }),
+      ).rejects.toMatchObject({ status: 409 });
+
+      // Original user-1 row is untouched.
+      const stored = alertStore.get(sharedId);
+      expect(stored?.user_id).toBe('user-1');
+    });
+
+    it('returns dispatch_in_progress=true when the original request is still mid-flight', async () => {
+      const sharedId = '00000000-0000-4000-8000-000000000abc';
+
+      // Hold the first dispatch open so the placeholder row stays
+      // un-completed while the retry comes in.
+      let releaseSend!: () => void;
+      const sendBlocker = new Promise<void>((resolve) => {
+        releaseSend = resolve;
+      });
+      notifier.send.mockImplementation(async () => {
+        await sendBlocker;
+        return { channel: 'sms', provider_message_id: 'SM-late' };
+      });
+
+      const first = service.sendCrashAlert('user-1', {
+        lat: 49.1,
+        lng: 16.75,
+        alert_id: sharedId,
+      });
+
+      // Spin until the placeholder row is committed by the first call.
+      while (!alertStore.has(sharedId)) {
+        await new Promise((r) => setImmediate(r));
+      }
+
+      const second = await service.sendCrashAlert('user-1', {
+        lat: 49.1,
+        lng: 16.75,
+        alert_id: sharedId,
+      });
+
+      expect(second.idempotent_replay).toBe(true);
+      expect(second.dispatch_in_progress).toBe(true);
+      expect(second.contacts).toHaveLength(0);
+
+      releaseSend();
+      const firstResolved = await first;
+      expect(firstResolved.idempotent_replay).toBe(false);
+      expect(firstResolved.dispatch_in_progress).toBe(false);
+      // Once the first dispatch finishes the row is completed.
+      expect(alertStore.get(sharedId)?.dispatch_completed_at).toBeInstanceOf(
+        Date,
+      );
+    });
+
+    it('persists a normalized short locale even when input is a long BCP-47 tag', async () => {
+      // 18 chars — would overflow VARCHAR(16) without normalization.
+      const result = await service.sendCrashAlert('user-1', {
+        lat: 49.1,
+        lng: 16.75,
+        locale: 'ar-SA-u-ca-islamic',
+      });
+
+      const stored = alertStore.get(result.alert_id);
+      // Normalized to the language subtag (≤ 5 chars). Falls back to
+      // 'en' since 'ar' is not in the supported list.
+      expect(stored?.locale?.length).toBeLessThanOrEqual(16);
+      expect(stored?.locale).toBe('en');
     });
 
     it('falls back to log channel when notifier is unconfigured (env unset)', async () => {

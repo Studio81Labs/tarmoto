@@ -83,6 +83,19 @@ function normalize(locale: string | null | undefined): SupportedLocale {
 }
 
 /**
+ * Canonical locale string safe to persist in `crash_alerts.locale`
+ * (always ≤ 5 chars). The `crash_alerts` column is `VARCHAR(16)`;
+ * normalizing at intake guarantees we never trip a "value too long"
+ * insert error from a 30-char BCP-47 extension tag like
+ * `ar-SA-u-ca-islamic`.
+ */
+export function normalizeCrashAlertLocale(
+  locale: string | null | undefined,
+): SupportedLocale {
+  return normalize(locale);
+}
+
+/**
  * Render the crash-alert message body for the given locale, falling
  * back to English when the locale is unset, malformed, or unsupported.
  */

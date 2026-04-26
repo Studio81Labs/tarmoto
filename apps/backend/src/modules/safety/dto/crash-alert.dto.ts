@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  MaxLength,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import type { CrashAlertSeverity } from '../../../entities/crash-alert.entity.js';
@@ -62,6 +63,10 @@ export class CrashAlertDto {
   })
   @IsOptional()
   @IsString()
+  // BCP-47 tags can grow large with extension subtags
+  // (e.g. `ar-SA-u-ca-islamic`); cap at the boundary so a malformed
+  // input never reaches the `crash_alerts.locale VARCHAR(16)` column.
+  @MaxLength(35)
   locale?: string;
 }
 
@@ -103,4 +108,12 @@ export class CrashAlertResponseDto {
       'and no new messages were sent.',
   })
   idempotent_replay!: boolean;
+
+  @ApiProperty({
+    description:
+      'Only meaningful when `idempotent_replay` is true: the original ' +
+      'request is still dispatching, so `contacts` may be empty and ' +
+      '`contacts_notified` may not yet reflect the final outcome.',
+  })
+  dispatch_in_progress!: boolean;
 }

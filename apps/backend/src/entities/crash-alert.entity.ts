@@ -72,6 +72,14 @@ export class CrashAlert {
   @Column({ type: 'jsonb', default: () => "'[]'::jsonb" })
   contact_results!: CrashAlertContactResult[];
 
+  /**
+   * Set once dispatch finishes (after every per-contact send returns).
+   * NULL means the row is the placeholder created at request entry, so
+   * concurrent retries can tell "in-flight" apart from "completed".
+   */
+  @Column({ type: 'timestamptz', nullable: true })
+  dispatch_completed_at!: Date | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
 

@@ -630,6 +630,12 @@ export interface CrashAlertResponse {
   alert_id: string;
   contacts: CrashAlertContactStatus[];
   idempotent_replay: boolean;
+  /**
+   * Only meaningful when `idempotent_replay` is true: the original
+   * request is still dispatching, so `contacts` may be empty and
+   * `contacts_notified` may not yet reflect the final outcome.
+   */
+  dispatch_in_progress: boolean;
 }
 
 export const api = new ApiService();
