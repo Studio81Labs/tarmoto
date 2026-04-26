@@ -61,7 +61,16 @@ export class DataExportController {
     const view = this.service.buildPublicView(request);
     if (created) {
       setImmediate(() => {
-        void this.processor.process(request.id, userId);
+        // Defense in depth: the processor's outer catch already absorbs
+        // worker errors (including markFailed failures), but a missed
+        // throw here would surface as an unhandled rejection inside
+        // setImmediate and crash the process under strict mode.
+        this.processor.process(request.id, userId).catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          this.logger.error(
+            `processor dispatch for export ${request.id} threw: ${msg}`,
+          );
+        });
       });
       res.status(202).json(view);
     } else {

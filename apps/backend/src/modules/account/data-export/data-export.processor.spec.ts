@@ -71,6 +71,18 @@ describe('DataExportProcessor', () => {
     expect(service.markReady).not.toHaveBeenCalled();
   });
 
+  it('absorbs failures from markFailed itself instead of escaping', async () => {
+    usersRepo.findOne.mockResolvedValue(baseUser);
+    assembler.assemble.mockRejectedValue(new Error('assembly boom'));
+    service.markFailed.mockRejectedValue(new Error('db down'));
+
+    const processor = makeProcessor();
+    // Must resolve cleanly — a thrown markFailed in the catch block
+    // would otherwise become an unhandled rejection in the
+    // setImmediate dispatch and crash the worker.
+    await expect(processor.process('req-1', 'u1')).resolves.toBeUndefined();
+  });
+
   it('marks failed when user is missing', async () => {
     usersRepo.findOne.mockResolvedValue(null);
     const processor = makeProcessor();

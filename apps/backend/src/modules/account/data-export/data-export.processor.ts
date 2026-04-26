@@ -45,7 +45,20 @@ export class DataExportProcessor {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`export ${requestId} failed: ${msg}`);
-      await this.service.markFailed(requestId, msg);
+      // markFailed itself can throw (transient DB error in exactly the
+      // failure mode we're trying to record). Swallow that so the
+      // rejection doesn't escape — the row is left in 'processing' and
+      // the next requestExport call will treat it as active until its
+      // TTL passes, which is preferable to crashing the worker.
+      try {
+        await this.service.markFailed(requestId, msg);
+      } catch (markErr) {
+        const markMsg =
+          markErr instanceof Error ? markErr.message : String(markErr);
+        this.logger.error(
+          `failed to record failure for export ${requestId}: ${markMsg}`,
+        );
+      }
     }
   }
 }
