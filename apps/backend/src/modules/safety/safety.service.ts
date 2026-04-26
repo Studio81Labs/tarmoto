@@ -97,6 +97,7 @@ export class SafetyService {
       contactsTotal: contacts.length,
     });
     if (claim.replay) return claim.replay;
+    const claimedAt = claim.claimedAt;
 
     const mapsLink = `https://maps.google.com/?q=${dto.lat},${dto.lng}`;
     const timestamp = new Date().toISOString();
@@ -131,18 +132,33 @@ export class SafetyService {
       flatResults = dispatchResults.flat();
     } finally {
       // Always close the row, even if dispatch threw, so retries don't
-      // see a permanent in-flight placeholder. A failure to write the
-      // completion is logged loudly — the stale-row recovery path in
-      // replayExistingAlert is the backstop for that case.
+      // see a permanent in-flight placeholder. The WHERE clause gates
+      // on `created_at = claimedAt` so a stale call whose claim was
+      // already reclaimed by a newer retry can't clobber the
+      // reclaimer's row — `affected === 0` means our claim was
+      // superseded and the new claim owns the row now. A genuine
+      // update error is logged loudly; the stale-row recovery path
+      // in claimAlertRow is the backstop.
       try {
-        await this.alertRepo.update(
-          { id: alertId, user_id: userId },
+        const result = await this.alertRepo.update(
+          {
+            id: alertId,
+            user_id: userId,
+            created_at: claimedAt,
+            dispatch_completed_at: IsNull(),
+          },
           {
             contacts_notified: contactsNotified,
             contact_results: flatResults,
             dispatch_completed_at: new Date(),
           },
         );
+        if (result.affected === 0) {
+          this.logger.warn(
+            `crash-alert ${alertId} completion skipped — claim was ` +
+              'reclaimed by a newer retry while dispatch was running',
+          );
+        }
       } catch (updateErr) {
         const msg =
           updateErr instanceof Error ? updateErr.message : String(updateErr);
@@ -189,9 +205,21 @@ export class SafetyService {
   /**
    * Insert the placeholder audit row, or — on a unique-violation —
    * decide whether to replay an existing dispatch or reclaim a stale
-   * placeholder. Returns either a `replay` response (caller should
-   * return it directly) or `replay: null` (caller proceeds with
-   * dispatch). Cross-user collisions throw 409.
+   * placeholder.
+   *
+   * Returns either a `replay` response (caller returns it directly)
+   * or `replay: null` plus a `claimedAt` token. The token is the row's
+   * `created_at` value for this claim; the dispatch path threads it
+   * through to the completion `UPDATE` so a stale call whose claim
+   * was already reclaimed by a newer retry can't clobber the
+   * reclaimer's row. Cross-user collisions throw 409.
+   *
+   * Concurrency model: insert is atomic via the PK; reclaim is atomic
+   * via a compare-and-swap on `created_at`, so two parallel retries
+   * racing to reclaim the same stale row will see exactly one win
+   * (`affected === 1`) and the other fall back to a normal in-flight
+   * replay response. No path can dispatch SMS/voice twice for one
+   * `alert_id`.
    */
   private async claimAlertRow(
     alertId: string,
@@ -205,7 +233,14 @@ export class SafetyService {
       locale: string | null;
       contactsTotal: number;
     },
-  ): Promise<{ replay: CrashAlertResponseDto | null }> {
+  ): Promise<
+    | { replay: CrashAlertResponseDto; claimedAt?: undefined }
+    | { replay: null; claimedAt: Date }
+  > {
+    // Set created_at explicitly so the dispatch path knows the exact
+    // value to use as the claim token. Defaulting to DB `NOW()` would
+    // require a follow-up SELECT to learn it.
+    const claimedAt = new Date();
     try {
       await this.alertRepo.insert({
         id: alertId,
@@ -220,8 +255,9 @@ export class SafetyService {
         contacts_total: fields.contactsTotal,
         contact_results: [],
         dispatch_completed_at: null,
+        created_at: claimedAt,
       });
-      return { replay: null };
+      return { replay: null, claimedAt };
     } catch (err) {
       if (!this.isUniqueViolation(err)) throw err;
     }
@@ -260,16 +296,18 @@ export class SafetyService {
     }
 
     // Stale placeholder: the original request died after the insert
-    // but before the completion update. Reclaim the row so this
-    // retry can dispatch fresh against the latest fields.
-    this.logger.warn(
-      `crash-alert reclaiming stale placeholder id=${alertId} ` +
-        `age=${Math.round(ageMs / 1000)}s — original dispatch never completed`,
-    );
-    await this.alertRepo.update(
-      // Constrain to still-incomplete rows so we don't accidentally
-      // overwrite a completion that landed between findOne and update.
-      { id: alertId, user_id: userId, dispatch_completed_at: IsNull() },
+    // but before the completion update. Reclaim atomically — the
+    // WHERE clause includes `created_at = existing.created_at` so
+    // two parallel reclaimers can't both win the race. The SET
+    // includes a fresh `created_at` so a third concurrent retry
+    // doesn't see THIS reclaim as also stale.
+    const reclaimResult = await this.alertRepo.update(
+      {
+        id: alertId,
+        user_id: userId,
+        dispatch_completed_at: IsNull(),
+        created_at: existing.created_at,
+      },
       {
         ride_id: fields.rideId,
         lat: fields.lat,
@@ -280,9 +318,32 @@ export class SafetyService {
         contacts_notified: 0,
         contacts_total: fields.contactsTotal,
         contact_results: [],
+        created_at: claimedAt,
       },
     );
-    return { replay: null };
+
+    if (reclaimResult.affected === 0) {
+      // Lost the reclaim race. The other reclaimer is dispatching,
+      // so report in-flight rather than running our own dispatch.
+      this.logger.warn(
+        `crash-alert reclaim race lost id=${alertId} — concurrent retry won`,
+      );
+      return {
+        replay: {
+          alert_id: existing.id,
+          contacts_notified: 0,
+          contacts: [],
+          idempotent_replay: true,
+          dispatch_in_progress: true,
+        },
+      };
+    }
+
+    this.logger.warn(
+      `crash-alert reclaimed stale placeholder id=${alertId} ` +
+        `age=${Math.round(ageMs / 1000)}s — original dispatch never completed`,
+    );
+    return { replay: null, claimedAt };
   }
 
   private toReplayResponse(

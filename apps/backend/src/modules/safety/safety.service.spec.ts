@@ -51,24 +51,47 @@ describe('SafetyService', () => {
           ).driverError = { code: '23505' };
           throw err;
         }
-        // Stamp created_at so stale-row detection can reason about age.
-        alertStore.set(entity.id, { ...entity, created_at: new Date() });
+        // Honor an explicit created_at if the service set one (used as
+        // the optimistic-lock token in the reclaim path), otherwise
+        // stamp now() so stale-row detection has something to reason
+        // about.
+        const created_at = entity.created_at ?? new Date();
+        alertStore.set(entity.id, { ...entity, created_at });
         return { identifiers: [{ id: entity.id }], generatedMaps: [], raw: [] };
       }),
       update: jest.fn(
         async (
-          criteria: { id: string; user_id?: string },
+          criteria: {
+            id: string;
+            user_id?: string;
+            created_at?: Date;
+            dispatch_completed_at?: unknown;
+          },
           patch: Partial<CrashAlert>,
         ) => {
           const existing = alertStore.get(criteria.id);
-          if (
-            existing &&
-            (!criteria.user_id || existing.user_id === criteria.user_id)
-          ) {
-            alertStore.set(criteria.id, { ...existing, ...patch });
-            return { affected: 1, raw: [], generatedMaps: [] };
+          if (!existing) return { affected: 0, raw: [], generatedMaps: [] };
+          if (criteria.user_id && existing.user_id !== criteria.user_id) {
+            return { affected: 0, raw: [], generatedMaps: [] };
           }
-          return { affected: 0, raw: [], generatedMaps: [] };
+          // Optimistic-lock: caller passes the exact `created_at` it
+          // expects to find. Mismatch means another writer reclaimed
+          // the row first.
+          if (
+            criteria.created_at !== undefined &&
+            existing.created_at?.getTime() !== criteria.created_at.getTime()
+          ) {
+            return { affected: 0, raw: [], generatedMaps: [] };
+          }
+          // IsNull() check — only match still-incomplete rows.
+          if (
+            criteria.dispatch_completed_at !== undefined &&
+            existing.dispatch_completed_at !== null
+          ) {
+            return { affected: 0, raw: [], generatedMaps: [] };
+          }
+          alertStore.set(criteria.id, { ...existing, ...patch });
+          return { affected: 1, raw: [], generatedMaps: [] };
         },
       ),
       findOne: jest.fn(
@@ -455,6 +478,58 @@ describe('SafetyService', () => {
       const finalRow = alertStore.get(sharedId)!;
       expect(finalRow.dispatch_completed_at).toBeInstanceOf(Date);
       expect(finalRow.contacts_notified).toBe(2);
+    });
+
+    it('serializes concurrent stale-row reclaims so SMS only goes out once', async () => {
+      const sharedId = '00000000-0000-4000-8000-0000000000c0';
+
+      // Seed a stale placeholder directly so two concurrent retries
+      // race for the same reclaim slot.
+      alertStore.set(sharedId, {
+        id: sharedId,
+        user_id: 'user-1',
+        ride_id: null,
+        lat: 0,
+        lng: 0,
+        speed_at_impact: null,
+        severity: 'medium',
+        locale: 'en',
+        contacts_notified: 0,
+        contacts_total: 0,
+        contact_results: [],
+        dispatch_completed_at: null,
+        created_at: new Date(Date.now() - 10 * 60 * 1000),
+      } as CrashAlert);
+
+      notifier.send.mockResolvedValue({
+        channel: 'sms',
+        provider_message_id: 'SM-recovered',
+      });
+
+      const [a, b] = await Promise.all([
+        service.sendCrashAlert('user-1', {
+          lat: 49.1,
+          lng: 16.75,
+          alert_id: sharedId,
+        }),
+        service.sendCrashAlert('user-1', {
+          lat: 49.1,
+          lng: 16.75,
+          alert_id: sharedId,
+        }),
+      ]);
+
+      // Exactly one of the two parallel retries reclaimed the row and
+      // dispatched. The loser sees `dispatch_in_progress: true`.
+      const winners = [a, b].filter((r) => !r.idempotent_replay);
+      const losers = [a, b].filter((r) => r.idempotent_replay);
+      expect(winners).toHaveLength(1);
+      expect(losers).toHaveLength(1);
+      expect(losers[0].dispatch_in_progress).toBe(true);
+
+      // Notifier was called for one dispatch only — 2 contacts × 1
+      // claim. No duplicate SMS landed.
+      expect(notifier.send).toHaveBeenCalledTimes(2);
     });
 
     it('still closes the audit row when dispatch throws mid-flight', async () => {
