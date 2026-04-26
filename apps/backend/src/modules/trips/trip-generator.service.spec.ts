@@ -225,7 +225,7 @@ describe('TripGeneratorService', () => {
       expect(result.selected_option).toBe('scenic');
     });
 
-    it('persists the selected option in a transaction and emits trip:generated', async () => {
+    it('persists the selected option in a transaction and emits both trip:updated and trip:generated', async () => {
       // road_preference='mixed' falls through to the 'best-fit' default
       // so this test pins both the persistence path and the default
       // mapping for the catch-all case in one shot.
@@ -238,6 +238,15 @@ describe('TripGeneratorService', () => {
       });
 
       expect(dataSource.transaction).toHaveBeenCalledTimes(1);
+      // `trip:updated` carries the refreshed detail so collaborators
+      // already listening on the trip room (the same channel
+      // `TripsService.update` writes to) refresh their cached view —
+      // `persistSelected` flipped `status` from `draft` to `planned`.
+      expect(events.emitToTrip).toHaveBeenCalledWith(
+        TRIP_ID,
+        'trip:updated',
+        expect.objectContaining({ id: TRIP_ID }),
+      );
       expect(events.emitToTrip).toHaveBeenCalledWith(
         TRIP_ID,
         'trip:generated',

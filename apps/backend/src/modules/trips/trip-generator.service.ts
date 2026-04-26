@@ -263,6 +263,16 @@ export class TripGeneratorService {
     await this.persistSelected(tripId, selected);
 
     const detail = await this.tripsService.getDetail(userId, tripId);
+    // Emit both events: `trip:updated` carries the full refreshed
+    // detail so any collaborator already listening on the socket room
+    // (the same channel `TripsService.update` writes to) refreshes
+    // their cached view — `persistSelected` flipped `status` from
+    // `draft` to `planned` and rewrote every day, so the previous
+    // `getDetail` cache is stale. `trip:generated` is the
+    // generation-specific signal carrying the selected preset id so
+    // the companion's "compare side-by-side" view can react without
+    // re-deriving from the detail payload.
+    this.events.emitToTrip(tripId, 'trip:updated', detail);
     this.events.emitToTrip(tripId, 'trip:generated', {
       tripId,
       selected_option: selectedId,
