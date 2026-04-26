@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "beb28a58-bfad-40ac-99f2-1d211d39c96e",
+    "_postman_id": "da798286-baec-49ea-a7b4-fb577bf22e2d",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -207,32 +207,6 @@
               "raw": "{{baseUrl}}/api/v1/account/subscription/webhook",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "account", "subscription", "webhook"]
-            }
-          }
-        },
-        {
-          "name": "Schedule the authenticated account for permanent deletion (GDPR Art. 17)",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/account",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "account"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"password\": \"\",\n  \"reason\": \"\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
             }
           }
         }
@@ -1567,6 +1541,29 @@
                   "language": "json"
                 }
               }
+            }
+          }
+        },
+        {
+          "name": "Delete a trip",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", ":tripId"],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                }
+              ]
             }
           }
         },

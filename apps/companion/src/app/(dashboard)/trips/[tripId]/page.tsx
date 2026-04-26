@@ -1,49 +1,716 @@
 "use client";
 
-import { useParams } from 'next/navigation';
-import Link from 'next/link';
-import { ArrowLeft, Edit, Share2, Download, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import {
+  ArrowLeft,
+  BedDouble,
+  Calendar,
+  Check,
+  Crown,
+  Edit,
+  Gauge,
+  Loader2,
+  MapPin,
+  Mountain,
+  Printer,
+  Route,
+  Share2,
+  Shield,
+  Trash2,
+  User,
+} from "lucide-react";
+import { ApiError, tripsApi } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth";
+import { useTripStore } from "@/stores/trip";
+import { useClosures } from "@/hooks/useClosures";
+import { usePasses } from "@/hooks/usePasses";
+import { useTripCollabSession } from "@/hooks/useTripCollabSession";
+import { TripPlannerMap } from "@/components/TripPlannerMap";
+import { SegmentSidebar } from "@/components/SegmentSidebar";
+import { TripStopsPanel } from "@/components/TripStopsPanel";
+import { TripCollaborateModal } from "@/components/TripCollaborateModal";
+import { TripExportMenu } from "@/components/TripExportMenu";
+import { buildTripClosureRoutes } from "@/lib/closures-summary";
+import { currentUtcMonth } from "@/lib/passes-summary";
+import {
+  findOwnerId,
+  tripFromDetail,
+  type TripDetailMember,
+  type TripDetailResponse,
+} from "@/lib/trip-from-detail";
+import { formatDistance, formatDuration } from "@/lib/utils";
+
+type RightTab = "days" | "members" | "collaborate";
+
+interface LoadedTrip {
+  detail: TripDetailResponse;
+  members: TripDetailMember[];
+}
 
 export default function TripDetailPage() {
   const { tripId } = useParams<{ tripId: string }>();
+  const router = useRouter();
 
-  // TODO: Fetch trip data from API
-  // TODO: Display map with route, day-by-day breakdown, Road Preview Cards
-  // TODO: Collaboration panel showing members and suggestions
+  const [loaded, setLoaded] = useState<LoadedTrip | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
+  const [collaborateOpen, setCollaborateOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<RightTab>("days");
+  const [travelMonth, setTravelMonth] = useState<number>(() =>
+    currentUtcMonth(),
+  );
+
+  const currentUserId = useAuthStore((s) => s.user?.id ?? null);
+  const setActiveTrip = useTripStore((s) => s.setActiveTrip);
+
+  // Memoise the local Trip projection so referential equality doesn't
+  // churn on every render — `TripPlannerMap` and `SegmentSidebar`
+  // re-derive their overlays whenever `trip` changes identity.
+  const trip = useMemo(
+    () => (loaded ? tripFromDetail(loaded.detail) : null),
+    [loaded],
+  );
+  const ownerId = loaded ? findOwnerId(loaded.detail) : null;
+  const callerRole =
+    currentUserId && loaded
+      ? (loaded.members.find((m) => m.user_id === currentUserId)?.role ?? null)
+      : null;
+  const isOwner = callerRole === "owner";
+
+  const closureRoutes = useMemo(() => buildTripClosureRoutes(trip), [trip]);
+  const closuresData = useClosures(travelMonth, closureRoutes);
+  const passesData = usePasses(travelMonth, closureRoutes);
+
+  // Activate the trip in the store so SegmentSidebar (which is
+  // store-driven) renders the correct day/segment list. Reset on
+  // unmount so navigating to the planner doesn't inherit a stale trip.
+  useEffect(() => {
+    setActiveTrip(trip);
+    return () => {
+      setActiveTrip(null);
+    };
+  }, [trip, setActiveTrip]);
+
+  useEffect(() => {
+    if (!tripId) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setNotFound(false);
+    tripsApi
+      .get(tripId)
+      .then(({ data }) => {
+        if (cancelled) return;
+        const detail = data as unknown as TripDetailResponse;
+        setLoaded({ detail, members: detail.members ?? [] });
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        if (err instanceof ApiError && err.status === 403) {
+          // Permission errors fold into the trips list per the spec —
+          // we don't surface a denied-access page since the backend
+          // already 404s non-members for trip detail. 403 only happens
+          // on a few collab endpoints that get stricter checks.
+          router.replace("/trips");
+          return;
+        }
+        if (err instanceof ApiError && err.status === 404) {
+          setNotFound(true);
+          return;
+        }
+        setError("Couldn't load this trip. Check your connection.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tripId, router]);
+
+  const collabSession = useTripCollabSession(loaded ? loaded.detail.id : null);
+
+  const handleDelete = useCallback(async () => {
+    if (!loaded) return;
+    if (
+      !confirm(
+        `Delete "${loaded.detail.title}"? This permanently removes all days, waypoints, and collaboration history. This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await tripsApi.delete(loaded.detail.id);
+      router.replace("/trips");
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? err.status === 404
+            ? "This trip no longer exists."
+            : err.status === 403
+              ? "Only the trip owner can delete it."
+              : "Couldn't delete the trip. Try again."
+          : "Couldn't delete the trip. Try again.";
+      setDeleteError(message);
+      setDeleting(false);
+    }
+  }, [loaded, router]);
+
+  if (loading) {
+    return (
+      <div className="flex h-full items-center justify-center text-slate-400">
+        <Loader2 size={20} className="mr-2 animate-spin" /> Loading trip…
+      </div>
+    );
+  }
+
+  if (notFound) {
+    return (
+      <div className="p-6 max-w-2xl mx-auto animate-fade-in">
+        <Link
+          href="/trips"
+          className="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-white transition mb-6"
+        >
+          <ArrowLeft size={14} /> Back to trips
+        </Link>
+        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-10 text-center">
+          <Route size={36} className="mx-auto mb-3 text-slate-600" />
+          <h2 className="text-lg font-semibold text-white">Trip not found</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            The trip may have been deleted, or the link may be wrong.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !loaded || !trip) {
+    return (
+      <div className="p-6 max-w-2xl mx-auto animate-fade-in">
+        <Link
+          href="/trips"
+          className="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-white transition mb-6"
+        >
+          <ArrowLeft size={14} /> Back to trips
+        </Link>
+        <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-6 text-sm text-red-200">
+          {error ?? "Unknown error loading trip."}
+        </div>
+      </div>
+    );
+  }
+
+  const totalDistance = trip.days.reduce((sum, d) => sum + d.distanceKm, 0);
+  const totalDuration = trip.days.reduce(
+    (sum, d) => sum + d.durationMinutes,
+    0,
+  );
+  const totalElevation = trip.days.reduce((sum, d) => sum + d.elevationGain, 0);
 
   return (
-    <div className="p-6 max-w-6xl mx-auto animate-fade-in">
-      <div className="flex items-center gap-4 mb-6">
-        <Link href="/trips" className="p-2 rounded-lg hover:bg-slate-800 transition">
-          <ArrowLeft size={20} className="text-slate-400" />
-        </Link>
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold">Trip Detail</h1>
-          <p className="text-slate-500 text-sm">Trip ID: {tripId}</p>
-        </div>
-        <div className="flex items-center gap-2">
+    <div className="flex flex-col h-full">
+      {/* Header / action bar */}
+      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-800 bg-slate-950/90 px-4 py-3 backdrop-blur-sm">
+        <div className="flex items-start gap-3">
           <Link
-            href={`/trips/${tripId}/edit`}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light transition"
+            href="/trips"
+            aria-label="Back to trips"
+            className="mt-1 rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition"
+          >
+            <ArrowLeft size={16} />
+          </Link>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-base font-semibold text-white">
+                {loaded.detail.title}
+              </h1>
+              <StatusBadge status={loaded.detail.status} />
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+              <span className="inline-flex items-center gap-1">
+                <Calendar size={11} /> {trip.days.length} day
+                {trip.days.length === 1 ? "" : "s"}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <Route size={11} /> {formatDistance(totalDistance)}
+              </span>
+              {totalDuration > 0 && (
+                <span className="inline-flex items-center gap-1">
+                  <Gauge size={11} /> {formatDuration(totalDuration)}
+                </span>
+              )}
+              {totalElevation > 0 && (
+                <span className="inline-flex items-center gap-1">
+                  <Mountain size={11} /> {Math.round(totalElevation)} m gain
+                </span>
+              )}
+              <span className="inline-flex items-center gap-1">
+                <User size={11} /> {loaded.members.length} member
+                {loaded.members.length === 1 ? "" : "s"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href={`/trips/${loaded.detail.id}/edit`}
+            className="flex items-center gap-1.5 rounded-lg bg-tarmoto-cyan px-3 py-1.5 text-sm font-semibold text-slate-950 hover:bg-tarmoto-cyan-light transition"
           >
             <Edit size={14} /> Edit
           </Link>
-          <button className="p-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition">
-            <Share2 size={16} />
+          <button
+            type="button"
+            onClick={() => setCollaborateOpen(true)}
+            className="flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-700 transition"
+          >
+            <Share2 size={14} /> Share
           </button>
-          <button className="p-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition">
-            <Download size={16} />
-          </button>
-          <button className="p-2 rounded-lg bg-slate-800 text-red-400 hover:bg-red-400/10 transition">
-            <Trash2 size={16} />
-          </button>
+          <TripExportMenu trip={trip} />
+          <Link
+            href={`/trips/${loaded.detail.id}/print`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-700 transition"
+          >
+            <Printer size={14} /> Print
+          </Link>
+          {isOwner && (
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={deleting}
+              aria-label="Delete trip"
+              className="flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-sm text-red-400 hover:bg-red-400/10 transition disabled:opacity-60 disabled:cursor-wait"
+            >
+              {deleting ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Trash2 size={14} />
+              )}
+              Delete
+            </button>
+          )}
         </div>
+      </header>
+
+      {deleteError && (
+        <div
+          role="alert"
+          className="border-b border-red-500/30 bg-red-500/10 px-4 py-2 text-xs text-red-200"
+        >
+          {deleteError}
+        </div>
+      )}
+
+      {/* Main split: map | right column */}
+      <div className="flex flex-1 overflow-hidden">
+        <div className="relative flex-1 bg-slate-900">
+          <TripPlannerMap
+            trip={trip}
+            month={travelMonth}
+            closuresData={closuresData}
+            passesData={passesData}
+            collaboratorCursors={collabSession.cursors}
+            suggestions={collabSession.suggestions}
+          />
+          <div className="pointer-events-none absolute left-3 top-3 rounded-lg bg-slate-950/80 px-2.5 py-1 text-[11px] text-slate-300 backdrop-blur-sm">
+            <label className="pointer-events-auto inline-flex items-center gap-2">
+              Travel month
+              <select
+                value={travelMonth}
+                onChange={(e) => setTravelMonth(Number(e.target.value))}
+                className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-[11px] text-slate-200"
+                aria-label="Travel month"
+              >
+                {MONTHS.map((label, idx) => (
+                  <option key={idx} value={idx + 1}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <aside
+          aria-label="Trip detail panel"
+          className="hidden w-96 shrink-0 flex-col border-l border-slate-800 bg-slate-950 lg:flex"
+        >
+          <nav
+            role="tablist"
+            aria-label="Trip detail tabs"
+            className="flex shrink-0 border-b border-slate-800"
+          >
+            <TabButton
+              id="days"
+              label="Days"
+              active={activeTab === "days"}
+              onSelect={setActiveTab}
+            />
+            <TabButton
+              id="members"
+              label={`Members (${loaded.members.length})`}
+              active={activeTab === "members"}
+              onSelect={setActiveTab}
+            />
+            <TabButton
+              id="collaborate"
+              label="Collaborate"
+              active={activeTab === "collaborate"}
+              onSelect={setActiveTab}
+            />
+          </nav>
+
+          <div className="flex-1 overflow-y-auto">
+            {activeTab === "days" && (
+              <div className="p-4 space-y-4">
+                <DaysList trip={trip} />
+                <TripStopsPanel trip={trip} />
+                <SegmentSidebarSection />
+              </div>
+            )}
+            {activeTab === "members" && (
+              <MembersList
+                members={loaded.members}
+                inviteCode={loaded.detail.invite_code}
+                canInvite={callerRole !== null}
+                onShareLinkClick={() => {
+                  setCollaborateOpen(true);
+                }}
+              />
+            )}
+            {activeTab === "collaborate" && (
+              <CollaborateTabSummary
+                onOpenModal={() => setCollaborateOpen(true)}
+                suggestionsCount={collabSession.suggestions.length}
+              />
+            )}
+          </div>
+        </aside>
       </div>
 
-      {/* Trip map + details placeholder */}
-      <div className="rounded-2xl bg-slate-900 border border-slate-800 h-96 flex items-center justify-center">
-        <p className="text-slate-500">Trip route map and day-by-day breakdown</p>
+      <TripCollaborateModal
+        open={collaborateOpen}
+        trip={trip}
+        serverTripId={loaded.detail.id}
+        ownerId={ownerId}
+        currentUserId={currentUserId}
+        suggestions={collabSession.suggestions}
+        onSuggestionsChange={collabSession.setSuggestions}
+        suggestionsError={collabSession.suggestionsError}
+        onClose={() => setCollaborateOpen(false)}
+      />
+    </div>
+  );
+}
+
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+function StatusBadge({ status }: { status: string }) {
+  const tone =
+    status === "active"
+      ? "bg-tarmoto-cyan text-slate-950"
+      : status === "completed"
+        ? "bg-quality-excellent text-slate-950"
+        : status === "planned"
+          ? "bg-blue-500 text-white"
+          : "bg-slate-700 text-slate-200";
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${tone}`}
+    >
+      {status}
+    </span>
+  );
+}
+
+function TabButton({
+  id,
+  label,
+  active,
+  onSelect,
+}: {
+  id: RightTab;
+  label: string;
+  active: boolean;
+  onSelect: (id: RightTab) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={() => onSelect(id)}
+      className={`flex-1 px-3 py-3 text-xs font-medium transition ${
+        active
+          ? "border-b-2 border-tarmoto-cyan text-white"
+          : "border-b-2 border-transparent text-slate-400 hover:text-white"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function DaysList({
+  trip,
+}: {
+  trip: NonNullable<ReturnType<typeof tripFromDetail>>;
+}) {
+  if (trip.days.length === 0) {
+    return (
+      <p className="rounded-lg border border-dashed border-slate-800 bg-slate-900/40 p-4 text-xs text-slate-500">
+        This trip has no days yet. Open it in the planner to generate the
+        itinerary.
+      </p>
+    );
+  }
+  return (
+    <section className="space-y-2">
+      <h2 className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+        Day-by-day
+      </h2>
+      <ul className="space-y-2">
+        {trip.days.map((day) => (
+          <li
+            key={day.dayNumber}
+            className="rounded-lg border border-slate-800 bg-slate-900/60 p-3"
+          >
+            <div className="flex items-baseline justify-between gap-2">
+              <h3 className="text-sm font-semibold text-white">
+                Day {day.dayNumber}
+                {day.title ? (
+                  <span className="ml-1 font-normal text-slate-400">
+                    · {day.title}
+                  </span>
+                ) : null}
+              </h3>
+            </div>
+            <dl className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
+              <Stat label="Distance" value={formatDistance(day.distanceKm)} />
+              <Stat
+                label="Ride time"
+                value={
+                  day.durationMinutes > 0
+                    ? formatDuration(day.durationMinutes)
+                    : "—"
+                }
+              />
+              <Stat
+                label="Elevation"
+                value={
+                  day.elevationGain > 0
+                    ? `${Math.round(day.elevationGain)} m`
+                    : "—"
+                }
+              />
+            </dl>
+            {day.overnightStop && (
+              <p className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-slate-400">
+                <BedDouble size={11} className="text-slate-500" />
+                Overnight: {day.overnightStop.name}
+              </p>
+            )}
+            <p className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-slate-500">
+              <MapPin size={11} /> {day.waypoints.length} waypoint
+              {day.waypoints.length === 1 ? "" : "s"}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md bg-slate-950/60 px-2 py-1.5">
+      <dt className="text-[10px] uppercase tracking-wide text-slate-500">
+        {label}
+      </dt>
+      <dd className="mt-0.5 font-semibold tabular-nums text-slate-100">
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+function SegmentSidebarSection() {
+  // Only show the Road Preview Cards header when the planner has populated
+  // segments. Backend-loaded trips currently arrive without segments, so
+  // showing an empty card list here would be noise — `SegmentSidebar`
+  // handles the empty case itself.
+  return (
+    <section className="-mx-4 -mb-4 border-t border-slate-800">
+      <SegmentSidebar />
+    </section>
+  );
+}
+
+function MembersList({
+  members,
+  inviteCode,
+  canInvite,
+  onShareLinkClick,
+}: {
+  members: TripDetailMember[];
+  inviteCode: string;
+  canInvite: boolean;
+  onShareLinkClick: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(inviteCode);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard write may fail silently in unsupported browsers */
+    }
+  };
+
+  return (
+    <div className="p-4 space-y-4">
+      <section>
+        <h2 className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+          Members
+        </h2>
+        <ul className="mt-2 space-y-2">
+          {members.length === 0 ? (
+            <li className="text-xs text-slate-500">No members yet.</li>
+          ) : (
+            members.map((m) => <MemberRow key={m.user_id} member={m} />)
+          )}
+        </ul>
+      </section>
+
+      {canInvite && (
+        <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+          <h3 className="text-xs font-semibold text-white">Invite riders</h3>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Share the invite code so riders can join from the mobile app, or
+            copy a read-only link for the web companion.
+          </p>
+          <div className="mt-3 flex items-center gap-2">
+            <code className="flex-1 truncate rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs font-mono text-tarmoto-cyan">
+              {inviteCode}
+            </code>
+            <button
+              type="button"
+              onClick={handleCopyCode}
+              className="inline-flex items-center gap-1 rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px] text-slate-200 hover:bg-slate-700 transition"
+            >
+              {copied ? <Check size={12} /> : null} {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={onShareLinkClick}
+            className="mt-3 inline-flex items-center gap-1.5 text-[11px] text-tarmoto-cyan hover:underline"
+          >
+            <Share2 size={11} /> Or share a read-only link
+          </button>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function MemberRow({ member }: { member: TripDetailMember }) {
+  const roleStyle =
+    member.role === "owner"
+      ? "bg-amber-500/10 text-amber-300 border-amber-500/30"
+      : member.role === "admin"
+        ? "bg-blue-500/10 text-blue-300 border-blue-500/30"
+        : "bg-slate-800 text-slate-300 border-slate-700";
+  const RoleIcon =
+    member.role === "owner" ? Crown : member.role === "admin" ? Shield : User;
+  return (
+    <li className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-900/60 p-2.5">
+      <div
+        aria-hidden
+        className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-xs font-semibold text-slate-300"
+      >
+        {member.display_name.charAt(0).toUpperCase()}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm text-white">{member.display_name}</p>
+        <p className="text-[10px] text-slate-500">
+          Joined {formatJoinedDate(member.joined_at)}
+        </p>
+      </div>
+      <span
+        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${roleStyle}`}
+      >
+        <RoleIcon size={10} /> {member.role}
+      </span>
+    </li>
+  );
+}
+
+function CollaborateTabSummary({
+  onOpenModal,
+  suggestionsCount,
+}: {
+  onOpenModal: () => void;
+  suggestionsCount: number;
+}) {
+  return (
+    <div className="p-4 space-y-3">
+      <h2 className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+        Collaborate
+      </h2>
+      <p className="text-xs text-slate-400">
+        Invite riders, propose route tweaks, vote on suggestions, and follow the
+        activity log — all in one place.
+      </p>
+      <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+        <p className="text-xs text-slate-300">
+          {suggestionsCount} open suggestion
+          {suggestionsCount === 1 ? "" : "s"}
+        </p>
+        <button
+          type="button"
+          onClick={onOpenModal}
+          className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-tarmoto-cyan px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-tarmoto-cyan-light transition"
+        >
+          Open collaboration panel
+        </button>
       </div>
     </div>
   );
+}
+
+function formatJoinedDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  } catch {
+    return "recently";
+  }
 }

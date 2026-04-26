@@ -687,6 +687,46 @@ describe('TripsService', () => {
     });
   });
 
+  describe('remove', () => {
+    it('deletes the trip, emits trip:deleted, and resolves void when caller is owner', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      (tripRepo.delete as jest.Mock) = jest
+        .fn()
+        .mockResolvedValue({ affected: 1 });
+
+      await expect(service.remove(OWNER_ID, TRIP_ID)).resolves.toBeUndefined();
+
+      expect(tripRepo.delete).toHaveBeenCalledWith({ id: TRIP_ID });
+      expect(events.emitToTrip).toHaveBeenCalledWith(TRIP_ID, 'trip:deleted', {
+        trip_id: TRIP_ID,
+      });
+      // Cascade FKs delete the activity row anyway, so we deliberately
+      // skip writing one.
+      expect(activity.recordSafe).not.toHaveBeenCalled();
+    });
+
+    it('404s a non-owner (admins, members, non-members all collapse)', async () => {
+      (tripRepo.delete as jest.Mock) = jest.fn();
+
+      for (const role of ['admin', 'member'] as const) {
+        memberRepo.findOne.mockResolvedValueOnce({ role } as TripMember);
+        await expect(service.remove(OTHER_ID, TRIP_ID)).rejects.toBeInstanceOf(
+          NotFoundException,
+        );
+      }
+
+      memberRepo.findOne.mockResolvedValueOnce(null); // non-member
+      await expect(service.remove(OTHER_ID, TRIP_ID)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+
+      expect(tripRepo.delete).not.toHaveBeenCalled();
+      expect(events.emitToTrip).not.toHaveBeenCalled();
+    });
+  });
+
   describe('detail mapping', () => {
     it('converts route_geom + waypoint locations to lat/lng', async () => {
       const trip = makeOwnedTrip({

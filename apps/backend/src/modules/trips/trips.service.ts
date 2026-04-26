@@ -221,6 +221,28 @@ export class TripsService {
     return detail;
   }
 
+  async remove(userId: string, tripId: string): Promise<void> {
+    // Owner-only: a 404 covers both "no such trip" and "you are not the
+    // owner" so the endpoint cannot be used to enumerate trip ids or to
+    // probe roles a caller doesn't have. Cascading FKs on
+    // `trip_members`, `trip_days`, `trip_waypoints`, `trip_suggestions`,
+    // `trip_messages`, and `trip_activity` clean up dependent rows.
+    const membership = await this.memberRepo.findOne({
+      where: { trip_id: tripId, user_id: userId },
+    });
+    if (!membership || membership.role !== 'owner') {
+      throw new NotFoundException('Trip not found');
+    }
+
+    // Notify any live collaborators before the row disappears so their
+    // sockets can drop the subscription without a stale render. We do not
+    // write to `trip_activity` because the cascade would delete the row
+    // in the same transaction.
+    this.events.emitToTrip(tripId, 'trip:deleted', { trip_id: tripId });
+
+    await this.tripRepo.delete({ id: tripId });
+  }
+
   async list(userId: string, query: ListTripsDto): Promise<TripSummaryDto[]> {
     // Trips visible to the caller = trips where they appear in
     // `trip_members` (the `create` flow inserts the owner as a member,
