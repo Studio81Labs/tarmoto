@@ -84,10 +84,23 @@ export class TripDayDto {
   @ApiProperty()
   avg_quality!: number;
 
-  @ApiProperty()
+  @ApiProperty({
+    description:
+      'Total ascent (m) along the day, summed from intersected ' +
+      '`road_segments.elevation_max - elevation_min` spans. Approximates ' +
+      'true gain — exact per-vertex profile is not available without ' +
+      'an elevation API integration.',
+  })
   elevation_gain!: number;
 
-  @ApiProperty()
+  @ApiProperty({
+    description:
+      'Total descent (m) along the day. **Currently mirrors ' +
+      '`elevation_gain` as an upper-bound proxy** — for a loop trip ' +
+      'this is exact, for a one-way day it is an over-estimate. Will ' +
+      'become independent once a per-vertex elevation profile is ' +
+      'available.',
+  })
   elevation_loss!: number;
 
   @ApiProperty()

@@ -589,8 +589,12 @@ export class TripGeneratorService {
     // Elevation gain/loss: we don't have a pre-aggregated profile per
     // route, so use the sum of segment elevation spans as an upper-bound
     // proxy — plenty good for a day card and consistent with what the
-    // road-segment elevation columns already report. Loss = gain for a
-    // loop trip; for a straight day the two halves balance out.
+    // road-segment elevation columns already report. For a loop trip
+    // total descent equals total ascent so this is exact; for a one-way
+    // day it's an over-estimate. The contract is documented on
+    // `TripDayDto.elevation_loss` so mobile/companion consumers know
+    // the value mirrors `elevation_gain` until a real elevation profile
+    // API lands.
     const elevationSpan = q?.elevation_span ?? 0;
     const elevationGain = elevationSpan;
     const elevationLoss = elevationSpan;

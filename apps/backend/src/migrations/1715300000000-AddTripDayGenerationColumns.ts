@@ -6,7 +6,11 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *
  * `elevation_loss` is split out from `elevation_gain` so the per-day card
  * can render the descent total without re-summing the elevation profile
- * at request time.
+ * at request time. Today the generator stores the same upper-bound proxy
+ * in both columns (we don't have a per-vertex elevation API yet); the
+ * column is added now so a future profile integration can backfill real
+ * descent without a follow-up migration. The DTO docs make the proxy
+ * nature explicit to consumers.
  *
  * `curviness_score` and `scenic_score` are the two halves of the
  * "scenic/curvy mix" metric the AC calls out — keeping them as separate

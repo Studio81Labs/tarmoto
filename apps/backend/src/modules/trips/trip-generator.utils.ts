@@ -206,7 +206,11 @@ export function pickAnchors(
   // over "we have fewer anchors than days, so the trip will have
   // empty placeholder legs."
   if (anchors.length < count) {
-    const baseDistKm = midpointFallbackDistanceKm(bbox, start);
+    // Floor the projection radius so a near-edge `start` (which makes
+    // `midpointFallbackDistanceKm` go to ~0) doesn't collapse the sweep
+    // into an all-`start` cluster. Below ~1 km the bearings would be
+    // indistinguishable in WGS84 anyway.
+    const baseDistKm = Math.max(midpointFallbackDistanceKm(bbox, start), 1);
     const fineStepDeg = 360 / Math.max(count * 4, 24);
 
     const sweep = (radiusKm: number, minSpacingKm: number): void => {
@@ -215,13 +219,17 @@ export function pickAnchors(
         bearing < 360 && anchors.length < count;
         bearing += fineStepDeg
       ) {
-        const cand = pointAtBearing(start, bearing, radiusKm);
+        const cand = pointAtBearing(start, bearing, Math.max(radiusKm, 1));
         if (!isInsideBBox(cand, bbox)) continue;
-        // No need to compare against `start` here — the radius itself
-        // guarantees a non-zero offset, and a tight bbox with a small
-        // radius would otherwise reject every candidate against an
-        // unreachable spacing threshold.
-        if (isTooCloseToAny(cand, anchors, minSpacingKm)) continue;
+        // Always reject exact-or-near duplicates regardless of the
+        // configured spacing. `isTooCloseToAny(_, _, 0)` would let
+        // duplicates through (haversine is never < 0), but a 0 km
+        // anchor twins back to a degenerate start→start day in
+        // `buildDayChain`.
+        if (isNearDuplicate(cand, anchors)) continue;
+        if (minSpacingKm > 0 && isTooCloseToAny(cand, anchors, minSpacingKm)) {
+          continue;
+        }
         anchors.push(cand);
       }
     };
@@ -440,6 +448,20 @@ function isTooCloseToAny(
   thresholdKm: number,
 ): boolean {
   return others.some((o) => isTooClose(p, o, thresholdKm));
+}
+
+/**
+ * True when `p` is within ~10 metres of any already-placed anchor.
+ * Catches the degenerate case where the fallback sweep collapses to
+ * the same point (e.g. very small projection radius) — even if the
+ * caller relaxed the explicit `minSpacingKm` threshold to zero, we
+ * never want literally identical anchors on the chain.
+ */
+function isNearDuplicate(
+  p: { lat: number; lng: number },
+  others: ReadonlyArray<{ lat: number; lng: number }>,
+): boolean {
+  return others.some((o) => haversineKm(p.lat, p.lng, o.lat, o.lng) < 0.01);
 }
 
 /**

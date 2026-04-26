@@ -160,6 +160,26 @@ describe('pickAnchors', () => {
     const anchors = pickAnchors(START, tightBbox, [], 3);
     expect(anchors).toHaveLength(3);
   });
+
+  it('does not produce duplicate anchors when start sits exactly on a bbox edge', () => {
+    // Edge starts make `midpointFallbackDistanceKm` collapse toward 0,
+    // which previously had the last-resort sweep project every bearing
+    // to the same point and pass the (relaxed-to-zero) spacing check.
+    // The duplicate guard plus the radius floor must keep anchors
+    // distinct here.
+    const edgeBbox: [number, number, number, number] = [
+      START.lng,
+      START.lat,
+      START.lng + 0.5,
+      START.lat + 0.5,
+    ];
+    const anchors = pickAnchors(START, edgeBbox, [], 3);
+    expect(anchors).toHaveLength(3);
+    const seen = new Set(
+      anchors.map((a) => `${a.lat.toFixed(5)}|${a.lng.toFixed(5)}`),
+    );
+    expect(seen.size).toBe(anchors.length);
+  });
 });
 
 describe('buildDayChain', () => {
