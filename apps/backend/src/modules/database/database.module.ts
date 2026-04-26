@@ -28,6 +28,7 @@ import { AddSurfaceReadingClientModelVersion1715200000000 } from '../../migratio
 import { AddFunZoneClusteringSeed1715300000000 } from '../../migrations/1715300000000-AddFunZoneClusteringSeed.js';
 import { AddCrashAlerts1715400000000 } from '../../migrations/1715400000000-AddCrashAlerts.js';
 import { AddAccountDeletion1715500000000 } from '../../migrations/1715500000000-AddAccountDeletion.js';
+import { AddDataExportRequests1715600000000 } from '../../migrations/1715600000000-AddDataExportRequests.js';
 import {
   User,
   UserContact,
@@ -59,6 +60,7 @@ import {
   MountainPass,
   RoadReviewVote,
   RoadClosure,
+  DataExportRequest,
 } from '../../entities/index.js';
 
 const entities = [
@@ -92,6 +94,7 @@ const entities = [
   MountainPass,
   RoadReviewVote,
   RoadClosure,
+  DataExportRequest,
 ];
 
 @Module({
@@ -142,6 +145,7 @@ const entities = [
             AddFunZoneClusteringSeed1715300000000,
             AddCrashAlerts1715400000000,
             AddAccountDeletion1715500000000,
+            AddDataExportRequests1715600000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.

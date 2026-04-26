@@ -24,6 +24,7 @@ import { TripSuggestion } from './entities/trip-suggestion.entity.js';
 import { TripSuggestionVote } from './entities/trip-suggestion-vote.entity.js';
 import { TripMessage } from './entities/trip-message.entity.js';
 import { TripActivity } from './entities/trip-activity.entity.js';
+import { DataExportRequest } from './entities/data-export-request.entity.js';
 import { InitSchema1713000000000 } from './migrations/1713000000000-InitSchema.js';
 import { AddPasswordHash1713100000000 } from './migrations/1713100000000-AddPasswordHash.js';
 import { FixIsEmergencyDefault1713200000000 } from './migrations/1713200000000-FixIsEmergencyDefault.js';
@@ -50,6 +51,7 @@ import { AddSurfaceReadingClientModelVersion1715200000000 } from './migrations/1
 import { AddFunZoneClusteringSeed1715300000000 } from './migrations/1715300000000-AddFunZoneClusteringSeed.js';
 import { AddCrashAlerts1715400000000 } from './migrations/1715400000000-AddCrashAlerts.js';
 import { AddAccountDeletion1715500000000 } from './migrations/1715500000000-AddAccountDeletion.js';
+import { AddDataExportRequests1715600000000 } from './migrations/1715600000000-AddDataExportRequests.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -83,6 +85,7 @@ export const AppDataSource = new DataSource({
     TripSuggestionVote,
     TripMessage,
     TripActivity,
+    DataExportRequest,
   ],
   migrations: [
     // Listed in chronological order. Every migration in
@@ -118,6 +121,7 @@ export const AppDataSource = new DataSource({
     AddFunZoneClusteringSeed1715300000000,
     AddCrashAlerts1715400000000,
     AddAccountDeletion1715500000000,
+    AddDataExportRequests1715600000000,
   ],
   synchronize: false,
 });

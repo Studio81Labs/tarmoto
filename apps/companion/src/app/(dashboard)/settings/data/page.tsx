@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 import {
@@ -9,7 +9,6 @@ import {
   Check,
   Download,
   Loader2,
-  Mail,
   Trash2,
   X,
 } from "lucide-react";
@@ -20,7 +19,8 @@ import { isDeletionConfirmed } from "@/lib/account-deletion";
 type ExportState =
   | { kind: "idle" }
   | { kind: "requesting" }
-  | { kind: "requested" }
+  | { kind: "polling"; id: string }
+  | { kind: "ready"; id: string; downloadUrl: string }
   | { kind: "error"; message: string };
 
 type DeleteState =
@@ -42,17 +42,67 @@ export default function DataPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   async function requestExport() {
-    if (exportState.kind === "requesting") return;
+    if (exportState.kind === "requesting" || exportState.kind === "polling")
+      return;
     setExportState({ kind: "requesting" });
     try {
-      await accountApi.exportData();
-      setExportState({ kind: "requested" });
+      const { data: view } = await accountApi.requestDataExport();
+      if (view.status === "ready" && view.downloadUrl) {
+        setExportState({
+          kind: "ready",
+          id: view.id,
+          downloadUrl: view.downloadUrl,
+        });
+      } else if (view.status === "failed") {
+        setExportState({
+          kind: "error",
+          message: view.errorMessage ?? "Export failed",
+        });
+      } else {
+        setExportState({ kind: "polling", id: view.id });
+      }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Could not start export";
       setExportState({ kind: "error", message });
     }
   }
+
+  useEffect(() => {
+    if (exportState.kind !== "polling") return;
+    let cancelled = false;
+    const id = exportState.id;
+    const tick = async () => {
+      try {
+        const { data: view } = await accountApi.getDataExport(id);
+        if (cancelled) return;
+        if (view.status === "ready" && view.downloadUrl) {
+          setExportState({
+            kind: "ready",
+            id: view.id,
+            downloadUrl: view.downloadUrl,
+          });
+        } else if (view.status === "failed" || view.status === "expired") {
+          setExportState({
+            kind: "error",
+            message: view.errorMessage ?? `Export ${view.status}`,
+          });
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setExportState({
+          kind: "error",
+          message: err instanceof Error ? err.message : "Polling failed",
+        });
+      }
+    };
+    void tick();
+    const interval = setInterval(() => void tick(), 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [exportState]);
 
   return (
     <div className="p-6 max-w-3xl mx-auto animate-fade-in">
@@ -80,8 +130,8 @@ export default function DataPage() {
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
               We&apos;ll prepare a ZIP archive with everything tied to your
-              account and email you a download link. The link stays valid for 7
-              days.
+              account. The download link appears here when ready and stays
+              valid for 7 days.
             </p>
           </div>
         </div>
@@ -101,13 +151,17 @@ export default function DataPage() {
             onClick={requestExport}
             disabled={
               exportState.kind === "requesting" ||
-              exportState.kind === "requested"
+              exportState.kind === "polling"
             }
             className="px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
           >
-            {exportState.kind === "requesting" ? (
+            {exportState.kind === "requesting" ||
+            exportState.kind === "polling" ? (
               <>
-                <Loader2 size={14} className="animate-spin" /> Requesting…
+                <Loader2 size={14} className="animate-spin" />
+                {exportState.kind === "requesting"
+                  ? "Requesting…"
+                  : "Assembling your data…"}
               </>
             ) : (
               <>
@@ -116,13 +170,23 @@ export default function DataPage() {
             )}
           </button>
 
-          {exportState.kind === "requested" && (
+          {exportState.kind === "polling" && (
             <span
               role="status"
-              className="inline-flex items-center gap-1.5 text-sm text-tarmoto-cyan"
+              className="inline-flex items-center gap-1.5 text-sm text-slate-400"
             >
-              <Mail size={14} /> Export started — check your email shortly.
+              Usually takes under a minute.
             </span>
+          )}
+          {exportState.kind === "ready" && (
+            <a
+              href={exportState.downloadUrl}
+              download
+              role="status"
+              className="inline-flex items-center gap-1.5 text-sm text-tarmoto-cyan underline hover:text-tarmoto-cyan-light"
+            >
+              <Download size={14} /> Download your data (link expires in 7 days)
+            </a>
           )}
           {exportState.kind === "error" && (
             <span role="alert" className="text-sm text-red-400">
