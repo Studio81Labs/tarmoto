@@ -15,7 +15,7 @@ import { AccountDeletionLog } from '../../entities/account-deletion-log.entity.j
 
 describe('AccountDeletionService', () => {
   let service: AccountDeletionService;
-  let userRepo: jest.Mocked<Pick<Repository<User>, 'find'>> & {
+  let userRepo: jest.Mocked<Pick<Repository<User>, 'find' | 'findOne'>> & {
     createQueryBuilder: jest.Mock;
   };
   let stripe: jest.Mocked<StripeBillingClient>;
@@ -98,6 +98,14 @@ describe('AccountDeletionService', () => {
     };
     userRepo = {
       find: jest.fn().mockResolvedValue([]),
+      // Pre-flight existence check used by `purgeUser` — default to
+      // "row still present" so the existing tests don't have to
+      // explicitly mock it.
+      findOne: jest
+        .fn()
+        .mockImplementation(({ where }: { where: { id: string } }) =>
+          Promise.resolve({ id: where.id } as User),
+        ),
       createQueryBuilder: jest.fn().mockReturnValue(userQb),
     } as any;
 
@@ -368,6 +376,29 @@ describe('AccountDeletionService', () => {
           }),
         }),
       );
+    });
+
+    it('skips the Stripe calls entirely when a concurrent sweeper already deleted the user', async () => {
+      // Cheap pre-flight existence check: if the user row is gone by
+      // the time we get to processing, don't burn metered Stripe calls
+      // on something another worker has already cleaned up.
+      userRepo.findOne.mockResolvedValueOnce(null);
+      const due = buildUser({
+        deleted_at: new Date(),
+        deletion_scheduled_at: new Date('2026-04-01T00:00:00Z'),
+        stripe_customer_id: 'cus_already_handled',
+        stripe_subscription_id: 'sub_already_handled',
+      });
+      userRepo.find.mockResolvedValueOnce([due]);
+
+      const purged = await service.processDueDeletions(
+        new Date('2026-04-02T00:00:00Z'),
+      );
+
+      expect(purged).toBe(0);
+      expect(stripe.cancelSubscription).not.toHaveBeenCalled();
+      expect(stripe.deleteCustomer).not.toHaveBeenCalled();
+      expect(dataSource.transaction).not.toHaveBeenCalled();
     });
 
     it('skips the purge audit row when a concurrent sweeper already deleted the user', async () => {

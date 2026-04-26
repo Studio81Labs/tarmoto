@@ -190,6 +190,23 @@ export class AccountDeletionService {
    * audit log when multiple backend instances run the same hourly cron.
    */
   private async purgeUser(user: User): Promise<boolean> {
+    // Cheap pre-flight: skip Stripe entirely when a concurrent sweeper
+    // already finished the purge. Stripe calls are slow (~hundreds of
+    // ms) and metered, so paying for one extra DB read here pays off
+    // even on a single race. The check isn't race-free — a worker can
+    // still slip in between this read and the delete — but the
+    // `affected: 0` guard inside the transaction below remains the
+    // definitive backstop against duplicate audit rows. Stripe's
+    // `customers.del` is idempotent (`resource_missing` tolerated), so
+    // any remaining duplicate call is harmless.
+    const stillExists = await this.userRepo.findOne({
+      where: { id: user.id },
+      select: { id: true },
+    });
+    if (!stillExists) {
+      return false;
+    }
+
     const stripeResult = await this.cancelStripe(user);
 
     return this.dataSource.transaction(async (manager) => {
