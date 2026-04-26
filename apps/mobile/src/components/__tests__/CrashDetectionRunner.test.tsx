@@ -164,16 +164,29 @@ describe("CrashDetectionRunner", () => {
     // Drive a synthetic crash sequence: a sustained 5g spike plus 6
     // seconds of stillness. The runner's CrashDetector instance reads
     // these inputs and ought to call into useCrashStore.startCountdown.
+    // The first reading carries the rider's pre-impact speed (20 m/s
+    // ≈ 72 km/h); the rest report 0 to simulate the rider going down.
+    // The detector is responsible for snapshotting the spike-onset
+    // speed so the alert payload reflects pre-impact velocity even
+    // though the immobility window has elapsed by the time we fire.
     const G = 9.81;
     let t = 0;
     act(() => {
       // Spike well above the 4g default for 200ms.
-      for (; t <= 200; t += 20) {
+      registered!({
+        t,
+        ax: 0,
+        ay: 0,
+        az: 5 * G + G,
+        speed: 20,
+      } as never);
+      for (t = 20; t <= 200; t += 20) {
         registered!({
           t,
           ax: 0,
           ay: 0,
           az: 5 * G + G,
+          speed: 0,
         } as never);
       }
       // Stillness for 6 seconds.
@@ -183,6 +196,7 @@ describe("CrashDetectionRunner", () => {
           ax: 0,
           ay: 0,
           az: 0.05 + G,
+          speed: 0,
         } as never);
       }
     });
@@ -191,6 +205,8 @@ describe("CrashDetectionRunner", () => {
     expect(state.phase).toBe("countdown");
     expect(state.alert?.rideId).toBe("ride-7");
     expect(state.alert?.lat).toBe(49.82);
-    expect(state.alert?.speedAtImpact).toBe(72);
+    // 20 m/s * 3.6 = 72 km/h captured from the impact reading, not
+    // from the post-immobility ride store value (which would be 0).
+    expect(state.alert?.speedAtImpact).toBeCloseTo(72, 5);
   });
 });

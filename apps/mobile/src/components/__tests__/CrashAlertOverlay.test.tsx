@@ -185,6 +185,52 @@ describe("CrashAlertOverlay", () => {
     expect(useCrashStore.getState().errorMessage).toMatch(/no gps fix/i);
   });
 
+  it("recomputes the countdown from wall clock when the app foregrounds", async () => {
+    // Bugbot c2c8337d: on iOS the JS thread can be paused while the
+    // app is backgrounded, freezing the displayed seconds at the
+    // last value rendered before backgrounding. The previous nudge
+    // `setRemainingMs(prev => prev)` was a useState bail-out and
+    // produced no re-render — the UI stayed stale until the next
+    // setInterval tick. The handler must instead recompute remaining
+    // time directly from the start timestamp.
+    const ReactNative = require("react-native");
+    let appStateListener: ((s: string) => void) | null = null;
+    const origAdd = ReactNative.AppState.addEventListener;
+    ReactNative.AppState.addEventListener = jest.fn(
+      (evt: string, cb: never) => {
+        if (evt === "change") {
+          appStateListener = cb as never as (s: string) => void;
+        }
+        return { remove: jest.fn() };
+      },
+    );
+
+    try {
+      render(<CrashAlertOverlay countdownMs={10_000} />);
+      const baseline = Date.now();
+      jest.setSystemTime(baseline);
+      act(() => {
+        useCrashStore.getState().startCountdown(snapshot());
+      });
+
+      // Initial render shows the full countdown.
+      expect(screen.getByText("10")).toBeTruthy();
+
+      // Simulate 7 seconds of wall-clock passing while the JS thread
+      // was paused (no setInterval ticks). The displayed value would
+      // remain stuck at "10" without the fix.
+      jest.setSystemTime(baseline + 7_000);
+      await act(async () => {
+        appStateListener?.("active");
+      });
+
+      // Foreground recompute: 10s - 7s elapsed = 3s remaining.
+      await waitFor(() => expect(screen.getByText("3")).toBeTruthy());
+    } finally {
+      ReactNative.AppState.addEventListener = origAdd;
+    }
+  });
+
   it("flips to failed state when the API rejects", async () => {
     mockedApi.sendCrashAlert.mockRejectedValueOnce(new Error("offline"));
     render(<CrashAlertOverlay countdownMs={500} />);

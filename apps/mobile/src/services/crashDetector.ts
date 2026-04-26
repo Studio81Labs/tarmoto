@@ -60,12 +60,31 @@ export interface CrashEvent {
   triggeredAt: number;
   /** Peak deviation magnitude (m/s²) observed during the spike. */
   peakAcceleration: number;
+  /**
+   * Speed at the moment of impact (m/s), captured from the reading that
+   * crossed the spike threshold. Reported here rather than read from
+   * the ride store at fire time because by then the 5-second immobility
+   * window has elapsed and the rider's speed has already dropped to ~0.
+   * `null` when the reading didn't carry a speed (no GPS fix at impact).
+   */
+  speedAtImpactMs: number | null;
 }
 
 type State =
   | { kind: "idle" }
-  | { kind: "spiking"; startedAt: number; peak: number }
-  | { kind: "armed"; armedAt: number; peak: number; rmsBuffer: RmsBuffer };
+  | {
+      kind: "spiking";
+      startedAt: number;
+      peak: number;
+      speedAtImpact: number | null;
+    }
+  | {
+      kind: "armed";
+      armedAt: number;
+      peak: number;
+      speedAtImpact: number | null;
+      rmsBuffer: RmsBuffer;
+    };
 
 /**
  * Rolling RMS buffer over the immobility window. Keeps a fixed-time
@@ -165,7 +184,17 @@ export class CrashDetector {
           return null;
         }
         if (magnitude >= this.peakThresholdMs2) {
-          this.state = { kind: "spiking", startedAt: t, peak: magnitude };
+          this.state = {
+            kind: "spiking",
+            startedAt: t,
+            peak: magnitude,
+            // Capture the rider's speed at the moment the spike begins.
+            // The ride store's `currentSpeed` would still be live here
+            // too, but binding to the reading keeps the detector pure
+            // (no store dependency) and survives the 5-second
+            // immobility window with the pre-impact value intact.
+            speedAtImpact: reading.speed ?? null,
+          };
         }
         return null;
       }
@@ -181,6 +210,7 @@ export class CrashDetector {
               kind: "armed",
               armedAt: t,
               peak,
+              speedAtImpact: this.state.speedAtImpact,
               rmsBuffer: buffer,
             };
           } else {
@@ -195,7 +225,7 @@ export class CrashDetector {
         return null;
       }
       case "armed": {
-        const { armedAt, peak, rmsBuffer } = this.state;
+        const { armedAt, peak, speedAtImpact, rmsBuffer } = this.state;
         rmsBuffer.push(t, magnitude, this.immobilityDurationMs);
         if (magnitude >= this.peakThresholdMs2) {
           // Aftershock spike — keep the peak record up to date but stay
@@ -215,6 +245,7 @@ export class CrashDetector {
           const event: CrashEvent = {
             triggeredAt: t,
             peakAcceleration: peak,
+            speedAtImpactMs: speedAtImpact,
           };
           this.state = { kind: "idle" };
           this.lastFireAt = t;

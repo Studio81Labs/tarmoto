@@ -78,6 +78,10 @@ export default function CrashAlertOverlay({
 
   const [remainingMs, setRemainingMs] = useState(countdownMs);
   const dispatchedRef = useRef(false);
+  // Lifted out of the countdown effect so the AppState handler can also
+  // recompute the remaining time when the rider returns from background
+  // — see the foreground hook below.
+  const startedAtRef = useRef<number | null>(null);
 
   const visible = phase !== "idle";
 
@@ -86,12 +90,14 @@ export default function CrashAlertOverlay({
     if (phase !== "countdown") {
       setRemainingMs(countdownMs);
       dispatchedRef.current = false;
+      startedAtRef.current = null;
       return;
     }
     setRemainingMs(countdownMs);
-    const startedAt = Date.now();
+    startedAtRef.current = Date.now();
     const id = setInterval(() => {
-      const elapsed = Date.now() - startedAt;
+      if (startedAtRef.current === null) return;
+      const elapsed = Date.now() - startedAtRef.current;
       const next = Math.max(0, countdownMs - elapsed);
       setRemainingMs(next);
     }, COUNTDOWN_TICK_MS);
@@ -158,17 +164,23 @@ export default function CrashAlertOverlay({
   }, [phase, remainingMs, dispatch]);
 
   // ── Foreground re-trigger ──
-  // If the rider's phone backgrounded mid-countdown the overlay is still
-  // active when they return — but timers continue counting in JS. This
-  // hook is only here to make sure the overlay forces a re-render when
-  // the app comes back into focus, so the displayed seconds don't lag.
+  // While the app is backgrounded, RN may pause the JS thread on iOS, so
+  // the countdown setInterval doesn't tick and the displayed seconds
+  // freeze at the last value rendered before backgrounding. On return
+  // we recompute remainingMs directly from `startedAtRef` rather than
+  // using `setRemainingMs(prev => prev)` — the previous form was a
+  // bail-out and produced no re-render, so the UI stayed stale until
+  // the next interval fire. (Bugbot c2c8337d.)
   useEffect(() => {
     if (phase !== "countdown") return;
     const sub = AppState.addEventListener("change", (next: AppStateStatus) => {
-      if (next === "active") setRemainingMs((prev) => prev);
+      if (next !== "active") return;
+      if (startedAtRef.current === null) return;
+      const elapsed = Date.now() - startedAtRef.current;
+      setRemainingMs(Math.max(0, countdownMs - elapsed));
     });
     return () => sub.remove();
-  }, [phase]);
+  }, [phase, countdownMs]);
 
   if (!visible) return null;
 

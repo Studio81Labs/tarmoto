@@ -216,6 +216,50 @@ describe("CrashDetector", () => {
     expect(fires).toBe(2);
   });
 
+  it("captures speedAtImpactMs at the spike onset, not after immobility", () => {
+    // Bugbot 00350521: by the time onCrash fires the rider has been
+    // still for the entire immobility window, so reading
+    // `ride.currentSpeed` from the store would report ~0. The detector
+    // must instead bind the speed of the reading that crossed the
+    // threshold so emergency dispatchers see the pre-impact value.
+    const detector = new CrashDetector();
+    let captured: { speedAtImpactMs: number | null } | null = null;
+    detector.onCrash((event) => {
+      captured = event;
+    });
+
+    const G = 9.81;
+    const az = 5 * G + G; // well above 4g default
+    let t = 0;
+    // First spike sample carries the rider's pre-impact speed (20 m/s
+    // ≈ 72 km/h). Subsequent samples drop the speed to 0 to simulate
+    // the rider going down.
+    detector.feed({ t, ax: 0, ay: 0, az, speed: 20 });
+    for (t = 20; t <= 200; t += 20) {
+      detector.feed({ t, ax: 0, ay: 0, az, speed: 0 });
+    }
+    for (; t <= 6_220; t += 20) {
+      detector.feed({ t, ax: 0, ay: 0, az: 0.05 + G, speed: 0 });
+    }
+
+    expect(captured).not.toBeNull();
+    expect(captured!.speedAtImpactMs).toBe(20);
+  });
+
+  it("reports speedAtImpactMs=null when the impact reading has no GPS", () => {
+    const detector = new CrashDetector();
+    let captured: { speedAtImpactMs: number | null } | null = null;
+    detector.onCrash((event) => {
+      captured = event;
+    });
+
+    feedMagnitude(detector, 0, 200, CRASH_DEFAULTS.peakG * GRAVITY);
+    feedMagnitude(detector, 220, 6_000, 0.05);
+
+    expect(captured).not.toBeNull();
+    expect(captured!.speedAtImpactMs).toBeNull();
+  });
+
   it("reset() clears in-progress spike state", () => {
     const detector = new CrashDetector();
     feedMagnitude(detector, 0, 60, CRASH_DEFAULTS.peakG * GRAVITY);

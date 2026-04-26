@@ -48,16 +48,20 @@ export default function CrashDetectionRunner(): React.ReactElement | null {
       const ride = useRideStore.getState();
       const crashStore = useCrashStore.getState();
       if (crashStore.phase !== "idle") return;
+      // `event.speedAtImpactMs` is captured by the detector at the
+      // moment the spike begins, so by the time onCrash fires (5s
+      // later, after the immobility window) we still have the rider's
+      // pre-impact speed. Reading `ride.currentSpeed` here would
+      // report ~0 km/h because the rider is by definition stationary
+      // for the trigger to fire. (Bugbot 00350521.)
+      const speedKmh =
+        event.speedAtImpactMs !== null ? event.speedAtImpactMs * 3.6 : null;
       crashStore.startCountdown({
         triggeredAt: event.triggeredAt,
         rideId: ride.activeRide?.id ?? null,
         lat: ride.location?.lat ?? null,
         lng: ride.location?.lng ?? null,
-        // Use the last known speed — by the time the immobility window
-        // has elapsed (5s), the rider's speed is already 0. The peak
-        // happens at impact, so the most useful value is the speed
-        // captured just before the spike.
-        speedAtImpact: ride.currentSpeed ?? null,
+        speedAtImpact: speedKmh,
       });
     });
 
