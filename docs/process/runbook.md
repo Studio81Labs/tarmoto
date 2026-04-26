@@ -99,6 +99,76 @@ TARMOTO_TRUST_PROXY_HOPS=1 pnpm dev:backend
 curl -H "X-Forwarded-For: 1.2.3.4" -sS http://localhost:3000/api/v1/...
 ```
 
+## Crash-alert SMS / voice dispatch (US-12)
+
+The `POST /safety/crash-alert` endpoint dispatches SMS (and a voice call when
+`severity=high`) via the configured `CrashAlertNotifier`. The default
+implementation is `TwilioCrashAlertNotifier`. Without credentials the notifier
+silently falls back to log-only mode so dev and CI continue to work.
+
+### Required env vars (staging)
+
+| Variable                         | Required | Notes                                      |
+| -------------------------------- | -------- | ------------------------------------------ |
+| `TARMOTO_TWILIO_ACCOUNT_SID`     | yes      | Found in the Twilio console.               |
+| `TARMOTO_TWILIO_AUTH_TOKEN`      | yes      | Treat as a secret. Store in 1Password.     |
+| `TARMOTO_TWILIO_FROM_NUMBER`     | yes      | E.164, must be Twilio-owned & SMS-enabled. |
+| `TARMOTO_TWILIO_VOICE_TWIML_URL` | no       | If unset, voice calls use inline TwiML.    |
+
+If any of the three required vars are missing the backend logs:
+
+```
+Twilio crash-alert notifier disabled — set TARMOTO_TWILIO_ACCOUNT_SID, ...
+```
+
+…on boot, and every dispatch records `channel=log` instead of `sms`/`voice`.
+
+### Smoke test on staging
+
+1. Add yourself as an emergency contact under your test account
+   (`POST /users/me/contacts` with `is_emergency: true`).
+2. Acquire a JWT for that account.
+3. Trigger an alert — the response includes a per-contact `status`. A real
+   send shows `channel: "sms"` and a non-null `provider_message_id` (Twilio
+   `SM…` SID):
+
+   ```bash
+   curl -sS -X POST https://staging.tarmoto.app/api/v1/safety/crash-alert \
+     -H "Authorization: Bearer $JWT" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "lat": 49.1,
+       "lng": 16.75,
+       "speed_at_impact": 72,
+       "severity": "high",
+       "alert_id": "00000000-0000-4000-8000-000000000001"
+     }'
+   ```
+
+4. Confirm the SMS (and voice call when `severity=high`) lands on the
+   contact's phone. Cross-check against the Twilio console under
+   _Monitor → Logs → Messages / Calls_ using the returned SID.
+5. Re-send the same `alert_id` — the response should be `idempotent_replay:
+true` and **no second SMS** should arrive. Twilio also dedupes via
+   `I-Twilio-Idempotency-Token` as a second line of defence.
+6. Inspect the audit row:
+
+   ```sql
+   SELECT id, severity, contacts_notified, contacts_total, contact_results
+   FROM crash_alerts
+   ORDER BY created_at DESC LIMIT 5;
+   ```
+
+### Common failures
+
+- **`Twilio API error: Authenticate`** — `TARMOTO_TWILIO_AUTH_TOKEN` wrong
+  or rotated. Update the secret and redeploy.
+- **`channel=log` in response despite secrets being set** — env vars set in
+  the wrong scope (e.g. only on the worker, not the API). Check the boot
+  log for the disabled-notifier warning.
+- **Throttled (HTTP 429) when re-testing rapidly** — the endpoint is capped
+  at 5 req/min/IP. Wait or use a different IP.
+
 ## Incident response checklist (placeholder)
 
 When production deploys land, this section grows. Template for now:

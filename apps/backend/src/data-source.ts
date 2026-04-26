@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { DataSource } from 'typeorm';
 import { User } from './entities/user.entity.js';
 import { UserContact } from './entities/user-contact.entity.js';
+import { CrashAlert } from './entities/crash-alert.entity.js';
 import { RoadSegment } from './entities/road-segment.entity.js';
 import { SurfaceReading } from './entities/surface-reading.entity.js';
 import { Ride } from './entities/ride.entity.js';
@@ -46,6 +47,7 @@ import { AddTripCollaboration1715000000000 } from './migrations/1715000000000-Ad
 import { AddTripActivity1715100000000 } from './migrations/1715100000000-AddTripActivity.js';
 import { AddSurfaceReadingClientModelVersion1715200000000 } from './migrations/1715200000000-AddSurfaceReadingClientModelVersion.js';
 import { AddFunZoneClusteringSeed1715300000000 } from './migrations/1715300000000-AddFunZoneClusteringSeed.js';
+import { AddCrashAlerts1715400000000 } from './migrations/1715400000000-AddCrashAlerts.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -57,6 +59,7 @@ export const AppDataSource = new DataSource({
   entities: [
     User,
     UserContact,
+    CrashAlert,
     RoadSegment,
     SurfaceReading,
     Ride,
@@ -110,6 +113,7 @@ export const AppDataSource = new DataSource({
     AddTripActivity1715100000000,
     AddSurfaceReadingClientModelVersion1715200000000,
     AddFunZoneClusteringSeed1715300000000,
+    AddCrashAlerts1715400000000,
   ],
   synchronize: false,
 });

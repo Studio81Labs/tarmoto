@@ -589,16 +589,53 @@ class ApiService {
   async sendCrashAlert(
     lat: number,
     lng: number,
-    rideId?: string,
-    speedAtImpact?: number,
-  ): Promise<void> {
-    await this.client.post("/safety/crash-alert", {
-      lat,
-      lng,
-      ride_id: rideId,
-      speed_at_impact: speedAtImpact,
-    });
+    options: {
+      rideId?: string;
+      speedAtImpact?: number;
+      /** `high` triggers an automated voice call alongside SMS. */
+      severity?: "low" | "medium" | "high";
+      /** Stable client UUID to make retries idempotent. */
+      alertId?: string;
+      /** BCP-47 locale; defaults to user preferences on the backend. */
+      locale?: string;
+    } = {},
+  ): Promise<CrashAlertResponse> {
+    const { data } = await this.client.post<CrashAlertResponse>(
+      "/safety/crash-alert",
+      {
+        lat,
+        lng,
+        ride_id: options.rideId,
+        speed_at_impact: options.speedAtImpact,
+        severity: options.severity,
+        alert_id: options.alertId,
+        locale: options.locale,
+      },
+    );
+    return data;
   }
+}
+
+export interface CrashAlertContactStatus {
+  contact_id: string;
+  name: string;
+  channel: "sms" | "voice" | "log";
+  status: "sent" | "failed" | "skipped";
+  provider_message_id: string | null;
+  error: string | null;
+}
+
+export interface CrashAlertResponse {
+  contacts_notified: number;
+  alert_id: string;
+  contacts: CrashAlertContactStatus[];
+  idempotent_replay: boolean;
+  /**
+   * Only meaningful when `idempotent_replay` is true: the original
+   * request is still dispatching, so `contacts` may be empty and
+   * `contacts_notified` may not yet reflect the final outcome.
+   */
+  dispatch_in_progress: boolean;
 }
 
 export const api = new ApiService();

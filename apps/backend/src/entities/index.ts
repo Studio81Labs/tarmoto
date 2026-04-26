@@ -1,5 +1,12 @@
 export { User } from './user.entity.js';
 export { UserContact } from './user-contact.entity.js';
+export { CrashAlert } from './crash-alert.entity.js';
+export type {
+  CrashAlertSeverity,
+  CrashAlertContactStatus,
+  CrashAlertContactChannel,
+  CrashAlertContactResult,
+} from './crash-alert.entity.js';
 export { RoadSegment } from './road-segment.entity.js';
 export { SurfaceReading } from './surface-reading.entity.js';
 export { Ride } from './ride.entity.js';

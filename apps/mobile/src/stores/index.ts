@@ -145,7 +145,32 @@ export type CrashAlertPhase =
   | "dispatched"
   | "failed";
 
+/**
+ * RFC 4122 v4 UUID — used as the per-incident idempotency key for
+ * `POST /safety/crash-alert`. `Math.random` is good enough here: a
+ * collision would only mean the backend treats two unrelated alerts
+ * as the same one, and the chance over the entire user base is
+ * astronomical (~5e-39 per call). React Native doesn't polyfill
+ * `crypto.randomUUID` on every supported version, so a small
+ * inline generator avoids a native dependency.
+ */
+function makeIncidentId(): string {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 interface CrashAlertSnapshot {
+  /**
+   * Stable per-incident UUIDv4 used as the backend idempotency key.
+   * Generated once in `startCountdown` and reused for every dispatch
+   * attempt of the same incident, so a network retry can replay the
+   * original outcome instead of re-notifying contacts. Cleared on
+   * `cancel`/`reset` along with the rest of the snapshot.
+   */
+  alertId: string;
   /** Trigger location at the moment of detection. May be null if GPS is offline. */
   lat: number | null;
   lng: number | null;
@@ -157,12 +182,35 @@ interface CrashAlertSnapshot {
   triggeredAt: number;
 }
 
+/**
+ * What kind of failure landed us in the `failed` phase. Drives the
+ * overlay's RETRY behavior: only `completed` failures (the backend
+ * recorded the dispatch with `contacts_notified: 0`) need a fresh
+ * `alertId` to re-attempt — for transient ones (network error,
+ * timeout, in-flight bound exhausted) keeping the same id preserves
+ * idempotency so an in-flight original can't double-notify.
+ */
+export type CrashFailureSource = "completed" | "transient";
+
 interface CrashState {
   phase: CrashAlertPhase;
   alert: CrashAlertSnapshot | null;
   /** Error message from the last failed dispatch, if any. */
   errorMessage: string | null;
-  startCountdown: (snapshot: CrashAlertSnapshot) => void;
+  /**
+   * Source of the most recent `failed` transition. The overlay's
+   * RETRY button reads this to decide whether to rotate the
+   * incident id (only for `completed`) or keep it (for `transient`).
+   */
+  failureSource: CrashFailureSource | null;
+  /**
+   * Begin the cancellable countdown for a fresh incident. The store
+   * stamps a stable `alertId` (UUIDv4) on the snapshot so every
+   * dispatch attempt for this incident — including manual RETRY taps
+   * — uses the same backend idempotency key. Callers do not need to
+   * provide one.
+   */
+  startCountdown: (snapshot: Omit<CrashAlertSnapshot, "alertId">) => void;
   /**
    * Move into the dispatching phase. Once here the rider can no longer
    * silently cancel: the POST is already in flight (or about to be) and
@@ -174,7 +222,21 @@ interface CrashState {
   /** Rider cancelled within the countdown — silent, no contacts notified. */
   cancel: () => void;
   markDispatched: () => void;
-  markFailed: (message: string) => void;
+  /**
+   * Mark the dispatch as failed. `source` distinguishes a backend-
+   * recorded permanent failure (`completed`) from a transient
+   * client-side issue (`transient`); see `CrashFailureSource`.
+   */
+  markFailed: (message: string, source: CrashFailureSource) => void;
+  /**
+   * Generate a fresh `alertId` on the current snapshot. Used by the
+   * overlay's RETRY button only when the previous failure was
+   * `completed` — without rotating, the backend would short-circuit
+   * to the recorded failure replay. For `transient` failures the id
+   * is kept so a still-in-flight original can replay deterministically
+   * instead of double-notifying contacts.
+   */
+  rotateIncidentId: () => void;
   /** Dismiss after dispatched / failed terminal state. */
   reset: () => void;
 }
@@ -183,12 +245,18 @@ export const useCrashStore = create<CrashState>((set) => ({
   phase: "idle",
   alert: null,
   errorMessage: null,
-  startCountdown: (alert) =>
-    set({ phase: "countdown", alert, errorMessage: null }),
+  failureSource: null,
+  startCountdown: (snapshot) =>
+    set({
+      phase: "countdown",
+      alert: { ...snapshot, alertId: makeIncidentId() },
+      errorMessage: null,
+      failureSource: null,
+    }),
   beginDispatch: () =>
     set((s) =>
       s.phase === "countdown"
-        ? { phase: "dispatching", errorMessage: null }
+        ? { phase: "dispatching", errorMessage: null, failureSource: null }
         : s,
     ),
   cancel: () =>
@@ -198,12 +266,29 @@ export const useCrashStore = create<CrashState>((set) => ({
       // pretending we cancelled would mislead the rider. Use `reset()`
       // to dismiss the dispatched/failed terminal screens instead.
       s.phase === "countdown"
-        ? { phase: "idle", alert: null, errorMessage: null }
+        ? {
+            phase: "idle",
+            alert: null,
+            errorMessage: null,
+            failureSource: null,
+          }
         : s,
     ),
-  markDispatched: () => set({ phase: "dispatched", errorMessage: null }),
-  markFailed: (errorMessage) => set({ phase: "failed", errorMessage }),
-  reset: () => set({ phase: "idle", alert: null, errorMessage: null }),
+  markDispatched: () =>
+    set({ phase: "dispatched", errorMessage: null, failureSource: null }),
+  markFailed: (errorMessage, failureSource) =>
+    set({ phase: "failed", errorMessage, failureSource }),
+  rotateIncidentId: () =>
+    set((s) =>
+      s.alert ? { alert: { ...s.alert, alertId: makeIncidentId() } } : s,
+    ),
+  reset: () =>
+    set({
+      phase: "idle",
+      alert: null,
+      errorMessage: null,
+      failureSource: null,
+    }),
 }));
 
 // ── Hazard Store ──

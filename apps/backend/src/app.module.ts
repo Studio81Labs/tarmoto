@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { UserScopedThrottlerGuard } from './config/user-scoped-throttler.guard.js';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { DatabaseModule } from './modules/database/database.module.js';
@@ -65,6 +66,13 @@ import { TripActivityModule } from './modules/trip-activity/index.js';
     ClosuresModule,
   ],
   controllers: [AppController],
-  providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
+  // Global APP_GUARD throttles every route by `(ip, user_id)` instead
+  // of plain IP. See `UserScopedThrottlerGuard` for why — short
+  // version: riders behind a shared NAT must not be able to starve
+  // each other's safety-endpoint budget.
+  providers: [
+    AppService,
+    { provide: APP_GUARD, useClass: UserScopedThrottlerGuard },
+  ],
 })
 export class AppModule {}

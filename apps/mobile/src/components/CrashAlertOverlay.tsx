@@ -37,6 +37,21 @@ import { ttsService } from "@/services/tts";
 const COUNTDOWN_TICK_MS = 250;
 /** Pulse cadence while the overlay is up — matches alarm-clock timing. */
 const HAPTIC_PULSE_MS = 1_000;
+/**
+ * When the backend reports `dispatch_in_progress` on an idempotent
+ * replay (the original POST is still working server-side), we poll
+ * after this many ms to read the eventual outcome.
+ */
+const IN_FLIGHT_POLL_MS = 3_000;
+/**
+ * Cap how many times we'll re-poll an in-flight replay before
+ * surfacing a "still dispatching" failure with a manual retry button.
+ * Sized so the auto-poll budget plus a couple of manual retries fits
+ * inside the backend's 5/min per-(ip,user) throttle: 1 initial send +
+ * 2 polls = 3 calls in ~6 s, leaving 2 manual RETRY attempts in the
+ * minute.
+ */
+const MAX_IN_FLIGHT_POLLS = 2;
 
 interface HapticTrigger {
   trigger: () => void;
@@ -68,12 +83,16 @@ export default function CrashAlertOverlay({
   countdownMs = CRASH_DEFAULTS.countdownMs,
 }: CrashAlertOverlayProps): React.ReactElement | null {
   const phase = useCrashStore((s) => s.phase);
-  const alert = useCrashStore((s) => s.alert);
+  // `dispatch` reads the alert via `useCrashStore.getState()` at call
+  // time so the manual-RETRY rotation lands before we POST. The hook
+  // selector isn't needed here because no JSX branch reads alert
+  // fields directly.
   const errorMessage = useCrashStore((s) => s.errorMessage);
   const cancel = useCrashStore((s) => s.cancel);
   const beginDispatch = useCrashStore((s) => s.beginDispatch);
   const markDispatched = useCrashStore((s) => s.markDispatched);
   const markFailed = useCrashStore((s) => s.markFailed);
+  const rotateIncidentId = useCrashStore((s) => s.rotateIncidentId);
   const resetAlert = useCrashStore((s) => s.reset);
 
   const [remainingMs, setRemainingMs] = useState(countdownMs);
@@ -88,6 +107,11 @@ export default function CrashAlertOverlay({
    * attempt has completed (resolve or reject).
    */
   const inFlightRef = useRef(false);
+  // Pending in-flight-replay poll, scheduled when the backend replies
+  // `dispatch_in_progress: true`. Cleared on every fresh dispatch entry
+  // and on unmount so a stale timer can't fire after the rider already
+  // dismissed the overlay or kicked off a manual retry.
+  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Lifted out of the countdown effect so the AppState handler can also
   // recompute the remaining time when the rider returns from background
   // — see the foreground hook below.
@@ -125,55 +149,120 @@ export default function CrashAlertOverlay({
   }, [phase]);
 
   // ── Auto-dispatch on countdown elapsed ──
-  const dispatch = useCallback(async () => {
-    // `inFlightRef` is the single guard against concurrent dispatches.
-    // Both the auto-dispatch effect (fires whenever phase=countdown and
-    // remaining<=0) and the manual RETRY button funnel through this
-    // function; the ref ensures only one POST is in flight at a time.
-    // Critically, the ref is NOT reset by callers — only the `finally`
-    // below clears it, so a double-tap on RETRY can't race past the
-    // guard.
-    if (inFlightRef.current) return;
-    if (!alert) {
-      // Defensive: no snapshot means we have nothing to send. Surface as
-      // a failure so the rider knows the alert didn't go out.
-      markFailed("No location captured for the alert.");
-      return;
-    }
-    // GPS may have had no fix when the spike landed (tunnel, indoor
-    // start, dead module). Don't fall back to `(0, 0)` — that's Null
-    // Island in the Atlantic and would dispatch a meaningless location
-    // to emergency contacts during a real crash. Better to fail loudly
-    // so the rider can fall back to a manual call. (Bugbot 5069fc01.)
-    if (alert.lat === null || alert.lng === null) {
-      markFailed("No GPS fix at the moment of impact.");
-      return;
-    }
-    inFlightRef.current = true;
-    // Flip into the dispatching phase BEFORE the network call so the
-    // cancel button is hidden for the rest of the request lifecycle.
-    // Without this gate the rider could tap "I'm OK" while the POST is
-    // already in flight — the backend may already have queued the alert
-    // and notified contacts, so flipping the local store to idle would
-    // contradict reality and trigger a "HELP IS ON THE WAY" screen on
-    // the resolve. (Bugbot 1032971c.)
-    beginDispatch();
-    try {
-      await api.sendCrashAlert(
-        alert.lat,
-        alert.lng,
-        alert.rideId ?? undefined,
-        alert.speedAtImpact ?? undefined,
-      );
-      markDispatched();
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Couldn't reach the server.";
-      markFailed(message);
-    } finally {
-      inFlightRef.current = false;
-    }
-  }, [alert, beginDispatch, markDispatched, markFailed]);
+  const dispatch = useCallback(
+    async (pollAttempt = 0) => {
+      // `inFlightRef` is the single guard against concurrent dispatches.
+      // Both the auto-dispatch effect (fires whenever phase=countdown and
+      // remaining<=0) and the manual RETRY button funnel through this
+      // function; the ref ensures only one POST is in flight at a time.
+      // Critically, the ref is NOT reset by callers — only the `finally`
+      // below clears it, so a double-tap on RETRY can't race past the
+      // guard.
+      if (inFlightRef.current) return;
+      // Read the alert directly from the store rather than the
+      // closure variable. The RETRY button rotates the alertId via
+      // `rotateIncidentId()` and immediately calls `dispatch()` —
+      // because React state updates are batched, the closure-captured
+      // `alert` would still hold the pre-rotation id at that point.
+      // Pulling from the store at call time guarantees we send the
+      // freshly-rotated id.
+      const alert = useCrashStore.getState().alert;
+      if (!alert) {
+        // Defensive: no snapshot means we have nothing to send. Surface as
+        // a failure so the rider knows the alert didn't go out. Treat as
+        // transient — a fresh incident would generate a new snapshot.
+        markFailed("No location captured for the alert.", "transient");
+        return;
+      }
+      // GPS may have had no fix when the spike landed (tunnel, indoor
+      // start, dead module). Don't fall back to `(0, 0)` — that's Null
+      // Island in the Atlantic and would dispatch a meaningless location
+      // to emergency contacts during a real crash. Better to fail loudly
+      // so the rider can fall back to a manual call. (Bugbot 5069fc01.)
+      if (alert.lat === null || alert.lng === null) {
+        markFailed("No GPS fix at the moment of impact.", "transient");
+        return;
+      }
+      // A new dispatch supersedes any pending in-flight-replay poll —
+      // the rider hit RETRY (or the auto-dispatch refired), so we don't
+      // want the old timer to also fire and double-call.
+      if (pollTimeoutRef.current !== null) {
+        clearTimeout(pollTimeoutRef.current);
+        pollTimeoutRef.current = null;
+      }
+      inFlightRef.current = true;
+      // Flip into the dispatching phase BEFORE the network call so the
+      // cancel button is hidden for the rest of the request lifecycle.
+      // Without this gate the rider could tap "I'm OK" while the POST is
+      // already in flight — the backend may already have queued the alert
+      // and notified contacts, so flipping the local store to idle would
+      // contradict reality and trigger a "HELP IS ON THE WAY" screen on
+      // the resolve. (Bugbot 1032971c.)
+      beginDispatch();
+      try {
+        // `alert.alertId` is a stable UUID generated once in
+        // `startCountdown`. Threading it on every attempt gives the
+        // backend a fixed idempotency key so a network retry replays
+        // the original outcome instead of re-notifying contacts.
+        const result = await api.sendCrashAlert(alert.lat, alert.lng, {
+          rideId: alert.rideId ?? undefined,
+          speedAtImpact: alert.speedAtImpact ?? undefined,
+          alertId: alert.alertId,
+        });
+        // Idempotent replay where the original POST is still running
+        // server-side. We don't know the eventual `contacts_notified`
+        // yet — keep the rider on the dispatching phase and re-poll
+        // shortly to read the real outcome instead of misclassifying
+        // this as a failure. Bounded to MAX_IN_FLIGHT_POLLS so a stuck
+        // backend doesn't loop forever.
+        if (result.dispatch_in_progress) {
+          if (pollAttempt < MAX_IN_FLIGHT_POLLS) {
+            pollTimeoutRef.current = setTimeout(() => {
+              pollTimeoutRef.current = null;
+              void dispatch(pollAttempt + 1);
+            }, IN_FLIGHT_POLL_MS);
+          } else {
+            // Transient: the original is still working server-side, so
+            // a manual RETRY should keep the same alertId to replay
+            // the eventual outcome (instead of dispatching twice).
+            markFailed(
+              "Original alert is still being sent. Please wait a moment, then tap RETRY.",
+              "transient",
+            );
+          }
+          return;
+        }
+        // Backend returns 200 even when nothing actually went out (every
+        // contact failed, notifier unconfigured, no contacts on file).
+        // Surface that as a failure so the rider doesn't see "HELP IS ON
+        // THE WAY" while the alert silently fizzled. This is a `completed`
+        // failure — the row is closed server-side under this alertId, so
+        // RETRY needs a fresh id to genuinely re-dispatch.
+        if (result.contacts_notified === 0) {
+          markFailed(
+            result.contacts.length === 0
+              ? "No emergency contacts on file."
+              : "Couldn't reach any of your emergency contacts.",
+            "completed",
+          );
+        } else {
+          markDispatched();
+        }
+      } catch (err) {
+        // Network / timeout / 5xx — request never reached completion
+        // server-side, so the original `alertId` was never (or only
+        // partially) recorded. Treat as transient so RETRY keeps the
+        // same id; if the backend ends up with the row anyway, the
+        // retry will replay it instead of double-notifying.
+        const message =
+          err instanceof Error ? err.message : "Couldn't reach the server.";
+        markFailed(message, "transient");
+      } finally {
+        inFlightRef.current = false;
+      }
+    },
+    [beginDispatch, markDispatched, markFailed],
+  );
 
   useEffect(() => {
     if (phase === "countdown" && remainingMs <= 0) {
@@ -199,6 +288,25 @@ export default function CrashAlertOverlay({
     });
     return () => sub.remove();
   }, [phase, countdownMs]);
+
+  // Cancel any pending in-flight-replay poll on unmount or when the
+  // phase moves out of dispatching/failed terminals — without this a
+  // stale timer could fire after the rider dismissed the overlay and
+  // resurrect a closed alert.
+  useEffect(() => {
+    if (phase !== "dispatching") {
+      if (pollTimeoutRef.current !== null) {
+        clearTimeout(pollTimeoutRef.current);
+        pollTimeoutRef.current = null;
+      }
+    }
+    return () => {
+      if (pollTimeoutRef.current !== null) {
+        clearTimeout(pollTimeoutRef.current);
+        pollTimeoutRef.current = null;
+      }
+    };
+  }, [phase]);
 
   if (!visible) return null;
 
@@ -268,12 +376,22 @@ export default function CrashAlertOverlay({
             <TouchableOpacity
               style={styles.cancelBtn}
               onPress={() => {
+                // Only rotate the incident id when the previous
+                // failure was a backend-completed permanent failure
+                // (every contact's send rejected, dispatch_completed_at
+                // set). For transient failures (network error, timeout,
+                // in-flight bound exhausted) the original `alertId` was
+                // either never recorded server-side or the original
+                // dispatch is still in flight — keep the id so the
+                // backend can replay deterministically and we don't
+                // double-notify. `dispatch()`'s own `inFlightRef`
+                // guard still dedupes a double-tap either way.
+                if (useCrashStore.getState().failureSource === "completed") {
+                  rotateIncidentId();
+                }
                 // Hop straight to dispatching so the failed UI hides
                 // immediately — re-running the 30-second countdown
                 // after an explicit retry tap would be worse UX.
-                // `dispatch()`'s own `inFlightRef` guard takes care of
-                // dedupe if the rider double-taps before the request
-                // resolves; we don't reset any flag here ourselves.
                 useCrashStore.setState({ phase: "dispatching" });
                 void dispatch();
               }}
