@@ -46,25 +46,33 @@ export class OsrmProvider implements RoutingProvider {
     options?: RoutingOptions,
   ): Promise<RouteAlternative[]> {
     const coords = `${originLng},${originLat};${destLng},${destLat}`;
-    const params = new URLSearchParams({
-      alternatives: String(maxAlternatives),
-      overview: 'full',
-      geometries: 'geojson',
-    });
     // OSRM's `driving` profile honours `exclude=motorway`. `toll`
     // exclusion is only available on profiles that have been compiled
     // with toll metadata — the public demo doesn't, but a custom
     // self-hosted OSRM can. We pass it through anyway: an upstream
     // that doesn't recognise the value still routes correctly (it's
     // not strictly invalid), and a self-hosted backend that does
-    // recognise it gets the avoidance the rider asked for. Multiple
-    // exclusions go in a single comma-separated parameter per the
-    // OSRM API spec.
+    // recognise it gets the avoidance the rider asked for.
+    //
+    // Build the query string manually rather than via URLSearchParams:
+    // the WHATWG URL spec percent-encodes commas, producing
+    // `exclude=motorway%2Ctoll` — OSRM's custom HTTP handler does not
+    // reliably decode `%2C` back to `,`, so the exclude parameter
+    // would be silently ignored. The values here are all known-safe
+    // (numbers and a fixed enum of OSRM exclusion classes), so direct
+    // concatenation is unambiguous.
+    const queryParts: string[] = [
+      `alternatives=${maxAlternatives}`,
+      `overview=full`,
+      `geometries=geojson`,
+    ];
     const exclude: string[] = [];
     if (options?.avoidHighways) exclude.push('motorway');
     if (options?.avoidTolls) exclude.push('toll');
-    if (exclude.length > 0) params.set('exclude', exclude.join(','));
-    const url = `${this.baseUrl}/route/v1/driving/${coords}?${params.toString()}`;
+    if (exclude.length > 0) {
+      queryParts.push(`exclude=${exclude.join(',')}`);
+    }
+    const url = `${this.baseUrl}/route/v1/driving/${coords}?${queryParts.join('&')}`;
 
     const response = await fetch(url);
     if (!response.ok) {
