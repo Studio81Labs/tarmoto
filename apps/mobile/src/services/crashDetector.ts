@@ -228,11 +228,18 @@ export class CrashDetector {
         const { armedAt, peak, speedAtImpact, rmsBuffer } = this.state;
         rmsBuffer.push(t, magnitude, this.immobilityDurationMs);
         if (magnitude >= this.peakThresholdMs2) {
-          // Aftershock spike — keep the peak record up to date but stay
-          // armed; the immobility counter resets implicitly because the
-          // RMS will exceed the still-threshold.
+          // Aftershock spike — keep the peak record up to date AND push
+          // `armedAt` forward to the aftershock timestamp so both the
+          // fire check and the re-arm deadline restart relative to the
+          // most recent spike. Without this push, an aftershock landing
+          // late inside the immobility window would still be in the
+          // rolling RMS buffer when the absolute re-arm check
+          // (`elapsed >= immobilityDurationMs * 2`) fires, flipping the
+          // detector back to idle before the buffer settles. (Bugbot
+          // 7c1723a8.)
           this.state = {
             ...this.state,
+            armedAt: t,
             peak: Math.max(peak, magnitude),
           };
           return null;

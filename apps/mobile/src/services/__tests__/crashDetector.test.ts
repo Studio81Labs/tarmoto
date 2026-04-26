@@ -260,6 +260,51 @@ describe("CrashDetector", () => {
     expect(captured!.speedAtImpactMps).toBeNull();
   });
 
+  it("still fires when an aftershock lands late in the immobility window", () => {
+    // Bugbot 7c1723a8: an aftershock spike that landed near
+    // `armedAt + immobilityDurationMs` previously left a high-magnitude
+    // sample in the rolling RMS buffer past the absolute re-arm
+    // deadline (`elapsed >= immobilityDurationMs * 2`), so the detector
+    // flipped back to idle before the buffer settled — silently
+    // missing a real crash with a late secondary impact (rider sliding
+    // into a barrier seconds after the initial fall, etc.). The fix
+    // pushes `armedAt` forward on every aftershock so both the fire
+    // check and the re-arm deadline restart relative to the latest
+    // spike.
+    const detector = new CrashDetector();
+    let captured: { triggeredAt: number; peakAcceleration: number } | null =
+      null;
+    detector.onCrash((event) => {
+      captured = event;
+    });
+
+    // Initial spike at t=0..200 (transitions to armed at t=100).
+    const firstSpike = feedMagnitude(
+      detector,
+      0,
+      200,
+      CRASH_DEFAULTS.peakG * GRAVITY,
+    );
+    expect(firstSpike.event).toBeNull();
+
+    // Quiet stretch up to t=4_800 (still inside the 5s window).
+    feedMagnitude(detector, firstSpike.lastT + SAMPLE_PERIOD_MS, 4_600, 0.05);
+
+    // Aftershock at t=4_820..5_020 — well past the original 100ms spike
+    // duration but inside the original 5s immobility window. Without
+    // the armedAt-reset, the high-magnitude sample at ~4_820 would
+    // still be in the buffer at t=10_100 when the absolute re-arm
+    // deadline fires.
+    feedMagnitude(detector, 4_820, 200, CRASH_DEFAULTS.peakG * GRAVITY);
+
+    // Then 6 more seconds of stillness. The detector should still fire
+    // — armedAt was pushed forward to ~4_820, so the fire check passes
+    // around t=10_000+ once the buffer purges the aftershock.
+    feedMagnitude(detector, 5_040, 6_500, 0.05);
+
+    expect(captured).not.toBeNull();
+  });
+
   it("reset() clears in-progress spike state", () => {
     const detector = new CrashDetector();
     feedMagnitude(detector, 0, 60, CRASH_DEFAULTS.peakG * GRAVITY);
