@@ -169,8 +169,9 @@ export default function CrashAlertOverlay({
       const alert = useCrashStore.getState().alert;
       if (!alert) {
         // Defensive: no snapshot means we have nothing to send. Surface as
-        // a failure so the rider knows the alert didn't go out.
-        markFailed("No location captured for the alert.");
+        // a failure so the rider knows the alert didn't go out. Treat as
+        // transient — a fresh incident would generate a new snapshot.
+        markFailed("No location captured for the alert.", "transient");
         return;
       }
       // GPS may have had no fix when the spike landed (tunnel, indoor
@@ -179,7 +180,7 @@ export default function CrashAlertOverlay({
       // to emergency contacts during a real crash. Better to fail loudly
       // so the rider can fall back to a manual call. (Bugbot 5069fc01.)
       if (alert.lat === null || alert.lng === null) {
-        markFailed("No GPS fix at the moment of impact.");
+        markFailed("No GPS fix at the moment of impact.", "transient");
         return;
       }
       // A new dispatch supersedes any pending in-flight-replay poll —
@@ -221,8 +222,12 @@ export default function CrashAlertOverlay({
               void dispatch(pollAttempt + 1);
             }, IN_FLIGHT_POLL_MS);
           } else {
+            // Transient: the original is still working server-side, so
+            // a manual RETRY should keep the same alertId to replay
+            // the eventual outcome (instead of dispatching twice).
             markFailed(
               "Original alert is still being sent. Please wait a moment, then tap RETRY.",
+              "transient",
             );
           }
           return;
@@ -230,20 +235,28 @@ export default function CrashAlertOverlay({
         // Backend returns 200 even when nothing actually went out (every
         // contact failed, notifier unconfigured, no contacts on file).
         // Surface that as a failure so the rider doesn't see "HELP IS ON
-        // THE WAY" while the alert silently fizzled.
+        // THE WAY" while the alert silently fizzled. This is a `completed`
+        // failure — the row is closed server-side under this alertId, so
+        // RETRY needs a fresh id to genuinely re-dispatch.
         if (result.contacts_notified === 0) {
           markFailed(
             result.contacts.length === 0
               ? "No emergency contacts on file."
               : "Couldn't reach any of your emergency contacts.",
+            "completed",
           );
         } else {
           markDispatched();
         }
       } catch (err) {
+        // Network / timeout / 5xx — request never reached completion
+        // server-side, so the original `alertId` was never (or only
+        // partially) recorded. Treat as transient so RETRY keeps the
+        // same id; if the backend ends up with the row anyway, the
+        // retry will replay it instead of double-notifying.
         const message =
           err instanceof Error ? err.message : "Couldn't reach the server.";
-        markFailed(message);
+        markFailed(message, "transient");
       } finally {
         inFlightRef.current = false;
       }
@@ -364,19 +377,19 @@ export default function CrashAlertOverlay({
               style={styles.cancelBtn}
               onPress={() => {
                 // Rotate the incident id so the backend treats this
-                // tap as a fresh dispatch instead of replaying the
-                // recorded failure under the previous `alertId`. A
-                // permanent failure (every contact's send rejected)
-                // is recorded with `dispatch_completed_at != null`,
-                // so reusing the same id would short-circuit to the
-                // same failed response and the rider could never
-                // genuinely retry. Rotating accepts a small risk of
-                // double-notification if a stuck-in-flight original
-                // eventually succeeds — acceptable trade-off in a
-                // safety flow where the rider's intent is clearly
-                // "make sure the alert goes out". `dispatch()`'s own
-                // `inFlightRef` guard still dedupes a double-tap.
-                rotateIncidentId();
+                // Only rotate the incident id when the previous
+                // failure was a backend-completed permanent failure
+                // (every contact's send rejected, dispatch_completed_at
+                // set). For transient failures (network error, timeout,
+                // in-flight bound exhausted) the original `alertId` was
+                // either never recorded server-side or the original
+                // dispatch is still in flight — keep the id so the
+                // backend can replay deterministically and we don't
+                // double-notify. `dispatch()`'s own `inFlightRef`
+                // guard still dedupes a double-tap either way.
+                if (useCrashStore.getState().failureSource === "completed") {
+                  rotateIncidentId();
+                }
                 // Hop straight to dispatching so the failed UI hides
                 // immediately — re-running the 30-second countdown
                 // after an explicit retry tap would be worse UX.

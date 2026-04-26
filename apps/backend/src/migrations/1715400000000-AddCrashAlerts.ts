@@ -28,6 +28,17 @@ export class AddCrashAlerts1715400000000 implements MigrationInterface {
         contacts_total INTEGER NOT NULL DEFAULT 0,
         contact_results JSONB NOT NULL DEFAULT '[]'::jsonb,
         dispatch_completed_at TIMESTAMPTZ,
+        -- Optimistic-lock token for the stale-reclaim path. Bumped on
+        -- every reclaim so concurrent reclaimers race for exactly one
+        -- winner via 'WHERE claim_version = previous'. Keeps
+        -- 'created_at' stable so the audit row reflects the actual
+        -- incident timestamp (not the latest reclaim).
+        claim_version INTEGER NOT NULL DEFAULT 0,
+        -- Append-only history of prior claim attempts: timestamp the
+        -- claim was reclaimed plus the contact_results captured at
+        -- that point. Lets ops trace partial dispatches that landed
+        -- before a process kill, instead of overwriting them in place.
+        previous_attempts JSONB NOT NULL DEFAULT '[]'::jsonb,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
     `);

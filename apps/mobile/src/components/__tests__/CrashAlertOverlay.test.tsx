@@ -133,15 +133,12 @@ describe("CrashAlertOverlay", () => {
     expect(useCrashStore.getState().phase).toBe("dispatched");
   });
 
-  it("rotates the alertId on RETRY so a permanent backend failure can be re-attempted", async () => {
-    // The previous design reused the same alertId on RETRY; the
-    // backend then replayed the recorded failure under that key
-    // instead of actually re-dispatching, so the rider couldn't
-    // recover from a "every contact send rejected" outcome. The
-    // overlay now rotates the id on every manual retry — the trade
-    // is a small risk of double-notification if a stuck-in-flight
-    // original eventually succeeds, which is acceptable in a safety
-    // flow where the rider's intent is clearly "make sure it goes."
+  it("keeps the same alertId on RETRY after a transient failure so the backend can replay", async () => {
+    // Network errors / 5xx are transient: the original POST may have
+    // landed and recorded the alert (or not), but EITHER WAY rotating
+    // the id risks a double-dispatch — the backend's idempotency
+    // replay can only deduplicate when the same key comes back. So
+    // for transient failures the overlay must keep the id.
     mockedApi.sendCrashAlert.mockRejectedValueOnce(new Error("network down"));
     mockedApi.sendCrashAlert.mockResolvedValueOnce(mockCrashAlertResponse);
 
@@ -153,6 +150,7 @@ describe("CrashAlertOverlay", () => {
       jest.advanceTimersByTime(1_500);
     });
     await waitFor(() => expect(useCrashStore.getState().phase).toBe("failed"));
+    expect(useCrashStore.getState().failureSource).toBe("transient");
 
     fireEvent.press(screen.getByLabelText(/retry crash alert/i));
     await waitFor(() =>
@@ -162,8 +160,7 @@ describe("CrashAlertOverlay", () => {
     const firstAttemptOpts = mockedApi.sendCrashAlert.mock.calls[0][2];
     const retryOpts = mockedApi.sendCrashAlert.mock.calls[1][2];
     expect(firstAttemptOpts?.alertId).toBeDefined();
-    expect(retryOpts?.alertId).toBeDefined();
-    expect(retryOpts?.alertId).not.toBe(firstAttemptOpts?.alertId);
+    expect(retryOpts?.alertId).toBe(firstAttemptOpts?.alertId);
   });
 
   it("keeps the same alertId across in-flight replay polls so the backend resolves a single dispatch", async () => {

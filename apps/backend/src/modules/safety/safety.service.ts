@@ -97,7 +97,7 @@ export class SafetyService {
       contactsTotal: contacts.length,
     });
     if (claim.replay) return claim.replay;
-    const claimedAt = claim.claimedAt;
+    const claimVersion = claim.claimVersion;
 
     const mapsLink = `https://maps.google.com/?q=${dto.lat},${dto.lng}`;
     const timestamp = new Date().toISOString();
@@ -134,10 +134,10 @@ export class SafetyService {
     ).length;
     const flatResults: CrashAlertContactResult[] = dispatchResults.flat();
 
-    // Close the row. The WHERE clause gates on `created_at = claimedAt`
-    // so a stale call whose claim was already reclaimed by a newer
-    // retry can't clobber the reclaimer's row — `affected === 0` means
-    // our claim was superseded.
+    // Close the row. The WHERE clause gates on `claim_version =
+    // claimVersion` so a stale call whose claim was already reclaimed
+    // by a newer retry can't clobber the reclaimer's row —
+    // `affected === 0` means our claim was superseded.
     //
     // Failures here are intentionally NOT swallowed: if we can't
     // persist completion, the audit row stays in-flight indefinitely
@@ -150,7 +150,7 @@ export class SafetyService {
       {
         id: alertId,
         user_id: userId,
-        created_at: claimedAt,
+        claim_version: claimVersion,
         dispatch_completed_at: IsNull(),
       },
       {
@@ -231,13 +231,9 @@ export class SafetyService {
       contactsTotal: number;
     },
   ): Promise<
-    | { replay: CrashAlertResponseDto; claimedAt?: undefined }
-    | { replay: null; claimedAt: Date }
+    | { replay: CrashAlertResponseDto; claimVersion?: undefined }
+    | { replay: null; claimVersion: number }
   > {
-    // Set created_at explicitly so the dispatch path knows the exact
-    // value to use as the claim token. Defaulting to DB `NOW()` would
-    // require a follow-up SELECT to learn it.
-    const claimedAt = new Date();
     try {
       await this.alertRepo.insert({
         id: alertId,
@@ -252,9 +248,10 @@ export class SafetyService {
         contacts_total: fields.contactsTotal,
         contact_results: [],
         dispatch_completed_at: null,
-        created_at: claimedAt,
+        claim_version: 0,
+        previous_attempts: [],
       });
-      return { replay: null, claimedAt };
+      return { replay: null, claimVersion: 0 };
     } catch (err) {
       if (!this.isUniqueViolation(err)) throw err;
     }
@@ -293,17 +290,29 @@ export class SafetyService {
     }
 
     // Stale placeholder: the original request died after the insert
-    // but before the completion update. Reclaim atomically — the
-    // WHERE clause includes `created_at = existing.created_at` so
-    // two parallel reclaimers can't both win the race. The SET
-    // includes a fresh `created_at` so a third concurrent retry
-    // doesn't see THIS reclaim as also stale.
+    // but before the completion update. Reclaim atomically using
+    // `claim_version` as the optimistic-lock token — two parallel
+    // reclaimers race for exactly one `affected: 1` via
+    // `WHERE claim_version = previous`. The new claim bumps the
+    // version so a third concurrent retry sees THIS reclaim's claim
+    // as already taken.
+    //
+    // `created_at` is intentionally NOT touched — it stays anchored
+    // to the original incident timestamp for audit accuracy. Any
+    // partial `contact_results` recorded by the abandoned claim are
+    // moved into `previous_attempts` instead of being overwritten,
+    // so triage can find SMS that landed before the process died.
+    const nextClaimVersion = existing.claim_version + 1;
+    const archivedAttempt = {
+      reclaimed_at: new Date().toISOString(),
+      contact_results: existing.contact_results,
+    };
     const reclaimResult = await this.alertRepo.update(
       {
         id: alertId,
         user_id: userId,
         dispatch_completed_at: IsNull(),
-        created_at: existing.created_at,
+        claim_version: existing.claim_version,
       },
       {
         ride_id: fields.rideId,
@@ -315,7 +324,8 @@ export class SafetyService {
         contacts_notified: 0,
         contacts_total: fields.contactsTotal,
         contact_results: [],
-        created_at: claimedAt,
+        claim_version: nextClaimVersion,
+        previous_attempts: [...existing.previous_attempts, archivedAttempt],
       },
     );
 
@@ -353,9 +363,10 @@ export class SafetyService {
 
     this.logger.warn(
       `crash-alert reclaimed stale placeholder id=${alertId} ` +
-        `age=${Math.round(ageMs / 1000)}s — original dispatch never completed`,
+        `age=${Math.round(ageMs / 1000)}s claim_version=${nextClaimVersion} — ` +
+        'original dispatch never completed; prior contact_results archived',
     );
-    return { replay: null, claimedAt };
+    return { replay: null, claimVersion: nextClaimVersion };
   }
 
   /**

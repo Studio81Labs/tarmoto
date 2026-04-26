@@ -51,12 +51,16 @@ describe('SafetyService', () => {
           ).driverError = { code: '23505' };
           throw err;
         }
-        // Honor an explicit created_at if the service set one (used as
-        // the optimistic-lock token in the reclaim path), otherwise
-        // stamp now() so stale-row detection has something to reason
-        // about.
+        // The service no longer sets created_at explicitly — the DB
+        // default fills it. Honor an explicit value if a test seeded
+        // one, else stamp now().
         const created_at = entity.created_at ?? new Date();
-        alertStore.set(entity.id, { ...entity, created_at });
+        alertStore.set(entity.id, {
+          ...entity,
+          created_at,
+          claim_version: entity.claim_version ?? 0,
+          previous_attempts: entity.previous_attempts ?? [],
+        });
         return { identifiers: [{ id: entity.id }], generatedMaps: [], raw: [] };
       }),
       update: jest.fn(
@@ -64,7 +68,7 @@ describe('SafetyService', () => {
           criteria: {
             id: string;
             user_id?: string;
-            created_at?: Date;
+            claim_version?: number;
             dispatch_completed_at?: unknown;
           },
           patch: Partial<CrashAlert>,
@@ -74,12 +78,12 @@ describe('SafetyService', () => {
           if (criteria.user_id && existing.user_id !== criteria.user_id) {
             return { affected: 0, raw: [], generatedMaps: [] };
           }
-          // Optimistic-lock: caller passes the exact `created_at` it
-          // expects to find. Mismatch means another writer reclaimed
-          // the row first.
+          // Optimistic-lock on claim_version: caller passes the exact
+          // value it expects to find. Mismatch means another writer
+          // already reclaimed (and bumped) the row.
           if (
-            criteria.created_at !== undefined &&
-            existing.created_at?.getTime() !== criteria.created_at.getTime()
+            criteria.claim_version !== undefined &&
+            existing.claim_version !== criteria.claim_version
           ) {
             return { affected: 0, raw: [], generatedMaps: [] };
           }
@@ -480,6 +484,64 @@ describe('SafetyService', () => {
       expect(finalRow.contacts_notified).toBe(2);
     });
 
+    it('archives the abandoned attempt into previous_attempts on stale reclaim', async () => {
+      // The audit table is documented as append-only — when the
+      // stale-reclaim path takes over a placeholder, any partial
+      // contact_results recorded by the abandoned claim must be
+      // preserved (in `previous_attempts`) instead of overwritten.
+      // `created_at` must also stay anchored to the original incident.
+      const sharedId = '00000000-0000-4000-8000-0000000000aa';
+      const originalCreatedAt = new Date(Date.now() - 10 * 60 * 1000);
+      const partialResult = {
+        contact_id: 'c-1',
+        name: 'Jane',
+        phone: '+420111',
+        channel: 'sms' as const,
+        status: 'sent' as const,
+        provider_message_id: 'SM-partial',
+        error: null,
+      };
+      alertStore.set(sharedId, {
+        id: sharedId,
+        user_id: 'user-1',
+        ride_id: null,
+        lat: 0,
+        lng: 0,
+        speed_at_impact: null,
+        severity: 'medium',
+        locale: 'en',
+        contacts_notified: 1,
+        contacts_total: 2,
+        contact_results: [partialResult],
+        dispatch_completed_at: null,
+        claim_version: 0,
+        previous_attempts: [],
+        created_at: originalCreatedAt,
+      } as CrashAlert);
+
+      notifier.send.mockResolvedValue({
+        channel: 'sms',
+        provider_message_id: 'SM-recovered',
+      });
+      await service.sendCrashAlert('user-1', {
+        lat: 49.1,
+        lng: 16.75,
+        alert_id: sharedId,
+      });
+
+      const finalRow = alertStore.get(sharedId)!;
+      // created_at preserved (audit row reflects the actual incident).
+      expect(finalRow.created_at.getTime()).toBe(originalCreatedAt.getTime());
+      // claim_version bumped so the new claim wins the lock.
+      expect(finalRow.claim_version).toBe(1);
+      // Abandoned attempt's contact_results captured for triage.
+      expect(finalRow.previous_attempts).toHaveLength(1);
+      expect(finalRow.previous_attempts[0].contact_results).toEqual([
+        partialResult,
+      ]);
+      expect(typeof finalRow.previous_attempts[0].reclaimed_at).toBe('string');
+    });
+
     it('serializes concurrent stale-row reclaims so SMS only goes out once', async () => {
       const sharedId = '00000000-0000-4000-8000-0000000000c0';
 
@@ -498,6 +560,8 @@ describe('SafetyService', () => {
         contacts_total: 0,
         contact_results: [],
         dispatch_completed_at: null,
+        claim_version: 0,
+        previous_attempts: [],
         created_at: new Date(Date.now() - 10 * 60 * 1000),
       } as CrashAlert);
 
@@ -542,7 +606,7 @@ describe('SafetyService', () => {
       const sharedId = '00000000-0000-4000-8000-0000000000c1';
 
       // Seed a stale-looking row with completed=null. The mock's
-      // optimistic-lock predicate (`created_at: existing.created_at`)
+      // optimistic-lock predicate (`claim_version: existing.claim_version`)
       // will flip it under us mid-call by the time the reclaim
       // UPDATE is attempted, so reclaimResult.affected=0.
       const originalCreatedAt = new Date(Date.now() - 10 * 60 * 1000);
@@ -569,6 +633,8 @@ describe('SafetyService', () => {
           },
         ],
         dispatch_completed_at: null,
+        claim_version: 0,
+        previous_attempts: [],
         created_at: originalCreatedAt,
       } as CrashAlert);
 
@@ -585,7 +651,7 @@ describe('SafetyService', () => {
             alertStore.set(sharedId, {
               ...existing,
               dispatch_completed_at: new Date(),
-              created_at: new Date(), // moves out of the optimistic-lock window
+              claim_version: existing.claim_version + 1, // bump out of the lock window
             });
           }
           return { affected: 0, raw: [], generatedMaps: [] };

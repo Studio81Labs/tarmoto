@@ -31,6 +31,20 @@ export interface CrashAlertContactResult {
 }
 
 /**
+ * Snapshot of a prior claim, stored in `previous_attempts` when the
+ * stale-reclaim path takes over a placeholder. Preserves what the
+ * original dispatch managed to record before it was abandoned, so
+ * incident triage can see partial dispatches that landed before the
+ * process was killed.
+ */
+export interface CrashAlertPreviousAttempt {
+  /** When this prior claim was reclaimed (i.e. the start of a NEW attempt). */
+  reclaimed_at: string;
+  /** Per-contact results captured by the abandoned claim. */
+  contact_results: CrashAlertContactResult[];
+}
+
+/**
  * Append-only crash alert audit row. Doubles as the idempotency key
  * store: dispatch is keyed off `id`, so a duplicate POST with the same
  * `alert_id` short-circuits to the previously recorded outcome instead
@@ -82,6 +96,31 @@ export class CrashAlert {
   @Column({ type: 'timestamptz', nullable: true })
   dispatch_completed_at!: Date | null;
 
+  /**
+   * Optimistic-lock token bumped on every successful stale-reclaim.
+   * The dispatch path threads the value it observed at claim time
+   * through to the completion update so a stale call whose claim was
+   * reclaimed by a newer retry can't clobber the reclaimer's row.
+   * Two parallel reclaimers race for exactly one `affected: 1` via a
+   * `WHERE claim_version = previous` predicate.
+   */
+  @Column({ type: 'integer', default: 0 })
+  claim_version!: number;
+
+  /**
+   * Append-only history of prior claims that were superseded by the
+   * stale-reclaim path. Each entry captures what the abandoned claim
+   * managed to record before it was taken over, so triage can find
+   * partial dispatches that landed before the original process died.
+   */
+  @Column({ type: 'jsonb', default: () => "'[]'::jsonb" })
+  previous_attempts!: CrashAlertPreviousAttempt[];
+
+  /**
+   * The original incident timestamp. Set on first insert and never
+   * mutated by reclaim — `claim_version` is the lock token, not this
+   * column. Sorting indices and audit displays use it.
+   */
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
 
