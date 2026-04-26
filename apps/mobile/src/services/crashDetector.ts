@@ -67,7 +67,7 @@ export interface CrashEvent {
    * window has elapsed and the rider's speed has already dropped to ~0.
    * `null` when the reading didn't carry a speed (no GPS fix at impact).
    */
-  speedAtImpactMs: number | null;
+  speedAtImpactMps: number | null;
 }
 
 type State =
@@ -245,7 +245,7 @@ export class CrashDetector {
           const event: CrashEvent = {
             triggeredAt: t,
             peakAcceleration: peak,
-            speedAtImpactMs: speedAtImpact,
+            speedAtImpactMps: speedAtImpact,
           };
           this.state = { kind: "idle" };
           this.lastFireAt = t;
