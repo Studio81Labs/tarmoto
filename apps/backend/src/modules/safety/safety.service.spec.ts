@@ -61,7 +61,6 @@ describe('SafetyService', () => {
           created_at,
           claimed_at,
           claim_version: entity.claim_version ?? 0,
-          previous_attempts: entity.previous_attempts ?? [],
         });
         return { identifiers: [{ id: entity.id }], generatedMaps: [], raw: [] };
       }),
@@ -515,12 +514,6 @@ describe('SafetyService', () => {
         dispatch_completed_at: null,
         claim_version: 1, // already reclaimed once
         claimed_at: new Date(now - 30 * 1000), // 30 s ago — well within the 5-min window
-        previous_attempts: [
-          {
-            reclaimed_at: new Date(now - 30 * 1000).toISOString(),
-            contact_results: [],
-          },
-        ],
         created_at: new Date(now - 10 * 60 * 1000), // 10 min ago — stale by created_at!
       } as CrashAlert);
 
@@ -538,23 +531,13 @@ describe('SafetyService', () => {
       expect(alertStore.get(sharedId)?.claim_version).toBe(1);
     });
 
-    it('archives the abandoned attempt into previous_attempts on stale reclaim', async () => {
-      // The audit table is documented as append-only — when the
-      // stale-reclaim path takes over a placeholder, any partial
-      // contact_results recorded by the abandoned claim must be
-      // preserved (in `previous_attempts`) instead of overwritten.
-      // `created_at` must also stay anchored to the original incident.
+    it('preserves created_at and bumps claim_version on stale reclaim', async () => {
+      // `created_at` must stay anchored to the original incident — it
+      // identifies WHEN the rider crashed, not when the latest reclaim
+      // happened. `claim_version` is the optimistic-lock token that
+      // gets bumped instead.
       const sharedId = '00000000-0000-4000-8000-0000000000aa';
       const originalCreatedAt = new Date(Date.now() - 10 * 60 * 1000);
-      const partialResult = {
-        contact_id: 'c-1',
-        name: 'Jane',
-        phone: '+420111',
-        channel: 'sms' as const,
-        status: 'sent' as const,
-        provider_message_id: 'SM-partial',
-        error: null,
-      };
       alertStore.set(sharedId, {
         id: sharedId,
         user_id: 'user-1',
@@ -564,15 +547,12 @@ describe('SafetyService', () => {
         speed_at_impact: null,
         severity: 'medium',
         locale: 'en',
-        contacts_notified: 1,
+        contacts_notified: 0,
         contacts_total: 2,
-        contact_results: [partialResult],
+        contact_results: [],
         dispatch_completed_at: null,
         claim_version: 0,
-        // Stale-detection reads `claimed_at`; aging it is what
-        // triggers the reclaim path. `created_at` stays anchored.
         claimed_at: originalCreatedAt,
-        previous_attempts: [],
         created_at: originalCreatedAt,
       } as CrashAlert);
 
@@ -589,14 +569,12 @@ describe('SafetyService', () => {
       const finalRow = alertStore.get(sharedId)!;
       // created_at preserved (audit row reflects the actual incident).
       expect(finalRow.created_at.getTime()).toBe(originalCreatedAt.getTime());
-      // claim_version bumped so the new claim wins the lock.
+      // claim_version bumped so the new claim wins the optimistic lock.
       expect(finalRow.claim_version).toBe(1);
-      // Abandoned attempt's contact_results captured for triage.
-      expect(finalRow.previous_attempts).toHaveLength(1);
-      expect(finalRow.previous_attempts[0].contact_results).toEqual([
-        partialResult,
-      ]);
-      expect(typeof finalRow.previous_attempts[0].reclaimed_at).toBe('string');
+      // claimed_at refreshed so the new claim's grace window starts now.
+      expect(finalRow.claimed_at.getTime()).toBeGreaterThan(
+        originalCreatedAt.getTime(),
+      );
     });
 
     it('serializes concurrent stale-row reclaims so SMS only goes out once', async () => {
@@ -619,7 +597,6 @@ describe('SafetyService', () => {
         dispatch_completed_at: null,
         claim_version: 0,
         claimed_at: new Date(Date.now() - 10 * 60 * 1000),
-        previous_attempts: [],
         created_at: new Date(Date.now() - 10 * 60 * 1000),
       } as CrashAlert);
 
@@ -693,7 +670,6 @@ describe('SafetyService', () => {
         dispatch_completed_at: null,
         claim_version: 0,
         claimed_at: originalCreatedAt,
-        previous_attempts: [],
         created_at: originalCreatedAt,
       } as CrashAlert);
 
@@ -731,6 +707,33 @@ describe('SafetyService', () => {
       expect(result.contacts_notified).toBe(1);
       expect(result.contacts).toHaveLength(1);
       expect(result.contacts[0].provider_message_id).toBe('SM-original');
+    });
+
+    it('throws Conflict and skips the websocket emit when our claim is reclaimed mid-dispatch', async () => {
+      // The completion UPDATE returns affected=0 when a stale-reclaim
+      // bumped claim_version under us while we were sending SMS. Both
+      // we and the reclaimer dispatched to the same contacts (real
+      // duplicate notifications), so the audit row now belongs to the
+      // reclaimer and our outcome is no longer the canonical record.
+      // Returning success would lie to the rider's app — surface the
+      // inconsistency as a 409 instead so the next retry replays the
+      // reclaimer's outcome.
+      eventsGateway.emitToUser.mockClear();
+      // Mock the completion update to return affected=0 (lost the race).
+      alertRepo.update!.mockResolvedValueOnce({
+        affected: 0,
+        raw: [],
+        generatedMaps: [],
+      });
+
+      await expect(
+        service.sendCrashAlert('user-1', { lat: 49.1, lng: 16.75 }),
+      ).rejects.toMatchObject({ status: 409 });
+
+      // Notifier ran (real SMS may have gone out under our claim) but
+      // the websocket event MUST NOT fire — the audit row isn't ours.
+      expect(notifier.send).toHaveBeenCalled();
+      expect(eventsGateway.emitToUser).not.toHaveBeenCalled();
     });
 
     it('propagates a completion-update failure instead of silently leaving the row in-flight', async () => {

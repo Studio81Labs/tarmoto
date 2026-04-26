@@ -41,11 +41,6 @@ export class AddCrashAlerts1715400000000 implements MigrationInterface {
         -- 'created_at + STALE_DISPATCH_MS' would re-reclaim an
         -- already-active newer claim and fan out duplicate SMS.
         claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        -- Append-only history of prior claim attempts: timestamp the
-        -- claim was reclaimed plus the contact_results captured at
-        -- that point. Lets ops trace partial dispatches that landed
-        -- before a process kill, instead of overwriting them in place.
-        previous_attempts JSONB NOT NULL DEFAULT '[]'::jsonb,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
     `);

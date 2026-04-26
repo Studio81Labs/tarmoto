@@ -160,9 +160,24 @@ export class SafetyService {
       },
     );
     if (result.affected === 0) {
-      this.logger.warn(
-        `crash-alert ${alertId} completion skipped — claim was ` +
-          'reclaimed by a newer retry while dispatch was running',
+      // Our claim was superseded by a stale-reclaim while we were
+      // mid-dispatch. The reclaimer is also dispatching to the same
+      // contacts, so contacts may already have been (or will shortly
+      // be) double-notified. We must not return success or emit a
+      // websocket event under our caller's identity — the audit row
+      // belongs to the reclaimer now and this caller's outcome is
+      // not the canonical record.
+      //
+      // Conflict surfaces the inconsistency to the rider's app loudly.
+      // The next retry with the same alert_id will hit the idempotent
+      // replay path and read the reclaimer's eventual outcome.
+      this.logger.error(
+        `crash-alert ${alertId} completion lost — claim was reclaimed ` +
+          'by a newer retry mid-dispatch; SMS may have been sent twice',
+      );
+      throw new ConflictException(
+        'crash-alert claim was reclaimed by a parallel attempt; ' +
+          'the original audit row is owned by the reclaimer',
       );
     }
 
@@ -250,7 +265,6 @@ export class SafetyService {
         dispatch_completed_at: null,
         claim_version: 0,
         claimed_at: new Date(),
-        previous_attempts: [],
       });
       return { replay: null, claimVersion: 0 };
     } catch (err) {
@@ -305,15 +319,13 @@ export class SafetyService {
     // as already taken.
     //
     // `created_at` is intentionally NOT touched — it stays anchored
-    // to the original incident timestamp for audit accuracy. Any
-    // partial `contact_results` recorded by the abandoned claim are
-    // moved into `previous_attempts` instead of being overwritten,
-    // so triage can find SMS that landed before the process died.
+    // to the original incident timestamp for audit accuracy. The
+    // abandoned claim's `contact_results` would always be empty here
+    // (the original would have written it as part of its completion
+    // update, which by definition didn't run if the row is stale), so
+    // there's no useful partial state to archive — just bump the
+    // version and reset.
     const nextClaimVersion = existing.claim_version + 1;
-    const archivedAttempt = {
-      reclaimed_at: new Date().toISOString(),
-      contact_results: existing.contact_results,
-    };
     const reclaimResult = await this.alertRepo.update(
       {
         id: alertId,
@@ -333,7 +345,6 @@ export class SafetyService {
         contact_results: [],
         claim_version: nextClaimVersion,
         claimed_at: new Date(),
-        previous_attempts: [...existing.previous_attempts, archivedAttempt],
       },
     );
 

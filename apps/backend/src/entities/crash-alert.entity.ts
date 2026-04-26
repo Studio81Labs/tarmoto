@@ -31,20 +31,6 @@ export interface CrashAlertContactResult {
 }
 
 /**
- * Snapshot of a prior claim, stored in `previous_attempts` when the
- * stale-reclaim path takes over a placeholder. Preserves what the
- * original dispatch managed to record before it was abandoned, so
- * incident triage can see partial dispatches that landed before the
- * process was killed.
- */
-export interface CrashAlertPreviousAttempt {
-  /** When this prior claim was reclaimed (i.e. the start of a NEW attempt). */
-  reclaimed_at: string;
-  /** Per-contact results captured by the abandoned claim. */
-  contact_results: CrashAlertContactResult[];
-}
-
-/**
  * Append-only crash alert audit row. Doubles as the idempotency key
  * store: dispatch is keyed off `id`, so a duplicate POST with the same
  * `alert_id` short-circuits to the previously recorded outcome instead
@@ -117,15 +103,6 @@ export class CrashAlert {
    */
   @Column({ type: 'timestamptz' })
   claimed_at!: Date;
-
-  /**
-   * Append-only history of prior claims that were superseded by the
-   * stale-reclaim path. Each entry captures what the abandoned claim
-   * managed to record before it was taken over, so triage can find
-   * partial dispatches that landed before the original process died.
-   */
-  @Column({ type: 'jsonb', default: () => "'[]'::jsonb" })
-  previous_attempts!: CrashAlertPreviousAttempt[];
 
   /**
    * The original incident timestamp. Set on first insert and never
