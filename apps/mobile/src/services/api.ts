@@ -34,6 +34,8 @@ import type {
   AlongRoutePoiList,
   PoiKind,
   PoiList,
+  EmergencyContact,
+  EmergencyContactInput,
 } from "@/types";
 import {
   drainOfflineQueue,
@@ -155,6 +157,37 @@ class ApiService {
   async updateProfile(updates: Partial<User>): Promise<User> {
     const { data } = await this.client.patch<User>("/users/me", updates);
     return data;
+  }
+
+  // ── Emergency Contacts (US-12) ──
+
+  async listContacts(): Promise<EmergencyContact[]> {
+    const { data } =
+      await this.client.get<EmergencyContact[]>("/users/me/contacts");
+    return data;
+  }
+
+  async addContact(input: EmergencyContactInput): Promise<EmergencyContact> {
+    const { data } = await this.client.post<EmergencyContact>(
+      "/users/me/contacts",
+      input,
+    );
+    return data;
+  }
+
+  async updateContact(
+    contactId: string,
+    input: Partial<EmergencyContactInput>,
+  ): Promise<EmergencyContact> {
+    const { data } = await this.client.patch<EmergencyContact>(
+      `/users/me/contacts/${contactId}`,
+      input,
+    );
+    return data;
+  }
+
+  async deleteContact(contactId: string): Promise<void> {
+    await this.client.delete(`/users/me/contacts/${contactId}`);
   }
 
   // ── Rides ──

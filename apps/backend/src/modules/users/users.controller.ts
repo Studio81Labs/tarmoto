@@ -29,6 +29,7 @@ import { AuthGuard } from '../auth/auth.guard.js';
 import { UsersService } from './users.service.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { CreateContactDto } from './dto/create-contact.dto.js';
+import { UpdateContactDto } from './dto/update-contact.dto.js';
 import {
   UserResponseDto,
   ContactResponseDto,
@@ -107,6 +108,18 @@ export class UsersController {
     @Body() dto: CreateContactDto,
   ): Promise<ContactResponseDto> {
     return this.usersService.addContact(req.user!.userId, dto);
+  }
+
+  @Patch('me/contacts/:contactId')
+  @ApiOperation({ summary: 'Update emergency contact' })
+  @ApiResponse({ status: 200, type: ContactResponseDto })
+  @ApiResponse({ status: 404, description: 'Contact not found' })
+  async updateContact(
+    @Req() req: express.Request,
+    @Param('contactId', ParseUUIDPipe) contactId: string,
+    @Body() dto: UpdateContactDto,
+  ): Promise<ContactResponseDto> {
+    return this.usersService.updateContact(req.user!.userId, contactId, dto);
   }
 
   @Delete('me/contacts/:contactId')

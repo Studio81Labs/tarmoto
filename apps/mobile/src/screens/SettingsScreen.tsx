@@ -1,8 +1,9 @@
-import React from "react";
+import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -20,8 +21,9 @@ import {
 } from "@/theme";
 import QualityThresholdSlider from "@/components/QualityThresholdSlider";
 import FuelRangePicker from "@/components/FuelRangePicker";
-import { usePreferencesStore, useOfflineStore } from "@/stores";
+import { useAuthStore, useOfflineStore, usePreferencesStore } from "@/stores";
 import { usePendingUploads } from "@/hooks";
+import { api } from "@/services/api";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 
 type SettingsNav = NativeStackNavigationProp<ProfileStackParamList, "Settings">;
@@ -66,10 +68,103 @@ export default function SettingsScreen() {
         />
       </View>
 
+      <SafetyCard />
+
       <OfflineRegionsCard />
 
       <PendingUploadsCard />
     </ScrollView>
+  );
+}
+
+// US-12 AC #5: surface the crash-detection toggle and a CTA into the
+// emergency-contacts screen. Toggle persists via PATCH /users/me so the
+// rider's preference is durable across devices.
+function SafetyCard() {
+  const navigation = useNavigation<SettingsNav>();
+  const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Default to false when the user hasn't been hydrated yet — the toggle
+  // is disabled in that case so we never PATCH a pref against a missing
+  // user.
+  const enabled = user?.preferences?.crash_detection ?? false;
+
+  const handleToggle = useCallback(
+    async (next: boolean) => {
+      if (!user) return;
+      setPending(true);
+      setError(null);
+      try {
+        const updated = await api.updateProfile({
+          preferences: { ...user.preferences, crash_detection: next },
+        });
+        setUser(updated);
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Couldn't update preference.",
+        );
+      } finally {
+        setPending(false);
+      }
+    },
+    [user, setUser],
+  );
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.uploadsHeader}>
+        <Icon
+          name="shield-alert-outline"
+          size={22}
+          color={enabled ? colors.primary : colors.textPrimary}
+        />
+        <Text style={styles.sectionTitle}>Safety</Text>
+      </View>
+
+      <View style={styles.toggleRow}>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={styles.toggleLabel}>Crash detection</Text>
+          <Text style={styles.sectionBody}>
+            Tarmoto will fire a 30-second countdown if it detects a hard impact
+            and call your emergency contacts if you don't cancel.
+          </Text>
+        </View>
+        <Switch
+          value={enabled}
+          onValueChange={(v) => void handleToggle(v)}
+          disabled={pending || !user}
+          accessibilityLabel="Enable crash detection"
+        />
+      </View>
+
+      {pending ? (
+        <ActivityIndicator color={colors.primary} size="small" />
+      ) : null}
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+      <TouchableOpacity
+        style={styles.linkRow}
+        onPress={() => navigation.navigate("EmergencyContacts")}
+        accessibilityRole="button"
+        accessibilityLabel="Manage emergency contacts"
+      >
+        <Icon
+          name="account-multiple-outline"
+          size={20}
+          color={colors.primary}
+        />
+        <Text style={styles.linkLabel}>Emergency contacts</Text>
+        <Icon
+          name="chevron-right"
+          size={20}
+          color={colors.textTertiary}
+          style={styles.chevron}
+        />
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -226,6 +321,31 @@ const styles = StyleSheet.create({
   retrySuccess: {
     color: colors.success,
     fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
+  },
+  toggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  toggleLabel: {
+    color: colors.textPrimary,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.semibold,
+  },
+  errorText: {
+    color: colors.danger,
+    fontSize: fontSize.sm,
+  },
+  linkRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  linkLabel: {
+    color: colors.textPrimary,
+    fontSize: fontSize.md,
     fontWeight: fontWeight.semibold,
   },
 });

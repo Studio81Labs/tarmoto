@@ -13,6 +13,7 @@ import { User } from '../../entities/user.entity.js';
 import { UserContact } from '../../entities/user-contact.entity.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { CreateContactDto } from './dto/create-contact.dto.js';
+import { UpdateContactDto } from './dto/update-contact.dto.js';
 import {
   UserResponseDto,
   ContactResponseDto,
@@ -200,6 +201,30 @@ export class UsersService {
       phone: dto.phone,
       is_emergency: dto.is_emergency ?? true,
     });
+    const saved = await this.contactRepo.save(contact);
+    return this.toContactResponse(saved);
+  }
+
+  async updateContact(
+    userId: string,
+    contactId: string,
+    dto: UpdateContactDto,
+  ): Promise<ContactResponseDto> {
+    const contact = await this.contactRepo.findOne({
+      where: { id: contactId, user_id: userId },
+    });
+    if (!contact) {
+      throw new NotFoundException('Contact not found');
+    }
+    if (dto.name !== undefined) {
+      contact.name = dto.name;
+    }
+    if (dto.phone !== undefined) {
+      contact.phone = dto.phone;
+    }
+    if (dto.is_emergency !== undefined) {
+      contact.is_emergency = dto.is_emergency;
+    }
     const saved = await this.contactRepo.save(contact);
     return this.toContactResponse(saved);
   }
