@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
-import { JwtService } from '@nestjs/jwt';
+import { authGuardTestProviders } from '../auth/auth-test-providers.js';
 import { ExplorationController } from './exploration.controller.js';
 import { ExplorationService } from './exploration.service.js';
 
@@ -37,7 +37,7 @@ describe('ExplorationController', () => {
       controllers: [ExplorationController],
       providers: [
         { provide: ExplorationService, useValue: mockService },
-        { provide: JwtService, useValue: { verifyAsync: jest.fn() } },
+        ...authGuardTestProviders,
       ],
     }).compile();
 

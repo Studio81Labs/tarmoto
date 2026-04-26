@@ -5,11 +5,18 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import * as express from 'express';
+import { User } from '../../entities/user.entity.js';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
-  constructor(private readonly jwt: JwtService) {}
+  constructor(
+    private readonly jwt: JwtService,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<express.Request>();
@@ -19,6 +26,7 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException();
     }
 
+    let userId: string;
     try {
       const payload = await this.jwt.verifyAsync<{ sub: string; type: string }>(
         token,
@@ -26,12 +34,27 @@ export class AuthGuard implements CanActivate {
       if (payload.type !== 'access') {
         throw new UnauthorizedException('Invalid token type');
       }
-      request['user'] = { userId: payload.sub };
+      userId = payload.sub;
     } catch (err) {
       if (err instanceof UnauthorizedException) throw err;
       throw new UnauthorizedException();
     }
 
+    // GDPR Art. 17 (US-62): once an account is soft-deleted, every
+    // authenticated request must be rejected immediately — not on the
+    // next access-token rotation. The query is a single PK lookup
+    // selecting only the columns we need, so it adds ~1 indexed read
+    // per authenticated request. Worth the cost vs. leaving deleted
+    // accounts addressable for up to an hour after deletion.
+    const account = await this.userRepo.findOne({
+      where: { id: userId },
+      select: { id: true, deleted_at: true },
+    });
+    if (!account || account.deleted_at != null) {
+      throw new UnauthorizedException();
+    }
+
+    request['user'] = { userId };
     return true;
   }
 

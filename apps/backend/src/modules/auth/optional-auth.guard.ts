@@ -1,17 +1,25 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import * as express from 'express';
+import { User } from '../../entities/user.entity.js';
 
 /**
  * Permissive JWT guard: lets the request through whether or not a valid
- * access token is present. When a valid token is found, it attaches
- * `req.user` the same way `AuthGuard` would; otherwise `req.user` stays
- * undefined. Handlers can then personalize the response (e.g. include
- * the caller's own vote) without forcing readers to sign in.
+ * access token is present. When a valid token is found AND the account
+ * is not soft-deleted (US-62), it attaches `req.user` the same way
+ * `AuthGuard` would; otherwise `req.user` stays undefined. Handlers can
+ * then personalize the response (e.g. include the caller's own vote)
+ * without forcing readers to sign in.
  */
 @Injectable()
 export class OptionalAuthGuard implements CanActivate {
-  constructor(private readonly jwt: JwtService) {}
+  constructor(
+    private readonly jwt: JwtService,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<express.Request>();
@@ -22,7 +30,16 @@ export class OptionalAuthGuard implements CanActivate {
       const payload = await this.jwt.verifyAsync<{ sub: string; type: string }>(
         token,
       );
-      if (payload.type === 'access') {
+      if (payload.type !== 'access') return true;
+
+      // Treat a soft-deleted account as anonymous on optional-auth
+      // routes — drop the personalization rather than blocking the
+      // read. The required-auth path (`AuthGuard`) blocks outright.
+      const account = await this.userRepo.findOne({
+        where: { id: payload.sub },
+        select: { id: true, deleted_at: true },
+      });
+      if (account && account.deleted_at == null) {
         request['user'] = { userId: payload.sub };
       }
     } catch {
