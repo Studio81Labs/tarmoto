@@ -4,7 +4,6 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -85,7 +84,11 @@ export class AccountDeletionService {
 
     const valid = await bcrypt.compare(dto.password, user.password_hash);
     if (!valid) {
-      throw new UnauthorizedException('Password does not match');
+      // 403 — not 401 — so the companion's `apiFetch` 401-handler does
+      // NOT clear the session out from under a rider who simply mistyped
+      // their password. The rider is authenticated; what's missing is
+      // the fresh-auth proof for an irreversible action.
+      throw new ForbiddenException('Password does not match');
     }
 
     const now = new Date();

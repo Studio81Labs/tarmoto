@@ -88,7 +88,10 @@ export class SharingService {
       where: { share_token: token },
       relations: ['ride', 'user'],
     });
-    if (!shared) {
+    // Soft-deleted owners (US-62) — pretend the share doesn't exist so
+    // share-link traffic during the grace window can't surface the
+    // rider's identity.
+    if (!shared || shared.user?.deleted_at != null) {
       throw new NotFoundException('Shared ride not found');
     }
 
@@ -145,7 +148,11 @@ export class SharingService {
       .createQueryBuilder('sr')
       .innerJoinAndSelect('sr.ride', 'ride')
       .innerJoinAndSelect('sr.user', 'user')
-      .where('sr.is_public = true');
+      .where('sr.is_public = true')
+      // Hide rides owned by accounts that have requested deletion (US-62).
+      // The hard-delete sweep removes the rows entirely; this filter
+      // covers the 30-day grace window in between.
+      .andWhere('user.deleted_at IS NULL');
 
     if (hasCentre) {
       // Only the spatial branch needs the geometry. The global feed

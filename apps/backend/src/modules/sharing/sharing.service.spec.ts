@@ -270,6 +270,26 @@ describe('SharingService', () => {
 
       expect(result.rider_name).toBe('Unknown');
     });
+
+    it('hides shared rides whose owner has requested account deletion (US-62 grace window)', async () => {
+      const deletedOwnerShared = {
+        ...mockShared,
+        user: {
+          ...(mockShared as { user: object }).user,
+          deleted_at: new Date(),
+        },
+      } as unknown as SharedRide;
+      sharedRideRepo.findOne!.mockResolvedValueOnce(deletedOwnerShared);
+
+      // 404 — same response as an unknown token, so a share-link visitor
+      // can't tell whether the rider deleted their account or the link
+      // was always invalid.
+      await expect(service.getByToken('abc123')).rejects.toThrow(
+        NotFoundException,
+      );
+      // The view-count side-effect must not fire for hidden rides.
+      expect(sharedRideRepo.increment).not.toHaveBeenCalled();
+    });
   });
 
   describe('trackEmbedClick', () => {

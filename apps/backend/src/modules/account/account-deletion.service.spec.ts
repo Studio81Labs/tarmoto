@@ -1,11 +1,7 @@
 /* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
-import {
-  ForbiddenException,
-  NotFoundException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { DataSource, EntityManager, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
@@ -191,12 +187,12 @@ describe('AccountDeletionService', () => {
       expect(auditRepo.save).toHaveBeenCalled();
     });
 
-    it('rejects with 401 when the password does not match', async () => {
+    it('rejects with 403 (not 401) when the password does not match — companion treats 401 as session expiry', async () => {
       userRepo.createQueryBuilder().getOne.mockResolvedValueOnce(buildUser());
 
       await expect(
         service.requestDeletion('user-1', { password: 'wrong' }),
-      ).rejects.toBeInstanceOf(UnauthorizedException);
+      ).rejects.toBeInstanceOf(ForbiddenException);
 
       expect(userRepo.update).not.toHaveBeenCalled();
       expect(auditRepo.save).not.toHaveBeenCalled();

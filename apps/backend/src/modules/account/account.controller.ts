@@ -111,8 +111,11 @@ export class AccountController {
   })
   @ApiBody({ type: DeleteAccountDto })
   @ApiResponse({ status: 200, type: DeleteAccountResponseDto })
-  @ApiResponse({ status: 401, description: 'Password does not match' })
-  @ApiResponse({ status: 403, description: 'Account already pending deletion' })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Password does not match, or the account is already pending deletion',
+  })
   async deleteAccount(
     @Req() req: Request,
     @Body() dto: DeleteAccountDto,
