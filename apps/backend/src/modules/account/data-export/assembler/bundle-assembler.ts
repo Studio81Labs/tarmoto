@@ -132,7 +132,16 @@ export class BundleAssembler {
       }
     }
 
-    void archive.finalize();
+    // archiver emits errors on the stream itself for most failure modes,
+    // but the promise returned by finalize() can also reject (zlib/IO).
+    // Re-emit so the downstream pipeline observes the failure instead of
+    // leaving an unhandled rejection that could crash the worker.
+    archive.finalize().catch((err: unknown) => {
+      archive.emit(
+        'error',
+        err instanceof Error ? err : new Error(String(err)),
+      );
+    });
     return archive;
   }
 }

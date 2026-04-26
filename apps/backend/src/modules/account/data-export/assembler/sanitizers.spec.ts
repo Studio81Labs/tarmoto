@@ -40,6 +40,26 @@ describe('sanitizeUserForExport', () => {
     expect(out.preferences).toEqual({ theme: 'dark' });
   });
 
+  it('preserves subscription + billing fields the user is entitled to see', () => {
+    const userWithBilling = {
+      ...baseUser,
+      subscription_tier: 'premium',
+      subscription_status: 'active',
+      subscription_cancel_at_period_end: true,
+      subscription_current_period_end: new Date('2026-06-01T00:00:00Z'),
+      billing_trial_used_at: new Date('2026-01-15T00:00:00Z'),
+    } as unknown as User;
+    const out = sanitizeUserForExport(userWithBilling) as unknown as Record<
+      string,
+      unknown
+    >;
+    expect(out.subscription_tier).toBe('premium');
+    expect(out.subscription_status).toBe('active');
+    expect(out.subscription_cancel_at_period_end).toBe(true);
+    expect(out.subscription_current_period_end).toBeInstanceOf(Date);
+    expect(out.billing_trial_used_at).toBeInstanceOf(Date);
+  });
+
   it('does not mutate the input', () => {
     const original = { ...baseUser };
     sanitizeUserForExport(baseUser);

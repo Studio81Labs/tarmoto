@@ -25,25 +25,12 @@ export class DataExportProcessor {
   async process(requestId: string, userId: string): Promise<void> {
     try {
       await this.service.markProcessing(requestId);
-      const user = await this.users.findOne({
-        where: { id: userId },
-        select: {
-          id: true,
-          email: true,
-          display_name: true,
-          phone: true,
-          avatar_url: true,
-          bio: true,
-          home_region: true,
-          home_location: true,
-          work_location: true,
-          preferences: true,
-          subscription_tier: true,
-          subscription_status: true,
-          created_at: true,
-          updated_at: true,
-        },
-      });
+      // No explicit select: rely on the entity's `select: false` columns
+      // (e.g. password_hash) to stay out, and on the assembler's
+      // sanitizer to strip stripe identifiers. Listing columns here was
+      // a maintenance trap — every new User column would silently drop
+      // out of the GDPR export until someone remembered to add it.
+      const user = await this.users.findOne({ where: { id: userId } });
       if (!user) {
         await this.service.markFailed(requestId, 'user not found');
         return;
