@@ -351,10 +351,13 @@ export class AddFunZoneClusteringSeed1715300000000 implements MigrationInterface
   public async down(queryRunner: QueryRunner): Promise<void> {
     // Drop ONLY zones whose membership is entirely seed roads —
     // those are zones the seed run created and that have no real
-    // (rider-driven) members. `bool_and(... LIKE 'seed:%')` is true
-    // only when every member matches the prefix. Mixed zones (seed +
-    // real members) are preserved here; the next step strips the
-    // seed memberships out of them so the real roads keep their
+    // (rider-driven) members. The predicate explicitly rejects NULL
+    // `road_name` rows because `bool_and` IGNORES nulls — without
+    // the `IS NOT NULL` guard, a mixed zone containing one seed
+    // member plus one real member with a NULL road_name would
+    // collapse to TRUE and get deleted by mistake. Mixed zones
+    // (seed + real members) are preserved here; the next step strips
+    // the seed memberships out of them so the real roads keep their
     // zone associations. In production no seed roads exist, so the
     // whole sequence is a no-op.
     await queryRunner.query(
@@ -363,7 +366,7 @@ export class AddFunZoneClusteringSeed1715300000000 implements MigrationInterface
          FROM fun_zone_roads fzr
          JOIN road_segments rs ON rs.id = fzr.road_segment_id
          GROUP BY fzr.fun_zone_id
-         HAVING bool_and(rs.road_name LIKE 'seed:%')
+         HAVING bool_and(rs.road_name IS NOT NULL AND rs.road_name LIKE 'seed:%')
        )`,
     );
     // For zones that survived above (i.e. had at least one real-road
