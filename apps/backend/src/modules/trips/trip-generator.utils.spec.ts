@@ -45,6 +45,24 @@ describe('chunkDistance', () => {
   });
 });
 
+describe('OPTION_PRESETS weight budget', () => {
+  it('every preset has weights summing to exactly 1.0 (positive + hazard penalty)', () => {
+    // The runtime invariant in `trip-generator.utils.ts` already
+    // throws at module load if this is violated, so this test mostly
+    // documents the contract and pins it for future preset edits.
+    for (const preset of OPTION_PRESETS) {
+      const sum =
+        preset.qualityWeight +
+        preset.curvinessWeight +
+        preset.scenicWeight +
+        preset.speedWeight +
+        preset.distanceFitWeight +
+        preset.hazardPenaltyWeight;
+      expect(sum).toBeCloseTo(1, 9);
+    }
+  });
+});
+
 describe('clampDailyKm', () => {
   it('returns the input unchanged when inside the soft window', () => {
     expect(clampDailyKm(250)).toBe(250);

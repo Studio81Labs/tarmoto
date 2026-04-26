@@ -57,6 +57,16 @@ export interface OptionPreset {
  * the key). Earlier revisions duplicated the option list across
  * `TRIP_GENERATION_OPTIONS` and an `OPTION_PRESETS` array, allowing
  * silent divergence to surface at runtime as a confusing 404.
+ *
+ * Weight budget rule: the sum of every weight on a preset (positive
+ * scoring weights + `hazardPenaltyWeight`) is exactly 1.0, asserted at
+ * module load by `assertPresetWeightBudget`. This pins each preset's
+ * score range to `[-hazardPenaltyWeight, 1 - hazardPenaltyWeight]` so
+ * the hazard penalty has a controlled, intentional impact relative to
+ * the positive bonuses — earlier revisions made the penalty additive
+ * on top of a 1.0 positive budget, which let `fastest` (-0.25) drop
+ * scores further than `scenic` (-0.15) before a clean route was even
+ * scored, a hidden asymmetry that surprised reviewers.
  */
 const PRESET_BY_ID: {
   readonly [K in TripGenerationOptionId]: OptionPreset & { id: K };
@@ -66,38 +76,69 @@ const PRESET_BY_ID: {
     label: 'Best fit',
     summary: 'Balanced route closest to your trip settings.',
     distanceMultiplier: 1.0,
-    qualityWeight: 0.3,
-    curvinessWeight: 0.2,
-    scenicWeight: 0.15,
-    speedWeight: 0.1,
-    distanceFitWeight: 0.25,
-    hazardPenaltyWeight: 0.2,
+    qualityWeight: 0.27,
+    curvinessWeight: 0.18,
+    scenicWeight: 0.13,
+    speedWeight: 0.09,
+    distanceFitWeight: 0.18,
+    hazardPenaltyWeight: 0.15,
   },
   scenic: {
     id: 'scenic',
     label: 'Scenic sweep',
     summary: 'Longer, twistier days with more fun-zone time.',
     distanceMultiplier: 1.12,
-    qualityWeight: 0.2,
-    curvinessWeight: 0.35,
-    scenicWeight: 0.25,
+    qualityWeight: 0.18,
+    curvinessWeight: 0.32,
+    scenicWeight: 0.22,
     speedWeight: 0.05,
-    distanceFitWeight: 0.15,
-    hazardPenaltyWeight: 0.15,
+    distanceFitWeight: 0.13,
+    hazardPenaltyWeight: 0.1,
   },
   fastest: {
     id: 'fastest',
     label: 'Fastest line',
     summary: 'Shorter, more direct days that still keep good roads.',
     distanceMultiplier: 0.88,
-    qualityWeight: 0.2,
-    curvinessWeight: 0.1,
-    scenicWeight: 0.05,
-    speedWeight: 0.45,
-    distanceFitWeight: 0.2,
-    hazardPenaltyWeight: 0.25,
+    qualityWeight: 0.16,
+    curvinessWeight: 0.08,
+    scenicWeight: 0.04,
+    speedWeight: 0.36,
+    distanceFitWeight: 0.16,
+    hazardPenaltyWeight: 0.2,
   },
 };
+
+/**
+ * Run at module load to guarantee the weight-budget invariant the
+ * scoring contract assumes. Any future preset edit that doesn't add up
+ * to 1.0 fails the backend boot loud and early instead of silently
+ * skewing route ranking in production.
+ */
+function assertPresetWeightBudget(): void {
+  const errors: string[] = [];
+  for (const id of TRIP_GENERATION_OPTIONS) {
+    const p = PRESET_BY_ID[id];
+    const sum =
+      p.qualityWeight +
+      p.curvinessWeight +
+      p.scenicWeight +
+      p.speedWeight +
+      p.distanceFitWeight +
+      p.hazardPenaltyWeight;
+    // Allow a tiny float tolerance — JS adds 0.27 + 0.18 + 0.13 + 0.09
+    // + 0.18 + 0.15 to 0.9999999999999999, not exactly 1.
+    if (Math.abs(sum - 1) > 1e-9) {
+      errors.push(`${id}: weights sum to ${sum.toFixed(6)}, expected 1`);
+    }
+  }
+  if (errors.length > 0) {
+    throw new Error(
+      `Trip generation preset weight budget invariant violated:\n  ${errors.join('\n  ')}`,
+    );
+  }
+}
+assertPresetWeightBudget();
 
 /**
  * Iteration order matches `TRIP_GENERATION_OPTIONS` so the response's

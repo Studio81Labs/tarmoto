@@ -331,9 +331,16 @@ export class TripGeneratorService {
     }
 
     const candidates: Candidate[] = [];
+    // Cache the per-route metrics enriched in the first pass so the
+    // last-resort fallback below can reuse them without re-issuing the
+    // four PostGIS round-trips that `aggregateRouteMetrics` does. Keyed
+    // by the route alternative reference so the lookup stays O(1)
+    // regardless of geometry size.
+    const enriched = new Map<RouteAlternative, RouteMetrics>();
     for (const alt of alts) {
       if (alt.geometry.length < 2) continue;
       const metrics = await this.aggregateRouteMetrics(alt.geometry);
+      enriched.set(alt, metrics);
       // Apply the trip-level quality and per-request surface filters
       // here rather than in SQL: with only a handful of candidates per
       // day, an in-memory drop is simpler than rewriting the spatial
@@ -354,8 +361,13 @@ export class TripGeneratorService {
       // Both filters dropped every candidate. Keep the primary as a
       // last-resort so the day still has something to render — the
       // option summary numbers will reflect the lower quality and the
-      // UI can warn the rider.
-      const metrics = await this.aggregateRouteMetrics(alts[0].geometry);
+      // UI can warn the rider. Reuse the metrics we already computed
+      // for `alts[0]` in the loop above; falling back to a fresh
+      // `aggregateRouteMetrics` call would waste 4 PostGIS round-trips
+      // per fallback day.
+      const cached = enriched.get(alts[0]);
+      const metrics =
+        cached ?? (await this.aggregateRouteMetrics(alts[0].geometry));
       candidates.push({ alt: alts[0], metrics });
     }
     return candidates;
