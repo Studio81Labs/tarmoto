@@ -322,7 +322,7 @@ export class TripGeneratorService {
       if (
         surfaceFilter &&
         Object.keys(metrics.surfaceMixMetres).length > 0 &&
-        !hasAllowedSurface(metrics.surfaceMixMetres, surfaceFilter)
+        !isSurfaceMixMostlyAllowed(metrics.surfaceMixMetres, surfaceFilter)
       ) {
         continue;
       }
@@ -797,17 +797,28 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
-function hasAllowedSurface(
-  // Values are road-segment lengths in **metres** (matches the
-  // `road_segments.length_m` column). The function only uses ratios so
-  // units cancel — but the parameter name preserves the metric
-  // contract for any future caller that touches absolute totals.
+/**
+ * Decide whether a route's surface mix meets the caller's allow-list.
+ *
+ * The rule is **majority by length, not presence**: at least 50% of the
+ * sampled metres must be made up of allowed surfaces. A route that's
+ * 40% asphalt and 60% gravel with filter `['asphalt']` is rejected,
+ * because the allowed share is below the threshold even though some
+ * allowed surface is present.
+ *
+ * Empty mixes (no road_segments hits along the day) are treated as
+ * "unknown surfaces" and let through so an under-mapped corridor
+ * doesn't block the only viable route.
+ *
+ * `mixMetres` values are road-segment lengths in **metres** (mirroring
+ * the `road_segments.length_m` column). Only ratios are used, but the
+ * parameter name preserves the metric contract for any future caller
+ * that touches absolute totals.
+ */
+function isSurfaceMixMostlyAllowed(
   mixMetres: Record<string, number>,
   filter: AllowedSurface[],
 ): boolean {
-  // The route is acceptable if at least one of its sampled surface
-  // categories is on the allow-list. Empty mixes are handled by the
-  // caller (treated as unknown and let through).
   let allowedM = 0;
   let totalM = 0;
   for (const [k, v] of Object.entries(mixMetres)) {
