@@ -47,7 +47,8 @@ interface RouteMetrics {
   elevationGain: number;
   elevationLoss: number;
   hazardCount: number;
-  surfaceMix: Record<string, number>;
+  /** Road-segment lengths grouped by `surface_type`, in **metres**. */
+  surfaceMixMetres: Record<string, number>;
 }
 
 /**
@@ -303,8 +304,8 @@ export class TripGeneratorService {
       }
       if (
         surfaceFilter &&
-        Object.keys(metrics.surfaceMix).length > 0 &&
-        !hasAllowedSurface(metrics.surfaceMix, surfaceFilter)
+        Object.keys(metrics.surfaceMixMetres).length > 0 &&
+        !hasAllowedSurface(metrics.surfaceMixMetres, surfaceFilter)
       ) {
         continue;
       }
@@ -340,7 +341,7 @@ export class TripGeneratorService {
         elevationGain: 0,
         elevationLoss: 0,
         hazardCount: 0,
-        surfaceMix: {},
+        surfaceMixMetres: {},
       },
     };
   }
@@ -488,7 +489,7 @@ export class TripGeneratorService {
       elevation_span: number | null;
       total_length_m: number | null;
     };
-    type SurfaceRow = { surface_type: string; km: number };
+    type SurfaceRow = { surface_type: string; length_m: number };
     type HazardRow = { count: number };
     type ScenicRow = { avg_scenic: number | null; zone_count: number };
 
@@ -513,7 +514,7 @@ export class TripGeneratorService {
           [wkt, ROAD_BUFFER_M],
         ),
         this.dataSource.query(
-          `SELECT rs.surface_type, SUM(rs.length_m)::float AS km
+          `SELECT rs.surface_type, SUM(rs.length_m)::float AS length_m
            FROM road_segments rs
            WHERE ST_DWithin(
              rs.geom::geography,
@@ -551,9 +552,9 @@ export class TripGeneratorService {
     const q: QualityRow | undefined = qualityRows[0];
     const s: ScenicRow | undefined = scenicRows[0];
     const h: HazardRow | undefined = hazardRows[0];
-    const surfaceMix: Record<string, number> = {};
+    const surfaceMixMetres: Record<string, number> = {};
     for (const row of surfaceRows) {
-      surfaceMix[row.surface_type] = row.km;
+      surfaceMixMetres[row.surface_type] = row.length_m;
     }
 
     // Elevation gain/loss: we don't have a pre-aggregated profile per
@@ -598,7 +599,7 @@ export class TripGeneratorService {
       elevationGain,
       elevationLoss,
       hazardCount,
-      surfaceMix,
+      surfaceMixMetres,
     };
   }
 
@@ -768,20 +769,24 @@ function round1(n: number): number {
 }
 
 function hasAllowedSurface(
-  mix: Record<string, number>,
+  // Values are road-segment lengths in **metres** (matches the
+  // `road_segments.length_m` column). The function only uses ratios so
+  // units cancel — but the parameter name preserves the metric
+  // contract for any future caller that touches absolute totals.
+  mixMetres: Record<string, number>,
   filter: AllowedSurface[],
 ): boolean {
   // The route is acceptable if at least one of its sampled surface
   // categories is on the allow-list. Empty mixes are handled by the
   // caller (treated as unknown and let through).
-  let allowedKm = 0;
-  let totalKm = 0;
-  for (const [k, v] of Object.entries(mix)) {
-    totalKm += v;
-    if ((filter as string[]).includes(k)) allowedKm += v;
+  let allowedM = 0;
+  let totalM = 0;
+  for (const [k, v] of Object.entries(mixMetres)) {
+    totalM += v;
+    if ((filter as string[]).includes(k)) allowedM += v;
   }
-  if (totalKm === 0) return true;
-  return allowedKm / totalKm >= 0.5;
+  if (totalM === 0) return true;
+  return allowedM / totalM >= 0.5;
 }
 
 // Re-exported so consumer modules don't need to reach into the dto

@@ -110,6 +110,36 @@ describe('pickAnchors', () => {
   it('returns empty for zero count', () => {
     expect(pickAnchors(START, bbox, [], 0)).toEqual([]);
   });
+
+  it('still returns the requested count when the start sits in a corner of the bbox', () => {
+    // Regression for the Bugbot finding where a near-edge start sent
+    // most cardinal compass candidates outside the bbox, leaving
+    // `pickAnchors` returning fewer anchors than requested and
+    // `buildDayChain` filling the gaps with start→start legs.
+    const cornerStart = { lat: bbox[1] + 0.1, lng: bbox[0] + 0.1 }; // SW corner
+    const anchors = pickAnchors(cornerStart, bbox, [], 4);
+    expect(anchors).toHaveLength(4);
+    for (const a of anchors) {
+      expect(a.lng).toBeGreaterThanOrEqual(bbox[0]);
+      expect(a.lng).toBeLessThanOrEqual(bbox[2]);
+      expect(a.lat).toBeGreaterThanOrEqual(bbox[1]);
+      expect(a.lat).toBeLessThanOrEqual(bbox[3]);
+    }
+  });
+
+  it('handles a tiny bbox by relaxing minimum spacing rather than dropping anchors', () => {
+    // A pathologically small bbox would force every fallback bearing
+    // into a tight cluster — we'd rather emit slightly-bunched anchors
+    // than miss the count, which would become start→start days.
+    const tightBbox: [number, number, number, number] = [
+      START.lng - 0.05,
+      START.lat - 0.05,
+      START.lng + 0.05,
+      START.lat + 0.05,
+    ];
+    const anchors = pickAnchors(START, tightBbox, [], 3);
+    expect(anchors).toHaveLength(3);
+  });
 });
 
 describe('buildDayChain', () => {

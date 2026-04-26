@@ -180,19 +180,49 @@ export function pickAnchors(
   }
 
   // Fill the remainder with compass-spread points around `start`. We
-  // step the compass at roughly 360°/count to keep adjacent anchors
-  // geographically distinct rather than piling them on one bearing.
+  // walk a fine-grained bearing sweep (24+ bearings) rather than the
+  // coarse `count` bearings the original implementation used, because
+  // when `start` sits near a bbox edge most cardinal candidates land
+  // *outside* the bbox and got dropped — yielding fewer anchors than
+  // requested and leaving `buildDayChain` to fill the gaps with
+  // `start`, producing 0 km start→start days.
+  //
+  // If even the fine sweep can't fill (extreme corner-of-bbox starts
+  // or pathologically tight bboxes), shrink the projection radius and
+  // try again with a relaxed minimum-spacing rule. The min-spacing is
+  // only applied when there's still slack in the count target — that
+  // way "we have anchors but they're slightly bunched" is preferred
+  // over "we have fewer anchors than days, so the trip will have
+  // empty placeholder legs."
   if (anchors.length < count) {
-    const fallbackDistKm = midpointFallbackDistanceKm(bbox, start);
-    const stepDeg = 360 / count;
-    let bearing = 0;
-    while (anchors.length < count && bearing < 360) {
-      const cand = pointAtBearing(start, bearing, fallbackDistKm);
-      bearing += stepDeg;
-      if (!isInsideBBox(cand, bbox)) continue;
-      if (isTooCloseToAny(cand, anchors, 20)) continue;
-      anchors.push(cand);
-    }
+    const baseDistKm = midpointFallbackDistanceKm(bbox, start);
+    const fineStepDeg = 360 / Math.max(count * 4, 24);
+
+    const sweep = (radiusKm: number, minSpacingKm: number): void => {
+      for (
+        let bearing = 0;
+        bearing < 360 && anchors.length < count;
+        bearing += fineStepDeg
+      ) {
+        const cand = pointAtBearing(start, bearing, radiusKm);
+        if (!isInsideBBox(cand, bbox)) continue;
+        // No need to compare against `start` here — the radius itself
+        // guarantees a non-zero offset, and a tight bbox with a small
+        // radius would otherwise reject every candidate against an
+        // unreachable spacing threshold.
+        if (isTooCloseToAny(cand, anchors, minSpacingKm)) continue;
+        anchors.push(cand);
+      }
+    };
+
+    sweep(baseDistKm, 20);
+    // First retry: shrink the radius so cardinals that previously fell
+    // off the edge of the bbox now sit comfortably inside.
+    if (anchors.length < count) sweep(baseDistKm * 0.6, 10);
+    // Last resort: drop the spacing rule entirely so the count is met
+    // even on a very tight bbox. We'd rather emit two slightly-bunched
+    // anchors than a single anchor + a degenerate start→start day.
+    if (anchors.length < count) sweep(baseDistKm * 0.4, 0);
   }
 
   // Sort by distance from start so the itinerary reads as a flowing
@@ -409,8 +439,8 @@ function isTooCloseToAny(
  * bbox along the cardinal directions, with a small margin so
  * intercardinal bearings (NE / SE / SW / NW) usually fit too.
  *
- * Floored at 40 km so a tiny bbox doesn't produce anchors stacked on
- * top of each other.
+ * Scales with the bbox so a tight 10 km square still produces anchors
+ * that fit (rather than projecting 40 km out and falling off the edge).
  */
 function midpointFallbackDistanceKm(
   bbox: BBox,
@@ -423,7 +453,7 @@ function midpointFallbackDistanceKm(
     haversineKm(start.lat, start.lng, start.lat, e),
     haversineKm(start.lat, start.lng, start.lat, w),
   );
-  return Math.max(40, minEdgeKm * 0.85);
+  return minEdgeKm * 0.85;
 }
 
 /**
