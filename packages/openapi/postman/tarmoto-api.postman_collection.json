@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "bbdb9ba8-1e69-4887-8045-8971a3e3067b",
+    "_postman_id": "b9bfafb3-8821-4943-bb50-7916546124d1",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -310,6 +310,38 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"Jane Doe\",\n  \"phone\": \"+420123456789\",\n  \"is_emergency\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Update emergency contact",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/me/contacts/:contactId",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "me", "contacts", ":contactId"],
+              "variable": [
+                {
+                  "key": "contactId",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Jane Doe\",\n  \"phone\": \"+420123456789\",\n  \"is_emergency\": false\n}",
               "options": {
                 "raw": {
                   "language": "json"
