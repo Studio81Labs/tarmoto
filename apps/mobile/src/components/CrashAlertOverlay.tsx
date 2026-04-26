@@ -119,6 +119,15 @@ export default function CrashAlertOverlay({
       markFailed("No location captured for the alert.");
       return;
     }
+    // GPS may have had no fix when the spike landed (tunnel, indoor
+    // start, dead module). Don't fall back to `(0, 0)` — that's Null
+    // Island in the Atlantic and would dispatch a meaningless location
+    // to emergency contacts during a real crash. Better to fail loudly
+    // so the rider can fall back to a manual call. (Bugbot 5069fc01.)
+    if (alert.lat === null || alert.lng === null) {
+      markFailed("No GPS fix at the moment of impact.");
+      return;
+    }
     // Flip into the dispatching phase BEFORE the network call so the
     // cancel button is hidden for the rest of the request lifecycle.
     // Without this gate the rider could tap "I'm OK" while the POST is
@@ -129,8 +138,8 @@ export default function CrashAlertOverlay({
     beginDispatch();
     try {
       await api.sendCrashAlert(
-        alert.lat ?? 0,
-        alert.lng ?? 0,
+        alert.lat,
+        alert.lng,
         alert.rideId ?? undefined,
         alert.speedAtImpact ?? undefined,
       );

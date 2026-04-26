@@ -160,6 +160,31 @@ describe("CrashAlertOverlay", () => {
     );
   });
 
+  it("refuses to dispatch when GPS has no fix at impact", async () => {
+    // Bugbot 5069fc01: a previous version fell back to (0, 0) for null
+    // lat/lng, dispatching a Null Island location to contacts during a
+    // real crash. The overlay must surface a failure instead so the
+    // rider knows to fall back to a manual call.
+    render(<CrashAlertOverlay countdownMs={500} />);
+    act(() => {
+      useCrashStore.getState().startCountdown({
+        triggeredAt: 1,
+        rideId: "ride-99",
+        lat: null,
+        lng: null,
+        speedAtImpact: null,
+      });
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(1_000);
+    });
+
+    await waitFor(() => expect(useCrashStore.getState().phase).toBe("failed"));
+    expect(mockedApi.sendCrashAlert).not.toHaveBeenCalled();
+    expect(useCrashStore.getState().errorMessage).toMatch(/no gps fix/i);
+  });
+
   it("flips to failed state when the API rejects", async () => {
     mockedApi.sendCrashAlert.mockRejectedValueOnce(new Error("offline"));
     render(<CrashAlertOverlay countdownMs={500} />);
