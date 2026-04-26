@@ -51,8 +51,6 @@ export class AccountDeletionService {
   constructor(
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
-    @InjectRepository(AccountDeletionLog)
-    private readonly auditRepo: Repository<AccountDeletionLog>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
     @Inject(STRIPE_BILLING_CLIENT)
@@ -97,16 +95,29 @@ export class AccountDeletionService {
       now.getTime() + graceDays * 24 * 60 * 60 * 1000,
     );
 
-    await this.userRepo.update(user.id, {
-      deleted_at: now,
-      deletion_scheduled_at: scheduledFor,
-      deletion_reason: dto.reason ?? null,
-      updated_at: now,
-    });
+    // Soft-delete and the `requested` audit row are written together so
+    // a transient failure on the audit insert can't leave the account
+    // locked-but-unaudited (the audit trail is part of the GDPR
+    // compliance surface). If the transaction rolls back, the rider
+    // sees the request fail and can retry.
+    await this.dataSource.transaction(async (manager) => {
+      await manager.update(User, user.id, {
+        deleted_at: now,
+        deletion_scheduled_at: scheduledFor,
+        deletion_reason: dto.reason ?? null,
+        updated_at: now,
+      });
 
-    await this.recordEvent(user, 'requested', {
-      scheduled_for: scheduledFor,
-      details: dto.reason ? { reason: dto.reason } : {},
+      const log = manager.create(AccountDeletionLog, {
+        user_id: user.id,
+        email: user.email,
+        event: 'requested' satisfies AccountDeletionEvent,
+        scheduled_for: scheduledFor,
+        stripe_customer_id: user.stripe_customer_id,
+        stripe_subscription_id: user.stripe_subscription_id,
+        details: dto.reason ? { reason: dto.reason } : {},
+      });
+      await manager.save(AccountDeletionLog, log);
     });
 
     this.logger.log(
@@ -140,8 +151,9 @@ export class AccountDeletionService {
     let purged = 0;
     for (const user of due) {
       try {
-        await this.purgeUser(user);
-        purged += 1;
+        if (await this.purgeUser(user)) {
+          purged += 1;
+        }
       } catch (err) {
         // Leave deletion_scheduled_at in place — the next sweep
         // retries. Don't abort the batch on one failure.
@@ -171,10 +183,16 @@ export class AccountDeletionService {
    * then deletes the user row. CASCADE FKs from the migration take
    * care of every other table.
    */
-  private async purgeUser(user: User): Promise<void> {
+  /**
+   * Returns `true` if this call actually purged the row (and wrote the
+   * audit entry), `false` if a concurrent sweeper had already deleted
+   * it. Distinguishing the two prevents duplicate `purged` rows on the
+   * audit log when multiple backend instances run the same hourly cron.
+   */
+  private async purgeUser(user: User): Promise<boolean> {
     const stripeResult = await this.cancelStripe(user);
 
-    await this.dataSource.transaction(async (manager) => {
+    return this.dataSource.transaction(async (manager) => {
       await manager
         .createQueryBuilder()
         .update('surface_readings')
@@ -182,7 +200,12 @@ export class AccountDeletionService {
         .where('user_id = :id', { id: user.id })
         .execute();
 
-      await manager.delete(User, { id: user.id });
+      const result = await manager.delete(User, { id: user.id });
+      if (!result.affected) {
+        // Another sweeper instance got here first. Skip the audit
+        // write so we don't fan out duplicate `purged` rows.
+        return false;
+      }
 
       const log = manager.create(AccountDeletionLog, {
         user_id: user.id,
@@ -201,6 +224,7 @@ export class AccountDeletionService {
         },
       });
       await manager.save(AccountDeletionLog, log);
+      return true;
     });
   }
 
@@ -256,26 +280,6 @@ export class AccountDeletionService {
       customerDeleted,
       ...(errors.length > 0 ? { errors } : {}),
     };
-  }
-
-  private async recordEvent(
-    user: Pick<
-      User,
-      'id' | 'email' | 'stripe_customer_id' | 'stripe_subscription_id'
-    >,
-    event: AccountDeletionEvent,
-    extra: { scheduled_for?: Date | null; details?: Record<string, unknown> },
-  ): Promise<void> {
-    const log = this.auditRepo.create({
-      user_id: user.id,
-      email: user.email,
-      event,
-      scheduled_for: extra.scheduled_for ?? null,
-      stripe_customer_id: user.stripe_customer_id,
-      stripe_subscription_id: user.stripe_subscription_id,
-      details: extra.details ?? {},
-    });
-    await this.auditRepo.save(log);
   }
 
   private gracePeriodDays(): number {

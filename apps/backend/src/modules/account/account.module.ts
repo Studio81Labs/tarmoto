@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from '../../entities/user.entity.js';
-import { AccountDeletionLog } from '../../entities/account-deletion-log.entity.js';
 import { AccountController } from './account.controller.js';
 import { AccountService } from './account.service.js';
 import { AccountDeletionService } from './account-deletion.service.js';
@@ -11,7 +10,7 @@ import {
 } from './stripe-billing.client.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, AccountDeletionLog])],
+  imports: [TypeOrmModule.forFeature([User])],
   controllers: [AccountController],
   providers: [
     AccountService,

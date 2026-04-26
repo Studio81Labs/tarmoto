@@ -15,16 +15,14 @@ import { AccountDeletionLog } from '../../entities/account-deletion-log.entity.j
 
 describe('AccountDeletionService', () => {
   let service: AccountDeletionService;
-  let userRepo: jest.Mocked<Pick<Repository<User>, 'find' | 'update'>> & {
+  let userRepo: jest.Mocked<Pick<Repository<User>, 'find'>> & {
     createQueryBuilder: jest.Mock;
   };
-  let auditRepo: jest.Mocked<
-    Pick<Repository<AccountDeletionLog>, 'create' | 'save'>
-  >;
   let stripe: jest.Mocked<StripeBillingClient>;
   let dataSource: { transaction: jest.Mock };
   let txManager: {
     createQueryBuilder: jest.Mock;
+    update: jest.Mock;
     delete: jest.Mock;
     create: jest.Mock;
     save: jest.Mock;
@@ -75,6 +73,7 @@ describe('AccountDeletionService', () => {
         where: jest.fn().mockReturnThis(),
         execute: surfaceUpdateExecute,
       }),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
       create: jest
         .fn()
@@ -99,13 +98,7 @@ describe('AccountDeletionService', () => {
     };
     userRepo = {
       find: jest.fn().mockResolvedValue([]),
-      update: jest.fn().mockResolvedValue({ affected: 1 }),
       createQueryBuilder: jest.fn().mockReturnValue(userQb),
-    } as any;
-
-    auditRepo = {
-      create: jest.fn().mockImplementation((payload: any) => ({ ...payload })),
-      save: jest.fn().mockImplementation((entity: any) => entity),
     } as any;
 
     stripe = {
@@ -123,10 +116,6 @@ describe('AccountDeletionService', () => {
       providers: [
         AccountDeletionService,
         { provide: getRepositoryToken(User), useValue: userRepo },
-        {
-          provide: getRepositoryToken(AccountDeletionLog),
-          useValue: auditRepo,
-        },
         {
           provide: getDataSourceToken(),
           useValue: dataSource as unknown as DataSource,
@@ -168,7 +157,12 @@ describe('AccountDeletionService', () => {
       expect(scheduledMs - before).toBeGreaterThanOrEqual(thirtyDaysMs - 1000);
       expect(scheduledMs - after).toBeLessThanOrEqual(thirtyDaysMs + 1000);
 
-      expect(userRepo.update).toHaveBeenCalledWith(
+      // Soft-delete + audit insert run inside the same transaction so a
+      // failed audit write rolls the account-lock back. Both writes
+      // therefore land on the txManager, not on a top-level repo.
+      expect(dataSource.transaction).toHaveBeenCalledTimes(1);
+      expect(txManager.update).toHaveBeenCalledWith(
+        User,
         'user-1',
         expect.objectContaining({
           deleted_at: expect.any(Date),
@@ -176,7 +170,8 @@ describe('AccountDeletionService', () => {
           deletion_reason: 'no longer riding',
         }),
       );
-      expect(auditRepo.create).toHaveBeenCalledWith(
+      expect(txManager.save).toHaveBeenCalledWith(
+        AccountDeletionLog,
         expect.objectContaining({
           user_id: 'user-1',
           email: 'rider@tarmoto.app',
@@ -184,7 +179,20 @@ describe('AccountDeletionService', () => {
           details: { reason: 'no longer riding' },
         }),
       );
-      expect(auditRepo.save).toHaveBeenCalled();
+    });
+
+    it('rolls the soft-delete back if the audit insert fails', async () => {
+      userRepo.createQueryBuilder().getOne.mockResolvedValueOnce(buildUser());
+      // Simulate a transient DB failure on the audit insert. The
+      // transaction wrapper rejects, so the user.update is rolled back
+      // — the account is not locked-but-unaudited.
+      txManager.save.mockRejectedValueOnce(new Error('audit insert failed'));
+
+      await expect(
+        service.requestDeletion('user-1', { password: KNOWN_PASSWORD }),
+      ).rejects.toThrow('audit insert failed');
+
+      expect(dataSource.transaction).toHaveBeenCalledTimes(1);
     });
 
     it('rejects with 403 (not 401) when the password does not match — companion treats 401 as session expiry', async () => {
@@ -194,8 +202,7 @@ describe('AccountDeletionService', () => {
         service.requestDeletion('user-1', { password: 'wrong' }),
       ).rejects.toBeInstanceOf(ForbiddenException);
 
-      expect(userRepo.update).not.toHaveBeenCalled();
-      expect(auditRepo.save).not.toHaveBeenCalled();
+      expect(dataSource.transaction).not.toHaveBeenCalled();
     });
 
     it('rejects with 403 when the account is already pending deletion', async () => {
@@ -209,7 +216,7 @@ describe('AccountDeletionService', () => {
         service.requestDeletion('user-1', { password: KNOWN_PASSWORD }),
       ).rejects.toBeInstanceOf(ForbiddenException);
 
-      expect(userRepo.update).not.toHaveBeenCalled();
+      expect(dataSource.transaction).not.toHaveBeenCalled();
     });
 
     it('rejects with 404 when the user does not exist', async () => {
@@ -361,6 +368,28 @@ describe('AccountDeletionService', () => {
           }),
         }),
       );
+    });
+
+    it('skips the purge audit row when a concurrent sweeper already deleted the user', async () => {
+      // Multiple backend instances run the same hourly cron. If worker A
+      // deletes the row first, worker B's manager.delete returns
+      // affected = 0; without this skip we would emit a duplicate
+      // `purged` audit row, polluting the compliance log.
+      txManager.delete.mockResolvedValueOnce({ affected: 0 });
+      const due = buildUser({
+        deleted_at: new Date(),
+        deletion_scheduled_at: new Date('2026-04-01T00:00:00Z'),
+      });
+      userRepo.find.mockResolvedValueOnce([due]);
+
+      const purged = await service.processDueDeletions(
+        new Date('2026-04-02T00:00:00Z'),
+      );
+
+      // The user wasn't actually deleted by *this* worker, so it
+      // doesn't count toward the purge tally and no audit row goes in.
+      expect(purged).toBe(0);
+      expect(txManager.save).not.toHaveBeenCalled();
     });
 
     it('continues the batch when one user fails to purge', async () => {
