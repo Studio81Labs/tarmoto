@@ -275,14 +275,21 @@ describe('AccountDeletionService', () => {
       // race (delete affected: 0) would orphan the user's telemetry
       // even though the user row is preserved.
       expect(surfaceUpdateExecute).not.toHaveBeenCalled();
-      // The delete carries `deleted_at IS NOT NULL` so a concurrent
-      // restore (support clearing `deleted_at`) is preserved instead
-      // of being silently hard-deleted.
+      // The delete carries the same predicate as the sweeper's
+      // snapshot query — `deleted_at IS NOT NULL AND
+      // deletion_scheduled_at <= now`. A support agent who restored
+      // (cleared `deleted_at`) OR postponed (pushed
+      // `deletion_scheduled_at` into the future) between pre-flight
+      // and this transaction is honoured: the delete returns
+      // affected: 0 and the audit is skipped.
       expect(txManager.delete).toHaveBeenCalledWith(
         User,
         expect.objectContaining({
           id: 'expired-1',
           deleted_at: expect.objectContaining({ _type: 'not' }),
+          deletion_scheduled_at: expect.objectContaining({
+            _type: 'lessThanOrEqual',
+          }),
         }),
       );
       expect(txManager.save).toHaveBeenCalledWith(
@@ -496,14 +503,17 @@ describe('AccountDeletionService', () => {
       );
 
       expect(purged).toBe(0);
-      // Stripe was called (pre-flight passed) but the delete with
-      // deleted_at IS NOT NULL did not touch the row.
+      // Stripe was called (pre-flight passed) but the guarded delete
+      // did not touch the row.
       expect(stripe.cancelSubscription).toHaveBeenCalled();
       expect(txManager.delete).toHaveBeenCalledWith(
         User,
         expect.objectContaining({
           id: due.id,
           deleted_at: expect.objectContaining({ _type: 'not' }),
+          deletion_scheduled_at: expect.objectContaining({
+            _type: 'lessThanOrEqual',
+          }),
         }),
       );
       // Critically: surface_readings.user_id is NOT updated when the
@@ -515,6 +525,44 @@ describe('AccountDeletionService', () => {
       // attached to the (now-active) user.
       expect(surfaceUpdateExecute).not.toHaveBeenCalled();
       // No audit row for a row we didn't actually purge.
+      expect(txManager.save).not.toHaveBeenCalled();
+    });
+
+    it('does not delete the user row when support postponed the deletion mid-transaction (delete carries deletion_scheduled_at <= now)', async () => {
+      // Sibling race to the restore case: support pushes
+      // `deletion_scheduled_at` into the future after pre-flight but
+      // before the transaction lands. The delete's
+      // `deletion_scheduled_at <= now` predicate makes the now-not-due
+      // row return affected: 0, and the user — along with all their
+      // data and a still-set `deleted_at` flag — is preserved for the
+      // new schedule.
+      txManager.delete.mockResolvedValueOnce({ affected: 0 });
+      const due = buildUser({
+        deleted_at: new Date(),
+        deletion_scheduled_at: new Date('2026-04-01T00:00:00Z'),
+        stripe_customer_id: 'cus_postponed',
+        stripe_subscription_id: 'sub_postponed',
+      });
+      userRepo.find.mockResolvedValueOnce([due]);
+
+      const purged = await service.processDueDeletions(
+        new Date('2026-04-02T00:00:00Z'),
+      );
+
+      expect(purged).toBe(0);
+      // The delete carries both predicates; affected: 0 makes the
+      // postpone case observationally identical to the restore case.
+      expect(txManager.delete).toHaveBeenCalledWith(
+        User,
+        expect.objectContaining({
+          id: due.id,
+          deleted_at: expect.objectContaining({ _type: 'not' }),
+          deletion_scheduled_at: expect.objectContaining({
+            _type: 'lessThanOrEqual',
+          }),
+        }),
+      );
+      expect(surfaceUpdateExecute).not.toHaveBeenCalled();
       expect(txManager.save).not.toHaveBeenCalled();
     });
 

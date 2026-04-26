@@ -214,23 +214,28 @@ export class AccountDeletionService {
     const stripeResult = await this.cancelStripe(user);
 
     return this.dataSource.transaction(async (manager) => {
-      // Delete only if the row is still soft-deleted. If support
-      // restored the account between the pre-flight check and now (or
-      // a concurrent sweeper already deleted it), `affected` will be
-      // 0 and we skip the audit. The user delete cascades to every
-      // personal table via the FK rules from migration 1715500000000;
-      // `surface_readings.user_id` is anonymized atomically with this
-      // delete via its `ON DELETE SET NULL` FK — no separate UPDATE
-      // needed (and writing one before this delete would orphan
-      // telemetry of restored users in the affected: 0 case).
+      // Delete only if the row is still due — both `deleted_at` is set
+      // AND `deletion_scheduled_at` has elapsed. Mirrors the pre-flight
+      // predicate so support actions during the grace window are
+      // honoured by the transaction even after Stripe ran:
+      //   - clear `deleted_at` (restore) → affected: 0, user preserved
+      //   - push `deletion_scheduled_at` into the future (postpone) →
+      //     affected: 0, user preserved
+      //   - concurrent sweeper already deleted the row → affected: 0
+      // The user delete cascades to every personal table via the FK
+      // rules from migration 1715500000000; `surface_readings.user_id`
+      // is anonymized atomically via its `ON DELETE SET NULL` FK — no
+      // separate UPDATE needed (and writing one before this delete
+      // would orphan telemetry of restored / postponed users in the
+      // affected: 0 case).
       const result = await manager.delete(User, {
         id: user.id,
         deleted_at: Not(IsNull()),
+        deletion_scheduled_at: LessThanOrEqual(now),
       });
       if (!result.affected) {
-        // Either a concurrent sweeper finished, or support restored
-        // the account. Skip the audit either way — the user row stays
-        // intact in the restore case along with their surface readings.
+        // Concurrent sweeper finished, or support restored, or support
+        // postponed. Skip the audit and leave the row intact.
         return false;
       }
 
