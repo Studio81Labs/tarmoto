@@ -59,6 +59,14 @@ describe('TripGeneratorService', () => {
   let tripsService: { getDetail: jest.Mock };
   let events: { emitToTrip: jest.Mock };
   let activity: { recordSafe: jest.Mock };
+  // Hoisted so persistence tests can inspect the calls the bulk-save
+  // path made on the transaction's manager (delete / save / update).
+  let manager: {
+    delete: jest.Mock;
+    create: jest.Mock;
+    save: jest.Mock;
+    update: jest.Mock;
+  };
 
   beforeEach(async () => {
     tripRepo = {
@@ -72,15 +80,31 @@ describe('TripGeneratorService', () => {
     // Default DataSource: spatial queries return zero hits, transaction
     // immediately invokes the callback with a stub manager so we can
     // assert against the persistence calls.
-    const manager = {
+    // The persistence path bulk-saves arrays of entities (days first
+    // to capture ids, then waypoints with the right `trip_day_id`),
+    // so the mock has to handle both shapes. A naive `{...entity}`
+    // spread would turn `[day0, day1]` into `{ '0': day0, '1': day1 }`
+    // and every saved row would lose its `id`, masking foreign-key
+    // linkage bugs that real TypeORM would surface immediately.
+    let nextId = 1;
+    const stampId = <T extends { id?: string }>(entity: T): T => ({
+      ...entity,
+      id: entity.id ?? `id-${nextId++}`,
+    });
+    manager = {
       delete: jest.fn().mockResolvedValue({ affected: 0 }),
       create: jest.fn().mockImplementation((_e: unknown, data: object) => ({
         ...data,
       })),
       save: jest
         .fn()
-        .mockImplementation((entity: { id?: string }) =>
-          Promise.resolve({ ...entity, id: entity.id ?? 'new-id' }),
+        .mockImplementation(
+          (entityOrArray: { id?: string } | { id?: string }[]) =>
+            Promise.resolve(
+              Array.isArray(entityOrArray)
+                ? entityOrArray.map(stampId)
+                : stampId(entityOrArray),
+            ),
         ),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
@@ -255,6 +279,47 @@ describe('TripGeneratorService', () => {
           selected_option: 'best-fit',
         }),
       );
+      // Persistence path bulk-saves days first, then waypoints. Pull
+      // the resolved value of the day-batch save (the mock stamps real
+      // ids onto each row) and assert every waypoint passed to the
+      // waypoint-batch save references one of those ids — the
+      // original shape of this test would have passed even when the
+      // array-spread mock dropped ids on the floor and the FK was
+      // silently broken.
+      const saveCalls = manager.save.mock.calls as Array<[unknown]>;
+      const saveResults = manager.save.mock.results as Array<{
+        type: string;
+        value: unknown;
+      }>;
+      const dayBatchIdx = saveCalls.findIndex(
+        (call) =>
+          Array.isArray(call[0]) &&
+          (call[0] as Array<{ day_number?: number }>)[0]?.day_number !==
+            undefined,
+      );
+      const waypointBatchIdx = saveCalls.findIndex(
+        (call) =>
+          Array.isArray(call[0]) &&
+          (call[0] as Array<{ waypoint_type?: string }>)[0]?.waypoint_type !==
+            undefined,
+      );
+      expect(dayBatchIdx).toBeGreaterThanOrEqual(0);
+      expect(waypointBatchIdx).toBeGreaterThanOrEqual(0);
+
+      const savedDays = (await Promise.resolve(
+        saveResults[dayBatchIdx].value,
+      )) as Array<{ id: string }>;
+      const savedDayIds = new Set(savedDays.map((d) => d.id));
+
+      const waypointInputs = saveCalls[waypointBatchIdx][0] as Array<{
+        trip_day_id: string | undefined;
+      }>;
+      expect(waypointInputs.length).toBeGreaterThan(0);
+      for (const w of waypointInputs) {
+        expect(w.trip_day_id).toBeDefined();
+        expect(savedDayIds.has(w.trip_day_id ?? '')).toBe(true);
+      }
+
       expect(activity.recordSafe).toHaveBeenCalledWith(
         TRIP_ID,
         USER_ID,
