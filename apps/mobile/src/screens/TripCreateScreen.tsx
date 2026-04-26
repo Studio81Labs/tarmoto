@@ -200,7 +200,7 @@ export default function TripCreateScreen() {
         startLocation.lng,
         numDays,
       );
-      await api.generateTripRoute(tripId, startLocation, bbox);
+      await api.generateTripRoute(tripId, startLocation, { bbox });
       // Replace rather than push: the detail screen for this trip should
       // be the back target from Day screens, not a half-filled create form.
       navigation.replace("TripDetail", { tripId });

@@ -366,6 +366,9 @@ export class TripsService {
       distance_km: d.distance_km ?? 0,
       avg_quality: d.avg_quality ?? 0,
       elevation_gain: d.elevation_gain ?? 0,
+      elevation_loss: d.elevation_loss ?? 0,
+      curviness_score: d.curviness_score ?? 0,
+      scenic_score: d.scenic_score ?? 0,
       estimated_time_min: parseIntervalToMinutes(d.estimated_time),
       route_geometry: lineStringToLatLngs(d.route_geom),
       waypoints: (d.waypoints ?? []).map((w): TripWaypointDto => {

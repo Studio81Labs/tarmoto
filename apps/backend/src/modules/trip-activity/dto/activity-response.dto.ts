@@ -4,6 +4,7 @@ export const TRIP_ACTIVITY_ACTIONS = [
   'member_joined',
   'member_left',
   'trip_updated',
+  'trip_generated',
   'suggestion_created',
   'suggestion_deleted',
   'suggestion_voted',

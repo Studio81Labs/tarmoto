@@ -953,6 +953,16 @@ function describeActivity(entry: TripActivityEntry): string {
       return `${actor} left the trip`;
     case "trip_updated":
       return `${actor} updated trip details`;
+    case "trip_generated": {
+      const option = entry.payload.option;
+      const label =
+        option === "scenic"
+          ? "Scenic sweep"
+          : option === "fastest"
+            ? "Fastest line"
+            : "Best fit";
+      return `${actor} generated a ${label} itinerary`;
+    }
     case "suggestion_created":
       return `${actor} proposed "${String(entry.payload.title ?? "a suggestion")}"`;
     case "suggestion_deleted":

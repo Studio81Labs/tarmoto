@@ -3,10 +3,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import { TripsController } from './trips.controller.js';
 import { TripsService } from './trips.service.js';
+import { TripGeneratorService } from './trip-generator.service.js';
 
 describe('TripsController', () => {
   let controller: TripsController;
   let service: jest.Mocked<TripsService>;
+  let generator: jest.Mocked<TripGeneratorService>;
 
   const mockReq = { user: { userId: 'user-1' } } as never;
 
@@ -40,16 +42,39 @@ describe('TripsController', () => {
       update: jest.fn().mockResolvedValue(mockDetail),
     };
 
+    const mockGenerator = {
+      // Echo the caller's `option` (or fall back to 'best-fit') so the
+      // controller pass-through assertion actually validates that the
+      // DTO's `option` field reaches the generator — not just that the
+      // mock returned its hard-coded value.
+      generate: jest
+        .fn()
+        .mockImplementation(
+          (
+            _userId: string,
+            _tripId: string,
+            dto: { option?: 'best-fit' | 'scenic' | 'fastest' },
+          ) =>
+            Promise.resolve({
+              trip: mockDetail,
+              selected_option: dto.option ?? 'best-fit',
+              options: [],
+            }),
+        ),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [TripsController],
       providers: [
         { provide: TripsService, useValue: mockService },
+        { provide: TripGeneratorService, useValue: mockGenerator },
         { provide: JwtService, useValue: { verifyAsync: jest.fn() } },
       ],
     }).compile();
 
     controller = module.get(TripsController);
     service = module.get(TripsService);
+    generator = module.get(TripGeneratorService);
   });
 
   it('GET /trips delegates to service.list with the caller id', async () => {
@@ -84,5 +109,19 @@ describe('TripsController', () => {
     const result = await controller.update(mockReq, 'trip-1', dto);
     expect(service.update).toHaveBeenCalledWith('user-1', 'trip-1', dto);
     expect(result.id).toBe('trip-1');
+  });
+
+  it('POST /trips/:tripId/generate forwards the DTO to the generator', async () => {
+    const dto = {
+      start_location: { lat: 47.0, lng: 11.5 },
+      option: 'scenic' as const,
+    };
+    const result = await controller.generate(mockReq, 'trip-1', dto);
+    expect(generator.generate).toHaveBeenCalledWith('user-1', 'trip-1', dto);
+    // Asserts the controller actually plumbed the DTO's `option`
+    // through to the generator — the mock echoes whatever option the
+    // caller passed, so a regression that drops the field would flip
+    // this back to the 'best-fit' default and fail.
+    expect(result.selected_option).toBe('scenic');
   });
 });

@@ -19,6 +19,8 @@ import type {
   HazardType,
   Severity,
   Trip,
+  TripGenerationOptionId,
+  TripGenerationResult,
   TripSummary,
   CommuteRoute,
   CommuteStatus,
@@ -448,12 +450,22 @@ class ApiService {
   async generateTripRoute(
     tripId: string,
     startLocation: LatLng,
-    bbox: string,
-  ): Promise<Trip> {
-    const { data } = await this.client.post<Trip>(`/trips/${tripId}/generate`, {
-      start_location: startLocation,
-      bbox,
-    });
+    options: {
+      bbox?: string;
+      option?: TripGenerationOptionId;
+      avoid_highways?: boolean;
+      avoid_tolls?: boolean;
+      avoid_unpaved?: boolean;
+      surfaces?: string[];
+    } = {},
+  ): Promise<TripGenerationResult> {
+    const { data } = await this.client.post<TripGenerationResult>(
+      `/trips/${tripId}/generate`,
+      {
+        start_location: startLocation,
+        ...options,
+      },
+    );
     return data;
   }
 

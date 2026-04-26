@@ -96,8 +96,11 @@ export const tripsApi = {
   update: (id: string, data: unknown) =>
     apiFetch(`/trips/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   delete: (id: string) => apiFetch(`/trips/${id}`, { method: "DELETE" }),
-  generate: (params: unknown) =>
-    apiFetch("/trips/generate", {
+  // POST /trips/:tripId/generate (US-7) — backend builds three preset
+  // options (best-fit / scenic / fastest), persists the selected one,
+  // and returns all three for side-by-side comparison.
+  generate: (tripId: string, params: unknown) =>
+    apiFetch(`/trips/${tripId}/generate`, {
       method: "POST",
       body: JSON.stringify(params),
     }),
@@ -177,6 +180,7 @@ export type TripActivityAction =
   | "member_joined"
   | "member_left"
   | "trip_updated"
+  | "trip_generated"
   | "suggestion_created"
   | "suggestion_deleted"
   | "suggestion_voted"

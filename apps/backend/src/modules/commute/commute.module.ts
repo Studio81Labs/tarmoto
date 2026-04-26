@@ -18,6 +18,10 @@ import { OsrmProvider } from './providers/osrm.provider.js';
     CommuteService,
     { provide: ROUTING_PROVIDER, useClass: OsrmProvider },
   ],
-  exports: [CommuteService],
+  // ROUTING_PROVIDER is exported so other features (e.g. the trip
+  // auto-generator in `TripsModule`) can reuse the same routing engine
+  // configuration without re-registering the provider in their own
+  // module — this keeps the OSRM swap-out story in one place.
+  exports: [CommuteService, ROUTING_PROVIDER],
 })
 export class CommuteModule {}

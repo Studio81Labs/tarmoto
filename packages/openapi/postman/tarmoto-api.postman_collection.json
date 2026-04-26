@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "bd14988c-b51d-4d09-802c-a4470c81db72",
+    "_postman_id": "dfacc8c1-f007-48c3-85bc-fe60b9914548",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -1545,6 +1545,38 @@
           }
         },
         {
+          "name": "Auto-generate a multi-day itinerary for a trip",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/generate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", ":tripId", "generate"],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"start_location\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"bbox\": \"11.0,46.0,12.5,47.0\",\n  \"option\": \"best-fit\",\n  \"avoid_highways\": false,\n  \"avoid_tolls\": false,\n  \"avoid_unpaved\": false,\n  \"surfaces\": [\n    \"asphalt\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
           "name": "Join a trip via its invite code",
           "request": {
             "method": "POST",
@@ -1923,6 +1955,136 @@
       ]
     },
     {
+      "name": "commute",
+      "item": [
+        {
+          "name": "Get user's saved commute routes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/commute/routes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "commute", "routes"]
+            }
+          }
+        },
+        {
+          "name": "Save a commute route",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/commute/routes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "commute", "routes"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Default\",\n  \"origin\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"destination\": {\n    \"lat\": 0,\n    \"lng\": 0\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Delete a commute route",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/commute/routes/:routeId",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "commute", "routes", ":routeId"],
+              "variable": [
+                {
+                  "key": "routeId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get current commute status (hazards, weather, route quality)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/commute/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "commute", "status"]
+            }
+          }
+        },
+        {
+          "name": "Get alternative routes when primary has issues",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/commute/alternatives",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "commute", "alternatives"]
+            }
+          }
+        },
+        {
+          "name": "Get commute statistics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/commute/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "commute", "stats"],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "safety",
       "item": [
         {
@@ -2050,136 +2212,6 @@
                   "language": "json"
                 }
               }
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "commute",
-      "item": [
-        {
-          "name": "Get user's saved commute routes",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/commute/routes",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "commute", "routes"]
-            }
-          }
-        },
-        {
-          "name": "Save a commute route",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/commute/routes",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "commute", "routes"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Default\",\n  \"origin\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"destination\": {\n    \"lat\": 0,\n    \"lng\": 0\n  }\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Delete a commute route",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/commute/routes/:routeId",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "commute", "routes", ":routeId"],
-              "variable": [
-                {
-                  "key": "routeId",
-                  "value": ""
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Get current commute status (hazards, weather, route quality)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/commute/status",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "commute", "status"]
-            }
-          }
-        },
-        {
-          "name": "Get alternative routes when primary has issues",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/commute/alternatives",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "commute", "alternatives"]
-            }
-          }
-        },
-        {
-          "name": "Get commute statistics",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/commute/stats",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "commute", "stats"],
-              "query": [
-                {
-                  "key": "period",
-                  "value": "",
-                  "description": "",
-                  "disabled": true
-                }
-              ]
             }
           }
         }
