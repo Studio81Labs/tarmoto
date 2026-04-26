@@ -43,11 +43,24 @@ describe('TripsController', () => {
     };
 
     const mockGenerator = {
-      generate: jest.fn().mockResolvedValue({
-        trip: mockDetail,
-        selected_option: 'best-fit',
-        options: [],
-      }),
+      // Echo the caller's `option` (or fall back to 'best-fit') so the
+      // controller pass-through assertion actually validates that the
+      // DTO's `option` field reaches the generator — not just that the
+      // mock returned its hard-coded value.
+      generate: jest
+        .fn()
+        .mockImplementation(
+          (
+            _userId: string,
+            _tripId: string,
+            dto: { option?: 'best-fit' | 'scenic' | 'fastest' },
+          ) =>
+            Promise.resolve({
+              trip: mockDetail,
+              selected_option: dto.option ?? 'best-fit',
+              options: [],
+            }),
+        ),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -105,6 +118,10 @@ describe('TripsController', () => {
     };
     const result = await controller.generate(mockReq, 'trip-1', dto);
     expect(generator.generate).toHaveBeenCalledWith('user-1', 'trip-1', dto);
-    expect(result.selected_option).toBe('best-fit');
+    // Asserts the controller actually plumbed the DTO's `option`
+    // through to the generator — the mock echoes whatever option the
+    // caller passed, so a regression that drops the field would flip
+    // this back to the 'best-fit' default and fail.
+    expect(result.selected_option).toBe('scenic');
   });
 });

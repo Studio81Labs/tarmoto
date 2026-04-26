@@ -30,6 +30,7 @@ import { TripDayDto, TripWaypointDto } from './dto/trip-response.dto.js';
 import {
   buildDayChain,
   chunkDistance,
+  clampDailyKm,
   defaultOptionForPreference,
   OPTION_PRESETS,
   type OptionPreset,
@@ -375,8 +376,13 @@ export class TripGeneratorService {
     // bounds into route selection. Each preset still picks from the
     // same OSRM candidate set, but `scoreRoute`'s `distanceFit` term
     // pulls each option toward its own preferred per-day length.
-    const dailyTargets = baseDailyTargets.map(
-      (km) => km * preset.distanceMultiplier,
+    //
+    // Re-clamp after multiplication: scenic's 1.12× could push an
+    // already-MAX target past MAX_DAILY_KM, and fastest's 0.88× could
+    // pull a MIN target below MIN_DAILY_KM, biasing the distance-fit
+    // term toward distances the rest of the system treats as illegal.
+    const dailyTargets = baseDailyTargets.map((km) =>
+      clampDailyKm(km * preset.distanceMultiplier),
     );
     const days: BuiltDay[] = candidatesByDay.map((candidates, dayIdx) => {
       const targetKm = dailyTargets[dayIdx];

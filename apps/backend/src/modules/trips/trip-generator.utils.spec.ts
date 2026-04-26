@@ -1,6 +1,7 @@
 import {
   buildDayChain,
   chunkDistance,
+  clampDailyKm,
   defaultOptionForPreference,
   MAX_DAILY_KM,
   MIN_DAILY_KM,
@@ -41,6 +42,25 @@ describe('chunkDistance', () => {
   it('returns an empty array for zero or negative numDays', () => {
     expect(chunkDistance(0, 150, 350, 1.0)).toEqual([]);
     expect(chunkDistance(-1, 150, 350, 1.0)).toEqual([]);
+  });
+});
+
+describe('clampDailyKm', () => {
+  it('returns the input unchanged when inside the soft window', () => {
+    expect(clampDailyKm(250)).toBe(250);
+    expect(clampDailyKm(MIN_DAILY_KM)).toBe(MIN_DAILY_KM);
+    expect(clampDailyKm(MAX_DAILY_KM)).toBe(MAX_DAILY_KM);
+  });
+
+  it('clamps post-multiplier scenic overshoot back to MAX_DAILY_KM', () => {
+    // chunkDistance returns MAX_DAILY_KM for an already-maxed trip;
+    // scenic preset's 1.12× would push that past the soft upper bound
+    // without the post-multiplier clamp.
+    expect(clampDailyKm(MAX_DAILY_KM * 1.12)).toBe(MAX_DAILY_KM);
+  });
+
+  it('clamps post-multiplier fastest undershoot back up to MIN_DAILY_KM', () => {
+    expect(clampDailyKm(MIN_DAILY_KM * 0.88)).toBe(MIN_DAILY_KM);
   });
 });
 

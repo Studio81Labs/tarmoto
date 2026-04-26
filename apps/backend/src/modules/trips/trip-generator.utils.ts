@@ -96,6 +96,17 @@ export const MIN_DAILY_KM = 30;
 export const MAX_DAILY_KM = 800;
 
 /**
+ * Clamp a per-day target distance to the soft `[MIN_DAILY_KM,
+ * MAX_DAILY_KM]` window. Used by the service after applying a
+ * preset's `distanceMultiplier` on top of `chunkDistance`'s base
+ * target so an aggressive multiplier doesn't push the target outside
+ * the bounds the rest of the system treats as legal.
+ */
+export function clampDailyKm(km: number): number {
+  return clamp(km, MIN_DAILY_KM, MAX_DAILY_KM);
+}
+
+/**
  * Compute per-day target distances (km) given the trip's bounds. The
  * result has length `numDays` and sums to roughly `numDays * avg`.
  *
@@ -110,7 +121,7 @@ export function chunkDistance(
 ): number[] {
   if (numDays <= 0) return [];
   const avg = (dailyKmMin + dailyKmMax) / 2;
-  const target = clamp(avg * multiplier, MIN_DAILY_KM, MAX_DAILY_KM);
+  const target = clampDailyKm(avg * multiplier);
   return new Array<number>(numDays).fill(target);
 }
 
