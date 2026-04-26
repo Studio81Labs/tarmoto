@@ -23,7 +23,6 @@ import { TripsService } from './trips.service.js';
 import { GenerateTripResponseDto } from './dto/generate-trip-response.dto.js';
 import {
   GenerateTripDto,
-  TRIP_GENERATION_OPTIONS,
   type AllowedSurface,
   type TripGenerationOptionId,
 } from './dto/generate-trip.dto.js';
@@ -381,28 +380,35 @@ export class TripGeneratorService {
     );
     const days: BuiltDay[] = candidatesByDay.map((candidates, dayIdx) => {
       const targetKm = dailyTargets[dayIdx];
-      const best = candidates.reduce<Candidate>(
-        (acc, cand) =>
-          scoreRoute(preset, {
-            avgQuality: cand.metrics.avgQuality,
-            curvinessScore: cand.metrics.curvinessScore,
-            scenicScore: cand.metrics.scenicScore,
-            durationMin: cand.alt.duration_min,
-            distanceKm: cand.alt.distance_km,
-            targetKm,
-          }) >
-          scoreRoute(preset, {
-            avgQuality: acc.metrics.avgQuality,
-            curvinessScore: acc.metrics.curvinessScore,
-            scenicScore: acc.metrics.scenicScore,
-            durationMin: acc.alt.duration_min,
-            distanceKm: acc.alt.distance_km,
-            targetKm,
-          })
-            ? cand
-            : acc,
-        candidates[0],
-      );
+      // Score each candidate exactly once and pick the max — the
+      // earlier `reduce` form double-scored the running best on every
+      // step (and self-scored the seed against itself on the first
+      // step), wasting `2 * candidates.length` calls per day-per-option
+      // for no behavioural difference.
+      let best = candidates[0];
+      let bestScore = scoreRoute(preset, {
+        avgQuality: best.metrics.avgQuality,
+        curvinessScore: best.metrics.curvinessScore,
+        scenicScore: best.metrics.scenicScore,
+        durationMin: best.alt.duration_min,
+        distanceKm: best.alt.distance_km,
+        targetKm,
+      });
+      for (let i = 1; i < candidates.length; i++) {
+        const cand = candidates[i];
+        const score = scoreRoute(preset, {
+          avgQuality: cand.metrics.avgQuality,
+          curvinessScore: cand.metrics.curvinessScore,
+          scenicScore: cand.metrics.scenicScore,
+          durationMin: cand.alt.duration_min,
+          distanceKm: cand.alt.distance_km,
+          targetKm,
+        });
+        if (score > bestScore) {
+          best = cand;
+          bestScore = score;
+        }
+      }
       return this.buildDay(
         dayIdx + 1,
         best,
@@ -805,7 +811,3 @@ function hasAllowedSurface(
   if (totalM === 0) return true;
   return allowedM / totalM >= 0.5;
 }
-
-// Re-exported so consumer modules don't need to reach into the dto
-// directly when wiring up tests.
-export { TRIP_GENERATION_OPTIONS };
