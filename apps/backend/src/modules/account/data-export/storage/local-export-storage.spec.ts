@@ -47,4 +47,10 @@ describe('LocalExportStorage', () => {
   it('delete is a no-op when the key does not exist', async () => {
     await expect(storage.delete('does-not-exist.zip')).resolves.toBeUndefined();
   });
+
+  it('exists returns true for written keys and false otherwise', async () => {
+    await storage.write('a.zip', Readable.from(Buffer.from('abc')));
+    await expect(storage.exists('a.zip')).resolves.toBe(true);
+    await expect(storage.exists('missing.zip')).resolves.toBe(false);
+  });
 });

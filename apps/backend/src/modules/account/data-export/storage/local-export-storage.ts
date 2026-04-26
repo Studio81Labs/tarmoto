@@ -39,4 +39,14 @@ export class LocalExportStorage implements ExportStorage {
       if (err.code !== 'ENOENT') throw err;
     });
   }
+
+  async exists(key: string): Promise<boolean> {
+    try {
+      await stat(this.resolveKey(key));
+      return true;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
+      throw err;
+    }
+  }
 }

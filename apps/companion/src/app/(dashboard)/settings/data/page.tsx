@@ -76,6 +76,13 @@ export default function DataPage() {
     if (pollingId === null) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    // Tolerate transient polling failures (CDN 502, brief network drops,
+    // momentary 401 during token refresh) — the backend job is still
+    // alive, so giving up on the first error would strand the user with
+    // a misleading "Polling failed" while the bundle is still cooking.
+    // Only escalate to error after several consecutive failures.
+    const MAX_CONSECUTIVE_ERRORS = 5;
+    let consecutiveErrors = 0;
     // Self-rescheduling tick instead of setInterval: at most one
     // request is in flight at a time, so a slow backend can't queue up
     // overlapping polls and out-of-order responses can't regress a
@@ -84,6 +91,7 @@ export default function DataPage() {
       try {
         const { data: view } = await accountApi.getDataExport(pollingId);
         if (cancelled) return;
+        consecutiveErrors = 0;
         if (view.status === "ready" && view.downloadUrl) {
           setExportState({
             kind: "ready",
@@ -102,10 +110,15 @@ export default function DataPage() {
         timer = setTimeout(() => void tick(), 2000);
       } catch (err) {
         if (cancelled) return;
-        setExportState({
-          kind: "error",
-          message: err instanceof Error ? err.message : "Polling failed",
-        });
+        consecutiveErrors += 1;
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+          setExportState({
+            kind: "error",
+            message: err instanceof Error ? err.message : "Polling failed",
+          });
+          return;
+        }
+        timer = setTimeout(() => void tick(), 2000);
       }
     };
     void tick();

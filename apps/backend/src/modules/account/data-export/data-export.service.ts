@@ -37,17 +37,27 @@ export class DataExportService {
   async requestExport(
     userId: string,
   ): Promise<{ created: boolean; request: DataExportRequest }> {
-    // Fast path: an existing row inside its TTL is the answer.
+    // Fast path: an existing row inside its TTL is the answer — but
+    // only if its underlying file is still actually present. If the ZIP
+    // has gone missing (operator cleanup, volume reset, partial deploy)
+    // returning the stale row would lock the user out of regenerating
+    // their export until the 7-day TTL expired.
     const active = await this.repo.findOne({
       where: { user_id: userId, status: In(ACTIVE) },
       order: { created_at: 'DESC' },
     });
     if (active && active.expires_at.getTime() > Date.now()) {
-      return { created: false, request: active };
-    }
-    // Past-TTL row — sweep it out so the partial unique index lets us
-    // insert a new one and so the stale ZIP doesn't linger on disk.
-    if (active) {
+      const reachable = await this.isStorageReachable(active);
+      if (reachable) {
+        return { created: false, request: active };
+      }
+      this.logger.warn(
+        `export ${active.id} for user ${userId} is ready but its ZIP is missing — regenerating`,
+      );
+      await this.expireAndCleanup(active);
+    } else if (active) {
+      // Past-TTL row — sweep it out so the partial unique index lets us
+      // insert a new one and so the stale ZIP doesn't linger on disk.
       await this.expireAndCleanup(active);
     }
 
@@ -72,6 +82,24 @@ export class DataExportService {
         }
       }
       throw err;
+    }
+  }
+
+  private async isStorageReachable(row: DataExportRequest): Promise<boolean> {
+    // Only `ready` rows have a file to check; `queued`/`processing` are
+    // legitimately mid-flight and have no storage yet.
+    if (row.status !== 'ready' || !row.storage_key) return true;
+    try {
+      return await this.storage.exists(row.storage_key);
+    } catch (err) {
+      // If the existence check itself fails (e.g. transient S3 error),
+      // assume the row is fine rather than wiping it. False positives
+      // are recoverable on the next request; false negatives lose work.
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `storage.exists failed for ${row.storage_key} (assuming reachable): ${msg}`,
+      );
+      return true;
     }
   }
 
@@ -111,8 +139,13 @@ export class DataExportService {
     storageKey: string,
     byteSize: number,
   ): Promise<void> {
-    await this.repo.update(
-      { id },
+    // Conditional update: only flip to 'ready' if the row is still in
+    // 'processing'. If a concurrent expireAndCleanup has already moved
+    // it to 'expired' (or it was force-failed), the freshly written ZIP
+    // is now an orphan — delete it so we don't leak personal data on
+    // disk indefinitely.
+    const result = await this.repo.update(
+      { id, status: 'processing' },
       {
         status: 'ready',
         storage_key: storageKey,
@@ -120,6 +153,15 @@ export class DataExportService {
         completed_at: new Date(),
       },
     );
+    if (!result.affected) {
+      this.logger.warn(
+        `markReady on ${id} found no 'processing' row (raced with expire/fail); deleting orphan ${storageKey}`,
+      );
+      await this.storage.delete(storageKey).catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`failed to delete orphan ${storageKey}: ${msg}`);
+      });
+    }
   }
 
   async markFailed(id: string, message: string): Promise<void> {

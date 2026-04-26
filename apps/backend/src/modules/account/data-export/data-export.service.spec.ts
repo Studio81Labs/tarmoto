@@ -24,6 +24,7 @@ describe('DataExportService', () => {
     write: jest.fn(),
     read: jest.fn(),
     delete: jest.fn().mockResolvedValue(undefined),
+    exists: jest.fn().mockResolvedValue(true),
   };
   const config = {
     get: jest.fn((k: string) => {
@@ -44,9 +45,12 @@ describe('DataExportService', () => {
         updated_at: new Date(),
       }),
     );
-    repo.update.mockClear();
+    repo.update.mockReset();
+    repo.update.mockResolvedValue({ affected: 1, raw: [] });
     repo.create.mockClear();
     storage.delete.mockClear();
+    storage.exists.mockReset();
+    storage.exists.mockResolvedValue(true);
     const module = await Test.createTestingModule({
       providers: [
         DataExportService,
@@ -86,6 +90,51 @@ describe('DataExportService', () => {
     expect(out.created).toBe(false);
     expect(out.request.id).toBe('req-1');
     expect(repo.save).not.toHaveBeenCalled();
+  });
+
+  it('regenerates when an in-TTL ready row has lost its file on disk', async () => {
+    const liveButOrphaned = {
+      id: 'req-orphan',
+      user_id: 'u1',
+      status: 'ready',
+      expires_at: new Date(Date.now() + 60_000),
+      created_at: new Date(),
+      updated_at: new Date(),
+      completed_at: new Date(),
+      storage_key: 'u1/req-orphan.zip',
+      byte_size: '100',
+      error_message: null,
+    } as DataExportRequest;
+    repo.findOne.mockResolvedValue(liveButOrphaned);
+    storage.exists.mockResolvedValueOnce(false);
+    const out = await service.requestExport('u1');
+    expect(storage.exists).toHaveBeenCalledWith('u1/req-orphan.zip');
+    expect(repo.update).toHaveBeenCalledWith(
+      { id: 'req-orphan' },
+      { status: 'expired' },
+    );
+    expect(out.created).toBe(true);
+  });
+
+  it('treats a transient storage.exists failure as reachable (no false-eviction)', async () => {
+    const liveRow = {
+      id: 'req-ok',
+      user_id: 'u1',
+      status: 'ready',
+      expires_at: new Date(Date.now() + 60_000),
+      created_at: new Date(),
+      updated_at: new Date(),
+      completed_at: new Date(),
+      storage_key: 'u1/req-ok.zip',
+      byte_size: '100',
+      error_message: null,
+    } as DataExportRequest;
+    repo.findOne.mockResolvedValue(liveRow);
+    storage.exists.mockRejectedValueOnce(new Error('s3 503'));
+    const out = await service.requestExport('u1');
+    expect(out.created).toBe(false);
+    expect(out.request.id).toBe('req-ok');
+    expect(repo.update).not.toHaveBeenCalled();
   });
 
   it('expires + deletes the old file when the previous row is past TTL', async () => {
@@ -273,16 +322,24 @@ describe('DataExportService', () => {
     expect(() => service.signingSecret()).toThrow(/SIGNING_SECRET/);
   });
 
-  it('markReady stores byte size as string and sets completed_at', async () => {
+  it('markReady is a conditional update on status=processing', async () => {
+    repo.update.mockResolvedValueOnce({ affected: 1, raw: [] });
     await service.markReady('req-1', 'u1/req-1.zip', 999);
     expect(repo.update).toHaveBeenCalledWith(
-      { id: 'req-1' },
+      { id: 'req-1', status: 'processing' },
       expect.objectContaining({
         status: 'ready',
         storage_key: 'u1/req-1.zip',
         byte_size: '999',
       }),
     );
+    expect(storage.delete).not.toHaveBeenCalled();
+  });
+
+  it('markReady deletes the orphan ZIP when the row was already moved off processing', async () => {
+    repo.update.mockResolvedValueOnce({ affected: 0, raw: [] });
+    await service.markReady('req-1', 'u1/req-1.zip', 999);
+    expect(storage.delete).toHaveBeenCalledWith('u1/req-1.zip');
   });
 
   it('markFailed clamps long messages', async () => {
