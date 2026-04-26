@@ -186,6 +186,24 @@ describe('DataExportService', () => {
     expect(view.byteSize).toBe(123);
   });
 
+  it('reports a ready row past its TTL as expired with no download URL', () => {
+    const req = {
+      id: 'req-stale',
+      user_id: 'u1',
+      status: 'ready',
+      storage_key: 'u1/req-stale.zip',
+      byte_size: '123',
+      expires_at: new Date(Date.now() - 1),
+      created_at: new Date(),
+      updated_at: new Date(),
+      completed_at: new Date(),
+      error_message: null,
+    } as DataExportRequest;
+    const view = service.buildPublicView(req);
+    expect(view.status).toBe('expired');
+    expect(view.downloadUrl).toBeNull();
+  });
+
   it('omits download URL for non-ready statuses', () => {
     for (const status of [
       'queued',

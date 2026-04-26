@@ -68,13 +68,16 @@ export default function DataPage() {
     }
   }
 
+  // Only re-run when entering or leaving the polling state, or when the
+  // request id changes — depending on the whole exportState would tear
+  // down the interval on any sibling state change.
+  const pollingId = exportState.kind === "polling" ? exportState.id : null;
   useEffect(() => {
-    if (exportState.kind !== "polling") return;
+    if (pollingId === null) return;
     let cancelled = false;
-    const id = exportState.id;
     const tick = async () => {
       try {
-        const { data: view } = await accountApi.getDataExport(id);
+        const { data: view } = await accountApi.getDataExport(pollingId);
         if (cancelled) return;
         if (view.status === "ready" && view.downloadUrl) {
           setExportState({
@@ -102,7 +105,7 @@ export default function DataPage() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [exportState]);
+  }, [pollingId]);
 
   return (
     <div className="p-6 max-w-3xl mx-auto animate-fade-in">

@@ -3,6 +3,7 @@ import {
   Get,
   HttpException,
   Inject,
+  Logger,
   Param,
   Post,
   Query,
@@ -10,6 +11,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import { pipeline } from 'node:stream/promises';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -31,6 +33,8 @@ import { verifyDownloadSignature } from './signed-url.js';
 @ApiTags('account')
 @Controller('account/data-export')
 export class DataExportController {
+  private readonly logger = new Logger(DataExportController.name);
+
   constructor(
     private readonly service: DataExportService,
     private readonly processor: DataExportProcessor,
@@ -125,12 +129,36 @@ export class DataExportController {
       throw new HttpException('link expired', 410);
     }
 
-    const stream = await this.storage.read(row.storage_key);
+    let stream;
+    try {
+      stream = await this.storage.read(row.storage_key);
+    } catch (err) {
+      // Storage object missing/unreadable while the row says ready —
+      // treat as gone (e.g. operator-side cleanup or partial expire).
+      const code = (err as NodeJS.ErrnoException | undefined)?.code;
+      if (code === 'ENOENT') {
+        throw new HttpException('not available', 410);
+      }
+      throw err;
+    }
+
     res.set('Content-Type', 'application/zip');
     res.set(
       'Content-Disposition',
       `attachment; filename="tarmoto-export-${id}.zip"`,
     );
-    stream.pipe(res);
+    try {
+      // pipeline() forwards source/destination errors and propagates
+      // client disconnect (res 'close') as an aborted error, so we
+      // don't leak file handles on broken connections.
+      await pipeline(stream, res);
+    } catch (err) {
+      // The response is already streaming, so we can't send a fresh
+      // status — log and let the open connection close. Without this
+      // catch the rejection becomes an unhandled promise rejection
+      // and crashes the process under strict mode.
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`download stream for export ${id} ended early: ${msg}`);
+    }
   }
 }

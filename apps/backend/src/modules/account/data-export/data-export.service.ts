@@ -130,8 +130,16 @@ export class DataExportService {
   }
 
   buildPublicView(request: DataExportRequest): DataExportRequestDto {
+    // A ready row whose TTL has already elapsed cannot be downloaded —
+    // a freshly signed URL would be born past `exp` and the download
+    // endpoint would 410. Surface the row as effectively expired so the
+    // companion shows the right state instead of a dead link.
+    const pastTtl = request.expires_at.getTime() <= Date.now();
+    const effectiveStatus: DataExportRequest['status'] =
+      request.status === 'ready' && pastTtl ? 'expired' : request.status;
+
     let downloadUrl: string | null = null;
-    if (request.status === 'ready') {
+    if (effectiveStatus === 'ready') {
       const exp = request.expires_at.getTime();
       const sig = signDownloadUrl({
         requestId: request.id,
@@ -144,7 +152,7 @@ export class DataExportService {
     }
     return {
       id: request.id,
-      status: request.status,
+      status: effectiveStatus,
       expiresAt: request.expires_at.toISOString(),
       createdAt: request.created_at.toISOString(),
       completedAt: request.completed_at?.toISOString() ?? null,
