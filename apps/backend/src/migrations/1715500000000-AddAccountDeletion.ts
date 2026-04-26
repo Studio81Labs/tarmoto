@@ -89,6 +89,20 @@ export class AddAccountDeletion1715500000000 implements MigrationInterface {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
     `);
 
+    // 2c. Partial index on `surface_readings.user_id` so the hourly
+    // sweeper's per-user `UPDATE … SET user_id = NULL WHERE user_id = ?`
+    // is bounded by the user's contribution count instead of the full
+    // telemetry table. Partial (`WHERE user_id IS NOT NULL`) so already-
+    // anonymized rows don't bloat the index — the dataset trends toward
+    // mostly-NULL over time as accounts are purged. Postgres uses the
+    // partial index for `user_id = :id` lookups because the predicate
+    // implies non-null.
+    await queryRunner.query(`
+      CREATE INDEX IF NOT EXISTS idx_surface_readings_user
+        ON surface_readings(user_id)
+        WHERE user_id IS NOT NULL;
+    `);
+
     // 3. Audit log table.
     await queryRunner.query(`
       CREATE TABLE account_deletion_log (
@@ -114,6 +128,8 @@ export class AddAccountDeletion1715500000000 implements MigrationInterface {
     await queryRunner.query(
       `DROP TABLE IF EXISTS account_deletion_log CASCADE;`,
     );
+
+    await queryRunner.query(`DROP INDEX IF EXISTS idx_surface_readings_user;`);
 
     // Revert FK changes back to no-cascade defaults to match the
     // original schema. We recreate the constraint without an
