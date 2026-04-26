@@ -159,12 +159,10 @@ export default function CrashAlertOverlay({
     // the resolve. (Bugbot 1032971c.)
     beginDispatch();
     try {
-      await api.sendCrashAlert(
-        alert.lat,
-        alert.lng,
-        alert.rideId ?? undefined,
-        alert.speedAtImpact ?? undefined,
-      );
+      await api.sendCrashAlert(alert.lat, alert.lng, {
+        rideId: alert.rideId ?? undefined,
+        speedAtImpact: alert.speedAtImpact ?? undefined,
+      });
       markDispatched();
     } catch (err) {
       const message =

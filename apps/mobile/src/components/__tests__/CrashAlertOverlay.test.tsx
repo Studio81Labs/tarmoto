@@ -12,7 +12,15 @@ import {
 } from "@testing-library/react-native";
 import CrashAlertOverlay from "../CrashAlertOverlay";
 import { useCrashStore } from "@/stores";
-import { api } from "@/services/api";
+import { api, type CrashAlertResponse } from "@/services/api";
+
+const mockCrashAlertResponse: CrashAlertResponse = {
+  alert_id: "00000000-0000-4000-8000-000000000000",
+  contacts_notified: 1,
+  contacts: [],
+  idempotent_replay: false,
+  dispatch_in_progress: false,
+};
 
 jest.mock("@react-native-vector-icons/material-design-icons", () => {
   const ReactLib = require("react");
@@ -62,7 +70,7 @@ describe("CrashAlertOverlay", () => {
       errorMessage: null,
     });
     mockedApi.sendCrashAlert.mockReset();
-    mockedApi.sendCrashAlert.mockResolvedValue(undefined);
+    mockedApi.sendCrashAlert.mockResolvedValue(mockCrashAlertResponse);
   });
 
   afterEach(() => {
@@ -110,12 +118,10 @@ describe("CrashAlertOverlay", () => {
     });
 
     await waitFor(() =>
-      expect(mockedApi.sendCrashAlert).toHaveBeenCalledWith(
-        49.82,
-        18.26,
-        "ride-1",
-        65,
-      ),
+      expect(mockedApi.sendCrashAlert).toHaveBeenCalledWith(49.82, 18.26, {
+        rideId: "ride-1",
+        speedAtImpact: 65,
+      }),
     );
     expect(useCrashStore.getState().phase).toBe("dispatched");
   });
@@ -128,8 +134,8 @@ describe("CrashAlertOverlay", () => {
     let resolveSend: () => void = () => {};
     mockedApi.sendCrashAlert.mockImplementationOnce(
       () =>
-        new Promise<void>((resolve) => {
-          resolveSend = resolve;
+        new Promise<CrashAlertResponse>((resolve) => {
+          resolveSend = () => resolve(mockCrashAlertResponse);
         }),
     );
     render(<CrashAlertOverlay countdownMs={500} />);
@@ -244,11 +250,11 @@ describe("CrashAlertOverlay", () => {
     let pendingCount = 0;
     mockedApi.sendCrashAlert.mockImplementation(
       () =>
-        new Promise<void>((resolve) => {
+        new Promise<CrashAlertResponse>((resolve) => {
           pendingCount += 1;
           resolveSend = () => {
             pendingCount -= 1;
-            resolve();
+            resolve(mockCrashAlertResponse);
           };
         }),
     );
