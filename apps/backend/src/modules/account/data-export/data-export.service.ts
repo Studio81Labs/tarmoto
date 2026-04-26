@@ -130,13 +130,19 @@ export class DataExportService {
   }
 
   buildPublicView(request: DataExportRequest): DataExportRequestDto {
-    // A ready row whose TTL has already elapsed cannot be downloaded —
-    // a freshly signed URL would be born past `exp` and the download
-    // endpoint would 410. Surface the row as effectively expired so the
-    // companion shows the right state instead of a dead link.
+    // Surface any non-terminal row past its TTL as 'expired'. Three
+    // failure modes converge here: a ready row past TTL would yield a
+    // dead-on-arrival download URL; a queued/processing row past TTL
+    // means the worker crashed (or markFailed itself failed) and the
+    // companion would otherwise poll forever, since its exit conditions
+    // are ready/failed/expired only.
     const pastTtl = request.expires_at.getTime() <= Date.now();
+    const isNonTerminal =
+      request.status === 'queued' ||
+      request.status === 'processing' ||
+      request.status === 'ready';
     const effectiveStatus: DataExportRequest['status'] =
-      request.status === 'ready' && pastTtl ? 'expired' : request.status;
+      pastTtl && isNonTerminal ? 'expired' : request.status;
 
     let downloadUrl: string | null = null;
     if (effectiveStatus === 'ready') {

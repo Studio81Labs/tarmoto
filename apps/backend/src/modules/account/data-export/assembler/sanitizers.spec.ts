@@ -37,7 +37,11 @@ describe('sanitizeUserForExport', () => {
     const out = sanitizeUserForExport(baseUser);
     expect(out.email).toBe('rider@example.com');
     expect(out.display_name).toBe('Rider');
-    expect(out.preferences).toEqual({ theme: 'dark' });
+  });
+
+  it('strips preferences (it is served by preferences.json instead)', () => {
+    const out = sanitizeUserForExport(baseUser);
+    expect(out).not.toHaveProperty('preferences');
   });
 
   it('preserves subscription + billing fields the user is entitled to see', () => {

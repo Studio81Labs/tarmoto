@@ -70,11 +70,16 @@ export default function DataPage() {
 
   // Only re-run when entering or leaving the polling state, or when the
   // request id changes — depending on the whole exportState would tear
-  // down the interval on any sibling state change.
+  // down the timer on any sibling state change.
   const pollingId = exportState.kind === "polling" ? exportState.id : null;
   useEffect(() => {
     if (pollingId === null) return;
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    // Self-rescheduling tick instead of setInterval: at most one
+    // request is in flight at a time, so a slow backend can't queue up
+    // overlapping polls and out-of-order responses can't regress a
+    // newer state into an older one.
     const tick = async () => {
       try {
         const { data: view } = await accountApi.getDataExport(pollingId);
@@ -85,12 +90,16 @@ export default function DataPage() {
             id: view.id,
             downloadUrl: view.downloadUrl,
           });
-        } else if (view.status === "failed" || view.status === "expired") {
+          return;
+        }
+        if (view.status === "failed" || view.status === "expired") {
           setExportState({
             kind: "error",
             message: view.errorMessage ?? `Export ${view.status}`,
           });
+          return;
         }
+        timer = setTimeout(() => void tick(), 2000);
       } catch (err) {
         if (cancelled) return;
         setExportState({
@@ -100,10 +109,9 @@ export default function DataPage() {
       }
     };
     void tick();
-    const interval = setInterval(() => void tick(), 2000);
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      if (timer !== null) clearTimeout(timer);
     };
   }, [pollingId]);
 

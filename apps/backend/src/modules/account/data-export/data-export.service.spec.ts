@@ -204,6 +204,45 @@ describe('DataExportService', () => {
     expect(view.downloadUrl).toBeNull();
   });
 
+  it.each(['queued', 'processing'] as const)(
+    'reports a %s row past its TTL as expired so polling can exit',
+    (status) => {
+      const req = {
+        id: 'req-stuck',
+        user_id: 'u1',
+        status,
+        storage_key: null,
+        byte_size: null,
+        expires_at: new Date(Date.now() - 1),
+        created_at: new Date(),
+        updated_at: new Date(),
+        completed_at: null,
+        error_message: null,
+      } as DataExportRequest;
+      const view = service.buildPublicView(req);
+      expect(view.status).toBe('expired');
+      expect(view.downloadUrl).toBeNull();
+    },
+  );
+
+  it('keeps a failed row as failed even past its TTL', () => {
+    const req = {
+      id: 'req-failed',
+      user_id: 'u1',
+      status: 'failed',
+      storage_key: null,
+      byte_size: null,
+      expires_at: new Date(Date.now() - 1),
+      created_at: new Date(),
+      updated_at: new Date(),
+      completed_at: null,
+      error_message: 'boom',
+    } as DataExportRequest;
+    const view = service.buildPublicView(req);
+    expect(view.status).toBe('failed');
+    expect(view.errorMessage).toBe('boom');
+  });
+
   it('omits download URL for non-ready statuses', () => {
     for (const status of [
       'queued',

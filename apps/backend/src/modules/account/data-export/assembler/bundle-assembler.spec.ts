@@ -89,6 +89,8 @@ describe('BundleAssembler', () => {
     expect(profile).not.toHaveProperty('password_hash');
     expect(profile).not.toHaveProperty('stripe_customer_id');
     expect(profile).not.toHaveProperty('stripe_subscription_id');
+    // preferences live in preferences.json — must not be duplicated here.
+    expect(profile).not.toHaveProperty('preferences');
 
     expect(JSON.parse(entries.get('bikes.json')!)).toEqual([]);
     expect(JSON.parse(entries.get('contacts.json')!)).toEqual([]);
