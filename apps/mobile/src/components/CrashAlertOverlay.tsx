@@ -71,6 +71,7 @@ export default function CrashAlertOverlay({
   const alert = useCrashStore((s) => s.alert);
   const errorMessage = useCrashStore((s) => s.errorMessage);
   const cancel = useCrashStore((s) => s.cancel);
+  const beginDispatch = useCrashStore((s) => s.beginDispatch);
   const markDispatched = useCrashStore((s) => s.markDispatched);
   const markFailed = useCrashStore((s) => s.markFailed);
   const resetAlert = useCrashStore((s) => s.reset);
@@ -78,8 +79,7 @@ export default function CrashAlertOverlay({
   const [remainingMs, setRemainingMs] = useState(countdownMs);
   const dispatchedRef = useRef(false);
 
-  const visible =
-    phase === "countdown" || phase === "dispatched" || phase === "failed";
+  const visible = phase !== "idle";
 
   // ── Countdown ticker ──
   useEffect(() => {
@@ -119,6 +119,14 @@ export default function CrashAlertOverlay({
       markFailed("No location captured for the alert.");
       return;
     }
+    // Flip into the dispatching phase BEFORE the network call so the
+    // cancel button is hidden for the rest of the request lifecycle.
+    // Without this gate the rider could tap "I'm OK" while the POST is
+    // already in flight — the backend may already have queued the alert
+    // and notified contacts, so flipping the local store to idle would
+    // contradict reality and trigger a "HELP IS ON THE WAY" screen on
+    // the resolve. (Bugbot 1032971c.)
+    beginDispatch();
     try {
       await api.sendCrashAlert(
         alert.lat ?? 0,
@@ -132,7 +140,7 @@ export default function CrashAlertOverlay({
         err instanceof Error ? err.message : "Couldn't reach the server.";
       markFailed(message);
     }
-  }, [alert, markDispatched, markFailed]);
+  }, [alert, beginDispatch, markDispatched, markFailed]);
 
   useEffect(() => {
     if (phase === "countdown" && remainingMs <= 0) {
@@ -186,6 +194,15 @@ export default function CrashAlertOverlay({
           </>
         ) : null}
 
+        {phase === "dispatching" ? (
+          <>
+            <Text style={styles.headline}>ALERTING CONTACTS…</Text>
+            <Text style={styles.subhead}>
+              Sending your location to your emergency contacts.
+            </Text>
+          </>
+        ) : null}
+
         {phase === "dispatched" ? (
           <>
             <Text style={styles.headline}>HELP IS ON THE WAY</Text>
@@ -213,7 +230,12 @@ export default function CrashAlertOverlay({
               style={styles.cancelBtn}
               onPress={() => {
                 dispatchedRef.current = false;
-                useCrashStore.setState({ phase: "countdown" });
+                // Skip straight back to dispatching — going through
+                // countdown would re-prompt the rider with a 30-second
+                // "I'm OK" timer after they explicitly chose to retry,
+                // which is worse UX than just re-firing the request.
+                useCrashStore.setState({ phase: "dispatching" });
+                void dispatch();
               }}
               accessibilityRole="button"
               accessibilityLabel="Retry crash alert"

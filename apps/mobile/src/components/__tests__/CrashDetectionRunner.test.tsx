@@ -98,6 +98,39 @@ describe("CrashDetectionRunner", () => {
     expect(unsubscribe).toHaveBeenCalled();
   });
 
+  it("re-subscribes when the alert phase returns to idle mid-ride", () => {
+    // Bugbot 4ee09bc2: previously the effect only re-evaluated on
+    // [isRiding, crashDetectionEnabled] changes. If the rider entered
+    // a non-idle phase (countdown / dispatched / failed) and later
+    // dismissed it, the effect's deps hadn't changed and the runner
+    // never re-attached the listener — crash detection silently went
+    // dark for the rest of the ride.
+    useAuthStore.getState().setUser(userWithCrashDetection(true));
+    act(() => useRideStore.getState().startRide("free"));
+
+    render(<CrashDetectionRunner />);
+    expect(mockedSensors.subscribeReadings).toHaveBeenCalledTimes(1);
+
+    // Simulate a triggered countdown that the rider dismisses.
+    act(() => {
+      useCrashStore.getState().startCountdown({
+        triggeredAt: 1,
+        rideId: null,
+        lat: null,
+        lng: null,
+        speedAtImpact: null,
+      });
+    });
+    // Subscription torn down while the alert is up.
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+
+    act(() => useCrashStore.getState().reset());
+
+    // Phase back to idle → runner must re-subscribe so the detector
+    // is live for the rest of the ride.
+    expect(mockedSensors.subscribeReadings).toHaveBeenCalledTimes(2);
+  });
+
   it("flips the crash store into countdown when the detector fires", () => {
     useAuthStore.getState().setUser(userWithCrashDetection(true));
     act(() => {

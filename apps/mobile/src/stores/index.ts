@@ -138,7 +138,12 @@ export const useRideStore = create<RideState>((set) => ({
 // by the crash detector runner and read by `CrashAlertOverlay` so the
 // UI can render the same source of truth from anywhere in the tree.
 
-export type CrashAlertPhase = "idle" | "countdown" | "dispatched" | "failed";
+export type CrashAlertPhase =
+  | "idle"
+  | "countdown"
+  | "dispatching"
+  | "dispatched"
+  | "failed";
 
 interface CrashAlertSnapshot {
   /** Trigger location at the moment of detection. May be null if GPS is offline. */
@@ -158,6 +163,14 @@ interface CrashState {
   /** Error message from the last failed dispatch, if any. */
   errorMessage: string | null;
   startCountdown: (snapshot: CrashAlertSnapshot) => void;
+  /**
+   * Move into the dispatching phase. Once here the rider can no longer
+   * silently cancel: the POST is already in flight (or about to be) and
+   * the backend may have notified contacts, so flipping back to idle
+   * would create a false sense of "cancelled" while a real alert went
+   * out. UI hides the cancel button in this phase.
+   */
+  beginDispatch: () => void;
   /** Rider cancelled within the countdown — silent, no contacts notified. */
   cancel: () => void;
   markDispatched: () => void;
@@ -172,7 +185,22 @@ export const useCrashStore = create<CrashState>((set) => ({
   errorMessage: null,
   startCountdown: (alert) =>
     set({ phase: "countdown", alert, errorMessage: null }),
-  cancel: () => set({ phase: "idle", alert: null, errorMessage: null }),
+  beginDispatch: () =>
+    set((s) =>
+      s.phase === "countdown"
+        ? { phase: "dispatching", errorMessage: null }
+        : s,
+    ),
+  cancel: () =>
+    set((s) =>
+      // Only honour cancel while the countdown is running. Once dispatch
+      // has started, the backend may already have notified contacts —
+      // pretending we cancelled would mislead the rider. Use `reset()`
+      // to dismiss the dispatched/failed terminal screens instead.
+      s.phase === "countdown"
+        ? { phase: "idle", alert: null, errorMessage: null }
+        : s,
+    ),
   markDispatched: () => set({ phase: "dispatched", errorMessage: null }),
   markFailed: (errorMessage) => set({ phase: "failed", errorMessage }),
   reset: () => set({ phase: "idle", alert: null, errorMessage: null }),

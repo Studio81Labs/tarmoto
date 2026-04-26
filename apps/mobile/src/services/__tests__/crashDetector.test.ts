@@ -169,6 +169,53 @@ describe("CrashDetector", () => {
     expect(captured).not.toBeNull();
   });
 
+  it("does not re-fire within rearmDelayMs of a previous trigger", () => {
+    // After a positive trigger the state machine returns to idle so
+    // the detector keeps protecting the rider, but an immediate second
+    // spike (helmet impact + body slam land seconds apart) must NOT
+    // produce a second countdown. Use a short delay for the test.
+    const detector = new CrashDetector({ rearmDelayMs: 60_000 });
+    let fires = 0;
+    detector.onCrash(() => {
+      fires += 1;
+    });
+
+    // First crash sequence.
+    const firstSpike = feedMagnitude(
+      detector,
+      0,
+      200,
+      CRASH_DEFAULTS.peakG * GRAVITY,
+    );
+    feedMagnitude(detector, firstSpike.lastT + SAMPLE_PERIOD_MS, 6_000, 0.05);
+    expect(fires).toBe(1);
+
+    // Second spike 10 seconds after the fire — well inside the rearm
+    // window. Must NOT trigger a second event.
+    const secondStart = 10_000;
+    const secondSpike = feedMagnitude(
+      detector,
+      secondStart,
+      200,
+      CRASH_DEFAULTS.peakG * GRAVITY,
+    );
+    feedMagnitude(detector, secondSpike.lastT + SAMPLE_PERIOD_MS, 6_000, 0.05);
+    expect(fires).toBe(1);
+
+    // After the rearm window has elapsed a real new crash must fire
+    // again so the rider isn't permanently unprotected after a single
+    // false positive.
+    const thirdStart = 80_000;
+    const thirdSpike = feedMagnitude(
+      detector,
+      thirdStart,
+      200,
+      CRASH_DEFAULTS.peakG * GRAVITY,
+    );
+    feedMagnitude(detector, thirdSpike.lastT + SAMPLE_PERIOD_MS, 6_000, 0.05);
+    expect(fires).toBe(2);
+  });
+
   it("reset() clears in-progress spike state", () => {
     const detector = new CrashDetector();
     feedMagnitude(detector, 0, 60, CRASH_DEFAULTS.peakG * GRAVITY);

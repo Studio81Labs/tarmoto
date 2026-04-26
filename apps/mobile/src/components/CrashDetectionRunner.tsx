@@ -29,13 +29,17 @@ export default function CrashDetectionRunner(): React.ReactElement | null {
   const crashDetectionEnabled = useAuthStore(
     (s) => s.user?.preferences?.crash_detection ?? false,
   );
+  // Subscribe to the phase as a derived boolean so this effect re-runs
+  // when the alert overlay clears back to idle. Earlier we only checked
+  // `phase !== "idle"` once at subscribe time with no `phase` dep, so
+  // any non-idle phase that lingered while `isRiding` / preference
+  // stayed stable would silently disable the detector for the rest of
+  // the ride. (Bugbot 4ee09bc2.)
+  const isPhaseIdle = useCrashStore((s) => s.phase === "idle");
   const detectorRef = useRef<CrashDetector | null>(null);
 
   useEffect(() => {
-    if (!isRiding || !crashDetectionEnabled) return;
-    // Already showing a crash alert from a prior trigger — don't fire
-    // a second one over the top.
-    if (useCrashStore.getState().phase !== "idle") return;
+    if (!isRiding || !crashDetectionEnabled || !isPhaseIdle) return;
 
     const detector = new CrashDetector();
     detectorRef.current = detector;
@@ -69,7 +73,7 @@ export default function CrashDetectionRunner(): React.ReactElement | null {
         detectorRef.current = null;
       }
     };
-  }, [isRiding, crashDetectionEnabled]);
+  }, [isRiding, crashDetectionEnabled, isPhaseIdle]);
 
   return null;
 }

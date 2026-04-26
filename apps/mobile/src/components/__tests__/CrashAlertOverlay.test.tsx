@@ -120,6 +120,46 @@ describe("CrashAlertOverlay", () => {
     expect(useCrashStore.getState().phase).toBe("dispatched");
   });
 
+  it("hides the cancel button once dispatch starts", async () => {
+    // Bugbot 1032971c: while the network call is in flight phase
+    // flips to "dispatching" and the cancel button must be gone, so
+    // a late tap on "I'm OK" can't pretend to cancel an alert that
+    // has already been sent.
+    let resolveSend: () => void = () => {};
+    mockedApi.sendCrashAlert.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSend = resolve;
+        }),
+    );
+    render(<CrashAlertOverlay countdownMs={500} />);
+    act(() => {
+      useCrashStore.getState().startCountdown(snapshot());
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(800);
+    });
+
+    await waitFor(() =>
+      expect(useCrashStore.getState().phase).toBe("dispatching"),
+    );
+    expect(screen.queryByLabelText(/cancel crash alert/i)).toBeNull();
+
+    // Even calling cancel() programmatically while dispatching must be
+    // a no-op so a stale tap from before the phase flipped can't reset
+    // the store.
+    act(() => useCrashStore.getState().cancel());
+    expect(useCrashStore.getState().phase).toBe("dispatching");
+
+    await act(async () => {
+      resolveSend();
+    });
+    await waitFor(() =>
+      expect(useCrashStore.getState().phase).toBe("dispatched"),
+    );
+  });
+
   it("flips to failed state when the API rejects", async () => {
     mockedApi.sendCrashAlert.mockRejectedValueOnce(new Error("offline"));
     render(<CrashAlertOverlay countdownMs={500} />);

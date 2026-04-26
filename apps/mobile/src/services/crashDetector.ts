@@ -50,6 +50,7 @@ export interface CrashDetectorOptions {
   peakDurationMs?: number;
   immobilityDurationMs?: number;
   immobilityRmsMax?: number;
+  rearmDelayMs?: number;
   /** Override `Date.now()` for deterministic tests. */
   now?: () => number;
 }
@@ -97,10 +98,21 @@ export class CrashDetector {
   private readonly peakDurationMs: number;
   private readonly immobilityDurationMs: number;
   private readonly immobilityRmsMax: number;
+  private readonly rearmDelayMs: number;
   private readonly now: () => number;
 
   private state: State = { kind: "idle" };
   private listener: CrashCallback | null = null;
+  /**
+   * Wall-clock timestamp of the last positive trigger. The state
+   * machine returns to idle immediately after firing so a future
+   * crash can still be detected, but we refuse to enter the spiking
+   * branch again until `rearmDelayMs` has elapsed. Without this guard
+   * the detector could fire twice within seconds (e.g. helmet impact
+   * then a second slap as the rider falls), spamming the rider with
+   * back-to-back countdown overlays for the same incident.
+   */
+  private lastFireAt: number | null = null;
 
   constructor(options: CrashDetectorOptions = {}) {
     this.peakG = options.peakG ?? CRASH_DEFAULTS.peakG;
@@ -111,6 +123,7 @@ export class CrashDetector {
       options.immobilityDurationMs ?? CRASH_DEFAULTS.immobilityDurationMs;
     this.immobilityRmsMax =
       options.immobilityRmsMax ?? CRASH_DEFAULTS.immobilityRmsMax;
+    this.rearmDelayMs = options.rearmDelayMs ?? CRASH_DEFAULTS.rearmDelayMs;
     this.now = options.now ?? (() => Date.now());
   }
 
@@ -121,6 +134,7 @@ export class CrashDetector {
   /** Discard transient state (e.g. ride stopped). */
   reset(): void {
     this.state = { kind: "idle" };
+    this.lastFireAt = null;
   }
 
   /**
@@ -140,6 +154,16 @@ export class CrashDetector {
 
     switch (this.state.kind) {
       case "idle": {
+        // Refuse to re-arm within `rearmDelayMs` of a previous trigger
+        // so a single incident can't fire two countdowns in a row
+        // (helmet impact + body slam land within seconds and would
+        // otherwise both clear the spike + immobility checks).
+        if (
+          this.lastFireAt !== null &&
+          t - this.lastFireAt < this.rearmDelayMs
+        ) {
+          return null;
+        }
         if (magnitude >= this.peakThresholdMs2) {
           this.state = { kind: "spiking", startedAt: t, peak: magnitude };
         }
@@ -193,6 +217,7 @@ export class CrashDetector {
             peakAcceleration: peak,
           };
           this.state = { kind: "idle" };
+          this.lastFireAt = t;
           this.listener?.(event);
           return event;
         }
