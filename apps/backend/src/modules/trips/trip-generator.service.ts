@@ -220,6 +220,11 @@ export class TripGeneratorService {
     const routingOptions: RoutingOptions = {
       avoidHighways: dto.avoid_highways,
       avoidTolls: dto.avoid_tolls,
+      // Score the primary route too, not just the alternatives — many
+      // rural / mountain legs have a single OSRM-returned route and
+      // dropping the primary would otherwise leave us with an empty
+      // candidate set and a synthetic 0 km fallback day.
+      includePrimary: true,
     };
     const candidatesByDay = await Promise.all(
       chain.map(async (leg) => {

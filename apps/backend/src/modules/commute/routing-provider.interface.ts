@@ -20,6 +20,17 @@ export interface RouteAlternative {
 export interface RoutingOptions {
   avoidHighways?: boolean;
   avoidTolls?: boolean;
+  /**
+   * When true, the returned set includes the routing engine's primary
+   * (lowest-duration) route at index 0 in addition to alternatives.
+   * The trip generator sets this so every candidate is scored
+   * equally — without it, OSRM's primary would be silently dropped
+   * and any leg with only one route would fall through to a
+   * synthetic 0 km stub. The commute module relies on the default
+   * (false) because it persists its own primary and only wants
+   * **other** routes to compare against.
+   */
+  includePrimary?: boolean;
 }
 
 /**

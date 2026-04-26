@@ -88,8 +88,14 @@ export class OsrmProvider implements RoutingProvider {
     }
 
     // OSRM returns the optimal route at index 0, alternatives at 1+.
-    // Skip the primary and return only true alternatives, capped at maxAlternatives.
-    return data.routes.slice(1, maxAlternatives + 1).map((route) => ({
+    // The commute module persists its own primary, so by default we
+    // skip index 0 and surface only the true alternatives. The trip
+    // generator (US-7) opts in via `includePrimary` because it wants
+    // every candidate scored equally — otherwise a leg where OSRM
+    // found only one route would yield an empty set and fall through
+    // to a synthetic 0 km stub day.
+    const start = options?.includePrimary ? 0 : 1;
+    return data.routes.slice(start, start + maxAlternatives).map((route) => ({
       distance_km: Math.round((route.distance / 1000) * 100) / 100,
       duration_min: Math.round(route.duration / 60),
       geometry: route.geometry.coordinates.map((c) => ({
