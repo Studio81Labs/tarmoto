@@ -76,10 +76,6 @@ vi.mock("@/components/SegmentSidebar", () => ({
   SegmentSidebar: () => <div data-testid="segment-sidebar" />,
 }));
 
-vi.mock("@/components/TripStopsPanel", () => ({
-  TripStopsPanel: () => <div data-testid="trip-stops-panel" />,
-}));
-
 vi.mock("@/components/TripExportMenu", () => ({
   TripExportMenu: () => <button>Export</button>,
 }));

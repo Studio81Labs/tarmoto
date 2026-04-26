@@ -234,7 +234,18 @@ export class TripsService {
       throw new NotFoundException('Trip not found');
     }
 
-    await this.tripRepo.delete({ id: tripId });
+    const result = await this.tripRepo.delete({ id: tripId });
+
+    // Concurrent double-delete: two requests from the same owner can
+    // both pass the membership check before either DELETE lands, and
+    // the second one will find the row already gone. `affected: 0`
+    // means another caller (or a racing manual delete) won that race —
+    // fold into a 404 so the late caller gets a consistent response
+    // and doesn't broadcast a duplicate `trip:deleted` to live
+    // collaborators.
+    if (result.affected === 0) {
+      throw new NotFoundException('Trip not found');
+    }
 
     // Emit AFTER the delete commits so a failed delete (FK violation,
     // dropped connection, etc.) doesn't broadcast a deletion that

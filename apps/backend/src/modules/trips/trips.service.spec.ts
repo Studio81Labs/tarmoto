@@ -734,6 +734,24 @@ describe('TripsService', () => {
       expect(events.emitToTrip).not.toHaveBeenCalled();
     });
 
+    it('404s and skips the emit when the delete affects 0 rows (concurrent double-delete)', async () => {
+      // Two requests from the same owner can both pass the membership
+      // check before either DELETE lands. The loser should see a 404
+      // instead of a duplicate `trip:deleted` broadcast that would tear
+      // down already-disconnected collaborators a second time.
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      (tripRepo.delete as jest.Mock) = jest
+        .fn()
+        .mockResolvedValue({ affected: 0 });
+
+      await expect(service.remove(OWNER_ID, TRIP_ID)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(events.emitToTrip).not.toHaveBeenCalled();
+    });
+
     it('404s a non-owner (admins, members, non-members all collapse)', async () => {
       (tripRepo.delete as jest.Mock) = jest.fn();
 

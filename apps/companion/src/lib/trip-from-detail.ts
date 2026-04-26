@@ -1,4 +1,5 @@
 import type {
+  POI,
   SurfaceType,
   Trip,
   TripDay,
@@ -129,14 +130,33 @@ export function findOwnerId(detail: TripDetailResponse): string | null {
 }
 
 function mapDay(day: TripDetailDay): TripDay {
-  const waypoints: Waypoint[] = [...(day.waypoints ?? [])]
-    .sort((a, b) => a.sequence - b.sequence)
-    .map((w) => ({
-      id: w.id,
-      name: w.name ?? undefined,
-      location: { lat: w.lat, lng: w.lng },
-      type: WAYPOINT_TYPE_MAP[w.waypoint_type] ?? "via",
-    }));
+  const sortedSourceWaypoints = [...(day.waypoints ?? [])].sort(
+    (a, b) => a.sequence - b.sequence,
+  );
+  const waypoints: Waypoint[] = sortedSourceWaypoints.map((w) => ({
+    id: w.id,
+    name: w.name ?? undefined,
+    location: { lat: w.lat, lng: w.lng },
+    type: WAYPOINT_TYPE_MAP[w.waypoint_type] ?? "via",
+  }));
+
+  // Surface the day's overnight stop as a `POI` so the detail page's
+  // day-by-day card can show "Overnight: …" without re-scanning every
+  // waypoint. The backend trip generator ends each non-final day with a
+  // `hotel` waypoint, and a day shouldn't realistically have more than
+  // one — but if a planner adds extras, the latest by sequence wins so
+  // we surface the actual end-of-day stay instead of an early stopover.
+  const lastHotel = [...sortedSourceWaypoints]
+    .reverse()
+    .find((w) => w.waypoint_type === "hotel");
+  const overnightStop: POI | undefined = lastHotel
+    ? {
+        id: lastHotel.id,
+        name: lastHotel.name ?? `Day ${day.day_number} overnight`,
+        type: "accommodation",
+        location: { lat: lastHotel.lat, lng: lastHotel.lng },
+      }
+    : undefined;
 
   const routeGeometry = day.route_geometry?.length
     ? {
@@ -157,6 +177,7 @@ function mapDay(day: TripDetailDay): TripDay {
     durationMinutes: day.estimated_time_min ?? 0,
     elevationGain: day.elevation_gain ?? 0,
     avgQuality: day.avg_quality ?? 0,
+    overnightStop,
   };
 }
 

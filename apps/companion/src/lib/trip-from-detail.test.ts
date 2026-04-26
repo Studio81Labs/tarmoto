@@ -133,6 +133,48 @@ describe("tripFromDetail", () => {
     expect(wps[2]!.type).toBe("accommodation");
   });
 
+  it("surfaces the day's hotel waypoint as overnightStop so DaysList can render it", () => {
+    const trip = tripFromDetail(makeDetail());
+    expect(trip.days[0]!.overnightStop).toEqual({
+      id: "w-2",
+      name: "Hotel Sella",
+      type: "accommodation",
+      location: { lat: 46.6, lng: 11.3 },
+    });
+  });
+
+  it("falls back to a 'Day N overnight' label when the hotel waypoint has no name", () => {
+    const detail = makeDetail();
+    const day = detail.days[0]!;
+    const trip = tripFromDetail({
+      ...detail,
+      days: [
+        {
+          ...day,
+          waypoints: day.waypoints.map((w) =>
+            w.waypoint_type === "hotel" ? { ...w, name: null } : w,
+          ),
+        },
+      ],
+    });
+    expect(trip.days[0]!.overnightStop?.name).toBe("Day 1 overnight");
+  });
+
+  it("leaves overnightStop undefined when the day has no hotel waypoint", () => {
+    const detail = makeDetail();
+    const day = detail.days[0]!;
+    const trip = tripFromDetail({
+      ...detail,
+      days: [
+        {
+          ...day,
+          waypoints: day.waypoints.filter((w) => w.waypoint_type !== "hotel"),
+        },
+      ],
+    });
+    expect(trip.days[0]!.overnightStop).toBeUndefined();
+  });
+
   it("converts route_geometry {lat,lng}[] into GeoJSON [lng,lat][] tuples", () => {
     const trip = tripFromDetail(makeDetail());
     const geom = trip.days[0]!.routeGeometry!;

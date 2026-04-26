@@ -29,7 +29,6 @@ import { usePasses } from "@/hooks/usePasses";
 import { useTripCollabSession } from "@/hooks/useTripCollabSession";
 import { TripPlannerMap } from "@/components/TripPlannerMap";
 import { SegmentSidebar } from "@/components/SegmentSidebar";
-import { TripStopsPanel } from "@/components/TripStopsPanel";
 import { TripCollaborateModal } from "@/components/TripCollaborateModal";
 import { TripExportMenu } from "@/components/TripExportMenu";
 import { buildTripClosureRoutes } from "@/lib/closures-summary";
@@ -371,7 +370,6 @@ export default function TripDetailPage() {
             {activeTab === "days" && (
               <div className="p-4 space-y-4">
                 <DaysList trip={trip} />
-                <TripStopsPanel trip={trip} />
                 <SegmentSidebarSection />
               </div>
             )}
