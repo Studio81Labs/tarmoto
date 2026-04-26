@@ -159,11 +159,28 @@ export default function CrashAlertOverlay({
     // the resolve. (Bugbot 1032971c.)
     beginDispatch();
     try {
-      await api.sendCrashAlert(alert.lat, alert.lng, {
+      // `alert.alertId` is a stable UUID generated once in
+      // `startCountdown`. Threading it on every attempt gives the
+      // backend a fixed idempotency key so a network retry replays
+      // the original outcome instead of re-notifying contacts.
+      const result = await api.sendCrashAlert(alert.lat, alert.lng, {
         rideId: alert.rideId ?? undefined,
         speedAtImpact: alert.speedAtImpact ?? undefined,
+        alertId: alert.alertId,
       });
-      markDispatched();
+      // Backend returns 200 even when nothing actually went out (every
+      // contact failed, notifier unconfigured, no contacts on file).
+      // Surface that as a failure so the rider doesn't see "HELP IS ON
+      // THE WAY" while the alert silently fizzled.
+      if (result.contacts_notified === 0) {
+        markFailed(
+          result.contacts.length === 0
+            ? "No emergency contacts on file."
+            : "Couldn't reach any of your emergency contacts.",
+        );
+      } else {
+        markDispatched();
+      }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Couldn't reach the server.";

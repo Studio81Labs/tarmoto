@@ -145,7 +145,32 @@ export type CrashAlertPhase =
   | "dispatched"
   | "failed";
 
+/**
+ * RFC 4122 v4 UUID — used as the per-incident idempotency key for
+ * `POST /safety/crash-alert`. `Math.random` is good enough here: a
+ * collision would only mean the backend treats two unrelated alerts
+ * as the same one, and the chance over the entire user base is
+ * astronomical (~5e-39 per call). React Native doesn't polyfill
+ * `crypto.randomUUID` on every supported version, so a small
+ * inline generator avoids a native dependency.
+ */
+function makeIncidentId(): string {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 interface CrashAlertSnapshot {
+  /**
+   * Stable per-incident UUIDv4 used as the backend idempotency key.
+   * Generated once in `startCountdown` and reused for every dispatch
+   * attempt of the same incident, so a network retry can replay the
+   * original outcome instead of re-notifying contacts. Cleared on
+   * `cancel`/`reset` along with the rest of the snapshot.
+   */
+  alertId: string;
   /** Trigger location at the moment of detection. May be null if GPS is offline. */
   lat: number | null;
   lng: number | null;
@@ -162,7 +187,14 @@ interface CrashState {
   alert: CrashAlertSnapshot | null;
   /** Error message from the last failed dispatch, if any. */
   errorMessage: string | null;
-  startCountdown: (snapshot: CrashAlertSnapshot) => void;
+  /**
+   * Begin the cancellable countdown for a fresh incident. The store
+   * stamps a stable `alertId` (UUIDv4) on the snapshot so every
+   * dispatch attempt for this incident — including manual RETRY taps
+   * — uses the same backend idempotency key. Callers do not need to
+   * provide one.
+   */
+  startCountdown: (snapshot: Omit<CrashAlertSnapshot, "alertId">) => void;
   /**
    * Move into the dispatching phase. Once here the rider can no longer
    * silently cancel: the POST is already in flight (or about to be) and
@@ -183,8 +215,12 @@ export const useCrashStore = create<CrashState>((set) => ({
   phase: "idle",
   alert: null,
   errorMessage: null,
-  startCountdown: (alert) =>
-    set({ phase: "countdown", alert, errorMessage: null }),
+  startCountdown: (snapshot) =>
+    set({
+      phase: "countdown",
+      alert: { ...snapshot, alertId: makeIncidentId() },
+      errorMessage: null,
+    }),
   beginDispatch: () =>
     set((s) =>
       s.phase === "countdown"

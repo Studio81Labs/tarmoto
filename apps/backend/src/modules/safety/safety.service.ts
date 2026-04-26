@@ -320,8 +320,23 @@ export class SafetyService {
     );
 
     if (reclaimResult.affected === 0) {
-      // Lost the reclaim race. The other reclaimer is dispatching,
-      // so report in-flight rather than running our own dispatch.
+      // Two ways to land here:
+      //   (a) another reclaimer won the race — row is in-flight under
+      //       a fresh claim by some other request,
+      //   (b) the original "stale" dispatch actually finished in the
+      //       window between the findOne and the reclaim UPDATE.
+      // Re-fetch to tell them apart so we don't mislabel a completed
+      // alert as "still dispatching".
+      const current = await this.alertRepo.findOne({
+        where: { id: alertId, user_id: userId },
+      });
+      if (current?.dispatch_completed_at) {
+        this.logger.warn(
+          `crash-alert ${alertId} completed in reclaim race window — ` +
+            'returning completed replay',
+        );
+        return { replay: this.toReplayResponse(current) };
+      }
       this.logger.warn(
         `crash-alert reclaim race lost id=${alertId} — concurrent retry won`,
       );

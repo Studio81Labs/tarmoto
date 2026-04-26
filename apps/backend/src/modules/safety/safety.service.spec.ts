@@ -532,6 +532,82 @@ describe('SafetyService', () => {
       expect(notifier.send).toHaveBeenCalledTimes(2);
     });
 
+    it('replays a completed row when the reclaim race ends with the original finishing', async () => {
+      // Reclaim-update returns affected=0 in two cases: another
+      // reclaimer won (in-flight), OR the original finally finished
+      // between our findOne and our reclaim UPDATE. In the second
+      // case the row is now completed; we must NOT report
+      // `dispatch_in_progress: true` — the rider deserves the real
+      // outcome.
+      const sharedId = '00000000-0000-4000-8000-0000000000c1';
+
+      // Seed a stale-looking row with completed=null. The mock's
+      // optimistic-lock predicate (`created_at: existing.created_at`)
+      // will flip it under us mid-call by the time the reclaim
+      // UPDATE is attempted, so reclaimResult.affected=0.
+      const originalCreatedAt = new Date(Date.now() - 10 * 60 * 1000);
+      alertStore.set(sharedId, {
+        id: sharedId,
+        user_id: 'user-1',
+        ride_id: null,
+        lat: 0,
+        lng: 0,
+        speed_at_impact: null,
+        severity: 'medium',
+        locale: 'en',
+        contacts_notified: 1,
+        contacts_total: 2,
+        contact_results: [
+          {
+            contact_id: 'c-1',
+            name: 'Jane',
+            phone: '+420111',
+            channel: 'sms',
+            status: 'sent',
+            provider_message_id: 'SM-original',
+            error: null,
+          },
+        ],
+        dispatch_completed_at: null,
+        created_at: originalCreatedAt,
+      } as CrashAlert);
+
+      // Race window: between findOne and the reclaim UPDATE the
+      // original request lands its completion. We simulate that by
+      // mutating the row inside the update mock the first time it's
+      // called for this id.
+      const realUpdate = alertRepo.update!.getMockImplementation();
+      alertRepo.update!.mockImplementationOnce(async (criteria, _patch) => {
+        const c = criteria as { id: string };
+        if (c.id === sharedId) {
+          const existing = alertStore.get(sharedId);
+          if (existing) {
+            alertStore.set(sharedId, {
+              ...existing,
+              dispatch_completed_at: new Date(),
+              created_at: new Date(), // moves out of the optimistic-lock window
+            });
+          }
+          return { affected: 0, raw: [], generatedMaps: [] };
+        }
+        return realUpdate!(criteria, _patch);
+      });
+
+      const result = await service.sendCrashAlert('user-1', {
+        lat: 49.1,
+        lng: 16.75,
+        alert_id: sharedId,
+      });
+
+      // Lost the reclaim race, but the row is COMPLETE — surface the
+      // real recorded outcome, not a misleading "still dispatching".
+      expect(result.idempotent_replay).toBe(true);
+      expect(result.dispatch_in_progress).toBe(false);
+      expect(result.contacts_notified).toBe(1);
+      expect(result.contacts).toHaveLength(1);
+      expect(result.contacts[0].provider_message_id).toBe('SM-original');
+    });
+
     it('propagates a completion-update failure instead of silently leaving the row in-flight', async () => {
       // If the post-dispatch UPDATE itself fails (DB hiccup, connection
       // drop), swallowing it would leave `dispatch_completed_at = null`
