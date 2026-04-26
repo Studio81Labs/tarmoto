@@ -231,6 +231,53 @@ describe("CrashAlertOverlay", () => {
     }
   });
 
+  it("retry tap fires exactly one POST and hides the retry button", async () => {
+    // Bugbot ac36c38f: the previous retry handler reset the in-flight
+    // guard on every tap, so consecutive presses (or any other caller
+    // re-invoking `dispatch()`) could queue a second
+    // `POST /safety/crash-alert` — double-notifying emergency
+    // contacts. Two defences now stack: pressing RETRY immediately
+    // flips the phase to "dispatching" so the button unmounts
+    // (preventing UI re-tap), and a separate `inFlightRef` guards
+    // concurrent `dispatch()` calls from any other code path.
+    let resolveSend: () => void = () => {};
+    let pendingCount = 0;
+    mockedApi.sendCrashAlert.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          pendingCount += 1;
+          resolveSend = () => {
+            pendingCount -= 1;
+            resolve();
+          };
+        }),
+    );
+    render(<CrashAlertOverlay countdownMs={300} />);
+    act(() => {
+      useCrashStore.getState().startCountdown(snapshot());
+      // Skip the countdown — drop straight into the failed terminal
+      // state so the retry path is the only thing under test.
+      useCrashStore.setState({ phase: "failed", errorMessage: "offline" });
+    });
+
+    fireEvent.press(screen.getByLabelText(/retry crash alert/i));
+
+    // Single fire only — the button must unmount synchronously and any
+    // re-invocation of `dispatch()` must short-circuit on the in-flight
+    // ref until this request resolves.
+    await waitFor(() => expect(pendingCount).toBe(1));
+    expect(mockedApi.sendCrashAlert).toHaveBeenCalledTimes(1);
+    expect(screen.queryByLabelText(/retry crash alert/i)).toBeNull();
+    expect(useCrashStore.getState().phase).toBe("dispatching");
+
+    await act(async () => {
+      resolveSend();
+    });
+    await waitFor(() =>
+      expect(useCrashStore.getState().phase).toBe("dispatched"),
+    );
+  });
+
   it("flips to failed state when the API rejects", async () => {
     mockedApi.sendCrashAlert.mockRejectedValueOnce(new Error("offline"));
     render(<CrashAlertOverlay countdownMs={500} />);

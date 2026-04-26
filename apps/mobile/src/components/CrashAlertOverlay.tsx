@@ -77,7 +77,17 @@ export default function CrashAlertOverlay({
   const resetAlert = useCrashStore((s) => s.reset);
 
   const [remainingMs, setRemainingMs] = useState(countdownMs);
-  const dispatchedRef = useRef(false);
+  /**
+   * Set while a `sendCrashAlert` request is in flight. Used as the
+   * single source of truth for "another dispatch is already running" so
+   * a double-tap on RETRY (or a re-fire of the auto-dispatch effect)
+   * can't queue a second `POST /safety/crash-alert` for the same
+   * incident — that would double-notify emergency contacts. (Bugbot
+   * ac36c38f.) The ref is only cleared in the request's `finally`, so
+   * the next legitimate retry tap proceeds the moment the current
+   * attempt has completed (resolve or reject).
+   */
+  const inFlightRef = useRef(false);
   // Lifted out of the countdown effect so the AppState handler can also
   // recompute the remaining time when the rider returns from background
   // — see the foreground hook below.
@@ -89,7 +99,6 @@ export default function CrashAlertOverlay({
   useEffect(() => {
     if (phase !== "countdown") {
       setRemainingMs(countdownMs);
-      dispatchedRef.current = false;
       startedAtRef.current = null;
       return;
     }
@@ -117,8 +126,14 @@ export default function CrashAlertOverlay({
 
   // ── Auto-dispatch on countdown elapsed ──
   const dispatch = useCallback(async () => {
-    if (dispatchedRef.current) return;
-    dispatchedRef.current = true;
+    // `inFlightRef` is the single guard against concurrent dispatches.
+    // Both the auto-dispatch effect (fires whenever phase=countdown and
+    // remaining<=0) and the manual RETRY button funnel through this
+    // function; the ref ensures only one POST is in flight at a time.
+    // Critically, the ref is NOT reset by callers — only the `finally`
+    // below clears it, so a double-tap on RETRY can't race past the
+    // guard.
+    if (inFlightRef.current) return;
     if (!alert) {
       // Defensive: no snapshot means we have nothing to send. Surface as
       // a failure so the rider knows the alert didn't go out.
@@ -134,6 +149,7 @@ export default function CrashAlertOverlay({
       markFailed("No GPS fix at the moment of impact.");
       return;
     }
+    inFlightRef.current = true;
     // Flip into the dispatching phase BEFORE the network call so the
     // cancel button is hidden for the rest of the request lifecycle.
     // Without this gate the rider could tap "I'm OK" while the POST is
@@ -154,6 +170,8 @@ export default function CrashAlertOverlay({
       const message =
         err instanceof Error ? err.message : "Couldn't reach the server.";
       markFailed(message);
+    } finally {
+      inFlightRef.current = false;
     }
   }, [alert, beginDispatch, markDispatched, markFailed]);
 
@@ -250,11 +268,12 @@ export default function CrashAlertOverlay({
             <TouchableOpacity
               style={styles.cancelBtn}
               onPress={() => {
-                dispatchedRef.current = false;
-                // Skip straight back to dispatching — going through
-                // countdown would re-prompt the rider with a 30-second
-                // "I'm OK" timer after they explicitly chose to retry,
-                // which is worse UX than just re-firing the request.
+                // Hop straight to dispatching so the failed UI hides
+                // immediately — re-running the 30-second countdown
+                // after an explicit retry tap would be worse UX.
+                // `dispatch()`'s own `inFlightRef` guard takes care of
+                // dedupe if the rider double-taps before the request
+                // resolves; we don't reset any flag here ourselves.
                 useCrashStore.setState({ phase: "dispatching" });
                 void dispatch();
               }}
