@@ -532,6 +532,26 @@ describe('SafetyService', () => {
       expect(notifier.send).toHaveBeenCalledTimes(2);
     });
 
+    it('propagates a completion-update failure instead of silently leaving the row in-flight', async () => {
+      // If the post-dispatch UPDATE itself fails (DB hiccup, connection
+      // drop), swallowing it would leave `dispatch_completed_at = null`
+      // forever — a retry within the stale window would then get a
+      // misleading `dispatch_in_progress: true`, suppressing the proper
+      // replay. Surfacing the error to the caller is the honest answer.
+      alertRepo.update!.mockImplementationOnce(() => {
+        throw new Error('connection lost');
+      });
+
+      await expect(
+        service.sendCrashAlert('user-1', { lat: 49.1, lng: 16.75 }),
+      ).rejects.toThrow('connection lost');
+
+      // Notifier ran (so SMS already left the system) but the row
+      // could not be marked complete — that's the inconsistency the
+      // 5xx surfaces to ops.
+      expect(notifier.send).toHaveBeenCalled();
+    });
+
     it('still closes the audit row when dispatch throws mid-flight', async () => {
       // Mock Promise.all to throw — emulates an unexpected error in the
       // dispatch fan-out (out-of-memory, propagated DB hiccup, etc).

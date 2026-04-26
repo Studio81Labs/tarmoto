@@ -16,6 +16,15 @@ interface TwilioMessageResponse {
 }
 
 /**
+ * Hard cap on a single Twilio HTTP call. Crash dispatch is a
+ * safety-critical synchronous flow — a blackholed Twilio request
+ * must never hang the request and keep the audit row in-flight for
+ * minutes (which would block legitimate replays and defer the
+ * stale-reclaim window).
+ */
+const TWILIO_REQUEST_TIMEOUT_MS = 10_000;
+
+/**
  * Twilio implementation of {@link CrashAlertNotifier}.
  *
  * Configured via:
@@ -146,15 +155,35 @@ export class TwilioCrashAlertNotifier implements CrashAlertNotifier {
       'base64',
     );
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${auth}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'I-Twilio-Idempotency-Token': idempotencyKey,
-      },
-      body: params.toString(),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      TWILIO_REQUEST_TIMEOUT_MS,
+    );
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${auth}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'I-Twilio-Idempotency-Token': idempotencyKey,
+        },
+        body: params.toString(),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      if (controller.signal.aborted) {
+        throw new Error(
+          `Twilio API timeout after ${TWILIO_REQUEST_TIMEOUT_MS}ms`,
+          { cause: err },
+        );
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeout);
+    }
 
     let body: TwilioMessageResponse = {};
     try {

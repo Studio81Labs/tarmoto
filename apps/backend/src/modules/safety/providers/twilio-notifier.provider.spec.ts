@@ -169,5 +169,34 @@ describe('TwilioCrashAlertNotifier', () => {
         provider.send('sms', baseRecipient, baseContext),
       ).rejects.toThrow('Twilio API error: Authenticate');
     });
+
+    it('aborts a hung request and throws a timeout error', async () => {
+      // Simulate a blackholed Twilio call: fetch never resolves on its
+      // own, only when the AbortController fires. Without the
+      // provider's hard timeout this would hang the dispatch and keep
+      // the audit row in-flight indefinitely.
+      global.fetch = jest.fn(
+        (_url: string, init: { signal?: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () => {
+              const err = new Error('aborted') as Error & { name: string };
+              err.name = 'AbortError';
+              reject(err);
+            });
+          }),
+      ) as unknown as typeof fetch;
+
+      jest.useFakeTimers();
+      // Attach a catch up-front so the rejection isn't reported as
+      // unhandled while we're advancing timers.
+      const promise = provider.send('sms', baseRecipient, baseContext);
+      const captured = promise.catch((e: Error) => e);
+      // Advance past the 10 s timeout the provider sets.
+      await jest.advanceTimersByTimeAsync(11_000);
+      const err = await captured;
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).message).toContain('Twilio API timeout');
+      jest.useRealTimers();
+    });
   });
 });

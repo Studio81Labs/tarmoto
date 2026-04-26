@@ -117,56 +117,53 @@ export class SafetyService {
 
     const useVoice = severity === 'high';
 
-    let contactsNotified = 0;
-    let flatResults: CrashAlertContactResult[] = [];
-    try {
-      const dispatchResults = await Promise.all(
-        contacts.map((contact) =>
-          this.dispatchToContact(contact, context, useVoice),
-        ),
-      );
+    // Per-contact failures are caught inside `dispatchToContact` —
+    // notifier errors map to `status: 'failed'` audit entries rather
+    // than throwing — so this Promise.all only rejects on a programmer
+    // error or unhandled exception, in which case the request should
+    // 500 anyway and the placeholder will be reclaimed by the
+    // STALE_DISPATCH_MS path on retry.
+    const dispatchResults = await Promise.all(
+      contacts.map((contact) =>
+        this.dispatchToContact(contact, context, useVoice),
+      ),
+    );
 
-      contactsNotified = dispatchResults.filter((r) =>
-        r.some((entry) => entry.status === 'sent'),
-      ).length;
-      flatResults = dispatchResults.flat();
-    } finally {
-      // Always close the row, even if dispatch threw, so retries don't
-      // see a permanent in-flight placeholder. The WHERE clause gates
-      // on `created_at = claimedAt` so a stale call whose claim was
-      // already reclaimed by a newer retry can't clobber the
-      // reclaimer's row — `affected === 0` means our claim was
-      // superseded and the new claim owns the row now. A genuine
-      // update error is logged loudly; the stale-row recovery path
-      // in claimAlertRow is the backstop.
-      try {
-        const result = await this.alertRepo.update(
-          {
-            id: alertId,
-            user_id: userId,
-            created_at: claimedAt,
-            dispatch_completed_at: IsNull(),
-          },
-          {
-            contacts_notified: contactsNotified,
-            contact_results: flatResults,
-            dispatch_completed_at: new Date(),
-          },
-        );
-        if (result.affected === 0) {
-          this.logger.warn(
-            `crash-alert ${alertId} completion skipped — claim was ` +
-              'reclaimed by a newer retry while dispatch was running',
-          );
-        }
-      } catch (updateErr) {
-        const msg =
-          updateErr instanceof Error ? updateErr.message : String(updateErr);
-        this.logger.error(
-          `crash-alert ${alertId} completion update failed: ${msg} — ` +
-            `placeholder row may be stale until reclaimed by a retry`,
-        );
-      }
+    const contactsNotified = dispatchResults.filter((r) =>
+      r.some((entry) => entry.status === 'sent'),
+    ).length;
+    const flatResults: CrashAlertContactResult[] = dispatchResults.flat();
+
+    // Close the row. The WHERE clause gates on `created_at = claimedAt`
+    // so a stale call whose claim was already reclaimed by a newer
+    // retry can't clobber the reclaimer's row — `affected === 0` means
+    // our claim was superseded.
+    //
+    // Failures here are intentionally NOT swallowed: if we can't
+    // persist completion, the audit row stays in-flight indefinitely
+    // and a retry within the stale window would get a misleading
+    // `dispatch_in_progress: true` (suppressing the proper replay),
+    // while a retry past the stale window would re-send the SMS to the
+    // same contacts. Propagating to the client surfaces the
+    // inconsistency loudly so ops can intervene.
+    const result = await this.alertRepo.update(
+      {
+        id: alertId,
+        user_id: userId,
+        created_at: claimedAt,
+        dispatch_completed_at: IsNull(),
+      },
+      {
+        contacts_notified: contactsNotified,
+        contact_results: flatResults,
+        dispatch_completed_at: new Date(),
+      },
+    );
+    if (result.affected === 0) {
+      this.logger.warn(
+        `crash-alert ${alertId} completion skipped — claim was ` +
+          'reclaimed by a newer retry while dispatch was running',
+      );
     }
 
     this.eventsGateway.emitToUser(userId, 'crash:alert-sent', {
@@ -276,7 +273,7 @@ export class SafetyService {
     }
 
     if (existing.dispatch_completed_at !== null) {
-      return { replay: this.toReplayResponse(existing, false) };
+      return { replay: this.toReplayResponse(existing) };
     }
 
     const ageMs = Date.now() - existing.created_at.getTime();
@@ -346,10 +343,14 @@ export class SafetyService {
     return { replay: null, claimedAt };
   }
 
-  private toReplayResponse(
-    existing: CrashAlert,
-    dispatchInProgress: boolean,
-  ): CrashAlertResponseDto {
+  /**
+   * Render the response for a completed prior dispatch. The
+   * `dispatch_in_progress: false` literal mirrors the row state —
+   * the in-flight and stale-reclaim-lost branches build their own
+   * responses inline because their semantics (and contacts payload)
+   * differ.
+   */
+  private toReplayResponse(existing: CrashAlert): CrashAlertResponseDto {
     this.logger.warn(
       `crash-alert idempotent replay id=${existing.id} ` +
         `notified=${existing.contacts_notified}/${existing.contacts_total}`,
@@ -366,7 +367,7 @@ export class SafetyService {
         error: r.error,
       })),
       idempotent_replay: true,
-      dispatch_in_progress: dispatchInProgress,
+      dispatch_in_progress: false,
     };
   }
 
