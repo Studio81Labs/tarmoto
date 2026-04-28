@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "dfacc8c1-f007-48c3-85bc-fe60b9914548",
+    "_postman_id": "beb28a58-bfad-40ac-99f2-1d211d39c96e",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -207,6 +207,32 @@
               "raw": "{{baseUrl}}/api/v1/account/subscription/webhook",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "account", "subscription", "webhook"]
+            }
+          }
+        },
+        {
+          "name": "Schedule the authenticated account for permanent deletion (GDPR Art. 17)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/account",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "account"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"\",\n  \"reason\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           }
         }

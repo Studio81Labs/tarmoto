@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
-import { JwtService } from '@nestjs/jwt';
+import { authGuardTestProviders } from '../auth/auth-test-providers.js';
 import { TripsController } from './trips.controller.js';
 import { TripsService } from './trips.service.js';
 import { TripGeneratorService } from './trip-generator.service.js';
@@ -68,7 +68,7 @@ describe('TripsController', () => {
       providers: [
         { provide: TripsService, useValue: mockService },
         { provide: TripGeneratorService, useValue: mockGenerator },
-        { provide: JwtService, useValue: { verifyAsync: jest.fn() } },
+        ...authGuardTestProviders,
       ],
     }).compile();
 

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
-import { JwtService } from '@nestjs/jwt';
+import { authGuardTestProviders } from '../auth/auth-test-providers.js';
 import { FollowersController } from './followers.controller.js';
 import { FollowersService } from './followers.service.js';
 
@@ -48,7 +48,7 @@ describe('FollowersController', () => {
       controllers: [FollowersController],
       providers: [
         { provide: FollowersService, useValue: mockService },
-        { provide: JwtService, useValue: { verifyAsync: jest.fn() } },
+        ...authGuardTestProviders,
       ],
     }).compile();
 

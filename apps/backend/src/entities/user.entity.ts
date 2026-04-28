@@ -80,6 +80,15 @@ export class User {
   @Column({ type: 'timestamptz', nullable: true })
   billing_trial_used_at!: Date | null;
 
+  @Column({ type: 'timestamptz', nullable: true })
+  deleted_at!: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  deletion_scheduled_at!: Date | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  deletion_reason!: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
 

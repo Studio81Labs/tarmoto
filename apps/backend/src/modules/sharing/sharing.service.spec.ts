@@ -270,6 +270,26 @@ describe('SharingService', () => {
 
       expect(result.rider_name).toBe('Unknown');
     });
+
+    it('hides shared rides whose owner has requested account deletion (US-62 grace window)', async () => {
+      const deletedOwnerShared = {
+        ...mockShared,
+        user: {
+          ...(mockShared as { user: object }).user,
+          deleted_at: new Date(),
+        },
+      } as unknown as SharedRide;
+      sharedRideRepo.findOne!.mockResolvedValueOnce(deletedOwnerShared);
+
+      // 404 — same response as an unknown token, so a share-link visitor
+      // can't tell whether the rider deleted their account or the link
+      // was always invalid.
+      await expect(service.getByToken('abc123')).rejects.toThrow(
+        NotFoundException,
+      );
+      // The view-count side-effect must not fire for hidden rides.
+      expect(sharedRideRepo.increment).not.toHaveBeenCalled();
+    });
   });
 
   describe('trackEmbedClick', () => {
@@ -289,6 +309,27 @@ describe('SharingService', () => {
       await expect(service.trackEmbedClick('missing')).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it('hides embed-click tracking for tokens whose owner has requested deletion (US-62)', async () => {
+      // Without this gate a caller could probe `/embed-click` to
+      // side-channel whether a token belongs to a deleted owner vs an
+      // unknown share — `getByToken` already 404s, so the two paths
+      // must agree.
+      const deletedOwnerShared = {
+        ...mockShared,
+        user: {
+          ...(mockShared as { user: object }).user,
+          deleted_at: new Date(),
+        },
+      } as unknown as SharedRide;
+      sharedRideRepo.findOne!.mockResolvedValueOnce(deletedOwnerShared);
+
+      await expect(service.trackEmbedClick('abc123')).rejects.toThrow(
+        NotFoundException,
+      );
+      // The increment side-effect must not fire for hidden tokens.
+      expect(sharedRideRepo.increment).not.toHaveBeenCalled();
     });
   });
 

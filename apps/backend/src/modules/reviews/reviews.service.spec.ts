@@ -164,14 +164,29 @@ describe('ReviewsService', () => {
       expect(result).toHaveLength(0);
     });
 
-    it('should default user_display_name to Unknown when user is null', async () => {
+    it('should mask user_display_name when the author has been soft-deleted', async () => {
       reviewRepo.find!.mockResolvedValueOnce([
         { ...mockReview, user: undefined } as unknown as RoadReview,
       ]);
 
       const result = await service.listForSegment('seg-1');
 
-      expect(result[0].user_display_name).toBe('Unknown');
+      // After US-62 GDPR deletion, both a missing relation and a
+      // soft-deleted author flow through the same masked-name path.
+      expect(result[0].user_display_name).toBe('Deleted user');
+    });
+
+    it('should mask user_display_name when the author is soft-deleted with deleted_at set', async () => {
+      reviewRepo.find!.mockResolvedValueOnce([
+        {
+          ...mockReview,
+          user: { ...mockReview.user, deleted_at: new Date() },
+        } as unknown as RoadReview,
+      ]);
+
+      const result = await service.listForSegment('seg-1');
+
+      expect(result[0].user_display_name).toBe('Deleted user');
     });
   });
 

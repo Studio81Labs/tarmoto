@@ -27,9 +27,11 @@ import { AddTripActivity1715100000000 } from '../../migrations/1715100000000-Add
 import { AddSurfaceReadingClientModelVersion1715200000000 } from '../../migrations/1715200000000-AddSurfaceReadingClientModelVersion.js';
 import { AddFunZoneClusteringSeed1715300000000 } from '../../migrations/1715300000000-AddFunZoneClusteringSeed.js';
 import { AddCrashAlerts1715400000000 } from '../../migrations/1715400000000-AddCrashAlerts.js';
+import { AddAccountDeletion1715500000000 } from '../../migrations/1715500000000-AddAccountDeletion.js';
 import {
   User,
   UserContact,
+  AccountDeletionLog,
   CrashAlert,
   RoadSegment,
   SurfaceReading,
@@ -62,6 +64,7 @@ import {
 const entities = [
   User,
   UserContact,
+  AccountDeletionLog,
   CrashAlert,
   RoadSegment,
   SurfaceReading,
@@ -138,6 +141,7 @@ const entities = [
             AddSurfaceReadingClientModelVersion1715200000000,
             AddFunZoneClusteringSeed1715300000000,
             AddCrashAlerts1715400000000,
+            AddAccountDeletion1715500000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.

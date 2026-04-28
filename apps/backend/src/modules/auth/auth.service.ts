@@ -66,6 +66,14 @@ export class AuthService {
     if (!user || !valid) {
       throw new UnauthorizedException('Invalid credentials');
     }
+    // Soft-deleted accounts are locked out immediately. Mirror the
+    // generic "Invalid credentials" message to avoid leaking the
+    // account-status side-channel — a user whose account was scheduled
+    // for deletion shouldn't be distinguishable from a wrong password
+    // to an attacker probing the login endpoint.
+    if (user.deleted_at != null) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
 
     return this.buildAuthResponse(user);
   }
@@ -90,7 +98,7 @@ export class AuthService {
     }
 
     const user = await this.userRepo.findOne({ where: { id: payload.sub } });
-    if (!user) {
+    if (!user || user.deleted_at != null) {
       throw new UnauthorizedException('User not found');
     }
 

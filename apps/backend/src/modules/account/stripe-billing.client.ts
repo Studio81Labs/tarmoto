@@ -118,6 +118,9 @@ export interface StripeBillingClient {
       afterCompletionUrl?: string;
     };
   }): Promise<{ url: string }>;
+  cancelSubscription(subscriptionId: string): Promise<void>;
+  deleteCustomer(customerId: string): Promise<void>;
+  isConfigured(): boolean;
   constructWebhookEvent(payload: Buffer, signature: string): StripeWebhookEvent;
 }
 
@@ -306,6 +309,47 @@ export class StripeNodeBillingClient implements StripeBillingClient {
     return { url: session.url };
   }
 
+  isConfigured(): boolean {
+    return this.stripe != null;
+  }
+
+  /**
+   * Immediately cancel a subscription. Used when an account is being
+   * hard-deleted — the rider has already passed the 30-day grace
+   * period, so we don't bother with `cancel_at_period_end`. Tolerates
+   * already-cancelled subscriptions (Stripe returns `resource_missing`
+   * if the subscription was cancelled out-of-band, e.g. via the
+   * customer portal).
+   */
+  async cancelSubscription(subscriptionId: string): Promise<void> {
+    const stripe = this.requireStripe();
+    try {
+      await stripe.subscriptions.cancel(subscriptionId);
+    } catch (err) {
+      if (isResourceMissing(err)) {
+        return;
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Delete the Stripe customer record entirely. Stripe cascades any
+   * remaining subscriptions and detaches payment methods. Tolerates a
+   * customer that is already gone (idempotent re-runs of the sweeper).
+   */
+  async deleteCustomer(customerId: string): Promise<void> {
+    const stripe = this.requireStripe();
+    try {
+      await stripe.customers.del(customerId);
+    } catch (err) {
+      if (isResourceMissing(err)) {
+        return;
+      }
+      throw err;
+    }
+  }
+
   constructWebhookEvent(
     payload: Buffer,
     signature: string,
@@ -421,6 +465,15 @@ function normalizeSubscriptionStatus(status: string): BillingStatus {
   if (status === 'past_due' || status === 'unpaid') return 'past_due';
   if (status === 'active') return 'active';
   return 'canceled';
+}
+
+function isResourceMissing(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    (err as { code: unknown }).code === 'resource_missing'
+  );
 }
 
 function normalizeInvoiceStatus(

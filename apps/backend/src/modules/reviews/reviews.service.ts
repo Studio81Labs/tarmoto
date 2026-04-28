@@ -290,9 +290,16 @@ export class ReviewsService {
     votes?: VoteAggregate,
     viewerUserId: string | null = null,
   ): ReviewResponseDto {
+    // Soft-deleted authors are masked in feeds/profiles per GDPR
+    // requirements (US-62) — the review row stays so historical
+    // road-quality context is preserved, but the personal name is
+    // hidden until the hard-delete sweep finishes the cascade.
+    const authorVisible = review.user != null && review.user.deleted_at == null;
     return {
       id: review.id,
-      user_display_name: review.user?.display_name ?? 'Unknown',
+      user_display_name: authorVisible
+        ? review.user.display_name
+        : 'Deleted user',
       rating: review.rating,
       comment: review.comment,
       bike_model: review.bike_model,

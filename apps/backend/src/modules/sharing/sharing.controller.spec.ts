@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
-import { JwtService } from '@nestjs/jwt';
+import { authGuardTestProviders } from '../auth/auth-test-providers.js';
 import { SharingController } from './sharing.controller.js';
 import { SharingService } from './sharing.service.js';
 
@@ -69,7 +69,7 @@ describe('SharingController', () => {
       controllers: [SharingController],
       providers: [
         { provide: SharingService, useValue: mockService },
-        { provide: JwtService, useValue: { verifyAsync: jest.fn() } },
+        ...authGuardTestProviders,
       ],
     }).compile();
 

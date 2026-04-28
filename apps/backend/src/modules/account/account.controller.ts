@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   HttpCode,
@@ -22,8 +23,11 @@ import type { Request } from 'express';
 import { SkipThrottle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { AccountService } from './account.service.js';
+import { AccountDeletionService } from './account-deletion.service.js';
 import { CreateCheckoutSessionDto } from './dto/create-checkout-session.dto.js';
 import { CreatePortalSessionDto } from './dto/create-portal-session.dto.js';
+import { DeleteAccountDto } from './dto/delete-account.dto.js';
+import { DeleteAccountResponseDto } from './dto/delete-account-response.dto.js';
 import {
   RedirectUrlResponseDto,
   SubscriptionSnapshotResponseDto,
@@ -32,7 +36,10 @@ import {
 @ApiTags('account')
 @Controller('account')
 export class AccountController {
-  constructor(private readonly accountService: AccountService) {}
+  constructor(
+    private readonly accountService: AccountService,
+    private readonly accountDeletionService: AccountDeletionService,
+  ) {}
 
   @Get('subscription')
   @UseGuards(AuthGuard)
@@ -89,5 +96,30 @@ export class AccountController {
 
     await this.accountService.handleWebhook(req.rawBody, signature);
     return { received: true };
+  }
+
+  @Delete()
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Schedule the authenticated account for permanent deletion (GDPR Art. 17)',
+    description:
+      'Soft-deletes immediately and schedules a hard delete after a 30-day grace period. ' +
+      'Requires the current password as fresh-auth proof. Cancels Stripe billing as part of the purge. ' +
+      'Anonymized road-quality contributions are retained per the deletion notice.',
+  })
+  @ApiBody({ type: DeleteAccountDto })
+  @ApiResponse({ status: 200, type: DeleteAccountResponseDto })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Password does not match, or the account is already pending deletion',
+  })
+  async deleteAccount(
+    @Req() req: Request,
+    @Body() dto: DeleteAccountDto,
+  ): Promise<DeleteAccountResponseDto> {
+    return this.accountDeletionService.requestDeletion(req.user!.userId, dto);
   }
 }

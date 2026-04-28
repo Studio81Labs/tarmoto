@@ -749,7 +749,15 @@ export const accountApi = {
   deleteBike: (id: string) =>
     apiFetch(`/account/bikes/${id}`, { method: "DELETE" }),
   exportData: () => apiFetch("/account/export", { method: "POST" }),
-  deleteAccount: () => apiFetch("/account", { method: "DELETE" }),
+  deleteAccount: (input: { password: string; reason?: string }) =>
+    apiFetch<{
+      status: "scheduled";
+      scheduled_for: string;
+      grace_period_days: number;
+    }>("/account", {
+      method: "DELETE",
+      body: JSON.stringify(input),
+    }),
   getNotificationPreferences: () =>
     apiFetch("/account/notification-preferences"),
   updateNotificationPreferences: (data: unknown) =>
