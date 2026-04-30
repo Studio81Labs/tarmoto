@@ -420,21 +420,26 @@ export default function ReviewFormModal({
       if (isConflictError(e)) {
         // 409 means the rider already has a review on this segment.
         // Don't bubble through `onSubmitted` (which closes the form).
-        // Instead surface a persistent banner and ask the parent to
-        // refresh. Once `initialReview` updates the seeding effect
-        // re-pours the existing values into the same visible form,
-        // merging in any photos the rider just uploaded so they
-        // aren't orphaned on the backend.
+        // Instead ask the parent to refresh. Once `initialReview`
+        // updates the seeding effect re-pours the existing values
+        // into the same visible form, merging in any photos the
+        // rider just uploaded so they aren't orphaned on the backend.
+        // The conflict banner is set ONLY after the parent refresh
+        // succeeds — if `onConflict` rejects, the form stays in
+        // create mode and we surface a regular error so the banner
+        // text ("your existing review is loaded for editing") never
+        // appears alongside an unchanged create-mode form.
         mergeStagedOnNextReseed.current = true;
-        setConflictNotice(
-          "You already reviewed this road — your existing review is loaded for editing.",
-        );
         try {
           await onConflict?.();
+          setConflictNotice(
+            "You already reviewed this road — your existing review is loaded for editing.",
+          );
         } catch {
-          // Parent refresh failure shouldn't take down the modal —
-          // the rider can retry by closing and re-opening.
           mergeStagedOnNextReseed.current = false;
+          setError(
+            "You already reviewed this road, but loading the existing review failed. Close and reopen to retry.",
+          );
         }
       } else {
         const message = isAxiosError(e)

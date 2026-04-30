@@ -362,6 +362,41 @@ describe("ReviewFormModal", () => {
     expect(onSubmitted).not.toHaveBeenCalled();
   });
 
+  it("on 409 conflict, falls back to a plain error if the parent refresh rejects", async () => {
+    // Regression: previously the conflict banner was set BEFORE
+    // onConflict was awaited, so a parent refresh failure left the
+    // banner promising "your existing review is loaded for editing"
+    // while the form still rendered create-mode fields. The banner
+    // is now set only after onConflict resolves successfully.
+    const conflictError = Object.assign(new Error("conflict"), {
+      response: { status: 409 },
+    });
+    submitWithQueueMock.mockRejectedValueOnce(conflictError);
+    const onConflict = jest.fn().mockRejectedValue(new Error("refresh failed"));
+
+    render(
+      <ReviewFormModal
+        visible
+        segmentId="seg-1"
+        onClose={jest.fn()}
+        onSubmitted={jest.fn()}
+        onConflict={onConflict}
+      />,
+    );
+
+    fireEvent.press(screen.getByLabelText("Set rating to 4 stars"));
+    fireEvent.press(screen.getByLabelText("Submit review"));
+
+    // Plain error surfaces; the misleading "loaded for editing"
+    // banner does NOT.
+    expect(
+      await screen.findByText(/loading the existing review failed/i),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(/your existing review is loaded for editing/i),
+    ).toBeNull();
+  });
+
   it("blocks submit when any photo upload errored", async () => {
     capturePhotoMock.mockResolvedValueOnce({
       status: "captured",
