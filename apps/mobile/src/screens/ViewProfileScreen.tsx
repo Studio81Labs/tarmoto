@@ -30,6 +30,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
 import { api } from "@/services/api";
 import Avatar from "@/components/Avatar";
+import StatTile from "@/components/StatTile";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import type { PublicProfile, UserBadge } from "@/types";
 import { formatCount, formatJoinedLabel } from "./riderProfile.helpers";
@@ -314,40 +315,6 @@ export default function ViewProfileScreen() {
   );
 }
 
-interface StatTileProps {
-  label: string;
-  value: string;
-  onPress?: () => void;
-  accessibilityLabel?: string;
-}
-
-function StatTile({
-  label,
-  value,
-  onPress,
-  accessibilityLabel,
-}: StatTileProps) {
-  if (onPress) {
-    return (
-      <TouchableOpacity
-        style={styles.statTile}
-        onPress={onPress}
-        accessibilityRole="button"
-        accessibilityLabel={accessibilityLabel ?? label}
-      >
-        <Text style={styles.statValue}>{value}</Text>
-        <Text style={styles.statLabel}>{label}</Text>
-      </TouchableOpacity>
-    );
-  }
-  return (
-    <View style={styles.statTile} accessibilityLabel={accessibilityLabel}>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   content: {
@@ -425,25 +392,6 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: "row",
     gap: spacing.md,
-  },
-  statTile: {
-    flex: 1,
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    alignItems: "center",
-    gap: spacing.xs,
-  },
-  statValue: {
-    color: colors.textPrimary,
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.bold,
-  },
-  statLabel: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
   },
   badgesCard: {
     backgroundColor: colors.bgCard,

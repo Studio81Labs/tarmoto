@@ -35,6 +35,7 @@ import { api } from "@/services/api";
 import { useAuthStore } from "@/stores";
 import { capturePhoto } from "@/services/photoCapture";
 import Avatar from "@/components/Avatar";
+import StatTile from "@/components/StatTile";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import type { PublicProfile, UserBadge } from "@/types";
 import { formatCount, formatJoinedLabel } from "./riderProfile.helpers";
@@ -311,36 +312,6 @@ export default function ProfileScreen() {
   );
 }
 
-interface StatTileProps {
-  label: string;
-  value: string;
-  onPress?: () => void;
-  accessibilityLabel?: string;
-}
-
-function StatTile({
-  label,
-  value,
-  onPress,
-  accessibilityLabel,
-}: StatTileProps) {
-  const Container: React.ComponentType<
-    React.ComponentProps<typeof TouchableOpacity>
-  > = onPress ? TouchableOpacity : (View as never);
-  return (
-    <Container
-      style={styles.statTile}
-      onPress={onPress}
-      disabled={!onPress}
-      accessibilityRole={onPress ? "button" : undefined}
-      accessibilityLabel={accessibilityLabel ?? label}
-    >
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </Container>
-  );
-}
-
 interface ActionRowProps {
   icon: React.ComponentProps<typeof Icon>["name"];
   label: string;
@@ -441,25 +412,6 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: "row",
     gap: spacing.md,
-  },
-  statTile: {
-    flex: 1,
-    backgroundColor: colors.bgCard,
-    borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    alignItems: "center",
-    gap: spacing.xs,
-  },
-  statValue: {
-    color: colors.textPrimary,
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.bold,
-  },
-  statLabel: {
-    color: colors.textSecondary,
-    fontSize: fontSize.sm,
   },
   actionsCard: {
     backgroundColor: colors.bgCard,

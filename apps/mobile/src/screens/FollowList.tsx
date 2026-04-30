@@ -148,7 +148,7 @@ export default function FollowList({
           <View style={styles.rowBody}>
             <Text style={styles.rowName}>{item.display_name}</Text>
             <Text style={styles.rowMeta}>
-              {formatFollowedSince(item.followed_at)}
+              {formatFollowedSince(item.followed_at, mode)}
             </Text>
           </View>
         </TouchableOpacity>
