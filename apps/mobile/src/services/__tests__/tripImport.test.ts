@@ -125,19 +125,49 @@ describe("parseImportedRoute (mobile entry)", () => {
     if (result.ok) expect(result.route.points).toHaveLength(2);
   });
 
-  it("tolerates the gpx:trkpt namespace prefix some emitters use", () => {
-    // Garmin Connect sometimes emits namespaced tags; the parser uses
-    // local-name matching so the prefix shouldn't matter.
+  it("parses Garmin/Komoot GPX files with `gpx:` namespace prefixes", () => {
+    // Real-world Garmin Connect / Komoot exports prefix every structural
+    // tag with `gpx:` because they declare GPX 1.1 with a non-default
+    // namespace. The parser must accept the prefixed form or the file
+    // imports as "no track or route points".
     const xml = `<?xml version="1.0"?>
-<gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">
-  <trk><trkseg>
-    <trkpt lat="46.47" lon="10.37"><ele>1100</ele></trkpt>
-    <trkpt lat="46.50" lon="10.41"><ele>1300</ele></trkpt>
-  </trkseg></trk>
-</gpx>`;
+<gpx:gpx version="1.1" xmlns:gpx="http://www.topografix.com/GPX/1/1">
+  <gpx:metadata><gpx:name>Stelvio loop</gpx:name></gpx:metadata>
+  <gpx:trk>
+    <gpx:name>Stelvio loop</gpx:name>
+    <gpx:trkseg>
+      <gpx:trkpt lat="46.47" lon="10.37"/>
+      <gpx:trkpt lat="46.50" lon="10.41"/>
+      <gpx:trkpt lat="46.61" lon="10.57"/>
+    </gpx:trkseg>
+  </gpx:trk>
+</gpx:gpx>`;
     const result = parseImportedRoute(xml, "namespaced.gpx");
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.route.points).toHaveLength(2);
+    if (!result.ok) return;
+    expect(result.route.sourceFormat).toBe("gpx");
+    expect(result.route.name).toBe("Stelvio loop");
+    expect(result.route.points).toHaveLength(3);
+  });
+
+  it("parses KML files with `kml:` namespace prefixes", () => {
+    const xml = `<?xml version="1.0"?>
+<kml:kml xmlns:kml="http://www.opengis.net/kml/2.2">
+  <kml:Document>
+    <kml:name>Alps</kml:name>
+    <kml:Placemark>
+      <kml:LineString><kml:coordinates>
+        10.37,46.47,0 10.41,46.50,0 10.57,46.61,0
+      </kml:coordinates></kml:LineString>
+    </kml:Placemark>
+  </kml:Document>
+</kml:kml>`;
+    const result = parseImportedRoute(xml, "namespaced.kml");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.route.sourceFormat).toBe("kml");
+    expect(result.route.name).toBe("Alps");
+    expect(result.route.points).toHaveLength(3);
   });
 
   it("decodes XML entities in <name>", () => {

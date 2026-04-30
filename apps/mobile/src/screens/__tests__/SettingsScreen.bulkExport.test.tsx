@@ -155,7 +155,11 @@ describe("SettingsScreen bulk export", () => {
   });
 
   it("blocks parallel exports while one is in flight", async () => {
-    let resolveGpx: ((value: string) => void) | null = null;
+    // Initialise to a no-op so TS doesn't narrow `resolveGpx` to `null`
+    // after the in-callback assignment — control-flow analysis won't
+    // re-widen across closure boundaries, and the optional-chained call
+    // below would otherwise be typed as `never`.
+    let resolveGpx: (value: string) => void = () => undefined;
     (api.exportAllRidesGpx as jest.Mock).mockReturnValueOnce(
       new Promise<string>((resolve) => {
         resolveGpx = resolve;
@@ -171,7 +175,7 @@ describe("SettingsScreen bulk export", () => {
     expect(api.exportAllRidesGpx).toHaveBeenCalledTimes(1);
     expect(api.exportAllRidesCsv).not.toHaveBeenCalled();
 
-    resolveGpx?.("<gpx></gpx>");
+    resolveGpx("<gpx></gpx>");
     await waitFor(() => {
       expect(RNShare.open).toHaveBeenCalledTimes(1);
     });

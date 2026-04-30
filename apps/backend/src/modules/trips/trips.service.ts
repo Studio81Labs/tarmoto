@@ -151,12 +151,17 @@ export class TripsService {
     dto: ImportTripDto,
   ): Promise<TripDetailDto> {
     const totalKm = totalDistanceKm(dto.geometry);
-    const dailyKmMin = Math.max(1, Math.round(totalKm));
-    const dailyKmMax = Math.max(dailyKmMin, dailyKmMin);
+    // Imported trips are 1-day routes — daily_km_{min,max} both
+    // represent the actual distance. The 1 km floor protects the
+    // schema's positive-number constraint when the file is a
+    // microscopic stub (zero or sub-km tracks have already been
+    // rejected by the parser, but defending in depth here costs
+    // nothing).
+    const dailyKm = Math.max(1, Math.round(totalKm));
     const tripId = await this.allocateAndPersistImportedTrip(userId, dto, {
       totalKm,
-      dailyKmMin,
-      dailyKmMax,
+      dailyKmMin: dailyKm,
+      dailyKmMax: dailyKm,
     });
     return this.getDetail(userId, tripId);
   }

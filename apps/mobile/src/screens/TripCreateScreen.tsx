@@ -101,6 +101,13 @@ export default function TripCreateScreen() {
   // the form — closes the race the bugbot flagged.
   const submittingRef = useRef(false);
   const dirtySinceSubmitRef = useRef(false);
+  // Synchronous re-entrancy guard for the import flow: state-based
+  // guards (`importing`) only flip on the next render, so two same-
+  // frame taps both pass the guard and we end up with a duplicate
+  // picker open / a duplicate `POST /trips/import` against the same
+  // file. Mirrors the `submittingRef` pattern used by the generate
+  // path below.
+  const importingRef = useRef(false);
   const invalidateDraft = useCallback(() => {
     if (submittingRef.current) dirtySinceSubmitRef.current = true;
     setDraftTripId(null);
@@ -150,7 +157,12 @@ export default function TripCreateScreen() {
   );
 
   const trimmedTitle = title.trim();
-  const canSubmit = trimmedTitle.length > 0 && !submitting;
+  // Block Generate while an import is mid-flight: the picker call is
+  // suspended on a native promise that we can't cancel, and Generate
+  // would otherwise navigate the user to a freshly-created trip while
+  // the still-running import completes and tries to navigate to a
+  // different trip.
+  const canSubmit = trimmedTitle.length > 0 && !submitting && !importing;
 
   const handleQualityChange = useCallback(
     (value: number) => {
@@ -160,7 +172,12 @@ export default function TripCreateScreen() {
   );
 
   const handleImport = useCallback(async () => {
-    if (importing || submitting) return;
+    // Two synchronous guards: the ref bails on a same-frame double-tap
+    // before React has flushed `setImporting(true)`, and `submittingRef`
+    // blocks parallel runs while the Generate flow is mid-flight (both
+    // would otherwise race on the picker / network / navigation).
+    if (importingRef.current || submittingRef.current) return;
+    importingRef.current = true;
     setImporting(true);
     setErrorMessage(null);
     try {
@@ -188,9 +205,10 @@ export default function TripCreateScreen() {
       setErrorMessage(message);
       Alert.alert("Import failed", message);
     } finally {
+      importingRef.current = false;
       setImporting(false);
     }
-  }, [importing, submitting, trimmedTitle, region, navigation]);
+  }, [trimmedTitle, region, navigation]);
 
   const handleGenerate = useCallback(async () => {
     // Re-entrancy guard: a rapid double-tap can fire this callback twice
@@ -198,7 +216,7 @@ export default function TripCreateScreen() {
     // would see `canSubmit=true` and hit `api.createTrip` — producing
     // duplicate drafts on the server. The ref flips synchronously so the
     // second call bails before any network I/O.
-    if (submittingRef.current) return;
+    if (submittingRef.current || importingRef.current) return;
     if (!canSubmit) return;
     submittingRef.current = true;
     dirtySinceSubmitRef.current = false;

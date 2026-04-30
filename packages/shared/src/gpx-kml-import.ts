@@ -84,6 +84,15 @@ function detectFormat(text: string, filename: string): "gpx" | "kml" | null {
 }
 
 /**
+ * Optional XML namespace prefix. Garmin Connect, Komoot and a handful of
+ * KML emitters write `<gpx:trkpt>`, `<kml:LineString>`, etc.; matching
+ * tag patterns therefore allow an optional `prefix:` ahead of the local
+ * name. Restricted to NCName-ish characters so the regex can't run away
+ * across the rest of the line.
+ */
+const NS_PREFIX_PATTERN = "(?:[A-Za-z_][\\w.-]*:)?";
+
+/**
  * Lightweight well-formedness check. We do not run a full XML validator —
  * that would mean shipping a parser library to RN and the browser. Instead,
  * we check that every opening tag has a corresponding closing or self-close
@@ -93,8 +102,10 @@ function detectFormat(text: string, filename: string): "gpx" | "kml" | null {
  */
 function isWellFormedEnough(text: string, format: "gpx" | "kml"): boolean {
   const root = format;
-  const open = new RegExp(`<${root}\\b`, "i").test(text);
-  const close = new RegExp(`</${root}\\s*>`, "i").test(text);
+  const open = new RegExp(`<${NS_PREFIX_PATTERN}${root}\\b`, "i").test(text);
+  const close = new RegExp(`</${NS_PREFIX_PATTERN}${root}\\s*>`, "i").test(
+    text,
+  );
   if (!open || !close) return false;
 
   const checks =
@@ -102,8 +113,14 @@ function isWellFormedEnough(text: string, format: "gpx" | "kml"): boolean {
       ? ["trk", "trkseg", "rte"]
       : ["Document", "Placemark", "LineString"];
   for (const tag of checks) {
-    const opens = countMatches(text, new RegExp(`<${tag}\\b`, "g"));
-    const closes = countMatches(text, new RegExp(`</${tag}\\s*>`, "g"));
+    const opens = countMatches(
+      text,
+      new RegExp(`<${NS_PREFIX_PATTERN}${tag}\\b`, "g"),
+    );
+    const closes = countMatches(
+      text,
+      new RegExp(`</${NS_PREFIX_PATTERN}${tag}\\s*>`, "g"),
+    );
     if (opens !== closes) return false;
   }
   return true;
@@ -158,7 +175,10 @@ function parseKml(text: string, filename: string): ImportedRoute | null {
 
   const waypoints: ImportedWaypoint[] = [];
   for (const placemark of collectElements(text, "Placemark")) {
-    if (/<LineString\b/i.test(placemark.body)) continue;
+    if (
+      new RegExp(`<${NS_PREFIX_PATTERN}LineString\\b`, "i").test(placemark.body)
+    )
+      continue;
     const point = collectElements(placemark.body, "Point")[0];
     if (!point) continue;
     const coordsText = childText(point.body, "coordinates");
@@ -205,11 +225,20 @@ interface ParsedElement {
  * the GPX/KML parsers walk. It does not depth-track, so this should only
  * be used on tags that don't nest inside themselves (LineString,
  * Placemark, trk, rte, trkseg — none nest in real exports).
+ *
+ * Namespace prefixes are accepted on either side and are not required to
+ * match each other — DOMParser would treat `<gpx:trk>...</trk>` as
+ * malformed but real-world emitters are consistent within a file, and
+ * the tighter check would reject more good files than it would catch
+ * bad ones.
  */
 function collectElements(text: string, tag: string): ParsedElement[] {
   const out: ParsedElement[] = [];
-  const openRe = new RegExp(`<${tag}\\b([^>]*?)(/?)>`, "gi");
-  const closeRe = new RegExp(`</${tag}\\s*>`, "gi");
+  const openRe = new RegExp(
+    `<${NS_PREFIX_PATTERN}${tag}\\b([^>]*?)(/?)>`,
+    "gi",
+  );
+  const closeRe = new RegExp(`</${NS_PREFIX_PATTERN}${tag}\\s*>`, "gi");
   let cursor = 0;
   while (cursor < text.length) {
     openRe.lastIndex = cursor;
@@ -281,9 +310,13 @@ function childText(body: string, tag: string): string | null {
   // We deliberately match the FIRST occurrence anywhere inside the body
   // rather than only direct children — DOM tree-walks are out of scope
   // for a regex parser, and in practice the first `<name>` inside a
-  // `<trk>` / `<wpt>` / `<Placemark>` is the title we want.
+  // `<trk>` / `<wpt>` / `<Placemark>` is the title we want. The optional
+  // namespace prefix matches Garmin/Komoot-style `<gpx:name>`.
   const m = body.match(
-    new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)</${tag}\\s*>`, "i"),
+    new RegExp(
+      `<${NS_PREFIX_PATTERN}${tag}\\b[^>]*>([\\s\\S]*?)</${NS_PREFIX_PATTERN}${tag}\\s*>`,
+      "i",
+    ),
   );
   if (!m) return null;
   const inner = decodeXmlEntities(m[1].trim());
