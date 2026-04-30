@@ -333,6 +333,10 @@ describe("vehicle display runtime bridge", () => {
         };
       });
       jest.doMock("../carplay", () => ({
+        formatSpeedKmh: (kmh: number) =>
+          Number.isFinite(kmh) && kmh >= 1 ? `${Math.round(kmh)} km/h` : "—",
+        formatDistanceKm: (km: number) =>
+          Number.isFinite(km) && km > 0 ? `${km.toFixed(1)} km` : "0.0 km",
         mountRideStatusBoard: jest.fn(),
         resumeRideStatusBoard: jest.fn(),
         suspendRideStatusBoard: jest.fn(),
@@ -398,9 +402,20 @@ describe("vehicle display runtime bridge", () => {
           InformationTemplate: class {
             constructor(_: unknown) {}
           },
+          // PaneTemplate is the Android-Auto idle fallback root — the
+          // bridge reaches for it when navigation tears down without a
+          // live ride snapshot to fall back to. Must be present in the
+          // Android test mock or the bridge crashes.
+          PaneTemplate: class {
+            constructor(_: unknown) {}
+          },
         };
       });
       jest.doMock("../carplay", () => ({
+        formatSpeedKmh: (kmh: number) =>
+          Number.isFinite(kmh) && kmh >= 1 ? `${Math.round(kmh)} km/h` : "—",
+        formatDistanceKm: (km: number) =>
+          Number.isFinite(km) && km > 0 ? `${km.toFixed(1)} km` : "0.0 km",
         mountRideStatusBoard: jest.fn(),
         resumeRideStatusBoard: jest.fn(),
         suspendRideStatusBoard: jest.fn(),
@@ -499,6 +514,10 @@ describe("vehicle display runtime bridge", () => {
         };
       });
       jest.doMock("../carplay", () => ({
+        formatSpeedKmh: (kmh: number) =>
+          Number.isFinite(kmh) && kmh >= 1 ? `${Math.round(kmh)} km/h` : "—",
+        formatDistanceKm: (km: number) =>
+          Number.isFinite(km) && km > 0 ? `${km.toFixed(1)} km` : "0.0 km",
         mountRideStatusBoard: jest.fn(),
         resumeRideStatusBoard: jest.fn(),
         suspendRideStatusBoard: jest.fn(),

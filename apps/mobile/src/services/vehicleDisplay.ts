@@ -1,6 +1,8 @@
 import type { NativeEventSubscription } from "react-native";
 import { Platform } from "react-native";
 import {
+  formatDistanceKm,
+  formatSpeedKmh,
   mountRideStatusBoard,
   resumeRideStatusBoard,
   suspendRideStatusBoard,
@@ -11,6 +13,7 @@ import {
   type VehicleDisplaySnapshot,
 } from "@/stores/vehicleDisplay";
 import { MANEUVER_LABELS } from "@/services/navigation";
+import { formatDurationSeconds } from "@/theme";
 import type { HazardType, LatLng } from "@/types";
 import VehicleDisplaySurface from "@/components/VehicleDisplaySurface";
 
@@ -167,31 +170,17 @@ export interface NavigationPaneItem {
   detail: string;
 }
 
+/**
+ * Distance to the next maneuver, in metres. Distinct from
+ * `formatDistanceKm` (in `services/carplay`) because the navigation
+ * snapshot expresses upcoming-maneuver distance in metres rather than
+ * cumulative ride distance in kilometres — switching units below 1 km
+ * keeps "320 m to turn" readable on the bike display.
+ */
 function formatNavDistanceMeters(meters: number): string {
   if (!Number.isFinite(meters) || meters <= 0) return "0 m";
   if (meters < 1000) return `${Math.round(meters / 10) * 10} m`;
   return `${(meters / 1000).toFixed(1)} km`;
-}
-
-function formatPaneSpeed(speedKmh: number): string {
-  if (!Number.isFinite(speedKmh) || speedKmh < 1) return "—";
-  return `${Math.round(speedKmh)} km/h`;
-}
-
-function formatPaneDistance(distanceKm: number): string {
-  if (!Number.isFinite(distanceKm) || distanceKm <= 0) return "0.0 km";
-  return `${distanceKm.toFixed(1)} km`;
-}
-
-function formatPaneDuration(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return "0:00";
-  const total = Math.floor(seconds);
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  if (h > 0)
-    return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 /**
@@ -248,19 +237,22 @@ export function formatNextManeuverRow(
 export function buildNavigationPaneItems(
   snapshot: VehicleNavigationSnapshot,
 ): NavigationPaneItem[] {
+  // Reuse the carplay/theme formatters so the head-unit pane and the
+  // CarPlay status board can never drift on edge cases (sub-1 km/h
+  // jitter, NaN durations, negative km from a corrupt snapshot).
   return [
     formatNextManeuverRow(snapshot),
     {
       title: "Speed",
-      detail: formatPaneSpeed(snapshot.rideStats.speedKmh),
+      detail: formatSpeedKmh(snapshot.rideStats.speedKmh),
     },
     {
       title: "Distance",
-      detail: formatPaneDistance(snapshot.rideStats.distanceKm),
+      detail: formatDistanceKm(snapshot.rideStats.distanceKm),
     },
     {
       title: "Duration",
-      detail: formatPaneDuration(snapshot.rideStats.durationSeconds),
+      detail: formatDurationSeconds(snapshot.rideStats.durationSeconds),
     },
   ];
 }
@@ -415,6 +407,17 @@ function createRuntimeBridge(snapshotRef: {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const lib = require("react-native-carplay") as CarPlayLib;
     const { CarPlay, MapTemplate, SearchTemplate, InformationTemplate } = lib;
+    // PaneTemplate is the Android-Auto equivalent of InformationTemplate
+    // — needed for the idle fallback root because AA's `TemplateParser`
+    // has no `"information"` case (see node_modules/react-native-carplay/
+    // android/.../TemplateParser.kt) and would build a "Template missing"
+    // pane if we fed it an InformationTemplate. Resolved separately so
+    // tests stubbing the package don't have to pay attention to it on
+    // platforms that won't reach the Android branch below.
+    const PaneTemplate =
+      Platform.OS === "android"
+        ? (lib as typeof import("react-native-carplay")).PaneTemplate
+        : null;
 
     const MAP_TEMPLATE_ID = "tarmoto-vehicle-map";
     const SEARCH_TEMPLATE_ID = "tarmoto-vehicle-hazard-search";
@@ -528,13 +531,27 @@ function createRuntimeBridge(snapshotRef: {
         return;
       }
 
+      if (!CarPlay.connected) return;
+      // The idle root is platform-specific: AA's `TemplateParser` has
+      // no `"information"` case, so an `InformationTemplate` would
+      // render as a "Template missing" pane on the head unit. Use the
+      // Jetpack `PaneTemplate` on Android — same shape (title + zero
+      // rows), parses cleanly. iOS keeps `InformationTemplate` so the
+      // CarPlay idle look matches the active ride-status board.
+      if (Platform.OS === "android" && PaneTemplate) {
+        const idle = new PaneTemplate({
+          title: "Tarmoto",
+          pane: { items: [] },
+        });
+        CarPlay.setRootTemplate(idle, false);
+        return;
+      }
       const idle = new InformationTemplate({
         title: "Tarmoto",
         items: [],
         actions: [],
         onActionButtonPressed: () => undefined,
       });
-      if (!CarPlay.connected) return;
       CarPlay.setRootTemplate(idle, false);
     };
 
