@@ -9,6 +9,7 @@ import { In, Repository } from 'typeorm';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { hasControlCharacters } from '../../common/control-characters.js';
 import { RoadReview } from '../../entities/road-review.entity.js';
 import { RoadReviewVote } from '../../entities/road-review-vote.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
@@ -28,13 +29,6 @@ const REVIEW_PHOTO_UPLOAD_DIR = join(
   'uploads',
   'road-review-photos',
 );
-
-function hasControlCharacters(value: string): boolean {
-  return [...value].some((character) => {
-    const code = character.charCodeAt(0);
-    return code <= 31 || code === 127;
-  });
-}
 
 interface ManagedPhoto {
   /** Decoded basename (e.g. `seg-1-user-1-1700000000-uuid.jpg`). */

@@ -68,6 +68,11 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
   const activeSegmentRef = useRef(segmentId);
   const activeViewerKeyRef = useRef(viewerKey);
   const editorModeRef = useRef<"create" | "edit" | null>(null);
+  // Bumps every time the editor opens or closes, so a stale upload from
+  // a canceled draft can't leak into a brand-new editor session opened
+  // on the same segment+viewer. `editorModeRef === null` alone wasn't
+  // enough — close + reopen leaves the mode non-null again.
+  const editorSessionRef = useRef(0);
   const requestGenerationRef = useRef(0);
   const mutationAttemptRef = useRef(0);
   const localMyReviewRef = useRef<RoadReview | null>(null);
@@ -84,6 +89,11 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
     activeSegmentRef.current = segmentId;
     activeViewerKeyRef.current = viewerKey;
     requestGenerationRef.current += 1;
+    // Bump session too — the segment-change reset blanks the draft, so
+    // any in-flight upload tied to the previous draft session must be
+    // treated as stale even if the segment ends up matching again on
+    // subsequent navigation.
+    editorSessionRef.current += 1;
     localMyReviewRef.current = null;
     deletedMyReviewIdRef.current = null;
     setDraft(EMPTY_REVIEW_DRAFT);
@@ -154,6 +164,11 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
   };
 
   const openCreate = () => {
+    // Each open is a fresh editor session — the upload guard uses this
+    // to reject results that resolved after a previous draft was
+    // canceled, even if the user reopens the editor on the same
+    // segment + viewer before the request lands.
+    editorSessionRef.current += 1;
     setDraft(EMPTY_REVIEW_DRAFT);
     setSubmitError(null);
     setEditorMode("create");
@@ -161,6 +176,7 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
 
   const openEdit = () => {
     if (!myReview) return;
+    editorSessionRef.current += 1;
     setDraft({
       rating: myReview.rating,
       comment: myReview.comment ?? "",
@@ -173,17 +189,23 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
 
   const closeEditor = () => {
     if (submitting) return;
+    // Bump on close too so an upload kicked off in this session is
+    // already invalidated before any reopen — the editor-mode null check
+    // alone races with reopens that flip the flag back to non-null
+    // before the upload resolves.
+    editorSessionRef.current += 1;
     setEditorMode(null);
     setSubmitError(null);
   };
 
   /**
    * Owns the upload roundtrip + draft mutation so the same staleness
-   * checks the submit handler relies on (segment, viewer, generation,
-   * editor session) also gate uploaded URLs from leaking into a draft
-   * the user no longer cares about — closed editor, segment switch,
-   * viewer change. Errors propagate to the editor so it can render a
-   * local toast; stale successes resolve silently.
+   * checks the submit handler relies on (segment, viewer, generation)
+   * plus a per-editor-open `editorSessionRef` gate uploaded URLs from
+   * leaking into a draft the user no longer cares about — closed
+   * editor, close + reopen on the same segment, segment switch, viewer
+   * change. Errors propagate to the editor so it can render a local
+   * toast; stale successes resolve silently.
    */
   const handleUploadPhotos = async (files: File[]): Promise<void> => {
     if (!editorModeRef.current) return;
@@ -191,6 +213,7 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
     const requestSegmentId = segmentId;
     const requestViewerKey = viewerKey;
     const requestGeneration = requestGenerationRef.current;
+    const requestEditorSession = editorSessionRef.current;
 
     const { data } = await roadsApi.uploadReviewPhotos(segmentId, files);
 
@@ -198,13 +221,15 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
       requestSegmentId !== activeSegmentRef.current ||
       requestViewerKey !== activeViewerKeyRef.current ||
       requestGeneration !== requestGenerationRef.current ||
+      requestEditorSession !== editorSessionRef.current ||
       editorModeRef.current === null
     ) {
-      // Editor was closed, the segment / viewer changed, or the segment
-      // was navigated away and back — the URLs the user is trying to
-      // attach belong to a draft that no longer exists. Drop them rather
-      // than poisoning whatever draft is open now (or sticking photos
-      // onto a closed-editor draft that re-emerges on the next
+      // Editor was closed (and possibly reopened — same segment, new
+      // session), the segment / viewer changed, or the segment was
+      // navigated away and back — the URLs the user is trying to attach
+      // belong to a draft that no longer exists. Drop them rather than
+      // poisoning whatever draft is open now (or sticking photos onto a
+      // closed-editor draft that re-emerges on the next
       // openCreate/openEdit). The files themselves stay on disk and get
       // swept by the orphan cleanup tracked separately.
       return;

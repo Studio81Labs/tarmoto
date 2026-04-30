@@ -30,13 +30,22 @@ export const ALLOWED_REVIEW_PHOTO_TYPES: ReadonlyMap<string, string> = new Map([
   ['image/webp', '.webp'],
 ]);
 
+function isProductionEnv(): boolean {
+  // Mirror the runtime check the bootstrapper uses (`apps/backend/src/main.ts`)
+  // so the loopback-http allowance below stays in lockstep with the env that
+  // determines whether helmet's full CSP is on, etc.
+  return process.env.TARMOTO_NODE_ENV === 'production';
+}
+
 /**
  * Validate a photo URL against the same rule the response sanitizer enforces:
- * `https://` always wins, plain `http://` is only accepted on loopback so the
- * managed-uploads flow works in local dev (where `req.protocol` is `http`)
- * without weakening the production rule. Production deployments are expected
- * to serve the API and the `/uploads` static prefix over https — mixed-content
- * blocking would otherwise break image rendering even if validation passed.
+ * `https://` always wins. Plain `http://` is accepted only on loopback hosts
+ * AND only outside production — local dev's `req.protocol`-derived URLs need
+ * to round-trip through the create / update DTO, but a production client must
+ * never persist a non-https URL. A stored `http://localhost/...` would render
+ * as `<img src="http://localhost/...">` in every viewer's browser, hitting
+ * each viewer's own machine (broken images at best, SSRF-by-rendering at
+ * worst).
  */
 export function isAllowedReviewPhotoUrl(value: string): boolean {
   let parsed: URL;
@@ -48,6 +57,7 @@ export function isAllowedReviewPhotoUrl(value: string): boolean {
   if (parsed.hostname.length === 0) return false;
   if (parsed.protocol === 'https:') return true;
   if (parsed.protocol === 'http:') {
+    if (isProductionEnv()) return false;
     return parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
   }
   return false;

@@ -9,6 +9,7 @@ import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { pointToLatLng } from '@tarmoto/shared';
+import { hasControlCharacters } from '../../common/control-characters.js';
 import { User } from '../../entities/user.entity.js';
 import { UserContact } from '../../entities/user-contact.entity.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
@@ -26,13 +27,6 @@ const ALLOWED_AVATAR_TYPES = new Map<string, string>([
   ['image/png', '.png'],
   ['image/webp', '.webp'],
 ]);
-
-function hasControlCharacters(value: string): boolean {
-  return [...value].some((character) => {
-    const code = character.charCodeAt(0);
-    return code <= 31 || code === 127;
-  });
-}
 
 function managedAvatarFilePath(avatarUrl: string | null): string | null {
   if (!avatarUrl) return null;

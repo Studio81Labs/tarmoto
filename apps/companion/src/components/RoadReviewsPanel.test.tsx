@@ -440,6 +440,61 @@ describe("RoadReviewsPanel", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("ignores uploaded URLs that resolve after the editor was closed and reopened on the same segment", async () => {
+    // Close+reopen leaves `editorMode` non-null again, so the bare null
+    // check isn't enough on its own — we additionally bump an
+    // editor-session counter on every open and close, and the upload
+    // guard rejects results whose captured session no longer matches.
+    setAuthenticatedViewer();
+    getReviewsMock.mockResolvedValue({ data: [] });
+
+    let resolveUpload:
+      | ((value: { data: { photos: string[] } }) => void)
+      | null = null;
+    uploadReviewPhotosMock.mockImplementationOnce(
+      () =>
+        new Promise<{ data: { photos: string[] } }>((resolve) => {
+          resolveUpload = resolve;
+        }),
+    );
+
+    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+    await screen.findByRole("button", { name: "Write a review for this road" });
+
+    // Open → upload → cancel → reopen, all on the same segment.
+    fireEvent.click(
+      screen.getByRole("button", { name: "Write a review for this road" }),
+    );
+    const fileInput = screen.getByLabelText(
+      "Select review photos",
+    ) as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(fileInput, {
+        target: { files: [jpegFile("from-canceled-session.jpg")] },
+      });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Write a review for this road" }),
+    );
+
+    // The reopened editor is fresh — the in-flight upload from the
+    // previous session must not apply its result here.
+    await act(async () => {
+      resolveUpload?.({
+        data: {
+          photos: [
+            "https://app.tarmoto.test/uploads/road-review-photos/seg-1-canceled.jpg",
+          ],
+        },
+      });
+    });
+
+    expect(
+      screen.queryByRole("button", { name: /Remove photo/ }),
+    ).not.toBeInTheDocument();
+  });
+
   it("ignores uploaded URLs that resolve after the editor was closed", async () => {
     setAuthenticatedViewer();
     getReviewsMock.mockResolvedValue({ data: [] });

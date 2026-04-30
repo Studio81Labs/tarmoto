@@ -877,6 +877,39 @@ describe('ReviewsService', () => {
       ]);
     });
 
+    it('should reject loopback http URLs when running in production', async () => {
+      // In production every photo must be served over https — a stored
+      // http://localhost/... URL would render in every viewer's browser
+      // as an image hitting each viewer's local services. The validator
+      // / sanitizer reads TARMOTO_NODE_ENV at call time so the prod
+      // posture stays the same regardless of how the row landed there.
+      const previous = process.env.TARMOTO_NODE_ENV;
+      process.env.TARMOTO_NODE_ENV = 'production';
+      try {
+        const freshReview = {
+          ...mockReview,
+          photos: [
+            'http://localhost:3000/uploads/road-review-photos/dev.jpg',
+            'http://127.0.0.1:3000/uploads/road-review-photos/dev2.jpg',
+            'https://app.tarmoto.test/uploads/road-review-photos/keep.jpg',
+          ],
+        } as unknown as RoadReview;
+        reviewRepo.find!.mockResolvedValueOnce([freshReview]);
+
+        const result = await service.listForSegment('seg-1');
+
+        expect(result[0].photos).toEqual([
+          'https://app.tarmoto.test/uploads/road-review-photos/keep.jpg',
+        ]);
+      } finally {
+        if (previous === undefined) {
+          delete process.env.TARMOTO_NODE_ENV;
+        } else {
+          process.env.TARMOTO_NODE_ENV = previous;
+        }
+      }
+    });
+
     it('should reject malformed https strings that prefix-pass but fail URL parsing', async () => {
       // Prefix-only `startsWith('https://')` would let these through — the
       // URL-parse + hostname check must catch space-after-scheme, missing
