@@ -254,6 +254,31 @@ export default function GroupRideScreen() {
     positionsRef.current = {};
   }, [groupRide]);
 
+  // Stable colour assignment keyed by user_id. Without this, the map
+  // (which filters out members with no broadcast position yet) and the
+  // member list (which renders every member) walked different index
+  // spaces, so a member who'd just joined and shifted everyone in the
+  // list by one would get a different colour on the map than next to
+  // their name. Sorting by `joined_at` (with user_id as tiebreaker)
+  // gives both views the same lookup table.
+  const colorByUserId = useMemo(() => {
+    void positionTick;
+    const sorted = Object.values(positionsRef.current).sort((a, b) => {
+      if (a.joined_at !== b.joined_at) {
+        return a.joined_at < b.joined_at ? -1 : 1;
+      }
+      return a.user_id < b.user_id ? -1 : 1;
+    });
+    // Use a plain object — `Map` is also a named import from
+    // `@maplibre/maplibre-react-native` in this file, so the global
+    // constructor isn't reachable here.
+    const lookup: Record<string, string> = {};
+    sorted.forEach((m, idx) => {
+      lookup[m.user_id] = MEMBER_COLORS[idx % MEMBER_COLORS.length];
+    });
+    return lookup;
+  }, [positionTick]);
+
   const memberFeatures = useMemo(() => {
     void positionTick;
     const members = Object.values(positionsRef.current).filter(
@@ -261,7 +286,7 @@ export default function GroupRideScreen() {
     );
     return {
       type: "FeatureCollection" as const,
-      features: members.map((m, idx) => ({
+      features: members.map((m) => ({
         type: "Feature" as const,
         geometry: {
           type: "Point" as const,
@@ -270,11 +295,11 @@ export default function GroupRideScreen() {
         properties: {
           user_id: m.user_id,
           display_name: m.display_name,
-          color: MEMBER_COLORS[idx % MEMBER_COLORS.length],
+          color: colorByUserId[m.user_id] ?? MEMBER_COLORS[0],
         },
       })),
     };
-  }, [positionTick]);
+  }, [positionTick, colorByUserId]);
 
   const initialCenter = useMemo<[number, number]>(() => {
     const first = Object.values(positionsRef.current).find(
@@ -449,13 +474,13 @@ export default function GroupRideScreen() {
 
       <View style={styles.memberList}>
         <Text style={styles.memberListTitle}>Members ({members.length})</Text>
-        {members.map((m, idx) => (
+        {members.map((m) => (
           <View key={m.user_id} style={styles.memberRow}>
             <View
               style={[
                 styles.memberDot,
                 {
-                  backgroundColor: MEMBER_COLORS[idx % MEMBER_COLORS.length],
+                  backgroundColor: colorByUserId[m.user_id] ?? MEMBER_COLORS[0],
                 },
               ]}
             />

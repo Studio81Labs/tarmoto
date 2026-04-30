@@ -19,7 +19,6 @@ import { createClient } from 'redis';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { Ride } from '../../entities/ride.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
-import { GroupRide } from '../../entities/group-ride.entity.js';
 import { GroupRideMember } from '../../entities/group-ride-member.entity.js';
 
 // Shared between subscribe handlers so a malformed id never reaches a
@@ -127,8 +126,10 @@ export class EventsGateway
     private readonly rideRepo: Repository<Ride>,
     @InjectRepository(TripMember)
     private readonly tripMemberRepo: Repository<TripMember>,
-    @InjectRepository(GroupRide)
-    private readonly groupRideRepo: Repository<GroupRide>,
+    // The `GroupRide` entity is registered in `EventsModule` so the
+    // `relations: { group_ride: true }` lookup below resolves, but the
+    // gateway never needs to query it directly — every membership +
+    // active-state read goes through `groupRideMemberRepo`.
     @InjectRepository(GroupRideMember)
     private readonly groupRideMemberRepo: Repository<GroupRideMember>,
   ) {}

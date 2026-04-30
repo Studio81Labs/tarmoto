@@ -6,7 +6,6 @@ import { JwtService } from '@nestjs/jwt';
 import { EventsGateway } from './events.gateway.js';
 import { Ride } from '../../entities/ride.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
-import { GroupRide } from '../../entities/group-ride.entity.js';
 import { GroupRideMember } from '../../entities/group-ride-member.entity.js';
 import { Server, Socket } from 'socket.io';
 
@@ -54,12 +53,6 @@ describe('EventsGateway', () => {
         },
         {
           provide: getRepositoryToken(TripMember),
-          useValue: {
-            findOne: jest.fn().mockResolvedValue(null),
-          },
-        },
-        {
-          provide: getRepositoryToken(GroupRide),
           useValue: {
             findOne: jest.fn().mockResolvedValue(null),
           },
