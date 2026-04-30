@@ -16,6 +16,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
+  Platform,
   RefreshControl,
   ScrollView,
   Share,
@@ -24,9 +26,12 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import RNFS from "react-native-fs";
+import RNShare from "react-native-share";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Icon from "@react-native-vector-icons/material-design-icons";
+import { tripGpxFileName, tripToGpx } from "@tarmoto/shared";
 import {
   borderRadius,
   colors,
@@ -49,6 +54,7 @@ import {
   routeGeometrySignature,
   summarizeWaypoints,
   sumDistance,
+  tripToGpxInput,
 } from "./TripScreens.helpers";
 
 type DetailRoute = RouteProp<TripsStackParamList, "TripDetail">;
@@ -234,6 +240,8 @@ export default function TripDetailScreen() {
         <ClosedPassesWarning passes={closedPasses} />
       ) : null}
 
+      <ExportGpxAction trip={trip} />
+
       <InviteCard tripId={trip.id} inviteCode={trip.invite_code} />
       <MembersCard members={trip.members} />
 
@@ -348,6 +356,84 @@ function DayCard({ day, onPress }: { day: TripDay; onPress: () => void }) {
           </Text>
         </View>
       ) : null}
+    </TouchableOpacity>
+  );
+}
+
+/**
+ * US-20: lets the rider hand the trip off to Garmin / RideWithGPS /
+ * Komoot etc. as a GPX file. The backend has no `/trips/:id/gpx`
+ * endpoint yet (only the data-export bundle bakes per-day GPX), so we
+ * render the file client-side from the same Trip object the screen is
+ * already showing — no extra round trip and no risk of the share sheet
+ * stalling on a slow network.
+ */
+function ExportGpxAction({ trip }: { trip: Trip }) {
+  const [busy, setBusy] = useState(false);
+
+  const hasGeometry = useMemo(
+    () =>
+      trip.days.some(
+        (day) =>
+          Array.isArray(day.route_geometry) && day.route_geometry.length > 1,
+      ),
+    [trip.days],
+  );
+
+  const handleExport = useCallback(async () => {
+    if (busy) return;
+    setBusy(true);
+    const filename = tripGpxFileName(trip.title);
+    const tempPath = `${RNFS.TemporaryDirectoryPath}/${filename}`.replace(
+      /\/{2,}/g,
+      "/",
+    );
+    try {
+      const xml = tripToGpx(tripToGpxInput(trip));
+      await RNFS.writeFile(tempPath, xml, "utf8");
+      await RNShare.open({
+        url: Platform.OS === "android" ? `file://${tempPath}` : tempPath,
+        type: "application/gpx+xml",
+        filename,
+        title: "Export trip as GPX",
+        // Don't surface a cancel as an error — riders dismissing the
+        // sheet is a routine outcome, not a failure mode worth toasting.
+        failOnCancel: false,
+      });
+    } catch (err) {
+      Alert.alert(
+        "Couldn't export",
+        err instanceof Error ? err.message : "Unable to export GPX.",
+      );
+    } finally {
+      // Same rationale as RideDetailScreen: leave the temp file in
+      // place so the share target can read it lazily (Mail / Files /
+      // third-party importers all stage payloads asynchronously).
+      // `TemporaryDirectoryPath` is reaped by the OS so a stray .gpx
+      // is harmless.
+      setBusy(false);
+    }
+  }, [busy, trip]);
+
+  if (!hasGeometry) return null;
+
+  return (
+    <TouchableOpacity
+      style={styles.exportBtn}
+      onPress={() => void handleExport()}
+      disabled={busy}
+      accessibilityRole="button"
+      accessibilityLabel="Export trip as GPX"
+      accessibilityState={{ busy }}
+    >
+      {busy ? (
+        <ActivityIndicator color={colors.primary} />
+      ) : (
+        <>
+          <Icon name="download-outline" size={20} color={colors.primary} />
+          <Text style={styles.exportLabel}>Export GPX</Text>
+        </>
+      )}
     </TouchableOpacity>
   );
 }
@@ -810,6 +896,22 @@ const styles = StyleSheet.create({
   inviteError: {
     color: colors.danger,
     fontSize: fontSize.xs,
+  },
+  exportBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.pill,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.bgCard,
+  },
+  exportLabel: {
+    color: colors.primary,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.bold,
   },
   memberRow: {
     flexDirection: "row",

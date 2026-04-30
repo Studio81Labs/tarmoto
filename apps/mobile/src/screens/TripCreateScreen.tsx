@@ -39,6 +39,7 @@ import {
 } from "@/theme";
 import QualityThresholdSlider from "@/components/QualityThresholdSlider";
 import { api } from "@/services/api";
+import { pickAndParseRoute, routeToImportRequest } from "@/services/tripImport";
 import { useMapStore, usePreferencesStore, useRideStore } from "@/stores";
 import type { LatLng } from "@/types";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
@@ -84,6 +85,7 @@ export default function TripCreateScreen() {
 
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
 
   // If `createTrip` succeeded but `generateTripRoute` failed, we hold onto
   // the draft id and retry generation against the same draft instead of
@@ -156,6 +158,39 @@ export default function TripCreateScreen() {
     },
     [defaultMinQuality],
   );
+
+  const handleImport = useCallback(async () => {
+    if (importing || submitting) return;
+    setImporting(true);
+    setErrorMessage(null);
+    try {
+      const outcome = await pickAndParseRoute();
+      if (!outcome.ok) {
+        if (outcome.cancelled) return;
+        setErrorMessage(outcome.error);
+        Alert.alert("Couldn't import file", outcome.error);
+        return;
+      }
+      const requestTitle = trimmedTitle || outcome.route.name;
+      const request = routeToImportRequest(
+        outcome.route,
+        requestTitle,
+        region.trim() || undefined,
+      );
+      const trip = await api.importTripFromRoute(request);
+      // Replace, not push: the user just consumed the create form, so
+      // back from TripDetail should go to the trips list rather than
+      // back to a half-filled form they have no reason to revisit.
+      navigation.replace("TripDetail", { tripId: trip.id });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Unable to import route";
+      setErrorMessage(message);
+      Alert.alert("Import failed", message);
+    } finally {
+      setImporting(false);
+    }
+  }, [importing, submitting, trimmedTitle, region, navigation]);
 
   const handleGenerate = useCallback(async () => {
     // Re-entrancy guard: a rapid double-tap can fire this callback twice
@@ -242,6 +277,31 @@ export default function TripCreateScreen() {
           We'll auto-generate a multi-day route that favours the roads you care
           about.
         </Text>
+
+        <TouchableOpacity
+          style={[
+            styles.importBtn,
+            (importing || submitting) && styles.importBtnDisabled,
+          ]}
+          onPress={() => void handleImport()}
+          disabled={importing || submitting}
+          accessibilityRole="button"
+          accessibilityLabel="Import GPX or KML file"
+          accessibilityState={{ busy: importing }}
+        >
+          {importing ? (
+            <ActivityIndicator color={colors.primary} />
+          ) : (
+            <>
+              <Icon
+                name="file-upload-outline"
+                size={20}
+                color={colors.primary}
+              />
+              <Text style={styles.importLabel}>Import GPX/KML</Text>
+            </>
+          )}
+        </TouchableOpacity>
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Title</Text>
@@ -615,6 +675,25 @@ const styles = StyleSheet.create({
   generateLabel: {
     color: colors.textInverse,
     fontSize: fontSize.lg,
+    fontWeight: fontWeight.bold,
+  },
+  importBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.pill,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.bgCard,
+  },
+  importBtnDisabled: {
+    opacity: 0.5,
+  },
+  importLabel: {
+    color: colors.primary,
+    fontSize: fontSize.md,
     fontWeight: fontWeight.bold,
   },
 });

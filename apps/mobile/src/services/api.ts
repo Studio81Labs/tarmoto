@@ -244,6 +244,33 @@ class ApiService {
     return data;
   }
 
+  /**
+   * Bulk-export every ride owned by the caller as a single GPX bundle.
+   * Backend route: `GET /rides/export.gpx`. Used by the SettingsScreen
+   * "Export all rides" action so riders can move their full history to
+   * Garmin/RideWithGPS without writing a script.
+   */
+  async exportAllRidesGpx(): Promise<string> {
+    const { data } = await this.client.get<string>("/rides/export.gpx", {
+      responseType: "text",
+      headers: { Accept: "application/gpx+xml" },
+    });
+    return data;
+  }
+
+  /**
+   * Bulk-export the rider's ride history as a tabular CSV (one row per
+   * ride). Useful for spreadsheet workflows / fitness analytics tools
+   * that don't speak GPX.
+   */
+  async exportAllRidesCsv(): Promise<string> {
+    const { data } = await this.client.get<string>("/rides/export.csv", {
+      responseType: "text",
+      headers: { Accept: "text/csv" },
+    });
+    return data;
+  }
+
   // ── Sensor Data ──
   //
   // The raw POST is intentionally private: every ride-stop flow must go
@@ -439,6 +466,23 @@ class ApiService {
     daily_km_max?: number;
   }): Promise<Trip> {
     const { data } = await this.client.post<Trip>("/trips", params);
+    return data;
+  }
+
+  /**
+   * Create a trip seeded from a parsed GPX/KML file (US-20). The mobile
+   * app parses the file via `@tarmoto/shared` and posts the normalised
+   * geometry + waypoints; the backend persists a single planned day with
+   * the supplied geometry rather than running the route generator.
+   */
+  async importTripFromRoute(params: {
+    title: string;
+    region?: string;
+    source_format: "gpx" | "kml";
+    geometry: Array<{ lat: number; lng: number }>;
+    waypoints?: Array<{ lat: number; lng: number; name?: string }>;
+  }): Promise<Trip> {
+    const { data } = await this.client.post<Trip>("/trips/import", params);
     return data;
   }
 

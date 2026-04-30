@@ -5,6 +5,7 @@
  * pulling React Native or navigation into the module graph.
  */
 
+import type { TripGpxInput } from "@tarmoto/shared";
 import type {
   Accommodation,
   AccommodationKind,
@@ -282,6 +283,37 @@ export function routeGeometrySignature(days: TripDay[]): string {
   const route = flattenTripRoute(days);
   if (route.length === 0) return "";
   return route.map((point) => `${point.lat},${point.lng}`).join("|");
+}
+
+/**
+ * Adapt a backend `Trip` into the shape the shared `tripToGpx` renderer
+ * expects. Sorting days by `day_number` matches the on-screen order so
+ * the exported GPX walks day 1 → day N regardless of how the API
+ * happened to return them.
+ */
+export function tripToGpxInput(trip: Trip): TripGpxInput {
+  const orderedDays = [...trip.days].sort(
+    (a, b) => a.day_number - b.day_number,
+  );
+  return {
+    name: trip.title,
+    description: trip.region ?? undefined,
+    days: orderedDays.map((day) => ({
+      dayNumber: day.day_number,
+      title: day.title ?? undefined,
+      waypoints: [...day.waypoints]
+        .sort((a, b) => a.sequence - b.sequence)
+        .map((w) => ({
+          lat: w.lat,
+          lng: w.lng,
+          name: w.name ?? undefined,
+          type: w.waypoint_type,
+        })),
+      routeGeometry: Array.isArray(day.route_geometry)
+        ? day.route_geometry.map((p) => [p.lng, p.lat] as [number, number])
+        : undefined,
+    })),
+  };
 }
 
 // Great-circle distance between two lat/lng pairs, in kilometres.

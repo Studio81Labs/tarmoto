@@ -7,12 +7,15 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { pointToLatLng } from '@tarmoto/shared';
+import { haversineKm, latLngToPoint, pointToLatLng } from '@tarmoto/shared';
 import { Trip } from '../../entities/trip.entity.js';
+import { TripDay } from '../../entities/trip-day.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
+import { TripWaypoint } from '../../entities/trip-waypoint.entity.js';
 import { EventsGateway } from '../events/events.gateway.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 import { CreateTripDto } from './dto/create-trip.dto.js';
+import { ImportTripDto } from './dto/import-trip.dto.js';
 import { ListTripsDto } from './dto/list-trips.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
 import {
@@ -125,6 +128,112 @@ export class TripsService {
         // index). Any other failure — including a 23505 from an
         // unrelated constraint — propagates so we don't paper over a
         // real bug as a code collision.
+        if (!isInviteCodeViolation(err)) throw err;
+        lastError = err;
+      }
+    }
+    throw new Error(
+      `Failed to allocate a unique trip invite code after ${MAX_INVITE_ALLOCATION_ATTEMPTS} attempts` +
+        (lastError instanceof Error ? `: ${lastError.message}` : ''),
+    );
+  }
+
+  /**
+   * US-20: create a trip seeded from a GPX/KML file. The mobile/companion
+   * client parses the file locally (see `@tarmoto/shared/gpx-kml-import`)
+   * and posts the normalised geometry + waypoints; we persist them as a
+   * single planned day so the trip lands ready to ride instead of in
+   * draft state. We do not invoke the route generator — the imported
+   * file IS the route and overwriting it would defeat the import.
+   */
+  async importFromRoute(
+    userId: string,
+    dto: ImportTripDto,
+  ): Promise<TripDetailDto> {
+    const totalKm = totalDistanceKm(dto.geometry);
+    const dailyKmMin = Math.max(1, Math.round(totalKm));
+    const dailyKmMax = Math.max(dailyKmMin, dailyKmMin);
+    const tripId = await this.allocateAndPersistImportedTrip(userId, dto, {
+      totalKm,
+      dailyKmMin,
+      dailyKmMax,
+    });
+    return this.getDetail(userId, tripId);
+  }
+
+  private async allocateAndPersistImportedTrip(
+    userId: string,
+    dto: ImportTripDto,
+    bounds: { totalKm: number; dailyKmMin: number; dailyKmMax: number },
+  ): Promise<string> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < MAX_INVITE_ALLOCATION_ATTEMPTS; attempt++) {
+      const inviteCode = generateInviteCode();
+      try {
+        return await this.tripRepo.manager.transaction(async (manager) => {
+          const trip = manager.create(Trip, {
+            owner_id: userId,
+            title: dto.title,
+            region: dto.region ?? null,
+            num_days: 1,
+            daily_km_min: bounds.dailyKmMin,
+            daily_km_max: bounds.dailyKmMax,
+            min_quality: DEFAULT_MIN_QUALITY,
+            road_preference: DEFAULT_ROAD_PREFERENCE,
+            // Imported files are routes the rider already has — surface
+            // them as `planned` so they appear alongside generated trips
+            // rather than in the "draft" bucket that needs another step.
+            status: 'planned',
+            invite_code: inviteCode,
+          });
+          const savedTrip = await manager.save(trip);
+
+          await manager.save(
+            manager.create(TripMember, {
+              trip_id: savedTrip.id,
+              user_id: userId,
+              role: 'owner',
+            }),
+          );
+
+          const day = manager.create(TripDay, {
+            trip_id: savedTrip.id,
+            day_number: 1,
+            title: dto.title,
+            distance_km: Number(bounds.totalKm.toFixed(2)),
+            // Rough estimate at 55 km/h — same heuristic the companion
+            // uses for imported routes. Floor at 30 minutes so very
+            // short test imports don't render as "0 min".
+            estimated_time: `${Math.max(30, Math.round((bounds.totalKm / 55) * 60))} minutes`,
+            avg_quality: null,
+            curviness_score: null,
+            scenic_score: null,
+            elevation_gain: null,
+            elevation_loss: null,
+            route_geom: {
+              type: 'LineString',
+              coordinates: dto.geometry.map((p) => [p.lng, p.lat]),
+            },
+          });
+          const savedDay = await manager.save(day);
+
+          const waypoints = buildImportedWaypoints(dto);
+          if (waypoints.length > 0) {
+            const rows = waypoints.map((w, idx) =>
+              manager.create(TripWaypoint, {
+                trip_day_id: savedDay.id,
+                sequence: idx,
+                location: latLngToPoint({ lat: w.lat, lng: w.lng }),
+                name: w.name ?? null,
+                waypoint_type: w.waypoint_type,
+              }),
+            );
+            await manager.save(rows);
+          }
+
+          return savedTrip.id;
+        });
+      } catch (err: unknown) {
         if (!isInviteCodeViolation(err)) throw err;
         lastError = err;
       }
@@ -516,4 +625,79 @@ function isInviteCodeViolation(err: unknown): boolean {
   if (!isUniqueViolation(err)) return false;
   const constraint = (err as { constraint?: unknown }).constraint;
   return constraint === INVITE_CODE_INDEX;
+}
+
+function totalDistanceKm(points: Array<{ lat: number; lng: number }>): number {
+  let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    total += haversineKm(
+      points[i - 1].lat,
+      points[i - 1].lng,
+      points[i].lat,
+      points[i].lng,
+    );
+  }
+  return total;
+}
+
+interface BuiltWaypoint {
+  lat: number;
+  lng: number;
+  name?: string;
+  waypoint_type: 'start' | 'via' | 'end';
+}
+
+const SAME_POINT_EPSILON = 1e-5;
+
+function samePoint(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): boolean {
+  return (
+    Math.abs(a.lat - b.lat) < SAME_POINT_EPSILON &&
+    Math.abs(a.lng - b.lng) < SAME_POINT_EPSILON
+  );
+}
+
+/**
+ * Build the start/via/end waypoint sequence we persist for an imported
+ * trip. Mirrors the companion's `deriveWaypoints` heuristic so the
+ * imported trip has the same shape on every client:
+ *  - the route's first/last polyline point are forced to be `start`/`end`
+ *  - imported waypoints co-located with start/end donate their `name`
+ *  - all other imported waypoints persist as `via` markers in order
+ *  - waypoints outside the lat/lng range (already filtered by class
+ *    validators) cannot reach this function
+ */
+function buildImportedWaypoints(dto: ImportTripDto): BuiltWaypoint[] {
+  const first = dto.geometry[0];
+  const last = dto.geometry[dto.geometry.length - 1];
+  const incoming = dto.waypoints ?? [];
+
+  const startMatch = incoming.find((w) => samePoint(w, first));
+  const endMatch = incoming.find((w) => samePoint(w, last));
+
+  const start: BuiltWaypoint = {
+    lat: first.lat,
+    lng: first.lng,
+    name: startMatch?.name,
+    waypoint_type: 'start',
+  };
+  const end: BuiltWaypoint = {
+    lat: last.lat,
+    lng: last.lng,
+    name: endMatch?.name,
+    waypoint_type: 'end',
+  };
+
+  const vias: BuiltWaypoint[] = incoming
+    .filter((w) => !samePoint(w, first) && !samePoint(w, last))
+    .map((w) => ({
+      lat: w.lat,
+      lng: w.lng,
+      name: w.name,
+      waypoint_type: 'via',
+    }));
+
+  return [start, ...vias, end];
 }
