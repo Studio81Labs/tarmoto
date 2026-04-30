@@ -24,6 +24,8 @@ import type {
   TripSummary,
   CommuteRoute,
   CommuteStatus,
+  CommuteAlternativesResponse,
+  CommuteStats,
   RouteWeatherResponse,
   CalculatedRoute,
   RoutePreferences,
@@ -677,6 +679,29 @@ class ApiService {
 
   async getCommuteStatus(): Promise<CommuteStatus> {
     const { data } = await this.client.get<CommuteStatus>("/commute/status");
+    return data;
+  }
+
+  async getCommuteAlternatives(): Promise<CommuteAlternativesResponse> {
+    const { data } = await this.client.get<CommuteAlternativesResponse>(
+      "/commute/alternatives",
+    );
+    return data;
+  }
+
+  async getCommuteStats(
+    period: "week" | "month" = "week",
+  ): Promise<CommuteStats> {
+    const { data } = await this.client.get<CommuteStats>("/commute/stats", {
+      params: { period },
+    });
+    return data;
+  }
+
+  async setPrimaryCommuteRoute(routeId: string): Promise<CommuteRoute> {
+    const { data } = await this.client.put<CommuteRoute>(
+      `/commute/routes/${routeId}/primary`,
+    );
     return data;
   }
 

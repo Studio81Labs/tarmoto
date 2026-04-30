@@ -1,12 +1,12 @@
 /**
- * CommuteScreen — US-15 proactive commute hazard warnings.
+ * CommuteScreen — US-15 / US-21 / US-22 / US-23 commute surface.
  *
  * Three visual states:
  *   - `loading` while the first fetch is in flight
  *   - `learning` when no primary commute has been detected yet (the
  *     backend needs at least 3 rides per the user story)
- *   - `ready` with the commute summary, weather line, and a hazard list
- *     where hazards new since the rider's last visit are flagged NEW.
+ *   - `ready` with the commute summary, weather line, hazard list,
+ *     alternative routes, and weekly summary
  *
  * Push notifications for new hazards are a separate workstream (see
  * Issue #17 acceptance criteria). This screen delivers the in-app half
@@ -14,9 +14,10 @@
  * layer can reuse via the same `useCommute()` hook.
  */
 
-import React, { ComponentProps } from "react";
+import React, { ComponentProps, useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -25,6 +26,12 @@ import {
   View,
 } from "react-native";
 import Icon from "@react-native-vector-icons/material-design-icons";
+import {
+  type CompositeNavigationProp,
+  useNavigation,
+} from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import {
   borderRadius,
   colors,
@@ -36,7 +43,18 @@ import {
   spacing,
 } from "@/theme";
 import { useCommute, type CommuteHazardView } from "@/hooks/useCommute";
-import type { CommuteStatus, Weather } from "@/types";
+import type {
+  CommuteAlternativeRoute,
+  CommuteAlternativesResponse,
+  CommuteRoute,
+  CommuteStats,
+  CommuteStatus,
+  Weather,
+} from "@/types";
+import type {
+  HomeStackParamList,
+  RootTabParamList,
+} from "@/navigation/RootNavigator";
 import {
   formatHazardType,
   formatRelativeTime,
@@ -45,19 +63,40 @@ import { capitalize } from "./TripScreens.helpers";
 
 type IconName = ComponentProps<typeof Icon>["name"];
 
+type CommuteNav = CompositeNavigationProp<
+  NativeStackNavigationProp<HomeStackParamList, "Commute">,
+  BottomTabNavigationProp<RootTabParamList>
+>;
+
 export default function CommuteScreen() {
   const {
     phase,
     route,
+    savedRoutes,
     status,
     hazards,
     newHazardCount,
+    alternatives,
+    stats,
     errorMessage,
     refresh,
     retry,
     acknowledge,
+    setPrimary,
     isRefreshing,
+    isUpdatingPrimary,
   } = useCommute();
+  const navigation = useNavigation<CommuteNav>();
+
+  const startCommuteRide = useCallback((): void => {
+    // Cross-tab nav into the live ride HUD. RideActiveScreen owns the
+    // `/rides/start` POST and telemetry pipeline; this screen just
+    // chooses the ride_type marker.
+    navigation.navigate("RideTab", {
+      screen: "RideActive",
+      params: { rideType: "commute" },
+    });
+  }, [navigation]);
 
   // NEW hazard markers stay sticky until the rider explicitly taps
   // "Mark all seen" below. Avoid auto-acknowledging on unmount: the
@@ -119,6 +158,15 @@ export default function CommuteScreen() {
             valueColor={qualityColor(status.route_quality)}
           />
         </View>
+        <TouchableOpacity
+          style={styles.startCommuteBtn}
+          onPress={startCommuteRide}
+          accessibilityRole="button"
+          accessibilityLabel={`Start commute ride to ${route.name}`}
+        >
+          <Icon name="play-circle" size={20} color={colors.textInverse} />
+          <Text style={styles.startCommuteLabel}>Start commute</Text>
+        </TouchableOpacity>
       </View>
 
       <WeatherCard weather={status.weather} />
@@ -128,6 +176,27 @@ export default function CommuteScreen() {
         newHazardCount={newHazardCount}
         onDismissNewBadges={acknowledge}
       />
+
+      {alternatives ? (
+        <AlternativesCard
+          alternatives={alternatives}
+          primaryDistanceKm={route.distance_km}
+          primaryDurationMin={route.avg_duration_min}
+          onStart={startCommuteRide}
+        />
+      ) : null}
+
+      {savedRoutes.length > 1 ? (
+        <SavedRoutesCard
+          routes={savedRoutes}
+          primaryRouteId={route.id}
+          isUpdatingPrimary={isUpdatingPrimary}
+          onSetPrimary={setPrimary}
+          onStart={startCommuteRide}
+        />
+      ) : null}
+
+      {stats ? <WeeklySummaryCard stats={stats} /> : null}
     </ScrollView>
   );
 }
@@ -318,6 +387,332 @@ function HazardRow({ hazard }: { hazard: CommuteHazardView }) {
   );
 }
 
+// US-22: alternative routes the rider can pick when the primary has
+// hazards / closures / weather. The list is ranked client-side using a
+// simple score (hazards weighted heaviest, then duration delta vs the
+// primary, then quality) — this matches what the rider intuitively
+// scans for on the cards. These come from the routing engine on each
+// request and don't have a stable `id`, so they're tap-to-start only;
+// promoting one to "primary" requires a saved route, which lives in
+// `SavedRoutesCard` below.
+function AlternativesCard({
+  alternatives,
+  primaryDistanceKm,
+  primaryDurationMin,
+  onStart,
+}: {
+  alternatives: CommuteAlternativesResponse;
+  primaryDistanceKm: number;
+  primaryDurationMin: number;
+  onStart: () => void;
+}) {
+  const ranked = rankAlternatives(alternatives.alternatives);
+
+  if (ranked.length === 0) {
+    return (
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>Alternative routes</Text>
+        <View style={styles.clearRow}>
+          <Icon name="check" size={20} color={colors.textSecondary} />
+          <Text style={styles.clearText}>
+            Your usual route looks like the best option right now.
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.card}>
+      <Text style={styles.sectionTitle}>
+        Alternative routes ({ranked.length})
+      </Text>
+      <Text style={styles.altSubtitle}>
+        Compared with your primary
+        {alternatives.primary_hazard_count > 0
+          ? ` (${alternatives.primary_hazard_count} hazard${alternatives.primary_hazard_count === 1 ? "" : "s"})`
+          : ""}
+        .
+      </Text>
+      {ranked.map((alt, idx) => (
+        <AlternativeRow
+          key={`${alt.distance_km}-${idx}`}
+          alt={alt}
+          primaryDistanceKm={primaryDistanceKm}
+          primaryDurationMin={primaryDurationMin}
+          onStart={onStart}
+        />
+      ))}
+    </View>
+  );
+}
+
+function AlternativeRow({
+  alt,
+  primaryDistanceKm,
+  primaryDurationMin,
+  onStart,
+}: {
+  alt: CommuteAlternativeRoute;
+  primaryDistanceKm: number;
+  primaryDurationMin: number;
+  onStart: () => void;
+}) {
+  const distanceDelta = alt.distance_km - primaryDistanceKm;
+  const durationDelta = alt.duration_min - primaryDurationMin;
+  return (
+    <TouchableOpacity
+      style={styles.altRow}
+      onPress={onStart}
+      accessibilityRole="button"
+      accessibilityLabel={
+        `Start commute on alternative route, ${alt.distance_km.toFixed(1)} ` +
+        `kilometres, ${alt.duration_min} minutes, ${alt.hazard_count} ` +
+        `hazard${alt.hazard_count === 1 ? "" : "s"}`
+      }
+    >
+      <View style={styles.altMain}>
+        <View style={styles.altHeaderRow}>
+          <Text style={styles.altTitle}>
+            {alt.distance_km.toFixed(1)} km · {alt.duration_min} min
+          </Text>
+          {alt.hazard_count === 0 ? (
+            <View style={[styles.altPill, { backgroundColor: colors.success }]}>
+              <Text style={styles.altPillText}>CLEAR</Text>
+            </View>
+          ) : (
+            <View style={[styles.altPill, { backgroundColor: colors.warning }]}>
+              <Text style={styles.altPillText}>
+                {alt.hazard_count} HAZARD{alt.hazard_count === 1 ? "" : "S"}
+              </Text>
+            </View>
+          )}
+        </View>
+        <View style={styles.altDeltasRow}>
+          <DeltaChip
+            label="Δ km"
+            value={formatSignedDistance(distanceDelta)}
+            negativeIsGood
+            delta={distanceDelta}
+          />
+          <DeltaChip
+            label="Δ time"
+            value={formatSignedDuration(durationDelta)}
+            negativeIsGood
+            delta={durationDelta}
+          />
+          <DeltaChip
+            label="Quality"
+            value={qualityLabel(alt.avg_quality ?? 0)}
+            valueColor={qualityColor(alt.avg_quality ?? 0)}
+          />
+        </View>
+      </View>
+      <Icon name="chevron-right" size={20} color={colors.textTertiary} />
+    </TouchableOpacity>
+  );
+}
+
+// Saved (non-primary) routes the rider has stashed earlier — picking
+// one promotes it to primary via the atomic swap endpoint, which then
+// drives every other surface on this screen (status, alternatives,
+// stats) on the next refresh.
+function SavedRoutesCard({
+  routes,
+  primaryRouteId,
+  isUpdatingPrimary,
+  onSetPrimary,
+  onStart,
+}: {
+  routes: CommuteRoute[];
+  primaryRouteId: string;
+  isUpdatingPrimary: boolean;
+  onSetPrimary: (routeId: string) => Promise<void>;
+  onStart: () => void;
+}) {
+  const others = routes.filter((r) => r.id !== primaryRouteId);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+
+  const handlePromote = useCallback(
+    (route: CommuteRoute) => {
+      Alert.alert(
+        "Use this as primary?",
+        `Future commute checks will use ${route.name} as your primary route.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Use as primary",
+            onPress: () => {
+              setPendingId(route.id);
+              void onSetPrimary(route.id).finally(() => setPendingId(null));
+            },
+          },
+        ],
+      );
+    },
+    [onSetPrimary],
+  );
+
+  if (others.length === 0) return null;
+
+  return (
+    <View style={styles.card}>
+      <Text style={styles.sectionTitle}>Saved routes ({others.length})</Text>
+      <Text style={styles.altSubtitle}>
+        Switch which one is your primary — hazards and weekly stats follow.
+      </Text>
+      {others.map((r) => (
+        <View key={r.id} style={styles.savedRow}>
+          <TouchableOpacity
+            style={styles.savedMain}
+            onPress={onStart}
+            accessibilityRole="button"
+            accessibilityLabel={`Start commute on ${r.name}`}
+          >
+            <Text style={styles.altTitle}>{r.name}</Text>
+            <Text style={styles.altSubtitle}>
+              {r.distance_km != null
+                ? `${r.distance_km.toFixed(1)} km`
+                : "Distance pending"}
+              {r.avg_quality != null
+                ? ` · Quality ${qualityLabel(r.avg_quality)}`
+                : ""}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => handlePromote(r)}
+            disabled={isUpdatingPrimary && pendingId === r.id}
+            accessibilityRole="button"
+            accessibilityLabel={`Use ${r.name} as primary commute`}
+            style={styles.savedAction}
+          >
+            {isUpdatingPrimary && pendingId === r.id ? (
+              <ActivityIndicator color={colors.primary} size="small" />
+            ) : (
+              <Text style={styles.altSecondaryLabel}>Use as primary</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function DeltaChip({
+  label,
+  value,
+  valueColor,
+  negativeIsGood,
+  delta,
+}: {
+  label: string;
+  value: string;
+  valueColor?: string;
+  /** When true (distance/time deltas), negative deltas render as success. */
+  negativeIsGood?: boolean;
+  delta?: number;
+}) {
+  let color = valueColor ?? colors.textPrimary;
+  if (delta !== undefined && negativeIsGood) {
+    if (delta < 0) color = colors.success;
+    else if (delta > 0) color = colors.warning;
+    else color = colors.textPrimary;
+  }
+  return (
+    <View style={styles.altDelta}>
+      <Text style={styles.altDeltaLabel}>{label}</Text>
+      <Text style={[styles.altDeltaValue, { color }]}>{value}</Text>
+    </View>
+  );
+}
+
+// US-23: small trend section under the commute view. We surface the four
+// totals the spec explicitly calls out — distance, time, fuel, ride
+// count — and a per-metric arrow + percentage vs the prior week. The
+// arrow is colour-coded only for distance / time / rides (more is good
+// for distance/rides, less is good for time); fuel is intentionally
+// neutral since it's an estimate, not a goal.
+function WeeklySummaryCard({ stats }: { stats: CommuteStats }) {
+  const { previous_period: prev } = stats;
+  return (
+    <View style={styles.card}>
+      <View style={styles.weeklyHeader}>
+        <Text style={styles.sectionTitle}>This week</Text>
+        <Text style={styles.weeklySubtitle}>vs last week</Text>
+      </View>
+      <View style={styles.weeklyGrid}>
+        <TrendCell
+          label="Rides"
+          value={String(stats.total_rides)}
+          delta={stats.total_rides - prev.total_rides}
+          positiveIsGood
+        />
+        <TrendCell
+          label="Distance"
+          value={`${stats.total_km.toFixed(1)} km`}
+          delta={stats.total_km - prev.total_km}
+          deltaText={trendPercent(stats.total_km, prev.total_km)}
+          positiveIsGood
+        />
+        <TrendCell
+          label="Time"
+          value={`${stats.total_time_min} min`}
+          delta={stats.total_time_min - prev.total_time_min}
+          deltaText={trendPercent(stats.total_time_min, prev.total_time_min)}
+          positiveIsGood={false}
+        />
+        <TrendCell
+          label="Fuel est."
+          value={`${stats.fuel_estimate_l.toFixed(1)} L`}
+          delta={stats.fuel_estimate_l - prev.fuel_estimate_l}
+          deltaText={trendPercent(stats.fuel_estimate_l, prev.fuel_estimate_l)}
+          neutral
+        />
+      </View>
+    </View>
+  );
+}
+
+function TrendCell({
+  label,
+  value,
+  delta,
+  deltaText,
+  positiveIsGood,
+  neutral,
+}: {
+  label: string;
+  value: string;
+  delta: number;
+  /** Optional override (e.g. percentage). Defaults to formatted absolute delta. */
+  deltaText?: string;
+  positiveIsGood?: boolean;
+  neutral?: boolean;
+}) {
+  let color: string = colors.textTertiary;
+  let icon: IconName = "minus";
+  const epsilon = 0.05; // dampens the arrow on tiny rounding differences
+  if (!neutral && Math.abs(delta) > epsilon) {
+    icon = delta > 0 ? "arrow-up" : "arrow-down";
+    if (positiveIsGood !== undefined) {
+      const isGood = positiveIsGood ? delta > 0 : delta < 0;
+      color = isGood ? colors.success : colors.warning;
+    }
+  }
+  return (
+    <View style={styles.weeklyCell}>
+      <Text style={styles.metricLabel}>{label}</Text>
+      <Text style={styles.weeklyValue}>{value}</Text>
+      <View style={styles.weeklyTrendRow}>
+        <Icon name={icon} size={14} color={color} />
+        <Text style={[styles.weeklyDelta, { color }]}>
+          {deltaText ?? formatAbsDelta(delta)}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 // ── Pure helpers (kept inline; small + screen-specific) ──
 
 function describeStatus(
@@ -415,6 +810,65 @@ function severityAlpha(severity: string): string {
       return "rgba(59, 130, 246, 0.15)";
   }
 }
+
+/**
+ * Rank alternatives so the rider's eye lands on the best candidate first.
+ *
+ * Score order: fewer hazards > shorter duration > higher quality. Each
+ * tier dominates the next so a 0-hazard route always ranks above one
+ * with hazards even if it's 10 minutes longer (the rider's whole
+ * reason for using alternates is hazard avoidance).
+ */
+export function rankAlternatives(
+  alts: CommuteAlternativeRoute[],
+): CommuteAlternativeRoute[] {
+  return [...alts].sort((a, b) => {
+    if (a.hazard_count !== b.hazard_count) {
+      return a.hazard_count - b.hazard_count;
+    }
+    if (a.duration_min !== b.duration_min) {
+      return a.duration_min - b.duration_min;
+    }
+    const aQ = a.avg_quality ?? -1;
+    const bQ = b.avg_quality ?? -1;
+    return bQ - aQ;
+  });
+}
+
+function formatSignedDistance(km: number): string {
+  if (Math.abs(km) < 0.05) return "±0 km";
+  return `${km > 0 ? "+" : ""}${km.toFixed(1)} km`;
+}
+
+function formatSignedDuration(min: number): string {
+  if (min === 0) return "±0 min";
+  return `${min > 0 ? "+" : ""}${min} min`;
+}
+
+function formatAbsDelta(delta: number): string {
+  if (Math.abs(delta) < 0.05) return "±0";
+  return delta > 0 ? `+${delta.toFixed(1)}` : delta.toFixed(1);
+}
+
+function trendPercent(current: number, previous: number): string {
+  if (previous === 0) {
+    if (current === 0) return "±0%";
+    // No prior baseline to divide against — just signal direction.
+    return current > 0 ? "+new" : "—";
+  }
+  const pct = ((current - previous) / previous) * 100;
+  if (Math.abs(pct) < 0.5) return "±0%";
+  return pct > 0 ? `+${Math.round(pct)}%` : `${Math.round(pct)}%`;
+}
+
+// Re-exported so the spec can assert against the formatter without
+// importing the screen component.
+export const __test = {
+  rankAlternatives,
+  trendPercent,
+  formatSignedDistance,
+  formatSignedDuration,
+};
 
 // ── Styles ──
 
@@ -529,6 +983,21 @@ const styles = StyleSheet.create({
     fontWeight: fontWeight.bold,
     marginTop: 4,
   },
+  startCommuteBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.pill,
+    marginTop: spacing.sm,
+  },
+  startCommuteLabel: {
+    color: colors.textInverse,
+    fontWeight: fontWeight.bold,
+    fontSize: fontSize.md,
+  },
   weatherRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -615,5 +1084,118 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     fontWeight: fontWeight.bold,
     letterSpacing: 0.5,
+  },
+  altSubtitle: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
+  },
+  altRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  altMain: {
+    flex: 1,
+    gap: spacing.sm,
+  },
+  altHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+  altTitle: {
+    color: colors.textPrimary,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.semibold,
+  },
+  altPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+  },
+  altPillText: {
+    color: colors.white,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.bold,
+    letterSpacing: 0.5,
+  },
+  altDeltasRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+  },
+  altDelta: {
+    flex: 1,
+  },
+  altDeltaLabel: {
+    color: colors.textTertiary,
+    fontSize: fontSize.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    fontWeight: fontWeight.semibold,
+  },
+  altDeltaValue: {
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.bold,
+    marginTop: 2,
+  },
+  altSecondaryLabel: {
+    color: colors.primary,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
+  },
+  savedRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  savedMain: {
+    flex: 1,
+    gap: 2,
+  },
+  savedAction: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  weeklyHeader: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+  },
+  weeklySubtitle: {
+    color: colors.textTertiary,
+    fontSize: fontSize.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    fontWeight: fontWeight.semibold,
+  },
+  weeklyGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.md,
+  },
+  weeklyCell: {
+    width: "47%",
+    gap: 4,
+  },
+  weeklyValue: {
+    color: colors.textPrimary,
+    fontSize: fontSize.lg,
+    fontWeight: fontWeight.bold,
+  },
+  weeklyTrendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  weeklyDelta: {
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
   },
 });

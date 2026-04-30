@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Delete,
   Body,
   Param,
@@ -54,6 +55,22 @@ export class CommuteController {
     @Body() dto: CreateCommuteRouteDto,
   ): Promise<CommuteRouteResponseDto> {
     return this.commuteService.createRoute(req.user!.userId, dto);
+  }
+
+  @Put('routes/:routeId/primary')
+  @ApiOperation({
+    summary: 'Mark a commute route as the primary one',
+    description:
+      'Atomically clears the primary flag on every other saved route ' +
+      'for the user and sets it on the target route.',
+  })
+  @ApiResponse({ status: 200, type: CommuteRouteResponseDto })
+  @ApiResponse({ status: 404, description: 'Route not found' })
+  async setPrimaryRoute(
+    @Req() req: express.Request,
+    @Param('routeId', ParseUUIDPipe) routeId: string,
+  ): Promise<CommuteRouteResponseDto> {
+    return this.commuteService.setPrimaryRoute(req.user!.userId, routeId);
   }
 
   @Delete('routes/:routeId')
