@@ -158,6 +158,10 @@ export default function GroupRideScreen() {
       groupRideSocket.disconnect();
       setMode("idle");
       setGroupRide(null);
+      // Wipe any in-session error banner so a transient throttle/network
+      // complaint from the active state doesn't bleed into the idle
+      // create-or-join UI and look like the form itself is broken.
+      setErrorMessage(null);
       positionsRef.current = {};
     };
 
@@ -283,6 +287,7 @@ export default function GroupRideScreen() {
     }
     setMode("idle");
     setGroupRide(null);
+    setErrorMessage(null);
     positionsRef.current = {};
   }, [groupRide]);
 
@@ -317,6 +322,7 @@ export default function GroupRideScreen() {
     }
     setMode("idle");
     setGroupRide(null);
+    setErrorMessage(null);
     positionsRef.current = {};
   }, [groupRide]);
 
