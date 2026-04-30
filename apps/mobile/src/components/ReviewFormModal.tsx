@@ -181,6 +181,18 @@ export default function ReviewFormModal({
    * backend) when the form auto-switches to edit mode.
    */
   const mergeStagedOnNextReseed = useRef(false);
+  /**
+   * True once the seeding effect has poured initial values into the
+   * form during the current `visible: true` session. Reset when the
+   * modal closes. Used to ignore subsequent `initialReview` prop
+   * changes that don't come from the rider — e.g. the mount-time
+   * queue drain in `RoadPreviewScreen` flushing a previously-queued
+   * review and chaining through to `setMyReview(...)` while the form
+   * is already open. Without this guard, the seeding effect would
+   * silently overwrite the rider's unsaved input with the flushed
+   * review's content.
+   */
+  const hasSeededWhileVisibleRef = useRef(false);
 
   function abortAllUploads(): void {
     for (const controller of uploadAbortControllers.current.values()) {
@@ -205,8 +217,23 @@ export default function ReviewFormModal({
   // Re-seed when the modal re-opens or `initialReview` changes (e.g.
   // the rider tapped Edit on their own row after Cancel, or the
   // parent hand-promoted a 409 conflict into edit mode).
+  //
+  // Only reseed on the FIRST run after `visible` flips true, or when
+  // the conflict path opted in via `mergeStagedOnNextReseed`. A bare
+  // `initialReview` prop change while the form is already open is
+  // treated as background noise (the queue drain at parent mount can
+  // chain through to `setMyReview(...)` and flip `initialReview` from
+  // null to a flushed review while the rider is mid-typing) and must
+  // not silently clobber the rider's unsaved input.
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      hasSeededWhileVisibleRef.current = false;
+      return;
+    }
+    if (hasSeededWhileVisibleRef.current && !mergeStagedOnNextReseed.current) {
+      return;
+    }
+    hasSeededWhileVisibleRef.current = true;
     setRating(initialReview?.rating ?? 0);
     setComment(initialReview?.comment ?? "");
     setBikeModel(initialReview?.bike_model ?? "");

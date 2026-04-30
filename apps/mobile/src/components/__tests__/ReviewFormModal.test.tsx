@@ -619,4 +619,51 @@ describe("ReviewFormModal", () => {
       ).toBe(false),
     );
   });
+
+  it("does not clobber unsaved input if initialReview changes while the form is open", async () => {
+    // Regression: the parent's mount-time queue drain can flush a
+    // previously-queued review for the current segment and chain
+    // through `onSegmentChanged` → `setMyReview(...)`, flipping
+    // `initialReview` from null to a fresh review while the rider is
+    // mid-typing. Without this guard, the seeding effect would silently
+    // overwrite their unsaved input.
+    const onSubmitted = jest.fn();
+    const { rerender } = render(
+      <ReviewFormModal
+        visible
+        segmentId="seg-1"
+        initialReview={null}
+        onClose={jest.fn()}
+        onSubmitted={onSubmitted}
+      />,
+    );
+
+    fireEvent.press(screen.getByLabelText("Set rating to 5 stars"));
+    fireEvent.changeText(
+      screen.getByLabelText("Review notes"),
+      "Newly composed note",
+    );
+    fireEvent.changeText(screen.getByLabelText("Bike model"), "Yamaha MT-09");
+
+    rerender(
+      <ReviewFormModal
+        visible
+        segmentId="seg-1"
+        initialReview={makeReview({
+          rating: 1,
+          comment: "Old flushed note",
+          bike_model: "Honda Africa Twin",
+        })}
+        onClose={jest.fn()}
+        onSubmitted={onSubmitted}
+      />,
+    );
+
+    expect(screen.getByLabelText("Review notes").props.value).toBe(
+      "Newly composed note",
+    );
+    expect(screen.getByLabelText("Bike model").props.value).toBe(
+      "Yamaha MT-09",
+    );
+  });
 });
