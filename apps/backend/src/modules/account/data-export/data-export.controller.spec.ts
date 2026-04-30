@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
+import { getRepositoryToken } from '@nestjs/typeorm';
 import { PassThrough, Readable } from 'node:stream';
 import { DataExportController } from './data-export.controller.js';
 import { DataExportService } from './data-export.service.js';
@@ -9,6 +10,7 @@ import {
   type ExportStorage,
 } from './storage/export-storage.interface.js';
 import { signDownloadUrl } from './signed-url.js';
+import { User } from '../../../entities/user.entity.js';
 
 describe('DataExportController', () => {
   let controller: DataExportController;
@@ -44,6 +46,9 @@ describe('DataExportController', () => {
         { provide: DataExportProcessor, useValue: processor },
         { provide: EXPORT_STORAGE, useValue: storage },
         { provide: JwtService, useValue: { verifyAsync: jest.fn() } },
+        // AuthGuard pulls UserRepository now (post-#295) for token-aware
+        // user lookups; tests don't exercise the guard but DI needs it.
+        { provide: getRepositoryToken(User), useValue: { findOne: jest.fn() } },
       ],
     }).compile();
     controller = module.get(DataExportController);
