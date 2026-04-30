@@ -67,10 +67,18 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
   const [submitting, setSubmitting] = useState(false);
   const activeSegmentRef = useRef(segmentId);
   const activeViewerKeyRef = useRef(viewerKey);
+  const editorModeRef = useRef<"create" | "edit" | null>(null);
   const requestGenerationRef = useRef(0);
   const mutationAttemptRef = useRef(0);
   const localMyReviewRef = useRef<RoadReview | null>(null);
   const deletedMyReviewIdRef = useRef<string | null>(null);
+
+  // Mirror editorMode into a ref so async callbacks (uploadReviewPhotos)
+  // can compare the value at resolve time without restarting on every
+  // editor-state transition.
+  useEffect(() => {
+    editorModeRef.current = editorMode;
+  }, [editorMode]);
 
   useEffect(() => {
     activeSegmentRef.current = segmentId;
@@ -166,6 +174,49 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
   const closeEditor = () => {
     if (submitting) return;
     setEditorMode(null);
+    setSubmitError(null);
+  };
+
+  /**
+   * Owns the upload roundtrip + draft mutation so the same staleness
+   * checks the submit handler relies on (segment, viewer, generation,
+   * editor session) also gate uploaded URLs from leaking into a draft
+   * the user no longer cares about — closed editor, segment switch,
+   * viewer change. Errors propagate to the editor so it can render a
+   * local toast; stale successes resolve silently.
+   */
+  const handleUploadPhotos = async (files: File[]): Promise<void> => {
+    if (!editorModeRef.current) return;
+
+    const requestSegmentId = segmentId;
+    const requestViewerKey = viewerKey;
+    const requestGeneration = requestGenerationRef.current;
+
+    const { data } = await roadsApi.uploadReviewPhotos(segmentId, files);
+
+    if (
+      requestSegmentId !== activeSegmentRef.current ||
+      requestViewerKey !== activeViewerKeyRef.current ||
+      requestGeneration !== requestGenerationRef.current ||
+      editorModeRef.current === null
+    ) {
+      // Editor was closed, the segment / viewer changed, or the segment
+      // was navigated away and back — the URLs the user is trying to
+      // attach belong to a draft that no longer exists. Drop them rather
+      // than poisoning whatever draft is open now (or sticking photos
+      // onto a closed-editor draft that re-emerges on the next
+      // openCreate/openEdit). The files themselves stay on disk and get
+      // swept by the orphan cleanup tracked separately.
+      return;
+    }
+
+    setDraft((current) => ({
+      ...current,
+      photoUrls: [...current.photoUrls, ...data.photos].slice(
+        0,
+        MAX_REVIEW_PHOTOS,
+      ),
+    }));
     setSubmitError(null);
   };
 
@@ -383,7 +434,10 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
       {editorMode && (
         <ReviewEditor
           mode={editorMode}
-          segmentId={segmentId}
+          remainingPhotoSlots={Math.max(
+            0,
+            MAX_REVIEW_PHOTOS - draft.photoUrls.length,
+          )}
           draft={draft}
           disabled={loading || submitting}
           error={submitError}
@@ -405,16 +459,7 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
             }));
             setSubmitError(null);
           }}
-          onPhotosUploaded={(urls) => {
-            setDraft((current) => ({
-              ...current,
-              photoUrls: [...current.photoUrls, ...urls].slice(
-                0,
-                MAX_REVIEW_PHOTOS,
-              ),
-            }));
-            setSubmitError(null);
-          }}
+          onUploadPhotos={handleUploadPhotos}
           onRemovePhoto={(index) => {
             setDraft((current) => ({
               ...current,
@@ -499,39 +544,42 @@ function upsertReview(current: RoadReview[], next: RoadReview): RoadReview[] {
 
 function ReviewEditor({
   mode,
-  segmentId,
+  remainingPhotoSlots,
   draft,
   disabled,
   error,
   onRatingChange,
   onCommentChange,
   onBikeModelChange,
-  onPhotosUploaded,
+  onUploadPhotos,
   onRemovePhoto,
   onCancel,
   onSubmit,
 }: {
   mode: "create" | "edit";
-  segmentId: string;
+  remainingPhotoSlots: number;
   draft: ReviewDraft;
   disabled: boolean;
   error: string | null;
   onRatingChange: (rating: number) => void;
   onCommentChange: (comment: string) => void;
   onBikeModelChange: (bikeModel: string) => void;
-  onPhotosUploaded: (urls: string[]) => void;
+  onUploadPhotos: (files: File[]) => Promise<void>;
   onRemovePhoto: (index: number) => void;
   onCancel: () => void;
   onSubmit: () => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const mountedRef = useRef(true);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const remainingSlots = Math.max(
-    0,
-    MAX_REVIEW_PHOTOS - draft.photoUrls.length,
-  );
-  const photoInputDisabled = disabled || uploading || remainingSlots === 0;
+  const photoInputDisabled = disabled || uploading || remainingPhotoSlots === 0;
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const handleSelectFiles = async (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.target;
@@ -542,7 +590,7 @@ function ReviewEditor({
     input.value = "";
     if (selected.length === 0) return;
 
-    const validation = validateSelectedPhotos(selected, remainingSlots);
+    const validation = validateSelectedPhotos(selected, remainingPhotoSlots);
     if ("error" in validation) {
       setUploadError(validation.error);
       return;
@@ -551,12 +599,13 @@ function ReviewEditor({
     setUploading(true);
     setUploadError(null);
     try {
-      const { data } = await roadsApi.uploadReviewPhotos(
-        segmentId,
-        validation.files,
-      );
-      onPhotosUploaded(data.photos);
+      // Parent owns the upload roundtrip and decides whether to apply
+      // the returned URLs to the draft (see `handleUploadPhotos`). Stale
+      // successes resolve here as a normal void return — the spinner
+      // just clears.
+      await onUploadPhotos(validation.files);
     } catch (err) {
+      if (!mountedRef.current) return;
       setUploadError(
         err instanceof ApiError
           ? err.message
@@ -565,7 +614,12 @@ function ReviewEditor({
             : "Could not upload photos.",
       );
     } finally {
-      setUploading(false);
+      // Editor may have unmounted while the upload was in flight (e.g.
+      // user closed it or switched segments) — skip the state update so
+      // React doesn't warn about setState on an unmounted component.
+      if (mountedRef.current) {
+        setUploading(false);
+      }
     }
   };
 
