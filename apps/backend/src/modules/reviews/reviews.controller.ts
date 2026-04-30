@@ -6,6 +6,7 @@ import {
   Put,
   Delete,
   Body,
+  InternalServerErrorException,
   Param,
   Req,
   UploadedFiles,
@@ -15,6 +16,7 @@ import {
   HttpStatus,
   ParseUUIDPipe,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   ApiTags,
   ApiOperation,
@@ -36,12 +38,61 @@ import {
   ReviewResponseDto,
   ReviewVoteDto,
   ReviewVoteResultDto,
+  isAllowedReviewPhotoUrl,
+  REVIEW_PHOTO_PATH_PREFIX,
 } from './dto/review.dto.js';
 
 @ApiTags('reviews')
 @Controller('roads')
 export class ReviewsController {
-  constructor(private readonly reviewsService: ReviewsService) {}
+  constructor(
+    private readonly reviewsService: ReviewsService,
+    private readonly config: ConfigService,
+  ) {}
+
+  /**
+   * Resolve the public origin to embed in the URLs we hand back from
+   * `POST :segmentId/reviews/photos`. The returned URLs round-trip
+   * through `CreateReviewDto.photos`, so they MUST pass
+   * `isAllowedReviewPhotoUrl` under the current `TARMOTO_NODE_ENV` —
+   * otherwise the upload-then-submit flow would 400 on the submit step
+   * even though the upload succeeded.
+   *
+   * `TARMOTO_PUBLIC_BASE_URL` is the source of truth (already used by
+   * data-export's signed download URLs). When unset, we fall back to
+   * `req.protocol://req.get('host')` for local dev — this only matches
+   * `isAllowedReviewPhotoUrl` because loopback http is allowed outside
+   * production. In a TLS-terminating-proxy production deploy with
+   * `TARMOTO_TRUST_PROXY_HOPS=0` (the default), `req.protocol` is
+   * `http`, so the fallback would emit `http://api.example.com/...`
+   * URLs and the create/update DTO would reject them. Failing fast
+   * here with a 500 surfaces the misconfiguration to the operator
+   * instead of letting the upload look successful.
+   */
+  private resolvePublicBaseUrl(req: express.Request): string {
+    const configured = this.config
+      .get<string>('TARMOTO_PUBLIC_BASE_URL')
+      ?.trim();
+    const baseUrl =
+      configured && configured.length > 0
+        ? configured.replace(/\/$/, '')
+        : `${req.protocol}://${req.get('host')}`;
+
+    // The probe URL has to share the path prefix the upload endpoint
+    // actually emits — `isAllowedReviewPhotoUrl` parses with the URL
+    // constructor, so a base ending in `/foo` plus a leading `/uploads/`
+    // would still parse cleanly; we just need to confirm protocol +
+    // host.
+    if (
+      !isAllowedReviewPhotoUrl(`${baseUrl}${REVIEW_PHOTO_PATH_PREFIX}probe`)
+    ) {
+      throw new InternalServerErrorException(
+        'Review photo uploads are misconfigured: TARMOTO_PUBLIC_BASE_URL ' +
+          'must be an https URL in production. See docs/process/runbook.md.',
+      );
+    }
+    return baseUrl;
+  }
 
   @Get(':segmentId/reviews')
   @UseGuards(OptionalAuthGuard)
@@ -99,7 +150,7 @@ export class ReviewsController {
     if (!files || files.length === 0) {
       throw new BadRequestException('At least one photo file is required');
     }
-    const publicBaseUrl = `${req.protocol}://${req.get('host')}`;
+    const publicBaseUrl = this.resolvePublicBaseUrl(req);
     return this.reviewsService.uploadPhotos(
       req.user!.userId,
       segmentId,

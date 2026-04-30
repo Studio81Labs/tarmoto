@@ -130,15 +130,6 @@ function assertReviewPhotosAreOwned(
 }
 
 /**
- * Best-effort delete of managed review-photo files the caller owns, out of
- * the given URL list. Third-party URLs, missing files, and managed files
- * uploaded by another user are skipped silently — the caller has already
- * committed the new state in the DB and we don't want a stray orphan to
- * surface a 500, and we never delete a file we don't own. Permission
- * errors still bubble so an operator notices a misconfigured uploads
- * directory.
- */
-/**
  * Trim every entry in a photo URL list and drop empties, mirroring what
  * `sanitizeReviewPhotos` returns on the response side. Both ends of the
  * cascade-delete diff (and what we save to the DB) need to go through
@@ -161,6 +152,15 @@ function normalizeReviewPhotoList(
   return out;
 }
 
+/**
+ * Best-effort delete of managed review-photo files the caller owns, out of
+ * the given URL list. Third-party URLs, missing files, and managed files
+ * uploaded by another user are skipped silently — the caller has already
+ * committed the new state in the DB and we don't want a stray orphan to
+ * surface a 500, and we never delete a file we don't own. Permission
+ * errors still bubble so an operator notices a misconfigured uploads
+ * directory.
+ */
 async function deleteOwnedReviewPhotos(
   photoUrls: readonly string[] | null | undefined,
   segmentId: string,

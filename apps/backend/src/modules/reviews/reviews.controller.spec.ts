@@ -1,6 +1,10 @@
 /* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  InternalServerErrorException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { authGuardTestProviders } from '../auth/auth-test-providers.js';
 import { ReviewsController } from './reviews.controller.js';
 import { ReviewsService } from './reviews.service.js';
@@ -8,6 +12,7 @@ import { ReviewsService } from './reviews.service.js';
 describe('ReviewsController', () => {
   let controller: ReviewsController;
   let service: jest.Mocked<ReviewsService>;
+  let configGet: jest.Mock;
 
   const mockReq = { user: { userId: 'user-1' } } as never;
 
@@ -48,10 +53,13 @@ describe('ReviewsController', () => {
       }),
     };
 
+    configGet = jest.fn().mockReturnValue(undefined);
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ReviewsController],
       providers: [
         { provide: ReviewsService, useValue: mockService },
+        { provide: ConfigService, useValue: { get: configGet } },
         ...authGuardTestProviders,
       ],
     }).compile();
@@ -115,27 +123,92 @@ describe('ReviewsController', () => {
     expect(service.delete).toHaveBeenCalledWith('user-1', 'seg-1');
   });
 
-  it('POST /roads/:segmentId/reviews/photos should forward files and a derived public base URL', async () => {
+  it('POST /roads/:segmentId/reviews/photos should prefer TARMOTO_PUBLIC_BASE_URL over the request-derived host', async () => {
+    // In a TLS-terminating-proxy production deploy, `req.protocol` is
+    // `http` (no `trust proxy` hops set by default), so deriving the
+    // public URL from the request would produce http URLs that the
+    // production CreateReviewDto then rejects. The configured value is
+    // the source of truth — same env var the data-export service uses.
+    configGet.mockImplementation((key: string) =>
+      key === 'TARMOTO_PUBLIC_BASE_URL' ? 'https://api.tarmoto.app' : undefined,
+    );
     const file = {
       mimetype: 'image/jpeg',
       buffer: Buffer.from('jpg'),
     } as Express.Multer.File;
     const req = {
       user: { userId: 'user-1' },
-      protocol: 'https',
-      get: jest.fn().mockReturnValue('app.tarmoto.test'),
+      protocol: 'http', // simulates TLS terminator + trust_proxy=0
+      get: jest.fn().mockReturnValue('internal.tarmoto.svc'),
     } as never;
 
-    const result = await controller.uploadPhotos(req, 'seg-1', [file]);
+    await controller.uploadPhotos(req, 'seg-1', [file]);
 
     expect(service.uploadPhotos).toHaveBeenCalledWith(
       'user-1',
       'seg-1',
       [file],
-      'https://app.tarmoto.test',
+      'https://api.tarmoto.app',
     );
-    expect(result.photos).toHaveLength(1);
-    expect(result.photos[0]).toMatch(/^https:\/\/app\.tarmoto\.test\//);
+  });
+
+  it('POST /roads/:segmentId/reviews/photos should fall back to the request-derived host when TARMOTO_PUBLIC_BASE_URL is unset', async () => {
+    // Local-dev path: no env var, the API serves over plain http on
+    // localhost, and `isAllowedReviewPhotoUrl` accepts loopback http
+    // outside production so the round-trip works.
+    configGet.mockReturnValue(undefined);
+    const file = {
+      mimetype: 'image/jpeg',
+      buffer: Buffer.from('jpg'),
+    } as Express.Multer.File;
+    const req = {
+      user: { userId: 'user-1' },
+      protocol: 'http',
+      get: jest.fn().mockReturnValue('localhost:3000'),
+    } as never;
+
+    await controller.uploadPhotos(req, 'seg-1', [file]);
+
+    expect(service.uploadPhotos).toHaveBeenCalledWith(
+      'user-1',
+      'seg-1',
+      [file],
+      'http://localhost:3000',
+    );
+  });
+
+  it('POST /roads/:segmentId/reviews/photos should 500 when the resolved base URL would be rejected by CreateReviewDto', async () => {
+    // Production with `req.protocol=http` (TLS upstream + trust_proxy=0)
+    // and no TARMOTO_PUBLIC_BASE_URL set is a misconfiguration: every
+    // generated URL would be http://api.example.com/... which the
+    // production DTO rejects, so upload-then-submit is impossible.
+    // Surface the misconfig immediately as a 500 instead of letting the
+    // upload "succeed" and the create silently 400.
+    const previous = process.env.TARMOTO_NODE_ENV;
+    process.env.TARMOTO_NODE_ENV = 'production';
+    configGet.mockReturnValue(undefined);
+    try {
+      const file = {
+        mimetype: 'image/jpeg',
+        buffer: Buffer.from('jpg'),
+      } as Express.Multer.File;
+      const req = {
+        user: { userId: 'user-1' },
+        protocol: 'http',
+        get: jest.fn().mockReturnValue('api.example.com'),
+      } as never;
+
+      await expect(
+        controller.uploadPhotos(req, 'seg-1', [file]),
+      ).rejects.toThrow(InternalServerErrorException);
+      expect(service.uploadPhotos).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) {
+        delete process.env.TARMOTO_NODE_ENV;
+      } else {
+        process.env.TARMOTO_NODE_ENV = previous;
+      }
+    }
   });
 
   it('POST /roads/:segmentId/reviews/photos should reject when no files were uploaded', async () => {
