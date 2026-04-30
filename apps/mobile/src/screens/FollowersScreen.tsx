@@ -8,7 +8,6 @@
 import React from "react";
 import { useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
-import { api } from "@/services/api";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import FollowList from "./FollowList";
 
@@ -21,7 +20,6 @@ export default function FollowersScreen() {
       userId={params.userId}
       displayName={params.displayName}
       mode="followers"
-      fetcher={api.listFollowers.bind(api)}
     />
   );
 }

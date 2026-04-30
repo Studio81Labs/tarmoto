@@ -1,12 +1,12 @@
 /**
  * FollowingScreen — US-27 list of riders that the given user follows.
  *
- * Mirror of `FollowersScreen` — different endpoint, same UI.
+ * Mirror of `FollowersScreen` — different endpoint, same UI, picked by
+ * the `mode` prop on `FollowList`.
  */
 import React from "react";
 import { useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
-import { api } from "@/services/api";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import FollowList from "./FollowList";
 
@@ -19,7 +19,6 @@ export default function FollowingScreen() {
       userId={params.userId}
       displayName={params.displayName}
       mode="following"
-      fetcher={api.listFollowing.bind(api)}
     />
   );
 }

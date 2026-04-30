@@ -2,9 +2,18 @@
  * Shared list rendering for the Followers and Following screens (US-27).
  *
  * Both screens render an identical FlatList of rider rows; only the
- * fetcher and empty-state copy differ. Sharing here keeps the two screen
- * files thin (parameter unpacking + fetcher selection) and ensures the
- * pull-to-refresh / loading / error / row-tap behaviour stays in lockstep.
+ * endpoint and empty-state copy differ. The mode prop drives both, so
+ * the screens stay one-liners (FollowList with a mode + route params)
+ * and the pull-to-refresh / loading / error / row-tap behaviour stays
+ * in lockstep across the two surfaces.
+ *
+ * The fetch is dispatched off `mode` rather than threaded through as a
+ * function prop. A function prop would have to be re-stabilised on
+ * every render of the parent screen (or `bind`ed at module scope) —
+ * `api.listFollowers.bind(api)` was a footgun because the new function
+ * reference per render would re-trigger the `useEffect` below and flash
+ * the loading spinner. Letting `mode` select the call inside `load`
+ * avoids the trap.
  */
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -19,16 +28,18 @@ import {
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
+import { api } from "@/services/api";
 import Avatar from "@/components/Avatar";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import type { FollowerListItem } from "@/types";
 import { formatFollowedSince } from "./riderProfile.helpers";
 
+export type FollowListMode = "followers" | "following";
+
 interface FollowListProps {
   userId: string;
   displayName: string;
-  mode: "followers" | "following";
-  fetcher: (userId: string) => Promise<FollowerListItem[]>;
+  mode: FollowListMode;
 }
 
 type Phase = "loading" | "ready" | "error";
@@ -37,7 +48,6 @@ export default function FollowList({
   userId,
   displayName,
   mode,
-  fetcher,
 }: FollowListProps) {
   const navigation =
     useNavigation<NativeStackNavigationProp<ProfileStackParamList>>();
@@ -62,7 +72,14 @@ export default function FollowList({
       }
 
       try {
-        const next = await fetcher(userId);
+        // Calling `api.listFollowers(...)` as a method preserves `this`
+        // — no bind needed, and crucially nothing here changes identity
+        // between renders, so the useEffect below only fires when
+        // `userId` or `mode` actually change.
+        const next =
+          mode === "followers"
+            ? await api.listFollowers(userId)
+            : await api.listFollowing(userId);
         if (signal.cancelled) return;
         setItems(next);
         setPhase("ready");
@@ -76,7 +93,7 @@ export default function FollowList({
         if (!signal.cancelled) setIsRefreshing(false);
       }
     },
-    [userId, fetcher],
+    [userId, mode],
   );
 
   useEffect(() => {
