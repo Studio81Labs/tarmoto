@@ -37,7 +37,11 @@ export default function HomeScreen() {
   // glance that their regular route has unseen hazards. The badge clears
   // the moment they open CommuteScreen and tap "Mark all seen" — same
   // acknowledge flow that drives the in-list NEW markers.
-  const { phase, route, newHazardCount } = useCommute();
+  //
+  // `withSecondary: false` keeps the cold-start request count down to
+  // routes + status — HomeScreen never renders alternatives or weekly
+  // stats, so the extra two requests would be pure waste.
+  const { phase, route, newHazardCount } = useCommute({ withSecondary: false });
   const showBadge = phase === "ready" && newHazardCount > 0;
   // Cap the displayed count at 99+ so the badge stays visually compact,
   // and reuse the same string in the accessibility label so VoiceOver

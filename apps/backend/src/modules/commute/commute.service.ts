@@ -157,7 +157,14 @@ export class CommuteService {
     period: 'week' | 'month' = 'week',
   ): Promise<CommuteStatsResponseDto> {
     const intervalDays = period === 'month' ? 30 : 7;
-    const intervalLiteral = `${intervalDays} days`;
+    // Build the SQL interval literals from the day count rather than
+    // string-concatenating " 2" onto a "7 days" string. Postgres parses
+    // each unit-less token in an INTERVAL literal as seconds, so a naive
+    // `'${intervalLiteral} 2'` expanded to `'7 days 2'` and resolved to
+    // `7 days + 2 seconds` — which collapsed the prior window to a
+    // 2-second slice and made every "vs last week" trend zero.
+    const currentIntervalLiteral = `${intervalDays} days`;
+    const priorBoundaryLiteral = `${intervalDays * 2} days`;
 
     // Pull the current period (with daily breakdown) and the immediately
     // prior period (totals only) in parallel — the trend section in
@@ -187,7 +194,7 @@ export class CommuteService {
          WHERE user_id = $1
            AND ride_type = 'commute'
            AND status = 'completed'
-           AND started_at > NOW() - INTERVAL '${intervalLiteral}'
+           AND started_at > NOW() - INTERVAL '${currentIntervalLiteral}'
          GROUP BY DATE(started_at)
          ORDER BY date DESC`,
         [userId],
@@ -201,8 +208,8 @@ export class CommuteService {
          WHERE user_id = $1
            AND ride_type = 'commute'
            AND status = 'completed'
-           AND started_at > NOW() - INTERVAL '${intervalLiteral} 2'
-           AND started_at <= NOW() - INTERVAL '${intervalLiteral}'`,
+           AND started_at > NOW() - INTERVAL '${priorBoundaryLiteral}'
+           AND started_at <= NOW() - INTERVAL '${currentIntervalLiteral}'`,
         [userId],
       ),
     ])) as [CurrentRow[], PriorRow[]];

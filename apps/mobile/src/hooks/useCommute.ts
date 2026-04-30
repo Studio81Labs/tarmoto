@@ -34,6 +34,16 @@ export interface CommuteHazardView extends Hazard {
   isNew: boolean;
 }
 
+export interface UseCommuteOptions {
+  /**
+   * When true (the default), the hook also fetches alternatives and
+   * weekly stats in parallel with status. Light callers — HomeScreen,
+   * notification handlers — pass `false` so they don't fan out two
+   * extra requests on cold start that the surface never renders.
+   */
+  withSecondary?: boolean;
+}
+
 export interface UseCommuteResult {
   phase: CommutePhase;
   /** The user's primary commute route, or `null` if none is saved yet. */
@@ -64,7 +74,8 @@ export interface UseCommuteResult {
   isUpdatingPrimary: boolean;
 }
 
-export function useCommute(): UseCommuteResult {
+export function useCommute(options: UseCommuteOptions = {}): UseCommuteResult {
+  const { withSecondary = true } = options;
   const [route, setRoute] = useState<CommuteRoute | null>(null);
   const [savedRoutes, setSavedRoutes] = useState<CommuteRoute[]>([]);
   const [status, setStatus] = useState<CommuteStatus | null>(null);
@@ -81,72 +92,91 @@ export function useCommute(): UseCommuteResult {
   // and the hazard `isNew` flags flip off without a refetch.
   const seenByRoute = useCommuteStore((s) => s.seenHazardsByRoute);
 
-  const load = useCallback(async (isInitial: boolean) => {
-    if (isInitial) {
-      setPhase("loading");
-      setErrorMessage(null);
-    } else {
-      setIsRefreshing(true);
-    }
-
-    try {
-      const routes = await api.getCommuteRoutes();
-      const primary = routes.find((r) => r.is_primary) ?? routes[0] ?? null;
-
-      setSavedRoutes(routes);
-
-      if (!primary) {
-        setRoute(null);
-        setStatus(null);
-        setAlternatives(null);
-        setStats(null);
-        setPhase("learning");
-        return;
-      }
-
-      // Fan-out: status drives the primary surface, while alternatives
-      // and stats power the secondary cards. Wrap each in `allSettled`
-      // so a transient 5xx on, say, /commute/stats doesn't tear the
-      // rider off their commute view.
-      const [statusResult, alternativesResult, statsResult] =
-        await Promise.allSettled([
-          api.getCommuteStatus(),
-          api.getCommuteAlternatives(),
-          api.getCommuteStats("week"),
-        ]);
-
-      if (statusResult.status === "rejected") {
-        // Re-throw so the outer catch routes us to the error state on
-        // initial loads (the rider has nothing usable yet) or silently
-        // keeps the prior data on a refresh blip.
-        throw statusResult.reason;
-      }
-
-      setRoute(primary);
-      setStatus(statusResult.value);
-      setAlternatives(
-        alternativesResult.status === "fulfilled"
-          ? alternativesResult.value
-          : null,
-      );
-      setStats(statsResult.status === "fulfilled" ? statsResult.value : null);
-      setPhase("ready");
-    } catch (err) {
-      // On initial/retry loads there's nothing else on screen, so show
-      // the full error view. On a pull-to-refresh we keep the existing
-      // data visible — the RefreshControl stopping is enough feedback
-      // for a transient network blip, and tearing the rider off their
-      // commute view for a temporary glitch is worse than a silent miss.
+  const load = useCallback(
+    async (isInitial: boolean) => {
       if (isInitial) {
-        setPhase("error");
-        setErrorMessage(
-          err instanceof Error ? err.message : "Unable to load commute",
-        );
+        setPhase("loading");
+        setErrorMessage(null);
+      } else {
+        setIsRefreshing(true);
       }
-    } finally {
-      if (!isInitial) setIsRefreshing(false);
-    }
-  }, []);
+
+      try {
+        const routes = await api.getCommuteRoutes();
+        const primary = routes.find((r) => r.is_primary) ?? routes[0] ?? null;
+
+        setSavedRoutes(routes);
+
+        if (!primary) {
+          setRoute(null);
+          setStatus(null);
+          setAlternatives(null);
+          setStats(null);
+          setPhase("learning");
+          return;
+        }
+
+        // Fan-out: status drives the primary surface; alternatives and
+        // stats power the secondary cards on CommuteScreen. Light callers
+        // (HomeScreen, notifications) pass `withSecondary=false` so a
+        // cold start doesn't fire two extra requests whose responses
+        // they never render.
+        const requests: [
+          Promise<CommuteStatus>,
+          Promise<CommuteAlternativesResponse> | null,
+          Promise<CommuteStats> | null,
+        ] = [
+          api.getCommuteStatus(),
+          withSecondary ? api.getCommuteAlternatives() : null,
+          withSecondary ? api.getCommuteStats("week") : null,
+        ];
+        const [statusResult, alternativesResult, statsResult] =
+          await Promise.allSettled([
+            requests[0],
+            requests[1] ??
+              Promise.resolve<CommuteAlternativesResponse | null>(null),
+            requests[2] ?? Promise.resolve<CommuteStats | null>(null),
+          ]);
+
+        if (statusResult.status === "rejected") {
+          // Re-throw so the outer catch routes us to the error state on
+          // initial loads (the rider has nothing usable yet) or silently
+          // keeps the prior data on a refresh blip.
+          throw statusResult.reason;
+        }
+
+        setRoute(primary);
+        setStatus(statusResult.value);
+        setAlternatives(
+          alternativesResult.status === "fulfilled"
+            ? (alternativesResult.value ?? null)
+            : null,
+        );
+        setStats(
+          statsResult.status === "fulfilled"
+            ? (statsResult.value ?? null)
+            : null,
+        );
+        setPhase("ready");
+      } catch (err) {
+        // On initial/retry loads there's nothing else on screen, so show
+        // the full error view. On a pull-to-refresh we keep the existing
+        // data visible — the RefreshControl stopping is enough feedback
+        // for a transient network blip, and tearing the rider off their
+        // commute view for a temporary glitch is worse than a silent
+        // miss.
+        if (isInitial) {
+          setPhase("error");
+          setErrorMessage(
+            err instanceof Error ? err.message : "Unable to load commute",
+          );
+        }
+      } finally {
+        if (!isInitial) setIsRefreshing(false);
+      }
+    },
+    [withSecondary],
+  );
 
   useEffect(() => {
     void load(true);

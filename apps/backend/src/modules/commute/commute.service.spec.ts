@@ -320,6 +320,44 @@ describe('CommuteService', () => {
       expect(result.previous_period.total_km).toBe(0);
       expect(result.previous_period.fuel_estimate_l).toBe(0);
     });
+
+    it('issues a well-formed SQL INTERVAL for the prior window', async () => {
+      // Regression guard for a bug where the prior window was computed
+      // by string-concatenating " 2" onto "7 days", yielding the literal
+      // `INTERVAL '7 days 2'`. Postgres parses unit-less tokens as
+      // seconds, so that literal collapsed to `7 days + 2 seconds` and
+      // the trend was effectively always 0. The fix builds the doubled
+      // boundary explicitly from `intervalDays * 2`.
+      rideRepo.query!.mockResolvedValueOnce([]);
+      rideRepo.query!.mockResolvedValueOnce([
+        { rides: 0, km: 0, duration_min: 0 },
+      ]);
+
+      await service.getStats('user-1', 'week');
+
+      const calls = rideRepo.query!.mock.calls;
+      expect(calls).toHaveLength(2);
+      const currentSql = String(calls[0][0]);
+      const priorSql = String(calls[1][0]);
+      expect(currentSql).toContain("INTERVAL '7 days'");
+      expect(currentSql).not.toContain("INTERVAL '7 days 2'");
+      expect(priorSql).toContain("INTERVAL '14 days'");
+      expect(priorSql).toContain("INTERVAL '7 days'");
+      expect(priorSql).not.toContain("INTERVAL '7 days 2'");
+    });
+
+    it('doubles the boundary for the month period too', async () => {
+      rideRepo.query!.mockResolvedValueOnce([]);
+      rideRepo.query!.mockResolvedValueOnce([
+        { rides: 0, km: 0, duration_min: 0 },
+      ]);
+
+      await service.getStats('user-1', 'month');
+
+      const priorSql = String(rideRepo.query!.mock.calls[1][0]);
+      expect(priorSql).toContain("INTERVAL '60 days'");
+      expect(priorSql).toContain("INTERVAL '30 days'");
+    });
   });
 
   describe('getAlternatives', () => {
