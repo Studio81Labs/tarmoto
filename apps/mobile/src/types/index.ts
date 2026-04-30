@@ -348,6 +348,36 @@ export interface Weather {
   description: string;
 }
 
+export interface RouteWeatherPoint extends Weather {
+  lat: number;
+  lng: number;
+}
+
+export type WeatherAlertKind = "storm" | "ice" | "wet" | "wind";
+
+export type WeatherAlertSeverity = "info" | "warning" | "critical";
+
+export interface WeatherAlert {
+  id: string;
+  kind: WeatherAlertKind;
+  severity: WeatherAlertSeverity;
+  lat: number;
+  lng: number;
+  /** Distance from the route start (km), measured along the polyline. */
+  distance_km_from_start: number;
+  title: string;
+  message: string;
+}
+
+export interface RouteWeatherResponse {
+  points: RouteWeatherPoint[];
+  has_alerts: boolean;
+  /** Plain-text alert summaries — kept for backwards compatibility. */
+  alerts: string[];
+  /** Structured alerts — what the navigation banner consumes. */
+  typed_alerts: WeatherAlert[];
+}
+
 // ── Accommodations (US-10) ──
 
 export type AccommodationKind =

@@ -8,11 +8,15 @@ import type {
   WeatherResponseDto,
   RouteWeatherResponseDto,
   RouteWeatherPointDto,
+  WeatherAlertDto,
 } from './dto/weather.dto.js';
 import { haversineKm } from '@tarmoto/shared';
 
 /** Sample points every ~20km along the route */
 const ROUTE_SAMPLE_INTERVAL_KM = 20;
+
+/** Wind threshold (km/h) that crosses from a regular gust into an alert. */
+const WIND_ALERT_THRESHOLD_KMH = 60;
 
 @Injectable()
 export class WeatherService {
@@ -34,16 +38,17 @@ export class WeatherService {
   ): Promise<RouteWeatherResponseDto> {
     // Sample points along the route at regular intervals
     const samplePoints = this.sampleRoute(route, ROUTE_SAMPLE_INTERVAL_KM);
+    const sampleDistancesKm = this.distancesAlongRoute(route, samplePoints);
 
     // Fetch weather for all sample points in parallel
     const results = await Promise.all(
-      samplePoints.map(async (point) => {
+      samplePoints.map(async (point, index) => {
         try {
           const data = await this.provider.getCurrentWeather(
             point.lat,
             point.lng,
           );
-          return { point, data };
+          return { point, data, index };
         } catch {
           return null;
         }
@@ -52,6 +57,7 @@ export class WeatherService {
 
     const points: RouteWeatherPointDto[] = [];
     const alerts: string[] = [];
+    const typedAlerts: WeatherAlertDto[] = [];
 
     for (const result of results) {
       if (!result) continue;
@@ -63,35 +69,106 @@ export class WeatherService {
         lng: result.point.lng,
       });
 
-      // Generate alerts for dangerous conditions
+      const distanceKm = sampleDistancesKm[result.index] ?? 0;
+      const latLngLabel = `${result.point.lat.toFixed(2)},${result.point.lng.toFixed(2)}`;
+
       if (
         result.data.road_condition === 'icy' ||
         result.data.road_condition === 'wet'
       ) {
-        alerts.push(
-          `${result.data.road_condition === 'icy' ? 'Icy' : 'Wet'} roads near ` +
-            `${result.point.lat.toFixed(2)},${result.point.lng.toFixed(2)}: ` +
-            `${response.description}`,
-        );
+        const isIcy = result.data.road_condition === 'icy';
+        const surfaceLabel = isIcy ? 'Icy' : 'Wet';
+        const stringMessage = `${surfaceLabel} roads near ${latLngLabel}: ${response.description}`;
+        alerts.push(stringMessage);
+        typedAlerts.push({
+          id: `${isIcy ? 'ice' : 'wet'}-${result.index}`,
+          kind: isIcy ? 'ice' : 'wet',
+          // Ice on the road is the single biggest crash risk for a
+          // motorcycle — promote it to critical so the rider gets a
+          // voice read-out, not just a banner.
+          severity: isIcy ? 'critical' : 'info',
+          lat: result.point.lat,
+          lng: result.point.lng,
+          distance_km_from_start: distanceKm,
+          title: isIcy ? 'Icy roads ahead' : 'Wet roads ahead',
+          message: stringMessage,
+        });
       }
       if (result.data.condition === 'storm') {
-        alerts.push(
-          `Storm warning near ${result.point.lat.toFixed(2)},${result.point.lng.toFixed(2)}`,
-        );
+        const stringMessage = `Storm warning near ${latLngLabel}`;
+        alerts.push(stringMessage);
+        typedAlerts.push({
+          id: `storm-${result.index}`,
+          kind: 'storm',
+          severity: 'critical',
+          lat: result.point.lat,
+          lng: result.point.lng,
+          distance_km_from_start: distanceKm,
+          title: 'Storm warning',
+          message: `Severe storm at ${latLngLabel} — consider rerouting or pulling over.`,
+        });
       }
-      if (result.data.wind_kmh > 60) {
-        alerts.push(
-          `High wind (${result.data.wind_kmh} km/h) near ` +
-            `${result.point.lat.toFixed(2)},${result.point.lng.toFixed(2)}`,
-        );
+      if (result.data.wind_kmh > WIND_ALERT_THRESHOLD_KMH) {
+        const stringMessage = `High wind (${result.data.wind_kmh} km/h) near ${latLngLabel}`;
+        alerts.push(stringMessage);
+        typedAlerts.push({
+          id: `wind-${result.index}`,
+          kind: 'wind',
+          severity: 'warning',
+          lat: result.point.lat,
+          lng: result.point.lng,
+          distance_km_from_start: distanceKm,
+          title: 'High wind ahead',
+          message: stringMessage,
+        });
       }
     }
 
     return {
       points,
-      has_alerts: alerts.length > 0,
+      has_alerts: typedAlerts.length > 0,
       alerts,
+      typed_alerts: typedAlerts,
     };
+  }
+
+  /**
+   * Compute the distance along `route` (km) at which each entry of
+   * `samples` first appears, walking the polyline once. Samples are
+   * produced by `sampleRoute` so they always sit on a polyline vertex,
+   * but in case a sample isn't found (defensive) we return 0 for it.
+   */
+  distancesAlongRoute(
+    route: Array<{ lat: number; lng: number }>,
+    samples: Array<{ lat: number; lng: number }>,
+  ): number[] {
+    if (route.length === 0 || samples.length === 0) return [];
+
+    const cumulative: number[] = new Array<number>(route.length).fill(0);
+    for (let i = 1; i < route.length; i++) {
+      cumulative[i] =
+        cumulative[i - 1] +
+        haversineKm(
+          route[i - 1].lat,
+          route[i - 1].lng,
+          route[i].lat,
+          route[i].lng,
+        );
+    }
+
+    let cursor = 0;
+    return samples.map((sample) => {
+      // Walk forward from the previous sample's position; samples come
+      // out of `sampleRoute` in order so we never need to rewind.
+      while (cursor < route.length) {
+        const v = route[cursor];
+        if (v.lat === sample.lat && v.lng === sample.lng) {
+          return cumulative[cursor];
+        }
+        cursor++;
+      }
+      return 0;
+    });
   }
 
   /**

@@ -47,10 +47,11 @@ import {
   shadows,
   spacing,
 } from "@/theme";
-import { useKeepAwake } from "@/hooks";
+import { useKeepAwake, useRouteWeatherAlerts } from "@/hooks";
 import { useNavigationSession } from "@/hooks/useNavigationSession";
 import { useVehicleNavigationDisplay } from "@/hooks/useVehicleNavigationDisplay";
-import { useTripStore } from "@/stores";
+import { usePreferencesStore, useTripStore } from "@/stores";
+import { WeatherAlertBanner } from "@/components/WeatherAlertBanner";
 import type { LatLng, TripDay, Waypoint } from "@/types";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
 import {
@@ -83,6 +84,10 @@ export default function NavigationScreen() {
   const nav = useNavigation<Nav>();
   const trip = useTripStore((s) => s.activeTrip);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [weatherDetailOpen, setWeatherDetailOpen] = useState(false);
+  const weatherAlertsEnabled = usePreferencesStore(
+    (s) => s.weatherAlertsEnabled,
+  );
   useKeepAwake(true);
 
   const day = useMemo<TripDay | null>(() => {
@@ -117,6 +122,16 @@ export default function NavigationScreen() {
     // screen renders the empty-state below and the rider isn't navigating
     // anything, so there's nothing to project live location onto.
     trackLocation: polyline.length >= 2,
+  });
+
+  // US-13: surface real-time weather alerts ahead. The hook handles
+  // polling, dedupe, and TTS throttling; the screen just renders the
+  // banner above the maneuver card.
+  const { alerts: weatherAlerts } = useRouteWeatherAlerts({
+    polyline,
+    progressM: tick?.progressM ?? null,
+    enabled: weatherAlertsEnabled && polyline.length >= 2,
+    voiceEnabled,
   });
 
   const routeShape = useMemo<GeoJSON.FeatureCollection>(
@@ -243,6 +258,12 @@ export default function NavigationScreen() {
         {offRoute ? (
           <OffRouteBanner distanceM={tick?.offRouteDistanceM ?? 0} />
         ) : null}
+        <WeatherAlertBanner
+          alerts={weatherAlerts}
+          detailOpen={weatherDetailOpen}
+          onOpenDetail={() => setWeatherDetailOpen(true)}
+          onCloseDetail={() => setWeatherDetailOpen(false)}
+        />
         <NextManeuverCard
           maneuver={nextManeuver}
           distanceM={tick?.distanceToNextM ?? 0}

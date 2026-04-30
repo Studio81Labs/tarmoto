@@ -77,6 +77,57 @@ export class RouteWeatherPointDto extends WeatherResponseDto {
   lng!: number;
 }
 
+/**
+ * Kind of route weather alert. Drives the icon and copy on clients;
+ * `severity` controls colour and whether it qualifies for a TTS read-out.
+ */
+export type WeatherAlertKind = 'storm' | 'ice' | 'wet' | 'wind';
+
+/**
+ * Severity buckets the mobile banner uses to pick a colour:
+ *   - `critical` (storm, ice) — red, voice-announced
+ *   - `warning`  (high wind)  — orange, banner only
+ *   - `info`     (wet roads)  — yellow, banner only
+ */
+export type WeatherAlertSeverity = 'info' | 'warning' | 'critical';
+
+export class WeatherAlertDto {
+  /**
+   * Stable identifier deterministic in (kind, sample-index) so the mobile
+   * client can dedupe across polls without juggling fuzzy lat/lng matches.
+   */
+  @ApiProperty({ example: 'storm-3' })
+  id!: string;
+
+  @ApiProperty({ enum: ['storm', 'ice', 'wet', 'wind'] })
+  kind!: WeatherAlertKind;
+
+  @ApiProperty({ enum: ['info', 'warning', 'critical'] })
+  severity!: WeatherAlertSeverity;
+
+  @ApiProperty()
+  lat!: number;
+
+  @ApiProperty()
+  lng!: number;
+
+  /**
+   * Distance from the route's start (km), measured along the supplied
+   * polyline. The mobile client compares this against its live progress
+   * to drop alerts the rider has already passed.
+   */
+  @ApiProperty()
+  distance_km_from_start!: number;
+
+  @ApiProperty({ example: 'Storm warning ahead' })
+  title!: string;
+
+  @ApiProperty({
+    example: 'Severe storm at 49.12, 16.75 — pull over or reroute.',
+  })
+  message!: string;
+}
+
 export class RouteWeatherResponseDto {
   @ApiProperty({ type: [RouteWeatherPointDto] })
   points!: RouteWeatherPointDto[];
@@ -84,6 +135,14 @@ export class RouteWeatherResponseDto {
   @ApiProperty()
   has_alerts!: boolean;
 
+  /**
+   * Plain-text alert summaries kept for backwards compatibility with the
+   * existing commute-status surface. `typed_alerts` is the structured
+   * source the new navigation banner consumes.
+   */
   @ApiProperty({ type: [String] })
   alerts!: string[];
+
+  @ApiProperty({ type: [WeatherAlertDto] })
+  typed_alerts!: WeatherAlertDto[];
 }

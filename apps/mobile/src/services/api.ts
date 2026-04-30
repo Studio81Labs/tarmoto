@@ -24,6 +24,7 @@ import type {
   TripSummary,
   CommuteRoute,
   CommuteStatus,
+  RouteWeatherResponse,
   CalculatedRoute,
   RoutePreferences,
   LatLng,
@@ -676,6 +677,23 @@ class ApiService {
 
   async getCommuteStatus(): Promise<CommuteStatus> {
     const { data } = await this.client.get<CommuteStatus>("/commute/status");
+    return data;
+  }
+
+  // ── Weather ──
+
+  /**
+   * Sample weather along a route polyline (US-13). The backend bounces
+   * a request to OpenWeatherMap every ~20km and returns both the per-point
+   * conditions and a list of structured alerts the navigation banner uses.
+   * Throws on transport errors so callers can decide whether to swallow
+   * (NavigationScreen does — riders shouldn't see a weather error popup).
+   */
+  async getRouteWeather(route: LatLng[]): Promise<RouteWeatherResponse> {
+    const { data } = await this.client.post<RouteWeatherResponse>(
+      "/weather/route",
+      { route },
+    );
     return data;
   }
 

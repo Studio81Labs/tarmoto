@@ -1,0 +1,126 @@
+/**
+ * WeatherAlertBanner — US-13.
+ *
+ * Focus: nothing renders for an empty list, the most severe alert wins
+ * top billing, the "+N more" suffix shows up when extra alerts exist,
+ * and the detail sheet is gated on `detailOpen` (parent-owned state).
+ */
+
+import React from "react";
+import { fireEvent, render, screen } from "@testing-library/react-native";
+import { WeatherAlertBanner } from "../WeatherAlertBanner";
+import type { WeatherAlert } from "@/types";
+
+jest.mock("@react-native-vector-icons/material-design-icons", () => {
+  const ReactLib = require("react");
+  const { Text } = require("react-native");
+  return function MockIcon({ name }: { name?: string }) {
+    return ReactLib.createElement(Text, null, `icon:${name ?? ""}`);
+  };
+});
+
+function buildAlert(overrides: Partial<WeatherAlert>): WeatherAlert {
+  return {
+    id: "storm-0",
+    kind: "storm",
+    severity: "critical",
+    lat: 0,
+    lng: 0,
+    distance_km_from_start: 0,
+    title: "Storm warning",
+    message: "Severe storm ahead.",
+    ...overrides,
+  };
+}
+
+describe("WeatherAlertBanner", () => {
+  it("renders nothing when there are no alerts", () => {
+    const { queryByRole } = render(
+      <WeatherAlertBanner
+        alerts={[]}
+        detailOpen={false}
+        onOpenDetail={jest.fn()}
+        onCloseDetail={jest.fn()}
+      />,
+    );
+    expect(queryByRole("button")).toBeNull();
+  });
+
+  it("surfaces the highest-severity alert at the top", () => {
+    const wind = buildAlert({
+      id: "wind-1",
+      kind: "wind",
+      severity: "warning",
+      title: "High wind ahead",
+      message: "75 km/h wind.",
+    });
+    const storm = buildAlert({
+      id: "storm-2",
+      kind: "storm",
+      severity: "critical",
+      title: "Storm warning",
+      message: "Severe storm.",
+    });
+
+    render(
+      <WeatherAlertBanner
+        alerts={[wind, storm]}
+        detailOpen={false}
+        onOpenDetail={jest.fn()}
+        onCloseDetail={jest.fn()}
+      />,
+    );
+
+    // Critical wins primary billing even though the warning came first
+    // in the input array.
+    expect(screen.getByText("Storm warning")).toBeTruthy();
+    expect(screen.getByText(/Severe storm.*\+1 more/)).toBeTruthy();
+  });
+
+  it("calls onOpenDetail when tapped", () => {
+    const handleOpen = jest.fn();
+    render(
+      <WeatherAlertBanner
+        alerts={[buildAlert({})]}
+        detailOpen={false}
+        onOpenDetail={handleOpen}
+        onCloseDetail={jest.fn()}
+      />,
+    );
+
+    fireEvent.press(screen.getByRole("button"));
+    expect(handleOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders the full list inside the detail sheet when detailOpen is true", () => {
+    const a = buildAlert({
+      id: "storm-1",
+      title: "Storm warning",
+      message: "Severe storm.",
+      distance_km_from_start: 12,
+    });
+    const b = buildAlert({
+      id: "wind-2",
+      kind: "wind",
+      severity: "warning",
+      title: "High wind ahead",
+      message: "75 km/h wind.",
+      distance_km_from_start: 28,
+    });
+
+    render(
+      <WeatherAlertBanner
+        alerts={[a, b]}
+        detailOpen
+        onOpenDetail={jest.fn()}
+        onCloseDetail={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Weather alerts ahead")).toBeTruthy();
+    expect(screen.getByText("Severe storm.")).toBeTruthy();
+    expect(screen.getByText("75 km/h wind.")).toBeTruthy();
+    // Distance is formatted in km when >= 1.
+    expect(screen.getByText(/12.0 km from start/)).toBeTruthy();
+  });
+});

@@ -62,6 +62,7 @@ describe('WeatherService', () => {
       expect(result.points.length).toBeGreaterThanOrEqual(2);
       expect(result.has_alerts).toBe(false);
       expect(result.alerts).toHaveLength(0);
+      expect(result.typed_alerts).toHaveLength(0);
     });
 
     it('should generate alerts for dangerous conditions', async () => {
@@ -83,6 +84,11 @@ describe('WeatherService', () => {
       expect(result.alerts.some((a) => a.includes('Wet roads'))).toBe(true);
       expect(result.alerts.some((a) => a.includes('Storm'))).toBe(true);
       expect(result.alerts.some((a) => a.includes('High wind'))).toBe(true);
+      // Each kind shows up exactly once per sampled point so the mobile
+      // banner never has to dedupe inside a single response.
+      expect(result.typed_alerts.some((a) => a.kind === 'wet')).toBe(true);
+      expect(result.typed_alerts.some((a) => a.kind === 'storm')).toBe(true);
+      expect(result.typed_alerts.some((a) => a.kind === 'wind')).toBe(true);
     });
 
     it('should generate icy road alert', async () => {
@@ -102,6 +108,56 @@ describe('WeatherService', () => {
 
       expect(result.has_alerts).toBe(true);
       expect(result.alerts.some((a) => a.includes('Icy'))).toBe(true);
+      const icy = result.typed_alerts.find((a) => a.kind === 'ice');
+      // Ice lifts severity to `critical` because it triggers a voice
+      // read-out on the mobile client.
+      expect(icy?.severity).toBe('critical');
+    });
+
+    it('should expose stable typed alert ids and a distance from route start', async () => {
+      provider.getCurrentWeather.mockResolvedValue({
+        ...mockWeather,
+        condition: 'storm',
+      });
+
+      const route = [
+        { lat: 49.0, lng: 16.0 },
+        { lat: 49.5, lng: 16.5 },
+        { lat: 50.0, lng: 17.0 },
+      ];
+
+      const a = await service.getRouteWeather(route);
+      const b = await service.getRouteWeather(route);
+
+      // Same input → same alert ids. Lets the mobile dedupe across polls.
+      expect(a.typed_alerts.map((x) => x.id).sort()).toEqual(
+        b.typed_alerts.map((x) => x.id).sort(),
+      );
+      // Distances are non-negative and increase along the route — the
+      // first sample is always at km 0.
+      expect(a.typed_alerts[0]?.distance_km_from_start).toBe(0);
+      const distances = a.typed_alerts.map(
+        (alert) => alert.distance_km_from_start,
+      );
+      const sorted = [...distances].sort((x, y) => x - y);
+      expect(distances).toEqual(sorted);
+    });
+
+    it('should drop wind alerts at exactly the threshold', async () => {
+      // The legacy gate was `wind > 60`, so 60 km/h must NOT trigger.
+      // Anything above does.
+      provider.getCurrentWeather.mockResolvedValue({
+        ...mockWeather,
+        wind_kmh: 60,
+      });
+
+      const route = [
+        { lat: 49.0, lng: 16.0 },
+        { lat: 50.0, lng: 17.0 },
+      ];
+
+      const result = await service.getRouteWeather(route);
+      expect(result.typed_alerts.some((a) => a.kind === 'wind')).toBe(false);
     });
 
     it('should handle provider errors gracefully', async () => {
@@ -116,6 +172,7 @@ describe('WeatherService', () => {
 
       expect(result.points).toHaveLength(0);
       expect(result.has_alerts).toBe(false);
+      expect(result.typed_alerts).toHaveLength(0);
     });
   });
 

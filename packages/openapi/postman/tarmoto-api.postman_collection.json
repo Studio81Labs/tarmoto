@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "2515f6a2-5fdd-4084-be1e-367aba64389a",
+    "_postman_id": "936e9a1d-bcb7-4d34-b207-406b03ab9567",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -1792,6 +1792,32 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"title\": \"\",\n  \"num_days\": 0,\n  \"region\": \"\",\n  \"min_quality\": 0,\n  \"road_preference\": \"curvy\",\n  \"daily_km_min\": 0,\n  \"daily_km_max\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Create a trip seeded from a parsed GPX/KML file (US-20)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/import",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", "import"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"\",\n  \"region\": \"\",\n  \"source_format\": \"gpx\",\n  \"geometry\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"waypoints\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0,\n      \"name\": \"\",\n      \"type\": \"via\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"

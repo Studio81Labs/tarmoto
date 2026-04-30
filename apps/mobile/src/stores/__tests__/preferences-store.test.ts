@@ -53,6 +53,26 @@ describe("usePreferencesStore", () => {
     );
   });
 
+  describe("weatherAlertsEnabled (US-13)", () => {
+    it("starts on by default — riders opt out, not in", () => {
+      expect(usePreferencesStore.getState().weatherAlertsEnabled).toBe(true);
+      expect(PREFERENCES_DEFAULTS.weatherAlertsEnabled).toBe(true);
+    });
+
+    it("setWeatherAlertsEnabled flips the toggle", () => {
+      usePreferencesStore.getState().setWeatherAlertsEnabled(false);
+      expect(usePreferencesStore.getState().weatherAlertsEnabled).toBe(false);
+      usePreferencesStore.getState().setWeatherAlertsEnabled(true);
+      expect(usePreferencesStore.getState().weatherAlertsEnabled).toBe(true);
+    });
+
+    it("resetPreferences restores the on default", () => {
+      usePreferencesStore.getState().setWeatherAlertsEnabled(false);
+      usePreferencesStore.getState().resetPreferences();
+      expect(usePreferencesStore.getState().weatherAlertsEnabled).toBe(true);
+    });
+  });
+
   describe("fuelRangeKm (US-10)", () => {
     it("starts at the default fuel range", () => {
       expect(usePreferencesStore.getState().fuelRangeKm).toBe(
@@ -102,5 +122,6 @@ function useStoreReset() {
   usePreferencesStore.setState({
     minQuality: PREFERENCES_DEFAULTS.minQuality,
     fuelRangeKm: PREFERENCES_DEFAULTS.fuelRangeKm,
+    weatherAlertsEnabled: PREFERENCES_DEFAULTS.weatherAlertsEnabled,
   });
 }
