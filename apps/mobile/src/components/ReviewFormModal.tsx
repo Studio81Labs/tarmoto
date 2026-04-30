@@ -76,9 +76,22 @@ export interface ReviewFormModalProps {
    * Fired when the create POST returns 409 (the rider already has a
    * review on this segment). The parent should refetch personalised
    * reviews and update `initialReview` so the form can re-seed in
-   * edit mode. The form stays visible across this transition.
+   * edit mode.
+   *
+   * Must return `true` only when the existing review is loaded into
+   * `initialReview` — the form uses this signal to switch to edit
+   * mode and show the "your existing review is loaded for editing"
+   * banner. Returning `false` (or rejecting) tells the form the
+   * reload failed and it should stay in create mode and surface a
+   * regular error. Returning `void` from a legacy caller is
+   * coerced to `false` for safety.
+   *
+   * The parent's pull-to-refresh helper deliberately swallows fetch
+   * errors so the segment screen keeps showing the last-good
+   * payload — this signal is the only reliable way for the form to
+   * know whether the conflict reload actually succeeded.
    */
-  onConflict?(): void | Promise<void>;
+  onConflict?(): boolean | Promise<boolean>;
 }
 
 interface PhotoEntry {
@@ -423,19 +436,28 @@ export default function ReviewFormModal({
         // Instead ask the parent to refresh. Once `initialReview`
         // updates the seeding effect re-pours the existing values
         // into the same visible form, merging in any photos the
-        // rider just uploaded so they aren't orphaned on the backend.
-        // The conflict banner is set ONLY after the parent refresh
-        // succeeds — if `onConflict` rejects, the form stays in
-        // create mode and we surface a regular error so the banner
-        // text ("your existing review is loaded for editing") never
-        // appears alongside an unchanged create-mode form.
+        // rider just uploaded so they aren't orphaned on the
+        // backend.
+        //
+        // The conflict banner is set ONLY when `onConflict` reports
+        // success (returns true). The parent's segment refresh
+        // helper swallows fetch errors so a `void` return / never
+        // throws would otherwise hide a failed reload behind the
+        // banner; the explicit boolean signal lets us fall back to
+        // a regular error and keep the form in create mode if the
+        // reload didn't actually populate `initialReview`.
         mergeStagedOnNextReseed.current = true;
+        let reloadSucceeded: boolean;
         try {
-          await onConflict?.();
+          reloadSucceeded = (await onConflict?.()) ?? false;
+        } catch {
+          reloadSucceeded = false;
+        }
+        if (reloadSucceeded) {
           setConflictNotice(
             "You already reviewed this road — your existing review is loaded for editing.",
           );
-        } catch {
+        } else {
           mergeStagedOnNextReseed.current = false;
           setError(
             "You already reviewed this road, but loading the existing review failed. Close and reopen to retry.",

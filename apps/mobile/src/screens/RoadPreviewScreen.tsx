@@ -708,14 +708,35 @@ function ReviewsCard({
     await onSegmentChanged();
   }, [onSegmentChanged]);
 
-  const handleConflict = useCallback(async () => {
+  const handleConflict = useCallback(async (): Promise<boolean> => {
     // 409 — server already has a review from this rider on this
-    // segment. Refresh the parent segment so `embeddedReviews`
-    // changes; the effect then fires `refreshReviews()` which
-    // populates `myReview`, and the form re-seeds in edit mode via
-    // its `initialReview` prop.
-    await onSegmentChanged();
-  }, [onSegmentChanged]);
+    // segment. We explicitly fetch personalised reviews here (NOT
+    // via `onSegmentChanged`, which silently swallows fetch errors)
+    // so the form can know whether the existing review actually
+    // landed in `myReview` before it commits to the
+    // "loaded for editing" banner. The boolean return is the form's
+    // signal: true → switch to edit mode, false → fall back to a
+    // create-mode error.
+    const fetchedSegmentId = segmentId;
+    let own: RoadReview | null;
+    try {
+      const personalised = await api.getReviews(fetchedSegmentId);
+      if (currentSegmentRef.current !== fetchedSegmentId) return false;
+      setReviews(personalised);
+      own = personalised.find((r) => r.is_mine) ?? null;
+      setMyReview(own);
+    } catch {
+      // Personalised fetch failed; the form will surface its own
+      // error and stay in create mode.
+      return false;
+    }
+    // Best-effort segment refetch in parallel so the embedded list
+    // (other riders' newly-added reviews) catches up too. Errors
+    // here don't change the form's outcome — the boolean below
+    // captures whether the rider's own review was loaded.
+    void onSegmentChanged();
+    return own !== null;
+  }, [onSegmentChanged, segmentId]);
 
   const openForm = useCallback(() => setFormVisible(true), []);
 

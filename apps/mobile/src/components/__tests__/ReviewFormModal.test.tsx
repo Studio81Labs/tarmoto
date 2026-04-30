@@ -338,7 +338,7 @@ describe("ReviewFormModal", () => {
     });
     submitWithQueueMock.mockRejectedValueOnce(conflictError);
     const onSubmitted = jest.fn();
-    const onConflict = jest.fn().mockResolvedValue(undefined);
+    const onConflict = jest.fn().mockResolvedValue(true);
 
     render(
       <ReviewFormModal
@@ -389,6 +389,38 @@ describe("ReviewFormModal", () => {
 
     // Plain error surfaces; the misleading "loaded for editing"
     // banner does NOT.
+    expect(
+      await screen.findByText(/loading the existing review failed/i),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(/your existing review is loaded for editing/i),
+    ).toBeNull();
+  });
+
+  it("on 409 conflict, falls back to a plain error if onConflict reports failure (returns false)", async () => {
+    // The parent's segment refresh helper silently swallows fetch
+    // errors, so `onConflict` returning `false` is the only signal
+    // that the existing review failed to load. The form must NOT
+    // show the "loaded for editing" banner in that case.
+    const conflictError = Object.assign(new Error("conflict"), {
+      response: { status: 409 },
+    });
+    submitWithQueueMock.mockRejectedValueOnce(conflictError);
+    const onConflict = jest.fn().mockResolvedValue(false);
+
+    render(
+      <ReviewFormModal
+        visible
+        segmentId="seg-1"
+        onClose={jest.fn()}
+        onSubmitted={jest.fn()}
+        onConflict={onConflict}
+      />,
+    );
+
+    fireEvent.press(screen.getByLabelText("Set rating to 4 stars"));
+    fireEvent.press(screen.getByLabelText("Submit review"));
+
     expect(
       await screen.findByText(/loading the existing review failed/i),
     ).toBeTruthy();
