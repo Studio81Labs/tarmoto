@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 import { User } from '../../entities/user.entity.js';
 import { EmailService } from '../email/email.service.js';
+import { getCompanionUrl } from '../../common/companion-url.js';
 import {
   STRIPE_BILLING_CLIENT,
   type StripeCheckoutSession,
@@ -446,10 +447,7 @@ export class AccountService {
   }
 
   private subscriptionPageUrl(): string {
-    const base =
-      this.config.get<string>('TARMOTO_COMPANION_URL')?.trim() ??
-      'http://localhost:3000';
-    return `${base.replace(/\/$/, '')}/settings/subscription`;
+    return `${getCompanionUrl(this.config)}/settings/subscription`;
   }
 
   private isIntroTrialEligible(user: User): boolean {

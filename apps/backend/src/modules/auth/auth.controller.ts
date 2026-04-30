@@ -101,11 +101,17 @@ export class AuthController {
       'A reset email is only sent if the address is registered.',
   })
   @ApiResponse({ status: 204 })
-  async forgotPassword(
-    @Req() req: Request,
-    @Body() dto: ForgotPasswordDto,
-  ): Promise<void> {
-    await this.passwordReset.requestReset(dto.email, req.ip ?? null);
+  forgotPassword(@Req() req: Request, @Body() dto: ForgotPasswordDto): void {
+    // Fire-and-forget: a known address triggers a DB lookup, token
+    // invalidate + insert, and an HTTP send to Resend, while an
+    // unknown address falls out at the first findOne. Awaiting that
+    // would surface the difference as response latency — easily
+    // measurable from the outside even though the status code is
+    // identical for both. Not awaiting makes the HTTP timing constant
+    // (sub-ms regardless of the email) while the actual work still
+    // runs server-side. The service catches its own errors so this
+    // can never throw an unhandled rejection.
+    void this.passwordReset.requestReset(dto.email, req.ip ?? null);
   }
 
   @Post('reset-password')

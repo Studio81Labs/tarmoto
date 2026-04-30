@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { getCompanionUrl } from '../../common/companion-url.js';
 import {
   EMAIL_PROVIDER,
   type EmailProvider,
@@ -28,7 +29,6 @@ import {
 } from './templates/index.js';
 
 const DEFAULT_SUPPORT_EMAIL = 'support@tarmoto.app';
-const DEFAULT_COMPANION_URL = 'http://localhost:3000';
 
 type ContextWithoutBase<T> = Omit<T, 'preferencesUrl'>;
 
@@ -194,19 +194,12 @@ export class EmailService {
     return { ...ctx, preferencesUrl: this.preferencesUrl() };
   }
 
-  private companionUrl(): string {
-    const raw =
-      this.config.get<string>('TARMOTO_COMPANION_URL')?.trim() ??
-      DEFAULT_COMPANION_URL;
-    return raw.replace(/\/$/, '');
-  }
-
   private preferencesUrl(): string {
     const override = this.config
       .get<string>('TARMOTO_EMAIL_PREFERENCES_URL')
       ?.trim();
     if (override) return override;
-    return `${this.companionUrl()}/settings/notifications`;
+    return `${getCompanionUrl(this.config)}/settings/notifications`;
   }
 
   private supportEmail(): string {

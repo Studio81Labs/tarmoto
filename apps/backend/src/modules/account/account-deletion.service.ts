@@ -20,6 +20,7 @@ import {
   type StripeBillingClient,
 } from './stripe-billing.client.js';
 import { EmailService } from '../email/email.service.js';
+import { getCompanionUrl } from '../../common/companion-url.js';
 import type { DeleteAccountDto } from './dto/delete-account.dto.js';
 import type { DeleteAccountResponseDto } from './dto/delete-account-response.dto.js';
 
@@ -188,10 +189,7 @@ export class AccountDeletionService {
   }
 
   private companionLoginUrl(): string {
-    const base =
-      this.config.get<string>('TARMOTO_COMPANION_URL')?.trim() ??
-      'http://localhost:3000';
-    return `${base.replace(/\/$/, '')}/login`;
+    return `${getCompanionUrl(this.config)}/login`;
   }
 
   /**

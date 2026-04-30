@@ -6,13 +6,12 @@ import * as bcrypt from 'bcrypt';
 import { PasswordResetToken } from '../../entities/password-reset-token.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { EmailService } from '../email/email.service.js';
+import { getCompanionUrl } from '../../common/companion-url.js';
 import { hashToken, issueToken } from './token-utils.js';
 
 const RESET_TOKEN_TTL_MINUTES = 15;
 const RESET_TOKEN_TTL_MS = RESET_TOKEN_TTL_MINUTES * 60 * 1000;
 const BCRYPT_ROUNDS = 12;
-
-const DEFAULT_COMPANION_URL = 'http://localhost:3000';
 
 /**
  * `POST /auth/forgot-password` and `POST /auth/reset-password`. Kept
@@ -42,8 +41,30 @@ export class PasswordResetService {
    * `consumed_at = NOW()` on it. This means a stolen previous link
    * stops working the moment the legitimate user clicks "send me
    * another reset email."
+   *
+   * The user lookup, token writes, and email send all happen here
+   * (inside the awaited path) so unit tests can assert on the side
+   * effects deterministically. The HTTP-level constant-time
+   * guarantee — needed for anti-enumeration — is enforced by the
+   * controller, which fires this without awaiting (see
+   * `AuthController.forgotPassword`).
    */
   async requestReset(email: string, ip: string | null): Promise<void> {
+    try {
+      await this.processResetRequest(email, ip);
+    } catch (err) {
+      this.logger.warn(
+        `Password-reset request failed for ${email}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  private async processResetRequest(
+    email: string,
+    ip: string | null,
+  ): Promise<void> {
     const user = await this.userRepo.findOne({ where: { email } });
     if (!user || user.deleted_at != null) {
       // Anti-enumeration: do nothing, return like we sent the mail.
@@ -67,7 +88,7 @@ export class PasswordResetService {
       requested_ip: ip,
     });
 
-    const resetUrl = `${this.companionUrl()}/reset-password?token=${encodeURIComponent(
+    const resetUrl = `${getCompanionUrl(this.config)}/reset-password?token=${encodeURIComponent(
       token.raw,
     )}`;
 
@@ -165,12 +186,5 @@ export class PasswordResetService {
       expires_at: LessThanOrEqual(now),
     });
     return res.affected ?? 0;
-  }
-
-  private companionUrl(): string {
-    const raw =
-      this.config.get<string>('TARMOTO_COMPANION_URL')?.trim() ??
-      DEFAULT_COMPANION_URL;
-    return raw.replace(/\/$/, '');
   }
 }

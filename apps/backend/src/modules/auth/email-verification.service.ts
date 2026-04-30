@@ -10,12 +10,11 @@ import { IsNull, Repository } from 'typeorm';
 import { EmailVerificationToken } from '../../entities/email-verification-token.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { EmailService } from '../email/email.service.js';
+import { getCompanionUrl } from '../../common/companion-url.js';
 import { hashToken, issueToken } from './token-utils.js';
 
 const VERIFY_TOKEN_TTL_HOURS = 24;
 const VERIFY_TOKEN_TTL_MS = VERIFY_TOKEN_TTL_HOURS * 60 * 60 * 1000;
-
-const DEFAULT_COMPANION_URL = 'http://localhost:3000';
 
 /**
  * Issuance + consumption of `email_verification_tokens`. Kept
@@ -52,7 +51,7 @@ export class EmailVerificationService {
       expires_at: expiresAt,
     });
 
-    const verifyUrl = `${this.companionUrl()}/verify-email?token=${encodeURIComponent(
+    const verifyUrl = `${getCompanionUrl(this.config)}/verify-email?token=${encodeURIComponent(
       token.raw,
     )}`;
 
@@ -128,12 +127,5 @@ export class EmailVerificationService {
 
     this.logger.log(`User ${tokenRow.user_id} verified email`);
     return { verified: true };
-  }
-
-  private companionUrl(): string {
-    const raw =
-      this.config.get<string>('TARMOTO_COMPANION_URL')?.trim() ??
-      DEFAULT_COMPANION_URL;
-    return raw.replace(/\/$/, '');
   }
 }
