@@ -137,17 +137,38 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
         beforeId,
       );
 
-      // Hover/click popups — bind to the cyan layer so we never trigger on
-      // unridden segments (they have no metadata to show).
+      // Hover/click popups — bind to the cyan layer. The layer paints
+      // every quality feature (unridden ones at opacity 0 via
+      // feature-state) so MapLibre still hit-tests their geometry; the
+      // `meta` lookup below distinguishes ridden hover targets from
+      // transparent ones, and dismisses the popup when the cursor is
+      // over the latter so it doesn't linger from a previous ridden
+      // hover.
+      const dismissPopup = () => {
+        if (popupRef.current) {
+          popupRef.current.remove();
+          popupRef.current = null;
+        }
+        map.getCanvas().style.cursor = "";
+      };
+
       const handlePointerMove = (
         ev: MapMouseEvent & { features?: maplibregl.MapGeoJSONFeature[] },
       ) => {
         const feature = ev.features?.[0];
-        if (!feature) return;
+        if (!feature) {
+          dismissPopup();
+          return;
+        }
         const id = feature.id;
-        if (typeof id !== "string") return;
-        const meta = indexedRiddenRef.current.get(id);
-        if (!meta) return;
+        const meta =
+          typeof id === "string" ? indexedRiddenRef.current.get(id) : null;
+        if (!meta) {
+          // Transparent feature (unridden) under the cursor — clear any
+          // popup left over from a ridden segment we just moved off of.
+          dismissPopup();
+          return;
+        }
 
         const html = renderPopupHtml(meta);
         if (popupRef.current) {
@@ -166,11 +187,7 @@ export const PersonalRoadMap = forwardRef<PersonalRoadMapHandle, Props>(
       };
 
       const handlePointerLeave = () => {
-        if (popupRef.current) {
-          popupRef.current.remove();
-          popupRef.current = null;
-        }
-        map.getCanvas().style.cursor = "";
+        dismissPopup();
       };
 
       map.on("mousemove", ROAD_MAP_RIDDEN_LAYER_ID, handlePointerMove);

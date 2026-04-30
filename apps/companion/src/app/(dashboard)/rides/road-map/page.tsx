@@ -177,60 +177,52 @@ export default function RoadMapPage() {
     [nearby],
   );
 
+  // Shared between the sidebar's "Use my location" and the map's
+  // "Center on me" so denial messaging, coordinate rounding, and the
+  // 10s timeout stay in lockstep across the two entry points.
+  const requestUserLocation = useCallback(
+    (onLocated: (lat: number, lng: number) => void) => {
+      if (typeof navigator === "undefined" || !navigator.geolocation) {
+        setNearbyError("Geolocation is not available in this browser");
+        return;
+      }
+      setLocating(true);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setLocating(false);
+          const lat = Number(pos.coords.latitude.toFixed(4));
+          const lng = Number(pos.coords.longitude.toFixed(4));
+          onLocated(lat, lng);
+        },
+        (err) => {
+          setLocating(false);
+          setNearbyError(
+            err.code === err.PERMISSION_DENIED
+              ? "Location permission denied. Enter coordinates below."
+              : "Could not read your location. Enter coordinates below.",
+          );
+        },
+        { timeout: 10_000 },
+      );
+    },
+    [],
+  );
+
   const handleUseMyLocation = useCallback(() => {
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setNearbyError("Geolocation is not available in this browser");
-      return;
-    }
-    setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLocating(false);
-        const lat = Number(pos.coords.latitude.toFixed(4));
-        const lng = Number(pos.coords.longitude.toFixed(4));
-        setCenter({ lat, lng, label: "My location" });
-        // Centre the MapLibre view too — the AC's "Center on me" is the
-        // same gesture as the Explore-near locator, so a single button
-        // drives both panels.
-        mapRef.current?.flyTo({ lat, lng });
-      },
-      (err) => {
-        setLocating(false);
-        setNearbyError(
-          err.code === err.PERMISSION_DENIED
-            ? "Location permission denied. Enter coordinates below."
-            : "Could not read your location. Enter coordinates below.",
-        );
-      },
-      { timeout: 10_000 },
-    );
-  }, []);
+    requestUserLocation((lat, lng) => {
+      setCenter({ lat, lng, label: "My location" });
+      // Centre the MapLibre view too — the AC's "Center on me" is the
+      // same gesture as the Explore-near locator, so a single button
+      // drives both panels.
+      mapRef.current?.flyTo({ lat, lng });
+    });
+  }, [requestUserLocation]);
 
   const handleCenterOnMe = useCallback(() => {
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      // Same surface as the sidebar locator — without it the button
-      // fails silently when the browser blocks geolocation entirely.
-      setNearbyError("Geolocation is not available in this browser");
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const lat = Number(pos.coords.latitude.toFixed(4));
-        const lng = Number(pos.coords.longitude.toFixed(4));
-        mapRef.current?.flyTo({ lat, lng });
-      },
-      (err) => {
-        // Mirror `handleUseMyLocation`'s feedback so a denied permission
-        // or timeout doesn't leave the button looking broken.
-        setNearbyError(
-          err.code === err.PERMISSION_DENIED
-            ? "Location permission denied. Enter coordinates below."
-            : "Could not read your location. Enter coordinates below.",
-        );
-      },
-      { timeout: 10_000 },
-    );
-  }, []);
+    requestUserLocation((lat, lng) => {
+      mapRef.current?.flyTo({ lat, lng });
+    });
+  }, [requestUserLocation]);
 
   const handleShare = useCallback(async () => {
     if (!stats) return;
@@ -255,6 +247,7 @@ export default function RoadMapPage() {
     }
 
     setShareState({ kind: "creating" });
+    let createdShareId: string | null = null;
     try {
       const snapshot = buildMapShareSnapshot({
         stats,
@@ -274,6 +267,7 @@ export default function RoadMapPage() {
         // its real types.
         snapshot: snapshot as unknown as Record<string, unknown>,
       });
+      createdShareId = data.id;
       const fullUrl =
         typeof window !== "undefined"
           ? new URL(data.share_url, window.location.origin).toString()
@@ -298,9 +292,22 @@ export default function RoadMapPage() {
         // Defensive: capability check above already guarantees one path
         // is available, but if `canShare` rejects the payload we still
         // need a fallback rather than silently doing nothing.
-        setShareState({ kind: "error", message: "Sharing is not supported" });
+        throw new Error("Sharing is not supported");
       }
+      // Delivery succeeded — clear the rollback marker so the catch
+      // branch below doesn't revoke a share the user actually used.
+      createdShareId = null;
     } catch (err) {
+      // Roll back the share row whenever post-create delivery fails
+      // (cancelled Web Share, denied clipboard write, unsupported
+      // canShare, etc.). Without this, repeated cancellations would
+      // accumulate orphaned `map_shares` rows.
+      if (createdShareId) {
+        // Best-effort cleanup: if the revoke itself fails we still want
+        // to surface the original delivery error to the user, not the
+        // cleanup error.
+        void mapSharesApi.revoke(createdShareId).catch(() => undefined);
+      }
       // A user-cancelled Web Share rejects with AbortError on iOS Safari —
       // treat that as idle (the user explicitly opted out) rather than as
       // an error toast.

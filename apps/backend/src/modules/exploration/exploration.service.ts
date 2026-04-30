@@ -135,12 +135,21 @@ export class ExplorationService {
    * outer query never touches `ride_segments` for other users, so cost
    * scales with the caller's history, not the global table size.
    *
-   * Tie-breaking on `DISTINCT ON`: rides sharing the same `started_at`
-   * (e.g. data-import collisions) order by `rs2.exited_at DESC` then by
-   * `rs2.id` to pick a deterministic row. Without these the "latest
+   * `last_ridden_at` resolves to the segment-touch time
+   * (`COALESCE(rs.exited_at, rs.entered_at, r.started_at)`) rather than
+   * the ride start. Long rides that span period boundaries (an
+   * overnight tour, a year-end ride) would otherwise be misclassified —
+   * a segment ridden after midnight would still bucket into the
+   * previous period because the ride's `started_at` is older.
+   *
+   * Tie-breaking on `DISTINCT ON`: rides sharing the same touch time
+   * (e.g. data-import collisions, multiple passes in one ride) order by
+   * `rs.id DESC` to pick a deterministic row. Without it the "latest
    * quality" value would flap between concurrent reads.
    */
   async getRiddenSegments(userId: string): Promise<RiddenSegmentsListDto> {
+    const lastTouchExpr =
+      'COALESCE(rs2.exited_at, rs2.entered_at, r2.started_at)';
     const rows = await this.rideSegmentRepo.manager
       .createQueryBuilder()
       .select('latest.segment_id', 'id')
@@ -154,7 +163,7 @@ export class ExplorationService {
             'DISTINCT ON (rs2.road_segment_id) rs2.road_segment_id',
             'segment_id',
           )
-          .addSelect('r2.started_at', 'last_ridden_at')
+          .addSelect(lastTouchExpr, 'last_ridden_at')
           .addSelect('rs2.quality_reading', 'last_quality_score')
           .from('ride_segments', 'rs2')
           .innerJoin('rides', 'r2', 'r2.id = rs2.ride_id')
@@ -162,8 +171,7 @@ export class ExplorationService {
           .andWhere("r2.status = 'completed'")
           .andWhere('rs2.road_segment_id IS NOT NULL')
           .orderBy('rs2.road_segment_id')
-          .addOrderBy('r2.started_at', 'DESC')
-          .addOrderBy('rs2.exited_at', 'DESC', 'NULLS LAST')
+          .addOrderBy(lastTouchExpr, 'DESC', 'NULLS LAST')
           .addOrderBy('rs2.id', 'DESC');
       }, 'latest')
       .innerJoin(
