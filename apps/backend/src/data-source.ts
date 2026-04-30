@@ -22,6 +22,7 @@ import { FunZoneRoad } from './entities/fun-zone-road.entity.js';
 import { CommuteRoute } from './entities/commute-route.entity.js';
 import { SharedRide } from './entities/shared-ride.entity.js';
 import { TripShare } from './entities/trip-share.entity.js';
+import { MapShare } from './entities/map-share.entity.js';
 import { TripSuggestion } from './entities/trip-suggestion.entity.js';
 import { TripSuggestionVote } from './entities/trip-suggestion-vote.entity.js';
 import { TripMessage } from './entities/trip-message.entity.js';
@@ -57,6 +58,7 @@ import { AddDataExportRequests1715600000000 } from './migrations/1715600000000-A
 import { AddEmailVerificationAndPasswordReset1715700000000 } from './migrations/1715700000000-AddEmailVerificationAndPasswordReset.js';
 import { AddPasswordChangedAtAndUniqueResetToken1715800000000 } from './migrations/1715800000000-AddPasswordChangedAtAndUniqueResetToken.js';
 import { AddVerificationTokenUniqueIndex1715900000000 } from './migrations/1715900000000-AddVerificationTokenUniqueIndex.js';
+import { AddMapShares1716000000000 } from './migrations/1716000000000-AddMapShares.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -88,6 +90,7 @@ export const AppDataSource = new DataSource({
     CommuteRoute,
     SharedRide,
     TripShare,
+    MapShare,
     TripSuggestion,
     TripSuggestionVote,
     TripMessage,
@@ -132,6 +135,7 @@ export const AppDataSource = new DataSource({
     AddEmailVerificationAndPasswordReset1715700000000,
     AddPasswordChangedAtAndUniqueResetToken1715800000000,
     AddVerificationTokenUniqueIndex1715900000000,
+    AddMapShares1716000000000,
   ],
   synchronize: false,
 });

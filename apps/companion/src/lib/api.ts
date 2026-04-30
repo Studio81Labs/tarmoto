@@ -276,10 +276,19 @@ export interface UnriddenSegment {
   distance_m: number;
 }
 
+export interface RiddenSegmentMeta {
+  id: string;
+  last_ridden_at: string;
+  last_quality_score: number | null;
+  ride_count: number;
+}
+
 export const explorationApi = {
   getStats: () => apiFetch<ExplorationStats>("/exploration/stats"),
   getRiddenIds: () =>
     apiFetch<{ segment_ids: string[] }>("/exploration/ridden-ids"),
+  getRiddenSegments: () =>
+    apiFetch<{ segments: RiddenSegmentMeta[] }>("/exploration/ridden-segments"),
   getNearbyUnridden: (params: {
     lat: number;
     lng: number;
@@ -297,6 +306,46 @@ export const explorationApi = {
       `/exploration/nearby-unridden?${query.toString()}`,
     );
   },
+};
+
+// ── Map shares (US-50: read-only personal road-map snapshots) ──
+
+export interface MapShareResponse {
+  id: string;
+  share_token: string;
+  share_url: string;
+  title: string;
+  view_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MapSharePublic {
+  share_token: string;
+  title: string;
+  owner_name: string;
+  snapshot: Record<string, unknown>;
+  view_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MapShareListResponse {
+  items: MapShareResponse[];
+  total: number;
+}
+
+export const mapSharesApi = {
+  create: (payload: { title: string; snapshot: Record<string, unknown> }) =>
+    apiFetch<MapShareResponse>("/map-shares", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  listMine: () => apiFetch<MapShareListResponse>("/map-shares/mine"),
+  getByToken: (token: string) =>
+    apiFetch<MapSharePublic>(`/map-shares/${encodeURIComponent(token)}`),
+  revoke: (id: string) =>
+    apiFetch(`/map-shares/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };
 
 // ── Hazards endpoints (public; not yet in spec) ──

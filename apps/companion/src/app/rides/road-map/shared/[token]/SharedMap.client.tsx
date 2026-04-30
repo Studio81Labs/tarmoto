@@ -1,0 +1,26 @@
+"use client";
+
+import { useRef } from "react";
+import {
+  PersonalRoadMap,
+  type PersonalRoadMapHandle,
+} from "@/app/(dashboard)/rides/road-map/_components/PersonalRoadMap";
+import type { RiddenSegment } from "@/lib/road-map-layer";
+
+interface Props {
+  initialCenter: { lat: number; lng: number; zoom: number };
+  segments: readonly RiddenSegment[];
+}
+
+export function SharedMap({ initialCenter, segments }: Props) {
+  const mapRef = useRef<PersonalRoadMapHandle>(null);
+  return (
+    <div className="absolute inset-0">
+      <PersonalRoadMap
+        ref={mapRef}
+        initialCenter={initialCenter}
+        ridden={segments}
+      />
+    </div>
+  );
+}

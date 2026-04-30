@@ -8,6 +8,8 @@ import {
   ExplorationStatsDto,
   UnriddenSegmentDto,
   RiddenSegmentIdsDto,
+  RiddenSegmentsListDto,
+  RiddenSegmentDto,
 } from './dto/exploration.dto.js';
 
 @Injectable()
@@ -120,5 +122,84 @@ export class ExplorationService {
     return {
       segment_ids: results.map((r) => r.id),
     };
+  }
+
+  /**
+   * Per-segment metadata for the personal road-map layer (US-50). Returns
+   * one row per ridden segment with the most-recent ride timestamp and
+   * quality reading so the map can both period-filter client-side and
+   * show a hover popup without a second round-trip.
+   *
+   * Ordering by (segment, ride started_at DESC) and DISTINCT ON the
+   * segment id picks the latest reading deterministically — matches the
+   * "ride date + quality experienced" tooltip in the AC.
+   */
+  async getRiddenSegments(userId: string): Promise<RiddenSegmentsListDto> {
+    const rows = await this.rideSegmentRepo
+      .createQueryBuilder('rs')
+      .select('rs.road_segment_id', 'id')
+      .addSelect('latest.last_ridden_at', 'last_ridden_at')
+      .addSelect('latest.last_quality_score', 'last_quality_score')
+      .addSelect('counts.ride_count', 'ride_count')
+      .innerJoin(
+        (qb) =>
+          qb
+            .subQuery()
+            .select(
+              'DISTINCT ON (rs2.road_segment_id) rs2.road_segment_id',
+              'segment_id',
+            )
+            .addSelect('r2.started_at', 'last_ridden_at')
+            .addSelect('rs2.quality_reading', 'last_quality_score')
+            .from('ride_segments', 'rs2')
+            .innerJoin('rides', 'r2', 'r2.id = rs2.ride_id')
+            .where('r2.user_id = :userId', { userId })
+            .andWhere("r2.status = 'completed'")
+            .andWhere('rs2.road_segment_id IS NOT NULL')
+            .orderBy('rs2.road_segment_id')
+            .addOrderBy('r2.started_at', 'DESC'),
+        'latest',
+        'latest.segment_id = rs.road_segment_id',
+      )
+      .innerJoin(
+        (qb) =>
+          qb
+            .subQuery()
+            .select('rs3.road_segment_id', 'segment_id')
+            .addSelect('COUNT(DISTINCT rs3.ride_id)', 'ride_count')
+            .from('ride_segments', 'rs3')
+            .innerJoin('rides', 'r3', 'r3.id = rs3.ride_id')
+            .where('r3.user_id = :userId', { userId })
+            .andWhere("r3.status = 'completed'")
+            .andWhere('rs3.road_segment_id IS NOT NULL')
+            .groupBy('rs3.road_segment_id'),
+        'counts',
+        'counts.segment_id = rs.road_segment_id',
+      )
+      .groupBy('rs.road_segment_id')
+      .addGroupBy('latest.last_ridden_at')
+      .addGroupBy('latest.last_quality_score')
+      .addGroupBy('counts.ride_count')
+      .getRawMany<{
+        id: string;
+        last_ridden_at: Date | string;
+        last_quality_score: number | null;
+        ride_count: string | number;
+      }>();
+
+    const segments: RiddenSegmentDto[] = rows.map((row) => ({
+      id: row.id,
+      last_ridden_at:
+        row.last_ridden_at instanceof Date
+          ? row.last_ridden_at.toISOString()
+          : new Date(row.last_ridden_at).toISOString(),
+      last_quality_score: row.last_quality_score,
+      ride_count:
+        typeof row.ride_count === 'number'
+          ? row.ride_count
+          : parseInt(row.ride_count, 10),
+    }));
+
+    return { segments };
   }
 }

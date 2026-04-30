@@ -13,6 +13,7 @@ import {
   NearbyUnriddenQueryDto,
   UnriddenSegmentDto,
   RiddenSegmentIdsDto,
+  RiddenSegmentsListDto,
 } from './dto/exploration.dto.js';
 
 @ApiTags('exploration')
@@ -52,5 +53,17 @@ export class ExplorationController {
     @Req() req: express.Request,
   ): Promise<RiddenSegmentIdsDto> {
     return this.explorationService.getRiddenIds(req.user!.userId);
+  }
+
+  @Get('ridden-segments')
+  @ApiOperation({
+    summary:
+      'Ridden segments with last-ridden timestamp + quality (powers personal road map US-50)',
+  })
+  @ApiResponse({ status: 200, type: RiddenSegmentsListDto })
+  async getRiddenSegments(
+    @Req() req: express.Request,
+  ): Promise<RiddenSegmentsListDto> {
+    return this.explorationService.getRiddenSegments(req.user!.userId);
   }
 }

@@ -143,6 +143,11 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
         tiles: [`${originForTiles()}${API_BASE}/roads/tiles/{z}/{x}/{y}.mvt`],
         minzoom: 6,
         maxzoom: 18,
+        // Hoist the segment UUID from properties to the feature `id` so
+        // consumers (notably the personal road-map US-50) can drive
+        // ridden/unridden styling via `feature-state` instead of a
+        // 10k-entry `["match", ["get", "id"], …]` filter.
+        promoteId: { quality: "id", surface: "id" },
       });
 
       // Each layer's initial visibility is read from the current props so the

@@ -31,6 +31,16 @@ describe('ExplorationController', () => {
       getRiddenIds: jest.fn().mockResolvedValue({
         segment_ids: ['seg-1', 'seg-2'],
       }),
+      getRiddenSegments: jest.fn().mockResolvedValue({
+        segments: [
+          {
+            id: 'seg-1',
+            last_ridden_at: '2026-04-01T08:30:00.000Z',
+            last_quality_score: 4.2,
+            ride_count: 3,
+          },
+        ],
+      }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -90,5 +100,18 @@ describe('ExplorationController', () => {
 
     expect(service.getRiddenIds).toHaveBeenCalledWith('user-1');
     expect(result.segment_ids).toHaveLength(2);
+  });
+
+  it('GET /exploration/ridden-segments should return segments with ride metadata', async () => {
+    const result = await controller.getRiddenSegments(mockReq);
+
+    expect(service.getRiddenSegments).toHaveBeenCalledWith('user-1');
+    expect(result.segments).toHaveLength(1);
+    expect(result.segments[0]).toEqual({
+      id: 'seg-1',
+      last_ridden_at: '2026-04-01T08:30:00.000Z',
+      last_quality_score: 4.2,
+      ride_count: 3,
+    });
   });
 });

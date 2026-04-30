@@ -14,9 +14,17 @@ describe('ExplorationService', () => {
 
   const mockRideSegmentQb = {
     select: jest.fn().mockReturnThis(),
+    addSelect: jest.fn().mockReturnThis(),
     innerJoin: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
+    groupBy: jest.fn().mockReturnThis(),
+    addGroupBy: jest.fn().mockReturnThis(),
+    subQuery: jest.fn().mockReturnThis(),
+    from: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    addOrderBy: jest.fn().mockReturnThis(),
+    getQuery: jest.fn().mockReturnValue(''),
     getRawOne: jest.fn().mockResolvedValue({ count: '15' }),
     getRawMany: jest.fn().mockResolvedValue([{ id: 'seg-1' }, { id: 'seg-2' }]),
   };
@@ -198,6 +206,51 @@ describe('ExplorationService', () => {
       expect(mockRideSegmentQb.andWhere).toHaveBeenCalledWith(
         "r.status = 'completed'",
       );
+    });
+  });
+
+  describe('getRiddenSegments', () => {
+    it('normalises timestamps and ride_count for the road-map layer (US-50)', async () => {
+      const lastRidden = new Date('2026-04-01T08:30:00.000Z');
+      mockRideSegmentQb.getRawMany.mockResolvedValueOnce([
+        {
+          id: 'seg-1',
+          last_ridden_at: lastRidden,
+          last_quality_score: 4.2,
+          ride_count: '3',
+        },
+        {
+          id: 'seg-2',
+          last_ridden_at: '2025-11-12T10:00:00.000Z',
+          last_quality_score: null,
+          ride_count: 1,
+        },
+      ]);
+
+      const result = await service.getRiddenSegments('user-1');
+
+      expect(result.segments).toEqual([
+        {
+          id: 'seg-1',
+          last_ridden_at: lastRidden.toISOString(),
+          last_quality_score: 4.2,
+          ride_count: 3,
+        },
+        {
+          id: 'seg-2',
+          last_ridden_at: '2025-11-12T10:00:00.000Z',
+          last_quality_score: null,
+          ride_count: 1,
+        },
+      ]);
+    });
+
+    it('returns an empty list when the user has no completed rides', async () => {
+      mockRideSegmentQb.getRawMany.mockResolvedValueOnce([]);
+
+      const result = await service.getRiddenSegments('user-1');
+
+      expect(result.segments).toEqual([]);
     });
   });
 });
