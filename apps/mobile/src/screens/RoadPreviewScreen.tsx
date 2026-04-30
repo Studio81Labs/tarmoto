@@ -639,13 +639,33 @@ function ReviewsCard({
   // is scoped to the current user id so a queued payload from a
   // previous account on this device doesn't get uploaded under the
   // new session.
+  //
+  // After a successful flush we trigger the parent's segment refetch
+  // so the freshly-uploaded reviews show up in `embeddedReviews` and
+  // the personalised effect picks up the new `is_mine` rows. Without
+  // this follow-up, the rider's just-flushed-on-mount review stays
+  // invisible until they pull-to-refresh or navigate away.
   const currentUserId = useAuthStore((s) => s.user?.id);
   useEffect(() => {
     if (!currentUserId) return;
-    void api.flushPendingReviews(currentUserId).catch(() => {
-      // Drain failures stay queued for next time; nothing to surface.
-    });
-  }, [currentUserId]);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await api.flushPendingReviews(currentUserId);
+        if (cancelled) return;
+        if (result.flushed > 0) {
+          // Refetch the parent segment; the embedded-effect then
+          // runs `refreshReviews()` once to land personalised state.
+          await onSegmentChanged();
+        }
+      } catch {
+        // Drain failures stay queued for next time; nothing to surface.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUserId, onSegmentChanged]);
 
   const handleVoteChange = useCallback(
     (reviewId: string, next: Partial<RoadReview>) => {

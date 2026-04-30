@@ -220,6 +220,13 @@ export default function ReviewFormModal({
     }
     setError(null);
     setPickerNotice(null);
+    // Reset the submit-busy flag too. The submit's `finally { setSubmitting(false) }`
+    // runs only after the parent's awaited `onSubmitted` resolves, so the
+    // window between `setFormVisible(false)` and that resolution leaves
+    // `submitting` true. Without this reset, re-opening the form via the
+    // Edit affordance during that window would render a fresh-looking
+    // form whose Submit button is stuck disabled with a spinner.
+    setSubmitting(false);
   }, [visible, initialReview]);
 
   // Drop the conflict banner whenever the modal is closed so a fresh
