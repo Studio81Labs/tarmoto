@@ -11,8 +11,14 @@ import {
 const BOOTSTRAP_LOGGER = new Logger('EmailModule');
 
 const emailProviderFactory = (config: ConfigService): EmailProvider => {
+  // Truthy fallback (`||` not `??`): a blank or whitespace-only
+  // `TARMOTO_EMAIL_PROVIDER` would otherwise pass through as `''`,
+  // miss both the `log` and `resend` branches, and trip the
+  // "Unknown TARMOTO_EMAIL_PROVIDER" warning instead of silently
+  // landing on the dev/CI default. Same rationale as the trim+`||`
+  // pattern in `common/companion-url.ts`.
   const raw =
-    config.get<string>('TARMOTO_EMAIL_PROVIDER')?.trim().toLowerCase() ?? 'log';
+    config.get<string>('TARMOTO_EMAIL_PROVIDER')?.trim().toLowerCase() || 'log';
   const requested: 'log' | 'resend' | 'unknown' =
     raw === 'log' || raw === 'resend' ? raw : 'unknown';
 
