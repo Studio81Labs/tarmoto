@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
 import { Test, type TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { BadRequestException } from '@nestjs/common';
+import type { EntityManager } from 'typeorm';
 import { EmailVerificationService } from './email-verification.service.js';
 import { EmailService } from '../email/email.service.js';
 import { EmailVerificationToken } from '../../entities/email-verification-token.entity.js';
@@ -18,6 +19,8 @@ describe('EmailVerificationService', () => {
     createQueryBuilder: jest.Mock;
   };
   let userRepo: { findOne: jest.Mock; update: jest.Mock };
+  let txManager: { update: jest.Mock; insert: jest.Mock };
+  let dataSource: { transaction: jest.Mock };
   let email: { sendVerification: jest.Mock };
 
   const buildUser = (): User =>
@@ -45,6 +48,16 @@ describe('EmailVerificationService', () => {
       findOne: jest.fn(),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
+    txManager = {
+      update: jest.fn().mockResolvedValue({ affected: 0 }),
+      insert: jest.fn().mockResolvedValue({ identifiers: [{ id: 'tok-x' }] }),
+    };
+    dataSource = {
+      transaction: jest.fn(
+        async (cb: (manager: EntityManager) => Promise<unknown>) =>
+          cb(txManager as unknown as EntityManager),
+      ),
+    };
     email = { sendVerification: jest.fn().mockResolvedValue(null) };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -55,6 +68,7 @@ describe('EmailVerificationService', () => {
           useValue: tokenRepo,
         },
         { provide: getRepositoryToken(User), useValue: userRepo },
+        { provide: getDataSourceToken(), useValue: dataSource },
         { provide: EmailService, useValue: email },
         {
           provide: ConfigService,
@@ -77,10 +91,13 @@ describe('EmailVerificationService', () => {
       const user = buildUser();
       await service.issueAndSend(user);
 
-      // Prior un-consumed tokens must be invalidated before issuing a
-      // new one — otherwise resend would accumulate multiple valid
-      // 24h links and a leaked old one stays usable.
-      expect(tokenRepo.update).toHaveBeenCalledWith(
+      // Token rotation runs in a transaction now — the prior-token
+      // UPDATE and the fresh-token INSERT both go through the
+      // transaction manager, gated by `uniq_email_verification_active`
+      // so concurrent issuance can't end up with two live tokens.
+      expect(dataSource.transaction).toHaveBeenCalledTimes(1);
+      expect(txManager.update).toHaveBeenCalledWith(
+        EmailVerificationToken,
         expect.objectContaining({
           user_id: 'user-1',
           consumed_at: expect.any(Object),
@@ -88,8 +105,8 @@ describe('EmailVerificationService', () => {
         expect.objectContaining({ consumed_at: expect.any(Date) }),
       );
 
-      expect(tokenRepo.insert).toHaveBeenCalledTimes(1);
-      const inserted = tokenRepo.insert.mock.calls[0][0] as {
+      expect(txManager.insert).toHaveBeenCalledTimes(1);
+      const inserted = txManager.insert.mock.calls[0][1] as {
         user_id: string;
         token_hash: string;
         expires_at: Date;
@@ -117,7 +134,20 @@ describe('EmailVerificationService', () => {
     it('does not propagate transport failures back to the caller', async () => {
       email.sendVerification.mockRejectedValueOnce(new Error('Resend down'));
       await expect(service.issueAndSend(buildUser())).resolves.toBeUndefined();
-      expect(tokenRepo.insert).toHaveBeenCalled();
+      expect(txManager.insert).toHaveBeenCalled();
+    });
+
+    it('treats a unique-violation as a concurrent issuance and skips the email', async () => {
+      // Simulate the partial unique index firing on a concurrent
+      // INSERT (e.g. register + a near-simultaneous resend racing
+      // for the same user).
+      const uniqErr = Object.assign(new Error('duplicate key value'), {
+        code: '23505',
+      });
+      txManager.insert.mockRejectedValueOnce(uniqErr);
+
+      await expect(service.issueAndSend(buildUser())).resolves.toBeUndefined();
+      expect(email.sendVerification).not.toHaveBeenCalled();
     });
   });
 

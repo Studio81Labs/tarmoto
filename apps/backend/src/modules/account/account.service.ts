@@ -270,7 +270,13 @@ export class AccountService {
       // notice for a plan they never had.
       if (previousTier !== 'free') {
         const planName = PLAN_CATALOG[previousTier]?.name ?? previousTier;
-        await this.dispatchSubscriptionCancelled(user, planName, periodEnd);
+        // Fire-and-forget: a 10s Resend timeout on top of normal DB
+        // I/O could push the webhook response close to Stripe's 20s
+        // timeout window, triggering a retry — which would re-run
+        // this handler and send the email again. The dispatch helper
+        // catches its own errors so an unhandled rejection can't
+        // escape.
+        void this.dispatchSubscriptionCancelled(user, planName, periodEnd);
       }
       return;
     }
@@ -302,7 +308,11 @@ export class AccountService {
       user.subscription_status === 'trialing';
     const isActiveNow = newStatus === 'active' || newStatus === 'trialing';
     if (!wasActiveBefore && isActiveNow && newTier !== 'free') {
-      await this.dispatchSubscriptionConfirmed(user, newTier, periodEnd);
+      // Fire-and-forget for the same reason as the cancellation
+      // path above — keep the webhook response well inside Stripe's
+      // 20s timeout window so a slow Resend send can't trigger a
+      // retry-and-duplicate-email loop.
+      void this.dispatchSubscriptionConfirmed(user, newTier, periodEnd);
     }
   }
 

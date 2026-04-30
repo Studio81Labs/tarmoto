@@ -56,6 +56,7 @@ import { AddAccountDeletion1715500000000 } from './migrations/1715500000000-AddA
 import { AddDataExportRequests1715600000000 } from './migrations/1715600000000-AddDataExportRequests.js';
 import { AddEmailVerificationAndPasswordReset1715700000000 } from './migrations/1715700000000-AddEmailVerificationAndPasswordReset.js';
 import { AddPasswordChangedAtAndUniqueResetToken1715800000000 } from './migrations/1715800000000-AddPasswordChangedAtAndUniqueResetToken.js';
+import { AddVerificationTokenUniqueIndex1715900000000 } from './migrations/1715900000000-AddVerificationTokenUniqueIndex.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -130,6 +131,7 @@ export const AppDataSource = new DataSource({
     AddDataExportRequests1715600000000,
     AddEmailVerificationAndPasswordReset1715700000000,
     AddPasswordChangedAtAndUniqueResetToken1715800000000,
+    AddVerificationTokenUniqueIndex1715900000000,
   ],
   synchronize: false,
 });

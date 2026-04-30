@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, IsNull, LessThanOrEqual, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
@@ -208,16 +209,35 @@ export class PasswordResetService {
   }
 
   /**
-   * Garbage-collect expired tokens. Not strictly required (the
-   * unique-hash constraint plus the expiry check make replay
-   * impossible) but keeps the table from growing without bound.
-   * Wired up by the caller — kept on the service so we have one
-   * place to add a cron later if needed.
+   * Garbage-collect expired tokens. The unique-hash constraint plus
+   * the `consumed_at IS NULL AND expires_at > now()` consumption
+   * predicate make replay impossible regardless of pruning, but
+   * tokens accumulate forever otherwise — every forgot-password
+   * request leaves a row behind. The daily cron below keeps the
+   * table bounded.
    */
   async pruneExpired(now: Date = new Date()): Promise<number> {
     const res = await this.tokenRepo.delete({
       expires_at: LessThanOrEqual(now),
     });
     return res.affected ?? 0;
+  }
+
+  @Cron(CronExpression.EVERY_DAY_AT_3AM, {
+    name: 'password-reset-token-prune',
+  })
+  async runScheduledPrune(): Promise<void> {
+    try {
+      const pruned = await this.pruneExpired();
+      if (pruned > 0) {
+        this.logger.log(`Pruned ${pruned} expired password-reset token(s)`);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Scheduled password-reset prune failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 }
