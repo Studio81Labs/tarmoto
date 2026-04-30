@@ -87,6 +87,10 @@ export default function RoadMapPage() {
   const [locating, setLocating] = useState(false);
 
   const [shareState, setShareState] = useState<ShareState>({ kind: "idle" });
+  // Track the auto-reset timer so back-to-back share clicks don't let a
+  // stale timer stomp over the next call's `{ kind: "creating" }` state
+  // (which would re-enable the button mid-flight).
+  const shareResetTimerRef = useRef<number | null>(null);
 
   const mapRef = useRef<PersonalRoadMapHandle>(null);
 
@@ -224,8 +228,39 @@ export default function RoadMapPage() {
     });
   }, [requestUserLocation]);
 
+  // Schedule a single auto-reset back to "idle". Always cancels any
+  // pending timer first so back-to-back share attempts don't have a
+  // stale timer fire mid-flight and stomp over `{ kind: "creating" }`.
+  const scheduleShareReset = useCallback((delayMs: number) => {
+    if (shareResetTimerRef.current !== null) {
+      window.clearTimeout(shareResetTimerRef.current);
+    }
+    shareResetTimerRef.current = window.setTimeout(() => {
+      shareResetTimerRef.current = null;
+      setShareState({ kind: "idle" });
+    }, delayMs);
+  }, []);
+
+  // Cancel any in-flight reset on unmount so we don't `setState` after
+  // the page has been torn down.
+  useEffect(() => {
+    return () => {
+      if (shareResetTimerRef.current !== null) {
+        window.clearTimeout(shareResetTimerRef.current);
+        shareResetTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const handleShare = useCallback(async () => {
     if (!stats) return;
+    // Cancel any pending reset BEFORE we touch shareState so a leftover
+    // timer can't flip us back to "idle" while a fresh request is in
+    // flight (cursor: stale timeout reset).
+    if (shareResetTimerRef.current !== null) {
+      window.clearTimeout(shareResetTimerRef.current);
+      shareResetTimerRef.current = null;
+    }
     // Capability check first: if neither Web Share nor the async
     // Clipboard API is available, the user has no way to retrieve the
     // generated URL. Bail BEFORE persisting so we don't orphan rows in
@@ -242,7 +277,7 @@ export default function RoadMapPage() {
         message:
           "Your browser doesn't support sharing or clipboard access — try a different browser.",
       });
-      window.setTimeout(() => setShareState({ kind: "idle" }), 3500);
+      scheduleShareReset(3500);
       return;
     }
 
@@ -321,8 +356,15 @@ export default function RoadMapPage() {
           err instanceof Error ? err.message : "Could not generate share link",
       });
     }
-    window.setTimeout(() => setShareState({ kind: "idle" }), 3500);
-  }, [stats, period, filteredRidden, center.lat, center.lng]);
+    scheduleShareReset(3500);
+  }, [
+    stats,
+    period,
+    filteredRidden,
+    center.lat,
+    center.lng,
+    scheduleShareReset,
+  ]);
 
   if (loading) {
     return (
