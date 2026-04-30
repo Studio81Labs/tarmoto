@@ -50,6 +50,54 @@ describe('rideToGpx', () => {
     expect(xml).toContain('A &amp; B &lt;evil&gt;');
     expect(xml).not.toContain('<evil>');
   });
+
+  it('emits <ele> when GeoJSON coordinates carry an elevation component', () => {
+    const xml = rideToGpx({
+      name: 'mountain run',
+      startedAt: new Date('2026-04-01T08:00:00Z'),
+      route: {
+        type: 'LineString',
+        coordinates: [
+          [-122.0, 37.0, 1234.5],
+          [-122.1, 37.1, 1240],
+        ],
+      },
+    });
+    expect(xml).toContain(
+      '<trkpt lat="37" lon="-122"><ele>1234.5</ele></trkpt>',
+    );
+    expect(xml).toContain(
+      '<trkpt lat="37.1" lon="-122.1"><ele>1240</ele></trkpt>',
+    );
+  });
+
+  it('emits trkpt without <ele> when coordinates are 2D', () => {
+    const xml = rideToGpx({
+      name: 'flat',
+      startedAt: new Date('2026-04-01T08:00:00Z'),
+      route: {
+        type: 'LineString',
+        coordinates: [[-122.0, 37.0]],
+      },
+    });
+    expect(xml).toContain('<trkpt lat="37" lon="-122"></trkpt>');
+    expect(xml).not.toContain('<ele>');
+  });
+
+  it('skips <ele> when the third element is NaN or Infinity', () => {
+    const xml = rideToGpx({
+      name: 'bad-elev',
+      startedAt: new Date('2026-04-01T08:00:00Z'),
+      route: {
+        type: 'LineString',
+        coordinates: [
+          [-122.0, 37.0, NaN as unknown as number],
+          [-122.1, 37.1, Infinity as unknown as number],
+        ],
+      } as never,
+    });
+    expect(xml).not.toContain('<ele>');
+  });
 });
 
 describe('tripDayToGpx', () => {

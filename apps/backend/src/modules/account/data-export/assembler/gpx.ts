@@ -20,8 +20,17 @@ function escapeXml(s: string): string {
 }
 
 function track(name: string, route: GeoJSON.LineString): string {
+  // GeoJSON allows 2D ([lon, lat]) or 3D ([lon, lat, elevation]) coords.
+  // GPX represents elevation as a child <ele> element on <trkpt>; if the
+  // source has it, we must round-trip it or the user's GDPR export
+  // silently loses elevation data.
   const points = route.coordinates
-    .map(([lon, lat]) => `<trkpt lat="${lat}" lon="${lon}" />`)
+    .map((coord) => {
+      const [lon, lat, ele] = coord;
+      const trkpt = `<trkpt lat="${lat}" lon="${lon}">`;
+      const elev = Number.isFinite(ele) ? `<ele>${ele}</ele>` : '';
+      return elev ? `${trkpt}${elev}</trkpt>` : `${trkpt}</trkpt>`;
+    })
     .join('');
   return `<trk><name>${escapeXml(name)}</name><trkseg>${points}</trkseg></trk>`;
 }
