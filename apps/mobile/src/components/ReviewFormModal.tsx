@@ -315,6 +315,15 @@ export default function ReviewFormModal({
     // backend writes the multipart body avoids leaking an orphaned
     // file for the common "tapped wrong photo, removed it before it
     // finished" case.
+    //
+    // Already-completed uploads (entries with `url !== null`) leave
+    // a file on the backend with no review row referencing it. There
+    // is no per-photo DELETE endpoint today, so we can't proactively
+    // clean those up. US-55 (#304) explicitly accepts this as a
+    // known orphan-leak and tracks an S3-backed lifecycle sweep
+    // separately — adding a tactical client→server cleanup call here
+    // would duplicate that work and couple the mobile flow to a
+    // surface that's about to be replaced.
     const controller = uploadAbortControllers.current.get(id);
     if (controller) {
       controller.abort();

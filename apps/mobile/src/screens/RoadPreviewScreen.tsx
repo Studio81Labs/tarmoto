@@ -595,12 +595,18 @@ function ReviewsCard({
       // reviews fetched by the parent (pull-to-refresh /
       // onSegmentChanged) still surface — without this, the local
       // mirror would stay pinned to the previous personalised
-      // snapshot until the next successful refetch. Edit/delete
-      // affordances temporarily disappear because we can't confirm
-      // ownership, but the row visibility is more important than the
-      // affordance.
+      // snapshot until the next successful refetch. Also drop
+      // `myReview`: we can't confirm ownership from the embedded
+      // list (every entry has `is_mine: false`), and a stale
+      // `myReview` would surface "Edit your review" while none of
+      // the rendered rows offered an Edit affordance — and tapping
+      // the button would open the form with potentially
+      // out-of-date data (e.g. the rider deleted from another
+      // session). Better to hide the affordance until a successful
+      // refetch confirms ownership again.
       if (currentSegmentRef.current !== fetchedSegmentId) return;
       setReviews(embeddedReviewsRef.current);
+      setMyReview(null);
     }
   }, [segmentId]);
 
