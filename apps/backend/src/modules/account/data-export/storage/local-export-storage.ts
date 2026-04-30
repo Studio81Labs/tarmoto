@@ -22,7 +22,16 @@ export class LocalExportStorage implements ExportStorage {
   async write(key: string, body: Readable): Promise<{ byteSize: number }> {
     const target = this.resolveKey(key);
     await mkdir(dirname(target), { recursive: true });
-    await pipeline(body, createWriteStream(target));
+    try {
+      await pipeline(body, createWriteStream(target));
+    } catch (err) {
+      // pipeline failed mid-write: a partial file containing personal
+      // data may now sit on disk. Best-effort delete; the unlink is
+      // wrapped in catch so an unrelated error here doesn't mask the
+      // original write failure we're rethrowing.
+      await unlink(target).catch(() => {});
+      throw err;
+    }
     const s = await stat(target);
     return { byteSize: s.size };
   }

@@ -53,4 +53,18 @@ describe('LocalExportStorage', () => {
     await expect(storage.exists('a.zip')).resolves.toBe(true);
     await expect(storage.exists('missing.zip')).resolves.toBe(false);
   });
+
+  it('cleans up the partial file when the source stream errors mid-write', async () => {
+    const erroring = new Readable({
+      read() {
+        this.push(Buffer.from('partial-personal-data'));
+        process.nextTick(() => this.destroy(new Error('disk yanked')));
+      },
+    });
+    await expect(storage.write('partial.zip', erroring)).rejects.toThrow(
+      /disk yanked/,
+    );
+    // The destination file must NOT linger on disk after a failed write.
+    await expect(storage.exists('partial.zip')).resolves.toBe(false);
+  });
 });

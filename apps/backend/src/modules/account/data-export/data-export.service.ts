@@ -47,12 +47,12 @@ export class DataExportService {
       order: { created_at: 'DESC' },
     });
     if (active && active.expires_at.getTime() > Date.now()) {
-      const reachable = await this.isStorageReachable(active);
-      if (reachable) {
+      const reusable = await this.isRowReusable(active);
+      if (reusable) {
         return { created: false, request: active };
       }
       this.logger.warn(
-        `export ${active.id} for user ${userId} is ready but its ZIP is missing — regenerating`,
+        `export ${active.id} for user ${userId} is unusable (status=${active.status}, updated_at=${active.updated_at.toISOString()}) — regenerating`,
       );
       await this.expireAndCleanup(active);
     } else if (active) {
@@ -85,22 +85,37 @@ export class DataExportService {
     }
   }
 
-  private async isStorageReachable(row: DataExportRequest): Promise<boolean> {
-    // Only `ready` rows have a file to check; `queued`/`processing` are
-    // legitimately mid-flight and have no storage yet.
-    if (row.status !== 'ready' || !row.storage_key) return true;
-    try {
-      return await this.storage.exists(row.storage_key);
-    } catch (err) {
-      // If the existence check itself fails (e.g. transient S3 error),
-      // assume the row is fine rather than wiping it. False positives
-      // are recoverable on the next request; false negatives lose work.
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.warn(
-        `storage.exists failed for ${row.storage_key} (assuming reachable): ${msg}`,
-      );
-      return true;
+  // A 'queued' or 'processing' row that hasn't seen a status update for
+  // this long is treated as orphaned (worker died — process restart,
+  // crash, redeploy). Real exports complete in seconds, so 30 minutes
+  // is comfortably past any legitimate run while still recovering the
+  // user well before the 7-day TTL would let them retry.
+  private static readonly STUCK_WORKER_MS = 30 * 60 * 1000;
+
+  private async isRowReusable(row: DataExportRequest): Promise<boolean> {
+    // 'ready' must have its file on disk — otherwise (operator cleanup,
+    // volume reset, partial deploy) returning the row would hand the
+    // user a download link that 410s and lock them out for 7 days.
+    if (row.status === 'ready') {
+      if (!row.storage_key) return false;
+      try {
+        return await this.storage.exists(row.storage_key);
+      } catch (err) {
+        // If the existence check itself fails (e.g. transient S3 error),
+        // assume the row is fine rather than wiping it. False positives
+        // are recoverable on the next request; false negatives lose work.
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          `storage.exists failed for ${row.storage_key} (assuming reachable): ${msg}`,
+        );
+        return true;
+      }
     }
+    // 'queued' / 'processing' is reusable only if the worker is still
+    // plausibly alive — i.e. the row was touched recently.
+    return (
+      Date.now() - row.updated_at.getTime() < DataExportService.STUCK_WORKER_MS
+    );
   }
 
   private async expireAndCleanup(row: DataExportRequest): Promise<void> {
@@ -165,8 +180,12 @@ export class DataExportService {
   }
 
   async markFailed(id: string, message: string): Promise<void> {
+    // Conditional update mirroring markReady: only flip processing rows
+    // to 'failed'. If a concurrent expireAndCleanup already moved the
+    // row to 'expired' (or another path ran first), don't resurrect a
+    // terminal state with a stale error message.
     await this.repo.update(
-      { id },
+      { id, status: 'processing' },
       { status: 'failed', error_message: message.slice(0, 1000) },
     );
   }

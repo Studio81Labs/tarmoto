@@ -137,6 +137,54 @@ describe('DataExportService', () => {
     expect(repo.update).not.toHaveBeenCalled();
   });
 
+  it.each(['queued', 'processing'] as const)(
+    'regenerates when a %s row has been stuck for >30min (worker is dead)',
+    async (status) => {
+      const stuck = {
+        id: 'req-stuck',
+        user_id: 'u1',
+        status,
+        expires_at: new Date(Date.now() + 24 * 60 * 60_000),
+        created_at: new Date(Date.now() - 60 * 60_000),
+        updated_at: new Date(Date.now() - 60 * 60_000),
+        completed_at: null,
+        storage_key: null,
+        byte_size: null,
+        error_message: null,
+      } as DataExportRequest;
+      repo.findOne.mockResolvedValue(stuck);
+      const out = await service.requestExport('u1');
+      expect(repo.update).toHaveBeenCalledWith(
+        { id: 'req-stuck' },
+        { status: 'expired' },
+      );
+      expect(out.created).toBe(true);
+    },
+  );
+
+  it.each(['queued', 'processing'] as const)(
+    'reuses a fresh %s row that the worker is still plausibly running',
+    async (status) => {
+      const fresh = {
+        id: 'req-fresh',
+        user_id: 'u1',
+        status,
+        expires_at: new Date(Date.now() + 24 * 60 * 60_000),
+        created_at: new Date(),
+        updated_at: new Date(),
+        completed_at: null,
+        storage_key: null,
+        byte_size: null,
+        error_message: null,
+      } as DataExportRequest;
+      repo.findOne.mockResolvedValue(fresh);
+      const out = await service.requestExport('u1');
+      expect(out.created).toBe(false);
+      expect(out.request.id).toBe('req-fresh');
+      expect(repo.update).not.toHaveBeenCalled();
+    },
+  );
+
   it('expires + deletes the old file when the previous row is past TTL', async () => {
     const expired = {
       id: 'req-old',
@@ -340,6 +388,14 @@ describe('DataExportService', () => {
     repo.update.mockResolvedValueOnce({ affected: 0, raw: [] });
     await service.markReady('req-1', 'u1/req-1.zip', 999);
     expect(storage.delete).toHaveBeenCalledWith('u1/req-1.zip');
+  });
+
+  it('markFailed is a conditional update on status=processing', async () => {
+    await service.markFailed('req-1', 'boom');
+    expect(repo.update).toHaveBeenCalledWith(
+      { id: 'req-1', status: 'processing' },
+      expect.objectContaining({ status: 'failed', error_message: 'boom' }),
+    );
   });
 
   it('markFailed clamps long messages', async () => {

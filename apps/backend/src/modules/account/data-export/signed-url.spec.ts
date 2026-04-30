@@ -82,4 +82,37 @@ describe('signed-url', () => {
       }),
     ).toBe('invalid');
   });
+
+  it('rejects a non-hex signature without throwing', () => {
+    const expiresAt = Date.now() + 60_000;
+    // Same character length as a real hex digest (64), but contains
+    // non-ASCII chars — timingSafeEqual would throw on the resulting
+    // unequal buffer lengths if we let it through.
+    const nonAscii = '★'.repeat(64);
+    expect(
+      verifyDownloadSignature({
+        requestId: 'req-1',
+        expiresAt,
+        signature: nonAscii,
+        secret,
+      }),
+    ).toBe('invalid');
+  });
+
+  it('rejects uppercase hex (signatures are emitted lowercase)', () => {
+    const expiresAt = Date.now() + 60_000;
+    const sig = signDownloadUrl({
+      requestId: 'req-1',
+      expiresAt,
+      secret,
+    }).toUpperCase();
+    expect(
+      verifyDownloadSignature({
+        requestId: 'req-1',
+        expiresAt,
+        signature: sig,
+        secret,
+      }),
+    ).toBe('invalid');
+  });
 });
