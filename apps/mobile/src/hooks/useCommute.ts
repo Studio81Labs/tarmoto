@@ -147,16 +147,25 @@ export function useCommute(options: UseCommuteOptions = {}): UseCommuteResult {
 
         setRoute(primary);
         setStatus(statusResult.value);
-        setAlternatives(
-          alternativesResult.status === "fulfilled"
-            ? (alternativesResult.value ?? null)
-            : null,
-        );
-        setStats(
-          statsResult.status === "fulfilled"
-            ? (statsResult.value ?? null)
-            : null,
-        );
+        // Only overwrite the secondary slices when their fetch resolved.
+        // On a pull-to-refresh, if `/commute/alternatives` or
+        // `/commute/stats` 5xx while `/commute/status` succeeds, we
+        // keep whatever was already on screen — clearing them would
+        // make the cards visibly disappear and reappear on the next
+        // refresh, which contradicts the `Promise.allSettled` design
+        // goal stated above. On the initial load there's nothing to
+        // preserve, so we still surface a fresh `null` to leave the
+        // card unmounted.
+        if (alternativesResult.status === "fulfilled") {
+          setAlternatives(alternativesResult.value ?? null);
+        } else if (isInitial) {
+          setAlternatives(null);
+        }
+        if (statsResult.status === "fulfilled") {
+          setStats(statsResult.value ?? null);
+        } else if (isInitial) {
+          setStats(null);
+        }
         setPhase("ready");
       } catch (err) {
         // On initial/retry loads there's nothing else on screen, so show

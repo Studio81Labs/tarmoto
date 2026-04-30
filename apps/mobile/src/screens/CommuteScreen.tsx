@@ -843,7 +843,7 @@ function severityAlpha(severity: string): string {
  * with hazards even if it's 10 minutes longer (the rider's whole
  * reason for using alternates is hazard avoidance).
  */
-export function rankAlternatives(
+function rankAlternatives(
   alts: CommuteAlternativeRoute[],
 ): CommuteAlternativeRoute[] {
   return [...alts].sort((a, b) => {
