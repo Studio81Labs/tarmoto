@@ -36,16 +36,25 @@ function hasControlCharacters(value: string): boolean {
   });
 }
 
+interface ManagedPhoto {
+  /** Decoded basename (e.g. `seg-1-user-1-1700000000-uuid.jpg`). */
+  filename: string;
+  /** Resolved absolute path inside `REVIEW_PHOTO_UPLOAD_DIR`. */
+  filePath: string;
+}
+
 /**
- * Resolve a photo URL to the on-disk file path inside our managed upload
- * directory, or `null` when the URL does not belong to us. Mirrors the
+ * Resolve a photo URL to its managed filename + on-disk path inside the
+ * upload directory, or `null` when the URL is not one we own. Mirrors the
  * `users.service` avatar pattern: parse the URL, only honor it when the
  * pathname carries the managed prefix, and reject decoded filenames that
  * include path separators, control characters, or `.`/`..` segments so a
  * crafted `photos[]` entry can't make a cascade delete escape the managed
  * directory.
  */
-function managedReviewPhotoFilePath(photoUrl: string | null): string | null {
+function resolveManagedReviewPhoto(
+  photoUrl: string | null,
+): ManagedPhoto | null {
   if (!photoUrl) return null;
 
   try {
@@ -69,28 +78,88 @@ function managedReviewPhotoFilePath(photoUrl: string | null): string | null {
       return null;
     }
 
-    return join(REVIEW_PHOTO_UPLOAD_DIR, filename);
+    return { filename, filePath: join(REVIEW_PHOTO_UPLOAD_DIR, filename) };
   } catch {
     return null;
   }
 }
 
 /**
- * Best-effort delete of any review-photo files we manage out of the given
- * URL list. Third-party URLs and missing files are skipped silently — the
- * caller has already committed the new state in the DB and we don't want a
- * stray orphan to surface a 500. Permission errors still bubble so an
- * operator notices a misconfigured uploads directory.
+ * Build the prefix every managed filename uploaded by `(segmentId, userId)`
+ * starts with — `<segmentId>-<userId>-`. Both ids are UUIDs in production
+ * (the controller's `ParseUUIDPipe` enforces it), so a `startsWith` check
+ * unambiguously identifies ownership: a managed file `X` was uploaded by
+ * `userId` for `segmentId` iff `filename.startsWith(buildOwnedPrefix(...))`.
  */
-async function deleteManagedReviewPhotos(
+function buildOwnedPrefix(segmentId: string, userId: string): string {
+  return `${segmentId}-${userId}-`;
+}
+
+function isOwnedManagedPhoto(
+  photo: ManagedPhoto,
+  segmentId: string,
+  userId: string,
+): boolean {
+  return photo.filename.startsWith(buildOwnedPrefix(segmentId, userId));
+}
+
+/**
+ * Reject a `photos[]` payload that references a managed file the caller
+ * doesn't own.
+ *
+ * `CreateReviewDto.photos` only validates URL shape, not authorization,
+ * so without this check user B could attach user A's
+ * `/uploads/road-review-photos/...` URL to B's own review — and then a
+ * later `delete`/`update` on B's review would unlink the shared file out
+ * from under A. Forcing every managed URL to carry the caller's
+ * `<segmentId>-<userId>-` filename prefix means cascade deletes only ever
+ * touch files the same user produced for the same segment.
+ *
+ * Third-party URLs that don't resolve to a managed path pass through
+ * untouched — we never wrote those, so we can't and won't delete them.
+ */
+function assertReviewPhotosAreOwned(
   photoUrls: readonly string[] | null | undefined,
+  segmentId: string,
+  userId: string,
+): void {
+  if (!photoUrls?.length) return;
+  for (const photoUrl of photoUrls) {
+    const managed = resolveManagedReviewPhoto(photoUrl);
+    if (!managed) continue;
+    if (!isOwnedManagedPhoto(managed, segmentId, userId)) {
+      throw new BadRequestException(
+        'Photo URL refers to a file you did not upload for this segment',
+      );
+    }
+  }
+}
+
+/**
+ * Best-effort delete of managed review-photo files the caller owns, out of
+ * the given URL list. Third-party URLs, missing files, and managed files
+ * uploaded by another user are skipped silently — the caller has already
+ * committed the new state in the DB and we don't want a stray orphan to
+ * surface a 500, and we never delete a file we don't own. Permission
+ * errors still bubble so an operator notices a misconfigured uploads
+ * directory.
+ */
+async function deleteOwnedReviewPhotos(
+  photoUrls: readonly string[] | null | undefined,
+  segmentId: string,
+  userId: string,
 ): Promise<void> {
   if (!photoUrls?.length) return;
   for (const photoUrl of photoUrls) {
-    const filePath = managedReviewPhotoFilePath(photoUrl);
-    if (!filePath) continue;
+    const managed = resolveManagedReviewPhoto(photoUrl);
+    if (!managed) continue;
+    // Defense in depth: even if `assertReviewPhotosAreOwned` was bypassed
+    // (e.g. a legacy row predating the ownership rule), the cascade-delete
+    // refuses to touch files outside the caller's `<segmentId>-<userId>-`
+    // namespace so removing review B can't break review A.
+    if (!isOwnedManagedPhoto(managed, segmentId, userId)) continue;
     try {
-      await unlink(filePath);
+      await unlink(managed.filePath);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
@@ -144,6 +213,11 @@ export class ReviewsService {
     if (!segment) {
       throw new NotFoundException('Road segment not found');
     }
+
+    // Block attaching managed photos that another user uploaded — see
+    // `assertReviewPhotosAreOwned` for why DTO-level URL validation isn't
+    // enough on its own.
+    assertReviewPhotosAreOwned(dto.photos, segmentId, userId);
 
     const review = this.reviewRepo.create({
       user_id: userId,
@@ -203,6 +277,10 @@ export class ReviewsService {
       throw new NotFoundException('Review not found');
     }
 
+    // Block attaching managed photos uploaded by someone else (see
+    // `assertReviewPhotosAreOwned`).
+    assertReviewPhotosAreOwned(dto.photos, segmentId, userId);
+
     const previousPhotos = review.photos ?? [];
     const nextPhotos = dto.photos ?? [];
 
@@ -216,10 +294,12 @@ export class ReviewsService {
     // Cascade-delete files for any managed photos that the new payload
     // dropped, so removing a photo from an existing review doesn't leave
     // an orphan on disk. Run after save so a DB failure can't leave the
-    // row pointing at a file we already deleted.
+    // row pointing at a file we already deleted. The ownership filter
+    // inside `deleteOwnedReviewPhotos` ensures we never delete a file
+    // another user uploaded — even if a legacy row carries a foreign URL.
     const nextSet = new Set(nextPhotos);
     const removed = previousPhotos.filter((photo) => !nextSet.has(photo));
-    await deleteManagedReviewPhotos(removed);
+    await deleteOwnedReviewPhotos(removed, segmentId, userId);
 
     const voteMap = await this.aggregateVotes([saved.id], userId);
     return this.toResponse(saved, voteMap.get(saved.id), userId);
@@ -234,7 +314,7 @@ export class ReviewsService {
     }
     const photos = review.photos ?? [];
     await this.reviewRepo.remove(review);
-    await deleteManagedReviewPhotos(photos);
+    await deleteOwnedReviewPhotos(photos, segmentId, userId);
   }
 
   /**
