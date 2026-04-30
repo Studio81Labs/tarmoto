@@ -1,0 +1,228 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  fetchGamificationSnapshot,
+  GamificationFetchError,
+  joinChallenge,
+} from "../gamification-fetch";
+import { api } from "@/lib/api";
+
+vi.mock("@/lib/api", () => ({
+  api: {
+    GET: vi.fn(),
+    POST: vi.fn(),
+  },
+}));
+
+const mockGet = vi.mocked(api.GET);
+const mockPost = vi.mocked(api.POST);
+
+function ok<T>(data: T) {
+  return {
+    data,
+    response: new Response(null, { status: 200 }),
+  } as unknown as Awaited<ReturnType<typeof api.GET>>;
+}
+
+function fail(status: number, body: unknown = { message: "boom" }) {
+  return {
+    error: body,
+    response: new Response(null, { status }),
+  } as unknown as Awaited<ReturnType<typeof api.GET>>;
+}
+
+beforeEach(() => {
+  mockGet.mockReset();
+  mockPost.mockReset();
+});
+
+describe("joinChallenge", () => {
+  it("calls POST /challenges/{id}/join with the given id", async () => {
+    mockPost.mockResolvedValueOnce(ok({ challenge_id: "ch-1" }));
+
+    await joinChallenge("ch-1");
+
+    expect(mockPost).toHaveBeenCalledWith(
+      "/api/v1/challenges/{challengeId}/join",
+      { params: { path: { challengeId: "ch-1" } } },
+    );
+  });
+
+  it("treats 409 (already joined) as success", async () => {
+    mockPost.mockResolvedValueOnce(fail(409, { message: "Already joined" }));
+
+    await expect(joinChallenge("ch-1")).resolves.toBeUndefined();
+  });
+
+  it("propagates non-409 errors", async () => {
+    mockPost.mockResolvedValueOnce(fail(404, { message: "Not found" }));
+
+    await expect(joinChallenge("ch-1")).rejects.toBeInstanceOf(
+      GamificationFetchError,
+    );
+  });
+
+  it("includes the backend message and status on the thrown error", async () => {
+    mockPost.mockResolvedValueOnce(fail(500, { message: "Server died" }));
+
+    try {
+      await joinChallenge("ch-1");
+      throw new Error("expected join to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(GamificationFetchError);
+      const ge = err as GamificationFetchError;
+      expect(ge.message).toBe("Server died");
+      expect(ge.status).toBe(500);
+    }
+  });
+});
+
+describe("fetchGamificationSnapshot", () => {
+  function setupHappyPath() {
+    // Order: badges, challenges (parallel), then per-challenge details.
+    // We respond in URL-pattern order via implementation rather than relying
+    // on call order.
+    mockGet.mockImplementation((url: string, options?: unknown) => {
+      const opts = options as
+        | { params?: { path?: Record<string, string> } }
+        | undefined;
+      if (url === "/api/v1/users/{userId}/badges") {
+        return Promise.resolve(
+          ok([
+            {
+              key: "total_distance",
+              name: "Road Warrior",
+              description: "Total distance ridden",
+              category: "distance",
+              tier: "bronze",
+              earned_at: "2026-04-01T00:00:00Z",
+              progress: {
+                current: 200,
+                bronze: 100,
+                silver: 1000,
+                gold: 10000,
+              },
+            },
+          ]),
+        );
+      }
+      if (url === "/api/v1/challenges") {
+        return Promise.resolve(
+          ok([
+            {
+              id: "ch-1",
+              title: "Spring Explorer",
+              description: "Ride 10 new roads",
+              metric: "roads_discovered",
+              target: 10,
+              starts_at: "2026-04-01T00:00:00Z",
+              ends_at: "2026-05-01T00:00:00Z",
+              reward_badge_key: null,
+              participant_count: 12,
+            },
+          ]),
+        );
+      }
+      if (url === "/api/v1/challenges/{challengeId}") {
+        const id = opts?.params?.path?.challengeId;
+        return Promise.resolve(
+          ok({
+            id,
+            title: "Spring Explorer",
+            description: "Ride 10 new roads",
+            metric: "roads_discovered",
+            target: 10,
+            starts_at: "2026-04-01T00:00:00Z",
+            ends_at: "2026-05-01T00:00:00Z",
+            reward_badge_key: null,
+            participant_count: 12,
+            my_progress: 4,
+            my_completed: false,
+            leaderboard: [
+              {
+                rank: 1,
+                user_id: "user-1",
+                display_name: "Me",
+                progress: 4,
+                completed: false,
+              },
+            ],
+          }),
+        );
+      }
+      return Promise.resolve(fail(404));
+    });
+  }
+
+  it("composes badges + challenges + details into a snapshot", async () => {
+    setupHappyPath();
+
+    const snap = await fetchGamificationSnapshot("user-1");
+
+    expect(snap.badges).toHaveLength(1);
+    expect(snap.badges[0]?.id).toBe("total_distance");
+    expect(snap.challenges).toHaveLength(1);
+    expect(snap.challenges[0]?.current).toBe(4);
+    expect(snap.challengeMeta["ch-1"]).toEqual({
+      joined: true,
+      participantCount: 12,
+    });
+    expect(snap.primaryLeaderboard?.entries[0]?.isMe).toBe(true);
+  });
+
+  it("propagates errors from the badges call", async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (url === "/api/v1/users/{userId}/badges") {
+        return Promise.resolve(fail(500, { message: "DB down" }));
+      }
+      return Promise.resolve(ok([]));
+    });
+
+    await expect(fetchGamificationSnapshot("user-1")).rejects.toThrow(
+      "DB down",
+    );
+  });
+
+  it("propagates errors from the challenges list call", async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (url === "/api/v1/users/{userId}/badges") {
+        return Promise.resolve(ok([]));
+      }
+      if (url === "/api/v1/challenges") {
+        return Promise.resolve(fail(503, { message: "Unavailable" }));
+      }
+      return Promise.resolve(ok([]));
+    });
+
+    await expect(fetchGamificationSnapshot("user-1")).rejects.toThrow(
+      "Unavailable",
+    );
+  });
+
+  it("returns an empty-but-valid snapshot when there are no challenges", async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (url === "/api/v1/users/{userId}/badges")
+        return Promise.resolve(ok([]));
+      if (url === "/api/v1/challenges") return Promise.resolve(ok([]));
+      return Promise.resolve(fail(404));
+    });
+
+    const snap = await fetchGamificationSnapshot("user-1");
+    expect(snap.challenges).toEqual([]);
+    expect(snap.primaryLeaderboard).toBeNull();
+    expect(snap.milestones.length).toBeGreaterThan(0);
+  });
+
+  it("threads the AbortSignal through every backend call", async () => {
+    setupHappyPath();
+    const controller = new AbortController();
+
+    await fetchGamificationSnapshot("user-1", { signal: controller.signal });
+
+    // Every api.GET invocation should have received the same signal so
+    // that aborting the controller cancels the whole fan-out.
+    for (const call of mockGet.mock.calls) {
+      const init = call[1] as { signal?: AbortSignal } | undefined;
+      expect(init?.signal).toBe(controller.signal);
+    }
+  });
+});

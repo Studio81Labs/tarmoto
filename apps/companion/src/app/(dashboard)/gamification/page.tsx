@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Award,
@@ -8,6 +8,7 @@ import {
   Flag,
   Flame,
   Heart,
+  Loader2,
   Lock,
   Medal,
   Moon,
@@ -25,22 +26,24 @@ import { useAuthStore } from "@/stores/auth";
 import type { Badge as BadgeType } from "@/lib/types";
 import {
   activeChallenges,
-  buildDemoSnapshot,
   challengeProgress,
   formatDaysRemaining,
   formatMilestoneLabel,
-  myLeaderboardRank,
   pickNextMilestone,
   seasonalProgress,
-  sortLeaderboard,
   type Challenge,
   type ChallengeCategory,
+  type ChallengeMeta,
   type GamificationSnapshot,
-  type LeaderboardEntry,
-  type LeaderboardMetric,
   type MilestoneProgress,
+  type PrimaryLeaderboard,
+  type PrimaryLeaderboardEntry,
   type SeasonalChallenge,
 } from "@/lib/gamification";
+import {
+  fetchGamificationSnapshot,
+  joinChallenge,
+} from "@/lib/gamification-fetch";
 
 const BADGE_ICONS: Record<string, LucideIcon> = {
   compass: Compass,
@@ -69,26 +72,252 @@ const CATEGORY_STYLE: Record<
   seasonal: { label: "Seasonal", icon: Sparkles, accent: "text-emerald-300" },
 };
 
-const LEADERBOARD_METRICS: {
-  key: LeaderboardMetric;
-  label: string;
-  unit: string;
-}[] = [
-  { key: "totalKm", label: "Kilometres ridden", unit: "km" },
-  { key: "roadsDiscovered", label: "Roads discovered", unit: "roads" },
-  { key: "hazardsReported", label: "Hazards reported", unit: "reports" },
-];
+// Every loaded state is tagged with the userId it represents so the render
+// can refuse to show snapshot data for a user that is no longer signed in.
+// Without this, switching accounts could briefly leak the previous user's
+// badges/challenges between the prop change and the refetch completing.
+type LoadState =
+  | { status: "idle" }
+  | { status: "loading"; userId: string }
+  | { status: "ready"; userId: string; snapshot: GamificationSnapshot }
+  | { status: "error"; userId: string; message: string };
 
 export default function GamificationPage() {
   const userId = useAuthStore((s) => s.user?.id);
-  // Seed with a stable fallback so the page renders pre-auth and for the
-  // demo-only environment used in CI. The snapshot is deterministic per id,
-  // matching the rider-profile page's fallback behaviour.
-  const snapshot = useMemo<GamificationSnapshot>(
-    () => buildDemoSnapshot(userId ?? "me"),
-    [userId],
+  const [state, setState] = useState<LoadState>({ status: "idle" });
+  // Tracks every join currently in flight. Using a set instead of a single
+  // string lets two challenges be joined concurrently without one's
+  // completion stripping the other's spinner.
+  const [joiningIds, setJoiningIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [joinError, setJoinError] = useState<string | null>(null);
+  // The currently-active fetch controller. Stored in a ref so that retries,
+  // post-join silent refetches, and a userId change can all abort whatever
+  // is in flight without prop-drilling a signal through every caller.
+  const controllerRef = useRef<AbortController | null>(null);
+
+  // `silent` keeps the current `ready` snapshot mounted while a refetch runs
+  // in the background — used after a successful "Join challenge" so the
+  // dashboard doesn't flash to the page-level skeleton; the button keeps
+  // its own spinner via `joiningIds`. Initial loads still set `loading` so
+  // the user sees the skeleton on first render. A silent refetch that
+  // fails rethrows so the caller can decide what to surface — see
+  // `handleJoin` for why a post-join refetch failure must NOT be reported
+  // as a join failure. Each call aborts the previous controller so retries
+  // and post-join refetches inherit cancellation on user switch.
+  //
+  // The first guard stops a stale closure (e.g. an in-flight `handleJoin`
+  // that resolved after the user signed in as someone else) from
+  // aborting the new user's initial load. We compare `uid` against the
+  // store rather than the prop because the prop is captured in the
+  // closure at useCallback-time and `useAuthStore.getState()` always
+  // reflects the live signed-in user.
+  const load = useCallback(
+    async (uid: string, opts: { silent?: boolean } = {}) => {
+      const currentUid = useAuthStore.getState().user?.id;
+      if (currentUid !== uid) return;
+      controllerRef.current?.abort();
+      const controller = new AbortController();
+      controllerRef.current = controller;
+      const { silent = false } = opts;
+      if (!silent) setState({ status: "loading", userId: uid });
+      try {
+        const snapshot = await fetchGamificationSnapshot(uid, {
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        setState({ status: "ready", userId: uid, snapshot });
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        if (silent) throw err;
+        setState({
+          status: "error",
+          userId: uid,
+          message:
+            err instanceof Error
+              ? err.message
+              : "Could not load achievements right now.",
+        });
+      }
+    },
+    [],
   );
 
+  useEffect(() => {
+    // The user changed (sign-in, sign-out, or account switch). Clear any
+    // join-related state from the previous session so a stale error or
+    // an orphaned spinner can't render on the new user's dashboard.
+    setJoinError(null);
+    setJoiningIds(new Set());
+    if (!userId) {
+      // Sign-out: cancel any in-flight fetch and drop the previous user's
+      // snapshot so it can't render on the next frame.
+      controllerRef.current?.abort();
+      controllerRef.current = null;
+      setState({ status: "idle" });
+      return;
+    }
+    void load(userId);
+    return () => {
+      controllerRef.current?.abort();
+    };
+  }, [userId, load]);
+
+  const handleJoin = useCallback(
+    async (challengeId: string) => {
+      if (!userId) return;
+      setJoiningIds((prev) => {
+        const next = new Set(prev);
+        next.add(challengeId);
+        return next;
+      });
+      setJoinError(null);
+      try {
+        await joinChallenge(challengeId);
+      } catch (err) {
+        // Only surface the error to the user that initiated the join.
+        // If the rider switched accounts while the request was in flight,
+        // the live signed-in user is no longer who clicked Join — writing
+        // their previous error onto the new user's dashboard would be
+        // confusing (the new user never tried to join anything).
+        if (useAuthStore.getState().user?.id === userId) {
+          setJoinError(
+            err instanceof Error ? err.message : "Could not join challenge.",
+          );
+          setJoiningIds((prev) => {
+            const next = new Set(prev);
+            next.delete(challengeId);
+            return next;
+          });
+        }
+        return;
+      }
+      // Join succeeded — reflect that in the snapshot immediately so the
+      // card flips to "Joined" without waiting on the refetch. The userId
+      // tag guards against a user switch racing with a stale resolved
+      // join: we only patch a snapshot that still belongs to the user we
+      // joined for. Any failure of the silent refetch must NOT be
+      // surfaced via `joinError`: the backend has already accepted the
+      // join, and showing "Could not load badges" would make the user
+      // think their join failed.
+      setState((prev) =>
+        prev.status === "ready" && prev.userId === userId
+          ? {
+              ...prev,
+              snapshot: markChallengeJoined(prev.snapshot, challengeId),
+            }
+          : prev,
+      );
+      try {
+        await load(userId, { silent: true });
+      } catch {
+        // The optimistic update keeps the dashboard consistent until the
+        // next page visit refreshes it. Swallowing the error is correct —
+        // the join itself succeeded.
+      } finally {
+        setJoiningIds((prev) => {
+          const next = new Set(prev);
+          next.delete(challengeId);
+          return next;
+        });
+      }
+    },
+    [userId, load],
+  );
+
+  if (!userId) {
+    return (
+      <div className="p-6 max-w-6xl mx-auto animate-fade-in">
+        <PageHeader />
+        <EmptyCard
+          icon={<Lock size={32} className="text-slate-600" />}
+          title="Sign in to see your achievements"
+          body="Badges, challenges, and leaderboards appear once you're signed in."
+        />
+      </div>
+    );
+  }
+
+  // Render-time guard: a snapshot tagged for a different user (because
+  // the userId prop changed before the new fetch resolved) must NOT be
+  // shown — fall through to the skeleton until the userId-effect kicks
+  // off a fresh load.
+  const stateForUser =
+    state.status === "ready" && state.userId === userId
+      ? state
+      : state.status === "error" && state.userId === userId
+        ? state
+        : null;
+
+  if (!stateForUser) {
+    return (
+      <div className="p-6 max-w-6xl mx-auto animate-fade-in space-y-8">
+        <PageHeader />
+        <SkeletonGrid />
+      </div>
+    );
+  }
+
+  if (stateForUser.status === "error") {
+    return (
+      <div className="p-6 max-w-6xl mx-auto animate-fade-in">
+        <PageHeader />
+        <ErrorCard
+          message={stateForUser.message}
+          onRetry={() => load(userId)}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <Dashboard
+      snapshot={stateForUser.snapshot}
+      joiningIds={joiningIds}
+      joinError={joinError}
+      onJoin={handleJoin}
+    />
+  );
+}
+
+/**
+ * Returns a snapshot with the named challenge optimistically flipped to
+ * "joined" — used between a successful `POST /challenges/{id}/join` and
+ * the silent refetch so the card immediately reflects the new state. The
+ * participant count is bumped by one if the rider was not already a
+ * participant. The refetch (or next page visit) reconciles with the
+ * authoritative server state.
+ */
+function markChallengeJoined(
+  snapshot: GamificationSnapshot,
+  challengeId: string,
+): GamificationSnapshot {
+  const existing = snapshot.challengeMeta[challengeId];
+  if (existing?.joined) return snapshot;
+  return {
+    ...snapshot,
+    challengeMeta: {
+      ...snapshot.challengeMeta,
+      [challengeId]: {
+        joined: true,
+        participantCount: (existing?.participantCount ?? 0) + 1,
+      },
+    },
+  };
+}
+
+function Dashboard({
+  snapshot,
+  joiningIds,
+  joinError,
+  onJoin,
+}: {
+  snapshot: GamificationSnapshot;
+  joiningIds: ReadonlySet<string>;
+  joinError: string | null;
+  onJoin: (id: string) => void;
+}) {
   const visibleChallenges = useMemo(
     () => activeChallenges(snapshot.challenges),
     [snapshot.challenges],
@@ -97,27 +326,30 @@ export default function GamificationPage() {
     () => pickNextMilestone(snapshot.milestones, snapshot.stats),
     [snapshot.milestones, snapshot.stats],
   );
+  const earnedBadgeCount = snapshot.badges.filter((b) => b.earnedAt).length;
 
   return (
     <div className="p-6 max-w-6xl mx-auto animate-fade-in space-y-8">
-      <header>
-        <h1 className="text-2xl font-bold">Achievements</h1>
-        <p className="text-sm text-slate-400 mt-1">
-          Badges, challenges, leaderboards, and milestones for your riding
-          region.
-        </p>
-      </header>
+      <PageHeader />
 
-      <SeasonalBanner seasonal={snapshot.seasonal} />
+      {snapshot.seasonal && <SeasonalBanner seasonal={snapshot.seasonal} />}
 
       <section aria-labelledby="badges-heading">
         <SectionHeader
           id="badges-heading"
           icon={<Award size={16} />}
           title="Badges"
-          subtitle={`${snapshot.badges.filter((b) => b.earnedAt).length} of ${snapshot.badges.length} earned`}
+          subtitle={`${earnedBadgeCount} of ${snapshot.badges.length} earned`}
         />
-        <BadgeGrid badges={snapshot.badges} />
+        {snapshot.badges.length === 0 ? (
+          <EmptyCard
+            icon={<Award size={32} className="text-slate-600" />}
+            title="No badges yet"
+            body="Ride, discover roads, or report hazards to start earning badges."
+          />
+        ) : (
+          <BadgeGrid badges={snapshot.badges} />
+        )}
       </section>
 
       <section aria-labelledby="challenges-heading">
@@ -131,34 +363,43 @@ export default function GamificationPage() {
               : `${visibleChallenges.length} in progress`
           }
         />
+        {joinError && (
+          <p className="mb-3 text-xs text-red-300" role="alert">
+            {joinError}
+          </p>
+        )}
         {visibleChallenges.length === 0 ? (
           <EmptyCard
             icon={<Target size={32} className="text-slate-600" />}
-            title="Nothing active"
+            title="No challenges to join yet"
             body="Check back on Monday — new weekly challenges drop every week."
           />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {visibleChallenges.map((challenge) => (
-              <ChallengeCard key={challenge.id} challenge={challenge} />
+              <ChallengeCard
+                key={challenge.id}
+                challenge={challenge}
+                meta={snapshot.challengeMeta[challenge.id]}
+                joining={joiningIds.has(challenge.id)}
+                onJoin={onJoin}
+              />
             ))}
           </div>
         )}
       </section>
 
-      <section aria-labelledby="leaderboard-heading">
-        <SectionHeader
-          id="leaderboard-heading"
-          icon={<Trophy size={16} />}
-          title="Regional leaderboard"
-          subtitle={
-            snapshot.leaderboard[0]?.homeRegion
-              ? `Riders in ${snapshot.leaderboard[0].homeRegion}`
-              : "Top riders in your region"
-          }
-        />
-        <Leaderboard entries={snapshot.leaderboard} />
-      </section>
+      {snapshot.primaryLeaderboard && (
+        <section aria-labelledby="leaderboard-heading">
+          <SectionHeader
+            id="leaderboard-heading"
+            icon={<Trophy size={16} />}
+            title="Challenge leaderboard"
+            subtitle={`Top riders in "${snapshot.primaryLeaderboard.challengeTitle}"`}
+          />
+          <PrimaryLeaderboardTable leaderboard={snapshot.primaryLeaderboard} />
+        </section>
+      )}
 
       {nextMilestone && (
         <section aria-labelledby="milestone-heading">
@@ -172,6 +413,17 @@ export default function GamificationPage() {
         </section>
       )}
     </div>
+  );
+}
+
+function PageHeader() {
+  return (
+    <header>
+      <h1 className="text-2xl font-bold">Achievements</h1>
+      <p className="text-sm text-slate-400 mt-1">
+        Badges, challenges, leaderboards, and milestones for your riding region.
+      </p>
+    </header>
   );
 }
 
@@ -274,12 +526,23 @@ function BadgeCard({ badge }: { badge: BadgeType }) {
 
 // ── Challenges ──
 
-function ChallengeCard({ challenge }: { challenge: Challenge }) {
+function ChallengeCard({
+  challenge,
+  meta,
+  joining,
+  onJoin,
+}: {
+  challenge: Challenge;
+  meta: ChallengeMeta | undefined;
+  joining: boolean;
+  onJoin: (id: string) => void;
+}) {
   const style = CATEGORY_STYLE[challenge.category];
   const fraction = challengeProgress(challenge);
   const percent = Math.round(fraction * 100);
   const Icon = style.icon;
   const complete = fraction >= 1;
+  const joined = meta?.joined ?? false;
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
       <div className="flex items-start justify-between gap-3">
@@ -326,22 +589,51 @@ function ChallengeCard({ challenge }: { challenge: Challenge }) {
         />
       </div>
 
-      {challenge.reward && (
-        <p className="mt-3 text-[11px] text-slate-500 flex items-center gap-1">
-          <Medal size={12} /> Reward: {challenge.reward}
-        </p>
-      )}
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <div className="text-[11px] text-slate-500 flex items-center gap-3">
+          {challenge.reward && (
+            <span className="flex items-center gap-1">
+              <Medal size={12} /> Reward: {challenge.reward}
+            </span>
+          )}
+          {meta && (
+            <span className="flex items-center gap-1">
+              <Users size={12} /> {meta.participantCount.toLocaleString()}
+            </span>
+          )}
+        </div>
+        {joined ? (
+          <span className="text-[11px] uppercase tracking-widest text-tarmoto-cyan">
+            Joined
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onJoin(challenge.id)}
+            disabled={joining}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-tarmoto-cyan/15 text-tarmoto-cyan text-xs font-semibold hover:bg-tarmoto-cyan/25 disabled:opacity-60 disabled:cursor-not-allowed transition"
+          >
+            {joining ? (
+              <>
+                <Loader2 size={12} className="animate-spin" /> Joining…
+              </>
+            ) : (
+              "Join challenge"
+            )}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
 // ── Leaderboard ──
 
-interface LeaderboardProps {
-  entries: LeaderboardEntry[];
-}
-
-function Leaderboard({ entries }: LeaderboardProps) {
+function PrimaryLeaderboardTable({
+  leaderboard,
+}: {
+  leaderboard: PrimaryLeaderboard;
+}) {
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900 overflow-hidden">
       <div className="overflow-x-auto">
@@ -350,70 +642,92 @@ function Leaderboard({ entries }: LeaderboardProps) {
             <tr className="text-left text-xs uppercase tracking-wider text-slate-500 bg-slate-900/80">
               <th className="py-3 px-4 font-semibold w-12">#</th>
               <th className="py-3 px-4 font-semibold">Rider</th>
-              {LEADERBOARD_METRICS.map((metric) => (
-                <th
-                  key={metric.key}
-                  className="py-3 px-4 font-semibold text-right"
-                >
-                  {metric.label}
-                </th>
-              ))}
+              <th className="py-3 px-4 font-semibold text-right">
+                Progress ({leaderboard.unit})
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800">
-            {LEADERBOARD_METRICS[0] &&
-              renderLeaderboardRows(entries, LEADERBOARD_METRICS[0].key)}
+            {leaderboard.entries.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={3}
+                  className="py-8 px-4 text-center text-sm text-slate-500"
+                >
+                  No riders have joined this challenge yet.
+                </td>
+              </tr>
+            ) : (
+              leaderboard.entries.map((entry) => (
+                <PrimaryLeaderboardRow
+                  key={entry.userId}
+                  entry={entry}
+                  unit={leaderboard.unit}
+                />
+              ))
+            )}
           </tbody>
         </table>
       </div>
-      <MyRankSummary entries={entries} />
+      <PrimaryLeaderboardSummary leaderboard={leaderboard} />
     </div>
   );
 }
 
-function renderLeaderboardRows(
-  entries: LeaderboardEntry[],
-  sortMetric: LeaderboardMetric,
-) {
-  const sorted = sortLeaderboard(entries, sortMetric);
-  return sorted.map((entry, index) => {
-    const rank = index + 1;
-    return (
-      <tr
-        key={entry.riderId}
-        className={clsx(
-          "text-slate-200",
-          entry.isMe && "bg-tarmoto-cyan/5 text-white",
-        )}
-      >
-        <td className="py-3 px-4">
-          <RankBadge rank={rank} />
-        </td>
-        <td className="py-3 px-4">
-          <div className="font-medium">
-            {entry.displayName}
-            {entry.isMe && (
-              <span className="ml-2 text-[10px] uppercase tracking-widest text-tarmoto-cyan">
-                You
-              </span>
-            )}
-          </div>
-          {entry.homeRegion && (
-            <div className="text-xs text-slate-500">{entry.homeRegion}</div>
+function PrimaryLeaderboardRow({
+  entry,
+  unit,
+}: {
+  entry: PrimaryLeaderboardEntry;
+  unit: string;
+}) {
+  return (
+    <tr className={clsx("text-slate-200", entry.isMe && "bg-tarmoto-cyan/5")}>
+      <td className="py-3 px-4">
+        <RankBadge rank={entry.rank} />
+      </td>
+      <td className="py-3 px-4">
+        <div className="font-medium">
+          {entry.displayName}
+          {entry.isMe && (
+            <span className="ml-2 text-[10px] uppercase tracking-widest text-tarmoto-cyan">
+              You
+            </span>
           )}
-        </td>
-        <td className="py-3 px-4 text-right tabular-nums">
-          {Math.round(entry.totalKm).toLocaleString()} km
-        </td>
-        <td className="py-3 px-4 text-right tabular-nums">
-          {entry.roadsDiscovered.toLocaleString()}
-        </td>
-        <td className="py-3 px-4 text-right tabular-nums">
-          {entry.hazardsReported.toLocaleString()}
-        </td>
-      </tr>
-    );
-  });
+          {entry.completed && (
+            <span className="ml-2 text-[10px] uppercase tracking-widest text-emerald-300">
+              Completed
+            </span>
+          )}
+        </div>
+      </td>
+      <td className="py-3 px-4 text-right tabular-nums">
+        {Math.round(entry.progress).toLocaleString()} {unit}
+      </td>
+    </tr>
+  );
+}
+
+function PrimaryLeaderboardSummary({
+  leaderboard,
+}: {
+  leaderboard: PrimaryLeaderboard;
+}) {
+  const me = leaderboard.entries.find((e) => e.isMe);
+  if (!me) return null;
+  return (
+    <div className="border-t border-slate-800 px-4 py-3 flex flex-wrap gap-x-6 gap-y-2 text-xs text-slate-400">
+      <span className="text-slate-500 uppercase tracking-widest font-semibold">
+        Your rank
+      </span>
+      <span className="tabular-nums">
+        #{me.rank}{" "}
+        <span className="text-slate-500">
+          · {Math.round(me.progress).toLocaleString()} {leaderboard.unit}
+        </span>
+      </span>
+    </div>
+  );
 }
 
 function RankBadge({ rank }: { rank: number }) {
@@ -442,26 +756,6 @@ function RankBadge({ rank }: { rank: number }) {
     <span className="inline-flex w-7 h-7 items-center justify-center text-sm text-slate-400 tabular-nums">
       {rank}
     </span>
-  );
-}
-
-function MyRankSummary({ entries }: { entries: LeaderboardEntry[] }) {
-  const items = LEADERBOARD_METRICS.map((metric) => ({
-    label: metric.label,
-    rank: myLeaderboardRank(entries, metric.key),
-  })).filter((i): i is { label: string; rank: number } => i.rank !== null);
-  if (items.length === 0) return null;
-  return (
-    <div className="border-t border-slate-800 px-4 py-3 flex flex-wrap gap-x-6 gap-y-2 text-xs text-slate-400">
-      <span className="text-slate-500 uppercase tracking-widest font-semibold">
-        Your ranks
-      </span>
-      {items.map((item) => (
-        <span key={item.label} className="tabular-nums">
-          #{item.rank} <span className="text-slate-500">· {item.label}</span>
-        </span>
-      ))}
-    </div>
   );
 }
 
@@ -603,6 +897,62 @@ function EmptyCard({
       </div>
       <p className="text-slate-300 font-medium">{title}</p>
       <p className="text-slate-500 text-sm mt-1">{body}</p>
+    </div>
+  );
+}
+
+function ErrorCard({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div
+      role="alert"
+      className="rounded-2xl border border-red-900/60 bg-red-950/30 p-6 text-center"
+    >
+      <AlertTriangle className="mx-auto text-red-300 mb-2" size={28} />
+      <p className="text-red-200 font-medium">Could not load achievements</p>
+      <p className="text-red-300/80 text-sm mt-1">{message}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="mt-4 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-900/40 text-red-100 text-sm hover:bg-red-900/60 transition"
+      >
+        Try again
+      </button>
+    </div>
+  );
+}
+
+function SkeletonGrid() {
+  return (
+    <div className="space-y-8" aria-busy="true" aria-live="polite">
+      <div className="h-32 rounded-2xl bg-slate-900 border border-slate-800 animate-pulse" />
+      <div>
+        <div className="mb-3 h-4 w-24 bg-slate-800 rounded animate-pulse" />
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-32 rounded-xl bg-slate-900 border border-slate-800 animate-pulse"
+            />
+          ))}
+        </div>
+      </div>
+      <div>
+        <div className="mb-3 h-4 w-32 bg-slate-800 rounded animate-pulse" />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-36 rounded-xl bg-slate-900 border border-slate-800 animate-pulse"
+            />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

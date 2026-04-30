@@ -1,16 +1,16 @@
 /**
- * Pure helpers + demo data for the gamification dashboard (US-57).
+ * Types, mappers and helpers for the gamification dashboard (US-57).
  *
  * The dashboard surfaces four data surfaces on top of the rider's profile
- * badges: active challenges with progress, a regional leaderboard, the next
- * milestone the rider is working toward, and a seasonal challenge banner.
+ * badges: active challenges with progress, a per-challenge leaderboard, the
+ * next milestone the rider is working toward, and an optional long-running
+ * seasonal challenge banner.
  *
- * The backend endpoints are still spec-pending, so the page drives off a
- * deterministic demo generator keyed by rider id — same approach used by the
- * rider profile fetcher (`rider-profile.ts`) so the UI can be rendered and
- * tested without the API.
+ * `buildDemoSnapshot` is retained as a typed test fixture only — production
+ * rendering goes through `gamification-fetch.ts` and the real backend.
  */
 
+import type { components } from "@tarmoto/openapi";
 import type { Badge, RiderStats } from "@/lib/types";
 
 // ── Types ──
@@ -89,12 +89,57 @@ export interface SeasonalChallenge {
   unit: string;
 }
 
+/**
+ * Per-challenge metadata kept alongside the UI `Challenge` shape. Lets the
+ * dashboard render "Join challenge" / "Joined" CTAs and show participant
+ * counts without changing the existing `Challenge` shape used by the demo
+ * fixture and pure helpers.
+ */
+export interface ChallengeMeta {
+  joined: boolean;
+  participantCount: number;
+}
+
+export interface PrimaryLeaderboardEntry {
+  rank: number;
+  userId: string;
+  displayName: string;
+  /** Progress in the challenge's metric/unit. */
+  progress: number;
+  completed: boolean;
+  isMe: boolean;
+}
+
+/**
+ * Single-dimension leaderboard surfaced for the challenge with the most
+ * participants. Backend leaderboards are scoped per challenge, so the multi-
+ * dimensional regional leaderboard (km / roads / hazards) shown by the demo
+ * snapshot is a follow-up — see issue notes.
+ */
+export interface PrimaryLeaderboard {
+  challengeId: string;
+  challengeTitle: string;
+  metric: string;
+  unit: string;
+  entries: PrimaryLeaderboardEntry[];
+}
+
 export interface GamificationSnapshot {
   badges: Badge[];
   challenges: Challenge[];
+  /** Backend metadata per challenge id (joined flag, participant count). */
+  challengeMeta: Record<string, ChallengeMeta>;
+  /**
+   * Legacy multi-dimensional regional leaderboard. Demo fixtures populate it;
+   * production data leaves it empty (the backend exposes per-challenge
+   * leaderboards only — see `primaryLeaderboard`).
+   */
   leaderboard: LeaderboardEntry[];
+  /** Per-challenge leaderboard surfaced in the dashboard, or null if none. */
+  primaryLeaderboard: PrimaryLeaderboard | null;
   milestones: Milestone[];
-  seasonal: SeasonalChallenge;
+  /** Optional seasonal banner — hidden when no long-running challenge fits. */
+  seasonal: SeasonalChallenge | null;
   stats: RiderStats;
 }
 
@@ -447,10 +492,226 @@ export function buildDemoSnapshot(
   return {
     badges,
     challenges,
+    challengeMeta: {},
     leaderboard,
+    primaryLeaderboard: null,
     milestones: DEFAULT_MILESTONES,
     seasonal,
     stats,
+  };
+}
+
+// ── Backend → UI mappers ──
+
+type BadgeDto = components["schemas"]["BadgeDto"];
+type ChallengeDto = components["schemas"]["ChallengeDto"];
+type ChallengeDetailDto = components["schemas"]["ChallengeDetailDto"];
+type LeaderboardEntryDto = components["schemas"]["LeaderboardEntryDto"];
+
+/**
+ * Lucide icon name for a badge key. Backend keys are stable identifiers, so a
+ * static map is the right shape — unknown keys fall back to "medal" so a new
+ * server-side badge still renders without a UI deploy.
+ */
+const BADGE_ICON_BY_KEY: Record<string, string> = {
+  total_distance: "trophy",
+  single_ride: "mountain",
+  ride_count: "flame",
+  roads_discovered: "compass",
+  reviews_written: "star",
+  hazards_reported: "alert-triangle",
+  rides_shared: "medal",
+};
+
+export function iconForBadgeKey(key: string): string {
+  return BADGE_ICON_BY_KEY[key] ?? "medal";
+}
+
+/**
+ * Maps the backend `BadgeDto` to the companion's `Badge` UI shape. The badge
+ * is treated as earned only when `earned_at` is set — `tier === null` is the
+ * locked state regardless of whether progress has begun.
+ */
+export function mapBadgeDto(dto: BadgeDto): Badge {
+  return {
+    id: dto.key,
+    name: dto.name,
+    description: dto.description,
+    icon: iconForBadgeKey(dto.key),
+    earnedAt: dto.earned_at ?? undefined,
+  };
+}
+
+/** Mapping from backend metric key → UI challenge category. */
+const CHALLENGE_CATEGORY_BY_METRIC: Record<string, ChallengeCategory> = {
+  total_distance: "distance",
+  single_ride: "distance",
+  ride_count: "distance",
+  roads_discovered: "discovery",
+  reviews_written: "discovery",
+  hazards_reported: "safety",
+  rides_shared: "social",
+};
+
+export function categoryForChallengeMetric(metric: string): ChallengeCategory {
+  return CHALLENGE_CATEGORY_BY_METRIC[metric] ?? "distance";
+}
+
+/** Mapping from backend metric key → unit label rendered next to progress. */
+const UNIT_BY_METRIC: Record<string, string> = {
+  total_distance: "km",
+  single_ride: "km",
+  ride_count: "rides",
+  roads_discovered: "roads",
+  reviews_written: "reviews",
+  hazards_reported: "reports",
+  rides_shared: "rides",
+};
+
+export function unitForChallengeMetric(metric: string): string {
+  return UNIT_BY_METRIC[metric] ?? "units";
+}
+
+/**
+ * Turns a backend `reward_badge_key` (e.g. `"spring_explorer"`) into a
+ * human-readable label (`"Spring explorer"`). Until the backend exposes a
+ * proper localised reward title alongside the key, this is the safest way
+ * to avoid leaking snake_case identifiers into the UI.
+ */
+export function humanizeRewardBadgeKey(key: string): string {
+  const trimmed = key.trim();
+  if (trimmed.length === 0) return "";
+  const words = trimmed.replace(/[_-]+/g, " ").split(/\s+/);
+  const first = words[0]!;
+  const head = first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+  const tail = words.slice(1).map((w) => w.toLowerCase());
+  return [head, ...tail].join(" ");
+}
+
+/**
+ * Maps `ChallengeDto` (+ optional my-progress from `ChallengeDetailDto`) to
+ * the companion's `Challenge` shape. `my_progress === null` means the rider
+ * has not joined yet; we render that as 0 progress so the bar is visible
+ * while the CTA stays "Join challenge".
+ */
+export function mapChallengeDto(
+  dto: ChallengeDto,
+  myProgress?: number | null,
+): Challenge {
+  return {
+    id: dto.id,
+    name: dto.title,
+    description: dto.description,
+    category: categoryForChallengeMetric(dto.metric),
+    current: typeof myProgress === "number" ? myProgress : 0,
+    target: dto.target,
+    unit: unitForChallengeMetric(dto.metric),
+    endsAt: dto.ends_at,
+    reward: dto.reward_badge_key
+      ? humanizeRewardBadgeKey(dto.reward_badge_key)
+      : undefined,
+  };
+}
+
+/**
+ * Derives a partial `RiderStats` from badge progress values. The badges
+ * endpoint is the only API that exposes per-metric current values; rides /
+ * hours / joined-at are not available there and fall back to zeros so the
+ * milestone tracker still renders.
+ */
+export function riderStatsFromBadges(
+  badges: readonly BadgeDto[],
+  joinedAt = new Date(0).toISOString(),
+): RiderStats {
+  const byKey = new Map(badges.map((b) => [b.key, b.progress.current]));
+  return {
+    totalKm: byKey.get("total_distance") ?? 0,
+    totalRides: byKey.get("ride_count") ?? 0,
+    totalHours: 0,
+    roadsDiscovered: byKey.get("roads_discovered") ?? 0,
+    hazardsReported: byKey.get("hazards_reported") ?? 0,
+    joinedAt,
+  };
+}
+
+/**
+ * Maps a backend per-challenge leaderboard row, marking the signed-in rider
+ * with `isMe` so the table can highlight their position.
+ */
+export function mapPrimaryLeaderboardEntry(
+  dto: LeaderboardEntryDto,
+  currentUserId: string | null,
+): PrimaryLeaderboardEntry {
+  return {
+    rank: dto.rank,
+    userId: dto.user_id,
+    displayName: dto.display_name,
+    progress: dto.progress,
+    completed: dto.completed,
+    isMe: currentUserId !== null && dto.user_id === currentUserId,
+  };
+}
+
+/**
+ * Picks the most-popular active challenge as the leaderboard the dashboard
+ * surfaces. Ties prefer the challenge ending soonest (fresher signal). The
+ * caller passes the full set of challenge details — we use them both to pick
+ * and to extract the leaderboard payload.
+ */
+export function pickPrimaryChallenge(
+  details: readonly ChallengeDetailDto[],
+): ChallengeDetailDto | null {
+  if (details.length === 0) return null;
+  return [...details].sort((a, b) => {
+    if (b.participant_count !== a.participant_count) {
+      return b.participant_count - a.participant_count;
+    }
+    return new Date(a.ends_at).getTime() - new Date(b.ends_at).getTime();
+  })[0]!;
+}
+
+/**
+ * Builds a full `GamificationSnapshot` from the data the backend exposes.
+ * Real fetches go through `gamification-fetch.ts`; this is the pure
+ * transform so it can be tested without touching network.
+ */
+export function buildLiveSnapshot(input: {
+  badges: readonly BadgeDto[];
+  challengeDetails: readonly ChallengeDetailDto[];
+  currentUserId: string | null;
+}): GamificationSnapshot {
+  const badges = input.badges.map(mapBadgeDto);
+  const challenges = input.challengeDetails.map((d) =>
+    mapChallengeDto(d, d.my_progress),
+  );
+  const challengeMeta: Record<string, ChallengeMeta> = {};
+  for (const d of input.challengeDetails) {
+    challengeMeta[d.id] = {
+      joined: d.my_progress !== null && d.my_progress !== undefined,
+      participantCount: d.participant_count,
+    };
+  }
+  const primary = pickPrimaryChallenge(input.challengeDetails);
+  const primaryLeaderboard: PrimaryLeaderboard | null = primary
+    ? {
+        challengeId: primary.id,
+        challengeTitle: primary.title,
+        metric: primary.metric,
+        unit: unitForChallengeMetric(primary.metric),
+        entries: primary.leaderboard.map((e) =>
+          mapPrimaryLeaderboardEntry(e, input.currentUserId),
+        ),
+      }
+    : null;
+  return {
+    badges,
+    challenges,
+    challengeMeta,
+    leaderboard: [],
+    primaryLeaderboard,
+    milestones: DEFAULT_MILESTONES,
+    seasonal: null,
+    stats: riderStatsFromBadges(input.badges),
   };
 }
 
