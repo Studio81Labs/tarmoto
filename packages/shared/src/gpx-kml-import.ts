@@ -99,6 +99,13 @@ const NS_PREFIX_PATTERN = "(?:[A-Za-z_][\\w.-]*:)?";
  * for the structural elements we care about. This catches the cases the
  * companion's old DOMParser flagged as `parsererror` while still tolerating
  * the loose inputs riders actually paste in.
+ *
+ * `<TAG\b` matches every opener, including self-closing variants like
+ * `<rte/>` or `<Placemark/>`. Self-closes are balanced by themselves, so
+ * the count of explicit `</TAG>` closers is allowed to fall short by
+ * exactly the number of self-closing instances. Earlier revisions
+ * required strict open/close pair-matching and rejected valid GPX files
+ * that emitted an empty `<rte/>` alongside a populated `<trk>`.
  */
 function isWellFormedEnough(text: string, format: "gpx" | "kml"): boolean {
   const root = format;
@@ -121,7 +128,11 @@ function isWellFormedEnough(text: string, format: "gpx" | "kml"): boolean {
       text,
       new RegExp(`</${NS_PREFIX_PATTERN}${tag}\\s*>`, "g"),
     );
-    if (opens !== closes) return false;
+    const selfCloses = countMatches(
+      text,
+      new RegExp(`<${NS_PREFIX_PATTERN}${tag}\\b[^>]*?/>`, "g"),
+    );
+    if (opens !== closes + selfCloses) return false;
   }
   return true;
 }
@@ -306,21 +317,87 @@ function firstChildText(
   return childText(parent.body, childTag);
 }
 
+/**
+ * Look up a direct child element by name and return its text content. Walks
+ * the parent body a top-level element at a time so a nested `<trkpt>
+ * <name>X</name></trkpt>` can't be confused with a real `<trk><name>`
+ * track title — that's the regression an earlier "first match anywhere"
+ * regex would produce on GPX files with point-level names.
+ *
+ * Self-closing matches (`<TAG/>`) return an empty string, which the
+ * caller treats as "no usable text" via the trim/empty-string guard.
+ * Namespace-prefixed variants (`<gpx:name>`) are accepted on either
+ * side per the parser's overall NS-prefix policy.
+ */
 function childText(body: string, tag: string): string | null {
-  // We deliberately match the FIRST occurrence anywhere inside the body
-  // rather than only direct children — DOM tree-walks are out of scope
-  // for a regex parser, and in practice the first `<name>` inside a
-  // `<trk>` / `<wpt>` / `<Placemark>` is the title we want. The optional
-  // namespace prefix matches Garmin/Komoot-style `<gpx:name>`.
-  const m = body.match(
-    new RegExp(
-      `<${NS_PREFIX_PATTERN}${tag}\\b[^>]*>([\\s\\S]*?)</${NS_PREFIX_PATTERN}${tag}\\s*>`,
-      "i",
-    ),
+  const tagPattern = new RegExp(
+    `^<(/)?(${NS_PREFIX_PATTERN}([A-Za-z_][\\w.-]*))\\b([^>]*)(/?)>`,
+    "i",
   );
-  if (!m) return null;
-  const inner = decodeXmlEntities(m[1].trim());
-  return inner || null;
+  const targetCloseRe = new RegExp(`</${NS_PREFIX_PATTERN}${tag}\\s*>`, "i");
+
+  let i = 0;
+  while (i < body.length) {
+    const lt = body.indexOf("<", i);
+    if (lt === -1) break;
+    const slice = body.slice(lt);
+    const m = tagPattern.exec(slice);
+    if (!m) {
+      // Bare `<` in text content — skip it.
+      i = lt + 1;
+      continue;
+    }
+    const isClose = m[1] === "/";
+    const elemName = m[3];
+    const isSelfClose = m[5] === "/";
+    const tagEnd = lt + m[0].length;
+
+    if (isClose) {
+      // We've reached the parent element's own end tag — no direct
+      // child by `tag` exists at this level.
+      break;
+    }
+
+    const matchesTarget = elemName.toLowerCase() === tag.toLowerCase();
+    if (matchesTarget) {
+      if (isSelfClose) return null;
+      const tail = body.slice(tagEnd);
+      const closeMatch = targetCloseRe.exec(tail);
+      if (!closeMatch) break;
+      const inner = decodeXmlEntities(tail.slice(0, closeMatch.index).trim());
+      return inner || null;
+    }
+
+    if (isSelfClose) {
+      i = tagEnd;
+      continue;
+    }
+
+    // Skip past this non-target child by finding its matching closer
+    // for the SAME element name. We track depth so a nested element
+    // with the same name (rare in practice but possible) can't fool us.
+    const childCloseRe = new RegExp(
+      `<(/?)${NS_PREFIX_PATTERN}${elemName}\\b[^>]*?(/?)>`,
+      "gi",
+    );
+    childCloseRe.lastIndex = tagEnd;
+    let depth = 1;
+    let scanCursor = tagEnd;
+    while (depth > 0) {
+      const next = childCloseRe.exec(body);
+      if (!next) {
+        scanCursor = body.length;
+        break;
+      }
+      const nextIsClose = next[1] === "/";
+      const nextIsSelfClose = next[2] === "/";
+      if (nextIsClose) depth--;
+      else if (!nextIsSelfClose) depth++;
+      scanCursor = childCloseRe.lastIndex;
+    }
+    i = scanCursor;
+  }
+  return null;
 }
 
 function parseKmlCoordString(text: string): Array<[number, number]> {

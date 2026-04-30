@@ -189,6 +189,50 @@ describe("parseImportedRoute", () => {
     expect(result.route.points).toHaveLength(3);
   });
 
+  it("accepts files with self-closing structural tags (e.g. empty <rte/>)", () => {
+    // GPX exports from BaseCamp / Calimoto sometimes include an empty
+    // self-closing `<rte/>` alongside the populated `<trk>`. Earlier
+    // revisions treated the lone `<rte` as an unmatched open and
+    // rejected the file as "not valid XML".
+    const xml = `<?xml version="1.0"?>
+<gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">
+  <rte/>
+  <trk>
+    <name>Loop</name>
+    <trkseg>
+      <trkpt lat="46.47" lon="10.37"/>
+      <trkpt lat="46.50" lon="10.41"/>
+    </trkseg>
+  </trk>
+</gpx>`;
+    const result = parseImportedRoute(xml, "with-empty-rte.gpx");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.route.name).toBe("Loop");
+    expect(result.route.points).toHaveLength(2);
+  });
+
+  it("picks the track-level <name>, not a nested point name", () => {
+    // Earlier "first match anywhere in subtree" `childText` would have
+    // returned "Trailhead" (the first <name> in the <trk> body). The
+    // direct-child walker must skip the <trkpt> subtree and pick up the
+    // track-level name that follows it.
+    const xml = `<?xml version="1.0"?>
+<gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <trkseg>
+      <trkpt lat="46.47" lon="10.37"><name>Trailhead</name></trkpt>
+      <trkpt lat="46.50" lon="10.41"><name>Junction</name></trkpt>
+    </trkseg>
+    <name>Real track name</name>
+  </trk>
+</gpx>`;
+    const result = parseImportedRoute(xml, "nested-names.gpx");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.route.name).toBe("Real track name");
+  });
+
   it("uses the filename stem as a fallback name", () => {
     const gpx = `<?xml version="1.0"?>
 <gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">

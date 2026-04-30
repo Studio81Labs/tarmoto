@@ -5,7 +5,10 @@
  * pulling React Native or navigation into the module graph.
  */
 
-import type { TripGpxInput } from "@tarmoto/shared";
+import {
+  haversineKm as sharedHaversineKm,
+  type TripGpxInput,
+} from "@tarmoto/shared";
 import type {
   Accommodation,
   AccommodationKind,
@@ -316,19 +319,13 @@ export function tripToGpxInput(trip: Trip): TripGpxInput {
   };
 }
 
-// Great-circle distance between two lat/lng pairs, in kilometres.
-// Inlined here so the helper module stays free of runtime deps — the
-// mobile app doesn't (yet) pull in `@tarmoto/shared` at build time.
-const EARTH_RADIUS_KM = 6371;
+// Tiny adapter around the shared `haversineKm(lat1, lng1, lat2, lng2)` so
+// the existing `(LatLng, LatLng)` call sites below stay readable. Mobile
+// now resolves `@tarmoto/shared` via Metro's monorepo node_modules paths
+// (US-20 added it as a runtime dep), so the previous "inlined to avoid
+// pulling in shared" rationale no longer applies.
 function haversineKm(a: LatLng, b: LatLng): number {
-  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
-  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((a.lat * Math.PI) / 180) *
-      Math.cos((b.lat * Math.PI) / 180) *
-      Math.sin(dLng / 2) ** 2;
-  return EARTH_RADIUS_KM * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  return sharedHaversineKm(a.lat, a.lng, b.lat, b.lng);
 }
 
 /**
