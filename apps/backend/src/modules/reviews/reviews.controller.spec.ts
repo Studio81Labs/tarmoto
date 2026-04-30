@@ -177,13 +177,12 @@ describe('ReviewsController', () => {
     );
   });
 
-  it('POST /roads/:segmentId/reviews/photos should 500 when the resolved base URL would be rejected by CreateReviewDto', async () => {
-    // Production with `req.protocol=http` (TLS upstream + trust_proxy=0)
-    // and no TARMOTO_PUBLIC_BASE_URL set is a misconfiguration: every
-    // generated URL would be http://api.example.com/... which the
-    // production DTO rejects, so upload-then-submit is impossible.
-    // Surface the misconfig immediately as a 500 instead of letting the
-    // upload "succeed" and the create silently 400.
+  it('POST /roads/:segmentId/reviews/photos should 500 in production when TARMOTO_PUBLIC_BASE_URL is unset', async () => {
+    // Production deploys MUST set TARMOTO_PUBLIC_BASE_URL — without it,
+    // the service's trusted-origin set is empty and any URL the upload
+    // emits via `req.protocol://req.get('host')` would be classified as
+    // third-party at submission time, silently bypassing the ownership
+    // guard and leaving managed files orphaned. Fail fast.
     const previous = process.env.TARMOTO_NODE_ENV;
     process.env.TARMOTO_NODE_ENV = 'production';
     configGet.mockReturnValue(undefined);
@@ -194,7 +193,7 @@ describe('ReviewsController', () => {
       } as Express.Multer.File;
       const req = {
         user: { userId: 'user-1' },
-        protocol: 'http',
+        protocol: 'https',
         get: jest.fn().mockReturnValue('api.example.com'),
       } as never;
 
@@ -202,6 +201,77 @@ describe('ReviewsController', () => {
         controller.uploadPhotos(req, 'seg-1', [file]),
       ).rejects.toThrow(InternalServerErrorException);
       expect(service.uploadPhotos).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) {
+        delete process.env.TARMOTO_NODE_ENV;
+      } else {
+        process.env.TARMOTO_NODE_ENV = previous;
+      }
+    }
+  });
+
+  it('POST /roads/:segmentId/reviews/photos should 500 in production when TARMOTO_PUBLIC_BASE_URL is non-https', async () => {
+    // Bad config (e.g. operator typo) where the env var resolves to an
+    // http URL in prod — same outcome as missing config: the service
+    // would never trust the resulting origin. Fail fast with a 500.
+    const previous = process.env.TARMOTO_NODE_ENV;
+    process.env.TARMOTO_NODE_ENV = 'production';
+    configGet.mockImplementation((key: string) =>
+      key === 'TARMOTO_PUBLIC_BASE_URL' ? 'http://api.example.com' : undefined,
+    );
+    try {
+      const file = {
+        mimetype: 'image/jpeg',
+        buffer: Buffer.from('jpg'),
+      } as Express.Multer.File;
+      const req = {
+        user: { userId: 'user-1' },
+        protocol: 'https',
+        get: jest.fn().mockReturnValue('api.example.com'),
+      } as never;
+
+      await expect(
+        controller.uploadPhotos(req, 'seg-1', [file]),
+      ).rejects.toThrow(InternalServerErrorException);
+      expect(service.uploadPhotos).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) {
+        delete process.env.TARMOTO_NODE_ENV;
+      } else {
+        process.env.TARMOTO_NODE_ENV = previous;
+      }
+    }
+  });
+
+  it('POST /roads/:segmentId/reviews/photos should accept a properly-configured production deploy', async () => {
+    // Counterpoint to the misconfig tests: with a valid https
+    // TARMOTO_PUBLIC_BASE_URL set, production uploads go through and
+    // the service is called with the configured origin (which the
+    // service will then recognize as managed in `resolveManagedReviewPhoto`).
+    const previous = process.env.TARMOTO_NODE_ENV;
+    process.env.TARMOTO_NODE_ENV = 'production';
+    configGet.mockImplementation((key: string) =>
+      key === 'TARMOTO_PUBLIC_BASE_URL' ? 'https://api.tarmoto.app' : undefined,
+    );
+    try {
+      const file = {
+        mimetype: 'image/jpeg',
+        buffer: Buffer.from('jpg'),
+      } as Express.Multer.File;
+      const req = {
+        user: { userId: 'user-1' },
+        protocol: 'http',
+        get: jest.fn().mockReturnValue('internal.tarmoto.svc'),
+      } as never;
+
+      await controller.uploadPhotos(req, 'seg-1', [file]);
+
+      expect(service.uploadPhotos).toHaveBeenCalledWith(
+        'user-1',
+        'seg-1',
+        [file],
+        'https://api.tarmoto.app',
+      );
     } finally {
       if (previous === undefined) {
         delete process.env.TARMOTO_NODE_ENV;

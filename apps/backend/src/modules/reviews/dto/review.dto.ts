@@ -13,6 +13,7 @@ import {
   type ValidationOptions,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { LOOPBACK_HOSTS } from '../../../common/loopback-hosts.js';
 
 export const MAX_REVIEW_PHOTOS = 5;
 export const MAX_REVIEW_PHOTO_BYTES = 5 * 1024 * 1024;
@@ -36,17 +37,6 @@ function isProductionEnv(): boolean {
   // determines whether helmet's full CSP is on, etc.
   return process.env.TARMOTO_NODE_ENV === 'production';
 }
-
-/**
- * Hosts the WHATWG URL parser surfaces as `parsed.hostname` for the
- * three loopback origins we want to allow in non-production:
- * - `localhost` (DNS-resolved)
- * - `127.0.0.1` (IPv4 loopback — the conventional address)
- * - `[::1]` (IPv6 loopback — Node's URL parser keeps the brackets in
- *   `parsed.hostname` for IPv6 literals, so the comparison must include
- *   them)
- */
-const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /**
  * Validate a photo URL against the same rule the response sanitizer enforces:

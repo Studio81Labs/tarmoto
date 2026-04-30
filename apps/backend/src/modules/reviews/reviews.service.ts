@@ -11,6 +11,7 @@ import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { hasControlCharacters } from '../../common/control-characters.js';
+import { LOOPBACK_HOSTS } from '../../common/loopback-hosts.js';
 import { RoadReview } from '../../entities/road-review.entity.js';
 import { RoadReviewVote } from '../../entities/road-review-vote.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
@@ -30,12 +31,6 @@ const REVIEW_PHOTO_UPLOAD_DIR = join(
   'uploads',
   'road-review-photos',
 );
-
-const LOOPBACK_HOSTS: ReadonlySet<string> = new Set([
-  'localhost',
-  '127.0.0.1',
-  '[::1]',
-]);
 
 /**
  * Decide whether a `<scheme>://<host>` origin belongs to *our* upload
