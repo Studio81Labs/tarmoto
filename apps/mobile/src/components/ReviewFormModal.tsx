@@ -141,7 +141,17 @@ export default function ReviewFormModal({
   onDeleted,
   onConflict,
 }: ReviewFormModalProps) {
-  const isEditing = Boolean(initialReview);
+  // Tracks whether the form is in create or edit mode. Seeded from
+  // the initial `initialReview` and then ONLY updated alongside the
+  // field-seeding effect below, so it stays in lockstep with the
+  // values actually rendered in the form. Without this stickiness,
+  // `isEditing` would flip from false to true the moment a parent
+  // race (e.g. mount-time queue drain landing a flushed review into
+  // `myReview`) flipped `initialReview` to non-null while the rider
+  // was mid-typing — routing submit through `updateReview` (no
+  // offline queue + null-clobbers cleared optional fields) and
+  // surfacing a Delete button the rider never asked for.
+  const [isEditing, setIsEditing] = useState<boolean>(Boolean(initialReview));
   // Used to scope queued review payloads to the current session — a
   // queued submit must not upload under a different account if the
   // rider signs out and back in as someone else on the same device.
@@ -234,6 +244,7 @@ export default function ReviewFormModal({
       return;
     }
     hasSeededWhileVisibleRef.current = true;
+    setIsEditing(Boolean(initialReview));
     setRating(initialReview?.rating ?? 0);
     setComment(initialReview?.comment ?? "");
     setBikeModel(initialReview?.bike_model ?? "");

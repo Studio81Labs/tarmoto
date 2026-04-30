@@ -666,4 +666,56 @@ describe("ReviewFormModal", () => {
       "Yamaha MT-09",
     );
   });
+
+  it("keeps form in create mode when initialReview flips mid-session (no updateReview, no Delete button)", async () => {
+    // Regression: the field-state guard above stops the rider's input
+    // from being clobbered, but `isEditing` was previously derived
+    // from the live `initialReview` prop and would still flip to
+    // true. That routed Submit through `api.updateReview` (live-only,
+    // no offline queue) and silently surfaced a Delete affordance.
+    // `isEditing` now ticks alongside the field seed so the mode
+    // matches the values actually shown in the form.
+    submitWithQueueMock.mockResolvedValueOnce({
+      status: "uploaded",
+      review: makeReview(),
+      pending: 0,
+    });
+    const onSubmitted = jest.fn();
+    const { rerender } = render(
+      <ReviewFormModal
+        visible
+        segmentId="seg-1"
+        initialReview={null}
+        onClose={jest.fn()}
+        onSubmitted={onSubmitted}
+      />,
+    );
+
+    fireEvent.press(screen.getByLabelText("Set rating to 4 stars"));
+
+    // Mid-session prop flip — drain landed a flushed review into the
+    // parent's `myReview` while the form is still open.
+    rerender(
+      <ReviewFormModal
+        visible
+        segmentId="seg-1"
+        initialReview={makeReview({ rating: 1, comment: "Old flushed note" })}
+        onClose={jest.fn()}
+        onSubmitted={onSubmitted}
+      />,
+    );
+
+    // Delete button must not surface — the rider opened in create mode
+    // and never asked to edit.
+    expect(screen.queryByLabelText("Delete review")).toBeNull();
+    // Submit button stays in create-mode label.
+    expect(screen.getByLabelText("Submit review")).toBeTruthy();
+    expect(screen.queryByLabelText("Save review changes")).toBeNull();
+
+    fireEvent.press(screen.getByLabelText("Submit review"));
+
+    await waitFor(() => expect(submitWithQueueMock).toHaveBeenCalledTimes(1));
+    // Routes through the offline-aware create path, NOT updateReview.
+    expect(updateReviewMock).not.toHaveBeenCalled();
+  });
 });
