@@ -207,20 +207,53 @@ export default function RoadMapPage() {
   }, []);
 
   const handleCenterOnMe = useCallback(() => {
-    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      // Same surface as the sidebar locator — without it the button
+      // fails silently when the browser blocks geolocation entirely.
+      setNearbyError("Geolocation is not available in this browser");
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const lat = Number(pos.coords.latitude.toFixed(4));
         const lng = Number(pos.coords.longitude.toFixed(4));
         mapRef.current?.flyTo({ lat, lng });
       },
-      undefined,
+      (err) => {
+        // Mirror `handleUseMyLocation`'s feedback so a denied permission
+        // or timeout doesn't leave the button looking broken.
+        setNearbyError(
+          err.code === err.PERMISSION_DENIED
+            ? "Location permission denied. Enter coordinates below."
+            : "Could not read your location. Enter coordinates below.",
+        );
+      },
       { timeout: 10_000 },
     );
   }, []);
 
   const handleShare = useCallback(async () => {
     if (!stats) return;
+    // Capability check first: if neither Web Share nor the async
+    // Clipboard API is available, the user has no way to retrieve the
+    // generated URL. Bail BEFORE persisting so we don't orphan rows in
+    // map_shares for browsers we can't deliver to (the previous flow
+    // would POST and then surface "Sharing is not supported").
+    const canWebShare =
+      typeof navigator !== "undefined" && typeof navigator.share === "function";
+    const canClipboard =
+      typeof navigator !== "undefined" &&
+      Boolean(navigator.clipboard?.writeText);
+    if (!canWebShare && !canClipboard) {
+      setShareState({
+        kind: "error",
+        message:
+          "Your browser doesn't support sharing or clipboard access — try a different browser.",
+      });
+      window.setTimeout(() => setShareState({ kind: "idle" }), 3500);
+      return;
+    }
+
     setShareState({ kind: "creating" });
     try {
       const snapshot = buildMapShareSnapshot({
@@ -253,19 +286,18 @@ export default function RoadMapPage() {
       };
 
       if (
-        typeof navigator !== "undefined" &&
-        typeof navigator.share === "function" &&
+        canWebShare &&
         (!navigator.canShare || navigator.canShare(shareData))
       ) {
         await navigator.share(shareData);
         setShareState({ kind: "shared", url: fullUrl });
-      } else if (
-        typeof navigator !== "undefined" &&
-        navigator.clipboard?.writeText
-      ) {
+      } else if (canClipboard) {
         await navigator.clipboard.writeText(fullUrl);
         setShareState({ kind: "copied", url: fullUrl });
       } else {
+        // Defensive: capability check above already guarantees one path
+        // is available, but if `canShare` rejects the payload we still
+        // need a fallback rather than silently doing nothing.
         setShareState({ kind: "error", message: "Sharing is not supported" });
       }
     } catch (err) {

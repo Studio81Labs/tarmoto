@@ -57,7 +57,14 @@ describe('ExplorationService', () => {
   beforeEach(async () => {
     rideSegmentRepo = {
       createQueryBuilder: jest.fn().mockReturnValue(mockRideSegmentQb),
-    };
+      // `getRiddenSegments` builds its outer query via
+      // `manager.createQueryBuilder()` so the FROM clause is a subquery
+      // (not the `RideSegment` repo's auto-aliased table). Mirror that
+      // shape in the mock so the test mirrors the runtime call graph.
+      manager: {
+        createQueryBuilder: jest.fn().mockReturnValue(mockRideSegmentQb),
+      },
+    } as Partial<jest.Mocked<Repository<RideSegment>>>;
     roadSegmentRepo = {
       count: jest.fn().mockResolvedValue(100),
       createQueryBuilder: jest.fn().mockReturnValue(mockRoadSegmentQb),

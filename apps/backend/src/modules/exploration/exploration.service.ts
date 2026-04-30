@@ -130,37 +130,42 @@ export class ExplorationService {
    * quality reading so the map can both period-filter client-side and
    * show a hover popup without a second round-trip.
    *
-   * Ordering by (segment, ride started_at DESC) and DISTINCT ON the
-   * segment id picks the latest reading deterministically — matches the
-   * "ride date + quality experienced" tooltip in the AC.
+   * Both the latest-reading and ride-count subqueries are scoped to the
+   * caller's completed rides, then joined to each other directly — the
+   * outer query never touches `ride_segments` for other users, so cost
+   * scales with the caller's history, not the global table size.
+   *
+   * Tie-breaking on `DISTINCT ON`: rides sharing the same `started_at`
+   * (e.g. data-import collisions) order by `rs2.exited_at DESC` then by
+   * `rs2.id` to pick a deterministic row. Without these the "latest
+   * quality" value would flap between concurrent reads.
    */
   async getRiddenSegments(userId: string): Promise<RiddenSegmentsListDto> {
-    const rows = await this.rideSegmentRepo
-      .createQueryBuilder('rs')
-      .select('rs.road_segment_id', 'id')
+    const rows = await this.rideSegmentRepo.manager
+      .createQueryBuilder()
+      .select('latest.segment_id', 'id')
       .addSelect('latest.last_ridden_at', 'last_ridden_at')
       .addSelect('latest.last_quality_score', 'last_quality_score')
       .addSelect('counts.ride_count', 'ride_count')
-      .innerJoin(
-        (qb) =>
-          qb
-            .subQuery()
-            .select(
-              'DISTINCT ON (rs2.road_segment_id) rs2.road_segment_id',
-              'segment_id',
-            )
-            .addSelect('r2.started_at', 'last_ridden_at')
-            .addSelect('rs2.quality_reading', 'last_quality_score')
-            .from('ride_segments', 'rs2')
-            .innerJoin('rides', 'r2', 'r2.id = rs2.ride_id')
-            .where('r2.user_id = :userId', { userId })
-            .andWhere("r2.status = 'completed'")
-            .andWhere('rs2.road_segment_id IS NOT NULL')
-            .orderBy('rs2.road_segment_id')
-            .addOrderBy('r2.started_at', 'DESC'),
-        'latest',
-        'latest.segment_id = rs.road_segment_id',
-      )
+      .from((qb) => {
+        return qb
+          .subQuery()
+          .select(
+            'DISTINCT ON (rs2.road_segment_id) rs2.road_segment_id',
+            'segment_id',
+          )
+          .addSelect('r2.started_at', 'last_ridden_at')
+          .addSelect('rs2.quality_reading', 'last_quality_score')
+          .from('ride_segments', 'rs2')
+          .innerJoin('rides', 'r2', 'r2.id = rs2.ride_id')
+          .where('r2.user_id = :userId', { userId })
+          .andWhere("r2.status = 'completed'")
+          .andWhere('rs2.road_segment_id IS NOT NULL')
+          .orderBy('rs2.road_segment_id')
+          .addOrderBy('r2.started_at', 'DESC')
+          .addOrderBy('rs2.exited_at', 'DESC', 'NULLS LAST')
+          .addOrderBy('rs2.id', 'DESC');
+      }, 'latest')
       .innerJoin(
         (qb) =>
           qb
@@ -174,12 +179,8 @@ export class ExplorationService {
             .andWhere('rs3.road_segment_id IS NOT NULL')
             .groupBy('rs3.road_segment_id'),
         'counts',
-        'counts.segment_id = rs.road_segment_id',
+        'counts.segment_id = latest.segment_id',
       )
-      .groupBy('rs.road_segment_id')
-      .addGroupBy('latest.last_ridden_at')
-      .addGroupBy('latest.last_quality_score')
-      .addGroupBy('counts.ride_count')
       .getRawMany<{
         id: string;
         last_ridden_at: Date | string;
