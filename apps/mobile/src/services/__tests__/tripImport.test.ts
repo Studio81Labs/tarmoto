@@ -20,7 +20,17 @@ jest.mock("react-native-fs", () => ({
 }));
 
 import { parseImportedRoute } from "@tarmoto/shared";
-import { routeToImportRequest, type TripImportOutcome } from "../tripImport";
+import { pick } from "@react-native-documents/picker";
+import RNFS from "react-native-fs";
+import {
+  pickAndParseRoute,
+  routeToImportRequest,
+  type TripImportOutcome,
+} from "../tripImport";
+
+const mockedPick = pick as jest.Mock;
+const mockedReadFile = RNFS.readFile as jest.Mock;
+const mockedStat = RNFS.stat as jest.Mock;
 
 describe("parseImportedRoute (mobile entry)", () => {
   it("parses a typical Garmin GPX track", () => {
@@ -251,6 +261,43 @@ describe("routeToImportRequest", () => {
   it("omits the waypoints array when the route had none", () => {
     const req = routeToImportRequest({ ...ROUTE, waypoints: [] }, "Trip");
     expect(req.waypoints).toBeUndefined();
+  });
+});
+
+describe("pickAndParseRoute", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedStat.mockResolvedValue({ size: 1024 });
+  });
+
+  it("identifies KML payloads via content sniffing when the picker omits the filename", async () => {
+    // Some Android providers return URI + MIME but no display name.
+    // An earlier version defaulted the filename to `imported.gpx`
+    // which forced the parser down the GPX path and failed on KML.
+    mockedPick.mockResolvedValue([
+      {
+        uri: "content://docs/kml-with-no-name",
+        name: null,
+        type: "application/vnd.google-earth.kml+xml",
+      },
+    ]);
+    const kml = `<?xml version="1.0"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document><name>Alps</name>
+    <Placemark><LineString><coordinates>
+      10.37,46.47,0 10.41,46.50,0 10.57,46.61,0
+    </coordinates></LineString></Placemark>
+  </Document>
+</kml>`;
+    mockedReadFile.mockResolvedValue(kml);
+
+    const outcome = await pickAndParseRoute();
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.route.sourceFormat).toBe("kml");
+    expect(outcome.route.name).toBe("Alps");
+    expect(outcome.route.points).toHaveLength(3);
   });
 });
 

@@ -330,8 +330,15 @@ function firstChildText(
  * side per the parser's overall NS-prefix policy.
  */
 function childText(body: string, tag: string): string | null {
+  // The attrs group MUST be non-greedy — a greedy `[^>]*` would happily
+  // swallow the trailing `/` of self-closing tags like `<link href="..."/>`
+  // or `<extensions/>`, so the self-close capture always stayed empty and
+  // the depth-skip path below would search for a non-existent `</link>`,
+  // walk past every later sibling, and miss the target `<name>`. This
+  // mirrors the non-greedy form `collectElements` uses for the same
+  // reason.
   const tagPattern = new RegExp(
-    `^<(/)?(${NS_PREFIX_PATTERN}([A-Za-z_][\\w.-]*))\\b([^>]*)(/?)>`,
+    `^<(/)?(${NS_PREFIX_PATTERN}([A-Za-z_][\\w.-]*))\\b([^>]*?)(/?)>`,
     "i",
   );
   const targetCloseRe = new RegExp(`</${NS_PREFIX_PATTERN}${tag}\\s*>`, "i");

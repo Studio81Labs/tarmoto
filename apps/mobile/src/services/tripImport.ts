@@ -62,7 +62,13 @@ export async function pickAndParseRoute(): Promise<TripImportOutcome> {
     return { ok: false, cancelled: true };
   }
 
-  const filename = response.name ?? "imported.gpx";
+  // Don't synthesise a `.gpx` fallback when the picker omits the name —
+  // some Android providers return URI + MIME but no display name, and an
+  // extension-tagged default would force every such file down the GPX
+  // detection path even when the MIME (or the body itself) clearly says
+  // KML. An extension-less stem makes `parseImportedRoute` fall through
+  // to its content sniff, which keys on `<gpx` vs `<kml`.
+  const filename = response.name ?? "imported";
   if (!isSupportedFilename(filename, response.type)) {
     return {
       ok: false,

@@ -233,6 +233,33 @@ describe("parseImportedRoute", () => {
     expect(result.route.name).toBe("Real track name");
   });
 
+  it("doesn't lose the track <name> when a self-closing child precedes it", () => {
+    // Garmin Connect emits `<extensions/>` and Strava emits `<link
+    // href="..."/>` inside `<trk>`. Earlier revisions of the direct-
+    // child walker had a greedy attrs regex that swallowed the trailing
+    // `/`, so these self-closes were misclassified as regular open
+    // tags; the depth-skip path then walked off the end of `<trk>`
+    // looking for the missing close, dropped the rest of the body,
+    // and the track's `<name>` was never found.
+    const xml = `<?xml version="1.0"?>
+<gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <extensions/>
+    <link href="https://example.com/route"/>
+    <name>Real track name</name>
+    <trkseg>
+      <trkpt lat="46.47" lon="10.37"/>
+      <trkpt lat="46.50" lon="10.41"/>
+    </trkseg>
+  </trk>
+</gpx>`;
+    const result = parseImportedRoute(xml, "with-self-closing-children.gpx");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.route.name).toBe("Real track name");
+    expect(result.route.points).toHaveLength(2);
+  });
+
   it("uses the filename stem as a fallback name", () => {
     const gpx = `<?xml version="1.0"?>
 <gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">
