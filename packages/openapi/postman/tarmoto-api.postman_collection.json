@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "31784c34-6de0-461e-b095-a4d76fb2c8b3",
+    "_postman_id": "0362273b-7773-473f-bc72-7c0e95497ff8",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -2357,6 +2357,29 @@
                   "language": "json"
                 }
               }
+            }
+          }
+        },
+        {
+          "name": "Mark a commute route as the primary one",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/commute/routes/:routeId/primary",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "commute", "routes", ":routeId", "primary"],
+              "variable": [
+                {
+                  "key": "routeId",
+                  "value": ""
+                }
+              ]
             }
           }
         },
