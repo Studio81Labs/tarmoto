@@ -91,7 +91,11 @@ describe("reviewQueue", () => {
         [ReviewSubmissionPayload]
       >(async () => makeReview());
 
-      const result = await submitReviewWithQueue(makePayload(), uploader);
+      const result = await submitReviewWithQueue(
+        makePayload(),
+        uploader,
+        "user-1",
+      );
 
       expect(result.status).toBe("uploaded");
       expect(result.review?.id).toBe("review-1");
@@ -107,6 +111,7 @@ describe("reviewQueue", () => {
       const result = await submitReviewWithQueue(
         makePayload({ comment: "Pavement broke up after the bridge" }),
         uploader,
+        "user-1",
       );
 
       expect(result.status).toBe("queued");
@@ -126,7 +131,11 @@ describe("reviewQueue", () => {
         throw makeServerError(503);
       });
 
-      const result = await submitReviewWithQueue(makePayload(), uploader);
+      const result = await submitReviewWithQueue(
+        makePayload(),
+        uploader,
+        "user-1",
+      );
 
       expect(result.status).toBe("queued");
       expect(getPendingCount()).toBe(1);
@@ -138,7 +147,7 @@ describe("reviewQueue", () => {
       });
 
       await expect(
-        submitReviewWithQueue(makePayload(), uploader),
+        submitReviewWithQueue(makePayload(), uploader, "user-1"),
       ).rejects.toMatchObject({ response: { status: 409 } });
       // 4xx must not silently land in the queue — the form needs to
       // see the rejection and switch to edit mode.
@@ -146,7 +155,7 @@ describe("reviewQueue", () => {
     });
 
     it("drains backlog before posting a fresh review (FIFO)", async () => {
-      enqueueReview(makePayload({ rating: 2, segmentId: "seg-A" }));
+      enqueueReview(makePayload({ rating: 2, segmentId: "seg-A" }), "user-1");
       const order: string[] = [];
       const uploader: ReviewUploader = jest.fn(async (p) => {
         order.push(p.segmentId);
@@ -156,6 +165,7 @@ describe("reviewQueue", () => {
       const result = await submitReviewWithQueue(
         makePayload({ rating: 5, segmentId: "seg-B" }),
         uploader,
+        "user-1",
       );
 
       expect(result.status).toBe("uploaded");
@@ -165,7 +175,7 @@ describe("reviewQueue", () => {
     });
 
     it("skips the live call when the drain stops on a network error", async () => {
-      enqueueReview(makePayload({ segmentId: "seg-A" }));
+      enqueueReview(makePayload({ segmentId: "seg-A" }), "user-1");
       const calls: ReviewSubmissionPayload[] = [];
       const uploader: ReviewUploader = jest.fn(async (p) => {
         calls.push(p);
@@ -175,6 +185,7 @@ describe("reviewQueue", () => {
       const result = await submitReviewWithQueue(
         makePayload({ segmentId: "seg-B" }),
         uploader,
+        "user-1",
       );
 
       expect(result.status).toBe("queued");
@@ -182,20 +193,51 @@ describe("reviewQueue", () => {
       expect(calls).toHaveLength(1);
       expect(calls[0].segmentId).toBe("seg-A");
     });
+
+    it("does not flush entries belonging to a different signed-in user", async () => {
+      // Regression: queue entries used to live without a userId, so a
+      // review queued by user A while offline could upload under user
+      // B's session after a sign-out / sign-in on the same device.
+      // The drain now only flushes entries whose userId matches.
+      enqueueReview(
+        makePayload({ comment: "user-A's note", segmentId: "seg-A" }),
+        "user-A",
+      );
+      const calls: ReviewSubmissionPayload[] = [];
+      const uploader: ReviewUploader = jest.fn(async (p) => {
+        calls.push(p);
+        return makeReview();
+      });
+
+      // user-B signs in; their fresh submit goes through but user-A's
+      // queued payload stays put.
+      const result = await submitReviewWithQueue(
+        makePayload({ comment: "user-B's note", segmentId: "seg-B" }),
+        uploader,
+        "user-B",
+      );
+
+      expect(result.status).toBe("uploaded");
+      expect(calls).toHaveLength(1);
+      expect(calls[0].comment).toBe("user-B's note");
+      const remaining = getPendingReviews();
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0].userId).toBe("user-A");
+    });
   });
 
   describe("drainReviewQueue", () => {
     it("flushes everything in order on a healthy link", async () => {
-      enqueueReview(makePayload({ segmentId: "a" }));
-      enqueueReview(makePayload({ segmentId: "b" }));
-      enqueueReview(makePayload({ segmentId: "c" }));
+      enqueueReview(makePayload({ segmentId: "a" }), "user-1");
+      enqueueReview(makePayload({ segmentId: "b" }), "user-1");
+      enqueueReview(makePayload({ segmentId: "c" }), "user-1");
       const seen: string[] = [];
       const uploader: ReviewUploader = jest.fn(async (p) => {
         seen.push(p.segmentId);
         return makeReview();
       });
 
-      const result = await drainReviewQueue(uploader);
+      const result = await drainReviewQueue(uploader, "user-1");
 
       expect(result).toEqual({
         flushed: 3,
@@ -207,27 +249,27 @@ describe("reviewQueue", () => {
     });
 
     it("drops poison-pill 4xx entries after their retry budget", async () => {
-      enqueueReview(makePayload({ segmentId: "poison" }));
+      enqueueReview(makePayload({ segmentId: "poison" }), "user-1");
       const uploader: ReviewUploader = jest.fn(async () => {
         throw makeServerError(400);
       });
 
-      await drainReviewQueue(uploader);
-      await drainReviewQueue(uploader);
-      const final = await drainReviewQueue(uploader);
+      await drainReviewQueue(uploader, "user-1");
+      await drainReviewQueue(uploader, "user-1");
+      const final = await drainReviewQueue(uploader, "user-1");
 
       expect(final.remaining).toBe(0);
       expect(getPendingCount()).toBe(0);
     });
 
     it("stops on the first network error, leaving the rest queued", async () => {
-      enqueueReview(makePayload({ segmentId: "a" }));
-      enqueueReview(makePayload({ segmentId: "b" }));
+      enqueueReview(makePayload({ segmentId: "a" }), "user-1");
+      enqueueReview(makePayload({ segmentId: "b" }), "user-1");
       const uploader: ReviewUploader = jest.fn(async () => {
         throw makeNetworkError();
       });
 
-      const result = await drainReviewQueue(uploader);
+      const result = await drainReviewQueue(uploader, "user-1");
 
       expect(result.networkFailed).toBe(true);
       expect(result.flushed).toBe(0);
@@ -235,19 +277,36 @@ describe("reviewQueue", () => {
     });
 
     it("concurrent drains share the in-flight promise", async () => {
-      enqueueReview(makePayload());
+      enqueueReview(makePayload(), "user-1");
       let resolve!: (value: RoadReview) => void;
       const uploader: ReviewUploader = jest.fn(
         () => new Promise<RoadReview>((r) => (resolve = r)),
       );
 
-      const a = drainReviewQueue(uploader);
-      const b = drainReviewQueue(uploader);
+      const a = drainReviewQueue(uploader, "user-1");
+      const b = drainReviewQueue(uploader, "user-1");
       expect(a).toBe(b);
 
       resolve(makeReview());
       await a;
       expect(uploader).toHaveBeenCalledTimes(1);
+    });
+
+    it("skips entries from other users without burning their retry budget", async () => {
+      enqueueReview(makePayload({ segmentId: "a" }), "user-A");
+      enqueueReview(makePayload({ segmentId: "b" }), "user-B");
+      const uploader: ReviewUploader = jest.fn(async () => makeReview());
+
+      const result = await drainReviewQueue(uploader, "user-B");
+
+      expect(result.flushed).toBe(1);
+      // user-A's entry is left untouched — its `attempts` counter
+      // stays at 0 so user A can finish it on their next sign-in
+      // without the poison-pill drop kicking in prematurely.
+      const remaining = getPendingReviews();
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0].userId).toBe("user-A");
+      expect(remaining[0].attempts).toBe(0);
     });
   });
 });

@@ -42,6 +42,12 @@ jest.mock("@/services/photoCapture", () => ({
   capturePhoto: jest.fn(),
 }));
 
+jest.mock("@/stores", () => ({
+  useAuthStore: (
+    selector: (state: { user: { id: string } | null }) => unknown,
+  ) => selector({ user: { id: "user-1" } }),
+}));
+
 jest.mock("@react-native-vector-icons/material-design-icons", () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const ReactStub = require("react");
@@ -154,13 +160,16 @@ describe("ReviewFormModal", () => {
     fireEvent.press(screen.getByLabelText("Submit review"));
 
     await waitFor(() => expect(submitWithQueueMock).toHaveBeenCalledTimes(1));
-    expect(submitWithQueueMock).toHaveBeenCalledWith({
-      segmentId: "seg-1",
-      rating: 3,
-      comment: undefined,
-      bikeModel: undefined,
-      photos: undefined,
-    });
+    expect(submitWithQueueMock).toHaveBeenCalledWith(
+      {
+        segmentId: "seg-1",
+        rating: 3,
+        comment: undefined,
+        bikeModel: undefined,
+        photos: undefined,
+      },
+      "user-1",
+    );
     expect(onSubmitted).toHaveBeenCalledWith(
       expect.objectContaining({ status: "uploaded" }),
     );
@@ -228,6 +237,7 @@ describe("ReviewFormModal", () => {
         rating: 5,
         photos: ["https://api.tarmoto.test/uploads/road-review-photos/abc.jpg"],
       }),
+      "user-1",
     );
   });
 

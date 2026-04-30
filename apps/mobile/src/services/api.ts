@@ -553,16 +553,31 @@ class ApiService {
    * Riders compose reviews curbside on poor cellular; queueing the
    * payload on link drop or transient server failure means the rider
    * doesn't have to retype the form when connectivity returns.
+   *
+   * `currentUserId` scopes the queue to the active session — entries
+   * survive across app launches, but the drain only flushes ones the
+   * current user enqueued. Without this, a review queued by user A
+   * before sign-out would upload under user B's session after a
+   * subsequent login on the same device.
    */
   async submitReviewWithQueue(
     payload: ReviewSubmissionPayload,
+    currentUserId: string,
   ): Promise<SubmitReviewResult> {
-    return submitReviewWithQueue(payload, (p) => this.submitReview(p));
+    return submitReviewWithQueue(
+      payload,
+      (p) => this.submitReview(p),
+      currentUserId,
+    );
   }
 
-  /** Best-effort flush of any queued reviews. */
-  async flushPendingReviews(): Promise<DrainReviewResult> {
-    return drainReviewQueue((p) => this.submitReview(p));
+  /**
+   * Best-effort flush of any queued reviews belonging to
+   * `currentUserId`. Entries from a different account stay queued so
+   * the original user can finish them on their next sign-in.
+   */
+  async flushPendingReviews(currentUserId: string): Promise<DrainReviewResult> {
+    return drainReviewQueue((p) => this.submitReview(p), currentUserId);
   }
 
   async updateReview(payload: ReviewSubmissionPayload): Promise<RoadReview> {

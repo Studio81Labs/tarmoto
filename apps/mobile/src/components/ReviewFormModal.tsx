@@ -46,6 +46,7 @@ import Icon from "@react-native-vector-icons/material-design-icons";
 import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
 import { api } from "@/services/api";
 import { capturePhoto, type CaptureResult } from "@/services/photoCapture";
+import { useAuthStore } from "@/stores";
 import type { RoadReview } from "@/types";
 
 export const MAX_REVIEW_PHOTOS = 5;
@@ -128,6 +129,10 @@ export default function ReviewFormModal({
   onConflict,
 }: ReviewFormModalProps) {
   const isEditing = Boolean(initialReview);
+  // Used to scope queued review payloads to the current session — a
+  // queued submit must not upload under a different account if the
+  // rider signs out and back in as someone else on the same device.
+  const currentUserId = useAuthStore((s) => s.user?.id);
   const [rating, setRating] = useState<number>(initialReview?.rating ?? 0);
   const [comment, setComment] = useState<string>(initialReview?.comment ?? "");
   const [bikeModel, setBikeModel] = useState<string>(
@@ -351,6 +356,14 @@ export default function ReviewFormModal({
       );
       return;
     }
+    if (!currentUserId) {
+      // The form should only be reachable while authenticated, but
+      // guard so a stale-token edge case doesn't fall through to the
+      // queue without an owner — without `userId` the entry would
+      // get treated as foreign-user at drain time and never flush.
+      setError("Sign in to submit your review.");
+      return;
+    }
     const photoUrls = photos
       .map((p) => p.url)
       .filter((u): u is string => Boolean(u));
@@ -384,13 +397,16 @@ export default function ReviewFormModal({
       } else {
         // Create path can omit empty optional fields — there's no
         // existing row to "preserve."
-        const result = await api.submitReviewWithQueue({
-          segmentId,
-          rating,
-          comment: trimmedComment || undefined,
-          bikeModel: trimmedBike || undefined,
-          photos: photoUrls.length > 0 ? photoUrls : undefined,
-        });
+        const result = await api.submitReviewWithQueue(
+          {
+            segmentId,
+            rating,
+            comment: trimmedComment || undefined,
+            bikeModel: trimmedBike || undefined,
+            photos: photoUrls.length > 0 ? photoUrls : undefined,
+          },
+          currentUserId,
+        );
         await onSubmitted({ status: result.status, review: result.review });
       }
     } catch (e: unknown) {
@@ -426,6 +442,7 @@ export default function ReviewFormModal({
     bikeModel,
     canSubmit,
     comment,
+    currentUserId,
     isEditing,
     onConflict,
     onSubmitted,

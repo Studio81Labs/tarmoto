@@ -32,7 +32,7 @@ import {
   spacing,
 } from "@/theme";
 import { api } from "@/services/api";
-import { usePreferencesStore } from "@/stores";
+import { useAuthStore, usePreferencesStore } from "@/stores";
 import type { Hazard, RoadReview, RoadSegmentDetail } from "@/types";
 import ReviewFormModal, {
   type ReviewFormSubmitResult,
@@ -635,12 +635,17 @@ function ReviewsCard({
   // Drain any reviews queued offline on a previous session. Without
   // this, a single review queued by a rider who never writes a second
   // one could sit in MMKV indefinitely — `submitReviewWithQueue` only
-  // drains the backlog as part of the next submit attempt.
+  // drains the backlog as part of the next submit attempt. The drain
+  // is scoped to the current user id so a queued payload from a
+  // previous account on this device doesn't get uploaded under the
+  // new session.
+  const currentUserId = useAuthStore((s) => s.user?.id);
   useEffect(() => {
-    void api.flushPendingReviews().catch(() => {
+    if (!currentUserId) return;
+    void api.flushPendingReviews(currentUserId).catch(() => {
       // Drain failures stay queued for next time; nothing to surface.
     });
-  }, []);
+  }, [currentUserId]);
 
   const handleVoteChange = useCallback(
     (reviewId: string, next: Partial<RoadReview>) => {
@@ -651,6 +656,14 @@ function ReviewsCard({
     [],
   );
 
+  // Submit / delete / conflict handlers all rely on the parent's
+  // `onSegmentChanged()` to drive the personalised refetch — when
+  // the segment refetch resolves and `embeddedReviews` updates, the
+  // `[refreshReviews, embeddedReviews]` effect above runs
+  // `refreshReviews()` exactly once. Calling it explicitly here too
+  // would double the API hit for every write (the explicit fetch
+  // races with the parent setState; the embedded-driven fetch fires
+  // once the parent's state propagates regardless).
   const handleSubmitted = useCallback(
     async (result: ReviewFormSubmitResult) => {
       setFormVisible(false);
@@ -659,25 +672,30 @@ function ReviewsCard({
           ? "You're offline — your review is saved locally and will upload when you reconnect."
           : null,
       );
-      await Promise.all([refreshReviews(), onSegmentChanged()]);
+      await onSegmentChanged();
     },
-    [onSegmentChanged, refreshReviews],
+    [onSegmentChanged],
   );
 
   const handleDeleted = useCallback(async () => {
     setFormVisible(false);
+    // Optimistically clear my-review so the Edit affordance hides
+    // before the parent refetch lands. The effect-driven refresh
+    // confirms (or restores) ownership state once the segment
+    // refetch propagates.
     setMyReview(null);
     setStatusBanner(null);
-    await Promise.all([refreshReviews(), onSegmentChanged()]);
-  }, [onSegmentChanged, refreshReviews]);
+    await onSegmentChanged();
+  }, [onSegmentChanged]);
 
   const handleConflict = useCallback(async () => {
     // 409 — server already has a review from this rider on this
-    // segment. Refresh personalised data so `myReview` populates;
-    // the modal stays visible and re-seeds in edit mode via its
-    // `initialReview` prop.
-    await Promise.all([refreshReviews(), onSegmentChanged()]);
-  }, [onSegmentChanged, refreshReviews]);
+    // segment. Refresh the parent segment so `embeddedReviews`
+    // changes; the effect then fires `refreshReviews()` which
+    // populates `myReview`, and the form re-seeds in edit mode via
+    // its `initialReview` prop.
+    await onSegmentChanged();
+  }, [onSegmentChanged]);
 
   const openForm = useCallback(() => setFormVisible(true), []);
 

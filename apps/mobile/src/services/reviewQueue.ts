@@ -59,6 +59,18 @@ export interface ReviewSubmissionPayload {
 
 export interface PendingReview extends ReviewSubmissionPayload {
   id: string;
+  /**
+   * The authenticated user id at enqueue time. The drain only flushes
+   * entries matching the current session's user — without this scope,
+   * a review queued by user A while offline would upload under user
+   * B's session after a logout/login on the same device, both a data
+   * integrity and a privacy issue.
+   *
+   * Optional on the type for forward compatibility with queue entries
+   * persisted before this field was introduced; treated as
+   * foreign-user (skipped) at drain time.
+   */
+  userId?: string;
   enqueuedAt: number;
   attempts: number;
 }
@@ -157,10 +169,15 @@ function readQueue(): PendingReview[] {
 function isPendingReview(value: unknown): value is PendingReview {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Partial<PendingReview>;
+  // `userId` is optional on the runtime check so entries persisted
+  // before the field was introduced still parse cleanly. Older
+  // entries are treated as foreign-user and skipped on drain.
+  const userIdOk = v.userId === undefined || typeof v.userId === "string";
   return (
     typeof v.id === "string" &&
     typeof v.segmentId === "string" &&
     typeof v.rating === "number" &&
+    userIdOk &&
     typeof v.enqueuedAt === "number" &&
     typeof v.attempts === "number"
   );
@@ -201,6 +218,7 @@ function pendingPayload(entry: PendingReview): ReviewSubmissionPayload {
 export async function submitReviewWithQueue(
   payload: ReviewSubmissionPayload,
   uploader: ReviewUploader,
+  currentUserId: string,
 ): Promise<SubmitReviewResult> {
   // Drain backlog first so reviews stay in the order the rider tapped
   // Submit. Gate on the drain's stop reasons (`networkFailed`,
@@ -208,10 +226,10 @@ export async function submitReviewWithQueue(
   // `remaining` could equally be a 4xx poison pill awaiting its retry
   // budget, in which case the link and server are both fine and a
   // healthy fresh review should still go live.
-  const drain = await drainReviewQueue(uploader);
+  const drain = await drainReviewQueue(uploader, currentUserId);
 
   if (drain.networkFailed || drain.transientServerError) {
-    enqueueReview(payload);
+    enqueueReview(payload, currentUserId);
     return { status: "queued", pending: getPendingCount() };
   }
 
@@ -220,7 +238,7 @@ export async function submitReviewWithQueue(
     return { status: "uploaded", review, pending: getPendingCount() };
   } catch (error) {
     if (isRetriableError(error)) {
-      enqueueReview(payload);
+      enqueueReview(payload, currentUserId);
       return { status: "queued", pending: getPendingCount() };
     }
     // 4xx (other than 408/429) propagates — caller-actionable: bad
@@ -232,6 +250,7 @@ export async function submitReviewWithQueue(
 
 export function drainReviewQueue(
   uploader: ReviewUploader,
+  currentUserId: string,
 ): Promise<DrainReviewResult> {
   if (drainInFlight) return drainInFlight;
 
@@ -245,7 +264,14 @@ export function drainReviewQueue(
     const attemptedThisDrain = new Set<string>();
     while (true) {
       const queue = readQueue();
-      const next = queue.find((e) => !attemptedThisDrain.has(e.id));
+      // Only flush entries that belong to the current session's user.
+      // Entries from a different account stay in the queue so that
+      // user can finish them on next sign-in. Pre-`userId` legacy
+      // entries (no field set) are also skipped — without an
+      // owner we can't safely upload under any specific account.
+      const next = queue.find(
+        (e) => e.userId === currentUserId && !attemptedThisDrain.has(e.id),
+      );
       if (!next) break;
       attemptedThisDrain.add(next.id);
       try {
@@ -290,10 +316,14 @@ export function drainReviewQueue(
   return drainInFlight;
 }
 
-export function enqueueReview(payload: ReviewSubmissionPayload): PendingReview {
+export function enqueueReview(
+  payload: ReviewSubmissionPayload,
+  userId: string,
+): PendingReview {
   const entry: PendingReview = {
     ...payload,
     id: nextId(),
+    userId,
     enqueuedAt: Date.now(),
     attempts: 0,
   };
