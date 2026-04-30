@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  US-17 — Android Auto descriptor.
+  Tells the Android Auto host that Tarmoto provides a templated experience
+  (no media playback, no messaging surfaces). The matching meta-data entry
+  in AndroidManifest.xml points the system at this file.
+-->
+<automotiveApp>
+    <uses name="template" />
+</automotiveApp>

@@ -1,37 +1,53 @@
 /**
- * CarPlay bridge — US-17 AC #3 "Basic ride stats visible".
+ * Vehicle ride-status board — US-17 AC #3.
  *
- * Mirrors the active ride from `useRideStore` onto the CarPlay information
- * template so the rider sees current speed, distance, duration, and surface
- * classification on the bike's display while their phone is mounted in the
- * pocket. The template is the simplest CarPlay surface that satisfies the
- * AC — a richer map-template overlay (US-17 AC #1) and the maneuver pane
- * for turn-by-turn (US-17 AC #2 / US-16) are separate slices.
+ * Mirrors the active ride from `useRideStore` onto the connected head
+ * unit so the rider sees current speed, distance, duration, and surface
+ * classification while their phone is in the pocket. Backed by Apple
+ * CarPlay on iOS and Android Auto on Android, fronted by a single
+ * platform-agnostic API the calling hook (`useCarPlayRideMirror`) drives
+ * regardless of which head unit the rider plugs in.
  *
- * Why a service module rather than calling react-native-carplay directly
- * from the hook:
+ * Why two native templates from one module:
  *
- *   1. The CarPlay singleton in `react-native-carplay` runs its constructor
- *      on import — it grabs `NativeModules.RNCarPlay` and starts a
- *      `NativeEventEmitter` that crashes in Jest and on platforms without
- *      the native binding (Android in this slice). Lazy + guarded
- *      require keeps the rest of the app importable.
+ *   - On iOS, CarPlay's `CPInformationTemplate` is the right surface for
+ *     a four-row stats panel. The package exposes it as
+ *     `InformationTemplate` and supports incremental item updates via
+ *     `updateInformationTemplateItems` so we don't flicker the bike
+ *     display every tick.
+ *   - On Android, the Jetpack `androidx.car.app.model.PaneTemplate` is
+ *     the equivalent — same shape (title + rows), but the package's
+ *     `InformationTemplate` has no Android template parser case (see
+ *     `node_modules/react-native-carplay/android/.../TemplateParser.kt`),
+ *     so on Android we synthesize the same content into a `PaneTemplate`
+ *     and refresh it via the base-class `updateTemplate` call.
  *
- *   2. The CarPlay scene only exists on iOS hardware and needs Apple-issued
- *      entitlements; we can't validate the live bridge in CI. Pulling the
- *      bridge behind an interface lets us inject a fake in tests and
- *      assert the template lifecycle without ever touching native code.
+ * Why the bridge module rather than calling `react-native-carplay`
+ * directly from the hook:
  *
- *   3. Formatting (m/s vs km/h, surface labels, duration) is shared with
- *      the on-phone HUD eventually — keeping it in one pure module avoids
- *      drift between what the rider sees on the bike display and what
- *      they'd see on the phone.
+ *   1. The CarPlay singleton in `react-native-carplay` runs its
+ *      constructor on import — it grabs `NativeModules.RNCarPlay` and
+ *      starts a `NativeEventEmitter` that crashes in Jest and on
+ *      platforms without the native binding. A guarded require in this
+ *      module keeps the rest of the app importable.
+ *   2. Hardware testing requires Apple-issued entitlements (CarPlay)
+ *      and an actual Android Auto host or Desktop Head Unit (DHU). We
+ *      can't validate the live bridge in CI. Hiding the bridge behind
+ *      an interface lets us inject a fake in tests and assert the
+ *      template lifecycle without touching native code.
+ *   3. Formatting (km/h, surface labels, duration) is shared between
+ *      the head-unit template and the on-phone HUD — keeping it pure
+ *      avoids drift across surfaces.
  *
- * Non-goals for this slice:
- *   - Android Auto template parity (separate native module surface in
- *     react-native-carplay; will land as a follow-up slice of US-17).
- *   - CarPlay map / navigation templates (US-17 AC #1, #2).
- *   - Voice control for hazard reporting (US-17 AC #4).
+ * Out of scope for this slice:
+ *   - Voice-trigger to start a hazard report (US-17 AC #5). Documented
+ *     scope cut: Android Auto's voice flow requires a Google Assistant
+ *     App Action registration in the Play Console plus an Actions
+ *     model file the head unit hosts; the React surface can request
+ *     the AA system speech-to-text via `SearchTemplate` (which we
+ *     already use for the report flow) but cannot register a voice
+ *     intent like "Hey Google, ask Tarmoto to report a pothole"
+ *     without that out-of-band Console wiring. Tracked separately.
  */
 
 import { Platform } from "react-native";
@@ -40,8 +56,9 @@ import { formatDurationSeconds, qualityLabel } from "@/theme";
 // ── Public types ──
 
 /**
- * Snapshot of the ride state we mirror to CarPlay. Pure data so tests can
- * assert template content without standing up the Zustand store.
+ * Snapshot of the ride state we mirror to the head unit. Pure data so
+ * tests can assert template content without standing up the Zustand
+ * store or native bridge.
  */
 export interface RideStatusBoard {
   /** Speed in km/h, as stored by the ride store. Negative is treated as 0. */
@@ -58,44 +75,68 @@ export interface RideStatusBoard {
   rideType: "free" | "commute" | "trip";
 }
 
-export interface InformationTemplateItem {
+/**
+ * One row on the head-unit status board. Maps 1:1 to a CarPlay
+ * `InformationItem` (title/detail) and a Jetpack `Row` (title/text).
+ */
+export interface StatusBoardItem {
   title: string;
   detail: string;
 }
 
 /**
- * Minimal slice of the react-native-carplay surface this module needs.
- * Defining it locally rather than importing the package's class types means
- * the test fake doesn't have to construct real `InformationTemplate`
- * instances (which would re-trigger the singleton import side effects).
+ * Minimal slice of the underlying native bridge needed by this module.
+ * Defining it locally rather than importing the package's class types
+ * means the test fake doesn't have to construct real native templates,
+ * which would re-trigger the singleton import side effects.
+ *
+ * The implementation chosen at runtime is platform-aware:
+ *
+ *   - iOS uses `CPInformationTemplate` via the package's
+ *     `InformationTemplate` class.
+ *   - Android uses `PaneTemplate` (Jetpack PaneTemplate), refreshed via
+ *     the base-class `updateTemplate` call rather than per-item updates.
+ *
+ * Both implementations are interchangeable behind this interface, so
+ * the controller below doesn't need to branch on platform.
  */
-export interface CarPlayBridge {
+export interface VehicleStatusBridge {
   isAvailable(): boolean;
-  setRootInformationTemplate(config: {
-    title: string;
-    items: InformationTemplateItem[];
-  }): void;
-  updateInformationTemplateItems(items: InformationTemplateItem[]): void;
-  clearRootTemplate(): void;
+  mountStatusBoard(config: { title: string; items: StatusBoardItem[] }): void;
+  updateStatusBoard(items: StatusBoardItem[]): void;
+  clearStatusBoard(): void;
   /**
-   * Subscribe to CarPlay disconnect events. When the bike head-unit
-   * disconnects mid-ride, the native CPTemplate scene is destroyed —
-   * any subsequent `updateInformationTemplateItems` would target a
-   * vanished template and the rider would see a blank display until
-   * the ride ends. The controller uses this hook to clear its
-   * mount-tracking flags so the next ride-tick after a reconnect
-   * re-issues `setRootTemplate` instead.
+   * Subscribe to head-unit disconnect events.
    *
-   * Returns an unsubscribe function for symmetry with the package
-   * API; the no-op bridge returns a no-op unsubscriber.
+   * When the bike head unit disconnects mid-ride, the native template
+   * scene is destroyed — any subsequent update would target a vanished
+   * template and the rider would see a blank display until the ride
+   * ends. The controller uses this hook to clear its mount-tracking
+   * flags so the next ride-tick after a reconnect re-mounts cleanly.
+   *
+   * Returns an unsubscribe function for symmetry with the package API;
+   * the no-op bridge returns a no-op unsubscriber.
    */
   subscribeDisconnect(callback: () => void): () => void;
+  /**
+   * Subscribe to head-unit connect events.
+   *
+   * Android Auto's lifecycle does not reliably emit a disconnect event
+   * when the rider unplugs the head unit (the package's
+   * `CarPlaySession.onDestroy` is a no-op), but every fresh connection
+   * fires `didConnect`. Watching the connect side too lets the
+   * controller treat a reconnect as "discard local mount state, the
+   * previous template is gone" — guaranteeing the next ride-tick
+   * re-issues `setRootTemplate` instead of trying to update an
+   * orphaned template id.
+   */
+  subscribeConnect(callback: () => void): () => void;
 }
 
 // ── Pure formatters ──
 
 /**
- * Render the rider's current speed for the CarPlay row. Sub-1 km/h
+ * Render the rider's current speed for the head-unit row. Sub-1 km/h
  * (i.e. stationary GPS noise) collapses to "—" so the bike display
  * doesn't strobe "0/1/0/1 km/h" while waiting at a light.
  */
@@ -117,17 +158,16 @@ export function formatDistanceKm(km: number): string {
 
 /**
  * mm:ss for short rides, h:mm:ss past the hour mark. Thin delegate to
- * `formatDurationSeconds` in `@/theme` so the CarPlay board and the
- * on-phone HUD always render durations the same way — see that helper
- * for the NaN / negative / sub-second edge cases.
+ * `formatDurationSeconds` in `@/theme` so the head-unit board and the
+ * on-phone HUD always render durations the same way.
  */
 export function formatDuration(totalSeconds: number): string {
   return formatDurationSeconds(totalSeconds);
 }
 
 /**
- * Human-readable label for the ride type — used as the CarPlay template
- * title. Capitalised for the larger CarPlay typography.
+ * Human-readable label for the ride type — used as the head-unit
+ * template title. Capitalised for the larger CarPlay/AA typography.
  */
 export function formatRideTypeTitle(
   rideType: RideStatusBoard["rideType"],
@@ -160,13 +200,12 @@ export function formatQualityDetail(
 }
 
 /**
- * Build the four-row item list for the CarPlay information template.
- * Pure on the inputs so tests can lock in the shape without touching
- * the bridge.
+ * Build the four-row item list for the head-unit status board. Pure on
+ * the inputs so tests can lock in the shape without touching the bridge.
  */
 export function buildRideStatusItems(
   board: RideStatusBoard,
-): InformationTemplateItem[] {
+): StatusBoardItem[] {
   return [
     { title: "Speed", detail: formatSpeedKmh(board.speedKmh) },
     { title: "Distance", detail: formatDistanceKm(board.distanceKm) },
@@ -180,60 +219,67 @@ export function buildRideStatusItems(
 
 // ── Bridge resolution ──
 
-/**
- * Build the default `CarPlayBridge` backed by `react-native-carplay`.
- *
- * iOS-only: returns a no-op bridge on every other platform (Android, Jest
- * via `react-native`'s `Platform` mock). The require is wrapped in
- * try/catch because the package's CarPlay singleton instantiates a
- * `NativeEventEmitter` on import, which throws when the native module
- * isn't linked (e.g. during a fresh install before a `pod install`).
- * A throw here would crash the whole RootNavigator render — much better
- * to silently degrade to no-op and surface the misconfiguration via
- * logs that an iOS dev can see in Xcode.
- */
-export function createDefaultCarPlayBridge(): CarPlayBridge {
-  if (Platform.OS !== "ios") return createNoopBridge();
+/** Stable id so iOS / Android can find the same template across updates. */
+const STATUS_TEMPLATE_ID = "tarmoto-vehicle-status-board";
 
+type CarPlayLib = typeof import("react-native-carplay");
+
+/**
+ * Build the default `VehicleStatusBridge` backed by `react-native-carplay`.
+ *
+ * iOS uses the package's `InformationTemplate`; Android uses
+ * `PaneTemplate` (the Jetpack equivalent). Other platforms (web, Jest
+ * via the `react-native` mock) get a no-op bridge so the calling hook
+ * can be installed unconditionally without platform guards.
+ *
+ * The require is wrapped in try/catch because the package's CarPlay
+ * singleton instantiates a `NativeEventEmitter` on import, which throws
+ * when the native module isn't linked (e.g. before a fresh
+ * `pod install` on iOS or before the Android side autolinks the
+ * library). A throw here would crash the whole RootNavigator render —
+ * much better to silently degrade to no-op and surface the
+ * misconfiguration via native logs that a platform dev can see in
+ * Xcode / Logcat.
+ */
+export function createDefaultCarPlayBridge(): VehicleStatusBridge {
+  if (Platform.OS === "ios") return createIosBridge();
+  if (Platform.OS === "android") return createAndroidBridge();
+  return createNoopBridge();
+}
+
+function createIosBridge(): VehicleStatusBridge {
   try {
-    // Lazy require so the singleton's `new NativeEventEmitter(RNCarPlay)`
-    // runs only on iOS at runtime — never in Jest, never on Android.
-    /* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires */
-    const carplayModule =
-      require("react-native-carplay") as typeof import("react-native-carplay");
-    const { CarPlay, InformationTemplate } = carplayModule;
-    /* eslint-enable @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires */
+    /* eslint-disable @typescript-eslint/no-require-imports */
+    const lib = require("react-native-carplay") as CarPlayLib;
+    /* eslint-enable @typescript-eslint/no-require-imports */
+    const { CarPlay, InformationTemplate } = lib;
 
     let template: InstanceType<typeof InformationTemplate> | null = null;
 
     return {
       isAvailable: () => CarPlay.connected,
-      setRootInformationTemplate: ({ title, items }) => {
+      mountStatusBoard: ({ title, items }) => {
         template = new InformationTemplate({
+          id: STATUS_TEMPLATE_ID,
           title,
           items,
           actions: [],
-          // CarPlay always passes us a callback signature; we don't
-          // expose actions yet, so the handler is a no-op. A future
-          // slice (voice-control, end-ride) will wire it.
           onActionButtonPressed: () => undefined,
         });
         CarPlay.setRootTemplate(template, false);
       },
-      updateInformationTemplateItems: (items) => {
+      updateStatusBoard: (items) => {
         if (!template) return;
         template.updateInformationTemplateItems(items);
       },
-      clearRootTemplate: () => {
+      clearStatusBoard: () => {
         if (!template) return;
-        // The package's public surface has no "remove root" call —
-        // CarPlay always shows a root template once one has been set.
-        // To stop the bike display from showing the stale ride board
-        // (last speed / distance frozen at ride end), install a
-        // minimal idle template via the documented `setRootTemplate`
-        // replacement path. The next ride's mount swaps this back out
-        // for the live ride board.
         try {
+          // CarPlay always shows a root template once one has been set;
+          // there's no public "remove root" call. Replace with a minimal
+          // idle template so the bike display stops showing the stale
+          // ride board (last speed / distance frozen at ride end). The
+          // next ride re-mounts the live board on top.
           const idle = new InformationTemplate({
             title: "Tarmoto",
             items: [],
@@ -249,9 +295,6 @@ export function createDefaultCarPlayBridge(): CarPlayBridge {
         template = null;
       },
       subscribeDisconnect: (callback) => {
-        // Drop the local template reference too — the native scene is
-        // gone with the head-unit, so a stale handle would let the
-        // next setRoot path think it could update items on it.
         const handler = () => {
           template = null;
           callback();
@@ -259,19 +302,112 @@ export function createDefaultCarPlayBridge(): CarPlayBridge {
         CarPlay.registerOnDisconnect(handler);
         return () => CarPlay.unregisterOnDisconnect(handler);
       },
+      subscribeConnect: (callback) => {
+        const handler = () => {
+          // Same intent as disconnect: a fresh connection means the
+          // previous native template is gone. Reset local state so the
+          // controller re-mounts on the next ride-tick.
+          template = null;
+          callback();
+        };
+        CarPlay.registerOnConnect(handler);
+        return () => CarPlay.unregisterOnConnect(handler);
+      },
     };
   } catch {
     return createNoopBridge();
   }
 }
 
-function createNoopBridge(): CarPlayBridge {
+function createAndroidBridge(): VehicleStatusBridge {
+  try {
+    /* eslint-disable @typescript-eslint/no-require-imports */
+    const lib = require("react-native-carplay") as CarPlayLib;
+    /* eslint-enable @typescript-eslint/no-require-imports */
+    const { CarPlay, PaneTemplate } = lib;
+
+    let template: InstanceType<typeof PaneTemplate> | null = null;
+    let mountedTitle: string | null = null;
+
+    const buildPane = (items: StatusBoardItem[]) => ({
+      // The Android `parseRowItem` reads `text` (title) + `detailText`
+      // (subtitle) — matching the iOS InformationItem shape would put
+      // our values on the wrong row, so we map at the boundary.
+      items: items.map((item, index) => ({
+        id: `status-row-${index}`,
+        text: item.title,
+        detailText: item.detail,
+      })),
+    });
+
+    return {
+      isAvailable: () => CarPlay.connected,
+      mountStatusBoard: ({ title, items }) => {
+        template = new PaneTemplate({
+          id: STATUS_TEMPLATE_ID,
+          title,
+          pane: buildPane(items),
+        });
+        mountedTitle = title;
+        CarPlay.setRootTemplate(template, false);
+      },
+      updateStatusBoard: (items) => {
+        if (!template) return;
+        // PaneTemplate has no per-row update API on the package
+        // surface; the base-class `updateTemplate` re-pushes the full
+        // config, which the Android module forwards to the existing
+        // screen via `screen.invalidate()` — no flicker, no re-mount.
+        template.updateTemplate({
+          title: mountedTitle ?? "Tarmoto",
+          pane: buildPane(items),
+        });
+      },
+      clearStatusBoard: () => {
+        if (!template) return;
+        try {
+          const idle = new PaneTemplate({
+            title: "Tarmoto",
+            pane: { items: [] },
+          });
+          CarPlay.setRootTemplate(idle, false);
+        } catch {
+          // AA host may have torn down the screen manager already.
+        }
+        template = null;
+        mountedTitle = null;
+      },
+      subscribeDisconnect: (callback) => {
+        const handler = () => {
+          template = null;
+          mountedTitle = null;
+          callback();
+        };
+        CarPlay.registerOnDisconnect(handler);
+        return () => CarPlay.unregisterOnDisconnect(handler);
+      },
+      subscribeConnect: (callback) => {
+        const handler = () => {
+          template = null;
+          mountedTitle = null;
+          callback();
+        };
+        CarPlay.registerOnConnect(handler);
+        return () => CarPlay.unregisterOnConnect(handler);
+      },
+    };
+  } catch {
+    return createNoopBridge();
+  }
+}
+
+function createNoopBridge(): VehicleStatusBridge {
   return {
     isAvailable: () => false,
-    setRootInformationTemplate: () => undefined,
-    updateInformationTemplateItems: () => undefined,
-    clearRootTemplate: () => undefined,
+    mountStatusBoard: () => undefined,
+    updateStatusBoard: () => undefined,
+    clearStatusBoard: () => undefined,
     subscribeDisconnect: () => () => undefined,
+    subscribeConnect: () => () => undefined,
   };
 }
 
@@ -284,7 +420,7 @@ function createNoopBridge(): CarPlayBridge {
  * module-scoped + lazily resolved: tests inject their fake before the
  * hook's first render via `__setCarPlayBridgeForTest`.
  */
-let activeBridge: CarPlayBridge | null = null;
+let activeBridge: VehicleStatusBridge | null = null;
 let templateMounted = false;
 let rideStatusSuspended = false;
 /**
@@ -295,62 +431,71 @@ let rideStatusSuspended = false;
  */
 let mountedTitle: string | null = null;
 
-function getBridge(): CarPlayBridge {
+function getBridge(): VehicleStatusBridge {
   if (!activeBridge) {
     activeBridge = createDefaultCarPlayBridge();
-    attachDisconnectHandler(activeBridge);
+    attachLifecycleHandlers(activeBridge);
   }
   return activeBridge;
 }
 
 /**
- * Reset mount-tracking flags when CarPlay disconnects so the next
- * ride-tick after a reconnect re-issues `setRootTemplate` instead of
- * trying to push items to a destroyed native template. Called once
- * when the lazy bridge is first resolved (and re-armed by
+ * Reset mount-tracking flags whenever the head unit's connection
+ * lifecycle resets the native template scene — disconnect destroys the
+ * scene, and on Android Auto a fresh connect after a host restart can
+ * also drop the previous template id from the host's screen manager.
+ * Watching both ensures the next ride-tick re-issues
+ * `setRootTemplate` instead of trying to push items to a vanished
+ * template.
+ *
+ * Called once when the lazy bridge is first resolved (and re-armed by
  * `__setCarPlayBridgeForTest` so injected fakes can simulate the
- * disconnect path the same way).
+ * lifecycle paths the same way).
  */
-function attachDisconnectHandler(bridge: CarPlayBridge): void {
-  bridge.subscribeDisconnect(() => {
+function attachLifecycleHandlers(bridge: VehicleStatusBridge): void {
+  const reset = () => {
     templateMounted = false;
     mountedTitle = null;
-  });
+  };
+  bridge.subscribeDisconnect(reset);
+  bridge.subscribeConnect(reset);
 }
 
 /**
- * Mount the CarPlay information template for the current ride and seed
- * it with the rider's first stats snapshot. Idempotent — if the template
- * is already mounted (e.g. the rider backgrounded and re-foregrounded
- * the app), the call falls through to an items update so the bike display
- * never blanks while we re-mount. If the rider's ride type changed
- * (different title), we re-issue `setRootInformationTemplate` so the
- * title refreshes too.
+ * Mount the head-unit information board for the current ride and seed
+ * it with the rider's first stats snapshot. Idempotent — if the
+ * template is already mounted (e.g. the rider backgrounded and
+ * re-foregrounded the app), the call falls through to an items update
+ * so the bike display never blanks while we re-mount. If the rider's
+ * ride type changed (different title), we re-issue `mountStatusBoard`
+ * so the title refreshes too.
  *
  * Returns `true` when the bridge accepted the request, or `false` when
- * CarPlay isn't reachable (Android, no connection, missing native
- * module) — callers can use this to short-circuit subsequent ticks.
+ * the head unit isn't reachable (no connection, missing native module,
+ * Jest) — callers can use this to short-circuit subsequent ticks.
  */
 export function mountRideStatusBoard(board: RideStatusBoard): boolean {
   const bridge = getBridge();
   if (rideStatusSuspended) return false;
-  // Skip the native round-trip when CarPlay isn't connected — saves
+  // Skip the native round-trip when no head unit is connected — saves
   // bridge traffic on every ride-store tick while the rider's phone
-  // sits unmounted, and keeps the no-op iOS / Android path symmetric.
+  // sits unmounted, and keeps the iOS / Android / no-op paths
+  // symmetric.
   if (!bridge.isAvailable()) return false;
 
   const items = buildRideStatusItems(board);
   const title = formatRideTypeTitle(board.rideType);
 
   if (templateMounted && title === mountedTitle) {
-    bridge.updateInformationTemplateItems(items);
+    bridge.updateStatusBoard(items);
     return true;
   }
 
-  // Fresh mount, or ride-type changed — setRootTemplate replaces the
-  // current root (documented contract of the package), so this handles
-  // both the first-mount and title-change paths.
-  bridge.setRootInformationTemplate({ title, items });
+  // Fresh mount, or ride-type changed — `mountStatusBoard` replaces the
+  // current root template (documented contract of the package on both
+  // platforms), so this handles both the first-mount and title-change
+  // paths.
+  bridge.mountStatusBoard({ title, items });
   templateMounted = true;
   mountedTitle = title;
   return true;
@@ -358,16 +503,16 @@ export function mountRideStatusBoard(board: RideStatusBoard): boolean {
 
 /**
  * Tear down the template at the end of a ride. Idempotent so a stop
- * dispatched while the template was never mounted (offline, no CarPlay)
- * is safe.
+ * dispatched while the template was never mounted (offline, no head
+ * unit connected) is safe.
  */
 export function unmountRideStatusBoard(): void {
   if (!templateMounted) return;
   const bridge = getBridge();
-  // Even if CarPlay disconnected mid-ride we still drop our local state
-  // so the next ride mounts cleanly; the bridge is allowed to no-op on
-  // its side when `isAvailable` is false.
-  if (bridge.isAvailable()) bridge.clearRootTemplate();
+  // Even if the head unit disconnected mid-ride we still drop our local
+  // state so the next ride mounts cleanly; the bridge is allowed to
+  // no-op on its side when `isAvailable` is false.
+  if (bridge.isAvailable()) bridge.clearStatusBoard();
   templateMounted = false;
   mountedTitle = null;
 }
@@ -379,19 +524,22 @@ export function unmountRideStatusBoard(): void {
  * default). Tests should pair this with `__resetCarPlayStateForTest`
  * between cases so the `templateMounted` flag doesn't bleed across.
  */
-export function __setCarPlayBridgeForTest(bridge: CarPlayBridge | null): void {
+export function __setCarPlayBridgeForTest(
+  bridge: VehicleStatusBridge | null,
+): void {
   activeBridge = bridge;
   templateMounted = false;
   mountedTitle = null;
-  // Re-arm the disconnect handler against the new fake so tests can
+  // Re-arm the lifecycle handlers against the new fake so tests can
   // exercise the reconnect-after-disconnect path through the same
   // contract the production bridge uses.
-  if (bridge) attachDisconnectHandler(bridge);
+  if (bridge) attachLifecycleHandlers(bridge);
 }
 
 /**
- * Force-reset the mount flag without touching the bridge — useful when a
- * test wants to assert mount-vs-update behavior twice in the same case.
+ * Force-reset the mount flag without touching the bridge — useful when
+ * a test wants to assert mount-vs-update behavior twice in the same
+ * case.
  */
 export function __resetCarPlayStateForTest(): void {
   templateMounted = false;
@@ -400,11 +548,10 @@ export function __resetCarPlayStateForTest(): void {
 }
 
 /**
- * Temporarily suppress ride-board mounts while another CarPlay / Android
- * Auto surface owns the vehicle display (e.g. the full navigation map).
- * The board state is reset so the next post-resume mount re-issues the
- * root template instead of trying to update an off-screen information
- * template.
+ * Temporarily suppress ride-board mounts while another head-unit
+ * surface owns the display (e.g. the full navigation map). The board
+ * state is reset so the next post-resume mount re-issues the root
+ * template instead of trying to update an off-screen template.
  */
 export function suspendRideStatusBoard(): void {
   rideStatusSuspended = true;
@@ -413,11 +560,25 @@ export function suspendRideStatusBoard(): void {
 }
 
 /**
- * Re-enable ride-board mounts after a different vehicle-display surface
- * yields control back to the root information template.
+ * Re-enable ride-board mounts after a different head-unit surface
+ * yields control back to the root status board.
  */
 export function resumeRideStatusBoard(): void {
   rideStatusSuspended = false;
   templateMounted = false;
   mountedTitle = null;
 }
+
+// ── Backwards-compatible aliases ──
+
+/**
+ * @deprecated Use `VehicleStatusBridge`. Kept as an alias because
+ * older test fakes referenced the iOS-leaning name; will be removed
+ * in a follow-up sweep.
+ */
+export type CarPlayBridge = VehicleStatusBridge;
+
+/**
+ * @deprecated Use `StatusBoardItem`.
+ */
+export type InformationTemplateItem = StatusBoardItem;

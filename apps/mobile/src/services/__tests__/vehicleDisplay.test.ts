@@ -2,6 +2,8 @@ import type { LatLng, HazardType } from "@/types";
 import {
   VehicleDisplayController,
   buildHazardSearchItems,
+  buildNavigationPaneItems,
+  formatNextManeuverRow,
   matchHazardTypeFromText,
   type VehicleDisplayBridge,
   type VehicleNavigationSnapshot,
@@ -14,6 +16,7 @@ function makeReportHazardMock() {
 class FakeBridge implements VehicleDisplayBridge {
   mountNavigation = jest.fn();
   unmountNavigation = jest.fn();
+  syncNavigation = jest.fn();
   openSearch = jest.fn();
   updateSearch = jest.fn();
   closeSearch = jest.fn();
@@ -115,6 +118,22 @@ describe("VehicleDisplayController", () => {
     expect(bridge.mountNavigation).toHaveBeenCalledTimes(1);
   });
 
+  it("forwards every snapshot tick to syncNavigation for native pane updates", () => {
+    // The Android Auto path needs every snapshot to push the pane
+    // natively (the React component is iOS-only). On iOS the bridge
+    // implementation no-ops syncNavigation since the React surface
+    // re-renders from the store automatically — the fake just records
+    // that the controller did call it on every tick.
+    const first = makeSnapshot();
+    const second = makeSnapshot({ distanceToNextM: 150 });
+    controller.sync(first);
+    controller.sync(second);
+
+    expect(bridge.syncNavigation).toHaveBeenCalledTimes(2);
+    expect(bridge.syncNavigation.mock.calls[0]?.[0]).toEqual(first);
+    expect(bridge.syncNavigation.mock.calls[1]?.[0]).toEqual(second);
+  });
+
   it("opens the hazard search when the report action is pressed", () => {
     controller.sync(makeSnapshot());
     controller.handleTemplateAction("report-hazard");
@@ -182,6 +201,87 @@ describe("VehicleDisplayController", () => {
   });
 });
 
+describe("formatNextManeuverRow", () => {
+  it("renders the upcoming maneuver as 'Verb in distance' with the road name on the detail line", () => {
+    expect(
+      formatNextManeuverRow(
+        makeSnapshot({
+          distanceToNextM: 320,
+          nextManeuver: { type: "turn-right", roadName: "B500" },
+        }),
+      ),
+    ).toEqual({ title: "Turn right in 320 m", detail: "onto B500" });
+  });
+
+  it("falls back to the trip title when the maneuver has no road name", () => {
+    expect(
+      formatNextManeuverRow(
+        makeSnapshot({
+          title: "Sunday Alps",
+          distanceToNextM: 1500,
+          nextManeuver: { type: "turn-left" },
+        }),
+      ),
+    ).toEqual({ title: "Turn left in 1.5 km", detail: "Sunday Alps" });
+  });
+
+  it("collapses to 'Continue' when there is no upcoming maneuver", () => {
+    expect(
+      formatNextManeuverRow(
+        makeSnapshot({ nextManeuver: null, title: "Sunday Alps" }),
+      ),
+    ).toEqual({ title: "Continue", detail: "Sunday Alps" });
+  });
+
+  it("surfaces off-route state ahead of the maneuver row", () => {
+    expect(
+      formatNextManeuverRow(
+        makeSnapshot({
+          offRoute: true,
+          offRouteDistanceM: 230,
+          nextManeuver: { type: "turn-right", roadName: "B500" },
+        }),
+      ),
+    ).toEqual({ title: "Off route", detail: "230 m from path" });
+  });
+});
+
+describe("buildNavigationPaneItems", () => {
+  it("emits exactly four rows in maneuver/speed/distance/duration order", () => {
+    // Android Auto's MapTemplate caps the pane at 4 rows. Adding a
+    // fifth would silently drop on the host, so we lock the count
+    // here to catch accidental regressions.
+    const items = buildNavigationPaneItems(makeSnapshot());
+    expect(items).toHaveLength(4);
+    expect(items.map((item) => item.title)).toEqual([
+      "Turn right in 320 m",
+      "Speed",
+      "Distance",
+      "Duration",
+    ]);
+  });
+
+  it("threads ride stats through their formatters", () => {
+    const items = buildNavigationPaneItems(
+      makeSnapshot({
+        rideStats: {
+          rideType: "trip",
+          speedKmh: 0,
+          distanceKm: 0,
+          durationSeconds: 0,
+        },
+      }),
+    );
+    expect(items.find((item) => item.title === "Speed")?.detail).toBe("—");
+    expect(items.find((item) => item.title === "Distance")?.detail).toBe(
+      "0.0 km",
+    );
+    expect(items.find((item) => item.title === "Duration")?.detail).toBe(
+      "0:00",
+    );
+  });
+});
+
 describe("vehicle display runtime bridge", () => {
   afterEach(() => {
     jest.resetModules();
@@ -215,7 +315,13 @@ describe("vehicle display runtime bridge", () => {
             },
           },
           MapTemplate: class {
-            constructor(_: unknown) {}
+            config: unknown;
+            constructor(config: unknown) {
+              this.config = config;
+            }
+            updateConfig(config: unknown) {
+              this.config = config;
+            }
           },
           SearchTemplate: class {
             constructor(_: unknown) {}
@@ -244,6 +350,173 @@ describe("vehicle display runtime bridge", () => {
     for (const remove of removeFns) {
       expect(remove).toHaveBeenCalledTimes(1);
     }
+  });
+
+  it("pushes the next-maneuver pane to the Android map template via updateConfig", () => {
+    // Android Auto path: the bridge synthesises a Pane from the
+    // navigation snapshot and pushes it through the package's
+    // `updateConfig` so the head unit shows the next maneuver and
+    // ride stats natively. iOS skips this path because the
+    // React-component map surface re-renders from the store.
+    const updateConfig = jest.fn();
+    let lastMapConfig: { id?: string; pane?: unknown } | null = null;
+
+    jest.isolateModules(() => {
+      jest.doMock("react-native", () => ({
+        Platform: { OS: "android" },
+      }));
+      jest.doMock("react-native-carplay", () => {
+        const addListener = jest.fn(() => ({ remove: jest.fn() }));
+        return {
+          CarPlay: {
+            connected: true,
+            emitter: { addListener },
+            setRootTemplate: jest.fn(),
+            pushTemplate: jest.fn(),
+            popTemplate: jest.fn(),
+            bridge: {
+              reactToUpdatedSearchText: jest.fn(),
+              reactToSelectedResult: jest.fn(),
+            },
+          },
+          MapTemplate: class {
+            config: unknown;
+            constructor(config: { id?: string }) {
+              this.config = config;
+              lastMapConfig = config;
+            }
+            updateConfig = (config: { id?: string; pane?: unknown }) => {
+              this.config = config;
+              lastMapConfig = config;
+              updateConfig(config);
+            };
+          },
+          SearchTemplate: class {
+            constructor(_: unknown) {}
+            updateTemplate(_: unknown) {}
+          },
+          InformationTemplate: class {
+            constructor(_: unknown) {}
+          },
+        };
+      });
+      jest.doMock("../carplay", () => ({
+        mountRideStatusBoard: jest.fn(),
+        resumeRideStatusBoard: jest.fn(),
+        suspendRideStatusBoard: jest.fn(),
+      }));
+      jest.doMock("@/components/VehicleDisplaySurface", () => "VehicleDisplay");
+
+      const { syncVehicleNavigationDisplay, stopVehicleNavigationDisplay } =
+        require("../vehicleDisplay") as typeof import("../vehicleDisplay");
+
+      syncVehicleNavigationDisplay(
+        makeSnapshot({
+          distanceToNextM: 320,
+          nextManeuver: { type: "turn-right", roadName: "B500" },
+        }),
+        makeReportHazardMock(),
+      );
+
+      // Same snapshot should be diff-skipped to respect AA's host
+      // rate-limit on template updates.
+      syncVehicleNavigationDisplay(
+        makeSnapshot({
+          distanceToNextM: 320,
+          nextManeuver: { type: "turn-right", roadName: "B500" },
+        }),
+        makeReportHazardMock(),
+      );
+
+      // A real change (closer to the maneuver) should refresh.
+      syncVehicleNavigationDisplay(
+        makeSnapshot({
+          distanceToNextM: 150,
+          nextManeuver: { type: "turn-right", roadName: "B500" },
+        }),
+        makeReportHazardMock(),
+      );
+
+      stopVehicleNavigationDisplay();
+    });
+
+    expect(updateConfig).toHaveBeenCalledTimes(2);
+    const lastCall = updateConfig.mock.calls.at(-1)?.[0] as {
+      pane: { items: Array<{ id: string; text: string; detailText: string }> };
+    };
+    expect(lastCall.pane.items[0]).toEqual({
+      id: "nav-row-0",
+      text: "Turn right in 150 m",
+      detailText: "onto B500",
+    });
+    expect(lastCall.pane.items.map((row) => row.text)).toEqual([
+      "Turn right in 150 m",
+      "Speed",
+      "Distance",
+      "Duration",
+    ]);
+    expect(lastMapConfig).not.toBeNull();
+  });
+
+  it("does not push native pane updates on iOS (the React surface re-renders from the store)", () => {
+    const updateConfig = jest.fn();
+
+    jest.isolateModules(() => {
+      jest.doMock("react-native", () => ({
+        Platform: { OS: "ios" },
+      }));
+      jest.doMock("react-native-carplay", () => {
+        const addListener = jest.fn(() => ({ remove: jest.fn() }));
+        return {
+          CarPlay: {
+            connected: true,
+            emitter: { addListener },
+            setRootTemplate: jest.fn(),
+            pushTemplate: jest.fn(),
+            popTemplate: jest.fn(),
+            bridge: {
+              reactToUpdatedSearchText: jest.fn(),
+              reactToSelectedResult: jest.fn(),
+            },
+          },
+          MapTemplate: class {
+            config: unknown;
+            constructor(config: unknown) {
+              this.config = config;
+            }
+            updateConfig = (config: unknown) => {
+              this.config = config;
+              updateConfig(config);
+            };
+          },
+          SearchTemplate: class {
+            constructor(_: unknown) {}
+            updateTemplate(_: unknown) {}
+          },
+          InformationTemplate: class {
+            constructor(_: unknown) {}
+          },
+        };
+      });
+      jest.doMock("../carplay", () => ({
+        mountRideStatusBoard: jest.fn(),
+        resumeRideStatusBoard: jest.fn(),
+        suspendRideStatusBoard: jest.fn(),
+      }));
+      jest.doMock("@/components/VehicleDisplaySurface", () => "VehicleDisplay");
+
+      const { syncVehicleNavigationDisplay, stopVehicleNavigationDisplay } =
+        require("../vehicleDisplay") as typeof import("../vehicleDisplay");
+
+      syncVehicleNavigationDisplay(makeSnapshot(), makeReportHazardMock());
+      syncVehicleNavigationDisplay(
+        makeSnapshot({ distanceToNextM: 220 }),
+        makeReportHazardMock(),
+      );
+      stopVehicleNavigationDisplay();
+    });
+
+    expect(updateConfig).not.toHaveBeenCalled();
   });
 });
 
