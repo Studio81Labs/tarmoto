@@ -345,27 +345,43 @@ export default function ReviewFormModal({
     const photoUrls = photos
       .map((p) => p.url)
       .filter((u): u is string => Boolean(u));
+    const trimmedComment = comment.trim();
+    const trimmedBike = bikeModel.trim();
     setSubmitting(true);
     setError(null);
 
-    const payload = {
-      segmentId,
-      rating,
-      comment: comment.trim() ? comment.trim() : undefined,
-      bikeModel: bikeModel.trim() ? bikeModel.trim() : undefined,
-      photos: photoUrls.length > 0 ? photoUrls : undefined,
-    };
-
     try {
       if (isEditing) {
-        const review = await api.updateReview(payload);
+        // Update path uses explicit `null` / `[]` for cleared
+        // optional fields. `JSON.stringify` strips `undefined`,
+        // which would let a permissive PUT handler interpret a
+        // missing key as "keep existing value" — clearing the
+        // rider's comment in the UI would silently leave the old
+        // comment on the server. Sending the explicit empty form
+        // keeps the wire payload unambiguous regardless of how the
+        // backend reads PUT semantics.
+        const review = await api.updateReview({
+          segmentId,
+          rating,
+          comment: trimmedComment || null,
+          bikeModel: trimmedBike || null,
+          photos: photoUrls.length > 0 ? photoUrls : [],
+        });
         // Await the parent's async work so `submitting` stays true
         // until the refresh + segment refetch land — otherwise the
         // form would flip to "Saved" while the parent list still
         // shows stale data.
         await onSubmitted({ status: "uploaded", review });
       } else {
-        const result = await api.submitReviewWithQueue(payload);
+        // Create path can omit empty optional fields — there's no
+        // existing row to "preserve."
+        const result = await api.submitReviewWithQueue({
+          segmentId,
+          rating,
+          comment: trimmedComment || undefined,
+          bikeModel: trimmedBike || undefined,
+          photos: photoUrls.length > 0 ? photoUrls : undefined,
+        });
         await onSubmitted({ status: result.status, review: result.review });
       }
     } catch (e: unknown) {

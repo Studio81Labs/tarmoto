@@ -572,6 +572,15 @@ function ReviewsCard({
     currentSegmentRef.current = segmentId;
   }, [segmentId]);
 
+  // Hold a ref to the latest embeddedReviews so `refreshReviews`'s
+  // failure-fallback can read the current value without invalidating
+  // the callback (and re-firing every effect that depends on it) on
+  // every parent render.
+  const embeddedReviewsRef = useRef(embeddedReviews);
+  useEffect(() => {
+    embeddedReviewsRef.current = embeddedReviews;
+  }, [embeddedReviews]);
+
   const refreshReviews = useCallback(async () => {
     const fetchedSegmentId = segmentId;
     try {
@@ -581,10 +590,17 @@ function ReviewsCard({
       const own = personalised.find((r) => r.is_mine) ?? null;
       setMyReview(own);
     } catch {
-      // Fall back to the embedded list silently — the segment payload
-      // already carries the public-facing fields, so the rider still
-      // sees other riders' reviews. Edit/delete affordances simply
-      // won't appear if we can't confirm who owns each row.
+      // Personalised fetch failed (network blip, server error). Fall
+      // back to the latest embedded list so newly created or deleted
+      // reviews fetched by the parent (pull-to-refresh /
+      // onSegmentChanged) still surface — without this, the local
+      // mirror would stay pinned to the previous personalised
+      // snapshot until the next successful refetch. Edit/delete
+      // affordances temporarily disappear because we can't confirm
+      // ownership, but the row visibility is more important than the
+      // affordance.
+      if (currentSegmentRef.current !== fetchedSegmentId) return;
+      setReviews(embeddedReviewsRef.current);
     }
   }, [segmentId]);
 

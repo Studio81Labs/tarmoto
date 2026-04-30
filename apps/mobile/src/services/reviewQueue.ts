@@ -44,10 +44,17 @@ import type { RoadReview } from "@/types";
 export interface ReviewSubmissionPayload {
   segmentId: string;
   rating: number;
-  comment?: string;
-  bikeModel?: string;
+  /**
+   * `null` explicitly clears the field (used on the update path so a
+   * cleared comment makes it onto the wire — `JSON.stringify` strips
+   * `undefined`, which would let a permissive PUT handler read it as
+   * "keep existing value"). Use `undefined` on create to omit the
+   * field entirely. Same convention for `bikeModel` and `photos`.
+   */
+  comment?: string | null;
+  bikeModel?: string | null;
   /** URLs of photos already persisted on Tarmoto media storage. */
-  photos?: string[];
+  photos?: string[] | null;
 }
 
 export interface PendingReview extends ReviewSubmissionPayload {

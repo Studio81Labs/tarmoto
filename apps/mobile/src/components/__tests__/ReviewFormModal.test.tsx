@@ -256,6 +256,45 @@ describe("ReviewFormModal", () => {
     );
   });
 
+  it("update path sends explicit null/[] for cleared optional fields", async () => {
+    // Regression: undefined values are stripped by JSON.stringify, so
+    // a permissive PUT handler could read missing keys as "keep
+    // existing." Sending explicit null for cleared text and an empty
+    // array for cleared photos keeps the wire payload unambiguous.
+    const initialReview = makeReview({
+      rating: 5,
+      comment: "Original",
+      bike_model: "BMW R1250GS",
+      photos: ["https://api.tarmoto.test/uploads/road-review-photos/old.jpg"],
+    });
+    updateReviewMock.mockResolvedValueOnce(makeReview());
+
+    render(
+      <ReviewFormModal
+        visible
+        segmentId="seg-1"
+        initialReview={initialReview}
+        onClose={jest.fn()}
+        onSubmitted={jest.fn()}
+      />,
+    );
+
+    // Clear comment, bike model, and remove the seeded photo.
+    fireEvent.changeText(screen.getByLabelText("Review notes"), "");
+    fireEvent.changeText(screen.getByLabelText("Bike model"), "");
+    fireEvent.press(screen.getByLabelText("Remove photo 1"));
+    fireEvent.press(screen.getByLabelText("Save review changes"));
+
+    await waitFor(() => expect(updateReviewMock).toHaveBeenCalledTimes(1));
+    expect(updateReviewMock).toHaveBeenCalledWith({
+      segmentId: "seg-1",
+      rating: 5,
+      comment: null,
+      bikeModel: null,
+      photos: [],
+    });
+  });
+
   it("routes edit-mode saves through updateReview", async () => {
     const initialReview = makeReview({ rating: 4, comment: "Original" });
     updateReviewMock.mockResolvedValueOnce(
