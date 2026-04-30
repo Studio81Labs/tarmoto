@@ -715,6 +715,17 @@ export const usersApi = {
 };
 
 // ── Account endpoints (not yet in spec) ──
+export interface DataExportRequestView {
+  id: string;
+  status: "queued" | "processing" | "ready" | "failed" | "expired";
+  expiresAt: string;
+  createdAt: string;
+  completedAt: string | null;
+  downloadUrl: string | null;
+  byteSize: number | null;
+  errorMessage: string | null;
+}
+
 export const accountApi = {
   updateProfile: (data: unknown) =>
     apiFetch("/account/profile", {
@@ -748,7 +759,12 @@ export const accountApi = {
     }),
   deleteBike: (id: string) =>
     apiFetch(`/account/bikes/${id}`, { method: "DELETE" }),
-  exportData: () => apiFetch("/account/export", { method: "POST" }),
+  requestDataExport: () =>
+    apiFetch<DataExportRequestView>("/account/data-export", {
+      method: "POST",
+    }),
+  getDataExport: (id: string) =>
+    apiFetch<DataExportRequestView>(`/account/data-export/${id}`),
   deleteAccount: (input: { password: string; reason?: string }) =>
     apiFetch<{
       status: "scheduled";

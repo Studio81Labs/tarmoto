@@ -8,9 +8,10 @@ import {
   STRIPE_BILLING_CLIENT,
   StripeNodeBillingClient,
 } from './stripe-billing.client.js';
+import { DataExportModule } from './data-export/data-export.module.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User])],
+  imports: [TypeOrmModule.forFeature([User]), DataExportModule],
   controllers: [AccountController],
   providers: [
     AccountService,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 import {
@@ -9,7 +9,6 @@ import {
   Check,
   Download,
   Loader2,
-  Mail,
   Trash2,
   X,
 } from "lucide-react";
@@ -20,8 +19,42 @@ import { isDeletionConfirmed } from "@/lib/account-deletion";
 type ExportState =
   | { kind: "idle" }
   | { kind: "requesting" }
-  | { kind: "requested" }
+  | { kind: "polling"; id: string }
+  | { kind: "ready"; id: string; downloadUrl: string }
   | { kind: "error"; message: string };
+
+type ExportView = Awaited<
+  ReturnType<typeof accountApi.requestDataExport>
+>["data"];
+
+// Maps a backend view to a terminal companion state, or null if the
+// caller should keep polling. Centralizing the mapping keeps the POST
+// handler and the polling tick in lockstep, and — importantly —
+// treats `status === "ready"` as terminal regardless of whether
+// `downloadUrl` came through. Without this, a (contract-breaking) ready
+// row with a falsy URL would trap the user on a spinner forever.
+function nextExportState(view: ExportView): ExportState | null {
+  if (view.status === "ready") {
+    if (view.downloadUrl) {
+      return {
+        kind: "ready",
+        id: view.id,
+        downloadUrl: view.downloadUrl,
+      };
+    }
+    return {
+      kind: "error",
+      message: "Export marked ready but the download link is missing.",
+    };
+  }
+  if (view.status === "failed" || view.status === "expired") {
+    return {
+      kind: "error",
+      message: view.errorMessage ?? `Export ${view.status}`,
+    };
+  }
+  return null;
+}
 
 type DeleteState =
   | { kind: "idle" }
@@ -42,17 +75,87 @@ export default function DataPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   async function requestExport() {
-    if (exportState.kind === "requesting") return;
+    if (exportState.kind === "requesting" || exportState.kind === "polling")
+      return;
     setExportState({ kind: "requesting" });
     try {
-      await accountApi.exportData();
-      setExportState({ kind: "requested" });
+      const { data: view } = await accountApi.requestDataExport();
+      const next = nextExportState(view);
+      if (next) setExportState(next);
+      else setExportState({ kind: "polling", id: view.id });
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Could not start export";
       setExportState({ kind: "error", message });
     }
   }
+
+  // Only re-run when entering or leaving the polling state, or when the
+  // request id changes — depending on the whole exportState would tear
+  // down the timer on any sibling state change.
+  const pollingId = exportState.kind === "polling" ? exportState.id : null;
+  useEffect(() => {
+    if (pollingId === null) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    // Tolerate transient polling failures (CDN 502, brief network drops,
+    // momentary 401 during token refresh) — the backend job is still
+    // alive, so giving up on the first error would strand the user with
+    // a misleading "Polling failed" while the bundle is still cooking.
+    // Only escalate to error after several consecutive failures.
+    const MAX_CONSECUTIVE_ERRORS = 5;
+    // Hard client-side cap on how long we'll wait for a terminal
+    // status. Real exports complete in seconds; if we're still polling
+    // after 10 min the worker is almost certainly dead in a way the
+    // backend hasn't yet reflected on the row (and the server's
+    // stuck-row threshold is 30 min, so this fires first). Without
+    // this, a worker that died AND failed to record its own failure
+    // would have us polling for 7 days until the TTL expired.
+    const MAX_POLL_MS = 10 * 60 * 1000;
+    const startedAt = Date.now();
+    let consecutiveErrors = 0;
+    // Self-rescheduling tick instead of setInterval: at most one
+    // request is in flight at a time, so a slow backend can't queue up
+    // overlapping polls and out-of-order responses can't regress a
+    // newer state into an older one.
+    const tick = async () => {
+      if (Date.now() - startedAt > MAX_POLL_MS) {
+        setExportState({
+          kind: "error",
+          message:
+            "Export is taking longer than expected. Please try again in a few minutes.",
+        });
+        return;
+      }
+      try {
+        const { data: view } = await accountApi.getDataExport(pollingId);
+        if (cancelled) return;
+        consecutiveErrors = 0;
+        const next = nextExportState(view);
+        if (next) {
+          setExportState(next);
+          return;
+        }
+        timer = setTimeout(() => void tick(), 2000);
+      } catch (err) {
+        if (cancelled) return;
+        consecutiveErrors += 1;
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+          setExportState({
+            kind: "error",
+            message: err instanceof Error ? err.message : "Polling failed",
+          });
+          return;
+        }
+        timer = setTimeout(() => void tick(), 2000);
+      }
+    };
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [pollingId]);
 
   return (
     <div className="p-6 max-w-3xl mx-auto animate-fade-in">
@@ -80,8 +183,8 @@ export default function DataPage() {
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
               We&apos;ll prepare a ZIP archive with everything tied to your
-              account and email you a download link. The link stays valid for 7
-              days.
+              account. The download link appears here when ready and stays valid
+              for 7 days.
             </p>
           </div>
         </div>
@@ -101,13 +204,17 @@ export default function DataPage() {
             onClick={requestExport}
             disabled={
               exportState.kind === "requesting" ||
-              exportState.kind === "requested"
+              exportState.kind === "polling"
             }
             className="px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
           >
-            {exportState.kind === "requesting" ? (
+            {exportState.kind === "requesting" ||
+            exportState.kind === "polling" ? (
               <>
-                <Loader2 size={14} className="animate-spin" /> Requesting…
+                <Loader2 size={14} className="animate-spin" />
+                {exportState.kind === "requesting"
+                  ? "Requesting…"
+                  : "Assembling your data…"}
               </>
             ) : (
               <>
@@ -116,13 +223,23 @@ export default function DataPage() {
             )}
           </button>
 
-          {exportState.kind === "requested" && (
+          {exportState.kind === "polling" && (
             <span
               role="status"
-              className="inline-flex items-center gap-1.5 text-sm text-tarmoto-cyan"
+              className="inline-flex items-center gap-1.5 text-sm text-slate-400"
             >
-              <Mail size={14} /> Export started — check your email shortly.
+              Usually takes under a minute.
             </span>
+          )}
+          {exportState.kind === "ready" && (
+            <a
+              href={exportState.downloadUrl}
+              download
+              role="status"
+              className="inline-flex items-center gap-1.5 text-sm text-tarmoto-cyan underline hover:text-tarmoto-cyan-light"
+            >
+              <Download size={14} /> Download your data (link expires in 7 days)
+            </a>
           )}
           {exportState.kind === "error" && (
             <span role="alert" className="text-sm text-red-400">

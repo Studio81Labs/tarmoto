@@ -40,6 +40,7 @@
     "@nestjs/websockets": "^11.1.19",
     "@socket.io/redis-adapter": "^8.3.0",
     "@tarmoto/shared": "workspace:*",
+    "archiver": "^7.0.1",
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
@@ -63,6 +64,7 @@
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.1",
+    "@types/archiver": "^7.0.0",
     "@types/bcrypt": "^6.0.0",
     "@types/express": "^5.0.0",
     "@types/geojson": "^7946.0.16",
@@ -71,6 +73,7 @@
     "@types/multer": "^2.1.0",
     "@types/node": "^24.0.0",
     "@types/supertest": "^7.0.0",
+    "@types/unzipper": "^0.10.11",
     "dotenv": "^17.4.2",
     "eslint": "^10.0.0",
     "eslint-config-prettier": "^10.0.1",
@@ -85,7 +88,8 @@
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.7.3",
-    "typescript-eslint": "^8.20.0"
+    "typescript-eslint": "^8.20.0",
+    "unzipper": "^0.12.3"
   },
   "jest": {
     "moduleFileExtensions": [
