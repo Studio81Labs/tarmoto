@@ -23,6 +23,39 @@ type ExportState =
   | { kind: "ready"; id: string; downloadUrl: string }
   | { kind: "error"; message: string };
 
+type ExportView = Awaited<
+  ReturnType<typeof accountApi.requestDataExport>
+>["data"];
+
+// Maps a backend view to a terminal companion state, or null if the
+// caller should keep polling. Centralizing the mapping keeps the POST
+// handler and the polling tick in lockstep, and — importantly —
+// treats `status === "ready"` as terminal regardless of whether
+// `downloadUrl` came through. Without this, a (contract-breaking) ready
+// row with a falsy URL would trap the user on a spinner forever.
+function nextExportState(view: ExportView): ExportState | null {
+  if (view.status === "ready") {
+    if (view.downloadUrl) {
+      return {
+        kind: "ready",
+        id: view.id,
+        downloadUrl: view.downloadUrl,
+      };
+    }
+    return {
+      kind: "error",
+      message: "Export marked ready but the download link is missing.",
+    };
+  }
+  if (view.status === "failed" || view.status === "expired") {
+    return {
+      kind: "error",
+      message: view.errorMessage ?? `Export ${view.status}`,
+    };
+  }
+  return null;
+}
+
 type DeleteState =
   | { kind: "idle" }
   | { kind: "deleting" }
@@ -47,20 +80,9 @@ export default function DataPage() {
     setExportState({ kind: "requesting" });
     try {
       const { data: view } = await accountApi.requestDataExport();
-      if (view.status === "ready" && view.downloadUrl) {
-        setExportState({
-          kind: "ready",
-          id: view.id,
-          downloadUrl: view.downloadUrl,
-        });
-      } else if (view.status === "failed") {
-        setExportState({
-          kind: "error",
-          message: view.errorMessage ?? "Export failed",
-        });
-      } else {
-        setExportState({ kind: "polling", id: view.id });
-      }
+      const next = nextExportState(view);
+      if (next) setExportState(next);
+      else setExportState({ kind: "polling", id: view.id });
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Could not start export";
@@ -92,19 +114,9 @@ export default function DataPage() {
         const { data: view } = await accountApi.getDataExport(pollingId);
         if (cancelled) return;
         consecutiveErrors = 0;
-        if (view.status === "ready" && view.downloadUrl) {
-          setExportState({
-            kind: "ready",
-            id: view.id,
-            downloadUrl: view.downloadUrl,
-          });
-          return;
-        }
-        if (view.status === "failed" || view.status === "expired") {
-          setExportState({
-            kind: "error",
-            message: view.errorMessage ?? `Export ${view.status}`,
-          });
+        const next = nextExportState(view);
+        if (next) {
+          setExportState(next);
           return;
         }
         timer = setTimeout(() => void tick(), 2000);
@@ -154,8 +166,8 @@ export default function DataPage() {
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
               We&apos;ll prepare a ZIP archive with everything tied to your
-              account. The download link appears here when ready and stays
-              valid for 7 days.
+              account. The download link appears here when ready and stays valid
+              for 7 days.
             </p>
           </div>
         </div>
