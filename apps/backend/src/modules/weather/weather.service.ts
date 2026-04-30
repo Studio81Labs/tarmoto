@@ -159,13 +159,16 @@ export class WeatherService {
     let cursor = 0;
     return samples.map((sample) => {
       // Walk forward from the previous sample's position; samples come
-      // out of `sampleRoute` in order so we never need to rewind.
-      while (cursor < route.length) {
-        const v = route[cursor];
+      // out of `sampleRoute` in order so we never need to rewind. On a
+      // miss we leave `cursor` where it was so a defensive caller that
+      // passes an off-route sample doesn't poison every later lookup —
+      // each sample gets to scan from the last *successful* match.
+      for (let i = cursor; i < route.length; i++) {
+        const v = route[i];
         if (v.lat === sample.lat && v.lng === sample.lng) {
-          return cumulative[cursor];
+          cursor = i;
+          return cumulative[i];
         }
-        cursor++;
       }
       return 0;
     });

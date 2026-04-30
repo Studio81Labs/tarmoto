@@ -213,4 +213,30 @@ describe('WeatherService', () => {
       expect(service.sampleRoute(route, 20)).toEqual(route);
     });
   });
+
+  describe('distancesAlongRoute', () => {
+    it('does not poison later samples when an earlier sample is off-route', () => {
+      // Defensive guard: `sampleRoute` always returns route-vertex
+      // references so the public method's cursor never has to handle a
+      // miss in production. But a future caller that hands in an
+      // off-route point shouldn't invalidate every subsequent sample —
+      // each one should still resolve to its true distance.
+      const route = [
+        { lat: 49.0, lng: 16.0 },
+        { lat: 49.5, lng: 16.5 },
+        { lat: 50.0, lng: 17.0 },
+      ];
+      const samples = [
+        { lat: 49.0, lng: 16.0 }, // matches route[0]
+        { lat: 99.0, lng: 99.0 }, // off-route
+        { lat: 50.0, lng: 17.0 }, // matches route[2]
+      ];
+
+      const distances = service.distancesAlongRoute(route, samples);
+
+      expect(distances[0]).toBe(0);
+      expect(distances[1]).toBe(0); // unmatched stays 0
+      expect(distances[2]).toBeGreaterThan(0); // last sample still resolves
+    });
+  });
 });
