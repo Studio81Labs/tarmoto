@@ -38,14 +38,25 @@ function isProductionEnv(): boolean {
 }
 
 /**
+ * Hosts the WHATWG URL parser surfaces as `parsed.hostname` for the
+ * three loopback origins we want to allow in non-production:
+ * - `localhost` (DNS-resolved)
+ * - `127.0.0.1` (IPv4 loopback — the conventional address)
+ * - `[::1]` (IPv6 loopback — Node's URL parser keeps the brackets in
+ *   `parsed.hostname` for IPv6 literals, so the comparison must include
+ *   them)
+ */
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
  * Validate a photo URL against the same rule the response sanitizer enforces:
  * `https://` always wins. Plain `http://` is accepted only on loopback hosts
- * AND only outside production — local dev's `req.protocol`-derived URLs need
- * to round-trip through the create / update DTO, but a production client must
- * never persist a non-https URL. A stored `http://localhost/...` would render
- * as `<img src="http://localhost/...">` in every viewer's browser, hitting
- * each viewer's own machine (broken images at best, SSRF-by-rendering at
- * worst).
+ * (IPv4 + IPv6) AND only outside production — local dev's
+ * `req.protocol`-derived URLs need to round-trip through the create / update
+ * DTO, but a production client must never persist a non-https URL. A stored
+ * `http://localhost/...` would render as `<img src="http://localhost/...">`
+ * in every viewer's browser, hitting each viewer's own machine (broken
+ * images at best, SSRF-by-rendering at worst).
  */
 export function isAllowedReviewPhotoUrl(value: string): boolean {
   let parsed: URL;
@@ -58,7 +69,7 @@ export function isAllowedReviewPhotoUrl(value: string): boolean {
   if (parsed.protocol === 'https:') return true;
   if (parsed.protocol === 'http:') {
     if (isProductionEnv()) return false;
-    return parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+    return LOOPBACK_HOSTS.has(parsed.hostname);
   }
   return false;
 }

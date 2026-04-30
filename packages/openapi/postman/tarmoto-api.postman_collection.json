@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "a1d82480-d988-45f6-a4c1-027a7ecab14f",
+    "_postman_id": "2515f6a2-5fdd-4084-be1e-367aba64389a",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -467,16 +467,22 @@
           "name": "Upload a profile avatar",
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/me/avatar",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "users", "me", "avatar"]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": ""
+                }
+              ]
             }
           }
         },
@@ -1217,6 +1223,100 @@
       ]
     },
     {
+      "name": "map-shares",
+      "item": [
+        {
+          "name": "Create a shareable read-only link for a personal road-map snapshot (US-50)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/map-shares",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "map-shares"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"\",\n  \"snapshot\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List the caller's own road-map shares",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/map-shares/mine",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "map-shares", "mine"]
+            }
+          }
+        },
+        {
+          "name": "View a shared road-map snapshot by token (no auth required, read-only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/map-shares/:token",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "map-shares", ":token"],
+              "variable": [
+                {
+                  "key": "token",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Revoke a map share (owner only)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/map-shares/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "map-shares", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "rides",
       "item": [
         {
@@ -1358,16 +1458,22 @@
           "name": "Import a GPX file as a route",
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/import",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "rides", "import"]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": ""
+                }
+              ]
             }
           }
         },
@@ -2562,12 +2668,7 @@
           "name": "Upload photos for a road review",
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/roads/:segmentId/reviews/photos",
               "host": ["{{baseUrl}}"],
@@ -2576,6 +2677,17 @@
                 {
                   "key": "segmentId",
                   "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": [],
+                  "description": ""
                 }
               ]
             }
@@ -2991,6 +3103,23 @@
               "raw": "{{baseUrl}}/api/v1/exploration/ridden-ids",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "exploration", "ridden-ids"]
+            }
+          }
+        },
+        {
+          "name": "Ridden segments with last-ridden timestamp + quality (powers personal road map US-50)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/exploration/ridden-segments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "exploration", "ridden-segments"]
             }
           }
         }

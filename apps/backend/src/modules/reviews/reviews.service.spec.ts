@@ -852,18 +852,21 @@ describe('ReviewsService', () => {
       expect(result[0].photos).not.toContain('https://media.tarmoto.app/g.jpg');
     });
 
-    it('should keep loopback http URLs but drop other plain-http hosts', async () => {
+    it('should keep loopback http URLs (IPv4 + IPv6) but drop other plain-http hosts', async () => {
       // Local-dev managed uploads come back as http://localhost:PORT/...
       // (req.protocol is http when there's no TLS terminator), so the
       // sanitizer must accept loopback http to round-trip those URLs
-      // through the response. Non-loopback http remains rejected — we
-      // don't want a stored row to silently leak insecure third-party
-      // image URLs.
+      // through the response. IPv6 loopback `[::1]` is included because
+      // some local setups resolve the API host to ::1 — without it the
+      // upload-then-submit flow would 500 in plain dev. Non-loopback
+      // http remains rejected — we don't want a stored row to silently
+      // leak insecure third-party image URLs.
       const freshReview = {
         ...mockReview,
         photos: [
           'http://localhost:3000/uploads/road-review-photos/dev.jpg',
           'http://127.0.0.1:3000/uploads/road-review-photos/dev2.jpg',
+          'http://[::1]:3000/uploads/road-review-photos/dev3.jpg',
           'http://insecure.example.com/x.jpg',
         ],
       } as unknown as RoadReview;
@@ -874,6 +877,7 @@ describe('ReviewsService', () => {
       expect(result[0].photos).toEqual([
         'http://localhost:3000/uploads/road-review-photos/dev.jpg',
         'http://127.0.0.1:3000/uploads/road-review-photos/dev2.jpg',
+        'http://[::1]:3000/uploads/road-review-photos/dev3.jpg',
       ]);
     });
 
