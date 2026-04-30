@@ -44,6 +44,11 @@ import {
   type GeneratedTripOption,
 } from "@/lib/trip-itinerary-generator";
 import { currentUtcMonth } from "@/lib/passes-summary";
+import {
+  findOwnerId,
+  tripFromDetail,
+  type TripDetailResponse,
+} from "@/lib/trip-from-detail";
 import type { SurfaceType, Trip, TripParameters } from "@/lib/types";
 import { formatDuration } from "@/lib/utils";
 
@@ -145,10 +150,32 @@ export default function TripPlannerPage() {
       try {
         const { data } = await tripsApi.get(serverTripId);
         if (cancelled) return;
-        const ownerId = (
-          data as { members?: Array<{ role: string; user_id: string }> }
-        ).members?.find((m) => m.role === "owner")?.user_id;
-        setServerTripOwnerId(ownerId ?? null);
+        const detail = data as unknown as TripDetailResponse;
+        setServerTripOwnerId(findOwnerId(detail));
+        // Hydrate `activeTrip` when the planner is showing a different
+        // trip (or no trip at all) so deep links and the `/trips/:id/edit`
+        // handoff actually load the requested itinerary instead of leaving
+        // the canvas empty. Skipped when the in-memory trip already
+        // matches `serverTripId` so unsaved planner edits aren't clobbered
+        // by a remount or a refetch.
+        if (activeTripRef.current?.id !== detail.id) {
+          const hydrated = tripFromDetail(detail);
+          setActiveTrip(hydrated);
+          // Also seed the local generation controls from the persisted
+          // trip parameters. Without this, pressing **Generate** after
+          // landing here from `/trips/:id/edit` would regenerate using
+          // the planner's default react state (3 days / 250 km / mixed),
+          // silently overwriting the rider's persisted settings.
+          const params = hydrated.parameters;
+          setDays(params.days);
+          setDailyKmTarget(params.dailyKmTarget);
+          setRoadPreference(params.roadPreference);
+          setSurfacePreference(params.surfacePreference);
+          setMinQuality(params.minQuality);
+          setAvoidHighways(params.avoidHighways);
+          setAvoidTolls(params.avoidTolls);
+          setAvoidUnpaved(params.avoidUnpaved);
+        }
       } catch {
         // Non-fatal — modal / hook will surface concrete errors on
         // their own actions if the trip really isn't accessible.
@@ -157,7 +184,7 @@ export default function TripPlannerPage() {
     return () => {
       cancelled = true;
     };
-  }, [serverTripId]);
+  }, [serverTripId, setActiveTrip]);
 
   const handlePromotedToServer = useCallback((newServerTripId: string) => {
     setServerTripId(newServerTripId);

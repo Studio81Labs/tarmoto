@@ -221,6 +221,41 @@ export class TripsService {
     return detail;
   }
 
+  async remove(userId: string, tripId: string): Promise<void> {
+    // Owner-only: a 404 covers both "no such trip" and "you are not the
+    // owner" so the endpoint cannot be used to enumerate trip ids or to
+    // probe roles a caller doesn't have. Cascading FKs on
+    // `trip_members`, `trip_days`, `trip_waypoints`, `trip_suggestions`,
+    // `trip_messages`, and `trip_activity` clean up dependent rows.
+    const membership = await this.memberRepo.findOne({
+      where: { trip_id: tripId, user_id: userId },
+    });
+    if (!membership || membership.role !== 'owner') {
+      throw new NotFoundException('Trip not found');
+    }
+
+    const result = await this.tripRepo.delete({ id: tripId });
+
+    // Concurrent double-delete: two requests from the same owner can
+    // both pass the membership check before either DELETE lands, and
+    // the second one will find the row already gone. `affected: 0`
+    // means another caller (or a racing manual delete) won that race —
+    // fold into a 404 so the late caller gets a consistent response
+    // and doesn't broadcast a duplicate `trip:deleted` to live
+    // collaborators.
+    if (result.affected === 0) {
+      throw new NotFoundException('Trip not found');
+    }
+
+    // Emit AFTER the delete commits so a failed delete (FK violation,
+    // dropped connection, etc.) doesn't broadcast a deletion that
+    // didn't actually happen — collaborators would otherwise tear down
+    // their subscriptions for a trip that still exists. We don't write
+    // to `trip_activity` because the cascade would delete the row in
+    // the same transaction.
+    this.events.emitToTrip(tripId, 'trip:deleted', { trip_id: tripId });
+  }
+
   async list(userId: string, query: ListTripsDto): Promise<TripSummaryDto[]> {
     // Trips visible to the caller = trips where they appear in
     // `trip_members` (the `create` flow inserts the owner as a member,

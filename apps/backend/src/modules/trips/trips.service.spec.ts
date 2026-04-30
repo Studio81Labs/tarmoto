@@ -687,6 +687,91 @@ describe('TripsService', () => {
     });
   });
 
+  describe('remove', () => {
+    it('deletes the trip, emits trip:deleted, and resolves void when caller is owner', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      const callOrder: string[] = [];
+      (tripRepo.delete as jest.Mock) = jest.fn().mockImplementation(() => {
+        callOrder.push('delete');
+        return Promise.resolve({ affected: 1 });
+      });
+      events.emitToTrip.mockImplementation(() => {
+        callOrder.push('emit');
+      });
+
+      await expect(service.remove(OWNER_ID, TRIP_ID)).resolves.toBeUndefined();
+
+      expect(tripRepo.delete).toHaveBeenCalledWith({ id: TRIP_ID });
+      expect(events.emitToTrip).toHaveBeenCalledWith(TRIP_ID, 'trip:deleted', {
+        trip_id: TRIP_ID,
+      });
+      // The emit must run AFTER the delete commits so a failed delete
+      // doesn't broadcast a deletion that didn't happen — collaborators
+      // would otherwise tear down their subscriptions for a trip that
+      // still exists.
+      expect(callOrder).toEqual(['delete', 'emit']);
+      // Cascade FKs delete the activity row anyway, so we deliberately
+      // skip writing one.
+      expect(activity.recordSafe).not.toHaveBeenCalled();
+    });
+
+    it('does not emit trip:deleted when the delete fails', async () => {
+      // Without this guarantee live collaborators would receive a false
+      // deletion notification on a transient DB error and tear down
+      // their subscription for a trip that still exists.
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      (tripRepo.delete as jest.Mock) = jest
+        .fn()
+        .mockRejectedValue(new Error('connection lost'));
+
+      await expect(service.remove(OWNER_ID, TRIP_ID)).rejects.toThrow(
+        'connection lost',
+      );
+      expect(events.emitToTrip).not.toHaveBeenCalled();
+    });
+
+    it('404s and skips the emit when the delete affects 0 rows (concurrent double-delete)', async () => {
+      // Two requests from the same owner can both pass the membership
+      // check before either DELETE lands. The loser should see a 404
+      // instead of a duplicate `trip:deleted` broadcast that would tear
+      // down already-disconnected collaborators a second time.
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      (tripRepo.delete as jest.Mock) = jest
+        .fn()
+        .mockResolvedValue({ affected: 0 });
+
+      await expect(service.remove(OWNER_ID, TRIP_ID)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(events.emitToTrip).not.toHaveBeenCalled();
+    });
+
+    it('404s a non-owner (admins, members, non-members all collapse)', async () => {
+      (tripRepo.delete as jest.Mock) = jest.fn();
+
+      for (const role of ['admin', 'member'] as const) {
+        memberRepo.findOne.mockResolvedValueOnce({ role } as TripMember);
+        await expect(service.remove(OTHER_ID, TRIP_ID)).rejects.toBeInstanceOf(
+          NotFoundException,
+        );
+      }
+
+      memberRepo.findOne.mockResolvedValueOnce(null); // non-member
+      await expect(service.remove(OTHER_ID, TRIP_ID)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+
+      expect(tripRepo.delete).not.toHaveBeenCalled();
+      expect(events.emitToTrip).not.toHaveBeenCalled();
+    });
+  });
+
   describe('detail mapping', () => {
     it('converts route_geom + waypoint locations to lat/lng', async () => {
       const trip = makeOwnedTrip({

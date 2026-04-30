@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "beb28a58-bfad-40ac-99f2-1d211d39c96e",
+    "_postman_id": "0110fd6f-97ae-4d5b-9f36-baa8130f11d2",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -1567,6 +1567,29 @@
                   "language": "json"
                 }
               }
+            }
+          }
+        },
+        {
+          "name": "Delete a trip",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", ":tripId"],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                }
+              ]
             }
           }
         },

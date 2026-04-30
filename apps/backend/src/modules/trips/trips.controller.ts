@@ -1,7 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -108,6 +111,25 @@ export class TripsController {
     @Body() dto: GenerateTripDto,
   ): Promise<GenerateTripResponseDto> {
     return this.tripGenerator.generate(req.user!.userId, tripId, dto);
+  }
+
+  @Delete(':tripId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Delete a trip',
+    description:
+      'Owner-only. Cascades to members, days, waypoints, suggestions, ' +
+      'votes, messages, and activity. Folds "no such trip" and "not the ' +
+      'owner" into the same 404 so the endpoint cannot enumerate ids or ' +
+      'roles.',
+  })
+  @ApiResponse({ status: 204, description: 'Trip deleted' })
+  @ApiResponse({ status: 404, description: 'Trip not found or not owned' })
+  async remove(
+    @Req() req: express.Request,
+    @Param('tripId', ParseUUIDPipe) tripId: string,
+  ): Promise<void> {
+    await this.tripsService.remove(req.user!.userId, tripId);
   }
 
   @Post(':tripId/join')

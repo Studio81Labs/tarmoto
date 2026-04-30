@@ -40,6 +40,7 @@ describe('TripsController', () => {
       getDetail: jest.fn().mockResolvedValue(mockDetail),
       join: jest.fn().mockResolvedValue(mockDetail),
       update: jest.fn().mockResolvedValue(mockDetail),
+      remove: jest.fn().mockResolvedValue(undefined),
     };
 
     const mockGenerator = {
@@ -109,6 +110,11 @@ describe('TripsController', () => {
     const result = await controller.update(mockReq, 'trip-1', dto);
     expect(service.update).toHaveBeenCalledWith('user-1', 'trip-1', dto);
     expect(result.id).toBe('trip-1');
+  });
+
+  it('DELETE /trips/:tripId delegates to service.remove with the caller id', async () => {
+    await controller.remove(mockReq, 'trip-1');
+    expect(service.remove).toHaveBeenCalledWith('user-1', 'trip-1');
   });
 
   it('POST /trips/:tripId/generate forwards the DTO to the generator', async () => {
