@@ -192,7 +192,6 @@ export default function CommuteScreen() {
           primaryRouteId={route.id}
           isUpdatingPrimary={isUpdatingPrimary}
           onSetPrimary={setPrimary}
-          onStart={startCommuteRide}
         />
       ) : null}
 
@@ -517,18 +516,24 @@ function AlternativeRow({
 // one promotes it to primary via the atomic swap endpoint, which then
 // drives every other surface on this screen (status, alternatives,
 // stats) on the next refresh.
+//
+// We deliberately do NOT expose a "start ride on this row" affordance
+// here: `RideActive` only takes `{ rideType: 'commute' }` and uses
+// whichever route the backend treats as primary, so a "Start" tap
+// would silently launch the *current* primary instead of the row the
+// rider tapped — confusing both sighted and screen-reader users. The
+// promote step is required first, then the rider taps the primary
+// CTA above to start the ride.
 function SavedRoutesCard({
   routes,
   primaryRouteId,
   isUpdatingPrimary,
   onSetPrimary,
-  onStart,
 }: {
   routes: CommuteRoute[];
   primaryRouteId: string;
   isUpdatingPrimary: boolean;
   onSetPrimary: (routeId: string) => Promise<void>;
-  onStart: () => void;
 }) {
   const others = routes.filter((r) => r.id !== primaryRouteId);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -576,39 +581,36 @@ function SavedRoutesCard({
       <Text style={styles.altSubtitle}>
         Switch which one is your primary — hazards and weekly stats follow.
       </Text>
-      {others.map((r) => (
-        <View key={r.id} style={styles.savedRow}>
+      {others.map((r) => {
+        const isPending = isUpdatingPrimary && pendingId === r.id;
+        return (
           <TouchableOpacity
-            style={styles.savedMain}
-            onPress={onStart}
-            accessibilityRole="button"
-            accessibilityLabel={`Start commute on ${r.name}`}
-          >
-            <Text style={styles.altTitle}>{r.name}</Text>
-            <Text style={styles.altSubtitle}>
-              {r.distance_km != null
-                ? `${r.distance_km.toFixed(1)} km`
-                : "Distance pending"}
-              {r.avg_quality != null
-                ? ` · Quality ${qualityLabel(r.avg_quality)}`
-                : ""}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
+            key={r.id}
+            style={styles.savedRow}
             onPress={() => handlePromote(r)}
-            disabled={isUpdatingPrimary && pendingId === r.id}
+            disabled={isPending}
             accessibilityRole="button"
             accessibilityLabel={`Use ${r.name} as primary commute`}
-            style={styles.savedAction}
           >
-            {isUpdatingPrimary && pendingId === r.id ? (
+            <View style={styles.savedMain}>
+              <Text style={styles.altTitle}>{r.name}</Text>
+              <Text style={styles.altSubtitle}>
+                {r.distance_km != null
+                  ? `${r.distance_km.toFixed(1)} km`
+                  : "Distance pending"}
+                {r.avg_quality != null
+                  ? ` · Quality ${qualityLabel(r.avg_quality)}`
+                  : ""}
+              </Text>
+            </View>
+            {isPending ? (
               <ActivityIndicator color={colors.primary} size="small" />
             ) : (
               <Text style={styles.altSecondaryLabel}>Use as primary</Text>
             )}
           </TouchableOpacity>
-        </View>
-      ))}
+        );
+      })}
     </View>
   );
 }
@@ -661,6 +663,10 @@ function WeeklySummaryCard({ stats }: { stats: CommuteStats }) {
           value={String(stats.total_rides)}
           delta={stats.total_rides - prev.total_rides}
           positiveIsGood
+          // Ride count is a whole number; without this the cell would
+          // render "+1.0 rides", which reads like a duration/distance
+          // value rather than a count.
+          integer
         />
         <TrendCell
           label="Distance"
@@ -695,6 +701,7 @@ function TrendCell({
   deltaText,
   positiveIsGood,
   neutral,
+  integer,
 }: {
   label: string;
   value: string;
@@ -703,6 +710,8 @@ function TrendCell({
   deltaText?: string;
   positiveIsGood?: boolean;
   neutral?: boolean;
+  /** When true, the default delta label drops the decimal place (rides). */
+  integer?: boolean;
 }) {
   let color: string = colors.textTertiary;
   let icon: IconName = "minus";
@@ -721,7 +730,7 @@ function TrendCell({
       <View style={styles.weeklyTrendRow}>
         <Icon name={icon} size={14} color={color} />
         <Text style={[styles.weeklyDelta, { color }]}>
-          {deltaText ?? formatAbsDelta(delta)}
+          {deltaText ?? formatAbsDelta(delta, { integer })}
         </Text>
       </View>
     </View>
@@ -860,8 +869,15 @@ function formatSignedDuration(min: number): string {
   return `${min > 0 ? "+" : ""}${min} min`;
 }
 
-function formatAbsDelta(delta: number): string {
+function formatAbsDelta(
+  delta: number,
+  options: { integer?: boolean } = {},
+): string {
   if (Math.abs(delta) < 0.05) return "±0";
+  if (options.integer) {
+    const rounded = Math.round(delta);
+    return rounded > 0 ? `+${rounded}` : String(rounded);
+  }
   return delta > 0 ? `+${delta.toFixed(1)}` : delta.toFixed(1);
 }
 
@@ -1173,10 +1189,6 @@ const styles = StyleSheet.create({
   savedMain: {
     flex: 1,
     gap: 2,
-  },
-  savedAction: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
   },
   weeklyHeader: {
     flexDirection: "row",

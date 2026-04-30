@@ -286,6 +286,38 @@ describe("CommuteScreen", () => {
     expect(screen.getByText("-20%")).toBeTruthy();
     expect(screen.getByText("+20%")).toBeTruthy();
   });
+
+  it("renders the rides delta as a whole number, not '+1.0'", () => {
+    // Fixture has rides 4 → 5, so delta = 1. The Rides cell is the only
+    // one that doesn't pass a `deltaText` percentage, so it falls back
+    // to formatAbsDelta — which used to produce "+1.0" because of
+    // toFixed(1). Asserting the integer form regression-guards that.
+    render(<CommuteScreen />);
+    expect(screen.getByText("+1")).toBeTruthy();
+    expect(screen.queryByText("+1.0")).toBeNull();
+  });
+
+  it("does not expose a Start-on-tap affordance on saved (non-primary) routes", () => {
+    // Tapping a saved route ONLY promotes it; "Start commute on …"
+    // would have been a lie because RideActive uses whichever route
+    // the backend treats as primary, not the row that was tapped.
+    const secondary: CommuteRoute = {
+      ...baseRoute,
+      id: "route-2",
+      name: "Long way",
+      is_primary: false,
+    };
+    mockUseCommuteResult = buildResult({
+      savedRoutes: [baseRoute, secondary],
+    });
+
+    render(<CommuteScreen />);
+
+    expect(screen.queryByLabelText("Start commute on Long way")).toBeNull();
+    expect(
+      screen.getByLabelText("Use Long way as primary commute"),
+    ).toBeTruthy();
+  });
 });
 
 describe("rankAlternatives", () => {
