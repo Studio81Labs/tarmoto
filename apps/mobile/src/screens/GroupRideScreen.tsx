@@ -267,15 +267,20 @@ export default function GroupRideScreen() {
       );
     });
     if (!confirmed) return;
+    // Disconnect BEFORE the REST call so the server's `group:left`
+    // (and the auto-emitted `group:ended` if this leave ends the ride)
+    // fan-out doesn't echo back to our own socket — otherwise the
+    // self-initiated "owner ended the ride" alert would race with the
+    // teardown below. The fail-closed contract is unchanged: even if
+    // the REST call rejects, the socket stays disconnected.
+    groupRideSocket.disconnect();
     try {
       await api.leaveGroupRide(groupRide.id);
     } catch {
-      // Even if the REST call fails, kill the socket so we stop
-      // broadcasting. The rider's intent was clear; we'd rather drop a
-      // server-side row stale than keep publishing positions after
-      // they tapped Leave.
+      // The rider's intent was clear; we'd rather drop a server-side
+      // row stale than keep publishing positions after they tapped
+      // Leave.
     }
-    groupRideSocket.disconnect();
     setMode("idle");
     setGroupRide(null);
     positionsRef.current = {};
@@ -298,14 +303,18 @@ export default function GroupRideScreen() {
       );
     });
     if (!confirmed) return;
+    // Detach from the room before kicking off the REST call so the
+    // server's `group:ended` fanout (which uses `server.to(...)` and
+    // therefore includes the originator) can't trigger our own
+    // `handleEnded` alert. See the matching note in `handleLeave`.
+    groupRideSocket.disconnect();
     try {
       await api.endGroupRide(groupRide.id);
     } catch {
       // Same fail-closed reasoning as `handleLeave` — the owner asked
-      // for the ride to be over, so tear the socket down regardless of
-      // the REST call's outcome.
+      // for the ride to be over, so the local UI tears down regardless
+      // of the REST call's outcome.
     }
-    groupRideSocket.disconnect();
     setMode("idle");
     setGroupRide(null);
     positionsRef.current = {};
