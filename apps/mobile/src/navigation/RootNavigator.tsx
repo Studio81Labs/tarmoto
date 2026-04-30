@@ -7,6 +7,7 @@ import React from "react";
 import {
   NavigationContainer,
   type LinkingOptions,
+  type NavigatorScreenParams,
 } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
@@ -44,12 +45,15 @@ import EmergencyContactsScreen from "@/screens/EmergencyContactsScreen";
 
 // ── Type definitions ──
 
+// `NavigatorScreenParams` lets cross-tab navigation describe the nested
+// screen + params type-safely. Used by US-21 / US-22 where the
+// "Start commute" CTA on Home jumps the rider into RideTab → RideActive.
 export type RootTabParamList = {
-  HomeTab: undefined;
-  MapTab: undefined;
-  RideTab: undefined;
-  TripsTab: undefined;
-  ProfileTab: undefined;
+  HomeTab: NavigatorScreenParams<HomeStackParamList> | undefined;
+  MapTab: NavigatorScreenParams<MapStackParamList> | undefined;
+  RideTab: NavigatorScreenParams<RideStackParamList> | undefined;
+  TripsTab: NavigatorScreenParams<TripsStackParamList> | undefined;
+  ProfileTab: NavigatorScreenParams<ProfileStackParamList> | undefined;
 };
 
 export type HomeStackParamList = {

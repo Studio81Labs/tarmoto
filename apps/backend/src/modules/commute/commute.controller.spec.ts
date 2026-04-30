@@ -25,6 +25,7 @@ describe('CommuteController', () => {
     const mockService = {
       listRoutes: jest.fn().mockResolvedValue([mockRoute]),
       createRoute: jest.fn().mockResolvedValue(mockRoute),
+      setPrimaryRoute: jest.fn().mockResolvedValue(mockRoute),
       deleteRoute: jest.fn().mockResolvedValue(undefined),
       getStatus: jest.fn().mockResolvedValue({
         route: mockRoute,
@@ -40,6 +41,13 @@ describe('CommuteController', () => {
         avg_duration_min: 0,
         fuel_estimate_l: 0,
         daily_breakdown: [],
+        previous_period: {
+          total_rides: 0,
+          total_km: 0,
+          total_time_min: 0,
+          avg_duration_min: 0,
+          fuel_estimate_l: 0,
+        },
       }),
       getAlternatives: jest.fn().mockResolvedValue({
         primary_route: mockRoute,
@@ -81,6 +89,13 @@ describe('CommuteController', () => {
     };
     await controller.createRoute(mockReq, dto);
     expect(service.createRoute).toHaveBeenCalledWith('user-1', dto);
+  });
+
+  it('PUT /commute/routes/:id/primary should swap primary route', async () => {
+    const result = await controller.setPrimaryRoute(mockReq, 'route-1');
+    expect(service.setPrimaryRoute).toHaveBeenCalledWith('user-1', 'route-1');
+    expect(result.id).toBe('route-1');
+    expect(result.is_primary).toBe(true);
   });
 
   it('DELETE /commute/routes/:id should delete route', async () => {

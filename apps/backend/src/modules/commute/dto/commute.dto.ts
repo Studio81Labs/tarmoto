@@ -134,6 +134,23 @@ export class CommuteAlternativesResponseDto {
   alternatives!: AlternativeRouteDto[];
 }
 
+export class CommuteStatsPeriodDto {
+  @ApiProperty()
+  total_rides!: number;
+
+  @ApiProperty()
+  total_km!: number;
+
+  @ApiProperty()
+  total_time_min!: number;
+
+  @ApiProperty()
+  avg_duration_min!: number;
+
+  @ApiProperty()
+  fuel_estimate_l!: number;
+}
+
 export class CommuteStatsResponseDto {
   @ApiProperty()
   period!: string;
@@ -155,4 +172,11 @@ export class CommuteStatsResponseDto {
 
   @ApiProperty({ type: [DailyBreakdownDto] })
   daily_breakdown!: DailyBreakdownDto[];
+
+  @ApiProperty({
+    type: CommuteStatsPeriodDto,
+    description:
+      'Totals for the equivalent prior window (e.g. last week vs this week).',
+  })
+  previous_period!: CommuteStatsPeriodDto;
 }

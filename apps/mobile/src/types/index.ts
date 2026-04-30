@@ -339,6 +339,56 @@ export interface CommuteStatus {
   status: "clear" | "hazards" | "weather_warning" | "delays";
 }
 
+/**
+ * Alternative route returned by GET /commute/alternatives.
+ *
+ * Each candidate carries the geometry the routing engine produced plus
+ * the same hazard / quality enrichment we run for the primary route, so
+ * the rider can compare options side-by-side without a follow-up fetch.
+ */
+export interface CommuteAlternativeRoute {
+  distance_km: number;
+  duration_min: number;
+  /** Average road quality 0–5; null when no scored segments overlap. */
+  avg_quality: number | null;
+  /** Active hazards within 500 m of the alternative geometry. */
+  hazard_count: number;
+  geometry: LatLng[];
+}
+
+export interface CommuteAlternativesResponse {
+  primary_route: CommuteRoute;
+  primary_hazard_count: number;
+  alternatives: CommuteAlternativeRoute[];
+}
+
+export interface CommuteStatsPeriod {
+  total_rides: number;
+  total_km: number;
+  total_time_min: number;
+  avg_duration_min: number;
+  fuel_estimate_l: number;
+}
+
+export interface CommuteStatsDailyBreakdown {
+  date: string;
+  rides: number;
+  km: number;
+  duration_min: number;
+}
+
+export interface CommuteStats {
+  period: "week" | "month";
+  total_rides: number;
+  total_km: number;
+  total_time_min: number;
+  avg_duration_min: number;
+  fuel_estimate_l: number;
+  daily_breakdown: CommuteStatsDailyBreakdown[];
+  /** Same shape as the current period, for the immediately prior window. */
+  previous_period: CommuteStatsPeriod;
+}
+
 export interface Weather {
   temperature_c: number;
   condition: "clear" | "cloudy" | "rain" | "storm" | "snow" | "fog" | "ice";

@@ -151,6 +151,52 @@ describe('CommuteService', () => {
     });
   });
 
+  describe('setPrimaryRoute', () => {
+    it('atomically swaps primary flag inside the transaction', async () => {
+      // Target is currently non-primary so the swap actually performs the
+      // unset+save. The order matters: unset must run before the save so
+      // a concurrent reader can never see two primary routes.
+      mockTransactionManager.findOne.mockResolvedValueOnce({
+        ...mockRoute,
+        id: 'route-2',
+        is_primary: false,
+      });
+
+      const result = await service.setPrimaryRoute('user-1', 'route-2');
+
+      expect(mockTransactionManager.update).toHaveBeenCalledWith(
+        CommuteRoute,
+        { user_id: 'user-1', is_primary: true },
+        { is_primary: false },
+      );
+      expect(mockTransactionManager.save).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'route-2', is_primary: true }),
+      );
+      expect(result.id).toBe('route-2');
+      expect(result.is_primary).toBe(true);
+    });
+
+    it('skips writes when the target is already primary', async () => {
+      mockTransactionManager.findOne.mockResolvedValueOnce({
+        ...mockRoute,
+        is_primary: true,
+      });
+
+      await service.setPrimaryRoute('user-1', 'route-1');
+
+      expect(mockTransactionManager.update).not.toHaveBeenCalled();
+      expect(mockTransactionManager.save).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException for missing route', async () => {
+      mockTransactionManager.findOne.mockResolvedValueOnce(null);
+
+      await expect(
+        service.setPrimaryRoute('user-1', 'missing'),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
   describe('deleteRoute', () => {
     it('should delete a route via transaction', async () => {
       // findOne inside transaction returns the route
@@ -227,10 +273,15 @@ describe('CommuteService', () => {
   });
 
   describe('getStats', () => {
-    it('should return weekly stats with daily breakdown', async () => {
+    it('should return weekly stats with daily breakdown and prior-week totals', async () => {
+      // First call: current period rows; second call: aggregated prior
+      // period row. The service issues both queries in parallel.
       rideRepo.query!.mockResolvedValueOnce([
         { date: '2026-04-14', rides: 2, km: 25, duration_min: 36 },
         { date: '2026-04-13', rides: 2, km: 25, duration_min: 34 },
+      ]);
+      rideRepo.query!.mockResolvedValueOnce([
+        { rides: 3, km: 30, duration_min: 60 },
       ]);
 
       const result = await service.getStats('user-1', 'week');
@@ -242,14 +293,70 @@ describe('CommuteService', () => {
       expect(result.avg_duration_min).toBe(18);
       expect(result.fuel_estimate_l).toBe(2.5);
       expect(result.daily_breakdown).toHaveLength(2);
+      expect(result.previous_period).toEqual({
+        total_rides: 3,
+        total_km: 30,
+        total_time_min: 60,
+        avg_duration_min: 20,
+        fuel_estimate_l: 1.5,
+      });
     });
 
     it('should return empty stats when no commute rides', async () => {
+      // Both periods empty: the prior-period query returns a single zeroed
+      // aggregate row (COUNT/SUM with no matches), which the service
+      // collapses to an all-zero `previous_period`.
+      rideRepo.query!.mockResolvedValueOnce([]);
+      rideRepo.query!.mockResolvedValueOnce([
+        { rides: 0, km: 0, duration_min: 0 },
+      ]);
+
       const result = await service.getStats('user-1', 'week');
 
       expect(result.total_rides).toBe(0);
       expect(result.total_km).toBe(0);
       expect(result.fuel_estimate_l).toBe(0);
+      expect(result.previous_period.total_rides).toBe(0);
+      expect(result.previous_period.total_km).toBe(0);
+      expect(result.previous_period.fuel_estimate_l).toBe(0);
+    });
+
+    it('issues a well-formed SQL INTERVAL for the prior window', async () => {
+      // Regression guard for a bug where the prior window was computed
+      // by string-concatenating " 2" onto "7 days", yielding the literal
+      // `INTERVAL '7 days 2'`. Postgres parses unit-less tokens as
+      // seconds, so that literal collapsed to `7 days + 2 seconds` and
+      // the trend was effectively always 0. The fix builds the doubled
+      // boundary explicitly from `intervalDays * 2`.
+      rideRepo.query!.mockResolvedValueOnce([]);
+      rideRepo.query!.mockResolvedValueOnce([
+        { rides: 0, km: 0, duration_min: 0 },
+      ]);
+
+      await service.getStats('user-1', 'week');
+
+      const calls = rideRepo.query!.mock.calls;
+      expect(calls).toHaveLength(2);
+      const currentSql = String(calls[0][0]);
+      const priorSql = String(calls[1][0]);
+      expect(currentSql).toContain("INTERVAL '7 days'");
+      expect(currentSql).not.toContain("INTERVAL '7 days 2'");
+      expect(priorSql).toContain("INTERVAL '14 days'");
+      expect(priorSql).toContain("INTERVAL '7 days'");
+      expect(priorSql).not.toContain("INTERVAL '7 days 2'");
+    });
+
+    it('doubles the boundary for the month period too', async () => {
+      rideRepo.query!.mockResolvedValueOnce([]);
+      rideRepo.query!.mockResolvedValueOnce([
+        { rides: 0, km: 0, duration_min: 0 },
+      ]);
+
+      await service.getStats('user-1', 'month');
+
+      const priorSql = String(rideRepo.query!.mock.calls[1][0]);
+      expect(priorSql).toContain("INTERVAL '60 days'");
+      expect(priorSql).toContain("INTERVAL '30 days'");
     });
   });
 

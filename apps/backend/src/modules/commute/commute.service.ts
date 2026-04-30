@@ -13,6 +13,7 @@ import {
   CommuteRouteResponseDto,
   CommuteStatusResponseDto,
   CommuteStatsResponseDto,
+  CommuteStatsPeriodDto,
   AlternativeRouteDto,
   CommuteAlternativesResponseDto,
 } from './dto/commute.dto.js';
@@ -64,6 +65,42 @@ export class CommuteService {
     });
 
     return this.toRouteResponse(saved);
+  }
+
+  async setPrimaryRoute(
+    userId: string,
+    routeId: string,
+  ): Promise<CommuteRouteResponseDto> {
+    // Atomic swap: a single transaction unsets `is_primary` on every other
+    // saved route for this user and flips it on for the target. Without
+    // the transaction a transient failure between the two writes could
+    // leave the user with zero primary routes (which makes
+    // /commute/status and /commute/alternatives 404 even though the
+    // rider has saved routes).
+    const updated = await this.dataSource.transaction(async (manager) => {
+      const target = await manager.findOne(CommuteRoute, {
+        where: { id: routeId, user_id: userId },
+      });
+      if (!target) {
+        throw new NotFoundException('Commute route not found');
+      }
+
+      // Skip the writes if the target is already primary so a no-op tap
+      // doesn't churn the row's updated_at and doesn't burn an UPDATE.
+      if (!target.is_primary) {
+        await manager.update(
+          CommuteRoute,
+          { user_id: userId, is_primary: true },
+          { is_primary: false },
+        );
+        target.is_primary = true;
+        await manager.save(target);
+      }
+
+      return target;
+    });
+
+    return this.toRouteResponse(updated);
   }
 
   async deleteRoute(userId: string, routeId: string): Promise<void> {
@@ -119,55 +156,109 @@ export class CommuteService {
     userId: string,
     period: 'week' | 'month' = 'week',
   ): Promise<CommuteStatsResponseDto> {
-    const interval = period === 'month' ? '30 days' : '7 days';
+    const intervalDays = period === 'month' ? 30 : 7;
+    // Build the SQL interval literals from the day count rather than
+    // string-concatenating " 2" onto a "7 days" string. Postgres parses
+    // each unit-less token in an INTERVAL literal as seconds, so a naive
+    // `'${intervalLiteral} 2'` expanded to `'7 days 2'` and resolved to
+    // `7 days + 2 seconds` — which collapsed the prior window to a
+    // 2-second slice and made every "vs last week" trend zero.
+    const currentIntervalLiteral = `${intervalDays} days`;
+    const priorBoundaryLiteral = `${intervalDays * 2} days`;
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const rows = await this.rideRepo.query(
-      `SELECT
-         DATE(started_at) AS date,
-         COUNT(*)::int AS rides,
-         COALESCE(SUM(distance_km), 0)::float AS km,
-         COALESCE(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60), 0)::int AS duration_min
-       FROM rides
-       WHERE user_id = $1
-         AND ride_type = 'commute'
-         AND status = 'completed'
-         AND started_at > NOW() - INTERVAL '${interval}'
-       GROUP BY DATE(started_at)
-       ORDER BY date DESC`,
-      [userId],
-    );
+    // Pull the current period (with daily breakdown) and the immediately
+    // prior period (totals only) in parallel — the trend section in
+    // CommuteScreen needs both. We deliberately don't lump them into one
+    // query: the daily breakdown is only meaningful for the current
+    // window and the prior totals are the simpler aggregate that the
+    // mobile UI surfaces as "vs last week".
+    type CurrentRow = {
+      date: string;
+      rides: number;
+      km: number;
+      duration_min: number;
+    };
+    type PriorRow = {
+      rides: number;
+      km: number | null;
+      duration_min: number;
+    };
+    const [currentRows, priorRows] = (await Promise.all([
+      this.rideRepo.query(
+        `SELECT
+           DATE(started_at) AS date,
+           COUNT(*)::int AS rides,
+           COALESCE(SUM(distance_km), 0)::float AS km,
+           COALESCE(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60), 0)::int AS duration_min
+         FROM rides
+         WHERE user_id = $1
+           AND ride_type = 'commute'
+           AND status = 'completed'
+           AND started_at > NOW() - INTERVAL '${currentIntervalLiteral}'
+         GROUP BY DATE(started_at)
+         ORDER BY date DESC`,
+        [userId],
+      ),
+      this.rideRepo.query(
+        `SELECT
+           COUNT(*)::int AS rides,
+           COALESCE(SUM(distance_km), 0)::float AS km,
+           COALESCE(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60), 0)::int AS duration_min
+         FROM rides
+         WHERE user_id = $1
+           AND ride_type = 'commute'
+           AND status = 'completed'
+           AND started_at > NOW() - INTERVAL '${priorBoundaryLiteral}'
+           AND started_at <= NOW() - INTERVAL '${currentIntervalLiteral}'`,
+        [userId],
+      ),
+    ])) as [CurrentRow[], PriorRow[]];
 
-    const dailyBreakdown = (
-      rows as Array<{
-        date: string;
-        rides: number;
-        km: number;
-        duration_min: number;
-      }>
-    ).map((r) => ({
+    const dailyBreakdown = currentRows.map((r) => ({
       date: r.date,
       rides: r.rides,
       km: Math.round(r.km * 100) / 100,
       duration_min: r.duration_min,
     }));
 
-    const totalRides = dailyBreakdown.reduce((sum, d) => sum + d.rides, 0);
-    const totalKm = dailyBreakdown.reduce((sum, d) => sum + d.km, 0);
-    const totalTimeMin = dailyBreakdown.reduce(
-      (sum, d) => sum + d.duration_min,
-      0,
+    const current = this.toStatsPeriod(
+      dailyBreakdown.reduce((sum, d) => sum + d.rides, 0),
+      dailyBreakdown.reduce((sum, d) => sum + d.km, 0),
+      dailyBreakdown.reduce((sum, d) => sum + d.duration_min, 0),
+    );
+
+    const priorRaw = priorRows[0];
+    const previous = this.toStatsPeriod(
+      priorRaw?.rides ?? 0,
+      priorRaw?.km ?? 0,
+      priorRaw?.duration_min ?? 0,
     );
 
     return {
       period,
+      total_rides: current.total_rides,
+      total_km: current.total_km,
+      total_time_min: current.total_time_min,
+      avg_duration_min: current.avg_duration_min,
+      fuel_estimate_l: current.fuel_estimate_l,
+      daily_breakdown: dailyBreakdown,
+      previous_period: previous,
+    };
+  }
+
+  private toStatsPeriod(
+    totalRides: number,
+    totalKmRaw: number,
+    totalTimeMin: number,
+  ): CommuteStatsPeriodDto {
+    const totalKm = Math.round(totalKmRaw * 100) / 100;
+    return {
       total_rides: totalRides,
-      total_km: Math.round(totalKm * 100) / 100,
+      total_km: totalKm,
       total_time_min: totalTimeMin,
       avg_duration_min:
         totalRides > 0 ? Math.round(totalTimeMin / totalRides) : 0,
-      fuel_estimate_l: Math.round(totalKm * FUEL_L_PER_KM * 100) / 100,
-      daily_breakdown: dailyBreakdown,
+      fuel_estimate_l: Math.round(totalKmRaw * FUEL_L_PER_KM * 100) / 100,
     };
   }
 
