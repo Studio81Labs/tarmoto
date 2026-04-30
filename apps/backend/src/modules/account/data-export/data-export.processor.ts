@@ -24,7 +24,18 @@ export class DataExportProcessor {
 
   async process(requestId: string, userId: string): Promise<void> {
     try {
-      await this.service.markProcessing(requestId);
+      const claimed = await this.service.markProcessing(requestId);
+      if (!claimed) {
+        // Row was already moved off 'queued' by something else — most
+        // likely expireAndCleanup swept it as stuck after a long delay
+        // before this setImmediate finally fired. Bail without writing
+        // any storage so we don't orphan a ZIP under a row that now
+        // belongs to a fresh request the user just made.
+        this.logger.warn(
+          `export ${requestId} skipped: row no longer 'queued' at claim time`,
+        );
+        return;
+      }
       // No explicit select: rely on the entity's `select: false` columns
       // (e.g. password_hash) to stay out, and on the assembler's
       // sanitizer to strip stripe identifiers. Listing columns here was

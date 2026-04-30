@@ -5,7 +5,9 @@ describe('DataExportProcessor', () => {
   const baseUser = { id: 'u1', email: 'r@example.com' };
   const usersRepo = { findOne: jest.fn() };
   const service = {
-    markProcessing: jest.fn(),
+    // Defaults to "row claimed successfully"; tests that exercise the
+    // already-claimed bail-out path override this for that one call.
+    markProcessing: jest.fn().mockResolvedValue(true),
     markReady: jest.fn(),
     markFailed: jest.fn(),
   };
@@ -20,6 +22,7 @@ describe('DataExportProcessor', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    service.markProcessing.mockResolvedValue(true);
   });
 
   function makeProcessor() {
@@ -81,6 +84,21 @@ describe('DataExportProcessor', () => {
     // would otherwise become an unhandled rejection in the
     // setImmediate dispatch and crash the worker.
     await expect(processor.process('req-1', 'u1')).resolves.toBeUndefined();
+  });
+
+  it('bails without touching storage when markProcessing returns false', async () => {
+    // Stuck-row sweep moved this row off 'queued' before the worker
+    // got to it — the conditional update affects 0 rows. The processor
+    // must NOT continue, otherwise it would write a ZIP under a row
+    // that no longer represents an active export.
+    service.markProcessing.mockResolvedValueOnce(false);
+    const processor = makeProcessor();
+    await processor.process('req-1', 'u1');
+    expect(usersRepo.findOne).not.toHaveBeenCalled();
+    expect(assembler.assemble).not.toHaveBeenCalled();
+    expect(storage.write).not.toHaveBeenCalled();
+    expect(service.markReady).not.toHaveBeenCalled();
+    expect(service.markFailed).not.toHaveBeenCalled();
   });
 
   it('marks failed when user is missing', async () => {

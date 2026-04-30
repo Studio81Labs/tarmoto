@@ -370,6 +370,22 @@ describe('DataExportService', () => {
     expect(() => service.signingSecret()).toThrow(/SIGNING_SECRET/);
   });
 
+  it('markProcessing is a conditional update on status=queued and reports affected', async () => {
+    repo.update.mockResolvedValueOnce({ affected: 1, raw: [] });
+    const claimed = await service.markProcessing('req-1');
+    expect(repo.update).toHaveBeenCalledWith(
+      { id: 'req-1', status: 'queued' },
+      { status: 'processing' },
+    );
+    expect(claimed).toBe(true);
+  });
+
+  it('markProcessing returns false when the row is no longer queued', async () => {
+    repo.update.mockResolvedValueOnce({ affected: 0, raw: [] });
+    const claimed = await service.markProcessing('req-1');
+    expect(claimed).toBe(false);
+  });
+
   it('markReady is a conditional update on status=processing', async () => {
     repo.update.mockResolvedValueOnce({ affected: 1, raw: [] });
     await service.markReady('req-1', 'u1/req-1.zip', 999);

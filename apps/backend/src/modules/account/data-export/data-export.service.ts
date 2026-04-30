@@ -145,8 +145,20 @@ export class DataExportService {
     return this.repo.findOne({ where: { id } });
   }
 
-  async markProcessing(id: string): Promise<void> {
-    await this.repo.update({ id }, { status: 'processing' });
+  /**
+   * Atomically claim a queued row for processing. Returns false when
+   * the row is no longer in 'queued' (e.g. expireAndCleanup moved it
+   * to 'expired' after the stuck-row threshold elapsed). The caller
+   * MUST bail in that case — continuing would resurrect a terminal
+   * row to 'processing' and collide with the newer queued row through
+   * the partial unique index `uq_data_export_requests_user_active`.
+   */
+  async markProcessing(id: string): Promise<boolean> {
+    const result = await this.repo.update(
+      { id, status: 'queued' },
+      { status: 'processing' },
+    );
+    return Boolean(result.affected);
   }
 
   async markReady(
