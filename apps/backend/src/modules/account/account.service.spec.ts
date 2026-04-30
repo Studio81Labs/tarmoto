@@ -9,6 +9,7 @@ import {
   STRIPE_BILLING_CLIENT,
   type StripeBillingClient,
 } from './stripe-billing.client.js';
+import { EmailService } from '../email/email.service.js';
 import { User } from '../../entities/user.entity.js';
 
 describe('AccountService', () => {
@@ -37,6 +38,7 @@ describe('AccountService', () => {
       subscription_cancel_at_period_end: false,
       subscription_current_period_end: null,
       billing_trial_used_at: null,
+      email_verified_at: new Date('2026-04-23T12:00:00Z'),
       ...overrides,
     }) as User;
 
@@ -63,6 +65,13 @@ describe('AccountService', () => {
         AccountService,
         { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: STRIPE_BILLING_CLIENT, useValue: stripe },
+        {
+          provide: EmailService,
+          useValue: {
+            sendSubscriptionConfirmed: jest.fn().mockResolvedValue(null),
+            sendSubscriptionCancelled: jest.fn().mockResolvedValue(null),
+          },
+        },
         {
           provide: ConfigService,
           useValue: {

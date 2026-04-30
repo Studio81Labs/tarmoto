@@ -1,6 +1,7 @@
 import {
   Injectable,
   ConflictException,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -10,6 +11,7 @@ import * as bcrypt from 'bcrypt';
 import { User } from '../../entities/user.entity.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
+import { EmailVerificationService } from './email-verification.service.js';
 
 const ACCESS_TOKEN_EXPIRY = 60 * 60; // 1 hour
 const REFRESH_TOKEN_EXPIRY = 90 * 24 * 60 * 60; // 90 days
@@ -20,10 +22,13 @@ const DUMMY_HASH =
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     private readonly jwt: JwtService,
+    private readonly emailVerification: EmailVerificationService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -49,6 +54,22 @@ export class AuthService {
         throw new ConflictException('Email already registered');
       }
       throw err;
+    }
+
+    // Best-effort verification email. A token row is persisted inside
+    // `issueAndSend`, so even if the mail provider hiccups the user
+    // can hit `/auth/resend-verification` later without losing
+    // anything. Wrapped here as a final safety net so a never-thrown-
+    // before exception inside the verification path can't 500 the
+    // register response.
+    try {
+      await this.emailVerification.issueAndSend(saved);
+    } catch (err) {
+      this.logger.warn(
+        `Failed to issue verification email for user ${saved.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
     }
 
     return this.buildAuthResponse(saved);

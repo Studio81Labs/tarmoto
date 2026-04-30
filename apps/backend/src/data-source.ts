@@ -2,6 +2,8 @@ import 'dotenv/config';
 import { DataSource } from 'typeorm';
 import { User } from './entities/user.entity.js';
 import { UserContact } from './entities/user-contact.entity.js';
+import { EmailVerificationToken } from './entities/email-verification-token.entity.js';
+import { PasswordResetToken } from './entities/password-reset-token.entity.js';
 import { AccountDeletionLog } from './entities/account-deletion-log.entity.js';
 import { CrashAlert } from './entities/crash-alert.entity.js';
 import { RoadSegment } from './entities/road-segment.entity.js';
@@ -52,6 +54,7 @@ import { AddFunZoneClusteringSeed1715300000000 } from './migrations/171530000000
 import { AddCrashAlerts1715400000000 } from './migrations/1715400000000-AddCrashAlerts.js';
 import { AddAccountDeletion1715500000000 } from './migrations/1715500000000-AddAccountDeletion.js';
 import { AddDataExportRequests1715600000000 } from './migrations/1715600000000-AddDataExportRequests.js';
+import { AddEmailVerificationAndPasswordReset1715700000000 } from './migrations/1715700000000-AddEmailVerificationAndPasswordReset.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -63,6 +66,8 @@ export const AppDataSource = new DataSource({
   entities: [
     User,
     UserContact,
+    EmailVerificationToken,
+    PasswordResetToken,
     AccountDeletionLog,
     CrashAlert,
     RoadSegment,
@@ -122,6 +127,7 @@ export const AppDataSource = new DataSource({
     AddCrashAlerts1715400000000,
     AddAccountDeletion1715500000000,
     AddDataExportRequests1715600000000,
+    AddEmailVerificationAndPasswordReset1715700000000,
   ],
   synchronize: false,
 });

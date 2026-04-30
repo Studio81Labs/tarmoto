@@ -10,6 +10,7 @@ import {
   STRIPE_BILLING_CLIENT,
   type StripeBillingClient,
 } from './stripe-billing.client.js';
+import { EmailService } from '../email/email.service.js';
 import { User } from '../../entities/user.entity.js';
 import { AccountDeletionLog } from '../../entities/account-deletion-log.entity.js';
 
@@ -52,6 +53,7 @@ describe('AccountDeletionService', () => {
       subscription_cancel_at_period_end: false,
       subscription_current_period_end: null,
       billing_trial_used_at: null,
+      email_verified_at: new Date('2026-04-01T00:00:00Z'),
       deleted_at: null,
       deletion_scheduled_at: null,
       deletion_reason: null,
@@ -129,6 +131,13 @@ describe('AccountDeletionService', () => {
           useValue: dataSource,
         },
         { provide: STRIPE_BILLING_CLIENT, useValue: stripe },
+        {
+          provide: EmailService,
+          useValue: {
+            sendAccountDeletionScheduled: jest.fn().mockResolvedValue(null),
+            sendAccountDeletionCompleted: jest.fn().mockResolvedValue(null),
+          },
+        },
         {
           provide: ConfigService,
           useValue: {

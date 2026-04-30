@@ -2,12 +2,14 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 import { User } from '../../entities/user.entity.js';
+import { EmailService } from '../email/email.service.js';
 import {
   STRIPE_BILLING_CLIENT,
   type StripeCheckoutSession,
@@ -73,12 +75,15 @@ const PLAN_CATALOG: Record<
 
 @Injectable()
 export class AccountService {
+  private readonly logger = new Logger(AccountService.name);
+
   constructor(
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     @Inject(STRIPE_BILLING_CLIENT)
     private readonly stripe: StripeBillingClient,
     private readonly config: ConfigService,
+    private readonly email: EmailService,
   ) {}
 
   async getSubscription(
@@ -245,36 +250,103 @@ export class AccountService {
     const update: UserUpdate = { updated_at: new Date() };
     if (customerId) update.stripe_customer_id = customerId;
 
+    const periodEndSeconds = subscriptionPeriodEnd(subscription);
+    const periodEnd: Date | null =
+      periodEndSeconds != null ? new Date(periodEndSeconds * 1000) : null;
+
     if (isDeleted) {
+      const previousTier = user.subscription_tier;
       update.stripe_subscription_id = null;
       update.subscription_tier = 'free';
       update.subscription_status = 'canceled';
       update.subscription_cancel_at_period_end = false;
-      update.subscription_current_period_end =
-        subscriptionPeriodEnd(subscription) != null
-          ? new Date(subscriptionPeriodEnd(subscription)! * 1000)
-          : null;
+      update.subscription_current_period_end = periodEnd;
       await this.userRepo.update(user.id, update);
+      // Only fire the cancellation mail if the rider was actually on
+      // a paid plan beforehand. Stripe also fires `customer.subscription
+      // .deleted` when a free→paid trial gets aborted before activation,
+      // which would otherwise bombard the user with a cancellation
+      // notice for a plan they never had.
+      if (previousTier !== 'free') {
+        const planName = PLAN_CATALOG[previousTier]?.name ?? previousTier;
+        await this.dispatchSubscriptionCancelled(user, planName, periodEnd);
+      }
       return;
     }
 
     const price = subscription.items.data[0]?.price;
+    const newTier = this.tierFromPrice(price);
+    const newStatus = this.statusFromSubscription(subscription.status);
     update.stripe_subscription_id = subscription.id;
-    update.subscription_tier = this.tierFromPrice(price);
-    update.subscription_status = this.statusFromSubscription(
-      subscription.status,
-    );
+    update.subscription_tier = newTier;
+    update.subscription_status = newStatus;
     update.subscription_cancel_at_period_end =
       subscription.cancel_at_period_end;
-    update.subscription_current_period_end =
-      subscriptionPeriodEnd(subscription) != null
-        ? new Date(subscriptionPeriodEnd(subscription)! * 1000)
-        : null;
+    update.subscription_current_period_end = periodEnd;
     if (subscription.status === 'trialing' && !user.billing_trial_used_at) {
       update.billing_trial_used_at = new Date();
     }
 
     await this.userRepo.update(user.id, update);
+
+    // Fire-once confirmation: when the subscription transitions into
+    // an active state from a non-active one. Stripe emits multiple
+    // `customer.subscription.updated` events per period (proration
+    // re-bills, payment-method changes, scheduled cancel toggles, etc.)
+    // — we don't want to spam the rider with "subscription confirmed"
+    // every time. A single transition `(canceled|past_due|free) → (active|trialing)`
+    // is the trigger.
+    const wasActiveBefore =
+      user.subscription_status === 'active' ||
+      user.subscription_status === 'trialing';
+    const isActiveNow = newStatus === 'active' || newStatus === 'trialing';
+    if (!wasActiveBefore && isActiveNow && newTier !== 'free') {
+      await this.dispatchSubscriptionConfirmed(user, newTier, periodEnd);
+    }
+  }
+
+  private async dispatchSubscriptionConfirmed(
+    user: User,
+    tier: BillingTier,
+    renewsAt: Date | null,
+  ): Promise<void> {
+    const plan = PLAN_CATALOG[tier];
+    try {
+      await this.email.sendSubscriptionConfirmed(user.email, {
+        displayName: user.display_name,
+        planName: plan.name,
+        priceLabel: plan.priceLabel,
+        renewsAt,
+        manageBillingUrl: this.subscriptionPageUrl(),
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Subscription-confirmed email failed for user ${user.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  private async dispatchSubscriptionCancelled(
+    user: User,
+    planName: string,
+    endsAt: Date | null,
+  ): Promise<void> {
+    try {
+      await this.email.sendSubscriptionCancelled(user.email, {
+        displayName: user.display_name,
+        planName,
+        endsAt,
+        resubscribeUrl: this.subscriptionPageUrl(),
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Subscription-cancelled email failed for user ${user.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   private async findUserForSubscriptionEvent(

@@ -1,5 +1,7 @@
 export { User } from './user.entity.js';
 export { UserContact } from './user-contact.entity.js';
+export { EmailVerificationToken } from './email-verification-token.entity.js';
+export { PasswordResetToken } from './password-reset-token.entity.js';
 export { AccountDeletionLog } from './account-deletion-log.entity.js';
 export type { AccountDeletionEvent } from './account-deletion-log.entity.js';
 export { CrashAlert } from './crash-alert.entity.js';

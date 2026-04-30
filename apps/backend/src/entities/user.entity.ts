@@ -81,6 +81,9 @@ export class User {
   billing_trial_used_at!: Date | null;
 
   @Column({ type: 'timestamptz', nullable: true })
+  email_verified_at!: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
   deleted_at!: Date | null;
 
   @Column({ type: 'timestamptz', nullable: true })
