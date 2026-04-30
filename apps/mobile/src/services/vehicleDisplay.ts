@@ -1,6 +1,8 @@
 import type { NativeEventSubscription } from "react-native";
 import { Platform } from "react-native";
 import {
+  formatDistanceKm,
+  formatSpeedKmh,
   mountRideStatusBoard,
   resumeRideStatusBoard,
   suspendRideStatusBoard,
@@ -10,6 +12,8 @@ import {
   useVehicleDisplayStore,
   type VehicleDisplaySnapshot,
 } from "@/stores/vehicleDisplay";
+import { MANEUVER_LABELS } from "@/services/navigation";
+import { formatDurationSeconds } from "@/theme";
 import type { HazardType, LatLng } from "@/types";
 import VehicleDisplaySurface from "@/components/VehicleDisplaySurface";
 
@@ -18,6 +22,17 @@ export type VehicleNavigationSnapshot = VehicleDisplaySnapshot;
 export interface VehicleDisplayBridge {
   mountNavigation(): void;
   unmountNavigation(): void;
+  /**
+   * Push the latest navigation snapshot into the active map template
+   * surface. iOS renders the snapshot through the React-component map
+   * surface (`VehicleDisplaySurface` subscribes to the Zustand store
+   * and re-renders), so this is a no-op there. On Android Auto the
+   * Jetpack `MapTemplate` doesn't render React components — only
+   * native Pane / Header / ItemList content — so this is the call
+   * that actually paints the next maneuver and live ride stats onto
+   * the head unit display.
+   */
+  syncNavigation(snapshot: VehicleNavigationSnapshot): void;
   openSearch(items: HazardSearchItem[]): void;
   updateSearch(items: HazardSearchItem[]): void;
   closeSearch(): void;
@@ -145,6 +160,111 @@ export function buildHazardSearchItems(query: string): HazardSearchItem[] {
     .map(({ id, text, detailText }) => ({ id, text, detailText }));
 }
 
+/**
+ * One row of head-unit pane content. Mirrors the StatusBoardItem shape
+ * from `services/carplay` so the same row primitive flows through both
+ * the navigation surface (this module) and the idle status board.
+ */
+export interface NavigationPaneItem {
+  title: string;
+  detail: string;
+}
+
+/**
+ * Distance to the next maneuver, in metres. Distinct from
+ * `formatDistanceKm` (in `services/carplay`) because the navigation
+ * snapshot expresses upcoming-maneuver distance in metres rather than
+ * cumulative ride distance in kilometres — switching units below 1 km
+ * keeps "320 m to turn" readable on the bike display.
+ *
+ * The 10-m rounding is applied before the unit threshold so a 995 m
+ * input snaps to "1.0 km" rather than briefly rendering "1000 m" and
+ * then dropping to "990 m" a tick later — that backwards-looking
+ * discontinuity is jarring at a glance from the bike.
+ */
+export function formatNavDistanceMeters(meters: number): string {
+  if (!Number.isFinite(meters) || meters <= 0) return "0 m";
+  if (meters < 1000) {
+    const rounded = Math.round(meters / 10) * 10;
+    if (rounded < 1000) return `${rounded} m`;
+  }
+  return `${(meters / 1000).toFixed(1)} km`;
+}
+
+/**
+ * Compose the next-maneuver row title for the Android Auto pane.
+ *
+ * AC #4 calls for "icon + distance + road name" on the AA navigation
+ * template. Android Auto's MapTemplate pane shows a `Row` with a title
+ * and a single secondary text line — combining the maneuver verb and
+ * the distance into the title (e.g. "Turn left in 320 m") plus the
+ * road name on the detail line is the closest analogue without
+ * standing up the full `androidx.car.app.navigation.model.Maneuver`
+ * machinery (which requires bundled bitmap icons and is overkill for
+ * the polyline-derived turns we infer in `services/navigation`).
+ *
+ * Off-route state takes priority over the upcoming maneuver — when
+ * the rider has drifted off the planned polyline, the maneuver index
+ * is unreliable, so we surface that as the headline row instead.
+ */
+export function formatNextManeuverRow(
+  snapshot: VehicleNavigationSnapshot,
+): NavigationPaneItem {
+  if (snapshot.offRoute) {
+    return {
+      title: "Off route",
+      detail: `${formatNavDistanceMeters(snapshot.offRouteDistanceM)} from path`,
+    };
+  }
+  if (!snapshot.nextManeuver) {
+    return {
+      title: "Continue",
+      detail: snapshot.title,
+    };
+  }
+  const verb = MANEUVER_LABELS[snapshot.nextManeuver.type] ?? "Continue";
+  const distance = formatNavDistanceMeters(snapshot.distanceToNextM);
+  return {
+    title: `${verb} in ${distance}`,
+    detail: snapshot.nextManeuver.roadName
+      ? `onto ${snapshot.nextManeuver.roadName}`
+      : snapshot.title,
+  };
+}
+
+/**
+ * Build the four-row pane content shown on the Android Auto map
+ * template — the next maneuver headline plus the same speed /
+ * distance / duration triplet the iOS surface renders. Pure on the
+ * snapshot so tests can lock in the wording without instantiating a
+ * native template.
+ *
+ * AA's MapTemplate caps the pane at 4 rows, so we deliberately emit
+ * exactly four. Adding a fifth would silently drop on the host.
+ */
+export function buildNavigationPaneItems(
+  snapshot: VehicleNavigationSnapshot,
+): NavigationPaneItem[] {
+  // Reuse the carplay/theme formatters so the head-unit pane and the
+  // CarPlay status board can never drift on edge cases (sub-1 km/h
+  // jitter, NaN durations, negative km from a corrupt snapshot).
+  return [
+    formatNextManeuverRow(snapshot),
+    {
+      title: "Speed",
+      detail: formatSpeedKmh(snapshot.rideStats.speedKmh),
+    },
+    {
+      title: "Distance",
+      detail: formatDistanceKm(snapshot.rideStats.distanceKm),
+    },
+    {
+      title: "Duration",
+      detail: formatDurationSeconds(snapshot.rideStats.durationSeconds),
+    },
+  ];
+}
+
 interface VehicleDisplayControllerOptions {
   bridge: VehicleDisplayBridge;
   reportHazard: (location: LatLng, type: HazardType) => Promise<void>;
@@ -163,6 +283,13 @@ export class VehicleDisplayController {
       this.options.bridge.mountNavigation();
       this.mounted = true;
     }
+    // Push the new snapshot into the bridge whether or not we just
+    // mounted. iOS no-ops this (the React-component surface
+    // re-renders from the Zustand store automatically); Android Auto
+    // uses it to refresh the next-maneuver pane natively, since the
+    // Jetpack `MapTemplate` ignores the `component` prop and only
+    // renders pane/header/itemList content set on the template.
+    this.options.bridge.syncNavigation(snapshot);
   }
 
   stop(): void {
@@ -263,26 +390,42 @@ export function showVehicleDisplayBanner(
   }, 3000);
 }
 
+function createNoopRuntimeBridge(): VehicleDisplayBridge {
+  return {
+    mountNavigation: () => undefined,
+    unmountNavigation: () => undefined,
+    syncNavigation: () => undefined,
+    openSearch: () => undefined,
+    updateSearch: () => undefined,
+    closeSearch: () => undefined,
+    showBanner: showVehicleDisplayBanner,
+  };
+}
+
 function createRuntimeBridge(snapshotRef: {
   current: VehicleNavigationSnapshot | null;
 }): VehicleDisplayBridge {
   const store = useVehicleDisplayStore.getState();
 
   if (Platform.OS !== "ios" && Platform.OS !== "android") {
-    return {
-      mountNavigation: () => undefined,
-      unmountNavigation: () => undefined,
-      openSearch: () => undefined,
-      updateSearch: () => undefined,
-      closeSearch: () => undefined,
-      showBanner: showVehicleDisplayBanner,
-    };
+    return createNoopRuntimeBridge();
   }
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const lib = require("react-native-carplay") as CarPlayLib;
     const { CarPlay, MapTemplate, SearchTemplate, InformationTemplate } = lib;
+    // PaneTemplate is the Android-Auto equivalent of InformationTemplate
+    // — needed for the idle fallback root because AA's `TemplateParser`
+    // has no `"information"` case (see node_modules/react-native-carplay/
+    // android/.../TemplateParser.kt) and would build a "Template missing"
+    // pane if we fed it an InformationTemplate. Resolved separately so
+    // tests stubbing the package don't have to pay attention to it on
+    // platforms that won't reach the Android branch below.
+    const PaneTemplate =
+      Platform.OS === "android"
+        ? (lib as typeof import("react-native-carplay")).PaneTemplate
+        : null;
 
     const MAP_TEMPLATE_ID = "tarmoto-vehicle-map";
     const SEARCH_TEMPLATE_ID = "tarmoto-vehicle-hazard-search";
@@ -290,6 +433,16 @@ function createRuntimeBridge(snapshotRef: {
     let searchTemplate: InstanceType<typeof SearchTemplate> | null = null;
     let listening = false;
     let searchVisible = false;
+    /**
+     * Cache the last pane content we pushed to the Android map
+     * template. The Jetpack host treats every `setTemplate` call as a
+     * potential "screen invalidate" — re-pushing identical content
+     * costs the rider's quota of 1 update / 5 s during navigation
+     * (host-enforced rate limit) and can flicker the bike display.
+     * Diff-skip the no-op pushes here so high-frequency ride-store
+     * ticks (~1 Hz) only hit the host when something visibly changed.
+     */
+    let lastAndroidPaneSignature: string | null = null;
     const subscriptions: NativeEventSubscription[] = [];
 
     const ensureListeners = () => {
@@ -386,13 +539,27 @@ function createRuntimeBridge(snapshotRef: {
         return;
       }
 
+      if (!CarPlay.connected) return;
+      // The idle root is platform-specific: AA's `TemplateParser` has
+      // no `"information"` case, so an `InformationTemplate` would
+      // render as a "Template missing" pane on the head unit. Use the
+      // Jetpack `PaneTemplate` on Android — same shape (title + zero
+      // rows), parses cleanly. iOS keeps `InformationTemplate` so the
+      // CarPlay idle look matches the active ride-status board.
+      if (Platform.OS === "android" && PaneTemplate) {
+        const idle = new PaneTemplate({
+          title: "Tarmoto",
+          pane: { items: [] },
+        });
+        CarPlay.setRootTemplate(idle, false);
+        return;
+      }
       const idle = new InformationTemplate({
         title: "Tarmoto",
         items: [],
         actions: [],
         onActionButtonPressed: () => undefined,
       });
-      if (!CarPlay.connected) return;
       CarPlay.setRootTemplate(idle, false);
     };
 
@@ -402,6 +569,10 @@ function createRuntimeBridge(snapshotRef: {
         ensureListeners();
         store.setVisible(true);
         suspendRideStatusBoard();
+        // Reset the diff cache so the first post-mount sync always
+        // pushes its pane (the host has no carry-over from the
+        // pre-mount template).
+        lastAndroidPaneSignature = null;
         CarPlay.setRootTemplate(ensureMapTemplate(), false);
       },
       unmountNavigation: () => {
@@ -411,7 +582,37 @@ function createRuntimeBridge(snapshotRef: {
         store.setVisible(false);
         store.setSnapshot(null);
         store.setBanner(null);
+        lastAndroidPaneSignature = null;
+        mapTemplate = null;
         restoreFallbackRoot();
+      },
+      syncNavigation: (snapshot) => {
+        if (!CarPlay.connected) return;
+        // iOS path: the React-component map surface re-renders from
+        // the Zustand store automatically when `store.setSnapshot`
+        // fires (called by `syncVehicleNavigationDisplay` upstream of
+        // this bridge call), so there's no native push needed here.
+        if (Platform.OS !== "android") return;
+        // Android path: the system MapTemplate ignores the React
+        // `component` prop and only paints the pane / itemList /
+        // header content set on the template. Push the latest pane
+        // every tick so the rider sees current speed / distance /
+        // duration / next-maneuver natively.
+        const items = buildNavigationPaneItems(snapshot);
+        const signature = items.map((i) => `${i.title}|${i.detail}`).join("\n");
+        if (signature === lastAndroidPaneSignature) return;
+        lastAndroidPaneSignature = signature;
+        const template = ensureMapTemplate();
+        template.updateConfig({
+          ...template.config,
+          pane: {
+            items: items.map((item, index) => ({
+              id: `nav-row-${index}`,
+              text: item.title,
+              detailText: item.detail,
+            })),
+          },
+        } as never);
       },
       openSearch: (items) => {
         if (!CarPlay.connected) return;
@@ -463,14 +664,7 @@ function createRuntimeBridge(snapshotRef: {
       showBanner: showVehicleDisplayBanner,
     };
   } catch {
-    return {
-      mountNavigation: () => undefined,
-      unmountNavigation: () => undefined,
-      openSearch: () => undefined,
-      updateSearch: () => undefined,
-      closeSearch: () => undefined,
-      showBanner: showVehicleDisplayBanner,
-    };
+    return createNoopRuntimeBridge();
   }
 }
 

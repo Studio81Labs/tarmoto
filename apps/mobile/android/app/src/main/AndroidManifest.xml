@@ -4,6 +4,16 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!--
+      US-17 — Android Auto.
+      Phones (not head units) are the primary target; Android Auto runs as
+      a projection, so the automotive feature is optional. Without this
+      flag, Play Console rejects the build for non-automotive devices.
+    -->
+    <uses-feature
+      android:name="android.hardware.type.automotive"
+      android:required="false" />
+
     <application
       android:name=".MainApplication"
       android:label="@string/app_name"
@@ -13,6 +23,36 @@
       android:theme="@style/AppTheme"
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
+      <!--
+        Tells the AA host this app provides templated screens (rather than
+        media or messaging). Points to res/xml/automotive_app_desc.xml.
+      -->
+      <meta-data
+        android:name="com.google.android.gms.car.application"
+        android:resource="@xml/automotive_app_desc" />
+
+      <!--
+        Pin the AA Car App API level Tarmoto compiled against. The
+        react-native-carplay package's manifest contributes a default of
+        1; we ship templates (Map / Pane / Search / Navigation) introduced
+        through API level 5, so we lift the floor here. AA hosts that
+        report a lower API level will silently skip the connection rather
+        than crash on an unrecognised template.
+      -->
+      <meta-data
+        android:name="androidx.car.app.minCarApiLevel"
+        android:value="5" />
+
+      <!--
+        CarAppService and the automotive intent filter are also declared
+        in the react-native-carplay package's manifest and merged into
+        this app at build time (see node_modules/react-native-carplay/
+        android/src/main/AndroidManifest.xml). Keeping the merged service
+        the single source of truth avoids two registrations of the same
+        component name. If the package is removed, declare the service
+        explicitly here pointing at .CarPlayService.
+      -->
+
       <activity
         android:name=".MainActivity"
         android:label="@string/app_name"

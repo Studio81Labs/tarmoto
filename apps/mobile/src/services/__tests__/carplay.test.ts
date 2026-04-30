@@ -1,23 +1,29 @@
 /**
- * CarPlay bridge tests — US-17 AC #3.
+ * Vehicle ride-status board tests — US-17 AC #3.
  *
- * The native CarPlay surface is iOS-only and requires Apple-issued
- * entitlements to validate live, so these tests focus on what the
- * bridge contract guarantees regardless of environment:
+ * The native head-unit surfaces are platform-specific: CarPlay is
+ * iOS-only and requires Apple-issued entitlements; Android Auto needs a
+ * real head unit or the Desktop Head Unit emulator. Neither path can be
+ * validated live in CI, so these tests focus on what the bridge
+ * contract guarantees regardless of environment:
  *
  *   - Pure formatters survive the noisy edge cases the ride store
  *     produces (sub-1 km/h GPS jitter, classifier null states, NaN
  *     from a malformed sensor window).
- *   - Mount/update/unmount drives the injected bridge fake the way the
- *     hook will drive it on the device, so wiring regressions surface
- *     here instead of on a bike at 80 km/h.
+ *   - Mount/update/unmount drives the injected bridge fake the way
+ *     the controller will drive it on the device, so wiring
+ *     regressions surface here instead of on a bike at 80 km/h.
+ *   - Both connect and disconnect lifecycle hooks reset the local
+ *     mount flag so iOS' disconnect-driven reset and Android's
+ *     connect-driven reset (where AA may not emit a clean disconnect
+ *     when the host restarts) both keep the next ride-tick honest.
  */
 
 import {
   __resetCarPlayStateForTest,
   __setCarPlayBridgeForTest,
   buildRideStatusItems,
-  type CarPlayBridge,
+  type VehicleStatusBridge,
   formatDistanceKm,
   formatDuration,
   formatQualityDetail,
@@ -25,38 +31,48 @@ import {
   formatSpeedKmh,
   mountRideStatusBoard,
   resumeRideStatusBoard,
-  suspendRideStatusBoard,
   type RideStatusBoard,
+  suspendRideStatusBoard,
   unmountRideStatusBoard,
 } from "../carplay";
 
-interface FakeBridge extends CarPlayBridge {
-  setRoot: jest.Mock;
-  updateItems: jest.Mock;
+interface FakeBridge extends VehicleStatusBridge {
+  mount: jest.Mock;
+  update: jest.Mock;
   clear: jest.Mock;
   /** Fire any disconnect callbacks the controller has registered. */
   fireDisconnect: () => void;
+  /** Fire any connect callbacks the controller has registered. */
+  fireConnect: () => void;
 }
 
 function createFakeBridge(): FakeBridge {
-  const setRoot = jest.fn();
-  const updateItems = jest.fn();
+  const mount = jest.fn();
+  const update = jest.fn();
   const clear = jest.fn();
   const disconnectListeners = new Set<() => void>();
+  const connectListeners = new Set<() => void>();
   return {
-    setRoot,
-    updateItems,
+    mount,
+    update,
     clear,
     isAvailable: () => true,
-    setRootInformationTemplate: setRoot,
-    updateInformationTemplateItems: updateItems,
-    clearRootTemplate: clear,
+    mountStatusBoard: mount,
+    updateStatusBoard: update,
+    clearStatusBoard: clear,
     subscribeDisconnect: (cb) => {
       disconnectListeners.add(cb);
       return () => disconnectListeners.delete(cb);
     },
+    subscribeConnect: (cb) => {
+      connectListeners.add(cb);
+      return () => connectListeners.delete(cb);
+    },
     fireDisconnect: () => {
       for (const cb of disconnectListeners) cb();
+    },
+    fireConnect: () => {
+      for (const cb of connectListeners) cb();
     },
   };
 }
@@ -203,10 +219,10 @@ describe("ride status board lifecycle", () => {
 
   it("mounts the template once, then updates items on subsequent calls", () => {
     mountRideStatusBoard(makeBoard({ speedKmh: 30 }));
-    expect(bridge.setRoot).toHaveBeenCalledTimes(1);
-    expect(bridge.updateItems).not.toHaveBeenCalled();
+    expect(bridge.mount).toHaveBeenCalledTimes(1);
+    expect(bridge.update).not.toHaveBeenCalled();
 
-    const firstCall = bridge.setRoot.mock.calls[0]?.[0] as {
+    const firstCall = bridge.mount.mock.calls[0]?.[0] as {
       title: string;
       items: { title: string; detail: string }[];
     };
@@ -218,77 +234,90 @@ describe("ride status board lifecycle", () => {
     // Re-mount call while already mounted falls through to update path
     // so the bike display never blanks during a hot reload / refocus.
     mountRideStatusBoard(makeBoard({ speedKmh: 31 }));
-    expect(bridge.setRoot).toHaveBeenCalledTimes(1);
-    expect(bridge.updateItems).toHaveBeenCalledTimes(1);
+    expect(bridge.mount).toHaveBeenCalledTimes(1);
+    expect(bridge.update).toHaveBeenCalledTimes(1);
   });
 
   it("titles the template by ride type", () => {
     mountRideStatusBoard(makeBoard({ rideType: "commute" }));
-    const config = bridge.setRoot.mock.calls[0]?.[0] as { title: string };
+    const config = bridge.mount.mock.calls[0]?.[0] as { title: string };
     expect(config.title).toBe("Commute");
   });
 
-  it("re-issues setRootTemplate when the ride type changes mid-mount", () => {
+  it("re-issues mount when the ride type changes mid-mount", () => {
     // Seed mount with free-ride title.
     mountRideStatusBoard(makeBoard({ rideType: "free" }));
-    expect(bridge.setRoot).toHaveBeenCalledTimes(1);
+    expect(bridge.mount).toHaveBeenCalledTimes(1);
 
     // Same ride type on the next mount call → items-only update, no
-    // setRoot re-issue (that would flicker the bike display).
+    // mount re-issue (that would flicker the bike display).
     mountRideStatusBoard(makeBoard({ rideType: "free", speedKmh: 42 }));
-    expect(bridge.setRoot).toHaveBeenCalledTimes(1);
-    expect(bridge.updateItems).toHaveBeenCalledTimes(1);
+    expect(bridge.mount).toHaveBeenCalledTimes(1);
+    expect(bridge.update).toHaveBeenCalledTimes(1);
 
-    // Ride type flips → re-issue setRootTemplate so the title refreshes.
+    // Ride type flips → re-issue mount so the title refreshes.
     mountRideStatusBoard(makeBoard({ rideType: "commute" }));
-    expect(bridge.setRoot).toHaveBeenCalledTimes(2);
-    const secondSetRoot = bridge.setRoot.mock.calls[1]?.[0] as {
-      title: string;
-    };
-    expect(secondSetRoot.title).toBe("Commute");
+    expect(bridge.mount).toHaveBeenCalledTimes(2);
+    const secondMount = bridge.mount.mock.calls[1]?.[0] as { title: string };
+    expect(secondMount.title).toBe("Commute");
   });
 
-  it("skips native traffic when CarPlay is not available", () => {
+  it("skips native traffic when the head unit is not available", () => {
     // Bridge reports disconnected — every lifecycle op should no-op
-    // without touching setRoot / updateItems / clear.
+    // without touching mount / update / clear.
     const offlineBridge = createFakeBridge();
     offlineBridge.isAvailable = () => false;
     __setCarPlayBridgeForTest(offlineBridge);
 
     expect(mountRideStatusBoard(makeBoard())).toBe(false);
-    expect(offlineBridge.setRoot).not.toHaveBeenCalled();
+    expect(offlineBridge.mount).not.toHaveBeenCalled();
 
     // Subsequent ride-tick while still disconnected — same short-
-    // circuit, so neither setRoot nor updateItems should fire.
+    // circuit, so neither mount nor update should fire.
     expect(mountRideStatusBoard(makeBoard({ speedKmh: 80 }))).toBe(false);
-    expect(offlineBridge.setRoot).not.toHaveBeenCalled();
-    expect(offlineBridge.updateItems).not.toHaveBeenCalled();
+    expect(offlineBridge.mount).not.toHaveBeenCalled();
+    expect(offlineBridge.update).not.toHaveBeenCalled();
 
     unmountRideStatusBoard();
     expect(offlineBridge.clear).not.toHaveBeenCalled();
   });
 
-  it("re-issues setRootTemplate after a CarPlay disconnect/reconnect", () => {
+  it("re-issues mount after a head-unit disconnect/reconnect", () => {
     // First mount on initial connect.
     mountRideStatusBoard(makeBoard());
-    expect(bridge.setRoot).toHaveBeenCalledTimes(1);
+    expect(bridge.mount).toHaveBeenCalledTimes(1);
 
-    // Same-title mount → items-only update path (no second setRoot).
+    // Same-title mount → items-only update path (no second mount).
     mountRideStatusBoard(makeBoard({ speedKmh: 42 }));
-    expect(bridge.setRoot).toHaveBeenCalledTimes(1);
-    expect(bridge.updateItems).toHaveBeenCalledTimes(1);
+    expect(bridge.mount).toHaveBeenCalledTimes(1);
+    expect(bridge.update).toHaveBeenCalledTimes(1);
 
-    // CarPlay disconnects mid-ride — the native CPTemplate scene is
+    // Head unit disconnects mid-ride — the native template scene is
     // destroyed. The bridge fires its disconnect listeners, which the
     // controller uses to reset its mount flag.
     bridge.fireDisconnect();
 
-    // Reconnect: next ride-tick comes in. We must re-issue setRoot
+    // Reconnect: next ride-tick comes in. We must re-issue mount
     // (NOT items-update) because the previous template no longer
     // exists on the native side. Otherwise the bike display stays
     // blank for the rest of the ride.
     mountRideStatusBoard(makeBoard({ speedKmh: 50 }));
-    expect(bridge.setRoot).toHaveBeenCalledTimes(2);
+    expect(bridge.mount).toHaveBeenCalledTimes(2);
+  });
+
+  it("treats a fresh connect as a reset (Android-Auto-friendly)", () => {
+    // Android Auto's `Session.onDestroy` doesn't emit a `didDisconnect`
+    // through the package. Instead, when the host restarts and a new
+    // session begins, `didConnect` fires again. The controller must
+    // treat that as a signal to drop the local mount flag so the next
+    // ride-tick re-issues mount against the new template id.
+    mountRideStatusBoard(makeBoard());
+    expect(bridge.mount).toHaveBeenCalledTimes(1);
+
+    bridge.fireConnect();
+
+    mountRideStatusBoard(makeBoard({ speedKmh: 60 }));
+    expect(bridge.mount).toHaveBeenCalledTimes(2);
   });
 
   it("unmount is idempotent and resets the mount flag", () => {
@@ -304,26 +333,26 @@ describe("ride status board lifecycle", () => {
     expect(bridge.clear).toHaveBeenCalledTimes(1);
 
     mountRideStatusBoard(makeBoard());
-    expect(bridge.setRoot).toHaveBeenCalledTimes(2);
+    expect(bridge.mount).toHaveBeenCalledTimes(2);
   });
 
   it("__resetCarPlayStateForTest forces the next call to re-mount", () => {
     mountRideStatusBoard(makeBoard());
-    bridge.setRoot.mockClear();
+    bridge.mount.mockClear();
 
     __resetCarPlayStateForTest();
     mountRideStatusBoard(makeBoard());
-    expect(bridge.setRoot).toHaveBeenCalledTimes(1);
+    expect(bridge.mount).toHaveBeenCalledTimes(1);
   });
 
   it("can suspend and later resume the ride-status board", () => {
     suspendRideStatusBoard();
 
     expect(mountRideStatusBoard(makeBoard())).toBe(false);
-    expect(bridge.setRoot).not.toHaveBeenCalled();
+    expect(bridge.mount).not.toHaveBeenCalled();
 
     resumeRideStatusBoard();
     expect(mountRideStatusBoard(makeBoard())).toBe(true);
-    expect(bridge.setRoot).toHaveBeenCalledTimes(1);
+    expect(bridge.mount).toHaveBeenCalledTimes(1);
   });
 });
