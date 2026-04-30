@@ -81,17 +81,22 @@ type LoadState =
 export default function GamificationPage() {
   const userId = useAuthStore((s) => s.user?.id);
   const [state, setState] = useState<LoadState>({ status: "idle" });
-  const [joining, setJoining] = useState<string | null>(null);
+  // Tracks every join currently in flight. Using a set instead of a single
+  // string lets two challenges be joined concurrently without one's
+  // completion stripping the other's spinner.
+  const [joiningIds, setJoiningIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const [joinError, setJoinError] = useState<string | null>(null);
 
   // `silent` keeps the current `ready` snapshot mounted while a refetch runs
   // in the background — used after a successful "Join challenge" so the
-  // dashboard doesn't flash to the page-level skeleton; the button has its
-  // own spinner via `joining`. Initial loads (no snapshot yet) still set
-  // `loading` so the user sees the skeleton on first render. A silent
+  // dashboard doesn't flash to the page-level skeleton; the button keeps
+  // its own spinner via `joiningIds`. Initial loads (no snapshot yet) still
+  // set `loading` so the user sees the skeleton on first render. A silent
   // refetch that fails leaves the existing snapshot on screen and rethrows
-  // so the caller can surface a localised error instead of replacing the
-  // whole page with the error fallback.
+  // so the caller can decide what to surface — see `handleJoin` for why a
+  // post-join refetch failure must NOT be reported as a join failure.
   const load = useCallback(
     async (
       uid: string,
@@ -128,17 +133,50 @@ export default function GamificationPage() {
   const handleJoin = useCallback(
     async (challengeId: string) => {
       if (!userId) return;
-      setJoining(challengeId);
+      setJoiningIds((prev) => {
+        const next = new Set(prev);
+        next.add(challengeId);
+        return next;
+      });
       setJoinError(null);
       try {
         await joinChallenge(challengeId);
-        await load(userId, { silent: true });
       } catch (err) {
         setJoinError(
           err instanceof Error ? err.message : "Could not join challenge.",
         );
+        setJoiningIds((prev) => {
+          const next = new Set(prev);
+          next.delete(challengeId);
+          return next;
+        });
+        return;
+      }
+      // Join succeeded — reflect that in the snapshot immediately so the
+      // card flips to "Joined" without waiting on the refetch. Any failure
+      // of the silent refetch must NOT be surfaced via `joinError`: the
+      // backend has already accepted the join, and showing "Could not load
+      // badges" would make the user think their join failed.
+      setState((prev) =>
+        prev.status === "ready"
+          ? {
+              ...prev,
+              snapshot: markChallengeJoined(prev.snapshot, challengeId),
+            }
+          : prev,
+      );
+      try {
+        await load(userId, { silent: true });
+      } catch {
+        // The optimistic update keeps the dashboard consistent until the
+        // next page visit refreshes it. Swallowing the error is correct —
+        // the join itself succeeded.
       } finally {
-        setJoining(null);
+        setJoiningIds((prev) => {
+          const next = new Set(prev);
+          next.delete(challengeId);
+          return next;
+        });
       }
     },
     [userId, load],
@@ -181,21 +219,47 @@ export default function GamificationPage() {
   return (
     <Dashboard
       snapshot={state.snapshot}
-      joining={joining}
+      joiningIds={joiningIds}
       joinError={joinError}
       onJoin={handleJoin}
     />
   );
 }
 
+/**
+ * Returns a snapshot with the named challenge optimistically flipped to
+ * "joined" — used between a successful `POST /challenges/{id}/join` and
+ * the silent refetch so the card immediately reflects the new state. The
+ * participant count is bumped by one if the rider was not already a
+ * participant. The refetch (or next page visit) reconciles with the
+ * authoritative server state.
+ */
+function markChallengeJoined(
+  snapshot: GamificationSnapshot,
+  challengeId: string,
+): GamificationSnapshot {
+  const existing = snapshot.challengeMeta[challengeId];
+  if (existing?.joined) return snapshot;
+  return {
+    ...snapshot,
+    challengeMeta: {
+      ...snapshot.challengeMeta,
+      [challengeId]: {
+        joined: true,
+        participantCount: (existing?.participantCount ?? 0) + 1,
+      },
+    },
+  };
+}
+
 function Dashboard({
   snapshot,
-  joining,
+  joiningIds,
   joinError,
   onJoin,
 }: {
   snapshot: GamificationSnapshot;
-  joining: string | null;
+  joiningIds: ReadonlySet<string>;
   joinError: string | null;
   onJoin: (id: string) => void;
 }) {
@@ -262,7 +326,7 @@ function Dashboard({
                 key={challenge.id}
                 challenge={challenge}
                 meta={snapshot.challengeMeta[challenge.id]}
-                joining={joining === challenge.id}
+                joining={joiningIds.has(challenge.id)}
                 onJoin={onJoin}
               />
             ))}
