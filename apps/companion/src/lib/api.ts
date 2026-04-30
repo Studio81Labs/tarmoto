@@ -655,12 +655,51 @@ export interface UpsertRoadReviewInput {
   photos?: string[];
 }
 
+export interface ReviewPhotosResponse {
+  photos: string[];
+}
+
 export const roadsApi = {
   getReviews: (segmentId: string, init?: RequestInit) =>
     apiFetch<RoadReview[]>(
       `/roads/${encodeURIComponent(segmentId)}/reviews`,
       init,
     ),
+  uploadReviewPhotos: async (
+    segmentId: string,
+    files: File[],
+  ): Promise<{ data: ReviewPhotosResponse }> => {
+    // Multipart upload bypasses `apiFetch` because it forces a JSON
+    // Content-Type — letting the browser set its own boundary header is
+    // mandatory for the multer parser on the backend to find the files.
+    const token = useAuthStore.getState().accessToken;
+    const body = new FormData();
+    for (const file of files) {
+      body.append("files", file);
+    }
+
+    const res = await fetch(
+      `${API_BASE}/roads/${encodeURIComponent(segmentId)}/reviews/photos`,
+      {
+        method: "POST",
+        body,
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      },
+    );
+
+    if (!res.ok) {
+      if (res.status === 401) useAuthStore.getState().clearSession();
+      const payload = await res.json().catch(() => ({}));
+      throw new ApiError(
+        (payload as { message?: string }).message ??
+          `Request failed (${res.status})`,
+        res.status,
+        payload,
+      );
+    }
+
+    return { data: (await res.json()) as ReviewPhotosResponse };
+  },
   createReview: (
     segmentId: string,
     data: UpsertRoadReviewInput,

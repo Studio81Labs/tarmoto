@@ -1,19 +1,101 @@
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
   ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { basename, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { RoadReview } from '../../entities/road-review.entity.js';
 import { RoadReviewVote } from '../../entities/road-review-vote.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
 import {
+  ALLOWED_REVIEW_PHOTO_TYPES,
   CreateReviewDto,
+  MAX_REVIEW_PHOTOS,
+  REVIEW_PHOTO_PATH_PREFIX,
+  ReviewPhotosResponseDto,
   ReviewResponseDto,
   ReviewVoteResultDto,
   sanitizeReviewPhotos,
 } from './dto/review.dto.js';
+
+const REVIEW_PHOTO_UPLOAD_DIR = join(
+  process.cwd(),
+  'uploads',
+  'road-review-photos',
+);
+
+function hasControlCharacters(value: string): boolean {
+  return [...value].some((character) => {
+    const code = character.charCodeAt(0);
+    return code <= 31 || code === 127;
+  });
+}
+
+/**
+ * Resolve a photo URL to the on-disk file path inside our managed upload
+ * directory, or `null` when the URL does not belong to us. Mirrors the
+ * `users.service` avatar pattern: parse the URL, only honor it when the
+ * pathname carries the managed prefix, and reject decoded filenames that
+ * include path separators, control characters, or `.`/`..` segments so a
+ * crafted `photos[]` entry can't make a cascade delete escape the managed
+ * directory.
+ */
+function managedReviewPhotoFilePath(photoUrl: string | null): string | null {
+  if (!photoUrl) return null;
+
+  try {
+    const parsed = new URL(photoUrl, 'https://tarmoto.local');
+    if (!parsed.pathname.startsWith(REVIEW_PHOTO_PATH_PREFIX)) return null;
+
+    const encodedFilename = parsed.pathname.slice(
+      REVIEW_PHOTO_PATH_PREFIX.length,
+    );
+    if (!encodedFilename) return null;
+
+    const filename = decodeURIComponent(encodedFilename);
+    if (
+      filename === '.' ||
+      filename === '..' ||
+      filename !== basename(filename) ||
+      filename.includes('/') ||
+      filename.includes('\\') ||
+      hasControlCharacters(filename)
+    ) {
+      return null;
+    }
+
+    return join(REVIEW_PHOTO_UPLOAD_DIR, filename);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Best-effort delete of any review-photo files we manage out of the given
+ * URL list. Third-party URLs and missing files are skipped silently — the
+ * caller has already committed the new state in the DB and we don't want a
+ * stray orphan to surface a 500. Permission errors still bubble so an
+ * operator notices a misconfigured uploads directory.
+ */
+async function deleteManagedReviewPhotos(
+  photoUrls: readonly string[] | null | undefined,
+): Promise<void> {
+  if (!photoUrls?.length) return;
+  for (const photoUrl of photoUrls) {
+    const filePath = managedReviewPhotoFilePath(photoUrl);
+    if (!filePath) continue;
+    try {
+      await unlink(filePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+  }
+}
 
 interface VoteAggregate {
   helpful_count: number;
@@ -121,12 +203,24 @@ export class ReviewsService {
       throw new NotFoundException('Review not found');
     }
 
+    const previousPhotos = review.photos ?? [];
+    const nextPhotos = dto.photos ?? [];
+
     review.rating = dto.rating;
     review.comment = dto.comment ?? null;
     review.bike_model = dto.bike_model ?? null;
     review.photos = dto.photos ?? null;
 
     const saved = await this.reviewRepo.save(review);
+
+    // Cascade-delete files for any managed photos that the new payload
+    // dropped, so removing a photo from an existing review doesn't leave
+    // an orphan on disk. Run after save so a DB failure can't leave the
+    // row pointing at a file we already deleted.
+    const nextSet = new Set(nextPhotos);
+    const removed = previousPhotos.filter((photo) => !nextSet.has(photo));
+    await deleteManagedReviewPhotos(removed);
+
     const voteMap = await this.aggregateVotes([saved.id], userId);
     return this.toResponse(saved, voteMap.get(saved.id), userId);
   }
@@ -138,7 +232,79 @@ export class ReviewsService {
     if (!review) {
       throw new NotFoundException('Review not found');
     }
+    const photos = review.photos ?? [];
     await this.reviewRepo.remove(review);
+    await deleteManagedReviewPhotos(photos);
+  }
+
+  /**
+   * Persist uploaded review photo files to local disk and return the URLs
+   * the caller should submit on the next `POST/PUT /roads/:id/reviews`.
+   *
+   * The endpoint deliberately doesn't require the review to exist yet —
+   * the typical flow is upload-then-create, and validating the segment
+   * here would force a second roundtrip. Orphaned files (uploaded then
+   * never attached) are accepted as a known cost; an S3-backed lifecycle
+   * sweep is tracked separately. We do still verify the segment exists so
+   * arbitrary UUIDs can't be used to spam the uploads directory.
+   */
+  async uploadPhotos(
+    userId: string,
+    segmentId: string,
+    files: Express.Multer.File[],
+    publicBaseUrl: string,
+  ): Promise<ReviewPhotosResponseDto> {
+    if (files.length === 0) {
+      throw new BadRequestException('At least one photo file is required');
+    }
+    if (files.length > MAX_REVIEW_PHOTOS) {
+      throw new BadRequestException(
+        `You can upload up to ${MAX_REVIEW_PHOTOS} photos at a time`,
+      );
+    }
+
+    const segment = await this.segmentRepo.findOne({
+      where: { id: segmentId },
+    });
+    if (!segment) {
+      throw new NotFoundException('Road segment not found');
+    }
+
+    const records = files.map((file) => {
+      const extension = ALLOWED_REVIEW_PHOTO_TYPES.get(file.mimetype);
+      if (!extension) {
+        throw new BadRequestException(
+          'Photos must be PNG, JPEG, or WebP images',
+        );
+      }
+      const filename = `${segmentId}-${userId}-${Date.now()}-${randomUUID()}${extension}`;
+      return { file, filename };
+    });
+
+    await mkdir(REVIEW_PHOTO_UPLOAD_DIR, { recursive: true });
+
+    const written: string[] = [];
+    try {
+      for (const { file, filename } of records) {
+        const filePath = join(REVIEW_PHOTO_UPLOAD_DIR, filename);
+        await writeFile(filePath, file.buffer);
+        written.push(filename);
+      }
+    } catch (error) {
+      // Roll back any partial writes (e.g. ENOSPC mid-batch) so the caller
+      // either gets every URL it expected or none — half-uploaded galleries
+      // would leak storage and confuse retry logic on the client.
+      for (const filename of written) {
+        await unlink(join(REVIEW_PHOTO_UPLOAD_DIR, filename)).catch(() => {});
+      }
+      throw error;
+    }
+
+    return {
+      photos: written.map(
+        (filename) => `${publicBaseUrl}${REVIEW_PHOTO_PATH_PREFIX}${filename}`,
+      ),
+    };
   }
 
   /**

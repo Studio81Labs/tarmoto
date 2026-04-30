@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -7,7 +8,9 @@ import {
   Body,
   Param,
   Req,
+  UploadedFiles,
   UseGuards,
+  UseInterceptors,
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
@@ -17,13 +20,19 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
 } from '@nestjs/swagger';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard.js';
 import { ReviewsService } from './reviews.service.js';
 import {
   CreateReviewDto,
+  MAX_REVIEW_PHOTO_BYTES,
+  MAX_REVIEW_PHOTOS,
+  ReviewPhotosResponseDto,
   ReviewResponseDto,
   ReviewVoteDto,
   ReviewVoteResultDto,
@@ -45,6 +54,57 @@ export class ReviewsController {
     return this.reviewsService.listForSegment(
       segmentId,
       req.user?.userId ?? null,
+    );
+  }
+
+  @Post(':segmentId/reviews/photos')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @UseInterceptors(
+    FilesInterceptor('files', MAX_REVIEW_PHOTOS, {
+      limits: { fileSize: MAX_REVIEW_PHOTO_BYTES },
+    }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Upload photos for a road review',
+    description:
+      `Accepts up to ${MAX_REVIEW_PHOTOS} image files (JPEG, PNG, or WebP) ` +
+      `at ${Math.round(
+        MAX_REVIEW_PHOTO_BYTES / (1024 * 1024),
+      )} MB each. Returns the URLs to submit on POST/PUT ` +
+      `/roads/:segmentId/reviews under the \`photos\` field.`,
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['files'],
+      properties: {
+        files: {
+          type: 'array',
+          items: { type: 'string', format: 'binary' },
+          maxItems: MAX_REVIEW_PHOTOS,
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 201, type: ReviewPhotosResponseDto })
+  @ApiResponse({ status: 400, description: 'Invalid file type or empty body' })
+  @ApiResponse({ status: 404, description: 'Road segment not found' })
+  async uploadPhotos(
+    @Req() req: express.Request,
+    @Param('segmentId', ParseUUIDPipe) segmentId: string,
+    @UploadedFiles() files: Express.Multer.File[] | undefined,
+  ): Promise<ReviewPhotosResponseDto> {
+    if (!files || files.length === 0) {
+      throw new BadRequestException('At least one photo file is required');
+    }
+    const publicBaseUrl = `${req.protocol}://${req.get('host')}`;
+    return this.reviewsService.uploadPhotos(
+      req.user!.userId,
+      segmentId,
+      files,
+      publicBaseUrl,
     );
   }
 

@@ -5,21 +5,81 @@ import {
   IsInt,
   IsString,
   IsOptional,
-  IsUrl,
   Min,
   Max,
   MaxLength,
+  ValidateBy,
+  buildMessage,
+  type ValidationOptions,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export const MAX_REVIEW_PHOTOS = 5;
+export const MAX_REVIEW_PHOTO_BYTES = 5 * 1024 * 1024;
+export const REVIEW_PHOTO_PATH_PREFIX = '/uploads/road-review-photos/';
+
+/**
+ * Maps each accepted upload mimetype to the on-disk extension we'll use.
+ * The set is intentionally narrow — we only accept image formats every
+ * mainstream browser can render via plain `<img src>` so the gallery
+ * doesn't need a per-format fallback path.
+ */
+export const ALLOWED_REVIEW_PHOTO_TYPES: ReadonlyMap<string, string> = new Map([
+  ['image/jpeg', '.jpg'],
+  ['image/png', '.png'],
+  ['image/webp', '.webp'],
+]);
+
+/**
+ * Validate a photo URL against the same rule the response sanitizer enforces:
+ * `https://` always wins, plain `http://` is only accepted on loopback so the
+ * managed-uploads flow works in local dev (where `req.protocol` is `http`)
+ * without weakening the production rule. Production deployments are expected
+ * to serve the API and the `/uploads` static prefix over https — mixed-content
+ * blocking would otherwise break image rendering even if validation passed.
+ */
+export function isAllowedReviewPhotoUrl(value: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  if (parsed.hostname.length === 0) return false;
+  if (parsed.protocol === 'https:') return true;
+  if (parsed.protocol === 'http:') {
+    return parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+  }
+  return false;
+}
+
+const IS_REVIEW_PHOTO_URL = 'isReviewPhotoUrl';
+
+function IsReviewPhotoUrl(options?: ValidationOptions) {
+  return ValidateBy(
+    {
+      name: IS_REVIEW_PHOTO_URL,
+      validator: {
+        validate: (value: unknown): boolean =>
+          typeof value === 'string' && isAllowedReviewPhotoUrl(value.trim()),
+        defaultMessage: buildMessage(
+          (eachPrefix) =>
+            eachPrefix +
+            '$property must be an https URL (loopback http is only accepted in local development).',
+          options,
+        ),
+      },
+    },
+    options,
+  );
+}
 
 /**
  * Coerce a raw photos value from the DB into the DTO contract: keep only
- * plain `https://` strings and cap at `MAX_REVIEW_PHOTOS`. The
- * `road_reviews.photos` column is `text[]` with no per-element validation,
- * and legacy rows may predate the HTTPS-only `CreateReviewDto` rule; both
- * response mappers (`reviews.service.toResponse` and
+ * URLs that pass the same rule `CreateReviewDto.photos` enforces and cap
+ * at `MAX_REVIEW_PHOTOS`. The `road_reviews.photos` column is `text[]`
+ * with no per-element validation, and legacy rows may predate the rule;
+ * both response mappers (`reviews.service.toResponse` and
  * `roads.service.mapReviewRows`) must go through this so /roads/:id and
  * /roads/:id/reviews can't disagree on what's valid.
  */
@@ -28,20 +88,12 @@ export function sanitizeReviewPhotos(raw: unknown): string[] {
   const out: string[] = [];
   for (const p of raw as unknown[]) {
     if (typeof p !== 'string') continue;
-    // Parse via URL instead of a `startsWith` prefix check so whitespace-
-    // padded or otherwise malformed strings (e.g. "https:// invalid") are
-    // rejected, not just wrong schemes. Return the trimmed form so the
-    // mobile `Image` source.uri doesn't receive leading/trailing whitespace
-    // that the network stack would reject.
+    // Trim before the protocol/host check so whitespace-padded strings
+    // (e.g. "  https://ok.example.com/ok.jpg ") are kept in their cleaned
+    // form — clients render the URL directly and a leading space would
+    // break Image source.uri fetches.
     const candidate = p.trim();
-    try {
-      const parsed = new URL(candidate);
-      if (parsed.protocol !== 'https:' || parsed.hostname.length === 0) {
-        continue;
-      }
-    } catch {
-      continue;
-    }
+    if (!isAllowedReviewPhotoUrl(candidate)) continue;
     out.push(candidate);
     if (out.length >= MAX_REVIEW_PHOTOS) break;
   }
@@ -71,13 +123,27 @@ export class CreateReviewDto {
     required: false,
     type: [String],
     maxItems: MAX_REVIEW_PHOTOS,
-    description: 'HTTPS URLs of review photos hosted on Tarmoto media storage.',
+    description:
+      'URLs of review photos hosted on Tarmoto media storage. Use ' +
+      'POST /roads/:segmentId/reviews/photos to obtain these URLs.',
   })
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(MAX_REVIEW_PHOTOS)
-  @IsUrl({ protocols: ['https'], require_protocol: true }, { each: true })
+  @IsReviewPhotoUrl({ each: true })
   photos?: string[];
+}
+
+export class ReviewPhotosResponseDto {
+  @ApiProperty({
+    type: [String],
+    maxItems: MAX_REVIEW_PHOTOS,
+    description:
+      'URLs of the photos that were just uploaded. Submit these as the ' +
+      '`photos` field on POST/PUT /roads/:segmentId/reviews to attach ' +
+      'them to a review.',
+  })
+  photos!: string[];
 }
 
 export class ReviewResponseDto {

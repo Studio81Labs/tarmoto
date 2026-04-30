@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
+import { BadRequestException } from '@nestjs/common';
 import { authGuardTestProviders } from '../auth/auth-test-providers.js';
 import { ReviewsController } from './reviews.controller.js';
 import { ReviewsService } from './reviews.service.js';
@@ -30,6 +31,11 @@ describe('ReviewsController', () => {
       create: jest.fn().mockResolvedValue(mockReview),
       update: jest.fn().mockResolvedValue(mockReview),
       delete: jest.fn().mockResolvedValue(undefined),
+      uploadPhotos: jest.fn().mockResolvedValue({
+        photos: [
+          'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-1.jpg',
+        ],
+      }),
       castVote: jest.fn().mockResolvedValue({
         helpful_count: 1,
         not_helpful_count: 0,
@@ -107,5 +113,44 @@ describe('ReviewsController', () => {
     await controller.delete(mockReq, 'seg-1');
 
     expect(service.delete).toHaveBeenCalledWith('user-1', 'seg-1');
+  });
+
+  it('POST /roads/:segmentId/reviews/photos should forward files and a derived public base URL', async () => {
+    const file = {
+      mimetype: 'image/jpeg',
+      buffer: Buffer.from('jpg'),
+    } as Express.Multer.File;
+    const req = {
+      user: { userId: 'user-1' },
+      protocol: 'https',
+      get: jest.fn().mockReturnValue('app.tarmoto.test'),
+    } as never;
+
+    const result = await controller.uploadPhotos(req, 'seg-1', [file]);
+
+    expect(service.uploadPhotos).toHaveBeenCalledWith(
+      'user-1',
+      'seg-1',
+      [file],
+      'https://app.tarmoto.test',
+    );
+    expect(result.photos).toHaveLength(1);
+    expect(result.photos[0]).toMatch(/^https:\/\/app\.tarmoto\.test\//);
+  });
+
+  it('POST /roads/:segmentId/reviews/photos should reject when no files were uploaded', async () => {
+    // Multer hands us undefined when the multipart form has no `files`
+    // entries; the controller has to surface a 400 itself because the
+    // service-level zero-length guard never gets a chance to run.
+    const req = {
+      user: { userId: 'user-1' },
+      protocol: 'https',
+      get: jest.fn().mockReturnValue('app.tarmoto.test'),
+    } as never;
+
+    await expect(
+      controller.uploadPhotos(req, 'seg-1', undefined),
+    ).rejects.toThrow(BadRequestException);
+    expect(service.uploadPhotos).not.toHaveBeenCalled();
   });
 });
