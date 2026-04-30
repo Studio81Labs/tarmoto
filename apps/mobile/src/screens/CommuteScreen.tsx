@@ -401,8 +401,12 @@ function AlternativesCard({
   onStart,
 }: {
   alternatives: CommuteAlternativesResponse;
-  primaryDistanceKm: number;
-  primaryDurationMin: number;
+  // Both fields can be missing at runtime: backend's
+  // `CommuteRouteResponseDto` returns `distance_km` as nullable and
+  // does not include `avg_duration_min` at all. Without this guard the
+  // delta chips render `NaN km` / `NaN min` for every alternative.
+  primaryDistanceKm: number | null | undefined;
+  primaryDurationMin: number | null | undefined;
   onStart: () => void;
 }) {
   const ranked = rankAlternatives(alternatives.alternatives);
@@ -453,12 +457,23 @@ function AlternativeRow({
   onStart,
 }: {
   alt: CommuteAlternativeRoute;
-  primaryDistanceKm: number;
-  primaryDurationMin: number;
+  primaryDistanceKm: number | null | undefined;
+  primaryDurationMin: number | null | undefined;
   onStart: () => void;
 }) {
-  const distanceDelta = alt.distance_km - primaryDistanceKm;
-  const durationDelta = alt.duration_min - primaryDurationMin;
+  // Compute deltas only when the primary value is actually a finite
+  // number. The backend's primary route DTO doesn't carry
+  // `avg_duration_min` and treats `distance_km` as nullable, so naive
+  // subtraction would produce NaN and the chip would render "NaN km".
+  const distanceDelta =
+    typeof primaryDistanceKm === "number" && Number.isFinite(primaryDistanceKm)
+      ? alt.distance_km - primaryDistanceKm
+      : null;
+  const durationDelta =
+    typeof primaryDurationMin === "number" &&
+    Number.isFinite(primaryDurationMin)
+      ? alt.duration_min - primaryDurationMin
+      : null;
   return (
     <TouchableOpacity
       style={styles.altRow}
@@ -490,15 +505,19 @@ function AlternativeRow({
         <View style={styles.altDeltasRow}>
           <DeltaChip
             label="Δ km"
-            value={formatSignedDistance(distanceDelta)}
+            value={
+              distanceDelta != null ? formatSignedDistance(distanceDelta) : "—"
+            }
             negativeIsGood
-            delta={distanceDelta}
+            delta={distanceDelta ?? undefined}
           />
           <DeltaChip
             label="Δ time"
-            value={formatSignedDuration(durationDelta)}
+            value={
+              durationDelta != null ? formatSignedDuration(durationDelta) : "—"
+            }
             negativeIsGood
-            delta={durationDelta}
+            delta={durationDelta ?? undefined}
           />
           <DeltaChip
             label="Quality"

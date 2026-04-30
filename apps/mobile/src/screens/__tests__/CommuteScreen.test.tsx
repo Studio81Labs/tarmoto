@@ -297,6 +297,39 @@ describe("CommuteScreen", () => {
     expect(screen.queryByText("+1.0")).toBeNull();
   });
 
+  it("renders a Δ time placeholder instead of NaN when the primary's avg_duration_min is missing", () => {
+    // Backend's `CommuteRouteResponseDto` doesn't return
+    // `avg_duration_min`, so at runtime it's `undefined`. Without the
+    // guard, the alternative row's Δ time chip would compute
+    // `alt.duration_min - undefined` = NaN and render "NaN min" for
+    // every alternative — visibly broken UX. The chip should fall
+    // back to "—" instead.
+    const routeWithoutDuration = {
+      ...baseRoute,
+      // Strip the field while keeping the other numbers populated so
+      // the unrelated primary "Avg time" metric strip path isn't
+      // exercised here (separate pre-existing latent bug).
+      avg_duration_min: undefined as unknown as number,
+    };
+    mockUseCommuteResult = buildResult({
+      route: routeWithoutDuration,
+      savedRoutes: [routeWithoutDuration],
+      status: { ...baseStatus, route: routeWithoutDuration },
+      alternatives: {
+        ...baseAlternatives,
+        primary_route: routeWithoutDuration,
+      },
+    });
+
+    render(<CommuteScreen />);
+
+    // Three alternative rows × one Δ time chip that depended on the
+    // primary number = three placeholders. Assert no `NaN min` sneaks
+    // through (Δ km still renders since distance is present).
+    expect(screen.queryByText(/NaN min/)).toBeNull();
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(3);
+  });
+
   it("does not expose a Start-on-tap affordance on saved (non-primary) routes", () => {
     // Tapping a saved route ONLY promotes it; "Start commute on …"
     // would have been a lie because RideActive uses whichever route
