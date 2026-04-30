@@ -514,6 +514,38 @@ describe('ReviewsService', () => {
       expect(reviewRepo.save).not.toHaveBeenCalled();
       expect(unlink).not.toHaveBeenCalled();
     });
+
+    it('should treat a whitespace-padded stored URL and a trimmed update as the same photo', async () => {
+      // `IsReviewPhotoUrl` validates `value.trim()`, so a row could land
+      // in the DB with surrounding whitespace via direct API use. If the
+      // set-difference compared raw strings, the next update sending the
+      // same URL trimmed would mark it as removed and unlink the file
+      // out from under the still-saved (now-normalized) review row.
+      reviewRepo.findOne!.mockResolvedValueOnce({
+        ...mockReview,
+        photos: [
+          '  https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-keep.jpg  ',
+        ],
+      } as unknown as RoadReview);
+
+      await service.update('user-1', 'seg-1', {
+        rating: 4,
+        photos: [
+          'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-keep.jpg',
+        ],
+      });
+
+      expect(unlink).not.toHaveBeenCalled();
+      // Saved row carries the trimmed form so future diffs stay
+      // consistent with the response sanitizer.
+      expect(reviewRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          photos: [
+            'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-keep.jpg',
+          ],
+        }),
+      );
+    });
   });
 
   describe('delete', () => {

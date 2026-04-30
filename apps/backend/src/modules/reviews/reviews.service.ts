@@ -144,6 +144,29 @@ function assertReviewPhotosAreOwned(
  * errors still bubble so an operator notices a misconfigured uploads
  * directory.
  */
+/**
+ * Trim every entry in a photo URL list and drop empties, mirroring what
+ * `sanitizeReviewPhotos` returns on the response side. Both ends of the
+ * cascade-delete diff (and what we save to the DB) need to go through
+ * this — otherwise a stored ` https://.../x.jpg ` and an updated
+ * `https://.../x.jpg` look different to a `Set` and the still-referenced
+ * file gets unlinked. `IsReviewPhotoUrl` already validates `value.trim()`,
+ * so any padding that passes validation has no semantic meaning anyway.
+ */
+function normalizeReviewPhotoList(
+  photoUrls: readonly string[] | null | undefined,
+): string[] {
+  if (!photoUrls?.length) return [];
+  const out: string[] = [];
+  for (const photoUrl of photoUrls) {
+    if (typeof photoUrl !== 'string') continue;
+    const trimmed = photoUrl.trim();
+    if (trimmed.length === 0) continue;
+    out.push(trimmed);
+  }
+  return out;
+}
+
 async function deleteOwnedReviewPhotos(
   photoUrls: readonly string[] | null | undefined,
   segmentId: string,
@@ -214,10 +237,16 @@ export class ReviewsService {
       throw new NotFoundException('Road segment not found');
     }
 
+    // Normalize before any further processing — `IsReviewPhotoUrl`
+    // accepts whitespace-padded URLs (it validates `value.trim()`), and
+    // we want what's saved to match what the response sanitizer returns
+    // so update / cascade-delete diffs don't drift on padding alone.
+    const normalizedPhotos = normalizeReviewPhotoList(dto.photos);
+
     // Block attaching managed photos that another user uploaded — see
     // `assertReviewPhotosAreOwned` for why DTO-level URL validation isn't
     // enough on its own.
-    assertReviewPhotosAreOwned(dto.photos, segmentId, userId);
+    assertReviewPhotosAreOwned(normalizedPhotos, segmentId, userId);
 
     const review = this.reviewRepo.create({
       user_id: userId,
@@ -225,7 +254,7 @@ export class ReviewsService {
       rating: dto.rating,
       comment: dto.comment ?? null,
       bike_model: dto.bike_model ?? null,
-      photos: dto.photos ?? null,
+      photos: normalizedPhotos.length > 0 ? normalizedPhotos : null,
     });
 
     let saved: RoadReview;
@@ -277,17 +306,21 @@ export class ReviewsService {
       throw new NotFoundException('Review not found');
     }
 
+    // Normalize incoming and stored URLs to the same trimmed form so the
+    // set-difference below can't mistake padding for an actual removal —
+    // a row stored as ` https://.../x.jpg ` (legacy / direct API) and an
+    // update sending `https://.../x.jpg` are the same photo.
+    const previousPhotos = normalizeReviewPhotoList(review.photos);
+    const nextPhotos = normalizeReviewPhotoList(dto.photos);
+
     // Block attaching managed photos uploaded by someone else (see
     // `assertReviewPhotosAreOwned`).
-    assertReviewPhotosAreOwned(dto.photos, segmentId, userId);
-
-    const previousPhotos = review.photos ?? [];
-    const nextPhotos = dto.photos ?? [];
+    assertReviewPhotosAreOwned(nextPhotos, segmentId, userId);
 
     review.rating = dto.rating;
     review.comment = dto.comment ?? null;
     review.bike_model = dto.bike_model ?? null;
-    review.photos = dto.photos ?? null;
+    review.photos = nextPhotos.length > 0 ? nextPhotos : null;
 
     const saved = await this.reviewRepo.save(review);
 
@@ -312,7 +345,9 @@ export class ReviewsService {
     if (!review) {
       throw new NotFoundException('Review not found');
     }
-    const photos = review.photos ?? [];
+    // Normalize so a legacy padded URL still resolves to the same managed
+    // file the path-resolver would otherwise miss.
+    const photos = normalizeReviewPhotoList(review.photos);
     await this.reviewRepo.remove(review);
     await deleteOwnedReviewPhotos(photos, segmentId, userId);
   }
