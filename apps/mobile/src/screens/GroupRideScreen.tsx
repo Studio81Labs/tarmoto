@@ -49,7 +49,7 @@ import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
 import { api } from "@/services/api";
 import { groupRideSocket } from "@/services/groupRideSocket";
 import { DEV_MAP_STYLE_URL } from "./MapScreen.helpers";
-import { useRideStore } from "@/stores";
+import { useAuthStore, useRideStore } from "@/stores";
 import type {
   GroupEndedEvent,
   GroupJoinedEvent,
@@ -98,6 +98,7 @@ export default function GroupRideScreen() {
   // the user opened it before tapping Start.
   const myLocation = useRideStore((s) => s.location);
   const isRiding = useRideStore((s) => s.isRiding);
+  const currentUserId = useAuthStore((s) => s.user?.id ?? null);
 
   // ── Hydrate the position map from the GET response ──
   useEffect(() => {
@@ -253,6 +254,39 @@ export default function GroupRideScreen() {
     setGroupRide(null);
     positionsRef.current = {};
   }, [groupRide]);
+
+  // Owner-only "End ride for everyone" flow. The leave path also ends
+  // the ride when the owner is the last one out, but an explicit End
+  // button lets the owner shut down the session up-front rather than
+  // having to drain the group manually first.
+  const handleEnd = useCallback(async () => {
+    if (!groupRide) return;
+    const confirmed = await new Promise<boolean>((resolve) => {
+      Alert.alert(
+        "End group ride?",
+        "Everyone in the ride will be disconnected and the code will stop working.",
+        [
+          { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+          { text: "End", style: "destructive", onPress: () => resolve(true) },
+        ],
+      );
+    });
+    if (!confirmed) return;
+    try {
+      await api.endGroupRide(groupRide.id);
+    } catch {
+      // Same fail-closed reasoning as `handleLeave` — the owner asked
+      // for the ride to be over, so tear the socket down regardless of
+      // the REST call's outcome.
+    }
+    groupRideSocket.disconnect();
+    setMode("idle");
+    setGroupRide(null);
+    positionsRef.current = {};
+  }, [groupRide]);
+
+  const isOwner =
+    currentUserId !== null && groupRide?.owner_id === currentUserId;
 
   // Stable colour assignment keyed by user_id. Without this, the map
   // (which filters out members with no broadcast position yet) and the
@@ -423,6 +457,16 @@ export default function GroupRideScreen() {
             </Text>
             <Text style={styles.activeCode}>Code: {groupRide.code}</Text>
           </View>
+          {isOwner ? (
+            <TouchableOpacity style={styles.leaveBtn} onPress={handleEnd}>
+              <Icon
+                name="stop-circle-outline"
+                size={16}
+                color={colors.danger}
+              />
+              <Text style={styles.leaveLabel}>End</Text>
+            </TouchableOpacity>
+          ) : null}
           <TouchableOpacity style={styles.leaveBtn} onPress={handleLeave}>
             <Icon name="exit-to-app" size={16} color={colors.danger} />
             <Text style={styles.leaveLabel}>Leave</Text>

@@ -69,9 +69,17 @@ class GroupRideSocketService {
     if (this.socket && this.subscribedGroupRideId === groupRideId) return;
 
     if (!this.socket) {
-      const token = tokenStorage.getString("access_token");
+      // Pass `auth` as a callback so socket.io re-reads the token on
+      // every (re)connect attempt. The static `{ token }` form
+      // captured the value at construction time, so a token rotated
+      // by the axios refresh interceptor mid-session would never reach
+      // the socket — the gateway would treat the reconnecting client
+      // as anonymous and silently drop the `subscribe:group` replay.
       this.socket = io(resolveEventsUrl(), {
-        auth: token ? { token } : undefined,
+        auth: (cb) => {
+          const token = tokenStorage.getString("access_token");
+          cb(token ? { token } : {});
+        },
         transports: ["websocket"],
         // Auto-reconnect; on reconnect, replay the subscribe so we
         // re-join the room without forcing the screen to manage it.
