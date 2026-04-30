@@ -184,8 +184,13 @@ function mapDay(day: TripDetailDay): TripDay {
 function parametersFromDetail(detail: TripDetailResponse): TripParameters {
   const min = detail.daily_km_min ?? 150;
   const max = detail.daily_km_max ?? 350;
+  // Use `??` so an explicit `0` from the server doesn't silently fall
+  // through to `days.length`, then floor at 1 because a planner with
+  // zero days is a degenerate UI we never want to render — the slider
+  // and timeline both assume `days >= 1`.
+  const persistedDays = detail.num_days ?? detail.days?.length ?? 0;
   return {
-    days: detail.num_days || detail.days?.length || 1,
+    days: Math.max(1, persistedDays),
     // Planner UI exposes a single km/day target; pick the midpoint of the
     // persisted [min, max] band so re-entering the planner shows a sane
     // default the rider can adjust.

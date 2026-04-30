@@ -3,7 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { DataSource, EntityManager, Repository } from 'typeorm';
+import type { EntityManager, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { AccountDeletionService } from './account-deletion.service.js';
 import {
@@ -107,7 +107,7 @@ describe('AccountDeletionService', () => {
           Promise.resolve({ id: where.id } as User),
         ),
       createQueryBuilder: jest.fn().mockReturnValue(userQb),
-    } as any;
+    };
 
     stripe = {
       ensureCustomer: jest.fn(),
@@ -126,7 +126,7 @@ describe('AccountDeletionService', () => {
         { provide: getRepositoryToken(User), useValue: userRepo },
         {
           provide: getDataSourceToken(),
-          useValue: dataSource as unknown as DataSource,
+          useValue: dataSource,
         },
         { provide: STRIPE_BILLING_CLIENT, useValue: stripe },
         {

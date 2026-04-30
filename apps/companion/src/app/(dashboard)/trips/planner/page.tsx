@@ -159,7 +159,22 @@ export default function TripPlannerPage() {
         // matches `serverTripId` so unsaved planner edits aren't clobbered
         // by a remount or a refetch.
         if (activeTripRef.current?.id !== detail.id) {
-          setActiveTrip(tripFromDetail(detail));
+          const hydrated = tripFromDetail(detail);
+          setActiveTrip(hydrated);
+          // Also seed the local generation controls from the persisted
+          // trip parameters. Without this, pressing **Generate** after
+          // landing here from `/trips/:id/edit` would regenerate using
+          // the planner's default react state (3 days / 250 km / mixed),
+          // silently overwriting the rider's persisted settings.
+          const params = hydrated.parameters;
+          setDays(params.days);
+          setDailyKmTarget(params.dailyKmTarget);
+          setRoadPreference(params.roadPreference);
+          setSurfacePreference(params.surfacePreference);
+          setMinQuality(params.minQuality);
+          setAvoidHighways(params.avoidHighways);
+          setAvoidTolls(params.avoidTolls);
+          setAvoidUnpaved(params.avoidUnpaved);
         }
       } catch {
         // Non-fatal — modal / hook will surface concrete errors on
