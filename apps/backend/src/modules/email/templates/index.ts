@@ -264,7 +264,7 @@ The link expires on ${ctx.expiresAt.toUTCString()}.${renderTextFooter(ctx.prefer
 export interface AccountDeletionScheduledContext extends BaseContext {
   displayName: string;
   scheduledFor: Date;
-  cancelUrl: string;
+  supportEmail: string;
 }
 
 export const accountDeletionScheduledTemplate = (
@@ -272,11 +272,19 @@ export const accountDeletionScheduledTemplate = (
 ): RenderedTemplate => {
   const subject = 'Your Tarmoto account is scheduled for deletion';
   const greeting = ctx.displayName ? `Hi ${ctx.displayName},` : 'Hi there,';
+  // Restoration during the grace window is support-only: a soft-
+  // deleted account is locked out of /auth/login and /auth/refresh
+  // (see AuthService — `deleted_at != null` rejects with the same
+  // "invalid credentials" message as wrong passwords). Earlier copy
+  // promised "sign back in to restore" which always failed; users
+  // were sent to a path that quietly drops them. Direct them to
+  // support instead so they can actually exercise the right of
+  // restoration the GDPR grace window grants.
   const text = `${greeting}
 
 Your Tarmoto account is scheduled for permanent deletion on ${ctx.scheduledFor.toUTCString()}.
 
-If you change your mind, you can sign back in before that date and we'll restore your account: ${ctx.cancelUrl}
+Changed your mind? Email ${ctx.supportEmail} before that date and our team will restore your account. Self-service restore from the app isn't possible during the grace window — the account is locked from sign-in until it's either restored by support or permanently erased.
 
 After the scheduled date, your personal data will be permanently erased. Anonymized road-quality contributions will remain in the community dataset.${renderTextFooter(ctx.preferencesUrl)}`;
 
@@ -286,10 +294,8 @@ After the scheduled date, your personal data will be permanently erased. Anonymi
     bodyHtml: `
       <p>${escapeHtml(greeting)}</p>
       <p>Your Tarmoto account is scheduled for <strong>permanent deletion</strong> on ${escapeHtml(ctx.scheduledFor.toUTCString())}.</p>
-      <p>If you change your mind, sign back in before that date and we'll restore your account.</p>
-      <p style="margin:24px 0;">
-        <a href="${escapeHtml(ctx.cancelUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Restore account</a>
-      </p>
+      <p>Changed your mind? Email <a href="mailto:${escapeHtml(ctx.supportEmail)}" style="color:#06b6d4;">${escapeHtml(ctx.supportEmail)}</a> before that date and our team will restore your account.</p>
+      <p style="color:#94a3b8;font-size:13px;">Self-service restore from the app isn't possible during the grace window — the account is locked from sign-in until it's either restored by support or permanently erased.</p>
       <p style="color:#94a3b8;font-size:13px;">After the scheduled date, your personal data will be permanently erased. Anonymized road-quality contributions will remain in the community dataset.</p>
     `,
   });

@@ -20,7 +20,6 @@ import {
   type StripeBillingClient,
 } from './stripe-billing.client.js';
 import { EmailService } from '../email/email.service.js';
-import { getCompanionUrl } from '../../common/companion-url.js';
 import type { DeleteAccountDto } from './dto/delete-account.dto.js';
 import type { DeleteAccountResponseDto } from './dto/delete-account-response.dto.js';
 
@@ -171,7 +170,6 @@ export class AccountDeletionService {
       await this.email.sendAccountDeletionScheduled(user.email, {
         displayName: user.display_name,
         scheduledFor: actualSchedule,
-        cancelUrl: this.companionLoginUrl(),
       });
     } catch (err) {
       this.logger.warn(
@@ -186,10 +184,6 @@ export class AccountDeletionService {
       scheduled_for: actualSchedule.toISOString(),
       grace_period_days: graceDays,
     };
-  }
-
-  private companionLoginUrl(): string {
-    return `${getCompanionUrl(this.config)}/login`;
   }
 
   /**

@@ -113,11 +113,15 @@ export class EmailService {
 
   async sendAccountDeletionScheduled(
     to: string,
-    ctx: ContextWithoutBase<AccountDeletionScheduledContext>,
+    ctx: ContextWithoutBase<
+      Omit<AccountDeletionScheduledContext, 'supportEmail'>
+    >,
   ): Promise<EmailSendResult | null> {
     return this.dispatch(
       to,
-      accountDeletionScheduledTemplate(this.withBase(ctx)),
+      accountDeletionScheduledTemplate(
+        this.withBase({ ...ctx, supportEmail: this.supportEmail() }),
+      ),
     );
   }
 

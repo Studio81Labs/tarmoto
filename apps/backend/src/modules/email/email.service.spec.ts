@@ -150,7 +150,6 @@ describe('EmailService', () => {
         {
           displayName: 'Rider',
           scheduledFor: new Date('2026-05-30T00:00:00Z'),
-          cancelUrl: 'https://app.tarmoto.app/login',
         },
         'account-deletion-scheduled',
       ],
