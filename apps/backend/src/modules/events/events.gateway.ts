@@ -509,11 +509,24 @@ export class EventsGateway
 
     const membership = await this.groupRideMemberRepo.findOne({
       where: { group_ride_id: data.group_ride_id, user_id: userId },
+      relations: { group_ride: true },
     });
     if (!membership) {
       client.emit('error', {
         message: 'Group ride not found or access denied',
       });
+      return;
+    }
+
+    // Membership rows survive ride termination (we keep them so a
+    // GET /group-rides/:id can still surface who was in the ride),
+    // but a client reconnecting after `group:ended` already fired
+    // would otherwise join a dead room and get stuck "active" with
+    // no further events to nudge it back to idle. Refuse the join
+    // and tell the client explicitly so the screen can drop back
+    // to the create/join form.
+    if (membership.group_ride.ended_at !== null) {
+      client.emit('error', { message: 'Group ride has ended' });
       return;
     }
 
@@ -580,6 +593,15 @@ export class EventsGateway
     const last = this.groupPositionThrottle.get(throttleKey) ?? 0;
     if (nowMs - last < GROUP_POSITION_THROTTLE_MS) return;
 
+    // Claim the slot SYNCHRONOUSLY, before yielding on the membership
+    // lookup. If we wrote `nowMs` only after the await, two ticks
+    // arriving within the same event-loop turn would both pass the
+    // check above, then both await in parallel, then both broadcast —
+    // bypassing the 1 Hz floor that's the trust boundary for the
+    // bandwidth budget. Setting it first means concurrent ticks see
+    // the updated timestamp and bail before doing any DB work.
+    this.groupPositionThrottle.set(throttleKey, nowMs);
+
     // Re-verify membership AND active state on every accepted update.
     // A client that joined the socket room then was kicked from the
     // ride (or whose ride ended) must stop receiving fanout — without
@@ -592,12 +614,13 @@ export class EventsGateway
     if (!membership || membership.group_ride.ended_at !== null) {
       // Race: either left, or the owner ended the ride. Detach the
       // client from the room so subsequent ticks short-circuit before
-      // hitting the DB.
+      // hitting the DB. Drop the throttle entry so the next position
+      // attempt — which we'll silently swallow on the room-membership
+      // check — doesn't sit in the map forever.
+      this.groupPositionThrottle.delete(throttleKey);
       client.leave(room);
       return;
     }
-
-    this.groupPositionThrottle.set(throttleKey, nowMs);
 
     const at = new Date(nowMs);
     const point = { lat: data.lat, lng: data.lng, at: at.toISOString() };

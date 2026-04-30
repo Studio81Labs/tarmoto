@@ -703,6 +703,7 @@ describe('EventsGateway', () => {
         id: 'm-1',
         group_ride_id: RIDE_ID,
         user_id: 'user-1',
+        group_ride: { id: RIDE_ID, ended_at: null },
       });
       const client = {
         id: 'c-1',
@@ -715,6 +716,35 @@ describe('EventsGateway', () => {
       await gateway.handleSubscribeGroup(client, { group_ride_id: RIDE_ID });
 
       expect(client.join).toHaveBeenCalledWith(`group-ride:${RIDE_ID}`);
+    });
+
+    it('refuses to join when the ride has already ended', async () => {
+      // Reconnecting member of a ride that ended while they were
+      // offline: membership row survives but the room is dead. We
+      // tell them explicitly so the screen can drop to the idle
+      // state — without this, `group:ended` had already fired before
+      // they reconnected and they'd sit in an "active" UI forever.
+      groupRideMemberRepo.findOne.mockResolvedValueOnce({
+        id: 'm-1',
+        group_ride_id: RIDE_ID,
+        user_id: 'user-1',
+        group_ride: { id: RIDE_ID, ended_at: new Date() },
+      });
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        rooms: new Set(['c-1']),
+        join: jest.fn(),
+        emit: jest.fn(),
+      } as unknown as Socket;
+
+      await gateway.handleSubscribeGroup(client, { group_ride_id: RIDE_ID });
+
+      expect(client.join).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith(
+        'error',
+        expect.objectContaining({ message: 'Group ride has ended' }),
+      );
     });
 
     it('is idempotent for an already-joined client', async () => {
@@ -838,6 +868,48 @@ describe('EventsGateway', () => {
       await gateway.handleGroupPosition(client, payload);
       await gateway.handleGroupPosition(client, payload);
 
+      expect(emit).toHaveBeenCalledTimes(1);
+    });
+
+    it('claims the throttle slot synchronously so concurrent ticks bail', async () => {
+      // Regression: previously the throttle entry was written AFTER the
+      // membership await. Two ticks arriving in the same event-loop turn
+      // would both pass the synchronous check, both await in parallel,
+      // and both broadcast — bypassing the 1 Hz floor.
+      let resolveFindOne!: (value: Record<string, unknown>) => void;
+      groupRideMemberRepo.findOne.mockImplementation(
+        () =>
+          new Promise<Record<string, unknown>>((r) => {
+            resolveFindOne = r;
+          }),
+      );
+      const emit = jest.fn();
+      const mockTo = jest.fn().mockReturnValue({ emit });
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        rooms: new Set(['c-1', `group-ride:${RIDE_ID}`]),
+        to: mockTo,
+        leave: jest.fn(),
+      } as unknown as Socket;
+
+      const payload = {
+        group_ride_id: RIDE_ID,
+        lat: 49.1,
+        lng: 16.5,
+      };
+      // Fire two handlers without awaiting — the second must observe
+      // the throttle entry the first wrote synchronously and exit
+      // before doing any DB work.
+      const first = gateway.handleGroupPosition(client, payload);
+      const second = gateway.handleGroupPosition(client, payload);
+
+      // Second already short-circuited, so even one resolve drains
+      // every outstanding lookup. (`findOne` is only invoked once.)
+      resolveFindOne(makeMembership());
+      await Promise.all([first, second]);
+
+      expect(groupRideMemberRepo.findOne).toHaveBeenCalledTimes(1);
       expect(emit).toHaveBeenCalledTimes(1);
     });
 
