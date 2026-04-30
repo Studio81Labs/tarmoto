@@ -21,6 +21,12 @@ export type {
 export { useCarPlayRideMirror } from "./useCarPlayRideMirror";
 export { useVehicleNavigationDisplay } from "./useVehicleNavigationDisplay";
 
+export { useRouteWeatherAlerts } from "./useRouteWeatherAlerts";
+export type {
+  UseRouteWeatherAlertsOptions,
+  UseRouteWeatherAlertsResult,
+} from "./useRouteWeatherAlerts";
+
 import { useEffect, useState } from "react";
 import { AppState, AppStateStatus } from "react-native";
 import KeepAwake from "react-native-keep-awake";

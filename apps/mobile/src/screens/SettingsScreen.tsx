@@ -37,6 +37,12 @@ export default function SettingsScreen() {
   const setMinQuality = usePreferencesStore((s) => s.setMinQuality);
   const fuelRangeKm = usePreferencesStore((s) => s.fuelRangeKm);
   const setFuelRangeKm = usePreferencesStore((s) => s.setFuelRangeKm);
+  const weatherAlertsEnabled = usePreferencesStore(
+    (s) => s.weatherAlertsEnabled,
+  );
+  const setWeatherAlertsEnabled = usePreferencesStore(
+    (s) => s.setWeatherAlertsEnabled,
+  );
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -70,6 +76,23 @@ export default function SettingsScreen() {
           label="Fuel range"
           helpText="Tap a distance to match your bike."
         />
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.toggleRow}>
+          <View style={styles.toggleBody}>
+            <Text style={styles.sectionTitle}>Weather alerts</Text>
+            <Text style={styles.sectionBody}>
+              Surface storms, ice, wet roads, and high wind ahead while
+              navigating. Critical alerts (storm, ice) are also read aloud.
+            </Text>
+          </View>
+          <Switch
+            value={weatherAlertsEnabled}
+            onValueChange={setWeatherAlertsEnabled}
+            accessibilityLabel="Toggle real-time weather alerts during navigation"
+          />
+        </View>
       </View>
 
       <SafetyCard />
@@ -440,6 +463,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.md,
+  },
+  toggleBody: {
+    flex: 1,
+    gap: spacing.xs,
   },
   toggleLabel: {
     color: colors.textPrimary,

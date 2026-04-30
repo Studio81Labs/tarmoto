@@ -389,6 +389,8 @@ const PREFS_STORAGE_ID = "tarmoto-prefs";
 const MIN_QUALITY_KEY = "minQuality";
 const DEFAULT_MIN_QUALITY = 3; // "Fair or better" — matches UserPreferences default
 const FUEL_RANGE_KEY = "fuelRangeKm";
+const WEATHER_ALERTS_ENABLED_KEY = "weatherAlertsEnabled";
+const DEFAULT_WEATHER_ALERTS_ENABLED = true;
 
 interface PrefsStorage {
   getNumber(key: string): number | undefined;
@@ -420,6 +422,19 @@ function createPrefsStorage(): PrefsStorage {
 
 const prefsStorage = createPrefsStorage();
 
+// Booleans ride on the same number-keyed shim — 1 = on, 0 = off, missing
+// = use the supplied default. Keeps the storage interface tiny and
+// matches MMKV's strongly-typed accessors.
+function loadPersistedBool(key: string, fallback: boolean): boolean {
+  const raw = prefsStorage.getNumber(key);
+  if (raw === undefined) return fallback;
+  return raw !== 0;
+}
+
+function persistBool(key: string, value: boolean): void {
+  prefsStorage.set(key, value ? 1 : 0);
+}
+
 function clampMinQuality(value: number): number {
   if (!Number.isFinite(value)) return DEFAULT_MIN_QUALITY;
   const rounded = Math.round(value);
@@ -448,6 +463,12 @@ interface PreferencesState {
   /** Rider's usable fuel range in kilometres — US-10 long-leg warnings. */
   fuelRangeKm: number;
   setFuelRangeKm: (value: number) => void;
+  /**
+   * US-13: surface real-time route weather alerts in NavigationScreen.
+   * On by default — riders opt out, not in.
+   */
+  weatherAlertsEnabled: boolean;
+  setWeatherAlertsEnabled: (value: boolean) => void;
   resetPreferences: () => void;
 }
 
@@ -464,12 +485,22 @@ export const usePreferencesStore = create<PreferencesState>((set) => ({
     prefsStorage.set(FUEL_RANGE_KEY, clamped);
     set({ fuelRangeKm: clamped });
   },
+  weatherAlertsEnabled: loadPersistedBool(
+    WEATHER_ALERTS_ENABLED_KEY,
+    DEFAULT_WEATHER_ALERTS_ENABLED,
+  ),
+  setWeatherAlertsEnabled: (value) => {
+    persistBool(WEATHER_ALERTS_ENABLED_KEY, value);
+    set({ weatherAlertsEnabled: value });
+  },
   resetPreferences: () => {
     prefsStorage.set(MIN_QUALITY_KEY, DEFAULT_MIN_QUALITY);
     prefsStorage.set(FUEL_RANGE_KEY, DEFAULT_FUEL_RANGE_KM);
+    persistBool(WEATHER_ALERTS_ENABLED_KEY, DEFAULT_WEATHER_ALERTS_ENABLED);
     set({
       minQuality: DEFAULT_MIN_QUALITY,
       fuelRangeKm: DEFAULT_FUEL_RANGE_KM,
+      weatherAlertsEnabled: DEFAULT_WEATHER_ALERTS_ENABLED,
     });
   },
 }));
@@ -477,6 +508,7 @@ export const usePreferencesStore = create<PreferencesState>((set) => ({
 export const PREFERENCES_DEFAULTS = {
   minQuality: DEFAULT_MIN_QUALITY,
   fuelRangeKm: DEFAULT_FUEL_RANGE_KM,
+  weatherAlertsEnabled: DEFAULT_WEATHER_ALERTS_ENABLED,
 } as const;
 
 // ── Commute Store ──
