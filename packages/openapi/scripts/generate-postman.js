@@ -65,8 +65,36 @@ function buildQuery(parameters) {
     }));
 }
 
-/** Build a sample JSON body from a $ref schema */
+/** Build a Postman body from an OpenAPI requestBody. Supports JSON and multipart/form-data. */
 function buildBody(requestBody) {
+  // Multipart routes (file uploads) need a `formdata` body — Postman
+  // sets the `Content-Type: multipart/form-data; boundary=...` header
+  // itself once a formdata body is present. Emitting a raw JSON body
+  // for these endpoints (the previous behavior) produced a request
+  // shape that always failed with "files required" because multer
+  // never saw any parts.
+  const multipart = requestBody?.content?.["multipart/form-data"]?.schema;
+  if (multipart) {
+    const resolved = multipart.$ref
+      ? spec.components?.schemas?.[
+          multipart.$ref.replace("#/components/schemas/", "")
+        ] || multipart
+      : multipart;
+    const properties = resolved.properties || {};
+    const formdata = Object.entries(properties).map(([key, prop]) => {
+      const isBinary =
+        prop.format === "binary" ||
+        (prop.type === "array" && prop.items?.format === "binary");
+      return {
+        key,
+        type: isBinary ? "file" : "text",
+        ...(isBinary ? { src: [] } : { value: "" }),
+        description: prop.description || "",
+      };
+    });
+    return { mode: "formdata", formdata };
+  }
+
   if (!requestBody?.content?.["application/json"]?.schema) return undefined;
 
   const schemaRef = requestBody.content["application/json"].schema;
@@ -77,6 +105,10 @@ function buildBody(requestBody) {
     raw: JSON.stringify(example, null, 2),
     options: { raw: { language: "json" } },
   };
+}
+
+function isMultipartBody(requestBody) {
+  return Boolean(requestBody?.content?.["multipart/form-data"]);
 }
 
 /**
@@ -156,11 +188,23 @@ for (const [pathStr, pathItem] of Object.entries(spec.paths)) {
     const query = buildQuery(operation.parameters);
     if (query.length) url.query = query;
 
+    // Multipart endpoints must NOT carry a hardcoded
+    // `Content-Type: application/json` header — Postman generates the
+    // correct `multipart/form-data; boundary=...` value itself once the
+    // body's mode is `formdata`, but a manual header overrides that and
+    // sends the wrong content type. Emit the JSON header only when the
+    // body is actually JSON (or absent — most GET / DELETE callers
+    // ignore the header anyway and matching the old shape avoids
+    // collection-wide diff churn).
+    const headers = isMultipartBody(operation.requestBody)
+      ? []
+      : [{ key: "Content-Type", value: "application/json" }];
+
     const item = {
       name,
       request: {
         method: method.toUpperCase(),
-        header: [{ key: "Content-Type", value: "application/json" }],
+        header: headers,
         url,
       },
     };

@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "e9c246ef-9de6-4d0b-8802-4171a772e6c5",
+    "_postman_id": "2515f6a2-5fdd-4084-be1e-367aba64389a",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -111,6 +111,101 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"refresh_token\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Consume an email-verification token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/verify-email",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "verify-email"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Resend the verification email to the current user",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/resend-verification",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "resend-verification"]
+            }
+          }
+        },
+        {
+          "name": "Request a password-reset email",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/forgot-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "forgot-password"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"rider@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Consume a password-reset token + set a new password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/reset-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "reset-password"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"\",\n  \"password\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -372,16 +467,22 @@
           "name": "Upload a profile avatar",
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/users/me/avatar",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "users", "me", "avatar"]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": ""
+                }
+              ]
             }
           }
         },
@@ -1122,6 +1223,100 @@
       ]
     },
     {
+      "name": "map-shares",
+      "item": [
+        {
+          "name": "Create a shareable read-only link for a personal road-map snapshot (US-50)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/map-shares",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "map-shares"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"\",\n  \"snapshot\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List the caller's own road-map shares",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/map-shares/mine",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "map-shares", "mine"]
+            }
+          }
+        },
+        {
+          "name": "View a shared road-map snapshot by token (no auth required, read-only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/map-shares/:token",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "map-shares", ":token"],
+              "variable": [
+                {
+                  "key": "token",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Revoke a map share (owner only)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/map-shares/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "map-shares", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "rides",
       "item": [
         {
@@ -1263,16 +1458,22 @@
           "name": "Import a GPX file as a route",
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/rides/import",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "rides", "import"]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": ""
+                }
+              ]
             }
           }
         },
@@ -2464,6 +2665,35 @@
           }
         },
         {
+          "name": "Upload photos for a road review",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roads/:segmentId/reviews/photos",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roads", ":segmentId", "reviews", "photos"],
+              "variable": [
+                {
+                  "key": "segmentId",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "files",
+                  "type": "file",
+                  "src": [],
+                  "description": ""
+                }
+              ]
+            }
+          }
+        },
+        {
           "name": "Cast or flip a helpful / not-helpful vote on a review",
           "request": {
             "method": "POST",
@@ -2873,6 +3103,23 @@
               "raw": "{{baseUrl}}/api/v1/exploration/ridden-ids",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "exploration", "ridden-ids"]
+            }
+          }
+        },
+        {
+          "name": "Ridden segments with last-ridden timestamp + quality (powers personal road map US-50)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/exploration/ridden-segments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "exploration", "ridden-segments"]
             }
           }
         }

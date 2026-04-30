@@ -1,18 +1,26 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ReactNode,
+} from "react";
 import {
   Images,
   Loader2,
   Pencil,
-  Plus,
   Star,
   ThumbsDown,
   ThumbsUp,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import {
+  ApiError,
   roadsApi,
   type RoadReview,
   type UpsertRoadReviewInput,
@@ -21,6 +29,12 @@ import { formatRelativeTime } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
 
 const MAX_REVIEW_PHOTOS = 5;
+const MAX_REVIEW_PHOTO_BYTES = 5 * 1024 * 1024;
+const ACCEPTED_PHOTO_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+] as const;
 const REVIEW_COMMENT_MAX_LENGTH = 1000;
 
 type ReviewDraft = {
@@ -34,7 +48,7 @@ const EMPTY_REVIEW_DRAFT: ReviewDraft = {
   rating: 0,
   comment: "",
   bikeModel: "",
-  photoUrls: [""],
+  photoUrls: [],
 };
 
 export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
@@ -53,15 +67,33 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
   const [submitting, setSubmitting] = useState(false);
   const activeSegmentRef = useRef(segmentId);
   const activeViewerKeyRef = useRef(viewerKey);
+  const editorModeRef = useRef<"create" | "edit" | null>(null);
+  // Bumps every time the editor opens or closes, so a stale upload from
+  // a canceled draft can't leak into a brand-new editor session opened
+  // on the same segment+viewer. `editorModeRef === null` alone wasn't
+  // enough — close + reopen leaves the mode non-null again.
+  const editorSessionRef = useRef(0);
   const requestGenerationRef = useRef(0);
   const mutationAttemptRef = useRef(0);
   const localMyReviewRef = useRef<RoadReview | null>(null);
   const deletedMyReviewIdRef = useRef<string | null>(null);
 
+  // Mirror editorMode into a ref so async callbacks (uploadReviewPhotos)
+  // can compare the value at resolve time without restarting on every
+  // editor-state transition.
+  useEffect(() => {
+    editorModeRef.current = editorMode;
+  }, [editorMode]);
+
   useEffect(() => {
     activeSegmentRef.current = segmentId;
     activeViewerKeyRef.current = viewerKey;
     requestGenerationRef.current += 1;
+    // Bump session too — the segment-change reset blanks the draft, so
+    // any in-flight upload tied to the previous draft session must be
+    // treated as stale even if the segment ends up matching again on
+    // subsequent navigation.
+    editorSessionRef.current += 1;
     localMyReviewRef.current = null;
     deletedMyReviewIdRef.current = null;
     setDraft(EMPTY_REVIEW_DRAFT);
@@ -132,6 +164,11 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
   };
 
   const openCreate = () => {
+    // Each open is a fresh editor session — the upload guard uses this
+    // to reject results that resolved after a previous draft was
+    // canceled, even if the user reopens the editor on the same
+    // segment + viewer before the request lands.
+    editorSessionRef.current += 1;
     setDraft(EMPTY_REVIEW_DRAFT);
     setSubmitError(null);
     setEditorMode("create");
@@ -139,14 +176,12 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
 
   const openEdit = () => {
     if (!myReview) return;
+    editorSessionRef.current += 1;
     setDraft({
       rating: myReview.rating,
       comment: myReview.comment ?? "",
       bikeModel: myReview.bike_model ?? "",
-      photoUrls:
-        Array.isArray(myReview.photos) && myReview.photos.length > 0
-          ? [...myReview.photos]
-          : [""],
+      photoUrls: Array.isArray(myReview.photos) ? [...myReview.photos] : [],
     });
     setSubmitError(null);
     setEditorMode("edit");
@@ -154,7 +189,59 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
 
   const closeEditor = () => {
     if (submitting) return;
+    // Bump on close too so an upload kicked off in this session is
+    // already invalidated before any reopen — the editor-mode null check
+    // alone races with reopens that flip the flag back to non-null
+    // before the upload resolves.
+    editorSessionRef.current += 1;
     setEditorMode(null);
+    setSubmitError(null);
+  };
+
+  /**
+   * Owns the upload roundtrip + draft mutation so the same staleness
+   * checks the submit handler relies on (segment, viewer, generation)
+   * plus a per-editor-open `editorSessionRef` gate uploaded URLs from
+   * leaking into a draft the user no longer cares about — closed
+   * editor, close + reopen on the same segment, segment switch, viewer
+   * change. Errors propagate to the editor so it can render a local
+   * toast; stale successes resolve silently.
+   */
+  const handleUploadPhotos = async (files: File[]): Promise<void> => {
+    if (!editorModeRef.current) return;
+
+    const requestSegmentId = segmentId;
+    const requestViewerKey = viewerKey;
+    const requestGeneration = requestGenerationRef.current;
+    const requestEditorSession = editorSessionRef.current;
+
+    const { data } = await roadsApi.uploadReviewPhotos(segmentId, files);
+
+    if (
+      requestSegmentId !== activeSegmentRef.current ||
+      requestViewerKey !== activeViewerKeyRef.current ||
+      requestGeneration !== requestGenerationRef.current ||
+      requestEditorSession !== editorSessionRef.current ||
+      editorModeRef.current === null
+    ) {
+      // Editor was closed (and possibly reopened — same segment, new
+      // session), the segment / viewer changed, or the segment was
+      // navigated away and back — the URLs the user is trying to attach
+      // belong to a draft that no longer exists. Drop them rather than
+      // poisoning whatever draft is open now (or sticking photos onto a
+      // closed-editor draft that re-emerges on the next
+      // openCreate/openEdit). The files themselves stay on disk and get
+      // swept by the orphan cleanup tracked separately.
+      return;
+    }
+
+    setDraft((current) => ({
+      ...current,
+      photoUrls: [...current.photoUrls, ...data.photos].slice(
+        0,
+        MAX_REVIEW_PHOTOS,
+      ),
+    }));
     setSubmitError(null);
   };
 
@@ -372,6 +459,10 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
       {editorMode && (
         <ReviewEditor
           mode={editorMode}
+          remainingPhotoSlots={Math.max(
+            0,
+            MAX_REVIEW_PHOTOS - draft.photoUrls.length,
+          )}
           draft={draft}
           disabled={loading || submitting}
           error={submitError}
@@ -393,29 +484,11 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
             }));
             setSubmitError(null);
           }}
-          onPhotoChange={(index, value) => {
-            setDraft((current) => ({
-              ...current,
-              photoUrls: current.photoUrls.map((photo, idx) =>
-                idx === index ? value : photo,
-              ),
-            }));
-            setSubmitError(null);
-          }}
-          onAddPhoto={() => {
-            setDraft((current) => {
-              if (current.photoUrls.length >= MAX_REVIEW_PHOTOS) return current;
-              return { ...current, photoUrls: [...current.photoUrls, ""] };
-            });
-            setSubmitError(null);
-          }}
+          onUploadPhotos={handleUploadPhotos}
           onRemovePhoto={(index) => {
             setDraft((current) => ({
               ...current,
-              photoUrls:
-                current.photoUrls.length === 1
-                  ? [""]
-                  : current.photoUrls.filter((_, idx) => idx !== index),
+              photoUrls: current.photoUrls.filter((_, idx) => idx !== index),
             }));
             setSubmitError(null);
           }}
@@ -496,31 +569,85 @@ function upsertReview(current: RoadReview[], next: RoadReview): RoadReview[] {
 
 function ReviewEditor({
   mode,
+  remainingPhotoSlots,
   draft,
   disabled,
   error,
   onRatingChange,
   onCommentChange,
   onBikeModelChange,
-  onPhotoChange,
-  onAddPhoto,
+  onUploadPhotos,
   onRemovePhoto,
   onCancel,
   onSubmit,
 }: {
   mode: "create" | "edit";
+  remainingPhotoSlots: number;
   draft: ReviewDraft;
   disabled: boolean;
   error: string | null;
   onRatingChange: (rating: number) => void;
   onCommentChange: (comment: string) => void;
   onBikeModelChange: (bikeModel: string) => void;
-  onPhotoChange: (index: number, value: string) => void;
-  onAddPhoto: () => void;
+  onUploadPhotos: (files: File[]) => Promise<void>;
   onRemovePhoto: (index: number) => void;
   onCancel: () => void;
   onSubmit: () => void;
 }) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const mountedRef = useRef(true);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const photoInputDisabled = disabled || uploading || remainingPhotoSlots === 0;
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const handleSelectFiles = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.target;
+    const selected = Array.from(input.files ?? []);
+    // Reset the input value before any await so the next selection (even
+    // of the exact same filename) still fires `change` and lets the user
+    // retry after a validation failure.
+    input.value = "";
+    if (selected.length === 0) return;
+
+    const validation = validateSelectedPhotos(selected, remainingPhotoSlots);
+    if ("error" in validation) {
+      setUploadError(validation.error);
+      return;
+    }
+
+    setUploading(true);
+    setUploadError(null);
+    try {
+      // Parent owns the upload roundtrip and decides whether to apply
+      // the returned URLs to the draft (see `handleUploadPhotos`). Stale
+      // successes resolve here as a normal void return — the spinner
+      // just clears.
+      await onUploadPhotos(validation.files);
+    } catch (err) {
+      if (!mountedRef.current) return;
+      setUploadError(
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Could not upload photos.",
+      );
+    } finally {
+      // Editor may have unmounted while the upload was in flight (e.g.
+      // user closed it or switched segments) — skip the state update so
+      // React doesn't warn about setState on an unmounted component.
+      if (mountedRef.current) {
+        setUploading(false);
+      }
+    }
+  };
+
   return (
     <section className="mb-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
       <div className="flex items-start justify-between gap-3">
@@ -544,7 +671,7 @@ function ReviewEditor({
           <button
             type="button"
             onClick={onSubmit}
-            disabled={disabled}
+            disabled={disabled || uploading}
             className="inline-flex items-center gap-2 rounded-lg bg-tarmoto-cyan px-3 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-tarmoto-cyan-light disabled:cursor-not-allowed disabled:opacity-60"
           >
             {disabled ? <Loader2 size={12} className="animate-spin" /> : null}
@@ -615,49 +742,67 @@ function ReviewEditor({
 
         <div>
           <div className="mb-1 flex items-center justify-between gap-3">
-            <label className="block text-xs font-medium text-slate-400">
-              Photo URLs
-            </label>
+            <p className="text-xs font-medium text-slate-400">Photos</p>
             <button
               type="button"
-              onClick={onAddPhoto}
-              disabled={disabled || draft.photoUrls.length >= MAX_REVIEW_PHOTOS}
+              onClick={() => fileInputRef.current?.click()}
+              disabled={photoInputDisabled}
               className="inline-flex items-center gap-1 text-xs text-slate-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label="Add another photo"
+              aria-label="Upload review photos"
             >
-              <Plus size={12} />
-              Add another photo
+              {uploading ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Upload size={12} />
+              )}
+              Upload photos
             </button>
           </div>
-          <div className="space-y-2">
-            {draft.photoUrls.map((photo, index) => (
-              <div key={index} className="flex items-center gap-2">
-                <input
-                  aria-label={`Photo URL ${index + 1}`}
-                  type="url"
-                  value={photo}
-                  onChange={(event) => onPhotoChange(index, event.target.value)}
-                  disabled={disabled}
-                  placeholder="https://cdn.example.com/road-shot.jpg"
-                  className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-tarmoto-cyan focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                />
-                {draft.photoUrls.length > 1 && (
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={ACCEPTED_PHOTO_MIME_TYPES.join(",")}
+            multiple
+            disabled={photoInputDisabled}
+            onChange={handleSelectFiles}
+            aria-label="Select review photos"
+            className="sr-only"
+          />
+          {draft.photoUrls.length > 0 && (
+            <div className="grid grid-cols-3 gap-2">
+              {draft.photoUrls.map((photo, index) => (
+                <div
+                  key={`${photo}-${index}`}
+                  className="group relative aspect-[4/3] overflow-hidden rounded-lg border border-slate-800 bg-slate-900"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={photo}
+                    alt={`Review photo ${index + 1}`}
+                    className="h-full w-full object-cover"
+                  />
                   <button
                     type="button"
                     onClick={() => onRemovePhoto(index)}
-                    disabled={disabled}
-                    className="rounded-md p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-                    aria-label={`Remove photo URL ${index + 1}`}
+                    disabled={disabled || uploading}
+                    className="absolute right-1 top-1 rounded-full bg-slate-950/80 p-1 text-slate-300 transition hover:bg-rose-500/80 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                    aria-label={`Remove photo ${index + 1}`}
                   >
-                    <X size={14} />
+                    <X size={12} />
                   </button>
-                )}
-              </div>
-            ))}
-          </div>
+                </div>
+              ))}
+            </div>
+          )}
           <p className="mt-1 text-[11px] text-slate-500">
-            Add up to {MAX_REVIEW_PHOTOS} hosted photos using secure HTTPS URLs.
+            Up to {MAX_REVIEW_PHOTOS} JPEG, PNG, or WebP photos (max{" "}
+            {Math.round(MAX_REVIEW_PHOTO_BYTES / (1024 * 1024))} MB each).
           </p>
+          {uploadError && (
+            <p className="mt-1 text-xs text-rose-300" role="alert">
+              {uploadError}
+            </p>
+          )}
         </div>
       </div>
 
@@ -668,6 +813,32 @@ function ReviewEditor({
       )}
     </section>
   );
+}
+
+function validateSelectedPhotos(
+  files: File[],
+  remainingSlots: number,
+): { files: File[] } | { error: string } {
+  if (files.length > remainingSlots) {
+    return {
+      error: `You can attach up to ${MAX_REVIEW_PHOTOS} photos in total.`,
+    };
+  }
+  for (const file of files) {
+    if (!(ACCEPTED_PHOTO_MIME_TYPES as readonly string[]).includes(file.type)) {
+      return {
+        error: "Photos must be JPEG, PNG, or WebP images.",
+      };
+    }
+    if (file.size > MAX_REVIEW_PHOTO_BYTES) {
+      return {
+        error: `Each photo must be smaller than ${Math.round(
+          MAX_REVIEW_PHOTO_BYTES / (1024 * 1024),
+        )} MB.`,
+      };
+    }
+  }
+  return { files };
 }
 
 function ReviewCard({
@@ -858,9 +1029,11 @@ function normalizeDraft(
     return { ok: false, error: "Choose a star rating before you submit." };
   }
 
-  const photoResult = sanitizePhotoUrls(draft.photoUrls);
-  if ("error" in photoResult) {
-    return { ok: false, error: photoResult.error };
+  if (draft.photoUrls.length > MAX_REVIEW_PHOTOS) {
+    return {
+      ok: false,
+      error: `You can attach up to ${MAX_REVIEW_PHOTOS} photos.`,
+    };
   }
 
   const comment = draft.comment.trim();
@@ -872,27 +1045,9 @@ function normalizeDraft(
       rating: draft.rating,
       ...(comment ? { comment } : {}),
       ...(bikeModel ? { bike_model: bikeModel } : {}),
-      ...(photoResult.photos.length > 0 ? { photos: photoResult.photos } : {}),
+      ...(draft.photoUrls.length > 0 ? { photos: draft.photoUrls } : {}),
     },
   };
-}
-
-function sanitizePhotoUrls(
-  photoUrls: string[],
-): { photos: string[] } | { error: string } {
-  const photos = photoUrls.map((photo) => photo.trim()).filter(Boolean);
-
-  if (photos.length > MAX_REVIEW_PHOTOS) {
-    return { error: `You can attach up to ${MAX_REVIEW_PHOTOS} photos.` };
-  }
-
-  for (const photo of photos) {
-    if (!photo.startsWith("https://")) {
-      return { error: "Photo URLs must start with https://" };
-    }
-  }
-
-  return { photos };
 }
 
 function isUuid(value: string): boolean {

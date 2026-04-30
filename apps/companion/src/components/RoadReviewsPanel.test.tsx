@@ -19,11 +19,20 @@ vi.mock("@/lib/api", async () => {
       createReview: vi.fn(),
       updateReview: vi.fn(),
       deleteReview: vi.fn(),
+      uploadReviewPhotos: vi.fn(),
       voteOnReview: vi.fn(),
       clearReviewVote: vi.fn(),
     },
   };
 });
+
+function jpegFile(name: string, size = 1024) {
+  // Vitest's File implementation reports the byte length passed in the
+  // constructor — pad the content to match `size` so the panel's size
+  // guard can be exercised with realistic numbers.
+  const padding = "x".repeat(Math.max(1, size));
+  return new File([padding.slice(0, size)], name, { type: "image/jpeg" });
+}
 
 function review(overrides: Partial<RoadReview> & { id: string }): RoadReview {
   return {
@@ -58,6 +67,7 @@ describe("RoadReviewsPanel", () => {
   const createReviewMock = vi.mocked(roadsApi.createReview);
   const updateReviewMock = vi.mocked(roadsApi.updateReview);
   const deleteReviewMock = vi.mocked(roadsApi.deleteReview);
+  const uploadReviewPhotosMock = vi.mocked(roadsApi.uploadReviewPhotos);
   const voteOnReviewMock = vi.mocked(roadsApi.voteOnReview);
   const clearReviewVoteMock = vi.mocked(roadsApi.clearReviewVote);
   const firstSegmentId = "11111111-1111-4111-8111-111111111111";
@@ -73,6 +83,7 @@ describe("RoadReviewsPanel", () => {
     createReviewMock.mockReset();
     updateReviewMock.mockReset();
     deleteReviewMock.mockReset();
+    uploadReviewPhotosMock.mockReset();
     voteOnReviewMock.mockReset();
     clearReviewVoteMock.mockReset();
   });
@@ -173,9 +184,17 @@ describe("RoadReviewsPanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("submits a new review with photo URLs and switches to edit controls", async () => {
+  it("uploads selected photos, then submits the review with the returned URLs", async () => {
     setAuthenticatedViewer();
     getReviewsMock.mockResolvedValueOnce({ data: [] });
+    uploadReviewPhotosMock.mockResolvedValueOnce({
+      data: {
+        photos: [
+          "https://app.tarmoto.test/uploads/road-review-photos/seg-1-shot-1.jpg",
+          "https://app.tarmoto.test/uploads/road-review-photos/seg-1-shot-2.jpg",
+        ],
+      },
+    });
     createReviewMock.mockResolvedValueOnce({
       data: review({
         id: "review-new",
@@ -183,8 +202,8 @@ describe("RoadReviewsPanel", () => {
         comment: "Worth the detour.",
         bike_model: "Triumph Tiger 900",
         photos: [
-          "https://cdn.example.com/review-new-1.jpg",
-          "https://cdn.example.com/review-new-2.jpg",
+          "https://app.tarmoto.test/uploads/road-review-photos/seg-1-shot-1.jpg",
+          "https://app.tarmoto.test/uploads/road-review-photos/seg-1-shot-2.jpg",
         ],
         helpful_count: 0,
         not_helpful_count: 0,
@@ -207,13 +226,24 @@ describe("RoadReviewsPanel", () => {
     fireEvent.change(screen.getByLabelText("Bike model"), {
       target: { value: "Triumph Tiger 900" },
     });
-    fireEvent.change(screen.getByLabelText("Photo URL 1"), {
-      target: { value: "https://cdn.example.com/review-new-1.jpg" },
+
+    const fileInput = screen.getByLabelText(
+      "Select review photos",
+    ) as HTMLInputElement;
+    const fileA = jpegFile("shot-1.jpg");
+    const fileB = jpegFile("shot-2.jpg");
+    await act(async () => {
+      fireEvent.change(fileInput, {
+        target: { files: [fileA, fileB] },
+      });
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add another photo" }));
-    fireEvent.change(screen.getByLabelText("Photo URL 2"), {
-      target: { value: "https://cdn.example.com/review-new-2.jpg" },
-    });
+
+    await waitFor(() =>
+      expect(uploadReviewPhotosMock).toHaveBeenCalledWith(firstSegmentId, [
+        fileA,
+        fileB,
+      ]),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Submit review" }));
 
@@ -223,8 +253,8 @@ describe("RoadReviewsPanel", () => {
         comment: "Worth the detour.",
         bike_model: "Triumph Tiger 900",
         photos: [
-          "https://cdn.example.com/review-new-1.jpg",
-          "https://cdn.example.com/review-new-2.jpg",
+          "https://app.tarmoto.test/uploads/road-review-photos/seg-1-shot-1.jpg",
+          "https://app.tarmoto.test/uploads/road-review-photos/seg-1-shot-2.jpg",
         ],
       }),
     );
@@ -307,7 +337,9 @@ describe("RoadReviewsPanel", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("blocks invalid photo URLs before calling the backend", async () => {
+  it("rejects unsupported file types client-side before sending the upload", async () => {
+    // The backend does enforce mimetype but we want a fast inline error so
+    // the rider doesn't burn an upload roundtrip on a clearly-wrong file.
     setAuthenticatedViewer();
     getReviewsMock.mockResolvedValueOnce({ data: [] });
 
@@ -318,17 +350,240 @@ describe("RoadReviewsPanel", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Write a review for this road" }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "4 stars" }));
-    fireEvent.change(screen.getByLabelText("Photo URL 1"), {
-      target: { value: "http://cdn.example.com/review-1.jpg" },
+
+    const fileInput = screen.getByLabelText(
+      "Select review photos",
+    ) as HTMLInputElement;
+    const gif = new File(["raw"], "anim.gif", { type: "image/gif" });
+    await act(async () => {
+      fireEvent.change(fileInput, { target: { files: [gif] } });
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Submit review" }));
-
-    expect(createReviewMock).not.toHaveBeenCalled();
+    expect(uploadReviewPhotosMock).not.toHaveBeenCalled();
     expect(
-      await screen.findByText("Photo URLs must start with https://"),
+      await screen.findByText("Photos must be JPEG, PNG, or WebP images."),
     ).toBeInTheDocument();
+  });
+
+  it("ignores uploaded URLs that resolve after the segment changed", async () => {
+    // The Codex P2 case: a slow upload completes after the user has
+    // already navigated to a different segment. Without parent-side
+    // staleness checks the resolved URLs would silently land in the new
+    // segment's draft (or, worse, a draft for someone else's review on
+    // re-open). The handler must drop the result.
+    setAuthenticatedViewer();
+    getReviewsMock.mockResolvedValue({ data: [] });
+
+    let resolveUpload:
+      | ((value: { data: { photos: string[] } }) => void)
+      | null = null;
+    uploadReviewPhotosMock.mockImplementationOnce(
+      () =>
+        new Promise<{ data: { photos: string[] } }>((resolve) => {
+          resolveUpload = resolve;
+        }),
+    );
+
+    const { rerender } = render(
+      <RoadReviewsPanel segmentId={firstSegmentId} />,
+    );
+    await screen.findByRole("button", { name: "Write a review for this road" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Write a review for this road" }),
+    );
+
+    const fileInput = screen.getByLabelText(
+      "Select review photos",
+    ) as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(fileInput, {
+        target: { files: [jpegFile("slow.jpg")] },
+      });
+    });
+
+    expect(uploadReviewPhotosMock).toHaveBeenCalledWith(firstSegmentId, [
+      expect.any(File),
+    ]);
+
+    // Switch segments while the upload is in flight.
+    rerender(<RoadReviewsPanel segmentId={secondSegmentId} />);
+    await waitFor(() =>
+      expect(getReviewsMock).toHaveBeenLastCalledWith(secondSegmentId),
+    );
+
+    // Now resolve the original upload — its URL must NOT leak into the
+    // second segment's draft.
+    await act(async () => {
+      resolveUpload?.({
+        data: {
+          photos: [
+            "https://app.tarmoto.test/uploads/road-review-photos/seg-1-stale.jpg",
+          ],
+        },
+      });
+    });
+
+    // No editor was opened for the second segment, so re-open it for the
+    // first segment and confirm the draft is empty (the stale URL didn't
+    // sneak in via the segmentId reset path).
+    rerender(<RoadReviewsPanel segmentId={firstSegmentId} />);
+    await waitFor(() =>
+      expect(getReviewsMock).toHaveBeenLastCalledWith(firstSegmentId),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Write a review for this road",
+      }),
+    );
+    expect(
+      screen.queryByRole("button", { name: /Remove photo/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("ignores uploaded URLs that resolve after the editor was closed and reopened on the same segment", async () => {
+    // Close+reopen leaves `editorMode` non-null again, so the bare null
+    // check isn't enough on its own — we additionally bump an
+    // editor-session counter on every open and close, and the upload
+    // guard rejects results whose captured session no longer matches.
+    setAuthenticatedViewer();
+    getReviewsMock.mockResolvedValue({ data: [] });
+
+    let resolveUpload:
+      | ((value: { data: { photos: string[] } }) => void)
+      | null = null;
+    uploadReviewPhotosMock.mockImplementationOnce(
+      () =>
+        new Promise<{ data: { photos: string[] } }>((resolve) => {
+          resolveUpload = resolve;
+        }),
+    );
+
+    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+    await screen.findByRole("button", { name: "Write a review for this road" });
+
+    // Open → upload → cancel → reopen, all on the same segment.
+    fireEvent.click(
+      screen.getByRole("button", { name: "Write a review for this road" }),
+    );
+    const fileInput = screen.getByLabelText(
+      "Select review photos",
+    ) as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(fileInput, {
+        target: { files: [jpegFile("from-canceled-session.jpg")] },
+      });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Write a review for this road" }),
+    );
+
+    // The reopened editor is fresh — the in-flight upload from the
+    // previous session must not apply its result here.
+    await act(async () => {
+      resolveUpload?.({
+        data: {
+          photos: [
+            "https://app.tarmoto.test/uploads/road-review-photos/seg-1-canceled.jpg",
+          ],
+        },
+      });
+    });
+
+    expect(
+      screen.queryByRole("button", { name: /Remove photo/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("ignores uploaded URLs that resolve after the editor was closed", async () => {
+    setAuthenticatedViewer();
+    getReviewsMock.mockResolvedValue({ data: [] });
+
+    let resolveUpload:
+      | ((value: { data: { photos: string[] } }) => void)
+      | null = null;
+    uploadReviewPhotosMock.mockImplementationOnce(
+      () =>
+        new Promise<{ data: { photos: string[] } }>((resolve) => {
+          resolveUpload = resolve;
+        }),
+    );
+
+    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+    await screen.findByRole("button", { name: "Write a review for this road" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Write a review for this road" }),
+    );
+
+    const fileInput = screen.getByLabelText(
+      "Select review photos",
+    ) as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(fileInput, {
+        target: { files: [jpegFile("slow.jpg")] },
+      });
+    });
+
+    // Close the editor while the upload is mid-flight.
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(
+      screen.queryByRole("button", { name: "Submit review" }),
+    ).not.toBeInTheDocument();
+
+    // Resolve the upload — the URL should NOT be retained on the draft.
+    await act(async () => {
+      resolveUpload?.({
+        data: {
+          photos: [
+            "https://app.tarmoto.test/uploads/road-review-photos/seg-1-after-close.jpg",
+          ],
+        },
+      });
+    });
+
+    // Re-open the editor: draft should be empty, no thumbnail from the
+    // canceled upload.
+    fireEvent.click(
+      screen.getByRole("button", { name: "Write a review for this road" }),
+    );
+    expect(
+      screen.queryByRole("button", { name: /Remove photo/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("surfaces an upload error from the backend without blocking later submissions", async () => {
+    setAuthenticatedViewer();
+    getReviewsMock.mockResolvedValueOnce({ data: [] });
+    uploadReviewPhotosMock.mockRejectedValueOnce(
+      new Error("Photos must be PNG, JPEG, or WebP images"),
+    );
+
+    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+    await screen.findByRole("button", { name: "Write a review for this road" });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Write a review for this road" }),
+    );
+
+    const fileInput = screen.getByLabelText(
+      "Select review photos",
+    ) as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(fileInput, {
+        target: { files: [jpegFile("oops.jpg")] },
+      });
+    });
+
+    expect(
+      await screen.findByText("Photos must be PNG, JPEG, or WebP images"),
+    ).toBeInTheDocument();
+    // After an upload failure the submit button must remain enabled so the
+    // rider can fix it (try a different file) and retry without losing the
+    // rest of their draft.
+    expect(
+      screen.getByRole("button", { name: "Submit review" }),
+    ).not.toBeDisabled();
   });
 
   it("edits and deletes the authenticated rider's existing review", async () => {
@@ -656,9 +911,7 @@ describe("RoadReviewsPanel", () => {
     await screen.findByText("Scenic section with a photo.");
 
     fireEvent.click(screen.getByRole("button", { name: "Edit your review" }));
-    fireEvent.change(screen.getByLabelText("Photo URL 1"), {
-      target: { value: "" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "Remove photo 1" }));
     fireEvent.click(screen.getByRole("button", { name: "Save review" }));
 
     await waitFor(() =>

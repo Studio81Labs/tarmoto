@@ -1,8 +1,20 @@
 /* eslint-disable @typescript-eslint/no-unsafe-return */
+jest.mock('node:fs/promises', () => ({
+  mkdir: jest.fn(),
+  unlink: jest.fn(),
+  writeFile: jest.fn(),
+}));
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { ReviewsService } from './reviews.service.js';
 import { RoadReview } from '../../entities/road-review.entity.js';
 import { RoadReviewVote } from '../../entities/road-review-vote.entity.js';
@@ -40,6 +52,11 @@ describe('ReviewsService', () => {
   const mockSegment = { id: 'seg-1' } as unknown as RoadSegment;
 
   beforeEach(async () => {
+    jest.clearAllMocks();
+    jest.mocked(mkdir).mockResolvedValue(undefined);
+    jest.mocked(unlink).mockResolvedValue(undefined);
+    jest.mocked(writeFile).mockResolvedValue(undefined);
+
     reviewRepo = {
       find: jest.fn().mockResolvedValue([mockReview]),
       findOne: jest.fn().mockResolvedValue(mockReview),
@@ -96,6 +113,18 @@ describe('ReviewsService', () => {
         { provide: getRepositoryToken(RoadReview), useValue: reviewRepo },
         { provide: getRepositoryToken(RoadSegment), useValue: segmentRepo },
         { provide: getRepositoryToken(RoadReviewVote), useValue: voteRepo },
+        // Test fixtures use `https://app.tarmoto.test/...` everywhere —
+        // configure that as the trusted public base URL so the service's
+        // origin guard treats those URLs as ours.
+        {
+          provide: ConfigService,
+          useValue: {
+            get: (key: string) =>
+              key === 'TARMOTO_PUBLIC_BASE_URL'
+                ? 'https://app.tarmoto.test'
+                : undefined,
+          },
+        },
       ],
     }).compile();
 
@@ -291,6 +320,43 @@ describe('ReviewsService', () => {
         service.create('user-1', 'seg-1', { rating: 3 }),
       ).rejects.toThrow('connection lost');
     });
+
+    it("should reject when the payload references another user's managed photo", async () => {
+      // Mirror of the update-side ownership guard: the create path also
+      // refuses to persist a managed URL whose `<segmentId>-<userId>-`
+      // prefix doesn't match the caller, so user-1 can't snapshot
+      // user-2's gallery into their own review and trigger a cascade
+      // delete on it later.
+      await expect(
+        service.create('user-1', 'seg-1', {
+          rating: 5,
+          photos: [
+            'https://app.tarmoto.test/uploads/road-review-photos/seg-1-other-user-shot.jpg',
+          ],
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(reviewRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('should accept own managed photos and third-party URLs', async () => {
+      // Owned managed URLs (filename starts with `<seg>-<user>-`) and
+      // arbitrary third-party https URLs both pass — the ownership rule
+      // only kicks in when the URL resolves to our managed directory.
+      const dto = {
+        rating: 5,
+        photos: [
+          'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-shot.jpg',
+          'https://cdn.example.com/foreign.jpg',
+        ],
+      };
+
+      await service.create('user-1', 'seg-1', dto);
+
+      expect(reviewRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ photos: dto.photos }),
+      );
+    });
   });
 
   describe('update', () => {
@@ -336,6 +402,191 @@ describe('ReviewsService', () => {
         service.update('user-1', 'seg-1', { rating: 3 }),
       ).rejects.toThrow(NotFoundException);
     });
+
+    it('should cascade-delete managed photos that the new payload dropped', async () => {
+      // Editing a review that previously referenced two managed photos
+      // and now only keeps one must unlink the file behind the dropped
+      // URL — otherwise removing a photo from the UI leaves an orphan
+      // that nothing will ever clean up before the S3 lifecycle lands.
+      // Photo basenames must carry the `<segmentId>-<userId>-` prefix so
+      // the cascade-delete recognizes them as the caller's own files.
+      reviewRepo.findOne!.mockResolvedValueOnce({
+        ...mockReview,
+        photos: [
+          'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-keep.jpg',
+          'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-drop.jpg',
+        ],
+      } as unknown as RoadReview);
+
+      await service.update('user-1', 'seg-1', {
+        rating: 4,
+        photos: [
+          'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-keep.jpg',
+        ],
+      });
+
+      expect(unlink).toHaveBeenCalledTimes(1);
+      expect(unlink).toHaveBeenCalledWith(
+        expect.stringContaining(
+          '/uploads/road-review-photos/seg-1-user-1-drop.jpg',
+        ),
+      );
+    });
+
+    it('should not unlink anything when photos are unchanged', async () => {
+      reviewRepo.findOne!.mockResolvedValueOnce({
+        ...mockReview,
+        photos: [
+          'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-same.jpg',
+        ],
+      } as unknown as RoadReview);
+
+      await service.update('user-1', 'seg-1', {
+        rating: 4,
+        photos: [
+          'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-same.jpg',
+        ],
+      });
+
+      expect(unlink).not.toHaveBeenCalled();
+    });
+
+    it('should ignore dropped third-party URLs that are not managed', async () => {
+      reviewRepo.findOne!.mockResolvedValueOnce({
+        ...mockReview,
+        photos: [
+          'https://cdn.example.com/foreign.jpg',
+          'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-managed.jpg',
+        ],
+      } as unknown as RoadReview);
+
+      await service.update('user-1', 'seg-1', { rating: 4, photos: [] });
+
+      // The foreign URL is left alone — we never wrote it, we don't own
+      // the lifecycle for it. Only the managed file is removed.
+      expect(unlink).toHaveBeenCalledTimes(1);
+      expect(unlink).toHaveBeenCalledWith(
+        expect.stringContaining(
+          '/uploads/road-review-photos/seg-1-user-1-managed.jpg',
+        ),
+      );
+    });
+
+    it('should not unlink files for path-traversal attempts in stored photo URLs', async () => {
+      // A row whose photos[] was crafted (or migrated from legacy data)
+      // to include a `..%2F..%2F` segment must NOT cause unlink to be
+      // called with anything outside the managed directory. The path
+      // resolver returns null for those, mirroring the avatar pattern.
+      reviewRepo.findOne!.mockResolvedValueOnce({
+        ...mockReview,
+        photos: [
+          'https://app.tarmoto.test/uploads/road-review-photos/..%2F..%2Fsecrets.txt',
+          'https://app.tarmoto.test/uploads/road-review-photos/%00pwn.jpg',
+        ],
+      } as unknown as RoadReview);
+
+      await service.update('user-1', 'seg-1', { rating: 4, photos: [] });
+
+      expect(unlink).not.toHaveBeenCalled();
+    });
+
+    it('should not unlink a managed file uploaded by another user', async () => {
+      // Defense in depth for legacy rows that predate the create/update
+      // ownership check: even if a row carries a URL whose filename
+      // belongs to a different `(segmentId, userId)`, removing the row
+      // must NOT delete that file out from under the original uploader's
+      // own review.
+      reviewRepo.findOne!.mockResolvedValueOnce({
+        ...mockReview,
+        photos: [
+          'https://app.tarmoto.test/uploads/road-review-photos/seg-1-other-user-foreign.jpg',
+        ],
+      } as unknown as RoadReview);
+
+      await service.update('user-1', 'seg-1', { rating: 4, photos: [] });
+
+      expect(unlink).not.toHaveBeenCalled();
+    });
+
+    it("should reject when the payload references another user's managed photo", async () => {
+      // The DTO accepts any well-formed photo URL — without this guard,
+      // user-1 could attach user-2's `/uploads/road-review-photos/...`
+      // URL to their own review, and a later cascade-delete on user-1's
+      // review would then remove user-2's file. The owner check at the
+      // create/update boundary refuses to persist the cross-attachment
+      // in the first place.
+      await expect(
+        service.update('user-1', 'seg-1', {
+          rating: 4,
+          photos: [
+            'https://app.tarmoto.test/uploads/road-review-photos/seg-1-other-user-shot.jpg',
+          ],
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(reviewRepo.save).not.toHaveBeenCalled();
+      expect(unlink).not.toHaveBeenCalled();
+    });
+
+    it('should treat URLs from a third-party CDN with a colliding pathname as not managed', async () => {
+      // A third-party origin like `cdn.example.com` happens to expose a
+      // file at `/uploads/road-review-photos/<our-prefix>-x.jpg` — the
+      // pathname-only resolver would have classified this as managed and
+      // rejected with 400 even though the URL points at someone else's
+      // server. The origin guard restricts "managed" detection to the
+      // configured `TARMOTO_PUBLIC_BASE_URL` (or loopback in dev), so a
+      // foreign CDN URL passes through untouched as a third-party photo.
+      const result = await service.update('user-1', 'seg-1', {
+        rating: 4,
+        photos: [
+          'https://cdn.example.com/uploads/road-review-photos/seg-1-other-user-shot.jpg',
+        ],
+      });
+
+      expect(reviewRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          photos: [
+            'https://cdn.example.com/uploads/road-review-photos/seg-1-other-user-shot.jpg',
+          ],
+        }),
+      );
+      expect(unlink).not.toHaveBeenCalled();
+      expect(result.photos).toEqual([
+        'https://cdn.example.com/uploads/road-review-photos/seg-1-other-user-shot.jpg',
+      ]);
+    });
+
+    it('should treat a whitespace-padded stored URL and a trimmed update as the same photo', async () => {
+      // `IsReviewPhotoUrl` validates `value.trim()`, so a row could land
+      // in the DB with surrounding whitespace via direct API use. If the
+      // set-difference compared raw strings, the next update sending the
+      // same URL trimmed would mark it as removed and unlink the file
+      // out from under the still-saved (now-normalized) review row.
+      reviewRepo.findOne!.mockResolvedValueOnce({
+        ...mockReview,
+        photos: [
+          '  https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-keep.jpg  ',
+        ],
+      } as unknown as RoadReview);
+
+      await service.update('user-1', 'seg-1', {
+        rating: 4,
+        photos: [
+          'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-keep.jpg',
+        ],
+      });
+
+      expect(unlink).not.toHaveBeenCalled();
+      // Saved row carries the trimmed form so future diffs stay
+      // consistent with the response sanitizer.
+      expect(reviewRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          photos: [
+            'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-keep.jpg',
+          ],
+        }),
+      );
+    });
   });
 
   describe('delete', () => {
@@ -353,6 +604,205 @@ describe('ReviewsService', () => {
 
       await expect(service.delete('user-1', 'seg-1')).rejects.toThrow(
         NotFoundException,
+      );
+    });
+
+    it('should cascade-delete managed photo files after removing the review', async () => {
+      // Files referenced by the deleted review live under our managed
+      // /uploads/road-review-photos/ prefix and must be unlinked so the
+      // user-driven delete actually frees disk — third-party URLs are
+      // left alone and missing files are tolerated. Filenames must carry
+      // the `<segmentId>-<userId>-` prefix to be recognized as the
+      // caller's own.
+      reviewRepo.findOne!.mockResolvedValueOnce({
+        ...mockReview,
+        photos: [
+          'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-keep.jpg',
+          'https://cdn.example.com/external.jpg', // not managed → skipped
+        ],
+      } as unknown as RoadReview);
+
+      await service.delete('user-1', 'seg-1');
+
+      expect(reviewRepo.remove).toHaveBeenCalled();
+      expect(unlink).toHaveBeenCalledTimes(1);
+      expect(unlink).toHaveBeenCalledWith(
+        expect.stringContaining(
+          '/uploads/road-review-photos/seg-1-user-1-keep.jpg',
+        ),
+      );
+    });
+
+    it("should not unlink another user's managed photo even if the row points at it", async () => {
+      // Same defense-in-depth as the update path: a legacy row that
+      // somehow references user-2's filename must NOT cause unlink when
+      // user-1 deletes their review. The cascade-delete is bound to the
+      // caller's `<segmentId>-<userId>-` namespace, period.
+      reviewRepo.findOne!.mockResolvedValueOnce({
+        ...mockReview,
+        photos: [
+          'https://app.tarmoto.test/uploads/road-review-photos/seg-1-other-user-foreign.jpg',
+        ],
+      } as unknown as RoadReview);
+
+      await service.delete('user-1', 'seg-1');
+
+      expect(reviewRepo.remove).toHaveBeenCalled();
+      expect(unlink).not.toHaveBeenCalled();
+    });
+
+    it('should not call unlink when the review has no photos', async () => {
+      reviewRepo.findOne!.mockResolvedValueOnce({
+        ...mockReview,
+        photos: null,
+      } as unknown as RoadReview);
+
+      await service.delete('user-1', 'seg-1');
+
+      expect(unlink).not.toHaveBeenCalled();
+    });
+
+    it('should swallow ENOENT but rethrow other unlink errors', async () => {
+      reviewRepo.findOne!.mockResolvedValueOnce({
+        ...mockReview,
+        photos: [
+          'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-missing.jpg',
+        ],
+      } as unknown as RoadReview);
+      jest
+        .mocked(unlink)
+        .mockRejectedValueOnce(
+          Object.assign(new Error('not found'), { code: 'ENOENT' }),
+        );
+
+      // ENOENT is benign — the file was already gone, the row is the
+      // source of truth. The delete must still resolve.
+      await expect(service.delete('user-1', 'seg-1')).resolves.toBeUndefined();
+    });
+  });
+
+  describe('uploadPhotos', () => {
+    const fileA = {
+      mimetype: 'image/jpeg',
+      buffer: Buffer.from('jpeg-bytes'),
+    } as Express.Multer.File;
+    const fileB = {
+      mimetype: 'image/webp',
+      buffer: Buffer.from('webp-bytes'),
+    } as Express.Multer.File;
+
+    it('should reject when no files are provided', async () => {
+      await expect(
+        service.uploadPhotos('user-1', 'seg-1', [], 'https://app.tarmoto.test'),
+      ).rejects.toThrow(BadRequestException);
+      expect(writeFile).not.toHaveBeenCalled();
+    });
+
+    it('should reject when the segment does not exist', async () => {
+      segmentRepo.findOne!.mockResolvedValueOnce(null);
+
+      await expect(
+        service.uploadPhotos(
+          'user-1',
+          'missing',
+          [fileA],
+          'https://app.tarmoto.test',
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(writeFile).not.toHaveBeenCalled();
+    });
+
+    it('should reject unsupported mimetypes before writing any file', async () => {
+      const gif = {
+        mimetype: 'image/gif',
+        buffer: Buffer.from('gif-bytes'),
+      } as Express.Multer.File;
+
+      await expect(
+        service.uploadPhotos(
+          'user-1',
+          'seg-1',
+          [fileA, gif],
+          'https://app.tarmoto.test',
+        ),
+      ).rejects.toThrow(BadRequestException);
+      // Validation runs over the whole batch before any disk write so a
+      // bad file in the middle of a gallery doesn't leave a half-uploaded
+      // mess on disk.
+      expect(writeFile).not.toHaveBeenCalled();
+    });
+
+    it('should reject when too many files are uploaded at once', async () => {
+      const tooMany = Array.from({ length: 6 }, () => fileA);
+
+      await expect(
+        service.uploadPhotos(
+          'user-1',
+          'seg-1',
+          tooMany,
+          'https://app.tarmoto.test',
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(writeFile).not.toHaveBeenCalled();
+    });
+
+    it('should write each accepted file and return public URLs', async () => {
+      const result = await service.uploadPhotos(
+        'user-1',
+        'seg-1',
+        [fileA, fileB],
+        'https://app.tarmoto.test',
+      );
+
+      expect(writeFile).toHaveBeenCalledTimes(2);
+      expect(writeFile).toHaveBeenNthCalledWith(
+        1,
+        expect.stringMatching(
+          /\/uploads\/road-review-photos\/seg-1-user-1-.*\.jpg$/,
+        ),
+        fileA.buffer,
+      );
+      expect(writeFile).toHaveBeenNthCalledWith(
+        2,
+        expect.stringMatching(
+          /\/uploads\/road-review-photos\/seg-1-user-1-.*\.webp$/,
+        ),
+        fileB.buffer,
+      );
+      expect(result.photos).toHaveLength(2);
+      expect(result.photos[0]).toMatch(
+        /^https:\/\/app\.tarmoto\.test\/uploads\/road-review-photos\/seg-1-user-1-.*\.jpg$/,
+      );
+      expect(result.photos[1]).toMatch(
+        /^https:\/\/app\.tarmoto\.test\/uploads\/road-review-photos\/seg-1-user-1-.*\.webp$/,
+      );
+    });
+
+    it('should roll back already-written files when a later write fails', async () => {
+      jest
+        .mocked(writeFile)
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(
+          Object.assign(new Error('disk full'), { code: 'ENOSPC' }),
+        );
+
+      await expect(
+        service.uploadPhotos(
+          'user-1',
+          'seg-1',
+          [fileA, fileB],
+          'https://app.tarmoto.test',
+        ),
+      ).rejects.toThrow('disk full');
+
+      // The first file made it to disk before the second failed — the
+      // rollback unlink must remove it so callers either get every URL
+      // or none. Anything else leaks storage on retry.
+      expect(unlink).toHaveBeenCalledTimes(1);
+      expect(unlink).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /\/uploads\/road-review-photos\/seg-1-user-1-.*\.jpg$/,
+        ),
       );
     });
   });
@@ -441,6 +891,68 @@ describe('ReviewsService', () => {
         true,
       );
       expect(result[0].photos).not.toContain('https://media.tarmoto.app/g.jpg');
+    });
+
+    it('should keep loopback http URLs (IPv4 + IPv6) but drop other plain-http hosts', async () => {
+      // Local-dev managed uploads come back as http://localhost:PORT/...
+      // (req.protocol is http when there's no TLS terminator), so the
+      // sanitizer must accept loopback http to round-trip those URLs
+      // through the response. IPv6 loopback `[::1]` is included because
+      // some local setups resolve the API host to ::1 — without it the
+      // upload-then-submit flow would 500 in plain dev. Non-loopback
+      // http remains rejected — we don't want a stored row to silently
+      // leak insecure third-party image URLs.
+      const freshReview = {
+        ...mockReview,
+        photos: [
+          'http://localhost:3000/uploads/road-review-photos/dev.jpg',
+          'http://127.0.0.1:3000/uploads/road-review-photos/dev2.jpg',
+          'http://[::1]:3000/uploads/road-review-photos/dev3.jpg',
+          'http://insecure.example.com/x.jpg',
+        ],
+      } as unknown as RoadReview;
+      reviewRepo.find!.mockResolvedValueOnce([freshReview]);
+
+      const result = await service.listForSegment('seg-1');
+
+      expect(result[0].photos).toEqual([
+        'http://localhost:3000/uploads/road-review-photos/dev.jpg',
+        'http://127.0.0.1:3000/uploads/road-review-photos/dev2.jpg',
+        'http://[::1]:3000/uploads/road-review-photos/dev3.jpg',
+      ]);
+    });
+
+    it('should reject loopback http URLs when running in production', async () => {
+      // In production every photo must be served over https — a stored
+      // http://localhost/... URL would render in every viewer's browser
+      // as an image hitting each viewer's local services. The validator
+      // / sanitizer reads TARMOTO_NODE_ENV at call time so the prod
+      // posture stays the same regardless of how the row landed there.
+      const previous = process.env.TARMOTO_NODE_ENV;
+      process.env.TARMOTO_NODE_ENV = 'production';
+      try {
+        const freshReview = {
+          ...mockReview,
+          photos: [
+            'http://localhost:3000/uploads/road-review-photos/dev.jpg',
+            'http://127.0.0.1:3000/uploads/road-review-photos/dev2.jpg',
+            'https://app.tarmoto.test/uploads/road-review-photos/keep.jpg',
+          ],
+        } as unknown as RoadReview;
+        reviewRepo.find!.mockResolvedValueOnce([freshReview]);
+
+        const result = await service.listForSegment('seg-1');
+
+        expect(result[0].photos).toEqual([
+          'https://app.tarmoto.test/uploads/road-review-photos/keep.jpg',
+        ]);
+      } finally {
+        if (previous === undefined) {
+          delete process.env.TARMOTO_NODE_ENV;
+        } else {
+          process.env.TARMOTO_NODE_ENV = previous;
+        }
+      }
     });
 
     it('should reject malformed https strings that prefix-pass but fail URL parsing', async () => {

@@ -77,4 +77,61 @@ describe("generate-postman", () => {
     expect(body.device_model).toBe("iPhone 15 Pro");
     expect(body.client_model_version).toBe("rsc-v1.0.0");
   });
+
+  it("emits multipart formdata bodies for file-upload endpoints", () => {
+    // Regression: every generated request used to hardcode
+    // `Content-Type: application/json` and a raw JSON body, so the
+    // multipart upload routes (review photos, user avatar) shipped a
+    // collection entry that couldn't actually exercise the endpoint —
+    // multer never received any `files` parts. The generator now reads
+    // the operation's `multipart/form-data` schema and emits a Postman
+    // formdata body with file fields plus an empty Content-Type list
+    // (Postman fills in the correct boundary header itself).
+    const collection = JSON.parse(
+      fs.readFileSync(
+        path.join(PKG_DIR, "postman/tarmoto-api.postman_collection.json"),
+        "utf8",
+      ),
+    ) as {
+      item: {
+        item?: {
+          name: string;
+          request?: {
+            header?: { key: string; value: string }[];
+            body?: {
+              mode?: string;
+              formdata?: { key: string; type: string }[];
+              raw?: string;
+            };
+          };
+        }[];
+      }[];
+    };
+
+    const uploadPhotos = collection.item
+      .flatMap((folder) => folder.item ?? [])
+      .find((req) => req.name === "Upload photos for a road review");
+    expect(uploadPhotos?.request?.body?.mode).toBe("formdata");
+    expect(uploadPhotos?.request?.body?.formdata).toEqual([
+      expect.objectContaining({ key: "files", type: "file" }),
+    ]);
+    expect(
+      uploadPhotos?.request?.header?.find(
+        (h) => h.key.toLowerCase() === "content-type",
+      ),
+    ).toBeUndefined();
+
+    const uploadAvatar = collection.item
+      .flatMap((folder) => folder.item ?? [])
+      .find((req) => req.name === "Upload a profile avatar");
+    expect(uploadAvatar?.request?.body?.mode).toBe("formdata");
+    expect(uploadAvatar?.request?.body?.formdata).toEqual([
+      expect.objectContaining({ key: "file", type: "file" }),
+    ]);
+    expect(
+      uploadAvatar?.request?.header?.find(
+        (h) => h.key.toLowerCase() === "content-type",
+      ),
+    ).toBeUndefined();
+  });
 });

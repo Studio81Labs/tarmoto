@@ -1,19 +1,246 @@
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
   ConflictException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { basename, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { hasControlCharacters } from '../../common/control-characters.js';
+import { LOOPBACK_HOSTS } from '../../common/loopback-hosts.js';
 import { RoadReview } from '../../entities/road-review.entity.js';
 import { RoadReviewVote } from '../../entities/road-review-vote.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
 import {
+  ALLOWED_REVIEW_PHOTO_TYPES,
   CreateReviewDto,
+  MAX_REVIEW_PHOTOS,
+  REVIEW_PHOTO_PATH_PREFIX,
+  ReviewPhotosResponseDto,
   ReviewResponseDto,
   ReviewVoteResultDto,
   sanitizeReviewPhotos,
 } from './dto/review.dto.js';
+
+const REVIEW_PHOTO_UPLOAD_DIR = join(
+  process.cwd(),
+  'uploads',
+  'road-review-photos',
+);
+
+/**
+ * Decide whether a `<scheme>://<host>` origin belongs to *our* upload
+ * storage. The pathname-prefix check inside `resolveManagedReviewPhoto`
+ * isn't enough on its own: a third-party URL like
+ * `https://cdn.example.com/uploads/road-review-photos/...` would
+ * otherwise be misclassified as managed, and the caller's ownership-
+ * prefix check would either 400 spuriously or, for the cascade-delete
+ * path, attempt a local `unlink` against a coincidentally-matching
+ * filename in our managed directory. Treat as managed iff the origin
+ * matches `TARMOTO_PUBLIC_BASE_URL` OR (outside production) the host
+ * is loopback — same trust posture the upload endpoint uses when it
+ * builds outgoing URLs.
+ */
+function buildTrustedManagedOriginCheck(
+  config: ConfigService,
+): (parsed: URL) => boolean {
+  const configured = config.get<string>('TARMOTO_PUBLIC_BASE_URL')?.trim();
+  let configuredOrigin: string | null = null;
+  if (configured && configured.length > 0) {
+    try {
+      configuredOrigin = new URL(configured).origin;
+    } catch {
+      // Bad config falls through; the upload endpoint's own probe will
+      // surface the 500 with a clearer error than this resolver could.
+    }
+  }
+  return (parsed: URL): boolean => {
+    if (configuredOrigin && parsed.origin === configuredOrigin) return true;
+    // Loopback hosts are only trusted outside production — same rule
+    // `isAllowedReviewPhotoUrl` enforces, so a stored prod row that
+    // somehow points at localhost can't be silently deleted.
+    if (
+      process.env.TARMOTO_NODE_ENV !== 'production' &&
+      LOOPBACK_HOSTS.has(parsed.hostname)
+    ) {
+      return true;
+    }
+    return false;
+  };
+}
+
+interface ManagedPhoto {
+  /** Decoded basename (e.g. `seg-1-user-1-1700000000-uuid.jpg`). */
+  filename: string;
+  /** Resolved absolute path inside `REVIEW_PHOTO_UPLOAD_DIR`. */
+  filePath: string;
+}
+
+/**
+ * Resolve a photo URL to its managed filename + on-disk path inside the
+ * upload directory, or `null` when the URL is not one we own. Mirrors the
+ * `users.service` avatar pattern: parse the URL, only honor it when the
+ * origin is trusted (configured public base URL or a loopback dev host)
+ * AND the pathname carries the managed prefix, and reject decoded
+ * filenames that include path separators, control characters, or
+ * `.`/`..` segments so a crafted `photos[]` entry can't make a cascade
+ * delete escape the managed directory.
+ */
+function resolveManagedReviewPhoto(
+  photoUrl: string | null,
+  isTrustedOrigin: (parsed: URL) => boolean,
+): ManagedPhoto | null {
+  if (!photoUrl) return null;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(photoUrl);
+  } catch {
+    // Treat relative URLs as untrusted: we never emit relative photo
+    // URLs from the upload endpoint, so anything without a scheme is
+    // either a legacy or third-party value that can't be cleaned up
+    // by the cascade.
+    return null;
+  }
+
+  if (!isTrustedOrigin(parsed)) return null;
+  if (!parsed.pathname.startsWith(REVIEW_PHOTO_PATH_PREFIX)) return null;
+
+  const encodedFilename = parsed.pathname.slice(
+    REVIEW_PHOTO_PATH_PREFIX.length,
+  );
+  if (!encodedFilename) return null;
+
+  let filename: string;
+  try {
+    filename = decodeURIComponent(encodedFilename);
+  } catch {
+    return null;
+  }
+  if (
+    filename === '.' ||
+    filename === '..' ||
+    filename !== basename(filename) ||
+    filename.includes('/') ||
+    filename.includes('\\') ||
+    hasControlCharacters(filename)
+  ) {
+    return null;
+  }
+
+  return { filename, filePath: join(REVIEW_PHOTO_UPLOAD_DIR, filename) };
+}
+
+/**
+ * Build the prefix every managed filename uploaded by `(segmentId, userId)`
+ * starts with — `<segmentId>-<userId>-`. Both ids are UUIDs in production
+ * (the controller's `ParseUUIDPipe` enforces it), so a `startsWith` check
+ * unambiguously identifies ownership: a managed file `X` was uploaded by
+ * `userId` for `segmentId` iff `filename.startsWith(buildOwnedPrefix(...))`.
+ */
+function buildOwnedPrefix(segmentId: string, userId: string): string {
+  return `${segmentId}-${userId}-`;
+}
+
+function isOwnedManagedPhoto(
+  photo: ManagedPhoto,
+  segmentId: string,
+  userId: string,
+): boolean {
+  return photo.filename.startsWith(buildOwnedPrefix(segmentId, userId));
+}
+
+/**
+ * Reject a `photos[]` payload that references a managed file the caller
+ * doesn't own.
+ *
+ * `CreateReviewDto.photos` only validates URL shape, not authorization,
+ * so without this check user B could attach user A's
+ * `/uploads/road-review-photos/...` URL to B's own review — and then a
+ * later `delete`/`update` on B's review would unlink the shared file out
+ * from under A. Forcing every managed URL to carry the caller's
+ * `<segmentId>-<userId>-` filename prefix means cascade deletes only ever
+ * touch files the same user produced for the same segment.
+ *
+ * Third-party URLs that don't resolve to a managed path pass through
+ * untouched — we never wrote those, so we can't and won't delete them.
+ */
+function assertReviewPhotosAreOwned(
+  photoUrls: readonly string[] | null | undefined,
+  segmentId: string,
+  userId: string,
+  isTrustedOrigin: (parsed: URL) => boolean,
+): void {
+  if (!photoUrls?.length) return;
+  for (const photoUrl of photoUrls) {
+    const managed = resolveManagedReviewPhoto(photoUrl, isTrustedOrigin);
+    if (!managed) continue;
+    if (!isOwnedManagedPhoto(managed, segmentId, userId)) {
+      throw new BadRequestException(
+        'Photo URL refers to a file you did not upload for this segment',
+      );
+    }
+  }
+}
+
+/**
+ * Trim every entry in a photo URL list and drop empties, mirroring what
+ * `sanitizeReviewPhotos` returns on the response side. Both ends of the
+ * cascade-delete diff (and what we save to the DB) need to go through
+ * this — otherwise a stored ` https://.../x.jpg ` and an updated
+ * `https://.../x.jpg` look different to a `Set` and the still-referenced
+ * file gets unlinked. `IsReviewPhotoUrl` already validates `value.trim()`,
+ * so any padding that passes validation has no semantic meaning anyway.
+ */
+function normalizeReviewPhotoList(
+  photoUrls: readonly string[] | null | undefined,
+): string[] {
+  if (!photoUrls?.length) return [];
+  const out: string[] = [];
+  for (const photoUrl of photoUrls) {
+    if (typeof photoUrl !== 'string') continue;
+    const trimmed = photoUrl.trim();
+    if (trimmed.length === 0) continue;
+    out.push(trimmed);
+  }
+  return out;
+}
+
+/**
+ * Best-effort delete of managed review-photo files the caller owns, out of
+ * the given URL list. Third-party URLs, missing files, and managed files
+ * uploaded by another user are skipped silently — the caller has already
+ * committed the new state in the DB and we don't want a stray orphan to
+ * surface a 500, and we never delete a file we don't own. Permission
+ * errors still bubble so an operator notices a misconfigured uploads
+ * directory.
+ */
+async function deleteOwnedReviewPhotos(
+  photoUrls: readonly string[] | null | undefined,
+  segmentId: string,
+  userId: string,
+  isTrustedOrigin: (parsed: URL) => boolean,
+): Promise<void> {
+  if (!photoUrls?.length) return;
+  for (const photoUrl of photoUrls) {
+    const managed = resolveManagedReviewPhoto(photoUrl, isTrustedOrigin);
+    if (!managed) continue;
+    // Defense in depth: even if `assertReviewPhotosAreOwned` was bypassed
+    // (e.g. a legacy row predating the ownership rule), the cascade-delete
+    // refuses to touch files outside the caller's `<segmentId>-<userId>-`
+    // namespace so removing review B can't break review A.
+    if (!isOwnedManagedPhoto(managed, segmentId, userId)) continue;
+    try {
+      await unlink(managed.filePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+  }
+}
 
 interface VoteAggregate {
   helpful_count: number;
@@ -23,6 +250,12 @@ interface VoteAggregate {
 
 @Injectable()
 export class ReviewsService {
+  // Built once at construction so each create / update / delete doesn't
+  // re-read TARMOTO_PUBLIC_BASE_URL. Closes the loophole where a third-
+  // party URL with our managed pathname prefix would be mis-classified
+  // as a managed photo (see `buildTrustedManagedOriginCheck`).
+  private readonly isTrustedManagedOrigin: (parsed: URL) => boolean;
+
   constructor(
     @InjectRepository(RoadReview)
     private readonly reviewRepo: Repository<RoadReview>,
@@ -30,7 +263,10 @@ export class ReviewsService {
     private readonly segmentRepo: Repository<RoadSegment>,
     @InjectRepository(RoadReviewVote)
     private readonly voteRepo: Repository<RoadReviewVote>,
-  ) {}
+    config: ConfigService,
+  ) {
+    this.isTrustedManagedOrigin = buildTrustedManagedOriginCheck(config);
+  }
 
   async listForSegment(
     segmentId: string,
@@ -63,13 +299,29 @@ export class ReviewsService {
       throw new NotFoundException('Road segment not found');
     }
 
+    // Normalize before any further processing — `IsReviewPhotoUrl`
+    // accepts whitespace-padded URLs (it validates `value.trim()`), and
+    // we want what's saved to match what the response sanitizer returns
+    // so update / cascade-delete diffs don't drift on padding alone.
+    const normalizedPhotos = normalizeReviewPhotoList(dto.photos);
+
+    // Block attaching managed photos that another user uploaded — see
+    // `assertReviewPhotosAreOwned` for why DTO-level URL validation isn't
+    // enough on its own.
+    assertReviewPhotosAreOwned(
+      normalizedPhotos,
+      segmentId,
+      userId,
+      this.isTrustedManagedOrigin,
+    );
+
     const review = this.reviewRepo.create({
       user_id: userId,
       road_segment_id: segmentId,
       rating: dto.rating,
       comment: dto.comment ?? null,
       bike_model: dto.bike_model ?? null,
-      photos: dto.photos ?? null,
+      photos: normalizedPhotos.length > 0 ? normalizedPhotos : null,
     });
 
     let saved: RoadReview;
@@ -121,12 +373,44 @@ export class ReviewsService {
       throw new NotFoundException('Review not found');
     }
 
+    // Normalize incoming and stored URLs to the same trimmed form so the
+    // set-difference below can't mistake padding for an actual removal —
+    // a row stored as ` https://.../x.jpg ` (legacy / direct API) and an
+    // update sending `https://.../x.jpg` are the same photo.
+    const previousPhotos = normalizeReviewPhotoList(review.photos);
+    const nextPhotos = normalizeReviewPhotoList(dto.photos);
+
+    // Block attaching managed photos uploaded by someone else (see
+    // `assertReviewPhotosAreOwned`).
+    assertReviewPhotosAreOwned(
+      nextPhotos,
+      segmentId,
+      userId,
+      this.isTrustedManagedOrigin,
+    );
+
     review.rating = dto.rating;
     review.comment = dto.comment ?? null;
     review.bike_model = dto.bike_model ?? null;
-    review.photos = dto.photos ?? null;
+    review.photos = nextPhotos.length > 0 ? nextPhotos : null;
 
     const saved = await this.reviewRepo.save(review);
+
+    // Cascade-delete files for any managed photos that the new payload
+    // dropped, so removing a photo from an existing review doesn't leave
+    // an orphan on disk. Run after save so a DB failure can't leave the
+    // row pointing at a file we already deleted. The ownership filter
+    // inside `deleteOwnedReviewPhotos` ensures we never delete a file
+    // another user uploaded — even if a legacy row carries a foreign URL.
+    const nextSet = new Set(nextPhotos);
+    const removed = previousPhotos.filter((photo) => !nextSet.has(photo));
+    await deleteOwnedReviewPhotos(
+      removed,
+      segmentId,
+      userId,
+      this.isTrustedManagedOrigin,
+    );
+
     const voteMap = await this.aggregateVotes([saved.id], userId);
     return this.toResponse(saved, voteMap.get(saved.id), userId);
   }
@@ -138,7 +422,86 @@ export class ReviewsService {
     if (!review) {
       throw new NotFoundException('Review not found');
     }
+    // Normalize so a legacy padded URL still resolves to the same managed
+    // file the path-resolver would otherwise miss.
+    const photos = normalizeReviewPhotoList(review.photos);
     await this.reviewRepo.remove(review);
+    await deleteOwnedReviewPhotos(
+      photos,
+      segmentId,
+      userId,
+      this.isTrustedManagedOrigin,
+    );
+  }
+
+  /**
+   * Persist uploaded review photo files to local disk and return the URLs
+   * the caller should submit on the next `POST/PUT /roads/:id/reviews`.
+   *
+   * The endpoint deliberately doesn't require the review to exist yet —
+   * the typical flow is upload-then-create, and validating the segment
+   * here would force a second roundtrip. Orphaned files (uploaded then
+   * never attached) are accepted as a known cost; an S3-backed lifecycle
+   * sweep is tracked separately. We do still verify the segment exists so
+   * arbitrary UUIDs can't be used to spam the uploads directory.
+   */
+  async uploadPhotos(
+    userId: string,
+    segmentId: string,
+    files: Express.Multer.File[],
+    publicBaseUrl: string,
+  ): Promise<ReviewPhotosResponseDto> {
+    if (files.length === 0) {
+      throw new BadRequestException('At least one photo file is required');
+    }
+    if (files.length > MAX_REVIEW_PHOTOS) {
+      throw new BadRequestException(
+        `You can upload up to ${MAX_REVIEW_PHOTOS} photos at a time`,
+      );
+    }
+
+    const segment = await this.segmentRepo.findOne({
+      where: { id: segmentId },
+    });
+    if (!segment) {
+      throw new NotFoundException('Road segment not found');
+    }
+
+    const records = files.map((file) => {
+      const extension = ALLOWED_REVIEW_PHOTO_TYPES.get(file.mimetype);
+      if (!extension) {
+        throw new BadRequestException(
+          'Photos must be PNG, JPEG, or WebP images',
+        );
+      }
+      const filename = `${segmentId}-${userId}-${Date.now()}-${randomUUID()}${extension}`;
+      return { file, filename };
+    });
+
+    await mkdir(REVIEW_PHOTO_UPLOAD_DIR, { recursive: true });
+
+    const written: string[] = [];
+    try {
+      for (const { file, filename } of records) {
+        const filePath = join(REVIEW_PHOTO_UPLOAD_DIR, filename);
+        await writeFile(filePath, file.buffer);
+        written.push(filename);
+      }
+    } catch (error) {
+      // Roll back any partial writes (e.g. ENOSPC mid-batch) so the caller
+      // either gets every URL it expected or none — half-uploaded galleries
+      // would leak storage and confuse retry logic on the client.
+      for (const filename of written) {
+        await unlink(join(REVIEW_PHOTO_UPLOAD_DIR, filename)).catch(() => {});
+      }
+      throw error;
+    }
+
+    return {
+      photos: written.map(
+        (filename) => `${publicBaseUrl}${REVIEW_PHOTO_PATH_PREFIX}${filename}`,
+      ),
+    };
   }
 
   /**
