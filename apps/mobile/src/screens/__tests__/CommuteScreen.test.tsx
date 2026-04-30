@@ -194,6 +194,51 @@ describe("CommuteScreen", () => {
     });
   });
 
+  it("surfaces an alert and clears the spinner when setPrimary rejects", async () => {
+    const secondary: CommuteRoute = {
+      ...baseRoute,
+      id: "route-2",
+      name: "Long way",
+      is_primary: false,
+    };
+    mockSetPrimary = jest.fn().mockRejectedValue(new Error("Network down"));
+    mockUseCommuteResult = buildResult({
+      savedRoutes: [baseRoute, secondary],
+      setPrimary: mockSetPrimary,
+    });
+
+    // Two Alert.alert invocations get fired: the initial confirmation
+    // and (after the rejection) the "Couldn't update primary" error.
+    // The mock auto-confirms the first and records the second so we
+    // can assert on its title.
+    const alertCalls: Array<[string, string?]> = [];
+    const alertSpy = jest
+      .spyOn(Alert, "alert")
+      .mockImplementation((title, body, buttons) => {
+        alertCalls.push([title, body]);
+        if (title === "Use this as primary?") {
+          const confirm = buttons?.find((b) => b.text === "Use as primary");
+          confirm?.onPress?.();
+        }
+      });
+
+    render(<CommuteScreen />);
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("Use Long way as primary commute"));
+      // Two flushes: one for the rejected setPrimary promise, one for
+      // the chained `.finally()` setPendingId(null).
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockSetPrimary).toHaveBeenCalledWith("route-2");
+    // The error alert is the last call; the rider sees it instead of
+    // a swallowed failure plus a ghost spinner.
+    expect(alertCalls.map((c) => c[0])).toContain("Couldn't update primary");
+    alertSpy.mockRestore();
+  });
+
   it("calls setPrimary on the saved route after the rider confirms", async () => {
     const secondary: CommuteRoute = {
       ...baseRoute,

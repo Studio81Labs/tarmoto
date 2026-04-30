@@ -544,7 +544,22 @@ function SavedRoutesCard({
             text: "Use as primary",
             onPress: () => {
               setPendingId(route.id);
-              void onSetPrimary(route.id).finally(() => setPendingId(null));
+              // Attach a `.catch()` ahead of `.finally()` so a failed
+              // swap (network blip, 404 if the route was deleted on
+              // another device, 5xx) can't surface as an unhandled
+              // promise rejection — that warns in dev and on some RN
+              // Hermes builds will crash the app. We also tell the
+              // rider what happened: silently swallowing the error
+              // would leave them tapping the same row forever.
+              onSetPrimary(route.id)
+                .catch((err: unknown) => {
+                  const message =
+                    err instanceof Error
+                      ? err.message
+                      : "Couldn't switch your primary commute. Try again.";
+                  Alert.alert("Couldn't update primary", message);
+                })
+                .finally(() => setPendingId(null));
             },
           },
         ],
