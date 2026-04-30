@@ -81,6 +81,15 @@ export function useRouteWeatherAlerts(
   const voiceEnabledRef = useRef(voiceEnabled);
   voiceEnabledRef.current = voiceEnabled;
 
+  // Mirror progress in a ref so the polling effect — which closes over
+  // its initial `progressM` — can still apply the ahead-only filter to
+  // TTS announcements. Without this, a critical alert at a point the
+  // rider has already passed (e.g. weather changes back at km 5 while
+  // the rider is at km 10) would be read aloud even though the banner
+  // correctly hides it via the render-time `progressM` check below.
+  const progressMRef = useRef(progressM);
+  progressMRef.current = progressM;
+
   // Reset memory when the polyline identity changes — a fresh route
   // means the rider's "passed" frame of reference also resets.
   useEffect(() => {
@@ -106,12 +115,21 @@ export function useRouteWeatherAlerts(
         setAllAlerts(next);
 
         // TTS announce: only critical alerts the rider hasn't heard yet,
-        // and only when voice is enabled. Throttle prevents two criticals
-        // landing in the same poll from reading back-to-back.
+        // ahead of their current progress, and only when voice is on.
+        // Throttle prevents two criticals landing in the same poll from
+        // reading back-to-back.
         if (!voiceEnabledRef.current) return;
+        const progressMNow = progressMRef.current;
         for (const alert of next) {
           if (alert.severity !== "critical") continue;
           if (spokenIdsRef.current.has(alert.id)) continue;
+          if (
+            progressMNow !== null &&
+            alert.distance_km_from_start * 1000 <= progressMNow
+          ) {
+            // Already behind the rider — banner hides it, voice must too.
+            continue;
+          }
           const now = Date.now();
           if (now - lastSpokenAtRef.current < TTS_THROTTLE_MS) continue;
           ttsService.speak(`${alert.title}. ${alert.message}`);

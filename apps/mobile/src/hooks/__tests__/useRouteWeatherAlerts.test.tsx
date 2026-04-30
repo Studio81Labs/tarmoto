@@ -170,6 +170,45 @@ describe("useRouteWeatherAlerts", () => {
     unmount();
   });
 
+  it("does not speak critical alerts the rider has already passed", async () => {
+    const passed = buildAlert({
+      id: "storm-passed",
+      severity: "critical",
+      kind: "storm",
+      distance_km_from_start: 5,
+      message: "PASSED storm message",
+    });
+    const ahead = buildAlert({
+      id: "storm-ahead",
+      severity: "critical",
+      kind: "storm",
+      distance_km_from_start: 30,
+      message: "AHEAD storm message",
+    });
+    getRouteWeatherMock.mockResolvedValue(buildResponse([passed, ahead]));
+
+    // Rider is at 10 km in. The banner already filters `passed` out at
+    // render time; this test guards the parallel filter inside the
+    // polling effect so TTS doesn't contradict the visual UI.
+    const { result, unmount } = renderHook(() =>
+      useRouteWeatherAlerts({
+        polyline,
+        progressM: 10_000,
+        enabled: true,
+        voiceEnabled: true,
+        intervalMs: HUGE_INTERVAL_MS,
+      }),
+    );
+
+    await waitFor(() => expect(result.current.alerts).toHaveLength(1));
+    expect(result.current.alerts[0]?.id).toBe("storm-ahead");
+    expect(speakMock).toHaveBeenCalledTimes(1);
+    const spokenPhrases = speakMock.mock.calls.map((c) => c[0]);
+    expect(spokenPhrases.some((p) => p.includes("AHEAD"))).toBe(true);
+    expect(spokenPhrases.some((p) => p.includes("PASSED"))).toBe(false);
+    unmount();
+  });
+
   it("skips TTS when voice is disabled, even for critical alerts", async () => {
     const critical = buildAlert({ id: "ice-0", kind: "ice" });
     getRouteWeatherMock.mockResolvedValue(buildResponse([critical]));
