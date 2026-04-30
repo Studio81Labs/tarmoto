@@ -299,6 +299,14 @@ export interface RoadReview {
    * doesn't personalise per viewer.
    */
   my_vote: boolean | null;
+  /**
+   * True when this review belongs to the authenticated caller, false
+   * otherwise. The /roads/:id embedded-reviews shortcut always reports
+   * `false` (anonymous-friendly), so the form mounts /roads/:id/reviews
+   * separately when it needs to know whether the rider already has a
+   * review on this segment.
+   */
+  is_mine: boolean;
 }
 
 /** Result of POST / DELETE /roads/reviews/:reviewId/vote. */
