@@ -1,0 +1,284 @@
+/**
+ * ProfileScreen — US-27 own-profile coverage.
+ *
+ * Drives the screen's network calls through `@/services/api` mocks and the
+ * auth store through `@/stores` mocks; we don't exercise actual axios.
+ */
+import React from "react";
+import { Alert } from "react-native";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react-native";
+
+jest.mock(
+  "react-native/Libraries/Components/Touchable/TouchableOpacity",
+  () => {
+    const ReactLib = require("react");
+    const { Pressable } = require("react-native");
+    return {
+      __esModule: true,
+      default: function TouchableOpacityStub(
+        props: Record<string, unknown> & { children?: React.ReactNode },
+      ) {
+        return ReactLib.createElement(Pressable, props, props.children);
+      },
+    };
+  },
+);
+
+jest.mock("@react-native-vector-icons/material-design-icons", () => {
+  const ReactLib = require("react");
+  const { Text } = require("react-native");
+  return function MockIcon({ name }: { name?: string }) {
+    return ReactLib.createElement(Text, null, `icon:${name ?? ""}`);
+  };
+});
+
+const mockNavigate = jest.fn();
+const mockSetOptions = jest.fn();
+
+jest.mock("@react-navigation/native", () => ({
+  // useFocusEffect runs its callback on mount in real react-navigation,
+  // mirror that with React's effect so the screen's data fetch fires.
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    const ReactLib = require("react");
+    // Run on mount only — that's enough for the screen's data fetch
+    // path. Skipping `cb` from the deps list is intentional, mirrors
+    // how the real `useFocusEffect` is invoked once per focus event.
+    ReactLib.useEffect(() => {
+      const cleanup = cb();
+      return typeof cleanup === "function" ? cleanup : undefined;
+    }, []); // eslint-disable-line
+  },
+  useNavigation: () => ({
+    navigate: mockNavigate,
+    setOptions: mockSetOptions,
+  }),
+}));
+
+const mockSetUser = jest.fn();
+const mockLogout = jest.fn();
+const mockAuthState: {
+  user: {
+    id: string;
+    email: string;
+    display_name: string;
+    avatar_url?: string | null;
+    bio?: string | null;
+    home_region?: string | null;
+    preferences: Record<string, unknown>;
+    created_at: string;
+  } | null;
+} = {
+  user: {
+    id: "user-1",
+    email: "rider@tarmoto.app",
+    display_name: "Rider One",
+    avatar_url: null,
+    bio: null,
+    home_region: null,
+    preferences: { units: "metric" },
+    created_at: "2025-04-01T10:00:00.000Z",
+  },
+};
+
+jest.mock("@/stores", () => ({
+  useAuthStore: (
+    selector: (state: {
+      user: typeof mockAuthState.user;
+      setUser: typeof mockSetUser;
+      logout: typeof mockLogout;
+    }) => unknown,
+  ) =>
+    selector({
+      user: mockAuthState.user,
+      setUser: mockSetUser,
+      logout: mockLogout,
+    }),
+}));
+
+jest.mock("@/services/api", () => ({
+  api: {
+    getPublicProfile: jest.fn(),
+    listUserBadges: jest.fn(),
+    uploadAvatar: jest.fn(),
+    logout: jest.fn(),
+  },
+}));
+
+jest.mock("@/services/photoCapture", () => ({
+  capturePhoto: jest.fn(),
+}));
+
+import ProfileScreen from "../ProfileScreen";
+import { api } from "@/services/api";
+import { capturePhoto } from "@/services/photoCapture";
+
+const mockedApi = api as jest.Mocked<typeof api>;
+const mockedCapture = capturePhoto as jest.MockedFunction<typeof capturePhoto>;
+
+describe("ProfileScreen", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAuthState.user = {
+      id: "user-1",
+      email: "rider@tarmoto.app",
+      display_name: "Rider One",
+      avatar_url: null,
+      bio: null,
+      home_region: null,
+      preferences: { units: "metric" },
+      created_at: "2025-04-01T10:00:00.000Z",
+    };
+    mockedApi.getPublicProfile.mockResolvedValue({
+      id: "user-1",
+      display_name: "Rider One",
+      avatar_url: null,
+      bio: "Weekend rider",
+      home_region: "Beskydy",
+      created_at: "2025-04-01T10:00:00.000Z",
+      follower_count: 12,
+      following_count: 7,
+      is_following: null,
+      is_self: true,
+    });
+    mockedApi.listUserBadges.mockResolvedValue([
+      {
+        key: "pioneer",
+        name: "Pioneer",
+        description: "First 100 roads",
+        category: "explore",
+        tier: "bronze",
+        earned_at: "2025-12-01T10:00:00.000Z",
+        progress: { current: 1, bronze: 1, silver: 5, gold: 10 },
+      },
+    ]);
+  });
+
+  it("renders the rider's display name and follower/following counts after fetch", async () => {
+    render(<ProfileScreen />);
+
+    await waitFor(() => {
+      expect(mockedApi.getPublicProfile).toHaveBeenCalledWith("user-1");
+    });
+    expect(await screen.findByText("Rider One")).toBeTruthy();
+    expect(screen.getByText("Weekend rider")).toBeTruthy();
+    expect(screen.getByText("Beskydy")).toBeTruthy();
+    expect(screen.getByText("12")).toBeTruthy();
+    expect(screen.getByText("7")).toBeTruthy();
+    // 1 earned badge in fixture
+    expect(screen.getByText("1")).toBeTruthy();
+  });
+
+  it("opens the EditProfile modal when Edit profile is tapped", async () => {
+    render(<ProfileScreen />);
+    await waitFor(() => expect(mockedApi.getPublicProfile).toHaveBeenCalled());
+
+    fireEvent.press(screen.getByLabelText("Edit profile"));
+    expect(mockNavigate).toHaveBeenCalledWith("EditProfile");
+  });
+
+  it("navigates to the followers list when the Followers tile is tapped", async () => {
+    render(<ProfileScreen />);
+    await waitFor(() => expect(mockedApi.getPublicProfile).toHaveBeenCalled());
+
+    fireEvent.press(screen.getByLabelText("12 followers, open list"));
+    expect(mockNavigate).toHaveBeenCalledWith("Followers", {
+      userId: "user-1",
+      displayName: "Rider One",
+    });
+  });
+
+  it("clears the auth store when sign out is confirmed", async () => {
+    jest.spyOn(Alert, "alert").mockImplementation((_t, _m, buttons) => {
+      const destructive = buttons?.find((b) => b.style === "destructive");
+      destructive?.onPress?.();
+    });
+    render(<ProfileScreen />);
+    await waitFor(() => expect(mockedApi.getPublicProfile).toHaveBeenCalled());
+
+    fireEvent.press(screen.getByLabelText("Sign out"));
+
+    expect(mockedApi.logout).toHaveBeenCalled();
+    expect(mockLogout).toHaveBeenCalled();
+  });
+
+  it("uploads a new avatar and writes the result back to the auth store", async () => {
+    mockedCapture.mockResolvedValue({
+      status: "captured",
+      photo: {
+        uri: "file:///tmp/avatar.jpg",
+        mimeType: "image/jpeg",
+        fileName: "avatar.jpg",
+      },
+      source: "library",
+    });
+    mockedApi.uploadAvatar.mockResolvedValue({
+      id: "user-1",
+      email: "rider@tarmoto.app",
+      display_name: "Rider One",
+      avatar_url: "https://cdn.example.com/u/1.png",
+      bio: null,
+      home_region: null,
+      preferences: { units: "metric" },
+      created_at: "2025-04-01T10:00:00.000Z",
+    } as never);
+
+    render(<ProfileScreen />);
+    await waitFor(() => expect(mockedApi.getPublicProfile).toHaveBeenCalled());
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("Change avatar"));
+    });
+
+    await waitFor(() =>
+      expect(mockedApi.uploadAvatar).toHaveBeenCalledWith({
+        uri: "file:///tmp/avatar.jpg",
+        mimeType: "image/jpeg",
+        fileName: "avatar.jpg",
+      }),
+    );
+    // setUser should have been called twice — once for the optimistic
+    // local URI, then once with the persisted result.
+    expect(mockSetUser).toHaveBeenCalled();
+    const lastCall = mockSetUser.mock.calls.at(-1)?.[0] as {
+      avatar_url: string;
+    };
+    expect(lastCall.avatar_url).toBe("https://cdn.example.com/u/1.png");
+  });
+
+  it("reverts the optimistic avatar when upload fails", async () => {
+    mockedCapture.mockResolvedValue({
+      status: "captured",
+      photo: { uri: "file:///tmp/avatar.jpg" },
+      source: "library",
+    });
+    mockedApi.uploadAvatar.mockRejectedValue(new Error("offline"));
+
+    render(<ProfileScreen />);
+    await waitFor(() => expect(mockedApi.getPublicProfile).toHaveBeenCalled());
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("Change avatar"));
+    });
+
+    await waitFor(() => expect(mockedApi.uploadAvatar).toHaveBeenCalled());
+    // First call: optimistic local uri. Last call: revert to previous user.
+    const last = mockSetUser.mock.calls.at(-1)?.[0];
+    expect(last).toMatchObject({
+      id: "user-1",
+      avatar_url: null,
+    });
+    expect(await screen.findByText("offline")).toBeTruthy();
+  });
+
+  it("renders sign-in prompt when no user is authenticated", async () => {
+    mockAuthState.user = null;
+    render(<ProfileScreen />);
+    expect(await screen.findByText("Sign in to see your profile")).toBeTruthy();
+  });
+});

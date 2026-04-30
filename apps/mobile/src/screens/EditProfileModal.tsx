@@ -1,0 +1,232 @@
+/**
+ * EditProfileModal — US-27 own-profile editing.
+ *
+ * Edits display name, bio, and home region. Avatar upload is handled in
+ * `ProfileScreen` directly (one tap on the avatar) so this modal stays
+ * focused on the text fields. Patches go through the existing
+ * `PATCH /users/me` endpoint and write the result back to the auth store
+ * so the rest of the app sees the new values without needing to reload.
+ */
+import React, { useCallback, useState } from "react";
+import {
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
+import { api } from "@/services/api";
+import { useAuthStore } from "@/stores";
+import type { ProfileStackParamList } from "@/navigation/RootNavigator";
+
+type Nav = NativeStackNavigationProp<ProfileStackParamList, "EditProfile">;
+
+const DISPLAY_NAME_MAX = 100;
+const BIO_MAX = 500;
+const HOME_REGION_MAX = 120;
+
+export default function EditProfileModal() {
+  const navigation = useNavigation<Nav>();
+  const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
+
+  const [displayName, setDisplayName] = useState(user?.display_name ?? "");
+  const [bio, setBio] = useState(user?.bio ?? "");
+  const [homeRegion, setHomeRegion] = useState(user?.home_region ?? "");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [validation, setValidation] = useState<string | null>(null);
+
+  const handleSave = useCallback(async () => {
+    const trimmedName = displayName.trim();
+    if (!trimmedName) {
+      setValidation("Display name is required.");
+      return;
+    }
+    if (!user) return;
+
+    setValidation(null);
+    setError(null);
+    setSubmitting(true);
+    try {
+      // The backend treats `null` as "clear this field" and `undefined`
+      // (omitted key) as "leave unchanged". Convert the empty-string form
+      // values into `null` so blanking the bio actually blanks it on the
+      // server, and trim leading/trailing whitespace so a single space
+      // doesn't accidentally pass the required-name check.
+      const updated = await api.updateProfile({
+        display_name: trimmedName,
+        bio: bio.trim() ? bio.trim() : null,
+        home_region: homeRegion.trim() ? homeRegion.trim() : null,
+      });
+      setUser(updated);
+      navigation.goBack();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save profile.");
+    } finally {
+      setSubmitting(false);
+    }
+  }, [displayName, bio, homeRegion, user, setUser, navigation]);
+
+  if (!user) {
+    return (
+      <View style={styles.empty}>
+        <Text style={styles.emptyText}>Sign in to edit your profile.</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+    >
+      <View style={styles.field}>
+        <Text style={styles.label}>Display name</Text>
+        <TextInput
+          style={styles.input}
+          value={displayName}
+          onChangeText={setDisplayName}
+          maxLength={DISPLAY_NAME_MAX}
+          editable={!submitting}
+          accessibilityLabel="Display name"
+          autoCapitalize="words"
+          autoCorrect={false}
+          placeholder="Your rider name"
+          placeholderTextColor={colors.textTertiary}
+        />
+      </View>
+
+      <View style={styles.field}>
+        <Text style={styles.label}>Bio</Text>
+        <TextInput
+          style={[styles.input, styles.multiline]}
+          value={bio}
+          onChangeText={setBio}
+          maxLength={BIO_MAX}
+          multiline
+          editable={!submitting}
+          accessibilityLabel="Bio"
+          placeholder="A few words about your riding"
+          placeholderTextColor={colors.textTertiary}
+        />
+        <Text style={styles.hint}>{`${bio.length} / ${BIO_MAX}`}</Text>
+      </View>
+
+      <View style={styles.field}>
+        <Text style={styles.label}>Home region</Text>
+        <TextInput
+          style={styles.input}
+          value={homeRegion}
+          onChangeText={setHomeRegion}
+          maxLength={HOME_REGION_MAX}
+          editable={!submitting}
+          accessibilityLabel="Home region"
+          placeholder="Beskydy, Czech Republic"
+          placeholderTextColor={colors.textTertiary}
+        />
+      </View>
+
+      {validation ? <Text style={styles.errorText}>{validation}</Text> : null}
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+      <TouchableOpacity
+        style={[styles.saveButton, submitting ? styles.disabled : null]}
+        onPress={() => void handleSave()}
+        disabled={submitting}
+        accessibilityRole="button"
+        accessibilityLabel="Save profile"
+      >
+        {submitting ? (
+          <ActivityIndicator color={colors.textInverse} />
+        ) : (
+          <Text style={styles.saveLabel}>Save</Text>
+        )}
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.cancelButton}
+        onPress={() => navigation.goBack()}
+        disabled={submitting}
+        accessibilityRole="button"
+        accessibilityLabel="Cancel edit"
+      >
+        <Text style={styles.cancelLabel}>Cancel</Text>
+      </TouchableOpacity>
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.bg },
+  content: {
+    padding: spacing.xl,
+    gap: spacing.lg,
+  },
+  field: { gap: spacing.xs },
+  label: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
+  },
+  input: {
+    backgroundColor: colors.bgInput,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    color: colors.textPrimary,
+    fontSize: fontSize.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  multiline: {
+    minHeight: 96,
+    textAlignVertical: "top",
+  },
+  hint: {
+    color: colors.textTertiary,
+    fontSize: fontSize.xs,
+    textAlign: "right",
+  },
+  saveButton: {
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.pill,
+    paddingVertical: spacing.md,
+    alignItems: "center",
+    marginTop: spacing.sm,
+  },
+  saveLabel: {
+    color: colors.textInverse,
+    fontWeight: fontWeight.bold,
+    fontSize: fontSize.md,
+  },
+  cancelButton: {
+    paddingVertical: spacing.md,
+    alignItems: "center",
+  },
+  cancelLabel: {
+    color: colors.textSecondary,
+    fontSize: fontSize.md,
+  },
+  disabled: { opacity: 0.7 },
+  errorText: {
+    color: colors.danger,
+    fontSize: fontSize.sm,
+  },
+  empty: {
+    flex: 1,
+    backgroundColor: colors.bg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyText: {
+    color: colors.textPrimary,
+    fontSize: fontSize.md,
+  },
+});

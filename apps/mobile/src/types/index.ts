@@ -26,10 +26,59 @@ export interface User {
   email: string;
   display_name: string;
   phone?: string;
+  /** US-27: avatar URL backed by /users/me/avatar uploads. */
+  avatar_url?: string | null;
+  /** US-27: free-form rider bio shown on the profile screen. */
+  bio?: string | null;
+  /** US-27: free-form home region label (e.g. "Beskydy"). */
+  home_region?: string | null;
   home_location?: LatLng;
   work_location?: LatLng;
   preferences: UserPreferences;
   created_at: string;
+}
+
+/**
+ * Public-facing rider profile (US-27). Backed by GET /users/:userId/profile.
+ * `is_following` is null when viewing your own profile so the client can
+ * hide the follow button rather than render it in a misleading state.
+ */
+export interface PublicProfile {
+  id: string;
+  display_name: string;
+  avatar_url: string | null;
+  bio: string | null;
+  home_region: string | null;
+  /** ISO 8601 join timestamp. */
+  created_at: string;
+  follower_count: number;
+  following_count: number;
+  is_following: boolean | null;
+  is_self: boolean;
+}
+
+/** Single row from /users/:userId/followers and /users/:userId/following. */
+export interface FollowerListItem {
+  user_id: string;
+  display_name: string;
+  followed_at: string;
+}
+
+/** US-27: badge entry as returned by /users/:userId/badges. */
+export interface UserBadge {
+  key: string;
+  name: string;
+  description: string;
+  category: string;
+  tier: string | null;
+  /** ISO 8601 timestamp; null when not yet earned. */
+  earned_at: string | null;
+  progress: {
+    current: number;
+    bronze: number;
+    silver: number;
+    gold: number;
+  };
 }
 
 export interface UserPreferences {

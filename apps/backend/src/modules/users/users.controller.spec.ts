@@ -34,9 +34,23 @@ describe('UsersController', () => {
     created_at: '2026-04-13T10:00:00.000Z',
   };
 
+  const mockPublicProfile = {
+    id: 'user-2',
+    display_name: 'OtherRider',
+    avatar_url: null,
+    bio: null,
+    home_region: null,
+    created_at: '2026-04-13T10:00:00.000Z',
+    follower_count: 4,
+    following_count: 2,
+    is_following: false,
+    is_self: false,
+  };
+
   beforeEach(async () => {
     const mockService = {
       getProfile: jest.fn().mockResolvedValue(mockUser),
+      getPublicProfile: jest.fn().mockResolvedValue(mockPublicProfile),
       updateProfile: jest.fn().mockResolvedValue(mockUser),
       uploadAvatar: jest.fn().mockResolvedValue(mockUser),
       listContacts: jest.fn().mockResolvedValue([mockContact]),
@@ -72,6 +86,23 @@ describe('UsersController', () => {
       await controller.updateProfile(mockReq, dto);
 
       expect(service.updateProfile).toHaveBeenCalledWith('user-1', dto);
+    });
+  });
+
+  describe('GET /users/:userId/profile', () => {
+    it('passes the viewer id and target id through to the service', async () => {
+      const result = await controller.getPublicProfile(mockReq, 'user-2');
+
+      expect(service.getPublicProfile).toHaveBeenCalledWith('user-1', 'user-2');
+      expect(result.display_name).toBe('OtherRider');
+    });
+
+    it('propagates NotFoundException for missing target', async () => {
+      service.getPublicProfile.mockRejectedValueOnce(new NotFoundException());
+
+      await expect(
+        controller.getPublicProfile(mockReq, 'missing-user'),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 

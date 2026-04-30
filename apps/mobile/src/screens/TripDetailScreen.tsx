@@ -50,7 +50,10 @@ import {
 import { api } from "@/services/api";
 import { useTripStore } from "@/stores";
 import type { MountainPass, Trip, TripDay, TripMember } from "@/types";
-import type { TripsStackParamList } from "@/navigation/RootNavigator";
+import type {
+  RootTabParamList,
+  TripsStackParamList,
+} from "@/navigation/RootNavigator";
 import {
   averageQuality,
   flattenTripRoute,
@@ -537,8 +540,23 @@ function MembersCard({ members }: { members: TripMember[] }) {
 
 function MemberRow({ member }: { member: TripMember }) {
   const badgeColor = roleBadgeColor(member.role);
+  // US-27: tapping a rider opens their profile in the Profile tab. Cross-
+  // tab navigation is required because TripDetail lives in TripsStack —
+  // jumping into ProfileTab keeps the Profile back-stack clean and
+  // avoids polluting TripsStack with rider profiles.
+  const rootNav = useNavigation<NativeStackNavigationProp<RootTabParamList>>();
   return (
-    <View style={styles.memberRow}>
+    <TouchableOpacity
+      style={styles.memberRow}
+      onPress={() =>
+        rootNav.navigate("ProfileTab", {
+          screen: "ViewProfile",
+          params: { userId: member.user_id },
+        })
+      }
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${member.display_name}'s profile`}
+    >
       <View style={styles.memberAvatar}>
         <Icon name="account" size={18} color={colors.primary} />
       </View>
@@ -550,7 +568,7 @@ function MemberRow({ member }: { member: TripMember }) {
           {member.role}
         </Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
