@@ -154,12 +154,38 @@ export default function GroupRideScreen() {
         .catch(() => undefined);
     };
 
-    const handleEnded = (_: GroupEndedEvent): void => {
-      Alert.alert("Group ride ended", "The owner ended the ride.");
+    const teardownToIdle = (): void => {
       groupRideSocket.disconnect();
       setMode("idle");
       setGroupRide(null);
       positionsRef.current = {};
+    };
+
+    const handleEnded = (_: GroupEndedEvent): void => {
+      Alert.alert("Group ride ended", "The owner ended the ride.");
+      teardownToIdle();
+    };
+
+    // Some failure modes from the gateway are terminal for this
+    // session — the room is gone or the rider is no longer welcome —
+    // and leaving the rider on a stuck "active" screen with just an
+    // error banner means they have to tap Leave to recover. Detect
+    // those messages and run the same teardown as `handleEnded`.
+    // Anything else (transient network blip, throttle complaint) is
+    // surfaced as an inline error banner without ripping the screen
+    // down.
+    const TERMINAL_ERROR_MESSAGES = new Set([
+      "Group ride has ended",
+      "Group ride not found or access denied",
+    ]);
+
+    const handleError = (msg: string): void => {
+      if (TERMINAL_ERROR_MESSAGES.has(msg)) {
+        Alert.alert("Group ride", msg);
+        teardownToIdle();
+        return;
+      }
+      setErrorMessage(msg);
     };
 
     groupRideSocket.connect(groupRide.id, {
@@ -167,7 +193,7 @@ export default function GroupRideScreen() {
       onJoined: handleJoined,
       onLeft: handleLeft,
       onEnded: handleEnded,
-      onError: (msg) => setErrorMessage(msg),
+      onError: handleError,
     });
 
     return () => {
