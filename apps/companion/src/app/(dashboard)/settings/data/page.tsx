@@ -104,12 +104,29 @@ export default function DataPage() {
     // a misleading "Polling failed" while the bundle is still cooking.
     // Only escalate to error after several consecutive failures.
     const MAX_CONSECUTIVE_ERRORS = 5;
+    // Hard client-side cap on how long we'll wait for a terminal
+    // status. Real exports complete in seconds; if we're still polling
+    // after 10 min the worker is almost certainly dead in a way the
+    // backend hasn't yet reflected on the row (and the server's
+    // stuck-row threshold is 30 min, so this fires first). Without
+    // this, a worker that died AND failed to record its own failure
+    // would have us polling for 7 days until the TTL expired.
+    const MAX_POLL_MS = 10 * 60 * 1000;
+    const startedAt = Date.now();
     let consecutiveErrors = 0;
     // Self-rescheduling tick instead of setInterval: at most one
     // request is in flight at a time, so a slow backend can't queue up
     // overlapping polls and out-of-order responses can't regress a
     // newer state into an older one.
     const tick = async () => {
+      if (Date.now() - startedAt > MAX_POLL_MS) {
+        setExportState({
+          kind: "error",
+          message:
+            "Export is taking longer than expected. Please try again in a few minutes.",
+        });
+        return;
+      }
       try {
         const { data: view } = await accountApi.getDataExport(pollingId);
         if (cancelled) return;
