@@ -3,6 +3,7 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -33,6 +34,9 @@ import {
 import { api } from "@/services/api";
 import { usePreferencesStore } from "@/stores";
 import type { Hazard, RoadReview, RoadSegmentDetail } from "@/types";
+import ReviewFormModal, {
+  type ReviewFormSubmitResult,
+} from "@/components/ReviewFormModal";
 import {
   applyVoteDelta,
   buildElevationChartPaths,
@@ -169,8 +173,10 @@ export default function RoadPreviewScreen() {
         totalCount={segment.active_hazard_count}
       />
       <ReviewsCard
+        segmentId={segmentId!}
         reviews={segment.recent_reviews}
         avgRating={segment.avg_review_rating}
+        onSegmentChanged={refresh}
       />
     </ScrollView>
   );
@@ -534,21 +540,85 @@ function HazardRow({ hazard }: { hazard: Hazard }) {
 }
 
 function ReviewsCard({
+  segmentId,
   reviews: embeddedReviews,
   avgRating,
+  onSegmentChanged,
 }: {
+  segmentId: string;
   reviews: RoadReview[];
   avgRating: number | null;
+  /** Refetch the parent segment after a successful create/update/delete. */
+  onSegmentChanged: () => Promise<void> | void;
 }) {
   // Local mirror so helpful-vote taps can update the row immediately
-  // without waiting for a full segment refetch. Seeded from the embedded
-  // `recent_reviews` array (which always has `my_vote: null`, since the
-  // /roads/:id endpoint is anonymous); if we later decide to fetch from
-  // /roads/:id/reviews we'll pick up per-viewer state for free.
+  // without waiting for a full segment refetch. Seeded from the
+  // embedded `recent_reviews` array on first mount / segment change,
+  // then immediately replaced by the personalised /roads/:id/reviews
+  // fetch so `is_mine` / `my_vote` are accurate (the /roads/:id
+  // endpoint is anonymous-friendly and always reports both as
+  // null/false).
   const [reviews, setReviews] = useState<RoadReview[]>(embeddedReviews);
+  const [myReview, setMyReview] = useState<RoadReview | null>(null);
+  const [formVisible, setFormVisible] = useState(false);
+  const [statusBanner, setStatusBanner] = useState<string | null>(null);
+  // Tracks the segmentId that was current at fetch start. Used by
+  // `refreshReviews` to discard a late response from segment A after
+  // navigation has switched to B — without this guard, the late A
+  // response would overwrite B's `reviews`/`myReview` and surface the
+  // wrong ownership state on the new road.
+  const currentSegmentRef = useRef(segmentId);
+  useEffect(() => {
+    currentSegmentRef.current = segmentId;
+  }, [segmentId]);
+
+  const refreshReviews = useCallback(async () => {
+    const fetchedSegmentId = segmentId;
+    try {
+      const personalised = await api.getReviews(fetchedSegmentId);
+      if (currentSegmentRef.current !== fetchedSegmentId) return;
+      setReviews(personalised);
+      const own = personalised.find((r) => r.is_mine) ?? null;
+      setMyReview(own);
+    } catch {
+      // Fall back to the embedded list silently — the segment payload
+      // already carries the public-facing fields, so the rider still
+      // sees other riders' reviews. Edit/delete affordances simply
+      // won't appear if we can't confirm who owns each row.
+    }
+  }, [segmentId]);
+
+  // Reset my-review state on segment change. `embeddedReviews` is
+  // intentionally NOT in the deps: pull-to-refresh on the same
+  // segment updates the prop ref but we don't want to clear
+  // `myReview` / `statusBanner`.
   useEffect(() => {
     setReviews(embeddedReviews);
-  }, [embeddedReviews]);
+    setMyReview(null);
+    setStatusBanner(null);
+  }, [segmentId]);
+
+  // Refetch personalised reviews on mount, segment change (via the
+  // `refreshReviews` dep churn), AND when the parent's
+  // `embeddedReviews` ref changes (pull-to-refresh on the same
+  // segment). Without the embeddedReviews dep, newly-added rows from
+  // other riders fetched by pull-to-refresh wouldn't show up until
+  // navigation. We refetch personalised rather than blindly seeding
+  // from the embedded (anonymous-friendly) list so `is_mine` /
+  // `my_vote` stay accurate.
+  useEffect(() => {
+    void refreshReviews();
+  }, [refreshReviews, embeddedReviews]);
+
+  // Drain any reviews queued offline on a previous session. Without
+  // this, a single review queued by a rider who never writes a second
+  // one could sit in MMKV indefinitely — `submitReviewWithQueue` only
+  // drains the backlog as part of the next submit attempt.
+  useEffect(() => {
+    void api.flushPendingReviews().catch(() => {
+      // Drain failures stay queued for next time; nothing to surface.
+    });
+  }, []);
 
   const handleVoteChange = useCallback(
     (reviewId: string, next: Partial<RoadReview>) => {
@@ -559,6 +629,36 @@ function ReviewsCard({
     [],
   );
 
+  const handleSubmitted = useCallback(
+    async (result: ReviewFormSubmitResult) => {
+      setFormVisible(false);
+      setStatusBanner(
+        result.status === "queued"
+          ? "You're offline — your review is saved locally and will upload when you reconnect."
+          : null,
+      );
+      await Promise.all([refreshReviews(), onSegmentChanged()]);
+    },
+    [onSegmentChanged, refreshReviews],
+  );
+
+  const handleDeleted = useCallback(async () => {
+    setFormVisible(false);
+    setMyReview(null);
+    setStatusBanner(null);
+    await Promise.all([refreshReviews(), onSegmentChanged()]);
+  }, [onSegmentChanged, refreshReviews]);
+
+  const handleConflict = useCallback(async () => {
+    // 409 — server already has a review from this rider on this
+    // segment. Refresh personalised data so `myReview` populates;
+    // the modal stays visible and re-seeds in edit mode via its
+    // `initialReview` prop.
+    await Promise.all([refreshReviews(), onSegmentChanged()]);
+  }, [onSegmentChanged, refreshReviews]);
+
+  const openForm = useCallback(() => setFormVisible(true), []);
+
   const showAvg = reviews.length > 0 && avgRating !== null;
   return (
     <View style={styles.card}>
@@ -567,15 +667,49 @@ function ReviewsCard({
         title="Recent reviews"
         rightLabel={showAvg ? `${avgRating!.toFixed(1)} ★` : undefined}
       />
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={
+          myReview ? "Edit your review" : "Write a review for this road"
+        }
+        style={styles.writeReviewButton}
+        onPress={openForm}
+      >
+        <Icon
+          name={myReview ? "pencil-outline" : "comment-edit-outline"}
+          size={16}
+          color={colors.primary}
+        />
+        <Text style={styles.writeReviewLabel}>
+          {myReview ? "Edit your review" : "Write a review"}
+        </Text>
+      </TouchableOpacity>
+      {statusBanner ? (
+        <Text style={styles.statusBanner}>{statusBanner}</Text>
+      ) : null}
       {reviews.length === 0 ? (
         <Text style={styles.empty}>
           No reviews yet — be the first to review this road.
         </Text>
       ) : (
         reviews.map((r) => (
-          <ReviewRow key={r.id} review={r} onVoteChange={handleVoteChange} />
+          <ReviewRow
+            key={r.id}
+            review={r}
+            onVoteChange={handleVoteChange}
+            onEditOwn={r.is_mine ? openForm : undefined}
+          />
         ))
       )}
+      <ReviewFormModal
+        visible={formVisible}
+        segmentId={segmentId}
+        initialReview={myReview}
+        onClose={() => setFormVisible(false)}
+        onSubmitted={handleSubmitted}
+        onDeleted={handleDeleted}
+        onConflict={handleConflict}
+      />
     </View>
   );
 }
@@ -583,15 +717,25 @@ function ReviewsCard({
 function ReviewRow({
   review,
   onVoteChange,
+  onEditOwn,
 }: {
   review: RoadReview;
   onVoteChange: (reviewId: string, next: Partial<RoadReview>) => void;
+  /** Defined only when this row is the viewer's own review. */
+  onEditOwn?: () => void;
 }) {
   const photos = Array.isArray(review.photos) ? review.photos : [];
   return (
     <View style={styles.reviewRow}>
       <View style={styles.reviewHeader}>
-        <Text style={styles.reviewAuthor}>{review.user_display_name}</Text>
+        <View style={styles.reviewAuthorRow}>
+          <Text style={styles.reviewAuthor}>{review.user_display_name}</Text>
+          {review.is_mine ? (
+            <View style={styles.reviewMineBadge}>
+              <Text style={styles.reviewMineBadgeLabel}>You</Text>
+            </View>
+          ) : null}
+        </View>
         <Text style={styles.reviewRating}>
           {"★".repeat(Math.max(0, Math.min(5, Math.round(review.rating))))}
         </Text>
@@ -611,7 +755,19 @@ function ReviewRow({
           {formatRelativeTime(review.created_at)}
         </Text>
       </View>
-      <ReviewHelpfulRow review={review} onVoteChange={onVoteChange} />
+      {onEditOwn ? (
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Edit or delete your review"
+          style={styles.reviewEditButton}
+          onPress={onEditOwn}
+        >
+          <Icon name="pencil-outline" size={14} color={colors.primary} />
+          <Text style={styles.reviewEditLabel}>Edit / delete</Text>
+        </TouchableOpacity>
+      ) : (
+        <ReviewHelpfulRow review={review} onVoteChange={onVoteChange} />
+      )}
     </View>
   );
 }
@@ -1066,6 +1222,58 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
   },
 
+  writeReviewButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.pill,
+    backgroundColor: colors.primaryAlpha15,
+  },
+  writeReviewLabel: {
+    color: colors.primary,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
+  },
+  statusBanner: {
+    color: colors.warning,
+    fontSize: fontSize.xs,
+    fontStyle: "italic",
+  },
+  reviewAuthorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  reviewMineBadge: {
+    backgroundColor: colors.primaryAlpha15,
+    borderRadius: borderRadius.pill,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+  },
+  reviewMineBadgeLabel: {
+    color: colors.primary,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
+  },
+  reviewEditButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.pill,
+    backgroundColor: colors.bgElevated,
+  },
+  reviewEditLabel: {
+    color: colors.primary,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
+  },
   reviewRow: {
     gap: spacing.xs,
     paddingVertical: spacing.sm,

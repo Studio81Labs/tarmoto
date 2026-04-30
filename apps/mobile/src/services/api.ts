@@ -52,6 +52,13 @@ import {
   type HazardReportPayload,
   type SubmitHazardResult,
 } from "./hazardQueue";
+import {
+  drainReviewQueue,
+  submitReviewWithQueue,
+  type DrainReviewResult,
+  type ReviewSubmissionPayload,
+  type SubmitReviewResult,
+} from "./reviewQueue";
 
 const storage = createMMKV({ id: "tarmoto-auth" });
 
@@ -528,15 +535,101 @@ class ApiService {
     return data;
   }
 
-  async submitReview(
-    segmentId: string,
-    rating: number,
-    comment?: string,
-    bikeModel?: string,
-  ): Promise<RoadReview> {
+  async submitReview(payload: ReviewSubmissionPayload): Promise<RoadReview> {
     const { data } = await this.client.post<RoadReview>(
-      `/roads/${segmentId}/reviews`,
-      { rating, comment, bike_model: bikeModel },
+      `/roads/${payload.segmentId}/reviews`,
+      {
+        rating: payload.rating,
+        comment: payload.comment,
+        bike_model: payload.bikeModel,
+        photos: payload.photos,
+      },
+    );
+    return data;
+  }
+
+  /**
+   * Submit a review through the offline-aware queue (US-25 AC #2).
+   * Riders compose reviews curbside on poor cellular; queueing the
+   * payload on link drop or transient server failure means the rider
+   * doesn't have to retype the form when connectivity returns.
+   */
+  async submitReviewWithQueue(
+    payload: ReviewSubmissionPayload,
+  ): Promise<SubmitReviewResult> {
+    return submitReviewWithQueue(payload, (p) => this.submitReview(p));
+  }
+
+  /** Best-effort flush of any queued reviews. */
+  async flushPendingReviews(): Promise<DrainReviewResult> {
+    return drainReviewQueue((p) => this.submitReview(p));
+  }
+
+  async updateReview(payload: ReviewSubmissionPayload): Promise<RoadReview> {
+    const { data } = await this.client.put<RoadReview>(
+      `/roads/${payload.segmentId}/reviews`,
+      {
+        rating: payload.rating,
+        comment: payload.comment,
+        bike_model: payload.bikeModel,
+        photos: payload.photos,
+      },
+    );
+    return data;
+  }
+
+  async deleteReview(segmentId: string): Promise<void> {
+    await this.client.delete(`/roads/${segmentId}/reviews`);
+  }
+
+  /**
+   * Upload one or more review photos to /roads/:segmentId/reviews/photos
+   * (US-55) and return the URLs the backend persisted them at. The
+   * caller submits these URLs back as the next review's `photos[]`.
+   *
+   * Doing the upload separately from the review POST means a network
+   * drop after upload but before submit can be retried by the offline
+   * queue without re-uploading the bytes (or re-billing storage). The
+   * optional `signal` lets callers cancel an in-flight upload (rider
+   * tapped × on the thumbnail before its upload finished).
+   */
+  async uploadReviewPhotos(
+    segmentId: string,
+    photos: { uri: string; mimeType?: string; fileName?: string }[],
+    options?: { signal?: AbortSignal },
+  ): Promise<{ photos: string[] }> {
+    const form = new FormData();
+    for (const [i, photo] of photos.entries()) {
+      // React Native's FormData accepts the `{ uri, type, name }`
+      // shape and serialises it into a multipart attachment without
+      // us reading the bytes manually. Falling back to image/jpeg
+      // covers pickers that don't surface the mime type (older
+      // Android camera intents return undefined here).
+      form.append("files", {
+        uri: photo.uri,
+        type: photo.mimeType ?? "image/jpeg",
+        name: photo.fileName ?? `review-${Date.now()}-${i}.jpg`,
+      } as unknown as Blob);
+    }
+    // Clear the instance-level `Content-Type: application/json`
+    // default for THIS request. Axios's FormData transform then sets
+    // `multipart/form-data; boundary=...` correctly via the platform.
+    // Hard-coding the bare value (without a boundary) makes Multer
+    // reject the request with 400 even though capture succeeded —
+    // the boundary is non-optional in RFC 7578 and the platform is
+    // the only thing that can generate it.
+    const { data } = await this.client.post<{ photos: string[] }>(
+      `/roads/${segmentId}/reviews/photos`,
+      form,
+      {
+        headers: {
+          // Explicit-undefined removes the instance default from the
+          // merged headers; cast required because the TS types model
+          // header values as `string | number | boolean`.
+          "Content-Type": undefined as unknown as string,
+        },
+        signal: options?.signal,
+      },
     );
     return data;
   }

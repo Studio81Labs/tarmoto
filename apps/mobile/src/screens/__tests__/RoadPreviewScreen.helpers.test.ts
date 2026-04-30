@@ -361,6 +361,7 @@ describe("applyVoteDelta", () => {
     helpful_count: 3,
     not_helpful_count: 1,
     my_vote: null,
+    is_mine: false,
   };
 
   it("first helpful vote bumps helpful_count and records the vote", () => {

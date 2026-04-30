@@ -1,5 +1,5 @@
 /**
- * Photo capture for hazard reports — US-4 AC #4.
+ * Photo capture for hazard reports (US-4) and road reviews (US-25).
  *
  * Encapsulates the runtime permission request and the actual picker
  * launch behind a single `capturePhoto(source)` call. Two reasons for
@@ -7,19 +7,18 @@
  *
  *   1. The screen can render the same flow regardless of source
  *      (camera vs library) and decide what to do per `CaptureResult`
- *      status — UI doesn't need to know about Android's PermissionsAndroid
- *      or iOS Info.plist mechanics.
+ *      status — UI doesn't need to know about Android's
+ *      PermissionsAndroid or iOS Info.plist mechanics.
  *
- *   2. The native picker library hasn't landed yet (a follow-up will
- *      add `react-native-image-picker` and wire it into this module).
- *      Until then `defaultLauncher` returns `unavailable` so the UI
- *      degrades gracefully instead of crashing on a missing module.
- *      The permission gate is exercised regardless so the UI's
- *      "denied" branch is real today.
+ *   2. Tests inject a fake launcher via `__setLauncherForTest` so the
+ *      screen's denial / cancel / capture branches can all be covered
+ *      without monkey-patching React Native or pulling in the native
+ *      module under jest.
  *
- * Tests inject a fake launcher via `__setLauncherForTest`, which means
- * the screen's denial / cancel / capture branches can all be covered
- * without monkey-patching React Native.
+ * The default launcher delegates to `react-native-image-picker`. When
+ * the native module isn't available (jest, an older binary that hasn't
+ * had `pod install` rerun) the launcher reports `unavailable` so the
+ * UI can degrade rather than crash.
  */
 
 import { PermissionsAndroid, Platform } from "react-native";
@@ -51,13 +50,123 @@ export interface CaptureResult {
 
 type PhotoLauncher = (source: PhotoSource) => Promise<CaptureResult>;
 
-async function defaultLauncher(): Promise<CaptureResult> {
-  // Native picker integration is a follow-up — see related backend
-  // file-upload work referenced from the US-4 issue. The UI handles
-  // this status by collapsing to the no-photo path silently.
+interface ImagePickerAsset {
+  uri?: string;
+  fileName?: string;
+  type?: string;
+  fileSize?: number;
+  width?: number;
+  height?: number;
+}
+
+interface ImagePickerResponse {
+  didCancel?: boolean;
+  errorCode?: string;
+  errorMessage?: string;
+  assets?: ImagePickerAsset[];
+}
+
+interface ImagePickerModule {
+  launchCamera: (
+    options: Record<string, unknown>,
+  ) => Promise<ImagePickerResponse>;
+  launchImageLibrary: (
+    options: Record<string, unknown>,
+  ) => Promise<ImagePickerResponse>;
+}
+
+function loadImagePicker(): ImagePickerModule | null {
+  try {
+    // Lazy require so jest (and any RN binary that predates the
+    // dependency install) loads this module without crashing on the
+    // missing native bridge. The launcher reports `unavailable` and
+    // the UI degrades gracefully.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require("react-native-image-picker") as ImagePickerModule;
+    if (
+      typeof mod?.launchCamera !== "function" ||
+      typeof mod?.launchImageLibrary !== "function"
+    ) {
+      return null;
+    }
+    return mod;
+  } catch {
+    return null;
+  }
+}
+
+async function defaultLauncher(source: PhotoSource): Promise<CaptureResult> {
+  const picker = loadImagePicker();
+  if (!picker) {
+    return {
+      status: "unavailable",
+      source,
+      reason:
+        "Photo picker isn't available — rebuild the app after installing the latest dependencies.",
+    };
+  }
+
+  const options = {
+    mediaType: "photo" as const,
+    // Cap on-disk size before upload to keep the multipart POST under
+    // the backend's 5 MB limit (MAX_REVIEW_PHOTO_BYTES) on a forgiving
+    // margin without recompressing twice.
+    quality: 0.8,
+    maxWidth: 2048,
+    maxHeight: 2048,
+    selectionLimit: 1,
+    // saveToPhotos must stay false. On Android API ≤ 28 (still in
+    // scope with `minSdkVersion = 24`) the camera-roll save requires
+    // `WRITE_EXTERNAL_STORAGE`, which we don't request here — turning
+    // it on would make `launchCamera` fail outright on those devices.
+    // The captured photo lives at the temp URI we ship to the upload
+    // endpoint, so persisting to the camera roll isn't necessary.
+    saveToPhotos: false,
+    // We render thumbnails directly from the local URI; base64 would
+    // bloat memory and isn't needed for upload.
+    includeBase64: false,
+  };
+
+  let response: ImagePickerResponse;
+  try {
+    response =
+      source === "camera"
+        ? await picker.launchCamera(options)
+        : await picker.launchImageLibrary(options);
+  } catch (error) {
+    return {
+      status: "unavailable",
+      source,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  if (response.didCancel) return { status: "cancelled", source };
+  if (response.errorCode === "permission") {
+    return { status: "permission-denied", source };
+  }
+  if (response.errorCode || response.errorMessage) {
+    return {
+      status: "unavailable",
+      source,
+      reason: response.errorMessage ?? response.errorCode,
+    };
+  }
+
+  const asset = response.assets?.[0];
+  if (!asset?.uri) return { status: "cancelled", source };
+
   return {
-    status: "unavailable",
-    reason: "Photo attachment will land alongside backend file upload.",
+    status: "captured",
+    source,
+    photo: {
+      uri: asset.uri,
+      fileName: asset.fileName,
+      mimeType: asset.type,
+      fileSize: asset.fileSize,
+      width: asset.width,
+      height: asset.height,
+    },
   };
 }
 
@@ -75,8 +184,12 @@ async function ensureCameraPermission(): Promise<boolean> {
       PermissionsAndroid.PERMISSIONS.CAMERA,
       {
         title: "Camera access",
+        // Generic across both call sites (US-4 hazard reports and
+        // US-25 road reviews). When `capturePhoto` grows a third
+        // caller, keep this neutral or thread the caller's purpose
+        // through the API.
         message:
-          "Tarmoto uses the camera to attach a photo to your hazard report.",
+          "Tarmoto uses the camera to attach photos to road reports and reviews.",
         buttonPositive: "Allow",
         buttonNegative: "Deny",
       },
