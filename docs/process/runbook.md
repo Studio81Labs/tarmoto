@@ -169,6 +169,94 @@ true` and **no second SMS** should arrive. Twilio also dedupes via
 - **Throttled (HTTP 429) when re-testing rapidly** — the endpoint is capped
   at 5 req/min/IP. Wait or use a different IP.
 
+## Transactional email
+
+The backend ships transactional mail (verification, password reset,
+password changed, subscription confirmations, account-deletion notices,
+data-export delivery) through a small pluggable pipeline:
+
+- `EmailModule` selects an `EmailProvider` at boot from
+  `TARMOTO_EMAIL_PROVIDER` (`log` or `resend`).
+- `EmailService` renders typed templates and dispatches them; if the
+  configured provider throws, it falls back to logging the rendered
+  message so on-call always has the content.
+- All sends are best-effort — a transient provider outage never 500s
+  the user-facing endpoint that triggered the mail.
+
+### Local dev
+
+Default. No env vars required.
+
+```bash
+# In your .env (or shell):
+# TARMOTO_EMAIL_PROVIDER unset → falls back to the log provider.
+```
+
+The dev console prints every send as:
+
+```
+[EmailProvider:log] → rider@example.com :: Verify your Tarmoto email [verification]
+Hi Rider,
+Welcome to Tarmoto …
+https://localhost:3000/verify-email?token=…
+```
+
+Grep for the `[verification]` / `[password-reset]` / `[subscription-confirmed]`
+tag to find a specific mail. The verification / reset URL is in the
+plain-text body — copy/paste it into the browser to consume the token.
+
+### Staging / preview
+
+Same defaults as dev unless you want to test real delivery. To enable
+Resend:
+
+```env
+TARMOTO_EMAIL_PROVIDER=resend
+TARMOTO_RESEND_API_KEY=re_test_xxx        # Resend test mode keys are fine
+TARMOTO_EMAIL_FROM="Tarmoto <noreply@your-staging-domain.app>"
+TARMOTO_EMAIL_REPLY_TO="support@your-staging-domain.app"   # optional
+TARMOTO_COMPANION_URL=https://staging.tarmoto.app          # required for token URLs
+```
+
+If `TARMOTO_EMAIL_PROVIDER=resend` is set but the API key or `From` is
+missing, the boot log emits a `[EmailModule] ... Falling back to the
+log provider` warning and outbound mail keeps appearing only in the
+console.
+
+### Production
+
+```env
+TARMOTO_EMAIL_PROVIDER=resend
+TARMOTO_RESEND_API_KEY=<live secret from Resend dashboard>
+TARMOTO_EMAIL_FROM="Tarmoto <noreply@tarmoto.app>"   # MUST be a verified Resend domain
+TARMOTO_EMAIL_REPLY_TO="support@tarmoto.app"
+TARMOTO_COMPANION_URL=https://app.tarmoto.app
+TARMOTO_SUPPORT_EMAIL=support@tarmoto.app            # shown in password-changed and deletion mails
+TARMOTO_EMAIL_PREFERENCES_URL=https://app.tarmoto.app/settings/notifications  # optional override
+```
+
+Add the API key as a sealed secret in whatever env-var store you ship.
+Rotate by issuing a new key in the Resend dashboard, swapping the env
+var, and revoking the old key.
+
+### Common failures
+
+- **All mail goes to logs in prod** — the bootstrap warning means
+  `TARMOTO_EMAIL_PROVIDER=resend` is set but `TARMOTO_RESEND_API_KEY`
+  or `TARMOTO_EMAIL_FROM` is empty. Check the secret store and redeploy.
+- **`Resend send failed: 422`** — `TARMOTO_EMAIL_FROM` is not a verified
+  domain in the Resend project. Verify the domain in Resend, or use a
+  `From:` on a domain that is.
+- **Verification / reset link 400s with "invalid or expired"** — token
+  TTL exceeded (24 h for verification, 15 min for reset) or the token
+  was already consumed. Issue a fresh one (`POST /auth/resend-verification`
+  while signed in, or `POST /auth/forgot-password` for resets).
+- **No `subscription-confirmed` email after a Stripe checkout** — the
+  Stripe webhook didn't reach the backend (check
+  `TARMOTO_STRIPE_WEBHOOK_SECRET`) or the rider was already in an
+  active state before the event (the service de-dupes confirmations to
+  avoid spamming on every period update).
+
 ## Incident response checklist (placeholder)
 
 When production deploys land, this section grows. Template for now:

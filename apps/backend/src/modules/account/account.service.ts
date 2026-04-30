@@ -2,12 +2,15 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 import { User } from '../../entities/user.entity.js';
+import { EmailService } from '../email/email.service.js';
+import { getCompanionUrl } from '../../common/companion-url.js';
 import {
   STRIPE_BILLING_CLIENT,
   type StripeCheckoutSession,
@@ -73,12 +76,15 @@ const PLAN_CATALOG: Record<
 
 @Injectable()
 export class AccountService {
+  private readonly logger = new Logger(AccountService.name);
+
   constructor(
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     @Inject(STRIPE_BILLING_CLIENT)
     private readonly stripe: StripeBillingClient,
     private readonly config: ConfigService,
+    private readonly email: EmailService,
   ) {}
 
   async getSubscription(
@@ -245,36 +251,141 @@ export class AccountService {
     const update: UserUpdate = { updated_at: new Date() };
     if (customerId) update.stripe_customer_id = customerId;
 
+    const periodEndSeconds = subscriptionPeriodEnd(subscription);
+    const periodEnd: Date | null =
+      periodEndSeconds != null ? new Date(periodEndSeconds * 1000) : null;
+
     if (isDeleted) {
+      const previousTier = user.subscription_tier;
       update.stripe_subscription_id = null;
       update.subscription_tier = 'free';
       update.subscription_status = 'canceled';
       update.subscription_cancel_at_period_end = false;
-      update.subscription_current_period_end =
-        subscriptionPeriodEnd(subscription) != null
-          ? new Date(subscriptionPeriodEnd(subscription)! * 1000)
-          : null;
+      update.subscription_current_period_end = periodEnd;
       await this.userRepo.update(user.id, update);
+      // Only fire the cancellation mail if the rider was actually on
+      // a paid plan beforehand. Stripe also fires `customer.subscription
+      // .deleted` when a free→paid trial gets aborted before activation,
+      // which would otherwise bombard the user with a cancellation
+      // notice for a plan they never had.
+      if (previousTier !== 'free') {
+        const planName = PLAN_CATALOG[previousTier]?.name ?? previousTier;
+        // Fire-and-forget: a 10s Resend timeout on top of normal DB
+        // I/O could push the webhook response close to Stripe's 20s
+        // timeout window, triggering a retry — which would re-run
+        // this handler and send the email again. The dispatch helper
+        // catches its own errors; the trailing `.catch()` is a
+        // belt-and-braces guard so a logger throwing inside that
+        // catch can't escape as an unhandled rejection.
+        this.dispatchSubscriptionCancelled(user, planName, periodEnd).catch(
+          () => undefined,
+        );
+      }
       return;
     }
 
     const price = subscription.items.data[0]?.price;
+    const newTier = this.tierFromPrice(price);
+    const newStatus = this.statusFromSubscription(subscription.status);
     update.stripe_subscription_id = subscription.id;
-    update.subscription_tier = this.tierFromPrice(price);
-    update.subscription_status = this.statusFromSubscription(
-      subscription.status,
-    );
+    update.subscription_tier = newTier;
+    update.subscription_status = newStatus;
     update.subscription_cancel_at_period_end =
       subscription.cancel_at_period_end;
-    update.subscription_current_period_end =
-      subscriptionPeriodEnd(subscription) != null
-        ? new Date(subscriptionPeriodEnd(subscription)! * 1000)
-        : null;
+    update.subscription_current_period_end = periodEnd;
     if (subscription.status === 'trialing' && !user.billing_trial_used_at) {
       update.billing_trial_used_at = new Date();
     }
 
+    // Atomic activation-transition claim. Stripe emits multiple
+    // `customer.subscription.updated` events per period (proration
+    // re-bills, payment-method changes, scheduled cancel toggles)
+    // and may retry the SAME event in parallel. Two concurrent
+    // handlers for the same canceled→active transition would
+    // otherwise both read pre-update `subscription_status='canceled'`
+    // from the in-memory `user`, both pass the
+    // `!wasActiveBefore && isActiveNow` gate, and both fire the
+    // confirmation email — a textbook double-send.
+    //
+    // Gating on a conditional UPDATE moves the check into Postgres
+    // row-level locking: only one of two concurrent transactions
+    // sees `subscription_status NOT IN ('active', 'trialing')` at
+    // its locked-read instant; the loser sees affected: 0 and
+    // skips the email. The unconditional `userRepo.update()` below
+    // still runs for both so post-activation tweaks (period_end,
+    // tier, cancel_at_period_end) flow through.
+    const willActivate =
+      (newStatus === 'active' || newStatus === 'trialing') &&
+      newTier !== 'free';
+    let wonActivationTransition = false;
+    if (willActivate) {
+      const claim = await this.userRepo
+        .createQueryBuilder()
+        .update(User)
+        .set({ subscription_status: newStatus })
+        .where('id = :id', { id: user.id })
+        .andWhere("subscription_status NOT IN ('active', 'trialing')")
+        .execute();
+      wonActivationTransition = (claim.affected ?? 0) > 0;
+    }
+
     await this.userRepo.update(user.id, update);
+
+    if (wonActivationTransition) {
+      // Fire-and-forget for the same reason as the cancellation
+      // path above — keep the webhook response well inside Stripe's
+      // 20s timeout window so a slow Resend send can't trigger a
+      // retry-and-duplicate-email loop. Trailing `.catch()` belts-
+      // and-braces against an unhandled rejection escaping if the
+      // helper's own logger ever throws.
+      this.dispatchSubscriptionConfirmed(user, newTier, periodEnd).catch(
+        () => undefined,
+      );
+    }
+  }
+
+  private async dispatchSubscriptionConfirmed(
+    user: User,
+    tier: BillingTier,
+    renewsAt: Date | null,
+  ): Promise<void> {
+    const plan = PLAN_CATALOG[tier];
+    try {
+      await this.email.sendSubscriptionConfirmed(user.email, {
+        displayName: user.display_name,
+        planName: plan.name,
+        priceLabel: plan.priceLabel,
+        renewsAt,
+        manageBillingUrl: this.subscriptionPageUrl(),
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Subscription-confirmed email failed for user ${user.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  private async dispatchSubscriptionCancelled(
+    user: User,
+    planName: string,
+    endsAt: Date | null,
+  ): Promise<void> {
+    try {
+      await this.email.sendSubscriptionCancelled(user.email, {
+        displayName: user.display_name,
+        planName,
+        endsAt,
+        resubscribeUrl: this.subscriptionPageUrl(),
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Subscription-cancelled email failed for user ${user.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   private async findUserForSubscriptionEvent(
@@ -374,10 +485,7 @@ export class AccountService {
   }
 
   private subscriptionPageUrl(): string {
-    const base =
-      this.config.get<string>('TARMOTO_COMPANION_URL')?.trim() ??
-      'http://localhost:3000';
-    return `${base.replace(/\/$/, '')}/settings/subscription`;
+    return `${getCompanionUrl(this.config)}/settings/subscription`;
   }
 
   private isIntroTrialEligible(user: User): boolean {

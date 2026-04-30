@@ -19,6 +19,7 @@ import {
   STRIPE_BILLING_CLIENT,
   type StripeBillingClient,
 } from './stripe-billing.client.js';
+import { EmailService } from '../email/email.service.js';
 import type { DeleteAccountDto } from './dto/delete-account.dto.js';
 import type { DeleteAccountResponseDto } from './dto/delete-account-response.dto.js';
 
@@ -56,6 +57,7 @@ export class AccountDeletionService {
     @Inject(STRIPE_BILLING_CLIENT)
     private readonly stripe: StripeBillingClient,
     private readonly config: ConfigService,
+    private readonly email: EmailService,
   ) {}
 
   /**
@@ -158,6 +160,25 @@ export class AccountDeletionService {
       );
     }
 
+    // Always email the rider — even if a concurrent submit beat us to
+    // the soft-delete row update — so they have a record of the
+    // scheduled deletion in their inbox before any grace-period
+    // restore window elapses. Wrapped in try/catch so a transient mail
+    // failure doesn't surface a 500 from a deletion the row already
+    // committed.
+    try {
+      await this.email.sendAccountDeletionScheduled(user.email, {
+        displayName: user.display_name,
+        scheduledFor: actualSchedule,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Account-deletion-scheduled email failed for user ${user.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+
     return {
       status: 'scheduled',
       scheduled_for: actualSchedule.toISOString(),
@@ -185,8 +206,27 @@ export class AccountDeletionService {
     let purged = 0;
     for (const user of due) {
       try {
+        // Capture user-facing fields before the transaction so the
+        // post-purge confirmation email has the rider's display name
+        // and address even though their row no longer exists.
+        const purgedFields = {
+          email: user.email,
+          displayName: user.display_name,
+        };
         if (await this.purgeUser(user, now)) {
           purged += 1;
+          try {
+            await this.email.sendAccountDeletionCompleted(purgedFields.email, {
+              displayName: purgedFields.displayName,
+              deletedAt: now,
+            });
+          } catch (err) {
+            this.logger.warn(
+              `Account-deletion-completed email failed for user ${user.id}: ${
+                err instanceof Error ? err.message : String(err)
+              }`,
+            );
+          }
         }
       } catch (err) {
         // Leave deletion_scheduled_at in place — the next sweep

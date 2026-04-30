@@ -29,9 +29,14 @@ import { AddFunZoneClusteringSeed1715300000000 } from '../../migrations/17153000
 import { AddCrashAlerts1715400000000 } from '../../migrations/1715400000000-AddCrashAlerts.js';
 import { AddAccountDeletion1715500000000 } from '../../migrations/1715500000000-AddAccountDeletion.js';
 import { AddDataExportRequests1715600000000 } from '../../migrations/1715600000000-AddDataExportRequests.js';
+import { AddEmailVerificationAndPasswordReset1715700000000 } from '../../migrations/1715700000000-AddEmailVerificationAndPasswordReset.js';
+import { AddPasswordChangedAtAndUniqueResetToken1715800000000 } from '../../migrations/1715800000000-AddPasswordChangedAtAndUniqueResetToken.js';
+import { AddVerificationTokenUniqueIndex1715900000000 } from '../../migrations/1715900000000-AddVerificationTokenUniqueIndex.js';
 import {
   User,
   UserContact,
+  EmailVerificationToken,
+  PasswordResetToken,
   AccountDeletionLog,
   CrashAlert,
   RoadSegment,
@@ -66,6 +71,8 @@ import {
 const entities = [
   User,
   UserContact,
+  EmailVerificationToken,
+  PasswordResetToken,
   AccountDeletionLog,
   CrashAlert,
   RoadSegment,
@@ -146,6 +153,9 @@ const entities = [
             AddCrashAlerts1715400000000,
             AddAccountDeletion1715500000000,
             AddDataExportRequests1715600000000,
+            AddEmailVerificationAndPasswordReset1715700000000,
+            AddPasswordChangedAtAndUniqueResetToken1715800000000,
+            AddVerificationTokenUniqueIndex1715900000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.

@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../../../entities/user.entity.js';
+import { EmailService } from '../../email/email.service.js';
 import { DataExportService } from './data-export.service.js';
 import {
   EXPORT_STORAGE,
@@ -20,6 +21,7 @@ export class DataExportProcessor {
     @Inject(EXPORT_STORAGE)
     private readonly storage: ExportStorage,
     private readonly assembler: BundleAssembler,
+    private readonly email: EmailService,
   ) {}
 
   async process(requestId: string, userId: string): Promise<void> {
@@ -53,6 +55,34 @@ export class DataExportProcessor {
       this.logger.log(
         `data export ${requestId} ready (${byteSize} bytes) for user ${userId}`,
       );
+
+      // GDPR Art. 15 right-of-access: notify the rider that their
+      // bundle is ready. Best-effort fire-and-forget — a transient
+      // mail-provider failure must NOT bubble up here, since the row
+      // is already 'ready' and the user can still poll the API for
+      // the status. Re-fetch the row to get the current
+      // `expires_at`; `buildPublicView` rebuilds the signed
+      // download URL with the same TTL the controller uses, so the
+      // email link points at the same endpoint a UI poll would use.
+      const ready = await this.service.findById(requestId);
+      if (ready && ready.status === 'ready' && user.email) {
+        const view = this.service.buildPublicView(ready);
+        if (view.downloadUrl) {
+          this.email
+            .sendDataExportReady(user.email, {
+              displayName: user.display_name,
+              downloadUrl: view.downloadUrl,
+              expiresAt: new Date(view.expiresAt),
+            })
+            .catch((mailErr) => {
+              const mailMsg =
+                mailErr instanceof Error ? mailErr.message : String(mailErr);
+              this.logger.warn(
+                `data export ${requestId} mail send failed: ${mailMsg}`,
+              );
+            });
+        }
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`export ${requestId} failed: ${msg}`);

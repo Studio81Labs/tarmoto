@@ -18,6 +18,7 @@ import { ChallengeEntry } from '../../../entities/challenge-entry.entity.js';
 import { CommuteRoute } from '../../../entities/commute-route.entity.js';
 import { DataExportRequest } from '../../../entities/data-export-request.entity.js';
 import { AuthModule } from '../../auth/index.js';
+import { EmailModule } from '../../email/index.js';
 import { DataExportController } from './data-export.controller.js';
 import { DataExportService } from './data-export.service.js';
 import { DataExportProcessor } from './data-export.processor.js';
@@ -29,6 +30,7 @@ import { EXPORT_STORAGE } from './storage/export-storage.interface.js';
   imports: [
     ConfigModule,
     AuthModule,
+    EmailModule,
     TypeOrmModule.forFeature([
       DataExportRequest,
       User,

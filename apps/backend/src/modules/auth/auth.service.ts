@@ -1,6 +1,7 @@
 import {
   Injectable,
   ConflictException,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -10,6 +11,7 @@ import * as bcrypt from 'bcrypt';
 import { User } from '../../entities/user.entity.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
+import { EmailVerificationService } from './email-verification.service.js';
 
 const ACCESS_TOKEN_EXPIRY = 60 * 60; // 1 hour
 const REFRESH_TOKEN_EXPIRY = 90 * 24 * 60 * 60; // 90 days
@@ -20,10 +22,13 @@ const DUMMY_HASH =
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     private readonly jwt: JwtService,
+    private readonly emailVerification: EmailVerificationService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -49,6 +54,22 @@ export class AuthService {
         throw new ConflictException('Email already registered');
       }
       throw err;
+    }
+
+    // Best-effort verification email. A token row is persisted inside
+    // `issueAndSend`, so even if the mail provider hiccups the user
+    // can hit `/auth/resend-verification` later without losing
+    // anything. Wrapped here as a final safety net so a never-thrown-
+    // before exception inside the verification path can't 500 the
+    // register response.
+    try {
+      await this.emailVerification.issueAndSend(saved);
+    } catch (err) {
+      this.logger.warn(
+        `Failed to issue verification email for user ${saved.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
     }
 
     return this.buildAuthResponse(saved);
@@ -100,6 +121,31 @@ export class AuthService {
     const user = await this.userRepo.findOne({ where: { id: payload.sub } });
     if (!user || user.deleted_at != null) {
       throw new UnauthorizedException('User not found');
+    }
+
+    // Force-invalidate any session whose original-issue time is older
+    // than the user's last password change. Without this, an attacker
+    // who already stole a refresh token would keep minting access
+    // tokens for the full 90-day refresh-token lifetime even after
+    // the legitimate owner reset their password. The 1-hour access-
+    // token TTL bounds how long a stolen access token still works
+    // after the reset.
+    //
+    // Both sides of the comparison are floored to whole seconds. JWT
+    // `orig_iat` is `Math.floor(Date.now() / 1000)` at issuance, so
+    // sub-second precision on `password_changed_at` would otherwise
+    // flag a session issued *later in the same second* as the reset
+    // as predating it (sessionStart * 1000 < ms-precision change
+    // time → falsely rejected). Comparing in seconds preserves the
+    // 1-second slop window — acceptable since 90-day stolen-refresh-
+    // token survival was the threat we cared about.
+    if (user.password_changed_at != null) {
+      const passwordChangedSec = Math.floor(
+        user.password_changed_at.getTime() / 1000,
+      );
+      if (sessionStart < passwordChangedSec) {
+        throw new UnauthorizedException('Session expired, please log in again');
+      }
     }
 
     return this.buildAuthResponse(user, sessionStart);

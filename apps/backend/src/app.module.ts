@@ -30,6 +30,7 @@ import { PoiModule } from './modules/poi/index.js';
 import { GeocodeModule } from './modules/geocode/index.js';
 import { ClosuresModule } from './modules/closures/index.js';
 import { AccountModule } from './modules/account/index.js';
+import { EmailModule } from './modules/email/index.js';
 import { TripsModule } from './modules/trips/index.js';
 import { TripActivityModule } from './modules/trip-activity/index.js';
 
@@ -41,6 +42,7 @@ import { TripActivityModule } from './modules/trip-activity/index.js';
       throttlers: [{ ttl: 60_000, limit: 60 }],
     }),
     DatabaseModule,
+    EmailModule,
     AuthModule,
     AccountModule,
     UsersModule,
