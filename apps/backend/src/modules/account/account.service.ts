@@ -274,9 +274,12 @@ export class AccountService {
         // I/O could push the webhook response close to Stripe's 20s
         // timeout window, triggering a retry — which would re-run
         // this handler and send the email again. The dispatch helper
-        // catches its own errors so an unhandled rejection can't
-        // escape.
-        void this.dispatchSubscriptionCancelled(user, planName, periodEnd);
+        // catches its own errors; the trailing `.catch()` is a
+        // belt-and-braces guard so a logger throwing inside that
+        // catch can't escape as an unhandled rejection.
+        this.dispatchSubscriptionCancelled(user, planName, periodEnd).catch(
+          () => undefined,
+        );
       }
       return;
     }
@@ -311,8 +314,12 @@ export class AccountService {
       // Fire-and-forget for the same reason as the cancellation
       // path above — keep the webhook response well inside Stripe's
       // 20s timeout window so a slow Resend send can't trigger a
-      // retry-and-duplicate-email loop.
-      void this.dispatchSubscriptionConfirmed(user, newTier, periodEnd);
+      // retry-and-duplicate-email loop. Trailing `.catch()` belts-
+      // and-braces against an unhandled rejection escaping if the
+      // helper's own logger ever throws.
+      this.dispatchSubscriptionConfirmed(user, newTier, periodEnd).catch(
+        () => undefined,
+      );
     }
   }
 

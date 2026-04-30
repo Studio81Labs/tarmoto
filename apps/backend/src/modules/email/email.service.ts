@@ -38,9 +38,14 @@ type ContextWithoutBase<T> = Omit<T, 'preferencesUrl'>;
  *
  *   - rendering: caller supplies typed context, service injects shared
  *     base fields (preferences URL, etc.) and runs the template.
- *   - dispatch: hands off to the configured `EmailProvider`. On
- *     transport failure, falls back to the always-available
- *     `LogEmailProvider` so the message is at least captured for ops.
+ *   - dispatch: hands off to the configured `EmailProvider`. When no
+ *     provider is bound (test or `TARMOTO_EMAIL_PROVIDER=log`), uses
+ *     the in-process `LogEmailProvider` so dev/CI still see the
+ *     rendered output. On send failure, emits a metadata-only
+ *     warning — the body is NOT re-routed to the log provider
+ *     because verification and reset templates embed live one-time
+ *     tokens, and centralised production logs would turn a mail
+ *     outage into a credential-takeover surface.
  *   - bulk-sender headers: List-Unsubscribe is set on every send so
  *     Gmail/Yahoo group us with bulk-compliant senders even though
  *     these are transactional. The body itself does NOT render an
@@ -141,8 +146,12 @@ export class EmailService {
 
   /**
    * Render-then-send. If the configured provider throws, the service
-   * captures the message via the log fallback so a transient SES /
-   * Resend outage doesn't silently drop verification or reset mail.
+   * emits a metadata-only delivery-failed warning so on-call sees the
+   * miss, but does NOT fall back to the log provider with the full
+   * body — verification and reset templates embed live one-time
+   * tokens, and centralised production logs would turn a mail
+   * outage into a credential-takeover surface (anyone with log
+   * access can read the URL and consume the token before expiry).
    * The caller never sees the error — see the class docstring on why.
    */
   private async dispatch(
@@ -170,27 +179,15 @@ export class EmailService {
       return result;
     } catch (err) {
       const errMessage = err instanceof Error ? err.message : String(err);
+      // Metadata-only — `template.text` and `.html` may contain a live
+      // verification or reset token. The log provider primary path
+      // (dev) still emits full bodies because it IS the configured
+      // provider; this redaction only applies when a real provider
+      // failed and we'd otherwise leak the token into log aggregators.
       this.logger.warn(
-        `Primary email provider (${primary.name}) failed sending ${template.tag} to ${to}: ${errMessage}. Falling back to log provider.`,
+        `Email NOT delivered: tag=${template.tag} to=${to} subject="${template.subject}" provider=${primary.name} error="${errMessage}". Body redacted from logs to avoid leaking one-time tokens; if the user expected this mail, ask them to retry the originating action.`,
       );
-
-      // If the primary IS the log provider, no point falling back.
-      if (primary === this.fallback) {
-        return null;
-      }
-
-      try {
-        return await this.fallback.send(message);
-      } catch (fallbackErr) {
-        this.logger.error(
-          `Fallback log provider also failed for ${template.tag} to ${to}: ${
-            fallbackErr instanceof Error
-              ? fallbackErr.message
-              : String(fallbackErr)
-          }`,
-        );
-        return null;
-      }
+      return null;
     }
   }
 
@@ -207,8 +204,12 @@ export class EmailService {
   }
 
   private supportEmail(): string {
+    // Truthy fallback (`||` not `??`): a blank or whitespace-only env
+    // var would otherwise produce an empty `mailto:` link in the
+    // password-changed and deletion-scheduled emails — exactly the
+    // recovery surface where users need a working contact address.
     return (
-      this.config.get<string>('TARMOTO_SUPPORT_EMAIL')?.trim() ??
+      this.config.get<string>('TARMOTO_SUPPORT_EMAIL')?.trim() ||
       DEFAULT_SUPPORT_EMAIL
     );
   }

@@ -109,9 +109,18 @@ export class AuthController {
     // measurable from the outside even though the status code is
     // identical for both. Not awaiting makes the HTTP timing constant
     // (sub-ms regardless of the email) while the actual work still
-    // runs server-side. The service catches its own errors so this
-    // can never throw an unhandled rejection.
-    void this.passwordReset.requestReset(dto.email, req.ip ?? null);
+    // runs server-side.
+    //
+    // `requestReset` already wraps the work in its own try/catch, but
+    // we attach a no-op `.catch()` as a belt-and-braces safety net:
+    // `void` tells TypeScript the value is unused, but it does NOT
+    // suppress unhandled rejections at runtime. If the inner catch's
+    // logger ever threw (misconfigured transport, OOM during string
+    // format, etc.) the rejection would otherwise bubble up to Node's
+    // unhandledRejection handler and crash the worker.
+    this.passwordReset
+      .requestReset(dto.email, req.ip ?? null)
+      .catch(() => undefined);
   }
 
   @Post('reset-password')

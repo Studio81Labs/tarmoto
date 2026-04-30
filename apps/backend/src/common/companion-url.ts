@@ -14,8 +14,12 @@ const DEFAULT_COMPANION_URL = 'http://localhost:3000';
  * carried its own copy and the rules were free to drift.
  */
 export const getCompanionUrl = (config: ConfigService): string => {
+  // Truthy fallback (`||` not `??`): a blank or whitespace-only env
+  // var would otherwise produce empty / malformed URLs in
+  // verification, reset, and Stripe-redirect links, which all break
+  // the corresponding flows.
   const raw =
-    config.get<string>('TARMOTO_COMPANION_URL')?.trim() ??
+    config.get<string>('TARMOTO_COMPANION_URL')?.trim() ||
     DEFAULT_COMPANION_URL;
   return raw.replace(/\/$/, '');
 };

@@ -55,12 +55,12 @@ export class PasswordResetService {
    * controller, which fires this without awaiting (see
    * `AuthController.forgotPassword`).
    */
-  async requestReset(email: string, ip: string | null): Promise<void> {
+  async requestReset(recipientEmail: string, ip: string | null): Promise<void> {
     try {
-      await this.processResetRequest(email, ip);
+      await this.processResetRequest(recipientEmail, ip);
     } catch (err) {
       this.logger.warn(
-        `Password-reset request failed for ${email}: ${
+        `Password-reset request failed for ${recipientEmail}: ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
@@ -68,10 +68,12 @@ export class PasswordResetService {
   }
 
   private async processResetRequest(
-    email: string,
+    recipientEmail: string,
     ip: string | null,
   ): Promise<void> {
-    const user = await this.userRepo.findOne({ where: { email } });
+    const user = await this.userRepo.findOne({
+      where: { email: recipientEmail },
+    });
     if (!user || user.deleted_at != null) {
       // Anti-enumeration: do nothing, return like we sent the mail.
       return;

@@ -66,7 +66,7 @@ describe('EmailService', () => {
       );
     });
 
-    it('falls back to the log provider when the primary throws', async () => {
+    it('returns null and emits a metadata-only warning when the primary throws (no body re-logged)', async () => {
       const failing: EmailProvider = {
         name: 'flaky',
         send: jest.fn().mockRejectedValue(new Error('upstream 503')),
@@ -81,18 +81,21 @@ describe('EmailService', () => {
       }).compile();
       const service = module.get(EmailService);
 
-      // The fallback log provider only logs — the call still resolves
-      // (we never want a failed verification mail to 500 the
-      // registration response).
+      // Call must still resolve — a failed verification/reset mail
+      // never bubbles up to the user-facing endpoint that triggered
+      // it. The body must NOT fall through to the log provider:
+      // verification and reset templates contain live one-time
+      // tokens, and centralised production logs would turn a mail
+      // outage into a credential-takeover surface.
+      const resetUrl = 'https://app.tarmoto.app/reset-password?token=xyz';
       const result = await service.sendPasswordReset('rider@tarmoto.app', {
         displayName: 'Rider',
-        resetUrl: 'https://app.tarmoto.app/reset-password?token=xyz',
+        resetUrl,
         expiresInMinutes: 15,
       });
 
       expect(failing.send).toHaveBeenCalledTimes(1);
-      expect(result?.providerName).toBe('log');
-      expect(result?.providerMessageId).toBeNull();
+      expect(result).toBeNull();
     });
 
     it('uses the log provider when no EMAIL_PROVIDER is registered', async () => {
