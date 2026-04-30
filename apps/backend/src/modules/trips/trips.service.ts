@@ -653,7 +653,7 @@ interface BuiltWaypoint {
   lat: number;
   lng: number;
   name?: string;
-  waypoint_type: 'start' | 'via' | 'end';
+  waypoint_type: 'start' | 'via' | 'fuel' | 'rest' | 'photo' | 'end';
 }
 
 const SAME_POINT_EPSILON = 1e-5;
@@ -673,8 +673,12 @@ function samePoint(
  * trip. Mirrors the companion's `deriveWaypoints` heuristic so the
  * imported trip has the same shape on every client:
  *  - the route's first/last polyline point are forced to be `start`/`end`
+ *    (the DTO doesn't accept those types from the client — position wins)
  *  - imported waypoints co-located with start/end donate their `name`
- *  - all other imported waypoints persist as `via` markers in order
+ *  - all other imported waypoints honour the client-supplied `type`
+ *    (`via` / `fuel` / `rest` / `photo`), defaulting to `via` when the
+ *    client doesn't say (which is what the GPX/KML parsers emit, since
+ *    the source files don't carry a Tarmoto-shaped type field)
  *  - waypoints outside the lat/lng range (already filtered by class
  *    validators) cannot reach this function
  */
@@ -705,7 +709,7 @@ function buildImportedWaypoints(dto: ImportTripDto): BuiltWaypoint[] {
       lat: w.lat,
       lng: w.lng,
       name: w.name,
-      waypoint_type: 'via',
+      waypoint_type: w.type ?? 'via',
     }));
 
   return [start, ...vias, end];

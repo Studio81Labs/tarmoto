@@ -511,6 +511,54 @@ describe('TripsService', () => {
       expect(transactionMock).toHaveBeenCalledTimes(2);
       expect(result.status).toBe('planned');
     });
+
+    it('honours the per-waypoint `type` field when supplied', async () => {
+      // The DTO accepts `via | fuel | rest | photo` — clients that have
+      // richer waypoint info (a future planner-aware import flow) can
+      // mark fuel stops or photo waypoints. Earlier code dropped the
+      // type and forced every via to `via`.
+      mockGetDetailReturns(makeOwnedTrip({ status: 'planned' }));
+      await service.importFromRoute(OWNER_ID, {
+        ...ROUTE_DTO,
+        waypoints: [
+          { lat: 46.47, lng: 10.37, name: 'Bormio' },
+          {
+            lat: 46.5,
+            lng: 10.41,
+            name: 'Filling station',
+            type: 'fuel',
+          },
+          {
+            lat: 46.54,
+            lng: 10.47,
+            name: 'Lookout',
+            type: 'photo',
+          },
+          { lat: 46.61, lng: 10.57, name: 'Prato' },
+        ],
+      });
+      const waypointBodies = manager.create.mock.calls
+        .map(([, body]) => body as Record<string, unknown>)
+        .filter((b) => 'waypoint_type' in b);
+      // start (Bormio) + 2 vias (fuel, photo) + end (Prato).
+      expect(waypointBodies).toHaveLength(4);
+      expect(waypointBodies[0]).toMatchObject({
+        waypoint_type: 'start',
+        name: 'Bormio',
+      });
+      expect(waypointBodies[1]).toMatchObject({
+        waypoint_type: 'fuel',
+        name: 'Filling station',
+      });
+      expect(waypointBodies[2]).toMatchObject({
+        waypoint_type: 'photo',
+        name: 'Lookout',
+      });
+      expect(waypointBodies[3]).toMatchObject({
+        waypoint_type: 'end',
+        name: 'Prato',
+      });
+    });
   });
 
   describe('list', () => {

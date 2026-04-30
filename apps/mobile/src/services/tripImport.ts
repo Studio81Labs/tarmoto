@@ -93,8 +93,16 @@ export async function pickAndParseRoute(): Promise<TripImportOutcome> {
   let prevalidated = false;
   try {
     const stat = await RNFS.stat(response.uri);
-    if (typeof stat.size === "number") {
-      if (stat.size > MAX_FILE_BYTES) {
+    // RNFS exposes `size` as a string in this codebase (see
+    // `offlineRegions.ts` for the established pattern). The previous
+    // `typeof stat.size === "number"` guard was always false in
+    // production, so the cap was effectively bypassed and the read-time
+    // fallback was the only thing protecting against OOM. `Number()`
+    // coerces the string; `Number.isFinite` rejects empty strings,
+    // null, and other parser failures.
+    const sizeBytes = Number(stat.size);
+    if (Number.isFinite(sizeBytes) && sizeBytes >= 0) {
+      if (sizeBytes > MAX_FILE_BYTES) {
         return {
           ok: false,
           cancelled: false,

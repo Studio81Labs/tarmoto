@@ -16,14 +16,16 @@ import { ApiProperty } from '@nestjs/swagger';
 
 const SOURCE_FORMATS = ['gpx', 'kml'] as const;
 
-const WAYPOINT_TYPES = [
-  'start',
-  'via',
-  'fuel',
-  'rest',
-  'photo',
-  'end',
-] as const;
+/**
+ * Waypoint types a client may flag on an imported route. `start` and
+ * `end` are intentionally NOT in this list — those are derived by the
+ * server from the polyline's first/last point so a malformed payload
+ * can't smuggle two starts (or an end with no start) into the trip.
+ * Mid-route waypoints default to `via` when the client doesn't say
+ * otherwise.
+ */
+const WAYPOINT_TYPES = ['via', 'fuel', 'rest', 'photo'] as const;
+type ImportWaypointType = (typeof WAYPOINT_TYPES)[number];
 
 /**
  * Hard caps on a single import. The geometry cap matches the per-file
@@ -73,7 +75,7 @@ class ImportTripWaypointDto extends ImportTripPointDto {
   @ApiProperty({ required: false, enum: WAYPOINT_TYPES })
   @IsOptional()
   @IsIn(WAYPOINT_TYPES as unknown as string[])
-  type?: (typeof WAYPOINT_TYPES)[number];
+  type?: ImportWaypointType;
 }
 
 /**

@@ -267,7 +267,35 @@ describe("routeToImportRequest", () => {
 describe("pickAndParseRoute", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockedStat.mockResolvedValue({ size: 1024 });
+    // RNFS exposes size as a string in production. Mirroring that shape
+    // here keeps the size-guard test honest — see the dedicated
+    // "rejects an oversized file" case below.
+    mockedStat.mockResolvedValue({ size: "1024" });
+  });
+
+  it("rejects a file whose stat.size (string) exceeds the 10 MB cap", async () => {
+    // Regression guard: an earlier check used `typeof stat.size === "number"`
+    // which is always false because RNFS returns a string here. That made
+    // the cap effectively no-op and the readFile path was the only barrier
+    // against OOMing on an oversized file.
+    mockedPick.mockResolvedValue([
+      {
+        uri: "file:///big.gpx",
+        name: "big.gpx",
+        type: "application/gpx+xml",
+      },
+    ]);
+    mockedStat.mockResolvedValueOnce({ size: String(20 * 1024 * 1024) });
+
+    const outcome = await pickAndParseRoute();
+
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.cancelled).toBe(false);
+    if (outcome.cancelled) return;
+    expect(outcome.error).toMatch(/larger than 10 MB/i);
+    // readFile should never run — the stat-time guard caught it.
+    expect(mockedReadFile).not.toHaveBeenCalled();
   });
 
   it("identifies KML payloads via content sniffing when the picker omits the filename", async () => {
