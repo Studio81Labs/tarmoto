@@ -12,6 +12,7 @@ import {
   NotFoundException,
   ConflictException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { ReviewsService } from './reviews.service.js';
@@ -112,6 +113,18 @@ describe('ReviewsService', () => {
         { provide: getRepositoryToken(RoadReview), useValue: reviewRepo },
         { provide: getRepositoryToken(RoadSegment), useValue: segmentRepo },
         { provide: getRepositoryToken(RoadReviewVote), useValue: voteRepo },
+        // Test fixtures use `https://app.tarmoto.test/...` everywhere —
+        // configure that as the trusted public base URL so the service's
+        // origin guard treats those URLs as ours.
+        {
+          provide: ConfigService,
+          useValue: {
+            get: (key: string) =>
+              key === 'TARMOTO_PUBLIC_BASE_URL'
+                ? 'https://app.tarmoto.test'
+                : undefined,
+          },
+        },
       ],
     }).compile();
 
@@ -513,6 +526,34 @@ describe('ReviewsService', () => {
 
       expect(reviewRepo.save).not.toHaveBeenCalled();
       expect(unlink).not.toHaveBeenCalled();
+    });
+
+    it('should treat URLs from a third-party CDN with a colliding pathname as not managed', async () => {
+      // A third-party origin like `cdn.example.com` happens to expose a
+      // file at `/uploads/road-review-photos/<our-prefix>-x.jpg` — the
+      // pathname-only resolver would have classified this as managed and
+      // rejected with 400 even though the URL points at someone else's
+      // server. The origin guard restricts "managed" detection to the
+      // configured `TARMOTO_PUBLIC_BASE_URL` (or loopback in dev), so a
+      // foreign CDN URL passes through untouched as a third-party photo.
+      const result = await service.update('user-1', 'seg-1', {
+        rating: 4,
+        photos: [
+          'https://cdn.example.com/uploads/road-review-photos/seg-1-other-user-shot.jpg',
+        ],
+      });
+
+      expect(reviewRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          photos: [
+            'https://cdn.example.com/uploads/road-review-photos/seg-1-other-user-shot.jpg',
+          ],
+        }),
+      );
+      expect(unlink).not.toHaveBeenCalled();
+      expect(result.photos).toEqual([
+        'https://cdn.example.com/uploads/road-review-photos/seg-1-other-user-shot.jpg',
+      ]);
     });
 
     it('should treat a whitespace-padded stored URL and a trimmed update as the same photo', async () => {

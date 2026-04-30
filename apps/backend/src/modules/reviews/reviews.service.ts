@@ -4,6 +4,7 @@ import {
   NotFoundException,
   ConflictException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
@@ -30,6 +31,53 @@ const REVIEW_PHOTO_UPLOAD_DIR = join(
   'road-review-photos',
 );
 
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set([
+  'localhost',
+  '127.0.0.1',
+  '[::1]',
+]);
+
+/**
+ * Decide whether a `<scheme>://<host>` origin belongs to *our* upload
+ * storage. The pathname-prefix check inside `resolveManagedReviewPhoto`
+ * isn't enough on its own: a third-party URL like
+ * `https://cdn.example.com/uploads/road-review-photos/...` would
+ * otherwise be misclassified as managed, and the caller's ownership-
+ * prefix check would either 400 spuriously or, for the cascade-delete
+ * path, attempt a local `unlink` against a coincidentally-matching
+ * filename in our managed directory. Treat as managed iff the origin
+ * matches `TARMOTO_PUBLIC_BASE_URL` OR (outside production) the host
+ * is loopback — same trust posture the upload endpoint uses when it
+ * builds outgoing URLs.
+ */
+function buildTrustedManagedOriginCheck(
+  config: ConfigService,
+): (parsed: URL) => boolean {
+  const configured = config.get<string>('TARMOTO_PUBLIC_BASE_URL')?.trim();
+  let configuredOrigin: string | null = null;
+  if (configured && configured.length > 0) {
+    try {
+      configuredOrigin = new URL(configured).origin;
+    } catch {
+      // Bad config falls through; the upload endpoint's own probe will
+      // surface the 500 with a clearer error than this resolver could.
+    }
+  }
+  return (parsed: URL): boolean => {
+    if (configuredOrigin && parsed.origin === configuredOrigin) return true;
+    // Loopback hosts are only trusted outside production — same rule
+    // `isAllowedReviewPhotoUrl` enforces, so a stored prod row that
+    // somehow points at localhost can't be silently deleted.
+    if (
+      process.env.TARMOTO_NODE_ENV !== 'production' &&
+      LOOPBACK_HOSTS.has(parsed.hostname)
+    ) {
+      return true;
+    }
+    return false;
+  };
+}
+
 interface ManagedPhoto {
   /** Decoded basename (e.g. `seg-1-user-1-1700000000-uuid.jpg`). */
   filename: string;
@@ -41,41 +89,55 @@ interface ManagedPhoto {
  * Resolve a photo URL to its managed filename + on-disk path inside the
  * upload directory, or `null` when the URL is not one we own. Mirrors the
  * `users.service` avatar pattern: parse the URL, only honor it when the
- * pathname carries the managed prefix, and reject decoded filenames that
- * include path separators, control characters, or `.`/`..` segments so a
- * crafted `photos[]` entry can't make a cascade delete escape the managed
- * directory.
+ * origin is trusted (configured public base URL or a loopback dev host)
+ * AND the pathname carries the managed prefix, and reject decoded
+ * filenames that include path separators, control characters, or
+ * `.`/`..` segments so a crafted `photos[]` entry can't make a cascade
+ * delete escape the managed directory.
  */
 function resolveManagedReviewPhoto(
   photoUrl: string | null,
+  isTrustedOrigin: (parsed: URL) => boolean,
 ): ManagedPhoto | null {
   if (!photoUrl) return null;
 
+  let parsed: URL;
   try {
-    const parsed = new URL(photoUrl, 'https://tarmoto.local');
-    if (!parsed.pathname.startsWith(REVIEW_PHOTO_PATH_PREFIX)) return null;
+    parsed = new URL(photoUrl);
+  } catch {
+    // Treat relative URLs as untrusted: we never emit relative photo
+    // URLs from the upload endpoint, so anything without a scheme is
+    // either a legacy or third-party value that can't be cleaned up
+    // by the cascade.
+    return null;
+  }
 
-    const encodedFilename = parsed.pathname.slice(
-      REVIEW_PHOTO_PATH_PREFIX.length,
-    );
-    if (!encodedFilename) return null;
+  if (!isTrustedOrigin(parsed)) return null;
+  if (!parsed.pathname.startsWith(REVIEW_PHOTO_PATH_PREFIX)) return null;
 
-    const filename = decodeURIComponent(encodedFilename);
-    if (
-      filename === '.' ||
-      filename === '..' ||
-      filename !== basename(filename) ||
-      filename.includes('/') ||
-      filename.includes('\\') ||
-      hasControlCharacters(filename)
-    ) {
-      return null;
-    }
+  const encodedFilename = parsed.pathname.slice(
+    REVIEW_PHOTO_PATH_PREFIX.length,
+  );
+  if (!encodedFilename) return null;
 
-    return { filename, filePath: join(REVIEW_PHOTO_UPLOAD_DIR, filename) };
+  let filename: string;
+  try {
+    filename = decodeURIComponent(encodedFilename);
   } catch {
     return null;
   }
+  if (
+    filename === '.' ||
+    filename === '..' ||
+    filename !== basename(filename) ||
+    filename.includes('/') ||
+    filename.includes('\\') ||
+    hasControlCharacters(filename)
+  ) {
+    return null;
+  }
+
+  return { filename, filePath: join(REVIEW_PHOTO_UPLOAD_DIR, filename) };
 }
 
 /**
@@ -116,10 +178,11 @@ function assertReviewPhotosAreOwned(
   photoUrls: readonly string[] | null | undefined,
   segmentId: string,
   userId: string,
+  isTrustedOrigin: (parsed: URL) => boolean,
 ): void {
   if (!photoUrls?.length) return;
   for (const photoUrl of photoUrls) {
-    const managed = resolveManagedReviewPhoto(photoUrl);
+    const managed = resolveManagedReviewPhoto(photoUrl, isTrustedOrigin);
     if (!managed) continue;
     if (!isOwnedManagedPhoto(managed, segmentId, userId)) {
       throw new BadRequestException(
@@ -165,10 +228,11 @@ async function deleteOwnedReviewPhotos(
   photoUrls: readonly string[] | null | undefined,
   segmentId: string,
   userId: string,
+  isTrustedOrigin: (parsed: URL) => boolean,
 ): Promise<void> {
   if (!photoUrls?.length) return;
   for (const photoUrl of photoUrls) {
-    const managed = resolveManagedReviewPhoto(photoUrl);
+    const managed = resolveManagedReviewPhoto(photoUrl, isTrustedOrigin);
     if (!managed) continue;
     // Defense in depth: even if `assertReviewPhotosAreOwned` was bypassed
     // (e.g. a legacy row predating the ownership rule), the cascade-delete
@@ -191,6 +255,12 @@ interface VoteAggregate {
 
 @Injectable()
 export class ReviewsService {
+  // Built once at construction so each create / update / delete doesn't
+  // re-read TARMOTO_PUBLIC_BASE_URL. Closes the loophole where a third-
+  // party URL with our managed pathname prefix would be mis-classified
+  // as a managed photo (see `buildTrustedManagedOriginCheck`).
+  private readonly isTrustedManagedOrigin: (parsed: URL) => boolean;
+
   constructor(
     @InjectRepository(RoadReview)
     private readonly reviewRepo: Repository<RoadReview>,
@@ -198,7 +268,10 @@ export class ReviewsService {
     private readonly segmentRepo: Repository<RoadSegment>,
     @InjectRepository(RoadReviewVote)
     private readonly voteRepo: Repository<RoadReviewVote>,
-  ) {}
+    config: ConfigService,
+  ) {
+    this.isTrustedManagedOrigin = buildTrustedManagedOriginCheck(config);
+  }
 
   async listForSegment(
     segmentId: string,
@@ -240,7 +313,12 @@ export class ReviewsService {
     // Block attaching managed photos that another user uploaded — see
     // `assertReviewPhotosAreOwned` for why DTO-level URL validation isn't
     // enough on its own.
-    assertReviewPhotosAreOwned(normalizedPhotos, segmentId, userId);
+    assertReviewPhotosAreOwned(
+      normalizedPhotos,
+      segmentId,
+      userId,
+      this.isTrustedManagedOrigin,
+    );
 
     const review = this.reviewRepo.create({
       user_id: userId,
@@ -309,7 +387,12 @@ export class ReviewsService {
 
     // Block attaching managed photos uploaded by someone else (see
     // `assertReviewPhotosAreOwned`).
-    assertReviewPhotosAreOwned(nextPhotos, segmentId, userId);
+    assertReviewPhotosAreOwned(
+      nextPhotos,
+      segmentId,
+      userId,
+      this.isTrustedManagedOrigin,
+    );
 
     review.rating = dto.rating;
     review.comment = dto.comment ?? null;
@@ -326,7 +409,12 @@ export class ReviewsService {
     // another user uploaded — even if a legacy row carries a foreign URL.
     const nextSet = new Set(nextPhotos);
     const removed = previousPhotos.filter((photo) => !nextSet.has(photo));
-    await deleteOwnedReviewPhotos(removed, segmentId, userId);
+    await deleteOwnedReviewPhotos(
+      removed,
+      segmentId,
+      userId,
+      this.isTrustedManagedOrigin,
+    );
 
     const voteMap = await this.aggregateVotes([saved.id], userId);
     return this.toResponse(saved, voteMap.get(saved.id), userId);
@@ -343,7 +431,12 @@ export class ReviewsService {
     // file the path-resolver would otherwise miss.
     const photos = normalizeReviewPhotoList(review.photos);
     await this.reviewRepo.remove(review);
-    await deleteOwnedReviewPhotos(photos, segmentId, userId);
+    await deleteOwnedReviewPhotos(
+      photos,
+      segmentId,
+      userId,
+      this.isTrustedManagedOrigin,
+    );
   }
 
   /**
