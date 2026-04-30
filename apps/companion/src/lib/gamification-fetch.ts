@@ -40,16 +40,24 @@ function errorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+export interface FetchOptions {
+  /** Aborts the in-flight fetch when triggered (page unmount, user switch). */
+  signal?: AbortSignal;
+}
+
 // Capturing `response.status` before the `error` narrow avoids an
 // openapi-fetch typing quirk: in the discriminated union `{ data, error?,
 // response } | { data?, error, response }`, narrowing on `error` collapses
 // `response` to `never`, even though both branches share `response: Response`.
 // Reading `response.status` up front sidesteps the narrow entirely.
 
-export async function fetchBadges(userId: string): Promise<BadgeDto[]> {
+export async function fetchBadges(
+  userId: string,
+  options: FetchOptions = {},
+): Promise<BadgeDto[]> {
   const { data, error, response } = await api.GET(
     "/api/v1/users/{userId}/badges",
-    { params: { path: { userId } } },
+    { params: { path: { userId } }, signal: options.signal },
   );
   const status = response.status;
   if (error) {
@@ -61,8 +69,12 @@ export async function fetchBadges(userId: string): Promise<BadgeDto[]> {
   return data ?? [];
 }
 
-export async function fetchActiveChallenges(): Promise<ChallengeDto[]> {
-  const { data, error, response } = await api.GET("/api/v1/challenges");
+export async function fetchActiveChallenges(
+  options: FetchOptions = {},
+): Promise<ChallengeDto[]> {
+  const { data, error, response } = await api.GET("/api/v1/challenges", {
+    signal: options.signal,
+  });
   const status = response.status;
   if (error) {
     throw new GamificationFetchError(
@@ -75,10 +87,14 @@ export async function fetchActiveChallenges(): Promise<ChallengeDto[]> {
 
 export async function fetchChallengeDetail(
   challengeId: string,
+  options: FetchOptions = {},
 ): Promise<ChallengeDetailDto> {
   const { data, error, response } = await api.GET(
     "/api/v1/challenges/{challengeId}",
-    { params: { path: { challengeId } } },
+    {
+      params: { path: { challengeId } },
+      signal: options.signal,
+    },
   );
   const status = response.status;
   if (error || !data) {
@@ -114,16 +130,22 @@ export async function joinChallenge(challengeId: string): Promise<void> {
  * challenges run in parallel; per-challenge details fan out in a second
  * parallel batch. A failure in any step throws so the caller can render a
  * single error fallback rather than a half-populated page.
+ *
+ * The optional `signal` cancels every in-flight request when the page
+ * unmounts or the user switches accounts, so abandoned fetches stop
+ * consuming network and backend capacity.
  */
 export async function fetchGamificationSnapshot(
   userId: string,
+  options: FetchOptions = {},
 ): Promise<GamificationSnapshot> {
+  const { signal } = options;
   const [badges, challenges] = await Promise.all([
-    fetchBadges(userId),
-    fetchActiveChallenges(),
+    fetchBadges(userId, { signal }),
+    fetchActiveChallenges({ signal }),
   ]);
   const challengeDetails = await Promise.all(
-    challenges.map((c) => fetchChallengeDetail(c.id)),
+    challenges.map((c) => fetchChallengeDetail(c.id, { signal })),
   );
   return buildLiveSnapshot({
     badges,

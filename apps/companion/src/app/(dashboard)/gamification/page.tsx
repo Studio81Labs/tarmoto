@@ -84,28 +84,44 @@ export default function GamificationPage() {
   const [joining, setJoining] = useState<string | null>(null);
   const [joinError, setJoinError] = useState<string | null>(null);
 
-  const load = useCallback(async (uid: string, signal?: AbortSignal) => {
-    setState({ status: "loading" });
-    try {
-      const snapshot = await fetchGamificationSnapshot(uid);
-      if (signal?.aborted) return;
-      setState({ status: "ready", snapshot });
-    } catch (err) {
-      if (signal?.aborted) return;
-      setState({
-        status: "error",
-        message:
-          err instanceof Error
-            ? err.message
-            : "Could not load achievements right now.",
-      });
-    }
-  }, []);
+  // `silent` keeps the current `ready` snapshot mounted while a refetch runs
+  // in the background — used after a successful "Join challenge" so the
+  // dashboard doesn't flash to the page-level skeleton; the button has its
+  // own spinner via `joining`. Initial loads (no snapshot yet) still set
+  // `loading` so the user sees the skeleton on first render. A silent
+  // refetch that fails leaves the existing snapshot on screen and rethrows
+  // so the caller can surface a localised error instead of replacing the
+  // whole page with the error fallback.
+  const load = useCallback(
+    async (
+      uid: string,
+      opts: { signal?: AbortSignal; silent?: boolean } = {},
+    ) => {
+      const { signal, silent = false } = opts;
+      if (!silent) setState({ status: "loading" });
+      try {
+        const snapshot = await fetchGamificationSnapshot(uid, { signal });
+        if (signal?.aborted) return;
+        setState({ status: "ready", snapshot });
+      } catch (err) {
+        if (signal?.aborted) return;
+        if (silent) throw err;
+        setState({
+          status: "error",
+          message:
+            err instanceof Error
+              ? err.message
+              : "Could not load achievements right now.",
+        });
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!userId) return;
     const controller = new AbortController();
-    void load(userId, controller.signal);
+    void load(userId, { signal: controller.signal });
     return () => controller.abort();
   }, [userId, load]);
 
@@ -116,7 +132,7 @@ export default function GamificationPage() {
       setJoinError(null);
       try {
         await joinChallenge(challengeId);
-        await load(userId);
+        await load(userId, { silent: true });
       } catch (err) {
         setJoinError(
           err instanceof Error ? err.message : "Could not join challenge.",

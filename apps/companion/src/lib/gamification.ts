@@ -573,6 +573,22 @@ export function unitForChallengeMetric(metric: string): string {
 }
 
 /**
+ * Turns a backend `reward_badge_key` (e.g. `"spring_explorer"`) into a
+ * human-readable label (`"Spring explorer"`). Until the backend exposes a
+ * proper localised reward title alongside the key, this is the safest way
+ * to avoid leaking snake_case identifiers into the UI.
+ */
+export function humanizeRewardBadgeKey(key: string): string {
+  const trimmed = key.trim();
+  if (trimmed.length === 0) return "";
+  const words = trimmed.replace(/[_-]+/g, " ").split(/\s+/);
+  const first = words[0]!;
+  const head = first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+  const tail = words.slice(1).map((w) => w.toLowerCase());
+  return [head, ...tail].join(" ");
+}
+
+/**
  * Maps `ChallengeDto` (+ optional my-progress from `ChallengeDetailDto`) to
  * the companion's `Challenge` shape. `my_progress === null` means the rider
  * has not joined yet; we render that as 0 progress so the bar is visible
@@ -591,7 +607,9 @@ export function mapChallengeDto(
     target: dto.target,
     unit: unitForChallengeMetric(dto.metric),
     endsAt: dto.ends_at,
-    reward: dto.reward_badge_key ?? undefined,
+    reward: dto.reward_badge_key
+      ? humanizeRewardBadgeKey(dto.reward_badge_key)
+      : undefined,
   };
 }
 

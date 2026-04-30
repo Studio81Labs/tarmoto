@@ -9,6 +9,7 @@ import {
   challengeProgress,
   formatDaysRemaining,
   formatMilestoneLabel,
+  humanizeRewardBadgeKey,
   iconForBadgeKey,
   mapBadgeDto,
   mapChallengeDto,
@@ -447,6 +448,36 @@ describe("mapChallengeDto", () => {
     );
     expect(c.name).toBe("Spring");
     expect(c.endsAt).toBe("2026-05-01T00:00:00Z");
+  });
+
+  it("humanises a reward badge key into user-facing copy", () => {
+    const c = mapChallengeDto(
+      challengeDto({ reward_badge_key: "spring_explorer" }),
+    );
+    expect(c.reward).toBe("Spring explorer");
+  });
+
+  it("leaves reward undefined when no badge key is set", () => {
+    const c = mapChallengeDto(challengeDto({ reward_badge_key: null }));
+    expect(c.reward).toBeUndefined();
+  });
+});
+
+describe("humanizeRewardBadgeKey", () => {
+  it("converts snake_case to Sentence case", () => {
+    expect(humanizeRewardBadgeKey("spring_explorer")).toBe("Spring explorer");
+    expect(humanizeRewardBadgeKey("road_warrior_2026")).toBe(
+      "Road warrior 2026",
+    );
+  });
+
+  it("treats hyphens like underscores", () => {
+    expect(humanizeRewardBadgeKey("safety-scout")).toBe("Safety scout");
+  });
+
+  it("returns an empty string for blank input", () => {
+    expect(humanizeRewardBadgeKey("")).toBe("");
+    expect(humanizeRewardBadgeKey("   ")).toBe("");
   });
 });
 

@@ -211,4 +211,18 @@ describe("fetchGamificationSnapshot", () => {
     expect(snap.primaryLeaderboard).toBeNull();
     expect(snap.milestones.length).toBeGreaterThan(0);
   });
+
+  it("threads the AbortSignal through every backend call", async () => {
+    setupHappyPath();
+    const controller = new AbortController();
+
+    await fetchGamificationSnapshot("user-1", { signal: controller.signal });
+
+    // Every api.GET invocation should have received the same signal so
+    // that aborting the controller cancels the whole fan-out.
+    for (const call of mockGet.mock.calls) {
+      const init = call[1] as { signal?: AbortSignal } | undefined;
+      expect(init?.signal).toBe(controller.signal);
+    }
+  });
 });
