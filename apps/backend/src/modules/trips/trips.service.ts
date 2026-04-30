@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { haversineKm, latLngToPoint, pointToLatLng } from '@tarmoto/shared';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
@@ -94,40 +94,57 @@ export class TripsService {
     dto: CreateTripDto,
     bounds: { dailyKmMin: number; dailyKmMax: number },
   ): Promise<string> {
+    return this.withInviteCodeAllocation(async (manager, inviteCode) => {
+      const trip = manager.create(Trip, {
+        owner_id: userId,
+        title: dto.title,
+        region: dto.region ?? null,
+        num_days: dto.num_days,
+        daily_km_min: bounds.dailyKmMin,
+        daily_km_max: bounds.dailyKmMax,
+        min_quality: dto.min_quality ?? DEFAULT_MIN_QUALITY,
+        road_preference: dto.road_preference ?? DEFAULT_ROAD_PREFERENCE,
+        status: 'draft',
+        invite_code: inviteCode,
+      });
+      const saved = await manager.save(trip);
+
+      await manager.save(
+        manager.create(TripMember, {
+          trip_id: saved.id,
+          user_id: userId,
+          role: 'owner',
+        }),
+      );
+
+      return saved.id;
+    });
+  }
+
+  /**
+   * Run a transactional persist callback under the invite-code retry
+   * loop. The callback runs inside a single transaction with a freshly
+   * generated `inviteCode`; if the unique index on `trips.invite_code`
+   * trips (PG `23505` against `idx_trips_invite_code`), we roll back,
+   * regenerate, and try again up to `MAX_INVITE_ALLOCATION_ATTEMPTS`.
+   *
+   * Any other error — including a 23505 from a different constraint —
+   * propagates so a real bug isn't papered over as a code collision.
+   * Centralised here so the retry budget, the collision check, and the
+   * "gave up" error message stay in lockstep across every persist path
+   * (`POST /trips`, `POST /trips/import`, future variants).
+   */
+  private async withInviteCodeAllocation<T>(
+    persist: (manager: EntityManager, inviteCode: string) => Promise<T>,
+  ): Promise<T> {
     let lastError: unknown;
     for (let attempt = 0; attempt < MAX_INVITE_ALLOCATION_ATTEMPTS; attempt++) {
       const inviteCode = generateInviteCode();
       try {
-        return await this.tripRepo.manager.transaction(async (manager) => {
-          const trip = manager.create(Trip, {
-            owner_id: userId,
-            title: dto.title,
-            region: dto.region ?? null,
-            num_days: dto.num_days,
-            daily_km_min: bounds.dailyKmMin,
-            daily_km_max: bounds.dailyKmMax,
-            min_quality: dto.min_quality ?? DEFAULT_MIN_QUALITY,
-            road_preference: dto.road_preference ?? DEFAULT_ROAD_PREFERENCE,
-            status: 'draft',
-            invite_code: inviteCode,
-          });
-          const saved = await manager.save(trip);
-
-          await manager.save(
-            manager.create(TripMember, {
-              trip_id: saved.id,
-              user_id: userId,
-              role: 'owner',
-            }),
-          );
-
-          return saved.id;
-        });
+        return await this.tripRepo.manager.transaction((manager) =>
+          persist(manager, inviteCode),
+        );
       } catch (err: unknown) {
-        // Only retry the specific 23505 we caused (invite_code unique
-        // index). Any other failure — including a 23505 from an
-        // unrelated constraint — propagates so we don't paper over a
-        // real bug as a code collision.
         if (!isInviteCodeViolation(err)) throw err;
         lastError = err;
       }
@@ -171,82 +188,69 @@ export class TripsService {
     dto: ImportTripDto,
     bounds: { totalKm: number; dailyKmMin: number; dailyKmMax: number },
   ): Promise<string> {
-    let lastError: unknown;
-    for (let attempt = 0; attempt < MAX_INVITE_ALLOCATION_ATTEMPTS; attempt++) {
-      const inviteCode = generateInviteCode();
-      try {
-        return await this.tripRepo.manager.transaction(async (manager) => {
-          const trip = manager.create(Trip, {
-            owner_id: userId,
-            title: dto.title,
-            region: dto.region ?? null,
-            num_days: 1,
-            daily_km_min: bounds.dailyKmMin,
-            daily_km_max: bounds.dailyKmMax,
-            min_quality: DEFAULT_MIN_QUALITY,
-            road_preference: DEFAULT_ROAD_PREFERENCE,
-            // Imported files are routes the rider already has — surface
-            // them as `planned` so they appear alongside generated trips
-            // rather than in the "draft" bucket that needs another step.
-            status: 'planned',
-            invite_code: inviteCode,
-          });
-          const savedTrip = await manager.save(trip);
+    return this.withInviteCodeAllocation(async (manager, inviteCode) => {
+      const trip = manager.create(Trip, {
+        owner_id: userId,
+        title: dto.title,
+        region: dto.region ?? null,
+        num_days: 1,
+        daily_km_min: bounds.dailyKmMin,
+        daily_km_max: bounds.dailyKmMax,
+        min_quality: DEFAULT_MIN_QUALITY,
+        road_preference: DEFAULT_ROAD_PREFERENCE,
+        // Imported files are routes the rider already has — surface
+        // them as `planned` so they appear alongside generated trips
+        // rather than in the "draft" bucket that needs another step.
+        status: 'planned',
+        invite_code: inviteCode,
+      });
+      const savedTrip = await manager.save(trip);
 
-          await manager.save(
-            manager.create(TripMember, {
-              trip_id: savedTrip.id,
-              user_id: userId,
-              role: 'owner',
-            }),
-          );
+      await manager.save(
+        manager.create(TripMember, {
+          trip_id: savedTrip.id,
+          user_id: userId,
+          role: 'owner',
+        }),
+      );
 
-          const day = manager.create(TripDay, {
-            trip_id: savedTrip.id,
-            day_number: 1,
-            title: dto.title,
-            distance_km: Number(bounds.totalKm.toFixed(2)),
-            // Rough estimate at 55 km/h — same heuristic the companion
-            // uses for imported routes. Floor at 30 minutes so very
-            // short test imports don't render as "0 min".
-            estimated_time: `${Math.max(30, Math.round((bounds.totalKm / 55) * 60))} minutes`,
-            avg_quality: null,
-            curviness_score: null,
-            scenic_score: null,
-            elevation_gain: null,
-            elevation_loss: null,
-            route_geom: {
-              type: 'LineString',
-              coordinates: dto.geometry.map((p) => [p.lng, p.lat]),
-            },
-          });
-          const savedDay = await manager.save(day);
+      const day = manager.create(TripDay, {
+        trip_id: savedTrip.id,
+        day_number: 1,
+        title: dto.title,
+        distance_km: Number(bounds.totalKm.toFixed(2)),
+        // Rough estimate at 55 km/h — same heuristic the companion
+        // uses for imported routes. Floor at 30 minutes so very
+        // short test imports don't render as "0 min".
+        estimated_time: `${Math.max(30, Math.round((bounds.totalKm / 55) * 60))} minutes`,
+        avg_quality: null,
+        curviness_score: null,
+        scenic_score: null,
+        elevation_gain: null,
+        elevation_loss: null,
+        route_geom: {
+          type: 'LineString',
+          coordinates: dto.geometry.map((p) => [p.lng, p.lat]),
+        },
+      });
+      const savedDay = await manager.save(day);
 
-          const waypoints = buildImportedWaypoints(dto);
-          if (waypoints.length > 0) {
-            const rows = waypoints.map((w, idx) =>
-              manager.create(TripWaypoint, {
-                trip_day_id: savedDay.id,
-                sequence: idx,
-                location: latLngToPoint({ lat: w.lat, lng: w.lng }),
-                name: w.name ?? null,
-                waypoint_type: w.waypoint_type,
-              }),
-            );
-            await manager.save(rows);
-          }
-
-          return savedTrip.id;
-        });
-      } catch (err: unknown) {
-        if (!isInviteCodeViolation(err)) throw err;
-        lastError = err;
+      const waypoints = buildImportedWaypoints(dto);
+      if (waypoints.length > 0) {
+        const rows = waypoints.map((w, idx) =>
+          manager.create(TripWaypoint, {
+            trip_day_id: savedDay.id,
+            sequence: idx,
+            location: latLngToPoint({ lat: w.lat, lng: w.lng }),
+            name: w.name ?? null,
+            waypoint_type: w.waypoint_type,
+          }),
+        );
+        await manager.save(rows);
       }
-    }
-    throw new Error(
-      `Failed to allocate a unique trip invite code after ${MAX_INVITE_ALLOCATION_ATTEMPTS} attempts` +
-        (lastError instanceof Error ? `: ${lastError.message}` : ''),
-    );
+
+      return savedTrip.id;
+    });
   }
 
   async update(

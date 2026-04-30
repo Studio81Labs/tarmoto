@@ -75,19 +75,31 @@ export async function pickAndParseRoute(): Promise<TripImportOutcome> {
   // RN bridge during readFile. The 10MB ceiling matches what the
   // backend's `/rides/import` accepts so import behaviour is consistent
   // across surfaces.
+  //
+  // We feed the picker URI to `stat` and `readFile` verbatim — using
+  // `decodeURI` on one but not the other (an earlier draft) made the
+  // size guard inspect a different path than the read on URIs with
+  // percent-encoded characters, which silently bypassed the 10 MB cap
+  // when stat failed. If stat genuinely can't resolve the URI (e.g. a
+  // content:// scheme that needs RNFS's `copyFileAssets` first) we
+  // size-check via the readFile result instead so a malicious or
+  // pathological file can't slip past in either path.
+  let prevalidated = false;
   try {
-    const stat = await RNFS.stat(decodeURI(response.uri));
-    if (typeof stat.size === "number" && stat.size > MAX_FILE_BYTES) {
-      return {
-        ok: false,
-        cancelled: false,
-        error: "File is larger than 10 MB. Trim the GPX and try again.",
-      };
+    const stat = await RNFS.stat(response.uri);
+    if (typeof stat.size === "number") {
+      if (stat.size > MAX_FILE_BYTES) {
+        return {
+          ok: false,
+          cancelled: false,
+          error: "File is larger than 10 MB. Trim the GPX and try again.",
+        };
+      }
+      prevalidated = true;
     }
   } catch {
     // stat() can fail on content:// URIs that haven't been copied to a
-    // local path yet — fall through to readFile and let it surface a
-    // more specific error if the URI really is unusable.
+    // local path yet — fall through to the readFile size check below.
   }
 
   let text: string;
@@ -98,6 +110,19 @@ export async function pickAndParseRoute(): Promise<TripImportOutcome> {
       ok: false,
       cancelled: false,
       error: err instanceof Error ? err.message : "Could not read the file.",
+    };
+  }
+
+  // Belt-and-suspenders for the case where stat() couldn't size the
+  // file: a UTF-8 decoded string ≥ MAX_FILE_BYTES is a clear sign the
+  // payload would have been rejected at the stat stage if we'd been
+  // able to inspect it. `Blob` isn't available in the RN runtime, so
+  // string length is the closest proxy.
+  if (!prevalidated && text.length > MAX_FILE_BYTES) {
+    return {
+      ok: false,
+      cancelled: false,
+      error: "File is larger than 10 MB. Trim the GPX and try again.",
     };
   }
 

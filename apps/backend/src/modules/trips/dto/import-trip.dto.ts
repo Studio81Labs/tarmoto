@@ -36,6 +36,19 @@ const WAYPOINT_TYPES = [
 export const IMPORT_TRIP_MAX_POINTS = 50_000;
 export const IMPORT_TRIP_MAX_WAYPOINTS = 5_000;
 
+/**
+ * Per-route body-parser ceiling for `POST /trips/import`. The default
+ * 100 kb global limit is too small for realistic GPX exports — 50,000
+ * points × ~30 bytes per `{lat,lng}` JSON entry alone is ~1.5 MB, and
+ * Garmin Connect routinely emits 5,000-10,000 point tracks that
+ * exceed 100 kb once normalised to JSON. 4 MB is the smallest power-
+ * of-two cap that comfortably accepts the worst-case payload allowed
+ * by the DTO validators above; bigger bodies fail fast at body-parser
+ * with 413 instead of being decoded only to be rejected by `class-
+ * validator` after we've already paid the parse cost.
+ */
+export const IMPORT_TRIP_BODY_LIMIT_BYTES = 4 * 1024 * 1024;
+
 class ImportTripPointDto {
   @ApiProperty({ minimum: -90, maximum: 90 })
   @IsNumber()
