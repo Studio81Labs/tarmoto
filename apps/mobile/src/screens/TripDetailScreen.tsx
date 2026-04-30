@@ -13,7 +13,13 @@
  * header so the rider sees the problem before scrolling.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -370,6 +376,11 @@ function DayCard({ day, onPress }: { day: TripDay; onPress: () => void }) {
  */
 function ExportGpxAction({ trip }: { trip: Trip }) {
   const [busy, setBusy] = useState(false);
+  // Synchronous re-entrancy guard — same rationale as `BulkExportCard`
+  // and `TripCreateScreen`: `setBusy` only flips on the next render, so
+  // two same-frame taps would both pass `if (busy)` and trigger
+  // duplicate file writes / share sheets.
+  const busyRef = useRef(false);
 
   const hasGeometry = useMemo(
     () =>
@@ -381,7 +392,8 @@ function ExportGpxAction({ trip }: { trip: Trip }) {
   );
 
   const handleExport = useCallback(async () => {
-    if (busy) return;
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     const filename = tripGpxFileName(trip.title);
     const tempPath = `${RNFS.TemporaryDirectoryPath}/${filename}`.replace(
@@ -411,9 +423,10 @@ function ExportGpxAction({ trip }: { trip: Trip }) {
       // third-party importers all stage payloads asynchronously).
       // `TemporaryDirectoryPath` is reaped by the OS so a stray .gpx
       // is harmless.
+      busyRef.current = false;
       setBusy(false);
     }
-  }, [busy, trip]);
+  }, [trip]);
 
   if (!hasGeometry) return null;
 

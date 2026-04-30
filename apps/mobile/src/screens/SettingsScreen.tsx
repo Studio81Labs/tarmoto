@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -94,49 +94,53 @@ export default function SettingsScreen() {
  */
 function BulkExportCard() {
   const [busy, setBusy] = useState<"gpx" | "csv" | null>(null);
+  // Synchronous re-entrancy guard. `busy` only flips on the next
+  // render, so two same-frame taps would otherwise both pass the
+  // `busy !== null` check and trigger duplicate API calls + share
+  // sheets. Mirrors `importingRef` on `TripCreateScreen`.
+  const busyRef = useRef(false);
 
-  const handleExport = useCallback(
-    async (format: "gpx" | "csv") => {
-      if (busy !== null) return;
-      setBusy(format);
-      const filename =
-        format === "gpx" ? "tarmoto-rides.gpx" : "tarmoto-rides.csv";
-      const tempPath = `${RNFS.TemporaryDirectoryPath}/${filename}`.replace(
-        /\/{2,}/g,
-        "/",
-      );
-      try {
-        const data =
+  const handleExport = useCallback(async (format: "gpx" | "csv") => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(format);
+    const filename =
+      format === "gpx" ? "tarmoto-rides.gpx" : "tarmoto-rides.csv";
+    const tempPath = `${RNFS.TemporaryDirectoryPath}/${filename}`.replace(
+      /\/{2,}/g,
+      "/",
+    );
+    try {
+      const data =
+        format === "gpx"
+          ? await api.exportAllRidesGpx()
+          : await api.exportAllRidesCsv();
+      await RNFS.writeFile(tempPath, data, "utf8");
+      await RNShare.open({
+        url: Platform.OS === "android" ? `file://${tempPath}` : tempPath,
+        type: format === "gpx" ? "application/gpx+xml" : "text/csv",
+        filename,
+        title:
           format === "gpx"
-            ? await api.exportAllRidesGpx()
-            : await api.exportAllRidesCsv();
-        await RNFS.writeFile(tempPath, data, "utf8");
-        await RNShare.open({
-          url: Platform.OS === "android" ? `file://${tempPath}` : tempPath,
-          type: format === "gpx" ? "application/gpx+xml" : "text/csv",
-          filename,
-          title:
-            format === "gpx"
-              ? "Export all rides as GPX"
-              : "Export all rides as CSV",
-          // failOnCancel=false: dismissing the sheet is a normal outcome,
-          // not an error worth toasting.
-          failOnCancel: false,
-        });
-      } catch (err) {
-        Alert.alert(
-          "Couldn't export",
-          err instanceof Error ? err.message : "Unable to export rides.",
-        );
-      } finally {
-        // Same rationale as the per-ride export: leave the temp file in
-        // place so deferred consumers (Mail, Files, third-party importers)
-        // can read it lazily. The OS reaps `TemporaryDirectoryPath`.
-        setBusy(null);
-      }
-    },
-    [busy],
-  );
+            ? "Export all rides as GPX"
+            : "Export all rides as CSV",
+        // failOnCancel=false: dismissing the sheet is a normal outcome,
+        // not an error worth toasting.
+        failOnCancel: false,
+      });
+    } catch (err) {
+      Alert.alert(
+        "Couldn't export",
+        err instanceof Error ? err.message : "Unable to export rides.",
+      );
+    } finally {
+      // Same rationale as the per-ride export: leave the temp file in
+      // place so deferred consumers (Mail, Files, third-party importers)
+      // can read it lazily. The OS reaps `TemporaryDirectoryPath`.
+      busyRef.current = false;
+      setBusy(null);
+    }
+  }, []);
 
   return (
     <View style={styles.card}>
