@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "5d479f86-ab6e-4d40-8609-97f87a7ce581",
+    "_postman_id": "31784c34-6de0-461e-b095-a4d76fb2c8b3",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -2361,29 +2361,6 @@
           }
         },
         {
-          "name": "Mark a commute route as the primary one",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/commute/routes/:routeId/primary",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "commute", "routes", ":routeId", "primary"],
-              "variable": [
-                {
-                  "key": "routeId",
-                  "value": ""
-                }
-              ]
-            }
-          }
-        },
-        {
           "name": "Delete a commute route",
           "request": {
             "method": "DELETE",
@@ -2460,6 +2437,129 @@
                   "value": "",
                   "description": "",
                   "disabled": true
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "group-rides",
+      "item": [
+        {
+          "name": "Create a group ride and become its owner",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/group-rides",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "group-rides"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Join an active group ride by its 6-char code",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/group-rides/:code/join",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "group-rides", ":code", "join"],
+              "variable": [
+                {
+                  "key": "code",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Leave a group ride; positions are removed immediately",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/group-rides/:id/leave",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "group-rides", ":id", "leave"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "End a group ride (owner only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/group-rides/:id/end",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "group-rides", ":id", "end"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get group ride detail (members + last-known positions)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/group-rides/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "group-rides", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
                 }
               ]
             }

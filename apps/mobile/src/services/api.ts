@@ -41,6 +41,7 @@ import type {
   PoiList,
   EmergencyContact,
   EmergencyContactInput,
+  GroupRideDetail,
 } from "@/types";
 import {
   drainOfflineQueue,
@@ -527,6 +528,37 @@ class ApiService {
     await this.client.post(`/trips/${tripId}/join`, {
       invite_code: inviteCode,
     });
+  }
+
+  // ── Group Rides (US-26) ──
+
+  async createGroupRide(name: string): Promise<GroupRideDetail> {
+    const { data } = await this.client.post<GroupRideDetail>("/group-rides", {
+      name,
+    });
+    return data;
+  }
+
+  async joinGroupRide(code: string): Promise<GroupRideDetail> {
+    const { data } = await this.client.post<GroupRideDetail>(
+      `/group-rides/${encodeURIComponent(code)}/join`,
+    );
+    return data;
+  }
+
+  async leaveGroupRide(groupRideId: string): Promise<void> {
+    await this.client.post(`/group-rides/${groupRideId}/leave`);
+  }
+
+  async endGroupRide(groupRideId: string): Promise<void> {
+    await this.client.post(`/group-rides/${groupRideId}/end`);
+  }
+
+  async getGroupRide(groupRideId: string): Promise<GroupRideDetail> {
+    const { data } = await this.client.get<GroupRideDetail>(
+      `/group-rides/${groupRideId}`,
+    );
+    return data;
   }
 
   // ── Reviews ──

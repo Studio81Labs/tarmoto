@@ -42,6 +42,7 @@ import JoinTripScreen from "@/screens/JoinTripScreen";
 import LinkAccountScreen from "@/screens/LinkAccountScreen";
 import OfflineRegionsScreen from "@/screens/OfflineRegionsScreen";
 import EmergencyContactsScreen from "@/screens/EmergencyContactsScreen";
+import GroupRideScreen from "@/screens/GroupRideScreen";
 
 // ── Type definitions ──
 
@@ -76,6 +77,7 @@ export type RideStackParamList = {
   RideActive: { rideType: "free" | "commute" | "trip" };
   RideDetail: { rideId: string };
   HazardReport: { preselectedType?: HazardType } | undefined;
+  GroupRide: undefined;
 };
 
 export type TripsStackParamList = {
@@ -192,6 +194,11 @@ function RideNavigator() {
         name="HazardReport"
         component={HazardReportScreen}
         options={{ title: "Report Hazard", presentation: "modal" }}
+      />
+      <RideStack.Screen
+        name="GroupRide"
+        component={GroupRideScreen}
+        options={{ title: "Group Ride" }}
       />
     </RideStack.Navigator>
   );
