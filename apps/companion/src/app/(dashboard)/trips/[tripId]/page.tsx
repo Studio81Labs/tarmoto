@@ -115,6 +115,11 @@ export default function TripDetailPage() {
           // we don't surface a denied-access page since the backend
           // already 404s non-members for trip detail. 403 only happens
           // on a few collab endpoints that get stricter checks.
+          //
+          // Flip `cancelled` first so the `.finally()` below doesn't
+          // setLoading(false) and briefly flash the generic error
+          // banner before the router-driven unmount lands.
+          cancelled = true;
           router.replace("/trips");
           return;
         }

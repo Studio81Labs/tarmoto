@@ -270,6 +270,25 @@ describe("TripDetailPage — data fetching", () => {
     });
   });
 
+  it("does not flash the generic error UI while the 403 redirect lands", async () => {
+    // Without the in-flight cancellation guard, the .finally() below the
+    // catch ran setLoading(false) and the page rendered "Unknown error
+    // loading trip." for one frame before the router-driven unmount
+    // landed. Hold the visible state at "loading" until the unmount
+    // actually swaps the route.
+    tripsApiGetMock.mockRejectedValue(new ApiError("Forbidden", 403, null));
+    render(<TripDetailPage />);
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/trips");
+    });
+    expect(
+      screen.queryByText(/unknown error loading trip/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/couldn't load this trip/i),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders a generic error when the request fails for an unknown reason", async () => {
     tripsApiGetMock.mockRejectedValue(new Error("network down"));
     render(<TripDetailPage />);
