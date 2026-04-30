@@ -16,6 +16,7 @@ import { createSwaggerConfig } from './config/swagger.config.js';
 import { loadTrustProxyConfig } from './config/trust-proxy.config.js';
 import { MAX_TRIP_SNAPSHOT_BYTES } from './modules/trip-shares/dto/trip-share.dto.js';
 import { MAX_MAP_SNAPSHOT_BYTES } from './modules/map-shares/dto/map-share.dto.js';
+import { IMPORT_TRIP_BODY_LIMIT_BYTES } from './modules/trips/dto/import-trip.dto.js';
 
 // Default JSON body limit, matching body-parser's built-in default. Every
 // endpoint except trip-share creation stays on this limit so we don't widen
@@ -63,6 +64,19 @@ async function bootstrap() {
     '/api/v1/map-shares',
     expressJson({
       limit: MAX_MAP_SNAPSHOT_BYTES * 2,
+      verify: captureRawBody,
+    }),
+  );
+  // POST /api/v1/trips/import carries a parsed GPX/KML payload that
+  // commonly exceeds 100 kb — even modestly long Garmin/Komoot tracks
+  // (5–10k points) blow past the default once normalised to JSON. The
+  // route prefix is matched verbatim so the wider limit applies only
+  // to the import endpoint; the rest of `/api/v1/trips` (list/create/
+  // generate/etc.) stays on the default limit.
+  app.use(
+    '/api/v1/trips/import',
+    expressJson({
+      limit: IMPORT_TRIP_BODY_LIMIT_BYTES,
       verify: captureRawBody,
     }),
   );

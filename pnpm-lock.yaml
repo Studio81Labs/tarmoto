@@ -325,6 +325,9 @@ importers:
       '@react-native-community/geolocation':
         specifier: ^3.4.0
         version: 3.4.0(react-native@0.85.1(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.1(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
+      '@react-native-documents/picker':
+        specifier: ^11.0.0
+        version: 11.0.4(react-native@0.85.1(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.1(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
       '@react-native-vector-icons/material-design-icons':
         specifier: ^13.1.1
         version: 13.1.1(@expo/config-plugins@54.0.4)(@react-native/assets-registry@0.85.1)(react-native@0.85.1(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.1(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)
@@ -340,6 +343,9 @@ importers:
       '@react-navigation/native-stack':
         specifier: ^7.0.0
         version: 7.14.11(dbde209b39a522909293abd9c0c0a2d9)
+      '@tarmoto/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       axios:
         specifier: ^1.15.2
         version: 1.15.2
@@ -2045,6 +2051,12 @@ packages:
     peerDependencies:
       react: '*'
       react-native: '*'
+
+  '@react-native-documents/picker@11.0.4':
+    resolution: {integrity: sha512-lbwcBwXMwZ5eTvNI6j/HqPjyB87moRCA8k7EoLCXF4KsLNt2jYDBXkUONX/WcMRMyQEaJPWB77W2zMCcRdX4jw==}
+    peerDependencies:
+      react: '*'
+      react-native: '>=0.79.0'
 
   '@react-native-vector-icons/common@13.0.0':
     resolution: {integrity: sha512-FJ0Ql5UTGVtK0ak4vLTxmhFHadb8NmTk4yOWoggh7UvC2pVQNyJK7L9nIZeIZ0IaVJtKfmKXtBWA0nKqqzQ/FQ==}
@@ -9378,6 +9390,11 @@ snapshots:
       - utf-8-validate
 
   '@react-native-community/geolocation@3.4.0(react-native@0.85.1(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.1(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)':
+    dependencies:
+      react: 19.2.5
+      react-native: 0.85.1(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.1(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)
+
+  '@react-native-documents/picker@11.0.4(react-native@0.85.1(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.1(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5))(react@19.2.5)':
     dependencies:
       react: 19.2.5
       react-native: 0.85.1(@babel/core@7.29.0)(@react-native-community/cli@20.1.3(typescript@5.9.3))(@react-native/jest-preset@0.85.1(@babel/core@7.29.0)(react@19.2.5))(@react-native/metro-config@0.85.1(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.5)

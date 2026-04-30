@@ -5,6 +5,10 @@
  * pulling React Native or navigation into the module graph.
  */
 
+import {
+  haversineKm as sharedHaversineKm,
+  type TripGpxInput,
+} from "@tarmoto/shared";
 import type {
   Accommodation,
   AccommodationKind,
@@ -284,19 +288,44 @@ export function routeGeometrySignature(days: TripDay[]): string {
   return route.map((point) => `${point.lat},${point.lng}`).join("|");
 }
 
-// Great-circle distance between two lat/lng pairs, in kilometres.
-// Inlined here so the helper module stays free of runtime deps — the
-// mobile app doesn't (yet) pull in `@tarmoto/shared` at build time.
-const EARTH_RADIUS_KM = 6371;
+/**
+ * Adapt a backend `Trip` into the shape the shared `tripToGpx` renderer
+ * expects. Sorting days by `day_number` matches the on-screen order so
+ * the exported GPX walks day 1 → day N regardless of how the API
+ * happened to return them.
+ */
+export function tripToGpxInput(trip: Trip): TripGpxInput {
+  const orderedDays = [...trip.days].sort(
+    (a, b) => a.day_number - b.day_number,
+  );
+  return {
+    name: trip.title,
+    description: trip.region ?? undefined,
+    days: orderedDays.map((day) => ({
+      dayNumber: day.day_number,
+      title: day.title ?? undefined,
+      waypoints: [...day.waypoints]
+        .sort((a, b) => a.sequence - b.sequence)
+        .map((w) => ({
+          lat: w.lat,
+          lng: w.lng,
+          name: w.name ?? undefined,
+          type: w.waypoint_type,
+        })),
+      routeGeometry: Array.isArray(day.route_geometry)
+        ? day.route_geometry.map((p) => [p.lng, p.lat] as [number, number])
+        : undefined,
+    })),
+  };
+}
+
+// Tiny adapter around the shared `haversineKm(lat1, lng1, lat2, lng2)` so
+// the existing `(LatLng, LatLng)` call sites below stay readable. Mobile
+// now resolves `@tarmoto/shared` via Metro's monorepo node_modules paths
+// (US-20 added it as a runtime dep), so the previous "inlined to avoid
+// pulling in shared" rationale no longer applies.
 function haversineKm(a: LatLng, b: LatLng): number {
-  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
-  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((a.lat * Math.PI) / 180) *
-      Math.cos((b.lat * Math.PI) / 180) *
-      Math.sin(dLng / 2) ** 2;
-  return EARTH_RADIUS_KM * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  return sharedHaversineKm(a.lat, a.lng, b.lat, b.lng);
 }
 
 /**

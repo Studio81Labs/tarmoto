@@ -24,6 +24,7 @@ import { AuthGuard } from '../auth/auth.guard.js';
 import { TripsService } from './trips.service.js';
 import { TripGeneratorService } from './trip-generator.service.js';
 import { CreateTripDto } from './dto/create-trip.dto.js';
+import { ImportTripDto } from './dto/import-trip.dto.js';
 import { JoinTripDto } from './dto/join-trip.dto.js';
 import { ListTripsDto } from './dto/list-trips.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
@@ -59,6 +60,24 @@ export class TripsController {
     @Body() dto: CreateTripDto,
   ): Promise<TripDetailDto> {
     return this.tripsService.create(req.user!.userId, dto);
+  }
+
+  @Post('import')
+  @ApiOperation({
+    summary: 'Create a trip seeded from a parsed GPX/KML file (US-20)',
+    description:
+      'The client (mobile or companion) parses the file locally via the ' +
+      'shared `gpx-kml-import` helper and posts the normalised geometry ' +
+      'and waypoints. The server creates a single planned day with the ' +
+      'supplied geometry — the trip generator is NOT run, since the ' +
+      'imported file IS the route. Caller becomes the owner.',
+  })
+  @ApiResponse({ status: 201, type: TripDetailDto })
+  async importRoute(
+    @Req() req: express.Request,
+    @Body() dto: ImportTripDto,
+  ): Promise<TripDetailDto> {
+    return this.tripsService.importFromRoute(req.user!.userId, dto);
   }
 
   @Get(':tripId')

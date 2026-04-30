@@ -369,6 +369,198 @@ describe('TripsService', () => {
     });
   });
 
+  describe('importFromRoute', () => {
+    const ROUTE_DTO = {
+      title: 'Stelvio loop',
+      source_format: 'gpx' as const,
+      geometry: [
+        { lat: 46.47, lng: 10.37 },
+        { lat: 46.5, lng: 10.41 },
+        { lat: 46.54, lng: 10.47 },
+        { lat: 46.61, lng: 10.57 },
+      ],
+      waypoints: [
+        { lat: 46.47, lng: 10.37, name: 'Bormio' },
+        { lat: 46.54, lng: 10.47, name: 'Umbrail pass' },
+        { lat: 46.61, lng: 10.57, name: 'Prato' },
+      ],
+    };
+
+    it('creates a planned 1-day trip with the imported geometry and waypoints', async () => {
+      mockGetDetailReturns(makeOwnedTrip({ status: 'planned' }));
+
+      const result = await service.importFromRoute(OWNER_ID, ROUTE_DTO);
+
+      expect(transactionMock).toHaveBeenCalledTimes(1);
+      // Trip row: planned + 1 day + invite code allocated.
+      expect(manager.create).toHaveBeenCalledWith(
+        Trip,
+        expect.objectContaining({
+          owner_id: OWNER_ID,
+          title: 'Stelvio loop',
+          num_days: 1,
+          status: 'planned',
+          invite_code: expect.stringMatching(/^[A-Z2-9]{8}$/),
+        }),
+      );
+      // Owner membership row.
+      expect(manager.create).toHaveBeenCalledWith(
+        TripMember,
+        expect.objectContaining({
+          trip_id: TRIP_ID,
+          user_id: OWNER_ID,
+          role: 'owner',
+        }),
+      );
+      // The day's route geometry is persisted as a LineString of [lng,lat]
+      // tuples — order matches the DTO and the column SRID expectation.
+      const dayCall = manager.create.mock.calls.find(
+        ([entity]: [unknown, ...unknown[]]) =>
+          (entity as { name?: string })?.name === 'TripDay' ||
+          // some test setups stringify the entity ref — fall back to body
+          // shape detection so this assertion stays robust to either form.
+          (
+            (entity as { toString?: () => string })?.toString?.() ?? ''
+          ).includes('TripDay'),
+      );
+      // We also verify the body-shape branch in case `manager.create`
+      // was called with the entity class symbol our matcher above can't
+      // identify. The assertion below is the durable one.
+      const dayBodies = manager.create.mock.calls
+        .map(([, body]) => body as Record<string, unknown>)
+        .filter(
+          (b) =>
+            'route_geom' in b &&
+            (b.route_geom as { type: string }).type === 'LineString',
+        );
+      expect(dayBodies).toHaveLength(1);
+      expect(dayBodies[0]).toMatchObject({
+        day_number: 1,
+        title: 'Stelvio loop',
+      });
+      const coords = (dayBodies[0].route_geom as { coordinates: number[][] })
+        .coordinates;
+      expect(coords[0]).toEqual([10.37, 46.47]);
+      expect(coords[coords.length - 1]).toEqual([10.57, 46.61]);
+      expect(dayCall ?? dayBodies[0]).toBeDefined();
+
+      // Waypoints: start, single via, end (Bormio/Prato are deduped
+      // because they coincide with the polyline endpoints).
+      const waypointBodies = manager.create.mock.calls
+        .map(([, body]) => body as Record<string, unknown>)
+        .filter((b) => 'waypoint_type' in b);
+      expect(waypointBodies).toHaveLength(3);
+      expect(waypointBodies[0]).toMatchObject({
+        sequence: 0,
+        waypoint_type: 'start',
+        name: 'Bormio',
+      });
+      expect(waypointBodies[1]).toMatchObject({
+        sequence: 1,
+        waypoint_type: 'via',
+        name: 'Umbrail pass',
+      });
+      expect(waypointBodies[2]).toMatchObject({
+        sequence: 2,
+        waypoint_type: 'end',
+        name: 'Prato',
+      });
+
+      expect(result.status).toBe('planned');
+    });
+
+    it('produces a single start→end pair when the file has no explicit waypoints', async () => {
+      mockGetDetailReturns(makeOwnedTrip({ status: 'planned' }));
+      await service.importFromRoute(OWNER_ID, {
+        ...ROUTE_DTO,
+        waypoints: undefined,
+      });
+      const waypointBodies = manager.create.mock.calls
+        .map(([, body]) => body as Record<string, unknown>)
+        .filter((b) => 'waypoint_type' in b);
+      expect(waypointBodies).toHaveLength(2);
+      expect(waypointBodies[0]).toMatchObject({
+        sequence: 0,
+        waypoint_type: 'start',
+      });
+      expect(waypointBodies[1]).toMatchObject({
+        sequence: 1,
+        waypoint_type: 'end',
+      });
+      // Sequences must be 0..n-1 with no gaps so the per-day index stays
+      // well-formed for downstream consumers.
+      expect(waypointBodies[0]).not.toHaveProperty('name', expect.anything());
+    });
+
+    it('retries the whole transaction on invite_code unique violation', async () => {
+      mockGetDetailReturns(makeOwnedTrip({ status: 'planned' }));
+      const inviteCodeError = Object.assign(
+        new Error('duplicate invite_code'),
+        {
+          code: '23505',
+          constraint: 'idx_trips_invite_code',
+        },
+      );
+      transactionMock
+        .mockRejectedValueOnce(inviteCodeError)
+        .mockImplementationOnce(
+          async (cb: (m: typeof manager) => Promise<unknown>) => cb(manager),
+        );
+
+      const result = await service.importFromRoute(OWNER_ID, ROUTE_DTO);
+      expect(transactionMock).toHaveBeenCalledTimes(2);
+      expect(result.status).toBe('planned');
+    });
+
+    it('honours the per-waypoint `type` field when supplied', async () => {
+      // The DTO accepts `via | fuel | rest | photo` — clients that have
+      // richer waypoint info (a future planner-aware import flow) can
+      // mark fuel stops or photo waypoints. Earlier code dropped the
+      // type and forced every via to `via`.
+      mockGetDetailReturns(makeOwnedTrip({ status: 'planned' }));
+      await service.importFromRoute(OWNER_ID, {
+        ...ROUTE_DTO,
+        waypoints: [
+          { lat: 46.47, lng: 10.37, name: 'Bormio' },
+          {
+            lat: 46.5,
+            lng: 10.41,
+            name: 'Filling station',
+            type: 'fuel',
+          },
+          {
+            lat: 46.54,
+            lng: 10.47,
+            name: 'Lookout',
+            type: 'photo',
+          },
+          { lat: 46.61, lng: 10.57, name: 'Prato' },
+        ],
+      });
+      const waypointBodies = manager.create.mock.calls
+        .map(([, body]) => body as Record<string, unknown>)
+        .filter((b) => 'waypoint_type' in b);
+      // start (Bormio) + 2 vias (fuel, photo) + end (Prato).
+      expect(waypointBodies).toHaveLength(4);
+      expect(waypointBodies[0]).toMatchObject({
+        waypoint_type: 'start',
+        name: 'Bormio',
+      });
+      expect(waypointBodies[1]).toMatchObject({
+        waypoint_type: 'fuel',
+        name: 'Filling station',
+      });
+      expect(waypointBodies[2]).toMatchObject({
+        waypoint_type: 'photo',
+        name: 'Lookout',
+      });
+      expect(waypointBodies[3]).toMatchObject({
+        waypoint_type: 'end',
+        name: 'Prato',
+      });
+    });
+  });
+
   describe('list', () => {
     it('returns a summary per visible trip, ordered newest-first', async () => {
       const trips = [

@@ -6,13 +6,16 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { pointToLatLng } from '@tarmoto/shared';
+import { EntityManager, Repository } from 'typeorm';
+import { haversineKm, latLngToPoint, pointToLatLng } from '@tarmoto/shared';
 import { Trip } from '../../entities/trip.entity.js';
+import { TripDay } from '../../entities/trip-day.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
+import { TripWaypoint } from '../../entities/trip-waypoint.entity.js';
 import { EventsGateway } from '../events/events.gateway.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 import { CreateTripDto } from './dto/create-trip.dto.js';
+import { ImportTripDto } from './dto/import-trip.dto.js';
 import { ListTripsDto } from './dto/list-trips.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
 import {
@@ -91,40 +94,57 @@ export class TripsService {
     dto: CreateTripDto,
     bounds: { dailyKmMin: number; dailyKmMax: number },
   ): Promise<string> {
+    return this.withInviteCodeAllocation(async (manager, inviteCode) => {
+      const trip = manager.create(Trip, {
+        owner_id: userId,
+        title: dto.title,
+        region: dto.region ?? null,
+        num_days: dto.num_days,
+        daily_km_min: bounds.dailyKmMin,
+        daily_km_max: bounds.dailyKmMax,
+        min_quality: dto.min_quality ?? DEFAULT_MIN_QUALITY,
+        road_preference: dto.road_preference ?? DEFAULT_ROAD_PREFERENCE,
+        status: 'draft',
+        invite_code: inviteCode,
+      });
+      const saved = await manager.save(trip);
+
+      await manager.save(
+        manager.create(TripMember, {
+          trip_id: saved.id,
+          user_id: userId,
+          role: 'owner',
+        }),
+      );
+
+      return saved.id;
+    });
+  }
+
+  /**
+   * Run a transactional persist callback under the invite-code retry
+   * loop. The callback runs inside a single transaction with a freshly
+   * generated `inviteCode`; if the unique index on `trips.invite_code`
+   * trips (PG `23505` against `idx_trips_invite_code`), we roll back,
+   * regenerate, and try again up to `MAX_INVITE_ALLOCATION_ATTEMPTS`.
+   *
+   * Any other error — including a 23505 from a different constraint —
+   * propagates so a real bug isn't papered over as a code collision.
+   * Centralised here so the retry budget, the collision check, and the
+   * "gave up" error message stay in lockstep across every persist path
+   * (`POST /trips`, `POST /trips/import`, future variants).
+   */
+  private async withInviteCodeAllocation<T>(
+    persist: (manager: EntityManager, inviteCode: string) => Promise<T>,
+  ): Promise<T> {
     let lastError: unknown;
     for (let attempt = 0; attempt < MAX_INVITE_ALLOCATION_ATTEMPTS; attempt++) {
       const inviteCode = generateInviteCode();
       try {
-        return await this.tripRepo.manager.transaction(async (manager) => {
-          const trip = manager.create(Trip, {
-            owner_id: userId,
-            title: dto.title,
-            region: dto.region ?? null,
-            num_days: dto.num_days,
-            daily_km_min: bounds.dailyKmMin,
-            daily_km_max: bounds.dailyKmMax,
-            min_quality: dto.min_quality ?? DEFAULT_MIN_QUALITY,
-            road_preference: dto.road_preference ?? DEFAULT_ROAD_PREFERENCE,
-            status: 'draft',
-            invite_code: inviteCode,
-          });
-          const saved = await manager.save(trip);
-
-          await manager.save(
-            manager.create(TripMember, {
-              trip_id: saved.id,
-              user_id: userId,
-              role: 'owner',
-            }),
-          );
-
-          return saved.id;
-        });
+        return await this.tripRepo.manager.transaction((manager) =>
+          persist(manager, inviteCode),
+        );
       } catch (err: unknown) {
-        // Only retry the specific 23505 we caused (invite_code unique
-        // index). Any other failure — including a 23505 from an
-        // unrelated constraint — propagates so we don't paper over a
-        // real bug as a code collision.
         if (!isInviteCodeViolation(err)) throw err;
         lastError = err;
       }
@@ -133,6 +153,104 @@ export class TripsService {
       `Failed to allocate a unique trip invite code after ${MAX_INVITE_ALLOCATION_ATTEMPTS} attempts` +
         (lastError instanceof Error ? `: ${lastError.message}` : ''),
     );
+  }
+
+  /**
+   * US-20: create a trip seeded from a GPX/KML file. The mobile/companion
+   * client parses the file locally (see `@tarmoto/shared/gpx-kml-import`)
+   * and posts the normalised geometry + waypoints; we persist them as a
+   * single planned day so the trip lands ready to ride instead of in
+   * draft state. We do not invoke the route generator — the imported
+   * file IS the route and overwriting it would defeat the import.
+   */
+  async importFromRoute(
+    userId: string,
+    dto: ImportTripDto,
+  ): Promise<TripDetailDto> {
+    const totalKm = totalDistanceKm(dto.geometry);
+    // Imported trips are 1-day routes — daily_km_{min,max} both
+    // represent the actual distance. The 1 km floor protects the
+    // schema's positive-number constraint when the file is a
+    // microscopic stub (zero or sub-km tracks have already been
+    // rejected by the parser, but defending in depth here costs
+    // nothing).
+    const dailyKm = Math.max(1, Math.round(totalKm));
+    const tripId = await this.allocateAndPersistImportedTrip(userId, dto, {
+      totalKm,
+      dailyKmMin: dailyKm,
+      dailyKmMax: dailyKm,
+    });
+    return this.getDetail(userId, tripId);
+  }
+
+  private async allocateAndPersistImportedTrip(
+    userId: string,
+    dto: ImportTripDto,
+    bounds: { totalKm: number; dailyKmMin: number; dailyKmMax: number },
+  ): Promise<string> {
+    return this.withInviteCodeAllocation(async (manager, inviteCode) => {
+      const trip = manager.create(Trip, {
+        owner_id: userId,
+        title: dto.title,
+        region: dto.region ?? null,
+        num_days: 1,
+        daily_km_min: bounds.dailyKmMin,
+        daily_km_max: bounds.dailyKmMax,
+        min_quality: DEFAULT_MIN_QUALITY,
+        road_preference: DEFAULT_ROAD_PREFERENCE,
+        // Imported files are routes the rider already has — surface
+        // them as `planned` so they appear alongside generated trips
+        // rather than in the "draft" bucket that needs another step.
+        status: 'planned',
+        invite_code: inviteCode,
+      });
+      const savedTrip = await manager.save(trip);
+
+      await manager.save(
+        manager.create(TripMember, {
+          trip_id: savedTrip.id,
+          user_id: userId,
+          role: 'owner',
+        }),
+      );
+
+      const day = manager.create(TripDay, {
+        trip_id: savedTrip.id,
+        day_number: 1,
+        title: dto.title,
+        distance_km: Number(bounds.totalKm.toFixed(2)),
+        // Rough estimate at 55 km/h — same heuristic the companion
+        // uses for imported routes. Floor at 30 minutes so very
+        // short test imports don't render as "0 min".
+        estimated_time: `${Math.max(30, Math.round((bounds.totalKm / 55) * 60))} minutes`,
+        avg_quality: null,
+        curviness_score: null,
+        scenic_score: null,
+        elevation_gain: null,
+        elevation_loss: null,
+        route_geom: {
+          type: 'LineString',
+          coordinates: dto.geometry.map((p) => [p.lng, p.lat]),
+        },
+      });
+      const savedDay = await manager.save(day);
+
+      const waypoints = buildImportedWaypoints(dto);
+      if (waypoints.length > 0) {
+        const rows = waypoints.map((w, idx) =>
+          manager.create(TripWaypoint, {
+            trip_day_id: savedDay.id,
+            sequence: idx,
+            location: latLngToPoint({ lat: w.lat, lng: w.lng }),
+            name: w.name ?? null,
+            waypoint_type: w.waypoint_type,
+          }),
+        );
+        await manager.save(rows);
+      }
+
+      return savedTrip.id;
+    });
   }
 
   async update(
@@ -516,4 +634,83 @@ function isInviteCodeViolation(err: unknown): boolean {
   if (!isUniqueViolation(err)) return false;
   const constraint = (err as { constraint?: unknown }).constraint;
   return constraint === INVITE_CODE_INDEX;
+}
+
+function totalDistanceKm(points: Array<{ lat: number; lng: number }>): number {
+  let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    total += haversineKm(
+      points[i - 1].lat,
+      points[i - 1].lng,
+      points[i].lat,
+      points[i].lng,
+    );
+  }
+  return total;
+}
+
+interface BuiltWaypoint {
+  lat: number;
+  lng: number;
+  name?: string;
+  waypoint_type: 'start' | 'via' | 'fuel' | 'rest' | 'photo' | 'end';
+}
+
+const SAME_POINT_EPSILON = 1e-5;
+
+function samePoint(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): boolean {
+  return (
+    Math.abs(a.lat - b.lat) < SAME_POINT_EPSILON &&
+    Math.abs(a.lng - b.lng) < SAME_POINT_EPSILON
+  );
+}
+
+/**
+ * Build the start/via/end waypoint sequence we persist for an imported
+ * trip. Mirrors the companion's `deriveWaypoints` heuristic so the
+ * imported trip has the same shape on every client:
+ *  - the route's first/last polyline point are forced to be `start`/`end`
+ *    (the DTO doesn't accept those types from the client — position wins)
+ *  - imported waypoints co-located with start/end donate their `name`
+ *  - all other imported waypoints honour the client-supplied `type`
+ *    (`via` / `fuel` / `rest` / `photo`), defaulting to `via` when the
+ *    client doesn't say (which is what the GPX/KML parsers emit, since
+ *    the source files don't carry a Tarmoto-shaped type field)
+ *  - waypoints outside the lat/lng range (already filtered by class
+ *    validators) cannot reach this function
+ */
+function buildImportedWaypoints(dto: ImportTripDto): BuiltWaypoint[] {
+  const first = dto.geometry[0];
+  const last = dto.geometry[dto.geometry.length - 1];
+  const incoming = dto.waypoints ?? [];
+
+  const startMatch = incoming.find((w) => samePoint(w, first));
+  const endMatch = incoming.find((w) => samePoint(w, last));
+
+  const start: BuiltWaypoint = {
+    lat: first.lat,
+    lng: first.lng,
+    name: startMatch?.name,
+    waypoint_type: 'start',
+  };
+  const end: BuiltWaypoint = {
+    lat: last.lat,
+    lng: last.lng,
+    name: endMatch?.name,
+    waypoint_type: 'end',
+  };
+
+  const vias: BuiltWaypoint[] = incoming
+    .filter((w) => !samePoint(w, first) && !samePoint(w, last))
+    .map((w) => ({
+      lat: w.lat,
+      lng: w.lng,
+      name: w.name,
+      waypoint_type: w.type ?? 'via',
+    }));
+
+  return [start, ...vias, end];
 }

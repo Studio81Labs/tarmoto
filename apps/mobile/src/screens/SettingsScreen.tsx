@@ -1,6 +1,8 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -8,6 +10,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import RNFS from "react-native-fs";
+import RNShare from "react-native-share";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -72,8 +76,117 @@ export default function SettingsScreen() {
 
       <OfflineRegionsCard />
 
+      <BulkExportCard />
+
       <PendingUploadsCard />
     </ScrollView>
+  );
+}
+
+/**
+ * US-20: bulk-export every recorded ride as either a single GPX bundle
+ * (for re-importing into Garmin / Komoot / RideWithGPS) or a CSV summary
+ * (for spreadsheets and fitness analytics tools). The XML/CSV is fetched
+ * as text and written to the OS temp directory before being handed to
+ * the share sheet — `Share.share({ message })` would deliver the bytes
+ * as plain text and most importers reject that, so we always go through
+ * the file path.
+ */
+function BulkExportCard() {
+  const [busy, setBusy] = useState<"gpx" | "csv" | null>(null);
+  // Synchronous re-entrancy guard. `busy` only flips on the next
+  // render, so two same-frame taps would otherwise both pass the
+  // `busy !== null` check and trigger duplicate API calls + share
+  // sheets. Mirrors `importingRef` on `TripCreateScreen`.
+  const busyRef = useRef(false);
+
+  const handleExport = useCallback(async (format: "gpx" | "csv") => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(format);
+    const filename =
+      format === "gpx" ? "tarmoto-rides.gpx" : "tarmoto-rides.csv";
+    const tempPath = `${RNFS.TemporaryDirectoryPath}/${filename}`.replace(
+      /\/{2,}/g,
+      "/",
+    );
+    try {
+      const data =
+        format === "gpx"
+          ? await api.exportAllRidesGpx()
+          : await api.exportAllRidesCsv();
+      await RNFS.writeFile(tempPath, data, "utf8");
+      await RNShare.open({
+        url: Platform.OS === "android" ? `file://${tempPath}` : tempPath,
+        type: format === "gpx" ? "application/gpx+xml" : "text/csv",
+        filename,
+        title:
+          format === "gpx"
+            ? "Export all rides as GPX"
+            : "Export all rides as CSV",
+        // failOnCancel=false: dismissing the sheet is a normal outcome,
+        // not an error worth toasting.
+        failOnCancel: false,
+      });
+    } catch (err) {
+      Alert.alert(
+        "Couldn't export",
+        err instanceof Error ? err.message : "Unable to export rides.",
+      );
+    } finally {
+      // Same rationale as the per-ride export: leave the temp file in
+      // place so deferred consumers (Mail, Files, third-party importers)
+      // can read it lazily. The OS reaps `TemporaryDirectoryPath`.
+      busyRef.current = false;
+      setBusy(null);
+    }
+  }, []);
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.uploadsHeader}>
+        <Icon name="export-variant" size={22} color={colors.textPrimary} />
+        <Text style={styles.sectionTitle}>Export rides</Text>
+      </View>
+      <Text style={styles.sectionBody}>
+        Download your full ride history as GPX (for Garmin / RideWithGPS) or CSV
+        (for spreadsheets).
+      </Text>
+      <View style={styles.exportRow}>
+        <TouchableOpacity
+          style={styles.exportBtn}
+          onPress={() => void handleExport("gpx")}
+          disabled={busy !== null}
+          accessibilityRole="button"
+          accessibilityLabel="Export all rides as GPX"
+        >
+          {busy === "gpx" ? (
+            <ActivityIndicator color={colors.primary} size="small" />
+          ) : (
+            <>
+              <Icon name="download-outline" size={18} color={colors.primary} />
+              <Text style={styles.exportBtnLabel}>GPX</Text>
+            </>
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.exportBtn}
+          onPress={() => void handleExport("csv")}
+          disabled={busy !== null}
+          accessibilityRole="button"
+          accessibilityLabel="Export all rides as CSV"
+        >
+          {busy === "csv" ? (
+            <ActivityIndicator color={colors.primary} size="small" />
+          ) : (
+            <>
+              <Icon name="table" size={18} color={colors.primary} />
+              <Text style={styles.exportBtnLabel}>CSV</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
@@ -347,5 +460,26 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: fontSize.md,
     fontWeight: fontWeight.semibold,
+  },
+  exportRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  exportBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.pill,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.bgCard,
+  },
+  exportBtnLabel: {
+    color: colors.primary,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.bold,
   },
 });

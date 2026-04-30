@@ -1,12 +1,22 @@
 import type * as GeoJSON from "geojson";
+import {
+  parseImportedRoute as sharedParseImportedRoute,
+  pointsDistanceKm as sharedPointsDistanceKm,
+  type ImportedRoute,
+  type ImportedWaypoint,
+  type ImportResult,
+} from "@tarmoto/shared";
 import type { RoutePreviewSegment, Trip, Waypoint } from "@/lib/types";
 import { scoreToTier } from "@/lib/utils";
 
 /**
- * GPX/KML import (US-38). Parses files exported from Garmin, Calimoto,
- * Kurviger, Scenic, Google Earth, etc. and turns them into the same
- * `Trip` shape the planner uses natively so the imported route can flow
- * through the existing sidebar, timeline, and export surfaces.
+ * GPX/KML import (US-38 / US-20). Parses files exported from Garmin,
+ * Calimoto, Kurviger, Scenic, Google Earth, etc. The actual parsing now
+ * lives in `@tarmoto/shared` so the mobile app can reuse it without
+ * dragging in a browser DOMParser polyfill; the planner-specific
+ * `importedRouteToTrip` (segments, waypoint dedup, deterministic
+ * preview quality) stays here because it depends on the planner's
+ * `Trip`/`RoutePreviewSegment` shapes.
  *
  * Road-quality matching against Tarmoto's vector tiles requires the ML
  * pipeline (#6) + tile CDN (#79); until those land we synthesise a
@@ -16,25 +26,8 @@ import { scoreToTier } from "@/lib/utils";
  * preview without a network round-trip.
  */
 
-export type ImportResult =
-  | { ok: true; route: ImportedRoute }
-  | { ok: false; error: string };
+export type { ImportedRoute, ImportedWaypoint, ImportResult };
 
-export interface ImportedRoute {
-  name: string;
-  sourceFormat: "gpx" | "kml";
-  points: Array<[number, number]>; // [lng, lat]
-  waypoints: ImportedWaypoint[];
-  totalDistanceKm: number;
-}
-
-export interface ImportedWaypoint {
-  name?: string;
-  lng: number;
-  lat: number;
-}
-
-const MIN_POINTS = 2;
 const MAX_PREVIEW_SEGMENTS = 20;
 const MIN_SEGMENT_KM = 3;
 const EARTH_RADIUS_KM = 6371;
@@ -43,211 +36,11 @@ export function parseImportedRoute(
   text: string,
   filename: string,
 ): ImportResult {
-  const trimmed = text.trim();
-  if (!trimmed) return { ok: false, error: "File is empty." };
-
-  const format = detectFormat(trimmed, filename);
-  if (!format) {
-    return {
-      ok: false,
-      error: "Unsupported file format. Upload a GPX or KML file.",
-    };
-  }
-
-  let doc: Document;
-  try {
-    doc = new DOMParser().parseFromString(trimmed, "application/xml");
-  } catch {
-    return { ok: false, error: "Could not read file as XML." };
-  }
-  if (doc.getElementsByTagName("parsererror").length > 0) {
-    return { ok: false, error: "File is not valid XML." };
-  }
-
-  const route =
-    format === "gpx" ? parseGpx(doc, filename) : parseKml(doc, filename);
-  if (!route) {
-    return {
-      ok: false,
-      error:
-        format === "gpx"
-          ? "GPX file has no track or route points."
-          : "KML file has no LineString coordinates.",
-    };
-  }
-  if (route.points.length < MIN_POINTS) {
-    return { ok: false, error: "Route needs at least two points." };
-  }
-
-  return { ok: true, route };
-}
-
-function detectFormat(text: string, filename: string): "gpx" | "kml" | null {
-  const lowerName = filename.toLowerCase();
-  if (lowerName.endsWith(".gpx")) return "gpx";
-  if (lowerName.endsWith(".kml")) return "kml";
-  const head = text.slice(0, 2048).toLowerCase();
-  if (head.includes("<gpx")) return "gpx";
-  if (head.includes("<kml")) return "kml";
-  return null;
-}
-
-function parseGpx(doc: Document, filename: string): ImportedRoute | null {
-  const trackPoints = collectCoordsByTag(doc, "trkpt");
-  const routePoints =
-    trackPoints.length > 0 ? [] : collectCoordsByTag(doc, "rtept");
-  const points = trackPoints.length > 0 ? trackPoints : routePoints;
-  if (points.length === 0) return null;
-
-  const waypoints: ImportedWaypoint[] = [];
-  const wpts = doc.getElementsByTagName("wpt");
-  for (let i = 0; i < wpts.length; i++) {
-    const wp = readLatLonElement(wpts[i]);
-    if (wp) waypoints.push(wp);
-  }
-
-  const trackName = firstChildText(doc, "trk", "name");
-  const routeName = firstChildText(doc, "rte", "name");
-  const metaName = firstChildText(doc, "metadata", "name");
-  const name =
-    trackName ??
-    routeName ??
-    metaName ??
-    stripExtension(filename) ??
-    "Imported route";
-
-  return {
-    name,
-    sourceFormat: "gpx",
-    points,
-    waypoints,
-    totalDistanceKm: pointsDistanceKm(points),
-  };
-}
-
-function parseKml(doc: Document, filename: string): ImportedRoute | null {
-  const lineStrings = doc.getElementsByTagName("LineString");
-  const points: Array<[number, number]> = [];
-  for (let i = 0; i < lineStrings.length; i++) {
-    const coordsText = childText(lineStrings[i], "coordinates");
-    if (!coordsText) continue;
-    points.push(...parseKmlCoordString(coordsText));
-  }
-  if (points.length === 0) return null;
-
-  const waypoints: ImportedWaypoint[] = [];
-  const placemarks = doc.getElementsByTagName("Placemark");
-  for (let i = 0; i < placemarks.length; i++) {
-    const pm = placemarks[i];
-    const point = pm.getElementsByTagName("Point")[0];
-    if (!point) continue;
-    const coordsText = childText(point, "coordinates");
-    if (!coordsText) continue;
-    const parsed = parseKmlCoordString(coordsText);
-    const first = parsed[0];
-    if (!first) continue;
-    waypoints.push({
-      name: childText(pm, "name") ?? undefined,
-      lng: first[0],
-      lat: first[1],
-    });
-  }
-
-  const docName = firstChildText(doc, "Document", "name");
-  const firstPlacemarkName = placemarks[0]
-    ? childText(placemarks[0], "name")
-    : null;
-  const name =
-    docName ??
-    firstPlacemarkName ??
-    stripExtension(filename) ??
-    "Imported route";
-
-  return {
-    name,
-    sourceFormat: "kml",
-    points,
-    waypoints,
-    totalDistanceKm: pointsDistanceKm(points),
-  };
-}
-
-function collectCoordsByTag(
-  doc: Document,
-  tag: string,
-): Array<[number, number]> {
-  const out: Array<[number, number]> = [];
-  const nodes = doc.getElementsByTagName(tag);
-  for (let i = 0; i < nodes.length; i++) {
-    const wp = readLatLonElement(nodes[i]);
-    if (wp) out.push([wp.lng, wp.lat]);
-  }
-  return out;
-}
-
-function readLatLonElement(el: Element): ImportedWaypoint | null {
-  const latRaw = el.getAttribute("lat");
-  const lonRaw = el.getAttribute("lon");
-  const lat = latRaw ? Number.parseFloat(latRaw) : NaN;
-  const lng = lonRaw ? Number.parseFloat(lonRaw) : NaN;
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
-  return {
-    name: childText(el, "name") ?? undefined,
-    lat,
-    lng,
-  };
-}
-
-function parseKmlCoordString(text: string): Array<[number, number]> {
-  const out: Array<[number, number]> = [];
-  for (const tuple of text.trim().split(/\s+/)) {
-    if (!tuple) continue;
-    const [lngRaw, latRaw] = tuple.split(",");
-    const lng = Number.parseFloat(lngRaw);
-    const lat = Number.parseFloat(latRaw);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
-    out.push([lng, lat]);
-  }
-  return out;
-}
-
-function firstChildText(
-  doc: Document,
-  parentTag: string,
-  childTag: string,
-): string | null {
-  const parent = doc.getElementsByTagName(parentTag)[0];
-  if (!parent) return null;
-  return childText(parent, childTag);
-}
-
-function childText(parent: Element, tag: string): string | null {
-  const children = parent.getElementsByTagName(tag);
-  for (let i = 0; i < children.length; i++) {
-    // Skip nested matches (e.g. a <name> inside a <link> inside this element).
-    if (children[i].parentElement !== parent) continue;
-    const text = children[i].textContent?.trim();
-    if (text) return text;
-  }
-  return null;
-}
-
-function stripExtension(filename: string): string | null {
-  const base = filename.split(/[\\/]/).pop() ?? filename;
-  const dot = base.lastIndexOf(".");
-  const stem = dot > 0 ? base.slice(0, dot) : base;
-  const cleaned = stem.replace(/[_-]+/g, " ").trim();
-  return cleaned || null;
+  return sharedParseImportedRoute(text, filename);
 }
 
 export function pointsDistanceKm(points: Array<[number, number]>): number {
-  let total = 0;
-  for (let i = 1; i < points.length; i++) {
-    total += haversineKm(points[i - 1], points[i]);
-  }
-  return total;
+  return sharedPointsDistanceKm(points);
 }
 
 function haversineKm(a: [number, number], b: [number, number]): number {
