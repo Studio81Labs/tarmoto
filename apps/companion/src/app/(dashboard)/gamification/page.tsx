@@ -106,8 +106,17 @@ export default function GamificationPage() {
   // `handleJoin` for why a post-join refetch failure must NOT be reported
   // as a join failure. Each call aborts the previous controller so retries
   // and post-join refetches inherit cancellation on user switch.
+  //
+  // The first guard stops a stale closure (e.g. an in-flight `handleJoin`
+  // that resolved after the user signed in as someone else) from
+  // aborting the new user's initial load. We compare `uid` against the
+  // store rather than the prop because the prop is captured in the
+  // closure at useCallback-time and `useAuthStore.getState()` always
+  // reflects the live signed-in user.
   const load = useCallback(
     async (uid: string, opts: { silent?: boolean } = {}) => {
+      const currentUid = useAuthStore.getState().user?.id;
+      if (currentUid !== uid) return;
       controllerRef.current?.abort();
       const controller = new AbortController();
       controllerRef.current = controller;
