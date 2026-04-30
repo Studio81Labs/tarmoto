@@ -292,7 +292,23 @@ export default function ReviewFormModal({
         fileName: result.photo.fileName,
         mimeType: result.photo.mimeType,
       };
-      setPhotos((prev) => [...prev, entry]);
+      // Re-check the cap inside the functional updater. The earlier
+      // `photosFull` guard reads the closure value captured BEFORE
+      // `capturePhoto` awaited, so a background reseed (e.g. a queue
+      // drain that promotes the rider to edit mode and seeds 5
+      // existing photos while the picker UI is open) can race the
+      // append and push the array past MAX_REVIEW_PHOTOS. The
+      // functional check sees the latest state and silently drops
+      // the late pick rather than corrupting the limit.
+      let inserted = true;
+      setPhotos((prev) => {
+        if (prev.length >= MAX_REVIEW_PHOTOS) {
+          inserted = false;
+          return prev;
+        }
+        return [...prev, entry];
+      });
+      if (!inserted) return;
 
       const abortController = new AbortController();
       uploadAbortControllers.current.set(entry.id, abortController);
