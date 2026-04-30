@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "0110fd6f-97ae-4d5b-9f36-baa8130f11d2",
+    "_postman_id": "e9c246ef-9de6-4d0b-8802-4171a772e6c5",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -233,6 +233,90 @@
                   "language": "json"
                 }
               }
+            }
+          }
+        },
+        {
+          "name": "Request a GDPR data export bundle for the caller",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/account/data-export",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "account", "data-export"]
+            }
+          }
+        },
+        {
+          "name": "Get the status of a data export request",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/account/data-export/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "account", "data-export", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Download a ready data export bundle (signed URL)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/account/data-export/:id/download",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "api",
+                "v1",
+                "account",
+                "data-export",
+                ":id",
+                "download"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ],
+              "query": [
+                {
+                  "key": "sig",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "exp",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                }
+              ]
             }
           }
         }

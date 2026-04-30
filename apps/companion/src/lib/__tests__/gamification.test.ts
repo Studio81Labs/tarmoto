@@ -1,16 +1,26 @@
 import { describe, expect, it } from "vitest";
+import type { components } from "@tarmoto/openapi";
 import type { RiderStats } from "../types";
 import {
   activeChallenges,
   buildDemoSnapshot,
+  buildLiveSnapshot,
+  categoryForChallengeMetric,
   challengeProgress,
   formatDaysRemaining,
   formatMilestoneLabel,
+  iconForBadgeKey,
+  mapBadgeDto,
+  mapChallengeDto,
+  mapPrimaryLeaderboardEntry,
   milestoneProgress,
   myLeaderboardRank,
   pickNextMilestone,
+  pickPrimaryChallenge,
+  riderStatsFromBadges,
   seasonalProgress,
   sortLeaderboard,
+  unitForChallengeMetric,
   type Challenge,
   type LeaderboardEntry,
   type Milestone,
@@ -321,6 +331,332 @@ describe("formatDaysRemaining", () => {
   });
 });
 
+// ── Backend → UI mappers ──
+
+type BadgeDto = components["schemas"]["BadgeDto"];
+type ChallengeDto = components["schemas"]["ChallengeDto"];
+type ChallengeDetailDto = components["schemas"]["ChallengeDetailDto"];
+
+function badgeDto(overrides: Partial<BadgeDto> = {}): BadgeDto {
+  return {
+    key: "total_distance",
+    name: "Road Warrior",
+    description: "Total distance ridden",
+    category: "distance",
+    tier: null,
+    earned_at: null,
+    progress: { current: 0, bronze: 100, silver: 1000, gold: 10000 },
+    ...overrides,
+  };
+}
+
+function challengeDto(overrides: Partial<ChallengeDto> = {}): ChallengeDto {
+  return {
+    id: "ch-1",
+    title: "Spring Explorer",
+    description: "Ride 10 new roads this month",
+    metric: "roads_discovered",
+    target: 10,
+    starts_at: "2026-04-01T00:00:00Z",
+    ends_at: "2026-05-01T00:00:00Z",
+    reward_badge_key: null,
+    participant_count: 0,
+    ...overrides,
+  };
+}
+
+function challengeDetailDto(
+  overrides: Partial<ChallengeDetailDto> = {},
+): ChallengeDetailDto {
+  return {
+    ...challengeDto(),
+    my_progress: null,
+    my_completed: null,
+    leaderboard: [],
+    ...overrides,
+  };
+}
+
+describe("iconForBadgeKey", () => {
+  it("maps known keys to icon names", () => {
+    expect(iconForBadgeKey("total_distance")).toBe("trophy");
+    expect(iconForBadgeKey("roads_discovered")).toBe("compass");
+    expect(iconForBadgeKey("hazards_reported")).toBe("alert-triangle");
+  });
+
+  it("falls back to medal for unknown keys", () => {
+    expect(iconForBadgeKey("brand_new_badge")).toBe("medal");
+  });
+});
+
+describe("mapBadgeDto", () => {
+  it("uses earned_at when set and leaves it undefined when null", () => {
+    const earned = mapBadgeDto(
+      badgeDto({ tier: "bronze", earned_at: "2026-04-01T00:00:00Z" }),
+    );
+    expect(earned.earnedAt).toBe("2026-04-01T00:00:00Z");
+
+    const locked = mapBadgeDto(badgeDto());
+    expect(locked.earnedAt).toBeUndefined();
+  });
+
+  it("derives id from the backend key and picks an icon", () => {
+    const mapped = mapBadgeDto(badgeDto({ key: "roads_discovered" }));
+    expect(mapped.id).toBe("roads_discovered");
+    expect(mapped.icon).toBe("compass");
+  });
+});
+
+describe("categoryForChallengeMetric", () => {
+  it("maps backend metric → UI category", () => {
+    expect(categoryForChallengeMetric("total_distance")).toBe("distance");
+    expect(categoryForChallengeMetric("roads_discovered")).toBe("discovery");
+    expect(categoryForChallengeMetric("hazards_reported")).toBe("safety");
+    expect(categoryForChallengeMetric("rides_shared")).toBe("social");
+  });
+
+  it("falls back to distance for unknown metrics", () => {
+    expect(categoryForChallengeMetric("anything_else")).toBe("distance");
+  });
+});
+
+describe("unitForChallengeMetric", () => {
+  it("returns the unit label by metric", () => {
+    expect(unitForChallengeMetric("total_distance")).toBe("km");
+    expect(unitForChallengeMetric("ride_count")).toBe("rides");
+    expect(unitForChallengeMetric("roads_discovered")).toBe("roads");
+    expect(unitForChallengeMetric("hazards_reported")).toBe("reports");
+  });
+});
+
+describe("mapChallengeDto", () => {
+  it("treats null my_progress as not-yet-joined (current = 0)", () => {
+    const c = mapChallengeDto(challengeDto({ target: 10 }), null);
+    expect(c.current).toBe(0);
+    expect(c.target).toBe(10);
+  });
+
+  it("uses my_progress when the rider has joined", () => {
+    const c = mapChallengeDto(challengeDto({ target: 10 }), 4);
+    expect(c.current).toBe(4);
+  });
+
+  it("renames title → name and forwards endsAt", () => {
+    const c = mapChallengeDto(
+      challengeDto({ title: "Spring", ends_at: "2026-05-01T00:00:00Z" }),
+    );
+    expect(c.name).toBe("Spring");
+    expect(c.endsAt).toBe("2026-05-01T00:00:00Z");
+  });
+});
+
+describe("riderStatsFromBadges", () => {
+  it("derives stats from badge progress.current values", () => {
+    const stats = riderStatsFromBadges([
+      badgeDto({
+        key: "total_distance",
+        progress: { current: 5_000, bronze: 100, silver: 1_000, gold: 10_000 },
+      }),
+      badgeDto({
+        key: "roads_discovered",
+        progress: { current: 120, bronze: 25, silver: 100, gold: 500 },
+      }),
+      badgeDto({
+        key: "hazards_reported",
+        progress: { current: 30, bronze: 5, silver: 25, gold: 100 },
+      }),
+    ]);
+    expect(stats.totalKm).toBe(5_000);
+    expect(stats.roadsDiscovered).toBe(120);
+    expect(stats.hazardsReported).toBe(30);
+  });
+
+  it("zeros missing dimensions so milestone display still works", () => {
+    const stats = riderStatsFromBadges([]);
+    expect(stats.totalKm).toBe(0);
+    expect(stats.roadsDiscovered).toBe(0);
+    expect(stats.hazardsReported).toBe(0);
+  });
+});
+
+describe("mapPrimaryLeaderboardEntry", () => {
+  it("flags isMe when the user_id matches", () => {
+    const e = mapPrimaryLeaderboardEntry(
+      {
+        rank: 2,
+        user_id: "user-1",
+        display_name: "Me",
+        progress: 12,
+        completed: false,
+      },
+      "user-1",
+    );
+    expect(e.isMe).toBe(true);
+  });
+
+  it("does not flag isMe for other users or null current user", () => {
+    expect(
+      mapPrimaryLeaderboardEntry(
+        {
+          rank: 1,
+          user_id: "user-1",
+          display_name: "Other",
+          progress: 10,
+          completed: false,
+        },
+        "user-2",
+      ).isMe,
+    ).toBe(false);
+    expect(
+      mapPrimaryLeaderboardEntry(
+        {
+          rank: 1,
+          user_id: "user-1",
+          display_name: "Other",
+          progress: 10,
+          completed: false,
+        },
+        null,
+      ).isMe,
+    ).toBe(false);
+  });
+});
+
+describe("pickPrimaryChallenge", () => {
+  it("returns null for an empty list", () => {
+    expect(pickPrimaryChallenge([])).toBeNull();
+  });
+
+  it("picks the challenge with the most participants", () => {
+    const a = challengeDetailDto({ id: "a", participant_count: 5 });
+    const b = challengeDetailDto({ id: "b", participant_count: 12 });
+    expect(pickPrimaryChallenge([a, b])?.id).toBe("b");
+  });
+
+  it("breaks ties by ends_at soonest", () => {
+    const soon = challengeDetailDto({
+      id: "soon",
+      participant_count: 10,
+      ends_at: "2026-05-01T00:00:00Z",
+    });
+    const later = challengeDetailDto({
+      id: "later",
+      participant_count: 10,
+      ends_at: "2026-06-01T00:00:00Z",
+    });
+    expect(pickPrimaryChallenge([later, soon])?.id).toBe("soon");
+  });
+});
+
+describe("buildLiveSnapshot", () => {
+  it("produces an empty snapshot when no data is available", () => {
+    const snap = buildLiveSnapshot({
+      badges: [],
+      challengeDetails: [],
+      currentUserId: "user-1",
+    });
+    expect(snap.badges).toEqual([]);
+    expect(snap.challenges).toEqual([]);
+    expect(snap.primaryLeaderboard).toBeNull();
+    expect(snap.seasonal).toBeNull();
+    expect(snap.leaderboard).toEqual([]);
+    expect(snap.milestones.length).toBeGreaterThan(0);
+  });
+
+  it("populates challengeMeta with joined flag and participant count", () => {
+    const detail = challengeDetailDto({
+      id: "ch-1",
+      participant_count: 7,
+      my_progress: 3,
+    });
+    const snap = buildLiveSnapshot({
+      badges: [],
+      challengeDetails: [detail],
+      currentUserId: "user-1",
+    });
+    expect(snap.challengeMeta["ch-1"]).toEqual({
+      joined: true,
+      participantCount: 7,
+    });
+    expect(snap.challenges[0]?.current).toBe(3);
+  });
+
+  it("treats null my_progress as not-joined", () => {
+    const detail = challengeDetailDto({
+      id: "ch-1",
+      participant_count: 0,
+      my_progress: null,
+    });
+    const snap = buildLiveSnapshot({
+      badges: [],
+      challengeDetails: [detail],
+      currentUserId: "user-1",
+    });
+    expect(snap.challengeMeta["ch-1"]?.joined).toBe(false);
+    expect(snap.challenges[0]?.current).toBe(0);
+  });
+
+  it("builds the primary leaderboard from the most-popular challenge", () => {
+    const popular = challengeDetailDto({
+      id: "popular",
+      participant_count: 50,
+      title: "Big",
+      metric: "total_distance",
+      leaderboard: [
+        {
+          rank: 1,
+          user_id: "user-1",
+          display_name: "Top",
+          progress: 100,
+          completed: false,
+        },
+        {
+          rank: 2,
+          user_id: "me",
+          display_name: "Me",
+          progress: 50,
+          completed: false,
+        },
+      ],
+    });
+    const small = challengeDetailDto({
+      id: "small",
+      participant_count: 1,
+      leaderboard: [],
+    });
+    const snap = buildLiveSnapshot({
+      badges: [],
+      challengeDetails: [small, popular],
+      currentUserId: "me",
+    });
+    expect(snap.primaryLeaderboard?.challengeId).toBe("popular");
+    expect(snap.primaryLeaderboard?.challengeTitle).toBe("Big");
+    expect(snap.primaryLeaderboard?.unit).toBe("km");
+    expect(snap.primaryLeaderboard?.entries.find((e) => e.isMe)?.userId).toBe(
+      "me",
+    );
+  });
+
+  it("derives stats from the badges payload", () => {
+    const snap = buildLiveSnapshot({
+      badges: [
+        badgeDto({
+          key: "total_distance",
+          progress: {
+            current: 8_000,
+            bronze: 100,
+            silver: 1_000,
+            gold: 10_000,
+          },
+        }),
+      ],
+      challengeDetails: [],
+      currentUserId: null,
+    });
+    expect(snap.stats.totalKm).toBe(8_000);
+  });
+});
+
 describe("buildDemoSnapshot", () => {
   it("returns deterministic output for the same rider id", () => {
     const a = buildDemoSnapshot("rider-1", NOW);
@@ -343,6 +679,8 @@ describe("buildDemoSnapshot", () => {
 
   it("builds a seasonal challenge with a positive target", () => {
     const snap = buildDemoSnapshot("rider-1", NOW);
+    expect(snap.seasonal).not.toBeNull();
+    if (!snap.seasonal) throw new Error("seasonal expected");
     expect(snap.seasonal.target).toBeGreaterThan(0);
     expect(seasonalProgress(snap.seasonal)).toBeGreaterThan(0);
   });
