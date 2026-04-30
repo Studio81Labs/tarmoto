@@ -130,11 +130,22 @@ export class AuthService {
     // the legitimate owner reset their password. The 1-hour access-
     // token TTL bounds how long a stolen access token still works
     // after the reset.
-    if (
-      user.password_changed_at != null &&
-      sessionStart * 1000 < user.password_changed_at.getTime()
-    ) {
-      throw new UnauthorizedException('Session expired, please log in again');
+    //
+    // Both sides of the comparison are floored to whole seconds. JWT
+    // `orig_iat` is `Math.floor(Date.now() / 1000)` at issuance, so
+    // sub-second precision on `password_changed_at` would otherwise
+    // flag a session issued *later in the same second* as the reset
+    // as predating it (sessionStart * 1000 < ms-precision change
+    // time → falsely rejected). Comparing in seconds preserves the
+    // 1-second slop window — acceptable since 90-day stolen-refresh-
+    // token survival was the threat we cared about.
+    if (user.password_changed_at != null) {
+      const passwordChangedSec = Math.floor(
+        user.password_changed_at.getTime() / 1000,
+      );
+      if (sessionStart < passwordChangedSec) {
+        throw new UnauthorizedException('Session expired, please log in again');
+      }
     }
 
     return this.buildAuthResponse(user, sessionStart);
