@@ -14,7 +14,9 @@ import { User } from '../../entities/user.entity.js';
 
 describe('AccountService', () => {
   let service: AccountService;
-  let userRepo: Partial<jest.Mocked<Repository<User>>>;
+  let userRepo: Partial<jest.Mocked<Repository<User>>> & {
+    createQueryBuilder: jest.Mock;
+  };
   let stripe: jest.Mocked<StripeBillingClient>;
 
   const buildUser = (overrides: Partial<User> = {}): User =>
@@ -42,12 +44,22 @@ describe('AccountService', () => {
       ...overrides,
     }) as User;
 
+  let activationClaimExecute: jest.Mock;
+
   beforeEach(async () => {
+    activationClaimExecute = jest.fn().mockResolvedValue({ affected: 1 });
     userRepo = {
       findOne: jest.fn().mockResolvedValue(buildUser()),
       save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
-    };
+      createQueryBuilder: jest.fn().mockReturnValue({
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        execute: activationClaimExecute,
+      }),
+    } as unknown as typeof userRepo;
 
     stripe = {
       ensureCustomer: jest.fn(),
@@ -386,6 +398,47 @@ describe('AccountService', () => {
           billing_trial_used_at: expect.any(Date),
         }),
       );
+    });
+
+    it('skips the confirmation email when a concurrent webhook already claimed the activation transition', async () => {
+      // Two parallel `customer.subscription.updated` events for the
+      // same canceled→active transition: the first wins the
+      // conditional UPDATE (`subscription_status NOT IN ('active',
+      // 'trialing')`), the second sees affected: 0 and must NOT
+      // re-fire the confirmation email.
+      activationClaimExecute.mockResolvedValueOnce({ affected: 0 });
+
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          // Pre-update in-memory read still says 'canceled' because
+          // we haven't refetched after the concurrent winner committed.
+          subscription_status: 'canceled',
+          subscription_tier: 'free',
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'active',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'premium' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      const emailService = service['email'] as {
+        sendSubscriptionConfirmed: jest.Mock;
+      };
+      expect(emailService.sendSubscriptionConfirmed).not.toHaveBeenCalled();
+      // Other-field updates still flow even on the loser path.
+      expect(userRepo.update).toHaveBeenCalled();
     });
   });
 });

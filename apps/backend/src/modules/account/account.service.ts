@@ -297,20 +297,41 @@ export class AccountService {
       update.billing_trial_used_at = new Date();
     }
 
+    // Atomic activation-transition claim. Stripe emits multiple
+    // `customer.subscription.updated` events per period (proration
+    // re-bills, payment-method changes, scheduled cancel toggles)
+    // and may retry the SAME event in parallel. Two concurrent
+    // handlers for the same canceled→active transition would
+    // otherwise both read pre-update `subscription_status='canceled'`
+    // from the in-memory `user`, both pass the
+    // `!wasActiveBefore && isActiveNow` gate, and both fire the
+    // confirmation email — a textbook double-send.
+    //
+    // Gating on a conditional UPDATE moves the check into Postgres
+    // row-level locking: only one of two concurrent transactions
+    // sees `subscription_status NOT IN ('active', 'trialing')` at
+    // its locked-read instant; the loser sees affected: 0 and
+    // skips the email. The unconditional `userRepo.update()` below
+    // still runs for both so post-activation tweaks (period_end,
+    // tier, cancel_at_period_end) flow through.
+    const willActivate =
+      (newStatus === 'active' || newStatus === 'trialing') &&
+      newTier !== 'free';
+    let wonActivationTransition = false;
+    if (willActivate) {
+      const claim = await this.userRepo
+        .createQueryBuilder()
+        .update(User)
+        .set({ subscription_status: newStatus })
+        .where('id = :id', { id: user.id })
+        .andWhere("subscription_status NOT IN ('active', 'trialing')")
+        .execute();
+      wonActivationTransition = (claim.affected ?? 0) > 0;
+    }
+
     await this.userRepo.update(user.id, update);
 
-    // Fire-once confirmation: when the subscription transitions into
-    // an active state from a non-active one. Stripe emits multiple
-    // `customer.subscription.updated` events per period (proration
-    // re-bills, payment-method changes, scheduled cancel toggles, etc.)
-    // — we don't want to spam the rider with "subscription confirmed"
-    // every time. A single transition `(canceled|past_due|free) → (active|trialing)`
-    // is the trigger.
-    const wasActiveBefore =
-      user.subscription_status === 'active' ||
-      user.subscription_status === 'trialing';
-    const isActiveNow = newStatus === 'active' || newStatus === 'trialing';
-    if (!wasActiveBefore && isActiveNow && newTier !== 'free') {
+    if (wonActivationTransition) {
       // Fire-and-forget for the same reason as the cancellation
       // path above — keep the webhook response well inside Stripe's
       // 20s timeout window so a slow Resend send can't trigger a
