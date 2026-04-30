@@ -145,6 +145,11 @@ export default function GamificationPage() {
   );
 
   useEffect(() => {
+    // The user changed (sign-in, sign-out, or account switch). Clear any
+    // join-related state from the previous session so a stale error or
+    // an orphaned spinner can't render on the new user's dashboard.
+    setJoinError(null);
+    setJoiningIds(new Set());
     if (!userId) {
       // Sign-out: cancel any in-flight fetch and drop the previous user's
       // snapshot so it can't render on the next frame.
@@ -171,14 +176,21 @@ export default function GamificationPage() {
       try {
         await joinChallenge(challengeId);
       } catch (err) {
-        setJoinError(
-          err instanceof Error ? err.message : "Could not join challenge.",
-        );
-        setJoiningIds((prev) => {
-          const next = new Set(prev);
-          next.delete(challengeId);
-          return next;
-        });
+        // Only surface the error to the user that initiated the join.
+        // If the rider switched accounts while the request was in flight,
+        // the live signed-in user is no longer who clicked Join — writing
+        // their previous error onto the new user's dashboard would be
+        // confusing (the new user never tried to join anything).
+        if (useAuthStore.getState().user?.id === userId) {
+          setJoinError(
+            err instanceof Error ? err.message : "Could not join challenge.",
+          );
+          setJoiningIds((prev) => {
+            const next = new Set(prev);
+            next.delete(challengeId);
+            return next;
+          });
+        }
         return;
       }
       // Join succeeded — reflect that in the snapshot immediately so the
