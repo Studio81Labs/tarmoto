@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Award,
@@ -72,11 +72,15 @@ const CATEGORY_STYLE: Record<
   seasonal: { label: "Seasonal", icon: Sparkles, accent: "text-emerald-300" },
 };
 
+// Every loaded state is tagged with the userId it represents so the render
+// can refuse to show snapshot data for a user that is no longer signed in.
+// Without this, switching accounts could briefly leak the previous user's
+// badges/challenges between the prop change and the refetch completing.
 type LoadState =
   | { status: "idle" }
-  | { status: "loading" }
-  | { status: "ready"; snapshot: GamificationSnapshot }
-  | { status: "error"; message: string };
+  | { status: "loading"; userId: string }
+  | { status: "ready"; userId: string; snapshot: GamificationSnapshot }
+  | { status: "error"; userId: string; message: string };
 
 export default function GamificationPage() {
   const userId = useAuthStore((s) => s.user?.id);
@@ -88,31 +92,39 @@ export default function GamificationPage() {
     () => new Set(),
   );
   const [joinError, setJoinError] = useState<string | null>(null);
+  // The currently-active fetch controller. Stored in a ref so that retries,
+  // post-join silent refetches, and a userId change can all abort whatever
+  // is in flight without prop-drilling a signal through every caller.
+  const controllerRef = useRef<AbortController | null>(null);
 
   // `silent` keeps the current `ready` snapshot mounted while a refetch runs
   // in the background — used after a successful "Join challenge" so the
   // dashboard doesn't flash to the page-level skeleton; the button keeps
-  // its own spinner via `joiningIds`. Initial loads (no snapshot yet) still
-  // set `loading` so the user sees the skeleton on first render. A silent
-  // refetch that fails leaves the existing snapshot on screen and rethrows
-  // so the caller can decide what to surface — see `handleJoin` for why a
-  // post-join refetch failure must NOT be reported as a join failure.
+  // its own spinner via `joiningIds`. Initial loads still set `loading` so
+  // the user sees the skeleton on first render. A silent refetch that
+  // fails rethrows so the caller can decide what to surface — see
+  // `handleJoin` for why a post-join refetch failure must NOT be reported
+  // as a join failure. Each call aborts the previous controller so retries
+  // and post-join refetches inherit cancellation on user switch.
   const load = useCallback(
-    async (
-      uid: string,
-      opts: { signal?: AbortSignal; silent?: boolean } = {},
-    ) => {
-      const { signal, silent = false } = opts;
-      if (!silent) setState({ status: "loading" });
+    async (uid: string, opts: { silent?: boolean } = {}) => {
+      controllerRef.current?.abort();
+      const controller = new AbortController();
+      controllerRef.current = controller;
+      const { silent = false } = opts;
+      if (!silent) setState({ status: "loading", userId: uid });
       try {
-        const snapshot = await fetchGamificationSnapshot(uid, { signal });
-        if (signal?.aborted) return;
-        setState({ status: "ready", snapshot });
+        const snapshot = await fetchGamificationSnapshot(uid, {
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        setState({ status: "ready", userId: uid, snapshot });
       } catch (err) {
-        if (signal?.aborted) return;
+        if (controller.signal.aborted) return;
         if (silent) throw err;
         setState({
           status: "error",
+          userId: uid,
           message:
             err instanceof Error
               ? err.message
@@ -124,10 +136,18 @@ export default function GamificationPage() {
   );
 
   useEffect(() => {
-    if (!userId) return;
-    const controller = new AbortController();
-    void load(userId, { signal: controller.signal });
-    return () => controller.abort();
+    if (!userId) {
+      // Sign-out: cancel any in-flight fetch and drop the previous user's
+      // snapshot so it can't render on the next frame.
+      controllerRef.current?.abort();
+      controllerRef.current = null;
+      setState({ status: "idle" });
+      return;
+    }
+    void load(userId);
+    return () => {
+      controllerRef.current?.abort();
+    };
   }, [userId, load]);
 
   const handleJoin = useCallback(
@@ -153,12 +173,15 @@ export default function GamificationPage() {
         return;
       }
       // Join succeeded — reflect that in the snapshot immediately so the
-      // card flips to "Joined" without waiting on the refetch. Any failure
-      // of the silent refetch must NOT be surfaced via `joinError`: the
-      // backend has already accepted the join, and showing "Could not load
-      // badges" would make the user think their join failed.
+      // card flips to "Joined" without waiting on the refetch. The userId
+      // tag guards against a user switch racing with a stale resolved
+      // join: we only patch a snapshot that still belongs to the user we
+      // joined for. Any failure of the silent refetch must NOT be
+      // surfaced via `joinError`: the backend has already accepted the
+      // join, and showing "Could not load badges" would make the user
+      // think their join failed.
       setState((prev) =>
-        prev.status === "ready"
+        prev.status === "ready" && prev.userId === userId
           ? {
               ...prev,
               snapshot: markChallengeJoined(prev.snapshot, challengeId),
@@ -195,7 +218,18 @@ export default function GamificationPage() {
     );
   }
 
-  if (state.status === "loading" || state.status === "idle") {
+  // Render-time guard: a snapshot tagged for a different user (because
+  // the userId prop changed before the new fetch resolved) must NOT be
+  // shown — fall through to the skeleton until the userId-effect kicks
+  // off a fresh load.
+  const stateForUser =
+    state.status === "ready" && state.userId === userId
+      ? state
+      : state.status === "error" && state.userId === userId
+        ? state
+        : null;
+
+  if (!stateForUser) {
     return (
       <div className="p-6 max-w-6xl mx-auto animate-fade-in space-y-8">
         <PageHeader />
@@ -204,13 +238,13 @@ export default function GamificationPage() {
     );
   }
 
-  if (state.status === "error") {
+  if (stateForUser.status === "error") {
     return (
       <div className="p-6 max-w-6xl mx-auto animate-fade-in">
         <PageHeader />
         <ErrorCard
-          message={state.message}
-          onRetry={() => userId && load(userId)}
+          message={stateForUser.message}
+          onRetry={() => load(userId)}
         />
       </div>
     );
@@ -218,7 +252,7 @@ export default function GamificationPage() {
 
   return (
     <Dashboard
-      snapshot={state.snapshot}
+      snapshot={stateForUser.snapshot}
       joiningIds={joiningIds}
       joinError={joinError}
       onJoin={handleJoin}
