@@ -21,6 +21,7 @@ import { CommuteModule } from './modules/commute/index.js';
 import { ReviewsModule } from './modules/reviews/index.js';
 import { SharingModule } from './modules/sharing/index.js';
 import { TripSharesModule } from './modules/trip-shares/index.js';
+import { MapSharesModule } from './modules/map-shares/index.js';
 import { FollowersModule } from './modules/followers/index.js';
 import { BadgesModule } from './modules/badges/index.js';
 import { ChallengesModule } from './modules/challenges/index.js';
@@ -51,6 +52,7 @@ import { TripActivityModule } from './modules/trip-activity/index.js';
     RoadsModule,
     SharingModule,
     TripSharesModule,
+    MapSharesModule,
     RidesModule,
     TripsModule,
     TripActivityModule,

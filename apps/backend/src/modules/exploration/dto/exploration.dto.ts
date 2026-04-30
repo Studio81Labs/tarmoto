@@ -68,3 +68,32 @@ export class RiddenSegmentIdsDto {
   @ApiProperty({ type: [String] })
   segment_ids!: string[];
 }
+
+export class RiddenSegmentDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty({
+    description:
+      'ISO-8601 timestamp of the most recent ride that touched the segment',
+  })
+  last_ridden_at!: string;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'quality_reading from the most recent ride that touched the segment (null if rider had no reading)',
+  })
+  last_quality_score!: number | null;
+
+  @ApiProperty({
+    description:
+      'Total number of completed rides that have touched the segment',
+  })
+  ride_count!: number;
+}
+
+export class RiddenSegmentsListDto {
+  @ApiProperty({ type: [RiddenSegmentDto] })
+  segments!: RiddenSegmentDto[];
+}

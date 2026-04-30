@@ -15,6 +15,7 @@ import { AppModule } from './app.module.js';
 import { createSwaggerConfig } from './config/swagger.config.js';
 import { loadTrustProxyConfig } from './config/trust-proxy.config.js';
 import { MAX_TRIP_SNAPSHOT_BYTES } from './modules/trip-shares/dto/trip-share.dto.js';
+import { MAX_MAP_SNAPSHOT_BYTES } from './modules/map-shares/dto/map-share.dto.js';
 
 // Default JSON body limit, matching body-parser's built-in default. Every
 // endpoint except trip-share creation stays on this limit so we don't widen
@@ -50,6 +51,18 @@ async function bootstrap() {
     '/api/v1/trip-shares',
     expressJson({
       limit: MAX_TRIP_SNAPSHOT_BYTES * 2,
+      verify: captureRawBody,
+    }),
+  );
+  // Same rationale as trip-shares — POST /api/v1/map-shares carries a
+  // ridden-segments snapshot that easily exceeds the 100 kb default once
+  // a rider has covered a few thousand segments. Cap matches the DTO's
+  // `MAX_MAP_SNAPSHOT_BYTES` (×2 for envelope overhead) so the validator
+  // is what rejects oversize payloads, not body-parser's generic 413.
+  app.use(
+    '/api/v1/map-shares',
+    expressJson({
+      limit: MAX_MAP_SNAPSHOT_BYTES * 2,
       verify: captureRawBody,
     }),
   );

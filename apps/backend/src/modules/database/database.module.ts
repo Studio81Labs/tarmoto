@@ -32,6 +32,7 @@ import { AddDataExportRequests1715600000000 } from '../../migrations/17156000000
 import { AddEmailVerificationAndPasswordReset1715700000000 } from '../../migrations/1715700000000-AddEmailVerificationAndPasswordReset.js';
 import { AddPasswordChangedAtAndUniqueResetToken1715800000000 } from '../../migrations/1715800000000-AddPasswordChangedAtAndUniqueResetToken.js';
 import { AddVerificationTokenUniqueIndex1715900000000 } from '../../migrations/1715900000000-AddVerificationTokenUniqueIndex.js';
+import { AddMapShares1716000000000 } from '../../migrations/1716000000000-AddMapShares.js';
 import {
   User,
   UserContact,
@@ -55,6 +56,7 @@ import {
   CommuteRoute,
   SharedRide,
   TripShare,
+  MapShare,
   TripSuggestion,
   TripSuggestionVote,
   TripMessage,
@@ -91,6 +93,7 @@ const entities = [
   CommuteRoute,
   SharedRide,
   TripShare,
+  MapShare,
   TripSuggestion,
   TripSuggestionVote,
   TripMessage,
@@ -156,6 +159,7 @@ const entities = [
             AddEmailVerificationAndPasswordReset1715700000000,
             AddPasswordChangedAtAndUniqueResetToken1715800000000,
             AddVerificationTokenUniqueIndex1715900000000,
+            AddMapShares1716000000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.

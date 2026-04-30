@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   Copy,
@@ -12,8 +12,12 @@ import {
   Sparkles,
 } from "lucide-react";
 import type { UnitSystem } from "@tarmoto/shared";
-import { explorationApi } from "@/lib/api";
-import type { ExplorationStats, UnriddenSegment } from "@/lib/api";
+import { explorationApi, mapSharesApi } from "@/lib/api";
+import type {
+  ExplorationStats,
+  RiddenSegmentMeta,
+  UnriddenSegment,
+} from "@/lib/api";
 import {
   QUALITY_CONFIG,
   formatDistance,
@@ -25,22 +29,29 @@ import type { RideForStats } from "@/lib/ride-stats";
 import {
   TIME_PERIODS,
   TIME_PERIOD_LABELS,
-  buildShareSummary,
   computePeriodStats,
   groupUnriddenByRegion,
   type TimePeriod,
 } from "@/lib/exploration";
+import {
+  buildMapShareSnapshot,
+  filterRiddenByPeriod,
+  type RiddenSegment,
+} from "@/lib/road-map-layer";
 import { usePreferencesStore } from "@/stores/preferences";
+import {
+  PersonalRoadMap,
+  type PersonalRoadMapHandle,
+} from "./_components/PersonalRoadMap";
 
 /**
  * Personal road map (US-50).
  *
- * Global ridden/unridden totals come from `/exploration/stats`. The map layer
- * itself is a placeholder until INFRA #79 (MapLibre integration) lands; we
- * still fetch `/exploration/ridden-ids` so the page can report how many
- * segments the layer would render. Period chips only filter the rides list
- * (the exploration stats endpoint is not time-bucketed) so the global %
- * remains visible no matter which period is active.
+ * The MapLibre overlay (PersonalRoadMap) paints a dim base + a Tarmoto
+ * Cyan layer for ridden segments using `feature-state` so 10k+ segments
+ * don't stall the main thread. Period chips drive a client-side filter
+ * over the in-memory ridden list — no extra round-trip when the user
+ * flips between "this year" and "all time".
  */
 
 const NEARBY_DEFAULT_RADIUS_KM = 15;
@@ -51,10 +62,18 @@ const NEARBY_LIMIT = 25;
 // Central Europe; the user can override via the "Use my location" button or by
 // letting the coordinate inputs accept any lat/lng.
 const FALLBACK_CENTER = { lat: 50.0755, lng: 14.4378, label: "Prague" };
+const INITIAL_MAP_ZOOM = 8;
+
+type ShareState =
+  | { kind: "idle" }
+  | { kind: "creating" }
+  | { kind: "copied"; url: string }
+  | { kind: "shared"; url: string }
+  | { kind: "error"; message: string };
 
 export default function RoadMapPage() {
   const [stats, setStats] = useState<ExplorationStats | null>(null);
-  const [riddenSegmentIds, setRiddenSegmentIds] = useState<string[]>([]);
+  const [riddenSegments, setRiddenSegments] = useState<RiddenSegmentMeta[]>([]);
   const [rides, setRides] = useState<RideForStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -67,9 +86,13 @@ export default function RoadMapPage() {
   const [nearbyError, setNearbyError] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
 
-  const [shareState, setShareState] = useState<
-    "idle" | "copied" | "shared" | "error"
-  >("idle");
+  const [shareState, setShareState] = useState<ShareState>({ kind: "idle" });
+  // Track the auto-reset timer so back-to-back share clicks don't let a
+  // stale timer stomp over the next call's `{ kind: "creating" }` state
+  // (which would re-enable the button mid-flight).
+  const shareResetTimerRef = useRef<number | null>(null);
+
+  const mapRef = useRef<PersonalRoadMapHandle>(null);
 
   // Preferences are hydrated from localStorage on the client; during SSR the
   // store still returns the metric default so the server-rendered markup
@@ -86,13 +109,13 @@ export default function RoadMapPage() {
 
     Promise.all([
       explorationApi.getStats(),
-      explorationApi.getRiddenIds(),
+      explorationApi.getRiddenSegments(),
       fetchAllRides(),
     ])
       .then(([statsRes, riddenRes, ridesList]) => {
         if (cancelled) return;
         setStats(statsRes.data);
-        setRiddenSegmentIds(riddenRes.data.segment_ids);
+        setRiddenSegments(riddenRes.data.segments);
         setRides(ridesList);
         setLoading(false);
       })
@@ -143,6 +166,11 @@ export default function RoadMapPage() {
     [rides, period],
   );
 
+  const filteredRidden = useMemo<RiddenSegment[]>(
+    () => filterRiddenByPeriod(riddenSegments, period),
+    [riddenSegments, period],
+  );
+
   const regionBuckets = useMemo(() => groupUnriddenByRegion(nearby), [nearby]);
 
   // The backend returns nearby-unridden sorted by distance today, but the UI
@@ -153,67 +181,190 @@ export default function RoadMapPage() {
     [nearby],
   );
 
+  // Shared between the sidebar's "Use my location" and the map's
+  // "Center on me" so denial messaging, coordinate rounding, and the
+  // 10s timeout stay in lockstep across the two entry points.
+  const requestUserLocation = useCallback(
+    (onLocated: (lat: number, lng: number) => void) => {
+      if (typeof navigator === "undefined" || !navigator.geolocation) {
+        setNearbyError("Geolocation is not available in this browser");
+        return;
+      }
+      setLocating(true);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setLocating(false);
+          const lat = Number(pos.coords.latitude.toFixed(4));
+          const lng = Number(pos.coords.longitude.toFixed(4));
+          onLocated(lat, lng);
+        },
+        (err) => {
+          setLocating(false);
+          setNearbyError(
+            err.code === err.PERMISSION_DENIED
+              ? "Location permission denied. Enter coordinates below."
+              : "Could not read your location. Enter coordinates below.",
+          );
+        },
+        { timeout: 10_000 },
+      );
+    },
+    [],
+  );
+
   const handleUseMyLocation = useCallback(() => {
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setNearbyError("Geolocation is not available in this browser");
-      return;
+    requestUserLocation((lat, lng) => {
+      setCenter({ lat, lng, label: "My location" });
+      // Centre the MapLibre view too — the AC's "Center on me" is the
+      // same gesture as the Explore-near locator, so a single button
+      // drives both panels.
+      mapRef.current?.flyTo({ lat, lng });
+    });
+  }, [requestUserLocation]);
+
+  const handleCenterOnMe = useCallback(() => {
+    requestUserLocation((lat, lng) => {
+      mapRef.current?.flyTo({ lat, lng });
+    });
+  }, [requestUserLocation]);
+
+  // Schedule a single auto-reset back to "idle". Always cancels any
+  // pending timer first so back-to-back share attempts don't have a
+  // stale timer fire mid-flight and stomp over `{ kind: "creating" }`.
+  const scheduleShareReset = useCallback((delayMs: number) => {
+    if (shareResetTimerRef.current !== null) {
+      window.clearTimeout(shareResetTimerRef.current);
     }
-    setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLocating(false);
-        setCenter({
-          lat: Number(pos.coords.latitude.toFixed(4)),
-          lng: Number(pos.coords.longitude.toFixed(4)),
-          label: "My location",
-        });
-      },
-      (err) => {
-        setLocating(false);
-        setNearbyError(
-          err.code === err.PERMISSION_DENIED
-            ? "Location permission denied. Enter coordinates below."
-            : "Could not read your location. Enter coordinates below.",
-        );
-      },
-      { timeout: 10_000 },
-    );
+    shareResetTimerRef.current = window.setTimeout(() => {
+      shareResetTimerRef.current = null;
+      setShareState({ kind: "idle" });
+    }, delayMs);
+  }, []);
+
+  // Cancel any in-flight reset on unmount so we don't `setState` after
+  // the page has been torn down.
+  useEffect(() => {
+    return () => {
+      if (shareResetTimerRef.current !== null) {
+        window.clearTimeout(shareResetTimerRef.current);
+        shareResetTimerRef.current = null;
+      }
+    };
   }, []);
 
   const handleShare = useCallback(async () => {
     if (!stats) return;
-    const text = buildShareSummary(stats, periodStats, unitSystem);
-    const url =
-      typeof window !== "undefined" ? window.location.href : undefined;
-    const shareData: ShareData = {
-      title: "My Tarmoto exploration",
-      text,
-      ...(url ? { url } : {}),
-    };
+    // Cancel any pending reset BEFORE we touch shareState so a leftover
+    // timer can't flip us back to "idle" while a fresh request is in
+    // flight (cursor: stale timeout reset).
+    if (shareResetTimerRef.current !== null) {
+      window.clearTimeout(shareResetTimerRef.current);
+      shareResetTimerRef.current = null;
+    }
+    // Capability check first: if neither Web Share nor the async
+    // Clipboard API is available, the user has no way to retrieve the
+    // generated URL. Bail BEFORE persisting so we don't orphan rows in
+    // map_shares for browsers we can't deliver to (the previous flow
+    // would POST and then surface "Sharing is not supported").
+    const canWebShare =
+      typeof navigator !== "undefined" && typeof navigator.share === "function";
+    const canClipboard =
+      typeof navigator !== "undefined" &&
+      Boolean(navigator.clipboard?.writeText);
+    if (!canWebShare && !canClipboard) {
+      setShareState({
+        kind: "error",
+        message:
+          "Your browser doesn't support sharing or clipboard access — try a different browser.",
+      });
+      scheduleShareReset(3500);
+      return;
+    }
+
+    setShareState({ kind: "creating" });
+    let createdShareId: string | null = null;
     try {
+      const snapshot = buildMapShareSnapshot({
+        stats,
+        period,
+        segments: filteredRidden,
+        initialCenter: {
+          lat: center.lat,
+          lng: center.lng,
+          zoom: INITIAL_MAP_ZOOM,
+        },
+      });
+      const title = `My Tarmoto road map — ${stats.percent_explored}% explored`;
+      const { data } = await mapSharesApi.create({
+        title,
+        // The DTO accepts an opaque JSON object — narrow the typed snapshot
+        // shape to the API contract here so the rest of the function keeps
+        // its real types.
+        snapshot: snapshot as unknown as Record<string, unknown>,
+      });
+      createdShareId = data.id;
+      const fullUrl =
+        typeof window !== "undefined"
+          ? new URL(data.share_url, window.location.origin).toString()
+          : data.share_url;
+
+      const shareData: ShareData = {
+        title,
+        text: `Check out the roads I've ridden on Tarmoto — ${stats.percent_explored}% explored.`,
+        url: fullUrl,
+      };
+
       if (
-        typeof navigator !== "undefined" &&
-        typeof navigator.share === "function" &&
+        canWebShare &&
         (!navigator.canShare || navigator.canShare(shareData))
       ) {
         await navigator.share(shareData);
-        setShareState("shared");
-      } else if (
-        typeof navigator !== "undefined" &&
-        navigator.clipboard?.writeText
-      ) {
-        await navigator.clipboard.writeText(text);
-        setShareState("copied");
+        setShareState({ kind: "shared", url: fullUrl });
+      } else if (canClipboard) {
+        await navigator.clipboard.writeText(fullUrl);
+        setShareState({ kind: "copied", url: fullUrl });
       } else {
-        setShareState("error");
+        // Defensive: capability check above already guarantees one path
+        // is available, but if `canShare` rejects the payload we still
+        // need a fallback rather than silently doing nothing.
+        throw new Error("Sharing is not supported");
       }
-    } catch {
-      // A user-cancelled share on iOS Safari rejects; treat as idle, not error.
-      setShareState("idle");
-      return;
+      // Delivery succeeded — clear the rollback marker so the catch
+      // branch below doesn't revoke a share the user actually used.
+      createdShareId = null;
+    } catch (err) {
+      // Roll back the share row whenever post-create delivery fails
+      // (cancelled Web Share, denied clipboard write, unsupported
+      // canShare, etc.). Without this, repeated cancellations would
+      // accumulate orphaned `map_shares` rows.
+      if (createdShareId) {
+        // Best-effort cleanup: if the revoke itself fails we still want
+        // to surface the original delivery error to the user, not the
+        // cleanup error.
+        void mapSharesApi.revoke(createdShareId).catch(() => undefined);
+      }
+      // A user-cancelled Web Share rejects with AbortError on iOS Safari —
+      // treat that as idle (the user explicitly opted out) rather than as
+      // an error toast.
+      if (err instanceof Error && err.name === "AbortError") {
+        setShareState({ kind: "idle" });
+        return;
+      }
+      setShareState({
+        kind: "error",
+        message:
+          err instanceof Error ? err.message : "Could not generate share link",
+      });
     }
-    window.setTimeout(() => setShareState("idle"), 2500);
-  }, [stats, periodStats, unitSystem]);
+    scheduleShareReset(3500);
+  }, [
+    stats,
+    period,
+    filteredRidden,
+    center.lat,
+    center.lng,
+    scheduleShareReset,
+  ]);
 
   if (loading) {
     return (
@@ -266,36 +417,40 @@ export default function RoadMapPage() {
           ))}
         </div>
 
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
           <ShareButton state={shareState} onClick={handleShare} />
         </div>
       </div>
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_360px]">
-        {/* Map placeholder */}
         <div className="relative bg-slate-900 border-b lg:border-b-0 lg:border-r border-slate-800 min-h-[320px]">
-          <MapLegend riddenCount={riddenSegmentIds.length} />
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="text-center">
-              <MapPin size={56} className="mx-auto text-slate-700 mb-4" />
-              <p className="text-slate-500 text-lg font-medium">
-                Personal Road Map
-              </p>
-              <p className="text-slate-600 text-sm mt-1 max-w-md mx-auto px-4">
-                Ridden roads in Tarmoto Cyan, unridden dimmed. Full-screen
-                MapLibre layer lands with INFRA #79.
-              </p>
-            </div>
-          </div>
+          <PersonalRoadMap
+            ref={mapRef}
+            initialCenter={{
+              lat: center.lat,
+              lng: center.lng,
+              zoom: INITIAL_MAP_ZOOM,
+            }}
+            ridden={filteredRidden}
+          />
+          <MapLegend riddenCount={filteredRidden.length} />
+          <button
+            type="button"
+            onClick={handleCenterOnMe}
+            className="absolute bottom-4 right-4 z-10 flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-950/85 border border-slate-800 backdrop-blur text-xs text-slate-200 hover:bg-slate-900 transition"
+            title="Center on me"
+          >
+            <Crosshair size={12} /> Center on me
+          </button>
         </div>
 
-        {/* Sidebar */}
         <aside className="overflow-y-auto bg-slate-950/60">
           <section className="p-5 border-b border-slate-800 space-y-4">
             <SummaryCards
               stats={stats}
               periodStats={periodStats}
               units={unitSystem}
+              riddenInPeriod={filteredRidden.length}
             />
           </section>
 
@@ -311,6 +466,7 @@ export default function RoadMapPage() {
               onUseMyLocation={handleUseMyLocation}
               onCoordinatesChanged={(lat, lng, label) => {
                 setCenter({ lat, lng, label });
+                mapRef.current?.flyTo({ lat, lng });
               }}
             />
           </section>
@@ -404,14 +560,26 @@ interface SummaryCardsProps {
   stats: ExplorationStats;
   periodStats: ReturnType<typeof computePeriodStats>;
   units: UnitSystem;
+  riddenInPeriod: number;
 }
 
-function SummaryCards({ stats, periodStats, units }: SummaryCardsProps) {
+function SummaryCards({
+  stats,
+  periodStats,
+  units,
+  riddenInPeriod,
+}: SummaryCardsProps) {
+  const isAllTime = periodStats.period === "all";
   const cards = [
     {
-      label: "Segments ridden",
-      value: stats.ridden_segments.toLocaleString(),
-      sub: `of ${stats.total_segments.toLocaleString()} total`,
+      label: isAllTime ? "Segments ridden" : "Segments highlighted",
+      value: (isAllTime
+        ? stats.ridden_segments
+        : riddenInPeriod
+      ).toLocaleString(),
+      sub: isAllTime
+        ? `of ${stats.total_segments.toLocaleString()} total`
+        : `of ${stats.ridden_segments.toLocaleString()} all-time ridden`,
     },
     {
       label: "All-time distance",
@@ -587,34 +755,43 @@ function NearbyRow({ segment, units }: NearbyRowProps) {
 }
 
 interface ShareButtonProps {
-  state: "idle" | "copied" | "shared" | "error";
+  state: ShareState;
   onClick: () => void;
 }
 
 function ShareButton({ state, onClick }: ShareButtonProps) {
   const label =
-    state === "copied"
-      ? "Copied!"
-      : state === "shared"
-        ? "Shared"
-        : state === "error"
-          ? "Share unavailable"
-          : "Share stats";
+    state.kind === "creating"
+      ? "Creating link…"
+      : state.kind === "copied"
+        ? "Link copied!"
+        : state.kind === "shared"
+          ? "Shared"
+          : state.kind === "error"
+            ? "Share failed"
+            : "Share my map";
   const Icon =
-    state === "copied"
-      ? Check
-      : state === "shared"
+    state.kind === "creating"
+      ? Loader2
+      : state.kind === "copied"
         ? Check
-        : state === "error"
-          ? Copy
-          : Share2;
+        : state.kind === "shared"
+          ? Check
+          : state.kind === "error"
+            ? Copy
+            : Share2;
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-medium hover:bg-cyan-300 transition"
+      disabled={state.kind === "creating"}
+      title={state.kind === "error" ? state.message : undefined}
+      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-medium hover:bg-cyan-300 transition disabled:opacity-60"
     >
-      <Icon size={14} />
+      <Icon
+        size={14}
+        className={state.kind === "creating" ? "animate-spin" : undefined}
+      />
       {label}
     </button>
   );
@@ -646,7 +823,7 @@ interface MapLegendProps {
 
 function MapLegend({ riddenCount }: MapLegendProps) {
   return (
-    <div className="absolute top-4 left-4 z-10 rounded-xl bg-slate-950/80 border border-slate-800 backdrop-blur px-4 py-3 text-xs text-slate-300 space-y-2">
+    <div className="absolute top-4 left-4 z-10 rounded-xl bg-slate-950/80 border border-slate-800 backdrop-blur px-4 py-3 text-xs text-slate-300 space-y-2 pointer-events-none">
       <div className="flex items-center gap-2">
         <span className="h-1 w-6 rounded-full bg-tarmoto-cyan" />
         Ridden ({riddenCount.toLocaleString()} segments)
@@ -654,6 +831,9 @@ function MapLegend({ riddenCount }: MapLegendProps) {
       <div className="flex items-center gap-2">
         <span className="h-1 w-6 rounded-full bg-slate-600" />
         Unridden
+      </div>
+      <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+        <MapPin size={10} /> Hover a highlighted road for ride details
       </div>
     </div>
   );
