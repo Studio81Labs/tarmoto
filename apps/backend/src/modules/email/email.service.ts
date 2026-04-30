@@ -215,13 +215,21 @@ export class EmailService {
   }
 
   private bulkHeaders(tag: EmailTag): Record<string, string> {
-    // Gmail/Yahoo bulk-sender requirements: include a List-Unsubscribe
-    // header on every transactional message even when the body skips
-    // the marketing unsubscribe link. Pointing at the preferences page
-    // gives a single canonical place for users to manage receipts.
+    // Gmail/Yahoo bulk-sender requirements: include a `List-Unsubscribe`
+    // header pointing at a place where the user can manage receipts.
+    // The companion `/settings/notifications` page is a real,
+    // user-authenticated UI for this — mailbox providers treat the
+    // URL form as a "click here to manage" link.
+    //
+    // We deliberately do NOT advertise `List-Unsubscribe-Post` /
+    // RFC 8058 one-click unsubscribe yet: that requires a backend
+    // POST endpoint that accepts an unauthenticated request from
+    // mailbox providers, and we don't have one. Advertising it
+    // without a working endpoint would hurt deliverability worse
+    // than omitting it. Add the header back in the same change that
+    // ships the `POST /unsubscribe?token=...` route.
     return {
       'List-Unsubscribe': `<${this.preferencesUrl()}>`,
-      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
       'X-Tarmoto-Email-Category': tag,
     };
   }

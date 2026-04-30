@@ -52,15 +52,16 @@ describe('EmailService', () => {
         'https://app.tarmoto.app/verify-email?token=abc',
       );
       expect(message.tag).toBe('verification');
-      // Per the AC, transactional emails carry List-Unsubscribe so
-      // bulk-sender filters group us with compliant senders even
-      // though the body itself omits the marketing unsubscribe link.
+      // Per the AC, transactional emails carry `List-Unsubscribe`
+      // (URL form) so bulk-sender filters group us with compliant
+      // senders even though the body itself omits the marketing
+      // unsubscribe link. We deliberately do NOT advertise
+      // `List-Unsubscribe-Post` until a real POST `/unsubscribe`
+      // endpoint exists — see comment in `bulkHeaders`.
       expect(message.headers?.['List-Unsubscribe']).toBe(
         '<https://app.tarmoto.app/settings/notifications>',
       );
-      expect(message.headers?.['List-Unsubscribe-Post']).toBe(
-        'List-Unsubscribe=One-Click',
-      );
+      expect(message.headers?.['List-Unsubscribe-Post']).toBeUndefined();
       expect(message.headers?.['X-Tarmoto-Email-Category']).toBe(
         'verification',
       );
