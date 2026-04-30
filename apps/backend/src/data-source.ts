@@ -55,6 +55,7 @@ import { AddCrashAlerts1715400000000 } from './migrations/1715400000000-AddCrash
 import { AddAccountDeletion1715500000000 } from './migrations/1715500000000-AddAccountDeletion.js';
 import { AddDataExportRequests1715600000000 } from './migrations/1715600000000-AddDataExportRequests.js';
 import { AddEmailVerificationAndPasswordReset1715700000000 } from './migrations/1715700000000-AddEmailVerificationAndPasswordReset.js';
+import { AddPasswordChangedAtAndUniqueResetToken1715800000000 } from './migrations/1715800000000-AddPasswordChangedAtAndUniqueResetToken.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -128,6 +129,7 @@ export const AppDataSource = new DataSource({
     AddAccountDeletion1715500000000,
     AddDataExportRequests1715600000000,
     AddEmailVerificationAndPasswordReset1715700000000,
+    AddPasswordChangedAtAndUniqueResetToken1715800000000,
   ],
   synchronize: false,
 });

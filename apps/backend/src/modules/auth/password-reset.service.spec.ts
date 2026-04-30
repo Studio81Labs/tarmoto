@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
 import { Test, type TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { BadRequestException } from '@nestjs/common';
+import type { EntityManager } from 'typeorm';
 import { PasswordResetService } from './password-reset.service.js';
 import { EmailService } from '../email/email.service.js';
 import { PasswordResetToken } from '../../entities/password-reset-token.entity.js';
@@ -19,6 +20,8 @@ describe('PasswordResetService', () => {
     createQueryBuilder: jest.Mock;
   };
   let userRepo: { findOne: jest.Mock; update: jest.Mock };
+  let txManager: { update: jest.Mock; insert: jest.Mock };
+  let dataSource: { transaction: jest.Mock };
   let email: {
     sendPasswordReset: jest.Mock;
     sendPasswordChanged: jest.Mock;
@@ -51,6 +54,18 @@ describe('PasswordResetService', () => {
       findOne: jest.fn(),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
+
+    txManager = {
+      update: jest.fn().mockResolvedValue({ affected: 0 }),
+      insert: jest.fn().mockResolvedValue({ identifiers: [{ id: 'tok-x' }] }),
+    };
+    dataSource = {
+      transaction: jest.fn(
+        async (cb: (manager: EntityManager) => Promise<unknown>) =>
+          cb(txManager as unknown as EntityManager),
+      ),
+    };
+
     email = {
       sendPasswordReset: jest.fn().mockResolvedValue(null),
       sendPasswordChanged: jest.fn().mockResolvedValue(null),
@@ -64,6 +79,7 @@ describe('PasswordResetService', () => {
           useValue: tokenRepo,
         },
         { provide: getRepositoryToken(User), useValue: userRepo },
+        { provide: getDataSourceToken(), useValue: dataSource },
         { provide: EmailService, useValue: email },
         {
           provide: ConfigService,
@@ -87,17 +103,21 @@ describe('PasswordResetService', () => {
 
       await service.requestReset('rider@tarmoto.app', '203.0.113.5');
 
-      // Pre-existing un-consumed tokens are invalidated first so a
-      // stolen prior link can't be replayed.
-      expect(tokenRepo.update).toHaveBeenCalledWith(
+      // Token rotation runs in a transaction now: the prior-token
+      // UPDATE and the fresh-token INSERT are both routed through the
+      // transaction manager, gated by `uniq_password_reset_active` so
+      // concurrent requests can't end up with two live tokens.
+      expect(dataSource.transaction).toHaveBeenCalledTimes(1);
+      expect(txManager.update).toHaveBeenCalledWith(
+        PasswordResetToken,
         expect.objectContaining({
           user_id: 'user-1',
           consumed_at: expect.any(Object),
         }),
         expect.objectContaining({ consumed_at: expect.any(Date) }),
       );
-      expect(tokenRepo.insert).toHaveBeenCalledTimes(1);
-      const inserted = tokenRepo.insert.mock.calls[0][0] as {
+      expect(txManager.insert).toHaveBeenCalledTimes(1);
+      const inserted = txManager.insert.mock.calls[0][1] as {
         user_id: string;
         token_hash: string;
         expires_at: Date;
@@ -127,7 +147,7 @@ describe('PasswordResetService', () => {
 
       await service.requestReset('ghost@nowhere.example', null);
 
-      expect(tokenRepo.insert).not.toHaveBeenCalled();
+      expect(txManager.insert).not.toHaveBeenCalled();
       expect(email.sendPasswordReset).not.toHaveBeenCalled();
     });
 
@@ -139,7 +159,22 @@ describe('PasswordResetService', () => {
 
       await service.requestReset('rider@tarmoto.app', null);
 
-      expect(tokenRepo.insert).not.toHaveBeenCalled();
+      expect(txManager.insert).not.toHaveBeenCalled();
+      expect(email.sendPasswordReset).not.toHaveBeenCalled();
+    });
+
+    it('treats a unique-violation as a concurrent request and skips the email', async () => {
+      userRepo.findOne.mockResolvedValue(buildUser());
+      // Simulate the partial unique index firing on a concurrent insert.
+      const uniqErr = Object.assign(new Error('duplicate key value'), {
+        code: '23505',
+      });
+      txManager.insert.mockRejectedValueOnce(uniqErr);
+
+      await expect(
+        service.requestReset('rider@tarmoto.app', null),
+      ).resolves.toBeUndefined();
+
       expect(email.sendPasswordReset).not.toHaveBeenCalled();
     });
   });
@@ -166,6 +201,9 @@ describe('PasswordResetService', () => {
         { id: 'user-1' },
         expect.objectContaining({
           password_hash: expect.stringMatching(/^\$2[ab]\$/),
+          // Stamp the cutoff so AuthService.refresh rejects any
+          // refresh token whose `orig_iat` predates the reset.
+          password_changed_at: expect.any(Date),
         }),
       );
       expect(email.sendPasswordChanged).toHaveBeenCalledWith(

@@ -73,9 +73,20 @@ describe('EmailVerificationService', () => {
   });
 
   describe('issueAndSend', () => {
-    it('persists a hashed token and emails the verification link', async () => {
+    it('invalidates prior tokens, persists a hashed token, and emails the verification link', async () => {
       const user = buildUser();
       await service.issueAndSend(user);
+
+      // Prior un-consumed tokens must be invalidated before issuing a
+      // new one — otherwise resend would accumulate multiple valid
+      // 24h links and a leaked old one stays usable.
+      expect(tokenRepo.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 'user-1',
+          consumed_at: expect.any(Object),
+        }),
+        expect.objectContaining({ consumed_at: expect.any(Date) }),
+      );
 
       expect(tokenRepo.insert).toHaveBeenCalledTimes(1);
       const inserted = tokenRepo.insert.mock.calls[0][0] as {

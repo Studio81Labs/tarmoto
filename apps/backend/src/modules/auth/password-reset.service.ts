@@ -1,13 +1,16 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, LessThanOrEqual, Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, IsNull, LessThanOrEqual, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { PasswordResetToken } from '../../entities/password-reset-token.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { EmailService } from '../email/email.service.js';
 import { getCompanionUrl } from '../../common/companion-url.js';
 import { hashToken, issueToken } from './token-utils.js';
+
+// Postgres unique_violation SQLSTATE.
+const PG_UNIQUE_VIOLATION = '23505';
 
 const RESET_TOKEN_TTL_MINUTES = 15;
 const RESET_TOKEN_TTL_MS = RESET_TOKEN_TTL_MINUTES * 60 * 1000;
@@ -27,6 +30,8 @@ export class PasswordResetService {
     private readonly tokenRepo: Repository<PasswordResetToken>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
     private readonly email: EmailService,
     private readonly config: ConfigService,
   ) {}
@@ -71,22 +76,45 @@ export class PasswordResetService {
       return;
     }
 
-    await this.tokenRepo.update(
-      {
-        user_id: user.id,
-        consumed_at: IsNull(),
-      },
-      { consumed_at: new Date() },
-    );
-
     const token = issueToken();
     const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS);
-    await this.tokenRepo.insert({
-      user_id: user.id,
-      token_hash: token.hash,
-      expires_at: expiresAt,
-      requested_ip: ip,
-    });
+
+    // Invalidate any prior un-consumed token AND insert the fresh one
+    // inside a single transaction. The `uniq_password_reset_active`
+    // partial unique index (migration 1715800000000) guarantees at
+    // most one row per user with `consumed_at IS NULL`. If two
+    // concurrent requests for the same user race here, the slower one
+    // hits the unique violation; we treat that as "the other request
+    // already issued a fresh token" — the user got an email either
+    // way, no need to retry or fail.
+    try {
+      await this.dataSource.transaction(async (manager) => {
+        await manager.update(
+          PasswordResetToken,
+          { user_id: user.id, consumed_at: IsNull() },
+          { consumed_at: new Date() },
+        );
+        await manager.insert(PasswordResetToken, {
+          user_id: user.id,
+          token_hash: token.hash,
+          expires_at: expiresAt,
+          requested_ip: ip,
+        });
+      });
+    } catch (err) {
+      if (
+        typeof err === 'object' &&
+        err !== null &&
+        'code' in err &&
+        (err as { code: string }).code === PG_UNIQUE_VIOLATION
+      ) {
+        this.logger.log(
+          `Concurrent reset request for user ${user.id} — relying on the winner's token; not sending a duplicate email.`,
+        );
+        return;
+      }
+      throw err;
+    }
 
     const resetUrl = `${getCompanionUrl(this.config)}/reset-password?token=${encodeURIComponent(
       token.raw,
@@ -146,9 +174,14 @@ export class PasswordResetService {
     }
 
     const password_hash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    // `password_changed_at` is a hard cutoff: any refresh token whose
+    // `orig_iat` is older than this timestamp is rejected by
+    // `AuthService.refresh`. Bumping it here means a stolen refresh
+    // token stops minting new access tokens within the 1-hour access
+    // -token TTL after the legitimate owner completes the reset.
     await this.userRepo.update(
       { id: user.id },
-      { password_hash, updated_at: now },
+      { password_hash, password_changed_at: now, updated_at: now },
     );
 
     // Pre-emptively invalidate any other outstanding reset tokens for

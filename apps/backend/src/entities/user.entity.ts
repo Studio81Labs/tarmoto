@@ -84,6 +84,9 @@ export class User {
   email_verified_at!: Date | null;
 
   @Column({ type: 'timestamptz', nullable: true })
+  password_changed_at!: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
   deleted_at!: Date | null;
 
   @Column({ type: 'timestamptz', nullable: true })

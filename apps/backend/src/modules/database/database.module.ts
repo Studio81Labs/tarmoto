@@ -30,6 +30,7 @@ import { AddCrashAlerts1715400000000 } from '../../migrations/1715400000000-AddC
 import { AddAccountDeletion1715500000000 } from '../../migrations/1715500000000-AddAccountDeletion.js';
 import { AddDataExportRequests1715600000000 } from '../../migrations/1715600000000-AddDataExportRequests.js';
 import { AddEmailVerificationAndPasswordReset1715700000000 } from '../../migrations/1715700000000-AddEmailVerificationAndPasswordReset.js';
+import { AddPasswordChangedAtAndUniqueResetToken1715800000000 } from '../../migrations/1715800000000-AddPasswordChangedAtAndUniqueResetToken.js';
 import {
   User,
   UserContact,
@@ -152,6 +153,7 @@ const entities = [
             AddAccountDeletion1715500000000,
             AddDataExportRequests1715600000000,
             AddEmailVerificationAndPasswordReset1715700000000,
+            AddPasswordChangedAtAndUniqueResetToken1715800000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.

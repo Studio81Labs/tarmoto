@@ -123,6 +123,20 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
+    // Force-invalidate any session whose original-issue time is older
+    // than the user's last password change. Without this, an attacker
+    // who already stole a refresh token would keep minting access
+    // tokens for the full 90-day refresh-token lifetime even after
+    // the legitimate owner reset their password. The 1-hour access-
+    // token TTL bounds how long a stolen access token still works
+    // after the reset.
+    if (
+      user.password_changed_at != null &&
+      sessionStart * 1000 < user.password_changed_at.getTime()
+    ) {
+      throw new UnauthorizedException('Session expired, please log in again');
+    }
+
     return this.buildAuthResponse(user, sessionStart);
   }
 

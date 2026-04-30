@@ -7,6 +7,16 @@ import {
 
 const RESEND_ENDPOINT = 'https://api.resend.com/emails';
 
+// Hard cap on a single Resend HTTP call. Without this, a TCP blackhole
+// (Resend reachable but not responding) would hang the awaiting caller
+// for the system-level TCP timeout — typically 2+ minutes. Mail is
+// fire-and-forget at our boundaries, but `AuthService.register`
+// awaits the verification-email send before the registration response
+// completes, so a hang there would block real users. 10s is well above
+// Resend's median latency and well below anything we'd want a user to
+// wait for a 204.
+const RESEND_TIMEOUT_MS = 10_000;
+
 interface ResendApiResponse {
   id?: string;
   message?: string;
@@ -57,14 +67,36 @@ export class ResendEmailProvider implements EmailProvider {
       payload['tags'] = [{ name: 'category', value: message.tag }];
     }
 
-    const res = await fetch(RESEND_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.config.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
+    let res: Response;
+    try {
+      res = await fetch(RESEND_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.config.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(RESEND_TIMEOUT_MS),
+      });
+    } catch (err) {
+      // AbortSignal.timeout fires `TimeoutError` (a DOMException). Both
+      // the timeout and a network-level error land here; surface them
+      // as a normal Error so EmailService's fallback path picks the
+      // log provider up cleanly instead of seeing an opaque DOM type.
+      const reason = err instanceof Error ? err.message : String(err);
+      const isTimeout = err instanceof Error && err.name === 'TimeoutError';
+      this.logger.warn(
+        `Resend ${
+          isTimeout ? `timed out after ${RESEND_TIMEOUT_MS}ms` : 'fetch failed'
+        } for ${message.to}: ${reason}`,
+      );
+      throw new Error(
+        isTimeout
+          ? `Resend send timed out after ${RESEND_TIMEOUT_MS}ms`
+          : `Resend send failed: ${reason}`,
+        { cause: err },
+      );
+    }
 
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as ResendApiResponse;

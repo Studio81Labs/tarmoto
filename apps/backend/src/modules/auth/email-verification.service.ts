@@ -42,6 +42,15 @@ export class EmailVerificationService {
    * and the user can request a resend.
    */
   async issueAndSend(user: User): Promise<void> {
+    // Invalidate any prior un-consumed token for this user before
+    // issuing a new one. Mirrors the password-reset flow: a stolen
+    // verification link stops working the moment the legitimate user
+    // clicks "send me another verification email."
+    await this.tokenRepo.update(
+      { user_id: user.id, consumed_at: IsNull() },
+      { consumed_at: new Date() },
+    );
+
     const token = issueToken();
     const expiresAt = new Date(Date.now() + VERIFY_TOKEN_TTL_MS);
 
