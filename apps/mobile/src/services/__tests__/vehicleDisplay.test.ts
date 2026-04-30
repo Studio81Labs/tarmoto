@@ -3,6 +3,7 @@ import {
   VehicleDisplayController,
   buildHazardSearchItems,
   buildNavigationPaneItems,
+  formatNavDistanceMeters,
   formatNextManeuverRow,
   matchHazardTypeFromText,
   type VehicleDisplayBridge,
@@ -198,6 +199,35 @@ describe("VehicleDisplayController", () => {
 
     expect(bridge.closeSearch).toHaveBeenCalledTimes(1);
     expect(bridge.unmountNavigation).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("formatNavDistanceMeters", () => {
+  it("rounds to 10 m granularity below 1 km", () => {
+    expect(formatNavDistanceMeters(0)).toBe("0 m");
+    expect(formatNavDistanceMeters(7)).toBe("10 m");
+    expect(formatNavDistanceMeters(324)).toBe("320 m");
+    expect(formatNavDistanceMeters(326)).toBe("330 m");
+  });
+
+  it("renders one-decimal kilometres at and above 1 km", () => {
+    expect(formatNavDistanceMeters(1000)).toBe("1.0 km");
+    expect(formatNavDistanceMeters(1500)).toBe("1.5 km");
+    expect(formatNavDistanceMeters(12345)).toBe("12.3 km");
+  });
+
+  it("never produces '1000 m' on the boundary (995–999 m → 1.0 km)", () => {
+    // Without the post-round threshold check, Math.round(995/10)*10
+    // would render "1000 m", then snap back to "990 m" on the next
+    // tick — a backwards-looking flicker at a glance from the bike.
+    expect(formatNavDistanceMeters(995)).toBe("1.0 km");
+    expect(formatNavDistanceMeters(999)).toBe("1.0 km");
+  });
+
+  it("collapses non-finite / negative inputs to '0 m'", () => {
+    expect(formatNavDistanceMeters(-5)).toBe("0 m");
+    expect(formatNavDistanceMeters(NaN)).toBe("0 m");
+    expect(formatNavDistanceMeters(Infinity)).toBe("0 m");
   });
 });
 

@@ -176,10 +176,18 @@ export interface NavigationPaneItem {
  * snapshot expresses upcoming-maneuver distance in metres rather than
  * cumulative ride distance in kilometres — switching units below 1 km
  * keeps "320 m to turn" readable on the bike display.
+ *
+ * The 10-m rounding is applied before the unit threshold so a 995 m
+ * input snaps to "1.0 km" rather than briefly rendering "1000 m" and
+ * then dropping to "990 m" a tick later — that backwards-looking
+ * discontinuity is jarring at a glance from the bike.
  */
-function formatNavDistanceMeters(meters: number): string {
+export function formatNavDistanceMeters(meters: number): string {
   if (!Number.isFinite(meters) || meters <= 0) return "0 m";
-  if (meters < 1000) return `${Math.round(meters / 10) * 10} m`;
+  if (meters < 1000) {
+    const rounded = Math.round(meters / 10) * 10;
+    if (rounded < 1000) return `${rounded} m`;
+  }
   return `${(meters / 1000).toFixed(1)} km`;
 }
 
