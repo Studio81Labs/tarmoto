@@ -209,6 +209,7 @@ export class DataExportService {
     if (effectiveStatus === 'ready') {
       const exp = request.expires_at.getTime();
       const sig = signDownloadUrl({
+        userId: request.user_id,
         requestId: request.id,
         expiresAt: exp,
         secret: this.signingSecret(),

@@ -1,6 +1,12 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 export type SignArgs = {
+  // Binding userId into the payload (rather than just requestId) means
+  // a valid signature for one user's row cannot be reused or forged
+  // against another user's row, even if request IDs are guessable. The
+  // download endpoint pulls userId from the row itself at verify time,
+  // so a leaked URL stays scoped to the user it was generated for.
+  userId: string;
   requestId: string;
   expiresAt: number;
   secret: string;
@@ -11,11 +17,12 @@ export type VerifyArgs = SignArgs & { signature: string };
 export type VerifyResult = 'valid' | 'invalid' | 'expired';
 
 export function signDownloadUrl({
+  userId,
   requestId,
   expiresAt,
   secret,
 }: SignArgs): string {
-  const payload = `${requestId}:${expiresAt}`;
+  const payload = `${userId}:${requestId}:${expiresAt}`;
   return createHmac('sha256', secret).update(payload).digest('hex');
 }
 
@@ -27,6 +34,7 @@ export function signDownloadUrl({
 const HEX_SIGNATURE = /^[0-9a-f]{64}$/;
 
 export function verifyDownloadSignature({
+  userId,
   requestId,
   expiresAt,
   signature,
@@ -34,7 +42,12 @@ export function verifyDownloadSignature({
 }: VerifyArgs): VerifyResult {
   if (Date.now() > expiresAt) return 'expired';
   if (!HEX_SIGNATURE.test(signature)) return 'invalid';
-  const expected = signDownloadUrl({ requestId, expiresAt, secret });
+  const expected = signDownloadUrl({
+    userId,
+    requestId,
+    expiresAt,
+    secret,
+  });
   // Both buffers are guaranteed equal-length (64 bytes) by the regex
   // above, so timingSafeEqual cannot throw.
   const ok = timingSafeEqual(

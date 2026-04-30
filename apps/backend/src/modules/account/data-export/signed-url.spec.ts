@@ -2,16 +2,19 @@ import { signDownloadUrl, verifyDownloadSignature } from './signed-url.js';
 
 describe('signed-url', () => {
   const secret = 'test-secret-please-change';
+  const userId = 'user-1';
 
   it('verifies a freshly signed token', () => {
     const expiresAt = Date.now() + 60_000;
     const sig = signDownloadUrl({
+      userId,
       requestId: 'req-1',
       expiresAt,
       secret,
     });
     expect(
       verifyDownloadSignature({
+        userId,
         requestId: 'req-1',
         expiresAt,
         signature: sig,
@@ -23,13 +26,34 @@ describe('signed-url', () => {
   it('rejects a tampered request id', () => {
     const expiresAt = Date.now() + 60_000;
     const sig = signDownloadUrl({
+      userId,
       requestId: 'req-1',
       expiresAt,
       secret,
     });
     expect(
       verifyDownloadSignature({
+        userId,
         requestId: 'req-2',
+        expiresAt,
+        signature: sig,
+        secret,
+      }),
+    ).toBe('invalid');
+  });
+
+  it('rejects a tampered user id (cross-user replay defense)', () => {
+    const expiresAt = Date.now() + 60_000;
+    const sig = signDownloadUrl({
+      userId: 'user-A',
+      requestId: 'req-1',
+      expiresAt,
+      secret,
+    });
+    expect(
+      verifyDownloadSignature({
+        userId: 'user-B',
+        requestId: 'req-1',
         expiresAt,
         signature: sig,
         secret,
@@ -40,12 +64,14 @@ describe('signed-url', () => {
   it('rejects an expired token', () => {
     const expiresAt = Date.now() - 1;
     const sig = signDownloadUrl({
+      userId,
       requestId: 'req-1',
       expiresAt,
       secret,
     });
     expect(
       verifyDownloadSignature({
+        userId,
         requestId: 'req-1',
         expiresAt,
         signature: sig,
@@ -57,12 +83,14 @@ describe('signed-url', () => {
   it('rejects a wrong secret', () => {
     const expiresAt = Date.now() + 60_000;
     const sig = signDownloadUrl({
+      userId,
       requestId: 'req-1',
       expiresAt,
       secret,
     });
     expect(
       verifyDownloadSignature({
+        userId,
         requestId: 'req-1',
         expiresAt,
         signature: sig,
@@ -75,6 +103,7 @@ describe('signed-url', () => {
     const expiresAt = Date.now() + 60_000;
     expect(
       verifyDownloadSignature({
+        userId,
         requestId: 'req-1',
         expiresAt,
         signature: 'shorty',
@@ -91,6 +120,7 @@ describe('signed-url', () => {
     const nonAscii = '★'.repeat(64);
     expect(
       verifyDownloadSignature({
+        userId,
         requestId: 'req-1',
         expiresAt,
         signature: nonAscii,
@@ -102,12 +132,14 @@ describe('signed-url', () => {
   it('rejects uppercase hex (signatures are emitted lowercase)', () => {
     const expiresAt = Date.now() + 60_000;
     const sig = signDownloadUrl({
+      userId,
       requestId: 'req-1',
       expiresAt,
       secret,
     }).toUpperCase();
     expect(
       verifyDownloadSignature({
+        userId,
         requestId: 'req-1',
         expiresAt,
         signature: sig,

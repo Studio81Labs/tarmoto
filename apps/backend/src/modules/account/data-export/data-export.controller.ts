@@ -117,7 +117,23 @@ export class DataExportController {
     if (!Number.isFinite(expiresAt) || !signature) {
       throw new HttpException('missing signature', 403);
     }
+    // Cheap cross-cutting check first: if the URL is past its claimed
+    // expiry, no DB lookup is needed and we can short-circuit.
+    if (Date.now() > expiresAt) {
+      throw new HttpException('link expired', 410);
+    }
+
+    // Load the row before verifying — the signature is now bound to
+    // user_id, which we can only get from the row itself. To avoid
+    // leaking row existence to URL-probers, fold "no row" / "wrong
+    // status" into the same 403 the bad-signature path returns.
+    const row = await this.service.findById(id);
+    if (!row || row.status !== 'ready' || !row.storage_key) {
+      throw new HttpException('invalid signature', 403);
+    }
+
     const verdict = verifyDownloadSignature({
+      userId: row.user_id,
       requestId: id,
       expiresAt,
       signature,
@@ -128,11 +144,6 @@ export class DataExportController {
     }
     if (verdict !== 'valid') {
       throw new HttpException('invalid signature', 403);
-    }
-
-    const row = await this.service.findById(id);
-    if (!row || row.status !== 'ready' || !row.storage_key) {
-      throw new HttpException('not available', 410);
     }
     if (row.expires_at.getTime() < Date.now()) {
       throw new HttpException('link expired', 410);

@@ -106,6 +106,7 @@ describe('DataExportController', () => {
     const requestId = 'req-1';
     const expiresAt = Date.now() + 60_000;
     const sig = signDownloadUrl({
+      userId: 'u1',
       requestId,
       expiresAt,
       secret: 'test-secret',
@@ -143,6 +144,7 @@ describe('DataExportController', () => {
     const requestId = 'req-1';
     const expiresAt = Date.now() + 60_000;
     const sig = signDownloadUrl({
+      userId: 'u1',
       requestId,
       expiresAt,
       secret: 'test-secret',
@@ -170,6 +172,7 @@ describe('DataExportController', () => {
     const requestId = 'req-1';
     const expiresAt = Date.now() + 60_000;
     const sig = signDownloadUrl({
+      userId: 'u1',
       requestId,
       expiresAt,
       secret: 'test-secret',
@@ -203,8 +206,42 @@ describe('DataExportController', () => {
   it('GET download rejects bad signature with 403', async () => {
     const requestId = 'req-1';
     const expiresAt = Date.now() + 60_000;
+    service.findById.mockResolvedValue({
+      id: requestId,
+      user_id: 'u1',
+      status: 'ready',
+      storage_key: 'u1/req-1.zip',
+      expires_at: new Date(expiresAt),
+    });
     await expect(
       controller.download(requestId, 'badsig', String(expiresAt), {
+        set: jest.fn(),
+        status: jest.fn(),
+        send: jest.fn(),
+      } as never),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('GET download rejects a signature signed for a different user with 403', async () => {
+    const requestId = 'req-1';
+    const expiresAt = Date.now() + 60_000;
+    // Attacker signs with their own user id but points the URL at the
+    // victim's request id.
+    const sigForAttacker = signDownloadUrl({
+      userId: 'attacker',
+      requestId,
+      expiresAt,
+      secret: 'test-secret',
+    });
+    service.findById.mockResolvedValue({
+      id: requestId,
+      user_id: 'victim',
+      status: 'ready',
+      storage_key: 'victim/req-1.zip',
+      expires_at: new Date(expiresAt),
+    });
+    await expect(
+      controller.download(requestId, sigForAttacker, String(expiresAt), {
         set: jest.fn(),
         status: jest.fn(),
         send: jest.fn(),
@@ -216,6 +253,7 @@ describe('DataExportController', () => {
     const requestId = 'req-1';
     const expiresAt = Date.now() - 1;
     const sig = signDownloadUrl({
+      userId: 'u1',
       requestId,
       expiresAt,
       secret: 'test-secret',
@@ -229,10 +267,11 @@ describe('DataExportController', () => {
     ).rejects.toMatchObject({ status: 410 });
   });
 
-  it('GET download rejects when row is not ready', async () => {
+  it('GET download rejects when row is not ready (folded into 403 to avoid existence-leak)', async () => {
     const requestId = 'req-1';
     const expiresAt = Date.now() + 60_000;
     const sig = signDownloadUrl({
+      userId: 'u1',
       requestId,
       expiresAt,
       secret: 'test-secret',
@@ -250,7 +289,7 @@ describe('DataExportController', () => {
         status: jest.fn(),
         send: jest.fn(),
       } as never),
-    ).rejects.toMatchObject({ status: 410 });
+    ).rejects.toMatchObject({ status: 403 });
   });
 
   it('GET download rejects missing signature with 403', async () => {
