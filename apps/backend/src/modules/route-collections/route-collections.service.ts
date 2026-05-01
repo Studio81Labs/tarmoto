@@ -74,7 +74,16 @@ export class RouteCollectionsService {
         slug,
       }),
     );
-    return this.toDetailResponse(created, []);
+    // Re-read with the owner relation so the detail response carries
+    // `owner_name`. `toDetailResponse` reads `c.owner?.display_name`, and
+    // `save()` doesn't hydrate relations — without this round trip the POST
+    // response would always send `owner_name: ''`, drifting from getOwned /
+    // update / getBySlug which all populate it.
+    const withOwner = await this.collectionRepo.findOne({
+      where: { id: created.id },
+      relations: ['owner'],
+    });
+    return this.toDetailResponse(withOwner ?? created, []);
   }
 
   async getOwned(

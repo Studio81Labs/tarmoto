@@ -41,9 +41,18 @@ describe('RouteCollectionsService', () => {
     collectionRepo = {
       findOne: jest.fn(),
       exists: jest.fn().mockResolvedValue(false),
-      create: jest
-        .fn()
-        .mockImplementation((data) => ({ ...baseCollection, ...data })),
+      // Mirror real TypeORM: `create()` builds an entity from input + sane
+      // defaults (timestamps), but does NOT hydrate relations like `owner`.
+      // Tests that need owner_name to surface stub the post-save `findOne`
+      // separately (the create path re-finds with relations: ['owner']).
+      create: jest.fn().mockImplementation((data) => ({
+        id: collectionId,
+        description: null,
+        created_at: new Date('2026-04-20T10:00:00Z'),
+        updated_at: new Date('2026-04-20T10:00:00Z'),
+        items: [],
+        ...data,
+      })),
       save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
       remove: jest.fn().mockResolvedValue(undefined),
       createQueryBuilder: jest.fn().mockReturnValue(buildListQueryBuilder()),
@@ -100,6 +109,16 @@ describe('RouteCollectionsService', () => {
 
   describe('create', () => {
     it('allocates a slug and persists the trimmed title', async () => {
+      // Stub the post-save owner re-load so toDetailResponse can populate
+      // owner_name (the create path re-finds with relations: ['owner']).
+      // Reflects what TypeORM returns: the saved row hydrated with the
+      // requested relation, not the pre-save baseCollection snapshot.
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        title: 'Beskydy Loops',
+        visibility: 'unlisted',
+      });
+
       const result = await service.create(ownerId, {
         title: '  Beskydy Loops  ',
         visibility: 'unlisted',
@@ -113,14 +132,32 @@ describe('RouteCollectionsService', () => {
       expect(createArgs?.slug).toMatch(/^[A-Za-z0-9_-]+$/);
       expect(result.visibility).toBe('unlisted');
       expect(result.items).toEqual([]);
+      // Re-load uses relations: ['owner'] so the response carries owner_name
+      // — without that, every POST /collections response was `owner_name: ''`.
+      expect(result.owner_name).toBe('Jane Rider');
     });
 
     it('falls back to private visibility when none is supplied', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+      });
+
       await service.create(ownerId, { title: 'Untitled' });
       const createMock = collectionRepo.create as jest.Mock;
       const createArgs = createMock.mock
         .calls[0]?.[0] as Partial<RouteCollection>;
       expect(createArgs?.visibility).toBe('private');
+    });
+
+    it('still returns the detail when the post-save re-find yields nothing', async () => {
+      // Defensive path: if the row is gone by the time we re-find (race with
+      // a concurrent delete from another tab), fall back to the saved entity
+      // and just send an empty owner_name rather than 500ing the create.
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
+
+      const result = await service.create(ownerId, { title: 'Edge case' });
+      expect(result.id).toBe(baseCollection.id);
+      expect(result.owner_name).toBe('');
     });
   });
 
