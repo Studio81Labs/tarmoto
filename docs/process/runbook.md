@@ -456,13 +456,179 @@ When production deploys land, this section grows. Template for now:
 3. **Mitigate first, diagnose later** — roll back if in doubt.
 4. **Post-incident** — notes in `docs/reference/incidents/YYYY-MM-DD-<slug>.md` covering symptom, root cause, mitigation, timeline, prevention. Create the `incidents/` folder on first incident.
 
-## What this runbook does NOT yet cover (because we don't deploy them yet)
+## Production deploys
 
-- Backend production deploy / rollback (no AWS ECS wiring yet)
-- RDS Postgres backup/restore
-- Secret rotation in production (only local-dev relevance today)
-- Companion deployment (not wired)
-- Mobile release workflows (App Store / Play Store)
-- S3 bucket lifecycle / retention policy (e.g. expiring failed export uploads)
+The deployment stack is described in
+[ADR 0004](../decisions/0004-deployment-stack.md). Terraform IaC
+lives under `infra/aws/`; deploy workflows are
+`.github/workflows/{backend,companion,mobile-release}.yml`.
 
-Add sections above as these land.
+### Backend (AWS ECS Fargate)
+
+Normal flow:
+
+1. Merging a backend-touching PR to `main` triggers
+   `backend-deploy.yml`, which builds the image, pushes it to ECR
+   (`tarmoto-backend-staging:sha-<sha12>`), runs migrations as a
+   one-shot ECS RunTask against the new task definition, then
+   updates the staging service and waits for stability.
+2. The post-deploy smoke step (`scripts/smoke/smoke.sh`) hits
+   `/api/v1/healthz`, `/api/v1/jobs/health`, and the auth probe.
+   On failure, the workflow rolls the service back to the previous
+   active task-definition revision automatically.
+3. Promoting to prod is **manual**: tag the chosen commit with
+   `backend-vX.Y.Z` and push the tag, or run the workflow with
+   `workflow_dispatch -> environment=prod`. The `production`
+   GitHub environment requires reviewer approval before the
+   deploy step runs.
+
+Manual rollback (if the auto-rollback failed or you need a
+different revision):
+
+```bash
+ENV=prod  # or staging
+aws ecs list-task-definitions \
+  --family-prefix "tarmoto-${ENV}-backend" \
+  --status ACTIVE --sort DESC --max-items 10
+# Pick the revision you want, then:
+aws ecs update-service \
+  --cluster "tarmoto-${ENV}" \
+  --service "tarmoto-${ENV}-backend" \
+  --task-definition "tarmoto-${ENV}-backend:NN" \
+  --force-new-deployment
+aws ecs wait services-stable \
+  --cluster "tarmoto-${ENV}" --services "tarmoto-${ENV}-backend"
+```
+
+Common failures:
+
+- **"unable to assume role" on OIDC step** — `AWS_DEPLOY_ROLE_ARN_<ENV>`
+  secret is missing or the bootstrap role's trust policy isn't
+  scoped to this repo's main branch. Re-run
+  `infra/aws/bootstrap` and update the role ARN secret.
+- **Migration RunTask exits non-zero** — the failing migration is
+  echoed from CloudWatch in the workflow log. The ECS service is
+  not updated when the migration fails, so the previous task def
+  is still serving traffic. Fix the migration on a hotfix branch,
+  re-run the deploy.
+- **Healthcheck fails after deploy** — most often a missing or
+  wrong secret in Secrets Manager (e.g. an unrotated Stripe key).
+  Inspect `aws secretsmanager describe-secret --secret-id
+tarmoto/<env>/<name>` and confirm the JSON shape matches the
+  `secret_arns` map in `infra/aws/envs/<env>/main.tf`. After
+  fixing, force a new deployment to pick up the rotated value:
+
+  ```bash
+  aws ecs update-service --cluster tarmoto-<env> \
+    --service tarmoto-<env>-backend --force-new-deployment
+  ```
+
+RDS Postgres + PostGIS:
+
+- **Backups** — point-in-time restore is enabled for 30 days in
+  prod (staging: 7). To restore in place, use the AWS console
+  (RDS → Snapshots → Restore) which writes a new instance; cut
+  over by re-applying Terraform with the new endpoint.
+- **PostGIS extension** — created by the first backend migration
+  on fresh provisioning. The custom parameter group's
+  `shared_preload_libraries` is set to `pg_stat_statements` for
+  query observability.
+
+ElastiCache Redis:
+
+- BullMQ jobs that were in flight when Redis failed retry
+  idempotently on next enqueue. After a Redis outage, a
+  `jobs.cleanup` cycle catches up within an hour. If the queue
+  depth chart on CloudWatch is climbing for >15 min, check
+  `GET /jobs/health` per "Background jobs aren't running" above.
+
+### Companion (Cloudflare Pages)
+
+- PR previews deploy automatically on every PR via
+  `companion-deploy.yml`. The workflow comments the preview URL
+  on the PR.
+- Production deploys on push to `main`. The smoke step checks
+  the home page returns 200 and contains the Tarmoto app shell
+  marker.
+- **Rollback**: Cloudflare Pages dashboard → Deployments →
+  promote a previous successful build to production.
+- **Deploy failed with auth error** — `CLOUDFLARE_API_TOKEN` is
+  missing or has lost the Pages:Edit / Account:Read scopes.
+  Regenerate at https://dash.cloudflare.com/profile/api-tokens
+  using the "Edit Cloudflare Pages" template scoped to the
+  production account.
+
+### Mobile (TestFlight + Play Internal)
+
+Releases are manual:
+
+```bash
+# Tag-driven (cuts both iOS and Android):
+git tag mobile-v1.2.3
+git push origin mobile-v1.2.3
+
+# OR via the GitHub UI:
+#   Actions → Mobile Release → Run workflow
+#   Pick platform, version (X.Y.Z), paste release notes.
+```
+
+The version (`X.Y.Z`) is parsed from the tag and validated against
+strict semver in the workflow before any signing material is
+loaded. The build number is `github.run_number`, which never
+collides across reruns.
+
+Rollbacks differ per store:
+
+- **TestFlight** — expire the bad build via App Store Connect →
+  TestFlight → Builds. Real rollbacks of an App Store production
+  release require Apple's Phased Release pause plus a compensating
+  release; document in an incident note when used.
+- **Play Internal** — Google Play Console → Internal testing →
+  Releases → "Halt rollout" / "Promote previous". Halt-rollout is
+  per-track and applies on next install.
+
+Common failures:
+
+- **Match step fails ("not authorized")** — the deploy key on the
+  match repo expired or `MATCH_PASSWORD` is wrong. Rotate the
+  match repo deploy key, re-encrypt, push.
+- **Play upload fails with 403** — service-account JSON missing
+  the `Release manager` role on the Play app. Add it via the
+  Play Console.
+- **AAB rejected for missing/duplicate version code** — version
+  code is driven by `github.run_number`, which monotonically
+  increases. If you re-ran a workflow on a release that already
+  uploaded, Play rejects the second attempt; bump the patch
+  version and run again rather than trying to overwrite.
+
+### Secret rotation (prod)
+
+Backend secrets live in AWS Secrets Manager under
+`tarmoto/<env>/<name>`. Rotation is operator-driven:
+
+1. Update the secret value:
+   ```bash
+   aws secretsmanager put-secret-value \
+     --secret-id tarmoto/prod/jwt \
+     --secret-string '"new-value"'
+   ```
+   For composite secrets (e.g. `tarmoto/prod/stripe`) the value
+   must be a single JSON document — see the keys referenced in
+   `infra/aws/envs/prod/main.tf` `secret_arns`.
+2. Force a new ECS deployment so running tasks pick up the
+   rotated value at boot:
+   ```bash
+   aws ecs update-service \
+     --cluster tarmoto-prod \
+     --service tarmoto-prod-backend \
+     --force-new-deployment
+   ```
+3. Verify with `scripts/smoke/smoke.sh https://api.tarmoto.app`.
+
+## Out-of-scope (yet)
+
+- Per-PR ephemeral backend stacks
+- Multi-region DR
+- Automated secret rotation lambdas
+- Phased iOS release automation
+- S3 bucket lifecycle for failed export uploads (today: 30-day expiry on the exports bucket only)

@@ -62,3 +62,23 @@ apps/companion/test-results/
 # Misc
 *.tsbuildinfo
 .remember/
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Fastlane
+apps/mobile/fastlane/report.xml
+apps/mobile/fastlane/Preview.html
+apps/mobile/fastlane/screenshots
+apps/mobile/fastlane/test_output

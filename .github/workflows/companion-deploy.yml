@@ -1,0 +1,166 @@
+name: Companion Deploy
+
+# PR previews and prod deploys for the companion (Next.js).
+# Hosted on Cloudflare Pages — same pattern as the PoC sensor in
+# .github/workflows/poc-deploy.yml. Companion runs through
+# `@cloudflare/next-on-pages` so SSR + middleware route through
+# Cloudflare Workers.
+#
+# Required repo secrets / vars:
+#   CLOUDFLARE_API_TOKEN   — Pages:Edit, Account:Read, Zone:Read.
+#   CLOUDFLARE_ACCOUNT_ID  — account hosting the project.
+#   COMPANION_PAGES_PROJECT (var) — project name, default tarmoto-companion.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/companion/**"
+      - "apps/backend/**"
+      - "packages/shared/**"
+      - "packages/openapi/**"
+      - ".github/workflows/companion-deploy.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/companion/**"
+      - "apps/backend/**"
+      - "packages/shared/**"
+      - "packages/openapi/**"
+      - ".github/workflows/companion-deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+  pull-requests: write
+
+concurrency:
+  group: companion-deploy-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build & deploy to Cloudflare Pages
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event_name == 'pull_request' && 'companion-preview' || 'companion-production' }}
+      url: ${{ steps.deploy.outputs.url }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # wrangler picks up commit metadata for the deploy
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm build:shared
+
+      - name: Generate OpenAPI client
+        run: pnpm generate:api
+
+      - name: Build companion (next-on-pages)
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL || 'https://api.tarmoto.app/v1' }}
+          NEXT_PUBLIC_WS_URL: ${{ vars.NEXT_PUBLIC_WS_URL || 'wss://api.tarmoto.app' }}
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+        run: |
+          pnpm --filter @tarmoto/companion exec next build
+          pnpm --filter @tarmoto/companion exec npx @cloudflare/next-on-pages@latest
+
+      - name: Resolve project name
+        id: project
+        env:
+          PROJECT_VAR: ${{ vars.COMPANION_PAGES_PROJECT }}
+        run: |
+          NAME="${PROJECT_VAR:-tarmoto-companion}"
+          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Create Cloudflare Pages project (if missing)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PROJECT: ${{ steps.project.outputs.name }}
+        run: |
+          npx wrangler pages project create "$PROJECT" \
+            --production-branch=main \
+            --compatibility-date=2026-04-01 \
+            || true
+
+      - name: Deploy
+        id: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PROJECT: ${{ steps.project.outputs.name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          IS_PR: ${{ github.event_name == 'pull_request' }}
+        run: |
+          if [ "$IS_PR" = "true" ]; then
+            BRANCH="pr-${PR_NUMBER}"
+          else
+            BRANCH="main"
+          fi
+          OUTPUT=$(npx wrangler pages deploy apps/companion/.vercel/output/static \
+            --project-name="$PROJECT" \
+            --branch="$BRANCH" \
+            --commit-hash="$GITHUB_SHA" 2>&1 | tee /dev/stderr)
+          URL=$(echo "$OUTPUT" | grep -oE 'https://[a-zA-Z0-9.-]+\.pages\.dev' | tail -n1)
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test
+        if: steps.deploy.outputs.url != ''
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            STATUS=$(curl -s -o response.html -w "%{http_code}" "$URL" || true)
+            if [ "$STATUS" = "200" ] && grep -qi "tarmoto" response.html; then
+              echo "::notice::Companion smoke OK ($URL)"
+              exit 0
+            fi
+            echo "Smoke attempt $attempt: HTTP $STATUS"
+            sleep 5
+          done
+          echo "::error::Companion smoke failed after 3 attempts (last status $STATUS)"
+          exit 1
+
+      - name: Comment PR with preview URL
+        if: github.event_name == 'pull_request' && steps.deploy.outputs.url != ''
+        uses: actions/github-script@v8
+        env:
+          PREVIEW_URL: ${{ steps.deploy.outputs.url }}
+        with:
+          script: |
+            const url = process.env.PREVIEW_URL;
+            const body = `Companion preview deployed: ${url}`;
+            const { data: comments } = await github.rest.issues.listComments({
+              ...context.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find((c) => c.user.type === 'Bot' && c.body.startsWith('Companion preview deployed'));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                ...context.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

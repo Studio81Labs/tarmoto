@@ -1,0 +1,265 @@
+name: Backend Deploy
+
+# Auto-deploys to staging on every push to main that touches the
+# backend or its shared deps. Prod is gated behind the `production`
+# GitHub environment (manual approval).
+#
+# Tag-driven prod release: pushing a tag matching `backend-v*` cuts
+# a prod deploy. Workflow_dispatch covers hotfixes against either env.
+#
+# IaC and image build glue lives in:
+#   - apps/backend/Dockerfile
+#   - infra/aws/envs/<env>/  (Terraform — must be applied once before
+#                             the first deploy can succeed)
+#   - scripts/smoke/smoke.sh (post-deploy verification)
+
+on:
+  push:
+    branches: [main]
+    tags: ["backend-v*"]
+    paths:
+      - "apps/backend/**"
+      - "packages/shared/**"
+      - "packages/openapi/**"
+      - "infra/aws/**"
+      - ".github/workflows/backend-deploy.yml"
+      - "scripts/smoke/**"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        default: staging
+        options: [staging, prod]
+
+permissions:
+  contents: read
+  id-token: write # OIDC assume-role into AWS
+
+concurrency:
+  group: backend-deploy-${{ github.event.inputs.environment || (startsWith(github.ref, 'refs/tags/') && 'prod') || 'staging' }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-push:
+    name: Build & push image
+    runs-on: ubuntu-latest
+
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+      env_name: ${{ steps.env.outputs.name }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Resolve target environment
+        id: env
+        env:
+          DISPATCH_ENV: ${{ github.event.inputs.environment }}
+          REF_NAME: ${{ github.ref }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "name=${DISPATCH_ENV}" >> "$GITHUB_OUTPUT"
+          elif [[ "$REF_NAME" == refs/tags/backend-v* ]]; then
+            echo "name=prod" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=staging" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ steps.env.outputs.name == 'prod' && secrets.AWS_DEPLOY_ROLE_ARN_PROD || secrets.AWS_DEPLOY_ROLE_ARN_STAGING }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-central-1' }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Compute image metadata
+        id: meta
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          ENV_NAME: ${{ steps.env.outputs.name }}
+        run: |
+          REPO="tarmoto-backend-${ENV_NAME}"
+          TAG="sha-${GITHUB_SHA::12}"
+          echo "image=${REGISTRY}/${REPO}:${TAG}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "registry=${REGISTRY}" >> "$GITHUB_OUTPUT"
+          echo "repo=${REPO}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/backend/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.image }}
+          # GHA cache so subsequent deploys reuse the deps layer.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+  deploy:
+    name: Deploy to ECS
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    # The `staging` and `production` GitHub environments enforce
+    # required reviewers / branch protections. Prod gets a manual
+    # approval here even though the build step has already run.
+    environment: ${{ needs.build-and-push.outputs.env_name == 'prod' && 'production' || 'staging' }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Resolve target environment
+        id: env
+        env:
+          ENV_NAME: ${{ needs.build-and-push.outputs.env_name }}
+        run: |
+          echo "name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
+          echo "cluster=tarmoto-${ENV_NAME}" >> "$GITHUB_OUTPUT"
+          echo "service=tarmoto-${ENV_NAME}-backend" >> "$GITHUB_OUTPUT"
+          echo "task_family=tarmoto-${ENV_NAME}-backend" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ steps.env.outputs.name == 'prod' && secrets.AWS_DEPLOY_ROLE_ARN_PROD || secrets.AWS_DEPLOY_ROLE_ARN_STAGING }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-central-1' }}
+
+      - name: Fetch current task definition
+        id: taskdef
+        env:
+          TASK_FAMILY: ${{ steps.env.outputs.task_family }}
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition "$TASK_FAMILY" \
+            --query 'taskDefinition' \
+            > taskdef.json
+          # ecs-deploy-task-definition rejects fields it can't set.
+          jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)' \
+            taskdef.json > taskdef.cleaned.json
+          echo "path=taskdef.cleaned.json" >> "$GITHUB_OUTPUT"
+
+      - name: Render new image into task definition
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ steps.taskdef.outputs.path }}
+          container-name: backend
+          image: ${{ needs.build-and-push.outputs.image }}
+
+      - name: Run DB migrations
+        # ECS RunTask with the freshly-rendered task definition so
+        # migrations run against the same image we're about to deploy.
+        env:
+          ENV_NAME: ${{ steps.env.outputs.name }}
+          CLUSTER: ${{ steps.env.outputs.cluster }}
+          RENDERED_TASKDEF: ${{ steps.render.outputs.task-definition }}
+        run: |
+          set -euo pipefail
+          NEW_TASKDEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "file://${RENDERED_TASKDEF}" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered: $NEW_TASKDEF_ARN"
+
+          SUBNETS=$(aws ec2 describe-subnets \
+            --filters "Name=tag:Project,Values=tarmoto" \
+                      "Name=tag:Environment,Values=${ENV_NAME}" \
+                      "Name=tag:Tier,Values=private" \
+            --query 'Subnets[].SubnetId' --output text | tr '\t' ',')
+          SG=$(aws ec2 describe-security-groups \
+            --filters "Name=group-name,Values=tarmoto-${ENV_NAME}-backend-svc" \
+            --query 'SecurityGroups[0].GroupId' --output text)
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$CLUSTER" \
+            --task-definition "$NEW_TASKDEF_ARN" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[${SUBNETS}],securityGroups=[${SG}],assignPublicIp=DISABLED}" \
+            --overrides '{"containerOverrides":[{"name":"backend","command":["node","apps/backend/dist/scripts/migrate.js"]}]}' \
+            --started-by "gha-${GITHUB_RUN_ID}" \
+            --query 'tasks[0].taskArn' --output text)
+
+          echo "Migration task: $TASK_ARN"
+          aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$TASK_ARN"
+
+          EXIT=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' --output text)
+          if [ "$EXIT" != "0" ]; then
+            echo "::error::Migration container exited with $EXIT"
+            START_TIME=$(($(date -u +%s%3N) - 600000))
+            aws logs filter-log-events \
+              --log-group-name "/tarmoto/${ENV_NAME}/backend" \
+              --start-time "$START_TIME" \
+              --query 'events[].message' --output text || true
+            exit 1
+          fi
+
+      - name: Deploy task definition
+        id: deploy
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          service: ${{ steps.env.outputs.service }}
+          cluster: ${{ steps.env.outputs.cluster }}
+          wait-for-service-stability: true
+          wait-for-minutes: 15
+
+      - name: Resolve API URL
+        id: url
+        env:
+          ENV_NAME: ${{ steps.env.outputs.name }}
+          BACKEND_URL_PROD: ${{ vars.BACKEND_URL_PROD }}
+          BACKEND_URL_STAGING: ${{ vars.BACKEND_URL_STAGING }}
+        run: |
+          if [ "$ENV_NAME" = "prod" ]; then
+            URL="$BACKEND_URL_PROD"
+          else
+            URL="$BACKEND_URL_STAGING"
+          fi
+          if [ -z "$URL" ]; then
+            DNS=$(aws elbv2 describe-load-balancers \
+              --names "tarmoto-${ENV_NAME}-alb" \
+              --query 'LoadBalancers[0].DNSName' --output text)
+            URL="https://${DNS}"
+          fi
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test
+        run: scripts/smoke/smoke.sh "${{ steps.url.outputs.url }}"
+
+      - name: Roll back on smoke failure
+        if: failure() && steps.deploy.outcome == 'success'
+        env:
+          CLUSTER: ${{ steps.env.outputs.cluster }}
+          SERVICE: ${{ steps.env.outputs.service }}
+          TASK_FAMILY: ${{ steps.env.outputs.task_family }}
+        run: |
+          echo "::warning::Smoke test failed after deploy — rolling back."
+          PREV_REVISION=$(aws ecs list-task-definitions \
+            --family-prefix "$TASK_FAMILY" \
+            --status ACTIVE --sort DESC \
+            --query 'taskDefinitionArns[1]' --output text)
+          if [ -n "$PREV_REVISION" ] && [ "$PREV_REVISION" != "None" ]; then
+            aws ecs update-service \
+              --cluster "$CLUSTER" \
+              --service "$SERVICE" \
+              --task-definition "$PREV_REVISION" \
+              --force-new-deployment
+            aws ecs wait services-stable \
+              --cluster "$CLUSTER" \
+              --services "$SERVICE"
+            echo "::notice::Rolled back to ${PREV_REVISION}"
+          else
+            echo "::error::No previous task definition — manual recovery required. See docs/process/runbook.md."
+          fi

@@ -1,0 +1,13 @@
+# Fastlane app identifiers for the Tarmoto mobile app.
+# Match against PRODUCT_BUNDLE_IDENTIFIER in iOS pbxproj and
+# applicationId in apps/mobile/android/app/build.gradle.
+
+app_identifier "app.tarmoto"
+package_name   "app.tarmoto"
+
+# These come from the GitHub Actions environment in CI; locally the
+# operator sets them via `fastlane match` setup or pass them via
+# `--env`.
+apple_id        ENV["FASTLANE_APPLE_ID"]
+team_id         ENV["FASTLANE_TEAM_ID"]
+itc_team_id     ENV["FASTLANE_ITC_TEAM_ID"]

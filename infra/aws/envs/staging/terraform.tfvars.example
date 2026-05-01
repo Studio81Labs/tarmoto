@@ -1,0 +1,9 @@
+# Copy to terraform.tfvars (which is gitignored) and fill in the
+# environment-specific values. The certs must be DNS-validated and
+# pre-existing in the corresponding regions.
+
+# region              = "eu-central-1"
+# api_certificate_arn = "arn:aws:acm:eu-central-1:<account-id>:certificate/<id>"
+# cdn_certificate_arn = "arn:aws:acm:us-east-1:<account-id>:certificate/<id>"
+# cdn_aliases         = ["tiles.staging.tarmoto.app", "uploads.staging.tarmoto.app"]
+# companion_origin    = "https://staging.tarmoto.app"
