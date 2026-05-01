@@ -34,6 +34,22 @@ type FirebaseMessagingModule =
 let cachedMessaging: ReturnType<FirebaseMessagingModule> | null = null;
 let cachedToken: string | null = null;
 let unsubscribeTokenRefresh: (() => void) | null = null;
+/**
+ * Monotonic counter that flips whenever a new auth session begins or
+ * the previous one is torn down. `registerForPush` snapshots this at
+ * entry and refuses to commit any session-scoped state (cached token,
+ * onTokenRefresh subscription) once the snapshot has gone stale.
+ *
+ * This closes a race that would otherwise survive a quick login →
+ * logout: the in-flight register completes after `unregisterPush`
+ * has already returned (because `cachedToken` was still null at
+ * that moment), then sets `cachedToken` to the device handle. The
+ * next sign-in's register call sees `cachedToken === token` and
+ * skips its `POST /me/devices`, so the new user is never bound to
+ * this device on the backend — and notifications keep flowing for
+ * whichever account the in-flight POST happened to authenticate as.
+ */
+let registrationSession = 0;
 
 function loadMessaging(): ReturnType<FirebaseMessagingModule> | null {
   if (cachedMessaging) return cachedMessaging;
@@ -75,18 +91,24 @@ export interface PushRegistrationApi {
 
 /**
  * Register the current device for push. Safe to call any number of
- * times — repeats short-circuit when the token hasn't changed.
+ * times — repeats short-circuit when the token hasn't changed AND
+ * no logout has happened in between.
  */
 export async function registerForPush(api: PushRegistrationApi): Promise<void> {
   const messaging = loadMessaging();
   if (!messaging) return;
 
+  // Snapshot the session at entry. If `unregisterPush` runs before
+  // we finish, the session number bumps and we abort before writing
+  // any session-scoped state — see `registrationSession` for why.
+  const mySession = registrationSession;
+
   try {
     const granted = await requestPermission(messaging);
-    if (!granted) return;
+    if (!granted || mySession !== registrationSession) return;
 
     const token = await messaging.getToken();
-    if (!token) return;
+    if (!token || mySession !== registrationSession) return;
 
     if (cachedToken === token) {
       // Already registered this token in the current session.
@@ -97,12 +119,19 @@ export async function registerForPush(api: PushRegistrationApi): Promise<void> {
       Platform.OS === "ios" ? "ios" : "android";
 
     const appVersion = await safeAppVersion();
+    if (mySession !== registrationSession) return;
 
     await api.client.post("/me/devices", {
       platform,
       token,
       app_version: appVersion,
     });
+
+    // Final session check before mutating module state. A logout
+    // that fired during the POST round-trip must NOT leave the
+    // cache pointing at this token — the next login would otherwise
+    // see `cachedToken === token` and skip its own registration.
+    if (mySession !== registrationSession) return;
     cachedToken = token;
 
     // Re-register on token refresh (post-install rotations,
@@ -112,6 +141,10 @@ export async function registerForPush(api: PushRegistrationApi): Promise<void> {
       unsubscribeTokenRefresh = null;
     }
     unsubscribeTokenRefresh = messaging.onTokenRefresh((nextToken: string) => {
+      // Same gate on the refresh path — once the session has been
+      // torn down, refresh callbacks must stop posting under the
+      // old user's account.
+      if (mySession !== registrationSession) return;
       void api.client
         .post("/me/devices", {
           platform,
@@ -119,6 +152,7 @@ export async function registerForPush(api: PushRegistrationApi): Promise<void> {
           app_version: appVersion,
         })
         .then(() => {
+          if (mySession !== registrationSession) return;
           cachedToken = nextToken;
         })
         .catch(() => {
@@ -135,15 +169,26 @@ export async function registerForPush(api: PushRegistrationApi): Promise<void> {
 /**
  * Unregister the current device on sign-out. Idempotent — safe to
  * call when no token has ever been registered.
+ *
+ * Always invalidates the registration session up front, even when
+ * there's no `cachedToken` to DELETE: an in-flight `registerForPush`
+ * (the early-logout-after-login race) must be prevented from
+ * setting `cachedToken` after we return, otherwise the next login
+ * would see the same device handle in the cache and skip its
+ * own `POST /me/devices`.
  */
 export async function unregisterPush(api: PushRegistrationApi): Promise<void> {
-  if (!cachedToken) return;
+  registrationSession += 1;
+
   const token = cachedToken;
   cachedToken = null;
   if (unsubscribeTokenRefresh) {
     unsubscribeTokenRefresh();
     unsubscribeTokenRefresh = null;
   }
+
+  if (!token) return;
+
   try {
     await api.client.delete(`/me/devices/${encodeURIComponent(token)}`, {
       // When the caller passes an explicit bearer (logout flow),
@@ -173,6 +218,7 @@ async function safeAppVersion(): Promise<string | undefined> {
 export function __resetPushRegistrationForTesting(): void {
   cachedToken = null;
   cachedMessaging = null;
+  registrationSession = 0;
   if (unsubscribeTokenRefresh) {
     unsubscribeTokenRefresh();
     unsubscribeTokenRefresh = null;
