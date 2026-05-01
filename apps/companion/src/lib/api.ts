@@ -1,6 +1,8 @@
 import { createApiClient } from "@tarmoto/openapi/client";
+import type { NotificationPreferences } from "@tarmoto/shared";
 import { useAuthStore } from "@/stores/auth";
 import { API_HOST, API_BASE } from "@/lib/config";
+import type { PartialNotificationPreferences } from "./notification-preferences";
 import type { MountainPass } from "./passes-summary";
 
 // Typed openapi-fetch client for all spec-defined endpoints
@@ -863,10 +865,10 @@ export const accountApi = {
       body: JSON.stringify(input),
     }),
   getNotificationPreferences: () =>
-    apiFetch("/account/notification-preferences"),
-  updateNotificationPreferences: (data: unknown) =>
-    apiFetch("/account/notification-preferences", {
-      method: "PATCH",
+    apiFetch<NotificationPreferences>("/me/notification-preferences"),
+  updateNotificationPreferences: (data: PartialNotificationPreferences) =>
+    apiFetch<NotificationPreferences>("/me/notification-preferences", {
+      method: "PUT",
       body: JSON.stringify(data),
     }),
   getPrivacySettings: () => apiFetch("/account/privacy-settings"),

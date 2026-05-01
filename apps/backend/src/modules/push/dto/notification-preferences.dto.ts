@@ -1,5 +1,4 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
 import {
   IsBoolean,
   IsIn,
@@ -10,7 +9,6 @@ import {
   Max,
   MaxLength,
   Min,
-  ValidateNested,
 } from 'class-validator';
 import {
   type EmailDigestFrequency,
@@ -80,8 +78,14 @@ export class UpdateNotificationPreferencesDto {
   })
   @IsOptional()
   @IsObject()
-  @ValidateNested({ each: true })
-  @Type(() => NotificationChannelTogglesDto)
+  // Per-category nested validation is intentionally NOT wired up via
+  // `@ValidateNested({ each: true })` + `@Type`. class-transformer treats
+  // a `Record<string, ClassDto>` as a single typed value (not a map of
+  // typed values), which silently turns the whole `categories` object
+  // into one `NotificationChannelTogglesDto` instance and breaks
+  // validation. The merge layer in `NotificationPreferencesService`
+  // coerces every channel value with `Boolean(...)` before persisting,
+  // so callers can't poison the stored row with non-boolean values.
   categories?: Partial<
     Record<NotificationCategory, NotificationChannelTogglesDto>
   >;

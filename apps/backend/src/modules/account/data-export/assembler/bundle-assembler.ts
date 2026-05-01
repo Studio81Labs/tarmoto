@@ -14,6 +14,7 @@ import type { HazardReport } from '../../../../entities/hazard-report.entity.js'
 import type { UserBadge } from '../../../../entities/user-badge.entity.js';
 import type { ChallengeEntry } from '../../../../entities/challenge-entry.entity.js';
 import type { CommuteRoute } from '../../../../entities/commute-route.entity.js';
+import type { NotificationPreferencesRow } from '../../../../entities/notification-preferences.entity.js';
 import { sanitizeUserForExport } from './sanitizers.js';
 import { rideToGpx, tripDayToGpx } from './gpx.js';
 
@@ -29,6 +30,10 @@ export interface BundleRepos {
   badges: Pick<Repository<UserBadge>, 'find'>;
   challenges: Pick<Repository<ChallengeEntry>, 'find'>;
   commute: Pick<Repository<CommuteRoute>, 'find'>;
+  notificationPreferences: Pick<
+    Repository<NotificationPreferencesRow>,
+    'findOne'
+  >;
 }
 
 export class BundleAssembler {
@@ -47,6 +52,7 @@ export class BundleAssembler {
       badges,
       challenges,
       commute,
+      notificationRow,
     ] = await Promise.all([
       this.repos.contacts.find({ where: { user_id: userId } }),
       this.repos.rides.find({
@@ -60,6 +66,9 @@ export class BundleAssembler {
       this.repos.badges.find({ where: { user_id: userId } }),
       this.repos.challenges.find({ where: { user_id: userId } }),
       this.repos.commute.find({ where: { user_id: userId } }),
+      this.repos.notificationPreferences.findOne({
+        where: { user_id: userId },
+      }),
     ]);
 
     const allTripIds = Array.from(
@@ -92,7 +101,7 @@ export class BundleAssembler {
       name: 'preferences.json',
     });
     archive.append(json(extractPrivacy(user)), { name: 'privacy.json' });
-    archive.append(json(extractNotifications(user)), {
+    archive.append(json(extractNotifications(notificationRow)), {
       name: 'notifications.json',
     });
     archive.append(json({ rides, stats: rideStats }), { name: 'rides.json' });
@@ -164,7 +173,7 @@ function buildReadme(generatedAt: string): string {
     '  contacts.json        - emergency contacts',
     '  preferences.json     - user preferences blob',
     '  privacy.json         - privacy settings derived from preferences',
-    '  notifications.json   - notification settings derived from preferences',
+    '  notifications.json   - notification preferences (typed table; empty when never edited)',
     '  rides.json           - ride metadata + per-ride stats',
     '  rides/<id>.gpx       - GPX track per ride with a route',
     '  trips.json           - trip metadata + days + your memberships',
@@ -188,7 +197,20 @@ function extractPrivacy(user: User): Record<string, unknown> {
   return (prefs.privacy as Record<string, unknown>) ?? {};
 }
 
-function extractNotifications(user: User): Record<string, unknown> {
-  const prefs = user.preferences ?? {};
-  return (prefs.notifications as Record<string, unknown>) ?? {};
+function extractNotifications(
+  row: NotificationPreferencesRow | null | undefined,
+): Record<string, unknown> {
+  // Returns the raw typed-table row so the export reflects exactly what
+  // the dispatchers gate on. Empty object when the user has never saved
+  // preferences — defaults live in `@tarmoto/shared` and are applied at
+  // dispatch time, so re-materializing them here would be misleading.
+  if (!row) return {};
+  return {
+    email_digest: row.email_digest,
+    marketing_emails: row.marketing_emails,
+    quiet_hours_start: row.quiet_hours_start,
+    quiet_hours_end: row.quiet_hours_end,
+    quiet_hours_timezone: row.quiet_hours_timezone,
+    categories: row.categories ?? {},
+  };
 }

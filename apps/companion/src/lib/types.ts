@@ -296,20 +296,8 @@ export interface PrivacySettings {
 }
 
 // ── Notification preferences ──
-
-export type EmailDigestFrequency = "daily" | "weekly" | "never";
-
-export interface NotificationChannels {
-  email: boolean;
-  push: boolean;
-}
-
-export interface NotificationPreferences {
-  emailDigest: EmailDigestFrequency;
-  hazardAlertsSavedRoutes: NotificationChannels;
-  newFollowers: NotificationChannels;
-  routeComments: NotificationChannels;
-  rideLikes: NotificationChannels;
-  tripCollaboration: NotificationChannels;
-  marketingEmails: boolean;
-}
+//
+// Canonical shape lives in `@tarmoto/shared` (`NotificationPreferences`,
+// `NotificationChannelToggles`, `EmailDigestFrequency`,
+// `NOTIFICATION_CATEGORIES`). Importers in this app should pull from
+// `@tarmoto/shared` directly or via `@/lib/notification-preferences`.
