@@ -13,7 +13,6 @@ import {
   ValidateNested,
 } from 'class-validator';
 import {
-  NOTIFICATION_CATEGORIES,
   type EmailDigestFrequency,
   type NotificationCategory,
   type NotificationChannelToggles,
@@ -112,6 +111,3 @@ export class NotificationPreferencesResponseDto implements NotificationPreferenc
   })
   categories!: Record<NotificationCategory, NotificationChannelTogglesDto>;
 }
-
-export const NOTIFICATION_CATEGORY_VALUES: readonly string[] =
-  NOTIFICATION_CATEGORIES;

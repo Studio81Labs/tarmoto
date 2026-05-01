@@ -201,10 +201,25 @@ export function mergeWithDefaults(
   for (const cat of Object.keys(merged.categories) as NotificationCategory[]) {
     const override = row.categories?.[cat];
     if (override) {
+      // Symmetric coercion across all three channels — earlier we
+      // used `!!email && !!push` alongside `in_app !== false`,
+      // which let `in_app: 0` round-trip as `true` while `push: 0`
+      // collapsed to `false`. JSONB rows can hold non-boolean
+      // values from older writes or hand-edited rows, so coerce
+      // each field the same way and fall back to the default when
+      // the column is missing.
+      const fallback = merged.categories[cat];
       merged.categories[cat] = {
-        email: !!override.email,
-        push: !!override.push,
-        in_app: override.in_app !== false,
+        email:
+          override.email !== undefined
+            ? Boolean(override.email)
+            : fallback.email,
+        push:
+          override.push !== undefined ? Boolean(override.push) : fallback.push,
+        in_app:
+          override.in_app !== undefined
+            ? Boolean(override.in_app)
+            : fallback.in_app,
       };
     }
   }

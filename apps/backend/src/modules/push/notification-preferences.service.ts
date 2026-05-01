@@ -90,13 +90,29 @@ function applyPatch(
   if (patch.categories) {
     for (const cat of NOTIFICATION_CATEGORIES) {
       const override = patch.categories[cat];
-      if (override) {
-        next.categories[cat] = {
-          email: !!override.email,
-          push: !!override.push,
-          in_app: override.in_app !== false,
-        };
-      }
+      if (!override) continue;
+      // Per-field merge with the existing toggles. Overwrite only the
+      // fields the patch explicitly supplies; coerce supplied values
+      // to a strict boolean. Earlier we used `!!email && !!push`
+      // alongside `in_app !== false` which (a) silently defaulted
+      // `in_app` to `true` when missing — drifting from "supplied
+      // fields only" — and (b) treated `0`/`""` differently per
+      // field, an asymmetric coercion that would surprise anyone
+      // posting from a hand-rolled client without class-transformer
+      // normalisation in the path.
+      const existing = next.categories[cat];
+      next.categories[cat] = {
+        email:
+          override.email !== undefined
+            ? Boolean(override.email)
+            : existing.email,
+        push:
+          override.push !== undefined ? Boolean(override.push) : existing.push,
+        in_app:
+          override.in_app !== undefined
+            ? Boolean(override.in_app)
+            : existing.in_app,
+      };
     }
   }
   return next;
