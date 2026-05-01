@@ -25,7 +25,7 @@ import {
   waitFor,
 } from "@testing-library/react-native";
 import ReviewFormModal from "../ReviewFormModal";
-import { api } from "@/services/api";
+import { ApiError, api } from "@/services/api";
 import { capturePhoto } from "@/services/photoCapture";
 import type { RoadReview } from "@/types";
 
@@ -35,6 +35,19 @@ jest.mock("@/services/api", () => ({
     updateReview: jest.fn(),
     deleteReview: jest.fn(),
     uploadReviewPhotos: jest.fn(),
+  },
+  // The component narrows caught errors with `instanceof ApiError`;
+  // the mock must expose a real constructor so the check doesn't
+  // throw "right-hand side is not callable" on rejected promises.
+  ApiError: class ApiError extends Error {
+    status: number;
+    body: unknown;
+    constructor(message: string, status: number, body: unknown) {
+      super(message);
+      this.name = "ApiError";
+      this.status = status;
+      this.body = body;
+    }
   },
 }));
 
@@ -333,9 +346,7 @@ describe("ReviewFormModal", () => {
   });
 
   it("on 409 conflict, keeps the form open, surfaces a banner, and asks the parent to refresh", async () => {
-    const conflictError = Object.assign(new Error("conflict"), {
-      response: { status: 409 },
-    });
+    const conflictError = new ApiError("conflict", 409, null);
     submitWithQueueMock.mockRejectedValueOnce(conflictError);
     const onSubmitted = jest.fn();
     const onConflict = jest.fn().mockResolvedValue(true);
@@ -368,9 +379,7 @@ describe("ReviewFormModal", () => {
     // banner promising "your existing review is loaded for editing"
     // while the form still rendered create-mode fields. The banner
     // is now set only after onConflict resolves successfully.
-    const conflictError = Object.assign(new Error("conflict"), {
-      response: { status: 409 },
-    });
+    const conflictError = new ApiError("conflict", 409, null);
     submitWithQueueMock.mockRejectedValueOnce(conflictError);
     const onConflict = jest.fn().mockRejectedValue(new Error("refresh failed"));
 
@@ -402,9 +411,7 @@ describe("ReviewFormModal", () => {
     // errors, so `onConflict` returning `false` is the only signal
     // that the existing review failed to load. The form must NOT
     // show the "loaded for editing" banner in that case.
-    const conflictError = Object.assign(new Error("conflict"), {
-      response: { status: 409 },
-    });
+    const conflictError = new ApiError("conflict", 409, null);
     submitWithQueueMock.mockRejectedValueOnce(conflictError);
     const onConflict = jest.fn().mockResolvedValue(false);
 

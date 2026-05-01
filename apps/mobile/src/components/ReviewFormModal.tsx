@@ -44,7 +44,7 @@ import {
 } from "react-native";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
-import { api } from "@/services/api";
+import { ApiError, api } from "@/services/api";
 import { capturePhoto, type CaptureResult } from "@/services/photoCapture";
 import { useAuthStore } from "@/stores";
 import type { RoadReview } from "@/types";
@@ -518,10 +518,7 @@ export default function ReviewFormModal({
           );
         }
       } else {
-        const message = isAxiosError(e)
-          ? (e.response?.data?.message ?? "Couldn't save your review.")
-          : "Couldn't save your review.";
-        setError(message);
+        setError(apiErrorMessage(e) ?? "Couldn't save your review.");
       }
     } finally {
       setSubmitting(false);
@@ -559,10 +556,7 @@ export default function ReviewFormModal({
               // `submitting` true until the parent's refresh lands.
               await onDeleted?.();
             } catch (e: unknown) {
-              const message = isAxiosError(e)
-                ? (e.response?.data?.message ?? "Couldn't delete your review.")
-                : "Couldn't delete your review.";
-              setError(message);
+              setError(apiErrorMessage(e) ?? "Couldn't delete your review.");
             } finally {
               setSubmitting(false);
             }
@@ -859,36 +853,37 @@ function PhotoButton({
   );
 }
 
-function isAxiosError(
-  error: unknown,
-): error is { response?: { status?: number; data?: { message?: string } } } {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "response" in error &&
-    typeof (error as { response?: unknown }).response === "object"
-  );
+/**
+ * Pluck a server-supplied error message off an `ApiError` thrown by
+ * the typed-client facade. The body shape is whatever the backend
+ * sent (NestJS-style `{ message: string }` is the common case);
+ * defensively narrow before reading.
+ */
+function apiErrorMessage(error: unknown): string | undefined {
+  if (!(error instanceof ApiError)) return undefined;
+  const body = error.body;
+  if (typeof body === "object" && body !== null && "message" in body) {
+    const msg = (body as { message?: unknown }).message;
+    if (typeof msg === "string") return msg;
+  }
+  return undefined;
 }
 
 function isConflictError(error: unknown): boolean {
-  return isAxiosError(error) && error.response?.status === 409;
+  return error instanceof ApiError && error.status === 409;
 }
 
 /**
- * Detect a cancelled-via-AbortSignal axios error so the upload error
- * UI skips the rejection that the rider's own × tap caused. Axios v1+
- * sets `code === "ERR_CANCELED"` on cancellations; older versions emit
- * a `CanceledError` whose name we also accept defensively.
+ * Detect a cancelled-via-AbortSignal upload so the error UI skips
+ * the rejection that the rider's own × tap caused. The typed-client
+ * facade preserves the native `AbortError` for caller-driven cancels
+ * (see `typedClient.withTimeout` — only the timer-driven path is
+ * substituted with `TimeoutError`), so a name match is enough.
  */
 function isAbortError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
-  const e = error as { code?: string; name?: string; message?: string };
-  return (
-    e.code === "ERR_CANCELED" ||
-    e.name === "CanceledError" ||
-    e.name === "AbortError" ||
-    /aborted/i.test(e.message ?? "")
-  );
+  const e = error as { name?: string; message?: string };
+  return e.name === "AbortError" || /aborted/i.test(e.message ?? "");
 }
 
 const styles = StyleSheet.create({
