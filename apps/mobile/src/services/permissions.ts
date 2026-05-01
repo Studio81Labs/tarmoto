@@ -73,6 +73,19 @@ function showBlockedRecovery(rationale: PermissionRationale): Promise<void> {
 export async function requestWithRationale(
   input: RequestPermissionInput,
 ): Promise<PermissionStatus> {
+  if (Platform.OS === "android") {
+    // Skip the rationale Alert when the permission is already granted —
+    // `PermissionsAndroid.request` returns GRANTED instantly on a cached
+    // grant with no system prompt, so showing our rationale would be a
+    // redundant tap-through every ride start. The AC ("rationale before
+    // each system prompt") only applies when a prompt is actually about
+    // to fire.
+    const alreadyGranted = await PermissionsAndroid.check(
+      input.androidPermission,
+    );
+    if (alreadyGranted) return "granted";
+  }
+
   const consent = await showRationale(input.rationale);
   if (consent === "cancel") return "denied";
 
@@ -80,6 +93,12 @@ export async function requestWithRationale(
     // iOS surfaces the system prompt via the underlying API call (e.g.
     // `Geolocation.watchPosition`). The caller drives that next; we've
     // already shown our rationale, so return granted optimistically.
+    //
+    // Note: iOS doesn't expose a `PermissionsAndroid.check`-style API
+    // for the permissions we care about, so we can't yet skip the
+    // rationale on a cached iOS grant the way we do on Android. A
+    // follow-up that adds `react-native-permissions` (or queries each
+    // underlying API's status) would close that gap.
     return "granted";
   }
 

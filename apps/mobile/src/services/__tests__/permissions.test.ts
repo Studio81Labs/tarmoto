@@ -27,10 +27,14 @@ jest.mock("react-native", () => ({
       DENIED: "denied",
       NEVER_ASK_AGAIN: "never_ask_again",
     },
+    check: jest.fn(),
     request: jest.fn(),
   },
 }));
 
+const checkMock = PermissionsAndroid.check as jest.MockedFunction<
+  typeof PermissionsAndroid.check
+>;
 const requestMock = PermissionsAndroid.request as jest.MockedFunction<
   typeof PermissionsAndroid.request
 >;
@@ -46,6 +50,11 @@ const rationale: PermissionRationale = {
 };
 
 beforeEach(() => {
+  checkMock.mockReset();
+  // Default to "not yet granted" so each spec opts in to the
+  // already-granted short-circuit explicitly. Without this, every
+  // spec would have to remember to seed `check`.
+  checkMock.mockResolvedValue(false);
   requestMock.mockReset();
   alertMock.mockReset();
   openSettingsMock.mockReset();
@@ -58,6 +67,22 @@ function answerRationaleWith(button: "Allow" | "Cancel") {
     target?.onPress?.();
   });
 }
+
+it("returns granted without showing the rationale when Android already has the permission", async () => {
+  // Cached-grant short-circuit (PR #319 review feedback): a rider who
+  // granted location on a prior ride should not have to tap through
+  // a redundant rationale Alert every time they start a fresh ride.
+  checkMock.mockResolvedValueOnce(true);
+
+  const result = await requestWithRationale({
+    androidPermission: PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+    rationale,
+  });
+
+  expect(result).toBe("granted");
+  expect(alertMock).not.toHaveBeenCalled();
+  expect(requestMock).not.toHaveBeenCalled();
+});
 
 it("requests the OS permission after the rider taps Allow on the rationale", async () => {
   answerRationaleWith("Allow");
