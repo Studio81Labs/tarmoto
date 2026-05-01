@@ -11,6 +11,11 @@
  * kept separate from the fetcher.
  */
 
+import {
+  formatCount,
+  formatJoinedLabel,
+  initialsFromName,
+} from "@tarmoto/shared";
 import type {
   Badge,
   Bike,
@@ -19,6 +24,12 @@ import type {
   RouteCollection,
 } from "@/lib/types";
 import { API_BASE } from "@/lib/config";
+
+// US-27 review-driven dedupe: the platform-agnostic formatters live in
+// `@tarmoto/shared/rider-format` so mobile and companion stay in sync.
+// Re-exported here so existing companion call sites that import from
+// `@/lib/rider-profile` keep working.
+export { formatCount, formatJoinedLabel, initialsFromName };
 
 /**
  * One shared ride surfaced in the rider's recent-activity feed. Kept minimal
@@ -125,26 +136,6 @@ export function countEarnedBadges(entries: BadgeEntry[]): number {
 }
 
 /**
- * Extracts up to 2 uppercase initials from a display name for avatar
- * fallbacks. Returns `"?"` when the name is empty, whitespace-only, or
- * otherwise yields no alphanumeric characters — without this guard
- * `"  Alice".split(/\s+/)` would produce an empty-string word whose
- * first char is `undefined`, joined to the literal string
- * `"undefined"`, and sliced to `"UN"`.
- */
-export function initialsFromName(name: string | null | undefined): string {
-  if (!name) return "?";
-  const letters = name
-    .split(/\s+/)
-    .map((word) => word[0])
-    .filter((ch): ch is string => typeof ch === "string" && ch.length > 0)
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-  return letters || "?";
-}
-
-/**
  * Returns the rider's single highlighted bike (active bike preferred, else
  * the most-ridden). Used in the header — the full garage is on the account
  * page, not the public profile.
@@ -156,29 +147,6 @@ export function pickShowcaseBike(bikes: Bike[]): Bike | null {
   return [...bikes].sort((a, b) => b.totalKm - a.totalKm)[0];
 }
 
-export function formatJoinedLabel(
-  joinedAt: string,
-  now: Date = new Date(),
-): string {
-  const date = new Date(joinedAt);
-  if (Number.isNaN(date.getTime())) return "Joined recently";
-  let months =
-    (now.getUTCFullYear() - date.getUTCFullYear()) * 12 +
-    (now.getUTCMonth() - date.getUTCMonth());
-  // Calendar-month arithmetic overstates age when the day-of-month
-  // hasn't been reached yet (e.g. joined Mar 20, now Apr 18 is 29 days,
-  // not a full month). Future dates clamp to zero so ledger drift or
-  // clock skew can't show "Joined -2 months ago". UTC accessors keep the
-  // comparison timezone-agnostic so a user's locale can't flip the day.
-  if (now.getUTCDate() < date.getUTCDate()) months -= 1;
-  if (months < 0) months = 0;
-  if (months < 1) return "Joined this month";
-  if (months < 12)
-    return `Joined ${months} month${months === 1 ? "" : "s"} ago`;
-  const years = Math.floor(months / 12);
-  return `Joined ${years} year${years === 1 ? "" : "s"} ago`;
-}
-
 export function formatKm(km: number): string {
   if (km < 1_000) return `${Math.round(km).toLocaleString()} km`;
   const k = km / 1000;
@@ -187,13 +155,6 @@ export function formatKm(km: number): string {
   // that would render as 10.0+ into the integer branch.
   if (k >= 9.95) return `${Math.round(k).toLocaleString()}k km`;
   return `${k.toFixed(1)}k km`;
-}
-
-export function formatCount(value: number): string {
-  if (value < 1_000) return Math.round(value).toLocaleString();
-  const k = value / 1000;
-  if (k >= 9.95) return `${Math.round(k).toLocaleString()}k`;
-  return `${k.toFixed(1)}k`;
 }
 
 export function formatHours(hours: number): string {

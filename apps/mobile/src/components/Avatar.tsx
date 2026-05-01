@@ -7,33 +7,19 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
+import { initialsFromName } from "@tarmoto/shared";
 import { borderRadius, colors, fontWeight } from "@/theme";
+
+// Re-exported for the Avatar test file and any caller that prefers the
+// component-local import. The implementation lives in `@tarmoto/shared`
+// so it stays in lockstep with the companion's avatar fallback.
+export { initialsFromName };
 
 interface AvatarProps {
   uri?: string | null;
   name: string;
   size?: number;
   style?: StyleProp<ViewStyle>;
-}
-
-/**
- * Returns up to 2 uppercase initials from `name`, falling back to "?" when
- * the input is empty/whitespace-only or otherwise yields no alphanumeric
- * characters. Without the filter step, `"  Alice".split(/\s+/)` would emit
- * an empty leading word whose first char is `undefined` — joining that
- * back yields the literal string `"undefined"` and the fallback would
- * render the wrong initials.
- */
-export function initialsFromName(name: string | null | undefined): string {
-  if (!name) return "?";
-  const letters = name
-    .split(/\s+/)
-    .map((word) => word[0])
-    .filter((ch): ch is string => typeof ch === "string" && ch.length > 0)
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-  return letters || "?";
 }
 
 export default function Avatar({ uri, name, size = 64, style }: AvatarProps) {
