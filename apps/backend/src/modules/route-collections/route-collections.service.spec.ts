@@ -107,6 +107,68 @@ describe('RouteCollectionsService', () => {
     service = module.get<RouteCollectionsService>(RouteCollectionsService);
   });
 
+  describe('listMine', () => {
+    it('pairs item_count to entities by id, not array index', async () => {
+      // Deliberately misalign raw and entity orderings — TypeORM's
+      // `getRawAndEntities` doesn't guarantee positional alignment when
+      // aggregation/ordering is involved, so the service must look up
+      // counts by entity id (the `c_id` column from the alias `c`).
+      const collectionA = {
+        ...baseCollection,
+        id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        title: 'Alpha',
+      };
+      const collectionB = {
+        ...baseCollection,
+        id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+        title: 'Beta',
+      };
+
+      (collectionRepo.createQueryBuilder as jest.Mock).mockReturnValueOnce({
+        leftJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        groupBy: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getRawAndEntities: jest.fn().mockResolvedValue({
+          entities: [collectionA, collectionB],
+          raw: [
+            // Reversed wrt entities: B first with 5, A second with 7.
+            { c_id: collectionB.id, item_count: '5' },
+            { c_id: collectionA.id, item_count: '7' },
+          ],
+        }),
+      });
+
+      const result = await service.listMine(ownerId);
+
+      expect(result.items).toHaveLength(2);
+      const byId = new Map(result.items.map((i) => [i.id, i.item_count]));
+      // Without the id-keyed pairing this would attribute B's 5 to A.
+      expect(byId.get(collectionA.id)).toBe(7);
+      expect(byId.get(collectionB.id)).toBe(5);
+    });
+
+    it('falls back to 0 when a raw row is missing for an entity', async () => {
+      (collectionRepo.createQueryBuilder as jest.Mock).mockReturnValueOnce({
+        leftJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        groupBy: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getRawAndEntities: jest.fn().mockResolvedValue({
+          entities: [baseCollection],
+          raw: [], // missing — the lookup must default cleanly to 0
+        }),
+      });
+
+      const result = await service.listMine(ownerId);
+      expect(result.items[0]?.item_count).toBe(0);
+    });
+  });
+
   describe('create', () => {
     it('allocates a slug and persists the trimmed title', async () => {
       // Stub the post-save owner re-load so toDetailResponse can populate

@@ -52,10 +52,19 @@ export class RouteCollectionsService {
       .orderBy('c.updated_at', 'DESC')
       .getRawAndEntities();
 
-    const items = rows.entities.map((c, idx) => {
-      const raw = rows.raw[idx] as { item_count: string };
-      return this.toSummaryResponse(c, Number(raw.item_count ?? 0));
-    });
+    // TypeORM's `getRawAndEntities` does NOT guarantee positional alignment
+    // between `entities` and `raw` — particularly with aggregation, ordering,
+    // or hydration that drops rows. Key the raw `item_count` on the entity
+    // id (TypeORM emits the PK as `c_id` for the alias `c`) so collections
+    // can't pick up another collection's count.
+    const countById = new Map<string, number>();
+    for (const raw of rows.raw as { c_id?: string; item_count?: string }[]) {
+      if (raw.c_id) countById.set(raw.c_id, Number(raw.item_count ?? 0));
+    }
+
+    const items = rows.entities.map((c) =>
+      this.toSummaryResponse(c, countById.get(c.id) ?? 0),
+    );
     return { items, total: items.length };
   }
 
