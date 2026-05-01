@@ -116,17 +116,6 @@ function TripPrintPageContent() {
 
   return (
     <div className="trip-print min-h-screen bg-white text-slate-900">
-      <style>{`
-        @media print {
-          .trip-print-toolbar { display: none !important; }
-          @page { size: A4; margin: 16mm; }
-          .trip-print-cover { page-break-after: always; }
-          .trip-print-day { page-break-inside: avoid; page-break-before: always; }
-          .trip-print-day:first-child { page-break-before: auto; }
-          .trip-print-appendix { page-break-before: always; }
-        }
-      `}</style>
-
       <div className="trip-print-toolbar sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white/95 backdrop-blur px-6 py-3">
         <Link
           href={`/trips/${trip.id}`}

@@ -47,6 +47,24 @@ export function TripPrintBody({ trip, region, members }: TripPrintBodyProps) {
 
   return (
     <article className="trip-print-body mx-auto max-w-3xl px-6 py-8 text-[14px] leading-relaxed">
+      {/*
+        Print CSS lives with the body (not the host page) so the rules
+        stay in lockstep with the class names this component renders.
+        The `.trip-print-toolbar` rule is the public contract for hosts:
+        any wrapper that puts a toolbar over this body should tag it
+        with that class so it's hidden on paper.
+      */}
+      <style>{`
+        @media print {
+          .trip-print-toolbar { display: none !important; }
+          @page { size: A4; margin: 16mm; }
+          .trip-print-cover { page-break-after: always; }
+          .trip-print-day { page-break-inside: avoid; page-break-before: always; }
+          .trip-print-day:first-child { page-break-before: auto; }
+          .trip-print-appendix { page-break-before: always; }
+        }
+      `}</style>
+
       <CoverSection
         trip={trip}
         region={region}
