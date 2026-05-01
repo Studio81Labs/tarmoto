@@ -12,7 +12,6 @@ import { User } from '../../entities/user.entity.js';
 import { EmailService } from '../email/email.service.js';
 import { PushService } from '../push/index.js';
 import { getCompanionUrl } from '../../common/companion-url.js';
-import { SUBSCRIPTION_PRICING } from '@tarmoto/shared';
 import {
   STRIPE_BILLING_CLIENT,
   type StripeCheckoutSession,
@@ -44,7 +43,7 @@ const PLAN_CATALOG: Record<
 > = {
   free: {
     name: 'Free',
-    priceLabel: `$${SUBSCRIPTION_PRICING.free.price_eur}`,
+    priceLabel: '$0',
     features: [
       'Basic navigation',
       'Road quality overlay (limited)',
@@ -54,7 +53,7 @@ const PLAN_CATALOG: Record<
   },
   premium: {
     name: 'Premium',
-    priceLabel: `$${SUBSCRIPTION_PRICING.premium.price_eur}/yr`,
+    priceLabel: '$29.99/yr',
     highlighted: true,
     features: [
       'Unlimited trip planning',
@@ -65,7 +64,7 @@ const PLAN_CATALOG: Record<
   },
   pro: {
     name: 'Pro',
-    priceLabel: `$${SUBSCRIPTION_PRICING.pro.price_eur}/yr`,
+    priceLabel: '$49.99/yr',
     description: 'For group organisers and power users.',
     features: [
       'Everything in Premium',

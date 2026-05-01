@@ -56,9 +56,11 @@ export const SUBSCRIPTION_TIERS = ["free", "premium", "pro"] as const;
 
 export type SubscriptionTier = (typeof SUBSCRIPTION_TIERS)[number];
 
-// Canonical EUR-denominated PRD pricing. Display-layer code is responsible
-// for currency rendering — the symbol shown in the UI is intentionally not
-// encoded here so the source of truth stays a pure numeric record.
+// Canonical EUR-denominated PRD pricing. Not yet read by display code —
+// existing UI labels (`$N/yr`) hardcode dollar amounts that match these
+// values numerically; reconciling the `$`/`€` discrepancy is tracked in
+// #322 and will land alongside the first euro-aware consumer (Stripe
+// price-creation or i18n-aware label formatter).
 export const SUBSCRIPTION_PRICING: Record<
   SubscriptionTier,
   { price_eur: number; interval: "month" | "year" }
