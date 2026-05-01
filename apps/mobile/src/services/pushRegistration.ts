@@ -63,6 +63,14 @@ async function requestPermission(
 
 export interface PushRegistrationApi {
   client: AxiosInstance;
+  /**
+   * Optional explicit bearer for the DELETE in `unregisterPush`. The
+   * logout flow snapshots the access token before clearing MMKV and
+   * passes it through here so the request can authenticate even after
+   * the local credentials have been wiped (and even if a concurrent
+   * relogin has populated MMKV with a different user's token).
+   */
+  bearer?: string | undefined;
 }
 
 /**
@@ -137,7 +145,16 @@ export async function unregisterPush(api: PushRegistrationApi): Promise<void> {
     unsubscribeTokenRefresh = null;
   }
   try {
-    await api.client.delete(`/me/devices/${encodeURIComponent(token)}`);
+    await api.client.delete(`/me/devices/${encodeURIComponent(token)}`, {
+      // When the caller passes an explicit bearer (logout flow),
+      // attach it as a per-request header. The api client's request
+      // interceptor honours an existing `Authorization` value and
+      // skips the MMKV read, so this survives even after `clearTokens()`
+      // has wiped local credentials.
+      headers: api.bearer
+        ? { Authorization: `Bearer ${api.bearer}` }
+        : undefined,
+    });
   } catch {
     // Best-effort — backend will eventually soft-delete the token
     // on next dispatch failure if this call never lands.

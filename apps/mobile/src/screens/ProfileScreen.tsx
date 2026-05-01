@@ -161,11 +161,7 @@ export default function ProfileScreen() {
         text: "Sign out",
         style: "destructive",
         onPress: () => {
-          // Fire-and-forget: api.logout is now async (awaits the
-          // device-token DELETE before clearing the bearer), but the
-          // UI doesn't need to wait on that round-trip. The local
-          // Zustand `logout()` flips the screen state immediately.
-          void api.logout();
+          api.logout();
           logout();
         },
       },

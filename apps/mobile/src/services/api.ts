@@ -88,9 +88,19 @@ class ApiService {
       headers: { "Content-Type": "application/json" },
     });
 
-    // Attach auth token
+    // Attach auth token. Per-request callers can override the bearer
+    // by setting `Authorization` explicitly on the config — the
+    // interceptor honours that and skips the MMKV read. This matters
+    // for the logout flow, which snapshots the bearer and fires the
+    // device-token DELETE after `clearTokens()` has wiped MMKV; we
+    // don't want the interceptor to either drop the explicit header
+    // (because MMKV is empty) or, worse, replace it with a freshly
+    // signed-in user's token if they relogin during the round-trip.
     this.client.interceptors.request.use(
       (config: InternalAxiosRequestConfig) => {
+        if (config.headers?.Authorization) {
+          return config;
+        }
         const token = storage.getString("access_token");
         if (token && config.headers) {
           config.headers.Authorization = `Bearer ${token}`;
@@ -159,19 +169,31 @@ class ApiService {
     }
   }
 
-  async logout(): Promise<void> {
-    // Await unregister BEFORE clearing the bearer. The earlier
-    // implementation did `void unregisterPush(...); this.clearTokens()`,
-    // but the axios request interceptor reads `access_token` from MMKV
-    // asynchronously (via the Promise chain after the request is
-    // submitted), so by the time it ran `clearTokens()` had already
-    // wiped the bearer and the DELETE went out unauthenticated. Await
-    // on the same task ensures the DELETE completes (or fails — still
-    // best-effort) with a live token. UI callers can fire-and-forget
-    // this Promise; the local Zustand `logout()` flips the UI
-    // immediately and doesn't depend on the network round-trip.
-    await unregisterPush({ client: this.client });
+  logout(): void {
+    // Snapshot the bearer BEFORE clearing tokens, then clear MMKV
+    // synchronously, then fire the unregister DELETE with the
+    // explicit bearer in a per-request header. Two earlier
+    // attempts each had a race:
+    //
+    //   1. `void unregisterPush(...); clearTokens()` — interceptor
+    //      read MMKV asynchronously; by the time it ran,
+    //      clearTokens had wiped the bearer and the DELETE went
+    //      out unauthenticated.
+    //   2. `await unregisterPush(...); clearTokens()` (logout
+    //      async, called fire-and-forget) — clearTokens deferred
+    //      until after the round-trip, so a fast relogin in
+    //      between would write fresh tokens that clearTokens then
+    //      wiped.
+    //
+    // The current shape eliminates both: clearTokens is
+    // synchronous (no relogin window), the bearer is captured
+    // up-front, and the modified request interceptor honours the
+    // explicit `Authorization` header so a concurrent login
+    // populating MMKV doesn't substitute its bearer onto our
+    // in-flight DELETE.
+    const bearer = storage.getString("access_token");
     this.clearTokens();
+    void unregisterPush({ client: this.client, bearer });
   }
 
   private storeTokens(auth: AuthResponse): void {
