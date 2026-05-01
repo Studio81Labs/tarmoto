@@ -131,6 +131,12 @@ export class PushService {
    * multiple users (a hazard alert ahead on a saved commute fans out
    * to every rider with that commute). Each per-user dispatch goes
    * through the full preference + quiet-hours gate independently.
+   *
+   * Uses `Promise.allSettled` rather than `Promise.all` so one user's
+   * preference-load failure (transient DB blip, missing row in some
+   * unforeseen edge case) doesn't abort the whole fanout. Failures
+   * are logged at warn level; the aggregate result reflects only the
+   * users we managed to reach.
    */
   async sendToUsers(
     userIds: string[],
@@ -139,14 +145,26 @@ export class PushService {
     if (userIds.length === 0) {
       return { delivered: 0, pruned: 0, users: 0 };
     }
-    const results = await Promise.all(
+    const settled = await Promise.allSettled(
       userIds.map((id) => this.sendToUser(id, input)),
     );
-    return {
-      delivered: results.reduce((sum, r) => sum + r.delivered, 0),
-      pruned: results.reduce((sum, r) => sum + r.pruned, 0),
-      users: userIds.length,
-    };
+    let delivered = 0;
+    let pruned = 0;
+    settled.forEach((entry, i) => {
+      if (entry.status === 'fulfilled') {
+        delivered += entry.value.delivered;
+        pruned += entry.value.pruned;
+        return;
+      }
+      const reason =
+        entry.reason instanceof Error
+          ? entry.reason.message
+          : String(entry.reason);
+      this.logger.warn(
+        `push fanout failed for user=${userIds[i]} category=${input.category}: ${reason}`,
+      );
+    });
+    return { delivered, pruned, users: userIds.length };
   }
 
   async loadPreferences(userId: string): Promise<NotificationPreferences> {

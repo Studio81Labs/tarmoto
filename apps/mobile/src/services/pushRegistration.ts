@@ -54,14 +54,9 @@ function loadMessaging(): ReturnType<FirebaseMessagingModule> | null {
 async function requestPermission(
   messaging: ReturnType<FirebaseMessagingModule>,
 ): Promise<boolean> {
-  if (Platform.OS === "ios") {
-    const status = await messaging.requestPermission();
-    // 1 = AUTHORIZED, 2 = PROVISIONAL — both let us deliver pushes.
-    return status === 1 || status === 2;
-  }
-  // Android 13+ requires POST_NOTIFICATIONS at runtime; firebase
-  // messaging's `requestPermission` covers that. Older Androids
-  // are auto-granted.
+  // `messaging.requestPermission()` covers both iOS (real prompt) and
+  // Android (POST_NOTIFICATIONS on 13+, auto-granted on older).
+  // 1 = AUTHORIZED, 2 = PROVISIONAL — both let us deliver pushes.
   const status = await messaging.requestPermission();
   return status === 1 || status === 2;
 }

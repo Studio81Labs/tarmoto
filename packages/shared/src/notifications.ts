@@ -75,12 +75,12 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   quiet_hours_end: 0,
   quiet_hours_timezone: "UTC",
   categories: {
-    hazard_alert: pushOnlyDefault,
+    hazard_alert: { ...pushOnlyDefault },
     crash_followup: { ...allOn },
     trip_collaboration: { ...allOn },
     new_follower: { ...allOn },
-    ride_like: pushOnlyDefault,
-    weather_alert: pushOnlyDefault,
+    ride_like: { ...pushOnlyDefault },
+    weather_alert: { ...pushOnlyDefault },
     subscription_billing: { ...allOn },
   },
 };
