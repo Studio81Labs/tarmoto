@@ -3,12 +3,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SurfaceReading } from '../../entities/surface-reading.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
+import { RideStats } from '../../entities/ride-stats.entity.js';
 import {
   UploadSensorDataDto,
   SensorReadingDto,
 } from './dto/upload-sensor-data.dto.js';
 import { UploadResponseDto } from './dto/upload-response.dto.js';
-import { haversineMeters } from '@tarmoto/shared';
+import { haversineMeters, tallyLeanSamples } from '@tarmoto/shared';
 
 const SEGMENT_LENGTH_M = 100;
 const MIN_SPEED_MS = 2.78; // ~10 km/h — discard stopped readings
@@ -46,12 +47,24 @@ export class SensorService {
     private readonly readingRepo: Repository<SurfaceReading>,
     @InjectRepository(RoadSegment)
     private readonly segmentRepo: Repository<RoadSegment>,
+    @InjectRepository(RideStats)
+    private readonly statsRepo: Repository<RideStats>,
   ) {}
 
   async processUpload(
     userId: string,
     dto: UploadSensorDataDto,
   ): Promise<UploadResponseDto> {
+    // US-19 — fold this batch's lean samples into the per-ride
+    // aggregation FIRST so they survive the GPS / speed filter the
+    // surface-readings path applies below. Lean is derived from
+    // accel + gyro and is GPS-independent: a batch captured during
+    // GPS lock-acquisition, a tunnel, or stop-and-go traffic still
+    // has valid `lean_deg` values that should land on the histogram.
+    // Persisting before the early return keeps that data alive even
+    // when no reading qualifies for the surface-readings pipeline.
+    await this.upsertLeanStats(dto.ride_id, dto.readings);
+
     // Filter out readings without GPS or below speed threshold
     const validReadings = dto.readings.filter(
       (r) =>
@@ -111,6 +124,85 @@ export class SensorService {
       accepted: validReadings.length,
       segments_updated: segmentsUpdated,
     };
+  }
+
+  /**
+   * Fold this batch's per-reading lean samples into the running
+   * `ride_stats.max_lean_angle` and `ride_stats.lean_distribution_json`
+   * for the ride. Called from `processUpload` after surface readings
+   * have been persisted.
+   *
+   * Samples whose `lean_deg` is absent are dropped — the mobile filter
+   * intentionally omits the field while calibrating, so treating
+   * "missing" as 0° would over-fill the lowest bucket. Sub-windows are
+   * tallied at the per-reading granularity (50 Hz) which over-counts
+   * relative to the 1 s window granularity the spec calls out, but the
+   * histogram still reports time-in-bucket faithfully because every
+   * bucket scales by the same constant — what the rider sees is the
+   * proportion in each bucket, not the absolute count.
+   *
+   * Concurrency: the merge is performed atomically by Postgres via
+   * `INSERT ... ON CONFLICT (ride_id) DO UPDATE` rather than a JS-side
+   * read-merge-write. Two batches for the same ride landing
+   * concurrently (offline-queue replay racing a fresh upload) would
+   * otherwise both read the same baseline, merge independently, and
+   * have the second `save` clobber the first — silently losing a
+   * batch's worth of histogram counts and potentially regressing
+   * `max_lean_angle`. Doing the merge in SQL serialises on the
+   * unique-index lookup for `ride_id`, so the second statement sees
+   * the first's committed row in its `EXCLUDED` / `ride_stats.*`
+   * references.
+   */
+  private async upsertLeanStats(
+    rideId: string,
+    readings: SensorReadingDto[],
+  ): Promise<void> {
+    // Pull the absolute-degree samples once and reuse for both the max
+    // and the histogram tally so we don't walk the readings twice.
+    const absSamples: number[] = [];
+    let batchMax = 0;
+    for (const r of readings) {
+      if (r.lean_deg === undefined || !Number.isFinite(r.lean_deg)) continue;
+      const abs = Math.abs(r.lean_deg);
+      if (abs > batchMax) batchMax = abs;
+      absSamples.push(abs);
+    }
+    if (absSamples.length === 0) {
+      // Quiet sensor / pre-calibration batch — leave the row alone so
+      // a follow-up batch with real lean data can still write to it.
+      return;
+    }
+    const batchHistogram = tallyLeanSamples(absSamples);
+
+    // The bucket keys are owned by `@tarmoto/shared` (`LEAN_BUCKETS`),
+    // but inlining them here keeps the SQL stable across a future
+    // schema change to the bucket set — adding a new bucket needs an
+    // intentional edit to this statement, not an implicit drop on the
+    // floor when the JSONB merge silently omits an unknown key.
+    await this.statsRepo.query(
+      `INSERT INTO ride_stats (ride_id, max_lean_angle, lean_distribution_json)
+       VALUES ($1, $2, $3::jsonb)
+       ON CONFLICT (ride_id) DO UPDATE SET
+         max_lean_angle = GREATEST(
+           COALESCE(ride_stats.max_lean_angle, 0),
+           EXCLUDED.max_lean_angle
+         ),
+         lean_distribution_json = jsonb_build_object(
+           '0_10',
+             COALESCE((ride_stats.lean_distribution_json->>'0_10')::int, 0)
+             + COALESCE((EXCLUDED.lean_distribution_json->>'0_10')::int, 0),
+           '10_20',
+             COALESCE((ride_stats.lean_distribution_json->>'10_20')::int, 0)
+             + COALESCE((EXCLUDED.lean_distribution_json->>'10_20')::int, 0),
+           '20_30',
+             COALESCE((ride_stats.lean_distribution_json->>'20_30')::int, 0)
+             + COALESCE((EXCLUDED.lean_distribution_json->>'20_30')::int, 0),
+           '30_plus',
+             COALESCE((ride_stats.lean_distribution_json->>'30_plus')::int, 0)
+             + COALESCE((EXCLUDED.lean_distribution_json->>'30_plus')::int, 0)
+         )`,
+      [rideId, batchMax, JSON.stringify(batchHistogram)],
+    );
   }
 
   /**

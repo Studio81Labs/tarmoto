@@ -5,12 +5,15 @@ import { Repository } from 'typeorm';
 import { SensorService } from './sensor.service.js';
 import { SurfaceReading } from '../../entities/surface-reading.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
+import { RideStats } from '../../entities/ride-stats.entity.js';
 import { SensorReadingDto } from './dto/upload-sensor-data.dto.js';
 
 describe('SensorService', () => {
   let service: SensorService;
   let readingRepo: Partial<jest.Mocked<Repository<SurfaceReading>>>;
   let segmentRepo: Partial<jest.Mocked<Repository<RoadSegment>>>;
+  let statsRepo: Partial<jest.Mocked<Repository<RideStats>>>;
+  let storedStats: Partial<RideStats> | null;
 
   beforeEach(async () => {
     readingRepo = {
@@ -22,11 +25,54 @@ describe('SensorService', () => {
       query: jest.fn().mockResolvedValue([{ id: 'segment-1' }]),
     };
 
+    storedStats = null;
+    // Mock `query()` to simulate the atomic INSERT ... ON CONFLICT DO
+    // UPDATE the production code now uses (see `upsertLeanStats` for
+    // why the merge moved into SQL). Tracks the latest row so tests
+    // can assert against `storedStats` without parsing the SQL — the
+    // semantics being mocked are: max via GREATEST, distribution via
+    // per-bucket integer addition.
+    statsRepo = {
+      query: jest.fn().mockImplementation((_sql, params: unknown[]) => {
+        const [rideId, batchMax, distJson] = params as [string, number, string];
+        const batchDist = JSON.parse(distJson) as Record<string, number>;
+        if (storedStats === null) {
+          storedStats = {
+            ride_id: rideId,
+            max_lean_angle: batchMax,
+            lean_distribution_json: {
+              '0_10': batchDist['0_10'] ?? 0,
+              '10_20': batchDist['10_20'] ?? 0,
+              '20_30': batchDist['20_30'] ?? 0,
+              '30_plus': batchDist['30_plus'] ?? 0,
+            } as RideStats['lean_distribution_json'],
+          };
+        } else {
+          const existingDist =
+            (storedStats.lean_distribution_json as Record<string, number>) ??
+            {};
+          storedStats.max_lean_angle = Math.max(
+            storedStats.max_lean_angle ?? 0,
+            batchMax,
+          );
+          storedStats.lean_distribution_json = {
+            '0_10': (existingDist['0_10'] ?? 0) + (batchDist['0_10'] ?? 0),
+            '10_20': (existingDist['10_20'] ?? 0) + (batchDist['10_20'] ?? 0),
+            '20_30': (existingDist['20_30'] ?? 0) + (batchDist['20_30'] ?? 0),
+            '30_plus':
+              (existingDist['30_plus'] ?? 0) + (batchDist['30_plus'] ?? 0),
+          } as RideStats['lean_distribution_json'];
+        }
+        return Promise.resolve([]);
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SensorService,
         { provide: getRepositoryToken(SurfaceReading), useValue: readingRepo },
         { provide: getRepositoryToken(RoadSegment), useValue: segmentRepo },
+        { provide: getRepositoryToken(RideStats), useValue: statsRepo },
       ],
     }).compile();
 
@@ -394,6 +440,175 @@ describe('SensorService', () => {
 
       const createArg = (readingRepo.create as jest.Mock).mock.calls[0][0];
       expect(createArg.surface_type).toBeNull();
+    });
+  });
+
+  describe('lean aggregation (US-19)', () => {
+    function readingWithLean(
+      lean: number | undefined,
+      i: number,
+    ): SensorReadingDto {
+      return {
+        t: Date.now() + i * 20,
+        ax: 0.1,
+        ay: 0.2,
+        az: 9.8,
+        lat: 49.1 + i * 0.00001,
+        lng: 16.75,
+        speed: 15,
+        ...(lean !== undefined ? { lean_deg: lean } : {}),
+      };
+    }
+
+    it('writes max_lean_angle and a bucketed histogram into ride_stats from the upload payload', async () => {
+      const dto = {
+        ride_id: 'ride-1',
+        readings: [
+          ...Array.from({ length: 5 }, (_, i) => readingWithLean(2, i)),
+          ...Array.from({ length: 3 }, (_, i) => readingWithLean(15, i + 5)),
+          // Negative leans count by absolute value — left and right
+          // corners contribute to the same bucket.
+          ...Array.from({ length: 4 }, (_, i) => readingWithLean(-22, i + 8)),
+          readingWithLean(35, 12),
+        ],
+      };
+
+      await service.processUpload('user-1', dto);
+
+      // The sensor module always passes through findOne, then save —
+      // assert against the storedStats trace instead of the spy index
+      // so a future re-order of save calls doesn't break the test.
+      expect(storedStats?.ride_id).toBe('ride-1');
+      expect(storedStats?.max_lean_angle).toBe(35);
+      expect(storedStats?.lean_distribution_json).toEqual({
+        '0_10': 5,
+        '10_20': 3,
+        '20_30': 4,
+        '30_plus': 1,
+      });
+    });
+
+    it('merges new samples with the existing distribution instead of overwriting', async () => {
+      // Pre-existing ride_stats row from a previous batch. The
+      // aggregation should add the new histogram counts on top.
+      storedStats = {
+        ride_id: 'ride-1',
+        max_lean_angle: 18,
+        lean_distribution_json: {
+          '0_10': 100,
+          '10_20': 50,
+          '20_30': 0,
+          '30_plus': 0,
+        },
+      } as RideStats;
+
+      const dto = {
+        ride_id: 'ride-1',
+        readings: [
+          ...Array.from({ length: 2 }, (_, i) => readingWithLean(5, i)),
+          ...Array.from({ length: 1 }, (_, i) => readingWithLean(28, i + 2)),
+        ],
+      };
+
+      await service.processUpload('user-1', dto);
+
+      expect(storedStats?.max_lean_angle).toBe(28);
+      expect(storedStats?.lean_distribution_json).toEqual({
+        '0_10': 102,
+        '10_20': 50,
+        '20_30': 1,
+        '30_plus': 0,
+      });
+    });
+
+    it("doesn't touch ride_stats when no readings carry lean data", async () => {
+      const dto = {
+        ride_id: 'ride-1',
+        readings: Array.from({ length: 5 }, (_, i) =>
+          readingWithLean(undefined, i),
+        ),
+      };
+
+      await service.processUpload('user-1', dto);
+
+      expect(statsRepo.query).not.toHaveBeenCalled();
+      expect(storedStats).toBeNull();
+    });
+
+    it('persists lean samples even when every reading is filtered out by the GPS / speed gate', async () => {
+      // Lean is derived from accel + gyro; GPS lock-acquisition,
+      // tunnels, and stop-and-go traffic shouldn't cost the ride its
+      // lean histogram. Without the upfront `upsertLeanStats` call,
+      // the early return below would silently drop these samples.
+      const dto = {
+        ride_id: 'ride-1',
+        readings: [
+          // No GPS coordinates — dropped by the surface pipeline's
+          // filter, but the rider's lean is still meaningful.
+          {
+            t: Date.now(),
+            ax: 0.1,
+            ay: 0.2,
+            az: 9.8,
+            lean_deg: 22,
+          },
+          {
+            t: Date.now() + 20,
+            ax: 0.1,
+            ay: 0.2,
+            az: 9.8,
+            // Stopped (< 10 km/h) — also dropped by the GPS / speed
+            // filter for the same reason.
+            lat: 49.1,
+            lng: 16.75,
+            speed: 0.5,
+            lean_deg: 8,
+          },
+        ],
+      };
+
+      const result = await service.processUpload('user-1', dto);
+
+      expect(result.accepted).toBe(0);
+      expect(result.segments_updated).toBe(0);
+      expect(storedStats?.max_lean_angle).toBe(22);
+      expect(storedStats?.lean_distribution_json).toEqual({
+        '0_10': 1,
+        '10_20': 0,
+        '20_30': 1,
+        '30_plus': 0,
+      });
+    });
+
+    it('persists the merge through a single atomic upsert (no read-modify-write race)', async () => {
+      // Two batches landing concurrently for the same ride must not
+      // race on findOne → save: both would read the same baseline,
+      // merge independently, and the second save would clobber the
+      // first. The fix is to do the merge in SQL via INSERT ... ON
+      // CONFLICT DO UPDATE — assert here that we issue exactly one
+      // statement, with `ride_id` as the conflict target and
+      // `GREATEST` / `jsonb_build_object` doing the merge in PG.
+      const dto = {
+        ride_id: 'ride-concurrency',
+        readings: Array.from({ length: 3 }, (_, i) => readingWithLean(15, i)),
+      };
+
+      await service.processUpload('user-1', dto);
+
+      expect(statsRepo.query).toHaveBeenCalledTimes(1);
+      const [sql, params] = (statsRepo.query as jest.Mock).mock.calls[0];
+      expect(sql).toContain('INSERT INTO ride_stats');
+      expect(sql).toContain('ON CONFLICT (ride_id) DO UPDATE');
+      expect(sql).toContain('GREATEST');
+      expect(sql).toContain('jsonb_build_object');
+      expect(params[0]).toBe('ride-concurrency');
+      expect(params[1]).toBe(15);
+      expect(JSON.parse(params[2] as string)).toEqual({
+        '0_10': 0,
+        '10_20': 3,
+        '20_30': 0,
+        '30_plus': 0,
+      });
     });
   });
 

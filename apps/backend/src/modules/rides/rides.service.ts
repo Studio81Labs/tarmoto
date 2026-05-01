@@ -18,6 +18,7 @@ import {
   RideTracksResponseDto,
 } from './dto/ride-response.dto.js';
 import { CsvService } from './csv.service.js';
+import { normalizeLeanDistribution } from '@tarmoto/shared';
 
 @Injectable()
 export class RidesService {
@@ -213,6 +214,14 @@ export class RidesService {
       elevation_loss: stats?.elevation_loss ?? null,
       curve_count: stats?.curve_count ?? null,
       max_lean_angle: stats?.max_lean_angle ?? null,
+      // Normalise the JSONB blob through the shared helper so a stored
+      // row that's missing a bucket key (older write, hand-edited
+      // migration) still produces a complete distribution; return null
+      // verbatim when no samples were ever captured so the client can
+      // distinguish "uncomputed" from "all zeros".
+      lean_distribution: stats?.lean_distribution_json
+        ? normalizeLeanDistribution(stats.lean_distribution_json)
+        : null,
       fuel_estimate_l: stats?.fuel_estimate_l ?? null,
       segments: segments.map((s) => ({
         road_segment_id: s.road_segment_id,

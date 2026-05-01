@@ -68,6 +68,21 @@ interface RideState {
   distance: number;
   duration: number; // seconds
   segmentCount: number;
+  /**
+   * Running maximum absolute lean angle observed by the orientation
+   * filter so far this ride (US-19). Drives the live HUD's "Max lean"
+   * tile so the rider gets feedback before the ride finishes — the
+   * canonical post-ride value comes from the backend's per-ride
+   * aggregation in `ride_stats.max_lean_angle`.
+   */
+  maxLeanDeg: number;
+  /**
+   * `true` while the orientation filter is in its initial calibration
+   * window. The HUD greys out the lean tile until the offset has
+   * locked in so the rider doesn't see flickering 0° / nonsense readings
+   * from the first second.
+   */
+  leanCalibrating: boolean;
 
   // Actions
   startRide: (type?: "free" | "commute" | "trip") => void;
@@ -79,6 +94,15 @@ interface RideState {
   updateDistance: (distance: number) => void;
   updateDuration: (duration: number) => void;
   incrementSegments: () => void;
+  /**
+   * Push a window-level max lean reading from the sensor service. The
+   * store keeps the running per-ride maximum so the HUD can render it
+   * without driving its own state.
+   */
+  reportLeanWindow: (params: {
+    maxAbsLeanDeg: number;
+    calibrating: boolean;
+  }) => void;
 
   // History
   recentRides: RideSummary[];
@@ -96,6 +120,8 @@ export const useRideStore = create<RideState>((set) => ({
   distance: 0,
   duration: 0,
   segmentCount: 0,
+  maxLeanDeg: 0,
+  leanCalibrating: true,
   recentRides: [],
 
   startRide: (type = "free") =>
@@ -111,6 +137,13 @@ export const useRideStore = create<RideState>((set) => ({
       duration: 0,
       segmentCount: 0,
       currentQuality: null,
+      maxLeanDeg: 0,
+      // Re-enter the calibration grey-out state. The sensor service's
+      // own filter is reset by `sensorService.start()` in lockstep —
+      // these two flags need to flip together so a stale "calibrated"
+      // banner from the prior ride doesn't show on the first second
+      // of the new one.
+      leanCalibrating: true,
     }),
   stopRide: () =>
     set({
@@ -119,6 +152,8 @@ export const useRideStore = create<RideState>((set) => ({
       startedAtMs: null,
       currentQuality: null,
       currentSpeed: 0,
+      maxLeanDeg: 0,
+      leanCalibrating: true,
     }),
   setActiveRide: (activeRide) => set({ activeRide }),
   updateSpeed: (currentSpeed) => set({ currentSpeed }),
@@ -127,6 +162,18 @@ export const useRideStore = create<RideState>((set) => ({
   updateDistance: (distance) => set({ distance }),
   updateDuration: (duration) => set({ duration }),
   incrementSegments: () => set((s) => ({ segmentCount: s.segmentCount + 1 })),
+  reportLeanWindow: ({ maxAbsLeanDeg, calibrating }) =>
+    set((s) => ({
+      // Only advance the running max when the filter has actually
+      // settled — otherwise a transient 30° reading from the first
+      // tilt before calibration locked in would dominate the rest of
+      // the ride.
+      maxLeanDeg:
+        calibrating || !Number.isFinite(maxAbsLeanDeg)
+          ? s.maxLeanDeg
+          : Math.max(s.maxLeanDeg, maxAbsLeanDeg),
+      leanCalibrating: calibrating,
+    })),
   setRecentRides: (recentRides) => set({ recentRides }),
 }));
 

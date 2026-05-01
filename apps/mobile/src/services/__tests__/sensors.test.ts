@@ -39,6 +39,7 @@ function makeFeatures(overrides: Partial<WindowFeatures> = {}): WindowFeatures {
     gyro_rms: 0.2,
     speed_kmh: 30,
     speed_normalized_rms: 1.0,
+    max_abs_lean_deg: 0,
     timestamp: 0,
     ...overrides,
   };

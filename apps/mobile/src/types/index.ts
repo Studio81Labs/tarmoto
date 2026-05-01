@@ -193,6 +193,19 @@ export interface RideDetail extends RideSummary {
   curve_count: number;
   max_lean_angle: number;
   fuel_estimate_l: number;
+  /**
+   * US-19 lean histogram. Each bucket carries the number of 1-second
+   * sensor windows the rider's absolute lean fell into that bucket.
+   * Null when the ride has no lean samples yet (still in progress, or
+   * uploaded by an old client that didn't compute lean) — surfaced as
+   * an empty distribution by the detail screen.
+   */
+  lean_distribution: {
+    "0_10": number;
+    "10_20": number;
+    "20_30": number;
+    "30_plus": number;
+  } | null;
   segments: RideSegment[];
 }
 
@@ -591,6 +604,15 @@ export interface SensorReading {
   lat?: number;
   lng?: number;
   speed?: number; // m/s
+  /**
+   * Estimated bike-frame roll (signed, degrees) at this sample, produced
+   * by the on-device complementary filter (US-19). Optional because the
+   * filter requires both accelerometer + gyroscope to be active and a
+   * completed calibration window — pre-calibration samples carry no
+   * lean. Backend treats the absent field as "unknown" rather than zero
+   * so a quiet sensor doesn't pollute the per-ride histogram.
+   */
+  lean_deg?: number;
 }
 
 export interface SegmentClassification {

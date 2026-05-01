@@ -60,6 +60,23 @@ export class RideDetailDto extends RideSummaryDto {
   @ApiProperty({ nullable: true })
   max_lean_angle!: number | null;
 
+  @ApiProperty({
+    nullable: true,
+    type: 'object',
+    description:
+      'US-19 per-ride lean histogram. Counts of orientation-filter ' +
+      'samples in each bucket (0-10°, 10-20°, 20-30°, 30°+). Null when ' +
+      'no lean samples were captured (ride pre-dates US-19 or rider ' +
+      'never let the orientation filter calibrate).',
+    additionalProperties: { type: 'integer' },
+  })
+  lean_distribution!: {
+    '0_10': number;
+    '10_20': number;
+    '20_30': number;
+    '30_plus': number;
+  } | null;
+
   @ApiProperty({ nullable: true })
   fuel_estimate_l!: number | null;
 

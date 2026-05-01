@@ -121,8 +121,19 @@ export default function RideActiveScreen() {
   const distance = useRideStore((s) => s.distance);
   const duration = useRideStore((s) => s.duration);
   const segmentCount = useRideStore((s) => s.segmentCount);
+  const maxLeanDeg = useRideStore((s) => s.maxLeanDeg);
+  const leanCalibrating = useRideStore((s) => s.leanCalibrating);
   const stopRideAction = useRideStore((s) => s.stopRide);
   const minQuality = usePreferencesStore((s) => s.minQuality);
+
+  const handleRecalibrateLean = useCallback(() => {
+    // Re-enter the orientation filter's calibration window. The HUD's
+    // lean tile flips back to "Calibrating…" until the next ~1.5 s of
+    // upright readings settle the offset. The store mirror flips on
+    // the next window callback (`reportLeanWindow`).
+    sensorService.recalibrateLean();
+    useRideStore.setState({ leanCalibrating: true });
+  }, []);
 
   // ── Ride lifecycle: ensure a ride is active when the screen mounts. ──
   //
@@ -193,10 +204,16 @@ export default function RideActiveScreen() {
       // `locationService` are singletons that nothing else starts
       // on the ride path, so the store fields the screen renders
       // never receive any updates.
-      sensorService.start((_features, classification) => {
+      sensorService.start((features, classification) => {
         const s = useRideStore.getState();
         s.updateQuality(classification);
         s.incrementSegments();
+        // US-19: roll up the per-window lean max into the running
+        // per-ride max so the HUD's "Max lean" tile stays current.
+        s.reportLeanWindow({
+          maxAbsLeanDeg: features.max_abs_lean_deg,
+          calibrating: sensorService.isLeanCalibrating(),
+        });
       });
       locationService.start((update) => {
         const s = useRideStore.getState();
@@ -496,6 +513,29 @@ export default function RideActiveScreen() {
         </View>
       </View>
 
+      <View style={styles.leanRow}>
+        <View style={styles.leanBlock}>
+          <Text style={styles.leanLabel}>MAX LEAN</Text>
+          <Text style={styles.leanValue}>
+            {leanCalibrating ? "—" : `${Math.round(maxLeanDeg)}°`}
+          </Text>
+          <Text style={styles.leanHint}>
+            {leanCalibrating
+              ? "Calibrating — keep the bike upright"
+              : "Sit upright and tap to re-zero"}
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={styles.calibrateBtn}
+          onPress={handleRecalibrateLean}
+          accessibilityRole="button"
+          accessibilityLabel="Recalibrate lean angle"
+        >
+          <Icon name="crosshairs-gps" size={18} color={colors.primary} />
+          <Text style={styles.calibrateBtnLabel}>Calibrate</Text>
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.segmentRow}>
         <Icon name="counter" size={18} color={colors.textTertiary} />
         <Text style={styles.segmentText}>
@@ -684,6 +724,51 @@ const styles = StyleSheet.create({
   qualitySurface: {
     color: colors.textSecondary,
     fontSize: fontSize.sm,
+  },
+  leanRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.bgCard,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  leanBlock: {
+    flex: 1,
+    gap: 2,
+  },
+  leanLabel: {
+    color: colors.textTertiary,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
+    letterSpacing: 0.6,
+  },
+  leanValue: {
+    color: colors.textPrimary,
+    fontSize: fontSize.h2,
+    fontWeight: fontWeight.bold,
+  },
+  leanHint: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
+  },
+  calibrateBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.pill,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.bgCard,
+  },
+  calibrateBtnLabel: {
+    color: colors.primary,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.bold,
   },
   segmentRow: {
     flexDirection: "row",

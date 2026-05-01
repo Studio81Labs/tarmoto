@@ -121,16 +121,19 @@ CREATE TABLE ride_segments (
 CREATE INDEX idx_ride_segments_ride ON ride_segments(ride_id);
 
 CREATE TABLE ride_stats (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    ride_id         UUID NOT NULL UNIQUE REFERENCES rides(id) ON DELETE CASCADE,
-    elevation_gain  FLOAT,
-    elevation_loss  FLOAT,
-    curve_count     INT,
-    fuel_estimate_l FLOAT,
-    duration        INTERVAL,
-    avg_lean_angle  FLOAT,
-    max_lean_angle  FLOAT,
-    calories_est    INT
+    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    ride_id                 UUID NOT NULL UNIQUE REFERENCES rides(id) ON DELETE CASCADE,
+    elevation_gain          FLOAT,
+    elevation_loss          FLOAT,
+    curve_count             INT,
+    fuel_estimate_l         FLOAT,
+    duration                INTERVAL,
+    avg_lean_angle          FLOAT,
+    max_lean_angle          FLOAT,
+    -- US-19: per-ride lean histogram. Bucket boundaries owned by
+    -- `@tarmoto/shared` (`LEAN_BUCKETS`).
+    lean_distribution_json  JSONB,
+    calories_est            INT
 );
 
 -- ============================================================

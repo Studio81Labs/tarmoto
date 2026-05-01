@@ -44,6 +44,24 @@ export class SensorReadingDto {
   @IsOptional()
   @IsNumber()
   speed?: number;
+
+  /**
+   * Estimated bike-frame roll (signed degrees) from the on-device
+   * complementary filter (US-19). Optional — pre-calibration samples
+   * carry no lean, and older clients don't compute it. Backend treats
+   * an absent value as "unknown" and skips it from the per-ride
+   * histogram so a quiet sensor doesn't pollute the distribution.
+   */
+  @ApiProperty({
+    required: false,
+    description:
+      'Estimated bike-frame roll in degrees (signed). Absent when the ' +
+      "client's orientation filter was still calibrating or the field " +
+      "wasn't computed.",
+  })
+  @IsOptional()
+  @IsNumber()
+  lean_deg?: number;
 }
 
 export class UploadSensorDataDto {
