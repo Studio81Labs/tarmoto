@@ -146,12 +146,19 @@ export async function registerForPush(api: PushRegistrationApi): Promise<void> {
       // torn down, refresh callbacks must stop posting under the
       // old user's account.
       if (mySession !== registrationSession) return;
-      void api.client
-        .post("/me/devices", {
-          platform,
-          token: nextToken,
-          app_version: appVersion,
-        })
+      // Re-read the app version at refresh time. Firebase rotates
+      // tokens after re-installs and on app upgrade, so capturing
+      // `appVersion` from the closure would persist a stale build
+      // string into the backend row — confusing analytics and any
+      // version-gated dispatch decisions downstream.
+      void safeAppVersion()
+        .then((latestVersion) =>
+          api.client.post("/me/devices", {
+            platform,
+            token: nextToken,
+            app_version: latestVersion,
+          }),
+        )
         .then(() => {
           if (mySession !== registrationSession) return;
           cachedToken = nextToken;
@@ -213,15 +220,16 @@ export async function unregisterPush(api: PushRegistrationApi): Promise<void> {
   // anyway — the DELETE is best-effort cleanup, not a load-bearing
   // operation.
   try {
-    await axios.delete(
-      `${API_BASE_URL}/me/devices/${encodeURIComponent(token)}`,
-      {
-        timeout: 15_000,
-        headers: api.bearer
-          ? { Authorization: `Bearer ${api.bearer}` }
-          : undefined,
-      },
-    );
+    await axios.delete(`${API_BASE_URL}/me/devices`, {
+      // The token rides in the request body, not the URL — keeps a
+      // ~150-char opaque credential out of access logs and sidesteps
+      // Express path-match edge cases for variable-length values.
+      data: { token },
+      timeout: 15_000,
+      headers: api.bearer
+        ? { Authorization: `Bearer ${api.bearer}` }
+        : undefined,
+    });
   } catch {
     // Best-effort — backend will eventually soft-delete the token
     // on next dispatch failure if this call never lands.

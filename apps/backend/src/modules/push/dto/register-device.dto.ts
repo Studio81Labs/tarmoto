@@ -39,3 +39,14 @@ export class RegisterDeviceResponseDto {
   @ApiProperty()
   registered_at!: string;
 }
+
+export class UnregisterDeviceDto {
+  @ApiProperty({
+    description:
+      'FCM (Android) or APN (iOS) device token previously registered.',
+  })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(4096)
+  token!: string;
+}

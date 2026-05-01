@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "4352149b-d634-4a3e-b78f-c75ae8ec611f",
+    "_postman_id": "980883e9-ea03-4d34-8fda-acb0271ea63a",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -457,15 +457,18 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/me/devices/:token",
+              "raw": "{{baseUrl}}/api/v1/me/devices",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "me", "devices", ":token"],
-              "variable": [
-                {
-                  "key": "token",
-                  "value": ""
+              "path": ["api", "v1", "me", "devices"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
                 }
-              ]
+              }
             }
           }
         },
@@ -509,6 +512,381 @@
                   "language": "json"
                 }
               }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "jobs",
+      "item": [
+        {
+          "name": "Queue depth and most-recent failure per queue",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/jobs/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "jobs", "health"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "hazards",
+      "item": [
+        {
+          "name": "Get active hazards in area",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hazards",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "hazards"],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "lng",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "radius",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "types",
+                  "value": "",
+                  "description": "Comma-separated hazard types",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Report a hazard",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hazards",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "hazards"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lat\": 49.1,\n  \"lng\": 16.75,\n  \"hazard_type\": \"pothole\",\n  \"severity\": \"medium\",\n  \"note\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Confirm a hazard is still present",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hazards/:hazardId/confirm",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "hazards", ":hazardId", "confirm"],
+              "variable": [
+                {
+                  "key": "hazardId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Report hazard is no longer present",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hazards/:hazardId/dismiss",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "hazards", ":hazardId", "dismiss"],
+              "variable": [
+                {
+                  "key": "hazardId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get hazards along a route",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hazards/route",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "hazards", "route"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_m\": 200\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "badges",
+      "item": [
+        {
+          "name": "List a user's badges with progress",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/:userId/badges",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", ":userId", "badges"],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Check and award new badges for current user",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/badges/check",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "badges", "check"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "roads",
+      "item": [
+        {
+          "name": "Get road segments near a location",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roads/nearby",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roads", "nearby"],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "lng",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "radius",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "min_quality",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "surface_type",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get fun zones in a bounding box",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roads/fun-zones",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roads", "fun-zones"],
+              "query": [
+                {
+                  "key": "bbox",
+                  "value": "",
+                  "description": "Bounding box: west,south,east,north",
+                  "disabled": false
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get a Fun Zone with its top contributing roads",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roads/fun-zones/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roads", "fun-zones", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get top-ranked road segments for a curated region",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roads/best",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roads", "best"],
+              "query": [
+                {
+                  "key": "country",
+                  "value": "",
+                  "description": "ISO 3166-1 alpha-2 country code, lowercased",
+                  "disabled": false
+                },
+                {
+                  "key": "region",
+                  "value": "",
+                  "description": "Region slug (kebab-case)",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": "Maximum roads to return",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get road segment details (Road Preview Card data)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/roads/:segmentId",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "roads", ":segmentId"],
+              "variable": [
+                {
+                  "key": "segmentId",
+                  "value": ""
+                }
+              ]
             }
           }
         }
@@ -707,152 +1085,6 @@
       ]
     },
     {
-      "name": "hazards",
-      "item": [
-        {
-          "name": "Get active hazards in area",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/hazards",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "hazards"],
-              "query": [
-                {
-                  "key": "lat",
-                  "value": "",
-                  "description": "",
-                  "disabled": false
-                },
-                {
-                  "key": "lng",
-                  "value": "",
-                  "description": "",
-                  "disabled": false
-                },
-                {
-                  "key": "radius",
-                  "value": "",
-                  "description": "",
-                  "disabled": true
-                },
-                {
-                  "key": "types",
-                  "value": "",
-                  "description": "Comma-separated hazard types",
-                  "disabled": true
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Report a hazard",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/hazards",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "hazards"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"lat\": 49.1,\n  \"lng\": 16.75,\n  \"hazard_type\": \"pothole\",\n  \"severity\": \"medium\",\n  \"note\": \"\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Confirm a hazard is still present",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/hazards/:hazardId/confirm",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "hazards", ":hazardId", "confirm"],
-              "variable": [
-                {
-                  "key": "hazardId",
-                  "value": ""
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Report hazard is no longer present",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/hazards/:hazardId/dismiss",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "hazards", ":hazardId", "dismiss"],
-              "variable": [
-                {
-                  "key": "hazardId",
-                  "value": ""
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Get hazards along a route",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/hazards/route",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "hazards", "route"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"buffer_m\": 200\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        }
-      ]
-    },
-    {
       "name": "sensor",
       "item": [
         {
@@ -872,174 +1104,12 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"ride_id\": \"\",\n  \"device_model\": \"iPhone 15 Pro\",\n  \"client_model_version\": \"rsc-v1.0.0\",\n  \"readings\": [\n    {\n      \"t\": 0,\n      \"ax\": 0,\n      \"ay\": 0,\n      \"az\": 0,\n      \"lat\": 0,\n      \"lng\": 0,\n      \"speed\": 0\n    }\n  ]\n}",
+              "raw": "{\n  \"ride_id\": \"\",\n  \"device_model\": \"iPhone 15 Pro\",\n  \"client_model_version\": \"rsc-v1.0.0\",\n  \"readings\": [\n    {\n      \"t\": 0,\n      \"ax\": 0,\n      \"ay\": 0,\n      \"az\": 0,\n      \"lat\": 0,\n      \"lng\": 0,\n      \"speed\": 0,\n      \"lean_deg\": 0\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "roads",
-      "item": [
-        {
-          "name": "Get road segments near a location",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/roads/nearby",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roads", "nearby"],
-              "query": [
-                {
-                  "key": "lat",
-                  "value": "",
-                  "description": "",
-                  "disabled": false
-                },
-                {
-                  "key": "lng",
-                  "value": "",
-                  "description": "",
-                  "disabled": false
-                },
-                {
-                  "key": "radius",
-                  "value": "",
-                  "description": "",
-                  "disabled": true
-                },
-                {
-                  "key": "min_quality",
-                  "value": "",
-                  "description": "",
-                  "disabled": true
-                },
-                {
-                  "key": "surface_type",
-                  "value": "",
-                  "description": "",
-                  "disabled": true
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Get fun zones in a bounding box",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/roads/fun-zones",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roads", "fun-zones"],
-              "query": [
-                {
-                  "key": "bbox",
-                  "value": "",
-                  "description": "Bounding box: west,south,east,north",
-                  "disabled": false
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Get a Fun Zone with its top contributing roads",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/roads/fun-zones/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roads", "fun-zones", ":id"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": ""
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Get top-ranked road segments for a curated region",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/roads/best",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roads", "best"],
-              "query": [
-                {
-                  "key": "country",
-                  "value": "",
-                  "description": "ISO 3166-1 alpha-2 country code, lowercased",
-                  "disabled": false
-                },
-                {
-                  "key": "region",
-                  "value": "",
-                  "description": "Region slug (kebab-case)",
-                  "disabled": false
-                },
-                {
-                  "key": "limit",
-                  "value": "",
-                  "description": "Maximum roads to return",
-                  "disabled": true
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Get road segment details (Road Preview Card data)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/roads/:segmentId",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "roads", ":segmentId"],
-              "variable": [
-                {
-                  "key": "segmentId",
-                  "value": ""
-                }
-              ]
             }
           }
         }
@@ -3177,51 +3247,6 @@
                   "disabled": true
                 }
               ]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "badges",
-      "item": [
-        {
-          "name": "List a user's badges with progress",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/users/:userId/badges",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", ":userId", "badges"],
-              "variable": [
-                {
-                  "key": "userId",
-                  "value": ""
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Check and award new badges for current user",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/badges/check",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "badges", "check"]
             }
           }
         }
