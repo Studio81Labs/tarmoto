@@ -315,6 +315,86 @@ export const explorationApi = {
   },
 };
 
+// ── Route collections (US-56: cloud-synced shareable collections) ──
+
+export type RouteCollectionVisibility = "private" | "unlisted" | "public";
+
+export interface RouteCollectionSummary {
+  id: string;
+  owner_id: string;
+  title: string;
+  description: string | null;
+  visibility: RouteCollectionVisibility;
+  slug: string;
+  item_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RouteCollectionItemResponse {
+  id: string;
+  trip_id: string | null;
+  ride_id: string | null;
+  position: number;
+  created_at: string;
+}
+
+export interface RouteCollectionDetail extends RouteCollectionSummary {
+  items: RouteCollectionItemResponse[];
+  owner_name: string;
+}
+
+export interface CreateRouteCollectionInput {
+  title: string;
+  description?: string;
+  visibility?: RouteCollectionVisibility;
+}
+
+export interface UpdateRouteCollectionInput {
+  title?: string;
+  description?: string | null;
+  visibility?: RouteCollectionVisibility;
+}
+
+export interface RouteCollectionListResponse {
+  items: RouteCollectionSummary[];
+  total: number;
+}
+
+export const routeCollectionsApi = {
+  listMine: () => apiFetch<RouteCollectionListResponse>("/collections/me"),
+  create: (input: CreateRouteCollectionInput) =>
+    apiFetch<RouteCollectionDetail>("/collections", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  get: (id: string) =>
+    apiFetch<RouteCollectionDetail>(`/collections/${encodeURIComponent(id)}`),
+  getBySlug: (slug: string) =>
+    apiFetch<RouteCollectionDetail>(
+      `/collections/by-slug/${encodeURIComponent(slug)}`,
+    ),
+  update: (id: string, input: UpdateRouteCollectionInput) =>
+    apiFetch<RouteCollectionDetail>(`/collections/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  delete: (id: string) =>
+    apiFetch<void>(`/collections/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+  addItem: (id: string, input: { trip_id?: string; ride_id?: string }) =>
+    apiFetch<RouteCollectionItemResponse>(
+      `/collections/${encodeURIComponent(id)}/items`,
+      { method: "POST", body: JSON.stringify(input) },
+    ),
+  removeItem: (id: string, itemId: string) =>
+    apiFetch<void>(
+      `/collections/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}`,
+      { method: "DELETE" },
+    ),
+};
+
 // ── Map shares (US-50: read-only personal road-map snapshots) ──
 
 export interface MapShareResponse {

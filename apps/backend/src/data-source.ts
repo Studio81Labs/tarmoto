@@ -33,6 +33,8 @@ import { GroupRideMember } from './entities/group-ride-member.entity.js';
 import { DeviceToken } from './entities/device-token.entity.js';
 import { NotificationPreferencesRow } from './entities/notification-preferences.entity.js';
 import { PrivacyPreferencesRow } from './entities/privacy-preferences.entity.js';
+import { RouteCollection } from './entities/route-collection.entity.js';
+import { RouteCollectionItem } from './entities/route-collection-item.entity.js';
 import { InitSchema1713000000000 } from './migrations/1713000000000-InitSchema.js';
 import { AddPasswordHash1713100000000 } from './migrations/1713100000000-AddPasswordHash.js';
 import { FixIsEmergencyDefault1713200000000 } from './migrations/1713200000000-FixIsEmergencyDefault.js';
@@ -69,6 +71,7 @@ import { AddPushNotifications1716200000000 } from './migrations/1716200000000-Ad
 import { AddRideStatsLeanDistribution1716200000000 } from './migrations/1716200000000-AddRideStatsLeanDistribution.js';
 import { MigrateLegacyNotificationPreferences1716300000000 } from './migrations/1716300000000-MigrateLegacyNotificationPreferences.js';
 import { AddPrivacyPreferences1716400000000 } from './migrations/1716400000000-AddPrivacyPreferences.js';
+import { AddRouteCollections1716500000000 } from './migrations/1716500000000-AddRouteCollections.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -111,6 +114,8 @@ export const AppDataSource = new DataSource({
     DeviceToken,
     NotificationPreferencesRow,
     PrivacyPreferencesRow,
+    RouteCollection,
+    RouteCollectionItem,
   ],
   migrations: [
     // Listed in chronological order. Every migration in
@@ -156,6 +161,7 @@ export const AppDataSource = new DataSource({
     AddRideStatsLeanDistribution1716200000000,
     MigrateLegacyNotificationPreferences1716300000000,
     AddPrivacyPreferences1716400000000,
+    AddRouteCollections1716500000000,
   ],
   synchronize: false,
 });

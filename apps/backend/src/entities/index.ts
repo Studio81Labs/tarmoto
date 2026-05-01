@@ -46,3 +46,6 @@ export { GroupRideMember } from './group-ride-member.entity.js';
 export { DeviceToken } from './device-token.entity.js';
 export { NotificationPreferencesRow } from './notification-preferences.entity.js';
 export { PrivacyPreferencesRow } from './privacy-preferences.entity.js';
+export { RouteCollection } from './route-collection.entity.js';
+export type { RouteCollectionVisibility } from './route-collection.entity.js';
+export { RouteCollectionItem } from './route-collection-item.entity.js';

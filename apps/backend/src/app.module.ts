@@ -22,6 +22,7 @@ import { ReviewsModule } from './modules/reviews/index.js';
 import { SharingModule } from './modules/sharing/index.js';
 import { TripSharesModule } from './modules/trip-shares/index.js';
 import { MapSharesModule } from './modules/map-shares/index.js';
+import { RouteCollectionsModule } from './modules/route-collections/index.js';
 import { FollowersModule } from './modules/followers/index.js';
 import { BadgesModule } from './modules/badges/index.js';
 import { ChallengesModule } from './modules/challenges/index.js';
@@ -59,6 +60,7 @@ import { StorageModule } from './modules/storage/index.js';
     SharingModule,
     TripSharesModule,
     MapSharesModule,
+    RouteCollectionsModule,
     RidesModule,
     TripsModule,
     TripActivityModule,
