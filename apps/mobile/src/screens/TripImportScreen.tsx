@@ -162,7 +162,7 @@ export default function TripImportScreen() {
                   : "—"
               }
             />
-            <Stat label="Stops" value={String(preview.waypointCount)} />
+            <Stat label="Stops" value={String(preview.stopCount)} />
           </View>
         </View>
       ) : null}

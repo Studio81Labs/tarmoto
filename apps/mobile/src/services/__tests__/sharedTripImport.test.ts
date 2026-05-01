@@ -23,17 +23,24 @@ function share(snapshot: Record<string, unknown>): TripSharePublic {
 }
 
 describe("buildSharedTripPreview", () => {
-  it("rolls per-day distance and waypoint counts up to a single preview row", () => {
+  it("rolls per-day distance and intermediate-stop counts up to a single preview row", () => {
     const preview = buildSharedTripPreview(
       share({
         days: [
           {
             distanceKm: 120,
-            waypoints: [{ id: "a" }, { id: "b" }],
+            waypoints: [
+              { id: "a", type: "start" },
+              { id: "b", type: "fuel" },
+              { id: "c", type: "via" },
+            ],
           },
           {
             distanceKm: 80,
-            waypoints: [{ id: "c" }],
+            waypoints: [
+              { id: "d", type: "rest" },
+              { id: "e", type: "end" },
+            ],
           },
         ],
       }),
@@ -43,8 +50,29 @@ describe("buildSharedTripPreview", () => {
       ownerName: "Adam",
       dayCount: 2,
       totalDistanceKm: 200,
-      waypointCount: 3,
+      // start (a) and end (e) excluded; b/c/d are real stops.
+      stopCount: 3,
     });
+  });
+
+  it("excludes start/end and unknown waypoint types from stopCount", () => {
+    const preview = buildSharedTripPreview(
+      share({
+        days: [
+          {
+            distanceKm: 50,
+            waypoints: [
+              { id: "1", type: "start" },
+              { id: "2", type: "end" },
+              { id: "3", type: "weird" },
+              // No type field at all — also excluded.
+              { id: "4" },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(preview?.stopCount).toBe(0);
   });
 
   it("returns null when the snapshot is missing days", () => {

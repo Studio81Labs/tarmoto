@@ -28,7 +28,13 @@ export interface SharedTripPreview {
   ownerName: string;
   dayCount: number;
   totalDistanceKm: number;
-  waypointCount: number;
+  /**
+   * Count of intermediate stops only (start/end are excluded). The
+   * import-screen UI labels this "Stops", which a rider expects to mean
+   * fuel/rest/photo/accommodation/via points — not "every waypoint
+   * including start and end".
+   */
+  stopCount: number;
 }
 
 interface SnapshotDay {
@@ -36,9 +42,21 @@ interface SnapshotDay {
   waypoints?: Array<{
     location?: { lat?: unknown; lng?: unknown };
     name?: unknown;
+    type?: unknown;
   }>;
   distanceKm?: unknown;
 }
+
+// Waypoint `type` values that are intermediate stops a rider would
+// actually plan around. `start` and `end` describe the trip envelope and
+// don't belong in a "stops" count.
+const STOP_WAYPOINT_TYPES = new Set([
+  "via",
+  "fuel",
+  "rest",
+  "photo",
+  "accommodation",
+]);
 
 interface SnapshotShape {
   name?: unknown;
@@ -57,12 +75,18 @@ export function buildSharedTripPreview(
   const snapshot = share.snapshot as SnapshotShape;
   if (!snapshot || !Array.isArray(snapshot.days)) return null;
   let totalDistanceKm = 0;
-  let waypointCount = 0;
+  let stopCount = 0;
   for (const day of snapshot.days) {
     if (typeof day.distanceKm === "number" && Number.isFinite(day.distanceKm)) {
       totalDistanceKm += day.distanceKm;
     }
-    if (Array.isArray(day.waypoints)) waypointCount += day.waypoints.length;
+    if (Array.isArray(day.waypoints)) {
+      for (const wp of day.waypoints) {
+        if (typeof wp.type === "string" && STOP_WAYPOINT_TYPES.has(wp.type)) {
+          stopCount += 1;
+        }
+      }
+    }
   }
   return {
     title:
@@ -71,7 +95,7 @@ export function buildSharedTripPreview(
     ownerName: share.owner_name,
     dayCount: snapshot.days.length,
     totalDistanceKm,
-    waypointCount,
+    stopCount,
   };
 }
 
