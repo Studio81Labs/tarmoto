@@ -152,34 +152,26 @@ export function TripExportMenu({
     }
   }
 
-  function handlePrint() {
+  /**
+   * Open the print page for `trip`, optionally with the `autoprint` flag
+   * that lets the page trigger `window.print()` after hydration.
+   *
+   * Routes by the explicit `context` prop, not by inspecting `trip.status`:
+   * a backend-persisted trip can legitimately be in `draft` status (created
+   * but not yet route-generated), so a status check would silently send it
+   * down the planner-print path and drop the members/region the per-id
+   * print page fetches from the API.
+   *
+   * Planner-context trips need the local snapshot stashed in localStorage
+   * because `window.open(..., "noopener")` severs the creator
+   * relationship and the new tab starts with an empty Zustand store.
+   * `sessionStorage` would be the natural fit but the HTML spec skips its
+   * copy when `noopener` severs the creator link; localStorage is shared
+   * across same-origin tabs so the hand-off works regardless. The print
+   * page clears the key as soon as it hydrates.
+   */
+  function openPrintPage(autoprint: boolean) {
     if (!trip) return;
-    // The Zustand trip store is tab-local, so the new tab can't read
-    // `activeTrip`. sessionStorage would work except `noopener` below severs
-    // the creator relationship which skips its copy (HTML spec); localStorage
-    // is shared across same-origin tabs, and the print page deletes the key
-    // as soon as it hydrates so nothing lingers.
-    try {
-      localStorage.setItem(TRIP_PRINT_STORAGE_KEY, JSON.stringify(trip));
-    } catch {
-      /* private mode or storage full — the print page has a demo fallback */
-    }
-    window.open(
-      `/trips/planner/print?trip=${encodeURIComponent(trip.id)}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
-    setOpen(false);
-  }
-
-  function handlePdf() {
-    if (!trip) return;
-    // Route by the explicit `context` prop, not by inspecting `trip.status`
-    // — a backend-persisted trip can legitimately be in `draft` status
-    // (created but not yet route-generated), so a status check would
-    // silently send it down the planner-print path and drop the
-    // members/region the per-id print page fetches from the API. Both
-    // routes auto-trigger `window.print()` when `?autoprint=1` is set.
     if (context === "planner") {
       try {
         localStorage.setItem(TRIP_PRINT_STORAGE_KEY, JSON.stringify(trip));
@@ -187,12 +179,21 @@ export function TripExportMenu({
         /* private mode or storage full — the print page falls back to demo */
       }
     }
+    const flag = autoprint ? "autoprint=1" : "";
     const url =
       context === "saved-trip"
-        ? `/trips/${encodeURIComponent(trip.id)}/print?autoprint=1`
-        : `/trips/planner/print?trip=${encodeURIComponent(trip.id)}&autoprint=1`;
+        ? `/trips/${encodeURIComponent(trip.id)}/print${flag ? `?${flag}` : ""}`
+        : `/trips/planner/print?trip=${encodeURIComponent(trip.id)}${flag ? `&${flag}` : ""}`;
     window.open(url, "_blank", "noopener,noreferrer");
     setOpen(false);
+  }
+
+  function handlePrint() {
+    openPrintPage(false);
+  }
+
+  function handlePdf() {
+    openPrintPage(true);
   }
 
   return (
