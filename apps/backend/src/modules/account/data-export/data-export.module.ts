@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { BullModule } from '@nestjs/bullmq';
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
+import { QUEUE_NAMES } from '../../jobs/jobs.constants.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Repository } from 'typeorm';
@@ -31,6 +33,11 @@ import { EXPORT_STORAGE } from './storage/export-storage.interface.js';
     ConfigModule,
     AuthModule,
     EmailModule,
+    // Register the data-export BullMQ queue here so the controller can
+    // inject it and enqueue at request time. The connection comes from
+    // JobsModule's `BullModule.forRoot`; this `registerQueue` is a
+    // queue-token registration, not a second connection.
+    BullModule.registerQueue({ name: QUEUE_NAMES.DATA_EXPORT }),
     TypeOrmModule.forFeature([
       DataExportRequest,
       User,

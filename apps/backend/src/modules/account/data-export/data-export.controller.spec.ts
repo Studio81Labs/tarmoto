@@ -1,16 +1,17 @@
 import { Test } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
+import { getQueueToken } from '@nestjs/bullmq';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { PassThrough, Readable } from 'node:stream';
 import { DataExportController } from './data-export.controller.js';
 import { DataExportService } from './data-export.service.js';
-import { DataExportProcessor } from './data-export.processor.js';
 import {
   EXPORT_STORAGE,
   type ExportStorage,
 } from './storage/export-storage.interface.js';
 import { signDownloadUrl } from './signed-url.js';
 import { User } from '../../../entities/user.entity.js';
+import { QUEUE_NAMES, JOB_NAMES } from '../../jobs/jobs.constants.js';
 
 describe('DataExportController', () => {
   let controller: DataExportController;
@@ -30,7 +31,7 @@ describe('DataExportController', () => {
     })),
     signingSecret: () => 'test-secret',
   };
-  const processor = { process: jest.fn().mockResolvedValue(undefined) };
+  const queue = { add: jest.fn().mockResolvedValue(undefined) };
   const storage: ExportStorage = {
     write: jest.fn(),
     read: jest.fn(),
@@ -43,7 +44,10 @@ describe('DataExportController', () => {
       controllers: [DataExportController],
       providers: [
         { provide: DataExportService, useValue: service },
-        { provide: DataExportProcessor, useValue: processor },
+        {
+          provide: getQueueToken(QUEUE_NAMES.DATA_EXPORT),
+          useValue: queue,
+        },
         { provide: EXPORT_STORAGE, useValue: storage },
         { provide: JwtService, useValue: { verifyAsync: jest.fn() } },
         // AuthGuard pulls UserRepository now (post-#295) for token-aware
@@ -54,7 +58,7 @@ describe('DataExportController', () => {
     controller = module.get(DataExportController);
   });
 
-  it('returns 202 + dispatches worker on a fresh request', async () => {
+  it('returns 202 + enqueues worker on a fresh request', async () => {
     const req = { id: 'req-1', user_id: 'u1', status: 'queued' };
     service.requestExport.mockResolvedValue({ created: true, request: req });
     const res = {
@@ -64,8 +68,11 @@ describe('DataExportController', () => {
     await controller.create({ user: { userId: 'u1' } } as never, res as never);
     expect(service.requestExport).toHaveBeenCalledWith('u1');
     expect(res.status).toHaveBeenCalledWith(202);
-    await new Promise(setImmediate);
-    expect(processor.process).toHaveBeenCalledWith('req-1', 'u1');
+    expect(queue.add).toHaveBeenCalledWith(
+      JOB_NAMES.DATA_EXPORT_PROCESS,
+      { request_id: 'req-1', user_id: 'u1' },
+      expect.objectContaining({ jobId: 'data-export:req-1' }),
+    );
   });
 
   it('returns 200 when reusing an active request', async () => {
@@ -77,8 +84,7 @@ describe('DataExportController', () => {
     };
     await controller.create({ user: { userId: 'u1' } } as never, res as never);
     expect(res.status).toHaveBeenCalledWith(200);
-    await new Promise(setImmediate);
-    expect(processor.process).not.toHaveBeenCalled();
+    expect(queue.add).not.toHaveBeenCalled();
   });
 
   it('GET status returns the public view', async () => {
