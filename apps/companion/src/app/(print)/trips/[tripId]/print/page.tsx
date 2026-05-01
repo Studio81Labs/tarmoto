@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Loader2, Printer } from "lucide-react";
 import { ApiError, tripsApi } from "@/lib/api";
@@ -11,20 +11,39 @@ import {
   type TripDetailResponse,
 } from "@/lib/trip-from-detail";
 import type { Trip } from "@/lib/types";
-import { buildTurnList } from "@/lib/trip-export";
-import { formatDistance, formatDuration } from "@/lib/utils";
+import { TripPrintBody } from "@/components/TripPrintBody";
 
 /**
- * Print-friendly view of a saved trip (US-39 / issue #259). Unlike the
- * planner print page (which hydrates from `localStorage` so the
- * `noopener` tab handoff still works), this route fetches the trip
- * directly so opening it from a deep link, bookmark, or PDF cron job
- * works without the planner having to stash anything.
+ * Print-friendly view of a saved trip (US-39 / issue #283). Fetches the
+ * trip directly from the backend so opening the page from a deep link,
+ * bookmark, or PDF cron job works without any state hand-off from the
+ * planner. When `?autoprint=1` is set the page triggers `window.print()`
+ * after hydration so the rider lands one keypress away from saving the
+ * PDF — that's the mechanism behind the "Download PDF" export action.
  */
 export default function TripPrintPage() {
+  return (
+    // `useSearchParams` requires a Suspense boundary in Next 15+ or the
+    // build errors with "Missing Suspense boundary with useSearchParams".
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-white p-10 text-sm text-slate-500">
+          Loading…
+        </div>
+      }
+    >
+      <TripPrintPageContent />
+    </Suspense>
+  );
+}
+
+function TripPrintPageContent() {
   const { tripId } = useParams<{ tripId: string }>();
+  const searchParams = useSearchParams();
+  const autoprint = searchParams?.get("autoprint") === "1";
   const [trip, setTrip] = useState<Trip | null>(null);
   const [members, setMembers] = useState<TripDetailMember[]>([]);
+  const [region, setRegion] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -40,6 +59,7 @@ export default function TripPrintPage() {
         const detail = data as unknown as TripDetailResponse;
         setTrip(tripFromDetail(detail));
         setMembers(detail.members ?? []);
+        setRegion(detail.region ?? undefined);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -60,18 +80,15 @@ export default function TripPrintPage() {
     };
   }, [tripId]);
 
-  const turns = useMemo(() => (trip ? buildTurnList(trip) : []), [trip]);
-  const totals = useMemo(() => {
-    if (!trip) return { distanceKm: 0, durationMinutes: 0, elevationGain: 0 };
-    return trip.days.reduce(
-      (acc, day) => ({
-        distanceKm: acc.distanceKm + day.distanceKm,
-        durationMinutes: acc.durationMinutes + day.durationMinutes,
-        elevationGain: acc.elevationGain + day.elevationGain,
-      }),
-      { distanceKm: 0, durationMinutes: 0, elevationGain: 0 },
-    );
-  }, [trip]);
+  // Auto-trigger the browser's print dialog once the trip has rendered.
+  // The 200ms delay gives layout + SVG previews time to settle so the
+  // first PDF page isn't blank — without it Chrome occasionally captures
+  // the page before the per-day route SVGs paint.
+  useEffect(() => {
+    if (!autoprint || !trip || loading) return;
+    const id = window.setTimeout(() => window.print(), 200);
+    return () => window.clearTimeout(id);
+  }, [autoprint, trip, loading]);
 
   if (loading) {
     return (
@@ -102,7 +119,11 @@ export default function TripPrintPage() {
       <style>{`
         @media print {
           .trip-print-toolbar { display: none !important; }
-          @page { margin: 18mm; }
+          @page { size: A4; margin: 16mm; }
+          .trip-print-cover { page-break-after: always; }
+          .trip-print-day { page-break-inside: avoid; page-break-before: always; }
+          .trip-print-day:first-child { page-break-before: auto; }
+          .trip-print-appendix { page-break-before: always; }
         }
       `}</style>
 
@@ -118,124 +139,11 @@ export default function TripPrintPage() {
           onClick={() => window.print()}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-sm hover:bg-slate-800 transition"
         >
-          <Printer size={14} /> Print
+          <Printer size={14} /> Print / Save as PDF
         </button>
       </div>
 
-      <article className="max-w-3xl mx-auto px-6 py-8 space-y-8 text-[14px] leading-relaxed">
-        <header>
-          <p className="text-xs uppercase tracking-widest text-slate-500">
-            Tarmoto trip summary
-          </p>
-          <h1 className="text-3xl font-bold mt-1">{trip.name}</h1>
-          <dl className="mt-4 grid grid-cols-4 gap-4 text-sm">
-            <div>
-              <dt className="text-slate-500">Days</dt>
-              <dd className="font-semibold tabular-nums">{trip.days.length}</dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Total distance</dt>
-              <dd className="font-semibold tabular-nums">
-                {formatDistance(totals.distanceKm)}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Riding time</dt>
-              <dd className="font-semibold tabular-nums">
-                {totals.durationMinutes > 0
-                  ? formatDuration(totals.durationMinutes)
-                  : "—"}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-slate-500">Elevation gain</dt>
-              <dd className="font-semibold tabular-nums">
-                {totals.elevationGain > 0
-                  ? `${Math.round(totals.elevationGain)} m`
-                  : "—"}
-              </dd>
-            </div>
-          </dl>
-        </header>
-
-        {members.length > 0 && (
-          <section>
-            <h2 className="text-lg font-semibold mb-2">Members</h2>
-            <ul className="space-y-1 text-sm">
-              {members.map((m) => (
-                <li
-                  key={m.user_id}
-                  className="flex items-center gap-2 text-slate-700"
-                >
-                  <span className="font-medium">{m.display_name}</span>
-                  <span className="text-xs uppercase tracking-wide text-slate-500">
-                    {m.role}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-
-        <section>
-          <h2 className="text-lg font-semibold mb-3">Itinerary</h2>
-          <ol className="space-y-5">
-            {turns.map((day) => (
-              <li
-                key={day.dayNumber}
-                className="border-l-2 border-slate-300 pl-4"
-              >
-                <div className="flex items-baseline gap-3 mb-2">
-                  <h3 className="text-base font-semibold">
-                    Day {day.dayNumber}
-                    {day.dayTitle && (
-                      <span className="text-slate-500 font-normal">
-                        {" "}
-                        — {day.dayTitle}
-                      </span>
-                    )}
-                  </h3>
-                  <span className="text-xs text-slate-500 tabular-nums">
-                    {formatDistance(day.distanceKm)}
-                    {day.durationMinutes > 0 && (
-                      <> · {formatDuration(day.durationMinutes)}</>
-                    )}
-                  </span>
-                </div>
-
-                {day.waypoints.length === 0 ? (
-                  <p className="text-xs text-slate-500">
-                    No waypoints yet for this day.
-                  </p>
-                ) : (
-                  <ul className="space-y-1.5">
-                    {day.waypoints.map((wp, idx) => (
-                      <li
-                        key={idx}
-                        className="flex items-baseline gap-3 text-sm"
-                      >
-                        <span className="w-20 shrink-0 text-xs uppercase tracking-wider text-slate-500">
-                          {wp.typeLabel}
-                        </span>
-                        <span className="flex-1 font-medium">{wp.label}</span>
-                        <span className="tabular-nums text-xs text-slate-500">
-                          {wp.lat.toFixed(4)}, {wp.lng.toFixed(4)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            ))}
-          </ol>
-        </section>
-
-        <footer className="pt-4 border-t border-slate-200 text-xs text-slate-500">
-          <p>
-            Generated with Tarmoto Companion · {new Date().toLocaleDateString()}
-          </p>
-        </footer>
-      </article>
+      <TripPrintBody trip={trip} region={region} members={members} />
     </div>
   );
 }

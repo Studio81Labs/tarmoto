@@ -25,6 +25,7 @@ import type {
   Trip,
   TripGenerationOptionId,
   TripGenerationResult,
+  TripSharePublic,
   TripSummary,
   CommuteRoute,
   CommuteStatus,
@@ -648,6 +649,20 @@ class ApiService {
     await this.client.post(`/trips/${tripId}/join`, {
       invite_code: inviteCode,
     });
+  }
+
+  /**
+   * Fetch the public read-only snapshot for a trip share token (US-39 /
+   * #283). Used by the deep-link import flow when the rider opens
+   * `tarmoto://trips/import?tripId=...&token=...` from the web companion;
+   * the snapshot is then flattened and posted to `/trips/import` to
+   * materialise the trip in the rider's library.
+   */
+  async getTripShare(token: string): Promise<TripSharePublic> {
+    const { data } = await this.client.get<TripSharePublic>(
+      `/trip-shares/${encodeURIComponent(token)}`,
+    );
+    return data;
   }
 
   // ── Group Rides (US-26) ──

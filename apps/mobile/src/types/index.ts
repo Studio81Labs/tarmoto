@@ -335,6 +335,22 @@ export interface TripMember {
   joined_at: string;
 }
 
+/**
+ * Public read-only payload returned by `GET /trip-shares/:token` (US-39 /
+ * #283). The `snapshot` is the companion's local `Trip` shape serialised
+ * verbatim — keep it loosely typed here so the mobile import flow can
+ * adapt without forcing every web schema change through this file.
+ */
+export interface TripSharePublic {
+  share_token: string;
+  title: string;
+  owner_name: string;
+  snapshot: Record<string, unknown>;
+  view_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
 // ── Reviews ──
 
 export interface RoadReview {

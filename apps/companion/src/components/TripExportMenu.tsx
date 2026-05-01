@@ -6,10 +6,13 @@ import {
   ChevronDown,
   Download,
   FileDown,
+  FileText,
   Link as LinkIcon,
+  Loader2,
   Printer,
   Smartphone,
 } from "lucide-react";
+import { ApiError, tripSharesApi } from "@/lib/api";
 import type { Trip } from "@/lib/types";
 import {
   TRIP_PRINT_STORAGE_KEY,
@@ -27,15 +30,17 @@ type Feedback = { kind: "ok" | "err"; message: string } | null;
 
 /**
  * Export menu for a planned trip (US-39): GPX download, shareable link,
- * mobile deep-link handoff, and a printable summary view.
+ * mobile deep-link handoff with token, printable summary, and a one-click
+ * PDF download (browser print-to-PDF on a print-only page).
  *
- * Disabled until a trip is loaded — the four actions all need trip data, and
- * the menu doubles as a visual cue that "Load demo trip" or a generated trip
- * is the next step.
+ * Disabled until a trip is loaded — the actions all need trip data, and the
+ * menu doubles as a visual cue that "Load demo trip" or a generated trip is
+ * the next step.
  */
 export function TripExportMenu({ trip }: TripExportMenuProps) {
   const [open, setOpen] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
+  const [pushPending, setPushPending] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -98,17 +103,37 @@ export function TripExportMenu({ trip }: TripExportMenuProps) {
     }
   }
 
-  function handlePushMobile() {
-    if (!trip) return;
-    // Uses the tarmoto:// scheme so the installed mobile app picks up the
-    // intent. If the app isn't installed the browser silently no-ops, so we
-    // copy the same link to the clipboard as a fallback the user can paste.
-    const deepLink = buildMobileDeepLink(trip);
-    window.location.href = deepLink;
-    navigator.clipboard?.writeText(deepLink).catch(() => {
-      /* clipboard is best-effort */
-    });
-    show("ok", "Opening in Tarmoto app…");
+  async function handlePushMobile() {
+    if (!trip || pushPending) return;
+    setPushPending(true);
+    setFeedback(null);
+    try {
+      // Mint a fresh share token for every push so revoking one device
+      // doesn't kill another rider's import. The mobile app fetches the
+      // snapshot via `GET /trip-shares/:token` (no auth) and copies the
+      // trip into the rider's library.
+      const { data } = await tripSharesApi.create({
+        title: trip.name || "Untitled trip",
+        snapshot: trip as unknown as Record<string, unknown>,
+      });
+      const deepLink = buildMobileDeepLink(trip.id, data.share_token);
+      // Browser silently no-ops if the app isn't installed; copying the
+      // link to the clipboard gives the rider something to paste manually
+      // as a fallback.
+      window.location.href = deepLink;
+      navigator.clipboard?.writeText(deepLink).catch(() => {
+        /* clipboard is best-effort */
+      });
+      show("ok", "Opening in Tarmoto app…");
+    } catch (err) {
+      const message =
+        err instanceof ApiError
+          ? "Couldn't prepare the handoff — try again in a moment"
+          : "Couldn't prepare the handoff — check your connection";
+      show("err", message);
+    } finally {
+      setPushPending(false);
+    }
   }
 
   function handlePrint() {
@@ -128,6 +153,28 @@ export function TripExportMenu({ trip }: TripExportMenuProps) {
       "_blank",
       "noopener,noreferrer",
     );
+    setOpen(false);
+  }
+
+  function handlePdf() {
+    if (!trip) return;
+    // Use the planner print route for unsaved/draft trips so they hydrate
+    // from the localStorage hand-off; saved trips go to the per-id route
+    // which fetches authoritative data from the backend (members, region,
+    // server-side updates that may not be in the local snapshot). Both
+    // routes auto-trigger `window.print()` when `?autoprint=1` is set.
+    const isSavedTrip = trip.status !== "draft";
+    if (!isSavedTrip) {
+      try {
+        localStorage.setItem(TRIP_PRINT_STORAGE_KEY, JSON.stringify(trip));
+      } catch {
+        /* private mode or storage full — the print page falls back to demo */
+      }
+    }
+    const url = isSavedTrip
+      ? `/trips/${encodeURIComponent(trip.id)}/print?autoprint=1`
+      : `/trips/planner/print?trip=${encodeURIComponent(trip.id)}&autoprint=1`;
+    window.open(url, "_blank", "noopener,noreferrer");
     setOpen(false);
   }
 
@@ -158,16 +205,33 @@ export function TripExportMenu({ trip }: TripExportMenuProps) {
             onClick={handleGpx}
           />
           <MenuItem
+            icon={<FileText size={14} />}
+            label="Download PDF"
+            hint="Printable trip plan, A4/Letter"
+            onClick={handlePdf}
+          />
+          <MenuItem
             icon={<LinkIcon size={14} />}
             label="Copy share link"
             hint="Anyone with the link can view"
             onClick={handleShareLink}
           />
           <MenuItem
-            icon={<Smartphone size={14} />}
+            icon={
+              pushPending ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Smartphone size={14} />
+              )
+            }
             label="Push to mobile app"
-            hint="Opens in Tarmoto for iOS/Android"
-            onClick={handlePushMobile}
+            hint={
+              pushPending
+                ? "Preparing handoff…"
+                : "Opens in Tarmoto for iOS/Android"
+            }
+            onClick={() => void handlePushMobile()}
+            disabled={pushPending}
           />
           <MenuItem
             icon={<Printer size={14} />}
@@ -201,18 +265,21 @@ function MenuItem({
   label,
   hint,
   onClick,
+  disabled,
 }: {
   icon: React.ReactNode;
   label: string;
   hint: string;
   onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       role="menuitem"
       onClick={onClick}
-      className="flex w-full items-start gap-3 px-3 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-800 transition"
+      disabled={disabled}
+      className="flex w-full items-start gap-3 px-3 py-2.5 text-left text-sm text-slate-200 hover:bg-slate-800 transition disabled:opacity-60 disabled:cursor-not-allowed"
     >
       <span className="mt-0.5 text-tarmoto-cyan">{icon}</span>
       <span className="flex-1 min-w-0">
