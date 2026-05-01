@@ -15,6 +15,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { accountApi } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth";
 import {
   buildFallbackSubscriptionSnapshot,
   describeRenewal,
@@ -66,7 +67,14 @@ export default function SubscriptionPage() {
     error: string | null;
   }>({ kind: null, error: null });
 
+  // Gate the fetch on the auth store having a token. Without this,
+  // a hard reload of `/settings/subscription` races AuthSync — the
+  // fetch fires before `accessToken` lands in the store and the API
+  // call goes out unauthed, surfacing as a misleading "Unauthorized"
+  // banner.
+  const authReady = useAuthStore((s) => Boolean(s.accessToken));
   useEffect(() => {
+    if (!authReady) return;
     let cancelled = false;
 
     accountApi
@@ -99,7 +107,7 @@ export default function SubscriptionPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authReady]);
 
   const snapshot = state.kind === "loaded" ? state.snapshot : null;
   const renewalLabel = useMemo(

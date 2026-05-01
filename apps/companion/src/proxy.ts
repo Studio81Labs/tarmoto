@@ -8,6 +8,8 @@ const PUBLIC_PATHS = [
   "/discover",
   "/roads/best",
   "/rides/shared",
+  "/rides/road-map/shared",
+  "/trips/shared",
   "/embed/rides",
 ];
 

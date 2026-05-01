@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Check, Loader2, Mail, Smartphone } from "lucide-react";
 import { accountApi } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth";
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
   EMAIL_DIGEST_OPTIONS,
@@ -40,7 +41,12 @@ export default function NotificationsPage() {
   );
   const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
 
+  // Wait for the auth store to carry a token before fetching — same
+  // hard-navigation race fix as the privacy / subscription / trip
+  // detail pages.
+  const authReady = useAuthStore((s) => Boolean(s.accessToken));
   useEffect(() => {
+    if (!authReady) return;
     let cancelled = false;
     accountApi
       .getNotificationPreferences()
@@ -61,7 +67,7 @@ export default function NotificationsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authReady]);
 
   const isDirty = !preferencesEqual(prefs, serverPrefs);
 

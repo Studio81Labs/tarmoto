@@ -65,6 +65,7 @@ export default function TripDetailPage() {
   );
 
   const currentUserId = useAuthStore((s) => s.user?.id ?? null);
+  const authReady = useAuthStore((s) => Boolean(s.accessToken));
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
 
   // Memoise the local Trip projection so referential equality doesn't
@@ -97,6 +98,10 @@ export default function TripDetailPage() {
 
   useEffect(() => {
     if (!tripId) return;
+    // Gate on the auth store carrying a token — without this the fetch
+    // races AuthSync on a hard navigation to `/trips/:id` and lands as
+    // a 401, surfacing as a generic "Couldn't load this trip" banner.
+    if (!authReady) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -135,7 +140,7 @@ export default function TripDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [tripId, router]);
+  }, [tripId, router, authReady]);
 
   const collabSession = useTripCollabSession(loaded ? loaded.detail.id : null);
 

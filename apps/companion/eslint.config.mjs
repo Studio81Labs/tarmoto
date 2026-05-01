@@ -13,7 +13,17 @@ import tseslint from "typescript-eslint";
 
 export default [
   {
-    ignores: [".next/**", "node_modules/**", "next-env.d.ts"],
+    ignores: [
+      ".next/**",
+      "node_modules/**",
+      "next-env.d.ts",
+      // Playwright tests live under e2e/ and use Playwright's fixture
+      // function `use`, which `react-hooks/rules-of-hooks` flags as a
+      // misused React hook. The suite has its own runner and tsconfig;
+      // ESLint isn't useful here.
+      "e2e/**",
+      "playwright-report/**",
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
