@@ -112,13 +112,25 @@ describe("buildPersonalLineStyle", () => {
     expect(typeof style.lineColor).toBe("string");
   });
 
-  it("emits a match expression keyed on segment id when ridden ids exist", () => {
+  it("emits a single grouped match expression so ids aren't duplicated per stop", () => {
     const style = __test.buildPersonalLineStyle(["seg-a", "seg-b"]);
     expect(Array.isArray(style.lineColor)).toBe(true);
-    const expr = style.lineColor as unknown as Array<unknown>;
+    const expr = style.lineColor as unknown as unknown[];
+    // Grouped form: ["match", ["get", "id"], [labels…], output, fallback]
     expect(expr[0]).toBe("match");
-    // Stops alternate (id, color) so we expect the first id at idx 2.
-    expect(expr).toContain("seg-a");
-    expect(expr).toContain("seg-b");
+    expect(Array.isArray(expr[2])).toBe(true);
+    expect(expr[2]).toEqual(["seg-a", "seg-b"]);
+    // Only one entry per id — guards against regressing back to the
+    // flat alternating form which repeated each id twice (once per
+    // stop) and another two times across lineOpacity.
+    expect((expr[2] as string[]).length).toBe(2);
+  });
+
+  it("uses the same id list across lineColor and lineOpacity instead of duplicating it", () => {
+    const style = __test.buildPersonalLineStyle(["seg-a", "seg-b"]);
+    const colorExpr = style.lineColor as unknown as unknown[];
+    const opacityExpr = style.lineOpacity as unknown as unknown[];
+    expect(opacityExpr[0]).toBe("match");
+    expect(opacityExpr[2]).toEqual(colorExpr[2]);
   });
 });

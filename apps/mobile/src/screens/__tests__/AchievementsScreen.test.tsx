@@ -123,4 +123,38 @@ describe("AchievementsScreen", () => {
     fireEvent.press(screen.getByLabelText("Open Personal road map"));
     expect(mockNavigate).toHaveBeenCalledWith("PersonalRoadMap");
   });
+
+  it("surfaces an error banner when every source fails so the rider isn't shown empty defaults", async () => {
+    mockedApi.listUserBadges.mockRejectedValue(new Error("Network down"));
+    mockedApi.listChallenges.mockRejectedValue(new Error("Network down"));
+    mockedApi.getExplorationStats.mockRejectedValue(new Error("Network down"));
+
+    render(<AchievementsScreen />);
+
+    // Without the all-settled flow this would have rendered "0 of 0
+    // earned" + "No active challenges right now" — the misleading state
+    // the review flagged. With the fix the banner appears and the
+    // summary lines stay on the "Loading…" placeholder.
+    await waitFor(() => expect(screen.getByText("Network down")).toBeTruthy());
+    expect(screen.queryByText("0 of 0 earned")).toBeNull();
+    expect(screen.queryByText("No active challenges right now")).toBeNull();
+  });
+
+  it("renders a soft-warning banner when only some sources fail", async () => {
+    mockedApi.listChallenges.mockRejectedValue(new Error("Slow"));
+
+    render(<AchievementsScreen />);
+
+    // Working sources still render their summaries — the rider gets
+    // partial value rather than a blank screen — but the banner makes
+    // the staleness visible.
+    await waitFor(() =>
+      expect(
+        screen.getByText(/1 of 2 earned · SILVER tier reached/),
+      ).toBeTruthy(),
+    );
+    expect(
+      screen.getByText("Some achievements couldn't load. Pull to refresh."),
+    ).toBeTruthy();
+  });
 });

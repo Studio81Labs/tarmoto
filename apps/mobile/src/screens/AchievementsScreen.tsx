@@ -29,7 +29,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { api } from "@/services/api";
 import { useAuthStore } from "@/stores";
 import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
-import type { UserBadge, Challenge, ExplorationStats } from "@/types";
+import type { UserBadge, ExplorationStats } from "@/types";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import { tierRank } from "./AchievementsScreen.helpers";
 
@@ -57,48 +57,77 @@ export default function AchievementsScreen() {
   const load = useCallback(
     async (initial: boolean) => {
       if (!initial) setIsRefreshing(true);
-      try {
-        const [badgesResp, challengesResp, explorationResp] = await Promise.all(
-          [
-            userId
-              ? api.listUserBadges(userId).catch(() => [] as UserBadge[])
-              : Promise.resolve([] as UserBadge[]),
-            api.listChallenges().catch(() => [] as Challenge[]),
-            api
-              .getExplorationStats()
-              .catch(() => null as ExplorationStats | null),
-          ],
-        );
-        const earned = badgesResp.filter((b) => b.tier !== null);
-        const topTier = earned
-          .map((b) => b.tier)
-          .reduce<string | null>((best, t) => {
-            if (!t) return best;
-            if (!best) return t;
-            return tierRank(t) > tierRank(best) ? t : best;
-          }, null);
+      // `allSettled` so a transient failure on one source (e.g. challenges
+      // 503ing) doesn't blank the other two. We then differentiate the
+      // "all three failed" case from "everything is empty" — the former
+      // surfaces an error banner, the latter is just a brand-new rider.
+      const [badgesResult, challengesResult, explorationResult] =
+        await Promise.allSettled([
+          userId
+            ? api.listUserBadges(userId)
+            : Promise.resolve([] as UserBadge[]),
+          api.listChallenges(),
+          api.getExplorationStats(),
+        ]);
 
-        setSnapshot({
-          earnedBadges: earned.length,
-          totalBadges: badgesResp.length,
-          topTier,
-          activeChallenges: challengesResp.length,
-          // The hub doesn't fetch per-challenge detail (would be an N+1
-          // burst on the cold path), so "joined" is best-effort: a
-          // non-zero number means the rider has at least dabbled. We
-          // expose the active challenge count instead and let the
-          // detail screen show personal progress.
-          joinedChallenges: 0,
-          exploration: explorationResp,
-        });
-        setErrorMessage(null);
-      } catch (err: unknown) {
-        const message =
-          err instanceof Error ? err.message : "Couldn't load achievements.";
-        setErrorMessage(message);
-      } finally {
+      const badges =
+        badgesResult.status === "fulfilled" ? badgesResult.value : [];
+      const challenges =
+        challengesResult.status === "fulfilled" ? challengesResult.value : [];
+      const exploration =
+        explorationResult.status === "fulfilled"
+          ? explorationResult.value
+          : null;
+
+      const allFailed =
+        badgesResult.status === "rejected" &&
+        challengesResult.status === "rejected" &&
+        explorationResult.status === "rejected";
+
+      if (allFailed) {
+        const reason = (badgesResult as PromiseRejectedResult).reason;
+        setErrorMessage(
+          reason instanceof Error
+            ? reason.message
+            : "Couldn't load achievements.",
+        );
         if (!initial) setIsRefreshing(false);
+        return;
       }
+
+      const earned = badges.filter((b) => b.tier !== null);
+      const topTier = earned
+        .map((b) => b.tier)
+        .reduce<string | null>((best, t) => {
+          if (!t) return best;
+          if (!best) return t;
+          return tierRank(t) > tierRank(best) ? t : best;
+        }, null);
+
+      setSnapshot({
+        earnedBadges: earned.length,
+        totalBadges: badges.length,
+        topTier,
+        activeChallenges: challenges.length,
+        // The hub doesn't fetch per-challenge detail (would be an N+1
+        // burst on the cold path), so "joined" is best-effort: a
+        // non-zero number means the rider has at least dabbled. We
+        // expose the active challenge count instead and let the
+        // detail screen show personal progress.
+        joinedChallenges: 0,
+        exploration,
+      });
+      // Soft warning when only some sources failed: the banner stays
+      // visible alongside the populated cards so the rider knows the
+      // numbers may be stale, but the working surfaces still render.
+      const someFailed =
+        badgesResult.status === "rejected" ||
+        challengesResult.status === "rejected" ||
+        explorationResult.status === "rejected";
+      setErrorMessage(
+        someFailed ? "Some achievements couldn't load. Pull to refresh." : null,
+      );
+      if (!initial) setIsRefreshing(false);
     },
     [userId],
   );

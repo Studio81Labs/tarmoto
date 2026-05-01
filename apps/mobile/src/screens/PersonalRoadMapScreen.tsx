@@ -403,20 +403,22 @@ export function buildPersonalLineStyle(
   const cap = 5000;
   const ids = riddenIds.length > cap ? riddenIds.slice(0, cap) : riddenIds;
 
-  // Build the match expression: each id maps to the riddenColor.
-  // Stops alternate input → output.
-  const stops: (string | number)[] = [];
-  for (const id of ids) {
-    stops.push(id, riddenColor);
-  }
+  // MapLibre's `match` accepts an array of labels that all share the
+  // same output: `["match", input, [id1, id2, …], output, fallback]`.
+  // Every ridden id maps to the same colour/opacity, so the grouped
+  // form roughly halves the serialised expression size compared to
+  // emitting one stop per id, and avoids repeating the same id twice
+  // across the lineColor / lineOpacity expressions.
+  const labels = [...ids];
 
   return {
     lineColor: [
       "match",
       ["get", "id"],
-      ...stops,
+      labels,
+      riddenColor,
       dimmedColor,
-    ] as LineLayerStyle["lineColor"],
+    ] as unknown as LineLayerStyle["lineColor"],
     lineWidth: [
       "interpolate",
       ["linear"],
@@ -433,9 +435,10 @@ export function buildPersonalLineStyle(
     lineOpacity: [
       "match",
       ["get", "id"],
-      ...ids.flatMap((id) => [id, 1]),
+      labels,
+      1,
       0.45,
-    ] as LineLayerStyle["lineOpacity"],
+    ] as unknown as LineLayerStyle["lineOpacity"],
     lineCap: "round",
     lineJoin: "round",
   };
