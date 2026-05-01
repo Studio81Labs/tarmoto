@@ -76,7 +76,7 @@ async function requestPermission(
   // what they're saying yes (or no) to. On Android 13+ this runs
   // ahead of the POST_NOTIFICATIONS prompt; on iOS the messaging
   // prompt itself surfaces the system dialog right after.
-  const rationale = await requestWithRationale({
+  const rationaleStatus = await requestWithRationale({
     androidPermission: PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
     rationale: {
       title: "Stay in the loop",
@@ -86,7 +86,7 @@ async function requestPermission(
         "Notifications are blocked. Open Settings → Tarmoto and allow notifications to receive ride and hazard alerts.",
     },
   });
-  if (rationale === "denied" || rationale === "blocked") return false;
+  if (rationaleStatus !== "granted") return false;
 
   // `messaging.requestPermission()` covers both iOS (real prompt) and
   // Android (POST_NOTIFICATIONS on 13+, auto-granted on older). On
