@@ -406,6 +406,13 @@ export default function RideActiveScreen() {
     [navigation],
   );
 
+  // US-26 — entry into the group ride share screen. Opt-in: nothing
+  // is broadcast until the rider explicitly creates or joins a ride
+  // and starts publishing positions from there.
+  const handleOpenGroupRide = useCallback(() => {
+    navigation.navigate("GroupRide");
+  }, [navigation]);
+
   const speedLabel = formatSpeedKmh(currentSpeed);
   const distanceLabel = formatDistanceKm(distance);
   const hasQuality = currentQuality !== null;
@@ -424,6 +431,14 @@ export default function RideActiveScreen() {
         />
         <Text style={styles.headerLabel}>RECORDING</Text>
         <View style={styles.headerSpacer} />
+        <TouchableOpacity
+          onPress={handleOpenGroupRide}
+          accessibilityRole="button"
+          accessibilityLabel="Open group ride"
+          style={styles.groupRideToggle}
+        >
+          <Icon name="account-group" size={20} color={colors.primary} />
+        </TouchableOpacity>
         <VoiceMuteToggle />
       </View>
 
@@ -561,6 +576,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   voiceToggle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.bgCard,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  groupRideToggle: {
     width: 40,
     height: 40,
     borderRadius: 20,

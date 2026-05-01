@@ -584,3 +584,55 @@ export interface CalculatedRoute {
     hazard_count: number;
   }[];
 }
+
+// ── Group Rides (US-26) ──
+
+export interface GroupRideMember {
+  user_id: string;
+  display_name: string;
+  joined_at: string;
+  last_lat: number | null;
+  last_lng: number | null;
+  last_speed: number | null;
+  last_heading: number | null;
+  last_position_at: string | null;
+  recent_path: { lat: number; lng: number; at: string }[];
+}
+
+export interface GroupRideDetail {
+  id: string;
+  owner_id: string;
+  name: string;
+  code: string;
+  started_at: string;
+  ended_at: string | null;
+  members: GroupRideMember[];
+}
+
+export interface GroupPositionEvent {
+  group_ride_id: string;
+  user_id: string;
+  lat: number;
+  lng: number;
+  speed: number | null;
+  heading: number | null;
+  at: string;
+}
+
+export interface GroupJoinedEvent {
+  group_ride_id: string;
+  user_id: string;
+  display_name: string;
+  at: string;
+}
+
+export interface GroupLeftEvent {
+  group_ride_id: string;
+  user_id: string;
+  at: string;
+}
+
+export interface GroupEndedEvent {
+  group_ride_id: string;
+  at: string;
+}

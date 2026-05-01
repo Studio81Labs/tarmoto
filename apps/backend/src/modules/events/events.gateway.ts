@@ -19,6 +19,7 @@ import { createClient } from 'redis';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { Ride } from '../../entities/ride.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
+import { GroupRideMember } from '../../entities/group-ride-member.entity.js';
 
 // Shared between subscribe handlers so a malformed id never reaches a
 // UUID column and bubbles up as a Postgres "invalid input syntax"
@@ -67,6 +68,34 @@ export interface TripPresencePayload {
   at: string;
 }
 
+/**
+ * US-26 — wire shape of the `group:position` event. Used in both
+ * directions: clients emit `{ group_ride_id, lat, lng, speed?, heading? }`
+ * to publish their own position; the server fans out the same event
+ * with `user_id` and `at` filled in from the authenticated socket so
+ * peers cannot spoof identity.
+ */
+export interface GroupPositionPayload {
+  group_ride_id: string;
+  user_id: string;
+  lat: number;
+  lng: number;
+  speed: number | null;
+  heading: number | null;
+  at: string;
+}
+
+// US-26 — capped breadcrumb buffer. Keeps `recent_path` bounded for
+// long rides (a 4-hour ride at 1 Hz would otherwise persist 14k points
+// to JSONB on every position update).
+const GROUP_RIDE_PATH_LIMIT = 60;
+
+// Server-side throttle floor for `group:position`. The AC caps publishes
+// to ≤ 1 Hz; a misbehaving client could otherwise flood the channel and
+// chew through other riders' cellular bandwidth. Tracked in-memory per
+// process — multi-instance deploys still bound the per-process fanout.
+const GROUP_POSITION_THROTTLE_MS = 1000;
+
 @SkipThrottle()
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -85,6 +114,10 @@ export class EventsGateway
   private readonly logger = new Logger(EventsGateway.name);
   private pubClient: ReturnType<typeof createClient> | null = null;
   private subClient: ReturnType<typeof createClient> | null = null;
+  // Per `(group_ride_id, user_id)` last-broadcast timestamp used to
+  // enforce the 1 Hz floor on `group:position` events. See
+  // `GROUP_POSITION_THROTTLE_MS`.
+  private readonly groupPositionThrottle = new Map<string, number>();
 
   constructor(
     private readonly config: ConfigService,
@@ -93,6 +126,12 @@ export class EventsGateway
     private readonly rideRepo: Repository<Ride>,
     @InjectRepository(TripMember)
     private readonly tripMemberRepo: Repository<TripMember>,
+    // The `GroupRide` entity is registered in `EventsModule` so the
+    // `relations: { group_ride: true }` lookup below resolves, but the
+    // gateway never needs to query it directly — every membership +
+    // active-state read goes through `groupRideMemberRepo`.
+    @InjectRepository(GroupRideMember)
+    private readonly groupRideMemberRepo: Repository<GroupRideMember>,
   ) {}
 
   async afterInit(server: Server): Promise<void> {
@@ -433,6 +472,192 @@ export class EventsGateway
     client.to(room).emit('trip:cursor', payload);
   }
 
+  /**
+   * US-26 — subscribe to a group ride room so the client receives the
+   * `group:position`, `group:joined`, `group:left`, and `group:ended`
+   * fanout for that ride. Membership is verified against the database
+   * rather than the trip room pattern's "owner-only" check, because
+   * group rides are explicitly multi-member by design.
+   *
+   * Folds non-membership into a generic 404-ish error rather than a
+   * specific "you're not a member" so the endpoint cannot be used to
+   * probe whether a given group_ride_id exists at all.
+   */
+  @SubscribeMessage('subscribe:group')
+  async handleSubscribeGroup(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { group_ride_id: string },
+  ): Promise<void> {
+    const userId = (client.data as Record<string, unknown>).userId as
+      | string
+      | undefined;
+    if (!userId) {
+      client.emit('error', { message: 'Authentication required' });
+      return;
+    }
+    if (!data?.group_ride_id || typeof data.group_ride_id !== 'string') {
+      client.emit('error', { message: 'group_ride_id is required' });
+      return;
+    }
+    if (!UUID_PATTERN.test(data.group_ride_id)) {
+      client.emit('error', { message: 'group_ride_id must be a UUID' });
+      return;
+    }
+
+    const room = `group-ride:${data.group_ride_id}`;
+    if (client.rooms.has(room)) return;
+
+    const membership = await this.groupRideMemberRepo.findOne({
+      where: { group_ride_id: data.group_ride_id, user_id: userId },
+      relations: { group_ride: true },
+    });
+    if (!membership) {
+      client.emit('error', {
+        message: 'Group ride not found or access denied',
+      });
+      return;
+    }
+
+    // Membership rows survive ride termination (we keep them so a
+    // GET /group-rides/:id can still surface who was in the ride),
+    // but a client reconnecting after `group:ended` already fired
+    // would otherwise join a dead room and get stuck "active" with
+    // no further events to nudge it back to idle. Refuse the join
+    // and tell the client explicitly so the screen can drop back
+    // to the create/join form.
+    if (membership.group_ride.ended_at !== null) {
+      client.emit('error', { message: 'Group ride has ended' });
+      return;
+    }
+
+    client.join(room);
+    this.logger.debug(
+      `Client ${client.id} joined group ride ${data.group_ride_id}`,
+    );
+  }
+
+  @SubscribeMessage('unsubscribe:group')
+  handleUnsubscribeGroup(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { group_ride_id: string },
+  ): void {
+    if (!data?.group_ride_id || typeof data.group_ride_id !== 'string') return;
+    const room = `group-ride:${data.group_ride_id}`;
+    if (!client.rooms.has(room)) return;
+    client.leave(room);
+  }
+
+  /**
+   * US-26 — accept a position publish from a member, persist the last-
+   * known position + a capped breadcrumb trail, then fan out
+   * `group:position` to every other member in the room.
+   *
+   * Identity is taken from the authenticated socket (clients can't
+   * spoof `user_id`). The 1 Hz throttle is enforced server-side because
+   * we can't trust clients to honour it — a buggy build would
+   * otherwise flood the channel and starve everyone else's bandwidth.
+   * Persistence happens BEFORE broadcast so a `GET /group-rides/:id`
+   * issued immediately after by a reconnecting client always reflects
+   * at least the last accepted point.
+   *
+   * Silently drops messages from clients that aren't in the room. We
+   * intentionally don't echo errors back here — a flapping connection
+   * should fail closed without spamming the client with errors on every
+   * dropped tick.
+   */
+  @SubscribeMessage('group:position')
+  async handleGroupPosition(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    data: {
+      group_ride_id: string;
+      lat: number;
+      lng: number;
+      speed?: number;
+      heading?: number;
+    },
+  ): Promise<void> {
+    const userId = (client.data as Record<string, unknown>).userId as
+      | string
+      | undefined;
+    if (!userId) return;
+    if (!data?.group_ride_id) return;
+    if (typeof data.lat !== 'number' || typeof data.lng !== 'number') return;
+    if (!UUID_PATTERN.test(data.group_ride_id)) return;
+
+    const room = `group-ride:${data.group_ride_id}`;
+    if (!client.rooms.has(room)) return;
+
+    const throttleKey = `${data.group_ride_id}:${userId}`;
+    const nowMs = Date.now();
+    const last = this.groupPositionThrottle.get(throttleKey) ?? 0;
+    if (nowMs - last < GROUP_POSITION_THROTTLE_MS) return;
+
+    // Claim the slot SYNCHRONOUSLY, before yielding on the membership
+    // lookup. If we wrote `nowMs` only after the await, two ticks
+    // arriving within the same event-loop turn would both pass the
+    // check above, then both await in parallel, then both broadcast —
+    // bypassing the 1 Hz floor that's the trust boundary for the
+    // bandwidth budget. Setting it first means concurrent ticks see
+    // the updated timestamp and bail before doing any DB work.
+    this.groupPositionThrottle.set(throttleKey, nowMs);
+
+    // Re-verify membership AND active state on every accepted update.
+    // A client that joined the socket room then was kicked from the
+    // ride (or whose ride ended) must stop receiving fanout — without
+    // this re-check, the gateway would continue broadcasting their
+    // points until the connection drops.
+    const membership = await this.groupRideMemberRepo.findOne({
+      where: { group_ride_id: data.group_ride_id, user_id: userId },
+      relations: { group_ride: true },
+    });
+    if (!membership || membership.group_ride.ended_at !== null) {
+      // Race: either left, or the owner ended the ride. Detach the
+      // client from the room so subsequent ticks short-circuit before
+      // hitting the DB. Drop the throttle entry so the next position
+      // attempt — which we'll silently swallow on the room-membership
+      // check — doesn't sit in the map forever.
+      this.groupPositionThrottle.delete(throttleKey);
+      client.leave(room);
+      return;
+    }
+
+    const at = new Date(nowMs);
+    const point = { lat: data.lat, lng: data.lng, at: at.toISOString() };
+    const path = Array.isArray(membership.recent_path)
+      ? [...membership.recent_path, point]
+      : [point];
+    if (path.length > GROUP_RIDE_PATH_LIMIT) {
+      path.splice(0, path.length - GROUP_RIDE_PATH_LIMIT);
+    }
+
+    await this.groupRideMemberRepo.update(
+      { id: membership.id },
+      {
+        last_lat: data.lat,
+        last_lng: data.lng,
+        last_speed: data.speed ?? null,
+        last_heading: data.heading ?? null,
+        last_position_at: at,
+        recent_path: path,
+      },
+    );
+
+    const payload: GroupPositionPayload = {
+      group_ride_id: data.group_ride_id,
+      user_id: userId,
+      lat: data.lat,
+      lng: data.lng,
+      speed: data.speed ?? null,
+      heading: data.heading ?? null,
+      at: at.toISOString(),
+    };
+    // `client.to(room)` excludes the sender — they already have their
+    // own position locally and re-rendering their own dot from the
+    // round-tripped event would visibly lag.
+    client.to(room).emit('group:position', payload);
+  }
+
   // ── Server-side emit methods (called by other services) ──
 
   /**
@@ -468,6 +693,33 @@ export class EventsGateway
    */
   emitToTrip(tripId: string, event: string, data: unknown): void {
     this.server.to(`trip:${tripId}`).emit(event, data);
+  }
+
+  /**
+   * US-26 — broadcast a non-position event (`group:joined`, `group:left`,
+   * `group:ended`) to every client subscribed to a group ride room.
+   * Position fanout uses `client.to(...)` inside the socket handler so
+   * the sender doesn't echo themselves; everything else uses this
+   * `server.to(...)` form because every member should see the event,
+   * including whoever triggered it via REST.
+   *
+   * Also drops the throttle bookkeeping for the ride when it ends so a
+   * future ride with a coincidentally-matching id can't inherit stale
+   * state.
+   */
+  broadcastToGroupRide(
+    groupRideId: string,
+    event: string,
+    data: unknown,
+  ): void {
+    this.server.to(`group-ride:${groupRideId}`).emit(event, data);
+    if (event === 'group:ended') {
+      for (const key of this.groupPositionThrottle.keys()) {
+        if (key.startsWith(`${groupRideId}:`)) {
+          this.groupPositionThrottle.delete(key);
+        }
+      }
+    }
   }
 
   // ── Helpers ──

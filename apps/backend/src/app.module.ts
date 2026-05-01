@@ -34,6 +34,7 @@ import { AccountModule } from './modules/account/index.js';
 import { EmailModule } from './modules/email/index.js';
 import { TripsModule } from './modules/trips/index.js';
 import { TripActivityModule } from './modules/trip-activity/index.js';
+import { GroupRidesModule } from './modules/group-rides/index.js';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { TripActivityModule } from './modules/trip-activity/index.js';
     RidesModule,
     TripsModule,
     TripActivityModule,
+    GroupRidesModule,
     EventsModule,
     SafetyModule,
     TilesModule,

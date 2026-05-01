@@ -28,6 +28,8 @@ import { TripSuggestionVote } from './entities/trip-suggestion-vote.entity.js';
 import { TripMessage } from './entities/trip-message.entity.js';
 import { TripActivity } from './entities/trip-activity.entity.js';
 import { DataExportRequest } from './entities/data-export-request.entity.js';
+import { GroupRide } from './entities/group-ride.entity.js';
+import { GroupRideMember } from './entities/group-ride-member.entity.js';
 import { InitSchema1713000000000 } from './migrations/1713000000000-InitSchema.js';
 import { AddPasswordHash1713100000000 } from './migrations/1713100000000-AddPasswordHash.js';
 import { FixIsEmergencyDefault1713200000000 } from './migrations/1713200000000-FixIsEmergencyDefault.js';
@@ -59,6 +61,7 @@ import { AddEmailVerificationAndPasswordReset1715700000000 } from './migrations/
 import { AddPasswordChangedAtAndUniqueResetToken1715800000000 } from './migrations/1715800000000-AddPasswordChangedAtAndUniqueResetToken.js';
 import { AddVerificationTokenUniqueIndex1715900000000 } from './migrations/1715900000000-AddVerificationTokenUniqueIndex.js';
 import { AddMapShares1716000000000 } from './migrations/1716000000000-AddMapShares.js';
+import { AddGroupRides1716100000000 } from './migrations/1716100000000-AddGroupRides.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -96,6 +99,8 @@ export const AppDataSource = new DataSource({
     TripMessage,
     TripActivity,
     DataExportRequest,
+    GroupRide,
+    GroupRideMember,
   ],
   migrations: [
     // Listed in chronological order. Every migration in
@@ -136,6 +141,7 @@ export const AppDataSource = new DataSource({
     AddPasswordChangedAtAndUniqueResetToken1715800000000,
     AddVerificationTokenUniqueIndex1715900000000,
     AddMapShares1716000000000,
+    AddGroupRides1716100000000,
   ],
   synchronize: false,
 });

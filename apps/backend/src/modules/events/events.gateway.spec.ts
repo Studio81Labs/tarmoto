@@ -6,6 +6,7 @@ import { JwtService } from '@nestjs/jwt';
 import { EventsGateway } from './events.gateway.js';
 import { Ride } from '../../entities/ride.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
+import { GroupRideMember } from '../../entities/group-ride-member.entity.js';
 import { Server, Socket } from 'socket.io';
 
 describe('EventsGateway', () => {
@@ -13,6 +14,10 @@ describe('EventsGateway', () => {
   let jwtService: jest.Mocked<JwtService>;
   let rideRepo: { findOne: jest.Mock };
   let tripMemberRepo: { findOne: jest.Mock };
+  let groupRideMemberRepo: {
+    findOne: jest.Mock;
+    update: jest.Mock;
+  };
 
   const mockServer = {
     adapter: jest.fn(),
@@ -52,6 +57,13 @@ describe('EventsGateway', () => {
             findOne: jest.fn().mockResolvedValue(null),
           },
         },
+        {
+          provide: getRepositoryToken(GroupRideMember),
+          useValue: {
+            findOne: jest.fn().mockResolvedValue(null),
+            update: jest.fn().mockResolvedValue({ affected: 1 }),
+          },
+        },
       ],
     }).compile();
 
@@ -59,6 +71,7 @@ describe('EventsGateway', () => {
     jwtService = module.get(JwtService);
     rideRepo = module.get(getRepositoryToken(Ride));
     tripMemberRepo = module.get(getRepositoryToken(TripMember));
+    groupRideMemberRepo = module.get(getRepositoryToken(GroupRideMember));
     gateway.server = mockServer;
   });
 
@@ -629,6 +642,315 @@ describe('EventsGateway', () => {
       gateway.handleUnsubscribeTrip(client, {} as never);
 
       expect(client.leave).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleSubscribeGroup (US-26)', () => {
+    const RIDE_ID = '11111111-1111-1111-1111-111111111111';
+
+    it('rejects unauthenticated clients', async () => {
+      const client = {
+        id: 'c-1',
+        data: {},
+        rooms: new Set(['c-1']),
+        join: jest.fn(),
+        emit: jest.fn(),
+      } as unknown as Socket;
+
+      await gateway.handleSubscribeGroup(client, { group_ride_id: RIDE_ID });
+
+      expect(groupRideMemberRepo.findOne).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith('error', expect.any(Object));
+      expect(client.join).not.toHaveBeenCalled();
+    });
+
+    it('rejects non-UUID ride ids before hitting the database', async () => {
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        rooms: new Set(['c-1']),
+        join: jest.fn(),
+        emit: jest.fn(),
+      } as unknown as Socket;
+
+      await gateway.handleSubscribeGroup(client, { group_ride_id: 'not-uuid' });
+
+      expect(groupRideMemberRepo.findOne).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith(
+        'error',
+        expect.objectContaining({ message: 'group_ride_id must be a UUID' }),
+      );
+    });
+
+    it('rejects callers who are not members of the ride', async () => {
+      groupRideMemberRepo.findOne.mockResolvedValueOnce(null);
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        rooms: new Set(['c-1']),
+        join: jest.fn(),
+        emit: jest.fn(),
+      } as unknown as Socket;
+
+      await gateway.handleSubscribeGroup(client, { group_ride_id: RIDE_ID });
+
+      expect(client.join).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith('error', expect.any(Object));
+    });
+
+    it('joins the room when the caller is a member', async () => {
+      groupRideMemberRepo.findOne.mockResolvedValueOnce({
+        id: 'm-1',
+        group_ride_id: RIDE_ID,
+        user_id: 'user-1',
+        group_ride: { id: RIDE_ID, ended_at: null },
+      });
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        rooms: new Set(['c-1']),
+        join: jest.fn(),
+        emit: jest.fn(),
+      } as unknown as Socket;
+
+      await gateway.handleSubscribeGroup(client, { group_ride_id: RIDE_ID });
+
+      expect(client.join).toHaveBeenCalledWith(`group-ride:${RIDE_ID}`);
+    });
+
+    it('refuses to join when the ride has already ended', async () => {
+      // Reconnecting member of a ride that ended while they were
+      // offline: membership row survives but the room is dead. We
+      // tell them explicitly so the screen can drop to the idle
+      // state — without this, `group:ended` had already fired before
+      // they reconnected and they'd sit in an "active" UI forever.
+      groupRideMemberRepo.findOne.mockResolvedValueOnce({
+        id: 'm-1',
+        group_ride_id: RIDE_ID,
+        user_id: 'user-1',
+        group_ride: { id: RIDE_ID, ended_at: new Date() },
+      });
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        rooms: new Set(['c-1']),
+        join: jest.fn(),
+        emit: jest.fn(),
+      } as unknown as Socket;
+
+      await gateway.handleSubscribeGroup(client, { group_ride_id: RIDE_ID });
+
+      expect(client.join).not.toHaveBeenCalled();
+      expect(client.emit).toHaveBeenCalledWith(
+        'error',
+        expect.objectContaining({ message: 'Group ride has ended' }),
+      );
+    });
+
+    it('is idempotent for an already-joined client', async () => {
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        rooms: new Set(['c-1', `group-ride:${RIDE_ID}`]),
+        join: jest.fn(),
+        emit: jest.fn(),
+      } as unknown as Socket;
+
+      await gateway.handleSubscribeGroup(client, { group_ride_id: RIDE_ID });
+
+      expect(groupRideMemberRepo.findOne).not.toHaveBeenCalled();
+      expect(client.join).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleGroupPosition (US-26)', () => {
+    const RIDE_ID = '11111111-1111-1111-1111-111111111111';
+
+    function makeMembership(): Record<string, unknown> {
+      return {
+        id: 'm-1',
+        group_ride_id: RIDE_ID,
+        user_id: 'user-1',
+        recent_path: [],
+        group_ride: { id: RIDE_ID, ended_at: null },
+      };
+    }
+
+    it('does nothing when sender is not in the room (broadcast scoping)', async () => {
+      const mockTo = jest.fn().mockReturnValue({ emit: jest.fn() });
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        rooms: new Set(['c-1']), // not in `group-ride:...`
+        to: mockTo,
+        leave: jest.fn(),
+      } as unknown as Socket;
+
+      await gateway.handleGroupPosition(client, {
+        group_ride_id: RIDE_ID,
+        lat: 49.1,
+        lng: 16.5,
+      });
+
+      expect(groupRideMemberRepo.findOne).not.toHaveBeenCalled();
+      expect(mockTo).not.toHaveBeenCalled();
+    });
+
+    it('persists the position and broadcasts to the room (excluding sender)', async () => {
+      groupRideMemberRepo.findOne.mockResolvedValueOnce(makeMembership());
+      const emit = jest.fn();
+      const mockTo = jest.fn().mockReturnValue({ emit });
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        rooms: new Set(['c-1', `group-ride:${RIDE_ID}`]),
+        to: mockTo,
+        leave: jest.fn(),
+      } as unknown as Socket;
+
+      await gateway.handleGroupPosition(client, {
+        group_ride_id: RIDE_ID,
+        lat: 49.1,
+        lng: 16.5,
+        speed: 80,
+        heading: 180,
+      });
+
+      expect(groupRideMemberRepo.update).toHaveBeenCalledWith(
+        { id: 'm-1' },
+        expect.objectContaining({
+          last_lat: 49.1,
+          last_lng: 16.5,
+          last_speed: 80,
+          last_heading: 180,
+        }),
+      );
+      const updateCall = groupRideMemberRepo.update.mock.calls[0]?.[1] as {
+        last_position_at: Date;
+        recent_path: { lat: number; lng: number; at: string }[];
+      };
+      expect(updateCall.last_position_at).toBeInstanceOf(Date);
+      expect(updateCall.recent_path).toEqual([
+        { lat: 49.1, lng: 16.5, at: expect.any(String) as unknown as string },
+      ]);
+      // `client.to(room)` excludes sender — that's the AC for "fan out
+      // to group members only" (the sender already has their own
+      // position locally).
+      expect(mockTo).toHaveBeenCalledWith(`group-ride:${RIDE_ID}`);
+      expect(emit).toHaveBeenCalledWith(
+        'group:position',
+        expect.objectContaining({
+          group_ride_id: RIDE_ID,
+          user_id: 'user-1',
+          lat: 49.1,
+          lng: 16.5,
+        }),
+      );
+    });
+
+    it('drops the second update inside the throttle window', async () => {
+      groupRideMemberRepo.findOne.mockResolvedValue(makeMembership());
+      const emit = jest.fn();
+      const mockTo = jest.fn().mockReturnValue({ emit });
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        rooms: new Set(['c-1', `group-ride:${RIDE_ID}`]),
+        to: mockTo,
+        leave: jest.fn(),
+      } as unknown as Socket;
+
+      const payload = {
+        group_ride_id: RIDE_ID,
+        lat: 49.1,
+        lng: 16.5,
+      };
+      await gateway.handleGroupPosition(client, payload);
+      await gateway.handleGroupPosition(client, payload);
+
+      expect(emit).toHaveBeenCalledTimes(1);
+    });
+
+    it('claims the throttle slot synchronously so concurrent ticks bail', async () => {
+      // Regression: previously the throttle entry was written AFTER the
+      // membership await. Two ticks arriving in the same event-loop turn
+      // would both pass the synchronous check, both await in parallel,
+      // and both broadcast — bypassing the 1 Hz floor.
+      let resolveFindOne!: (value: Record<string, unknown>) => void;
+      groupRideMemberRepo.findOne.mockImplementation(
+        () =>
+          new Promise<Record<string, unknown>>((r) => {
+            resolveFindOne = r;
+          }),
+      );
+      const emit = jest.fn();
+      const mockTo = jest.fn().mockReturnValue({ emit });
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        rooms: new Set(['c-1', `group-ride:${RIDE_ID}`]),
+        to: mockTo,
+        leave: jest.fn(),
+      } as unknown as Socket;
+
+      const payload = {
+        group_ride_id: RIDE_ID,
+        lat: 49.1,
+        lng: 16.5,
+      };
+      // Fire two handlers without awaiting — the second must observe
+      // the throttle entry the first wrote synchronously and exit
+      // before doing any DB work.
+      const first = gateway.handleGroupPosition(client, payload);
+      const second = gateway.handleGroupPosition(client, payload);
+
+      // Second already short-circuited, so even one resolve drains
+      // every outstanding lookup. (`findOne` is only invoked once.)
+      resolveFindOne(makeMembership());
+      await Promise.all([first, second]);
+
+      expect(groupRideMemberRepo.findOne).toHaveBeenCalledTimes(1);
+      expect(emit).toHaveBeenCalledTimes(1);
+    });
+
+    it('drops broadcasts after the ride has ended', async () => {
+      groupRideMemberRepo.findOne.mockResolvedValueOnce({
+        ...makeMembership(),
+        group_ride: { id: RIDE_ID, ended_at: new Date() },
+      });
+      const emit = jest.fn();
+      const mockTo = jest.fn().mockReturnValue({ emit });
+      const leave = jest.fn();
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        rooms: new Set(['c-1', `group-ride:${RIDE_ID}`]),
+        to: mockTo,
+        leave,
+      } as unknown as Socket;
+
+      await gateway.handleGroupPosition(client, {
+        group_ride_id: RIDE_ID,
+        lat: 49.1,
+        lng: 16.5,
+      });
+
+      // Sender is detached so subsequent ticks short-circuit before
+      // the DB lookup.
+      expect(leave).toHaveBeenCalledWith(`group-ride:${RIDE_ID}`);
+      expect(emit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('broadcastToGroupRide (US-26)', () => {
+    const RIDE_ID = '11111111-1111-1111-1111-111111111111';
+
+    it('emits to the group ride room', () => {
+      gateway.broadcastToGroupRide(RIDE_ID, 'group:joined', { user_id: 'u' });
+      expect(mockServer.to).toHaveBeenCalledWith(`group-ride:${RIDE_ID}`);
+      expect(mockServer.emit).toHaveBeenCalledWith('group:joined', {
+        user_id: 'u',
+      });
     });
   });
 });
