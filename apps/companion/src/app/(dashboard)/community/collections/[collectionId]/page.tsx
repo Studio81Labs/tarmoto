@@ -16,7 +16,6 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useAuthStore } from "@/stores/auth";
 import { useUserTrips } from "@/hooks/useUserTrips";
 import {
   ApiError,
@@ -39,10 +38,16 @@ type LoadState =
   | { phase: "not-found" }
   | { phase: "error"; message: string };
 
+/**
+ * Owner-only detail page. Lives under the `(dashboard)` route group, which
+ * gates auth, and pulls from `GET /collections/:id` — the backend deliberately
+ * 404s that endpoint for non-owners (id existence isn't a side channel for
+ * unlisted collections). Non-owner viewing happens through the public
+ * `/community/collections/shared/[slug]` route, not this page.
+ */
 export default function CollectionDetailPage() {
   const { collectionId } = useParams<{ collectionId: string }>();
   const router = useRouter();
-  const userId = useAuthStore((s) => s.user?.id ?? null);
   const {
     trips,
     tripById,
@@ -79,7 +84,6 @@ export default function CollectionDetailPage() {
   }, [collectionId, reload]);
 
   const collection = load.phase === "ready" ? load.collection : null;
-  const isOwner = collection ? collection.ownerId === userId : false;
 
   const handleAddTrips = async (tripIds: string[]) => {
     if (!collection || tripIds.length === 0) return;
@@ -239,33 +243,26 @@ export default function CollectionDetailPage() {
           </div>
           <p className="text-xs text-slate-500">
             Updated {formatRelativeTime(collection!.updatedAt)}
-            {!isOwner && collection!.ownerName
-              ? ` · by ${collection!.ownerName}`
-              : ""}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <ShareButton collection={collection!} />
-          {isOwner && (
-            <button
-              type="button"
-              onClick={() => setShowPicker(true)}
-              disabled={busy}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light disabled:opacity-50 transition"
-            >
-              <Plus size={14} /> Add routes
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setShowPicker(true)}
+            disabled={busy}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light disabled:opacity-50 transition"
+          >
+            <Plus size={14} /> Add routes
+          </button>
         </div>
       </header>
 
-      {isOwner && (
-        <VisibilitySelector
-          value={collection!.visibility}
-          onChange={(v) => void handleVisibilityChange(v)}
-          disabled={busy}
-        />
-      )}
+      <VisibilitySelector
+        value={collection!.visibility}
+        onChange={(v) => void handleVisibilityChange(v)}
+        disabled={busy}
+      />
 
       {collection!.description && (
         <p className="text-sm text-slate-300 mt-3 max-w-2xl whitespace-pre-line">
@@ -313,13 +310,7 @@ export default function CollectionDetailPage() {
           Routes
         </h2>
         {memberTrips.length === 0 ? (
-          isOwner ? (
-            <EmptyRoutes onAdd={() => setShowPicker(true)} />
-          ) : (
-            <p className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/50 p-8 text-center text-sm text-slate-500">
-              The owner hasn&apos;t added any routes yet.
-            </p>
-          )
+          <EmptyRoutes onAdd={() => setShowPicker(true)} />
         ) : loadingTrips || tripsError ? (
           <>
             {tripsError && (
@@ -342,14 +333,12 @@ export default function CollectionDetailPage() {
               "missing" in entry ? (
                 <MissingTripRow
                   key={entry.itemId}
-                  canRemove={isOwner}
                   onRemove={() => void handleRemoveTrip(entry.itemId)}
                 />
               ) : (
                 <TripRow
                   key={entry.id}
                   trip={entry}
-                  canRemove={isOwner}
                   onRemove={() => {
                     const itemId = itemIdByTripId.get(entry.id);
                     if (itemId) void handleRemoveTrip(itemId);
@@ -361,7 +350,7 @@ export default function CollectionDetailPage() {
         )}
       </section>
 
-      {showPicker && isOwner && (
+      {showPicker && (
         <RoutePickerModal
           trips={availableTrips}
           loading={loadingTrips}
@@ -516,15 +505,7 @@ function EmptyRoutes({ onAdd }: { onAdd: () => void }) {
   );
 }
 
-function TripRow({
-  trip,
-  canRemove,
-  onRemove,
-}: {
-  trip: Trip;
-  canRemove: boolean;
-  onRemove: () => void;
-}) {
+function TripRow({ trip, onRemove }: { trip: Trip; onRemove: () => void }) {
   const points = useMemo(() => combineTripRoutePoints(trip.days), [trip.days]);
   const preview = useMemo(() => buildRoutePreview(points, 200, 6), [points]);
   const distance = tripDistanceKm(trip);
@@ -576,28 +557,20 @@ function TripRow({
             </div>
           </div>
         </Link>
-        {canRemove && (
-          <button
-            type="button"
-            onClick={onRemove}
-            aria-label={`Remove ${trip.name} from collection`}
-            className="px-3 text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition"
-          >
-            <Trash2 size={16} />
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={`Remove ${trip.name} from collection`}
+          className="px-3 text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition"
+        >
+          <Trash2 size={16} />
+        </button>
       </div>
     </li>
   );
 }
 
-function MissingTripRow({
-  canRemove,
-  onRemove,
-}: {
-  canRemove: boolean;
-  onRemove: () => void;
-}) {
+function MissingTripRow({ onRemove }: { onRemove: () => void }) {
   return (
     <li className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/50 p-4 flex items-center justify-between gap-4">
       <div className="min-w-0">
@@ -606,15 +579,13 @@ function MissingTripRow({
           The route may have been deleted or belongs to another account.
         </p>
       </div>
-      {canRemove && (
-        <button
-          type="button"
-          onClick={onRemove}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition"
-        >
-          <X size={12} /> Remove
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={onRemove}
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition"
+      >
+        <X size={12} /> Remove
+      </button>
     </li>
   );
 }
