@@ -52,16 +52,28 @@ export function buildJobsConfig(config: ConfigService): JobsConfig {
 
 /**
  * Default retry/backoff policy applied to every job enqueued through
- * the shared `enqueue()` helpers. Individual call sites can override
- * by passing options to `add()`.
+ * the shared producer + the cross-module `@InjectQueue` call sites.
+ * Individual call sites can override by passing options to `add()`.
  *
  * - `attempts: 5`: ~31 minutes of cumulative backoff before the job is
  *   marked failed and surfaced via the health endpoint.
  * - `backoff.type: 'exponential'`: 30s → 60s → 2m → 4m → 8m.
- * - `removeOnComplete: 1000`: keep recent successes for ops visibility
- *   without ballooning Redis memory.
- * - `removeOnFail: 5000`: keep more failures so on-call has a wider
- *   window to inspect what went wrong.
+ * - `removeOnComplete: { count: 1000 }`: keep recent successes for ops
+ *   visibility without ballooning Redis memory.
+ * - `removeOnFail: { age: 24h, count: 5000 }`: keep failures for at
+ *   most 24 hours OR 5000 jobs (whichever is smaller). The age cap is
+ *   load-bearing for queues that use a stable per-entity `jobId` for
+ *   idempotency: BullMQ's `add()` dedupes against ANY existing job
+ *   with the same id (waiting/active/delayed/completed/failed). A
+ *   stuck failed job on a low-volume queue (e.g. account-deletion-
+ *   finalize) would otherwise sit in Redis until 5000 newer failures
+ *   evicted it — months — silently no-op'ing every subsequent
+ *   re-enqueue from the daily sweep. The 24h TTL is comfortably past
+ *   any single-job retry chain (which exhausts at ~31 min) so it
+ *   never preempts a still-retrying job, but small enough that the
+ *   next daily sweep gets a fresh enqueue path. Most relevant for
+ *   `account-deletion-finalize` (GDPR deadline) and `data-export`
+ *   (a single failed export shouldn't strand the user's request).
  */
 export const DEFAULT_JOB_OPTIONS: JobsOptions = {
   attempts: 5,
@@ -70,7 +82,7 @@ export const DEFAULT_JOB_OPTIONS: JobsOptions = {
     delay: 30_000,
   },
   removeOnComplete: { count: 1000 },
-  removeOnFail: { count: 5000 },
+  removeOnFail: { age: 24 * 60 * 60, count: 5000 },
 };
 
 /**

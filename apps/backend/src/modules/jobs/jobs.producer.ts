@@ -63,8 +63,10 @@ export class JobsProducer {
   /**
    * Enqueue a per-user account-deletion finalize. Idempotent on
    * `user_id` — the daily sweep can re-enqueue on each tick safely
-   * because BullMQ deduplicates by jobId until the job finishes (or
-   * is cleaned up by `removeOnComplete`).
+   * because BullMQ deduplicates by jobId. Failed jobs evict via the
+   * 24h `age` cap on `removeOnFail` (see `DEFAULT_JOB_OPTIONS`), so
+   * a finalize that exhausts its retry chain doesn't permanently
+   * strand the user — the next daily sweep re-enqueues fresh.
    */
   async enqueueAccountDeletionFinalize(
     data: AccountDeletionFinalizeJobData,

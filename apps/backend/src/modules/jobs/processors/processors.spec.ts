@@ -214,12 +214,12 @@ describe('DataExportQueueProcessor', () => {
 });
 
 describe('AccountDeletionSweepProcessor', () => {
-  it('enqueues a finalize job per due user, never inlines the purge', async () => {
-    const users = {
-      find: jest
-        .fn()
-        .mockResolvedValue([{ id: 'u1' }, { id: 'u2' }, { id: 'u3' }]),
-    };
+  async function buildProcessor(found: { id: string }[]): Promise<{
+    processor: AccountDeletionSweepProcessor;
+    users: { find: jest.Mock };
+    producer: { enqueueAccountDeletionFinalize: jest.Mock };
+  }> {
+    const users = { find: jest.fn().mockResolvedValue(found) };
     const producer = {
       enqueueAccountDeletionFinalize: jest.fn().mockResolvedValue(undefined),
     };
@@ -230,7 +230,19 @@ describe('AccountDeletionSweepProcessor', () => {
         { provide: JobsProducer, useValue: producer },
       ],
     }).compile();
-    const processor = moduleRef.get(AccountDeletionSweepProcessor);
+    return {
+      processor: moduleRef.get(AccountDeletionSweepProcessor),
+      users,
+      producer,
+    };
+  }
+
+  it('enqueues a finalize job per due user, never inlines the purge', async () => {
+    const { processor, producer } = await buildProcessor([
+      { id: 'u1' },
+      { id: 'u2' },
+      { id: 'u3' },
+    ]);
     const result = await processor.process(
       fakeJob(JOB_NAMES.ACCOUNT_DELETION_SWEEP_RUN, {}) as never,
     );
@@ -239,6 +251,35 @@ describe('AccountDeletionSweepProcessor', () => {
       user_id: 'u1',
     });
     expect(result).toEqual({ users_enqueued: 3 });
+  });
+
+  it('queries oldest-first so the longest-overdue users get processed first under backlog', async () => {
+    // GDPR's deletion deadline is calendar time from the user's
+    // request, so when the batch can't drain the full backlog the
+    // user closest to breaching their deadline must come first off
+    // the queue. Asserting the ORM call shape so a regression of
+    // dropping `order: { deletion_scheduled_at: 'ASC' }` fails here.
+    const { processor, users } = await buildProcessor([{ id: 'u1' }]);
+    await processor.process(
+      fakeJob(JOB_NAMES.ACCOUNT_DELETION_SWEEP_RUN, {}) as never,
+    );
+    expect(users.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        order: { deletion_scheduled_at: 'ASC' },
+      }),
+    );
+  });
+
+  it('caps the batch large enough to exceed the previous @Cron(EVERY_HOUR) sweeper throughput', async () => {
+    // Old @Cron at hourly × 50 users = 1,200/day. New daily sweep
+    // must clear at least that volume in a single tick, with
+    // headroom for spikes.
+    const { processor, users } = await buildProcessor([]);
+    await processor.process(
+      fakeJob(JOB_NAMES.ACCOUNT_DELETION_SWEEP_RUN, {}) as never,
+    );
+    const callArgs = users.find.mock.calls[0][0] as { take: number };
+    expect(callArgs.take).toBeGreaterThanOrEqual(1200);
   });
 });
 

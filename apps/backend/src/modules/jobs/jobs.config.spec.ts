@@ -67,6 +67,13 @@ describe('DEFAULT_JOB_OPTIONS', () => {
 
   it('keeps a bounded retention window for completed and failed jobs', () => {
     expect(DEFAULT_JOB_OPTIONS.removeOnComplete).toEqual({ count: 1000 });
-    expect(DEFAULT_JOB_OPTIONS.removeOnFail).toEqual({ count: 5000 });
+    // `age` (24h) is load-bearing: jobId-based dedup blocks re-enqueue
+    // against ANY persisted job (including failed). Without the age cap,
+    // a stuck failed job on a low-volume queue could sit in Redis for
+    // months — long enough to break GDPR account-deletion finalize.
+    expect(DEFAULT_JOB_OPTIONS.removeOnFail).toEqual({
+      age: 24 * 60 * 60,
+      count: 5000,
+    });
   });
 });
