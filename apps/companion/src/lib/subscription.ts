@@ -1,4 +1,7 @@
-import type { SubscriptionTier } from "@tarmoto/shared";
+import {
+  formatSubscriptionPriceLabel,
+  type SubscriptionTier,
+} from "@tarmoto/shared";
 import { ApiError } from "@/lib/api";
 
 export type { SubscriptionTier };
@@ -70,7 +73,7 @@ export function buildFallbackSubscriptionSnapshot(): SubscriptionSnapshot {
       tier: "premium",
       name: "Premium",
       status: "active",
-      priceLabel: "$29.99/yr",
+      priceLabel: formatSubscriptionPriceLabel("premium"),
       renewsAt: "2026-11-15T00:00:00.000Z",
       cancelAtPeriodEnd: false,
       manageUrl: null,
@@ -79,7 +82,7 @@ export function buildFallbackSubscriptionSnapshot(): SubscriptionSnapshot {
       {
         tier: "free",
         name: "Free",
-        priceLabel: "$0",
+        priceLabel: formatSubscriptionPriceLabel("free"),
         features: [
           "Basic navigation",
           "Road quality overlay (limited)",
@@ -90,7 +93,7 @@ export function buildFallbackSubscriptionSnapshot(): SubscriptionSnapshot {
       {
         tier: "premium",
         name: "Premium",
-        priceLabel: "$29.99/yr",
+        priceLabel: formatSubscriptionPriceLabel("premium"),
         highlighted: true,
         features: [
           "Unlimited trip planning",
@@ -102,7 +105,7 @@ export function buildFallbackSubscriptionSnapshot(): SubscriptionSnapshot {
       {
         tier: "pro",
         name: "Pro",
-        priceLabel: "$49.99/yr",
+        priceLabel: formatSubscriptionPriceLabel("pro"),
         features: [
           "Everything in Premium",
           "Unlimited group rides",
