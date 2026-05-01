@@ -1,15 +1,9 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import {
-  Calendar,
-  Globe,
-  Link2,
-  MapPin,
-  Route as RouteIcon,
-  User,
-} from "lucide-react";
+import { Calendar, MapPin, Route as RouteIcon, User } from "lucide-react";
 import { fetchSharedCollection } from "@/lib/route-collection-share";
+import { RouteCollectionVisibilityPill } from "@/components/RouteCollectionVisibilityPill";
 import { formatRelativeTime } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -67,7 +61,7 @@ export default async function SharedCollectionPage({
           <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-tarmoto-cyan">
             Route collection
           </p>
-          <VisibilityBadge visibility={detail.visibility} />
+          <RouteCollectionVisibilityPill visibility={detail.visibility} />
         </div>
         <h1 className="text-3xl font-bold tracking-tight">{detail.title}</h1>
         {detail.description && (
@@ -145,22 +139,6 @@ export default async function SharedCollectionPage({
         </Link>
       </section>
     </main>
-  );
-}
-
-function VisibilityBadge({
-  visibility,
-}: {
-  visibility: "private" | "unlisted" | "public";
-}) {
-  if (visibility === "private") return null;
-  const Icon = visibility === "public" ? Globe : Link2;
-  const label = visibility === "public" ? "Public" : "Unlisted";
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-tarmoto-cyan/30 bg-tarmoto-cyan/5 px-2 py-0.5 text-[10px] uppercase tracking-wide text-tarmoto-cyan">
-      <Icon size={10} />
-      {label}
-    </span>
   );
 }
 
