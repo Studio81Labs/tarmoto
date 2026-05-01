@@ -3,14 +3,17 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { Repository } from 'typeorm';
+import { DEFAULT_PRIVACY_PREFERENCES } from '@tarmoto/shared';
 import { SharingService } from './sharing.service.js';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
+import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 
 describe('SharingService', () => {
   let service: SharingService;
   let sharedRideRepo: Partial<jest.Mocked<Repository<SharedRide>>>;
   let rideRepo: Partial<jest.Mocked<Repository<Ride>>>;
+  let privacy: { loadPreferences: jest.Mock };
 
   const mockRide = {
     id: 'ride-1',
@@ -49,6 +52,7 @@ describe('SharingService', () => {
 
   const mockQueryBuilder = {
     innerJoinAndSelect: jest.fn().mockReturnThis(),
+    leftJoin: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
@@ -80,12 +84,18 @@ describe('SharingService', () => {
     rideRepo = {
       findOne: jest.fn().mockResolvedValue(mockRide),
     };
+    privacy = {
+      loadPreferences: jest
+        .fn()
+        .mockResolvedValue({ ...DEFAULT_PRIVACY_PREFERENCES }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SharingService,
         { provide: getRepositoryToken(SharedRide), useValue: sharedRideRepo },
         { provide: getRepositoryToken(Ride), useValue: rideRepo },
+        { provide: PrivacyPreferencesService, useValue: privacy },
       ],
     }).compile();
 
@@ -329,6 +339,22 @@ describe('SharingService', () => {
         NotFoundException,
       );
       // The increment side-effect must not fire for hidden tokens.
+      expect(sharedRideRepo.increment).not.toHaveBeenCalled();
+    });
+
+    it('hides embed-click tracking for tokens whose owner is private (#279)', async () => {
+      // Same gate as `getByToken` — without it a caller can probe
+      // `/embed-click` to confirm a hidden share token exists, AND
+      // we'd record engagement against content that's supposed to
+      // be hidden.
+      privacy.loadPreferences.mockResolvedValueOnce({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        profile_visibility: 'private',
+      });
+
+      await expect(
+        service.trackEmbedClick('abc123def456abc123def456abc12345'),
+      ).rejects.toThrow(NotFoundException);
       expect(sharedRideRepo.increment).not.toHaveBeenCalled();
     });
   });

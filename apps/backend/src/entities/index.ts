@@ -45,3 +45,4 @@ export { GroupRide } from './group-ride.entity.js';
 export { GroupRideMember } from './group-ride-member.entity.js';
 export { DeviceToken } from './device-token.entity.js';
 export { NotificationPreferencesRow } from './notification-preferences.entity.js';
+export { PrivacyPreferencesRow } from './privacy-preferences.entity.js';

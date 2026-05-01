@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "d696ccca-e38b-40d8-ba36-f439d3a78c85",
+    "_postman_id": "1632d25b-4c95-4c5d-899d-96edd7921876",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -323,6 +323,49 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"password\": \"\",\n  \"reason\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Load the authenticated user's privacy preferences",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/account/privacy",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "account", "privacy"]
+            }
+          }
+        },
+        {
+          "name": "Update privacy preferences (partial — supplied fields only)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/account/privacy",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "account", "privacy"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"profile_visibility\": \"public\",\n  \"default_ride_sharing\": \"public\",\n  \"road_data_contribution\": false,\n  \"location_retention\": \"3months\",\n  \"analytics_consent\": false,\n  \"personalized_recommendations_consent\": false\n}",
               "options": {
                 "raw": {
                   "language": "json"

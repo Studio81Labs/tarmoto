@@ -19,6 +19,7 @@ import { UserBadge } from '../../../entities/user-badge.entity.js';
 import { ChallengeEntry } from '../../../entities/challenge-entry.entity.js';
 import { CommuteRoute } from '../../../entities/commute-route.entity.js';
 import { NotificationPreferencesRow } from '../../../entities/notification-preferences.entity.js';
+import { PrivacyPreferencesRow } from '../../../entities/privacy-preferences.entity.js';
 import { DataExportRequest } from '../../../entities/data-export-request.entity.js';
 import { AuthModule } from '../../auth/index.js';
 import { EmailModule } from '../../email/index.js';
@@ -54,6 +55,7 @@ import { EXPORT_STORAGE } from './storage/export-storage.interface.js';
       ChallengeEntry,
       CommuteRoute,
       NotificationPreferencesRow,
+      PrivacyPreferencesRow,
     ]),
   ],
   controllers: [DataExportController],
@@ -84,6 +86,7 @@ import { EXPORT_STORAGE } from './storage/export-storage.interface.js';
         getRepositoryToken(ChallengeEntry),
         getRepositoryToken(CommuteRoute),
         getRepositoryToken(NotificationPreferencesRow),
+        getRepositoryToken(PrivacyPreferencesRow),
       ],
       useFactory: (
         contacts: Repository<UserContact>,
@@ -98,6 +101,7 @@ import { EXPORT_STORAGE } from './storage/export-storage.interface.js';
         challenges: Repository<ChallengeEntry>,
         commute: Repository<CommuteRoute>,
         notificationPreferences: Repository<NotificationPreferencesRow>,
+        privacyPreferences: Repository<PrivacyPreferencesRow>,
       ) =>
         new BundleAssembler({
           contacts,
@@ -112,6 +116,7 @@ import { EXPORT_STORAGE } from './storage/export-storage.interface.js';
           challenges,
           commute,
           notificationPreferences,
+          privacyPreferences,
         }),
     },
   ],

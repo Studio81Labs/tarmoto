@@ -15,6 +15,7 @@ import type { UserBadge } from '../../../../entities/user-badge.entity.js';
 import type { ChallengeEntry } from '../../../../entities/challenge-entry.entity.js';
 import type { CommuteRoute } from '../../../../entities/commute-route.entity.js';
 import type { NotificationPreferencesRow } from '../../../../entities/notification-preferences.entity.js';
+import type { PrivacyPreferencesRow } from '../../../../entities/privacy-preferences.entity.js';
 import { sanitizeUserForExport } from './sanitizers.js';
 import { rideToGpx, tripDayToGpx } from './gpx.js';
 
@@ -34,6 +35,7 @@ export interface BundleRepos {
     Repository<NotificationPreferencesRow>,
     'findOne'
   >;
+  privacyPreferences: Pick<Repository<PrivacyPreferencesRow>, 'findOne'>;
 }
 
 export class BundleAssembler {
@@ -53,6 +55,7 @@ export class BundleAssembler {
       challenges,
       commute,
       notificationRow,
+      privacyRow,
     ] = await Promise.all([
       this.repos.contacts.find({ where: { user_id: userId } }),
       this.repos.rides.find({
@@ -69,6 +72,7 @@ export class BundleAssembler {
       this.repos.notificationPreferences.findOne({
         where: { user_id: userId },
       }),
+      this.repos.privacyPreferences.findOne({ where: { user_id: userId } }),
     ]);
 
     const allTripIds = Array.from(
@@ -100,7 +104,9 @@ export class BundleAssembler {
     archive.append(json(user.preferences ?? {}), {
       name: 'preferences.json',
     });
-    archive.append(json(extractPrivacy(user)), { name: 'privacy.json' });
+    archive.append(json(extractPrivacy(privacyRow)), {
+      name: 'privacy.json',
+    });
     archive.append(json(extractNotifications(notificationRow)), {
       name: 'notifications.json',
     });
@@ -172,7 +178,7 @@ function buildReadme(generatedAt: string): string {
     '  bikes.json           - garage entries (empty until bike entity ships)',
     '  contacts.json        - emergency contacts',
     '  preferences.json     - user preferences blob',
-    '  privacy.json         - privacy settings derived from preferences',
+    '  privacy.json         - privacy preferences (typed table; empty when never edited)',
     '  notifications.json   - notification preferences (typed table; empty when never edited)',
     '  rides.json           - ride metadata + per-ride stats',
     '  rides/<id>.gpx       - GPX track per ride with a route',
@@ -192,9 +198,24 @@ function buildReadme(generatedAt: string): string {
   ].join('\n');
 }
 
-function extractPrivacy(user: User): Record<string, unknown> {
-  const prefs = user.preferences ?? {};
-  return (prefs.privacy as Record<string, unknown>) ?? {};
+function extractPrivacy(
+  row: PrivacyPreferencesRow | null | undefined,
+): Record<string, unknown> {
+  // Returns the raw typed-table row so the export reflects exactly what
+  // the enforcement gates read (#279). Empty object when the user has
+  // never saved preferences — defaults live in `@tarmoto/shared` and
+  // are applied at gate time, so re-materializing them here would be
+  // misleading (the rider hasn't actually opted into anything yet).
+  if (!row) return {};
+  return {
+    profile_visibility: row.profile_visibility,
+    default_ride_sharing: row.default_ride_sharing,
+    road_data_contribution: row.road_data_contribution,
+    location_retention: row.location_retention,
+    analytics_consent: row.analytics_consent,
+    personalized_recommendations_consent:
+      row.personalized_recommendations_consent,
+  };
 }
 
 function extractNotifications(

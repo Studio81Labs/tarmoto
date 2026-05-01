@@ -32,6 +32,7 @@ import { GroupRide } from './entities/group-ride.entity.js';
 import { GroupRideMember } from './entities/group-ride-member.entity.js';
 import { DeviceToken } from './entities/device-token.entity.js';
 import { NotificationPreferencesRow } from './entities/notification-preferences.entity.js';
+import { PrivacyPreferencesRow } from './entities/privacy-preferences.entity.js';
 import { InitSchema1713000000000 } from './migrations/1713000000000-InitSchema.js';
 import { AddPasswordHash1713100000000 } from './migrations/1713100000000-AddPasswordHash.js';
 import { FixIsEmergencyDefault1713200000000 } from './migrations/1713200000000-FixIsEmergencyDefault.js';
@@ -65,6 +66,9 @@ import { AddVerificationTokenUniqueIndex1715900000000 } from './migrations/17159
 import { AddMapShares1716000000000 } from './migrations/1716000000000-AddMapShares.js';
 import { AddGroupRides1716100000000 } from './migrations/1716100000000-AddGroupRides.js';
 import { AddPushNotifications1716200000000 } from './migrations/1716200000000-AddPushNotifications.js';
+import { AddRideStatsLeanDistribution1716200000000 } from './migrations/1716200000000-AddRideStatsLeanDistribution.js';
+import { MigrateLegacyNotificationPreferences1716300000000 } from './migrations/1716300000000-MigrateLegacyNotificationPreferences.js';
+import { AddPrivacyPreferences1716400000000 } from './migrations/1716400000000-AddPrivacyPreferences.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -106,6 +110,7 @@ export const AppDataSource = new DataSource({
     GroupRideMember,
     DeviceToken,
     NotificationPreferencesRow,
+    PrivacyPreferencesRow,
   ],
   migrations: [
     // Listed in chronological order. Every migration in
@@ -148,6 +153,9 @@ export const AppDataSource = new DataSource({
     AddMapShares1716000000000,
     AddGroupRides1716100000000,
     AddPushNotifications1716200000000,
+    AddRideStatsLeanDistribution1716200000000,
+    MigrateLegacyNotificationPreferences1716300000000,
+    AddPrivacyPreferences1716400000000,
   ],
   synchronize: false,
 });

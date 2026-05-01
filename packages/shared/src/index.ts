@@ -8,6 +8,7 @@ export * from "./geo";
 export * from "./gpx-kml-import";
 export * from "./lean-angle";
 export * from "./notifications";
+export * from "./privacy";
 export * from "./rider-format";
 export * from "./trip-gpx";
 export * from "./units";

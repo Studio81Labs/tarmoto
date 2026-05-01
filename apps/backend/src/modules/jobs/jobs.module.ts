@@ -23,6 +23,7 @@ import { AccountDeletionSweepProcessor } from './processors/account-deletion-swe
 import { AccountDeletionFinalizeProcessor } from './processors/account-deletion-finalize.processor.js';
 import { FunzoneRecomputeProcessor } from './processors/funzone-recompute.processor.js';
 import { PushNotificationProcessor } from './processors/push-notification.processor.js';
+import { LocationRetentionSweepProcessor } from './processors/location-retention-sweep.processor.js';
 
 const JOBS_CONFIG_PROVIDER: Provider = {
   provide: JOBS_CONFIG_TOKEN,
@@ -39,6 +40,7 @@ const PROCESSOR_PROVIDERS: Provider[] = [
   AccountDeletionFinalizeProcessor,
   FunzoneRecomputeProcessor,
   PushNotificationProcessor,
+  LocationRetentionSweepProcessor,
 ];
 
 /**

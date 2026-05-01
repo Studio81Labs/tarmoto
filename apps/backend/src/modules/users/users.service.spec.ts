@@ -4,12 +4,14 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Logger, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { Readable } from 'node:stream';
+import { DEFAULT_PRIVACY_PREFERENCES } from '@tarmoto/shared';
 import { UsersService } from './users.service.js';
 import { User } from '../../entities/user.entity.js';
 import { UserContact } from '../../entities/user-contact.entity.js';
 import { UserFollow } from '../../entities/user-follow.entity.js';
 import { OBJECT_STORAGE } from '../storage/storage.tokens.js';
 import type { ObjectStorage } from '../storage/object-storage.interface.js';
+import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 
 describe('UsersService', () => {
   let service: UsersService;
@@ -17,6 +19,7 @@ describe('UsersService', () => {
   let contactRepo: Partial<jest.Mocked<Repository<UserContact>>>;
   let userFollowRepo: Partial<jest.Mocked<Repository<UserFollow>>>;
   let storage: jest.Mocked<ObjectStorage>;
+  let privacy: { loadPreferences: jest.Mock };
 
   // Factory, not a shared instance — updateProfile mutates the entity it
   // loads via findOne, so any two tests sharing the same object would leak
@@ -85,6 +88,11 @@ describe('UsersService', () => {
       count: jest.fn().mockResolvedValue(0),
       findOne: jest.fn().mockResolvedValue(null),
     };
+    privacy = {
+      loadPreferences: jest
+        .fn()
+        .mockResolvedValue({ ...DEFAULT_PRIVACY_PREFERENCES }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -93,6 +101,7 @@ describe('UsersService', () => {
         { provide: getRepositoryToken(UserContact), useValue: contactRepo },
         { provide: getRepositoryToken(UserFollow), useValue: userFollowRepo },
         { provide: OBJECT_STORAGE, useValue: storage },
+        { provide: PrivacyPreferencesService, useValue: privacy },
       ],
     }).compile();
 
@@ -192,6 +201,45 @@ describe('UsersService', () => {
       await expect(
         service.getPublicProfile('viewer-1', 'user-1'),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    it('hides private profiles from non-self viewers (#279)', async () => {
+      privacy.loadPreferences.mockResolvedValueOnce({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        profile_visibility: 'private',
+      });
+
+      await expect(
+        service.getPublicProfile('viewer-1', 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('shows private profile to the owner themselves', async () => {
+      privacy.loadPreferences.mockResolvedValueOnce({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        profile_visibility: 'private',
+      });
+      userFollowRepo.count!.mockResolvedValueOnce(0).mockResolvedValueOnce(0);
+
+      const result = await service.getPublicProfile('user-1', 'user-1');
+
+      expect(result.is_self).toBe(true);
+      // Self lookup short-circuits before the privacy check, so the
+      // privacy mock isn't even consulted — the call count is zero.
+      expect(privacy.loadPreferences).not.toHaveBeenCalled();
+    });
+
+    it('shows public profile to other riders', async () => {
+      privacy.loadPreferences.mockResolvedValueOnce({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        profile_visibility: 'public',
+      });
+      userFollowRepo.count!.mockResolvedValueOnce(1).mockResolvedValueOnce(2);
+
+      const result = await service.getPublicProfile('viewer-1', 'user-1');
+
+      expect(result.id).toBe('user-1');
+      expect(privacy.loadPreferences).toHaveBeenCalledWith('user-1');
     });
   });
 
