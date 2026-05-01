@@ -6,7 +6,6 @@ import {
   formatDistanceFromHere,
   formatSegmentLength,
   formatTimeRemaining,
-  hasJoined,
   metricUnit,
   nextMilestone,
   progressToNext,
@@ -19,7 +18,6 @@ import {
 import type {
   UserBadge,
   Challenge,
-  ChallengeDetail,
   RiddenSegment,
   UnriddenSegment,
 } from "@/types";
@@ -155,29 +153,6 @@ describe("metricUnit", () => {
   });
   it("falls back to the raw metric for unknowns", () => {
     expect(metricUnit("freshly_added_metric")).toBe("freshly_added_metric");
-  });
-});
-
-describe("hasJoined", () => {
-  const detail: ChallengeDetail = {
-    id: "c1",
-    title: "Ride 100 km",
-    description: "",
-    metric: "total_km",
-    target: 100,
-    starts_at: "2026-05-01T00:00:00Z",
-    ends_at: "2026-05-31T00:00:00Z",
-    reward_badge_key: null,
-    participant_count: 1,
-    my_progress: null,
-    my_completed: null,
-    leaderboard: [],
-  };
-  it("treats null my_progress as not joined", () => {
-    expect(hasJoined(detail)).toBe(false);
-  });
-  it("treats 0 my_progress as joined (rider just signed up)", () => {
-    expect(hasJoined({ ...detail, my_progress: 0 })).toBe(true);
   });
 });
 
@@ -369,7 +344,9 @@ describe("formatChallengeProgress", () => {
     );
   });
 
-  it("falls back to no unit for unknown metrics", () => {
-    expect(formatChallengeProgress(5, 10, "fresh_metric")).toBe("5 / 10");
+  it("uses the raw metric key as the unit for unknown metrics — matching metricUnit's fallback", () => {
+    expect(formatChallengeProgress(5, 10, "fresh_metric")).toBe(
+      "5 / 10 fresh_metric",
+    );
   });
 });

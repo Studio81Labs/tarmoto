@@ -8,7 +8,6 @@ import type {
   UserBadge,
   BadgeTier,
   Challenge,
-  ChallengeDetail,
   ExplorationStats,
   RiddenSegment,
   UnriddenSegment,
@@ -147,16 +146,6 @@ export function metricUnit(metric: string): string {
 }
 
 /**
- * Did this rider join the challenge? The detail endpoint exposes a
- * personalised `my_progress` (null when not joined). The list endpoint
- * doesn't, which is why callers fetch the detail on tap before drawing
- * the join button.
- */
-export function hasJoined(detail: ChallengeDetail): boolean {
-  return detail.my_progress !== null;
-}
-
-/**
  * Sort challenges so the ones the rider is most likely to act on appear
  * first: ending soonest at the top, then most-participants. Backend
  * already returns them ordered by `ends_at ASC` but we re-sort in the
@@ -256,7 +245,10 @@ export function formatSegmentLength(lengthM: number): string {
  * Format the rider's challenge progress as `current / target unit`.
  * Whole-number metrics (rides, reports, …) drop the decimal; floats keep
  * one decimal so a 12.4 km mark doesn't display as 12 km. The unit comes
- * from the challenge's `metric` field (e.g. `total_km`), not its ID.
+ * from the challenge's `metric` field (e.g. `total_km`), not its ID, and
+ * is resolved through `metricUnit()` so an unknown metric falls back to
+ * the raw key — same behaviour as the meta-pill rendered next to it on
+ * the same card.
  */
 export function formatChallengeProgress(
   progress: number,
@@ -264,9 +256,7 @@ export function formatChallengeProgress(
   metric: string,
 ): string {
   const isWhole = Number.isInteger(progress) && Number.isInteger(target);
-  const unit = METRIC_UNITS[metric] ?? "";
+  const unit = metricUnit(metric);
   const fmt = (n: number): string => (isWhole ? String(n) : n.toFixed(1));
-  return unit
-    ? `${fmt(progress)} / ${fmt(target)} ${unit}`
-    : `${fmt(progress)} / ${fmt(target)}`;
+  return `${fmt(progress)} / ${fmt(target)} ${unit}`;
 }

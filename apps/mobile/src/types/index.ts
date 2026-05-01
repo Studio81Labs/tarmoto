@@ -729,15 +729,6 @@ export interface ChallengeJoinResponse {
   joined_at: string;
 }
 
-export interface ChallengeProgress {
-  challenge_id: string;
-  progress: number;
-  target: number;
-  completed: boolean;
-  completed_at: string | null;
-  percent: number;
-}
-
 export interface ExplorationStats {
   ridden_segments: number;
   total_segments: number;
@@ -752,10 +743,6 @@ export interface UnriddenSegment {
   quality_score: number | null;
   surface_type: string;
   distance_m: number;
-}
-
-export interface RiddenSegmentIds {
-  segment_ids: string[];
 }
 
 export interface RiddenSegment {

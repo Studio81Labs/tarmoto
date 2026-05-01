@@ -49,9 +49,7 @@ import type {
   Challenge,
   ChallengeDetail,
   ChallengeJoinResponse,
-  ChallengeProgress,
   ExplorationStats,
-  RiddenSegmentIds,
   RiddenSegmentsList,
   UnriddenSegment,
 } from "@/types";
@@ -936,25 +934,11 @@ class ApiService {
     return data;
   }
 
-  async getChallengeProgress(challengeId: string): Promise<ChallengeProgress> {
-    const { data } = await this.client.get<ChallengeProgress>(
-      `/challenges/${challengeId}/progress`,
-    );
-    return data;
-  }
-
   // ── Gamification: Exploration / Personal road map (US-30) ──
 
   async getExplorationStats(): Promise<ExplorationStats> {
     const { data } =
       await this.client.get<ExplorationStats>("/exploration/stats");
-    return data;
-  }
-
-  async getRiddenSegmentIds(): Promise<RiddenSegmentIds> {
-    const { data } = await this.client.get<RiddenSegmentIds>(
-      "/exploration/ridden-ids",
-    );
     return data;
   }
 
