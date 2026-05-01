@@ -43,6 +43,10 @@ import LinkAccountScreen from "@/screens/LinkAccountScreen";
 import OfflineRegionsScreen from "@/screens/OfflineRegionsScreen";
 import EmergencyContactsScreen from "@/screens/EmergencyContactsScreen";
 import GroupRideScreen from "@/screens/GroupRideScreen";
+import EditProfileModal from "@/screens/EditProfileModal";
+import ViewProfileScreen from "@/screens/ViewProfileScreen";
+import FollowersScreen from "@/screens/FollowersScreen";
+import FollowingScreen from "@/screens/FollowingScreen";
 
 // ── Type definitions ──
 
@@ -93,6 +97,14 @@ export type TripsStackParamList = {
 export type ProfileStackParamList = {
   Profile: undefined;
   Settings: undefined;
+  // US-27: edit own profile (display name, bio, home region) and view another
+  // rider's public profile from anywhere in the app. `Followers` / `Following`
+  // sub-screens are reusable for any userId so they live in this stack rather
+  // than under Profile.
+  EditProfile: undefined;
+  ViewProfile: { userId: string };
+  Followers: { userId: string; displayName: string };
+  Following: { userId: string; displayName: string };
   LinkAccount: { email?: string } | undefined;
   OfflineRegions: undefined;
   EmergencyContacts: undefined;
@@ -255,6 +267,26 @@ function ProfileNavigator() {
         options={{ headerShown: false }}
       />
       <ProfileStack.Screen name="Settings" component={SettingsScreen} />
+      <ProfileStack.Screen
+        name="EditProfile"
+        component={EditProfileModal}
+        options={{ title: "Edit profile", presentation: "modal" }}
+      />
+      <ProfileStack.Screen
+        name="ViewProfile"
+        component={ViewProfileScreen}
+        options={{ title: "Rider" }}
+      />
+      <ProfileStack.Screen
+        name="Followers"
+        component={FollowersScreen}
+        options={{ title: "Followers" }}
+      />
+      <ProfileStack.Screen
+        name="Following"
+        component={FollowingScreen}
+        options={{ title: "Following" }}
+      />
       <ProfileStack.Screen
         name="LinkAccount"
         component={LinkAccountScreen}

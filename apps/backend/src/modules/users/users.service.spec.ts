@@ -13,11 +13,13 @@ import { unlink, writeFile, mkdir } from 'node:fs/promises';
 import { UsersService } from './users.service.js';
 import { User } from '../../entities/user.entity.js';
 import { UserContact } from '../../entities/user-contact.entity.js';
+import { UserFollow } from '../../entities/user-follow.entity.js';
 
 describe('UsersService', () => {
   let service: UsersService;
   let userRepo: Partial<jest.Mocked<Repository<User>>>;
   let contactRepo: Partial<jest.Mocked<Repository<UserContact>>>;
+  let userFollowRepo: Partial<jest.Mocked<Repository<UserFollow>>>;
 
   // Factory, not a shared instance — updateProfile mutates the entity it
   // loads via findOne, so any two tests sharing the same object would leak
@@ -68,12 +70,17 @@ describe('UsersService', () => {
       save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
       remove: jest.fn().mockResolvedValue(undefined),
     };
+    userFollowRepo = {
+      count: jest.fn().mockResolvedValue(0),
+      findOne: jest.fn().mockResolvedValue(null),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UsersService,
         { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: getRepositoryToken(UserContact), useValue: contactRepo },
+        { provide: getRepositoryToken(UserFollow), useValue: userFollowRepo },
       ],
     }).compile();
 
@@ -107,6 +114,72 @@ describe('UsersService', () => {
       const result = await service.getProfile('user-1');
 
       expect(result.home_location).toEqual({ lat: 49.1, lng: 16.75 });
+    });
+  });
+
+  describe('getPublicProfile', () => {
+    it('returns counts and is_following=true when viewer follows target', async () => {
+      userFollowRepo.count!.mockResolvedValueOnce(7).mockResolvedValueOnce(3);
+      userFollowRepo.findOne!.mockResolvedValueOnce({
+        follower_id: 'viewer-1',
+      } as UserFollow);
+
+      const result = await service.getPublicProfile('viewer-1', 'user-1');
+
+      expect(result).toEqual({
+        id: 'user-1',
+        display_name: 'TestRider',
+        avatar_url: null,
+        bio: null,
+        home_region: null,
+        created_at: '2026-04-13T10:00:00.000Z',
+        follower_count: 7,
+        following_count: 3,
+        is_following: true,
+        is_self: false,
+      });
+    });
+
+    it('returns is_following=false when viewer does not follow target', async () => {
+      userFollowRepo.count!.mockResolvedValueOnce(2).mockResolvedValueOnce(0);
+      userFollowRepo.findOne!.mockResolvedValueOnce(null);
+
+      const result = await service.getPublicProfile('viewer-1', 'user-1');
+
+      expect(result.is_following).toBe(false);
+      expect(result.is_self).toBe(false);
+      expect(result.follower_count).toBe(2);
+      expect(result.following_count).toBe(0);
+    });
+
+    it('returns is_following=null and is_self=true when viewing own profile', async () => {
+      userFollowRepo.count!.mockResolvedValueOnce(5).mockResolvedValueOnce(11);
+
+      const result = await service.getPublicProfile('user-1', 'user-1');
+
+      expect(result.is_following).toBeNull();
+      expect(result.is_self).toBe(true);
+      // Self check short-circuits the follow lookup so we don't waste a query.
+      expect(userFollowRepo.findOne).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException for missing user', async () => {
+      userRepo.findOne!.mockResolvedValueOnce(null);
+
+      await expect(
+        service.getPublicProfile('viewer-1', 'missing'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws NotFoundException for soft-deleted user', async () => {
+      userRepo.findOne!.mockResolvedValueOnce({
+        ...buildMockUser(),
+        deleted_at: new Date('2026-04-30T10:00:00Z'),
+      } as User);
+
+      await expect(
+        service.getPublicProfile('viewer-1', 'user-1'),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 

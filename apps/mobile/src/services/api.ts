@@ -10,6 +10,9 @@ import { API_BASE_URL } from "@/config";
 import type {
   AuthResponse,
   User,
+  PublicProfile,
+  FollowerListItem,
+  UserBadge,
   RideSummary,
   RideDetail,
   RoadSegment,
@@ -169,6 +172,76 @@ class ApiService {
 
   async updateProfile(updates: Partial<User>): Promise<User> {
     const { data } = await this.client.patch<User>("/users/me", updates);
+    return data;
+  }
+
+  // ── Rider profiles + follow (US-27) ──
+
+  /**
+   * Fetch a rider's public profile (display fields + follower/following
+   * counts + viewer's `is_following` flag). Powers both the own-profile
+   * stats row and the read-only ViewProfile screen so a single endpoint
+   * covers both modes.
+   */
+  async getPublicProfile(userId: string): Promise<PublicProfile> {
+    const { data } = await this.client.get<PublicProfile>(
+      `/users/${userId}/profile`,
+    );
+    return data;
+  }
+
+  async followUser(userId: string): Promise<void> {
+    await this.client.post(`/users/${userId}/follow`);
+  }
+
+  async unfollowUser(userId: string): Promise<void> {
+    await this.client.delete(`/users/${userId}/follow`);
+  }
+
+  async listFollowers(userId: string): Promise<FollowerListItem[]> {
+    const { data } = await this.client.get<FollowerListItem[]>(
+      `/users/${userId}/followers`,
+    );
+    return data;
+  }
+
+  async listFollowing(userId: string): Promise<FollowerListItem[]> {
+    const { data } = await this.client.get<FollowerListItem[]>(
+      `/users/${userId}/following`,
+    );
+    return data;
+  }
+
+  async listUserBadges(userId: string): Promise<UserBadge[]> {
+    const { data } = await this.client.get<UserBadge[]>(
+      `/users/${userId}/badges`,
+    );
+    return data;
+  }
+
+  /**
+   * Upload a new avatar. Mirrors the multipart pattern used by review photo
+   * upload — the instance-level `Content-Type: application/json` header
+   * must be cleared so axios's FormData transform can set the correct
+   * `multipart/form-data; boundary=...` value (Multer rejects requests
+   * without the boundary).
+   */
+  async uploadAvatar(photo: {
+    uri: string;
+    mimeType?: string;
+    fileName?: string;
+  }): Promise<User> {
+    const form = new FormData();
+    form.append("file", {
+      uri: photo.uri,
+      type: photo.mimeType ?? "image/jpeg",
+      name: photo.fileName ?? `avatar-${Date.now()}.jpg`,
+    } as unknown as Blob);
+    const { data } = await this.client.post<User>("/users/me/avatar", form, {
+      headers: {
+        "Content-Type": undefined as unknown as string,
+      },
+    });
     return data;
   }
 

@@ -12,6 +12,7 @@ import { pointToLatLng } from '@tarmoto/shared';
 import { hasControlCharacters } from '../../common/control-characters.js';
 import { User } from '../../entities/user.entity.js';
 import { UserContact } from '../../entities/user-contact.entity.js';
+import { UserFollow } from '../../entities/user-follow.entity.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { CreateContactDto } from './dto/create-contact.dto.js';
 import { UpdateContactDto } from './dto/update-contact.dto.js';
@@ -19,6 +20,7 @@ import {
   UserResponseDto,
   ContactResponseDto,
 } from './dto/user-response.dto.js';
+import { PublicProfileDto } from './dto/public-profile.dto.js';
 
 const AVATAR_PATH_PREFIX = '/uploads/avatars/';
 const AVATAR_UPLOAD_DIR = join(process.cwd(), 'uploads', 'avatars');
@@ -74,6 +76,8 @@ export class UsersService {
     private readonly userRepo: Repository<User>,
     @InjectRepository(UserContact)
     private readonly contactRepo: Repository<UserContact>,
+    @InjectRepository(UserFollow)
+    private readonly userFollowRepo: Repository<UserFollow>,
   ) {}
 
   async getProfile(userId: string): Promise<UserResponseDto> {
@@ -82,6 +86,51 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
     return this.toUserResponse(user);
+  }
+
+  /**
+   * Public-facing rider profile (US-27). Loads display fields, denormalised
+   * follower/following counts, and the viewer's `is_following` flag in one
+   * trip so the mobile screen doesn't need three round trips on render.
+   *
+   * `is_following` is `null` when `viewerId === userId` so the client can
+   * hide the follow button instead of mistakenly defaulting it to "Follow".
+   * 404 covers both a missing row and a soft-deleted user — public profiles
+   * shouldn't leak the difference.
+   */
+  async getPublicProfile(
+    viewerId: string,
+    userId: string,
+  ): Promise<PublicProfileDto> {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user || user.deleted_at != null) {
+      throw new NotFoundException('User not found');
+    }
+
+    const isSelf = viewerId === userId;
+    const [followerCount, followingCount, isFollowingRow] = await Promise.all([
+      this.userFollowRepo.count({ where: { following_id: userId } }),
+      this.userFollowRepo.count({ where: { follower_id: userId } }),
+      isSelf
+        ? Promise.resolve(null)
+        : this.userFollowRepo.findOne({
+            where: { follower_id: viewerId, following_id: userId },
+            select: ['follower_id'],
+          }),
+    ]);
+
+    return {
+      id: user.id,
+      display_name: user.display_name,
+      avatar_url: user.avatar_url,
+      bio: user.bio,
+      home_region: user.home_region,
+      created_at: user.created_at.toISOString(),
+      follower_count: followerCount,
+      following_count: followingCount,
+      is_following: isSelf ? null : isFollowingRow != null,
+      is_self: isSelf,
+    };
   }
 
   async updateProfile(

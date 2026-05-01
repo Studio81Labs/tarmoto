@@ -34,6 +34,7 @@ import {
   UserResponseDto,
   ContactResponseDto,
 } from './dto/user-response.dto.js';
+import { PublicProfileDto } from './dto/public-profile.dto.js';
 
 @ApiTags('users')
 @Controller('users')
@@ -57,6 +58,17 @@ export class UsersController {
     @Body() dto: UpdateProfileDto,
   ): Promise<UserResponseDto> {
     return this.usersService.updateProfile(req.user!.userId, dto);
+  }
+
+  @Get(':userId/profile')
+  @ApiOperation({ summary: "Get a rider's public profile" })
+  @ApiResponse({ status: 200, type: PublicProfileDto })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async getPublicProfile(
+    @Req() req: express.Request,
+    @Param('userId', ParseUUIDPipe) userId: string,
+  ): Promise<PublicProfileDto> {
+    return this.usersService.getPublicProfile(req.user!.userId, userId);
   }
 
   @Post('me/avatar')
