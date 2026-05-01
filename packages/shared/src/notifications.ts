@@ -20,6 +20,7 @@ export const NOTIFICATION_CATEGORIES = [
   "trip_collaboration",
   "new_follower",
   "ride_like",
+  "route_comment",
   "weather_alert",
   "subscription_billing",
 ] as const;
@@ -80,6 +81,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
     trip_collaboration: { ...allOn },
     new_follower: { ...allOn },
     ride_like: { ...pushOnlyDefault },
+    route_comment: { ...pushOnlyDefault },
     weather_alert: { ...pushOnlyDefault },
     subscription_billing: { ...allOn },
   },

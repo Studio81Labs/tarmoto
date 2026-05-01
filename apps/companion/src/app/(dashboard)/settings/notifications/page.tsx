@@ -4,58 +4,30 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Check, Loader2, Mail, Smartphone } from "lucide-react";
 import { accountApi } from "@/lib/api";
-import type {
-  EmailDigestFrequency,
-  NotificationChannels,
-  NotificationPreferences,
-} from "@/lib/types";
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
   EMAIL_DIGEST_OPTIONS,
+  VISIBLE_CATEGORY_LABELS,
+  VISIBLE_NOTIFICATION_CATEGORIES,
   mergeWithDefaults,
   preferencesEqual,
+  type EmailDigestFrequency,
+  type NotificationChannelToggles,
+  type NotificationPreferences,
   type PartialNotificationPreferences,
-  type PerChannelKey,
+  type VisibleNotificationCategory,
 } from "@/lib/notification-preferences";
-
-const CHANNEL_SECTIONS: {
-  key: PerChannelKey;
-  label: string;
-  description: string;
-}[] = [
-  {
-    key: "hazardAlertsSavedRoutes",
-    label: "Hazard alerts for saved routes",
-    description:
-      "Get warned about new potholes, roadworks, or hazards reported on routes you ride.",
-  },
-  {
-    key: "tripCollaboration",
-    label: "Trip collaboration",
-    description: "Invites, edits, and comments on trips you collaborate on.",
-  },
-  {
-    key: "newFollowers",
-    label: "New followers",
-    description: "When another rider follows your profile.",
-  },
-  {
-    key: "routeComments",
-    label: "Route comments",
-    description: "Comments on your shared routes and rides.",
-  },
-  {
-    key: "rideLikes",
-    label: "Ride likes",
-    description: "When riders like one of your shared rides.",
-  },
-];
 
 type SaveState =
   | { kind: "idle" }
   | { kind: "saving" }
   | { kind: "saved" }
   | { kind: "error"; message: string };
+
+type CategoryChannel = Extract<
+  keyof NotificationChannelToggles,
+  "email" | "push"
+>;
 
 export default function NotificationsPage() {
   const [loading, setLoading] = useState(true);
@@ -101,23 +73,29 @@ export default function NotificationsPage() {
   }
 
   function setDigest(value: EmailDigestFrequency) {
-    setPrefs((p) => ({ ...p, emailDigest: value }));
+    setPrefs((p) => ({ ...p, email_digest: value }));
     clearTransientSaveState();
   }
 
   function toggleChannel(
-    key: PerChannelKey,
-    channel: keyof NotificationChannels,
+    category: VisibleNotificationCategory,
+    channel: CategoryChannel,
   ) {
     setPrefs((p) => ({
       ...p,
-      [key]: { ...p[key], [channel]: !p[key][channel] },
+      categories: {
+        ...p.categories,
+        [category]: {
+          ...p.categories[category],
+          [channel]: !p.categories[category][channel],
+        },
+      },
     }));
     clearTransientSaveState();
   }
 
   function toggleMarketing() {
-    setPrefs((p) => ({ ...p, marketingEmails: !p.marketingEmails }));
+    setPrefs((p) => ({ ...p, marketing_emails: !p.marketing_emails }));
     clearTransientSaveState();
   }
 
@@ -125,8 +103,16 @@ export default function NotificationsPage() {
     if (saveState.kind === "saving") return;
     setSaveState({ kind: "saving" });
     try {
-      await accountApi.updateNotificationPreferences(prefs);
-      setServerPrefs(prefs);
+      const { data } = await accountApi.updateNotificationPreferences({
+        email_digest: prefs.email_digest,
+        marketing_emails: prefs.marketing_emails,
+        categories: prefs.categories,
+      });
+      const merged = mergeWithDefaults(
+        data as PartialNotificationPreferences | null,
+      );
+      setServerPrefs(merged);
+      setPrefs(merged);
       setSaveState({ kind: "saved" });
     } catch (err) {
       const message =
@@ -190,7 +176,7 @@ export default function NotificationsPage() {
           className="grid grid-cols-3 gap-2"
         >
           {EMAIL_DIGEST_OPTIONS.map((opt) => {
-            const active = prefs.emailDigest === opt.value;
+            const active = prefs.email_digest === opt.value;
             return (
               <button
                 key={opt.value}
@@ -214,7 +200,7 @@ export default function NotificationsPage() {
         </div>
       </section>
 
-      {/* Per-channel toggles */}
+      {/* Per-category toggles */}
       <section className="rounded-xl bg-slate-900 border border-slate-800 divide-y divide-slate-800 mb-6">
         <div className="px-5 py-3 flex items-center">
           <div className="flex-1 text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -229,28 +215,32 @@ export default function NotificationsPage() {
             </span>
           </div>
         </div>
-        {CHANNEL_SECTIONS.map((section) => (
-          <div key={section.key} className="px-5 py-4 flex items-center gap-4">
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white">{section.label}</p>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {section.description}
-              </p>
+        {VISIBLE_NOTIFICATION_CATEGORIES.map((category) => {
+          const meta = VISIBLE_CATEGORY_LABELS[category];
+          const toggles = prefs.categories[category];
+          return (
+            <div key={category} className="px-5 py-4 flex items-center gap-4">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-white">{meta.label}</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {meta.description}
+                </p>
+              </div>
+              <div className="flex items-center gap-6">
+                <ChannelToggle
+                  label={`${meta.label} email`}
+                  enabled={toggles.email}
+                  onToggle={() => toggleChannel(category, "email")}
+                />
+                <ChannelToggle
+                  label={`${meta.label} push`}
+                  enabled={toggles.push}
+                  onToggle={() => toggleChannel(category, "push")}
+                />
+              </div>
             </div>
-            <div className="flex items-center gap-6">
-              <ChannelToggle
-                label={`${section.label} email`}
-                enabled={prefs[section.key].email}
-                onToggle={() => toggleChannel(section.key, "email")}
-              />
-              <ChannelToggle
-                label={`${section.label} push`}
-                enabled={prefs[section.key].push}
-                onToggle={() => toggleChannel(section.key, "push")}
-              />
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </section>
 
       {/* Marketing opt-in */}
@@ -265,7 +255,7 @@ export default function NotificationsPage() {
           </div>
           <ChannelToggle
             label="Marketing emails"
-            enabled={prefs.marketingEmails}
+            enabled={prefs.marketing_emails}
             onToggle={toggleMarketing}
           />
         </div>

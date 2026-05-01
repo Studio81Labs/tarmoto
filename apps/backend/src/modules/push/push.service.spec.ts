@@ -206,6 +206,37 @@ describe('PushService', () => {
       expect(result.suppressedReason).toBe('no-tokens');
     });
 
+    it('gates the new route_comment category on its push toggle', async () => {
+      // route_comment defaults to push: true (see DEFAULT_NOTIFICATION_PREFERENCES);
+      // disabling it should suppress without calling the provider.
+      prefsRepo.findOne.mockResolvedValue(
+        makeRow({
+          categories: {
+            route_comment: { email: false, push: false, in_app: true },
+          },
+        }),
+      );
+
+      const result = await service.sendToUser(USER_ID, {
+        category: 'route_comment',
+        title: 'New comment',
+        body: '@ada commented on your route',
+      });
+
+      expect(provider.send).not.toHaveBeenCalled();
+      expect(result.suppressedReason).toBe('preference-off');
+    });
+
+    it('dispatches route_comment by default (push toggle on)', async () => {
+      const result = await service.sendToUser(USER_ID, {
+        category: 'route_comment',
+        title: 'New comment',
+        body: '@ada commented on your route',
+      });
+      expect(provider.send).toHaveBeenCalledTimes(1);
+      expect(result.suppressed).toBe(false);
+    });
+
     it('soft-deletes tokens the provider reported as invalid', async () => {
       provider.send.mockResolvedValueOnce({
         delivered: 1,

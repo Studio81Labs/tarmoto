@@ -18,6 +18,7 @@ import { HazardReport } from '../../../entities/hazard-report.entity.js';
 import { UserBadge } from '../../../entities/user-badge.entity.js';
 import { ChallengeEntry } from '../../../entities/challenge-entry.entity.js';
 import { CommuteRoute } from '../../../entities/commute-route.entity.js';
+import { NotificationPreferencesRow } from '../../../entities/notification-preferences.entity.js';
 import { DataExportRequest } from '../../../entities/data-export-request.entity.js';
 import { AuthModule } from '../../auth/index.js';
 import { EmailModule } from '../../email/index.js';
@@ -52,6 +53,7 @@ import { EXPORT_STORAGE } from './storage/export-storage.interface.js';
       UserBadge,
       ChallengeEntry,
       CommuteRoute,
+      NotificationPreferencesRow,
     ]),
   ],
   controllers: [DataExportController],
@@ -81,6 +83,7 @@ import { EXPORT_STORAGE } from './storage/export-storage.interface.js';
         getRepositoryToken(UserBadge),
         getRepositoryToken(ChallengeEntry),
         getRepositoryToken(CommuteRoute),
+        getRepositoryToken(NotificationPreferencesRow),
       ],
       useFactory: (
         contacts: Repository<UserContact>,
@@ -94,6 +97,7 @@ import { EXPORT_STORAGE } from './storage/export-storage.interface.js';
         badges: Repository<UserBadge>,
         challenges: Repository<ChallengeEntry>,
         commute: Repository<CommuteRoute>,
+        notificationPreferences: Repository<NotificationPreferencesRow>,
       ) =>
         new BundleAssembler({
           contacts,
@@ -107,6 +111,7 @@ import { EXPORT_STORAGE } from './storage/export-storage.interface.js';
           badges,
           challenges,
           commute,
+          notificationPreferences,
         }),
     },
   ],

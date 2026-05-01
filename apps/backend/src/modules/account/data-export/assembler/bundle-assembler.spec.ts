@@ -53,6 +53,7 @@ function emptyRepos() {
     badges: { find: jest.fn().mockResolvedValue([]) },
     challenges: { find: jest.fn().mockResolvedValue([]) },
     commute: { find: jest.fn().mockResolvedValue([]) },
+    notificationPreferences: { findOne: jest.fn().mockResolvedValue(null) },
   };
 }
 
@@ -102,19 +103,35 @@ describe('BundleAssembler', () => {
     expect(entries.get('README.txt')).toContain('GDPR Article 15');
   });
 
-  it('extracts privacy + notifications from preferences when present', async () => {
+  it('extracts privacy from user.preferences and notifications from the typed table', async () => {
     const user = makeUser({
       privacy: { share_location: false },
-      notifications: { hazards: 'push' },
     });
-    const assembler = new BundleAssembler(emptyRepos() as never);
+    const repos = emptyRepos();
+    repos.notificationPreferences.findOne.mockResolvedValue({
+      user_id: 'u1',
+      email_digest: 'daily',
+      marketing_emails: true,
+      quiet_hours_start: 22 * 60,
+      quiet_hours_end: 6 * 60,
+      quiet_hours_timezone: 'Europe/Prague',
+      categories: { hazard_alert: { email: false, push: true, in_app: true } },
+    });
+    const assembler = new BundleAssembler(repos as never);
     const buf = await streamToBuffer(await assembler.assemble(user));
     const entries = await listEntries(buf);
     expect(JSON.parse(entries.get('privacy.json')!)).toEqual({
       share_location: false,
     });
     expect(JSON.parse(entries.get('notifications.json')!)).toEqual({
-      hazards: 'push',
+      email_digest: 'daily',
+      marketing_emails: true,
+      quiet_hours_start: 22 * 60,
+      quiet_hours_end: 6 * 60,
+      quiet_hours_timezone: 'Europe/Prague',
+      categories: {
+        hazard_alert: { email: false, push: true, in_app: true },
+      },
     });
   });
 
