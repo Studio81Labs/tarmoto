@@ -38,14 +38,6 @@ export interface UseCollectionsResult {
     input: UpdateRouteCollectionInput,
   ) => Promise<RouteCollectionView>;
   removeCollection: (id: string) => Promise<void>;
-  addTripsToCollection: (
-    id: string,
-    tripIds: readonly string[],
-  ) => Promise<RouteCollectionView>;
-  removeItemFromCollection: (
-    id: string,
-    itemId: string,
-  ) => Promise<RouteCollectionView>;
   /**
    * If the user has legacy localStorage collections AND has not yet been
    * prompted, this is non-null and the page can render a banner asking the
@@ -138,31 +130,11 @@ export function useCollections(userId: string | null): UseCollectionsResult {
     [removeOne],
   );
 
-  const addTripsToCollection = useCallback(
-    async (id: string, tripIds: readonly string[]) => {
-      // Add items one-at-a-time then refresh detail. Sequential to avoid the
-      // backend's per-collection MAX(position)+1 racing on parallel adds.
-      for (const tripId of tripIds) {
-        await routeCollectionsApi.addItem(id, { trip_id: tripId });
-      }
-      const { data } = await routeCollectionsApi.get(id);
-      const view = mapDetailToView(data);
-      replaceOne(view);
-      return view;
-    },
-    [replaceOne],
-  );
-
-  const removeItemFromCollection = useCallback(
-    async (id: string, itemId: string) => {
-      await routeCollectionsApi.removeItem(id, itemId);
-      const { data } = await routeCollectionsApi.get(id);
-      const view = mapDetailToView(data);
-      replaceOne(view);
-      return view;
-    },
-    [replaceOne],
-  );
+  // Item-level mutations (add/remove trip) live on the detail page rather
+  // than this hook. The detail page already loads /collections/:id and
+  // owns the item state — routing those calls through the hook would just
+  // round-trip them via this hook's `collections` list, which the list
+  // page doesn't render anyway.
 
   // Initial load + migration-opportunity check whenever userId changes.
   useEffect(() => {
@@ -221,8 +193,6 @@ export function useCollections(userId: string | null): UseCollectionsResult {
     createCollection,
     updateCollection,
     removeCollection,
-    addTripsToCollection,
-    removeItemFromCollection,
     migration,
   };
 }

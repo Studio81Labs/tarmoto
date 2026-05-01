@@ -77,10 +77,24 @@ export class UpdateRouteCollectionDto {
 }
 
 /**
- * Add a single trip- or ride-keyed item to a collection. Exactly one of
- * `trip_id` / `ride_id` must be provided — class-validator ensures this with
- * the `ValidateIf`-anchored `IsUUID` so an empty body, both populated, or
- * non-UUIDs all 400. The DB has the same check constraint as a backstop.
+ * Add a single trip- or ride-keyed item to a collection.
+ *
+ * Validation runs in three layers, each catching a different failure mode:
+ *
+ *  1. Field-level `@IsUUID` (gated by `@ValidateIf`) — catches a non-UUID
+ *     value in either `trip_id` or `ride_id` at the ValidationPipe (400).
+ *  2. `RouteCollectionsService.addItem` — catches the cross-field invariants
+ *     class-validator can't express cleanly: empty body and both fields
+ *     populated. Throws `BadRequestException` (also 400) with a clear
+ *     message before touching the DB.
+ *  3. `chk_route_collection_items_target` DB CHECK — final backstop so a
+ *     hand-written INSERT can't drift the row state.
+ *
+ * (The cross-field check lives in the service, not the DTO, because
+ * `@ValidateIf` short-circuits *all* property decorators when its predicate
+ * returns false — including `@Validate(...)` — so the empty-body case is
+ * unreachable from a field-level constraint without a structural workaround
+ * that would be more confusing than the service check it would replace.)
  */
 export class AddRouteCollectionItemDto {
   @ApiProperty({

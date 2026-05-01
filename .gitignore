@@ -37,6 +37,9 @@ curviness/
 *.swp
 *.swo
 
+# Claude Code local session state (lock files, scheduled tasks, etc.)
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db

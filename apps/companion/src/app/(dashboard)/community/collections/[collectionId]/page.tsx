@@ -86,7 +86,10 @@ export default function CollectionDetailPage() {
     setActionError(null);
     setBusy(true);
     try {
-      // Sequential — see useCollections.addTripsToCollection for why.
+      // Sequential adds: the backend assigns position via MAX(position)+1
+      // inside a per-collection txn, so concurrent adds against the same
+      // collection can collide on the same position value. Serialising here
+      // keeps the resulting order deterministic.
       for (const tid of tripIds) {
         await routeCollectionsApi.addItem(collection.id, { trip_id: tid });
       }
