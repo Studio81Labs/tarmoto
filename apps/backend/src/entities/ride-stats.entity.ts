@@ -5,6 +5,7 @@ import {
   OneToOne,
   JoinColumn,
 } from 'typeorm';
+import type { LeanDistribution } from '@tarmoto/shared';
 import { Ride } from './ride.entity.js';
 
 @Entity('ride_stats')
@@ -35,6 +36,15 @@ export class RideStats {
 
   @Column({ type: 'float', nullable: true })
   max_lean_angle!: number | null;
+
+  /**
+   * US-19 lean histogram — counts the number of sensor samples that
+   * fell into each bucket. The bucket boundaries are owned by
+   * `@tarmoto/shared` (`LEAN_BUCKETS`); the column stays as a flexible
+   * JSONB so a future change to the buckets is a code-only migration.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  lean_distribution_json!: LeanDistribution | null;
 
   @Column({ type: 'int', nullable: true })
   calories_est!: number | null;

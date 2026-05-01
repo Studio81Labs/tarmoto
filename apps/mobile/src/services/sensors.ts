@@ -14,6 +14,7 @@ import { Subscription } from "rxjs";
 import { map, bufferCount } from "rxjs/operators";
 import type { SensorReading, QualityClass, SurfaceType } from "@/types";
 import * as mlClassifier from "./mlClassifier";
+import { LeanAngleFilter, type CalibrationStats } from "./leanAngle";
 
 const SAMPLE_RATE_MS = 20; // 50Hz
 const WINDOW_SIZE = 100; // 2 seconds at 50Hz
@@ -31,6 +32,12 @@ export interface WindowFeatures {
   gyro_rms: number;
   speed_kmh: number;
   speed_normalized_rms: number;
+  /**
+   * Maximum absolute lean angle (degrees) observed across this 2 s
+   * window. `0` while the orientation filter is still calibrating —
+   * see `LeanAngleFilter` for the calibration semantics.
+   */
+  max_abs_lean_deg: number;
   timestamp: number;
 }
 
@@ -72,6 +79,13 @@ class SensorService {
   private currentLat = 0;
   private currentLng = 0;
   private readingListeners = new Set<ReadingListener>();
+  // Per-ride orientation filter (US-19). One instance per ride so the
+  // calibration offset captured at start doesn't leak from one ride to
+  // the next. The filter needs the synchronous gyroscope tick in front
+  // of the accelerometer one to integrate cleanly, so we track the
+  // most recent gyro sample and feed it on the next accel tick.
+  private leanFilter = new LeanAngleFilter();
+  private latestGyroX: number | null = null;
 
   /**
    * Start recording sensor data
@@ -82,6 +96,11 @@ class SensorService {
     this.callback = onWindow;
     this.buffer = [];
     this.rawReadings = [];
+    // Reset the orientation filter so a previous ride's offset / drift
+    // doesn't bleed into this one. `start` also kicks off the auto-
+    // calibration window (~1.5 s of upright readings).
+    this.leanFilter.start();
+    this.latestGyroX = null;
 
     // Kick off the model load in the background. The first windows
     // arrive ~2s later, so the classifier is typically ready by then;
@@ -96,14 +115,32 @@ class SensorService {
     this.accelSub = accelerometer.subscribe(({ x, y, z, timestamp }) => {
       if (!this.isRecording) return;
 
+      const t = timestamp || Date.now();
+      // Update the orientation filter on every accelerometer tick. The
+      // gyro stream is faster than the accel stream on some devices,
+      // so we use the most recent gyroX (or 0 if no gyro tick has
+      // arrived yet) as the rate input. The filter still calibrates
+      // off accelerometer roll alone if the gyro is silent — that's
+      // a degenerate case (no gyro = no roll detection at speed) but
+      // at least the no-gyro device still surfaces gravity-only roll.
+      const gx = this.latestGyroX ?? 0;
+      const leanDeg = this.leanFilter.update({ ax: x, ay: y, az: z, gx, t });
+
       const reading: SensorReading = {
-        t: timestamp || Date.now(),
+        t,
         ax: x,
         ay: y,
         az: z,
         lat: this.currentLat,
         lng: this.currentLng,
         speed: this.currentSpeed / 3.6, // store as m/s
+        // Skip lean while still calibrating so the backend's per-ride
+        // distribution doesn't soak up a stream of zeros captured
+        // before the rider sat upright. The filter returns 0 verbatim
+        // during calibration; we differentiate from a real 0° lean
+        // (rider is genuinely upright) by checking the calibration
+        // flag, not the value.
+        lean_deg: this.leanFilter.isCalibrating() ? undefined : leanDeg,
       };
 
       this.buffer.push(reading);
@@ -143,7 +180,33 @@ class SensorService {
         last.gy = y;
         last.gz = z;
       }
+      // Cache the gyro X rate (rad/s) for the next accelerometer tick
+      // to feed into the orientation filter. We don't update the
+      // filter directly from the gyro stream — combining ticks per
+      // accel sample keeps the filter's `dt` stable around 20 ms.
+      this.latestGyroX = x;
     });
+  }
+
+  /**
+   * Manually re-zero the orientation filter (US-19). The rider taps
+   * "Calibrate" on the live HUD when the auto-captured offset looks
+   * off — typically because the phone shifted in its mount mid-ride.
+   * Returns the new offset stats so the caller can surface a
+   * confirmation toast.
+   */
+  recalibrateLean(): CalibrationStats {
+    this.leanFilter.beginCalibration();
+    return { samples: 0, offsetDeg: this.leanFilter.getOffsetDeg() };
+  }
+
+  /**
+   * Whether the orientation filter is in its initial calibration
+   * window. Surfaced to the HUD so it can show "Calibrating…" instead
+   * of a 0° lean reading on the first second of a ride.
+   */
+  isLeanCalibrating(): boolean {
+    return this.leanFilter.isCalibrating();
   }
 
   /**
@@ -239,6 +302,18 @@ class SensorService {
     const speed_kmh = this.currentSpeed;
     const speed_normalized_rms = speed_kmh > 10 ? rms / (speed_kmh / 50) : rms;
 
+    // Maximum absolute lean angle observed across this window (US-19).
+    // Pre-calibration samples carry no `lean_deg` (undefined) so the
+    // window-level max is just whatever the post-calibration samples
+    // saw. A window that's still entirely inside the calibration
+    // period returns 0.
+    let max_abs_lean_deg = 0;
+    for (const r of window) {
+      if (r.lean_deg === undefined) continue;
+      const abs = Math.abs(r.lean_deg);
+      if (abs > max_abs_lean_deg) max_abs_lean_deg = abs;
+    }
+
     return {
       rms,
       std,
@@ -251,6 +326,7 @@ class SensorService {
       gyro_rms,
       speed_kmh,
       speed_normalized_rms,
+      max_abs_lean_deg,
       timestamp: Date.now(),
     };
   }

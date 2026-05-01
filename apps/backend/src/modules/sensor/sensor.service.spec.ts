@@ -5,12 +5,15 @@ import { Repository } from 'typeorm';
 import { SensorService } from './sensor.service.js';
 import { SurfaceReading } from '../../entities/surface-reading.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
+import { RideStats } from '../../entities/ride-stats.entity.js';
 import { SensorReadingDto } from './dto/upload-sensor-data.dto.js';
 
 describe('SensorService', () => {
   let service: SensorService;
   let readingRepo: Partial<jest.Mocked<Repository<SurfaceReading>>>;
   let segmentRepo: Partial<jest.Mocked<Repository<RoadSegment>>>;
+  let statsRepo: Partial<jest.Mocked<Repository<RideStats>>>;
+  let storedStats: Partial<RideStats> | null;
 
   beforeEach(async () => {
     readingRepo = {
@@ -22,11 +25,25 @@ describe('SensorService', () => {
       query: jest.fn().mockResolvedValue([{ id: 'segment-1' }]),
     };
 
+    storedStats = null;
+    statsRepo = {
+      // The aggregation path round-trips through findOne/save. Track
+      // the most recently saved stats row so a test can assert on
+      // the upsert contents without juggling spy call indexes.
+      findOne: jest.fn().mockImplementation(() => Promise.resolve(storedStats)),
+      create: jest.fn().mockImplementation((data) => data),
+      save: jest.fn().mockImplementation((entity: Partial<RideStats>) => {
+        storedStats = { ...storedStats, ...entity };
+        return Promise.resolve(storedStats as RideStats);
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SensorService,
         { provide: getRepositoryToken(SurfaceReading), useValue: readingRepo },
         { provide: getRepositoryToken(RoadSegment), useValue: segmentRepo },
+        { provide: getRepositoryToken(RideStats), useValue: statsRepo },
       ],
     }).compile();
 
@@ -394,6 +411,99 @@ describe('SensorService', () => {
 
       const createArg = (readingRepo.create as jest.Mock).mock.calls[0][0];
       expect(createArg.surface_type).toBeNull();
+    });
+  });
+
+  describe('lean aggregation (US-19)', () => {
+    function readingWithLean(
+      lean: number | undefined,
+      i: number,
+    ): SensorReadingDto {
+      return {
+        t: Date.now() + i * 20,
+        ax: 0.1,
+        ay: 0.2,
+        az: 9.8,
+        lat: 49.1 + i * 0.00001,
+        lng: 16.75,
+        speed: 15,
+        ...(lean !== undefined ? { lean_deg: lean } : {}),
+      };
+    }
+
+    it('writes max_lean_angle and a bucketed histogram into ride_stats from the upload payload', async () => {
+      const dto = {
+        ride_id: 'ride-1',
+        readings: [
+          ...Array.from({ length: 5 }, (_, i) => readingWithLean(2, i)),
+          ...Array.from({ length: 3 }, (_, i) => readingWithLean(15, i + 5)),
+          // Negative leans count by absolute value — left and right
+          // corners contribute to the same bucket.
+          ...Array.from({ length: 4 }, (_, i) => readingWithLean(-22, i + 8)),
+          readingWithLean(35, 12),
+        ],
+      };
+
+      await service.processUpload('user-1', dto);
+
+      // The sensor module always passes through findOne, then save —
+      // assert against the storedStats trace instead of the spy index
+      // so a future re-order of save calls doesn't break the test.
+      expect(storedStats?.ride_id).toBe('ride-1');
+      expect(storedStats?.max_lean_angle).toBe(35);
+      expect(storedStats?.lean_distribution_json).toEqual({
+        '0_10': 5,
+        '10_20': 3,
+        '20_30': 4,
+        '30_plus': 1,
+      });
+    });
+
+    it('merges new samples with the existing distribution instead of overwriting', async () => {
+      // Pre-existing ride_stats row from a previous batch. The
+      // aggregation should add the new histogram counts on top.
+      storedStats = {
+        ride_id: 'ride-1',
+        max_lean_angle: 18,
+        lean_distribution_json: {
+          '0_10': 100,
+          '10_20': 50,
+          '20_30': 0,
+          '30_plus': 0,
+        },
+      } as RideStats;
+
+      const dto = {
+        ride_id: 'ride-1',
+        readings: [
+          ...Array.from({ length: 2 }, (_, i) => readingWithLean(5, i)),
+          ...Array.from({ length: 1 }, (_, i) => readingWithLean(28, i + 2)),
+        ],
+      };
+
+      await service.processUpload('user-1', dto);
+
+      expect(storedStats?.max_lean_angle).toBe(28);
+      expect(storedStats?.lean_distribution_json).toEqual({
+        '0_10': 102,
+        '10_20': 50,
+        '20_30': 1,
+        '30_plus': 0,
+      });
+    });
+
+    it("doesn't touch ride_stats when no readings carry lean data", async () => {
+      const dto = {
+        ride_id: 'ride-1',
+        readings: Array.from({ length: 5 }, (_, i) =>
+          readingWithLean(undefined, i),
+        ),
+      };
+
+      await service.processUpload('user-1', dto);
+
+      expect(statsRepo.save).not.toHaveBeenCalled();
+      expect(storedStats).toBeNull();
     });
   });
 

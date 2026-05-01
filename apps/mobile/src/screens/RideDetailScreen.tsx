@@ -71,10 +71,13 @@ import {
   formatLeanAngle,
   formatRideDate,
   formatSpeedKmh,
+  leanHistogramRows,
+  leanSampleTotal,
   rideBounds,
   rideRouteFeatureCollection,
   rideRouteLineColorExpression,
   segmentQualityHistogram,
+  type LeanHistogramRow,
 } from "./RideScreens.helpers";
 
 type IconName = ComponentProps<typeof Icon>["name"];
@@ -196,11 +199,25 @@ function RideDetailBody({ ride }: { ride: RideDetail }) {
     [ride.segments],
   );
 
+  const leanHistogram = useMemo(
+    () => leanHistogramRows(ride.lean_distribution),
+    [ride.lean_distribution],
+  );
+  const leanTotal = useMemo(
+    () => leanSampleTotal(ride.lean_distribution),
+    [ride.lean_distribution],
+  );
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <RouteMap featureCollection={featureCollection} bounds={bounds} />
       <SummaryCard ride={ride} />
       <StatsGrid ride={ride} />
+      <LeanBreakdownCard
+        rows={leanHistogram}
+        total={leanTotal}
+        maxLeanAngle={ride.max_lean_angle}
+      />
       <SegmentBreakdownCard segments={ride.segments} histogram={histogram} />
       <ShareActions ride={ride} />
     </ScrollView>
@@ -332,6 +349,80 @@ function StatsGrid({ ride }: { ride: RideDetail }) {
           value={formatFuelLiters(ride.fuel_estimate_l)}
         />
       </View>
+    </View>
+  );
+}
+
+function LeanBreakdownCard({
+  rows,
+  total,
+  maxLeanAngle,
+}: {
+  rows: LeanHistogramRow[];
+  total: number;
+  maxLeanAngle: number | null;
+}) {
+  // No samples yet — collapse the card down to a single hint line.
+  // Riders pre-US-19 (or with a quiet sensor / never-calibrated phone)
+  // shouldn't see a histogram of all zeros, which would imply the
+  // rider rode dead-flat the whole ride.
+  if (total === 0) {
+    return (
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>Lean breakdown</Text>
+        <Text style={styles.emptyHint}>
+          We didn't capture lean data on this ride. Calibrate during your next
+          ride to see the breakdown.
+        </Text>
+      </View>
+    );
+  }
+  const maxRatio = Math.max(0.01, ...rows.map((r) => r.ratio));
+  const maxLeanLabel = formatLeanAngle(maxLeanAngle ?? 0);
+  return (
+    <View style={styles.card}>
+      <View style={styles.sectionHeaderRow}>
+        <Text style={styles.sectionTitle}>Lean breakdown</Text>
+        <Text style={styles.sectionMeta}>Max {maxLeanLabel}</Text>
+      </View>
+      {rows.map((row) => (
+        <LeanHistogramRowView
+          key={row.bucket.id}
+          row={row}
+          maxRatio={maxRatio}
+        />
+      ))}
+    </View>
+  );
+}
+
+function LeanHistogramRowView({
+  row,
+  maxRatio,
+}: {
+  row: LeanHistogramRow;
+  maxRatio: number;
+}) {
+  const widthPct = `${Math.max(row.ratio * (100 / maxRatio), row.count > 0 ? 6 : 0)}%`;
+  const percentLabel = `${Math.round(row.ratio * 100)}%`;
+  return (
+    <View
+      style={styles.histRow}
+      accessibilityLabel={`${row.bucket.label}: ${percentLabel}`}
+    >
+      <Text style={styles.histLabel}>{row.bucket.label}</Text>
+      <View style={styles.histBarTrack}>
+        <View
+          style={[
+            styles.histBarFill,
+            {
+              width: widthPct as `${number}%`,
+              backgroundColor: colors.primary,
+            },
+          ]}
+        />
+      </View>
+      <Text style={styles.histCount}>{percentLabel}</Text>
     </View>
   );
 }

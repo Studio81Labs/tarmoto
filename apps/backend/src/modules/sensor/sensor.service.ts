@@ -3,12 +3,20 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SurfaceReading } from '../../entities/surface-reading.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
+import { RideStats } from '../../entities/ride-stats.entity.js';
 import {
   UploadSensorDataDto,
   SensorReadingDto,
 } from './dto/upload-sensor-data.dto.js';
 import { UploadResponseDto } from './dto/upload-response.dto.js';
-import { haversineMeters } from '@tarmoto/shared';
+import {
+  emptyLeanDistribution,
+  haversineMeters,
+  leanBucketFor,
+  mergeLeanDistributions,
+  normalizeLeanDistribution,
+  type LeanDistribution,
+} from '@tarmoto/shared';
 
 const SEGMENT_LENGTH_M = 100;
 const MIN_SPEED_MS = 2.78; // ~10 km/h — discard stopped readings
@@ -46,6 +54,8 @@ export class SensorService {
     private readonly readingRepo: Repository<SurfaceReading>,
     @InjectRepository(RoadSegment)
     private readonly segmentRepo: Repository<RoadSegment>,
+    @InjectRepository(RideStats)
+    private readonly statsRepo: Repository<RideStats>,
   ) {}
 
   async processUpload(
@@ -107,10 +117,78 @@ export class SensorService {
       segmentsUpdated++;
     }
 
+    // US-19 — fold this batch's lean samples into the per-ride
+    // aggregation. Done after the surface-reading loop so a partial
+    // failure mid-loop doesn't ship lean stats without the
+    // corresponding road-quality data, but kept inside `processUpload`
+    // so the unit of work for "this batch was accepted" stays one
+    // method.
+    await this.upsertLeanStats(dto.ride_id, dto.readings);
+
     return {
       accepted: validReadings.length,
       segments_updated: segmentsUpdated,
     };
+  }
+
+  /**
+   * Fold this batch's per-reading lean samples into the running
+   * `ride_stats.max_lean_angle` and `ride_stats.lean_distribution_json`
+   * for the ride. Called from `processUpload` after surface readings
+   * have been persisted.
+   *
+   * Samples whose `lean_deg` is absent are dropped — the mobile filter
+   * intentionally omits the field while calibrating, so treating
+   * "missing" as 0° would over-fill the lowest bucket. Sub-windows are
+   * tallied at the per-reading granularity (50 Hz) which over-counts
+   * relative to the 1 s window granularity the spec calls out, but the
+   * histogram still reports time-in-bucket faithfully because every
+   * bucket scales by the same constant — what the rider sees is the
+   * proportion in each bucket, not the absolute count.
+   */
+  private async upsertLeanStats(
+    rideId: string,
+    readings: SensorReadingDto[],
+  ): Promise<void> {
+    let batchMax = 0;
+    const batchHistogram = emptyLeanDistribution();
+    let sampleCount = 0;
+    for (const r of readings) {
+      if (r.lean_deg === undefined || !Number.isFinite(r.lean_deg)) continue;
+      const abs = Math.abs(r.lean_deg);
+      if (abs > batchMax) batchMax = abs;
+      const bucket = leanBucketFor(abs);
+      if (bucket) batchHistogram[bucket] += 1;
+      sampleCount += 1;
+    }
+    if (sampleCount === 0) {
+      // Quiet sensor / pre-calibration batch — leave the row alone so
+      // a follow-up batch with real lean data can still write to it.
+      return;
+    }
+
+    const existing = await this.statsRepo.findOne({
+      where: { ride_id: rideId },
+    });
+    const mergedMax = Math.max(existing?.max_lean_angle ?? 0, batchMax);
+    const existingDist: LeanDistribution = existing?.lean_distribution_json
+      ? normalizeLeanDistribution(existing.lean_distribution_json)
+      : emptyLeanDistribution();
+    const mergedDist = mergeLeanDistributions(existingDist, batchHistogram);
+
+    if (existing) {
+      existing.max_lean_angle = mergedMax;
+      existing.lean_distribution_json = mergedDist;
+      await this.statsRepo.save(existing);
+    } else {
+      await this.statsRepo.save(
+        this.statsRepo.create({
+          ride_id: rideId,
+          max_lean_angle: mergedMax,
+          lean_distribution_json: mergedDist,
+        }),
+      );
+    }
   }
 
   /**

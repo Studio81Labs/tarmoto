@@ -425,6 +425,7 @@ describe("buildRideShareMessage", () => {
     curve_count: 0,
     max_lean_angle: 0,
     fuel_estimate_l: 0,
+    lean_distribution: null,
     segments: [],
   };
 

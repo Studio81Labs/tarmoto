@@ -104,6 +104,12 @@ const RIDE: RideDetail = {
   curve_count: 12,
   max_lean_angle: 32,
   fuel_estimate_l: 4.2,
+  lean_distribution: {
+    "0_10": 60,
+    "10_20": 25,
+    "20_30": 12,
+    "30_plus": 3,
+  },
   segments: [
     {
       road_segment_id: "s1",

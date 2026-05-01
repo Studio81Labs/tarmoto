@@ -6,6 +6,14 @@
  * React Native, navigation, or MapLibre into the module graph.
  */
 
+import {
+  emptyLeanDistribution,
+  LEAN_BUCKETS,
+  type LeanBucket,
+  type LeanBucketId,
+  type LeanDistribution,
+} from "@tarmoto/shared";
+
 import type { ClassificationResult } from "@/services/sensors";
 import type { LatLng, RideDetail, RideSegment, SurfaceType } from "@/types";
 import { colors } from "@/theme";
@@ -361,6 +369,52 @@ function bucketForScore(score: number): 1 | 2 | 3 | 4 | 5 {
   if (score >= 1.5) return 2;
   return 1;
 }
+
+/**
+ * Histogram row for the per-ride lean breakdown (US-19). Mirrors the
+ * shape `RideDetailScreen` consumes: bucket metadata + raw count + the
+ * "total samples" denominator so the screen can render a percentage
+ * without recomputing the sum on every row.
+ */
+export interface LeanHistogramRow {
+  bucket: LeanBucket;
+  count: number;
+  /** 0..1 share of the per-ride sample total. */
+  ratio: number;
+}
+
+/**
+ * Coerce a (potentially `null`) `lean_distribution` payload into the
+ * fixed-order, fixed-key set of histogram rows the screen renders.
+ * Pure — no React, no native modules — so the unit tests can drive it
+ * with synthetic distributions.
+ */
+export function leanHistogramRows(
+  distribution: LeanDistribution | null,
+): LeanHistogramRow[] {
+  const dist = distribution ?? emptyLeanDistribution();
+  const total = LEAN_BUCKETS.reduce(
+    (acc, bucket) => acc + (dist[bucket.id] ?? 0),
+    0,
+  );
+  return LEAN_BUCKETS.map((bucket) => {
+    const count = dist[bucket.id] ?? 0;
+    const ratio = total > 0 ? count / total : 0;
+    return { bucket, count, ratio };
+  });
+}
+
+/** Total lean samples across the histogram. Returns 0 for null. */
+export function leanSampleTotal(distribution: LeanDistribution | null): number {
+  if (!distribution) return 0;
+  return LEAN_BUCKETS.reduce(
+    (acc, bucket) => acc + (distribution[bucket.id] ?? 0),
+    0,
+  );
+}
+
+/** Re-export so screens can render the canonical bucket labels. */
+export type { LeanBucket, LeanBucketId };
 
 /**
  * Build the share-message body for a past ride. Pure so tests can
