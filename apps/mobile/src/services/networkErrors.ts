@@ -35,11 +35,20 @@ export function isNetworkDownError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   // A response landed → not a transport-level failure.
   if (getStatus(error) !== undefined) return false;
+  // Our 15 s request-timeout middleware aborts the fetch via an
+  // `AbortController`, which surfaces as a DOMException with
+  // `name === "AbortError"`. The runtime message varies ("The
+  // operation was aborted" / "Aborted" / "The user aborted a
+  // request"), so name-matching is more reliable than the regex
+  // below — and a timeout is exactly the "queue for later" case
+  // the queues should pick up.
+  const name = (error as { name?: unknown }).name;
+  if (typeof name === "string" && name === "AbortError") return true;
   const message =
     typeof (error as { message?: unknown }).message === "string"
       ? (error as { message: string }).message
       : "";
-  return /network|timeout|offline|disconnected|fetch/i.test(message);
+  return /network|timeout|offline|disconnected|fetch|abort/i.test(message);
 }
 
 export function isTransientServerError(error: unknown): boolean {

@@ -27,6 +27,14 @@ const storage = createMMKV({ id: "tarmoto-auth" });
 const ACCESS_TOKEN_KEY = "access_token";
 const REFRESH_TOKEN_KEY = "refresh_token";
 
+/**
+ * Per-request timeout. Matches the previous axios default (`timeout:
+ * 15000`). Without this, a stalled-but-not-disconnected backend would
+ * hang on iOS for ~60 s (the platform-default fetch timeout) before
+ * the offline queues' "queue for later" path could take over.
+ */
+const REQUEST_TIMEOUT_MS = 15_000;
+
 /** Path that must NEVER be refresh-retried — refreshing on a 401 from
  *  the refresh endpoint itself would cause infinite recursion. */
 const REFRESH_PATH = "/api/v1/auth/refresh";
@@ -37,6 +45,41 @@ const SKIP_REFRESH_PATHS: readonly string[] = [
   "/api/v1/auth/register",
   REFRESH_PATH,
 ];
+
+/**
+ * Wrap a fetch with a timeout, optionally combined with a
+ * caller-supplied cancellation signal (e.g. `uploadReviewPhotos`'s
+ * abort handle). Returns a fresh signal that aborts on whichever
+ * fires first, plus a `dispose` that clears the timer so a fast
+ * response doesn't leak a 15 s no-op timer per request — over a
+ * long ride session that would stack thousands of dangling timers
+ * in the runtime.
+ *
+ * The DOM `AbortSignal.reason` accessor isn't in `lib: ["es2022"]`,
+ * so we use plain `abort()` and rely on the network-error classifier
+ * to recognise the resulting `AbortError` (no `.status`, message
+ * matches the offline regex) as a "queue for later" failure.
+ */
+function withTimeout(
+  callerSignal: AbortSignal | undefined,
+  timeoutMs: number,
+): { signal: AbortSignal; dispose: () => void } {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  if (callerSignal) {
+    if (callerSignal.aborted) {
+      controller.abort();
+    } else {
+      callerSignal.addEventListener("abort", () => controller.abort(), {
+        once: true,
+      });
+    }
+  }
+  return {
+    signal: controller.signal,
+    dispose: () => clearTimeout(timer),
+  };
+}
 
 let inflightRefresh: Promise<boolean> | null = null;
 
@@ -74,11 +117,13 @@ export async function refreshAccessToken(): Promise<boolean> {
   if (!refreshToken) return false;
 
   inflightRefresh = (async () => {
+    const { signal, dispose } = withTimeout(undefined, REQUEST_TIMEOUT_MS);
     try {
       const res = await fetch(`${API_BASE_URL}${REFRESH_PATH}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refresh_token: refreshToken }),
+        signal,
       });
       if (!res.ok) {
         clearTokens();
@@ -91,6 +136,7 @@ export async function refreshAccessToken(): Promise<boolean> {
       clearTokens();
       return false;
     } finally {
+      dispose();
       inflightRefresh = null;
     }
   })();
@@ -116,15 +162,32 @@ const baseClient = createApiClient({
  */
 const requestBodies = new Map<string, ArrayBuffer>();
 
+/**
+ * Per-request `dispose` callbacks that clear the 15 s timeout timer.
+ * Populated in `onRequest` and called from `onResponse` / `onError`
+ * so a fast response doesn't leak a no-op timer for the rest of its
+ * window — over a long ride session that would otherwise stack
+ * thousands of dangling timers in the runtime.
+ */
+const requestDisposers = new Map<string, () => void>();
+
 baseClient.use({
   async onRequest({ request, id }) {
-    if (request.method === "GET" || request.method === "HEAD") return;
-    // Clone first — `arrayBuffer()` on the clone consumes the clone's
-    // body stream while leaving the original request body intact for
-    // the imminent fetch. The original then ships its body normally.
-    const buf = await request.clone().arrayBuffer();
-    if (buf.byteLength > 0) requestBodies.set(id, buf);
-    return;
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      // Clone first — `arrayBuffer()` on the clone consumes the
+      // clone's body stream while leaving the original request body
+      // intact for the imminent fetch. The original then ships its
+      // body normally.
+      const buf = await request.clone().arrayBuffer();
+      if (buf.byteLength > 0) requestBodies.set(id, buf);
+    }
+    // Apply the 15 s deadline by replacing the request with one that
+    // carries our combined signal. A caller-supplied signal (e.g.
+    // `uploadReviewPhotos` cancellation) is preserved because
+    // `withTimeout` propagates its abort.
+    const { signal, dispose } = withTimeout(request.signal, REQUEST_TIMEOUT_MS);
+    requestDisposers.set(id, dispose);
+    return new Request(request, { signal });
   },
   async onResponse({ response, request, schemaPath, id }) {
     try {
@@ -144,18 +207,36 @@ baseClient.use({
       request.headers.forEach((value, key) => headers.set(key, value));
       if (newToken) headers.set("Authorization", `Bearer ${newToken}`);
 
-      const init: RequestInit = { method: request.method, headers };
-      const stashedBody = requestBodies.get(id);
-      if (stashedBody !== undefined) init.body = stashedBody;
-      return fetch(request.url, init);
+      // Fresh 15 s deadline for the retry — the original deadline's
+      // timer was cleared in the dispose() below and reusing it
+      // would leave near-zero budget for the second request to
+      // complete after a refresh round-trip.
+      const retryTimeout = withTimeout(undefined, REQUEST_TIMEOUT_MS);
+      try {
+        const init: RequestInit = {
+          method: request.method,
+          headers,
+          signal: retryTimeout.signal,
+        };
+        const stashedBody = requestBodies.get(id);
+        if (stashedBody !== undefined) init.body = stashedBody;
+        return await fetch(request.url, init);
+      } finally {
+        retryTimeout.dispose();
+      }
     } finally {
       requestBodies.delete(id);
+      requestDisposers.get(id)?.();
+      requestDisposers.delete(id);
     }
   },
   onError({ id }) {
     // Network failures skip onResponse, so clean up here too — leaving
-    // bytes in the map would leak memory across long-lived sessions.
+    // bytes / timers in the maps would leak memory and dangling
+    // setTimeout handles across long-lived sessions.
     requestBodies.delete(id);
+    requestDisposers.get(id)?.();
+    requestDisposers.delete(id);
   },
 });
 
@@ -172,8 +253,20 @@ export async function rawFetch(
   path: string,
   init: RequestInit & { bearer?: string },
 ): Promise<Response> {
-  const { bearer, headers, ...rest } = init;
+  const { bearer, headers, signal: callerSignal, ...rest } = init;
   const merged = new Headers(headers);
   if (bearer) merged.set("Authorization", `Bearer ${bearer}`);
-  return fetch(`${API_BASE_URL}${path}`, { ...rest, headers: merged });
+  const { signal, dispose } = withTimeout(
+    callerSignal ?? undefined,
+    REQUEST_TIMEOUT_MS,
+  );
+  try {
+    return await fetch(`${API_BASE_URL}${path}`, {
+      ...rest,
+      headers: merged,
+      signal,
+    });
+  } finally {
+    dispose();
+  }
 }
