@@ -26,15 +26,44 @@ describe('SensorService', () => {
     };
 
     storedStats = null;
+    // Mock `query()` to simulate the atomic INSERT ... ON CONFLICT DO
+    // UPDATE the production code now uses (see `upsertLeanStats` for
+    // why the merge moved into SQL). Tracks the latest row so tests
+    // can assert against `storedStats` without parsing the SQL — the
+    // semantics being mocked are: max via GREATEST, distribution via
+    // per-bucket integer addition.
     statsRepo = {
-      // The aggregation path round-trips through findOne/save. Track
-      // the most recently saved stats row so a test can assert on
-      // the upsert contents without juggling spy call indexes.
-      findOne: jest.fn().mockImplementation(() => Promise.resolve(storedStats)),
-      create: jest.fn().mockImplementation((data) => data),
-      save: jest.fn().mockImplementation((entity: Partial<RideStats>) => {
-        storedStats = { ...storedStats, ...entity };
-        return Promise.resolve(storedStats as RideStats);
+      query: jest.fn().mockImplementation((_sql, params: unknown[]) => {
+        const [rideId, batchMax, distJson] = params as [string, number, string];
+        const batchDist = JSON.parse(distJson) as Record<string, number>;
+        if (storedStats === null) {
+          storedStats = {
+            ride_id: rideId,
+            max_lean_angle: batchMax,
+            lean_distribution_json: {
+              '0_10': batchDist['0_10'] ?? 0,
+              '10_20': batchDist['10_20'] ?? 0,
+              '20_30': batchDist['20_30'] ?? 0,
+              '30_plus': batchDist['30_plus'] ?? 0,
+            } as RideStats['lean_distribution_json'],
+          };
+        } else {
+          const existingDist =
+            (storedStats.lean_distribution_json as Record<string, number>) ??
+            {};
+          storedStats.max_lean_angle = Math.max(
+            storedStats.max_lean_angle ?? 0,
+            batchMax,
+          );
+          storedStats.lean_distribution_json = {
+            '0_10': (existingDist['0_10'] ?? 0) + (batchDist['0_10'] ?? 0),
+            '10_20': (existingDist['10_20'] ?? 0) + (batchDist['10_20'] ?? 0),
+            '20_30': (existingDist['20_30'] ?? 0) + (batchDist['20_30'] ?? 0),
+            '30_plus':
+              (existingDist['30_plus'] ?? 0) + (batchDist['30_plus'] ?? 0),
+          } as RideStats['lean_distribution_json'];
+        }
+        return Promise.resolve([]);
       }),
     };
 
@@ -502,7 +531,7 @@ describe('SensorService', () => {
 
       await service.processUpload('user-1', dto);
 
-      expect(statsRepo.save).not.toHaveBeenCalled();
+      expect(statsRepo.query).not.toHaveBeenCalled();
       expect(storedStats).toBeNull();
     });
 
@@ -547,6 +576,37 @@ describe('SensorService', () => {
         '0_10': 1,
         '10_20': 0,
         '20_30': 1,
+        '30_plus': 0,
+      });
+    });
+
+    it('persists the merge through a single atomic upsert (no read-modify-write race)', async () => {
+      // Two batches landing concurrently for the same ride must not
+      // race on findOne → save: both would read the same baseline,
+      // merge independently, and the second save would clobber the
+      // first. The fix is to do the merge in SQL via INSERT ... ON
+      // CONFLICT DO UPDATE — assert here that we issue exactly one
+      // statement, with `ride_id` as the conflict target and
+      // `GREATEST` / `jsonb_build_object` doing the merge in PG.
+      const dto = {
+        ride_id: 'ride-concurrency',
+        readings: Array.from({ length: 3 }, (_, i) => readingWithLean(15, i)),
+      };
+
+      await service.processUpload('user-1', dto);
+
+      expect(statsRepo.query).toHaveBeenCalledTimes(1);
+      const [sql, params] = (statsRepo.query as jest.Mock).mock.calls[0];
+      expect(sql).toContain('INSERT INTO ride_stats');
+      expect(sql).toContain('ON CONFLICT (ride_id) DO UPDATE');
+      expect(sql).toContain('GREATEST');
+      expect(sql).toContain('jsonb_build_object');
+      expect(params[0]).toBe('ride-concurrency');
+      expect(params[1]).toBe(15);
+      expect(JSON.parse(params[2] as string)).toEqual({
+        '0_10': 0,
+        '10_20': 3,
+        '20_30': 0,
         '30_plus': 0,
       });
     });

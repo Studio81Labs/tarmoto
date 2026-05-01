@@ -9,14 +9,7 @@ import {
   SensorReadingDto,
 } from './dto/upload-sensor-data.dto.js';
 import { UploadResponseDto } from './dto/upload-response.dto.js';
-import {
-  emptyLeanDistribution,
-  haversineMeters,
-  mergeLeanDistributions,
-  normalizeLeanDistribution,
-  tallyLeanSamples,
-  type LeanDistribution,
-} from '@tarmoto/shared';
+import { haversineMeters, tallyLeanSamples } from '@tarmoto/shared';
 
 const SEGMENT_LENGTH_M = 100;
 const MIN_SPEED_MS = 2.78; // ~10 km/h — discard stopped readings
@@ -147,6 +140,18 @@ export class SensorService {
    * histogram still reports time-in-bucket faithfully because every
    * bucket scales by the same constant — what the rider sees is the
    * proportion in each bucket, not the absolute count.
+   *
+   * Concurrency: the merge is performed atomically by Postgres via
+   * `INSERT ... ON CONFLICT (ride_id) DO UPDATE` rather than a JS-side
+   * read-merge-write. Two batches for the same ride landing
+   * concurrently (offline-queue replay racing a fresh upload) would
+   * otherwise both read the same baseline, merge independently, and
+   * have the second `save` clobber the first — silently losing a
+   * batch's worth of histogram counts and potentially regressing
+   * `max_lean_angle`. Doing the merge in SQL serialises on the
+   * unique-index lookup for `ride_id`, so the second statement sees
+   * the first's committed row in its `EXCLUDED` / `ride_stats.*`
+   * references.
    */
   private async upsertLeanStats(
     rideId: string,
@@ -169,28 +174,35 @@ export class SensorService {
     }
     const batchHistogram = tallyLeanSamples(absSamples);
 
-    const existing = await this.statsRepo.findOne({
-      where: { ride_id: rideId },
-    });
-    const mergedMax = Math.max(existing?.max_lean_angle ?? 0, batchMax);
-    const existingDist: LeanDistribution = existing?.lean_distribution_json
-      ? normalizeLeanDistribution(existing.lean_distribution_json)
-      : emptyLeanDistribution();
-    const mergedDist = mergeLeanDistributions(existingDist, batchHistogram);
-
-    if (existing) {
-      existing.max_lean_angle = mergedMax;
-      existing.lean_distribution_json = mergedDist;
-      await this.statsRepo.save(existing);
-    } else {
-      await this.statsRepo.save(
-        this.statsRepo.create({
-          ride_id: rideId,
-          max_lean_angle: mergedMax,
-          lean_distribution_json: mergedDist,
-        }),
-      );
-    }
+    // The bucket keys are owned by `@tarmoto/shared` (`LEAN_BUCKETS`),
+    // but inlining them here keeps the SQL stable across a future
+    // schema change to the bucket set — adding a new bucket needs an
+    // intentional edit to this statement, not an implicit drop on the
+    // floor when the JSONB merge silently omits an unknown key.
+    await this.statsRepo.query(
+      `INSERT INTO ride_stats (ride_id, max_lean_angle, lean_distribution_json)
+       VALUES ($1, $2, $3::jsonb)
+       ON CONFLICT (ride_id) DO UPDATE SET
+         max_lean_angle = GREATEST(
+           COALESCE(ride_stats.max_lean_angle, 0),
+           EXCLUDED.max_lean_angle
+         ),
+         lean_distribution_json = jsonb_build_object(
+           '0_10',
+             COALESCE((ride_stats.lean_distribution_json->>'0_10')::int, 0)
+             + COALESCE((EXCLUDED.lean_distribution_json->>'0_10')::int, 0),
+           '10_20',
+             COALESCE((ride_stats.lean_distribution_json->>'10_20')::int, 0)
+             + COALESCE((EXCLUDED.lean_distribution_json->>'10_20')::int, 0),
+           '20_30',
+             COALESCE((ride_stats.lean_distribution_json->>'20_30')::int, 0)
+             + COALESCE((EXCLUDED.lean_distribution_json->>'20_30')::int, 0),
+           '30_plus',
+             COALESCE((ride_stats.lean_distribution_json->>'30_plus')::int, 0)
+             + COALESCE((EXCLUDED.lean_distribution_json->>'30_plus')::int, 0)
+         )`,
+      [rideId, batchMax, JSON.stringify(batchHistogram)],
+    );
   }
 
   /**
