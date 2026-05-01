@@ -42,12 +42,20 @@ const pushProviderFactory = (config: ConfigService): PushProvider => {
     return fallback;
   }
 
-  if (fcm) BOOTSTRAP_LOGGER.log('Push provider: FCM enabled for Android');
-  if (apn) BOOTSTRAP_LOGGER.log('Push provider: APN enabled for iOS');
+  if (fcm) {
+    BOOTSTRAP_LOGGER.log(
+      'Push provider: FCM enabled — serves Android natively and iOS via APN handoff',
+    );
+  }
+  if (apn) {
+    BOOTSTRAP_LOGGER.log(
+      'Push provider: APN enabled (used for iOS only when FCM is not configured)',
+    );
+  }
 
   return new CompositePushProvider({
-    ios: apn,
-    android: fcm,
+    fcm,
+    apn,
     fallback,
   });
 };
@@ -135,11 +143,11 @@ function walkAndShutdown(provider: PushProvider): void {
   if (provider instanceof CompositePushProvider) {
     const opts = (
       provider as unknown as {
-        options: { ios: PushProvider | null; android: PushProvider | null };
+        options: { fcm: PushProvider | null; apn: PushProvider | null };
       }
     ).options;
-    if (opts.ios) walkAndShutdown(opts.ios);
-    if (opts.android) walkAndShutdown(opts.android);
+    if (opts.fcm) walkAndShutdown(opts.fcm);
+    if (opts.apn) walkAndShutdown(opts.apn);
   }
   if (provider instanceof ApnPushProvider) {
     provider.shutdown();

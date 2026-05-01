@@ -7,12 +7,30 @@ import {
 } from '../push-provider.js';
 
 /**
- * Routes targets to the right per-platform transport. iOS tokens go
- * to APN, Android tokens go to FCM. A target whose platform has no
- * configured transport falls through to the supplied fallback (the
- * log provider in dev / when only one of the two is configured).
+ * Routes targets to the right transport, favouring FCM when configured
+ * because the mobile app stores FCM tokens for both platforms (Firebase
+ * messaging wraps APN under the hood and `messaging.getToken()` returns
+ * an FCM registration token regardless of OS).
  *
- * Aggregates the per-platform results so the service sees one
+ * Routing rules:
+ *   - Android targets always go to FCM. If FCM isn't configured they
+ *     fall back to the supplied `fallback` (log) provider.
+ *   - iOS targets prefer FCM when configured — Firebase delivers to
+ *     iOS via APN under the hood, and the only thing we have at hand
+ *     is an FCM registration token. Falls back to the raw-APN
+ *     provider when FCM isn't configured (the niche case where an
+ *     operator is running APN without Firebase, which would also
+ *     require the mobile client to register raw `apns-token`s instead
+ *     of FCM tokens). Final fallback is the log provider.
+ *
+ * Earlier iterations of this routing sent iOS targets straight to the
+ * APN provider (or log when APN was unconfigured). With Firebase as
+ * the mobile transport, both flavours of that were broken: only-FCM
+ * setups dropped iOS pushes silently, and both-configured setups sent
+ * FCM tokens to APN which rejects them with `BadDeviceToken` and
+ * triggers soft-deletion of every active iOS row on each dispatch.
+ *
+ * Aggregates the per-transport results so the service sees one
  * `PushSendResult` regardless of how many transports were involved.
  */
 @Injectable()
@@ -22,8 +40,8 @@ export class CompositePushProvider implements PushProvider {
 
   constructor(
     private readonly options: {
-      ios: PushProvider | null;
-      android: PushProvider | null;
+      fcm: PushProvider | null;
+      apn: PushProvider | null;
       fallback: PushProvider;
     },
   ) {}
@@ -36,16 +54,20 @@ export class CompositePushProvider implements PushProvider {
       return { delivered: 0, invalidTokens: [], providerName: this.name };
     }
 
-    const iosTargets: PushTarget[] = [];
-    const androidTargets: PushTarget[] = [];
+    const fcmTargets: PushTarget[] = [];
+    const apnTargets: PushTarget[] = [];
     const orphanTargets: PushTarget[] = [];
 
     for (const target of targets) {
-      if (target.platform === 'ios') {
-        if (this.options.ios) iosTargets.push(target);
+      if (target.platform === 'android') {
+        if (this.options.fcm) fcmTargets.push(target);
         else orphanTargets.push(target);
-      } else if (target.platform === 'android') {
-        if (this.options.android) androidTargets.push(target);
+      } else if (target.platform === 'ios') {
+        // Prefer FCM (Firebase proxies to APN); fall back to raw APN
+        // only when FCM isn't configured. See the class docstring
+        // for why this matters with Firebase-issued tokens.
+        if (this.options.fcm) fcmTargets.push(target);
+        else if (this.options.apn) apnTargets.push(target);
         else orphanTargets.push(target);
       } else {
         // Unknown platform — log and route through fallback so we
@@ -61,13 +83,13 @@ export class CompositePushProvider implements PushProvider {
       }
     }
 
-    // Fan out per-platform in parallel; aggregate at the end.
-    const [iosResult, androidResult, orphanResult] = await Promise.all([
-      iosTargets.length && this.options.ios
-        ? this.options.ios.send(iosTargets, payload)
+    // Fan out per-transport in parallel; aggregate at the end.
+    const [fcmResult, apnResult, orphanResult] = await Promise.all([
+      fcmTargets.length && this.options.fcm
+        ? this.options.fcm.send(fcmTargets, payload)
         : zero(this.name),
-      androidTargets.length && this.options.android
-        ? this.options.android.send(androidTargets, payload)
+      apnTargets.length && this.options.apn
+        ? this.options.apn.send(apnTargets, payload)
         : zero(this.name),
       orphanTargets.length
         ? this.options.fallback.send(orphanTargets, payload)
@@ -76,10 +98,10 @@ export class CompositePushProvider implements PushProvider {
 
     return {
       delivered:
-        iosResult.delivered + androidResult.delivered + orphanResult.delivered,
+        fcmResult.delivered + apnResult.delivered + orphanResult.delivered,
       invalidTokens: [
-        ...iosResult.invalidTokens,
-        ...androidResult.invalidTokens,
+        ...fcmResult.invalidTokens,
+        ...apnResult.invalidTokens,
         ...orphanResult.invalidTokens,
       ],
       providerName: this.name,
