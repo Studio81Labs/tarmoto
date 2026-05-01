@@ -17,8 +17,10 @@ export interface DataExportJobResult {
  * threads": the controller now enqueues and returns 202 immediately,
  * and the worker drains the queue independently of any HTTP request.
  *
- * Idempotency is enforced upstream by `JobsProducer.enqueueDataExport`
- * (jobId = `data-export:<request_id>`). The runner itself also checks
+ * Idempotency is enforced upstream by `DataExportController`'s direct
+ * queue.add call (jobId = `data-export:<request_id>`), which uses the
+ * shared `DEFAULT_JOB_OPTIONS` retry/backoff policy. The runner itself
+ * also checks
  * `markProcessing` to detect the row racing past the `queued` state,
  * so a duplicate worker pick-up is a no-op rather than a duplicate
  * upload.

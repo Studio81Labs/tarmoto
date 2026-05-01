@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Test } from '@nestjs/testing';
 import { getQueueToken } from '@nestjs/bullmq';
 import { JobsProducer } from './jobs.producer.js';
@@ -15,16 +14,12 @@ function makeQueue(name: string): QueueMock {
 
 describe('JobsProducer', () => {
   let producer: JobsProducer;
-  let dataExport: QueueMock;
   let accountDeletionFinalize: QueueMock;
-  let pushNotification: QueueMock;
   let badgesRecheck: QueueMock;
   let digestWeekly: QueueMock;
 
   beforeEach(async () => {
-    dataExport = makeQueue(QUEUE_NAMES.DATA_EXPORT);
     accountDeletionFinalize = makeQueue(QUEUE_NAMES.ACCOUNT_DELETION_FINALIZE);
-    pushNotification = makeQueue(QUEUE_NAMES.PUSH_NOTIFICATION);
     badgesRecheck = makeQueue(QUEUE_NAMES.BADGES_RECHECK);
     digestWeekly = makeQueue(QUEUE_NAMES.DIGEST_WEEKLY);
 
@@ -32,16 +27,8 @@ describe('JobsProducer', () => {
       providers: [
         JobsProducer,
         {
-          provide: getQueueToken(QUEUE_NAMES.DATA_EXPORT),
-          useValue: dataExport,
-        },
-        {
           provide: getQueueToken(QUEUE_NAMES.ACCOUNT_DELETION_FINALIZE),
           useValue: accountDeletionFinalize,
-        },
-        {
-          provide: getQueueToken(QUEUE_NAMES.PUSH_NOTIFICATION),
-          useValue: pushNotification,
         },
         {
           provide: getQueueToken(QUEUE_NAMES.BADGES_RECHECK),
@@ -57,22 +44,6 @@ describe('JobsProducer', () => {
     producer = moduleRef.get(JobsProducer);
   });
 
-  it('enqueues data-export with a deterministic jobId on request_id', async () => {
-    await producer.enqueueDataExport({
-      request_id: 'req-1',
-      user_id: 'u1',
-    });
-    expect(dataExport.add).toHaveBeenCalledWith(
-      JOB_NAMES.DATA_EXPORT_PROCESS,
-      { request_id: 'req-1', user_id: 'u1' },
-      expect.objectContaining({
-        jobId: 'data-export:req-1',
-        attempts: 5,
-        backoff: { type: 'exponential', delay: 30_000 },
-      }),
-    );
-  });
-
   it('enqueues account-deletion-finalize with a per-user idempotency key', async () => {
     await producer.enqueueAccountDeletionFinalize({ user_id: 'u-42' });
     expect(accountDeletionFinalize.add).toHaveBeenCalledWith(
@@ -80,21 +51,9 @@ describe('JobsProducer', () => {
       { user_id: 'u-42' },
       expect.objectContaining({
         jobId: 'account-deletion-finalize:u-42',
+        attempts: 5,
+        backoff: { type: 'exponential', delay: 30_000 },
       }),
-    );
-  });
-
-  it('does NOT set a jobId on push notifications — multi-event, multi-message', async () => {
-    await producer.enqueuePushNotification({
-      user_id: 'u1',
-      device_token: 'tok-abcdef',
-      title: 'Hazard ahead',
-      body: 'Pothole reported on your route',
-    });
-    expect(pushNotification.add).toHaveBeenCalledWith(
-      JOB_NAMES.PUSH_NOTIFICATION_SEND,
-      expect.objectContaining({ user_id: 'u1' }),
-      expect.not.objectContaining({ jobId: expect.anything() }),
     );
   });
 

@@ -32,40 +32,33 @@ export interface DigestWeeklyComposeJobData {
 }
 
 /**
- * Typed producer for every queue the backend publishes to. Centralised
- * so:
- *   - call sites import a single service and never see `bullmq`;
- *   - `jobId` (idempotency) and retry policy stay in one place,
- *     avoiding the very-easy-to-forget "did we set jobId?" trap that
- *     causes duplicate work across retries;
- *   - a future move to a different queue runner (e.g. SQS for AWS
- *     deploys) only needs to swap this service.
+ * Internal helper for `JobsModule` processors that enqueue child jobs
+ * into other queues (the dispatcher → per-user fan-out pattern).
+ * Centralises the `jobId` (idempotency) and retry policy so a typo at
+ * any one call site can't cause duplicate work or unbounded retries.
+ *
+ * Scope: in-module use only. Cross-module producers (e.g.
+ * `DataExportController` enqueueing a GDPR export) inject the queue
+ * directly via `@InjectQueue` to avoid a circular dependency between
+ * the feature module and `JobsModule` (which already imports the
+ * feature module to give its processor access to that feature's
+ * service). The DEFAULT_JOB_OPTIONS constant is exported for those
+ * call sites to use the same retry policy without duplicating it.
+ *
+ * Job data shapes (the `*JobData` interfaces above) ARE shared with
+ * those external call sites — they describe the queue's wire contract,
+ * not the producer's. Don't move them into a private file.
  */
 @Injectable()
 export class JobsProducer {
   constructor(
-    @InjectQueue(QUEUE_NAMES.DATA_EXPORT)
-    private readonly dataExport: Queue<DataExportJobData>,
     @InjectQueue(QUEUE_NAMES.ACCOUNT_DELETION_FINALIZE)
     private readonly accountDeletionFinalize: Queue<AccountDeletionFinalizeJobData>,
-    @InjectQueue(QUEUE_NAMES.PUSH_NOTIFICATION)
-    private readonly pushNotification: Queue<PushNotificationJobData>,
     @InjectQueue(QUEUE_NAMES.BADGES_RECHECK)
     private readonly badgesRecheck: Queue<BadgesRecheckUserJobData>,
     @InjectQueue(QUEUE_NAMES.DIGEST_WEEKLY)
     private readonly digestWeekly: Queue<DigestWeeklyComposeJobData>,
   ) {}
-
-  /**
-   * Enqueue a GDPR data export. Idempotent on `request_id` so retried
-   * HTTP calls don't double-process.
-   */
-  async enqueueDataExport(data: DataExportJobData): Promise<void> {
-    await this.dataExport.add(JOB_NAMES.DATA_EXPORT_PROCESS, data, {
-      ...DEFAULT_JOB_OPTIONS,
-      jobId: `data-export:${data.request_id}`,
-    });
-  }
 
   /**
    * Enqueue a per-user account-deletion finalize. Idempotent on
@@ -83,21 +76,6 @@ export class JobsProducer {
         ...DEFAULT_JOB_OPTIONS,
         jobId: `account-deletion-finalize:${data.user_id}`,
       },
-    );
-  }
-
-  /**
-   * Enqueue a single push-notification dispatch. No jobId is set —
-   * push messages are inherently per-event and callers commonly
-   * publish multiple messages per user (e.g. one per group ride
-   * member). Callers that DO need dedupe should pass their own jobId
-   * via the lower-level queue.
-   */
-  async enqueuePushNotification(data: PushNotificationJobData): Promise<void> {
-    await this.pushNotification.add(
-      JOB_NAMES.PUSH_NOTIFICATION_SEND,
-      data,
-      DEFAULT_JOB_OPTIONS,
     );
   }
 
