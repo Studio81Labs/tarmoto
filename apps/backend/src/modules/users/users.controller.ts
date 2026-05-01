@@ -6,7 +6,6 @@ import {
   Post,
   Delete,
   Body,
-  InternalServerErrorException,
   Param,
   Req,
   UseGuards,
@@ -27,6 +26,7 @@ import {
 } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import * as express from 'express';
+import { resolvePublicBaseUrl } from '../../common/public-base-url.js';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { UsersService } from './users.service.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
@@ -47,43 +47,6 @@ export class UsersController {
     private readonly usersService: UsersService,
     private readonly config: ConfigService,
   ) {}
-
-  /**
-   * Resolve the public origin to embed in the avatar URL we persist
-   * for this user. Mirrors the reviews controller's
-   * `resolvePublicBaseUrl`: behind a load balancer the multiple
-   * backend replicas all see the same external host via the proxy,
-   * but the request-derived `req.get('host')` may report an
-   * internal hostname (e.g. the pod IP behind ingress) that mobile
-   * clients can't resolve. `TARMOTO_PUBLIC_BASE_URL` is the env var
-   * data-export and reviews already standardised on, so the avatar
-   * path stays aligned.
-   *
-   * In production we hard-require the env var so a misconfigured
-   * deploy fails loudly rather than silently writing unreachable
-   * URLs into `users.avatar_url`. Outside production we fall back
-   * to the request-derived origin so contributors don't need any
-   * env wiring to get working dev uploads.
-   */
-  private resolvePublicBaseUrl(req: express.Request): string {
-    const configured = this.config
-      .get<string>('TARMOTO_PUBLIC_BASE_URL')
-      ?.trim();
-    const isProd = process.env.TARMOTO_NODE_ENV === 'production';
-
-    if (isProd && (!configured || configured.length === 0)) {
-      throw new InternalServerErrorException(
-        'Avatar uploads are misconfigured: TARMOTO_PUBLIC_BASE_URL ' +
-          'must be set to the public https origin in production. See ' +
-          'docs/process/runbook.md.',
-      );
-    }
-
-    if (configured && configured.length > 0) {
-      return configured.replace(/\/$/, '');
-    }
-    return `${req.protocol}://${req.get('host')}`;
-  }
 
   @Get('me')
   @ApiOperation({ summary: 'Get current user profile' })
@@ -140,7 +103,7 @@ export class UsersController {
     return this.usersService.uploadAvatar(
       req.user!.userId,
       file,
-      this.resolvePublicBaseUrl(req),
+      resolvePublicBaseUrl(req, this.config, { feature: 'Avatar uploads' }),
     );
   }
 

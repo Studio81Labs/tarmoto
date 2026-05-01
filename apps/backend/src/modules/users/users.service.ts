@@ -148,7 +148,7 @@ export class UsersService {
       dto.avatar_url !== undefined &&
       previousAvatarUrl !== saved.avatar_url
     ) {
-      await this.deleteManagedAvatar(previousAvatarUrl);
+      await this.cleanupPreviousAvatar(userId, previousAvatarUrl);
     }
     return this.toUserResponse(saved);
   }
@@ -204,21 +204,7 @@ export class UsersService {
       throw error;
     }
 
-    // Save succeeded — the user's profile already points at the new
-    // avatar. Removing the previous object is a cleanup of orphaned
-    // bytes; a transient failure here (S3 5xx, transient FS error)
-    // shouldn't turn into a 500 for an upload that, from the
-    // caller's perspective, already completed. Log and move on so
-    // the next upload (or a future GC sweep) gets another shot.
-    try {
-      await this.deleteManagedAvatar(previousAvatarUrl);
-    } catch (error) {
-      this.logger.warn(
-        `Failed to clean up previous avatar for user ${userId}: ${
-          (error as Error).message
-        }`,
-      );
-    }
+    await this.cleanupPreviousAvatar(userId, previousAvatarUrl);
     return this.toUserResponse(saved);
   }
 
@@ -282,6 +268,31 @@ export class UsersService {
     const key = avatarKeyFromUrl(avatarUrl);
     if (!key) return;
     await this.storage.delete(key);
+  }
+
+  /**
+   * Best-effort cleanup of a now-orphaned avatar AFTER the DB save
+   * has already succeeded. Both `uploadAvatar` and `updateProfile`
+   * call this on the previous avatar; from the caller's perspective
+   * the operation is already complete, so a transient storage error
+   * here (S3 5xx, FS hiccup) must not turn into a 500. With S3 in
+   * the mix transient failures are realistic, so swallowing-and-
+   * logging is the right behaviour — the next upload (or a future
+   * GC sweep) reclaims the orphan.
+   */
+  private async cleanupPreviousAvatar(
+    userId: string,
+    previousAvatarUrl: string | null,
+  ): Promise<void> {
+    try {
+      await this.deleteManagedAvatar(previousAvatarUrl);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to clean up previous avatar for user ${userId}: ${
+          (error as Error).message
+        }`,
+      );
+    }
   }
 
   private toUserResponse(user: User): UserResponseDto {

@@ -355,6 +355,36 @@ describe('UsersService', () => {
 
       expect(storage.delete).not.toHaveBeenCalled();
     });
+
+    it('returns the updated profile when the previous-avatar cleanup fails after save (best-effort, logged)', async () => {
+      // Same contract as `uploadAvatar`: from the caller's
+      // perspective the profile change is already saved, so a
+      // transient storage failure on cleanup of the orphaned
+      // previous avatar must not propagate as a 500. With S3 in
+      // play this is realistic, not theoretical.
+      userRepo.findOne!.mockResolvedValueOnce({
+        ...buildMockUser(),
+        avatar_url: 'https://app.tarmoto.test/uploads/avatars/old-avatar.png',
+      } as User);
+      const warnSpy = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      storage.delete.mockRejectedValueOnce(
+        Object.assign(new Error('S3 5xx'), { code: 'InternalError' }),
+      );
+
+      const result = await service.updateProfile('user-1', {
+        avatar_url: 'https://cdn.example.com/u/1.png',
+      });
+
+      expect(result.avatar_url).toBe('https://cdn.example.com/u/1.png');
+      expect(storage.delete).toHaveBeenCalledTimes(1);
+      expect(storage.delete).toHaveBeenCalledWith('avatars/old-avatar.png');
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to clean up previous avatar'),
+      );
+      warnSpy.mockRestore();
+    });
   });
 
   describe('uploadAvatar', () => {
