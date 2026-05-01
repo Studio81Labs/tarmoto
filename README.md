@@ -45,6 +45,27 @@ pnpm db:migrate          # Run migrations against Postgres
 pnpm dev:backend         # Start backend in watch mode
 ```
 
+### After editing `Info.plist` or `AndroidManifest.xml`
+
+Native manifest changes don't propagate through a Metro reload — the
+React Native bundle is unchanged, but the underlying iOS/Android binary
+still embeds the old manifest. After editing either file:
+
+```bash
+# iOS
+cd apps/mobile/ios && pod install && cd -
+pnpm ios     # forces a fresh xcodebuild
+
+# Android
+cd apps/mobile/android && ./gradlew clean && cd -
+pnpm android
+```
+
+If location, sensors, notifications, or photo capture stop working
+after a permission edit, 9 times out of 10 the binary on the device is
+stale. Uninstall the app and reinstall to be sure — Android in
+particular caches the granted permission set per install.
+
 ## Project Structure
 
 ```
@@ -70,27 +91,27 @@ tarmoto/
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `pnpm bootstrap` | Full dev environment setup |
-| `pnpm install` | Install workspace dependencies |
-| `pnpm dev:backend` | Start backend in watch mode |
-| `pnpm dev:mobile` | Start Metro bundler |
-| `pnpm ios` / `pnpm android` | Run mobile on simulator / emulator |
-| `pnpm dev:companion` | Start companion (Next.js) dev server |
-| `pnpm dev:poc` | Start PoC sensor dev server |
-| `pnpm dev:docs` | Design docs viewer (wireframes + ERD) on `:4200` |
-| `pnpm build:backend` | Build backend |
-| `pnpm build:companion` | Build companion |
-| `pnpm build:shared` | Build shared package |
-| `pnpm build:poc` | Build PoC sensor |
-| `pnpm db:up` | Start PostgreSQL + Redis via Docker |
-| `pnpm db:down` | Stop Docker services |
-| `pnpm db:migrate` | Build backend + run TypeORM migrations |
-| `pnpm generate:api` | Generate OpenAPI spec + TypeScript client from backend |
-| `pnpm lint` | Lint all packages |
-| `pnpm test` | Run backend tests |
-| `pnpm clean` | Remove `dist/` + `node_modules/` |
+| Command                     | Description                                            |
+| --------------------------- | ------------------------------------------------------ |
+| `pnpm bootstrap`            | Full dev environment setup                             |
+| `pnpm install`              | Install workspace dependencies                         |
+| `pnpm dev:backend`          | Start backend in watch mode                            |
+| `pnpm dev:mobile`           | Start Metro bundler                                    |
+| `pnpm ios` / `pnpm android` | Run mobile on simulator / emulator                     |
+| `pnpm dev:companion`        | Start companion (Next.js) dev server                   |
+| `pnpm dev:poc`              | Start PoC sensor dev server                            |
+| `pnpm dev:docs`             | Design docs viewer (wireframes + ERD) on `:4200`       |
+| `pnpm build:backend`        | Build backend                                          |
+| `pnpm build:companion`      | Build companion                                        |
+| `pnpm build:shared`         | Build shared package                                   |
+| `pnpm build:poc`            | Build PoC sensor                                       |
+| `pnpm db:up`                | Start PostgreSQL + Redis via Docker                    |
+| `pnpm db:down`              | Stop Docker services                                   |
+| `pnpm db:migrate`           | Build backend + run TypeORM migrations                 |
+| `pnpm generate:api`         | Generate OpenAPI spec + TypeScript client from backend |
+| `pnpm lint`                 | Lint all packages                                      |
+| `pnpm test`                 | Run backend tests                                      |
+| `pnpm clean`                | Remove `dist/` + `node_modules/`                       |
 
 ## Development Workflow
 
@@ -110,16 +131,16 @@ For database schema changes, see [docs/process/typeorm-migrations.md](./docs/pro
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|------------|
-| Mobile | Bare React Native 0.85, Zustand, MapLibre GL |
-| Companion (web) | Next.js, TailwindCSS, Zustand, MapLibre GL |
-| Backend | NestJS 11, TypeORM, TypeScript strict |
-| Database | PostgreSQL 16 + PostGIS 3.4 |
-| Real-time | WebSockets + Redis Pub/Sub |
-| On-device ML | TensorFlow Lite (road-surface classifier) |
-| Contracts | OpenAPI 3.0 (generated from backend) |
-| Infra | pnpm workspaces, Docker Compose, GitHub Actions |
+| Layer           | Technology                                      |
+| --------------- | ----------------------------------------------- |
+| Mobile          | Bare React Native 0.85, Zustand, MapLibre GL    |
+| Companion (web) | Next.js, TailwindCSS, Zustand, MapLibre GL      |
+| Backend         | NestJS 11, TypeORM, TypeScript strict           |
+| Database        | PostgreSQL 16 + PostGIS 3.4                     |
+| Real-time       | WebSockets + Redis Pub/Sub                      |
+| On-device ML    | TensorFlow Lite (road-surface classifier)       |
+| Contracts       | OpenAPI 3.0 (generated from backend)            |
+| Infra           | pnpm workspaces, Docker Compose, GitHub Actions |
 
 ## Docs
 

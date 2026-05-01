@@ -6,6 +6,7 @@ import RideActiveScreen, {
 import { api } from "@/services/api";
 import { locationService } from "@/services/location";
 import { sensorService, type ClassificationResult } from "@/services/sensors";
+import { requestWithRationale } from "@/services/permissions";
 import type { RideDetail } from "@/types";
 
 const mockGoBack = jest.fn();
@@ -80,6 +81,10 @@ jest.mock("@/services/location", () => ({
   },
 }));
 
+jest.mock("@/services/permissions", () => ({
+  requestWithRationale: jest.fn().mockResolvedValue("granted"),
+}));
+
 jest.mock("@/services/mlClassifier", () => ({
   getActiveModelVersion: jest.fn(() => null),
 }));
@@ -133,6 +138,8 @@ describe("RideActiveScreen", () => {
     (sensorService.stop as jest.Mock).mockClear();
     (locationService.start as jest.Mock).mockClear();
     (locationService.stop as jest.Mock).mockClear();
+    (requestWithRationale as jest.Mock).mockReset();
+    (requestWithRationale as jest.Mock).mockResolvedValue("granted");
     startRideMock.mockResolvedValue({
       id: "ride-99",
       ride_type: "free",
@@ -410,5 +417,56 @@ describe("RideActiveScreen", () => {
     await waitFor(() => expect(screen.getByText("2:05")).toBeTruthy());
     // The HUD should never write back into the store from a local tick.
     expect(mockUpdateDuration).not.toHaveBeenCalled();
+  });
+
+  // ── Issue #280 — location permission gate on fresh ride start ──
+
+  it("aborts the fresh ride start when location permission is denied", async () => {
+    mockState.isRiding = false;
+    mockState.activeRide = null;
+    (requestWithRationale as jest.Mock).mockResolvedValueOnce("denied");
+    const sensorStart = sensorService.start as jest.MockedFunction<
+      typeof sensorService.start
+    >;
+    const locationStart = locationService.start as jest.MockedFunction<
+      typeof locationService.start
+    >;
+
+    render(<RideActiveScreen />);
+
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalledTimes(1));
+    expect(sensorStart).not.toHaveBeenCalled();
+    expect(locationStart).not.toHaveBeenCalled();
+    expect(startRideMock).not.toHaveBeenCalled();
+    expect(mockStartRideAction).not.toHaveBeenCalled();
+  });
+
+  it("aborts the fresh ride start when location permission is blocked", async () => {
+    mockState.isRiding = false;
+    mockState.activeRide = null;
+    (requestWithRationale as jest.Mock).mockResolvedValueOnce("blocked");
+    const locationStart = locationService.start as jest.MockedFunction<
+      typeof locationService.start
+    >;
+
+    render(<RideActiveScreen />);
+
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalledTimes(1));
+    expect(locationStart).not.toHaveBeenCalled();
+    expect(startRideMock).not.toHaveBeenCalled();
+  });
+
+  it("does not re-prompt for location on the resume-after-fail path", async () => {
+    // Resume after a failed start: telemetry was started by the
+    // original mount (singletons are still running), only the POST
+    // needs retrying. Re-prompting mid-ride would be jarring and
+    // prompts that have already been answered shouldn't fire again.
+    mockState.isRiding = true;
+    mockState.activeRide = null;
+
+    render(<RideActiveScreen />);
+
+    await waitFor(() => expect(startRideMock).toHaveBeenCalledTimes(1));
+    expect(requestWithRationale).not.toHaveBeenCalled();
   });
 });

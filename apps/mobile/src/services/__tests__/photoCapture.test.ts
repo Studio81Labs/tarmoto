@@ -1,36 +1,33 @@
 /**
- * Photo capture — US-4 AC #4 + AC #9 (camera permission denial path).
+ * Photo capture — US-4 AC #4 + AC #9 (camera permission denial path)
+ * + US-280 (open-settings recovery on never_ask_again).
  *
- * The Android `PermissionsAndroid` module is mocked so the test owns
- * the request outcome. The real launcher is replaced via the
- * `__setLauncherForTest` seam so `captured` / `cancelled` /
- * `unavailable` branches are all reachable without a native picker.
+ * The permissions service is mocked so tests own the rationale outcome
+ * end-to-end without going through the platform `Alert`. The launcher
+ * is replaced via `__setLauncherForTest` so `captured` / `cancelled` /
+ * `unavailable` branches are reachable without a native picker.
  */
 
-import { Platform, PermissionsAndroid } from "react-native";
+import { Platform } from "react-native";
 import {
   __resetLauncherForTest,
   __setLauncherForTest,
   capturePhoto,
 } from "../photoCapture";
+import { requestWithRationale } from "../permissions";
 
-jest.mock("react-native", () => {
-  return {
-    Platform: { OS: "android" },
-    PermissionsAndroid: {
-      PERMISSIONS: { CAMERA: "android.permission.CAMERA" },
-      RESULTS: {
-        GRANTED: "granted",
-        DENIED: "denied",
-        NEVER_ASK_AGAIN: "never_ask_again",
-      },
-      request: jest.fn(),
-    },
-  };
-});
+jest.mock("react-native", () => ({
+  Platform: { OS: "android" },
+  PermissionsAndroid: {
+    PERMISSIONS: { CAMERA: "android.permission.CAMERA" },
+  },
+}));
+jest.mock("../permissions", () => ({
+  requestWithRationale: jest.fn(),
+}));
 
-const requestMock = PermissionsAndroid.request as jest.MockedFunction<
-  typeof PermissionsAndroid.request
+const requestMock = requestWithRationale as jest.MockedFunction<
+  typeof requestWithRationale
 >;
 
 describe("photoCapture", () => {
@@ -40,9 +37,8 @@ describe("photoCapture", () => {
     (Platform as { OS: string }).OS = "android";
   });
 
-  it("returns permission-denied when the rider denies the camera prompt", async () => {
-    requestMock.mockResolvedValueOnce(PermissionsAndroid.RESULTS.DENIED);
-
+  it("returns permission-denied when the rider declines the rationale", async () => {
+    requestMock.mockResolvedValueOnce("denied");
     const launcher = jest.fn();
     __setLauncherForTest(launcher);
 
@@ -53,9 +49,8 @@ describe("photoCapture", () => {
     expect(launcher).not.toHaveBeenCalled();
   });
 
-  it("returns permission-denied when the prompt itself throws", async () => {
-    requestMock.mockRejectedValueOnce(new Error("native module gone"));
-
+  it("returns permission-denied when the OS reports the prompt is blocked", async () => {
+    requestMock.mockResolvedValueOnce("blocked");
     const launcher = jest.fn();
     __setLauncherForTest(launcher);
 
@@ -65,8 +60,8 @@ describe("photoCapture", () => {
     expect(launcher).not.toHaveBeenCalled();
   });
 
-  it("invokes the launcher when camera permission is granted", async () => {
-    requestMock.mockResolvedValueOnce(PermissionsAndroid.RESULTS.GRANTED);
+  it("invokes the launcher when permission is granted", async () => {
+    requestMock.mockResolvedValueOnce("granted");
     __setLauncherForTest(async () => ({
       status: "captured",
       photo: { uri: "file:///tmp/x.jpg", fileName: "x.jpg" },
@@ -101,7 +96,7 @@ describe("photoCapture", () => {
   });
 
   it("forwards the launcher's unavailable status with its reason", async () => {
-    requestMock.mockResolvedValueOnce(PermissionsAndroid.RESULTS.GRANTED);
+    requestMock.mockResolvedValueOnce("granted");
     __setLauncherForTest(async () => ({
       status: "unavailable",
       reason: "feature flag off",

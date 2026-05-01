@@ -24,10 +24,11 @@
  * still use the app.
  */
 
-import { Platform } from "react-native";
+import { PermissionsAndroid, Platform } from "react-native";
 import DeviceInfo from "react-native-device-info";
 import axios, { type AxiosInstance } from "axios";
 import { API_BASE_URL } from "@/config";
+import { requestWithRationale } from "./permissions";
 
 type FirebaseMessagingModule =
   typeof import("@react-native-firebase/messaging").default;
@@ -71,8 +72,26 @@ function loadMessaging(): ReturnType<FirebaseMessagingModule> | null {
 async function requestPermission(
   messaging: ReturnType<FirebaseMessagingModule>,
 ): Promise<boolean> {
+  // Show the in-app rationale first (issue #280) so the rider knows
+  // what they're saying yes (or no) to. On Android 13+ this runs
+  // ahead of the POST_NOTIFICATIONS prompt; on iOS the messaging
+  // prompt itself surfaces the system dialog right after.
+  const rationaleStatus = await requestWithRationale({
+    androidPermission: PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+    rationale: {
+      title: "Stay in the loop",
+      message:
+        "Tarmoto sends notifications for nearby hazards, ride reminders, and safety alerts. You can fine-tune which kinds you want in Settings.",
+      whyOpenSettings:
+        "Notifications are blocked. Open Settings → Tarmoto and allow notifications to receive ride and hazard alerts.",
+    },
+  });
+  if (rationaleStatus !== "granted") return false;
+
   // `messaging.requestPermission()` covers both iOS (real prompt) and
-  // Android (POST_NOTIFICATIONS on 13+, auto-granted on older).
+  // Android (POST_NOTIFICATIONS on 13+, auto-granted on older). On
+  // Android 13+ the rationale call above has already taken the OS
+  // prompt to a granted state, so this becomes a no-op confirm.
   // 1 = AUTHORIZED, 2 = PROVISIONAL — both let us deliver pushes.
   const status = await messaging.requestPermission();
   return status === 1 || status === 2;

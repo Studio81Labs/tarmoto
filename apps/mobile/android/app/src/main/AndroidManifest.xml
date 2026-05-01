@@ -5,6 +5,50 @@
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <!--
+      US-280 — runtime permissions Tarmoto actually requests:
+        * Foreground location for the live ride HUD and the map tab.
+        * Coarse location for the network-provider fallback when GPS hasn't
+          acquired a fix yet (cold start in a covered car park).
+        * Background location so a ride keeps recording while the screen is
+          locked or the rider switches apps mid-ride.
+        * BODY_SENSORS for high-rate motion (lean angle, road-quality
+          classifier) — the default `<uses-permission>` for accelerometer
+          access is implicit, but the high-rate stream we ingest is gated.
+        * POST_NOTIFICATIONS (Android 13+) for hazard alerts, ride
+          reminders, and the foreground-service notification.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.BODY_SENSORS" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
+      Foreground service for ride recording. Android 14 (API 34) split
+      FOREGROUND_SERVICE into typed companions; rides require the location
+      type so the OS keeps `watchPosition` alive while backgrounded.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+
+    <!--
+      WAKE_LOCK is declared by react-native-keep-awake's manifest and merged
+      in, but re-declaring keeps it visible to any audit that diffs the app
+      manifest in isolation (e.g. the Play Console pre-launch report).
+    -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!--
+      GPS feature flag. Filters non-GPS hardware out of the Play Store
+      eligibility list (no point shipping Tarmoto to a device that can't
+      acquire a fix). Cellular-only tablets keep getting filtered, which
+      matches the rider-on-bike target.
+    -->
+    <uses-feature
+      android:name="android.hardware.location.gps"
+      android:required="true" />
+
+    <!--
       US-17 — Android Auto.
       Phones (not head units) are the primary target; Android Auto runs as
       a projection, so the automotive feature is optional. Without this

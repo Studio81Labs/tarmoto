@@ -22,6 +22,7 @@
  */
 
 import { PermissionsAndroid, Platform } from "react-native";
+import { requestWithRationale } from "./permissions";
 
 export type PhotoSource = "camera" | "library";
 
@@ -179,28 +180,20 @@ async function ensureCameraPermission(): Promise<boolean> {
     // launcher itself surfaces the failure as `permission-denied`.
     return true;
   }
-  try {
-    const result = await PermissionsAndroid.request(
-      PermissionsAndroid.PERMISSIONS.CAMERA,
-      {
-        title: "Camera access",
-        // Generic across both call sites (US-4 hazard reports and
-        // US-25 road reviews). When `capturePhoto` grows a third
-        // caller, keep this neutral or thread the caller's purpose
-        // through the API.
-        message:
-          "Tarmoto uses the camera to attach photos to road reports and reviews.",
-        buttonPositive: "Allow",
-        buttonNegative: "Deny",
-      },
-    );
-    return result === PermissionsAndroid.RESULTS.GRANTED;
-  } catch {
-    // If the platform module throws (very rare — usually a wrong-API
-    // version mismatch), fail closed. The launcher won't fire and the
-    // UI shows the standard permission-denied messaging.
-    return false;
-  }
+  // Generic copy across both call sites (US-4 hazard reports and
+  // US-25 road reviews). When `capturePhoto` grows a third caller,
+  // keep this neutral or thread the caller's purpose through the API.
+  const status = await requestWithRationale({
+    androidPermission: PermissionsAndroid.PERMISSIONS.CAMERA,
+    rationale: {
+      title: "Camera access",
+      message:
+        "Tarmoto uses the camera to attach photos to road reports and reviews.",
+      whyOpenSettings:
+        "Camera access is currently blocked. Open Settings → Tarmoto and toggle Camera on to attach photos.",
+    },
+  });
+  return status === "granted";
 }
 
 export async function capturePhoto(

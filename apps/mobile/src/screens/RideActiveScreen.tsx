@@ -35,7 +35,14 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  Alert,
+  PermissionsAndroid,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Icon from "@react-native-vector-icons/material-design-icons";
@@ -56,6 +63,7 @@ import {
 import { useFormattedDuration, useKeepAwake } from "@/hooks";
 import { api } from "@/services/api";
 import { locationService } from "@/services/location";
+import { requestWithRationale } from "@/services/permissions";
 import { getActiveModelVersion } from "@/services/mlClassifier";
 import { sensorService } from "@/services/sensors";
 import { ttsService } from "@/services/tts";
@@ -196,7 +204,93 @@ export default function RideActiveScreen() {
     //     deliberately don't re-flip `isRiding` or restart telemetry
     //     in this case: the singletons are still running.
     const isFreshStart = !store.isRiding;
-    if (isFreshStart) {
+
+    // Shared kick-off for `/rides/start`. Used by both the fresh-start
+    // path (after the permission gate clears) and the resume-after-fail
+    // path (telemetry is already running, we just need to retry the
+    // POST so the backend has an id).
+    const kickOffApiStart = () => {
+      const promise = api.startRide(params.rideType);
+      pendingStartPromise = promise;
+      // Snapshot the local ride session so the success handler can
+      // detect a stale resolve. Two scenarios this guards against:
+      //
+      //   1. Rider backs out of the HUD, taps Stop on the in-progress
+      //      banner before the POST resolves. `stopAndExit` clears local
+      //      state without an id; the original POST eventually lands and
+      //      would otherwise call `setActiveRide(ride)` on a finished
+      //      ride — leaving an orphaned `active` row on the backend AND
+      //      stranding the resume guard so the next "Start a ride" tap
+      //      gets short-circuited and the rider can't open a new ride.
+      //
+      //   2. Rider stops, then starts a fresh ride before the original
+      //      POST resolves. The stale resolve must not overwrite the new
+      //      ride's id.
+      //
+      // `startedAtMs` is set inside `store.startRide(...)` and cleared /
+      // replaced by every subsequent start/stop, so it's a reliable
+      // session identifier.
+      const sessionStartedAtMs = useRideStore.getState().startedAtMs;
+      void promise
+        .then((ride) => {
+          const current = useRideStore.getState();
+          if (current.startedAtMs !== sessionStartedAtMs) {
+            // Local session moved on. Best-effort cleanup of the orphaned
+            // backend ride so it doesn't sit in `active` forever and
+            // block the rider's next start (one-active-ride-per-user).
+            void api.stopRide(ride.id).catch(() => undefined);
+            return;
+          }
+          current.setActiveRide(ride);
+        })
+        .catch((err) => {
+          setStartError(
+            err instanceof Error ? err.message : "Couldn't sync ride to server",
+          );
+        })
+        .finally(() => {
+          // Only clear the module-level handle if we still own it. A
+          // newer ride started after a stop has already overwritten
+          // it; clobbering it back to null here would strand that
+          // newer mount's `stopAndExit` without anything to await.
+          if (pendingStartPromise === promise) {
+            pendingStartPromise = null;
+          }
+        });
+    };
+
+    if (!isFreshStart) {
+      // Resume after a failed start: telemetry is already running from
+      // the prior mount; just retry the `/rides/start` POST. No
+      // permission gate — the rider already cleared it on the first
+      // attempt, and re-prompting mid-ride would be jarring.
+      kickOffApiStart();
+      return;
+    }
+
+    // Fresh start: gate on `ACCESS_FINE_LOCATION` (issue #280) before
+    // touching the singletons. Without this the HUD pegs at 0 km/h on
+    // Android (no permission → watchPosition emits nothing) and on iOS
+    // riders saw an empty plist string before #280. If the rider
+    // declines, pop the screen with no side effects.
+    let cancelled = false;
+    void (async () => {
+      const status = await requestWithRationale({
+        androidPermission: PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+        rationale: {
+          title: "Location for ride recording",
+          message:
+            "Tarmoto records GPS while you ride to track distance, surface quality, and hazards along the route.",
+          whyOpenSettings:
+            "Location is currently blocked. Open Settings → Tarmoto and allow location to start recording rides.",
+        },
+      });
+      if (cancelled) return;
+      if (status !== "granted") {
+        navigation.goBack();
+        return;
+      }
+
       store.startRide(params.rideType);
       // ── Telemetry capture ──
       // Without this the HUD stayed pegged at 0 km/h / 0 km / 0
@@ -223,56 +317,18 @@ export default function RideActiveScreen() {
         // and backend agree on kilometres for ride distance.
         s.updateDistance(locationService.getDistance() / 1000);
       });
-    }
 
-    const promise = api.startRide(params.rideType);
-    pendingStartPromise = promise;
-    // Snapshot the local ride session so the success handler can detect
-    // a stale resolve. Two scenarios this guards against:
-    //
-    //   1. Rider backs out of the HUD, taps Stop on the in-progress
-    //      banner before the POST resolves. `stopAndExit` clears local
-    //      state without an id; the original POST eventually lands and
-    //      would otherwise call `setActiveRide(ride)` on a finished
-    //      ride — leaving an orphaned `active` row on the backend AND
-    //      stranding the resume guard so the next "Start a ride" tap
-    //      gets short-circuited and the rider can't open a new ride.
-    //
-    //   2. Rider stops, then starts a fresh ride before the original
-    //      POST resolves. The stale resolve must not overwrite the new
-    //      ride's id.
-    //
-    // `startedAtMs` is set inside `store.startRide(...)` (called above)
-    // and cleared / replaced by every subsequent start/stop, so it's a
-    // reliable session identifier.
-    const sessionStartedAtMs = useRideStore.getState().startedAtMs;
-    void promise
-      .then((ride) => {
-        const current = useRideStore.getState();
-        if (current.startedAtMs !== sessionStartedAtMs) {
-          // Local session moved on. Best-effort cleanup of the orphaned
-          // backend ride so it doesn't sit in `active` forever and
-          // block the rider's next start (one-active-ride-per-user).
-          void api.stopRide(ride.id).catch(() => undefined);
-          return;
-        }
-        current.setActiveRide(ride);
-      })
-      .catch((err) => {
-        setStartError(
-          err instanceof Error ? err.message : "Couldn't sync ride to server",
-        );
-      })
-      .finally(() => {
-        // Only clear the module-level handle if we still own it. A
-        // newer ride started after a stop has already overwritten
-        // it; clobbering it back to null here would strand that
-        // newer mount's `stopAndExit` without anything to await.
-        if (pendingStartPromise === promise) {
-          pendingStartPromise = null;
-        }
-      });
-  }, [params.rideType]);
+      kickOffApiStart();
+    })();
+
+    return () => {
+      // If the screen unmounts before the rationale resolves, suppress
+      // the post-permission start so we don't `goBack` on an
+      // already-unmounted screen or kick off telemetry that nothing
+      // will tear down.
+      cancelled = true;
+    };
+  }, [navigation, params.rideType]);
 
   // ── Duration display ──
   // Sourced from the store, which is ticked by the root-level
