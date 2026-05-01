@@ -210,8 +210,14 @@ baseClient.use({
       // Fresh 15 s deadline for the retry — the original deadline's
       // timer was cleared in the dispose() below and reusing it
       // would leave near-zero budget for the second request to
-      // complete after a refresh round-trip.
-      const retryTimeout = withTimeout(undefined, REQUEST_TIMEOUT_MS);
+      // complete after a refresh round-trip. The caller's
+      // cancellation signal is preserved by passing `request.signal`
+      // through: the request we're holding here is the one
+      // `onRequest` swapped in, which is already chained to the
+      // caller's original signal via `withTimeout`'s abort listener.
+      // Without this, aborting `uploadReviewPhotos`'s signal mid-401
+      // window would no-op against the retried fetch.
+      const retryTimeout = withTimeout(request.signal, REQUEST_TIMEOUT_MS);
       try {
         const init: RequestInit = {
           method: request.method,
