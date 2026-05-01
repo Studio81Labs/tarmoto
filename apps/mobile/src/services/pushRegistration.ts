@@ -26,7 +26,8 @@
 
 import { Platform } from "react-native";
 import DeviceInfo from "react-native-device-info";
-import type { AxiosInstance } from "axios";
+import axios, { type AxiosInstance } from "axios";
+import { API_BASE_URL } from "@/config";
 
 type FirebaseMessagingModule =
   typeof import("@react-native-firebase/messaging").default;
@@ -189,17 +190,38 @@ export async function unregisterPush(api: PushRegistrationApi): Promise<void> {
 
   if (!token) return;
 
+  // Use a bare `axios.delete` rather than the shared client so the
+  // request bypasses the instance interceptors entirely. The 401
+  // response interceptor on the shared client triggers a refresh +
+  // retry on auth failure — fine for normal traffic, but on the
+  // logout path it spins into an infinite loop:
+  //
+  //   1. Snapshotted bearer is expired → server returns 401.
+  //   2. Interceptor calls `refreshToken()`.
+  //   3. If a different user logged in between `clearTokens()` and
+  //      the 401 landing, MMKV holds their refresh token, so refresh
+  //      succeeds.
+  //   4. Interceptor retries `error.config` — which still carries
+  //      our explicit Authorization header — and the request
+  //      interceptor's "honour explicit bearer" path skips MMKV,
+  //      so the retry uses the same expired snapshot, 401s again,
+  //      and the loop never terminates.
+  //
+  // The bare axios call has no interceptors, so a 401 just rejects
+  // and the surrounding catch swallows it. The backend's dispatch
+  // path will soft-delete the token on its next attempted send
+  // anyway — the DELETE is best-effort cleanup, not a load-bearing
+  // operation.
   try {
-    await api.client.delete(`/me/devices/${encodeURIComponent(token)}`, {
-      // When the caller passes an explicit bearer (logout flow),
-      // attach it as a per-request header. The api client's request
-      // interceptor honours an existing `Authorization` value and
-      // skips the MMKV read, so this survives even after `clearTokens()`
-      // has wiped local credentials.
-      headers: api.bearer
-        ? { Authorization: `Bearer ${api.bearer}` }
-        : undefined,
-    });
+    await axios.delete(
+      `${API_BASE_URL}/me/devices/${encodeURIComponent(token)}`,
+      {
+        timeout: 15_000,
+        headers: api.bearer
+          ? { Authorization: `Bearer ${api.bearer}` }
+          : undefined,
+      },
+    );
   } catch {
     // Best-effort — backend will eventually soft-delete the token
     // on next dispatch failure if this call never lands.
