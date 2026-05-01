@@ -132,6 +132,16 @@ export class SharingService {
       throw new NotFoundException('Shared ride not found');
     }
 
+    // #279: same private-profile gate as `getByToken`. Without it a
+    // caller could probe `/embed-click` to confirm that a hidden
+    // share token exists, AND we'd record engagement against content
+    // that's supposed to be hidden — both are inconsistent with the
+    // 404 the read path returns for the same token.
+    const ownerPrefs = await this.privacy.loadPreferences(shared.user_id);
+    if (ownerPrefs.profile_visibility === 'private') {
+      throw new NotFoundException('Shared ride not found');
+    }
+
     await this.sharedRideRepo.increment(
       { id: shared.id },
       'embed_click_count',

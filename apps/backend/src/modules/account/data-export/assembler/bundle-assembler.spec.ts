@@ -54,6 +54,7 @@ function emptyRepos() {
     challenges: { find: jest.fn().mockResolvedValue([]) },
     commute: { find: jest.fn().mockResolvedValue([]) },
     notificationPreferences: { findOne: jest.fn().mockResolvedValue(null) },
+    privacyPreferences: { findOne: jest.fn().mockResolvedValue(null) },
   };
 }
 
@@ -103,10 +104,8 @@ describe('BundleAssembler', () => {
     expect(entries.get('README.txt')).toContain('GDPR Article 15');
   });
 
-  it('extracts privacy from user.preferences and notifications from the typed table', async () => {
-    const user = makeUser({
-      privacy: { share_location: false },
-    });
+  it('extracts privacy + notifications from their typed tables (#279)', async () => {
+    const user = makeUser();
     const repos = emptyRepos();
     repos.notificationPreferences.findOne.mockResolvedValue({
       user_id: 'u1',
@@ -117,11 +116,25 @@ describe('BundleAssembler', () => {
       quiet_hours_timezone: 'Europe/Prague',
       categories: { hazard_alert: { email: false, push: true, in_app: true } },
     });
+    repos.privacyPreferences.findOne.mockResolvedValue({
+      user_id: 'u1',
+      profile_visibility: 'private',
+      default_ride_sharing: 'public',
+      road_data_contribution: false,
+      location_retention: '6months',
+      analytics_consent: false,
+      personalized_recommendations_consent: true,
+    });
     const assembler = new BundleAssembler(repos as never);
     const buf = await streamToBuffer(await assembler.assemble(user));
     const entries = await listEntries(buf);
     expect(JSON.parse(entries.get('privacy.json')!)).toEqual({
-      share_location: false,
+      profile_visibility: 'private',
+      default_ride_sharing: 'public',
+      road_data_contribution: false,
+      location_retention: '6months',
+      analytics_consent: false,
+      personalized_recommendations_consent: true,
     });
     expect(JSON.parse(entries.get('notifications.json')!)).toEqual({
       email_digest: 'daily',

@@ -252,6 +252,42 @@ describe('RidesService', () => {
       expect(sharedRideRepo.create).not.toHaveBeenCalled();
       expect(sharedRideRepo.save).not.toHaveBeenCalled();
     });
+
+    it('returns the completed ride even when auto-share fails (#279, non-fatal)', async () => {
+      rideRepo.findOne!.mockResolvedValueOnce({ ...mockRide });
+      privacy.loadPreferences.mockResolvedValueOnce({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        default_ride_sharing: 'public',
+      });
+      // Simulate a transient failure in the privacy load OR shared_ride
+      // save — either should be logged-and-swallowed so `stop` keeps
+      // returning the saved-as-completed ride to the caller.
+      sharedRideRepo.save!.mockRejectedValueOnce(new Error('db hiccup'));
+
+      const result = await service.stop('user-1', 'ride-1');
+
+      expect(result.status).toBe('completed');
+      expect(result.ended_at).not.toBeNull();
+    });
+
+    it('treats unique-violation on auto-share as success (concurrent stop race)', async () => {
+      rideRepo.findOne!.mockResolvedValueOnce({ ...mockRide });
+      privacy.loadPreferences.mockResolvedValueOnce({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        default_ride_sharing: 'public',
+      });
+      // Postgres returns SQLSTATE '23505' on unique-index violation.
+      // Both concurrent stop calls pass the findOne pre-check, but
+      // only one wins the insert — the loser must NOT bubble a 500.
+      const uniqueErr = Object.assign(new Error('duplicate key'), {
+        code: '23505',
+      });
+      sharedRideRepo.save!.mockRejectedValueOnce(uniqueErr);
+
+      const result = await service.stop('user-1', 'ride-1');
+
+      expect(result.status).toBe('completed');
+    });
   });
 
   describe('toSummary', () => {

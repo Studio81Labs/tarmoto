@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
@@ -25,6 +26,8 @@ import { normalizeLeanDistribution } from '@tarmoto/shared';
 
 @Injectable()
 export class RidesService {
+  private readonly logger = new Logger(RidesService.name);
+
   constructor(
     @InjectRepository(Ride)
     private readonly rideRepo: Repository<Ride>,
@@ -93,10 +96,20 @@ export class RidesService {
     // preference is `public`, create a shared_ride row at finish time so
     // the ride immediately surfaces in the community feed. `private`
     // (the default) is a no-op — the rider can still publish ad-hoc via
-    // `POST /rides/:rideId/share`. Failures here are deliberately
-    // non-fatal: the ride finished successfully, and the rider can
-    // share manually if the auto-share didn't take.
-    await this.applyDefaultRideSharing(userId, saved.id);
+    // `POST /rides/:rideId/share`. Failures here MUST stay non-fatal:
+    // the ride is already saved as `completed` above and the caller
+    // (mobile) treats a 500 from `stop` as "ride didn't finish",
+    // which would prompt a misleading retry. Auto-share is a
+    // best-effort enhancement; the rider can still publish manually if
+    // it didn't take.
+    try {
+      await this.applyDefaultRideSharing(userId, saved.id);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `auto-share for ride ${saved.id} (user ${userId}) failed: ${msg}`,
+      );
+    }
 
     return this.toRideResponse(saved);
   }
@@ -108,21 +121,38 @@ export class RidesService {
     const prefs = await this.privacy.loadPreferences(userId);
     if (prefs.default_ride_sharing !== 'public') return;
 
-    // Idempotent: if the user already has a share row for this ride
-    // (concurrent stop call, replay), don't create a duplicate.
+    // Idempotent on `ride_id` via the unique index `idx_shared_rides_ride`.
+    // The findOne pre-check covers the common case (no concurrent stop);
+    // the catch on `save` handles the race where two concurrent finishes
+    // both pass the pre-check and the second hits the unique-violation.
+    // Either path leaves exactly one share row for the ride.
     const existing = await this.sharedRideRepo.findOne({
       where: { ride_id: rideId },
     });
     if (existing) return;
 
-    await this.sharedRideRepo.save(
-      this.sharedRideRepo.create({
-        ride_id: rideId,
-        user_id: userId,
-        share_token: randomBytes(16).toString('hex'),
-        is_public: true,
-      }),
-    );
+    try {
+      await this.sharedRideRepo.save(
+        this.sharedRideRepo.create({
+          ride_id: rideId,
+          user_id: userId,
+          share_token: randomBytes(16).toString('hex'),
+          is_public: true,
+        }),
+      );
+    } catch (err) {
+      // Postgres unique-violation on `ride_id` — another stop won the
+      // race and already created the row. Treat as success.
+      if (
+        typeof err === 'object' &&
+        err !== null &&
+        'code' in err &&
+        (err as { code: string }).code === '23505'
+      ) {
+        return;
+      }
+      throw err;
+    }
   }
 
   /**

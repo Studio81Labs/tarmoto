@@ -48,6 +48,30 @@ export class AddPrivacyPreferences1716400000000 implements MigrationInterface {
         WHERE location_retention <> 'forever';
     `);
 
+    // Helper that coerces a JSONB text value to a boolean WITHOUT
+    // raising on a malformed string. A naive `(jsonb->>'k')::boolean`
+    // raises `invalid input syntax for type boolean` on values like
+    // `'yes'`, `'1'`, `'on'` or hand-edited blobs, which would abort
+    // the whole migration. Only the canonical `true`/`false` strings
+    // round-trip; anything else returns the supplied default so the
+    // migration never blocks on a single weird row.
+    await queryRunner.query(`
+      CREATE OR REPLACE FUNCTION pg_temp.tarmoto_safe_bool(
+        src JSONB,
+        fallback BOOLEAN
+      ) RETURNS BOOLEAN
+      LANGUAGE SQL IMMUTABLE AS $$
+        SELECT CASE
+          WHEN src IS NULL OR jsonb_typeof(src) = 'null' THEN fallback
+          WHEN jsonb_typeof(src) = 'boolean' THEN (src::text)::boolean
+          WHEN jsonb_typeof(src) = 'string'
+            AND lower(src #>> '{}') IN ('true', 'false', 't', 'f', '1', '0', 'yes', 'no', 'on', 'off')
+            THEN lower(src #>> '{}') IN ('true', 't', '1', 'yes', 'on')
+          ELSE fallback
+        END
+      $$;
+    `);
+
     // Carry forward any prior JSONB values written into
     // `users.preferences->'privacy'` (camelCase keys from the companion
     // shape). `ON CONFLICT DO NOTHING` covers the staged-rollout case
@@ -82,8 +106,8 @@ export class AddPrivacyPreferences1716400000000 implements MigrationInterface {
             THEN u.preferences->'privacy'->>'defaultRideSharing'
           ELSE 'private'
         END,
-        COALESCE(
-          (u.preferences->'privacy'->>'roadDataContribution')::boolean,
+        pg_temp.tarmoto_safe_bool(
+          u.preferences->'privacy'->'roadDataContribution',
           TRUE
         ),
         CASE
@@ -92,12 +116,12 @@ export class AddPrivacyPreferences1716400000000 implements MigrationInterface {
             THEN u.preferences->'privacy'->>'locationRetention'
           ELSE '1year'
         END,
-        COALESCE(
-          (u.preferences->'privacy'->>'analyticsConsent')::boolean,
+        pg_temp.tarmoto_safe_bool(
+          u.preferences->'privacy'->'analyticsConsent',
           TRUE
         ),
-        COALESCE(
-          (u.preferences->'privacy'->>'personalizedRecommendationsConsent')::boolean,
+        pg_temp.tarmoto_safe_bool(
+          u.preferences->'privacy'->'personalizedRecommendationsConsent',
           TRUE
         ),
         NOW(),
@@ -114,6 +138,12 @@ export class AddPrivacyPreferences1716400000000 implements MigrationInterface {
       UPDATE users
       SET preferences = preferences - 'privacy'
       WHERE preferences ? 'privacy';
+    `);
+
+    // pg_temp.* functions die with the session; explicit DROP is
+    // belt-and-braces in case the migration runner reuses the session.
+    await queryRunner.query(`
+      DROP FUNCTION IF EXISTS pg_temp.tarmoto_safe_bool(JSONB, BOOLEAN);
     `);
   }
 
