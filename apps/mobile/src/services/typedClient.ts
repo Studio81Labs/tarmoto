@@ -16,7 +16,7 @@
  */
 
 import { createMMKV } from "react-native-mmkv";
-import { createApiClient, type paths } from "@tarmoto/openapi/client";
+import { createApiClient } from "@tarmoto/openapi/client";
 import type { components } from "@tarmoto/openapi";
 import { API_BASE_URL } from "@/config";
 
@@ -44,7 +44,7 @@ export function getAccessToken(): string | null {
   return storage.getString(ACCESS_TOKEN_KEY) ?? null;
 }
 
-export function getRefreshToken(): string | null {
+function getRefreshToken(): string | null {
   return storage.getString(REFRESH_TOKEN_KEY) ?? null;
 }
 
@@ -177,5 +177,3 @@ export async function rawFetch(
   if (bearer) merged.set("Authorization", `Bearer ${bearer}`);
   return fetch(`${API_BASE_URL}${path}`, { ...rest, headers: merged });
 }
-
-export type ApiPaths = paths;
