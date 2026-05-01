@@ -33,6 +33,18 @@ const MAX_DT_S = 0.5;
 const CALIBRATION_WINDOW_MS = 1500;
 const CALIBRATION_MIN_SAMPLES = 20;
 const GYRO_REST_THRESHOLD_RAD_S = 0.35;
+/**
+ * Maximum allowed deviation of accelerometer magnitude from gravity
+ * during calibration sampling (m/s²). Rejecting samples that fall
+ * outside `g ± ACCEL_REST_TOLERANCE` keeps a calibration off-limits
+ * during braking, acceleration, or cornering, where the accelerometer
+ * is reading more than just gravity and the inferred roll would bake
+ * in the bias permanently. ~1.0 m/s² (~0.1 g) is generous enough to
+ * tolerate idle engine vibration and a wobbly mount but tight enough
+ * to reject a brisk pull-away.
+ */
+const ACCEL_REST_TOLERANCE_MS2 = 1.0;
+const GRAVITY_MS2 = 9.81;
 
 export interface OrientationSample {
   /** Accelerometer X (m/s²). Forward axis — unused by roll math. */
@@ -43,6 +55,16 @@ export interface OrientationSample {
   az: number;
   /** Gyroscope X (rad/s). Rate of roll about the bike's forward axis. */
   gx: number;
+  /**
+   * Gyroscope Y (rad/s). Pitch rate. Optional so synthetic test
+   * streams that only care about roll don't have to plumb it.
+   */
+  gy?: number;
+  /**
+   * Gyroscope Z (rad/s). Yaw rate. Optional so synthetic test
+   * streams that only care about roll don't have to plumb it.
+   */
+  gz?: number;
   /** Sample timestamp in milliseconds. */
   t: number;
 }
@@ -211,10 +233,37 @@ export class LeanAngleFilter {
 
     // Only bank samples taken while the bike is reasonably still — a
     // calibration captured mid-corner would lock in a permanent bias.
-    // The threshold is generous (0.35 rad/s ≈ 20 deg/s) so an idling
-    // bike with mild engine vibration still calibrates.
-    const gyroMag = Math.sqrt(sample.gx ** 2);
-    if (gyroMag < GYRO_REST_THRESHOLD_RAD_S) {
+    //
+    // Two gates, both required:
+    //
+    //   1. 3-axis gyro magnitude < ~20 deg/s. Bikes that are yawing
+    //      (turning while upright) or pitching (braking, acceleration)
+    //      can have a near-zero `gx` while the accelerometer is
+    //      nonetheless reporting more than just gravity. Gating on the
+    //      full gyro vector catches that. `gy` / `gz` are optional on
+    //      `OrientationSample` (test fixtures that only care about
+    //      roll don't plumb them); fall back to the roll-axis-only
+    //      check when they're absent.
+    //
+    //   2. Accelerometer magnitude close to g. Centripetal acceleration
+    //      from a yaw turn and linear acceleration from braking both
+    //      corrupt the gravity vector even when the gyro reports near
+    //      zero. Rejecting samples where `||a|| - g| > 1 m/s²` keeps
+    //      those out of the calibration average regardless of what
+    //      the gyro is doing.
+    //
+    // The thresholds are deliberately generous so an idling bike with
+    // engine vibration and a slightly off-axis mount still captures
+    // enough samples to lock in the offset before the window closes.
+    const gx = sample.gx;
+    const gy = sample.gy ?? 0;
+    const gz = sample.gz ?? 0;
+    const gyroMag = Math.sqrt(gx * gx + gy * gy + gz * gz);
+    const accelMag = Math.sqrt(
+      sample.ax * sample.ax + sample.ay * sample.ay + sample.az * sample.az,
+    );
+    const accelOk = Math.abs(accelMag - GRAVITY_MS2) < ACCEL_REST_TOLERANCE_MS2;
+    if (gyroMag < GYRO_REST_THRESHOLD_RAD_S && accelOk) {
       this.calibrationSum += accelRollDeg;
       this.calibrationCount += 1;
     }

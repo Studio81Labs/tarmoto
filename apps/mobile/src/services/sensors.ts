@@ -86,6 +86,8 @@ class SensorService {
   // most recent gyro sample and feed it on the next accel tick.
   private leanFilter = new LeanAngleFilter();
   private latestGyroX: number | null = null;
+  private latestGyroY: number | null = null;
+  private latestGyroZ: number | null = null;
 
   /**
    * Start recording sensor data
@@ -101,6 +103,8 @@ class SensorService {
     // calibration window (~1.5 s of upright readings).
     this.leanFilter.start();
     this.latestGyroX = null;
+    this.latestGyroY = null;
+    this.latestGyroZ = null;
 
     // Kick off the model load in the background. The first windows
     // arrive ~2s later, so the classifier is typically ready by then;
@@ -118,13 +122,26 @@ class SensorService {
       const t = timestamp || Date.now();
       // Update the orientation filter on every accelerometer tick. The
       // gyro stream is faster than the accel stream on some devices,
-      // so we use the most recent gyroX (or 0 if no gyro tick has
-      // arrived yet) as the rate input. The filter still calibrates
-      // off accelerometer roll alone if the gyro is silent — that's
-      // a degenerate case (no gyro = no roll detection at speed) but
-      // at least the no-gyro device still surfaces gravity-only roll.
+      // so we use the most recent gyro reading (or 0 if no gyro tick
+      // has arrived yet) as the rate input. `gy` / `gz` aren't used by
+      // the roll integration itself but feed the calibration rest-check
+      // so a yaw or pitch transient doesn't lock in a biased offset.
+      // The filter still calibrates off accelerometer roll alone if the
+      // gyro is silent — that's a degenerate case (no gyro = no roll
+      // detection at speed) but at least the no-gyro device still
+      // surfaces gravity-only roll.
       const gx = this.latestGyroX ?? 0;
-      const leanDeg = this.leanFilter.update({ ax: x, ay: y, az: z, gx, t });
+      const gy = this.latestGyroY ?? 0;
+      const gz = this.latestGyroZ ?? 0;
+      const leanDeg = this.leanFilter.update({
+        ax: x,
+        ay: y,
+        az: z,
+        gx,
+        gy,
+        gz,
+        t,
+      });
 
       const reading: SensorReading = {
         t,
@@ -180,11 +197,16 @@ class SensorService {
         last.gy = y;
         last.gz = z;
       }
-      // Cache the gyro X rate (rad/s) for the next accelerometer tick
-      // to feed into the orientation filter. We don't update the
+      // Cache the full gyro vector (rad/s) for the next accelerometer
+      // tick to feed into the orientation filter. We don't update the
       // filter directly from the gyro stream — combining ticks per
       // accel sample keeps the filter's `dt` stable around 20 ms.
+      // `gy` / `gz` aren't used by the roll integration; they gate the
+      // calibration rest-check (US-19) so yaw/pitch transients don't
+      // lock in a biased offset.
       this.latestGyroX = x;
+      this.latestGyroY = y;
+      this.latestGyroZ = z;
     });
   }
 

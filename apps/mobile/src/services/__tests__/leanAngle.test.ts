@@ -118,6 +118,69 @@ describe("LeanAngleFilter.start + calibration", () => {
     expect(stats.offsetDeg).toBeCloseTo(5, 0);
     expect(filter.isCalibrating()).toBe(false);
   });
+
+  it("rejects calibration samples taken while yawing (centripetal acceleration on the lateral axis)", () => {
+    const filter = new LeanAngleFilter();
+    filter.start();
+
+    // Bike is upright (0° roll → ay = 0, az = g) but the rider is
+    // turning at speed. The yaw rotation produces centripetal
+    // acceleration on the lateral axis — the accel "lean" reads as
+    // ~17° even though the bike is straight up. Without the
+    // accel-magnitude gate, those false readings would bake into the
+    // calibration average. The yaw rate (gz) is well above the rest
+    // threshold, so the multi-axis gyro check also fires.
+    const samples: OrientationSample[] = [];
+    const lateralA = 3.0; // ~0.3 g sideways from yaw
+    for (let t = 0; t < 2000; t += 20) {
+      samples.push({
+        ax: 0,
+        ay: lateralA,
+        az: G,
+        gx: 0,
+        gy: 0,
+        gz: 1.0, // ~57°/s yaw — clearly turning
+        t,
+      });
+    }
+    for (const s of samples) filter.update(s);
+    const stats = filter.finishCalibration();
+
+    // Calibration must end the window without banking the bogus
+    // samples — either zero samples banked, or a near-zero offset
+    // (any banked samples were incidental gaps, not the bulk of the
+    // stream). Without the multi-axis fix, `offsetDeg` would land
+    // around the 17° the lateral accel implies.
+    expect(Math.abs(stats.offsetDeg)).toBeLessThan(2);
+    expect(filter.isCalibrating()).toBe(false);
+  });
+
+  it("rejects calibration samples taken during hard braking (linear acceleration on the forward axis)", () => {
+    const filter = new LeanAngleFilter();
+    filter.start();
+
+    // Bike is upright but decelerating at ~0.4 g. Forward axis (ax)
+    // reads -3.9; the gyro is silent (gx = gy = gz = 0). The accel
+    // magnitude is 10.6 m/s² — well above the rest tolerance — so
+    // the gate should reject these samples. Without that gate the
+    // single-axis gyro check would happily bank them.
+    const samples: OrientationSample[] = [];
+    for (let t = 0; t < 2000; t += 20) {
+      samples.push({
+        ax: -3.9,
+        ay: 0,
+        az: G,
+        gx: 0,
+        gy: 0,
+        gz: 0,
+        t,
+      });
+    }
+    for (const s of samples) filter.update(s);
+    const stats = filter.finishCalibration();
+
+    expect(stats.samples).toBe(0);
+  });
 });
 
 describe("LeanAngleFilter.update — corner reporting", () => {
