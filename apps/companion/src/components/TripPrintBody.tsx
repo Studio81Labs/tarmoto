@@ -1,6 +1,7 @@
 import { Fragment } from "react";
 import {
   AlertTriangle,
+  BedDouble,
   CloudSun,
   Fuel,
   MapPin,
@@ -349,7 +350,7 @@ function WaypointGroupBlock({ group }: { group: WaypointGroup }) {
 
 function groupIcon(label: string) {
   if (label === "Fuel") return Fuel;
-  if (label === "Accommodation") return MapPin;
+  if (label === "Accommodation") return BedDouble;
   return MapPin;
 }
 
