@@ -76,6 +76,43 @@ For first-time setup see [../../README.md](../../README.md) and [../../CONTRIBUT
 3. Android: nuke `~/.gradle/caches` if build errors reference missing dependencies that are clearly declared.
 4. If sensors don't emit data in the simulator, that's expected — TF Lite inference requires real device sensor input.
 
+## Mobile permission and manifest issues
+
+After any change to `apps/mobile/ios/TarmotoApp/Info.plist` or
+`apps/mobile/android/app/src/main/AndroidManifest.xml`:
+
+1. Reinstall the app on the device — granted permissions are scoped to
+   the install on Android, and iOS caches the plist purpose strings
+   shown in Settings → Privacy.
+2. iOS: `cd apps/mobile/ios && pod install` after touching the plist
+   and re-run `pnpm ios`.
+3. Android: `cd apps/mobile/android && ./gradlew clean` then `pnpm
+android` to drop the merged-manifest cache.
+
+### "Ride won't start, HUD stuck at 0 km/h" (Android)
+
+The screen now gates ride start on `ACCESS_FINE_LOCATION`. If the
+permission was denied with "Don't ask again", the rationale Alert
+opens settings via `Linking.openSettings()`. If the dialog shows but
+nothing happens on tap, the device's app-info screen is missing —
+usually a custom OEM build that changes the settings deep-link target.
+Manually navigate Settings → Apps → Tarmoto → Permissions → Location.
+
+### "TTS announcements stop the moment the screen locks" (iOS)
+
+iOS kills audio playback in apps that don't declare the `audio`
+background mode. Confirm `UIBackgroundModes` in Info.plist contains
+`audio` (and `location` for the GPS watch). On a fresh checkout that
+predates issue #280 this was missing — incremental builds keep the old
+plist baked into the IPA, so reinstall the app after pulling.
+
+### "Push permission prompt has no Tarmoto explainer" (Android)
+
+The pre-prompt rationale Alert ships in `services/permissions.ts`. If
+a rider doesn't see it, the most common cause is a build that
+predates issue #280 still running on the device — uninstall and
+reinstall the app.
+
 ## Proxy & throttling
 
 `ThrottlerGuard` keys rate-limit buckets off the client IP it gets from
