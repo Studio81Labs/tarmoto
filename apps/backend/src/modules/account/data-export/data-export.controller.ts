@@ -53,10 +53,11 @@ export class DataExportController {
   @ApiOperation({
     summary: 'Request a GDPR data export bundle for the caller',
     description:
-      'Returns 202 if a new request was created, 200 if an active request already exists. The bundle is assembled asynchronously; poll GET /account/data-export/:id until status is "ready", then follow downloadUrl.',
+      'Returns 202 if a new request was created, 200 if an active request already exists, or 503 if the queue is temporarily unreachable (caller should retry). The bundle is assembled asynchronously; poll GET /account/data-export/:id until status is "ready", then follow downloadUrl.',
   })
   @ApiResponse({ status: 202, type: DataExportRequestDto })
   @ApiResponse({ status: 200, type: DataExportRequestDto })
+  @ApiResponse({ status: 503 })
   async create(
     @Req() req: express.Request,
     @Res() res: express.Response,
@@ -64,34 +65,64 @@ export class DataExportController {
     const userId = req.user!.userId;
     const { created, request } = await this.service.requestExport(userId);
     const view = this.service.buildPublicView(request);
-    if (created) {
+    if (!created) {
+      res.status(200).json(view);
+      return;
+    }
+
+    try {
+      // Idempotent on request_id: a retried HTTP call hitting the
+      // existing-request branch above never reaches this enqueue,
+      // and a duplicate enqueue with the same jobId is a no-op.
+      await this.queue.add(
+        JOB_NAMES.DATA_EXPORT_PROCESS,
+        { request_id: request.id, user_id: userId },
+        {
+          ...DEFAULT_JOB_OPTIONS,
+          jobId: `data-export:${request.id}`,
+        },
+      );
+    } catch (err) {
+      // Redis was unreachable when we tried to dispatch. The DB row
+      // is in 'queued' but no job exists to drain it — without a
+      // rollback, subsequent requestExport calls within the 30-minute
+      // "stuck worker" threshold treat this row as still-active and
+      // skip the re-enqueue branch, leaving the user stuck for half
+      // an hour. Roll the row to 'failed' so the next POST creates a
+      // fresh request, then surface 503 so the caller knows to retry
+      // immediately. The Retry-After hint is conservative — the
+      // typical Redis outage is seconds, but a hint > 0 is what
+      // RFC-9110 expects from a 503.
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `Failed to enqueue data-export ${request.id} for user ${userId}: ${msg}`,
+      );
       try {
-        // Idempotent on request_id: a retried HTTP call hitting the
-        // existing-request branch above never reaches this enqueue,
-        // and a duplicate enqueue with the same jobId is a no-op.
-        await this.queue.add(
-          JOB_NAMES.DATA_EXPORT_PROCESS,
-          { request_id: request.id, user_id: userId },
-          {
-            ...DEFAULT_JOB_OPTIONS,
-            jobId: `data-export:${request.id}`,
-          },
+        await this.service.markEnqueueFailed(
+          request.id,
+          `enqueue failed: ${msg}`,
         );
-      } catch (err) {
-        // The DB row is already 'queued' but Redis was unreachable —
-        // leave the row in place so the next requestExport call (or
-        // a manual operator nudge) can re-enqueue. The user sees a
-        // 202 with the queued status they can poll, which matches
-        // every other transient backend issue we surface.
-        const msg = err instanceof Error ? err.message : String(err);
+      } catch (rollbackErr) {
+        // The DB itself is also flaky. Don't crash — the worst case
+        // is the user waits up to 30 minutes for the stuck-row TTL
+        // to clear, which is the legacy behaviour anyway.
+        const rollbackMsg =
+          rollbackErr instanceof Error
+            ? rollbackErr.message
+            : String(rollbackErr);
         this.logger.error(
-          `Failed to enqueue data-export ${request.id} for user ${userId}: ${msg}`,
+          `Failed to mark data-export ${request.id} failed after enqueue error: ${rollbackMsg}`,
         );
       }
-      res.status(202).json(view);
-    } else {
-      res.status(200).json(view);
+      res.set('Retry-After', '30');
+      res.status(503).json({
+        status: 'unavailable',
+        message: 'Queue temporarily unavailable, please retry.',
+      });
+      return;
     }
+
+    res.status(202).json(view);
   }
 
   @Get(':id')

@@ -424,4 +424,18 @@ describe('DataExportService', () => {
     expect(args.error_message.length).toBeLessThanOrEqual(1000);
     expect(args.error_message.startsWith('xxxx')).toBe(true);
   });
+
+  it('markEnqueueFailed transitions queued -> failed (not processing) so a fresh POST recovers immediately', async () => {
+    // Distinct from markFailed which targets the in-flight worker
+    // path — this one rolls back a row whose enqueue failed before
+    // the worker ever saw it.
+    await service.markEnqueueFailed('req-1', 'enqueue failed: ECONNREFUSED');
+    expect(repo.update).toHaveBeenCalledWith(
+      { id: 'req-1', status: 'queued' },
+      expect.objectContaining({
+        status: 'failed',
+        error_message: 'enqueue failed: ECONNREFUSED',
+      }),
+    );
+  });
 });

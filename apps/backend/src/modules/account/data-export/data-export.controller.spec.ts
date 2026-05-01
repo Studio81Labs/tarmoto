@@ -19,6 +19,7 @@ describe('DataExportController', () => {
     requestExport: jest.fn(),
     getRequest: jest.fn(),
     findById: jest.fn(),
+    markEnqueueFailed: jest.fn().mockResolvedValue(undefined),
     buildPublicView: jest.fn((r: { id: string; status: string }) => ({
       id: r.id,
       status: r.status,
@@ -85,6 +86,48 @@ describe('DataExportController', () => {
     await controller.create({ user: { userId: 'u1' } } as never, res as never);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  it('returns 503 + marks the row failed when the queue is unreachable so the next POST recovers', async () => {
+    // Without the rollback, the freshly-saved row sits in 'queued'
+    // with no actual job in Redis. Subsequent POSTs within the
+    // 30-minute "stuck worker" threshold see the row as still-active
+    // and skip the enqueue branch — user blocked for half an hour.
+    const req = { id: 'req-1', user_id: 'u1', status: 'queued' };
+    service.requestExport.mockResolvedValue({ created: true, request: req });
+    queue.add.mockRejectedValueOnce(new Error('ECONNREFUSED localhost:6379'));
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis(),
+      set: jest.fn().mockReturnThis(),
+    };
+    await controller.create({ user: { userId: 'u1' } } as never, res as never);
+    expect(service.markEnqueueFailed).toHaveBeenCalledWith(
+      'req-1',
+      expect.stringContaining('ECONNREFUSED'),
+    );
+    expect(res.set).toHaveBeenCalledWith('Retry-After', '30');
+    expect(res.status).toHaveBeenCalledWith(503);
+  });
+
+  it('still returns 503 when the rollback markEnqueueFailed itself fails (DB also flaky)', async () => {
+    // Defensive: don't crash if both Redis and Postgres are degraded.
+    // The user still sees 503 (so they retry); the row stays in
+    // 'queued' but the legacy 30-minute stuck-worker TTL kicks in
+    // eventually.
+    const req = { id: 'req-1', user_id: 'u1', status: 'queued' };
+    service.requestExport.mockResolvedValue({ created: true, request: req });
+    queue.add.mockRejectedValueOnce(new Error('queue down'));
+    service.markEnqueueFailed.mockRejectedValueOnce(new Error('db down'));
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis(),
+      set: jest.fn().mockReturnThis(),
+    };
+    await expect(
+      controller.create({ user: { userId: 'u1' } } as never, res as never),
+    ).resolves.toBeUndefined();
+    expect(res.status).toHaveBeenCalledWith(503);
   });
 
   it('GET status returns the public view', async () => {
