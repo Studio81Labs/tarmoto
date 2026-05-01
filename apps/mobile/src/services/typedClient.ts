@@ -103,31 +103,59 @@ const baseClient = createApiClient({
   getToken: getAccessToken,
 });
 
+/**
+ * Per-request stash of the original POST/PATCH/PUT body bytes,
+ * captured in `onRequest` before fetch consumes the body stream and
+ * read back in the 401-retry path. Cloning the Request inside
+ * `onResponse` is too late — by then `request.bodyUsed` is true and
+ * `clone()` throws TypeError per WHATWG, which would leave token
+ * refresh broken for any payload-bearing request (sensor uploads,
+ * hazard reports, profile updates, …). Keyed by the middleware's
+ * unique request id; cleared on response or error so a long-lived
+ * client can't accumulate bytes.
+ */
+const requestBodies = new Map<string, ArrayBuffer>();
+
 baseClient.use({
-  async onResponse({ response, request, schemaPath }) {
-    if (response.status !== 401) return response;
-    if (SKIP_REFRESH_PATHS.includes(schemaPath)) return response;
+  async onRequest({ request, id }) {
+    if (request.method === "GET" || request.method === "HEAD") return;
+    // Clone first — `arrayBuffer()` on the clone consumes the clone's
+    // body stream while leaving the original request body intact for
+    // the imminent fetch. The original then ships its body normally.
+    const buf = await request.clone().arrayBuffer();
+    if (buf.byteLength > 0) requestBodies.set(id, buf);
+    return;
+  },
+  async onResponse({ response, request, schemaPath, id }) {
+    try {
+      if (response.status !== 401) return response;
+      if (SKIP_REFRESH_PATHS.includes(schemaPath)) return response;
 
-    const refreshed = await refreshAccessToken();
-    if (!refreshed) return response;
+      const refreshed = await refreshAccessToken();
+      if (!refreshed) return response;
 
-    // Build a fresh Request with the new bearer rather than mutating
-    // headers on a clone. WHATWG `Request.clone().headers` is
-    // immutable, and on RN's whatwg-fetch polyfill `set()` is a
-    // silent no-op there — the retried request would otherwise go
-    // out with the same expired bearer and 401 again. Reading the
-    // original body via `.arrayBuffer()` on the clone preserves
-    // request payloads (POST/PATCH/PUT) across the retry.
-    const newToken = getAccessToken();
-    const headers = new Headers();
-    request.headers.forEach((value, key) => headers.set(key, value));
-    if (newToken) headers.set("Authorization", `Bearer ${newToken}`);
+      // Build a fresh Request with the new bearer rather than mutating
+      // headers on a clone. WHATWG `Request.clone().headers` is
+      // immutable, and on RN's whatwg-fetch polyfill `set()` is a
+      // silent no-op there — the retried request would otherwise go
+      // out with the same expired bearer and 401 again.
+      const newToken = getAccessToken();
+      const headers = new Headers();
+      request.headers.forEach((value, key) => headers.set(key, value));
+      if (newToken) headers.set("Authorization", `Bearer ${newToken}`);
 
-    const init: RequestInit = { method: request.method, headers };
-    if (request.method !== "GET" && request.method !== "HEAD") {
-      init.body = await request.clone().arrayBuffer();
+      const init: RequestInit = { method: request.method, headers };
+      const stashedBody = requestBodies.get(id);
+      if (stashedBody !== undefined) init.body = stashedBody;
+      return fetch(request.url, init);
+    } finally {
+      requestBodies.delete(id);
     }
-    return fetch(request.url, init);
+  },
+  onError({ id }) {
+    // Network failures skip onResponse, so clean up here too — leaving
+    // bytes in the map would leak memory across long-lived sessions.
+    requestBodies.delete(id);
   },
 });
 
