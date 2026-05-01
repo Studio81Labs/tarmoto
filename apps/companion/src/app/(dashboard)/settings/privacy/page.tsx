@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Check, Loader2 } from "lucide-react";
 import { accountApi } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth";
 import type {
   LocationRetention,
   PrivacySettings,
@@ -37,7 +38,12 @@ export default function PrivacyPage() {
   );
   const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
 
+  // Wait for the auth store to carry a token before fetching, so a hard
+  // navigation here doesn't race AuthSync and surface as an
+  // "Unauthorized" load error.
+  const authReady = useAuthStore((s) => Boolean(s.accessToken));
   useEffect(() => {
+    if (!authReady) return;
     let cancelled = false;
     accountApi
       .getPrivacySettings()
@@ -56,7 +62,7 @@ export default function PrivacyPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authReady]);
 
   const isDirty = !settingsEqual(settings, serverSettings);
 

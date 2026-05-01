@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import SubscriptionPage from "./page";
 import { ApiError, accountApi } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth";
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -37,6 +38,26 @@ describe("SubscriptionPage", () => {
         ...window.location,
         assign: assignMock,
       },
+    });
+    // Page gates its data fetch on a non-null access token to avoid an
+    // AuthSync race on hard navigations; seed the auth store so the
+    // tests' `useEffect` actually fires.
+    useAuthStore.setState({
+      user: {
+        id: "test-user",
+        email: "rider@example.com",
+        displayName: "Rider",
+      },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+  });
+
+  afterEach(() => {
+    useAuthStore.setState({
+      user: null,
+      isAuthenticated: false,
+      accessToken: null,
     });
   });
 

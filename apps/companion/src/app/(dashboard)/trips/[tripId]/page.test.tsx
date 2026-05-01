@@ -200,7 +200,15 @@ function primeStores(callerId: string | null = "owner-1") {
   // `useStore(selector)` invokes the selector against the current
   // snapshot. Tests don't need full reactivity — a fixed snapshot is
   // enough since `useTripStore.getState()` isn't called from this page.
-  const authSnapshot = { user: callerId ? { id: callerId } : null };
+  const authSnapshot = {
+    user: callerId ? { id: callerId } : null,
+    // The page gates its data fetch on a non-null access token to avoid
+    // a hard-navigation AuthSync race. Tests assert the loaded states,
+    // so the token always needs to be seeded — even the "unauthenticated
+    // caller" case sets it so the trip still loads and we can confirm
+    // the role-gated UI hides correctly.
+    accessToken: "test-access-token",
+  };
   useAuthStoreMock.mockImplementation(((selector: (s: unknown) => unknown) =>
     selector(authSnapshot)) as unknown as typeof useAuthStore);
   const setActiveTrip = vi.fn();

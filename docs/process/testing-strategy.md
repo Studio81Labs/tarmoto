@@ -67,22 +67,56 @@ When adding tests, colocate next to source (`screens/HomeScreen.test.tsx` next t
 
 ## Companion (Next.js web)
 
-### Current state
+### Unit / component tests
 
-No test infrastructure yet. When adding, install either Jest + `@testing-library/react` or Vitest. Stick to one choice across companion.
+- **Runner:** Vitest + `@testing-library/react`. Config in `apps/companion/vitest.config.ts`, jsdom environment.
+- **Location:** colocated as `*.test.ts` / `*.test.tsx` next to source. Examples: `src/stores/trip.test.ts`, `src/components/TripCollaborateModal.test.tsx`.
+- **Command:** `pnpm --filter @tarmoto/companion test`.
+- **What goes here:** pure logic in `lib/`, store reducers, hook behavior, component-level interactions that don't need a real browser.
+
+### End-to-end (E2E) tests — Playwright
+
+- **Runner:** `@playwright/test` against Chromium.
+- **Location:** `apps/companion/e2e/tests/*.spec.ts`. Config in `apps/companion/playwright.config.ts`.
+- **Command:** `pnpm --filter @tarmoto/companion test:e2e` (one-time setup: `pnpm --filter @tarmoto/companion test:e2e:install`).
+- **Local UI mode:** `pnpm --filter @tarmoto/companion test:e2e:ui`.
+
+#### Backend stub
+
+The companion E2E suite drives the real Next.js dev server but proxies the backend through a small in-process Express stub at `apps/companion/e2e/mock-backend/server.ts`. The stub:
+
+- Implements just the endpoints the suites exercise (auth, trips, suggestions, account, subscription).
+- Holds state in memory and resets per test via the `mockApi` fixture.
+- Is hard-wired to never reach Stripe; tests assert on the request payload going to `/account/subscription/{checkout,portal}` instead.
+
+This trade-off keeps CI fast and avoids standing up Postgres / Redis. Full backend integration is covered by the backend's own e2e suite (`apps/backend/test/*.e2e-spec.ts`).
+
+#### Critical flows covered
+
+- **Auth** (`auth.spec.ts`): register → auto-sign-in, login success / failure, forgot-password success screen, cross-page navigation, unauthenticated redirect.
+- **Trip planner** (`trip-planner.spec.ts`): demo trip → generate three options → select option → promote-to-server save → reopen via trip detail.
+- **Trip collaboration** (`trip-collaboration.spec.ts`): two browser contexts round-tripping a suggestion + vote; public share-link page anonymous load.
+- **Road quality explorer** (`road-explorer.spec.ts`): filter checkboxes mirror URL params; reset clears them; URL params hydrate the panel on cold load.
+- **Subscription** (`subscription.spec.ts`): upgrade-to-Premium intent reaches Stripe Checkout, portal entry from "Open billing portal" / "Update payment method" / cancel-subscription dialog routes through the right portal flow.
+- **Settings** (`settings.spec.ts`): privacy + notification preferences round-trip via PUT, bike CRUD (add / edit / delete), account-deletion confirmation gate (without actually deleting in CI).
+
+Cursor-presence and live WebSocket sync between collaborators are mocked out; the round-trip assertions reload the page to fetch fresh state.
 
 ### Priority surfaces
 
 - `lib/api` — API client error handling, token refresh
 - `stores/*` — route-planning state, auth
-- `middleware.ts` — route protection
+- `proxy.ts` — route protection
 - Form validation in `(auth)/` flows
 
 ## What gets run in CI
 
 Each PR triggers:
 
-- `ci.yml` — builds `shared` + `backend`, runs lint, runs backend unit tests
+- `backend-ci.yml` — builds `shared` + `backend`, runs lint, runs backend unit tests
+- `companion-ci.yml` — lint, typecheck, Vitest, and Next.js build for the companion
+- `companion-e2e.yml` — runs the Playwright suite against the in-process mock backend; uploads traces and the HTML report on failure
+- `mobile-ci.yml` — lint and typecheck for the mobile app
 - `lint-pr.yml` — enforces conventional-commit PR titles with valid scope
 
 If CI fails, fix the root cause. Do not merge on a red build.

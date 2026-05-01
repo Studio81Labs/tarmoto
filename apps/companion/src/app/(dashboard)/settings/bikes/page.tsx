@@ -14,6 +14,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { accountApi } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth";
 import type { Bike } from "@/lib/types";
 import { BikeFormModal } from "@/components/BikeFormModal";
 import { formatBikeTitle, type BikeFormPayload } from "@/lib/bikes";
@@ -50,7 +51,11 @@ export default function BikesPage() {
     }
   }, []);
 
+  // Wait for the auth store to carry a token before fetching — same
+  // hard-navigation race fix as the other settings pages.
+  const authReady = useAuthStore((s) => Boolean(s.accessToken));
   useEffect(() => {
+    if (!authReady) return;
     let cancelled = false;
     accountApi
       .getBikes()
@@ -67,7 +72,7 @@ export default function BikesPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authReady]);
 
   const sortedBikes = useMemo(
     () =>

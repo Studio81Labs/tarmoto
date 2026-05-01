@@ -1,0 +1,96 @@
+name: Companion E2E
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/companion/**"
+      - "apps/backend/**"
+      - "packages/shared/**"
+      - "packages/openapi/**"
+      - ".github/workflows/companion-e2e.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/companion/**"
+      - "apps/backend/**"
+      - "packages/shared/**"
+      - "packages/openapi/**"
+      - ".github/workflows/companion-e2e.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  playwright:
+    name: Playwright
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm build:shared
+
+      - name: Generate OpenAPI client
+        run: pnpm generate:api
+
+      - name: Get Playwright version
+        id: playwright-version
+        run: |
+          version=$(node -p "require('./apps/companion/package.json').devDependencies['@playwright/test'].replace(/[^0-9.]/g, '')")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: cache-playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Playwright browsers
+        if: steps.cache-playwright.outputs.cache-hit != 'true'
+        run: pnpm --filter @tarmoto/companion exec playwright install --with-deps chromium
+
+      - name: Install Playwright browser system deps
+        if: steps.cache-playwright.outputs.cache-hit == 'true'
+        run: pnpm --filter @tarmoto/companion exec playwright install-deps chromium
+
+      - name: Run Playwright tests
+        env:
+          CI: "1"
+        run: pnpm --filter @tarmoto/companion test:e2e
+
+      - name: Upload traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: apps/companion/e2e/.results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Upload HTML report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/companion/e2e/.report/
+          retention-days: 14
+          if-no-files-found: ignore

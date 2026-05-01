@@ -50,6 +50,12 @@ yarn-error.log*
 # Testing
 coverage/
 
+# Playwright (companion E2E)
+apps/companion/e2e/.results/
+apps/companion/e2e/.report/
+apps/companion/playwright-report/
+apps/companion/test-results/
+
 # Misc
 *.tsbuildinfo
 .remember/

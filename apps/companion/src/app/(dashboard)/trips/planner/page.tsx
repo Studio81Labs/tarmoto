@@ -125,6 +125,7 @@ export default function TripPlannerPage() {
     null,
   );
   const currentUserId = useAuthStore((s) => s.user?.id ?? null);
+  const authReady = useAuthStore((s) => Boolean(s.accessToken));
   const collabSession = useTripCollabSession(serverTripId);
 
   useEffect(() => {
@@ -145,6 +146,12 @@ export default function TripPlannerPage() {
       setServerTripOwnerId(null);
       return;
     }
+    // Mirrors the gate on `/trips/:id` and `/settings/subscription`:
+    // wait for the auth store to carry a token so the trip fetch on
+    // a hard navigation to `/trips/planner?tripId=...` doesn't race
+    // AuthSync and silently land as a 401 (the catch swallows errors
+    // and the canvas would render empty).
+    if (!authReady) return;
     let cancelled = false;
     (async () => {
       try {
@@ -184,7 +191,7 @@ export default function TripPlannerPage() {
     return () => {
       cancelled = true;
     };
-  }, [serverTripId, setActiveTrip]);
+  }, [serverTripId, authReady, setActiveTrip]);
 
   const handlePromotedToServer = useCallback((newServerTripId: string) => {
     setServerTripId(newServerTripId);
