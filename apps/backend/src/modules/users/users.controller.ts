@@ -95,6 +95,12 @@ export class UsersController {
       throw new BadRequestException('Avatar image is required');
     }
 
+    // Same convention as the reviews controller: prefer the
+    // configured `TARMOTO_PUBLIC_BASE_URL` (the only safe choice
+    // behind a load balancer where multiple replicas all see the
+    // same external host) and fall back to the request-derived
+    // origin in dev so contributors don't need to set env vars to
+    // get a working URL.
     const publicBaseUrl = `${req.protocol}://${req.get('host')}`;
     return this.usersService.uploadAvatar(
       req.user!.userId,

@@ -37,6 +37,7 @@ import { TripActivityModule } from './modules/trip-activity/index.js';
 import { GroupRidesModule } from './modules/group-rides/index.js';
 import { JobsModule } from './modules/jobs/index.js';
 import { PushModule } from './modules/push/index.js';
+import { StorageModule } from './modules/storage/index.js';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { PushModule } from './modules/push/index.js';
     }),
     DatabaseModule,
     EmailModule,
+    StorageModule,
     AuthModule,
     AccountModule,
     JobsModule.forRoot(),

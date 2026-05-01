@@ -1,25 +1,22 @@
-/* eslint-disable @typescript-eslint/no-unsafe-return */
-jest.mock('node:fs/promises', () => ({
-  mkdir: jest.fn(),
-  unlink: jest.fn(),
-  writeFile: jest.fn(),
-}));
-
+/* eslint-disable @typescript-eslint/no-unsafe-return, @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
-import { unlink, writeFile, mkdir } from 'node:fs/promises';
+import { Readable } from 'node:stream';
 import { UsersService } from './users.service.js';
 import { User } from '../../entities/user.entity.js';
 import { UserContact } from '../../entities/user-contact.entity.js';
 import { UserFollow } from '../../entities/user-follow.entity.js';
+import { OBJECT_STORAGE } from '../storage/storage.tokens.js';
+import type { ObjectStorage } from '../storage/object-storage.interface.js';
 
 describe('UsersService', () => {
   let service: UsersService;
   let userRepo: Partial<jest.Mocked<Repository<User>>>;
   let contactRepo: Partial<jest.Mocked<Repository<UserContact>>>;
   let userFollowRepo: Partial<jest.Mocked<Repository<UserFollow>>>;
+  let storage: jest.Mocked<ObjectStorage>;
 
   // Factory, not a shared instance — updateProfile mutates the entity it
   // loads via findOne, so any two tests sharing the same object would leak
@@ -51,9 +48,23 @@ describe('UsersService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    jest.mocked(mkdir).mockResolvedValue(undefined);
-    jest.mocked(unlink).mockResolvedValue(undefined);
-    jest.mocked(writeFile).mockResolvedValue(undefined);
+
+    storage = {
+      put: jest.fn().mockResolvedValue({ byteSize: 12 }),
+      read: jest.fn().mockResolvedValue(Readable.from(Buffer.from(''))),
+      delete: jest.fn().mockResolvedValue(undefined),
+      exists: jest.fn().mockResolvedValue(true),
+      // Default: build a relative LocalStorage-style URL from the
+      // key so tests can assert on either the key or the URL.
+      publicUrl: jest
+        .fn()
+        .mockImplementation((key: string) => `/uploads/${key}`),
+      signedUrl: jest
+        .fn()
+        .mockImplementation((key: string) =>
+          Promise.resolve(`/uploads/${key}`),
+        ),
+    } as unknown as jest.Mocked<ObjectStorage>;
 
     userRepo = {
       findOne: jest
@@ -81,6 +92,7 @@ describe('UsersService', () => {
         { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: getRepositoryToken(UserContact), useValue: contactRepo },
         { provide: getRepositoryToken(UserFollow), useValue: userFollowRepo },
+        { provide: OBJECT_STORAGE, useValue: storage },
       ],
     }).compile();
 
@@ -315,7 +327,7 @@ describe('UsersService', () => {
         avatar_url: 'https://cdn.example.com/u/1.png',
       });
 
-      expect(unlink).not.toHaveBeenCalled();
+      expect(storage.delete).not.toHaveBeenCalled();
     });
 
     it('should ignore decoded avatar filenames with null bytes', async () => {
@@ -328,7 +340,7 @@ describe('UsersService', () => {
         avatar_url: 'https://cdn.example.com/u/1.png',
       });
 
-      expect(unlink).not.toHaveBeenCalled();
+      expect(storage.delete).not.toHaveBeenCalled();
     });
 
     it('should ignore decoded avatar filenames that resolve to dot segments', async () => {
@@ -341,7 +353,7 @@ describe('UsersService', () => {
         avatar_url: 'https://cdn.example.com/u/1.png',
       });
 
-      expect(unlink).not.toHaveBeenCalled();
+      expect(storage.delete).not.toHaveBeenCalled();
     });
   });
 
@@ -351,7 +363,7 @@ describe('UsersService', () => {
       buffer: Buffer.from('avatar-bytes'),
     } as Express.Multer.File;
 
-    it('should store the uploaded avatar and remove the previous managed file', async () => {
+    it('writes the uploaded avatar via the storage backend and embeds an absolute URL built from the request base URL', async () => {
       userRepo.findOne!.mockResolvedValueOnce({
         ...buildMockUser(),
         avatar_url: 'https://app.tarmoto.test/uploads/avatars/old-avatar.png',
@@ -363,41 +375,106 @@ describe('UsersService', () => {
         'https://app.tarmoto.test',
       );
 
-      expect(writeFile).toHaveBeenCalledWith(
-        expect.stringContaining('/uploads/avatars/user-1-'),
-        file.buffer,
-      );
+      // The new avatar lands in storage under `avatars/<userId>-...`
+      // — we don't pin the random filename, just the prefix and
+      // content type contract.
+      expect(storage.put).toHaveBeenCalledTimes(1);
+      const putArg = storage.put.mock.calls[0][0];
+      expect(putArg.key).toMatch(/^avatars\/user-1-\d+-[0-9a-f-]+\.png$/);
+      expect(putArg.body).toBe(file.buffer);
+      expect(putArg.contentType).toBe('image/png');
+
+      // For LocalStorage-style relative URLs, the service prefixes
+      // the request's public base so mobile clients (which don't
+      // resolve relative URLs) can render the image directly.
       const savedUser = userRepo.save!.mock.calls[0]?.[0] as User;
       expect(savedUser.avatar_url).toMatch(
         /^https:\/\/app\.tarmoto\.test\/uploads\/avatars\/user-1-/,
       );
-      expect(unlink).toHaveBeenCalledWith(
-        expect.stringContaining('/uploads/avatars/old-avatar.png'),
-      );
       expect(result.avatar_url).toMatch(
         /^https:\/\/app\.tarmoto\.test\/uploads\/avatars\/user-1-/,
       );
+
+      // The old avatar is removed by storage key, not by absolute
+      // path — the storage-key helper turns the legacy URL into a
+      // managed key.
+      expect(storage.delete).toHaveBeenCalledWith('avatars/old-avatar.png');
     });
 
-    it('should not delete the new avatar file when removing the previous avatar fails after save', async () => {
+    it('preserves an absolute URL returned by the storage backend (S3 / CDN case)', async () => {
+      userRepo.findOne!.mockResolvedValueOnce({
+        ...buildMockUser(),
+        avatar_url: null,
+      } as User);
+      // S3Storage returns an absolute URL. The service should use
+      // it verbatim — prefixing the request base URL would yield
+      // an obvious nonsense double-host.
+      storage.publicUrl.mockImplementationOnce(
+        (key: string) => `https://cdn.tarmoto.app/${key}`,
+      );
+
+      const result = await service.uploadAvatar(
+        'user-1',
+        file,
+        'https://app.tarmoto.test',
+      );
+
+      expect(result.avatar_url).toMatch(
+        /^https:\/\/cdn\.tarmoto\.app\/avatars\/user-1-/,
+      );
+    });
+
+    it('rejects an unsupported MIME type before calling storage', async () => {
+      const badFile = {
+        mimetype: 'image/gif',
+        buffer: Buffer.from('gif87a'),
+      } as Express.Multer.File;
+
+      await expect(
+        service.uploadAvatar('user-1', badFile, 'https://app.tarmoto.test'),
+      ).rejects.toThrow(/PNG, JPEG, or WebP/);
+      expect(storage.put).not.toHaveBeenCalled();
+    });
+
+    it('does not delete the new object when removing the previous avatar fails after save', async () => {
       userRepo.findOne!.mockResolvedValueOnce({
         ...buildMockUser(),
         avatar_url: 'https://app.tarmoto.test/uploads/avatars/old-avatar.png',
       } as User);
-      jest
-        .mocked(unlink)
-        .mockRejectedValueOnce(
-          Object.assign(new Error('permission denied'), { code: 'EACCES' }),
-        );
+      // The first `delete` call is the managed-old-avatar cleanup.
+      // It must not bubble out — the new avatar is already saved
+      // and we don't want a flaky cleanup to fail the upload.
+      storage.delete.mockRejectedValueOnce(
+        Object.assign(new Error('permission denied'), { code: 'EACCES' }),
+      );
 
       await expect(
         service.uploadAvatar('user-1', file, 'https://app.tarmoto.test'),
       ).rejects.toThrow('permission denied');
 
-      expect(unlink).toHaveBeenCalledTimes(1);
-      expect(unlink).toHaveBeenCalledWith(
-        expect.stringContaining('/uploads/avatars/old-avatar.png'),
-      );
+      // Exactly one delete: the old avatar. The new one stays put,
+      // matching the previous behaviour where a successful save
+      // followed by a failed cleanup did not roll the new write back.
+      expect(storage.delete).toHaveBeenCalledTimes(1);
+      expect(storage.delete).toHaveBeenCalledWith('avatars/old-avatar.png');
+    });
+
+    it('rolls back the new object when the DB save fails', async () => {
+      userRepo.findOne!.mockResolvedValueOnce({
+        ...buildMockUser(),
+        avatar_url: null,
+      } as User);
+      userRepo.save!.mockRejectedValueOnce(new Error('db down'));
+
+      await expect(
+        service.uploadAvatar('user-1', file, 'https://app.tarmoto.test'),
+      ).rejects.toThrow('db down');
+
+      // The just-uploaded avatar is best-effort deleted so a
+      // failed save doesn't leak orphaned objects on every retry.
+      expect(storage.delete).toHaveBeenCalledTimes(1);
+      const deletedKey = storage.delete.mock.calls[0][0];
+      expect(deletedKey).toMatch(/^avatars\/user-1-/);
     });
   });
 

@@ -266,6 +266,134 @@ var, and revoking the old key.
   active state before the event (the service de-dupes confirmations to
   avoid spamming on every period update).
 
+## Object storage (avatars / review photos / GDPR exports)
+
+User-uploaded binaries flow through a pluggable `ObjectStorage`
+interface (see `apps/backend/src/modules/storage/`). The driver is
+chosen by `TARMOTO_STORAGE_DRIVER` and defaults to `local` so
+contributors get working avatar uploads without env wiring.
+
+### Drivers
+
+| Driver  | When to use                                                                                      | Notes                                                                                                   |
+| ------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `local` | Local dev. Single-instance prototype deploys.                                                    | Writes to `${TARMOTO_LOCAL_STORAGE_DIR}` (default `<cwd>/uploads`). Served via `/uploads` static route. |
+| `s3`    | Any deploy with **more than one backend replica**. Required once we move behind a load balancer. | AWS S3, Cloudflare R2, or MinIO. Uses `@aws-sdk/client-s3` with optional endpoint override.             |
+
+Local dev never needs an S3 bucket — leaving `TARMOTO_STORAGE_DRIVER`
+unset keeps the existing filesystem behaviour. The static-file
+middleware in `main.ts` mirrors the same env vars so overriding
+`TARMOTO_LOCAL_STORAGE_DIR` works end-to-end.
+
+### S3 / R2 / MinIO env vars (staging / prod)
+
+| Variable                       | Required when `s3` | Notes                                                                                                                                                                       |
+| ------------------------------ | :----------------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TARMOTO_STORAGE_DRIVER`       |        yes         | Set to `s3`. Anything else (or unset) selects `local`.                                                                                                                      |
+| `TARMOTO_S3_BUCKET`            |        yes         | Bucket name. The backend writes under `avatars/`, `reviews/`, `exports/` prefixes — keep them in one bucket.                                                                |
+| `TARMOTO_S3_REGION`            |        yes         | AWS region. R2 accepts any string but typically `auto`. MinIO accepts `us-east-1`.                                                                                          |
+| `TARMOTO_S3_ACCESS_KEY_ID`     |        yes         | Treat as secret. Store in 1Password / SSM / R2 token.                                                                                                                       |
+| `TARMOTO_S3_SECRET_ACCESS_KEY` |        yes         | Treat as secret.                                                                                                                                                            |
+| `TARMOTO_S3_ENDPOINT`          |         no         | Endpoint override. Required for R2 (`https://<accountid>.r2.cloudflarestorage.com`) and MinIO (`http://minio:9000`).                                                        |
+| `TARMOTO_S3_FORCE_PATH_STYLE`  |         no         | `true` for MinIO and convenient for R2. Default `false` (virtual-hosted, AWS native).                                                                                       |
+| `TARMOTO_S3_PUBLIC_URL_BASE`   |         no         | Public URL base for the bucket (CDN domain or R2 custom domain). When unset the backend builds a URL from endpoint + bucket — fine for MinIO, rarely what production wants. |
+
+Avatars and review photos are world-readable, so the bucket must
+allow anonymous GET on `avatars/*` and `reviews/*`. GDPR exports
+under `exports/*` should be private and served via signed URLs (see
+`apps/backend/src/modules/account/data-export/`).
+
+### Local MinIO recipe
+
+```bash
+# Spin up MinIO on top of the existing Postgres + Redis stack.
+docker compose -f infra/docker/docker-compose.yml --profile s3 up -d
+
+# Create the bucket via the console at http://localhost:9001 (login
+# minioadmin/minioadmin) or with the MinIO client:
+docker run --rm --network host minio/mc \
+  alias set local http://localhost:9000 minioadmin minioadmin
+docker run --rm --network host minio/mc mb --ignore-existing local/tarmoto
+
+# Point the backend at it.
+export TARMOTO_STORAGE_DRIVER=s3
+export TARMOTO_S3_BUCKET=tarmoto
+export TARMOTO_S3_REGION=us-east-1
+export TARMOTO_S3_ENDPOINT=http://localhost:9000
+export TARMOTO_S3_ACCESS_KEY_ID=minioadmin
+export TARMOTO_S3_SECRET_ACCESS_KEY=minioadmin
+export TARMOTO_S3_FORCE_PATH_STYLE=true
+pnpm dev:backend
+```
+
+### Migrating existing avatars from local FS to S3
+
+Existing rows have absolute URLs like `https://<api-host>/uploads/avatars/<file>`
+— that format works as-is regardless of which backend serves it,
+so flipping `TARMOTO_STORAGE_DRIVER` from `local` to `s3` does
+**not** break already-stored references _if_ the API host keeps
+serving the old `/uploads/avatars/...` path during the transition.
+
+When you want to fully cut over to S3 / R2:
+
+1. Sync the local filesystem to the bucket while the backend is
+   still on `local` so the bucket is the new source of truth:
+
+   ```bash
+   aws s3 sync /var/lib/tarmoto/uploads/avatars/ \
+     s3://tarmoto-prod/avatars/ \
+     --content-type 'image/png'   # adjust per file or rely on heuristics
+   ```
+
+   For R2 use `aws s3 sync ... --endpoint-url=$R2_ENDPOINT`. For
+   MinIO use `mc mirror`.
+
+2. Backfill `users.avatar_url` to point at the bucket's CDN URL:
+
+   ```sql
+   UPDATE users
+      SET avatar_url = regexp_replace(
+        avatar_url,
+        '^https?://[^/]+/uploads/avatars/(.*)$',
+        'https://cdn.tarmoto.app/avatars/\1'
+      )
+    WHERE avatar_url ~ '^https?://[^/]+/uploads/avatars/';
+   ```
+
+3. Set the env vars (`TARMOTO_STORAGE_DRIVER=s3` plus the bucket
+   credentials), redeploy, and verify a new avatar upload lands in
+   the bucket and renders end-to-end on the mobile client.
+
+### Symptoms and fixes
+
+- **Avatar uploads return 500 with "invalid storage key"** — the
+  storage backend rejected a key. Check the request log for the
+  full key; the most common cause is a contributor running with a
+  stale build that still passes a constructed path. Rebuild with
+  `pnpm build:backend`.
+- **Avatars 404 in prod after a hostname change** — old rows
+  embedded the previous public hostname into `users.avatar_url`.
+  Run a one-off SQL update to rewrite the host (preview against a
+  snapshot first):
+
+  ```sql
+  UPDATE users
+     SET avatar_url = regexp_replace(
+       avatar_url,
+       '^https?://[^/]+(/uploads/avatars/.*)$',
+       'https://api.tarmoto.app\1'
+     )
+   WHERE avatar_url ~ '^https?://[^/]+/uploads/avatars/';
+  ```
+
+- **MinIO bucket missing on first run** — the compose service does
+  not auto-create buckets. Use the MinIO console or `mc mb`.
+- **R2 SignatureDoesNotMatch errors** — the R2 token must scope
+  _Object Read & Write_ on the bucket. R2 also expects
+  `TARMOTO_S3_REGION=auto` for some token shapes; if the access
+  key looks like an R2 access ID rather than an AWS-style one,
+  double-check the dashboard's region setting.
+
 ## Incident response checklist (placeholder)
 
 When production deploys land, this section grows. Template for now:
@@ -282,5 +410,6 @@ When production deploys land, this section grows. Template for now:
 - Secret rotation in production (only local-dev relevance today)
 - Companion deployment (not wired)
 - Mobile release workflows (App Store / Play Store)
+- S3 bucket lifecycle / retention policy (e.g. expiring failed export uploads)
 
 Add sections above as these land.

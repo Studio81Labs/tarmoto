@@ -1,18 +1,18 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { pointToLatLng } from '@tarmoto/shared';
-import { hasControlCharacters } from '../../common/control-characters.js';
 import { User } from '../../entities/user.entity.js';
 import { UserContact } from '../../entities/user-contact.entity.js';
 import { UserFollow } from '../../entities/user-follow.entity.js';
+import { OBJECT_STORAGE } from '../storage/storage.tokens.js';
+import type { ObjectStorage } from '../storage/object-storage.interface.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { CreateContactDto } from './dto/create-contact.dto.js';
 import { UpdateContactDto } from './dto/update-contact.dto.js';
@@ -21,53 +21,13 @@ import {
   ContactResponseDto,
 } from './dto/user-response.dto.js';
 import { PublicProfileDto } from './dto/public-profile.dto.js';
+import { AVATAR_KEY_PREFIX, avatarKeyFromUrl } from './avatar-storage-key.js';
 
-const AVATAR_PATH_PREFIX = '/uploads/avatars/';
-const AVATAR_UPLOAD_DIR = join(process.cwd(), 'uploads', 'avatars');
 const ALLOWED_AVATAR_TYPES = new Map<string, string>([
   ['image/jpeg', '.jpg'],
   ['image/png', '.png'],
   ['image/webp', '.webp'],
 ]);
-
-function managedAvatarFilePath(avatarUrl: string | null): string | null {
-  if (!avatarUrl) return null;
-
-  try {
-    const parsed = new URL(avatarUrl, 'https://tarmoto.local');
-    if (!parsed.pathname.startsWith(AVATAR_PATH_PREFIX)) return null;
-
-    const encodedFilename = parsed.pathname.slice(AVATAR_PATH_PREFIX.length);
-    if (!encodedFilename) return null;
-
-    const filename = decodeURIComponent(encodedFilename);
-    if (
-      filename === '.' ||
-      filename === '..' ||
-      filename !== basename(filename) ||
-      filename.includes('/') ||
-      filename.includes('\\') ||
-      hasControlCharacters(filename)
-    ) {
-      return null;
-    }
-
-    return join(AVATAR_UPLOAD_DIR, filename);
-  } catch {
-    return null;
-  }
-}
-
-async function deleteManagedAvatar(avatarUrl: string | null): Promise<void> {
-  const filePath = managedAvatarFilePath(avatarUrl);
-  if (!filePath) return;
-
-  try {
-    await unlink(filePath);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-  }
-}
 
 @Injectable()
 export class UsersService {
@@ -78,6 +38,8 @@ export class UsersService {
     private readonly contactRepo: Repository<UserContact>,
     @InjectRepository(UserFollow)
     private readonly userFollowRepo: Repository<UserFollow>,
+    @Inject(OBJECT_STORAGE)
+    private readonly storage: ObjectStorage,
   ) {}
 
   async getProfile(userId: string): Promise<UserResponseDto> {
@@ -183,7 +145,7 @@ export class UsersService {
       dto.avatar_url !== undefined &&
       previousAvatarUrl !== saved.avatar_url
     ) {
-      await deleteManagedAvatar(previousAvatarUrl);
+      await this.deleteManagedAvatar(previousAvatarUrl);
     }
     return this.toUserResponse(saved);
   }
@@ -205,24 +167,41 @@ export class UsersService {
       );
     }
 
-    await mkdir(AVATAR_UPLOAD_DIR, { recursive: true });
     const filename = `${userId}-${Date.now()}-${randomUUID()}${extension}`;
-    const filePath = join(AVATAR_UPLOAD_DIR, filename);
+    const key = `${AVATAR_KEY_PREFIX}${filename}`;
     const previousAvatarUrl = user.avatar_url;
-    const nextAvatarUrl = `${publicBaseUrl}${AVATAR_PATH_PREFIX}${filename}`;
 
-    await writeFile(filePath, file.buffer);
+    await this.storage.put({
+      key,
+      body: file.buffer,
+      contentType: file.mimetype,
+    });
+    // Storage returns either a server-relative path (LocalStorage —
+    // depends on the API host the client hits) or an absolute CDN
+    // URL (S3 — already self-contained). Mobile / companion clients
+    // pass the value straight to `<Image source={{ uri }} />`, which
+    // does NOT auto-resolve relative URLs, so we lift the relative
+    // form into an absolute one against the request's public base
+    // URL before storing. Absolute URLs are preserved verbatim.
+    const storageUrl = this.storage.publicUrl(key);
+    const nextAvatarUrl = /^https?:\/\//.test(storageUrl)
+      ? storageUrl
+      : `${publicBaseUrl}${storageUrl}`;
 
     let saved: User;
     try {
       user.avatar_url = nextAvatarUrl;
       saved = await this.userRepo.save(user);
     } catch (error) {
-      await deleteManagedAvatar(nextAvatarUrl);
+      // Save failed after the new object landed: roll back the
+      // upload so we don't accumulate orphaned avatars on every
+      // failed DB write. Wrapped in a best-effort catch — the
+      // original save error is what the caller cares about.
+      await this.deleteManagedAvatar(nextAvatarUrl).catch(() => {});
       throw error;
     }
 
-    await deleteManagedAvatar(previousAvatarUrl);
+    await this.deleteManagedAvatar(previousAvatarUrl);
     return this.toUserResponse(saved);
   }
 
@@ -280,6 +259,12 @@ export class UsersService {
       throw new NotFoundException('Contact not found');
     }
     await this.contactRepo.remove(contact);
+  }
+
+  private async deleteManagedAvatar(avatarUrl: string | null): Promise<void> {
+    const key = avatarKeyFromUrl(avatarUrl);
+    if (!key) return;
+    await this.storage.delete(key);
   }
 
   private toUserResponse(user: User): UserResponseDto {

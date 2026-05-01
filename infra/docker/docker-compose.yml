@@ -38,6 +38,45 @@ services:
       timeout: 5s
       retries: 5
 
+  # S3-compatible storage for testing the `s3` storage driver
+  # locally. Off by default so the standard `pnpm db:up` flow stays
+  # cheap; opt in with `pnpm db:up --profile s3` (or
+  # `docker compose --profile s3 up -d`) when iterating on avatar /
+  # review-photo / data-export storage. Once running, point the
+  # backend at it with:
+  #
+  #   TARMOTO_STORAGE_DRIVER=s3
+  #   TARMOTO_S3_BUCKET=tarmoto
+  #   TARMOTO_S3_REGION=us-east-1
+  #   TARMOTO_S3_ENDPOINT=http://localhost:9000
+  #   TARMOTO_S3_ACCESS_KEY_ID=minioadmin
+  #   TARMOTO_S3_SECRET_ACCESS_KEY=minioadmin
+  #   TARMOTO_S3_FORCE_PATH_STYLE=true
+  #
+  # The console (default port 9001) is the easy way to create the
+  # `tarmoto` bucket on first run. See `docs/process/runbook.md` for
+  # the production setup.
+  minio:
+    container_name: tarmoto-minio
+    image: minio/minio:latest
+    profiles: ["s3"]
+    restart: unless-stopped
+    ports:
+      - "${TARMOTO_S3_PORT:-9000}:9000"
+      - "${TARMOTO_S3_CONSOLE_PORT:-9001}:9001"
+    environment:
+      MINIO_ROOT_USER: ${TARMOTO_S3_ACCESS_KEY_ID:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${TARMOTO_S3_SECRET_ACCESS_KEY:-minioadmin}
+    command: server /data --console-address ":9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   pgdata:
   redisdata:
+  miniodata:

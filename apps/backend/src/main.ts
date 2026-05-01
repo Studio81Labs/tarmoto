@@ -94,7 +94,27 @@ async function bootstrap() {
 
   app.use(isProd ? helmet() : helmet({ contentSecurityPolicy: false }));
   app.setGlobalPrefix('api/v1');
-  app.use('/uploads', serveStatic(join(process.cwd(), 'uploads')));
+
+  // Serve locally-stored uploads (avatars today; review photos next)
+  // when the `local` storage driver is in use. The path prefix and
+  // base directory mirror `LocalStorage` so a contributor running
+  // with default env config gets working avatar fetches without
+  // touching MinIO. When `TARMOTO_STORAGE_DRIVER=s3` clients fetch
+  // directly from the bucket / CDN, so this route is effectively
+  // unused — leaving it mounted is harmless.
+  const storageDriver = (process.env.TARMOTO_STORAGE_DRIVER ?? 'local')
+    .trim()
+    .toLowerCase();
+  if (storageDriver === 'local') {
+    const localDir =
+      process.env.TARMOTO_LOCAL_STORAGE_DIR?.trim() ||
+      join(process.cwd(), 'uploads');
+    const publicPath =
+      (process.env.TARMOTO_LOCAL_STORAGE_PUBLIC_PATH ?? '/uploads')
+        .trim()
+        .replace(/\/+$/, '') || '/uploads';
+    app.use(publicPath, serveStatic(localDir));
+  }
 
   app.useGlobalPipes(
     new ValidationPipe({
