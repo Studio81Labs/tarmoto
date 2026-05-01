@@ -43,7 +43,6 @@ interface HubSnapshot {
   totalBadges: number;
   topTier: string | null;
   activeChallenges: number;
-  joinedChallenges: number;
   exploration: ExplorationStats | null;
 }
 
@@ -109,12 +108,6 @@ export default function AchievementsScreen() {
         totalBadges: badges.length,
         topTier,
         activeChallenges: challenges.length,
-        // The hub doesn't fetch per-challenge detail (would be an N+1
-        // burst on the cold path), so "joined" is best-effort: a
-        // non-zero number means the rider has at least dabbled. We
-        // expose the active challenge count instead and let the
-        // detail screen show personal progress.
-        joinedChallenges: 0,
         exploration,
       });
       // Soft warning when only some sources failed: the banner stays
