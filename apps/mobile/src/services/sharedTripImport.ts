@@ -126,11 +126,16 @@ export function sharedSnapshotToImportRequest(
     }
   }
 
-  // No geometry means the snapshot was waypoints-only or malformed; fall
-  // back to the waypoint coords so the rider at least gets the stop list
-  // imported. The backend's import endpoint requires at least 2 points.
+  // No usable geometry means the snapshot was waypoints-only or malformed;
+  // fall back to the waypoint coords so the rider at least gets the stop
+  // list imported. The backend's import endpoint requires at least 2
+  // points. We REPLACE rather than append: a single salvaged point from a
+  // mostly-malformed geometry would otherwise prefix the waypoint
+  // fallback with an arbitrary mid-route coordinate and draw the
+  // imported route from there to the first stop, which is wrong.
   if (geometry.length < 2) {
     if (waypoints.length < 2) return null;
+    geometry.length = 0;
     geometry.push(...waypoints.map((w) => ({ lat: w.lat, lng: w.lng })));
   }
 

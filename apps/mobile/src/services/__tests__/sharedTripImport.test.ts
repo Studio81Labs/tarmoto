@@ -166,6 +166,36 @@ describe("sharedSnapshotToImportRequest", () => {
     ).toBeNull();
   });
 
+  it("discards a single salvaged geometry point before falling back to waypoints", () => {
+    // Mostly-malformed coords leave geometry with exactly one valid
+    // entry. Without clearing it we'd draw the imported line from that
+    // arbitrary mid-route point to the first waypoint — a wrong route.
+    const request = sharedSnapshotToImportRequest(
+      share({
+        days: [
+          {
+            routeGeometry: {
+              coordinates: [
+                [10.0, 46.0],
+                ["bad", "data"],
+                [null, null],
+              ],
+            },
+            waypoints: [
+              { location: { lat: 1, lng: 2 }, name: "A", type: "start" },
+              { location: { lat: 3, lng: 4 }, name: "B", type: "end" },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(request).not.toBeNull();
+    expect(request!.geometry).toEqual([
+      { lat: 1, lng: 2 },
+      { lat: 3, lng: 4 },
+    ]);
+  });
+
   it("skips malformed coordinate entries instead of throwing", () => {
     const request = sharedSnapshotToImportRequest(
       share({
