@@ -7,6 +7,7 @@ import {
   OneToMany,
 } from 'typeorm';
 import * as GeoJSON from 'geojson';
+import type { SubscriptionTier } from '@tarmoto/shared';
 import { UserContact } from './user-contact.entity.js';
 import { Ride } from './ride.entity.js';
 import { HazardReport } from './hazard-report.entity.js';
@@ -66,7 +67,7 @@ export class User {
   stripe_subscription_id!: string | null;
 
   @Column({ type: 'varchar', length: 20, default: 'free' })
-  subscription_tier!: 'free' | 'premium' | 'pro';
+  subscription_tier!: SubscriptionTier;
 
   @Column({ type: 'varchar', length: 20, default: 'canceled' })
   subscription_status!: 'active' | 'trialing' | 'past_due' | 'canceled';

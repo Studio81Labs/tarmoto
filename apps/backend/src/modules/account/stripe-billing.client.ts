@@ -1,6 +1,7 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
+import type { SubscriptionTier } from '@tarmoto/shared';
 
 export const STRIPE_BILLING_CLIENT = Symbol('STRIPE_BILLING_CLIENT');
 
@@ -58,7 +59,7 @@ type StripePortalSessionParams = {
   flow_data?: StripePortalFlowData;
 };
 
-export type BillingTier = 'free' | 'premium' | 'pro';
+export type BillingTier = SubscriptionTier;
 export type BillingStatus = 'active' | 'trialing' | 'past_due' | 'canceled';
 export type InvoiceStatus = 'paid' | 'open' | 'refunded';
 export type BillingPortalFlowType =
