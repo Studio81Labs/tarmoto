@@ -12,9 +12,9 @@ import { UploadResponseDto } from './dto/upload-response.dto.js';
 import {
   emptyLeanDistribution,
   haversineMeters,
-  leanBucketFor,
   mergeLeanDistributions,
   normalizeLeanDistribution,
+  tallyLeanSamples,
   type LeanDistribution,
 } from '@tarmoto/shared';
 
@@ -62,6 +62,16 @@ export class SensorService {
     userId: string,
     dto: UploadSensorDataDto,
   ): Promise<UploadResponseDto> {
+    // US-19 — fold this batch's lean samples into the per-ride
+    // aggregation FIRST so they survive the GPS / speed filter the
+    // surface-readings path applies below. Lean is derived from
+    // accel + gyro and is GPS-independent: a batch captured during
+    // GPS lock-acquisition, a tunnel, or stop-and-go traffic still
+    // has valid `lean_deg` values that should land on the histogram.
+    // Persisting before the early return keeps that data alive even
+    // when no reading qualifies for the surface-readings pipeline.
+    await this.upsertLeanStats(dto.ride_id, dto.readings);
+
     // Filter out readings without GPS or below speed threshold
     const validReadings = dto.readings.filter(
       (r) =>
@@ -117,14 +127,6 @@ export class SensorService {
       segmentsUpdated++;
     }
 
-    // US-19 — fold this batch's lean samples into the per-ride
-    // aggregation. Done after the surface-reading loop so a partial
-    // failure mid-loop doesn't ship lean stats without the
-    // corresponding road-quality data, but kept inside `processUpload`
-    // so the unit of work for "this batch was accepted" stays one
-    // method.
-    await this.upsertLeanStats(dto.ride_id, dto.readings);
-
     return {
       accepted: validReadings.length,
       segments_updated: segmentsUpdated,
@@ -150,22 +152,22 @@ export class SensorService {
     rideId: string,
     readings: SensorReadingDto[],
   ): Promise<void> {
+    // Pull the absolute-degree samples once and reuse for both the max
+    // and the histogram tally so we don't walk the readings twice.
+    const absSamples: number[] = [];
     let batchMax = 0;
-    const batchHistogram = emptyLeanDistribution();
-    let sampleCount = 0;
     for (const r of readings) {
       if (r.lean_deg === undefined || !Number.isFinite(r.lean_deg)) continue;
       const abs = Math.abs(r.lean_deg);
       if (abs > batchMax) batchMax = abs;
-      const bucket = leanBucketFor(abs);
-      if (bucket) batchHistogram[bucket] += 1;
-      sampleCount += 1;
+      absSamples.push(abs);
     }
-    if (sampleCount === 0) {
+    if (absSamples.length === 0) {
       // Quiet sensor / pre-calibration batch — leave the row alone so
       // a follow-up batch with real lean data can still write to it.
       return;
     }
+    const batchHistogram = tallyLeanSamples(absSamples);
 
     const existing = await this.statsRepo.findOne({
       where: { ride_id: rideId },

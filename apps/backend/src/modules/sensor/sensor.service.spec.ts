@@ -505,6 +505,51 @@ describe('SensorService', () => {
       expect(statsRepo.save).not.toHaveBeenCalled();
       expect(storedStats).toBeNull();
     });
+
+    it('persists lean samples even when every reading is filtered out by the GPS / speed gate', async () => {
+      // Lean is derived from accel + gyro; GPS lock-acquisition,
+      // tunnels, and stop-and-go traffic shouldn't cost the ride its
+      // lean histogram. Without the upfront `upsertLeanStats` call,
+      // the early return below would silently drop these samples.
+      const dto = {
+        ride_id: 'ride-1',
+        readings: [
+          // No GPS coordinates — dropped by the surface pipeline's
+          // filter, but the rider's lean is still meaningful.
+          {
+            t: Date.now(),
+            ax: 0.1,
+            ay: 0.2,
+            az: 9.8,
+            lean_deg: 22,
+          },
+          {
+            t: Date.now() + 20,
+            ax: 0.1,
+            ay: 0.2,
+            az: 9.8,
+            // Stopped (< 10 km/h) — also dropped by the GPS / speed
+            // filter for the same reason.
+            lat: 49.1,
+            lng: 16.75,
+            speed: 0.5,
+            lean_deg: 8,
+          },
+        ],
+      };
+
+      const result = await service.processUpload('user-1', dto);
+
+      expect(result.accepted).toBe(0);
+      expect(result.segments_updated).toBe(0);
+      expect(storedStats?.max_lean_angle).toBe(22);
+      expect(storedStats?.lean_distribution_json).toEqual({
+        '0_10': 1,
+        '10_20': 0,
+        '20_30': 1,
+        '30_plus': 0,
+      });
+    });
   });
 
   describe('processSegment speed handling', () => {
