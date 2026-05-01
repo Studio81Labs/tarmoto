@@ -145,7 +145,7 @@ export class QueueHealthService {
       name: job.name,
       failed_at: new Date(finishedOn).toISOString(),
       attempts_made: job.attemptsMade,
-      failed_reason: job.failedReason ?? null,
+      failed_reason: this.scrubFailureReason(job.failedReason ?? null),
     };
   }
 
@@ -169,5 +169,52 @@ export class QueueHealthService {
       return rawId;
     }
     return `${rawId.slice(0, colonIdx)}:***`;
+  }
+
+  /**
+   * Scrub PII from a raw `error.message` before exposing it on the
+   * unauthenticated `GET /jobs/health` response. BullMQ stores the
+   * exception's message verbatim, so an upstream error like
+   * `Stripe 503: subscription sub_abc123 for customer cus_xyz789`
+   * or a TypeORM error mentioning a user UUID would otherwise leak
+   * directly to anyone polling the endpoint.
+   *
+   * The scrub is intentionally narrow — replacing only well-known
+   * identifier shapes — so the surviving message still carries the
+   * triage signal on-call needs (HTTP status, error class, root
+   * cause). Truncation also caps the upper bound to 240 chars so
+   * a stack-trace-as-message can't ferry deep call-site detail
+   * through this surface.
+   *
+   * Patterns scrubbed:
+   *   - UUIDs (any version)            → `<uuid>`
+   *   - Stripe ids (`cus_`, `sub_`,    → `<prefix>_***`
+   *     `pi_`, `in_`, `seti_`,
+   *     `ch_`, `cs_`, `price_`,
+   *     `prod_`, `inv_`, `re_`)
+   *   - Email addresses                 → `<email>`
+   *   - Bare bearer tokens (40+ char    → `<token>`
+   *     hex/base64 chunks)
+   */
+  private scrubFailureReason(raw: string | null): string | null {
+    if (!raw) return raw;
+    const MAX_LEN = 240;
+    let out = raw.length > MAX_LEN ? `${raw.slice(0, MAX_LEN)}…` : raw;
+    out = out.replace(
+      /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,
+      '<uuid>',
+    );
+    out = out.replace(
+      /\b(cus|sub|pi|in|seti|ch|cs|price|prod|inv|re|tok|src|pm|sk|pk|whsec|rk)_[A-Za-z0-9]{6,}\b/g,
+      '$1_***',
+    );
+    out = out.replace(
+      /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g,
+      '<email>',
+    );
+    // Long opaque tokens (40+ hex/base64-url chars). Heuristic — runs
+    // last so it can't clobber the more specific patterns above.
+    out = out.replace(/\b[A-Za-z0-9_-]{40,}\b/g, '<token>');
+    return out;
   }
 }

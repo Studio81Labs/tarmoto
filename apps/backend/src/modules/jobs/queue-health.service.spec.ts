@@ -118,6 +118,56 @@ describe('QueueHealthService', () => {
     );
   });
 
+  it('scrubs PII (UUIDs, Stripe ids, emails, opaque tokens) from failed_reason before publishing', async () => {
+    queues[QUEUE_NAMES.ACCOUNT_DELETION_FINALIZE].getFailed.mockResolvedValue([
+      {
+        id: 'account-deletion-finalize:5b8e7c3a-1234-4567-89ab-cdef01234567',
+        name: 'finalize-user',
+        finishedOn: new Date('2026-04-30T12:00:00Z').valueOf(),
+        attemptsMade: 5,
+        failedReason:
+          'Stripe 503: cancel sub_1NaBcDeFgHiJkL for customer cus_xYzAbCdEf failed; rider rider@tarmoto.app (5b8e7c3a-1234-4567-89ab-cdef01234567)',
+      },
+    ]);
+    const snapshot = await service.snapshot(true);
+    const entry = snapshot.queues.find(
+      (q) => q.queue === QUEUE_NAMES.ACCOUNT_DELETION_FINALIZE,
+    )!;
+    const reason = entry.lastFailure!.failed_reason!;
+    // The shape that on-call cares about (Stripe 503, the verb, the
+    // word "rider") survives so the alert is still triageable.
+    expect(reason).toMatch(/Stripe 503/);
+    expect(reason).toMatch(/cancel/);
+    // PII is gone:
+    expect(reason).not.toMatch(/sub_1NaBcDeFgHiJkL/);
+    expect(reason).not.toMatch(/cus_xYzAbCdEf/);
+    expect(reason).not.toMatch(/rider@tarmoto\.app/);
+    expect(reason).not.toMatch(/5b8e7c3a-1234-4567-89ab-cdef01234567/);
+    expect(reason).toMatch(/sub_\*\*\*/);
+    expect(reason).toMatch(/cus_\*\*\*/);
+    expect(reason).toMatch(/<email>/);
+    expect(reason).toMatch(/<uuid>/);
+  });
+
+  it('caps failed_reason length so a stack-trace-as-message cannot ferry deep context through the public endpoint', async () => {
+    const giant = 'X'.repeat(2000);
+    queues[QUEUE_NAMES.DATA_EXPORT].getFailed.mockResolvedValue([
+      {
+        id: 'data-export:abc-123',
+        name: 'process',
+        finishedOn: new Date('2026-04-30T12:00:00Z').valueOf(),
+        attemptsMade: 5,
+        failedReason: giant,
+      },
+    ]);
+    const snapshot = await service.snapshot(true);
+    const entry = snapshot.queues.find(
+      (q) => q.queue === QUEUE_NAMES.DATA_EXPORT,
+    )!;
+    // 240-char body + 1-char ellipsis terminator.
+    expect(entry.lastFailure!.failed_reason!.length).toBeLessThanOrEqual(241);
+  });
+
   it('passes BullMQ-auto-generated numeric jobIds through unchanged (no user data to redact)', async () => {
     queues[QUEUE_NAMES.PUSH_NOTIFICATION].getFailed.mockResolvedValue([
       {
