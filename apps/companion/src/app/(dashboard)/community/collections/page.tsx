@@ -12,9 +12,6 @@ import Link from "next/link";
 import {
   AlertTriangle,
   FolderOpen,
-  Globe,
-  Link2,
-  Lock,
   MoreVertical,
   Pencil,
   Plus,
@@ -23,8 +20,8 @@ import {
   Trash2,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
-import { useUserTrips } from "@/hooks/useUserTrips";
 import { useCollections } from "@/hooks/useCollections";
+import { RouteCollectionVisibilityPill } from "@/components/RouteCollectionVisibilityPill";
 import {
   MAX_COLLECTION_DESCRIPTION_LENGTH,
   MAX_COLLECTION_NAME_LENGTH,
@@ -33,9 +30,7 @@ import {
   type RouteCollectionView,
 } from "@/lib/route-collections";
 import type { RouteCollectionVisibility } from "@/lib/api";
-import { tripDistanceKm } from "@/lib/trip-filters";
-import { formatDistance, formatRelativeTime } from "@/lib/utils";
-import type { Trip } from "@/lib/types";
+import { formatRelativeTime } from "@/lib/utils";
 
 interface CollectionInputForm {
   title: string;
@@ -44,7 +39,6 @@ interface CollectionInputForm {
 }
 
 export default function RouteCollectionsPage() {
-  const { tripById, loading: loadingTrips, error: tripsError } = useUserTrips();
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const {
     collections,
@@ -208,9 +202,6 @@ export default function RouteCollectionsPage() {
             <CollectionCard
               key={collection.id}
               collection={collection}
-              tripById={tripById}
-              loadingTrips={loadingTrips}
-              tripsError={tripsError}
               onEdit={() => setModal({ mode: "edit", collection })}
               onDelete={() => void deleteCollection(collection)}
             />
@@ -333,32 +324,20 @@ function Toolbar({
 
 function CollectionCard({
   collection,
-  tripById,
-  loadingTrips,
-  tripsError,
   onEdit,
   onDelete,
 }: {
   collection: RouteCollectionView;
-  tripById: Map<string, Trip>;
-  loadingTrips: boolean;
-  tripsError: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // Server gives us itemCount directly, but we still join with the trip cache
-  // to compute total distance for the trips we own locally.
-  const presentTrips = collection.tripIds
-    .map((id) => tripById.get(id))
-    .filter((t): t is Trip => Boolean(t));
-  const totalDistance = presentTrips.reduce(
-    (sum, t) => sum + tripDistanceKm(t),
-    0,
-  );
-  const missingCount = collection.itemCount - presentTrips.length;
-
+  // Distance + missing-count breakdowns deliberately live on the detail page,
+  // not here. The list endpoint returns a summary (no per-item ids), so any
+  // attempt to join against `useUserTrips` here would always read zero
+  // present-trips and render a misleading "N unavailable" badge for every
+  // non-empty collection. The simple `itemCount` is authoritative.
   return (
     <div
       data-menu-root
@@ -372,7 +351,10 @@ function CollectionCard({
           <h3 className="font-semibold text-white group-hover:text-tarmoto-cyan transition line-clamp-2 flex-1">
             {collection.title}
           </h3>
-          <VisibilityPill visibility={collection.visibility} />
+          <RouteCollectionVisibilityPill
+            visibility={collection.visibility}
+            className="shrink-0"
+          />
         </div>
 
         {collection.description && (
@@ -381,25 +363,12 @@ function CollectionCard({
           </p>
         )}
 
-        <div className="space-y-1.5 text-sm text-slate-400">
-          <div className="flex items-center gap-2">
-            <RouteIcon size={13} />
-            <span>
-              {collection.itemCount} route
-              {collection.itemCount === 1 ? "" : "s"}
-              {missingCount > 0 && !loadingTrips && !tripsError && (
-                <span className="ml-2 text-[11px] text-amber-400">
-                  {missingCount} unavailable
-                </span>
-              )}
-            </span>
-          </div>
-          {presentTrips.length > 0 && !tripsError && (
-            <div className="flex items-center gap-2">
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-tarmoto-cyan" />
-              <span>{formatDistance(totalDistance)} total</span>
-            </div>
-          )}
+        <div className="flex items-center gap-2 text-sm text-slate-400">
+          <RouteIcon size={13} />
+          <span>
+            {collection.itemCount} route
+            {collection.itemCount === 1 ? "" : "s"}
+          </span>
         </div>
 
         <p className="mt-3 text-[11px] text-slate-600">
@@ -443,35 +412,6 @@ function CollectionCard({
         </CardMenu>
       )}
     </div>
-  );
-}
-
-function VisibilityPill({
-  visibility,
-}: {
-  visibility: RouteCollectionVisibility;
-}) {
-  const label =
-    visibility === "public"
-      ? "Public"
-      : visibility === "unlisted"
-        ? "Unlisted"
-        : "Private";
-  const Icon =
-    visibility === "public" ? Globe : visibility === "unlisted" ? Link2 : Lock;
-  const tone =
-    visibility === "public"
-      ? "border-emerald-500/30 text-emerald-300 bg-emerald-500/5"
-      : visibility === "unlisted"
-        ? "border-tarmoto-cyan/30 text-tarmoto-cyan bg-tarmoto-cyan/5"
-        : "border-slate-700 text-slate-400 bg-slate-800/50";
-  return (
-    <span
-      className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide ${tone}`}
-    >
-      <Icon size={10} />
-      {label}
-    </span>
   );
 }
 

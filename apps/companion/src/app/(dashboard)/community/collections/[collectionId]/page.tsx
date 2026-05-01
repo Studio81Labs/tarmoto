@@ -8,10 +8,7 @@ import {
   Calendar,
   Check,
   Copy,
-  Globe,
-  Link2,
   Loader2,
-  Lock,
   MapPin,
   Plus,
   Route as RouteIcon,
@@ -26,6 +23,7 @@ import {
   routeCollectionsApi,
   type RouteCollectionVisibility,
 } from "@/lib/api";
+import { RouteCollectionVisibilityPill } from "@/components/RouteCollectionVisibilityPill";
 import {
   mapDetailToView,
   type RouteCollectionView,
@@ -232,7 +230,9 @@ export default function CollectionDetailPage() {
             <h1 className="text-2xl font-bold break-words mb-1">
               {collection!.title}
             </h1>
-            <VisibilityPill visibility={collection!.visibility} />
+            <RouteCollectionVisibilityPill
+              visibility={collection!.visibility}
+            />
           </div>
           <p className="text-xs text-slate-500">
             Updated {formatRelativeTime(collection!.updatedAt)}
@@ -371,35 +371,6 @@ export default function CollectionDetailPage() {
 // ─────────────────────────────────────────────────────────
 // Sub-components
 // ─────────────────────────────────────────────────────────
-
-function VisibilityPill({
-  visibility,
-}: {
-  visibility: RouteCollectionVisibility;
-}) {
-  const label =
-    visibility === "public"
-      ? "Public"
-      : visibility === "unlisted"
-        ? "Unlisted"
-        : "Private";
-  const Icon =
-    visibility === "public" ? Globe : visibility === "unlisted" ? Link2 : Lock;
-  const tone =
-    visibility === "public"
-      ? "border-emerald-500/30 text-emerald-300 bg-emerald-500/5"
-      : visibility === "unlisted"
-        ? "border-tarmoto-cyan/30 text-tarmoto-cyan bg-tarmoto-cyan/5"
-        : "border-slate-700 text-slate-400 bg-slate-800/50";
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide ${tone}`}
-    >
-      <Icon size={10} />
-      {label}
-    </span>
-  );
-}
 
 function VisibilitySelector({
   value,
