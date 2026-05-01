@@ -291,7 +291,6 @@ export class AccountService {
     const newStatus = this.statusFromSubscription(subscription.status);
     update.stripe_subscription_id = subscription.id;
     update.subscription_tier = newTier;
-    update.subscription_status = newStatus;
     update.subscription_cancel_at_period_end =
       subscription.cancel_at_period_end;
     update.subscription_current_period_end = periodEnd;
@@ -315,7 +314,10 @@ export class AccountService {
     // its locked-read instant; the loser sees affected: 0 and
     // skips the email. The unconditional `userRepo.update()` below
     // still runs for both so post-activation tweaks (period_end,
-    // tier, cancel_at_period_end) flow through.
+    // tier, cancel_at_period_end) flow through — but it does NOT
+    // include `subscription_status` (see comment on the unconditional
+    // update further down) so a slower handler can't overwrite the
+    // status a faster handler atomically claimed.
     const willActivate =
       (newStatus === 'active' || newStatus === 'trialing') &&
       newTier !== 'free';
@@ -348,6 +350,27 @@ export class AccountService {
         .andWhere("subscription_status != 'past_due'")
         .execute();
       wonPastDueTransition = (claim.affected ?? 0) > 0;
+    }
+
+    // The conditional claims above are the authoritative writers of
+    // `subscription_status` for active/trialing/past_due transitions.
+    // For other statuses (e.g. an `updated` event landing with
+    // `canceled`) neither claim runs, so the unconditional update
+    // below stays responsible for writing the column — include
+    // `subscription_status` only when no claim covers it.
+    //
+    // Why this matters: with two contradictory webhooks racing —
+    // a `past_due` and an `active` for the same subscription — the
+    // earlier round of this code ALSO let the unconditional update
+    // re-write `subscription_status: newStatus` after the claim.
+    // The slower handler's unconditional write would then overwrite
+    // the faster handler's atomic transition, undoing it. Removing
+    // the column from the unconditional payload makes the claim the
+    // single source of truth: the row converges on whichever
+    // atomic claim wrote last, instead of whichever unconditional
+    // update happened to run last.
+    if (!willActivate && newStatus !== 'past_due') {
+      update.subscription_status = newStatus;
     }
 
     await this.userRepo.update(user.id, update);

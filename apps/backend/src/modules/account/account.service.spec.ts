@@ -391,6 +391,13 @@ describe('AccountService', () => {
 
       await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
 
+      // `subscription_status` is intentionally NOT in the
+      // unconditional update for active/trialing/past_due
+      // transitions — the conditional claim above is the
+      // authoritative writer, so the unconditional payload only
+      // flushes the orthogonal fields. See the comment in
+      // `account.service.ts` (above the unconditional update) for
+      // the full rationale.
       expect(userRepo.update).toHaveBeenCalledWith(
         'user-1',
         expect.objectContaining({
@@ -398,11 +405,16 @@ describe('AccountService', () => {
           stripe_customer_id: 'cus_123',
           stripe_subscription_id: 'sub_123',
           subscription_tier: 'pro',
-          subscription_status: 'trialing',
           subscription_cancel_at_period_end: true,
           billing_trial_used_at: expect.any(Date),
         }),
       );
+      expect(userRepo.update).toHaveBeenCalledWith(
+        'user-1',
+        expect.not.objectContaining({ subscription_status: expect.anything() }),
+      );
+      // Conditional activation claim is what writes the status.
+      expect(activationClaimExecute).toHaveBeenCalled();
     });
 
     it('skips the confirmation email when a concurrent webhook already claimed the activation transition', async () => {
@@ -516,6 +528,46 @@ describe('AccountService', () => {
       expect(pushService.sendToUser).not.toHaveBeenCalled();
       // Loser path still flushes the unconditional update.
       expect(userRepo.update).toHaveBeenCalled();
+    });
+
+    it('keeps subscription_status out of the unconditional update for past_due transitions', async () => {
+      // The contradictory-webhook race: `past_due` and `active` for
+      // the same subscription land concurrently. Each conditional
+      // claim atomically writes its own status, but the
+      // unconditional update used to also write `subscription_status:
+      // newStatus`, so the slower handler would overwrite the
+      // faster handler's atomic transition. Verify the unconditional
+      // update no longer carries the status field on the past_due
+      // path.
+      activationClaimExecute.mockResolvedValueOnce({ affected: 1 });
+
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          subscription_status: 'active',
+          subscription_tier: 'premium',
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'past_due',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'premium' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+
+      expect(userRepo.update).toHaveBeenCalledWith(
+        'user-1',
+        expect.not.objectContaining({ subscription_status: expect.anything() }),
+      );
     });
   });
 });
