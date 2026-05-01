@@ -126,6 +126,10 @@ export default function CollectionDetailPage() {
 
   const handleVisibilityChange = async (next: RouteCollectionVisibility) => {
     if (!collection) return;
+    // Clicking the already-selected chip would otherwise fire a PATCH that
+    // changes nothing and briefly freezes every other action (Share, Add
+    // routes) for a network round trip. Bail before touching busy/error.
+    if (next === collection.visibility) return;
     setActionError(null);
     setBusy(true);
     try {
