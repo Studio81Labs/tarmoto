@@ -2,6 +2,7 @@ import { Fragment } from "react";
 import {
   AlertTriangle,
   BedDouble,
+  CalendarDays,
   CloudSun,
   Fuel,
   MapPin,
@@ -138,7 +139,7 @@ function CoverSection({
         <CoverStat
           label="Days"
           value={String(trip.days.length)}
-          icon={<RouteIcon size={14} className="text-slate-500" />}
+          icon={<CalendarDays size={14} className="text-slate-500" />}
         />
         <CoverStat
           label="Total distance"
