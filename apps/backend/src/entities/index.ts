@@ -43,3 +43,5 @@ export { DataExportRequest } from './data-export-request.entity.js';
 export type { DataExportStatus } from './data-export-request.entity.js';
 export { GroupRide } from './group-ride.entity.js';
 export { GroupRideMember } from './group-ride-member.entity.js';
+export { DeviceToken } from './device-token.entity.js';
+export { NotificationPreferencesRow } from './notification-preferences.entity.js';

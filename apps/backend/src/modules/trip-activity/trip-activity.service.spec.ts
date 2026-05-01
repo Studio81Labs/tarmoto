@@ -8,6 +8,7 @@ import { TripActivity } from '../../entities/trip-activity.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { EventsGateway } from '../events/events.gateway.js';
+import { PushService } from '../push/index.js';
 import { TripActivityService } from './trip-activity.service.js';
 
 const TRIP_ID = '11111111-1111-1111-1111-111111111111';
@@ -52,6 +53,15 @@ describe('TripActivityService', () => {
         { provide: getRepositoryToken(TripMember), useValue: memberRepo },
         { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: EventsGateway, useValue: events },
+        {
+          provide: PushService,
+          useValue: {
+            sendToUser: jest.fn().mockResolvedValue(undefined),
+            sendToUsers: jest
+              .fn()
+              .mockResolvedValue({ delivered: 0, pruned: 0, users: 0 }),
+          },
+        },
       ],
     }).compile();
 

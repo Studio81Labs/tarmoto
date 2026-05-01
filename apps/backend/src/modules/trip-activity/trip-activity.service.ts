@@ -8,6 +8,7 @@ import {
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { EventsGateway } from '../events/events.gateway.js';
+import { PushService } from '../push/index.js';
 import {
   TripActivityEntryDto,
   TripActivityListResponseDto,
@@ -17,9 +18,24 @@ const MAX_ACTIVITY_LIMIT = 200;
 const DEFAULT_ACTIVITY_LIMIT = 100;
 
 /**
+ * Activity actions that warrant a background push to the other trip
+ * members. Kept small on purpose — pushing on every vote change would
+ * shred each collaborator's notification feed; the companion's live
+ * timeline already covers low-importance events.
+ */
+const PUSH_WORTHY_ACTIONS: ReadonlySet<TripActivityAction> = new Set([
+  'member_joined',
+  'suggestion_created',
+  'suggestion_accepted',
+  'suggestion_rejected',
+]);
+
+/**
  * Writes and reads activity entries for a trip. Writes also broadcast
  * the entry to the live trip room via `EventsGateway.emitToTrip` so the
- * companion's activity tab updates without a refetch.
+ * companion's activity tab updates without a refetch, and (for select
+ * actions) fan out a background push to every other member so a
+ * collaborator who has the app closed still hears about it.
  *
  * Two write entry points:
  *
@@ -47,6 +63,7 @@ export class TripActivityService {
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     private readonly events: EventsGateway,
+    private readonly pushService: PushService,
   ) {}
 
   async record(
@@ -72,6 +89,11 @@ export class TripActivityService {
       'trip:activity',
       this.toDto(entry, actorName),
     );
+
+    if (PUSH_WORTHY_ACTIONS.has(action)) {
+      void this.notifyOtherMembers(tripId, actorId, actorName, action);
+    }
+
     return entry;
   }
 
@@ -130,6 +152,42 @@ export class TripActivityService {
     return user?.display_name ?? null;
   }
 
+  private async notifyOtherMembers(
+    tripId: string,
+    actorId: string | null,
+    actorName: string | null,
+    action: TripActivityAction,
+  ): Promise<void> {
+    try {
+      const members = await this.memberRepo.find({
+        where: { trip_id: tripId },
+      });
+      const recipients = members
+        .map((m) => m.user_id)
+        .filter((id) => id !== actorId);
+      if (recipients.length === 0) return;
+
+      const who = actorName ?? 'A teammate';
+      const { title, body } = renderTripActivityCopy(action, who);
+      await this.pushService.sendToUsers(recipients, {
+        category: 'trip_collaboration',
+        title,
+        body,
+        data: {
+          type: 'trip_collaboration',
+          trip_id: tripId,
+          action,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `trip_collaboration push failed (trip=${tripId} action=${action}): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
   private toDto(
     entry: TripActivity,
     actorName: string | null,
@@ -143,5 +201,32 @@ export class TripActivityService {
       payload: entry.payload ?? {},
       created_at: entry.created_at.toISOString(),
     };
+  }
+}
+
+function renderTripActivityCopy(
+  action: TripActivityAction,
+  who: string,
+): { title: string; body: string } {
+  switch (action) {
+    case 'member_joined':
+      return { title: 'New collaborator', body: `${who} joined your trip` };
+    case 'suggestion_created':
+      return {
+        title: 'New trip suggestion',
+        body: `${who} added a suggestion to your trip`,
+      };
+    case 'suggestion_accepted':
+      return {
+        title: 'Suggestion accepted',
+        body: `${who} accepted a suggestion on your trip`,
+      };
+    case 'suggestion_rejected':
+      return {
+        title: 'Suggestion declined',
+        body: `${who} declined a suggestion on your trip`,
+      };
+    default:
+      return { title: 'Trip update', body: `${who} updated your trip` };
   }
 }

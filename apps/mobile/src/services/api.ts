@@ -6,6 +6,7 @@
 
 import axios, { AxiosInstance, InternalAxiosRequestConfig } from "axios";
 import { createMMKV } from "react-native-mmkv";
+import type { NotificationPreferences } from "@tarmoto/shared";
 import { API_BASE_URL } from "@/config";
 import type {
   AuthResponse,
@@ -73,6 +74,7 @@ import {
   type ReviewSubmissionPayload,
   type SubmitReviewResult,
 } from "./reviewQueue";
+import { registerForPush, unregisterPush } from "./pushRegistration";
 
 const storage = createMMKV({ id: "tarmoto-auth" });
 
@@ -86,9 +88,19 @@ class ApiService {
       headers: { "Content-Type": "application/json" },
     });
 
-    // Attach auth token
+    // Attach auth token. Per-request callers can override the bearer
+    // by setting `Authorization` explicitly on the config — the
+    // interceptor honours that and skips the MMKV read. This matters
+    // for the logout flow, which snapshots the bearer and fires the
+    // device-token DELETE after `clearTokens()` has wiped MMKV; we
+    // don't want the interceptor to either drop the explicit header
+    // (because MMKV is empty) or, worse, replace it with a freshly
+    // signed-in user's token if they relogin during the round-trip.
     this.client.interceptors.request.use(
       (config: InternalAxiosRequestConfig) => {
+        if (config.headers?.Authorization) {
+          return config;
+        }
         const token = storage.getString("access_token");
         if (token && config.headers) {
           config.headers.Authorization = `Bearer ${token}`;
@@ -125,6 +137,10 @@ class ApiService {
       display_name,
     });
     this.storeTokens(data);
+    // Best-effort push registration after successful auth. Promise is
+    // intentionally not awaited — a permission denial or a missing
+    // native module must not delay the registration flow.
+    void registerForPush({ client: this.client });
     return data;
   }
 
@@ -134,6 +150,7 @@ class ApiService {
       password,
     });
     this.storeTokens(data);
+    void registerForPush({ client: this.client });
     return data;
   }
 
@@ -153,7 +170,30 @@ class ApiService {
   }
 
   logout(): void {
+    // Snapshot the bearer BEFORE clearing tokens, then clear MMKV
+    // synchronously, then fire the unregister DELETE with the
+    // explicit bearer in a per-request header. Two earlier
+    // attempts each had a race:
+    //
+    //   1. `void unregisterPush(...); clearTokens()` — interceptor
+    //      read MMKV asynchronously; by the time it ran,
+    //      clearTokens had wiped the bearer and the DELETE went
+    //      out unauthenticated.
+    //   2. `await unregisterPush(...); clearTokens()` (logout
+    //      async, called fire-and-forget) — clearTokens deferred
+    //      until after the round-trip, so a fast relogin in
+    //      between would write fresh tokens that clearTokens then
+    //      wiped.
+    //
+    // The current shape eliminates both: clearTokens is
+    // synchronous (no relogin window), the bearer is captured
+    // up-front, and the modified request interceptor honours the
+    // explicit `Authorization` header so a concurrent login
+    // populating MMKV doesn't substitute its bearer onto our
+    // in-flight DELETE.
+    const bearer = storage.getString("access_token");
     this.clearTokens();
+    void unregisterPush({ client: this.client, bearer });
   }
 
   private storeTokens(auth: AuthResponse): void {
@@ -969,6 +1009,25 @@ class ApiService {
   }
 
   // ── Safety ──
+
+  // ── Notification preferences ──
+
+  async getNotificationPreferences(): Promise<NotificationPreferences> {
+    const { data } = await this.client.get<NotificationPreferences>(
+      "/me/notification-preferences",
+    );
+    return data;
+  }
+
+  async updateNotificationPreferences(
+    patch: Partial<NotificationPreferences>,
+  ): Promise<NotificationPreferences> {
+    const { data } = await this.client.put<NotificationPreferences>(
+      "/me/notification-preferences",
+      patch,
+    );
+    return data;
+  }
 
   async sendCrashAlert(
     lat: number,

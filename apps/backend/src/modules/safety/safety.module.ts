@@ -5,6 +5,7 @@ import { User } from '../../entities/user.entity.js';
 import { UserContact } from '../../entities/user-contact.entity.js';
 import { CrashAlert } from '../../entities/crash-alert.entity.js';
 import { EventsModule } from '../events/index.js';
+import { PushModule } from '../push/index.js';
 import { SafetyController } from './safety.controller.js';
 import { SafetyService } from './safety.service.js';
 import { CRASH_ALERT_NOTIFIER } from './crash-alert-notifier.interface.js';
@@ -22,6 +23,7 @@ import { TwilioCrashAlertNotifier } from './providers/twilio-notifier.provider.j
     ConfigModule,
     TypeOrmModule.forFeature([User, UserContact, CrashAlert]),
     EventsModule,
+    PushModule,
   ],
   controllers: [SafetyController],
   providers: [

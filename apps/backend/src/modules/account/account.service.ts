@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 import { User } from '../../entities/user.entity.js';
 import { EmailService } from '../email/email.service.js';
+import { PushService } from '../push/index.js';
 import { getCompanionUrl } from '../../common/companion-url.js';
 import {
   STRIPE_BILLING_CLIENT,
@@ -85,6 +86,7 @@ export class AccountService {
     private readonly stripe: StripeBillingClient,
     private readonly config: ConfigService,
     private readonly email: EmailService,
+    private readonly pushService: PushService,
   ) {}
 
   async getSubscription(
@@ -289,7 +291,6 @@ export class AccountService {
     const newStatus = this.statusFromSubscription(subscription.status);
     update.stripe_subscription_id = subscription.id;
     update.subscription_tier = newTier;
-    update.subscription_status = newStatus;
     update.subscription_cancel_at_period_end =
       subscription.cancel_at_period_end;
     update.subscription_current_period_end = periodEnd;
@@ -313,7 +314,10 @@ export class AccountService {
     // its locked-read instant; the loser sees affected: 0 and
     // skips the email. The unconditional `userRepo.update()` below
     // still runs for both so post-activation tweaks (period_end,
-    // tier, cancel_at_period_end) flow through.
+    // tier, cancel_at_period_end) flow through — but it does NOT
+    // include `subscription_status` (see comment on the unconditional
+    // update further down) so a slower handler can't overwrite the
+    // status a faster handler atomically claimed.
     const willActivate =
       (newStatus === 'active' || newStatus === 'trialing') &&
       newTier !== 'free';
@@ -329,6 +333,46 @@ export class AccountService {
       wonActivationTransition = (claim.affected ?? 0) > 0;
     }
 
+    // Same atomic-claim pattern for past_due: Stripe retries
+    // `invoice.payment_failed`-driven `customer.subscription.updated`
+    // events in parallel, and an in-memory `user.subscription_status
+    // !== 'past_due'` check would let two handlers both pass the gate
+    // and fire duplicate `subscription_billing` pushes. The
+    // conditional UPDATE serialises through Postgres row-level
+    // locking; loser sees affected: 0 and skips the push.
+    let wonPastDueTransition = false;
+    if (newStatus === 'past_due') {
+      const claim = await this.userRepo
+        .createQueryBuilder()
+        .update(User)
+        .set({ subscription_status: 'past_due' })
+        .where('id = :id', { id: user.id })
+        .andWhere("subscription_status != 'past_due'")
+        .execute();
+      wonPastDueTransition = (claim.affected ?? 0) > 0;
+    }
+
+    // The conditional claims above are the authoritative writers of
+    // `subscription_status` for active/trialing/past_due transitions.
+    // For other statuses (e.g. an `updated` event landing with
+    // `canceled`) neither claim runs, so the unconditional update
+    // below stays responsible for writing the column — include
+    // `subscription_status` only when no claim covers it.
+    //
+    // Why this matters: with two contradictory webhooks racing —
+    // a `past_due` and an `active` for the same subscription — the
+    // earlier round of this code ALSO let the unconditional update
+    // re-write `subscription_status: newStatus` after the claim.
+    // The slower handler's unconditional write would then overwrite
+    // the faster handler's atomic transition, undoing it. Removing
+    // the column from the unconditional payload makes the claim the
+    // single source of truth: the row converges on whichever
+    // atomic claim wrote last, instead of whichever unconditional
+    // update happened to run last.
+    if (!willActivate && newStatus !== 'past_due') {
+      update.subscription_status = newStatus;
+    }
+
     await this.userRepo.update(user.id, update);
 
     if (wonActivationTransition) {
@@ -340,6 +384,30 @@ export class AccountService {
       // helper's own logger ever throws.
       this.dispatchSubscriptionConfirmed(user, newTier, periodEnd).catch(
         () => undefined,
+      );
+    }
+
+    if (wonPastDueTransition) {
+      this.dispatchBillingFailedPush(user.id).catch(() => undefined);
+    }
+  }
+
+  private async dispatchBillingFailedPush(userId: string): Promise<void> {
+    try {
+      await this.pushService.sendToUser(userId, {
+        category: 'subscription_billing',
+        title: 'Payment failed',
+        body: "We couldn't charge your card for Tarmoto. Update your payment method to keep your subscription active.",
+        data: {
+          type: 'subscription_billing',
+          status: 'past_due',
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `subscription_billing push failed for user ${userId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
       );
     }
   }

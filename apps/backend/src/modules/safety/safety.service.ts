@@ -11,6 +11,7 @@ import {
 } from '../../entities/crash-alert.entity.js';
 import { CrashAlertDto, CrashAlertResponseDto } from './dto/crash-alert.dto.js';
 import { EventsGateway } from '../events/events.gateway.js';
+import { PushService } from '../push/index.js';
 import {
   CRASH_ALERT_NOTIFIER,
   type CrashAlertChannel,
@@ -47,6 +48,7 @@ export class SafetyService {
     private readonly eventsGateway: EventsGateway,
     @Inject(CRASH_ALERT_NOTIFIER)
     private readonly notifier: CrashAlertNotifier,
+    private readonly pushService: PushService,
   ) {}
 
   async sendCrashAlert(
@@ -192,6 +194,27 @@ export class SafetyService {
       severity,
       timestamp,
     });
+
+    // Background push: backs up the live socket emit so a rider whose
+    // app was killed by the crash itself still gets the dispatch
+    // confirmation when the OS resumes them. `crash_followup` is a
+    // critical category — bypasses quiet hours.
+    void this.pushService
+      .sendToUser(userId, {
+        category: 'crash_followup',
+        title: 'Crash alert sent',
+        body: `Notified ${contactsNotified} of ${contacts.length} emergency contacts`,
+        data: {
+          type: 'crash_followup',
+          alert_id: alertId,
+          contacts_notified: String(contactsNotified),
+        },
+      })
+      .catch((err) => {
+        this.logger.warn(
+          `crash_followup push failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
 
     this.logger.warn(
       `crash-alert dispatched id=${alertId} user=${userId} severity=${severity} ` +

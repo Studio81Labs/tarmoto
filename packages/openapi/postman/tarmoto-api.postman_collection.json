@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "0362273b-7773-473f-bc72-7c0e95497ff8",
+    "_postman_id": "980883e9-ea03-4d34-8fda-acb0271ea63a",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -418,93 +418,10 @@
       ]
     },
     {
-      "name": "users",
+      "name": "me",
       "item": [
         {
-          "name": "Get current user profile",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/users/me",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "me"]
-            }
-          }
-        },
-        {
-          "name": "Update user profile",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/users/me",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "me"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"display_name\": \"\",\n  \"phone\": \"\",\n  \"avatar_url\": \"\",\n  \"bio\": \"\",\n  \"home_region\": \"\",\n  \"home_location\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"work_location\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"preferences\": {\n    \"units\": \"\",\n    \"daily_km\": 0,\n    \"min_quality\": 0,\n    \"road_types\": [\n      \"\"\n    ],\n    \"record_gps\": false,\n    \"crash_detection\": false\n  }\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Upload a profile avatar",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/users/me/avatar",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "me", "avatar"]
-            },
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "file",
-                  "type": "file",
-                  "src": [],
-                  "description": ""
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "List emergency contacts",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/users/me/contacts",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "me", "contacts"]
-            }
-          }
-        },
-        {
-          "name": "Add emergency contact",
+          "name": "Register an FCM/APN device token for the authenticated user",
           "request": {
             "method": "POST",
             "header": [
@@ -514,13 +431,13 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/users/me/contacts",
+              "raw": "{{baseUrl}}/api/v1/me/devices",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "me", "contacts"]
+              "path": ["api", "v1", "me", "devices"]
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Jane Doe\",\n  \"phone\": \"+420123456789\",\n  \"is_emergency\": true\n}",
+              "raw": "{\n  \"platform\": \"ios\",\n  \"token\": \"\",\n  \"app_version\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -530,39 +447,7 @@
           }
         },
         {
-          "name": "Update emergency contact",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/users/me/contacts/:contactId",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "me", "contacts", ":contactId"],
-              "variable": [
-                {
-                  "key": "contactId",
-                  "value": ""
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Jane Doe\",\n  \"phone\": \"+420123456789\",\n  \"is_emergency\": false\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Delete emergency contact",
+          "name": "Unregister a device token (call on logout / push opt-out)",
           "request": {
             "method": "DELETE",
             "header": [
@@ -572,15 +457,83 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/users/me/contacts/:contactId",
+              "raw": "{{baseUrl}}/api/v1/me/devices",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", "me", "contacts", ":contactId"],
-              "variable": [
-                {
-                  "key": "contactId",
-                  "value": ""
+              "path": ["api", "v1", "me", "devices"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
                 }
-              ]
+              }
+            }
+          }
+        },
+        {
+          "name": "Load the authenticated user's notification preferences",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/notification-preferences",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "notification-preferences"]
+            }
+          }
+        },
+        {
+          "name": "Update notification preferences (partial — supplied fields only)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/notification-preferences",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "notification-preferences"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email_digest\": \"daily\",\n  \"marketing_emails\": false,\n  \"quiet_hours_start\": 0,\n  \"quiet_hours_end\": 0,\n  \"quiet_hours_timezone\": \"\",\n  \"categories\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "jobs",
+      "item": [
+        {
+          "name": "Queue depth and most-recent failure per queue",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/jobs/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "jobs", "health"]
             }
           }
         }
@@ -733,10 +686,33 @@
       ]
     },
     {
-      "name": "sensor",
+      "name": "badges",
       "item": [
         {
-          "name": "Upload batched accelerometer readings",
+          "name": "List a user's badges with progress",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/:userId/badges",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", ":userId", "badges"],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Check and award new badges for current user",
           "request": {
             "method": "POST",
             "header": [
@@ -746,18 +722,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/sensor/upload",
+              "raw": "{{baseUrl}}/api/v1/badges/check",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "sensor", "upload"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"ride_id\": \"\",\n  \"device_model\": \"iPhone 15 Pro\",\n  \"client_model_version\": \"rsc-v1.0.0\",\n  \"readings\": [\n    {\n      \"t\": 0,\n      \"ax\": 0,\n      \"ay\": 0,\n      \"az\": 0,\n      \"lat\": 0,\n      \"lng\": 0,\n      \"speed\": 0\n    }\n  ]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
+              "path": ["api", "v1", "badges", "check"]
             }
           }
         }
@@ -920,6 +887,229 @@
                   "value": ""
                 }
               ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "users",
+      "item": [
+        {
+          "name": "Get current user profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "me"]
+            }
+          }
+        },
+        {
+          "name": "Update user profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "me"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"display_name\": \"\",\n  \"phone\": \"\",\n  \"avatar_url\": \"\",\n  \"bio\": \"\",\n  \"home_region\": \"\",\n  \"home_location\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"work_location\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"preferences\": {\n    \"units\": \"\",\n    \"daily_km\": 0,\n    \"min_quality\": 0,\n    \"road_types\": [\n      \"\"\n    ],\n    \"record_gps\": false,\n    \"crash_detection\": false\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Get a rider's public profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/:userId/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", ":userId", "profile"],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Upload a profile avatar",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/me/avatar",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "me", "avatar"]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List emergency contacts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/me/contacts",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "me", "contacts"]
+            }
+          }
+        },
+        {
+          "name": "Add emergency contact",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/me/contacts",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "me", "contacts"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Jane Doe\",\n  \"phone\": \"+420123456789\",\n  \"is_emergency\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Update emergency contact",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/me/contacts/:contactId",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "me", "contacts", ":contactId"],
+              "variable": [
+                {
+                  "key": "contactId",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Jane Doe\",\n  \"phone\": \"+420123456789\",\n  \"is_emergency\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Delete emergency contact",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/me/contacts/:contactId",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "me", "contacts", ":contactId"],
+              "variable": [
+                {
+                  "key": "contactId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "sensor",
+      "item": [
+        {
+          "name": "Upload batched accelerometer readings",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sensor/upload",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sensor", "upload"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ride_id\": \"\",\n  \"device_model\": \"iPhone 15 Pro\",\n  \"client_model_version\": \"rsc-v1.0.0\",\n  \"readings\": [\n    {\n      \"t\": 0,\n      \"ax\": 0,\n      \"ay\": 0,\n      \"az\": 0,\n      \"lat\": 0,\n      \"lng\": 0,\n      \"speed\": 0,\n      \"lean_deg\": 0\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           }
         }
@@ -3057,51 +3247,6 @@
                   "disabled": true
                 }
               ]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "badges",
-      "item": [
-        {
-          "name": "List a user's badges with progress",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/users/:userId/badges",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "users", ":userId", "badges"],
-              "variable": [
-                {
-                  "key": "userId",
-                  "value": ""
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Check and award new badges for current user",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/badges/check",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "badges", "check"]
             }
           }
         }
