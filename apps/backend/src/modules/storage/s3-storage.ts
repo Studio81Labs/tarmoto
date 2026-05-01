@@ -9,13 +9,13 @@ import {
 import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { PassThrough, Readable } from 'node:stream';
-import { hasControlCharacters } from '../../common/control-characters.js';
 import type {
   ObjectStorage,
   PutArgs,
   PutResult,
 } from './object-storage.interface.js';
 import type { S3StorageConfig } from './storage.config.js';
+import { validateStorageKey } from './validate-storage-key.js';
 
 /**
  * S3-compatible provider for the `ObjectStorage` interface. Selected
@@ -53,7 +53,7 @@ export class S3Storage implements ObjectStorage {
   }
 
   async put(args: PutArgs): Promise<PutResult> {
-    this.validateKey(args.key);
+    validateStorageKey(args.key);
 
     if (Buffer.isBuffer(args.body)) {
       // Small uploads (avatars / review photos) — single PUT is the
@@ -97,7 +97,7 @@ export class S3Storage implements ObjectStorage {
   }
 
   async read(key: string): Promise<Readable> {
-    this.validateKey(key);
+    validateStorageKey(key);
     const result = await this.client.send(
       new GetObjectCommand({ Bucket: this.bucket, Key: key }),
     );
@@ -108,14 +108,14 @@ export class S3Storage implements ObjectStorage {
   }
 
   async delete(key: string): Promise<void> {
-    this.validateKey(key);
+    validateStorageKey(key);
     await this.client.send(
       new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
     );
   }
 
   async exists(key: string): Promise<boolean> {
-    this.validateKey(key);
+    validateStorageKey(key);
     try {
       await this.client.send(
         new HeadObjectCommand({ Bucket: this.bucket, Key: key }),
@@ -130,7 +130,7 @@ export class S3Storage implements ObjectStorage {
   }
 
   publicUrl(key: string): string {
-    this.validateKey(key);
+    validateStorageKey(key);
     const encoded = key
       .split('/')
       .map((segment) => encodeURIComponent(segment))
@@ -139,33 +139,12 @@ export class S3Storage implements ObjectStorage {
   }
 
   async signedUrl(key: string, ttlSeconds: number): Promise<string> {
-    this.validateKey(key);
+    validateStorageKey(key);
     return getSignedUrl(
       this.client,
       new GetObjectCommand({ Bucket: this.bucket, Key: key }),
       { expiresIn: ttlSeconds },
     );
-  }
-
-  private validateKey(key: string): void {
-    if (!key || key.length === 0) {
-      throw new Error('invalid storage key: empty');
-    }
-    if (key.includes('\\')) {
-      throw new Error(`invalid storage key: ${key}`);
-    }
-    if (hasControlCharacters(key)) {
-      throw new Error(`invalid storage key: ${key}`);
-    }
-    if (key.startsWith('/')) {
-      throw new Error(`invalid storage key: ${key}`);
-    }
-    const segments = key.split('/');
-    for (const segment of segments) {
-      if (segment === '' || segment === '.' || segment === '..') {
-        throw new Error(`invalid storage key: ${key}`);
-      }
-    }
   }
 
   /**

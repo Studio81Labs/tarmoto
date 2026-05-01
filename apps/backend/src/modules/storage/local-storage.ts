@@ -1,14 +1,14 @@
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, stat, unlink, writeFile } from 'node:fs/promises';
-import { dirname, posix, resolve, sep } from 'node:path';
+import { dirname, resolve, sep } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { hasControlCharacters } from '../../common/control-characters.js';
 import type {
   ObjectStorage,
   PutArgs,
   PutResult,
 } from './object-storage.interface.js';
+import { validateStorageKey } from './validate-storage-key.js';
 
 /**
  * Filesystem provider for the `ObjectStorage` interface. Used for
@@ -73,7 +73,7 @@ export class LocalStorage implements ObjectStorage {
   }
 
   publicUrl(key: string): string {
-    this.validateKey(key);
+    validateStorageKey(key);
     const encoded = key
       .split('/')
       .map((segment) => encodeURIComponent(segment))
@@ -86,29 +86,8 @@ export class LocalStorage implements ObjectStorage {
     return Promise.resolve(this.publicUrl(key));
   }
 
-  private validateKey(key: string): void {
-    if (!key || key.length === 0) {
-      throw new Error('invalid storage key: empty');
-    }
-    if (key.includes('\\')) {
-      throw new Error(`invalid storage key: ${key}`);
-    }
-    if (hasControlCharacters(key)) {
-      throw new Error(`invalid storage key: ${key}`);
-    }
-    if (posix.isAbsolute(key)) {
-      throw new Error(`invalid storage key: ${key}`);
-    }
-    const segments = key.split('/');
-    for (const segment of segments) {
-      if (segment === '' || segment === '.' || segment === '..') {
-        throw new Error(`invalid storage key: ${key}`);
-      }
-    }
-  }
-
   private resolveKey(key: string): string {
-    this.validateKey(key);
+    validateStorageKey(key);
     const target = resolve(this.baseDir, key);
     const base = resolve(this.baseDir) + sep;
     if (!(target + sep).startsWith(base)) {
