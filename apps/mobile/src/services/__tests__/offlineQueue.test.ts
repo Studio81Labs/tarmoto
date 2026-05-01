@@ -39,22 +39,18 @@ function makeReading(t: number): SensorReading {
 }
 
 function makeNetworkError(): Error {
-  // Shape matches what axios v1 produces for a disconnect — ERR_NETWORK
-  // plus no `response`. The classifier short-circuits on `response` being
-  // defined so we must leave it unset.
-  const err = new Error("Network Error") as Error & {
-    code?: string;
-    response?: unknown;
-  };
-  err.code = "ERR_NETWORK";
-  return err;
+  // Shape matches what fetch produces for a disconnect — a TypeError
+  // (or generic Error in our facade) with no `status` set. The
+  // classifier short-circuits on a numeric `status`, so leaving it
+  // unset is what flags the error as network-down.
+  return new Error("Network Error");
 }
 
 function makeServerError(status: number): Error {
-  const err = new Error(`HTTP ${status}`) as Error & {
-    response?: { status: number };
-  };
-  err.response = { status };
+  // Mirrors the `ApiError` shape the typed-client facade throws —
+  // `status` is the HTTP status of the response that came back.
+  const err = new Error(`HTTP ${status}`) as Error & { status?: number };
+  err.status = status;
   return err;
 }
 

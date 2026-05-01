@@ -55,6 +55,18 @@ jest.mock("@/services/api", () => ({
     followUser: jest.fn(),
     unfollowUser: jest.fn(),
   },
+  // The screen narrows caught errors with `err instanceof ApiError`; the
+  // mock must expose a real constructor so the instanceof check doesn't
+  // throw "right-hand side is not callable" on plain `Error` rejections.
+  ApiError: class ApiError extends Error {
+    status: number;
+    body: unknown;
+    constructor(message: string, status: number, body: unknown) {
+      super(message);
+      this.status = status;
+      this.body = body;
+    }
+  },
 }));
 
 import ViewProfileScreen from "../ViewProfileScreen";
