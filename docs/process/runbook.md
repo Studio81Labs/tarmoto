@@ -38,6 +38,15 @@ For first-time setup see [../../README.md](../../README.md) and [../../CONTRIBUT
 3. Check if another test left state behind — E2E setup should drop/recreate the schema between runs. Look for missing `beforeEach` cleanup.
 4. If `jest-e2e.json` config drifted, diff against the version on `main`.
 
+## Background jobs aren't running / queue depth is climbing
+
+1. Hit `GET /jobs/health` and check `workers_enabled`. If `false`, this process is configured as the producer-only side of a split deployment — workers must be running elsewhere.
+2. If `workers_enabled: true`, look at per-queue counters:
+   - `waiting` rising while `active` stays at 0: the worker can't pick up jobs. Check Redis connectivity (`TARMOTO_REDIS_HOST`/`PORT`) and whether the process is starved (CPU pegged, GC pauses).
+   - `failed` climbing: read the `lastFailure` summary on the queue's entry — it includes `failed_reason` and `attempts_made`. After 5 attempts the job stops retrying.
+3. Recurring schedules are reconciled at boot. If the hourly hazard cleanup or daily account-deletion sweep stops firing, restart the worker process — the scheduler upserts repeatables on `onApplicationBootstrap`.
+4. To run a one-off recompute (e.g. fun zones) without waiting for the weekly slot, the CLI script `pnpm cluster:fun-zones` still works and is independent of the queue.
+
 ## PoC sensor deploy failed (Cloudflare Pages)
 
 1. Open the `deploy-poc.yml` workflow run in GitHub Actions. Read the failing step.

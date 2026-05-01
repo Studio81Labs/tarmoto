@@ -662,4 +662,81 @@ describe('AccountDeletionService', () => {
       );
     });
   });
+
+  describe('finalizeUser (per-user queue entry point)', () => {
+    it('purges a single eligible user and emails the deletion-completed receipt', async () => {
+      const purgedAt = new Date('2026-04-30T00:00:00Z');
+      jest.useFakeTimers();
+      jest.setSystemTime(purgedAt);
+      const target = buildUser({
+        id: 'finalize-1',
+        email: 'rider@tarmoto.app',
+        display_name: 'Final Rider',
+        deleted_at: new Date('2026-04-01T00:00:00Z'),
+        deletion_scheduled_at: new Date('2026-04-15T00:00:00Z'),
+      });
+      userRepo.findOne.mockResolvedValueOnce(target);
+      txManager.delete.mockResolvedValueOnce({ affected: 1 });
+
+      const purged = await service.finalizeUser('finalize-1');
+
+      expect(purged).toBe(true);
+      expect(txManager.delete).toHaveBeenCalledWith(
+        User,
+        expect.objectContaining({ id: 'finalize-1' }),
+      );
+      expect(txManager.save).toHaveBeenCalledWith(
+        AccountDeletionLog,
+        expect.objectContaining({
+          user_id: 'finalize-1',
+          email: 'rider@tarmoto.app',
+          event: 'purged',
+        }),
+      );
+      const email = service['email'] as {
+        sendAccountDeletionCompleted: jest.Mock;
+      };
+      expect(email.sendAccountDeletionCompleted).toHaveBeenCalledWith(
+        'rider@tarmoto.app',
+        expect.objectContaining({ displayName: 'Final Rider' }),
+      );
+      jest.useRealTimers();
+    });
+
+    it('returns false (no email, no audit) when the user is no longer eligible (concurrent purge / restore / postpone)', async () => {
+      // The `findOne` query bakes in `deleted_at IS NOT NULL AND deletion_scheduled_at <= NOW()`.
+      // A returned `null` means support already restored OR a parallel
+      // worker already finished — either way, finalize is a no-op.
+      userRepo.findOne.mockResolvedValueOnce(null);
+
+      const purged = await service.finalizeUser('finalize-1');
+
+      expect(purged).toBe(false);
+      expect(txManager.delete).not.toHaveBeenCalled();
+      expect(txManager.save).not.toHaveBeenCalled();
+      const email = service['email'] as {
+        sendAccountDeletionCompleted: jest.Mock;
+      };
+      expect(email.sendAccountDeletionCompleted).not.toHaveBeenCalled();
+    });
+
+    it('still returns true when the post-purge confirmation email fails — the row is gone, retrying does nothing', async () => {
+      const target = buildUser({
+        id: 'finalize-1',
+        deleted_at: new Date('2026-04-01T00:00:00Z'),
+        deletion_scheduled_at: new Date('2026-04-15T00:00:00Z'),
+      });
+      userRepo.findOne.mockResolvedValueOnce(target);
+      txManager.delete.mockResolvedValueOnce({ affected: 1 });
+      const email = service['email'] as {
+        sendAccountDeletionCompleted: jest.Mock;
+      };
+      email.sendAccountDeletionCompleted.mockRejectedValueOnce(
+        new Error('Resend 503'),
+      );
+
+      const purged = await service.finalizeUser('finalize-1');
+      expect(purged).toBe(true);
+    });
+  });
 });

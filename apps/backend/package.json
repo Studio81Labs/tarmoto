@@ -27,6 +27,7 @@
     "cluster:fun-zones": "node dist/scripts/cluster-fun-zones.js"
   },
   "dependencies": {
+    "@nestjs/bullmq": "^11.0.4",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.0.1",
@@ -42,6 +43,7 @@
     "@tarmoto/shared": "workspace:*",
     "archiver": "^7.0.1",
     "bcrypt": "^6.0.0",
+    "bullmq": "^5.76.4",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "express": "^5.2.1",

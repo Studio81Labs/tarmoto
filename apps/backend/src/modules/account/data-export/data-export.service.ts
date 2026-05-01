@@ -202,6 +202,25 @@ export class DataExportService {
     );
   }
 
+  /**
+   * Roll back a freshly-created row when the BullMQ enqueue fails
+   * (Redis unreachable, etc.). Without this rollback, the row sits
+   * in `'queued'` with no actual job in Redis: subsequent
+   * `requestExport` calls within the 30-minute "stuck worker"
+   * threshold see the row as still-active and skip the re-enqueue
+   * branch, leaving the user blocked until the threshold elapses.
+   *
+   * Conditional on `status: 'queued'` to avoid clobbering rows that
+   * a concurrent retry has already advanced (e.g., a parallel POST
+   * that won the enqueue race).
+   */
+  async markEnqueueFailed(id: string, message: string): Promise<void> {
+    await this.repo.update(
+      { id, status: 'queued' },
+      { status: 'failed', error_message: message.slice(0, 1000) },
+    );
+  }
+
   buildPublicView(request: DataExportRequest): DataExportRequestDto {
     // Surface any non-terminal row past its TTL as 'expired'. Three
     // failure modes converge here: a ready row past TTL would yield a

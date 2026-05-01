@@ -25,15 +25,19 @@ flowchart LR
   end
 
   PG[("PostgreSQL 16<br/>+ PostGIS 3.4")]
-  Redis[("Redis<br/>pub/sub")]
+  Redis[("Redis<br/>pub/sub + BullMQ")]
+  Jobs["Background workers<br/>(in-process, toggleable)"]
 
   Mobile <-->|REST · JWT| REST
   Companion <-->|REST · JWT| REST
   Mobile <-.->|WebSocket events| WS
   Companion <-.->|WebSocket events| WS
   REST --> PG
+  REST -.->|enqueue| Redis
   WS --> Redis
   Redis -.-> WS
+  Redis -.->|consume| Jobs
+  Jobs --> PG
 ```
 
 ## Backend modules
@@ -61,6 +65,7 @@ Located under `apps/backend/src/modules/`.
 | `sharing`     | Ride / trip sharing, access control                               |
 | `followers`   | Social follow relationships                                       |
 | `database`    | Database utilities (seeders, migration glue)                      |
+| `jobs`        | BullMQ queue runner — recurring schedules, processors, health     |
 
 Feature modules keep their own guards, pipes, and interceptors colocated — there is **no shared `common/` or `guards/` directory** at `src/`. If you need a helper by more than one module, lift it to `packages/shared`.
 
@@ -127,14 +132,33 @@ Companion UI calls `trips` module → trip, days, and waypoints persist → `exp
 
 ## Scheduled jobs
 
-None currently defined. If cron-style work lands (ride state reconciliation, hazard expiry sweeps, etc.), document here with schedule and purpose.
+Background work runs on **BullMQ** (Redis-backed). The `jobs` module owns the connection, registers eight named queues, schedules recurring jobs as BullMQ repeatables on application bootstrap, and exposes operational counters at `GET /jobs/health`.
+
+| Queue                       | Cadence                           | What it does                                                                                                                              |
+| --------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `hazards.cleanup`           | hourly (`0 * * * *`)              | Flips `is_active = false` on hazard reports past their `expires_at`. Read-side queries kept the same predicate as defense in depth.       |
+| `badges.recheck`            | nightly dispatcher (`30 2 * * *`) | Scans users with rides in the last 36 h and enqueues a `recheck-user` child job per user. Each child calls `BadgesService.checkAndAward`. |
+| `digest.weekly`             | hourly dispatcher (`0 * * * *`)   | Per-user-timezone Sunday-08:00 fan-out. Each opted-in user gets a `compose` child (template lands with US-63).                            |
+| `account-deletion-sweep`    | daily (`30 3 * * *`)              | Finds users whose `deletion_scheduled_at` has passed and enqueues `account-deletion-finalize` jobs.                                       |
+| `account-deletion-finalize` | one-shot (per user)               | Stripe cancel + DB cascade + audit log + confirmation email for one user. Idempotent; the row's eligibility is rechecked under lock.      |
+| `data-export`               | one-shot (per request)            | Assembles the GDPR ZIP bundle. Replaced the prior `setImmediate`-based fire-and-forget; the controller enqueues and returns 202.          |
+| `funzone-recompute`         | weekly Mon `0 4 * * 1`            | Re-runs the `FunZoneClusteringService` DBSCAN pipeline. The CLI script (`pnpm cluster:fun-zones`) stays for ad-hoc runs.                  |
+| `push-notification`         | one-shot                          | Stub processor — no FCM/APNS provider wired yet. Callers can already enqueue; swapping in the provider is a one-file change.              |
+
+**Retry policy:** every job retries up to 5 attempts with exponential backoff (30 s → 60 s → 2 m → 4 m → 8 m). Idempotency keys (`jobId`) are set on every producer that has a natural dedup target (request id, user id, or `user_id + window`).
+
+**Worker mode:** `TARMOTO_QUEUE_WORKER_ENABLED` controls whether the process attaches workers. Default ON for single-container dev; set `false` on the API container to run a separate worker process. Producers (the rest of the app calling `JobsProducer`) still work the same — they just enqueue without consuming.
+
+**Health endpoint:** `GET /jobs/health` returns per-queue counters (waiting / active / delayed / completed / failed) and a summary of the most recent failed job per queue. Public, throttle-skipped, suitable for status-page polling.
+
+**Implementation:** see `apps/backend/src/modules/jobs/` for processors, the scheduler, and the producer. Existing `@Cron` jobs in `auth/` (token cleanup) intentionally stay — they don't need queue retry semantics.
 
 ## External dependencies
 
 | Dependency                         | Purpose                                              | Failure behavior                                                                                                                                                                                                     |
 | ---------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | PostgreSQL 16 + PostGIS 3.4        | Primary store + geospatial queries                   | Migrations run manually via `pnpm db:migrate`; not auto on boot                                                                                                                                                      |
-| Redis                              | WebSocket pub/sub across backend instances           | Real-time features degrade; REST still works                                                                                                                                                                         |
+| Redis                              | WebSocket pub/sub + BullMQ background job queue      | Real-time features degrade; queues stop draining (existing rows accumulate, new submissions still 202 with row in `queued` state); REST still works                                                                  |
 | Stripe Billing                     | Web subscription checkout, customer portal, invoices | Account billing actions fail closed; existing persisted subscription state remains readable                                                                                                                          |
 | TensorFlow Lite on device (mobile) | Road surface classification                          | Mobile falls back to the v0 RMS heuristic in `services/sensors.ts` if the model fails to load (single warning logged); each upload tags rows with `model_version` so retired classifiers can be filtered server-side |
 | MapLibre GL tile server (custom)   | Vector tiles for maps                                | Clients show a simplified base layer while tiles are unavailable                                                                                                                                                     |

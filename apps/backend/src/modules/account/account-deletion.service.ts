@@ -6,7 +6,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, IsNull, LessThanOrEqual, Not, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
@@ -242,12 +241,63 @@ export class AccountDeletionService {
     return purged;
   }
 
-  @Cron(CronExpression.EVERY_HOUR, { name: 'account-deletion-sweeper' })
-  async runScheduledSweeper(): Promise<void> {
-    const purged = await this.processDueDeletions();
-    if (purged > 0) {
-      this.logger.log(`Hard-deleted ${purged} expired account(s)`);
+  /**
+   * Per-user finalize entry point used by the BullMQ
+   * `account-deletion-finalize` queue. Loads the row, runs the same
+   * `purgeUser` path the legacy batch sweeper used, and sends the
+   * post-purge confirmation email if the row was actually purged.
+   *
+   * Returns `true` when this call hard-deleted the row (and wrote
+   * the audit entry), `false` when the row was no longer eligible
+   * (concurrent purge, support-side restore, or postponed schedule).
+   * The boolean is what the queue processor surfaces to job results
+   * and structured logs.
+   */
+  async finalizeUser(userId: string): Promise<boolean> {
+    const now = new Date();
+    const user = await this.userRepo.findOne({
+      where: {
+        id: userId,
+        deleted_at: Not(IsNull()),
+        deletion_scheduled_at: LessThanOrEqual(now),
+      },
+    });
+    if (!user) {
+      // Row already purged by a concurrent worker, restored, or
+      // postponed past the schedule. The producer is idempotent so
+      // a duplicate enqueue will eventually find this same state;
+      // log nothing — successful no-ops should not page on-call.
+      return false;
     }
+
+    // Capture user-facing fields before the transaction so the
+    // post-purge confirmation email has the rider's display name
+    // and address even though their row no longer exists.
+    const purgedFields = {
+      email: user.email,
+      displayName: user.display_name,
+    };
+
+    const purged = await this.purgeUser(user, now);
+    if (!purged) {
+      return false;
+    }
+
+    try {
+      await this.email.sendAccountDeletionCompleted(purgedFields.email, {
+        displayName: purgedFields.displayName,
+        deletedAt: now,
+      });
+    } catch (err) {
+      // Email failure must not bubble — the row is gone, the audit
+      // is written, and re-running the job would do nothing useful.
+      this.logger.warn(
+        `Account-deletion-completed email failed for user ${userId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+    return true;
   }
 
   /**

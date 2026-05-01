@@ -1,0 +1,106 @@
+/**
+ * Canonical queue names for the BullMQ-based background job system.
+ *
+ * These string values become Redis key prefixes (`bull:<name>:*`), so
+ * renaming a queue is a breaking change to any in-flight or scheduled
+ * jobs that exist in the live Redis instance — coordinate with ops if
+ * a rename is unavoidable.
+ *
+ * Each queue is documented with its cadence (recurring vs one-shot),
+ * who enqueues it, and what the processor does.
+ */
+export const QUEUE_NAMES = {
+  /**
+   * Recurring (hourly). Sweeps `hazard_reports` whose `expires_at` has
+   * passed and flips `is_active = false` so dashboards, vector tiles,
+   * and the websocket layer don't have to filter expired rows at read
+   * time.
+   */
+  HAZARDS_CLEANUP: 'hazards.cleanup',
+
+  /**
+   * Recurring (nightly). Scans users with recent activity and enqueues
+   * one `recheck-user` child job per user so the worker concurrency
+   * limit prevents a thundering-herd on the DB.
+   */
+  BADGES_RECHECK: 'badges.recheck',
+
+  /**
+   * Recurring (hourly dispatcher). Each tick the dispatcher computes
+   * which users are at "Sunday morning local time" and enqueues a
+   * `compose` child job per user.
+   */
+  DIGEST_WEEKLY: 'digest.weekly',
+
+  /**
+   * One-shot. Replaces the previous `setImmediate`-based deferred
+   * processing in `DataExportController`. Producer: HTTP POST
+   * /account/data-export. Consumer: assembles the GDPR ZIP bundle.
+   */
+  DATA_EXPORT: 'data-export',
+
+  /**
+   * Recurring (daily). Finds users whose `deletion_scheduled_at` has
+   * passed and enqueues `account-deletion-finalize` jobs for each one.
+   */
+  ACCOUNT_DELETION_SWEEP: 'account-deletion-sweep',
+
+  /**
+   * One-shot. Hard-deletes a single user (Stripe cancellation, DB
+   * cascade, audit log, confirmation email). Enqueued by the daily
+   * sweep and idempotent on the user id so duplicate sweeps don't
+   * re-purge the same row.
+   */
+  ACCOUNT_DELETION_FINALIZE: 'account-deletion-finalize',
+
+  /**
+   * Recurring (weekly). Re-runs the DBSCAN clustering that builds
+   * `fun_zones` from `road_segments` (depends on US-6).
+   */
+  FUNZONE_RECOMPUTE: 'funzone-recompute',
+
+  /**
+   * One-shot. Dispatches a push notification to a single device token.
+   * Stub processor today (no FCM/APNS integration yet) — the queue
+   * exists so callers can already enqueue and the wiring is in place
+   * once the push provider lands.
+   */
+  PUSH_NOTIFICATION: 'push-notification',
+} as const;
+
+export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
+
+export const ALL_QUEUE_NAMES: readonly QueueName[] = Object.values(QUEUE_NAMES);
+
+/**
+ * Stable job names within each queue. BullMQ uses these for filtering
+ * in the dashboard and for routing to processor methods, so they are
+ * referenced by the processor decorator and by the producers.
+ */
+export const JOB_NAMES = {
+  HAZARDS_CLEANUP_RUN: 'run',
+  BADGES_RECHECK_DISPATCH: 'dispatch',
+  BADGES_RECHECK_USER: 'recheck-user',
+  DIGEST_WEEKLY_DISPATCH: 'dispatch',
+  DIGEST_WEEKLY_COMPOSE: 'compose',
+  DATA_EXPORT_PROCESS: 'process',
+  ACCOUNT_DELETION_SWEEP_RUN: 'run',
+  ACCOUNT_DELETION_FINALIZE_USER: 'finalize-user',
+  FUNZONE_RECOMPUTE_RUN: 'run',
+  PUSH_NOTIFICATION_SEND: 'send',
+} as const;
+
+/**
+ * Cron patterns for recurring queues. Times are evaluated in the
+ * worker process's TZ; production sets `TZ=UTC` so these are UTC.
+ */
+export const RECURRING_PATTERNS = {
+  /** Top of every hour. */
+  HOURLY: '0 * * * *',
+  /** Daily at 03:30. */
+  DAILY_0330: '30 3 * * *',
+  /** Daily at 02:30 (badge nightly). */
+  DAILY_0230: '30 2 * * *',
+  /** Weekly Monday at 04:00 — fun-zone recompute. */
+  WEEKLY_MON_0400: '0 4 * * 1',
+} as const;

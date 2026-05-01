@@ -35,6 +35,7 @@ import { EmailModule } from './modules/email/index.js';
 import { TripsModule } from './modules/trips/index.js';
 import { TripActivityModule } from './modules/trip-activity/index.js';
 import { GroupRidesModule } from './modules/group-rides/index.js';
+import { JobsModule } from './modules/jobs/index.js';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { GroupRidesModule } from './modules/group-rides/index.js';
     EmailModule,
     AuthModule,
     AccountModule,
+    JobsModule.forRoot(),
     UsersModule,
     HazardsModule,
     SensorModule,
