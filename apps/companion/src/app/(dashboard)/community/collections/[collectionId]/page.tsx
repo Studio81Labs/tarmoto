@@ -284,10 +284,15 @@ export default function CollectionDetailPage() {
           label="Routes"
           value={`${collection!.itemCount}`}
           hint={
-            collection!.itemCount - presentTrips.length > 0 &&
+            // Compare against tripRefs (the trip-only subset) rather than
+            // itemCount, which sums trips + rides. The hint specifically
+            // describes "trip ids the local trip cache couldn't resolve" —
+            // ride items are intentionally invisible until ride rendering
+            // ships, so they must not be counted as missing trips.
+            collection!.tripRefs.length - presentTrips.length > 0 &&
             !loadingTrips &&
             !tripsError
-              ? `${collection!.itemCount - presentTrips.length} unavailable`
+              ? `${collection!.tripRefs.length - presentTrips.length} unavailable`
               : undefined
           }
         />
