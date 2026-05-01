@@ -1,0 +1,136 @@
+/**
+ * PersonalRoadMapScreen — US-30 stats card + nearby unridden list +
+ * map style helper.
+ */
+import React from "react";
+import { render, screen, waitFor } from "@testing-library/react-native";
+import PersonalRoadMapScreen, { __test } from "../PersonalRoadMapScreen";
+import { api } from "@/services/api";
+
+jest.mock("@react-native-vector-icons/material-design-icons", () => {
+  const ReactLib = require("react");
+  const { Text } = require("react-native");
+  return function MockIcon({ name }: { name?: string }) {
+    return ReactLib.createElement(Text, null, `icon:${name ?? ""}`);
+  };
+});
+
+jest.mock("@maplibre/maplibre-react-native", () => {
+  const ReactLib = require("react");
+  const { View } = require("react-native");
+  const stub = (name: string) =>
+    function Stub({ children }: { children?: React.ReactNode }) {
+      return ReactLib.createElement(View, { testID: name }, children);
+    };
+  return {
+    Map: stub("Map"),
+    Camera: stub("Camera"),
+    UserLocation: stub("UserLocation"),
+    VectorSource: stub("VectorSource"),
+    Layer: stub("Layer"),
+  };
+});
+
+jest.mock("@/services/api", () => ({
+  api: {
+    getExplorationStats: jest.fn(),
+    getRiddenSegments: jest.fn(),
+    getNearbyUnriddenSegments: jest.fn(),
+  },
+}));
+
+jest.mock("@/services/location", () => ({
+  locationService: {
+    getCurrentLocation: jest.fn().mockResolvedValue({
+      lat: 49.2,
+      lng: 16.6,
+      speed: 0,
+      accuracy: 5,
+      altitude: 0,
+      timestamp: Date.now(),
+    }),
+  },
+}));
+
+const mockedApi = api as jest.Mocked<typeof api>;
+
+describe("PersonalRoadMapScreen", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedApi.getExplorationStats.mockResolvedValue({
+      ridden_segments: 100,
+      total_segments: 800,
+      percent_explored: 12.5,
+      total_distance_km: 1234.5,
+    });
+    mockedApi.getRiddenSegments.mockResolvedValue({
+      segments: [
+        {
+          id: "seg-1",
+          last_ridden_at: "2026-04-15T10:00:00Z",
+          last_quality_score: 4.0,
+          ride_count: 2,
+        },
+      ],
+    });
+    mockedApi.getNearbyUnriddenSegments.mockResolvedValue([
+      {
+        id: "u1",
+        road_name: "Forest Road",
+        length_m: 2400,
+        quality_score: 4.5,
+        surface_type: "asphalt",
+        distance_m: 800,
+      },
+    ]);
+  });
+
+  it("renders the stats card and the nearby unridden list", async () => {
+    render(<PersonalRoadMapScreen />);
+
+    await waitFor(() => expect(screen.getByText("12.5%")).toBeTruthy());
+    expect(screen.getByText("of 800 segments")).toBeTruthy();
+    expect(screen.getByText("1234.5 km")).toBeTruthy();
+    expect(screen.getByText("Forest Road")).toBeTruthy();
+    // Distance is rendered in metres for sub-1km values.
+    expect(screen.getByText(/800 m from you/)).toBeTruthy();
+  });
+
+  it("renders the empty CTA for a brand-new rider with no recorded rides", async () => {
+    mockedApi.getRiddenSegments.mockResolvedValue({ segments: [] });
+    render(<PersonalRoadMapScreen />);
+    await waitFor(() =>
+      expect(screen.getByText("No rides recorded yet")).toBeTruthy(),
+    );
+  });
+});
+
+describe("buildPersonalLineStyle", () => {
+  it("returns a uniform-dim style when the rider has no ridden segments", () => {
+    const style = __test.buildPersonalLineStyle([]);
+    // No `match` expression — `lineColor` is a flat string.
+    expect(typeof style.lineColor).toBe("string");
+  });
+
+  it("emits a single grouped match expression so ids aren't duplicated per stop", () => {
+    const style = __test.buildPersonalLineStyle(["seg-a", "seg-b"]);
+    expect(Array.isArray(style.lineColor)).toBe(true);
+    const expr = style.lineColor as unknown as unknown[];
+    // Grouped form: ["match", ["get", "id"], [labels…], output, fallback]
+    expect(expr[0]).toBe("match");
+    expect(Array.isArray(expr[2])).toBe(true);
+    expect(expr[2]).toEqual(["seg-a", "seg-b"]);
+    // Only one entry per id — guards against regressing back to the
+    // flat alternating form which repeated each id twice (once per
+    // stop) and another two times across lineOpacity.
+    expect((expr[2] as string[]).length).toBe(2);
+  });
+
+  it("uses the same id list across lineColor and lineOpacity instead of duplicating it", () => {
+    const style = __test.buildPersonalLineStyle(["seg-a", "seg-b"]);
+    const colorExpr = style.lineColor as unknown as unknown[];
+    const opacityExpr = style.lineOpacity as unknown as unknown[];
+    expect(opacityExpr[0]).toBe("match");
+    expect(opacityExpr[2]).toEqual(colorExpr[2]);
+  });
+});

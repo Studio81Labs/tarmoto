@@ -47,6 +47,10 @@ import EditProfileModal from "@/screens/EditProfileModal";
 import ViewProfileScreen from "@/screens/ViewProfileScreen";
 import FollowersScreen from "@/screens/FollowersScreen";
 import FollowingScreen from "@/screens/FollowingScreen";
+import AchievementsScreen from "@/screens/AchievementsScreen";
+import BadgesScreen from "@/screens/BadgesScreen";
+import ChallengesScreen from "@/screens/ChallengesScreen";
+import PersonalRoadMapScreen from "@/screens/PersonalRoadMapScreen";
 
 // ── Type definitions ──
 
@@ -108,6 +112,10 @@ export type ProfileStackParamList = {
   LinkAccount: { email?: string } | undefined;
   OfflineRegions: undefined;
   EmergencyContacts: undefined;
+  Achievements: undefined;
+  Badges: undefined;
+  Challenges: undefined;
+  PersonalRoadMap: undefined;
 };
 
 // ── Navigators ──
@@ -301,6 +309,26 @@ function ProfileNavigator() {
         name="EmergencyContacts"
         component={EmergencyContactsScreen}
         options={{ title: "Emergency contacts" }}
+      />
+      <ProfileStack.Screen
+        name="Achievements"
+        component={AchievementsScreen}
+        options={{ title: "Achievements" }}
+      />
+      <ProfileStack.Screen
+        name="Badges"
+        component={BadgesScreen}
+        options={{ title: "Badges" }}
+      />
+      <ProfileStack.Screen
+        name="Challenges"
+        component={ChallengesScreen}
+        options={{ title: "Challenges" }}
+      />
+      <ProfileStack.Screen
+        name="PersonalRoadMap"
+        component={PersonalRoadMapScreen}
+        options={{ title: "Personal road map" }}
       />
     </ProfileStack.Navigator>
   );

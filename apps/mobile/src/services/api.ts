@@ -45,6 +45,13 @@ import type {
   EmergencyContact,
   EmergencyContactInput,
   GroupRideDetail,
+  CheckBadgesResponse,
+  Challenge,
+  ChallengeDetail,
+  ChallengeJoinResponse,
+  ExplorationStats,
+  RiddenSegmentsList,
+  UnriddenSegment,
 } from "@/types";
 import {
   drainOfflineQueue,
@@ -891,6 +898,71 @@ class ApiService {
         route,
         buffer_km: options.bufferKm,
         kinds: options.kinds,
+      },
+    );
+    return data;
+  }
+
+  // ── Gamification: Badges (US-28) ──
+  // `listUserBadges` is defined above alongside the rider-profile endpoints
+  // — both this surface and ProfileScreen consume it.
+
+  async checkBadges(): Promise<CheckBadgesResponse> {
+    const { data } =
+      await this.client.post<CheckBadgesResponse>("/badges/check");
+    return data;
+  }
+
+  // ── Gamification: Challenges (US-29) ──
+
+  async listChallenges(): Promise<Challenge[]> {
+    const { data } = await this.client.get<Challenge[]>("/challenges");
+    return data;
+  }
+
+  async getChallenge(challengeId: string): Promise<ChallengeDetail> {
+    const { data } = await this.client.get<ChallengeDetail>(
+      `/challenges/${challengeId}`,
+    );
+    return data;
+  }
+
+  async joinChallenge(challengeId: string): Promise<ChallengeJoinResponse> {
+    const { data } = await this.client.post<ChallengeJoinResponse>(
+      `/challenges/${challengeId}/join`,
+    );
+    return data;
+  }
+
+  // ── Gamification: Exploration / Personal road map (US-30) ──
+
+  async getExplorationStats(): Promise<ExplorationStats> {
+    const { data } =
+      await this.client.get<ExplorationStats>("/exploration/stats");
+    return data;
+  }
+
+  async getRiddenSegments(): Promise<RiddenSegmentsList> {
+    const { data } = await this.client.get<RiddenSegmentsList>(
+      "/exploration/ridden-segments",
+    );
+    return data;
+  }
+
+  async getNearbyUnriddenSegments(
+    lat: number,
+    lng: number,
+    options: { radiusKm?: number; limit?: number } = {},
+  ): Promise<UnriddenSegment[]> {
+    const { data } = await this.client.get<UnriddenSegment[]>(
+      "/exploration/nearby-unridden",
+      {
+        params: {
+          lat,
+          lng,
+          radius_km: options.radiusKm,
+          limit: options.limit,
+        },
       },
     );
     return data;
