@@ -6,6 +6,7 @@
 
 import axios, { AxiosInstance, InternalAxiosRequestConfig } from "axios";
 import { createMMKV } from "react-native-mmkv";
+import type { NotificationPreferences } from "@tarmoto/shared";
 import { API_BASE_URL } from "@/config";
 import type {
   AuthResponse,
@@ -73,6 +74,7 @@ import {
   type ReviewSubmissionPayload,
   type SubmitReviewResult,
 } from "./reviewQueue";
+import { registerForPush, unregisterPush } from "./pushRegistration";
 
 const storage = createMMKV({ id: "tarmoto-auth" });
 
@@ -125,6 +127,10 @@ class ApiService {
       display_name,
     });
     this.storeTokens(data);
+    // Best-effort push registration after successful auth. Promise is
+    // intentionally not awaited — a permission denial or a missing
+    // native module must not delay the registration flow.
+    void registerForPush({ client: this.client });
     return data;
   }
 
@@ -134,6 +140,7 @@ class ApiService {
       password,
     });
     this.storeTokens(data);
+    void registerForPush({ client: this.client });
     return data;
   }
 
@@ -153,6 +160,11 @@ class ApiService {
   }
 
   logout(): void {
+    // Unregister BEFORE clearing tokens — the request needs the
+    // bearer to authorise. Best-effort: ignore any HTTP failure
+    // since the backend's dispatch path also soft-deletes invalid
+    // tokens automatically.
+    void unregisterPush({ client: this.client });
     this.clearTokens();
   }
 
@@ -969,6 +981,25 @@ class ApiService {
   }
 
   // ── Safety ──
+
+  // ── Notification preferences ──
+
+  async getNotificationPreferences(): Promise<NotificationPreferences> {
+    const { data } = await this.client.get<NotificationPreferences>(
+      "/me/notification-preferences",
+    );
+    return data;
+  }
+
+  async updateNotificationPreferences(
+    patch: Partial<NotificationPreferences>,
+  ): Promise<NotificationPreferences> {
+    const { data } = await this.client.put<NotificationPreferences>(
+      "/me/notification-preferences",
+      patch,
+    );
+    return data;
+  }
 
   async sendCrashAlert(
     lat: number,

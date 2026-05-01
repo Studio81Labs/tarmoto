@@ -36,6 +36,7 @@ import { TripsModule } from './modules/trips/index.js';
 import { TripActivityModule } from './modules/trip-activity/index.js';
 import { GroupRidesModule } from './modules/group-rides/index.js';
 import { JobsModule } from './modules/jobs/index.js';
+import { PushModule } from './modules/push/index.js';
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { JobsModule } from './modules/jobs/index.js';
     PoiModule,
     GeocodeModule,
     ClosuresModule,
+    PushModule,
   ],
   controllers: [AppController],
   // Global APP_GUARD throttles every route by `(ip, user_id)` instead

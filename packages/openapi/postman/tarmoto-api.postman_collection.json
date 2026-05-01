@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "0362273b-7773-473f-bc72-7c0e95497ff8",
+    "_postman_id": "4352149b-d634-4a3e-b78f-c75ae8ec611f",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -418,6 +418,103 @@
       ]
     },
     {
+      "name": "me",
+      "item": [
+        {
+          "name": "Register an FCM/APN device token for the authenticated user",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/devices",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "devices"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"platform\": \"ios\",\n  \"token\": \"\",\n  \"app_version\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Unregister a device token (call on logout / push opt-out)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/devices/:token",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "devices", ":token"],
+              "variable": [
+                {
+                  "key": "token",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Load the authenticated user's notification preferences",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/notification-preferences",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "notification-preferences"]
+            }
+          }
+        },
+        {
+          "name": "Update notification preferences (partial — supplied fields only)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/notification-preferences",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "notification-preferences"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email_digest\": \"daily\",\n  \"marketing_emails\": false,\n  \"quiet_hours_start\": 0,\n  \"quiet_hours_end\": 0,\n  \"quiet_hours_timezone\": \"\",\n  \"categories\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "users",
       "item": [
         {
@@ -460,6 +557,29 @@
                   "language": "json"
                 }
               }
+            }
+          }
+        },
+        {
+          "name": "Get a rider's public profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/:userId/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", ":userId", "profile"],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": ""
+                }
+              ]
             }
           }
         },

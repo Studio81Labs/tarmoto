@@ -5,8 +5,10 @@ import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { HazardsService } from './hazards.service.js';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
+import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { EXPIRY_HOURS } from './dto/create-hazard.dto.js';
 import { EventsGateway } from '../events/events.gateway.js';
+import { PushService } from '../push/index.js';
 
 describe('HazardsService', () => {
   let service: HazardsService;
@@ -66,11 +68,25 @@ describe('HazardsService', () => {
 
     eventsGateway = { emitHazardAlert: jest.fn() };
 
+    const commuteRepo = {
+      query: jest.fn().mockResolvedValue([]),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         HazardsService,
         { provide: getRepositoryToken(HazardReport), useValue: repo },
+        { provide: getRepositoryToken(CommuteRoute), useValue: commuteRepo },
         { provide: EventsGateway, useValue: eventsGateway },
+        {
+          provide: PushService,
+          useValue: {
+            sendToUser: jest.fn().mockResolvedValue(undefined),
+            sendToUsers: jest
+              .fn()
+              .mockResolvedValue({ delivered: 0, pruned: 0, users: 0 }),
+          },
+        },
       ],
     }).compile();
 

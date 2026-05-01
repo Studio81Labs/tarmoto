@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 import { User } from '../../entities/user.entity.js';
 import { EmailService } from '../email/email.service.js';
+import { PushService } from '../push/index.js';
 import { getCompanionUrl } from '../../common/companion-url.js';
 import {
   STRIPE_BILLING_CLIENT,
@@ -85,6 +86,7 @@ export class AccountService {
     private readonly stripe: StripeBillingClient,
     private readonly config: ConfigService,
     private readonly email: EmailService,
+    private readonly pushService: PushService,
   ) {}
 
   async getSubscription(
@@ -340,6 +342,35 @@ export class AccountService {
       // helper's own logger ever throws.
       this.dispatchSubscriptionConfirmed(user, newTier, periodEnd).catch(
         () => undefined,
+      );
+    }
+
+    // Push notify on a fresh transition into `past_due` — Stripe sends
+    // this when card auto-renewal fails. Only fire when the prior
+    // status was something else, so retries of the same webhook don't
+    // re-spam. Match the `wonActivationTransition` style: gate via a
+    // conditional UPDATE so concurrent webhook handlers don't race.
+    if (newStatus === 'past_due' && user.subscription_status !== 'past_due') {
+      this.dispatchBillingFailedPush(user.id).catch(() => undefined);
+    }
+  }
+
+  private async dispatchBillingFailedPush(userId: string): Promise<void> {
+    try {
+      await this.pushService.sendToUser(userId, {
+        category: 'subscription_billing',
+        title: 'Payment failed',
+        body: "We couldn't charge your card for Tarmoto. Update your payment method to keep your subscription active.",
+        data: {
+          type: 'subscription_billing',
+          status: 'past_due',
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `subscription_billing push failed for user ${userId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
       );
     }
   }

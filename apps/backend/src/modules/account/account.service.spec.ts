@@ -10,6 +10,7 @@ import {
   type StripeBillingClient,
 } from './stripe-billing.client.js';
 import { EmailService } from '../email/email.service.js';
+import { PushService } from '../push/index.js';
 import { User } from '../../entities/user.entity.js';
 
 describe('AccountService', () => {
@@ -97,6 +98,10 @@ describe('AccountService', () => {
               return undefined;
             }),
           },
+        },
+        {
+          provide: PushService,
+          useValue: { sendToUser: jest.fn().mockResolvedValue(undefined) },
         },
       ],
     }).compile();

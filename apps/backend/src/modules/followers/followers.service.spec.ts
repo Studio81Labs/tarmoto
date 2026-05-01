@@ -12,6 +12,7 @@ import { UserFollow } from '../../entities/user-follow.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
+import { PushService } from '../push/index.js';
 
 describe('FollowersService', () => {
   let service: FollowersService;
@@ -82,6 +83,10 @@ describe('FollowersService', () => {
         { provide: getRepositoryToken(UserFollow), useValue: followRepo },
         { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: getRepositoryToken(SharedRide), useValue: sharedRideRepo },
+        {
+          provide: PushService,
+          useValue: { sendToUser: jest.fn().mockResolvedValue(undefined) },
+        },
       ],
     }).compile();
 

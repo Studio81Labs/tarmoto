@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
   ConflictException,
@@ -9,6 +10,7 @@ import { Repository } from 'typeorm';
 import { UserFollow } from '../../entities/user-follow.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
+import { PushService } from '../push/index.js';
 import {
   FollowUserResponseDto,
   FollowerDto,
@@ -18,6 +20,8 @@ import {
 
 @Injectable()
 export class FollowersService {
+  private readonly logger = new Logger(FollowersService.name);
+
   constructor(
     @InjectRepository(UserFollow)
     private readonly followRepo: Repository<UserFollow>,
@@ -25,6 +29,7 @@ export class FollowersService {
     private readonly userRepo: Repository<User>,
     @InjectRepository(SharedRide)
     private readonly sharedRideRepo: Repository<SharedRide>,
+    private readonly pushService: PushService,
   ) {}
 
   async follow(
@@ -61,11 +66,44 @@ export class FollowersService {
       throw err;
     }
 
+    // Best-effort follower-notification push. Resolve the follower's
+    // display_name for a richer message; fall back to "Someone" if the
+    // lookup fails so a missing user row never blocks the follow itself.
+    void this.notifyNewFollower(followerId, target);
+
     return {
       following_id: followingId,
       display_name: target.display_name,
       followed_at: follow.created_at.toISOString(),
     };
+  }
+
+  private async notifyNewFollower(
+    followerId: string,
+    target: User,
+  ): Promise<void> {
+    try {
+      const follower = await this.userRepo.findOne({
+        where: { id: followerId },
+        select: { id: true, display_name: true },
+      });
+      const followerName = follower?.display_name ?? 'Someone';
+      await this.pushService.sendToUser(target.id, {
+        category: 'new_follower',
+        title: 'New follower',
+        body: `${followerName} started following you`,
+        data: {
+          type: 'new_follower',
+          follower_id: followerId,
+        },
+      });
+    } catch (err) {
+      // Push is best-effort — never let a notifier failure surface
+      // back to the user-facing follow response.
+      this.logger.warn(
+        `new_follower push failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   async unfollow(followerId: string, followingId: string): Promise<void> {

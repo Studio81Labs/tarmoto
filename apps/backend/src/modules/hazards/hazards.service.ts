@@ -1,16 +1,27 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
+import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { CreateHazardDto, EXPIRY_HOURS } from './dto/create-hazard.dto.js';
 import { QueryHazardsDto } from './dto/query-hazards.dto.js';
 import { RouteHazardsDto } from './dto/route-hazards.dto.js';
 import { HazardResponseDto } from './dto/hazard-response.dto.js';
 import { EventsGateway } from '../events/events.gateway.js';
+import { PushService } from '../push/index.js';
+
+/**
+ * Buffer in metres around a saved commute route — riders within this
+ * buffer of a fresh hazard get a background push. 200m matches the
+ * default `bufferM` used by the route-hazards REST query so the two
+ * surfaces agree on what counts as "on this route".
+ */
+const COMMUTE_HAZARD_BUFFER_M = 200;
 
 const HAZARD_SELECT_BASE = `
   SELECT
@@ -29,10 +40,15 @@ const HAZARD_SELECT_BASE = `
 
 @Injectable()
 export class HazardsService {
+  private readonly logger = new Logger(HazardsService.name);
+
   constructor(
     @InjectRepository(HazardReport)
     private readonly hazardRepo: Repository<HazardReport>,
+    @InjectRepository(CommuteRoute)
+    private readonly commuteRepo: Repository<CommuteRoute>,
     private readonly eventsGateway: EventsGateway,
+    private readonly pushService: PushService,
   ) {}
 
   async create(
@@ -66,7 +82,62 @@ export class HazardsService {
     // Broadcast new hazard to nearby riders via WebSocket
     this.emitHazardEvent(response);
 
+    // Background push to riders whose saved commute passes near this
+    // hazard. Excludes the reporter — they don't need a push for
+    // their own report.
+    void this.notifyRidersOnSavedCommute(response, userId);
+
     return response;
+  }
+
+  private async notifyRidersOnSavedCommute(
+    hazard: HazardResponseDto,
+    reporterId: string,
+  ): Promise<void> {
+    try {
+      // Single SQL pass: find every commute route that passes within
+      // COMMUTE_HAZARD_BUFFER_M of the hazard, return distinct user_ids.
+      // PostGIS `ST_DWithin` on the geography cast handles the metric
+      // distance correctly across the EPSG:4326 source.
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      const rows = await this.commuteRepo.query(
+        `
+          SELECT DISTINCT cr.user_id
+          FROM commute_routes cr
+          WHERE cr.route_geom IS NOT NULL
+            AND cr.user_id != $1
+            AND ST_DWithin(
+              cr.route_geom::geography,
+              ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography,
+              $4
+            )
+        `,
+        [reporterId, hazard.lng, hazard.lat, COMMUTE_HAZARD_BUFFER_M],
+      );
+
+      const recipients = (rows as { user_id: string }[]).map((r) => r.user_id);
+      if (recipients.length === 0) return;
+
+      const where = hazard.road_name ? ` on ${hazard.road_name}` : '';
+      await this.pushService.sendToUsers(recipients, {
+        category: 'hazard_alert',
+        title: 'Hazard ahead on your commute',
+        body: `${humanizeHazardType(hazard.hazard_type)} reported${where}`,
+        data: {
+          type: 'hazard_alert',
+          hazard_id: hazard.id,
+          hazard_type: hazard.hazard_type,
+          lat: String(hazard.lat),
+          lng: String(hazard.lng),
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `hazard_alert push failed (hazard=${hazard.id}): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   async findNearby(query: QueryHazardsDto): Promise<HazardResponseDto[]> {
@@ -241,5 +312,28 @@ export class HazardsService {
       created_at: (row.created_at as Date).toISOString(),
       expires_at: (row.expires_at as Date).toISOString(),
     };
+  }
+}
+
+function humanizeHazardType(hazardType: string): string {
+  switch (hazardType) {
+    case 'pothole':
+      return 'Pothole';
+    case 'gravel':
+      return 'Loose gravel';
+    case 'oil_spill':
+      return 'Oil spill';
+    case 'roadworks':
+      return 'Roadworks';
+    case 'animals':
+      return 'Animals on road';
+    case 'police':
+      return 'Police checkpoint';
+    case 'flooding':
+      return 'Flooding';
+    case 'ice':
+      return 'Ice / black ice';
+    default:
+      return 'Hazard';
   }
 }

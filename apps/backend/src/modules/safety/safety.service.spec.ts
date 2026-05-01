@@ -7,6 +7,7 @@ import { UserContact } from '../../entities/user-contact.entity.js';
 import { User } from '../../entities/user.entity.js';
 import { CrashAlert } from '../../entities/crash-alert.entity.js';
 import { EventsGateway } from '../events/events.gateway.js';
+import { PushService } from '../push/index.js';
 import {
   CRASH_ALERT_NOTIFIER,
   type CrashAlertNotifier,
@@ -130,6 +131,10 @@ describe('SafetyService', () => {
         { provide: getRepositoryToken(CrashAlert), useValue: alertRepo },
         { provide: EventsGateway, useValue: eventsGateway },
         { provide: CRASH_ALERT_NOTIFIER, useValue: notifier },
+        {
+          provide: PushService,
+          useValue: { sendToUser: jest.fn().mockResolvedValue(undefined) },
+        },
       ],
     }).compile();
 
