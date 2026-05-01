@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -31,6 +32,8 @@ const ALLOWED_AVATAR_TYPES = new Map<string, string>([
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
@@ -201,7 +204,21 @@ export class UsersService {
       throw error;
     }
 
-    await this.deleteManagedAvatar(previousAvatarUrl);
+    // Save succeeded — the user's profile already points at the new
+    // avatar. Removing the previous object is a cleanup of orphaned
+    // bytes; a transient failure here (S3 5xx, transient FS error)
+    // shouldn't turn into a 500 for an upload that, from the
+    // caller's perspective, already completed. Log and move on so
+    // the next upload (or a future GC sweep) gets another shot.
+    try {
+      await this.deleteManagedAvatar(previousAvatarUrl);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to clean up previous avatar for user ${userId}: ${
+          (error as Error).message
+        }`,
+      );
+    }
     return this.toUserResponse(saved);
   }
 

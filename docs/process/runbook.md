@@ -285,6 +285,22 @@ unset keeps the existing filesystem behaviour. The static-file
 middleware in `main.ts` mirrors the same env vars so overriding
 `TARMOTO_LOCAL_STORAGE_DIR` works end-to-end.
 
+#### Public-base-URL gotcha (LocalStorage behind a proxy)
+
+`LocalStorage.publicUrl()` returns a server-relative path; the
+users controller then prefixes it with the public origin before
+storing in `users.avatar_url`. Behind a reverse proxy
+`req.get('host')` can be an internal pod hostname that mobile
+clients can't resolve, so **production must set
+`TARMOTO_PUBLIC_BASE_URL`** to the public https origin. Without
+it, the avatar upload fails loudly with a 500 rather than
+persisting an unreachable URL. Outside production the request-
+derived origin is fine, so dev needs no env wiring.
+
+`TARMOTO_PUBLIC_BASE_URL` is the same env var data-export and
+reviews already use — it's the single source of truth for the
+public origin.
+
 ### S3 / R2 / MinIO env vars (staging / prod)
 
 | Variable                       | Required when `s3` | Notes                                                                                                                                                                       |

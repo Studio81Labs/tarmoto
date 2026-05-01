@@ -6,6 +6,7 @@ import {
   Post,
   Delete,
   Body,
+  InternalServerErrorException,
   Param,
   Req,
   UseGuards,
@@ -15,6 +16,7 @@ import {
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   ApiTags,
   ApiOperation,
@@ -41,7 +43,47 @@ import { PublicProfileDto } from './dto/public-profile.dto.js';
 @UseGuards(AuthGuard)
 @ApiBearerAuth()
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly config: ConfigService,
+  ) {}
+
+  /**
+   * Resolve the public origin to embed in the avatar URL we persist
+   * for this user. Mirrors the reviews controller's
+   * `resolvePublicBaseUrl`: behind a load balancer the multiple
+   * backend replicas all see the same external host via the proxy,
+   * but the request-derived `req.get('host')` may report an
+   * internal hostname (e.g. the pod IP behind ingress) that mobile
+   * clients can't resolve. `TARMOTO_PUBLIC_BASE_URL` is the env var
+   * data-export and reviews already standardised on, so the avatar
+   * path stays aligned.
+   *
+   * In production we hard-require the env var so a misconfigured
+   * deploy fails loudly rather than silently writing unreachable
+   * URLs into `users.avatar_url`. Outside production we fall back
+   * to the request-derived origin so contributors don't need any
+   * env wiring to get working dev uploads.
+   */
+  private resolvePublicBaseUrl(req: express.Request): string {
+    const configured = this.config
+      .get<string>('TARMOTO_PUBLIC_BASE_URL')
+      ?.trim();
+    const isProd = process.env.TARMOTO_NODE_ENV === 'production';
+
+    if (isProd && (!configured || configured.length === 0)) {
+      throw new InternalServerErrorException(
+        'Avatar uploads are misconfigured: TARMOTO_PUBLIC_BASE_URL ' +
+          'must be set to the public https origin in production. See ' +
+          'docs/process/runbook.md.',
+      );
+    }
+
+    if (configured && configured.length > 0) {
+      return configured.replace(/\/$/, '');
+    }
+    return `${req.protocol}://${req.get('host')}`;
+  }
 
   @Get('me')
   @ApiOperation({ summary: 'Get current user profile' })
@@ -95,17 +137,10 @@ export class UsersController {
       throw new BadRequestException('Avatar image is required');
     }
 
-    // Same convention as the reviews controller: prefer the
-    // configured `TARMOTO_PUBLIC_BASE_URL` (the only safe choice
-    // behind a load balancer where multiple replicas all see the
-    // same external host) and fall back to the request-derived
-    // origin in dev so contributors don't need to set env vars to
-    // get a working URL.
-    const publicBaseUrl = `${req.protocol}://${req.get('host')}`;
     return this.usersService.uploadAvatar(
       req.user!.userId,
       file,
-      publicBaseUrl,
+      this.resolvePublicBaseUrl(req),
     );
   }
 

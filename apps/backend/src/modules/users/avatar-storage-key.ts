@@ -12,17 +12,6 @@ import { hasControlCharacters } from '../../common/control-characters.js';
 export const AVATAR_KEY_PREFIX = 'avatars/';
 
 /**
- * URL path prefix for locally-stored avatars. Prior to the
- * `ObjectStorage` rollout the backend embedded an absolute
- * `${apiHost}/uploads/avatars/<file>` URL into `users.avatar_url`.
- * After the migration the value is server-relative
- * (`/uploads/avatars/<file>`) so the API host can move without
- * invalidating already-saved references; clients prefix their
- * `apiBaseUrl` when rendering.
- */
-export const AVATAR_LOCAL_URL_PREFIX = '/uploads/avatars/';
-
-/**
  * Resolve a stored `avatar_url` back to its `ObjectStorage` key, if
  * (and only if) the URL points to an avatar this backend manages.
  * Returns `null` for:

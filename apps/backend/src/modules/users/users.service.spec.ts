@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-return, @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { NotFoundException } from '@nestjs/common';
+import { Logger, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { Readable } from 'node:stream';
 import { UsersService } from './users.service.js';
@@ -436,27 +436,40 @@ describe('UsersService', () => {
       expect(storage.put).not.toHaveBeenCalled();
     });
 
-    it('does not delete the new object when removing the previous avatar fails after save', async () => {
+    it('returns the updated profile when the previous-avatar cleanup fails after save (best-effort, logged)', async () => {
       userRepo.findOne!.mockResolvedValueOnce({
         ...buildMockUser(),
         avatar_url: 'https://app.tarmoto.test/uploads/avatars/old-avatar.png',
       } as User);
-      // The first `delete` call is the managed-old-avatar cleanup.
-      // It must not bubble out — the new avatar is already saved
-      // and we don't want a flaky cleanup to fail the upload.
+      // From the caller's perspective the upload already succeeded —
+      // the row is saved, the new object is in storage. A flaky
+      // delete of the now-orphaned previous object must NOT turn
+      // into a 500. Suppress logger output so the test isn't noisy.
+      const warnSpy = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
       storage.delete.mockRejectedValueOnce(
         Object.assign(new Error('permission denied'), { code: 'EACCES' }),
       );
 
-      await expect(
-        service.uploadAvatar('user-1', file, 'https://app.tarmoto.test'),
-      ).rejects.toThrow('permission denied');
+      const result = await service.uploadAvatar(
+        'user-1',
+        file,
+        'https://app.tarmoto.test',
+      );
 
-      // Exactly one delete: the old avatar. The new one stays put,
-      // matching the previous behaviour where a successful save
-      // followed by a failed cleanup did not roll the new write back.
+      expect(result.avatar_url).toMatch(
+        /^https:\/\/app\.tarmoto\.test\/uploads\/avatars\/user-1-/,
+      );
+      // Exactly one delete: the old avatar. The new one stays put.
       expect(storage.delete).toHaveBeenCalledTimes(1);
       expect(storage.delete).toHaveBeenCalledWith('avatars/old-avatar.png');
+      // The failure is observable in logs so an operator can spot
+      // a leaking-cleanup pattern.
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to clean up previous avatar'),
+      );
+      warnSpy.mockRestore();
     });
 
     it('rolls back the new object when the DB save fails', async () => {
