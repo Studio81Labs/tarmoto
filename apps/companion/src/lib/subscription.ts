@@ -1,6 +1,7 @@
+import type { SubscriptionTier } from "@tarmoto/shared";
 import { ApiError } from "@/lib/api";
 
-export type SubscriptionTier = "free" | "premium" | "pro";
+export type { SubscriptionTier };
 export type SubscriptionStatus =
   | "active"
   | "trialing"

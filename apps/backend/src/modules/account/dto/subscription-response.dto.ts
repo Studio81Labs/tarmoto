@@ -1,8 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { SUBSCRIPTION_TIERS, type SubscriptionTier } from '@tarmoto/shared';
 
 class SubscriptionPlanDto {
-  @ApiProperty({ enum: ['free', 'premium', 'pro'] })
-  tier!: 'free' | 'premium' | 'pro';
+  @ApiProperty({ enum: SUBSCRIPTION_TIERS })
+  tier!: SubscriptionTier;
 
   @ApiProperty()
   name!: string;
@@ -21,8 +22,8 @@ class SubscriptionPlanDto {
 }
 
 class CurrentSubscriptionPlanDto {
-  @ApiProperty({ enum: ['free', 'premium', 'pro'] })
-  tier!: 'free' | 'premium' | 'pro';
+  @ApiProperty({ enum: SUBSCRIPTION_TIERS })
+  tier!: SubscriptionTier;
 
   @ApiProperty()
   name!: string;

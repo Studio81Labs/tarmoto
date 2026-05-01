@@ -1,5 +1,5 @@
 import type * as GeoJSON from "geojson";
-import type { HazardType } from "@tarmoto/shared";
+import type { HazardType, SubscriptionTier } from "@tarmoto/shared";
 
 // Re-export so callers that already import from `@/lib/types` keep working.
 // New code should import `HazardType` directly from `@tarmoto/shared` (the
@@ -14,7 +14,7 @@ export interface User {
   displayName: string;
   avatarUrl?: string;
   homeRegion?: string;
-  tier: "free" | "premium" | "pro";
+  tier: SubscriptionTier;
   createdAt: string;
 }
 
