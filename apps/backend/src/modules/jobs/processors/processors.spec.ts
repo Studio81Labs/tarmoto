@@ -139,6 +139,32 @@ describe('DigestWeeklyProcessor', () => {
     expect(result).toEqual({ users_enqueued: 2 });
   });
 
+  it('dispatch SQL validates timezones via pg_timezone_names so a malformed user pref cannot crash the whole query', async () => {
+    // `AT TIME ZONE 'Foo/Bar'` raises a Postgres error that aborts
+    // the entire SELECT — a single bad row would block digests for
+    // every user. The query must resolve unknown tz strings to UTC
+    // before they reach AT TIME ZONE. We assert the SQL surface here
+    // so a regression that drops the validation fails loudly without
+    // needing a live Postgres in the unit suite.
+    dataSource.query.mockResolvedValue([]);
+    await processor.process(
+      fakeJob(JOB_NAMES.DIGEST_WEEKLY_DISPATCH, {}) as never,
+    );
+    const [sql] = dataSource.query.mock.calls[0] as [string, unknown[]];
+    expect(sql).toMatch(/pg_timezone_names/);
+    // The validated tz comes from a CROSS JOIN LATERAL alias, not from
+    // the raw `preferences->>'timezone'` value being passed to
+    // AT TIME ZONE. If anyone reverts to interpolating the raw value
+    // again, this assertion fails.
+    expect(sql).toMatch(/AT TIME ZONE tz_resolution\.tz/);
+    // Sanity: the query never passes the raw preferences->>'timezone'
+    // directly to AT TIME ZONE (the foot-gun the lateral subquery
+    // exists to remove).
+    expect(sql).not.toMatch(
+      /AT TIME ZONE\s+COALESCE\(NULLIF\(u\.preferences->>'timezone'/,
+    );
+  });
+
   it('compose: stub returns "skipped" with a reason pointing at US-63 (real composer pending)', async () => {
     const result = await processor.process(
       fakeJob(JOB_NAMES.DIGEST_WEEKLY_COMPOSE, {

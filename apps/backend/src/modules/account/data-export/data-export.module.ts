@@ -110,5 +110,12 @@ import { EXPORT_STORAGE } from './storage/export-storage.interface.js';
         }),
     },
   ],
+  // `DataExportProcessor` is consumed by the BullMQ wrapper in
+  // `JobsModule` (`DataExportQueueProcessor`) which calls
+  // `runner.process(...)` to assemble the bundle. Without this export
+  // Nest DI fails at worker bootstrap with "can't resolve dependencies
+  // of DataExportQueueProcessor". Unit tests don't catch the gap
+  // because they provide manual mocks; only the running app exposes it.
+  exports: [DataExportProcessor],
 })
 export class DataExportModule {}

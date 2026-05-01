@@ -68,9 +68,18 @@ export class DigestWeeklyProcessor extends WorkerHost {
     const now = new Date();
     // SQL handles the per-row timezone math because Postgres can do it
     // and pulling every user into Node to call `Intl.DateTimeFormat`
-    // would scale poorly. `AT TIME ZONE` accepts an unknown zone by
-    // throwing — guard with a regex on `tz` so a malformed user pref
-    // doesn't poison the dispatch loop.
+    // would scale poorly.
+    //
+    // CRITICAL: `AT TIME ZONE '<bad-zone>'` raises a Postgres error that
+    // aborts the WHOLE query. A single user with `preferences.timezone =
+    // "Foo/Bar"` would prevent the digest from going out for *anyone*.
+    // Resolve each user's tz through a LATERAL join against
+    // `pg_timezone_names` (Postgres's authoritative IANA table). An
+    // unknown name returns no row → COALESCE picks 'UTC' → AT TIME ZONE
+    // sees only known-valid input. The lateral subquery is evaluated
+    // once per row but `pg_timezone_names` is a small (~600 entry)
+    // in-memory catalog, so the cost is negligible compared to the
+    // outer scan.
     //
     // The opt-in predicate is intentionally permissive (default ON when
     // missing) to match the AC, which expects the digest to roll out
@@ -80,18 +89,25 @@ export class DigestWeeklyProcessor extends WorkerHost {
       `
       SELECT u.id::text AS user_id
       FROM users u
+      CROSS JOIN LATERAL (
+        SELECT COALESCE(
+          (
+            SELECT ptn.name
+            FROM pg_timezone_names ptn
+            WHERE ptn.name = NULLIF(u.preferences->>'timezone', '')
+            LIMIT 1
+          ),
+          'UTC'
+        ) AS tz
+      ) tz_resolution
       WHERE u.deleted_at IS NULL
         AND u.email_verified_at IS NOT NULL
         AND COALESCE((u.preferences->>'weekly_digest')::boolean, true) = true
         AND EXTRACT(
-          DOW FROM ($1::timestamptz AT TIME ZONE
-            COALESCE(NULLIF(u.preferences->>'timezone', ''), 'UTC')
-          )
+          DOW FROM ($1::timestamptz AT TIME ZONE tz_resolution.tz)
         )::int = $2
         AND EXTRACT(
-          HOUR FROM ($1::timestamptz AT TIME ZONE
-            COALESCE(NULLIF(u.preferences->>'timezone', ''), 'UTC')
-          )
+          HOUR FROM ($1::timestamptz AT TIME ZONE tz_resolution.tz)
         )::int = $3
       `,
       [now.toISOString(), DIGEST_LOCAL_DOW, DIGEST_LOCAL_HOUR],
