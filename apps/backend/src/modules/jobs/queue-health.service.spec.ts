@@ -75,6 +75,66 @@ describe('QueueHealthService', () => {
     });
   });
 
+  it('redacts the entity portion of jobIds so the public endpoint never leaks user UUIDs', async () => {
+    // Producers set jobIds like `account-deletion-finalize:<user_uuid>`
+    // for idempotency. The raw value must NOT reach the unauthenticated
+    // /jobs/health response — for the account-deletion queue it would
+    // tell the world which user is being purged under GDPR right now.
+    queues[QUEUE_NAMES.ACCOUNT_DELETION_FINALIZE].getFailed.mockResolvedValue([
+      {
+        id: 'account-deletion-finalize:5b8e7c3a-1234-4567-89ab-cdef01234567',
+        name: 'finalize-user',
+        finishedOn: new Date('2026-04-30T12:00:00Z').valueOf(),
+        attemptsMade: 5,
+        failedReason: 'Stripe 503',
+      },
+    ]);
+    queues[QUEUE_NAMES.DIGEST_WEEKLY].getFailed.mockResolvedValue([
+      {
+        id: 'digest-weekly:5b8e7c3a-1234-4567-89ab-cdef01234567:2026-W18',
+        name: 'compose',
+        finishedOn: new Date('2026-04-30T12:00:00Z').valueOf(),
+        attemptsMade: 5,
+        failedReason: 'Resend 500',
+      },
+    ]);
+    const snapshot = await service.snapshot(true);
+    const accountDeletion = snapshot.queues.find(
+      (q) => q.queue === QUEUE_NAMES.ACCOUNT_DELETION_FINALIZE,
+    )!;
+    expect(accountDeletion.lastFailure!.job_id).toBe(
+      'account-deletion-finalize:***',
+    );
+    // Multi-segment jobIds (e.g. digest-weekly:<user>:<window>) also
+    // collapse everything after the first colon — the window is also
+    // user-correlatable on small populations.
+    const digest = snapshot.queues.find(
+      (q) => q.queue === QUEUE_NAMES.DIGEST_WEEKLY,
+    )!;
+    expect(digest.lastFailure!.job_id).toBe('digest-weekly:***');
+    // Sanity: no user UUID appears anywhere in the snapshot payload.
+    expect(JSON.stringify(snapshot)).not.toMatch(
+      /5b8e7c3a-1234-4567-89ab-cdef01234567/,
+    );
+  });
+
+  it('passes BullMQ-auto-generated numeric jobIds through unchanged (no user data to redact)', async () => {
+    queues[QUEUE_NAMES.PUSH_NOTIFICATION].getFailed.mockResolvedValue([
+      {
+        id: '12345',
+        name: 'send',
+        finishedOn: new Date('2026-04-30T12:00:00Z').valueOf(),
+        attemptsMade: 5,
+        failedReason: 'FCM 401',
+      },
+    ]);
+    const snapshot = await service.snapshot(true);
+    const push = snapshot.queues.find(
+      (q) => q.queue === QUEUE_NAMES.PUSH_NOTIFICATION,
+    )!;
+    expect(push.lastFailure!.job_id).toBe('12345');
+  });
+
   it('reports lastFailure: null when no failures are retained', async () => {
     const snapshot = await service.snapshot(true);
     for (const entry of snapshot.queues) {

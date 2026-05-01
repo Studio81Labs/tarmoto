@@ -141,11 +141,33 @@ export class QueueHealthService {
   private summarize(job: Job): QueueHealthEntry['lastFailure'] {
     const finishedOn = job.finishedOn ?? job.processedOn ?? Date.now();
     return {
-      job_id: String(job.id ?? 'unknown'),
+      job_id: this.redactJobId(String(job.id ?? 'unknown')),
       name: job.name,
       failed_at: new Date(finishedOn).toISOString(),
       attempts_made: job.attemptsMade,
       failed_reason: job.failedReason ?? null,
     };
+  }
+
+  /**
+   * Strip the entity portion of a manually-set jobId before exposing
+   * it on the public health endpoint. Producers use the convention
+   * `<queue-prefix>:<entity-id>[:<extra>]` (e.g.
+   * `account-deletion-finalize:<user_uuid>`,
+   * `digest-weekly:<user_uuid>:2026-W18`). The raw user UUID must
+   * NEVER reach the unauthenticated `GET /jobs/health` response —
+   * especially for the account-deletion queue, where the bare
+   * presence of a user id signals "this account is being purged
+   * under GDPR right now."
+   *
+   * Auto-generated BullMQ job ids (no colon, e.g. `12345`) pass
+   * through unchanged — they're internal counters, not user data.
+   */
+  private redactJobId(rawId: string): string {
+    const colonIdx = rawId.indexOf(':');
+    if (colonIdx === -1) {
+      return rawId;
+    }
+    return `${rawId.slice(0, colonIdx)}:***`;
   }
 }
