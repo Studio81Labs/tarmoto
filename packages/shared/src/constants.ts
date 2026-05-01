@@ -56,6 +56,9 @@ export const SUBSCRIPTION_TIERS = ["free", "premium", "pro"] as const;
 
 export type SubscriptionTier = (typeof SUBSCRIPTION_TIERS)[number];
 
+// Canonical EUR-denominated PRD pricing. Display-layer code is responsible
+// for currency rendering — the symbol shown in the UI is intentionally not
+// encoded here so the source of truth stays a pure numeric record.
 export const SUBSCRIPTION_PRICING: Record<
   SubscriptionTier,
   { price_eur: number; interval: "month" | "year" }
@@ -64,13 +67,3 @@ export const SUBSCRIPTION_PRICING: Record<
   premium: { price_eur: 29.99, interval: "year" },
   pro: { price_eur: 49.99, interval: "year" },
 };
-
-// Renders the price label shown in plan cards across backend and companion.
-// Free skips the interval suffix because there is no recurring charge — the
-// `interval: 'year'` field is retained for shape consistency with paid tiers.
-export function formatSubscriptionPriceLabel(tier: SubscriptionTier): string {
-  const { price_eur, interval } = SUBSCRIPTION_PRICING[tier];
-  if (price_eur === 0) return "$0";
-  const suffix = interval === "year" ? "/yr" : "/mo";
-  return `$${price_eur}${suffix}`;
-}
