@@ -111,7 +111,7 @@ export function isAuthenticated(): boolean {
  * itself can't loop). Persists new tokens on success, clears them on
  * failure. Concurrent calls share a single inflight promise.
  */
-export async function refreshAccessToken(): Promise<boolean> {
+async function refreshAccessToken(): Promise<boolean> {
   if (inflightRefresh) return inflightRefresh;
   const refreshToken = getRefreshToken();
   if (!refreshToken) return false;
@@ -197,6 +197,18 @@ baseClient.use({
       const refreshed = await refreshAccessToken();
       if (!refreshed) return response;
 
+      // Dispose the ORIGINAL request's timer NOW, before chaining
+      // the retry to its signal. The 401-detection plus refresh
+      // round-trip may have already eaten 10+ s of the original
+      // 15 s window; if we leave the original timer armed, it
+      // fires mid-retry and aborts the fresh fetch through the
+      // chained signal seconds after it starts. Calling
+      // `dispose()` only clears the timer — the caller-signal
+      // listener installed by `withTimeout` stays connected, so
+      // caller cancellation still propagates into the retry.
+      requestDisposers.get(id)?.();
+      requestDisposers.delete(id);
+
       // Build a fresh Request with the new bearer rather than mutating
       // headers on a clone. WHATWG `Request.clone().headers` is
       // immutable, and on RN's whatwg-fetch polyfill `set()` is a
@@ -207,16 +219,10 @@ baseClient.use({
       request.headers.forEach((value, key) => headers.set(key, value));
       if (newToken) headers.set("Authorization", `Bearer ${newToken}`);
 
-      // Fresh 15 s deadline for the retry — the original deadline's
-      // timer was cleared in the dispose() below and reusing it
-      // would leave near-zero budget for the second request to
-      // complete after a refresh round-trip. The caller's
-      // cancellation signal is preserved by passing `request.signal`
-      // through: the request we're holding here is the one
-      // `onRequest` swapped in, which is already chained to the
-      // caller's original signal via `withTimeout`'s abort listener.
-      // Without this, aborting `uploadReviewPhotos`'s signal mid-401
-      // window would no-op against the retried fetch.
+      // Fresh 15 s deadline for the retry chained to the caller's
+      // signal (via the original combined signal whose timer we
+      // just disposed). Caller cancellation propagates; the
+      // disposed original timer cannot.
       const retryTimeout = withTimeout(request.signal, REQUEST_TIMEOUT_MS);
       try {
         const init: RequestInit = {
@@ -232,6 +238,9 @@ baseClient.use({
       }
     } finally {
       requestBodies.delete(id);
+      // Original timer was already disposed on the 401-retry path;
+      // these calls cover the non-401 / skip-refresh / refresh-failed
+      // paths where we returned early without touching the disposer.
       requestDisposers.get(id)?.();
       requestDisposers.delete(id);
     }
