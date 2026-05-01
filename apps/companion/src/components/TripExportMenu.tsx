@@ -24,6 +24,19 @@ import {
 
 interface TripExportMenuProps {
   trip: Trip | null;
+  /**
+   * Whether this menu is rendered next to a backend-persisted trip
+   * ("saved-trip", default) or against the in-memory planner draft
+   * ("planner"). Drives the PDF download route: `saved-trip` opens the
+   * per-id print page so members/region come from the API, `planner`
+   * opens the local-snapshot print page.
+   *
+   * Avoid status-based heuristics here — a backend-persisted trip can
+   * legitimately be in `draft` status (created but not yet route-
+   * generated), so guessing from `trip.status` would silently route
+   * those trips to the planner print path and drop API-only fields.
+   */
+  context?: "saved-trip" | "planner";
 }
 
 type Feedback = { kind: "ok" | "err"; message: string } | null;
@@ -37,7 +50,10 @@ type Feedback = { kind: "ok" | "err"; message: string } | null;
  * menu doubles as a visual cue that "Load demo trip" or a generated trip is
  * the next step.
  */
-export function TripExportMenu({ trip }: TripExportMenuProps) {
+export function TripExportMenu({
+  trip,
+  context = "saved-trip",
+}: TripExportMenuProps) {
   const [open, setOpen] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [pushPending, setPushPending] = useState(false);
@@ -158,22 +174,23 @@ export function TripExportMenu({ trip }: TripExportMenuProps) {
 
   function handlePdf() {
     if (!trip) return;
-    // Use the planner print route for unsaved/draft trips so they hydrate
-    // from the localStorage hand-off; saved trips go to the per-id route
-    // which fetches authoritative data from the backend (members, region,
-    // server-side updates that may not be in the local snapshot). Both
+    // Route by the explicit `context` prop, not by inspecting `trip.status`
+    // — a backend-persisted trip can legitimately be in `draft` status
+    // (created but not yet route-generated), so a status check would
+    // silently send it down the planner-print path and drop the
+    // members/region the per-id print page fetches from the API. Both
     // routes auto-trigger `window.print()` when `?autoprint=1` is set.
-    const isSavedTrip = trip.status !== "draft";
-    if (!isSavedTrip) {
+    if (context === "planner") {
       try {
         localStorage.setItem(TRIP_PRINT_STORAGE_KEY, JSON.stringify(trip));
       } catch {
         /* private mode or storage full — the print page falls back to demo */
       }
     }
-    const url = isSavedTrip
-      ? `/trips/${encodeURIComponent(trip.id)}/print?autoprint=1`
-      : `/trips/planner/print?trip=${encodeURIComponent(trip.id)}&autoprint=1`;
+    const url =
+      context === "saved-trip"
+        ? `/trips/${encodeURIComponent(trip.id)}/print?autoprint=1`
+        : `/trips/planner/print?trip=${encodeURIComponent(trip.id)}&autoprint=1`;
     window.open(url, "_blank", "noopener,noreferrer");
     setOpen(false);
   }
