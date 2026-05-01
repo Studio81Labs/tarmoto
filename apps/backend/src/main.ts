@@ -94,7 +94,27 @@ async function bootstrap() {
 
   app.use(isProd ? helmet() : helmet({ contentSecurityPolicy: false }));
   app.setGlobalPrefix('api/v1');
-  app.use('/uploads', serveStatic(join(process.cwd(), 'uploads')));
+
+  // Serve locally-stored uploads (avatars today; review photos next).
+  // The path prefix and base directory mirror `LocalStorage` so a
+  // contributor running with default env config gets working avatar
+  // fetches without touching MinIO.
+  //
+  // The route stays mounted even when `TARMOTO_STORAGE_DRIVER=s3`:
+  // new uploads go to the bucket, but already-stored avatar URLs
+  // pointing at `/uploads/avatars/<file>` (from before the cutover,
+  // or sitting in older mobile-app caches) keep resolving against
+  // the existing local filesystem until the data backfill described
+  // in the runbook completes. Gating this on the driver flag would
+  // 404 every legacy URL the moment S3 is enabled.
+  const localDir =
+    process.env.TARMOTO_LOCAL_STORAGE_DIR?.trim() ||
+    join(process.cwd(), 'uploads');
+  const publicPath =
+    (process.env.TARMOTO_LOCAL_STORAGE_PUBLIC_PATH ?? '/uploads')
+      .trim()
+      .replace(/\/+$/, '') || '/uploads';
+  app.use(publicPath, serveStatic(localDir));
 
   app.useGlobalPipes(
     new ValidationPipe({

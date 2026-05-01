@@ -1,6 +1,11 @@
 /* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { authGuardTestProviders } from '../auth/auth-test-providers.js';
 import { UsersController } from './users.controller.js';
 import { UsersService } from './users.service.js';
@@ -47,7 +52,21 @@ describe('UsersController', () => {
     is_self: false,
   };
 
+  // Per-test config override for `TARMOTO_PUBLIC_BASE_URL` and
+  // `TARMOTO_NODE_ENV`. Tests reach into this and call `set()` to
+  // simulate prod / configured-base-url scenarios.
+  const env: Record<string, string | undefined> = {};
+  const setEnv = (next: Record<string, string | undefined>) => {
+    for (const k of Object.keys(env)) delete env[k];
+    Object.assign(env, next);
+  };
+  const mockConfigService = {
+    get: jest.fn(<T>(key: string): T | undefined => env[key] as T | undefined),
+  };
+
   beforeEach(async () => {
+    setEnv({});
+    delete process.env.TARMOTO_NODE_ENV;
     const mockService = {
       getProfile: jest.fn().mockResolvedValue(mockUser),
       getPublicProfile: jest.fn().mockResolvedValue(mockPublicProfile),
@@ -63,6 +82,7 @@ describe('UsersController', () => {
       controllers: [UsersController],
       providers: [
         { provide: UsersService, useValue: mockService },
+        { provide: ConfigService, useValue: mockConfigService },
         ...authGuardTestProviders,
       ],
     }).compile();
@@ -107,20 +127,72 @@ describe('UsersController', () => {
   });
 
   describe('POST /users/me/avatar', () => {
-    it('should upload an avatar and return the updated profile', async () => {
-      const file = {
-        originalname: 'rider.png',
-        mimetype: 'image/png',
-        buffer: Buffer.from('avatar'),
-        size: 6,
-      } as Express.Multer.File;
+    const file = {
+      originalname: 'rider.png',
+      mimetype: 'image/png',
+      buffer: Buffer.from('avatar'),
+      size: 6,
+    } as Express.Multer.File;
 
+    it('falls back to the request-derived origin when TARMOTO_PUBLIC_BASE_URL is unset (dev)', async () => {
       await controller.uploadAvatar(mockReq, file);
 
       expect(service.uploadAvatar).toHaveBeenCalledWith(
         'user-1',
         file,
         'https://api.tarmoto.test',
+      );
+    });
+
+    it('prefers TARMOTO_PUBLIC_BASE_URL over the request-derived origin', async () => {
+      // Behind a reverse proxy `req.get('host')` may report an
+      // internal pod hostname; the configured base URL is the one
+      // mobile clients can resolve, so it must win when set.
+      setEnv({ TARMOTO_PUBLIC_BASE_URL: 'https://api.tarmoto.app' });
+
+      await controller.uploadAvatar(mockReq, file);
+
+      expect(service.uploadAvatar).toHaveBeenCalledWith(
+        'user-1',
+        file,
+        'https://api.tarmoto.app',
+      );
+    });
+
+    it('strips a trailing slash from TARMOTO_PUBLIC_BASE_URL so URLs concatenate cleanly', async () => {
+      setEnv({ TARMOTO_PUBLIC_BASE_URL: 'https://api.tarmoto.app/' });
+
+      await controller.uploadAvatar(mockReq, file);
+
+      expect(service.uploadAvatar).toHaveBeenCalledWith(
+        'user-1',
+        file,
+        'https://api.tarmoto.app',
+      );
+    });
+
+    it('500s in production when TARMOTO_PUBLIC_BASE_URL is unset', async () => {
+      // Production behind a load balancer must NOT silently store
+      // the request-derived host — the URL would point at the
+      // internal pod hostname and 404 on every client. Fail loud.
+      process.env.TARMOTO_NODE_ENV = 'production';
+
+      await expect(controller.uploadAvatar(mockReq, file)).rejects.toThrow(
+        InternalServerErrorException,
+      );
+      expect(service.uploadAvatar).not.toHaveBeenCalled();
+    });
+
+    it('lets uploads through in production when TARMOTO_PUBLIC_BASE_URL is set', async () => {
+      process.env.TARMOTO_NODE_ENV = 'production';
+      setEnv({ TARMOTO_PUBLIC_BASE_URL: 'https://api.tarmoto.app' });
+
+      await controller.uploadAvatar(mockReq, file);
+
+      expect(service.uploadAvatar).toHaveBeenCalledWith(
+        'user-1',
+        file,
+        'https://api.tarmoto.app',
       );
     });
 

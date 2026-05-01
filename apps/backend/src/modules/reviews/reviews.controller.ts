@@ -27,6 +27,7 @@ import {
 } from '@nestjs/swagger';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import * as express from 'express';
+import { resolvePublicBaseUrl as sharedResolvePublicBaseUrl } from '../../common/public-base-url.js';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard.js';
 import { ReviewsService } from './reviews.service.js';
@@ -59,36 +60,19 @@ export class ReviewsController {
    * URL as "managed", otherwise the cascade-delete and ownership
    * guards silently no-op even though uploads look successful.
    *
-   * In production we require `TARMOTO_PUBLIC_BASE_URL` to be set: the
-   * service's trusted-origin set is built from that env var, so
-   * falling back to `req.protocol://req.get('host')` would emit URLs
-   * the service then refuses to recognize as ours, leaving managed
-   * files orphaned and skipping ownership validation. Outside
-   * production we fall back to the request-derived origin, since
-   * loopback hosts are trusted in the service.
-   *
-   * `TARMOTO_PUBLIC_BASE_URL` is the same env var data-export uses for
-   * its signed download URLs — keeping the contract aligned.
+   * Delegates the env-var-vs-request fallback (and the production
+   * hard-requirement) to the shared `resolvePublicBaseUrl` helper
+   * so the rule stays in lockstep across review-photo, avatar, and
+   * data-export download paths. The probe-URL check below is
+   * review-photo-specific — it confirms the resolved origin still
+   * passes `isAllowedReviewPhotoUrl`, catching prod misconfigs like
+   * `http://api.example.com` that the shared helper otherwise
+   * wouldn't reject.
    */
   private resolvePublicBaseUrl(req: express.Request): string {
-    const configured = this.config
-      .get<string>('TARMOTO_PUBLIC_BASE_URL')
-      ?.trim();
-    const isProd = process.env.TARMOTO_NODE_ENV === 'production';
-
-    if (isProd && (!configured || configured.length === 0)) {
-      throw new InternalServerErrorException(
-        'Review photo uploads are misconfigured: TARMOTO_PUBLIC_BASE_URL ' +
-          'must be set to the public https origin in production so the ' +
-          'service can recognize uploaded URLs as managed. See ' +
-          'docs/process/runbook.md.',
-      );
-    }
-
-    const baseUrl =
-      configured && configured.length > 0
-        ? configured.replace(/\/$/, '')
-        : `${req.protocol}://${req.get('host')}`;
+    const baseUrl = sharedResolvePublicBaseUrl(req, this.config, {
+      feature: 'Review photo uploads',
+    });
 
     // The probe URL has to share the path prefix the upload endpoint
     // actually emits — `isAllowedReviewPhotoUrl` parses with the URL

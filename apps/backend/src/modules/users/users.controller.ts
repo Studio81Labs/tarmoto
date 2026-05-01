@@ -15,6 +15,7 @@ import {
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   ApiTags,
   ApiOperation,
@@ -25,6 +26,7 @@ import {
 } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import * as express from 'express';
+import { resolvePublicBaseUrl } from '../../common/public-base-url.js';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { UsersService } from './users.service.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
@@ -41,7 +43,10 @@ import { PublicProfileDto } from './dto/public-profile.dto.js';
 @UseGuards(AuthGuard)
 @ApiBearerAuth()
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly config: ConfigService,
+  ) {}
 
   @Get('me')
   @ApiOperation({ summary: 'Get current user profile' })
@@ -95,11 +100,10 @@ export class UsersController {
       throw new BadRequestException('Avatar image is required');
     }
 
-    const publicBaseUrl = `${req.protocol}://${req.get('host')}`;
     return this.usersService.uploadAvatar(
       req.user!.userId,
       file,
-      publicBaseUrl,
+      resolvePublicBaseUrl(req, this.config, { feature: 'Avatar uploads' }),
     );
   }
 
