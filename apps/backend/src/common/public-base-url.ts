@@ -33,7 +33,13 @@ export function resolvePublicBaseUrl(
   }
 
   if (configured && configured.length > 0) {
-    return configured.replace(/\/$/, '');
+    // Strip ALL trailing slashes, not just one — a paste error
+    // like `https://api.example.com//` would otherwise leave a
+    // single slash behind and yield `https://...//uploads/...`
+    // when concatenated with a leading-slash path. Matches the
+    // multi-slash trim used elsewhere in this codebase
+    // (storage.config.ts, main.ts, s3-storage.ts).
+    return configured.replace(/\/+$/, '');
   }
   return `${req.protocol}://${req.get('host')}`;
 }

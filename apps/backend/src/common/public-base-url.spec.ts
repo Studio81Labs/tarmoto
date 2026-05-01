@@ -50,6 +50,19 @@ describe('resolvePublicBaseUrl', () => {
     expect(url).toBe('https://api.tarmoto.app');
   });
 
+  it('strips multiple trailing slashes (paste-error case)', () => {
+    // `https://api.example.com//` → `https://api.example.com`,
+    // not `https://api.example.com/`. Otherwise concatenation with
+    // a leading-slash path produces a double-slash URL. Matches
+    // the multi-slash trim used elsewhere in this codebase.
+    const url = resolvePublicBaseUrl(
+      fakeReq('api.tarmoto.test'),
+      fakeConfig({ TARMOTO_PUBLIC_BASE_URL: 'https://api.tarmoto.app///' }),
+      { feature: 'Avatar uploads' },
+    );
+    expect(url).toBe('https://api.tarmoto.app');
+  });
+
   it('throws in production when the env var is unset', () => {
     process.env.TARMOTO_NODE_ENV = 'production';
     expect(() =>
