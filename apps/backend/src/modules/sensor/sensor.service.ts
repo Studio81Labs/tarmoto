@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { SurfaceReading } from '../../entities/surface-reading.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { RideStats } from '../../entities/ride-stats.entity.js';
+import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import {
   UploadSensorDataDto,
   SensorReadingDto,
@@ -49,12 +50,26 @@ export class SensorService {
     private readonly segmentRepo: Repository<RoadSegment>,
     @InjectRepository(RideStats)
     private readonly statsRepo: Repository<RideStats>,
+    private readonly privacy: PrivacyPreferencesService,
   ) {}
 
   async processUpload(
     userId: string,
     dto: UploadSensorDataDto,
   ): Promise<UploadResponseDto> {
+    // #279 — honor the rider's road-data contribution opt-out. When
+    // disabled we 202 (matching the controller status) without
+    // persisting any surface readings; lean stats still update because
+    // they're personal-history data the rider sees on their own ride
+    // detail screen, never aggregated into the public road-quality map.
+    // Returning 202 (not 403) keeps the mobile uploader's offline retry
+    // loop quiet — the contribution is intentionally silent.
+    const prefs = await this.privacy.loadPreferences(userId);
+    if (!prefs.road_data_contribution) {
+      await this.upsertLeanStats(dto.ride_id, dto.readings);
+      return { accepted: 0, segments_updated: 0 };
+    }
+
     // US-19 — fold this batch's lean samples into the per-ride
     // aggregation FIRST so they survive the GPS / speed filter the
     // surface-readings path applies below. Lean is derived from

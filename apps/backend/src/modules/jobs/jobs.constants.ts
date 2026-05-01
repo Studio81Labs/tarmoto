@@ -66,6 +66,16 @@ export const QUEUE_NAMES = {
    * once the push provider lands.
    */
   PUSH_NOTIFICATION: 'push-notification',
+
+  /**
+   * Recurring (daily). Sweeps raw GPS / sensor data older than each
+   * user's `location_retention` preference (#279). Drops rows from
+   * `surface_readings`, `ride_segments`, and `ride_stats`-linked
+   * geometry while leaving aggregated road-quality data untouched.
+   * Users who set `forever` are skipped. Idempotent — running twice
+   * the same day deletes zero rows the second time.
+   */
+  LOCATION_RETENTION_SWEEP: 'location-retention-sweep',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -88,6 +98,7 @@ export const JOB_NAMES = {
   ACCOUNT_DELETION_FINALIZE_USER: 'finalize-user',
   FUNZONE_RECOMPUTE_RUN: 'run',
   PUSH_NOTIFICATION_SEND: 'send',
+  LOCATION_RETENTION_SWEEP_RUN: 'run',
 } as const;
 
 /**
@@ -99,6 +110,8 @@ export const RECURRING_PATTERNS = {
   HOURLY: '0 * * * *',
   /** Daily at 03:30. */
   DAILY_0330: '30 3 * * *',
+  /** Daily at 04:00 (retention sweep). */
+  DAILY_0400: '0 4 * * *',
   /** Daily at 02:30 (badge nightly). */
   DAILY_0230: '30 2 * * *',
   /** Weekly Monday at 04:00 — fun-zone recompute. */

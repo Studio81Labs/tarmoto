@@ -65,6 +65,8 @@ export class QueueHealthService {
     private readonly funzoneRecompute: Queue,
     @InjectQueue(QUEUE_NAMES.PUSH_NOTIFICATION)
     private readonly pushNotification: Queue,
+    @InjectQueue(QUEUE_NAMES.LOCATION_RETENTION_SWEEP)
+    private readonly locationRetentionSweep: Queue,
   ) {}
 
   private byName(): Record<QueueName, Queue> {
@@ -77,6 +79,7 @@ export class QueueHealthService {
       [QUEUE_NAMES.ACCOUNT_DELETION_FINALIZE]: this.accountDeletionFinalize,
       [QUEUE_NAMES.FUNZONE_RECOMPUTE]: this.funzoneRecompute,
       [QUEUE_NAMES.PUSH_NOTIFICATION]: this.pushNotification,
+      [QUEUE_NAMES.LOCATION_RETENTION_SWEEP]: this.locationRetentionSweep,
     };
   }
 

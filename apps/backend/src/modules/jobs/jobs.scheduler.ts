@@ -56,6 +56,8 @@ export class JobsScheduler implements OnApplicationBootstrap {
     private readonly accountDeletionSweep: Queue,
     @InjectQueue(QUEUE_NAMES.FUNZONE_RECOMPUTE)
     private readonly funzoneRecompute: Queue,
+    @InjectQueue(QUEUE_NAMES.LOCATION_RETENTION_SWEEP)
+    private readonly locationRetentionSweep: Queue,
     @Inject(JOBS_CONFIG_TOKEN)
     private readonly config: JobsConfig,
   ) {}
@@ -117,6 +119,12 @@ export class JobsScheduler implements OnApplicationBootstrap {
         name: JOB_NAMES.FUNZONE_RECOMPUTE_RUN,
         pattern: RECURRING_PATTERNS.WEEKLY_MON_0400,
         description: 'weekly fun-zone clustering recompute',
+      },
+      {
+        queue: this.locationRetentionSweep,
+        name: JOB_NAMES.LOCATION_RETENTION_SWEEP_RUN,
+        pattern: RECURRING_PATTERNS.DAILY_0400,
+        description: 'daily privacy retention sweep (#279)',
       },
     ];
   }

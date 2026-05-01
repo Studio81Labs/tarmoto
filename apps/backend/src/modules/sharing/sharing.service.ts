@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, SelectQueryBuilder } from 'typeorm';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
+import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import {
   SharedRideResponseDto,
   SharedRideDetailDto,
@@ -24,6 +25,7 @@ export class SharingService {
     private readonly sharedRideRepo: Repository<SharedRide>,
     @InjectRepository(Ride)
     private readonly rideRepo: Repository<Ride>,
+    private readonly privacy: PrivacyPreferencesService,
   ) {}
 
   async toggleShare(
@@ -95,6 +97,19 @@ export class SharingService {
       throw new NotFoundException('Shared ride not found');
     }
 
+    // #279: rider privacy. A `private` profile means "don't show me
+    // anywhere" — including via shared-ride link, which is the most
+    // accidentally-leaky surface (anyone with the URL gets the rider
+    // name). 404 mirrors the deleted-owner gate so callers can't
+    // side-channel the difference between "doesn't exist" and "owner
+    // hidden". `riders-only` and `public` both pass — the link is an
+    // intentional disclosure by the rider and overrides the
+    // signed-in-only audience hint.
+    const ownerPrefs = await this.privacy.loadPreferences(shared.user_id);
+    if (ownerPrefs.profile_visibility === 'private') {
+      throw new NotFoundException('Shared ride not found');
+    }
+
     // Atomic UPDATE ... SET view_count = view_count + 1 — safe under
     // concurrent fetches, unlike read-modify-write. The in-memory `shared`
     // is already loaded so we bump its `view_count` by one for the
@@ -152,11 +167,19 @@ export class SharingService {
       .createQueryBuilder('sr')
       .innerJoinAndSelect('sr.ride', 'ride')
       .innerJoinAndSelect('sr.user', 'user')
+      // Drop `private` profiles outright — the privacy gate (#279) is the
+      // user's explicit "do not show me anywhere", and the community feed
+      // is the most public surface in the app. Done with a LEFT JOIN so
+      // riders without a row (defaults apply, not private) still pass.
+      .leftJoin('privacy_preferences', 'pp', 'pp.user_id = sr.user_id')
       .where('sr.is_public = true')
       // Hide rides owned by accounts that have requested deletion (US-62).
       // The hard-delete sweep removes the rows entirely; this filter
       // covers the 30-day grace window in between.
-      .andWhere('user.deleted_at IS NULL');
+      .andWhere('user.deleted_at IS NULL')
+      .andWhere(
+        "(pp.profile_visibility IS NULL OR pp.profile_visibility <> 'private')",
+      );
 
     if (hasCentre) {
       // Only the spatial branch needs the geometry. The global feed

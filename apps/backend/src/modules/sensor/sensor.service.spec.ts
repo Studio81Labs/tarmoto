@@ -2,11 +2,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { DEFAULT_PRIVACY_PREFERENCES } from '@tarmoto/shared';
 import { SensorService } from './sensor.service.js';
 import { SurfaceReading } from '../../entities/surface-reading.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { RideStats } from '../../entities/ride-stats.entity.js';
 import { SensorReadingDto } from './dto/upload-sensor-data.dto.js';
+import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 
 describe('SensorService', () => {
   let service: SensorService;
@@ -14,6 +16,7 @@ describe('SensorService', () => {
   let segmentRepo: Partial<jest.Mocked<Repository<RoadSegment>>>;
   let statsRepo: Partial<jest.Mocked<Repository<RideStats>>>;
   let storedStats: Partial<RideStats> | null;
+  let privacy: { loadPreferences: jest.Mock };
 
   beforeEach(async () => {
     readingRepo = {
@@ -67,12 +70,19 @@ describe('SensorService', () => {
       }),
     };
 
+    privacy = {
+      loadPreferences: jest
+        .fn()
+        .mockResolvedValue({ ...DEFAULT_PRIVACY_PREFERENCES }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SensorService,
         { provide: getRepositoryToken(SurfaceReading), useValue: readingRepo },
         { provide: getRepositoryToken(RoadSegment), useValue: segmentRepo },
         { provide: getRepositoryToken(RideStats), useValue: statsRepo },
+        { provide: PrivacyPreferencesService, useValue: privacy },
       ],
     }).compile();
 
@@ -368,6 +378,40 @@ describe('SensorService', () => {
       const result = await service.processUpload('user-1', dto);
 
       expect(result.accepted).toBe(0);
+    });
+
+    it('skips persisting surface_readings when road_data_contribution is off (#279)', async () => {
+      privacy.loadPreferences.mockResolvedValueOnce({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        road_data_contribution: false,
+      });
+
+      const dto = {
+        ride_id: 'ride-1',
+        readings: Array.from({ length: 50 }, (_, i) => ({
+          t: Date.now() + i * 20,
+          ax: 0.1,
+          ay: 0.2,
+          az: 9.8,
+          lat: 49.1 + i * 0.00001,
+          lng: 16.75,
+          speed: 15,
+          // Lean stats are personal-history; verifying the upsertLeanStats
+          // path still runs (statsRepo.query) is below.
+          lean_deg: 12,
+        })),
+      };
+
+      const result = await service.processUpload('user-1', dto);
+
+      expect(result.accepted).toBe(0);
+      expect(result.segments_updated).toBe(0);
+      // No surface readings persisted, no road-segment lookup either.
+      expect(readingRepo.save).not.toHaveBeenCalled();
+      expect(segmentRepo.query).not.toHaveBeenCalled();
+      // Personal lean stats still recorded — it's the rider's own
+      // history, not aggregated into the public road map.
+      expect(statsRepo.query).toHaveBeenCalled();
     });
 
     it('should handle no matching road segment gracefully', async () => {

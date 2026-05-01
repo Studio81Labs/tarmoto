@@ -14,6 +14,7 @@ import { UserContact } from '../../entities/user-contact.entity.js';
 import { UserFollow } from '../../entities/user-follow.entity.js';
 import { OBJECT_STORAGE } from '../storage/storage.tokens.js';
 import type { ObjectStorage } from '../storage/object-storage.interface.js';
+import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { CreateContactDto } from './dto/create-contact.dto.js';
 import { UpdateContactDto } from './dto/update-contact.dto.js';
@@ -43,6 +44,7 @@ export class UsersService {
     private readonly userFollowRepo: Repository<UserFollow>,
     @Inject(OBJECT_STORAGE)
     private readonly storage: ObjectStorage,
+    private readonly privacy: PrivacyPreferencesService,
   ) {}
 
   async getProfile(userId: string): Promise<UserResponseDto> {
@@ -73,6 +75,23 @@ export class UsersService {
     }
 
     const isSelf = viewerId === userId;
+
+    // #279: enforce the target's privacy preference. `private` profiles
+    // 404 to non-self viewers (don't leak the difference between
+    // "doesn't exist" and "exists but hidden"). `riders-only` is a
+    // signed-in-only audience — `getPublicProfile` already runs behind
+    // `AuthGuard` so any caller reaching this point has a viewer id, and
+    // the toggle has no additional effect here. The companion's
+    // anonymous-feed surfaces (community ride list, shared ride detail)
+    // gate `riders-only` and `private` separately at their own call
+    // sites.
+    if (!isSelf) {
+      const targetPrefs = await this.privacy.loadPreferences(userId);
+      if (targetPrefs.profile_visibility === 'private') {
+        throw new NotFoundException('User not found');
+      }
+    }
+
     const [followerCount, followingCount, isFollowingRow] = await Promise.all([
       this.userFollowRepo.count({ where: { following_id: userId } }),
       this.userFollowRepo.count({ where: { follower_id: userId } }),

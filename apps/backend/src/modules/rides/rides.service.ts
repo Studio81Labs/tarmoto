@@ -5,9 +5,12 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository, SelectQueryBuilder } from 'typeorm';
+import { randomBytes } from 'node:crypto';
 import { Ride } from '../../entities/ride.entity.js';
 import { RideStats } from '../../entities/ride-stats.entity.js';
 import { RideSegment } from '../../entities/ride-segment.entity.js';
+import { SharedRide } from '../../entities/shared-ride.entity.js';
+import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import { StartRideDto } from './dto/start-ride.dto.js';
 import { ListRidesDto } from './dto/list-rides.dto.js';
 import {
@@ -29,7 +32,10 @@ export class RidesService {
     private readonly statsRepo: Repository<RideStats>,
     @InjectRepository(RideSegment)
     private readonly segmentRepo: Repository<RideSegment>,
+    @InjectRepository(SharedRide)
+    private readonly sharedRideRepo: Repository<SharedRide>,
     private readonly csvService: CsvService,
+    private readonly privacy: PrivacyPreferencesService,
   ) {}
 
   async start(userId: string, dto: StartRideDto): Promise<RideResponseDto> {
@@ -82,7 +88,41 @@ export class RidesService {
     // upload. Runs post-save so `saved` can mirror the updated value
     // without round-tripping a re-select.
     saved.avg_curviness = await this.recomputeAvgCurviness(saved.id);
+
+    // #279 — apply the rider's default sharing preference. When the
+    // preference is `public`, create a shared_ride row at finish time so
+    // the ride immediately surfaces in the community feed. `private`
+    // (the default) is a no-op — the rider can still publish ad-hoc via
+    // `POST /rides/:rideId/share`. Failures here are deliberately
+    // non-fatal: the ride finished successfully, and the rider can
+    // share manually if the auto-share didn't take.
+    await this.applyDefaultRideSharing(userId, saved.id);
+
     return this.toRideResponse(saved);
+  }
+
+  private async applyDefaultRideSharing(
+    userId: string,
+    rideId: string,
+  ): Promise<void> {
+    const prefs = await this.privacy.loadPreferences(userId);
+    if (prefs.default_ride_sharing !== 'public') return;
+
+    // Idempotent: if the user already has a share row for this ride
+    // (concurrent stop call, replay), don't create a duplicate.
+    const existing = await this.sharedRideRepo.findOne({
+      where: { ride_id: rideId },
+    });
+    if (existing) return;
+
+    await this.sharedRideRepo.save(
+      this.sharedRideRepo.create({
+        ride_id: rideId,
+        user_id: userId,
+        share_token: randomBytes(16).toString('hex'),
+        is_public: true,
+      }),
+    );
   }
 
   /**

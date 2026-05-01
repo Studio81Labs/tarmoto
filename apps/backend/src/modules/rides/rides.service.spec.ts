@@ -3,11 +3,14 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { Repository } from 'typeorm';
+import { DEFAULT_PRIVACY_PREFERENCES } from '@tarmoto/shared';
 import { RidesService } from './rides.service.js';
 import { CsvService } from './csv.service.js';
 import { Ride } from '../../entities/ride.entity.js';
 import { RideStats } from '../../entities/ride-stats.entity.js';
 import { RideSegment } from '../../entities/ride-segment.entity.js';
+import { SharedRide } from '../../entities/shared-ride.entity.js';
+import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 
 function makeQbSpy() {
   const andWhere = jest.fn().mockReturnThis();
@@ -28,6 +31,8 @@ describe('RidesService', () => {
   let rideRepo: Partial<jest.Mocked<Repository<Ride>>>;
   let statsRepo: Partial<jest.Mocked<Repository<RideStats>>>;
   let segmentRepo: Partial<jest.Mocked<Repository<RideSegment>>>;
+  let sharedRideRepo: Partial<jest.Mocked<Repository<SharedRide>>>;
+  let privacy: { loadPreferences: jest.Mock };
 
   const mockRide = {
     id: 'ride-1',
@@ -71,6 +76,16 @@ describe('RidesService', () => {
     segmentRepo = {
       find: jest.fn().mockResolvedValue([]),
     };
+    sharedRideRepo = {
+      findOne: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockImplementation((data) => data),
+      save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
+    };
+    privacy = {
+      loadPreferences: jest
+        .fn()
+        .mockResolvedValue({ ...DEFAULT_PRIVACY_PREFERENCES }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -79,6 +94,8 @@ describe('RidesService', () => {
         { provide: getRepositoryToken(Ride), useValue: rideRepo },
         { provide: getRepositoryToken(RideStats), useValue: statsRepo },
         { provide: getRepositoryToken(RideSegment), useValue: segmentRepo },
+        { provide: getRepositoryToken(SharedRide), useValue: sharedRideRepo },
+        { provide: PrivacyPreferencesService, useValue: privacy },
       ],
     }).compile();
 
@@ -187,6 +204,53 @@ describe('RidesService', () => {
         { avg_curviness: 2.75 },
       );
       expect(result.avg_curviness).toBe(2.75);
+    });
+
+    it('does NOT auto-share when default_ride_sharing is private (#279)', async () => {
+      rideRepo.findOne!.mockResolvedValueOnce({ ...mockRide });
+      privacy.loadPreferences.mockResolvedValueOnce({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        default_ride_sharing: 'private',
+      });
+
+      await service.stop('user-1', 'ride-1');
+
+      expect(sharedRideRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('auto-creates a public shared_ride when default_ride_sharing is public (#279)', async () => {
+      rideRepo.findOne!.mockResolvedValueOnce({ ...mockRide });
+      privacy.loadPreferences.mockResolvedValueOnce({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        default_ride_sharing: 'public',
+      });
+
+      await service.stop('user-1', 'ride-1');
+
+      expect(sharedRideRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ride_id: 'ride-1',
+          user_id: 'user-1',
+          is_public: true,
+        }),
+      );
+      expect(sharedRideRepo.save).toHaveBeenCalled();
+    });
+
+    it('does not double-share when a shared_ride already exists for the ride (idempotent)', async () => {
+      rideRepo.findOne!.mockResolvedValueOnce({ ...mockRide });
+      privacy.loadPreferences.mockResolvedValueOnce({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        default_ride_sharing: 'public',
+      });
+      sharedRideRepo.findOne!.mockResolvedValueOnce({
+        id: 'existing-share',
+      } as SharedRide);
+
+      await service.stop('user-1', 'ride-1');
+
+      expect(sharedRideRepo.create).not.toHaveBeenCalled();
+      expect(sharedRideRepo.save).not.toHaveBeenCalled();
     });
   });
 

@@ -25,9 +25,9 @@ describe('jobs.constants', () => {
     expect(ALL_QUEUE_NAMES).toContain('account-deletion-finalize');
   });
 
-  it('has eight uniquely-named queues — duplicate names would silently merge in BullMQ', () => {
+  it('has nine uniquely-named queues — duplicate names would silently merge in BullMQ', () => {
     expect(new Set(ALL_QUEUE_NAMES).size).toBe(ALL_QUEUE_NAMES.length);
-    expect(ALL_QUEUE_NAMES).toHaveLength(8);
+    expect(ALL_QUEUE_NAMES).toHaveLength(9);
   });
 
   it('uses the same string for every QUEUE_NAMES key as the value in ALL_QUEUE_NAMES (no drift)', () => {

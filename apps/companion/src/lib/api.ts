@@ -1,9 +1,14 @@
 import { createApiClient } from "@tarmoto/openapi/client";
-import type { NotificationPreferences } from "@tarmoto/shared";
+import type {
+  NotificationPreferences,
+  PrivacyPreferences,
+} from "@tarmoto/shared";
 import { useAuthStore } from "@/stores/auth";
 import { API_HOST, API_BASE } from "@/lib/config";
 import type { PartialNotificationPreferences } from "./notification-preferences";
 import type { MountainPass } from "./passes-summary";
+import type { PartialPrivacySettings } from "./privacy-settings";
+import type { PrivacySettings } from "./types";
 
 // Typed openapi-fetch client for all spec-defined endpoints
 export const api = createApiClient({
@@ -871,10 +876,61 @@ export const accountApi = {
       method: "PUT",
       body: JSON.stringify(data),
     }),
-  getPrivacySettings: () => apiFetch("/account/privacy-settings"),
-  updatePrivacySettings: (data: unknown) =>
-    apiFetch("/account/privacy-settings", {
-      method: "PATCH",
-      body: JSON.stringify(data),
-    }),
+  // #279: typed `/account/privacy` endpoint (GET/PUT). The backend
+  // uses snake_case keys; the companion's UI types are camelCase, so
+  // we translate at the boundary to keep the page code unchanged.
+  getPrivacySettings: async (): Promise<{ data: PrivacySettings }> => {
+    const { data } = await apiFetch<PrivacyPreferences>("/account/privacy");
+    return { data: privacyFromBackend(data) };
+  },
+  updatePrivacySettings: async (
+    data: PartialPrivacySettings,
+  ): Promise<{ data: PrivacySettings }> => {
+    const body = privacyToBackend(data);
+    const { data: updated } = await apiFetch<PrivacyPreferences>(
+      "/account/privacy",
+      {
+        method: "PUT",
+        body: JSON.stringify(body),
+      },
+    );
+    return { data: privacyFromBackend(updated) };
+  },
 };
+
+function privacyFromBackend(p: PrivacyPreferences): PrivacySettings {
+  return {
+    profileVisibility: p.profile_visibility,
+    defaultRideSharing: p.default_ride_sharing,
+    roadDataContribution: p.road_data_contribution,
+    locationRetention: p.location_retention,
+    analyticsConsent: p.analytics_consent,
+    personalizedRecommendationsConsent: p.personalized_recommendations_consent,
+  };
+}
+
+function privacyToBackend(
+  p: PartialPrivacySettings,
+): Partial<PrivacyPreferences> {
+  const out: Partial<PrivacyPreferences> = {};
+  if (p.profileVisibility !== undefined) {
+    out.profile_visibility = p.profileVisibility;
+  }
+  if (p.defaultRideSharing !== undefined) {
+    out.default_ride_sharing = p.defaultRideSharing;
+  }
+  if (p.roadDataContribution !== undefined) {
+    out.road_data_contribution = p.roadDataContribution;
+  }
+  if (p.locationRetention !== undefined) {
+    out.location_retention = p.locationRetention;
+  }
+  if (p.analyticsConsent !== undefined) {
+    out.analytics_consent = p.analyticsConsent;
+  }
+  if (p.personalizedRecommendationsConsent !== undefined) {
+    out.personalized_recommendations_consent =
+      p.personalizedRecommendationsConsent;
+  }
+  return out;
+}
