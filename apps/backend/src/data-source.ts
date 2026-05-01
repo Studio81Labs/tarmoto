@@ -66,6 +66,8 @@ import { AddVerificationTokenUniqueIndex1715900000000 } from './migrations/17159
 import { AddMapShares1716000000000 } from './migrations/1716000000000-AddMapShares.js';
 import { AddGroupRides1716100000000 } from './migrations/1716100000000-AddGroupRides.js';
 import { AddPushNotifications1716200000000 } from './migrations/1716200000000-AddPushNotifications.js';
+import { AddRideStatsLeanDistribution1716200000000 } from './migrations/1716200000000-AddRideStatsLeanDistribution.js';
+import { MigrateLegacyNotificationPreferences1716300000000 } from './migrations/1716300000000-MigrateLegacyNotificationPreferences.js';
 import { AddPrivacyPreferences1716400000000 } from './migrations/1716400000000-AddPrivacyPreferences.js';
 
 export const AppDataSource = new DataSource({
@@ -151,6 +153,8 @@ export const AppDataSource = new DataSource({
     AddMapShares1716000000000,
     AddGroupRides1716100000000,
     AddPushNotifications1716200000000,
+    AddRideStatsLeanDistribution1716200000000,
+    MigrateLegacyNotificationPreferences1716300000000,
     AddPrivacyPreferences1716400000000,
   ],
   synchronize: false,
