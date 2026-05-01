@@ -1,0 +1,124 @@
+/**
+ * PersonalRoadMapScreen — US-30 stats card + nearby unridden list +
+ * map style helper.
+ */
+import React from "react";
+import { render, screen, waitFor } from "@testing-library/react-native";
+import PersonalRoadMapScreen, { __test } from "../PersonalRoadMapScreen";
+import { api } from "@/services/api";
+
+jest.mock("@react-native-vector-icons/material-design-icons", () => {
+  const ReactLib = require("react");
+  const { Text } = require("react-native");
+  return function MockIcon({ name }: { name?: string }) {
+    return ReactLib.createElement(Text, null, `icon:${name ?? ""}`);
+  };
+});
+
+jest.mock("@maplibre/maplibre-react-native", () => {
+  const ReactLib = require("react");
+  const { View } = require("react-native");
+  const stub = (name: string) =>
+    function Stub({ children }: { children?: React.ReactNode }) {
+      return ReactLib.createElement(View, { testID: name }, children);
+    };
+  return {
+    Map: stub("Map"),
+    Camera: stub("Camera"),
+    UserLocation: stub("UserLocation"),
+    VectorSource: stub("VectorSource"),
+    Layer: stub("Layer"),
+  };
+});
+
+jest.mock("@/services/api", () => ({
+  api: {
+    getExplorationStats: jest.fn(),
+    getRiddenSegments: jest.fn(),
+    getNearbyUnriddenSegments: jest.fn(),
+  },
+}));
+
+jest.mock("@/services/location", () => ({
+  locationService: {
+    getCurrentLocation: jest.fn().mockResolvedValue({
+      lat: 49.2,
+      lng: 16.6,
+      speed: 0,
+      accuracy: 5,
+      altitude: 0,
+      timestamp: Date.now(),
+    }),
+  },
+}));
+
+const mockedApi = api as jest.Mocked<typeof api>;
+
+describe("PersonalRoadMapScreen", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedApi.getExplorationStats.mockResolvedValue({
+      ridden_segments: 100,
+      total_segments: 800,
+      percent_explored: 12.5,
+      total_distance_km: 1234.5,
+    });
+    mockedApi.getRiddenSegments.mockResolvedValue({
+      segments: [
+        {
+          id: "seg-1",
+          last_ridden_at: "2026-04-15T10:00:00Z",
+          last_quality_score: 4.0,
+          ride_count: 2,
+        },
+      ],
+    });
+    mockedApi.getNearbyUnriddenSegments.mockResolvedValue([
+      {
+        id: "u1",
+        road_name: "Forest Road",
+        length_m: 2400,
+        quality_score: 4.5,
+        surface_type: "asphalt",
+        distance_m: 800,
+      },
+    ]);
+  });
+
+  it("renders the stats card and the nearby unridden list", async () => {
+    render(<PersonalRoadMapScreen />);
+
+    await waitFor(() => expect(screen.getByText("12.5%")).toBeTruthy());
+    expect(screen.getByText("of 800 segments")).toBeTruthy();
+    expect(screen.getByText("1234.5 km")).toBeTruthy();
+    expect(screen.getByText("Forest Road")).toBeTruthy();
+    // Distance is rendered in metres for sub-1km values.
+    expect(screen.getByText(/800 m from you/)).toBeTruthy();
+  });
+
+  it("renders the empty CTA for a brand-new rider with no recorded rides", async () => {
+    mockedApi.getRiddenSegments.mockResolvedValue({ segments: [] });
+    render(<PersonalRoadMapScreen />);
+    await waitFor(() =>
+      expect(screen.getByText("No rides recorded yet")).toBeTruthy(),
+    );
+  });
+});
+
+describe("buildPersonalLineStyle", () => {
+  it("returns a uniform-dim style when the rider has no ridden segments", () => {
+    const style = __test.buildPersonalLineStyle([]);
+    // No `match` expression — `lineColor` is a flat string.
+    expect(typeof style.lineColor).toBe("string");
+  });
+
+  it("emits a match expression keyed on segment id when ridden ids exist", () => {
+    const style = __test.buildPersonalLineStyle(["seg-a", "seg-b"]);
+    expect(Array.isArray(style.lineColor)).toBe(true);
+    const expr = style.lineColor as unknown as Array<unknown>;
+    expect(expr[0]).toBe("match");
+    // Stops alternate (id, color) so we expect the first id at idx 2.
+    expect(expr).toContain("seg-a");
+    expect(expr).toContain("seg-b");
+  });
+});

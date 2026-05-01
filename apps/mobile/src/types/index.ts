@@ -685,3 +685,86 @@ export interface GroupEndedEvent {
   group_ride_id: string;
   at: string;
 }
+
+// ── Gamification (US-28 / US-29 / US-30) ──
+// `UserBadge` (the badge shape) is defined alongside the user types above so
+// it stays close to the rider's other profile data. The challenge / exploration
+// surfaces below build on top of it.
+
+export type BadgeCategory = "distance" | "exploration" | "community";
+export type BadgeTier = "bronze" | "silver" | "gold";
+
+export interface CheckBadgesResponse {
+  newly_earned: string[];
+}
+
+export interface Challenge {
+  id: string;
+  title: string;
+  description: string;
+  metric: string;
+  target: number;
+  starts_at: string;
+  ends_at: string;
+  reward_badge_key: string | null;
+  participant_count: number;
+}
+
+export interface ChallengeLeaderboardEntry {
+  rank: number;
+  user_id: string;
+  display_name: string;
+  progress: number;
+  completed: boolean;
+}
+
+export interface ChallengeDetail extends Challenge {
+  my_progress: number | null;
+  my_completed: boolean | null;
+  leaderboard: ChallengeLeaderboardEntry[];
+}
+
+export interface ChallengeJoinResponse {
+  challenge_id: string;
+  joined_at: string;
+}
+
+export interface ChallengeProgress {
+  challenge_id: string;
+  progress: number;
+  target: number;
+  completed: boolean;
+  completed_at: string | null;
+  percent: number;
+}
+
+export interface ExplorationStats {
+  ridden_segments: number;
+  total_segments: number;
+  percent_explored: number;
+  total_distance_km: number;
+}
+
+export interface UnriddenSegment {
+  id: string;
+  road_name: string | null;
+  length_m: number;
+  quality_score: number | null;
+  surface_type: string;
+  distance_m: number;
+}
+
+export interface RiddenSegmentIds {
+  segment_ids: string[];
+}
+
+export interface RiddenSegment {
+  id: string;
+  last_ridden_at: string;
+  last_quality_score: number | null;
+  ride_count: number;
+}
+
+export interface RiddenSegmentsList {
+  segments: RiddenSegment[];
+}

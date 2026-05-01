@@ -275,7 +275,12 @@ export default function ProfileScreen() {
           }
           accessibilityLabel={`Following ${followingCount} riders, open list`}
         />
-        <StatTile label="Badges" value={formatCount(earnedBadges.length)} />
+        <StatTile
+          label="Badges"
+          value={formatCount(earnedBadges.length)}
+          onPress={() => navigation.navigate("Achievements")}
+          accessibilityLabel={`${earnedBadges.length} badges earned, open achievements`}
+        />
       </View>
 
       <View style={styles.actionsCard}>
@@ -283,6 +288,11 @@ export default function ProfileScreen() {
           icon="account-edit-outline"
           label="Edit profile"
           onPress={() => navigation.navigate("EditProfile")}
+        />
+        <ActionRow
+          icon="trophy-outline"
+          label="Achievements"
+          onPress={() => navigation.navigate("Achievements")}
         />
         <ActionRow
           icon="cog-outline"
