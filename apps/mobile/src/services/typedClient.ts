@@ -47,25 +47,51 @@ const SKIP_REFRESH_PATHS: readonly string[] = [
 ];
 
 /**
- * Wrap a fetch with a timeout, optionally combined with a
+ * Distinguishable timeout failure. Surfaces from any fetch wrapped
+ * by `withTimeout` when the timer fires — the network-error
+ * classifier matches on `name === "TimeoutError"` to route only
+ * timeout-driven aborts to the offline queues' "queue for later"
+ * path. A generic `AbortError` from caller-driven cancellation
+ * (e.g. rider taps × to cancel a photo upload) keeps its native
+ * shape and bubbles up to the caller, so the cancel takes effect
+ * instead of being silently re-queued for retry.
+ */
+export class TimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Request timed out after ${timeoutMs}ms`);
+    this.name = "TimeoutError";
+  }
+}
+
+interface TimeoutHandle {
+  signal: AbortSignal;
+  dispose: () => void;
+  didTimeOut: () => boolean;
+}
+
+/**
+ * Wrap a fetch with a 15 s deadline, optionally combined with a
  * caller-supplied cancellation signal (e.g. `uploadReviewPhotos`'s
  * abort handle). Returns a fresh signal that aborts on whichever
- * fires first, plus a `dispose` that clears the timer so a fast
- * response doesn't leak a 15 s no-op timer per request — over a
- * long ride session that would stack thousands of dangling timers
- * in the runtime.
+ * fires first, a `dispose` that clears the timer so a fast response
+ * doesn't leak a no-op timer per request, and `didTimeOut()` so
+ * call sites can distinguish a timer-driven abort from a caller-
+ * driven one and surface the right error class to upstream queues.
  *
  * The DOM `AbortSignal.reason` accessor isn't in `lib: ["es2022"]`,
- * so we use plain `abort()` and rely on the network-error classifier
- * to recognise the resulting `AbortError` (no `.status`, message
- * matches the offline regex) as a "queue for later" failure.
+ * so we use plain `abort()` and track the timeout fact in a
+ * closed-over flag rather than the abort reason.
  */
 function withTimeout(
   callerSignal: AbortSignal | undefined,
   timeoutMs: number,
-): { signal: AbortSignal; dispose: () => void } {
+): TimeoutHandle {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
   if (callerSignal) {
     if (callerSignal.aborted) {
       controller.abort();
@@ -78,7 +104,31 @@ function withTimeout(
   return {
     signal: controller.signal,
     dispose: () => clearTimeout(timer),
+    didTimeOut: () => timedOut,
   };
+}
+
+/**
+ * Substitute a `TimeoutError` for a generic `AbortError` when our
+ * timer is the abort source. Call sites that wrap their own fetch
+ * (refresh, the 401 retry, `rawFetch`) feed every catch through
+ * here so the network-error classifier sees a stable name. The
+ * unchanged error rethrows for everything else (caller-driven
+ * cancellation, fetch transport failure, …).
+ */
+function asTimeoutErrorIfFired(
+  err: unknown,
+  handle: TimeoutHandle,
+  timeoutMs: number,
+): unknown {
+  if (
+    handle.didTimeOut() &&
+    err instanceof Error &&
+    err.name === "AbortError"
+  ) {
+    return new TimeoutError(timeoutMs);
+  }
+  return err;
 }
 
 let inflightRefresh: Promise<boolean> | null = null;
@@ -117,13 +167,13 @@ async function refreshAccessToken(): Promise<boolean> {
   if (!refreshToken) return false;
 
   inflightRefresh = (async () => {
-    const { signal, dispose } = withTimeout(undefined, REQUEST_TIMEOUT_MS);
+    const handle = withTimeout(undefined, REQUEST_TIMEOUT_MS);
     try {
       const res = await fetch(`${API_BASE_URL}${REFRESH_PATH}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refresh_token: refreshToken }),
-        signal,
+        signal: handle.signal,
       });
       if (!res.ok) {
         clearTokens();
@@ -133,10 +183,13 @@ async function refreshAccessToken(): Promise<boolean> {
       storeTokens(auth);
       return true;
     } catch {
+      // Refresh timed out OR network failure — either way the user's
+      // session can't be salvaged here; clear tokens so subsequent
+      // requests fail fast instead of looping.
       clearTokens();
       return false;
     } finally {
-      dispose();
+      handle.dispose();
       inflightRefresh = null;
     }
   })();
@@ -163,13 +216,14 @@ const baseClient = createApiClient({
 const requestBodies = new Map<string, ArrayBuffer>();
 
 /**
- * Per-request `dispose` callbacks that clear the 15 s timeout timer.
- * Populated in `onRequest` and called from `onResponse` / `onError`
- * so a fast response doesn't leak a no-op timer for the rest of its
- * window — over a long ride session that would otherwise stack
- * thousands of dangling timers in the runtime.
+ * Per-request timeout handles. Populated in `onRequest` and read by
+ * `onResponse` / `onError` so a fast response doesn't leak a no-op
+ * timer for the rest of its window (over a long ride session that
+ * stacks thousands of dangling timers), and so `onError` can spot a
+ * timer-driven abort and substitute a `TimeoutError` for the
+ * generic `AbortError` that fetch surfaces.
  */
-const requestDisposers = new Map<string, () => void>();
+const requestTimeouts = new Map<string, TimeoutHandle>();
 
 baseClient.use({
   async onRequest({ request, id }) {
@@ -185,9 +239,9 @@ baseClient.use({
     // carries our combined signal. A caller-supplied signal (e.g.
     // `uploadReviewPhotos` cancellation) is preserved because
     // `withTimeout` propagates its abort.
-    const { signal, dispose } = withTimeout(request.signal, REQUEST_TIMEOUT_MS);
-    requestDisposers.set(id, dispose);
-    return new Request(request, { signal });
+    const handle = withTimeout(request.signal, REQUEST_TIMEOUT_MS);
+    requestTimeouts.set(id, handle);
+    return new Request(request, { signal: handle.signal });
   },
   async onResponse({ response, request, schemaPath, id }) {
     try {
@@ -206,8 +260,8 @@ baseClient.use({
       // `dispose()` only clears the timer — the caller-signal
       // listener installed by `withTimeout` stays connected, so
       // caller cancellation still propagates into the retry.
-      requestDisposers.get(id)?.();
-      requestDisposers.delete(id);
+      requestTimeouts.get(id)?.dispose();
+      requestTimeouts.delete(id);
 
       // Build a fresh Request with the new bearer rather than mutating
       // headers on a clone. WHATWG `Request.clone().headers` is
@@ -223,35 +277,55 @@ baseClient.use({
       // signal (via the original combined signal whose timer we
       // just disposed). Caller cancellation propagates; the
       // disposed original timer cannot.
-      const retryTimeout = withTimeout(request.signal, REQUEST_TIMEOUT_MS);
+      const retryHandle = withTimeout(request.signal, REQUEST_TIMEOUT_MS);
       try {
         const init: RequestInit = {
           method: request.method,
           headers,
-          signal: retryTimeout.signal,
+          signal: retryHandle.signal,
         };
         const stashedBody = requestBodies.get(id);
         if (stashedBody !== undefined) init.body = stashedBody;
         return await fetch(request.url, init);
+      } catch (err) {
+        // Surface a `TimeoutError` instead of the generic
+        // `AbortError` so the offline queue's `isNetworkDownError`
+        // classifier routes timer-driven aborts to "queue for later"
+        // without misclassifying caller-driven cancellation.
+        throw asTimeoutErrorIfFired(err, retryHandle, REQUEST_TIMEOUT_MS);
       } finally {
-        retryTimeout.dispose();
+        retryHandle.dispose();
       }
     } finally {
       requestBodies.delete(id);
       // Original timer was already disposed on the 401-retry path;
-      // these calls cover the non-401 / skip-refresh / refresh-failed
-      // paths where we returned early without touching the disposer.
-      requestDisposers.get(id)?.();
-      requestDisposers.delete(id);
+      // this covers the non-401 / skip-refresh / refresh-failed
+      // paths where we returned early without touching the handle.
+      requestTimeouts.get(id)?.dispose();
+      requestTimeouts.delete(id);
     }
   },
-  onError({ id }) {
-    // Network failures skip onResponse, so clean up here too — leaving
-    // bytes / timers in the maps would leak memory and dangling
-    // setTimeout handles across long-lived sessions.
+  onError({ id, error }) {
+    const handle = requestTimeouts.get(id);
     requestBodies.delete(id);
-    requestDisposers.get(id)?.();
-    requestDisposers.delete(id);
+    requestTimeouts.delete(id);
+    handle?.dispose();
+    // openapi-fetch lets `onError` substitute the rejection by
+    // returning an `Error`. If our timer fired, surface the
+    // distinguishable `TimeoutError`; otherwise let the original
+    // error propagate (caller-driven cancellation, fetch transport
+    // failures, etc.).
+    if (handle) {
+      const substituted = asTimeoutErrorIfFired(
+        error,
+        handle,
+        REQUEST_TIMEOUT_MS,
+      );
+      if (substituted !== error && substituted instanceof Error) {
+        return substituted;
+      }
+    }
+    return;
   },
 });
 
@@ -271,17 +345,16 @@ export async function rawFetch(
   const { bearer, headers, signal: callerSignal, ...rest } = init;
   const merged = new Headers(headers);
   if (bearer) merged.set("Authorization", `Bearer ${bearer}`);
-  const { signal, dispose } = withTimeout(
-    callerSignal ?? undefined,
-    REQUEST_TIMEOUT_MS,
-  );
+  const handle = withTimeout(callerSignal ?? undefined, REQUEST_TIMEOUT_MS);
   try {
     return await fetch(`${API_BASE_URL}${path}`, {
       ...rest,
       headers: merged,
-      signal,
+      signal: handle.signal,
     });
+  } catch (err) {
+    throw asTimeoutErrorIfFired(err, handle, REQUEST_TIMEOUT_MS);
   } finally {
-    dispose();
+    handle.dispose();
   }
 }
