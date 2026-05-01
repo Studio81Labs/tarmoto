@@ -10,7 +10,11 @@ import {
 } from "react";
 import Link from "next/link";
 import {
+  AlertTriangle,
   FolderOpen,
+  Globe,
+  Link2,
+  Lock,
   MoreVertical,
   Pencil,
   Plus,
@@ -24,64 +28,97 @@ import { useCollections } from "@/hooks/useCollections";
 import {
   MAX_COLLECTION_DESCRIPTION_LENGTH,
   MAX_COLLECTION_NAME_LENGTH,
-  createCollection,
-  removeCollection,
-  updateCollection,
   validateCollectionDescription,
   validateCollectionName,
-  type CollectionInput,
-  type StoredRouteCollection,
+  type RouteCollectionView,
 } from "@/lib/route-collections";
+import type { RouteCollectionVisibility } from "@/lib/api";
 import { tripDistanceKm } from "@/lib/trip-filters";
 import { formatDistance, formatRelativeTime } from "@/lib/utils";
 import type { Trip } from "@/lib/types";
 
-// Public/private visibility, share buttons, and the visibility filter are
-// intentionally hidden until the backend grows a collections endpoint —
-// today `isPublic` has no externally visible effect. `isPublic` still lives
-// in the storage schema so preferences survive once sharing ships.
+interface CollectionInputForm {
+  title: string;
+  description: string;
+  visibility: RouteCollectionVisibility;
+}
 
 export default function RouteCollectionsPage() {
   const { tripById, loading: loadingTrips, error: tripsError } = useUserTrips();
   const userId = useAuthStore((s) => s.user?.id ?? null);
-  const { collections, hydrated, persist } = useCollections(userId);
+  const {
+    collections,
+    status,
+    errorMessage,
+    refresh,
+    createCollection,
+    updateCollection,
+    removeCollection,
+    migration,
+  } = useCollections(userId);
 
   const [search, setSearch] = useState("");
   const [modal, setModal] = useState<
     | { mode: "create" }
-    | { mode: "edit"; collection: StoredRouteCollection }
+    | { mode: "edit"; collection: RouteCollectionView }
     | null
   >(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  const submitModal = (input: CollectionInput) => {
-    if (!modal) return;
-    if (modal.mode === "create") {
-      persist([...collections, createCollection(input)]);
-    } else {
-      persist(updateCollection(collections, modal.collection.id, input));
+  const submitModal = async (input: CollectionInputForm) => {
+    setActionError(null);
+    try {
+      if (!modal) return;
+      if (modal.mode === "create") {
+        await createCollection({
+          title: input.title.trim(),
+          description: input.description.trim() || undefined,
+          visibility: input.visibility,
+        });
+      } else {
+        await updateCollection(modal.collection.id, {
+          title: input.title.trim(),
+          description: input.description.trim() || null,
+          visibility: input.visibility,
+        });
+      }
+      setModal(null);
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to save collection",
+      );
     }
-    setModal(null);
   };
 
-  const deleteCollection = (collection: StoredRouteCollection) => {
+  const deleteCollection = async (collection: RouteCollectionView) => {
     if (
       !confirm(
-        `Delete "${collection.name}"? The routes inside won't be affected.`,
+        `Delete "${collection.title}"? The routes inside won't be affected.`,
       )
     ) {
       return;
     }
-    persist(removeCollection(collections, collection.id));
+    setActionError(null);
+    try {
+      await removeCollection(collection.id);
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to delete collection",
+      );
+    }
   };
 
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return collections.filter((c) => {
       if (!needle) return true;
-      const hay = `${c.name} ${c.description ?? ""}`.toLowerCase();
+      const hay = `${c.title} ${c.description ?? ""}`.toLowerCase();
       return hay.includes(needle);
     });
   }, [collections, search]);
+
+  const showSkeleton = status === "loading" && collections.length === 0;
+  const showLoadError = status === "error" && collections.length === 0;
 
   return (
     <div className="p-6 max-w-6xl mx-auto animate-fade-in">
@@ -102,12 +139,20 @@ export default function RouteCollectionsPage() {
         </button>
       </div>
 
+      {migration && <MigrationBanner migration={migration} />}
+
+      {actionError && (
+        <div
+          role="alert"
+          className="mb-4 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-200"
+        >
+          {actionError}
+        </div>
+      )}
+
       <Toolbar search={search} onSearch={setSearch} />
 
-      {!hydrated ? (
-        // Skip empty-state UI until localStorage has been read — without
-        // this, saved collections flash as "No collections yet" on first
-        // paint before useCollections finishes hydrating.
+      {showSkeleton ? (
         <div
           className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-5"
           aria-busy="true"
@@ -118,6 +163,30 @@ export default function RouteCollectionsPage() {
               className="h-44 rounded-2xl border border-slate-800 bg-slate-900 animate-pulse"
             />
           ))}
+        </div>
+      ) : showLoadError ? (
+        <div
+          role="alert"
+          className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-10 text-center mt-5"
+        >
+          <AlertTriangle
+            size={32}
+            className="mx-auto text-amber-400 mb-3"
+            aria-hidden="true"
+          />
+          <p className="text-amber-200 mb-1">
+            Couldn&apos;t load your collections
+          </p>
+          <p className="text-sm text-slate-500 mb-4">
+            {errorMessage ?? "Try again in a moment."}
+          </p>
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm hover:bg-slate-700 transition"
+          >
+            Retry
+          </button>
         </div>
       ) : collections.length === 0 ? (
         <EmptyState
@@ -143,7 +212,7 @@ export default function RouteCollectionsPage() {
               loadingTrips={loadingTrips}
               tripsError={tripsError}
               onEdit={() => setModal({ mode: "edit", collection })}
-              onDelete={() => deleteCollection(collection)}
+              onDelete={() => void deleteCollection(collection)}
             />
           ))}
         </div>
@@ -155,11 +224,11 @@ export default function RouteCollectionsPage() {
           initial={
             modal.mode === "edit"
               ? {
-                  name: modal.collection.name,
+                  title: modal.collection.title,
                   description: modal.collection.description ?? "",
-                  isPublic: modal.collection.isPublic,
+                  visibility: modal.collection.visibility,
                 }
-              : { name: "", description: "", isPublic: false }
+              : { title: "", description: "", visibility: "private" }
           }
           collections={collections}
           excludeId={modal.mode === "edit" ? modal.collection.id : undefined}
@@ -167,6 +236,63 @@ export default function RouteCollectionsPage() {
           onSubmit={submitModal}
         />
       )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+// Migration banner
+// ─────────────────────────────────────────────────────────
+
+function MigrationBanner({
+  migration,
+}: {
+  migration: NonNullable<ReturnType<typeof useCollections>["migration"]>;
+}) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const word = migration.count === 1 ? "collection" : "collections";
+
+  return (
+    <div className="mb-4 rounded-xl border border-tarmoto-cyan/20 bg-tarmoto-cyan/5 p-4">
+      <p className="text-sm text-slate-200">
+        Found {migration.count} {word} saved on this device. Move them to your
+        Tarmoto account so they sync across devices and survive clearing browser
+        storage.
+      </p>
+      {error && (
+        <p className="mt-2 text-xs text-amber-300" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          type="button"
+          disabled={pending}
+          onClick={async () => {
+            setPending(true);
+            setError(null);
+            try {
+              await migration.accept();
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Migration failed");
+            } finally {
+              setPending(false);
+            }
+          }}
+          className="px-3 py-1.5 rounded-lg bg-tarmoto-cyan text-slate-950 text-xs font-semibold hover:bg-tarmoto-cyan-light disabled:opacity-50 transition"
+        >
+          {pending ? "Moving…" : "Move to my account"}
+        </button>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={migration.decline}
+          className="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white transition disabled:opacity-50"
+        >
+          Not now
+        </button>
+      </div>
     </div>
   );
 }
@@ -213,7 +339,7 @@ function CollectionCard({
   onEdit,
   onDelete,
 }: {
-  collection: StoredRouteCollection;
+  collection: RouteCollectionView;
   tripById: Map<string, Trip>;
   loadingTrips: boolean;
   tripsError: boolean;
@@ -222,9 +348,8 @@ function CollectionCard({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // Only count trips the user still owns — if a trip is deleted we don't want
-  // to inflate the card stats. The detail page shows a "missing trip" hint so
-  // users can unstick broken entries.
+  // Server gives us itemCount directly, but we still join with the trip cache
+  // to compute total distance for the trips we own locally.
   const presentTrips = collection.tripIds
     .map((id) => tripById.get(id))
     .filter((t): t is Trip => Boolean(t));
@@ -232,7 +357,7 @@ function CollectionCard({
     (sum, t) => sum + tripDistanceKm(t),
     0,
   );
-  const missingCount = collection.tripIds.length - presentTrips.length;
+  const missingCount = collection.itemCount - presentTrips.length;
 
   return (
     <div
@@ -243,9 +368,12 @@ function CollectionCard({
         href={`/community/collections/${collection.id}`}
         className="block p-5 pr-12 group"
       >
-        <h3 className="font-semibold text-white group-hover:text-tarmoto-cyan transition line-clamp-2 mb-3">
-          {collection.name}
-        </h3>
+        <div className="flex items-start gap-2 mb-3">
+          <h3 className="font-semibold text-white group-hover:text-tarmoto-cyan transition line-clamp-2 flex-1">
+            {collection.title}
+          </h3>
+          <VisibilityPill visibility={collection.visibility} />
+        </div>
 
         {collection.description && (
           <p className="text-xs text-slate-500 line-clamp-2 mb-3">
@@ -257,12 +385,9 @@ function CollectionCard({
           <div className="flex items-center gap-2">
             <RouteIcon size={13} />
             <span>
-              {collection.tripIds.length} route
-              {collection.tripIds.length === 1 ? "" : "s"}
+              {collection.itemCount} route
+              {collection.itemCount === 1 ? "" : "s"}
               {missingCount > 0 && !loadingTrips && !tripsError && (
-                // Gate on `!tripsError` too — an API failure leaves
-                // `tripById` empty, and without this every saved member
-                // would be labelled "unavailable" as if it were deleted.
                 <span className="ml-2 text-[11px] text-amber-400">
                   {missingCount} unavailable
                 </span>
@@ -285,7 +410,7 @@ function CollectionCard({
       <button
         type="button"
         data-menu-trigger
-        aria-label={`Actions for ${collection.name}`}
+        aria-label={`Actions for ${collection.title}`}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -321,6 +446,35 @@ function CollectionCard({
   );
 }
 
+function VisibilityPill({
+  visibility,
+}: {
+  visibility: RouteCollectionVisibility;
+}) {
+  const label =
+    visibility === "public"
+      ? "Public"
+      : visibility === "unlisted"
+        ? "Unlisted"
+        : "Private";
+  const Icon =
+    visibility === "public" ? Globe : visibility === "unlisted" ? Link2 : Lock;
+  const tone =
+    visibility === "public"
+      ? "border-emerald-500/30 text-emerald-300 bg-emerald-500/5"
+      : visibility === "unlisted"
+        ? "border-tarmoto-cyan/30 text-tarmoto-cyan bg-tarmoto-cyan/5"
+        : "border-slate-700 text-slate-400 bg-slate-800/50";
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide ${tone}`}
+    >
+      <Icon size={10} />
+      {label}
+    </span>
+  );
+}
+
 // ─────────────────────────────────────────────────────────
 // Create / edit modal
 // ─────────────────────────────────────────────────────────
@@ -334,19 +488,19 @@ function CollectionModal({
   onSubmit,
 }: {
   mode: "create" | "edit";
-  initial: { name: string; description: string; isPublic: boolean };
-  collections: readonly StoredRouteCollection[];
+  initial: CollectionInputForm;
+  collections: readonly RouteCollectionView[];
   excludeId?: string;
   onClose: () => void;
-  onSubmit: (input: CollectionInput) => void;
+  onSubmit: (input: CollectionInputForm) => Promise<void>;
 }) {
-  const [name, setName] = useState(initial.name);
+  const [title, setTitle] = useState(initial.title);
   const [description, setDescription] = useState(initial.description);
-  // `isPublic` isn't editable in the UI today (see note on the modal form
-  // below) but we carry the initial value through so edit mode round-trips
-  // without stomping an already-saved visibility preference.
-  const isPublic = initial.isPublic;
+  const [visibility, setVisibility] = useState<RouteCollectionVisibility>(
+    initial.visibility,
+  );
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -358,9 +512,9 @@ function CollectionModal({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const submit = (e: FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const nameError = validateCollectionName(name, collections, excludeId);
+    const nameError = validateCollectionName(title, collections, excludeId);
     if (nameError) {
       setError(nameError);
       return;
@@ -370,7 +524,12 @@ function CollectionModal({
       setError(descError);
       return;
     }
-    onSubmit({ name, description, isPublic });
+    setSubmitting(true);
+    try {
+      await onSubmit({ title, description, visibility });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -383,7 +542,7 @@ function CollectionModal({
     >
       <form
         onClick={(e) => e.stopPropagation()}
-        onSubmit={submit}
+        onSubmit={(e) => void submit(e)}
         className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-xl"
       >
         <h2
@@ -405,9 +564,9 @@ function CollectionModal({
               id="collection-name"
               autoFocus
               type="text"
-              value={name}
+              value={title}
               onChange={(e) => {
-                setName(e.target.value);
+                setTitle(e.target.value);
                 setError(null);
               }}
               maxLength={MAX_COLLECTION_NAME_LENGTH + 10}
@@ -439,12 +598,54 @@ function CollectionModal({
             </p>
           </div>
 
-          {/*
-            Visibility toggle is intentionally omitted — with no backend
-            sharing yet, "Public" would be a promise we can't keep. The
-            stored `isPublic` preference is preserved below so it survives
-            round-tripping an existing collection through the edit form.
-          */}
+          <fieldset>
+            <legend className="block text-xs text-slate-500 mb-2">
+              Visibility
+            </legend>
+            <div className="space-y-2">
+              {(
+                [
+                  {
+                    value: "private",
+                    label: "Private",
+                    body: "Only you can see this collection.",
+                  },
+                  {
+                    value: "unlisted",
+                    label: "Unlisted",
+                    body: "Anyone with the link can view. Not listed publicly.",
+                  },
+                  {
+                    value: "public",
+                    label: "Public",
+                    body: "Anyone can find and view this collection.",
+                  },
+                ] as const
+              ).map((opt) => (
+                <label
+                  key={opt.value}
+                  className={`flex gap-3 p-3 rounded-lg cursor-pointer border transition ${
+                    visibility === opt.value
+                      ? "border-tarmoto-cyan/40 bg-tarmoto-cyan/5"
+                      : "border-slate-800 bg-slate-950 hover:border-slate-700"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="collection-visibility"
+                    value={opt.value}
+                    checked={visibility === opt.value}
+                    onChange={() => setVisibility(opt.value)}
+                    className="mt-0.5 accent-tarmoto-cyan"
+                  />
+                  <div>
+                    <p className="text-sm text-white">{opt.label}</p>
+                    <p className="text-[11px] text-slate-500">{opt.body}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </fieldset>
         </div>
 
         {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
@@ -453,15 +654,17 @@ function CollectionModal({
           <button
             type="button"
             onClick={onClose}
-            className="px-3 py-1.5 rounded-lg text-sm text-slate-400 hover:text-white transition"
+            disabled={submitting}
+            className="px-3 py-1.5 rounded-lg text-sm text-slate-400 hover:text-white transition disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             type="submit"
-            className="px-3 py-1.5 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light transition"
+            disabled={submitting}
+            className="px-3 py-1.5 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light disabled:opacity-50 transition"
           >
-            {mode === "create" ? "Create" : "Save"}
+            {submitting ? "Saving…" : mode === "create" ? "Create" : "Save"}
           </button>
         </div>
       </form>

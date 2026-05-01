@@ -38,6 +38,7 @@ import { AddPushNotifications1716200000000 } from '../../migrations/171620000000
 import { AddRideStatsLeanDistribution1716200000000 } from '../../migrations/1716200000000-AddRideStatsLeanDistribution.js';
 import { MigrateLegacyNotificationPreferences1716300000000 } from '../../migrations/1716300000000-MigrateLegacyNotificationPreferences.js';
 import { AddPrivacyPreferences1716400000000 } from '../../migrations/1716400000000-AddPrivacyPreferences.js';
+import { AddRouteCollections1716500000000 } from '../../migrations/1716500000000-AddRouteCollections.js';
 import {
   User,
   UserContact,
@@ -78,6 +79,8 @@ import {
   DeviceToken,
   NotificationPreferencesRow,
   PrivacyPreferencesRow,
+  RouteCollection,
+  RouteCollectionItem,
 } from '../../entities/index.js';
 
 const entities = [
@@ -120,6 +123,8 @@ const entities = [
   DeviceToken,
   NotificationPreferencesRow,
   PrivacyPreferencesRow,
+  RouteCollection,
+  RouteCollectionItem,
 ];
 
 @Module({
@@ -180,6 +185,7 @@ const entities = [
             AddRideStatsLeanDistribution1716200000000,
             MigrateLegacyNotificationPreferences1716300000000,
             AddPrivacyPreferences1716400000000,
+            AddRouteCollections1716500000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.

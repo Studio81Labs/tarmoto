@@ -1,29 +1,45 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Calendar,
+  Check,
+  Copy,
+  Globe,
+  Link2,
   Loader2,
+  Lock,
   MapPin,
   Plus,
   Route as RouteIcon,
+  Share2,
   Trash2,
   X,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { useUserTrips } from "@/hooks/useUserTrips";
-import { useCollections } from "@/hooks/useCollections";
 import {
-  addTripsToCollection,
-  removeTripFromCollection,
+  ApiError,
+  routeCollectionsApi,
+  type RouteCollectionVisibility,
+} from "@/lib/api";
+import {
+  mapDetailToView,
+  type RouteCollectionView,
 } from "@/lib/route-collections";
 import { tripDistanceKm } from "@/lib/trip-filters";
 import { buildRoutePreview, type RoutePoint } from "@/lib/ride-detail";
 import { formatDistance, formatRelativeTime } from "@/lib/utils";
 import type { Trip, TripDay } from "@/lib/types";
+
+type LoadState =
+  | { phase: "loading" }
+  | { phase: "ready"; collection: RouteCollectionView }
+  | { phase: "not-found" }
+  | { phase: "error"; message: string };
 
 export default function CollectionDetailPage() {
   const { collectionId } = useParams<{ collectionId: string }>();
@@ -35,26 +51,93 @@ export default function CollectionDetailPage() {
     loading: loadingTrips,
     error: tripsError,
   } = useUserTrips();
-  const { collections, hydrated, persist } = useCollections(userId);
 
+  const [load, setLoad] = useState<LoadState>({ phase: "loading" });
   const [showPicker, setShowPicker] = useState(false);
-  const collection = useMemo(
-    () => collections.find((c) => c.id === collectionId) ?? null,
-    [collections, collectionId],
-  );
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const handleAddTrips = (tripIds: string[]) => {
+  const reload = useCallback(async (id: string) => {
+    try {
+      const { data } = await routeCollectionsApi.get(id);
+      setLoad({ phase: "ready", collection: mapDetailToView(data) });
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        setLoad({ phase: "not-found" });
+        return;
+      }
+      setLoad({
+        phase: "error",
+        message:
+          err instanceof Error ? err.message : "Failed to load collection",
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!collectionId) return;
+    setLoad({ phase: "loading" });
+    void reload(collectionId);
+  }, [collectionId, reload]);
+
+  const collection = load.phase === "ready" ? load.collection : null;
+  const isOwner = collection ? collection.ownerId === userId : false;
+
+  const handleAddTrips = async (tripIds: string[]) => {
     if (!collection || tripIds.length === 0) return;
-    persist(addTripsToCollection(collections, collection.id, tripIds));
-    setShowPicker(false);
+    setActionError(null);
+    setBusy(true);
+    try {
+      // Sequential — see useCollections.addTripsToCollection for why.
+      for (const tid of tripIds) {
+        await routeCollectionsApi.addItem(collection.id, { trip_id: tid });
+      }
+      await reload(collection.id);
+      setShowPicker(false);
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to add trips",
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const handleRemoveTrip = (tripId: string) => {
+  const handleRemoveTrip = async (itemId: string) => {
     if (!collection) return;
-    persist(removeTripFromCollection(collections, collection.id, tripId));
+    setActionError(null);
+    setBusy(true);
+    try {
+      await routeCollectionsApi.removeItem(collection.id, itemId);
+      await reload(collection.id);
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to remove trip",
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
-  if (!hydrated) {
+  const handleVisibilityChange = async (next: RouteCollectionVisibility) => {
+    if (!collection) return;
+    setActionError(null);
+    setBusy(true);
+    try {
+      const { data } = await routeCollectionsApi.update(collection.id, {
+        visibility: next,
+      });
+      setLoad({ phase: "ready", collection: mapDetailToView(data) });
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to update visibility",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (load.phase === "loading") {
     return (
       <div className="p-6 max-w-4xl mx-auto animate-fade-in">
         <div className="flex items-center gap-2 text-slate-400 text-sm">
@@ -64,7 +147,7 @@ export default function CollectionDetailPage() {
     );
   }
 
-  if (!collection) {
+  if (load.phase === "not-found") {
     return (
       <div className="p-6 max-w-4xl mx-auto animate-fade-in">
         <Link
@@ -79,23 +162,60 @@ export default function CollectionDetailPage() {
             Collection not found
           </p>
           <p className="text-sm text-slate-500">
-            This collection may have been deleted from this device.
+            This collection may have been deleted, or it&apos;s private and you
+            don&apos;t own it.
           </p>
         </div>
       </div>
     );
   }
 
-  const memberTripIds = new Set(collection.tripIds);
-  const memberTrips: (Trip | { id: string; missing: true })[] =
-    collection.tripIds.map((id) => tripById.get(id) ?? { id, missing: true });
-  const presentTrips = memberTrips.filter((t): t is Trip => !("missing" in t));
+  if (load.phase === "error") {
+    return (
+      <div className="p-6 max-w-4xl mx-auto animate-fade-in">
+        <Link
+          href="/community/collections"
+          className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-4 transition"
+        >
+          <ArrowLeft size={16} /> Collections
+        </Link>
+        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-10 text-center">
+          <p className="text-amber-200 font-medium mb-1">
+            Couldn&apos;t load this collection
+          </p>
+          <p className="text-sm text-slate-500 mb-4">{load.message}</p>
+          <button
+            type="button"
+            onClick={() => collectionId && void reload(collectionId)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm hover:bg-slate-700 transition"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ready
+  const memberTrips: (Trip | { id: string; itemId: string; missing: true })[] =
+    collection!.tripRefs.map((ref) => {
+      const trip = tripById.get(ref.tripId);
+      if (trip) return trip;
+      return { id: ref.tripId, itemId: ref.itemId, missing: true };
+    });
+  const presentTrips = memberTrips.filter(
+    (entry): entry is Trip => !("missing" in entry),
+  );
   const totalDistance = presentTrips.reduce(
     (sum, t) => sum + tripDistanceKm(t),
     0,
   );
   const totalDays = presentTrips.reduce((sum, t) => sum + t.days.length, 0);
+  const memberTripIds = new Set(collection!.tripIds);
   const availableTrips = trips.filter((t) => !memberTripIds.has(t.id));
+  const itemIdByTripId = new Map(
+    collection!.tripRefs.map((r) => [r.tripId, r.itemId]),
+  );
 
   return (
     <div className="p-6 max-w-4xl mx-auto animate-fade-in">
@@ -108,47 +228,63 @@ export default function CollectionDetailPage() {
 
       <header className="flex flex-wrap items-start justify-between gap-3 mb-2">
         <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-bold break-words mb-1">
-            {collection.name}
-          </h1>
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-2xl font-bold break-words mb-1">
+              {collection!.title}
+            </h1>
+            <VisibilityPill visibility={collection!.visibility} />
+          </div>
           <p className="text-xs text-slate-500">
-            Updated {formatRelativeTime(collection.updatedAt)}
+            Updated {formatRelativeTime(collection!.updatedAt)}
+            {!isOwner && collection!.ownerName
+              ? ` · by ${collection!.ownerName}`
+              : ""}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/*
-            Share affordance + visibility pill are intentionally omitted
-            until the backend grows a collections endpoint. Today a URL
-            points at a localStorage-keyed collection so a recipient would
-            land on "not found"; marking a collection "Public" likewise
-            promises something we can't deliver. The `isPublic` preference
-            still lives in storage so it survives once sharing ships.
-          */}
-          <button
-            type="button"
-            onClick={() => setShowPicker(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light transition"
-          >
-            <Plus size={14} /> Add routes
-          </button>
+          <ShareButton collection={collection!} />
+          {isOwner && (
+            <button
+              type="button"
+              onClick={() => setShowPicker(true)}
+              disabled={busy}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light disabled:opacity-50 transition"
+            >
+              <Plus size={14} /> Add routes
+            </button>
+          )}
         </div>
       </header>
 
-      {collection.description && (
+      {isOwner && (
+        <VisibilitySelector
+          value={collection!.visibility}
+          onChange={(v) => void handleVisibilityChange(v)}
+          disabled={busy}
+        />
+      )}
+
+      {collection!.description && (
         <p className="text-sm text-slate-300 mt-3 max-w-2xl whitespace-pre-line">
-          {collection.description}
+          {collection!.description}
+        </p>
+      )}
+
+      {actionError && (
+        <p role="alert" className="mt-3 text-xs text-red-300">
+          {actionError}
         </p>
       )}
 
       <section className="mt-6 grid grid-cols-3 gap-3">
         <Stat
           label="Routes"
-          value={`${collection.tripIds.length}`}
+          value={`${collection!.itemCount}`}
           hint={
-            collection.tripIds.length - presentTrips.length > 0 &&
+            collection!.itemCount - presentTrips.length > 0 &&
             !loadingTrips &&
             !tripsError
-              ? `${collection.tripIds.length - presentTrips.length} unavailable`
+              ? `${collection!.itemCount - presentTrips.length} unavailable`
               : undefined
           }
         />
@@ -169,13 +305,14 @@ export default function CollectionDetailPage() {
           Routes
         </h2>
         {memberTrips.length === 0 ? (
-          <EmptyRoutes onAdd={() => setShowPicker(true)} />
+          isOwner ? (
+            <EmptyRoutes onAdd={() => setShowPicker(true)} />
+          ) : (
+            <p className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/50 p-8 text-center text-sm text-slate-500">
+              The owner hasn&apos;t added any routes yet.
+            </p>
+          )
         ) : loadingTrips || tripsError ? (
-          // Until the trips API has responded successfully, `tripById` is
-          // empty and every member would otherwise render as "missing" with
-          // an active remove button. Skeleton rows during load; also keep
-          // them on API error — a transient outage mustn't trick users into
-          // pruning valid references. An inline banner surfaces the error.
           <>
             {tripsError && (
               <div
@@ -196,14 +333,19 @@ export default function CollectionDetailPage() {
             {memberTrips.map((entry) =>
               "missing" in entry ? (
                 <MissingTripRow
-                  key={entry.id}
-                  onRemove={() => handleRemoveTrip(entry.id)}
+                  key={entry.itemId}
+                  canRemove={isOwner}
+                  onRemove={() => void handleRemoveTrip(entry.itemId)}
                 />
               ) : (
                 <TripRow
                   key={entry.id}
                   trip={entry}
-                  onRemove={() => handleRemoveTrip(entry.id)}
+                  canRemove={isOwner}
+                  onRemove={() => {
+                    const itemId = itemIdByTripId.get(entry.id);
+                    if (itemId) void handleRemoveTrip(itemId);
+                  }}
                 />
               ),
             )}
@@ -211,14 +353,14 @@ export default function CollectionDetailPage() {
         )}
       </section>
 
-      {showPicker && (
+      {showPicker && isOwner && (
         <RoutePickerModal
           trips={availableTrips}
           loading={loadingTrips}
           error={tripsError}
           hasAnyTrips={trips.length > 0}
           onClose={() => setShowPicker(false)}
-          onAdd={handleAddTrips}
+          onAdd={(ids) => void handleAddTrips(ids)}
           onPlanTrip={() => router.push("/trips/planner")}
         />
       )}
@@ -229,6 +371,132 @@ export default function CollectionDetailPage() {
 // ─────────────────────────────────────────────────────────
 // Sub-components
 // ─────────────────────────────────────────────────────────
+
+function VisibilityPill({
+  visibility,
+}: {
+  visibility: RouteCollectionVisibility;
+}) {
+  const label =
+    visibility === "public"
+      ? "Public"
+      : visibility === "unlisted"
+        ? "Unlisted"
+        : "Private";
+  const Icon =
+    visibility === "public" ? Globe : visibility === "unlisted" ? Link2 : Lock;
+  const tone =
+    visibility === "public"
+      ? "border-emerald-500/30 text-emerald-300 bg-emerald-500/5"
+      : visibility === "unlisted"
+        ? "border-tarmoto-cyan/30 text-tarmoto-cyan bg-tarmoto-cyan/5"
+        : "border-slate-700 text-slate-400 bg-slate-800/50";
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide ${tone}`}
+    >
+      <Icon size={10} />
+      {label}
+    </span>
+  );
+}
+
+function VisibilitySelector({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: RouteCollectionVisibility;
+  onChange: (next: RouteCollectionVisibility) => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+      <span className="text-slate-500">Visibility</span>
+      {(["private", "unlisted", "public"] as const).map((v) => (
+        <button
+          key={v}
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange(v)}
+          className={`px-2.5 py-1 rounded-full border transition disabled:opacity-50 ${
+            v === value
+              ? "border-tarmoto-cyan/40 bg-tarmoto-cyan/10 text-tarmoto-cyan"
+              : "border-slate-800 bg-slate-900 text-slate-400 hover:text-white"
+          }`}
+        >
+          {v === "public"
+            ? "Public"
+            : v === "unlisted"
+              ? "Unlisted"
+              : "Private"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ShareButton({ collection }: { collection: RouteCollectionView }) {
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">(
+    "idle",
+  );
+
+  useEffect(() => {
+    if (copyState === "idle") return;
+    const t = window.setTimeout(() => setCopyState("idle"), 2000);
+    return () => window.clearTimeout(t);
+  }, [copyState]);
+
+  const sharable = collection.visibility !== "private";
+  const url =
+    typeof window === "undefined"
+      ? ""
+      : `${window.location.origin}/community/collections/shared/${collection.slug}`;
+
+  const handle = async () => {
+    if (!sharable) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopyState("copied");
+    } catch {
+      setCopyState("error");
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={() => void handle()}
+      disabled={!sharable}
+      title={
+        sharable
+          ? "Copy share link"
+          : "Make this collection unlisted or public to share"
+      }
+      className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition ${
+        !sharable
+          ? "bg-slate-900 border border-slate-800 text-slate-500 cursor-not-allowed"
+          : copyState === "copied"
+            ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-300"
+            : "bg-slate-900 border border-slate-800 text-slate-200 hover:border-slate-700"
+      }`}
+    >
+      {copyState === "copied" ? (
+        <>
+          <Check size={14} /> Copied
+        </>
+      ) : copyState === "error" ? (
+        <>
+          <Copy size={14} /> Copy failed
+        </>
+      ) : (
+        <>
+          <Share2 size={14} /> Share
+        </>
+      )}
+    </button>
+  );
+}
 
 function Stat({
   label,
@@ -269,7 +537,15 @@ function EmptyRoutes({ onAdd }: { onAdd: () => void }) {
   );
 }
 
-function TripRow({ trip, onRemove }: { trip: Trip; onRemove: () => void }) {
+function TripRow({
+  trip,
+  canRemove,
+  onRemove,
+}: {
+  trip: Trip;
+  canRemove: boolean;
+  onRemove: () => void;
+}) {
   const points = useMemo(() => combineTripRoutePoints(trip.days), [trip.days]);
   const preview = useMemo(() => buildRoutePreview(points, 200, 6), [points]);
   const distance = tripDistanceKm(trip);
@@ -321,20 +597,28 @@ function TripRow({ trip, onRemove }: { trip: Trip; onRemove: () => void }) {
             </div>
           </div>
         </Link>
-        <button
-          type="button"
-          onClick={onRemove}
-          aria-label={`Remove ${trip.name} from collection`}
-          className="px-3 text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition"
-        >
-          <Trash2 size={16} />
-        </button>
+        {canRemove && (
+          <button
+            type="button"
+            onClick={onRemove}
+            aria-label={`Remove ${trip.name} from collection`}
+            className="px-3 text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition"
+          >
+            <Trash2 size={16} />
+          </button>
+        )}
       </div>
     </li>
   );
 }
 
-function MissingTripRow({ onRemove }: { onRemove: () => void }) {
+function MissingTripRow({
+  canRemove,
+  onRemove,
+}: {
+  canRemove: boolean;
+  onRemove: () => void;
+}) {
   return (
     <li className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/50 p-4 flex items-center justify-between gap-4">
       <div className="min-w-0">
@@ -343,13 +627,15 @@ function MissingTripRow({ onRemove }: { onRemove: () => void }) {
           The route may have been deleted or belongs to another account.
         </p>
       </div>
-      <button
-        type="button"
-        onClick={onRemove}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition"
-      >
-        <X size={12} /> Remove
-      </button>
+      {canRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition"
+        >
+          <X size={12} /> Remove
+        </button>
+      )}
     </li>
   );
 }
@@ -367,7 +653,7 @@ function LoadingTripRow() {
 }
 
 // ─────────────────────────────────────────────────────────
-// Route picker modal
+// Route picker modal (unchanged from previous version)
 // ─────────────────────────────────────────────────────────
 
 function RoutePickerModal({
@@ -381,15 +667,7 @@ function RoutePickerModal({
 }: {
   trips: Trip[];
   loading: boolean;
-  // Signals a trip-API failure; the modal must surface a retry-able error
-  // state instead of its "no trips" / "everything already added" empty
-  // states, otherwise an outage reads as "the user has no trips" and drives
-  // them toward creating a duplicate.
   error: boolean;
-  // `trips` is already filtered to exclude members of this collection, so
-  // `trips.length === 0` alone can't distinguish "user has no trips" from
-  // "every trip is already here". Caller passes the unfiltered count so we
-  // render the right empty state.
   hasAnyTrips: boolean;
   onClose: () => void;
   onAdd: (tripIds: string[]) => void;
@@ -463,10 +741,6 @@ function RoutePickerModal({
               Loading your trips…
             </div>
           ) : error ? (
-            // Check the error branch before the empty-state branches —
-            // otherwise a failed trips fetch lands in "you have no trips
-            // yet" or "all already added", both of which imply we know the
-            // real state.
             <div
               role="alert"
               className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-6 text-center text-sm text-amber-200"
@@ -572,12 +846,6 @@ function RoutePickerModal({
 // Route geometry helpers
 // ─────────────────────────────────────────────────────────
 
-// Combines each day's routeGeometry (a GeoJSON LineString of [lng, lat]
-// tuples) into a single flat list of lat/lng points that `buildRoutePreview`
-// expects. Days without geometry are skipped; a single M command is emitted
-// per day implicitly because `buildRoutePreview` draws a continuous path, but
-// the visual discontinuity between days is small at preview resolution and
-// better than omitting the geometry altogether.
 function combineTripRoutePoints(days: readonly TripDay[]): RoutePoint[] {
   const out: RoutePoint[] = [];
   for (const day of days) {

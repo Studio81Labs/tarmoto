@@ -1,63 +1,228 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  loadCollections,
-  saveCollections,
+  routeCollectionsApi,
+  type CreateRouteCollectionInput,
+  type UpdateRouteCollectionInput,
+} from "@/lib/api";
+import {
+  isMigrationDone,
+  mapDetailToView,
+  mapSummaryToView,
+  migrateLegacyCollections,
+  readLegacyCollections,
   sortCollectionsByName,
-  type StoredRouteCollection,
+  type RouteCollectionView,
 } from "@/lib/route-collections";
 
+export type CollectionsStatus = "idle" | "loading" | "ready" | "error";
+
+export interface MigrationOpportunity {
+  /** How many legacy collections we found in localStorage. */
+  count: number;
+  /** Promise resolver — call once the user accepts/declines. */
+  accept: () => Promise<void>;
+  decline: () => void;
+}
+
+export interface UseCollectionsResult {
+  collections: RouteCollectionView[];
+  status: CollectionsStatus;
+  errorMessage: string | null;
+  /** Reload the list from the server. */
+  refresh: () => Promise<void>;
+  createCollection: (
+    input: CreateRouteCollectionInput,
+  ) => Promise<RouteCollectionView>;
+  updateCollection: (
+    id: string,
+    input: UpdateRouteCollectionInput,
+  ) => Promise<RouteCollectionView>;
+  removeCollection: (id: string) => Promise<void>;
+  addTripsToCollection: (
+    id: string,
+    tripIds: readonly string[],
+  ) => Promise<RouteCollectionView>;
+  removeItemFromCollection: (
+    id: string,
+    itemId: string,
+  ) => Promise<RouteCollectionView>;
+  /**
+   * If the user has legacy localStorage collections AND has not yet been
+   * prompted, this is non-null and the page can render a banner asking the
+   * user to opt into migration. The hook does NOT auto-migrate — that's the
+   * "user opt-in" gate from the issue.
+   */
+  migration: MigrationOpportunity | null;
+}
+
 /**
- * Loads the signed-in user's route collections from localStorage and exposes
- * a `persist` helper that sorts and writes back through `saveCollections`.
- *
- * Both collection pages need the same hydrate-then-mutate pattern, so it
- * lives here to prevent the same drift that prompted `useUserTrips`. When a
- * backend `/collections` endpoint ships, this hook is the single place to
- * swap storage.
+ * Cloud-backed route collections (US-56). Mirrors the previous localStorage
+ * hook's shape (`refresh`, mutators) but every call hits the backend. The
+ * `migration` field surfaces a one-time, user-confirmed import of the legacy
+ * localStorage row into the new endpoint.
  *
  * Pass `userId === null` to render an empty list (e.g. signed-out visitors).
- *
- * `hydrated` flips to `true` once the first `userId`-driven load has run, so
- * detail pages can wait before deciding a collection is missing — otherwise
- * the empty initial state would flash "not found" on every navigation.
- *
- * On `userId` change we reset state *before* reading the new user's data so
- * a sign-out/account-switch doesn't momentarily expose the previous user's
- * collections (or let `persist` write them into the new user's slot).
  */
-export function useCollections(userId: string | null): {
-  collections: StoredRouteCollection[];
-  hydrated: boolean;
-  persist: (next: readonly StoredRouteCollection[]) => void;
-} {
-  const [collections, setCollections] = useState<StoredRouteCollection[]>([]);
-  const [hydrated, setHydrated] = useState(false);
+export function useCollections(userId: string | null): UseCollectionsResult {
+  const [collections, setCollections] = useState<RouteCollectionView[]>([]);
+  const [status, setStatus] = useState<CollectionsStatus>("idle");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [migration, setMigration] = useState<MigrationOpportunity | null>(null);
 
-  // Track the userId the in-memory state is associated with. `persist` reads
-  // this instead of the effect-closed `userId` so a write that races with an
-  // account switch can't slip into the new account's storage slot.
+  // Track the userId the in-memory state belongs to so a refresh that lands
+  // after an account switch doesn't write the previous user's data into the
+  // new view (mirrors the guard the legacy hook had against localStorage).
   const activeUserIdRef = useRef<string | null>(userId);
+  activeUserIdRef.current = userId;
 
-  useEffect(() => {
-    activeUserIdRef.current = userId;
-    setHydrated(false);
-    setCollections([]);
-    if (!userId) {
-      setHydrated(true);
-      return;
-    }
-    setCollections(sortCollectionsByName(loadCollections(userId)));
-    setHydrated(true);
-  }, [userId]);
-
-  // Memoise so consumers can safely put `persist` in effect dependency
-  // arrays. The ref read inside means no captured userId to go stale.
-  const persist = useCallback((next: readonly StoredRouteCollection[]) => {
-    const sorted = sortCollectionsByName(next);
-    setCollections(sorted);
-    const owner = activeUserIdRef.current;
-    if (owner) saveCollections(owner, sorted);
+  const replaceOne = useCallback((next: RouteCollectionView) => {
+    setCollections((prev) => {
+      const without = prev.filter((c) => c.id !== next.id);
+      return sortCollectionsByName([...without, next]);
+    });
   }, []);
 
-  return { collections, hydrated, persist };
+  const removeOne = useCallback((id: string) => {
+    setCollections((prev) => prev.filter((c) => c.id !== id));
+  }, []);
+
+  const refresh = useCallback(async () => {
+    const owner = activeUserIdRef.current;
+    if (!owner) {
+      setCollections([]);
+      setStatus("ready");
+      return;
+    }
+    setStatus("loading");
+    setErrorMessage(null);
+    try {
+      const { data } = await routeCollectionsApi.listMine();
+      // Drop the result if the user has switched accounts mid-flight.
+      if (activeUserIdRef.current !== owner) return;
+      setCollections(sortCollectionsByName(data.items.map(mapSummaryToView)));
+      setStatus("ready");
+    } catch (err) {
+      if (activeUserIdRef.current !== owner) return;
+      setStatus("error");
+      setErrorMessage(
+        err instanceof Error ? err.message : "Failed to load route collections",
+      );
+    }
+  }, []);
+
+  const createCollection = useCallback(
+    async (input: CreateRouteCollectionInput) => {
+      const { data } = await routeCollectionsApi.create(input);
+      const view = mapDetailToView(data);
+      replaceOne(view);
+      return view;
+    },
+    [replaceOne],
+  );
+
+  const updateCollection = useCallback(
+    async (id: string, input: UpdateRouteCollectionInput) => {
+      const { data } = await routeCollectionsApi.update(id, input);
+      const view = mapDetailToView(data);
+      replaceOne(view);
+      return view;
+    },
+    [replaceOne],
+  );
+
+  const removeCollection = useCallback(
+    async (id: string) => {
+      await routeCollectionsApi.delete(id);
+      removeOne(id);
+    },
+    [removeOne],
+  );
+
+  const addTripsToCollection = useCallback(
+    async (id: string, tripIds: readonly string[]) => {
+      // Add items one-at-a-time then refresh detail. Sequential to avoid the
+      // backend's per-collection MAX(position)+1 racing on parallel adds.
+      for (const tripId of tripIds) {
+        await routeCollectionsApi.addItem(id, { trip_id: tripId });
+      }
+      const { data } = await routeCollectionsApi.get(id);
+      const view = mapDetailToView(data);
+      replaceOne(view);
+      return view;
+    },
+    [replaceOne],
+  );
+
+  const removeItemFromCollection = useCallback(
+    async (id: string, itemId: string) => {
+      await routeCollectionsApi.removeItem(id, itemId);
+      const { data } = await routeCollectionsApi.get(id);
+      const view = mapDetailToView(data);
+      replaceOne(view);
+      return view;
+    },
+    [replaceOne],
+  );
+
+  // Initial load + migration-opportunity check whenever userId changes.
+  useEffect(() => {
+    setCollections([]);
+    setMigration(null);
+    if (!userId) {
+      setStatus("ready");
+      setErrorMessage(null);
+      return;
+    }
+    void refresh();
+
+    // Migration prompt: only surface if the legacy key has data AND we haven't
+    // already migrated (or skipped) for this user. Storage helpers are no-ops
+    // server-side; readLegacyCollections returns [] there.
+    if (!isMigrationDone(userId)) {
+      const legacy = readLegacyCollections(userId);
+      if (legacy.length > 0) {
+        setMigration({
+          count: legacy.length,
+          accept: async () => {
+            const result = await migrateLegacyCollections(userId);
+            // Merge migrated collections into the view; refresh anyway in case
+            // listMine is the source of truth (e.g. legacy row had odd data).
+            await refresh();
+            if (result.errorMessage) {
+              setErrorMessage(result.errorMessage);
+            }
+            setMigration(null);
+          },
+          decline: () => {
+            // Mark as done so we don't keep prompting; legacy data stays in
+            // localStorage in case the user changes their mind via dev tools.
+            try {
+              if (typeof window !== "undefined") {
+                window.localStorage.setItem(
+                  `tarmoto:route-collections-migrated:${userId}`,
+                  "1",
+                );
+              }
+            } catch {
+              // Quota / private mode — best-effort.
+            }
+            setMigration(null);
+          },
+        });
+      }
+    }
+  }, [userId, refresh]);
+
+  return {
+    collections,
+    status,
+    errorMessage,
+    refresh,
+    createCollection,
+    updateCollection,
+    removeCollection,
+    addTripsToCollection,
+    removeItemFromCollection,
+    migration,
+  };
 }
