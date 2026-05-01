@@ -159,12 +159,18 @@ class ApiService {
     }
   }
 
-  logout(): void {
-    // Unregister BEFORE clearing tokens — the request needs the
-    // bearer to authorise. Best-effort: ignore any HTTP failure
-    // since the backend's dispatch path also soft-deletes invalid
-    // tokens automatically.
-    void unregisterPush({ client: this.client });
+  async logout(): Promise<void> {
+    // Await unregister BEFORE clearing the bearer. The earlier
+    // implementation did `void unregisterPush(...); this.clearTokens()`,
+    // but the axios request interceptor reads `access_token` from MMKV
+    // asynchronously (via the Promise chain after the request is
+    // submitted), so by the time it ran `clearTokens()` had already
+    // wiped the bearer and the DELETE went out unauthenticated. Await
+    // on the same task ensures the DELETE completes (or fails — still
+    // best-effort) with a live token. UI callers can fire-and-forget
+    // this Promise; the local Zustand `logout()` flips the UI
+    // immediately and doesn't depend on the network round-trip.
+    await unregisterPush({ client: this.client });
     this.clearTokens();
   }
 

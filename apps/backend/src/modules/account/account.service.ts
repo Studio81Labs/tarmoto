@@ -331,6 +331,25 @@ export class AccountService {
       wonActivationTransition = (claim.affected ?? 0) > 0;
     }
 
+    // Same atomic-claim pattern for past_due: Stripe retries
+    // `invoice.payment_failed`-driven `customer.subscription.updated`
+    // events in parallel, and an in-memory `user.subscription_status
+    // !== 'past_due'` check would let two handlers both pass the gate
+    // and fire duplicate `subscription_billing` pushes. The
+    // conditional UPDATE serialises through Postgres row-level
+    // locking; loser sees affected: 0 and skips the push.
+    let wonPastDueTransition = false;
+    if (newStatus === 'past_due') {
+      const claim = await this.userRepo
+        .createQueryBuilder()
+        .update(User)
+        .set({ subscription_status: 'past_due' })
+        .where('id = :id', { id: user.id })
+        .andWhere("subscription_status != 'past_due'")
+        .execute();
+      wonPastDueTransition = (claim.affected ?? 0) > 0;
+    }
+
     await this.userRepo.update(user.id, update);
 
     if (wonActivationTransition) {
@@ -345,12 +364,7 @@ export class AccountService {
       );
     }
 
-    // Push notify on a fresh transition into `past_due` — Stripe sends
-    // this when card auto-renewal fails. Only fire when the prior
-    // status was something else, so retries of the same webhook don't
-    // re-spam. Match the `wonActivationTransition` style: gate via a
-    // conditional UPDATE so concurrent webhook handlers don't race.
-    if (newStatus === 'past_due' && user.subscription_status !== 'past_due') {
+    if (wonPastDueTransition) {
       this.dispatchBillingFailedPush(user.id).catch(() => undefined);
     }
   }

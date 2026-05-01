@@ -445,5 +445,77 @@ describe('AccountService', () => {
       // Other-field updates still flow even on the loser path.
       expect(userRepo.update).toHaveBeenCalled();
     });
+
+    it('fires the billing-failed push when claiming the past_due transition', async () => {
+      // Stripe transitions the subscription to past_due after a failed
+      // auto-renewal. The conditional UPDATE claims the transition
+      // atomically so concurrent webhook retries can't double-push.
+      activationClaimExecute.mockResolvedValueOnce({ affected: 1 });
+
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          subscription_status: 'active',
+          subscription_tier: 'premium',
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'past_due',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'premium' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+      // Push is fire-and-forget — flush microtasks so the dispatch
+      // helper's `await pushService.sendToUser` resolves before assertion.
+      await new Promise((resolve) => setImmediate(resolve));
+
+      const pushService = service['pushService'] as { sendToUser: jest.Mock };
+      expect(pushService.sendToUser).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ category: 'subscription_billing' }),
+      );
+    });
+
+    it('skips the billing-failed push when a concurrent webhook already claimed the past_due transition', async () => {
+      activationClaimExecute.mockResolvedValueOnce({ affected: 0 });
+
+      userRepo.findOne!.mockResolvedValueOnce(
+        buildUser({
+          stripe_customer_id: 'cus_123',
+          subscription_status: 'active',
+          subscription_tier: 'premium',
+        }),
+      );
+      stripe.constructWebhookEvent.mockReturnValueOnce({
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'past_due',
+            cancel_at_period_end: false,
+            current_period_end: 1779537600,
+            items: { data: [{ price: { lookup_key: 'premium' } }] },
+          },
+        },
+      });
+
+      await service.handleWebhook(Buffer.from('payload'), 'stripe-signature');
+      await new Promise((resolve) => setImmediate(resolve));
+
+      const pushService = service['pushService'] as { sendToUser: jest.Mock };
+      expect(pushService.sendToUser).not.toHaveBeenCalled();
+      // Loser path still flushes the unconditional update.
+      expect(userRepo.update).toHaveBeenCalled();
+    });
   });
 });
