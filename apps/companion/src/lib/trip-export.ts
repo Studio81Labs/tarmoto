@@ -1,4 +1,4 @@
-import type { Trip, TripDay, Waypoint } from "@/lib/types";
+import type { RoutePreviewSegment, Trip, TripDay, Waypoint } from "@/lib/types";
 
 /**
  * Route export (US-39): GPX generation, share links, and mobile deep links
@@ -92,8 +92,16 @@ export function buildTripShareUrl(trip: Trip, origin: string): string {
   return `${base}/trips/${encodeURIComponent(trip.id)}`;
 }
 
-export function buildMobileDeepLink(trip: Trip): string {
-  return `${MOBILE_URL_SCHEME}://trips/${encodeURIComponent(trip.id)}`;
+/**
+ * Build the mobile deep link the "Push to mobile" action launches. The
+ * mobile app routes `tarmoto://trips/import?tripId=...&token=...` to its
+ * import screen, where the rider confirms and the snapshot is fetched
+ * from `/trip-shares/:token` (no auth, read-only) and copied into their
+ * library. The token is the share token returned by `POST /trip-shares`.
+ */
+export function buildMobileDeepLink(tripId: string, token: string): string {
+  const params = new URLSearchParams({ tripId, token });
+  return `${MOBILE_URL_SCHEME}://trips/import?${params.toString()}`;
 }
 
 /**
@@ -106,6 +114,106 @@ export function buildMobileDeepLink(trip: Trip): string {
  * tabs so the handoff works regardless of `noopener`.
  */
 export const TRIP_PRINT_STORAGE_KEY = "tarmoto-print-trip";
+
+export interface WaypointGroup {
+  label: string;
+  waypoints: Array<{
+    label: string;
+    typeLabel: string;
+    lat: number;
+    lng: number;
+  }>;
+}
+
+/**
+ * Group a day's waypoints into the buckets the printable trip plan renders
+ * separately ("Stops" / "Fuel" / "Accommodation"). Used by the PDF layout
+ * (US-39) so a rider can scan refuel and overnight points without sifting
+ * through the full waypoint list.
+ */
+export function groupDayWaypoints(day: TripDay): WaypointGroup[] {
+  const stops: WaypointGroup["waypoints"] = [];
+  const fuel: WaypointGroup["waypoints"] = [];
+  const accommodation: WaypointGroup["waypoints"] = [];
+  day.waypoints.forEach((wp, index) => {
+    const entry = {
+      label: wp.name ?? fallbackWaypointLabel(wp, index),
+      typeLabel: WAYPOINT_LABEL[wp.type],
+      lat: wp.location.lat,
+      lng: wp.location.lng,
+    };
+    if (wp.type === "fuel") fuel.push(entry);
+    else if (wp.type === "accommodation") accommodation.push(entry);
+    else stops.push(entry);
+  });
+  const groups: WaypointGroup[] = [];
+  if (stops.length > 0) groups.push({ label: "Stops", waypoints: stops });
+  if (fuel.length > 0) groups.push({ label: "Fuel", waypoints: fuel });
+  if (accommodation.length > 0)
+    groups.push({ label: "Accommodation", waypoints: accommodation });
+  return groups;
+}
+
+/**
+ * Pick the most "preview-worthy" road segments across all days for the PDF
+ * appendix (US-39). Sorted by quality * distance so the rider sees the
+ * highlights first; capped at `limit` (default 6) so the appendix stays
+ * within roughly one printed page.
+ */
+export function pickAppendixSegments(
+  trip: Trip,
+  limit = 6,
+): RoutePreviewSegment[] {
+  const all: RoutePreviewSegment[] = [];
+  for (const day of trip.days) {
+    if (day.segments?.length) {
+      for (const seg of day.segments) all.push(seg);
+    }
+  }
+  return all
+    .slice()
+    .sort(
+      (a, b) => b.qualityScore * b.distanceKm - a.qualityScore * a.distanceKm,
+    )
+    .slice(0, Math.max(0, limit));
+}
+
+/**
+ * Sample an elevation profile down to ~80 points so the printed sparkline
+ * stays readable without paying for hundreds of <line> elements per day.
+ * Returns the original array unchanged when it's already short.
+ */
+export function sampleElevationProfile(
+  profile: readonly number[],
+  maxPoints = 80,
+): number[] {
+  if (profile.length <= maxPoints) return profile.slice();
+  const out: number[] = [];
+  const step = (profile.length - 1) / (maxPoints - 1);
+  for (let i = 0; i < maxPoints; i++) {
+    out.push(profile[Math.round(i * step)]);
+  }
+  return out;
+}
+
+/**
+ * Concatenate the per-segment elevation profiles for a day so the print
+ * page can draw one sparkline covering the whole day's ride. Returns null
+ * when the day carries no segment data (e.g. imported GPX trips that skip
+ * the road-segment lookup).
+ */
+export function buildDayElevationProfile(day: TripDay): number[] | null {
+  if (!day.segments?.length) return null;
+  const points: number[] = [];
+  for (const seg of day.segments) {
+    if (!Array.isArray(seg.elevationProfile)) continue;
+    for (const value of seg.elevationProfile) {
+      if (Number.isFinite(value)) points.push(value);
+    }
+  }
+  if (points.length < 2) return null;
+  return sampleElevationProfile(points);
+}
 
 export function buildTurnList(trip: Trip): TurnListItem[] {
   return trip.days.map((day) => ({

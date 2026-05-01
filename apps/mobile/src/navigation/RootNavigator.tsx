@@ -39,6 +39,7 @@ import CommuteScreen from "@/screens/CommuteScreen";
 import RideDetailScreen from "@/screens/RideDetailScreen";
 import SettingsScreen from "@/screens/SettingsScreen";
 import JoinTripScreen from "@/screens/JoinTripScreen";
+import TripImportScreen from "@/screens/TripImportScreen";
 import LinkAccountScreen from "@/screens/LinkAccountScreen";
 import OfflineRegionsScreen from "@/screens/OfflineRegionsScreen";
 import EmergencyContactsScreen from "@/screens/EmergencyContactsScreen";
@@ -92,6 +93,11 @@ export type TripsStackParamList = {
   TripsList: undefined;
   TripCreate: undefined;
   TripJoin: { tripId?: string; inviteCode?: string } | undefined;
+  // US-39 / #283: deep-link target for the web "Push to mobile" handoff.
+  // `tripId` matches the source planner trip and is shown to the rider
+  // as a sanity check; `token` is the share token used to fetch the
+  // snapshot via `/trip-shares/:token`.
+  TripImport: { tripId?: string; token?: string } | undefined;
   TripDetail: { tripId: string };
   TripDay: { tripId: string; dayNumber: number };
   Navigate: { tripId: string; dayNumber: number };
@@ -139,6 +145,11 @@ const linking: LinkingOptions<RootTabParamList> = {
       TripsTab: {
         screens: {
           TripJoin: "trips/join",
+          // US-39 / #283: tarmoto://trips/import?tripId=...&token=...
+          // is what the web "Push to mobile" action launches; we map it
+          // to a dedicated screen that previews the share and posts to
+          // /trips/import on confirmation.
+          TripImport: "trips/import",
         },
       },
     },
@@ -241,6 +252,11 @@ function TripsNavigator() {
         name="TripJoin"
         component={JoinTripScreen}
         options={{ title: "Join a Trip" }}
+      />
+      <TripsStack.Screen
+        name="TripImport"
+        component={TripImportScreen}
+        options={{ title: "Import shared trip" }}
       />
       <TripsStack.Screen
         name="TripDetail"

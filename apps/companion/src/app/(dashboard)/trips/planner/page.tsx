@@ -505,7 +505,7 @@ export default function TripPlannerPage() {
             <Upload size={14} />
             Import GPX
           </button>
-          <TripExportMenu trip={displayedTrip} />
+          <TripExportMenu trip={displayedTrip} context="planner" />
           {!displayedTrip && (
             <button
               type="button"
