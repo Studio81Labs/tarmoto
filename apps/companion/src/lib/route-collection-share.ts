@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { API_BASE_SERVER } from "@/lib/config";
 import type { RouteCollectionDetail } from "@/lib/api";
 
@@ -11,19 +12,27 @@ export type { RouteCollectionDetail };
  *
  * Returns `null` for the 404 case (private/missing slug) so the caller can
  * `notFound()` cleanly instead of branching on a thrown error.
+ *
+ * Wrapped in React's `cache()` so `generateMetadata` and the page component
+ * dedupe to a single backend hit per render. The underlying `fetch` uses
+ * `cache: "no-store"` to opt out of Next.js's HTTP cache (we want a fresh
+ * read on every navigation), which also disables Next's automatic fetch
+ * dedup — `cache()` restores it at the function level for one render pass.
  */
-export async function fetchSharedCollection(
-  slug: string,
-): Promise<RouteCollectionDetail | null> {
-  const res = await fetch(
-    `${API_BASE_SERVER}/collections/by-slug/${encodeURIComponent(slug)}`,
-    { cache: "no-store" },
-  );
+export const fetchSharedCollection = cache(
+  async (slug: string): Promise<RouteCollectionDetail | null> => {
+    const res = await fetch(
+      `${API_BASE_SERVER}/collections/by-slug/${encodeURIComponent(slug)}`,
+      { cache: "no-store" },
+    );
 
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    throw new Error(`GET /collections/by-slug/${slug} failed (${res.status})`);
-  }
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      throw new Error(
+        `GET /collections/by-slug/${slug} failed (${res.status})`,
+      );
+    }
 
-  return (await res.json()) as RouteCollectionDetail;
-}
+    return (await res.json()) as RouteCollectionDetail;
+  },
+);
