@@ -45,12 +45,6 @@ export interface RouteCollectionView {
   updatedAt: string;
 }
 
-export interface CollectionInput {
-  title: string;
-  description?: string;
-  visibility: RouteCollectionVisibility;
-}
-
 export const MAX_COLLECTION_NAME_LENGTH = 80;
 export const MAX_COLLECTION_DESCRIPTION_LENGTH = 500;
 

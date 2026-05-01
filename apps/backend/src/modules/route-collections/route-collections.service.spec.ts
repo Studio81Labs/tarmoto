@@ -346,6 +346,27 @@ describe('RouteCollectionsService', () => {
         service.addItem(otherId, collectionId, { trip_id: tripId }),
       ).rejects.toThrow(ForbiddenException);
     });
+
+    it('locks the parent row to serialise concurrent MAX(position)+1', async () => {
+      // READ COMMITTED isolation does not prevent two concurrent
+      // addItem transactions from reading the same MAX(position) and
+      // writing duplicate position values. The fix is a pessimistic
+      // write lock on the parent row inside the txn — assert here that
+      // the lock option survives any future refactor.
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce(
+        baseCollection,
+      );
+      (itemRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
+
+      await service.addItem(ownerId, collectionId, { trip_id: tripId });
+
+      expect(collectionRepo.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: collectionId },
+          lock: { mode: 'pessimistic_write' },
+        }),
+      );
+    });
   });
 
   describe('removeItem', () => {

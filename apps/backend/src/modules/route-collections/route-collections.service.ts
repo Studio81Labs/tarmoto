@@ -194,8 +194,16 @@ export class RouteCollectionsService {
       const collectionRepo = manager.getRepository(RouteCollection);
       const itemRepo = manager.getRepository(RouteCollectionItem);
 
+      // SELECT ... FOR UPDATE on the parent row. PostgreSQL's default
+      // READ COMMITTED isolation does NOT prevent two concurrent
+      // `MAX(position)+1` reads from returning the same value, so the
+      // transaction alone isn't enough — we'd silently produce duplicate
+      // positions for the same collection. Locking the parent row
+      // serialises every concurrent `addItem` for the same collectionId
+      // (different collections stay independent) and releases at txn end.
       const collection = await collectionRepo.findOne({
         where: { id: collectionId },
+        lock: { mode: 'pessimistic_write' },
       });
       if (!collection) {
         throw new NotFoundException('Collection not found');
@@ -218,11 +226,9 @@ export class RouteCollectionsService {
         return this.toItemResponse(existing);
       }
 
-      // Compute next position via MAX(position)+1 inside the txn so two
-      // concurrent adds don't both land on the same value. Plain max() is
-      // fine here — there is no unique index on `position`, so a tie just
-      // produces visually ambiguous order; the per-collection FOR UPDATE
-      // would be overkill for a UI affordance.
+      // Safe to compute MAX(position)+1 now: the parent row lock above
+      // guarantees no other addItem for this collection is interleaving
+      // between this read and the insert below.
       const maxRow = await itemRepo
         .createQueryBuilder('i')
         .select('COALESCE(MAX(i.position), -1)', 'max')
