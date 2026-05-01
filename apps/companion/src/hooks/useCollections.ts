@@ -9,6 +9,7 @@ import {
   mapDetailToView,
   mapSummaryToView,
   migrateLegacyCollections,
+  migrationDoneKey,
   readLegacyCollections,
   sortCollectionsByName,
   type RouteCollectionView,
@@ -170,10 +171,7 @@ export function useCollections(userId: string | null): UseCollectionsResult {
             // localStorage in case the user changes their mind via dev tools.
             try {
               if (typeof window !== "undefined") {
-                window.localStorage.setItem(
-                  `tarmoto:route-collections-migrated:${userId}`,
-                  "1",
-                );
+                window.localStorage.setItem(migrationDoneKey(userId), "1");
               }
             } catch {
               // Quota / private mode — best-effort.

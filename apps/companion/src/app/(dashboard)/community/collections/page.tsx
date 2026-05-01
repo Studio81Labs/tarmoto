@@ -59,29 +59,27 @@ export default function RouteCollectionsPage() {
   >(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // Throws on failure so the modal stays open and renders the error inside
+  // its own form. The earlier shape (catch + setActionError + leave modal
+  // open) hid the error behind the modal's fixed overlay — the user got no
+  // feedback that anything went wrong.
   const submitModal = async (input: CollectionInputForm) => {
+    if (!modal) return;
     setActionError(null);
-    try {
-      if (!modal) return;
-      if (modal.mode === "create") {
-        await createCollection({
-          title: input.title.trim(),
-          description: input.description.trim() || undefined,
-          visibility: input.visibility,
-        });
-      } else {
-        await updateCollection(modal.collection.id, {
-          title: input.title.trim(),
-          description: input.description.trim() || null,
-          visibility: input.visibility,
-        });
-      }
-      setModal(null);
-    } catch (err) {
-      setActionError(
-        err instanceof Error ? err.message : "Failed to save collection",
-      );
+    if (modal.mode === "create") {
+      await createCollection({
+        title: input.title.trim(),
+        description: input.description.trim() || undefined,
+        visibility: input.visibility,
+      });
+    } else {
+      await updateCollection(modal.collection.id, {
+        title: input.title.trim(),
+        description: input.description.trim() || null,
+        visibility: input.visibility,
+      });
     }
+    setModal(null);
   };
 
   const deleteCollection = async (collection: RouteCollectionView) => {
@@ -467,6 +465,13 @@ function CollectionModal({
     setSubmitting(true);
     try {
       await onSubmit({ title, description, visibility });
+    } catch (err) {
+      // Render the error inline so it's visible above the modal overlay.
+      // The page's own actionError banner sits behind us — a parent-level
+      // setState wouldn't paint until the modal closed.
+      setError(
+        err instanceof Error ? err.message : "Failed to save collection",
+      );
     } finally {
       setSubmitting(false);
     }

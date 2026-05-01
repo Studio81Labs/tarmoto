@@ -10,6 +10,7 @@ import {
   User,
 } from "lucide-react";
 import { fetchSharedCollection } from "@/lib/route-collection-share";
+import { formatRelativeTime } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -82,7 +83,7 @@ export default async function SharedCollectionPage({
             {detail.item_count} route{detail.item_count === 1 ? "" : "s"}
           </Pill>
           <Pill icon={<Calendar size={14} />}>
-            Updated {formatRelativeDate(detail.updated_at)}
+            Updated {formatRelativeTime(detail.updated_at)}
           </Pill>
         </div>
       </header>
@@ -176,19 +177,4 @@ function Pill({
       <span>{children}</span>
     </span>
   );
-}
-
-function formatRelativeDate(iso: string): string {
-  const then = new Date(iso);
-  if (Number.isNaN(then.getTime())) return "recently";
-  const diffMs = Date.now() - then.getTime();
-  const day = 24 * 60 * 60 * 1000;
-  if (diffMs < day) return "today";
-  if (diffMs < 2 * day) return "yesterday";
-  const days = Math.floor(diffMs / day);
-  if (days < 30) return `${days} day${days === 1 ? "" : "s"} ago`;
-  const months = Math.floor(days / 30);
-  if (months < 12) return `${months} month${months === 1 ? "" : "s"} ago`;
-  const years = Math.floor(months / 12);
-  return `${years} year${years === 1 ? "" : "s"} ago`;
 }
