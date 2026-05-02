@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Test } from '@nestjs/testing';
-import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
+import { getDataSourceToken } from '@nestjs/typeorm';
 import { HazardsCleanupProcessor } from './hazards-cleanup.processor.js';
 import { BadgesRecheckProcessor } from './badges-recheck.processor.js';
 import { DigestWeeklyProcessor } from './digest-weekly.processor.js';
@@ -15,7 +15,6 @@ import { JobsProducer } from '../jobs.producer.js';
 import { DataExportProcessor as DataExportRunner } from '../../account/data-export/data-export.processor.js';
 import { AccountDeletionService } from '../../account/account-deletion.service.js';
 import { FunZoneClusteringService } from '../../roads/fun-zone-clustering.service.js';
-import { User } from '../../../entities/user.entity.js';
 import { JOB_NAMES } from '../jobs.constants.js';
 
 function fakeJob<T = unknown>(
@@ -216,23 +215,33 @@ describe('DataExportQueueProcessor', () => {
 describe('AccountDeletionSweepProcessor', () => {
   async function buildProcessor(found: { id: string }[]): Promise<{
     processor: AccountDeletionSweepProcessor;
-    users: { find: jest.Mock };
+    repoFind: jest.Mock;
+    txn: jest.Mock;
     producer: { enqueueAccountDeletionFinalize: jest.Mock };
   }> {
-    const users = { find: jest.fn().mockResolvedValue(found) };
+    const repoFind = jest.fn().mockResolvedValue(found);
+    const manager = {
+      getRepository: jest.fn().mockReturnValue({ find: repoFind }),
+    };
+    const txn = jest.fn(
+      async (cb: (m: typeof manager) => Promise<unknown>): Promise<unknown> =>
+        cb(manager),
+    );
+    const dataSource = { transaction: txn };
     const producer = {
       enqueueAccountDeletionFinalize: jest.fn().mockResolvedValue(undefined),
     };
     const moduleRef = await Test.createTestingModule({
       providers: [
         AccountDeletionSweepProcessor,
-        { provide: getRepositoryToken(User), useValue: users },
+        { provide: getDataSourceToken(), useValue: dataSource },
         { provide: JobsProducer, useValue: producer },
       ],
     }).compile();
     return {
       processor: moduleRef.get(AccountDeletionSweepProcessor),
-      users,
+      repoFind,
+      txn,
       producer,
     };
   }
@@ -259,11 +268,11 @@ describe('AccountDeletionSweepProcessor', () => {
     // user closest to breaching their deadline must come first off
     // the queue. Asserting the ORM call shape so a regression of
     // dropping `order: { deletion_scheduled_at: 'ASC' }` fails here.
-    const { processor, users } = await buildProcessor([{ id: 'u1' }]);
+    const { processor, repoFind } = await buildProcessor([{ id: 'u1' }]);
     await processor.process(
       fakeJob(JOB_NAMES.ACCOUNT_DELETION_SWEEP_RUN, {}) as never,
     );
-    expect(users.find).toHaveBeenCalledWith(
+    expect(repoFind).toHaveBeenCalledWith(
       expect.objectContaining({
         order: { deletion_scheduled_at: 'ASC' },
       }),
@@ -274,12 +283,50 @@ describe('AccountDeletionSweepProcessor', () => {
     // Old @Cron at hourly × 50 users = 1,200/day. New daily sweep
     // must clear at least that volume in a single tick, with
     // headroom for spikes.
-    const { processor, users } = await buildProcessor([]);
+    const { processor, repoFind } = await buildProcessor([]);
     await processor.process(
       fakeJob(JOB_NAMES.ACCOUNT_DELETION_SWEEP_RUN, {}) as never,
     );
-    const callArgs = users.find.mock.calls[0][0] as { take: number };
+    const callArgs = repoFind.mock.calls[0][0] as { take: number };
     expect(callArgs.take).toBeGreaterThanOrEqual(1200);
+  });
+
+  it('claims rows with FOR UPDATE SKIP LOCKED so two pods sweeping simultaneously cannot double-claim (#337)', async () => {
+    // Multi-pod safety: without SKIP LOCKED, two backend pods running
+    // the daily sweep at the same cron tick both SELECT the same
+    // due-user slice and both enqueue a finalize job per user. BullMQ's
+    // jobId dedup catches this today, but a typo or future refactor
+    // that disables that dedup would silently re-enable double-purge.
+    // The DB-level claim eliminates that exposure entirely.
+    const { processor, repoFind, txn } = await buildProcessor([{ id: 'u1' }]);
+    await processor.process(
+      fakeJob(JOB_NAMES.ACCOUNT_DELETION_SWEEP_RUN, {}) as never,
+    );
+    expect(txn).toHaveBeenCalledTimes(1);
+    expect(repoFind).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lock: { mode: 'pessimistic_write', onLocked: 'skip_locked' },
+      }),
+    );
+  });
+
+  it('runs the claim and every enqueue inside the same transaction so locks are held until the slice is fully enqueued', async () => {
+    // The locks are released at transaction commit. Holding them
+    // across the producer.enqueue calls means a concurrent sweeper
+    // that beats us to the cron tick by milliseconds still sees this
+    // pod's slice as locked and SKIPs it for its own claim — instead
+    // of racing past the SELECT and producing duplicate finalize jobs.
+    const { processor, txn, producer } = await buildProcessor([
+      { id: 'u1' },
+      { id: 'u2' },
+    ]);
+    await processor.process(
+      fakeJob(JOB_NAMES.ACCOUNT_DELETION_SWEEP_RUN, {}) as never,
+    );
+    // Single transaction wraps the whole sweep — not one txn per user,
+    // not zero txns with a bare `find`.
+    expect(txn).toHaveBeenCalledTimes(1);
+    expect(producer.enqueueAccountDeletionFinalize).toHaveBeenCalledTimes(2);
   });
 });
 
