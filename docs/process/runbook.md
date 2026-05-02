@@ -308,7 +308,9 @@ var, and revoking the old key.
 User-uploaded binaries flow through a pluggable `ObjectStorage`
 interface (see `apps/backend/src/modules/storage/`). The driver is
 chosen by `TARMOTO_STORAGE_DRIVER` and defaults to `local` so
-contributors get working avatar uploads without env wiring.
+contributors get working uploads without env wiring. Avatars and
+review photos both consume the interface; data-export bundles still
+use the legacy `ExportStorage` adapter pending its own migration.
 
 ### Drivers
 
@@ -343,7 +345,7 @@ public origin.
 | Variable                       | Required when `s3` | Notes                                                                                                                                                                       |
 | ------------------------------ | :----------------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `TARMOTO_STORAGE_DRIVER`       |        yes         | Set to `s3`. Anything else (or unset) selects `local`.                                                                                                                      |
-| `TARMOTO_S3_BUCKET`            |        yes         | Bucket name. The backend writes under `avatars/`, `reviews/`, `exports/` prefixes — keep them in one bucket.                                                                |
+| `TARMOTO_S3_BUCKET`            |        yes         | Bucket name. The backend writes under `avatars/`, `road-review-photos/`, `exports/` prefixes — keep them in one bucket.                                                     |
 | `TARMOTO_S3_REGION`            |        yes         | AWS region. R2 accepts any string but typically `auto`. MinIO accepts `us-east-1`.                                                                                          |
 | `TARMOTO_S3_ACCESS_KEY_ID`     |        yes         | Treat as secret. Store in 1Password / SSM / R2 token.                                                                                                                       |
 | `TARMOTO_S3_SECRET_ACCESS_KEY` |        yes         | Treat as secret.                                                                                                                                                            |
@@ -352,9 +354,9 @@ public origin.
 | `TARMOTO_S3_PUBLIC_URL_BASE`   |         no         | Public URL base for the bucket (CDN domain or R2 custom domain). When unset the backend builds a URL from endpoint + bucket — fine for MinIO, rarely what production wants. |
 
 Avatars and review photos are world-readable, so the bucket must
-allow anonymous GET on `avatars/*` and `reviews/*`. GDPR exports
-under `exports/*` should be private and served via signed URLs (see
-`apps/backend/src/modules/account/data-export/`).
+allow anonymous GET on `avatars/*` and `road-review-photos/*`.
+GDPR exports under `exports/*` should be private and served via
+signed URLs (see `apps/backend/src/modules/account/data-export/`).
 
 ### Local MinIO recipe
 
@@ -416,6 +418,50 @@ When you want to fully cut over to S3 / R2:
 3. Set the env vars (`TARMOTO_STORAGE_DRIVER=s3` plus the bucket
    credentials), redeploy, and verify a new avatar upload lands in
    the bucket and renders end-to-end on the mobile client.
+
+### Migrating existing review photos from local FS to S3
+
+Review photos use the same pluggable `ObjectStorage` interface as
+avatars (issue #356), so the cutover follows the same pattern. The
+storage key prefix is `road-review-photos/` (matches the URL path
+tail) so already-stored URLs like
+`https://<api-host>/uploads/road-review-photos/<file>` keep
+resolving while the API serves the legacy `/uploads` static route.
+
+When you fully cut over to S3 / R2:
+
+1. Sync the local filesystem to the bucket (same shape as avatars):
+
+   ```bash
+   aws s3 sync /var/lib/tarmoto/uploads/road-review-photos/ \
+     s3://tarmoto-prod/road-review-photos/ \
+     --content-type 'image/jpeg'   # adjust per file or rely on heuristics
+   ```
+
+2. Backfill `road_reviews.photos` to point at the bucket's CDN URL.
+   `photos` is a `text[]`, so the rewrite has to happen per-element:
+
+   ```sql
+   UPDATE road_reviews
+      SET photos = ARRAY(
+        SELECT regexp_replace(
+          p,
+          '^https?://[^/]+/uploads/road-review-photos/(.*)$',
+          'https://cdn.tarmoto.app/road-review-photos/\1'
+        )
+        FROM unnest(photos) AS p
+      )
+    WHERE EXISTS (
+      SELECT 1 FROM unnest(photos) AS p
+      WHERE p ~ '^https?://[^/]+/uploads/road-review-photos/'
+    );
+   ```
+
+3. Set the env vars and redeploy. The reviews service trusts both
+   `TARMOTO_PUBLIC_BASE_URL` and the storage's CDN origin as managed
+   sources for the cascade-delete + ownership guards, so a new
+   upload after cutover renders end-to-end and edits / deletes
+   continue to clean up orphans.
 
 ### Symptoms and fixes
 
