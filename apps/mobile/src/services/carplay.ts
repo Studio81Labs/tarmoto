@@ -39,15 +39,15 @@
  *      the head-unit template and the on-phone HUD — keeping it pure
  *      avoids drift across surfaces.
  *
- * Out of scope for this slice:
- *   - Voice-trigger to start a hazard report (US-17 AC #5). Documented
- *     scope cut: Android Auto's voice flow requires a Google Assistant
- *     App Action registration in the Play Console plus an Actions
- *     model file the head unit hosts; the React surface can request
- *     the AA system speech-to-text via `SearchTemplate` (which we
- *     already use for the report flow) but cannot register a voice
- *     intent like "Hey Google, ask Tarmoto to report a pothole"
- *     without that out-of-band Console wiring. Tracked separately.
+ * Voice-trigger to start a hazard report (US-17 AC #5) lives outside
+ * this module — see `android/app/src/main/res/xml/shortcuts.xml` and
+ * the `MapTab > HazardReport` linking entry in
+ * `navigation/RootNavigator.tsx` (#343). The Google Assistant
+ * capability fires a `tarmoto://hazard/report?preselectedType=<type>`
+ * deep link aimed at MainActivity, which routes through React
+ * Navigation's linking config rather than the CarPlay/AA template
+ * surface — the head unit's voice model is the entry point, not the
+ * Pane/Map template.
  */
 
 import { Platform } from "react-native";

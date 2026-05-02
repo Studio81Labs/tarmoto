@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  US-17 follow-up (#343) — inline inventory for the
+  `custom.actions.intent.REPORT_HAZARD` App Actions capability.
+
+  Each array enumerates the spoken-language phrases the Assistant
+  matches against when resolving the hazard-type parameter. The
+  matched array's name maps back to a `<shortcut>` in
+  `res/xml/shortcuts.xml`, and the shortcut's `parameter-binding`
+  emits the canonical hazard type (matching `HAZARD_TYPES` from
+  `@tarmoto/shared`) into the `tarmoto://hazard/report` deep link.
+
+  Synonyms are deliberately broad — riders on a bike say "hole" not
+  "pothole", "spilled oil" not "oil spill", etc. Plurals and common
+  shorthand are included so the Assistant doesn't bounce on minor
+  wording variation. Keep entries lower-case; matching is case-
+  insensitive but lower-case is the convention in App Actions docs.
+
+  The first entry of each list is the canonical type Tarmoto's
+  shared `HAZARD_TYPES` accepts — the Assistant emits whichever
+  matched item triggered, so the hazard report screen receives the
+  canonical value as its `preselectedType` route param.
+-->
+<resources>
+
+  <string-array name="hazard_pothole_synonyms" translatable="false">
+    <item>pothole</item>
+    <item>potholes</item>
+    <item>hole</item>
+    <item>holes</item>
+    <item>pit</item>
+  </string-array>
+
+  <string-array name="hazard_gravel_synonyms" translatable="false">
+    <item>gravel</item>
+    <item>loose gravel</item>
+    <item>stones</item>
+    <item>chippings</item>
+  </string-array>
+
+  <string-array name="hazard_oil_spill_synonyms" translatable="false">
+    <item>oil_spill</item>
+    <item>oil spill</item>
+    <item>oil</item>
+    <item>diesel</item>
+    <item>diesel spill</item>
+    <item>spilled oil</item>
+    <item>fuel spill</item>
+  </string-array>
+
+  <string-array name="hazard_roadworks_synonyms" translatable="false">
+    <item>roadworks</item>
+    <item>road works</item>
+    <item>construction</item>
+    <item>roadwork</item>
+  </string-array>
+
+  <string-array name="hazard_animals_synonyms" translatable="false">
+    <item>animals</item>
+    <item>animal</item>
+    <item>deer</item>
+    <item>livestock</item>
+    <item>roadkill</item>
+  </string-array>
+
+  <string-array name="hazard_police_synonyms" translatable="false">
+    <item>police</item>
+    <item>cop</item>
+    <item>cops</item>
+    <item>speed trap</item>
+    <item>checkpoint</item>
+  </string-array>
+
+  <string-array name="hazard_flooding_synonyms" translatable="false">
+    <item>flooding</item>
+    <item>flood</item>
+    <item>standing water</item>
+    <item>flooded road</item>
+    <item>water</item>
+  </string-array>
+
+  <string-array name="hazard_ice_synonyms" translatable="false">
+    <item>ice</item>
+    <item>black ice</item>
+    <item>icy</item>
+    <item>icy patch</item>
+    <item>frost</item>
+  </string-array>
+
+  <string-array name="hazard_other_synonyms" translatable="false">
+    <item>other</item>
+    <item>other hazard</item>
+    <item>hazard</item>
+    <item>danger</item>
+    <item>obstacle</item>
+    <item>debris</item>
+  </string-array>
+
+</resources>

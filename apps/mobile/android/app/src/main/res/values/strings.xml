@@ -1,3 +1,21 @@
 <resources>
     <string name="app_name">TarmotoApp</string>
+
+    <!--
+      US-17 follow-up (#343) — short labels for the App Actions
+      shortcuts declared in `res/xml/shortcuts.xml`. Each label is
+      surfaced by the system's shortcut UI (long-press launcher,
+      Assistant suggestions) when it offers a one-tap follow-up to a
+      voice query. The leading verb keeps them readable in the AA
+      action button list and the phone Assistant suggestion chips.
+    -->
+    <string name="hazard_pothole_label">Report pothole</string>
+    <string name="hazard_gravel_label">Report gravel</string>
+    <string name="hazard_oil_spill_label">Report oil spill</string>
+    <string name="hazard_roadworks_label">Report roadworks</string>
+    <string name="hazard_animals_label">Report animals</string>
+    <string name="hazard_police_label">Report police</string>
+    <string name="hazard_flooding_label">Report flooding</string>
+    <string name="hazard_ice_label">Report ice</string>
+    <string name="hazard_other_label">Report hazard</string>
 </resources>

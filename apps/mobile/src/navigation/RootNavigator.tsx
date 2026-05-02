@@ -15,6 +15,7 @@ import Icon from "@react-native-vector-icons/material-design-icons";
 type IconName = React.ComponentProps<typeof Icon>["name"];
 import { colors } from "@/theme";
 import type { HazardType, LatLng, Waypoint } from "@/types";
+import { parseHazardTypeParam } from "@/services/hazardReportLink";
 import CarPlayRideMirror from "@/components/CarPlayRideMirror";
 import RideDurationTicker from "@/components/RideDurationTicker";
 import CrashDetectionRunner from "@/components/CrashDetectionRunner";
@@ -172,6 +173,22 @@ const linking: LinkingOptions<RootTabParamList> = {
           // to a dedicated screen that previews the share and posts to
           // /trips/import on confirmation.
           TripImport: "trips/import",
+        },
+      },
+      // US-17 follow-up (#343): the Google Assistant App Action declared in
+      // `android/app/src/main/res/xml/shortcuts.xml` fires this URL when the
+      // rider says "Hey Google, ask Tarmoto to report a pothole" on Android
+      // Auto or the phone Assistant. Routing through the Map tab means the
+      // tab nav state is sane after the rider dismisses the modal — same
+      // footgun-avoidance choice as the in-app FAB on MapScreen.
+      MapTab: {
+        screens: {
+          HazardReport: {
+            path: "hazard/report",
+            parse: {
+              preselectedType: (value: string) => parseHazardTypeParam(value),
+            },
+          },
         },
       },
     },
