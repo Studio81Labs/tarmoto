@@ -83,10 +83,10 @@ export class CrashAlertContactStatusDto {
   @ApiProperty({ enum: ['sent', 'failed', 'skipped'] })
   status!: 'sent' | 'failed' | 'skipped';
 
-  @ApiProperty({ required: false, nullable: true })
+  @ApiProperty({ nullable: true })
   provider_message_id!: string | null;
 
-  @ApiProperty({ required: false, nullable: true })
+  @ApiProperty({ nullable: true })
   error!: string | null;
 }
 

@@ -194,6 +194,7 @@ describe("rideRouteFeatureCollection", () => {
   function makeSegment(quality: number): RideSegment {
     return {
       road_segment_id: "seg",
+      road_name: null,
       quality_reading: quality,
       speed_avg: 50,
       lean_angle_max: 0,
@@ -225,6 +226,7 @@ describe("rideRouteFeatureCollection", () => {
     const segs: RideSegment[] = [
       {
         road_segment_id: "seg",
+        road_name: null,
         quality_reading: Number.NaN,
         speed_avg: 0,
         lean_angle_max: 0,
@@ -272,6 +274,7 @@ describe("rideRouteFeatureCollection", () => {
     const segs: RideSegment[] = [
       {
         road_segment_id: "seg",
+        road_name: null,
         quality_reading: 0,
         speed_avg: 0,
         lean_angle_max: 0,
@@ -364,6 +367,7 @@ describe("segmentQualityHistogram", () => {
   function seg(quality: number): RideSegment {
     return {
       road_segment_id: "seg",
+      road_name: null,
       quality_reading: quality,
       speed_avg: 50,
       lean_angle_max: 0,
@@ -411,13 +415,16 @@ describe("segmentQualityHistogram", () => {
 describe("buildRideShareMessage", () => {
   const ride: RideDetail = {
     id: "ride-1",
+    ride_type: "free",
+    status: "completed",
     started_at: "2026-04-17T14:32:11",
+    ended_at: "2026-04-17T16:02:11",
     distance_km: 42.5,
     duration_min: 90,
     avg_speed: 45,
     avg_road_quality: 4.0,
-    ride_type: "free",
-    status: "completed",
+    avg_curviness: null,
+    name: null,
     route_geometry: [],
     max_speed: 95,
     elevation_gain: 0,

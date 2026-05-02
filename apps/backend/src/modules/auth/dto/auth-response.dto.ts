@@ -1,21 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-
-class UserResponse {
-  @ApiProperty()
-  id!: string;
-
-  @ApiProperty()
-  email!: string;
-
-  @ApiProperty()
-  display_name!: string;
-
-  @ApiProperty({ required: false, nullable: true })
-  phone!: string | null;
-
-  @ApiProperty()
-  created_at!: string;
-}
+import { UserResponseDto } from '../../users/dto/user-response.dto.js';
 
 export class AuthResponseDto {
   @ApiProperty()
@@ -27,6 +11,6 @@ export class AuthResponseDto {
   @ApiProperty({ description: 'Seconds until access token expires' })
   expires_in!: number;
 
-  @ApiProperty({ type: UserResponse })
-  user!: UserResponse;
+  @ApiProperty({ type: UserResponseDto })
+  user!: UserResponseDto;
 }

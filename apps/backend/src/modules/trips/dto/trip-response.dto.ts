@@ -1,5 +1,34 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+const TRIP_STATUSES = ['draft', 'planned', 'active', 'completed'] as const;
+type TripStatus = (typeof TRIP_STATUSES)[number];
+
+const TRIP_ROAD_PREFERENCES = ['curvy', 'scenic', 'fast', 'mixed'] as const;
+type TripRoadPreference = (typeof TRIP_ROAD_PREFERENCES)[number];
+
+const TRIP_MEMBER_ROLES = ['owner', 'admin', 'member'] as const;
+type TripMemberRole = (typeof TRIP_MEMBER_ROLES)[number];
+
+const TRIP_WAYPOINT_TYPES = [
+  'start',
+  'via',
+  'fuel',
+  'food',
+  'coffee',
+  'hotel',
+  'photo',
+  'end',
+] as const;
+type TripWaypointType = (typeof TRIP_WAYPOINT_TYPES)[number];
+
+class TripDayGeometryPointDto {
+  @ApiProperty()
+  lat!: number;
+
+  @ApiProperty()
+  lng!: number;
+}
+
 export class TripSummaryDto {
   @ApiProperty()
   id!: string;
@@ -13,8 +42,8 @@ export class TripSummaryDto {
   @ApiProperty()
   num_days!: number;
 
-  @ApiProperty({ enum: ['draft', 'planned', 'active', 'completed'] })
-  status!: string;
+  @ApiProperty({ enum: TRIP_STATUSES })
+  status!: TripStatus;
 
   @ApiProperty()
   member_count!: number;
@@ -30,8 +59,8 @@ export class TripMemberDto {
   @ApiProperty()
   display_name!: string;
 
-  @ApiProperty({ enum: ['owner', 'admin', 'member'] })
-  role!: string;
+  @ApiProperty({ enum: TRIP_MEMBER_ROLES })
+  role!: TripMemberRole;
 
   @ApiProperty()
   joined_at!: string;
@@ -53,10 +82,8 @@ export class TripWaypointDto {
   @ApiProperty({ nullable: true })
   name!: string | null;
 
-  @ApiProperty({
-    enum: ['start', 'via', 'fuel', 'food', 'coffee', 'hotel', 'photo', 'end'],
-  })
-  waypoint_type!: string;
+  @ApiProperty({ enum: TRIP_WAYPOINT_TYPES })
+  waypoint_type!: TripWaypointType;
 
   @ApiProperty({ nullable: true })
   road_segment_id!: string | null;
@@ -113,10 +140,10 @@ export class TripDayDto {
   estimated_time_min!: number;
 
   @ApiProperty({
-    type: [Object],
+    type: [TripDayGeometryPointDto],
     description: 'Polyline points (lat/lng) of the day route.',
   })
-  route_geometry!: Array<{ lat: number; lng: number }>;
+  route_geometry!: TripDayGeometryPointDto[];
 
   @ApiProperty({ type: [TripWaypointDto] })
   waypoints!: TripWaypointDto[];
@@ -132,8 +159,8 @@ export class TripDetailDto extends TripSummaryDto {
   @ApiProperty()
   min_quality!: number;
 
-  @ApiProperty()
-  road_preference!: string;
+  @ApiProperty({ enum: TRIP_ROAD_PREFERENCES })
+  road_preference!: TripRoadPreference;
 
   @ApiProperty()
   invite_code!: string;

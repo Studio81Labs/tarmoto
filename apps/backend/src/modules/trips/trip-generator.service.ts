@@ -811,7 +811,15 @@ export class TripGeneratorService {
               lat: w.lat,
               lng: w.lng,
               name: w.name,
-              waypoint_type: w.waypoint_type,
+              waypoint_type: w.waypoint_type as
+                | 'start'
+                | 'via'
+                | 'fuel'
+                | 'food'
+                | 'coffee'
+                | 'hotel'
+                | 'photo'
+                | 'end',
               road_segment_id: null,
               notes: w.notes,
               duration_min: w.duration_min,

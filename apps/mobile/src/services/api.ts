@@ -157,7 +157,7 @@ class ApiService {
     const data = unwrap(result, "Registration failed");
     storeTokens(data);
     void registerForPush(this.pushApi());
-    return data as unknown as AuthResponse;
+    return data;
   }
 
   async login(email: string, password: string): Promise<AuthResponse> {
@@ -167,7 +167,7 @@ class ApiService {
     const data = unwrap(result, "Login failed");
     storeTokens(data);
     void registerForPush(this.pushApi());
-    return data as unknown as AuthResponse;
+    return data;
   }
 
   logout(): void {
@@ -294,6 +294,11 @@ class ApiService {
     fileName?: string;
   }): Promise<User> {
     const form = new FormData();
+    // TODO drift-detection-irrelevant: multipart — openapi-fetch lacks
+    // first-class RN FormData support, so the casts on the body and the
+    // RN file descriptor are necessary to keep the platform in charge of
+    // the multipart boundary header. There's no spec-shape to drift
+    // against here.
     form.append("file", {
       uri: photo.uri,
       type: photo.mimeType ?? "image/jpeg",
@@ -354,21 +359,27 @@ class ApiService {
         trip_day_id: tripDayId,
       },
     });
-    return unwrap(result, "Failed to start ride") as unknown as RideDetail;
+    // The /start response is a RideResponseDto (the slim shape) but the
+    // mobile UI expects a RideDetail. The two share the same key set —
+    // detail-only fields (route_geometry, segments, lean_distribution)
+    // come back null/empty for a freshly-started ride — so a structural
+    // cast at the boundary is safe rather than a drift-hiding `unknown`.
+    return unwrap(result, "Failed to start ride") as RideDetail;
   }
 
   async stopRide(rideId: string): Promise<RideDetail> {
     const result = await client.POST("/api/v1/rides/{rideId}/stop", {
       params: { path: { rideId } },
     });
-    return unwrap(result, "Failed to stop ride") as unknown as RideDetail;
+    // /stop returns the slim RideResponseDto — see `startRide`.
+    return unwrap(result, "Failed to stop ride") as RideDetail;
   }
 
   async getRide(rideId: string): Promise<RideDetail> {
     const result = await client.GET("/api/v1/rides/{rideId}", {
       params: { path: { rideId } },
     });
-    return unwrap(result, "Failed to load ride") as unknown as RideDetail;
+    return unwrap(result, "Failed to load ride");
   }
 
   async listRides(
@@ -381,14 +392,11 @@ class ApiService {
         query: {
           limit,
           offset,
-          type: type as Schemas["RideListResponseDto"] extends never
-            ? never
-            : "free" | "commute" | "trip" | "tracked" | undefined,
+          type: type as "free" | "commute" | "trip" | "tracked" | undefined,
         },
       },
     });
-    const data = unwrap(result, "Failed to list rides");
-    return data as unknown as { rides: RideSummary[]; total: number };
+    return unwrap(result, "Failed to list rides");
   }
 
   /**
@@ -402,6 +410,12 @@ class ApiService {
       params: { path: { rideId } },
       parseAs: "text",
     });
+    // TODO drift-detection-irrelevant: text-body — the spec marks this
+    // operation's response as `content?: never` (no JSON schema), so the
+    // typed-client return type is `never` even though `parseAs: "text"`
+    // returns the raw GPX XML string. Surfacing `application/gpx+xml`
+    // in the backend swagger annotations would let openapi-typescript
+    // generate `string` here and the cast can go away.
     return unwrap(result, "Failed to export ride GPX") as unknown as string;
   }
 
@@ -415,6 +429,7 @@ class ApiService {
     const result = await client.GET("/api/v1/rides/export.gpx", {
       parseAs: "text",
     });
+    // TODO drift-detection-irrelevant: text-body — same as exportRideGpx.
     return unwrap(result, "Failed to export rides GPX") as unknown as string;
   }
 
@@ -427,6 +442,8 @@ class ApiService {
     const result = await client.GET("/api/v1/rides/export.csv", {
       parseAs: "text",
     });
+    // TODO drift-detection-irrelevant: text-body — same as exportRideGpx,
+    // but for `text/csv`.
     return unwrap(result, "Failed to export rides CSV") as unknown as string;
   }
 
@@ -512,10 +529,7 @@ class ApiService {
     const result = await client.GET("/api/v1/roads/{segmentId}", {
       params: { path: { segmentId } },
     });
-    return unwrap(
-      result,
-      "Failed to load road segment",
-    ) as unknown as RoadSegmentDetail;
+    return unwrap(result, "Failed to load road segment");
   }
 
   async getFunZones(bbox: string): Promise<FunZone[]> {
@@ -627,7 +641,7 @@ class ApiService {
     const result = await client.POST("/api/v1/trips", {
       body: params as Schemas["CreateTripDto"],
     });
-    return unwrap(result, "Failed to create trip") as unknown as Trip;
+    return unwrap(result, "Failed to create trip");
   }
 
   /**
@@ -647,14 +661,14 @@ class ApiService {
     const result = await client.POST("/api/v1/trips/import", {
       body: params,
     });
-    return unwrap(result, "Failed to import trip") as unknown as Trip;
+    return unwrap(result, "Failed to import trip");
   }
 
   async getTrip(tripId: string): Promise<Trip> {
     const result = await client.GET("/api/v1/trips/{tripId}", {
       params: { path: { tripId } },
     });
-    return unwrap(result, "Failed to load trip") as unknown as Trip;
+    return unwrap(result, "Failed to load trip");
   }
 
   async generateTripRoute(
@@ -681,10 +695,7 @@ class ApiService {
         surfaces: options.surfaces as Schemas["GenerateTripDto"]["surfaces"],
       },
     });
-    return unwrap(
-      result,
-      "Failed to generate trip route",
-    ) as unknown as TripGenerationResult;
+    return unwrap(result, "Failed to generate trip route");
   }
 
   async joinTrip(tripId: string, inviteCode: string): Promise<void> {
@@ -715,20 +726,14 @@ class ApiService {
     const result = await client.POST("/api/v1/group-rides", {
       body: { name },
     });
-    return unwrap(
-      result,
-      "Failed to create group ride",
-    ) as unknown as GroupRideDetail;
+    return unwrap(result, "Failed to create group ride");
   }
 
   async joinGroupRide(code: string): Promise<GroupRideDetail> {
     const result = await client.POST("/api/v1/group-rides/{code}/join", {
       params: { path: { code } },
     });
-    return unwrap(
-      result,
-      "Failed to join group ride",
-    ) as unknown as GroupRideDetail;
+    return unwrap(result, "Failed to join group ride");
   }
 
   async leaveGroupRide(groupRideId: string): Promise<void> {
@@ -749,10 +754,7 @@ class ApiService {
     const result = await client.GET("/api/v1/group-rides/{id}", {
       params: { path: { id: groupRideId } },
     });
-    return unwrap(
-      result,
-      "Failed to load group ride",
-    ) as unknown as GroupRideDetail;
+    return unwrap(result, "Failed to load group ride");
   }
 
   // ── Reviews ──
@@ -846,6 +848,10 @@ class ApiService {
     options?: { signal?: AbortSignal },
   ): Promise<{ photos: string[] }> {
     const form = new FormData();
+    // TODO drift-detection-irrelevant: multipart — same rationale as
+    // `uploadAvatar`. The Blob / { files: string[] } / bodySerializer
+    // casts below keep the platform in charge of the multipart boundary
+    // because openapi-fetch can't model RN FormData natively.
     for (const [i, photo] of photos.entries()) {
       // React Native's FormData accepts the `{ uri, type, name }`
       // shape and serialises it into a multipart attachment without
@@ -895,14 +901,18 @@ class ApiService {
 
   async getCommuteRoutes(): Promise<CommuteRoute[]> {
     const result = await client.GET("/api/v1/commute/routes");
-    return unwrap(
-      result,
-      "Failed to load commute routes",
-    ) as unknown as CommuteRoute[];
+    return unwrap(result, "Failed to load commute routes");
   }
 
   async getCommuteStatus(): Promise<CommuteStatus> {
     const result = await client.GET("/api/v1/commute/status");
+    // TODO drift-detection: backend returns the slim
+    // `CommuteStatusResponseDto` (hazard_count, route_quality, status).
+    // The mobile `CommuteStatus` is the rich in-app shape with
+    // `hazards`, `weather`, and `estimated_time_min` populated by
+    // separate fetches before the screen mounts. Either move those
+    // composite fields to backend (single round trip, real DTO match)
+    // or split the mobile type into a wire shape + a screen view-model.
     return unwrap(
       result,
       "Failed to load commute status",
@@ -911,10 +921,7 @@ class ApiService {
 
   async getCommuteAlternatives(): Promise<CommuteAlternativesResponse> {
     const result = await client.GET("/api/v1/commute/alternatives");
-    return unwrap(
-      result,
-      "Failed to load commute alternatives",
-    ) as unknown as CommuteAlternativesResponse;
+    return unwrap(result, "Failed to load commute alternatives");
   }
 
   async getCommuteStats(
@@ -931,10 +938,7 @@ class ApiService {
       "/api/v1/commute/routes/{routeId}/primary",
       { params: { path: { routeId } } },
     );
-    return unwrap(
-      result,
-      "Failed to set primary commute route",
-    ) as unknown as CommuteRoute;
+    return unwrap(result, "Failed to set primary commute route");
   }
 
   // ── Weather ──
@@ -950,10 +954,7 @@ class ApiService {
     const result = await client.POST("/api/v1/weather/route", {
       body: { route },
     });
-    return unwrap(
-      result,
-      "Failed to load route weather",
-    ) as unknown as RouteWeatherResponse;
+    return unwrap(result, "Failed to load route weather");
   }
 
   // ── Mountain Passes (US-11) ──
@@ -975,10 +976,7 @@ class ApiService {
     const result = await client.POST("/api/v1/passes/check-route", {
       body: { route, buffer_m: bufferM ?? 1500 },
     });
-    return unwrap(
-      result,
-      "Failed to check passes",
-    ) as unknown as CheckRouteForPassesResponse;
+    return unwrap(result, "Failed to check passes");
   }
 
   // ── POI / Accommodations (US-10) ──
@@ -991,10 +989,7 @@ class ApiService {
     const result = await client.GET("/api/v1/poi/accommodations", {
       params: { query: { lat, lng, radius_km: radiusKm } },
     });
-    return unwrap(
-      result,
-      "Failed to load accommodations",
-    ) as unknown as AccommodationList;
+    return unwrap(result, "Failed to load accommodations");
   }
 
   async listPois(
@@ -1017,7 +1012,7 @@ class ApiService {
         },
       },
     });
-    return unwrap(result, "Failed to load POIs") as unknown as PoiList;
+    return unwrap(result, "Failed to load POIs");
   }
 
   async listPoisAlongRoute(
@@ -1034,10 +1029,7 @@ class ApiService {
         kinds: options.kinds,
       },
     });
-    return unwrap(
-      result,
-      "Failed to load POIs along route",
-    ) as unknown as AlongRoutePoiList;
+    return unwrap(result, "Failed to load POIs along route");
   }
 
   // ── Gamification: Badges (US-28) ──
@@ -1060,10 +1052,7 @@ class ApiService {
     const result = await client.GET("/api/v1/challenges/{challengeId}", {
       params: { path: { challengeId } },
     });
-    return unwrap(
-      result,
-      "Failed to load challenge",
-    ) as unknown as ChallengeDetail;
+    return unwrap(result, "Failed to load challenge");
   }
 
   async joinChallenge(challengeId: string): Promise<ChallengeJoinResponse> {
@@ -1110,10 +1099,7 @@ class ApiService {
 
   async getNotificationPreferences(): Promise<NotificationPreferences> {
     const result = await client.GET("/api/v1/me/notification-preferences");
-    return unwrap(
-      result,
-      "Failed to load notification preferences",
-    ) as unknown as NotificationPreferences;
+    return unwrap(result, "Failed to load notification preferences");
   }
 
   async updateNotificationPreferences(
@@ -1122,10 +1108,7 @@ class ApiService {
     const result = await client.PUT("/api/v1/me/notification-preferences", {
       body: patch as Schemas["UpdateNotificationPreferencesDto"],
     });
-    return unwrap(
-      result,
-      "Failed to update notification preferences",
-    ) as unknown as NotificationPreferences;
+    return unwrap(result, "Failed to update notification preferences");
   }
 
   // ── Safety ──
@@ -1155,10 +1138,7 @@ class ApiService {
         locale: options.locale,
       },
     });
-    return unwrap(
-      result,
-      "Failed to send crash alert",
-    ) as unknown as CrashAlertResponse;
+    return unwrap(result, "Failed to send crash alert");
   }
 }
 

@@ -1,14 +1,68 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { RIDE_TYPES, type RideType } from '@tarmoto/shared';
+
+const RIDE_STATUSES = ['active', 'completed', 'cancelled'] as const;
+type RideStatus = (typeof RIDE_STATUSES)[number];
+
+class RideRouteGeometryPointDto {
+  @ApiProperty()
+  lat!: number;
+
+  @ApiProperty()
+  lng!: number;
+}
+
+/**
+ * Per-ride lean histogram (US-19). Counts of 1-second sensor windows in
+ * each absolute-lean bucket. Listed explicitly so the generated OpenAPI
+ * schema names every key — that gives mobile / companion drift detection
+ * if a future bucket is added or renamed.
+ */
+class LeanDistributionDto {
+  @ApiProperty({ description: 'Samples with absolute lean < 10°.' })
+  '0_10'!: number;
+
+  @ApiProperty({ description: 'Samples with absolute lean ≥ 10° and < 20°.' })
+  '10_20'!: number;
+
+  @ApiProperty({ description: 'Samples with absolute lean ≥ 20° and < 30°.' })
+  '20_30'!: number;
+
+  @ApiProperty({ description: 'Samples with absolute lean ≥ 30°.' })
+  '30_plus'!: number;
+}
+
+/**
+ * Per-segment summary attached to a ride detail. The road_segment_id is
+ * `null` when the rider's GPS samples didn't snap to any known segment
+ * (e.g. unmapped private roads).
+ */
+class RideSegmentDto {
+  @ApiProperty({ nullable: true })
+  road_segment_id!: string | null;
+
+  @ApiProperty({ nullable: true })
+  road_name!: string | null;
+
+  @ApiProperty({ nullable: true })
+  quality_reading!: number | null;
+
+  @ApiProperty({ nullable: true })
+  speed_avg!: number | null;
+
+  @ApiProperty({ nullable: true })
+  lean_angle_max!: number | null;
+}
 
 export class RideResponseDto {
   @ApiProperty()
   id!: string;
 
-  @ApiProperty()
-  status!: string;
+  @ApiProperty({ enum: RIDE_STATUSES })
+  status!: RideStatus;
 
-  @ApiProperty()
-  ride_type!: string;
+  @ApiProperty({ enum: RIDE_TYPES })
+  ride_type!: RideType;
 
   @ApiProperty()
   started_at!: string;
@@ -45,8 +99,8 @@ export class RideDetailDto extends RideSummaryDto {
   @ApiProperty({ nullable: true })
   max_speed!: number | null;
 
-  @ApiProperty({ type: [Object], nullable: true })
-  route_geometry!: Array<{ lat: number; lng: number }> | null;
+  @ApiProperty({ type: [RideRouteGeometryPointDto], nullable: true })
+  route_geometry!: RideRouteGeometryPointDto[] | null;
 
   @ApiProperty({ nullable: true })
   elevation_gain!: number | null;
@@ -60,34 +114,14 @@ export class RideDetailDto extends RideSummaryDto {
   @ApiProperty({ nullable: true })
   max_lean_angle!: number | null;
 
-  @ApiProperty({
-    nullable: true,
-    type: 'object',
-    description:
-      'US-19 per-ride lean histogram. Counts of orientation-filter ' +
-      'samples in each bucket (0-10°, 10-20°, 20-30°, 30°+). Null when ' +
-      'no lean samples were captured (ride pre-dates US-19 or rider ' +
-      'never let the orientation filter calibrate).',
-    additionalProperties: { type: 'integer' },
-  })
-  lean_distribution!: {
-    '0_10': number;
-    '10_20': number;
-    '20_30': number;
-    '30_plus': number;
-  } | null;
+  @ApiProperty({ type: LeanDistributionDto, nullable: true })
+  lean_distribution!: LeanDistributionDto | null;
 
   @ApiProperty({ nullable: true })
   fuel_estimate_l!: number | null;
 
-  @ApiProperty({ type: [Object] })
-  segments!: Array<{
-    road_segment_id: string | null;
-    road_name: string | null;
-    quality_reading: number | null;
-    speed_avg: number | null;
-    lean_angle_max: number | null;
-  }>;
+  @ApiProperty({ type: [RideSegmentDto] })
+  segments!: RideSegmentDto[];
 }
 
 export class RideListResponseDto {

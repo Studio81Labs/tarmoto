@@ -28,6 +28,12 @@ function userWithCrashDetection(enabled: boolean): User {
     id: "u1",
     email: "rider@tarmoto.app",
     display_name: "Rider",
+    phone: null,
+    avatar_url: null,
+    bio: null,
+    home_region: null,
+    home_location: null,
+    work_location: null,
     created_at: "2026-04-25T10:00:00Z",
     preferences: {
       units: "metric",

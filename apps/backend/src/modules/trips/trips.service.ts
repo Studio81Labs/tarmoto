@@ -494,7 +494,7 @@ export class TripsService {
       title: trip.title,
       region: trip.region,
       num_days: trip.num_days,
-      status: trip.status,
+      status: trip.status as 'draft' | 'planned' | 'active' | 'completed',
       // Prefer the COUNT mapped by `loadRelationCountAndMap` (set by
       // `list`), and fall back to the hydrated relation length when
       // `toSummary` is reached via `toDetail` (where we have the full
@@ -508,7 +508,7 @@ export class TripsService {
     const members: TripMemberDto[] = (trip.members ?? []).map((m) => ({
       user_id: m.user_id,
       display_name: m.user?.display_name ?? 'Unknown rider',
-      role: m.role,
+      role: m.role as 'owner' | 'admin' | 'member',
       joined_at: m.joined_at.toISOString(),
     }));
 
@@ -536,7 +536,15 @@ export class TripsService {
           lat: latLng.lat,
           lng: latLng.lng,
           name: w.name,
-          waypoint_type: w.waypoint_type,
+          waypoint_type: w.waypoint_type as
+            | 'start'
+            | 'via'
+            | 'fuel'
+            | 'food'
+            | 'coffee'
+            | 'hotel'
+            | 'photo'
+            | 'end',
           road_segment_id: w.road_segment_id,
           notes: w.notes,
           duration_min: w.duration_min,
@@ -550,7 +558,11 @@ export class TripsService {
       daily_km_min: trip.daily_km_min,
       daily_km_max: trip.daily_km_max,
       min_quality: trip.min_quality,
-      road_preference: trip.road_preference,
+      road_preference: trip.road_preference as
+        | 'curvy'
+        | 'scenic'
+        | 'fast'
+        | 'mixed',
       invite_code: trip.invite_code,
       members,
       days,

@@ -44,6 +44,7 @@ function makeHazard(overrides: Partial<Hazard> = {}): Hazard {
     lng: 18.2,
     hazard_type: "pothole",
     severity: "medium",
+    note: null,
     confirmations: 0,
     reporter: "user-1",
     road_name: "Main St",
@@ -191,7 +192,7 @@ describe("decideCommuteHazardNotification", () => {
     const out = decideCommuteHazardNotification({
       routeId: "r1",
       routeName: "Home → Work",
-      hazards: [makeHazard({ id: "h1", road_name: undefined })],
+      hazards: [makeHazard({ id: "h1", road_name: null })],
       lastSeen: new Set(),
       alreadyNotified: new Set(),
     });

@@ -59,6 +59,12 @@ describe("LinkAccountScreen", () => {
         id: "user-1",
         email: "rider@example.com",
         display_name: "Rider One",
+        phone: null,
+        avatar_url: null,
+        bio: null,
+        home_region: null,
+        home_location: null,
+        work_location: null,
         preferences: {
           units: "metric",
           daily_km: 250,

@@ -8,10 +8,12 @@ import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
+import { pointToLatLng } from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
 import { EmailVerificationService } from './email-verification.service.js';
+import { AuthResponseDto } from './dto/auth-response.dto.js';
 
 const ACCESS_TOKEN_EXPIRY = 60 * 60; // 1 hour
 const REFRESH_TOKEN_EXPIRY = 90 * 24 * 60 * 60; // 90 days
@@ -151,7 +153,7 @@ export class AuthService {
     return this.buildAuthResponse(user, sessionStart);
   }
 
-  private buildAuthResponse(user: User, origIat?: number) {
+  private buildAuthResponse(user: User, origIat?: number): AuthResponseDto {
     const now = Math.floor(Date.now() / 1000);
 
     const accessToken = this.jwt.sign(
@@ -164,6 +166,11 @@ export class AuthService {
       { expiresIn: REFRESH_TOKEN_EXPIRY },
     );
 
+    // Match `UsersService.toUserResponse` so login/register/refresh
+    // hand the client the same rich profile shape `/users/me` does —
+    // mobile reads `user.preferences.crash_detection` and the rest of
+    // the profile fields immediately on login, so the slim shape this
+    // used to return forced a follow-up `/users/me` call.
     return {
       access_token: accessToken,
       refresh_token: refreshToken,
@@ -173,6 +180,12 @@ export class AuthService {
         email: user.email,
         display_name: user.display_name,
         phone: user.phone,
+        avatar_url: user.avatar_url,
+        bio: user.bio,
+        home_region: user.home_region,
+        home_location: pointToLatLng(user.home_location),
+        work_location: pointToLatLng(user.work_location),
+        preferences: user.preferences,
         created_at: user.created_at.toISOString(),
       },
     };

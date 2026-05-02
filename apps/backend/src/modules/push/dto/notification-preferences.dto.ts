@@ -91,6 +91,47 @@ export class UpdateNotificationPreferencesDto {
   >;
 }
 
+/**
+ * Per-category channel toggle map. Every category in
+ * `NOTIFICATION_CATEGORIES` is required so consumers can rely on the
+ * shape — the backend always fills missing categories with defaults
+ * before responding.
+ *
+ * Listed explicitly (instead of `additionalProperties`) so the generated
+ * OpenAPI schema preserves the closed enum of categories. That gives
+ * mobile and companion drift detection on category renames/removals
+ * rather than letting them slip through under a permissive
+ * `Record<string, ...>` shape.
+ */
+export class NotificationCategoryTogglesDto implements Record<
+  NotificationCategory,
+  NotificationChannelTogglesDto
+> {
+  @ApiProperty({ type: NotificationChannelTogglesDto })
+  hazard_alert!: NotificationChannelTogglesDto;
+
+  @ApiProperty({ type: NotificationChannelTogglesDto })
+  crash_followup!: NotificationChannelTogglesDto;
+
+  @ApiProperty({ type: NotificationChannelTogglesDto })
+  trip_collaboration!: NotificationChannelTogglesDto;
+
+  @ApiProperty({ type: NotificationChannelTogglesDto })
+  new_follower!: NotificationChannelTogglesDto;
+
+  @ApiProperty({ type: NotificationChannelTogglesDto })
+  ride_like!: NotificationChannelTogglesDto;
+
+  @ApiProperty({ type: NotificationChannelTogglesDto })
+  route_comment!: NotificationChannelTogglesDto;
+
+  @ApiProperty({ type: NotificationChannelTogglesDto })
+  weather_alert!: NotificationChannelTogglesDto;
+
+  @ApiProperty({ type: NotificationChannelTogglesDto })
+  subscription_billing!: NotificationChannelTogglesDto;
+}
+
 export class NotificationPreferencesResponseDto implements NotificationPreferences {
   @ApiProperty({ enum: ['daily', 'weekly', 'never'] })
   email_digest!: EmailDigestFrequency;
@@ -109,9 +150,7 @@ export class NotificationPreferencesResponseDto implements NotificationPreferenc
 
   @ApiProperty({
     description: 'Per-category toggles for every notification category.',
-    additionalProperties: {
-      $ref: '#/components/schemas/NotificationChannelTogglesDto',
-    },
+    type: NotificationCategoryTogglesDto,
   })
-  categories!: Record<NotificationCategory, NotificationChannelTogglesDto>;
+  categories!: NotificationCategoryTogglesDto;
 }

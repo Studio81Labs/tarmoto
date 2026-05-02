@@ -130,7 +130,8 @@ export const shadows = {
 /**
  * Map quality score (1-5) to color
  */
-export function qualityColor(score: number): string {
+export function qualityColor(score: number | null): string {
+  if (score == null) return colors.textTertiary;
   if (score >= 4.5) return colors.quality.excellent;
   if (score >= 3.5) return colors.quality.good;
   if (score >= 2.5) return colors.quality.fair;
@@ -141,7 +142,8 @@ export function qualityColor(score: number): string {
 /**
  * Map quality score to label
  */
-export function qualityLabel(score: number): string {
+export function qualityLabel(score: number | null): string {
+  if (score == null) return "Unscored";
   if (score >= 4.5) return "Excellent";
   if (score >= 3.5) return "Good";
   if (score >= 2.5) return "Fair";
@@ -197,10 +199,10 @@ export function clampFuelRangeKm(value: number): number {
  * yet fail a "Fair or better" filter, which is what the UI promises.
  */
 export function meetsQualityThreshold(
-  score: number,
+  score: number | null,
   minQuality: number,
 ): boolean {
-  if (!Number.isFinite(score)) return false;
+  if (score == null || !Number.isFinite(score)) return false;
   return score >= minQuality - 0.5;
 }
 
@@ -210,10 +212,12 @@ export function meetsQualityThreshold(
  * recede visually — this is the "gray/excluded" behaviour from US-5.
  */
 export function qualityColorWithThreshold(
-  score: number,
+  score: number | null,
   minQuality: number,
 ): string {
-  if (!meetsQualityThreshold(score, minQuality)) return colors.textTertiary;
+  if (score == null || !meetsQualityThreshold(score, minQuality)) {
+    return colors.textTertiary;
+  }
   return qualityColor(score);
 }
 

@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository, SelectQueryBuilder } from 'typeorm';
 import { randomBytes } from 'node:crypto';
+import type { RideType } from '@tarmoto/shared';
 import { Ride } from '../../entities/ride.entity.js';
 import { RideStats } from '../../entities/ride-stats.entity.js';
 import { RideSegment } from '../../entities/ride-segment.entity.js';
@@ -268,8 +269,8 @@ export class RidesService {
 
     return {
       id: ride.id,
-      status: ride.status,
-      ride_type: ride.ride_type,
+      status: ride.status as 'active' | 'completed' | 'cancelled',
+      ride_type: ride.ride_type as RideType,
       started_at: ride.started_at.toISOString(),
       ended_at: ride.ended_at?.toISOString() ?? null,
       distance_km: ride.distance_km,
@@ -450,8 +451,8 @@ ${tracks.join('\n')}
   private toRideResponse(ride: Ride): RideResponseDto {
     return {
       id: ride.id,
-      status: ride.status,
-      ride_type: ride.ride_type,
+      status: ride.status as 'active' | 'completed' | 'cancelled',
+      ride_type: ride.ride_type as RideType,
       started_at: ride.started_at.toISOString(),
       ended_at: ride.ended_at?.toISOString() ?? null,
       distance_km: ride.distance_km,

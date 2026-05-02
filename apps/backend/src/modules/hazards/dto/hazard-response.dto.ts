@@ -1,4 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
+import {
+  HAZARD_TYPES,
+  HAZARD_SEVERITY,
+  type HazardType,
+  type HazardSeverity,
+} from '@tarmoto/shared';
 
 export class HazardResponseDto {
   @ApiProperty()
@@ -10,11 +16,11 @@ export class HazardResponseDto {
   @ApiProperty()
   lng!: number;
 
-  @ApiProperty()
-  hazard_type!: string;
+  @ApiProperty({ enum: HAZARD_TYPES })
+  hazard_type!: HazardType;
 
-  @ApiProperty()
-  severity!: string;
+  @ApiProperty({ enum: HAZARD_SEVERITY })
+  severity!: HazardSeverity;
 
   @ApiProperty({ nullable: true })
   note!: string | null;

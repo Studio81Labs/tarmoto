@@ -31,6 +31,10 @@ const wp = (
   lat: 0,
   lng: 0,
   waypoint_type: type,
+  name: null,
+  road_segment_id: null,
+  notes: null,
+  duration_min: null,
   ...overrides,
 });
 

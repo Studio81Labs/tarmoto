@@ -8,6 +8,34 @@ class LatLngResponse {
   lng!: number;
 }
 
+/**
+ * Subset of `users.preferences` JSONB the mobile and companion clients
+ * read directly. All fields are optional because the JSONB column starts
+ * empty and is populated lazily as the rider toggles things in Settings —
+ * a freshly-registered user reaches the client without any prefs set, so
+ * consumers must handle missing fields with their own defaults rather
+ * than assume the server will fill them in.
+ */
+class UserPreferencesResponse {
+  @ApiProperty({ required: false, enum: ['metric', 'imperial'] })
+  units?: 'metric' | 'imperial';
+
+  @ApiProperty({ required: false })
+  daily_km?: number;
+
+  @ApiProperty({ required: false })
+  min_quality?: number;
+
+  @ApiProperty({ required: false, type: [String] })
+  road_types?: string[];
+
+  @ApiProperty({ required: false })
+  record_gps?: boolean;
+
+  @ApiProperty({ required: false })
+  crash_detection?: boolean;
+}
+
 export class UserResponseDto {
   @ApiProperty()
   id!: string;
@@ -36,8 +64,8 @@ export class UserResponseDto {
   @ApiProperty({ nullable: true, type: LatLngResponse })
   work_location!: LatLngResponse | null;
 
-  @ApiProperty()
-  preferences!: Record<string, unknown>;
+  @ApiProperty({ type: UserPreferencesResponse })
+  preferences!: UserPreferencesResponse;
 
   @ApiProperty()
   created_at!: string;

@@ -22,7 +22,7 @@ export class ChallengeDto {
   @ApiProperty()
   ends_at!: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiProperty({ nullable: true })
   reward_badge_key!: string | null;
 
   @ApiProperty()
@@ -47,10 +47,10 @@ export class LeaderboardEntryDto {
 }
 
 export class ChallengeDetailDto extends ChallengeDto {
-  @ApiPropertyOptional({ nullable: true })
+  @ApiProperty({ nullable: true })
   my_progress!: number | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiProperty({ nullable: true })
   my_completed!: boolean | null;
 
   @ApiProperty({ type: [LeaderboardEntryDto] })

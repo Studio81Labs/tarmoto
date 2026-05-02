@@ -25,16 +25,23 @@ export interface User {
   id: string;
   email: string;
   display_name: string;
-  phone?: string;
+  /** Required-but-nullable on the wire (`UserResponseDto.phone`). */
+  phone: string | null;
   /** US-27: avatar URL backed by /users/me/avatar uploads. */
-  avatar_url?: string | null;
+  avatar_url: string | null;
   /** US-27: free-form rider bio shown on the profile screen. */
-  bio?: string | null;
+  bio: string | null;
   /** US-27: free-form home region label (e.g. "Beskydy"). */
-  home_region?: string | null;
-  home_location?: LatLng;
-  work_location?: LatLng;
-  preferences: UserPreferences;
+  home_region: string | null;
+  home_location: LatLng | null;
+  work_location: LatLng | null;
+  /**
+   * Lazy JSONB blob — every field is optional because freshly-registered
+   * users reach the client before any preference has been toggled. All
+   * consumers must default with `?? <default>` rather than assume keys
+   * are populated.
+   */
+  preferences: Partial<UserPreferences>;
   created_at: string;
 }
 
@@ -118,15 +125,22 @@ export type QualityClass = "excellent" | "good" | "fair" | "poor" | "very_poor";
 
 export interface RoadSegment {
   id: string;
-  road_name?: string;
-  road_number?: string;
-  quality_score: number;
+  road_name: string | null;
+  road_number: string | null;
+  /**
+   * 1-5 average quality. Null when no surface readings have ever been
+   * snapped to this segment (still waiting for the first ride to enrich
+   * it) — UI must render a "unscored" placeholder rather than `0`.
+   */
+  quality_score: number | null;
   curviness_score: number;
   surface_type: SurfaceType;
   length_m: number;
   confidence: number;
   reading_count: number;
   last_updated: string;
+  /** Optional. Present on `/roads/nearby` results, absent on detail. */
+  distance_m?: number;
 }
 
 export interface RoadSegmentDetail extends RoadSegment {
@@ -175,24 +189,36 @@ export type RideStatus = "active" | "completed" | "cancelled";
 
 export interface RideSummary {
   id: string;
-  started_at: string;
-  ended_at?: string;
-  distance_km: number;
-  duration_min: number;
-  avg_speed: number;
-  avg_road_quality: number;
   ride_type: RideType;
   status: RideStatus;
+  started_at: string;
+  ended_at: string | null;
+  /**
+   * Aggregated per-ride stats. All null while the ride is still active —
+   * they are computed at /stop time. UI must default with `?? 0` /
+   * `?? "—"` rather than assume a number is present.
+   */
+  distance_km: number | null;
+  avg_speed: number | null;
+  avg_road_quality: number | null;
+  /**
+   * Length-weighted average curviness across snapped segments. Null when
+   * no segments are snapped yet.
+   */
+  avg_curviness: number | null;
+  /** Rider-supplied label. Null when not renamed yet. */
+  name: string | null;
+  duration_min: number | null;
 }
 
 export interface RideDetail extends RideSummary {
-  route_geometry: LatLng[];
-  max_speed: number;
-  elevation_gain: number;
-  elevation_loss: number;
-  curve_count: number;
-  max_lean_angle: number;
-  fuel_estimate_l: number;
+  max_speed: number | null;
+  /** Snapped polyline. Null while the ride is still recording or empty. */
+  route_geometry: LatLng[] | null;
+  elevation_gain: number | null;
+  elevation_loss: number | null;
+  curve_count: number | null;
+  max_lean_angle: number | null;
   /**
    * US-19 lean histogram. Each bucket carries the number of 1-second
    * sensor windows the rider's absolute lean fell into that bucket.
@@ -206,15 +232,16 @@ export interface RideDetail extends RideSummary {
     "20_30": number;
     "30_plus": number;
   } | null;
+  fuel_estimate_l: number | null;
   segments: RideSegment[];
 }
 
 export interface RideSegment {
-  road_segment_id: string;
-  road_name?: string;
-  quality_reading: number;
-  speed_avg: number;
-  lean_angle_max: number;
+  road_segment_id: string | null;
+  road_name: string | null;
+  quality_reading: number | null;
+  speed_avg: number | null;
+  lean_angle_max: number | null;
 }
 
 // ── Hazards ──
@@ -238,10 +265,10 @@ export interface Hazard {
   lng: number;
   hazard_type: HazardType;
   severity: Severity;
-  note?: string;
+  note: string | null;
   confirmations: number;
-  reporter: string;
-  road_name?: string;
+  reporter: string | null;
+  road_name: string | null;
   created_at: string;
   expires_at: string;
 }
@@ -263,7 +290,7 @@ export type WaypointType =
 export interface TripSummary {
   id: string;
   title: string;
-  region?: string;
+  region: string | null;
   num_days: number;
   status: TripStatus;
   member_count: number;
@@ -283,7 +310,12 @@ export interface Trip extends TripSummary {
 export interface TripDay {
   id: string;
   day_number: number;
-  title?: string;
+  /**
+   * Optional+nullable for the same reason `Waypoint` is — both `null`
+   * (the wire shape) and `undefined` (older client fixtures) need to be
+   * acceptable. UI must default with `?? "Day N"`.
+   */
+  title?: string | null;
   distance_km: number;
   avg_quality: number;
   elevation_gain: number;
@@ -316,16 +348,23 @@ export interface TripGenerationResult {
   options: TripGenerationOption[];
 }
 
+/**
+ * Trip waypoint. Optional+nullable fields here intentionally widen the
+ * spec's `string | null` shape to `string | null | undefined` so existing
+ * client-side fixtures that omit a field are still assignable. The real
+ * wire shape is still required-nullable; consumers must handle both
+ * `null` and `undefined` defensively.
+ */
 export interface Waypoint {
   id: string;
   sequence: number;
   lat: number;
   lng: number;
-  name?: string;
+  name?: string | null;
   waypoint_type: WaypointType;
-  road_segment_id?: string;
-  notes?: string;
-  duration_min?: number;
+  road_segment_id?: string | null;
+  notes?: string | null;
+  duration_min?: number | null;
 }
 
 export interface TripMember {
@@ -396,24 +435,47 @@ export interface ReviewVoteResult {
 
 // ── Commute ──
 
+/**
+ * Saved commute route. The wire shape is `CommuteRouteResponseDto` —
+ * `distance_km` / `avg_quality` are nullable (zero-row routes haven't
+ * been driven yet) and `avg_duration_min` / `route_geometry` are absent
+ * entirely. The mobile screens already handle both as optional, so the
+ * type matches the actual contract instead of hiding the gap behind a
+ * cast.
+ */
 export interface CommuteRoute {
   id: string;
   name: string;
   origin: LatLng;
   destination: LatLng;
-  distance_km: number;
-  avg_duration_min: number;
-  avg_quality: number;
+  distance_km: number | null;
+  avg_quality: number | null;
   is_primary: boolean;
-  route_geometry: LatLng[];
+  /** ISO timestamp from the backend. Optional only because pre-existing
+   *  test fixtures predate the field — the wire shape is required. */
+  created_at?: string;
+  /** Backend doesn't currently surface duration; future work. */
+  avg_duration_min?: number;
+  /** Backend doesn't currently cache route geometry; future work. */
+  route_geometry?: LatLng[];
 }
 
+/**
+ * Mobile-side commute status shape. The wire DTO
+ * (`CommuteStatusResponseDto`) is slimmer — it only carries
+ * `hazard_count`, `route_quality`, and `status`. The mobile hooks
+ * consume a richer object with `hazards`, `weather`, and
+ * `estimated_time_min` populated client-side from separate `/hazards`
+ * and `/weather/route` calls before the screen mounts. Keeping the type
+ * rich here matches the in-app contract; the API boundary takes a
+ * documented cast.
+ */
 export interface CommuteStatus {
   route: CommuteRoute;
   hazards: Hazard[];
   weather: Weather;
   estimated_time_min: number;
-  route_quality: number;
+  route_quality: number | null;
   status: "clear" | "hazards" | "weather_warning" | "delays";
 }
 
@@ -532,6 +594,8 @@ export interface Accommodation {
 export interface AccommodationList {
   accommodations: Accommodation[];
   radius_km: number;
+  /** Echo of the kinds actually queried — matches the POI list endpoints. */
+  kinds: AccommodationKind[];
 }
 
 // ── Along-route POIs (US-10, US-36) ──

@@ -45,15 +45,15 @@ export function formatRideDate(iso: string | undefined | null): string {
  * decimal there reads as fake precision). Non-finite / negative collapse
  * to "0 km" so we never render NaN.
  */
-export function formatDistanceKm(km: number): string {
-  if (!Number.isFinite(km) || km <= 0) return "0 km";
+export function formatDistanceKm(km: number | null | undefined): string {
+  if (km == null || !Number.isFinite(km) || km <= 0) return "0 km";
   if (km < 100) return `${km.toFixed(1)} km`;
   return `${Math.round(km)} km`;
 }
 
 /** Speed in km/h, integer-rounded. Backend already serves metric. */
-export function formatSpeedKmh(kmh: number): string {
-  if (!Number.isFinite(kmh) || kmh < 0) return "0 km/h";
+export function formatSpeedKmh(kmh: number | null | undefined): string {
+  if (kmh == null || !Number.isFinite(kmh) || kmh < 0) return "0 km/h";
   return `${Math.round(kmh)} km/h`;
 }
 
@@ -62,8 +62,10 @@ export function formatSpeedKmh(kmh: number): string {
  * gives us seconds. Two helpers so callers can't accidentally feed the
  * wrong unit into the wrong formatter.
  */
-export function formatDurationMinutes(minutes: number): string {
-  if (!Number.isFinite(minutes) || minutes <= 0) return "0m";
+export function formatDurationMinutes(
+  minutes: number | null | undefined,
+): string {
+  if (minutes == null || !Number.isFinite(minutes) || minutes <= 0) return "0m";
   const total = Math.round(minutes);
   const h = Math.floor(total / 60);
   const m = total % 60;
@@ -73,26 +75,31 @@ export function formatDurationMinutes(minutes: number): string {
 }
 
 /** Elevation gain/loss in meters, prefixed with sign so the row reads "+125 m". */
-export function formatElevation(meters: number, sign: "+" | "-"): string {
-  if (!Number.isFinite(meters) || meters <= 0) return `${sign}0 m`;
+export function formatElevation(
+  meters: number | null | undefined,
+  sign: "+" | "-",
+): string {
+  if (meters == null || !Number.isFinite(meters) || meters <= 0) {
+    return `${sign}0 m`;
+  }
   return `${sign}${Math.round(meters)} m`;
 }
 
 /** Lean angle in whole degrees. */
-export function formatLeanAngle(deg: number): string {
-  if (!Number.isFinite(deg) || deg <= 0) return "0°";
+export function formatLeanAngle(deg: number | null | undefined): string {
+  if (deg == null || !Number.isFinite(deg) || deg <= 0) return "0°";
   return `${Math.round(deg)}°`;
 }
 
 /** Fuel estimate. Liters with one decimal — fuel pumps round to 0.01 L. */
-export function formatFuelLiters(liters: number): string {
-  if (!Number.isFinite(liters) || liters <= 0) return "0 L";
+export function formatFuelLiters(liters: number | null | undefined): string {
+  if (liters == null || !Number.isFinite(liters) || liters <= 0) return "0 L";
   return `${liters.toFixed(1)} L`;
 }
 
 /** Curve count is integer. */
-export function formatCurveCount(count: number): string {
-  if (!Number.isFinite(count) || count <= 0) return "0";
+export function formatCurveCount(count: number | null | undefined): string {
+  if (count == null || !Number.isFinite(count) || count <= 0) return "0";
   return `${Math.round(count)}`;
 }
 
@@ -219,7 +226,7 @@ export function rideRouteLineColorExpression(): unknown[] {
  * `quality_reading` from properties via `rideRouteLineColorExpression`.
  */
 export function rideRouteFeatureCollection(
-  geometry: LatLng[],
+  geometry: LatLng[] | null,
   segments: RideSegment[],
 ): GeoJSON.FeatureCollection {
   if (!Array.isArray(geometry) || geometry.length < 2) {
@@ -268,16 +275,16 @@ export function rideRouteFeatureCollection(
     const slice = geometry.slice(startIdx, endIdx + 1);
     if (slice.length < 2) continue;
     const reading = segments[i]?.quality_reading;
-    // The quality scale is 1..5 — treat anything ≤0 (or non-finite)
-    // as "no data" so the polyline agrees with the SummaryCard, which
-    // also reads a `qScore <= 0` average as "no data". Otherwise a
-    // segment with `quality_reading: 0` would render in `veryPoor`
+    // The quality scale is 1..5 — treat anything ≤0 (or non-finite or
+    // null) as "no data" so the polyline agrees with the SummaryCard,
+    // which also reads a `qScore <= 0` average as "no data". Otherwise
+    // a segment with `quality_reading: 0` would render in `veryPoor`
     // red on the map while the summary badge above shows "—".
     features.push({
       type: "Feature",
       properties: {
         quality_reading:
-          Number.isFinite(reading) && reading > 0
+          reading != null && Number.isFinite(reading) && reading > 0
             ? reading
             : NO_QUALITY_READING,
       },
@@ -295,7 +302,7 @@ export function rideRouteFeatureCollection(
  * polyline. Returns `null` when the geometry is too small to bound — the
  * caller should fall back to a default centre.
  */
-export function rideBounds(geometry: LatLng[]): {
+export function rideBounds(geometry: LatLng[] | null): {
   sw: LatLng;
   ne: LatLng;
 } | null {
@@ -349,7 +356,7 @@ export function segmentQualityHistogram(
   };
   for (const seg of segments) {
     const r = seg.quality_reading;
-    if (!Number.isFinite(r) || r <= 0) continue;
+    if (r == null || !Number.isFinite(r) || r <= 0) continue;
     const bucket = bucketForScore(r);
     counts[bucket] += 1;
   }
@@ -429,7 +436,7 @@ export function buildRideShareMessage(ride: RideDetail): string {
   }
   lines.push(`Distance: ${formatDistanceKm(ride.distance_km)}`);
   lines.push(`Duration: ${formatDurationMinutes(ride.duration_min)}`);
-  if (ride.max_speed > 0) {
+  if (ride.max_speed != null && ride.max_speed > 0) {
     lines.push(`Top speed: ${formatSpeedKmh(ride.max_speed)}`);
   }
   return lines.join("\n");

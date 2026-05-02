@@ -258,7 +258,9 @@ function QualityCard({
       <View style={styles.qualityHeader}>
         <View>
           <Text style={[styles.qualityScore, { color }]}>
-            {segment.quality_score.toFixed(1)}
+            {segment.quality_score != null
+              ? segment.quality_score.toFixed(1)
+              : "—"}
           </Text>
           <Text style={styles.qualitySubtitle}>
             {qualityLabel(segment.quality_score)} ·{" "}
