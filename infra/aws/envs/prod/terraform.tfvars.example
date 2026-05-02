@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars (which is gitignored) and fill in.
+
+# region              = "eu-central-1"
+# api_certificate_arn = "arn:aws:acm:eu-central-1:<account-id>:certificate/<id>"
+# cdn_certificate_arn = "arn:aws:acm:us-east-1:<account-id>:certificate/<id>"
+# cdn_aliases         = ["tiles.tarmoto.app", "uploads.tarmoto.app"]
+# companion_origin    = "https://tarmoto.app"

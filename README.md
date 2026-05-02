@@ -85,8 +85,10 @@ tarmoto/
 │   ├── process/             Runbook, testing, migrations, DoD, issue workflow
 │   ├── design/              Wireframes, ERD
 │   └── database/            PostgreSQL + PostGIS schema
-├── infra/docker/            docker-compose (Postgres + Redis)
-└── .github/                 CI workflows, issue templates
+├── infra/
+│   ├── docker/              docker-compose (Postgres + Redis)
+│   └── aws/                 Terraform IaC (VPC, ECS, RDS, ElastiCache, S3, CloudFront)
+└── .github/                 CI workflows, issue templates, deploy pipelines
 ```
 
 ## Commands
@@ -157,8 +159,12 @@ For database schema changes, see [docs/process/typeorm-migrations.md](./docs/pro
 
 ## Deployment
 
-- **PoC sensor** deploys to Cloudflare Pages via `deploy-poc.yml` on push to `main` (path filter `apps/poc-sensor/**`).
-- **Backend, mobile, companion** deploys are not yet wired. Target per the product spec is AWS (ECS, RDS, S3, CloudFront).
+- **Backend** — AWS ECS Fargate behind ALB; RDS Postgres + PostGIS; ElastiCache Redis; S3 + CloudFront for assets. IaC under [`infra/aws/`](./infra/aws/), deploy via [`.github/workflows/backend-deploy.yml`](./.github/workflows/backend-deploy.yml). Staging deploys on push to `main`; prod is gated behind a manual approval and tag-driven (`backend-vX.Y.Z`).
+- **Companion** — Cloudflare Pages with PR previews; deploy via [`.github/workflows/companion-deploy.yml`](./.github/workflows/companion-deploy.yml).
+- **Mobile** — Fastlane lanes for iOS TestFlight and Android Play Internal track; manual `workflow_dispatch` or `mobile-vX.Y.Z` tag, see [`.github/workflows/mobile-release.yml`](./.github/workflows/mobile-release.yml).
+- **PoC sensor** — Cloudflare Pages on push to `main` via [`poc-deploy.yml`](./.github/workflows/poc-deploy.yml).
+
+Stack rationale and tradeoffs are in [ADR 0004](./docs/decisions/0004-deployment-stack.md). Deploy / rollback runbook is in [docs/process/runbook.md](./docs/process/runbook.md#production-deploys).
 
 ## Bootstrap Details
 

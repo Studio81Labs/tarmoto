@@ -50,6 +50,7 @@ Briefly: what else did we look at, and why not?
 - [0001 — TypeORM over Prisma for the backend](./0001-typeorm-over-prisma.md)
 - [0002 — Nominatim as the geocoding provider](./0002-geocoding-provider.md)
 - [0003 — Subscription pricing is EUR-denominated and EUR-displayed](./0003-subscription-pricing-currency.md)
+- [0004 — Deployment stack: Terraform on AWS, Cloudflare Pages for companion, Fastlane for mobile](./0004-deployment-stack.md)
 
 ## Candidates worth writing up
 

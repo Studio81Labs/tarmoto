@@ -1,0 +1,161 @@
+# Tarmoto mobile release lanes.
+#
+# iOS lanes:
+#   beta_ios   — build TestFlight + upload via App Store Connect API.
+# Android lanes:
+#   beta_android — assemble release AAB + upload to Play Internal.
+#
+# Both lanes are designed to run on GitHub Actions runners
+# (.github/workflows/mobile-release.yml). Locally the same lanes work
+# if you have the right credentials in the keychain / env.
+#
+# Versioning: the workflow passes the version from the git tag
+# (mobile-vX.Y.Z) and a CI-derived build number (the GitHub run number).
+# We deliberately don't bump versions in the source — the tag is the
+# source of truth.
+
+default_platform(:ios)
+
+# Ruby treats `""` as truthy, so the bare `||` chain wouldn't fall
+# through to the default when the env var is set-but-empty (e.g. the
+# tag-push path used to leave RELEASE_NOTES blank). Use this helper
+# everywhere we want "set, non-empty, otherwise default" semantics.
+def first_non_blank(*candidates)
+  candidates.each do |c|
+    return c if c.is_a?(String) && !c.strip.empty?
+  end
+  nil
+end
+
+# ---------- iOS ----------
+platform :ios do
+  before_all do
+    setup_ci if ENV["CI"]
+  end
+
+  desc "Build & upload TestFlight build"
+  lane :beta_ios do |options|
+    version       = first_non_blank(options[:version], ENV["RELEASE_VERSION"])
+    build_number  = first_non_blank(options[:build],   ENV["BUILD_NUMBER"], ENV["GITHUB_RUN_NUMBER"])
+    release_notes = first_non_blank(options[:notes],   ENV["RELEASE_NOTES"]) || "Internal build"
+
+    UI.user_error!("RELEASE_VERSION is required") if version.nil? || version.empty?
+    UI.user_error!("BUILD_NUMBER is required")    if build_number.nil? || build_number.empty?
+
+    api_key = app_store_connect_api_key(
+      key_id:      ENV.fetch("APP_STORE_CONNECT_API_KEY_ID"),
+      issuer_id:   ENV.fetch("APP_STORE_CONNECT_API_ISSUER_ID"),
+      key_content: ENV.fetch("APP_STORE_CONNECT_API_KEY_CONTENT"),
+      duration:    1200,
+      in_house:    false,
+    )
+
+    # match installs the signing identity + provisioning profile
+    # from the encrypted match repo. Read-only in CI — `match` from a
+    # developer workstation is what creates / rotates them.
+    match(
+      type:           "appstore",
+      readonly:       true,
+      app_identifier: ["app.tarmoto"],
+      api_key:        api_key,
+    )
+
+    increment_version_number(
+      xcodeproj:      "ios/TarmotoApp.xcodeproj",
+      version_number: version,
+    )
+    increment_build_number(
+      xcodeproj:    "ios/TarmotoApp.xcodeproj",
+      build_number: build_number,
+    )
+
+    cocoapods(podfile: "ios/Podfile", clean_install: true)
+
+    build_ios_app(
+      workspace:        "ios/TarmotoApp.xcworkspace",
+      scheme:           "TarmotoApp",
+      configuration:    "Release",
+      export_method:    "app-store",
+      clean:            true,
+      output_directory: "build",
+      output_name:      "TarmotoApp.ipa",
+      export_options: {
+        provisioningProfiles: {
+          "app.tarmoto" => "match AppStore app.tarmoto",
+        },
+      },
+    )
+
+    upload_to_testflight(
+      api_key:                          api_key,
+      ipa:                              "build/TarmotoApp.ipa",
+      changelog:                        release_notes,
+      skip_waiting_for_build_processing: true,
+      distribute_external:              false,
+    )
+  end
+end
+
+# ---------- Android ----------
+platform :android do
+  desc "Build & upload to Play Internal track"
+  lane :beta_android do |options|
+    version       = first_non_blank(options[:version], ENV["RELEASE_VERSION"])
+    build_number  = first_non_blank(options[:build],   ENV["BUILD_NUMBER"], ENV["GITHUB_RUN_NUMBER"])
+    release_notes = first_non_blank(options[:notes],   ENV["RELEASE_NOTES"]) || "Internal build"
+
+    UI.user_error!("RELEASE_VERSION is required") if version.nil? || version.empty?
+    UI.user_error!("BUILD_NUMBER is required")    if build_number.nil? || build_number.empty?
+
+    # Apply version bumps to gradle. The CI workflow restores the
+    # working tree after the run; locally Fastlane will leave the
+    # changes for the operator to commit if they want.
+    android_set_version_name(
+      version_name: version,
+      gradle_file:  "android/app/build.gradle",
+    )
+    android_set_version_code(
+      version_code: build_number.to_i,
+      gradle_file:  "android/app/build.gradle",
+    )
+
+    gradle(
+      project_dir:     "android",
+      task:            "bundle",
+      build_type:      "Release",
+      print_command:   false,
+      properties: {
+        "android.injected.signing.store.file"     => ENV.fetch("ANDROID_KEYSTORE_PATH"),
+        "android.injected.signing.store.password" => ENV.fetch("ANDROID_KEYSTORE_PASSWORD"),
+        "android.injected.signing.key.alias"      => ENV.fetch("ANDROID_KEY_ALIAS"),
+        "android.injected.signing.key.password"   => ENV.fetch("ANDROID_KEY_PASSWORD"),
+      },
+    )
+
+    # `upload_to_play_store` (supply) does not take an inline
+    # changelog — it reads them from
+    # `<metadata_path>/<lang>/changelogs/<versionCode>.txt`. Write
+    # the file before the upload so `skip_upload_changelogs: false`
+    # actually has something to send. Play caps the body at 500
+    # chars; cap on character count (not bytes) so multi-byte
+    # codepoints aren't cut in half.
+    metadata_root  = File.expand_path("../android/fastlane/metadata/android", __dir__)
+    changelog_dir  = File.join(metadata_root, "en-US", "changelogs")
+    FileUtils.mkdir_p(changelog_dir)
+    changelog_path = File.join(changelog_dir, "#{build_number.to_i}.txt")
+    File.write(changelog_path, release_notes.to_s.slice(0, 500))
+    UI.message("Wrote Android changelog to #{changelog_path}")
+
+    upload_to_play_store(
+      track:                       "internal",
+      aab:                         "android/app/build/outputs/bundle/release/app-release.aab",
+      json_key_data:               ENV.fetch("PLAY_STORE_JSON_KEY"),
+      metadata_path:               metadata_root,
+      skip_upload_apk:             true,
+      skip_upload_metadata:        true,
+      skip_upload_changelogs:      false,
+      release_status:              "completed",
+      changes_not_sent_for_review: true,
+    )
+  end
+end

@@ -166,10 +166,14 @@ Background work runs on **BullMQ** (Redis-backed). The `jobs` module owns the co
 
 No Firebase, no push notification service, no paid external APIs today.
 
-## Deploy topology (current reality)
+## Deploy topology
 
-- **PoC sensor (`apps/poc-sensor`)** deploys to **Cloudflare Pages** via `deploy-poc.yml` on changes under `apps/poc-sensor/**`.
-- **Backend, mobile, companion**: **not yet deployed**. Target per AGENTS.md is AWS (ECS + RDS + S3 + CloudFront). Infrastructure-as-code not yet committed.
-- **Local dev**: Docker Compose runs Postgres + Redis (`infra/docker/docker-compose.yml`). Backend runs via `pnpm dev:backend`; mobile via Metro + `ios`/`android` scripts; companion via `pnpm dev:companion`.
+Stack rationale lives in [ADR 0004](../decisions/0004-deployment-stack.md). Operational playbooks (rollback per platform, secret rotation) live in [../process/runbook.md](../process/runbook.md#production-deploys).
 
-Expand this section when production deploys are wired up.
+- **Backend** runs on **AWS ECS Fargate** behind an Application Load Balancer (HTTPS via ACM). Postgres + PostGIS on **RDS**, Redis on **ElastiCache**, uploads / exports / tile cache on **S3** fronted by **CloudFront**, secrets in **Secrets Manager**, logs in **CloudWatch Logs** with Container Insights enabled. IaC is **Terraform** under [`infra/aws/`](../../infra/aws/) with per-environment root modules (`envs/staging`, `envs/prod`).
+- **Companion** runs on **Cloudflare Pages** (next-on-pages). Every PR gets a preview deploy commented on the PR; production deploys on push to `main`.
+- **Mobile** ships via **Fastlane** to **TestFlight** (iOS) and **Play Internal** (Android). Releases are manual — `workflow_dispatch` or a `mobile-vX.Y.Z` git tag — and gated behind a `mobile-release` GitHub environment for credential isolation.
+- **PoC sensor** stays on **Cloudflare Pages** via the existing `poc-deploy.yml`.
+- **Local dev** uses Docker Compose for Postgres + Redis (`infra/docker/docker-compose.yml`); the backend runs via `pnpm dev:backend`, mobile via Metro, companion via `pnpm dev:companion`.
+
+Workflows: [`backend-deploy.yml`](../../.github/workflows/backend-deploy.yml) (build, ECR push, ECS deploy with auto-rollback on smoke failure), [`companion-deploy.yml`](../../.github/workflows/companion-deploy.yml) (PR previews + prod), [`mobile-release.yml`](../../.github/workflows/mobile-release.yml) (TestFlight + Play Internal). Post-deploy verification is `scripts/smoke/smoke.sh`.
