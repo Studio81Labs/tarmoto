@@ -45,6 +45,7 @@ function makeHazard(overrides: Partial<Hazard> = {}): Hazard {
     hazard_type: "pothole",
     severity: "medium",
     note: null,
+    photo_url: null,
     confirmations: 0,
     reporter: "user-1",
     road_name: "Main St",

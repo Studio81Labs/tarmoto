@@ -558,11 +558,51 @@ class ApiService {
     type: HazardType,
     severity: Severity = "medium",
     note?: string,
+    photoUrl?: string,
   ): Promise<Hazard> {
     const result = await client.POST("/api/v1/hazards", {
-      body: { lat, lng, hazard_type: type, severity, note },
+      body: {
+        lat,
+        lng,
+        hazard_type: type,
+        severity,
+        note,
+        photo_url: photoUrl,
+      },
     });
     return unwrap(result, "Failed to report hazard") as Hazard;
+  }
+
+  /**
+   * Upload a single hazard photo to /hazards/photos and return the
+   * URL the backend persisted it at. Caller submits this URL back as
+   * the next report's `photo_url`.
+   *
+   * Doing the upload separately from the report POST means a network
+   * drop after upload but before submit can be retried by the offline
+   * queue without re-uploading the bytes (or re-billing storage).
+   * Mirrors `uploadReviewPhotos` — same multipart pattern.
+   */
+  async uploadHazardPhoto(
+    photo: { uri: string; mimeType?: string; fileName?: string },
+    options?: { signal?: AbortSignal },
+  ): Promise<{ photo_url: string }> {
+    const form = new FormData();
+    // TODO drift-detection-irrelevant: multipart — same rationale as
+    // `uploadReviewPhotos` / `uploadAvatar`. openapi-fetch can't model
+    // RN FormData natively, so the casts below keep the platform in
+    // charge of the multipart boundary header.
+    form.append("file", {
+      uri: photo.uri,
+      type: photo.mimeType ?? "image/jpeg",
+      name: photo.fileName ?? `hazard-${Date.now()}.jpg`,
+    } as unknown as Blob);
+    const result = await client.POST("/api/v1/hazards/photos", {
+      body: form as unknown as { file: string },
+      bodySerializer: (body) => body as unknown as FormData,
+      signal: options?.signal,
+    });
+    return unwrap(result, "Failed to upload hazard photo");
   }
 
   /**
@@ -570,19 +610,59 @@ class ApiService {
    * `reportHazard` stays public for the existing call sites that want
    * the raw POST semantics, but every UI flow should funnel through
    * this method so a tunnel-time tap doesn't drop the report.
+   *
+   * If the payload carries a `photoUri`, the queue uploads the photo
+   * first and then submits the report with the returned URL. The
+   * upload is wired through the queue's uploader callback so a queued
+   * (offline) report drains the photo + submit pair together when
+   * connectivity returns — no special handling needed at the call site.
    */
   async submitHazardReport(
     payload: HazardReportPayload,
   ): Promise<SubmitHazardResult> {
-    return submitHazardReport(payload, (p) =>
-      this.reportHazard(p.lat, p.lng, p.hazardType, p.severity, p.note),
-    );
+    return submitHazardReport(payload, (p) => this.reportHazardWithPhoto(p));
   }
 
   /** Best-effort flush of any queued hazard reports. */
   async flushPendingHazardReports(): Promise<DrainHazardResult> {
-    return drainHazardQueue((p) =>
-      this.reportHazard(p.lat, p.lng, p.hazardType, p.severity, p.note),
+    return drainHazardQueue((p) => this.reportHazardWithPhoto(p));
+  }
+
+  /**
+   * Internal uploader the queue hands to each drain attempt. Uploads
+   * the photo first (when `photoUri` is set) and ignores upload errors
+   * so the report still reaches the backend without an attachment —
+   * the rider tapped Submit on a hazard, dropping the report because
+   * the photo couldn't upload would be the worst outcome.
+   *
+   * Once the photo URL is known the report POST runs with `photo_url`
+   * populated; the backend persists it on the row and surfaces it on
+   * `/hazards` and the WebSocket fan-out.
+   */
+  private async reportHazardWithPhoto(
+    payload: HazardReportPayload,
+  ): Promise<Hazard> {
+    let photoUrl: string | undefined;
+    if (payload.photoUri) {
+      try {
+        const uploaded = await this.uploadHazardPhoto({
+          uri: payload.photoUri,
+        });
+        photoUrl = uploaded.photo_url;
+      } catch {
+        // Submit the report anyway — losing the photo is better than
+        // losing the hazard. The backend supports `photo_url` being
+        // omitted, and a future "edit hazard" surface (out of scope
+        // here) could let the rider re-attach.
+      }
+    }
+    return this.reportHazard(
+      payload.lat,
+      payload.lng,
+      payload.hazardType,
+      payload.severity,
+      payload.note,
+      photoUrl,
     );
   }
 

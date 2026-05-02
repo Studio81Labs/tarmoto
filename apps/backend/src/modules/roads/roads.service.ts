@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { FunZone } from '../../entities/fun-zone.entity.js';
 import { HazardResponseDto } from '../hazards/dto/hazard-response.dto.js';
+import { sanitizeHazardPhotoUrl } from '../hazards/dto/hazard-photo.dto.js';
 import {
   ReviewResponseDto,
   sanitizeReviewPhotos,
@@ -158,7 +159,7 @@ export class RoadsService {
       // /hazards endpoint, which the mobile RoadPreview screen renders.
       this.segmentRepo.query(
         `SELECT
-          h.id, h.hazard_type, h.severity, h.note, h.confirmations,
+          h.id, h.hazard_type, h.severity, h.note, h.photo_url, h.confirmations,
           h.created_at, h.expires_at,
           ST_X(h.location::geometry) AS lng,
           ST_Y(h.location::geometry) AS lat,
@@ -465,6 +466,7 @@ function mapHazardRows(rows: unknown): HazardResponseDto[] {
     hazard_type: r.hazard_type as HazardType,
     severity: r.severity as HazardSeverity,
     note: (r.note as string) ?? null,
+    photo_url: sanitizeHazardPhotoUrl(r.photo_url),
     confirmations: r.confirmations as number,
     reporter: (r.reporter as string) ?? null,
     road_name: (r.road_name as string) ?? null,

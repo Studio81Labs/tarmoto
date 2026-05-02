@@ -113,6 +113,7 @@ function makeHazard() {
     hazard_type: "pothole" as const,
     severity: "medium" as const,
     note: null,
+    photo_url: null,
     confirmations: 0,
     reporter: "rider-1",
     road_name: null,

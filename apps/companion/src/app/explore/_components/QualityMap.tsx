@@ -47,6 +47,8 @@ interface HazardProps {
   hazard_type: HazardType;
   severity: string;
   note: string | null;
+  /** Public URL of the rider-attached photo, when present. */
+  photo_url: string | null;
   confirmations: number;
   reporter: string | null;
   road_name: string | null;
@@ -497,6 +499,7 @@ function toHazardFeatures(
         hazard_type: type,
         severity: h.severity,
         note: h.note,
+        photo_url: h.photo_url ?? null,
         confirmations: h.confirmations,
         reporter: h.reporter,
         road_name: h.road_name,
@@ -536,6 +539,13 @@ function renderHazardPopup(props: HazardProps): string {
   const note = props.note
     ? `<div style="font-size:12px;color:#334155;margin-top:8px;padding:6px 8px;background:#f1f5f9;border-radius:6px;">${escapeHtml(props.note)}</div>`
     : "";
+  // Inline `<img>` keeps the popup self-contained — the URL is
+  // already validated as https / loopback on the backend response
+  // path (`sanitizeHazardPhotoUrl`). Server-trusted means we don't
+  // need an extra render-time check here, just escape the attribute.
+  const photo = props.photo_url
+    ? `<img src="${escapeHtml(props.photo_url)}" alt="Hazard photo" style="display:block;width:100%;max-width:280px;height:auto;margin-top:8px;border-radius:6px;background:#e2e8f0;" />`
+    : "";
   return `
     <div style="font-family:system-ui,sans-serif;color:#0f172a;min-width:200px;">
       <div style="display:flex;align-items:center;gap:8px;">
@@ -546,6 +556,7 @@ function renderHazardPopup(props: HazardProps): string {
         </div>
         <span style="font-size:10px;text-transform:uppercase;letter-spacing:0.05em;padding:2px 6px;border-radius:999px;background:${severityBg(severity)};color:${severityFg(severity)};">${escapeHtml(severity)}</span>
       </div>
+      ${photo}
       ${note}
       <div style="font-size:12px;color:#475569;margin-top:8px;display:flex;justify-content:space-between;gap:8px;">
         <span>${escapeHtml(reporter)} · ${escapeHtml(when)}</span>

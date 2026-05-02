@@ -4,17 +4,180 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { basename, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import type { HazardType, HazardSeverity } from '@tarmoto/shared';
+import { hasControlCharacters } from '../../common/control-characters.js';
+import { LOOPBACK_HOSTS } from '../../common/loopback-hosts.js';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { CreateHazardDto, EXPIRY_HOURS } from './dto/create-hazard.dto.js';
 import { QueryHazardsDto } from './dto/query-hazards.dto.js';
 import { RouteHazardsDto } from './dto/route-hazards.dto.js';
 import { HazardResponseDto } from './dto/hazard-response.dto.js';
+import {
+  ALLOWED_HAZARD_PHOTO_TYPES,
+  HAZARD_PHOTO_PATH_PREFIX,
+  HazardPhotoUploadResponseDto,
+  sanitizeHazardPhotoUrl,
+} from './dto/hazard-photo.dto.js';
 import { EventsGateway } from '../events/events.gateway.js';
 import { PushService } from '../push/index.js';
+
+const HAZARD_PHOTO_UPLOAD_DIR = join(process.cwd(), 'uploads', 'hazard-photos');
+
+/**
+ * Decide whether a `<scheme>://<host>` origin belongs to *our* hazard
+ * upload storage. Mirrors the review-photo helper: a third-party URL
+ * that happens to share the `/uploads/hazard-photos/` pathname must
+ * never be misclassified as managed, otherwise a delete-on-update
+ * cascade could `unlink` an unrelated file in our managed directory
+ * just because the path matched. Treat as managed iff the origin
+ * matches `TARMOTO_PUBLIC_BASE_URL` OR (outside production) the host
+ * is loopback — same trust posture the upload endpoint uses when it
+ * builds outgoing URLs.
+ */
+function buildTrustedManagedOriginCheck(
+  config: ConfigService,
+): (parsed: URL) => boolean {
+  const configured = config.get<string>('TARMOTO_PUBLIC_BASE_URL')?.trim();
+  let configuredOrigin: string | null = null;
+  if (configured && configured.length > 0) {
+    try {
+      configuredOrigin = new URL(configured).origin;
+    } catch {
+      // Bad config falls through; the upload endpoint's own probe will
+      // surface the 500 with a clearer error.
+    }
+  }
+  return (parsed: URL): boolean => {
+    if (configuredOrigin && parsed.origin === configuredOrigin) return true;
+    if (
+      process.env.TARMOTO_NODE_ENV !== 'production' &&
+      LOOPBACK_HOSTS.has(parsed.hostname)
+    ) {
+      return true;
+    }
+    return false;
+  };
+}
+
+interface ManagedHazardPhoto {
+  filename: string;
+  filePath: string;
+}
+
+/**
+ * Resolve a hazard photo URL to its managed filename + on-disk path,
+ * or `null` when the URL is not one we own. Same defense-in-depth as
+ * the review-photo resolver: only honour the URL when the origin is
+ * trusted AND the pathname carries the managed prefix, and reject
+ * decoded filenames with path separators, control chars, or `.`/`..`
+ * segments so a crafted `photo_url` can't make a delete escape the
+ * managed directory.
+ */
+function resolveManagedHazardPhoto(
+  photoUrl: string | null,
+  isTrustedOrigin: (parsed: URL) => boolean,
+): ManagedHazardPhoto | null {
+  if (!photoUrl) return null;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(photoUrl);
+  } catch {
+    return null;
+  }
+
+  if (!isTrustedOrigin(parsed)) return null;
+  if (!parsed.pathname.startsWith(HAZARD_PHOTO_PATH_PREFIX)) return null;
+
+  const encodedFilename = parsed.pathname.slice(
+    HAZARD_PHOTO_PATH_PREFIX.length,
+  );
+  if (!encodedFilename) return null;
+
+  let filename: string;
+  try {
+    filename = decodeURIComponent(encodedFilename);
+  } catch {
+    return null;
+  }
+  if (
+    filename === '.' ||
+    filename === '..' ||
+    filename !== basename(filename) ||
+    filename.includes('/') ||
+    filename.includes('\\') ||
+    hasControlCharacters(filename)
+  ) {
+    return null;
+  }
+
+  return { filename, filePath: join(HAZARD_PHOTO_UPLOAD_DIR, filename) };
+}
+
+function buildOwnedPrefix(userId: string): string {
+  return `${userId}-`;
+}
+
+function isOwnedManagedPhoto(
+  photo: ManagedHazardPhoto,
+  userId: string,
+): boolean {
+  return photo.filename.startsWith(buildOwnedPrefix(userId));
+}
+
+/**
+ * Reject a `photo_url` payload that references a managed file the
+ * caller doesn't own. Mirrors the review-photo guard: without it user
+ * B could attach user A's `/uploads/hazard-photos/...` URL to B's own
+ * report, and a later dismiss would unlink the shared file out from
+ * under A. Forcing every managed URL to carry the caller's `<userId>-`
+ * filename prefix means cascade deletes only ever touch files the
+ * same user produced.
+ */
+function assertHazardPhotoIsOwned(
+  photoUrl: string | null | undefined,
+  userId: string,
+  isTrustedOrigin: (parsed: URL) => boolean,
+): void {
+  if (!photoUrl) return;
+  const managed = resolveManagedHazardPhoto(photoUrl, isTrustedOrigin);
+  if (!managed) return;
+  if (!isOwnedManagedPhoto(managed, userId)) {
+    throw new BadRequestException(
+      'Photo URL refers to a file you did not upload',
+    );
+  }
+}
+
+/**
+ * Best-effort delete of a managed hazard-photo file the caller owns.
+ * Third-party URLs, missing files, and managed files uploaded by
+ * another user are skipped silently — the row is already gone, and a
+ * stray orphan shouldn't surface a 500. Permission errors still
+ * bubble so an operator notices a misconfigured uploads directory.
+ */
+async function deleteOwnedHazardPhoto(
+  photoUrl: string | null | undefined,
+  userId: string,
+  isTrustedOrigin: (parsed: URL) => boolean,
+): Promise<void> {
+  if (!photoUrl) return;
+  const managed = resolveManagedHazardPhoto(photoUrl, isTrustedOrigin);
+  if (!managed) return;
+  if (!isOwnedManagedPhoto(managed, userId)) return;
+  try {
+    await unlink(managed.filePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+}
 
 /**
  * Buffer in metres around a saved commute route — riders within this
@@ -26,7 +189,7 @@ const COMMUTE_HAZARD_BUFFER_M = 200;
 
 const HAZARD_SELECT_BASE = `
   SELECT
-    hr.id, hr.hazard_type, hr.severity, hr.note, hr.confirmations,
+    hr.id, hr.hazard_type, hr.severity, hr.note, hr.photo_url, hr.confirmations,
     hr.created_at, hr.expires_at,
     ST_Y(hr.location::geometry) AS lat,
     ST_X(hr.location::geometry) AS lng,
@@ -42,6 +205,11 @@ const HAZARD_SELECT_BASE = `
 @Injectable()
 export class HazardsService {
   private readonly logger = new Logger(HazardsService.name);
+  // Built once at construction so each create / dismiss doesn't re-read
+  // TARMOTO_PUBLIC_BASE_URL. Closes the loophole where a third-party URL
+  // with our managed pathname prefix would be misclassified as managed
+  // (see `buildTrustedManagedOriginCheck`).
+  private readonly isTrustedManagedOrigin: (parsed: URL) => boolean;
 
   constructor(
     @InjectRepository(HazardReport)
@@ -50,7 +218,10 @@ export class HazardsService {
     private readonly commuteRepo: Repository<CommuteRoute>,
     private readonly eventsGateway: EventsGateway,
     private readonly pushService: PushService,
-  ) {}
+    config: ConfigService,
+  ) {
+    this.isTrustedManagedOrigin = buildTrustedManagedOriginCheck(config);
+  }
 
   async create(
     userId: string,
@@ -58,6 +229,13 @@ export class HazardsService {
   ): Promise<HazardResponseDto> {
     const expiryHours = EXPIRY_HOURS[dto.hazard_type] ?? 24;
     const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000);
+
+    const photoUrl = dto.photo_url?.trim();
+    if (photoUrl) {
+      // Block attaching a managed photo someone else uploaded — DTO-level
+      // URL validation only checks shape, not authorization.
+      assertHazardPhotoIsOwned(photoUrl, userId, this.isTrustedManagedOrigin);
+    }
 
     const hazard = this.hazardRepo.create({
       user_id: userId,
@@ -68,6 +246,7 @@ export class HazardsService {
       hazard_type: dto.hazard_type,
       severity: dto.severity ?? 'medium',
       note: dto.note ?? null,
+      photo_url: photoUrl ? photoUrl : null,
       expires_at: expiresAt,
     });
 
@@ -212,6 +391,19 @@ export class HazardsService {
     hazard.is_active = false;
     await this.hazardRepo.save(hazard);
 
+    // Cascade-delete the managed photo file so a dismissed hazard
+    // doesn't keep its attachment around — an orphan would never be
+    // referenced again but would still bill storage. Run after save
+    // so a DB failure can't leave the row pointing at a file we
+    // already unlinked. The ownership filter inside
+    // `deleteOwnedHazardPhoto` ensures we never delete a file
+    // another user uploaded.
+    await deleteOwnedHazardPhoto(
+      hazard.photo_url,
+      hazard.user_id,
+      this.isTrustedManagedOrigin,
+    );
+
     // Broadcast dismissal to nearby riders. The wire-level event uses
     // a looser `severity: string` so we can repurpose the field as a
     // `dismissed` signal — clients use this to prune the hazard from
@@ -294,6 +486,7 @@ export class HazardsService {
       hazard_type: hazard.hazard_type as HazardType,
       severity: hazard.severity as HazardSeverity,
       note: hazard.note,
+      photo_url: sanitizeHazardPhotoUrl(hazard.photo_url),
       confirmations: hazard.confirmations,
       reporter: hazard.user?.display_name ?? null,
       road_name: hazard.road_segment?.road_name ?? null,
@@ -314,11 +507,55 @@ export class HazardsService {
       hazard_type: row.hazard_type as HazardType,
       severity: row.severity as HazardSeverity,
       note: (row.note as string) ?? null,
+      photo_url: sanitizeHazardPhotoUrl(row.photo_url),
       confirmations: row.confirmations as number,
       reporter: (row.reporter as string) ?? null,
       road_name: (row.road_name as string) ?? null,
       created_at: (row.created_at as Date).toISOString(),
       expires_at: (row.expires_at as Date).toISOString(),
+    };
+  }
+
+  /**
+   * Persist an uploaded hazard photo to local disk and return the URL
+   * the caller should submit on the next `POST /hazards`.
+   *
+   * The endpoint deliberately doesn't require a hazard to exist yet —
+   * the typical flow is upload-then-create, and forcing an upfront
+   * round-trip would just slow the rider's tap on a marginal cell
+   * connection. Orphaned files (uploaded then never attached) are
+   * accepted as a known cost; an S3-backed lifecycle sweep is tracked
+   * separately. Filenames are scoped to the uploading user so a later
+   * dismiss / cleanup cascade can't touch another rider's photo.
+   */
+  async uploadPhoto(
+    userId: string,
+    file: Express.Multer.File,
+    publicBaseUrl: string,
+  ): Promise<HazardPhotoUploadResponseDto> {
+    const extension = ALLOWED_HAZARD_PHOTO_TYPES.get(file.mimetype);
+    if (!extension) {
+      throw new BadRequestException('Photos must be PNG, JPEG, or WebP images');
+    }
+
+    await mkdir(HAZARD_PHOTO_UPLOAD_DIR, { recursive: true });
+
+    const filename = `${userId}-${Date.now()}-${randomUUID()}${extension}`;
+    const filePath = join(HAZARD_PHOTO_UPLOAD_DIR, filename);
+    try {
+      await writeFile(filePath, file.buffer);
+    } catch (error) {
+      // Best-effort cleanup so a partial write doesn't leak storage
+      // when the disk fills mid-upload (ENOSPC) or a permission flip
+      // creates a zero-byte file we never finished. unlink failure
+      // here is fine — there's nothing to leak when there was nothing
+      // to write.
+      await unlink(filePath).catch(() => {});
+      throw error;
+    }
+
+    return {
+      photo_url: `${publicBaseUrl}${HAZARD_PHOTO_PATH_PREFIX}${filename}`,
     };
   }
 }

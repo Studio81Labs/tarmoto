@@ -18,6 +18,7 @@ import React, { ComponentProps, useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -410,6 +411,19 @@ function HazardRow({ hazard }: { hazard: CommuteHazardView }) {
           <Text style={styles.hazardNote}>{hazard.note}</Text>
         ) : null}
       </View>
+      {hazard.photo_url ? (
+        // Thumbnail surfaces the rider-attached photo directly in the
+        // hazard list (US-4 photo upload). Tap-to-zoom is a nice-to-
+        // have follow-up; today the thumbnail alone gives the next
+        // rider a real-world view of the obstacle which matters for
+        // gravel / oil_spill / flooding where severity is hard to
+        // judge from text + icon alone.
+        <Image
+          source={{ uri: hazard.photo_url }}
+          style={styles.hazardPhoto}
+          accessibilityLabel={`Photo of ${formatHazardType(hazard.hazard_type)}`}
+        />
+      ) : null}
     </View>
   );
 }
@@ -1153,6 +1167,12 @@ const styles = StyleSheet.create({
   hazardBody: {
     flex: 1,
     gap: 2,
+  },
+  hazardPhoto: {
+    width: 56,
+    height: 56,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.border,
   },
   hazardTitleRow: {
     flexDirection: "row",

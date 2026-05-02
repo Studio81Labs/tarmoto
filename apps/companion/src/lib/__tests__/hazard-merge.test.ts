@@ -10,6 +10,7 @@ function hazard(id: string): HazardResponse {
     hazard_type: "pothole",
     severity: "medium",
     note: null,
+    photo_url: null,
     confirmations: 0,
     reporter: null,
     road_name: null,

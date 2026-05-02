@@ -1,7 +1,17 @@
 /* eslint-disable @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-assignment */
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  access,
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
+import { join } from 'node:path';
 import { Repository } from 'typeorm';
 import { HazardsService } from './hazards.service.js';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
@@ -85,6 +95,16 @@ describe('HazardsService', () => {
             sendToUsers: jest
               .fn()
               .mockResolvedValue({ delivered: 0, pruned: 0, users: 0 }),
+          },
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            // Default tests use loopback dev mode (no public-base URL),
+            // which `buildTrustedManagedOriginCheck` treats as trusted
+            // for any loopback host outside production. Photo-specific
+            // tests below override this with a configured URL.
+            get: jest.fn().mockReturnValue(undefined),
           },
         },
       ],
@@ -194,6 +214,70 @@ describe('HazardsService', () => {
         expect(Math.abs(expiryTime - expectedExpiry)).toBeLessThan(5000);
       }
     });
+
+    it('should persist a managed photo_url when the caller owns the file', async () => {
+      const dto = {
+        lat: 49.1,
+        lng: 16.75,
+        hazard_type: 'pothole' as const,
+        // The default ConfigService mock returns undefined for the
+        // public-base URL, which makes loopback hosts trusted —
+        // a `user-1-` filename matches the ownership prefix.
+        photo_url:
+          'http://localhost:3000/uploads/hazard-photos/user-1-1700000000000-abc.jpg',
+      };
+
+      const result = await service.create('user-1', dto);
+
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          photo_url:
+            'http://localhost:3000/uploads/hazard-photos/user-1-1700000000000-abc.jpg',
+        }),
+      );
+      expect(result.photo_url).toBe(
+        'http://localhost:3000/uploads/hazard-photos/user-1-1700000000000-abc.jpg',
+      );
+    });
+
+    it('should reject a managed photo_url uploaded by a different user', async () => {
+      const dto = {
+        lat: 49.1,
+        lng: 16.75,
+        hazard_type: 'pothole' as const,
+        photo_url:
+          'http://localhost:3000/uploads/hazard-photos/other-user-1700000000000-abc.jpg',
+      };
+
+      await expect(service.create('user-1', dto)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(repo.save).not.toHaveBeenCalled();
+    });
+
+    it('should accept third-party photo URLs without ownership checks', async () => {
+      const dto = {
+        lat: 49.1,
+        lng: 16.75,
+        hazard_type: 'pothole' as const,
+        // Origin doesn't match `TARMOTO_PUBLIC_BASE_URL` and isn't
+        // loopback, so the resolver classifies as third-party — we
+        // never wrote it, we won't validate ownership for it, and it
+        // round-trips through the response.
+        photo_url: 'https://cdn.thirdparty.example.com/some-photo.jpg',
+      };
+
+      const result = await service.create('user-1', dto);
+
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          photo_url: 'https://cdn.thirdparty.example.com/some-photo.jpg',
+        }),
+      );
+      expect(result.photo_url).toBe(
+        'https://cdn.thirdparty.example.com/some-photo.jpg',
+      );
+    });
   });
 
   describe('findNearby', () => {
@@ -234,6 +318,7 @@ describe('HazardsService', () => {
           hazard_type: 'pothole',
           severity: 'high',
           note: null,
+          photo_url: null,
           confirmations: 3,
           created_at: new Date('2026-04-13T10:00:00Z'),
           expires_at: new Date('2026-04-16T10:00:00Z'),
@@ -254,12 +339,59 @@ describe('HazardsService', () => {
         hazard_type: 'pothole',
         severity: 'high',
         note: null,
+        photo_url: null,
         confirmations: 3,
         reporter: 'TestRider',
         road_name: 'D35',
         created_at: '2026-04-13T10:00:00.000Z',
         expires_at: '2026-04-16T10:00:00.000Z',
       });
+    });
+
+    it('should surface a managed photo_url in mapped responses and reject foreign URLs', async () => {
+      repo.query!.mockResolvedValueOnce([
+        {
+          id: 'h1',
+          hazard_type: 'pothole',
+          severity: 'medium',
+          note: null,
+          // Loopback URL is trusted in dev — sanitizer keeps it.
+          photo_url:
+            'http://localhost:3000/uploads/hazard-photos/user-1-1700000000000-abc.jpg',
+          confirmations: 0,
+          created_at: new Date('2026-04-13T10:00:00Z'),
+          expires_at: new Date('2026-04-14T10:00:00Z'),
+          lat: 49.1,
+          lng: 16.75,
+          reporter: null,
+          road_name: null,
+        },
+        {
+          id: 'h2',
+          hazard_type: 'gravel',
+          severity: 'low',
+          note: null,
+          // Garbage value persisted directly to the DB at some point —
+          // sanitizer must filter it out so the map doesn't try to
+          // render an `<img src="not-a-url">`.
+          photo_url: 'not-a-url',
+          confirmations: 0,
+          created_at: new Date('2026-04-13T10:00:00Z'),
+          expires_at: new Date('2026-04-14T10:00:00Z'),
+          lat: 49.2,
+          lng: 16.85,
+          reporter: null,
+          road_name: null,
+        },
+      ]);
+
+      const results = await service.findNearby({ lat: 49.1, lng: 16.75 });
+
+      expect(results).toHaveLength(2);
+      expect(results[0].photo_url).toBe(
+        'http://localhost:3000/uploads/hazard-photos/user-1-1700000000000-abc.jpg',
+      );
+      expect(results[1].photo_url).toBeNull();
     });
   });
 
@@ -415,6 +547,84 @@ describe('HazardsService', () => {
       expect(mockQb.where).toHaveBeenCalledWith(
         'is_active = true AND expires_at < NOW()',
       );
+    });
+  });
+
+  describe('uploadPhoto', () => {
+    const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');
+
+    afterEach(async () => {
+      // Clean any files this suite wrote so a re-run doesn't trip
+      // ownership checks against stale `user-1-...` filenames.
+      try {
+        const entries = await readdir(tmpDir);
+        await Promise.all(
+          entries
+            .filter((name) => name.startsWith('user-1-'))
+            .map((name) => rm(join(tmpDir, name), { force: true })),
+        );
+      } catch {
+        // dir may not exist if no uploadPhoto test ran in this run.
+      }
+    });
+
+    it('should write the file to disk and return a URL under the public base', async () => {
+      await mkdir(tmpDir, { recursive: true });
+      const file = {
+        mimetype: 'image/jpeg',
+        buffer: Buffer.from('fake-jpg-bytes'),
+      } as Express.Multer.File;
+
+      const result = await service.uploadPhoto(
+        'user-1',
+        file,
+        'https://app.tarmoto.test',
+      );
+
+      expect(result.photo_url).toMatch(
+        /^https:\/\/app\.tarmoto\.test\/uploads\/hazard-photos\/user-1-\d+-[0-9a-f-]+\.jpg$/,
+      );
+      const filename = result.photo_url.split('/').pop()!;
+      const written = await readFile(join(tmpDir, filename));
+      expect(written.toString()).toBe('fake-jpg-bytes');
+    });
+
+    it('should reject unsupported mime types without writing anything', async () => {
+      const file = {
+        mimetype: 'application/pdf',
+        buffer: Buffer.from('not-an-image'),
+      } as Express.Multer.File;
+
+      await expect(
+        service.uploadPhoto('user-1', file, 'https://app.tarmoto.test'),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('dismiss cleanup', () => {
+    it('should unlink the managed photo file when dismissing a hazard that owns one', async () => {
+      const tmpDir = join(process.cwd(), 'uploads', 'hazard-photos');
+      await mkdir(tmpDir, { recursive: true });
+      // Match the ownership prefix so the dismiss cascade actually
+      // unlinks the file (foreign-user files are skipped).
+      const filename = `${mockHazard.user_id}-1700000000000-cleanup.jpg`;
+      const filePath = join(tmpDir, filename);
+      await writeFile(filePath, 'cleanup-bytes');
+
+      const hazardWithPhoto = {
+        ...mockHazard,
+        photo_url: `http://localhost:3000/uploads/hazard-photos/${filename}`,
+      };
+      const selectQb = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(hazardWithPhoto),
+      };
+      repo.createQueryBuilder!.mockReturnValueOnce(selectQb as never);
+
+      await service.dismiss(mockHazard.id!);
+
+      await expect(access(filePath)).rejects.toThrow();
     });
   });
 });
