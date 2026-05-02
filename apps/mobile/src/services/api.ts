@@ -27,6 +27,7 @@ import type {
   Trip,
   AuthResponse,
   User,
+  MeProfile,
   PublicProfile,
   FollowerListItem,
   UserBadge,
@@ -225,6 +226,17 @@ class ApiService {
   async getProfile(): Promise<User> {
     const result = await client.GET("/api/v1/users/me");
     return unwrap(result, "Failed to load profile") as User;
+  }
+
+  /**
+   * Authenticated rider's own profile summary (issue #334) — surfaces
+   * `total_hours`, `joined_at` and the basic ride / road / hazard / follow /
+   * badge counts in one call so the profile screen does not have to
+   * compose the badges, follow, and rides endpoints itself.
+   */
+  async getMyProfile(): Promise<MeProfile> {
+    const result = await client.GET("/api/v1/users/me/profile");
+    return unwrap(result, "Failed to load profile summary");
   }
 
   async updateProfile(updates: Partial<User>): Promise<User> {

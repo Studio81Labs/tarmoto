@@ -8,12 +8,15 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { randomUUID } from 'node:crypto';
+import { Ride } from '../../entities/ride.entity.js';
 import { User } from '../../entities/user.entity.js';
+import { UserBadge } from '../../entities/user-badge.entity.js';
 import { UserContact } from '../../entities/user-contact.entity.js';
 import { UserFollow } from '../../entities/user-follow.entity.js';
 import { OBJECT_STORAGE } from '../storage/storage.tokens.js';
 import type { ObjectStorage } from '../storage/object-storage.interface.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
+import { BadgesService } from '../badges/badges.service.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { CreateContactDto } from './dto/create-contact.dto.js';
 import { UpdateContactDto } from './dto/update-contact.dto.js';
@@ -22,6 +25,7 @@ import {
   ContactResponseDto,
 } from './dto/user-response.dto.js';
 import { PublicProfileDto } from './dto/public-profile.dto.js';
+import { MeProfileDto } from './dto/me-profile.dto.js';
 import { AVATAR_KEY_PREFIX, avatarKeyFromUrl } from './avatar-storage-key.js';
 import { toUserResponse } from './user-response.mapper.js';
 
@@ -42,9 +46,14 @@ export class UsersService {
     private readonly contactRepo: Repository<UserContact>,
     @InjectRepository(UserFollow)
     private readonly userFollowRepo: Repository<UserFollow>,
+    @InjectRepository(UserBadge)
+    private readonly userBadgeRepo: Repository<UserBadge>,
+    @InjectRepository(Ride)
+    private readonly rideRepo: Repository<Ride>,
     @Inject(OBJECT_STORAGE)
     private readonly storage: ObjectStorage,
     private readonly privacy: PrivacyPreferencesService,
+    private readonly badges: BadgesService,
   ) {}
 
   async getProfile(userId: string): Promise<UserResponseDto> {
@@ -53,6 +62,52 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
     return toUserResponse(user);
+  }
+
+  /**
+   * Authenticated rider's own profile summary (issue #334). Surfaces the
+   * fields the badges endpoint does not expose (`joined_at`, `total_hours`)
+   * plus the basic counts the profile / gamification surfaces want without
+   * making the client compose three separate calls. `total_hours` is the
+   * one number we can't crib from `BadgesService.computeStats()` — it is
+   * derived from `(ended_at - started_at)` on completed rides only so an
+   * abandoned in-progress ride doesn't inflate the total.
+   */
+  async getMeProfile(userId: string): Promise<MeProfileDto> {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const [stats, hoursRow, followerCount, followingCount, badgesEarned] =
+      await Promise.all([
+        this.badges.computeStats(userId),
+        this.rideRepo
+          .createQueryBuilder('r')
+          .select(
+            'COALESCE(SUM(EXTRACT(EPOCH FROM (r.ended_at - r.started_at)) / 3600.0), 0)',
+            'hours',
+          )
+          .where('r.user_id = :userId', { userId })
+          .andWhere("r.status = 'completed'")
+          .andWhere('r.ended_at IS NOT NULL')
+          .getRawOne<{ hours: string }>(),
+        this.userFollowRepo.count({ where: { following_id: userId } }),
+        this.userFollowRepo.count({ where: { follower_id: userId } }),
+        this.userBadgeRepo.count({ where: { user_id: userId } }),
+      ]);
+
+    return {
+      joined_at: user.created_at.toISOString(),
+      total_hours: parseFloat(hoursRow?.hours ?? '0'),
+      total_rides: stats.ride_count ?? 0,
+      total_distance_km: stats.total_distance ?? 0,
+      roads_discovered: stats.roads_discovered ?? 0,
+      hazards_reported: stats.hazards_reported ?? 0,
+      follower_count: followerCount,
+      following_count: followingCount,
+      badges_earned: badgesEarned,
+    };
   }
 
   /**

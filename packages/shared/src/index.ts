@@ -7,6 +7,7 @@ export * from "./constants";
 export * from "./geo";
 export * from "./gpx-kml-import";
 export * from "./lean-angle";
+export * from "./me-profile";
 export * from "./notifications";
 export * from "./privacy";
 export * from "./public-profile";

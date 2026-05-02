@@ -1,11 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fetchGamificationSnapshot,
+  fetchMeProfile,
   fetchRegionalLeaderboards,
   GamificationFetchError,
   joinChallenge,
 } from "../gamification-fetch";
 import { api } from "@/lib/api";
+
+const ME_PROFILE_RESPONSE = {
+  joined_at: "2024-04-13T10:00:00.000Z",
+  total_hours: 87.4,
+  total_rides: 18,
+  total_distance_km: 1_234.5,
+  roads_discovered: 73,
+  hazards_reported: 6,
+  follower_count: 11,
+  following_count: 7,
+  badges_earned: 5,
+};
 
 vi.mock("@/lib/api", () => ({
   api: {
@@ -77,6 +90,34 @@ describe("joinChallenge", () => {
   });
 });
 
+describe("fetchMeProfile", () => {
+  it("returns the rider summary on success", async () => {
+    mockGet.mockResolvedValueOnce(ok(ME_PROFILE_RESPONSE));
+
+    const me = await fetchMeProfile();
+
+    expect(mockGet).toHaveBeenCalledWith("/api/v1/users/me/profile", {
+      signal: undefined,
+    });
+    expect(me.total_hours).toBe(87.4);
+    expect(me.joined_at).toBe("2024-04-13T10:00:00.000Z");
+  });
+
+  it("wraps backend errors in GamificationFetchError with the status", async () => {
+    mockGet.mockResolvedValueOnce(fail(500, { message: "boom" }));
+
+    try {
+      await fetchMeProfile();
+      throw new Error("expected fetchMeProfile to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(GamificationFetchError);
+      const ge = err as GamificationFetchError;
+      expect(ge.message).toBe("boom");
+      expect(ge.status).toBe(500);
+    }
+  });
+});
+
 describe("fetchGamificationSnapshot", () => {
   function setupHappyPath() {
     // Order: badges, challenges (parallel), then per-challenge details.
@@ -86,6 +127,9 @@ describe("fetchGamificationSnapshot", () => {
       const opts = options as
         | { params?: { path?: Record<string, string> } }
         | undefined;
+      if (url === "/api/v1/users/me/profile") {
+        return Promise.resolve(ok(ME_PROFILE_RESPONSE));
+      }
       if (url === "/api/v1/users/{userId}/badges") {
         return Promise.resolve(
           ok([
@@ -154,7 +198,7 @@ describe("fetchGamificationSnapshot", () => {
     });
   }
 
-  it("composes badges + challenges + details into a snapshot", async () => {
+  it("composes badges + challenges + details + me-profile into a snapshot", async () => {
     setupHappyPath();
 
     const snap = await fetchGamificationSnapshot("user-1");
@@ -167,6 +211,10 @@ describe("fetchGamificationSnapshot", () => {
       joined: true,
       participantCount: 12,
     });
+    // The me-profile fields backfill `totalHours` / `joinedAt` that the
+    // badges endpoint can't provide (issue #334).
+    expect(snap.stats.totalHours).toBe(87.4);
+    expect(snap.stats.joinedAt).toBe("2024-04-13T10:00:00.000Z");
   });
 
   it("propagates errors from the badges call", async () => {
@@ -187,6 +235,9 @@ describe("fetchGamificationSnapshot", () => {
       if (url === "/api/v1/users/{userId}/badges") {
         return Promise.resolve(ok([]));
       }
+      if (url === "/api/v1/users/me/profile") {
+        return Promise.resolve(ok(ME_PROFILE_RESPONSE));
+      }
       if (url === "/api/v1/challenges") {
         return Promise.resolve(fail(503, { message: "Unavailable" }));
       }
@@ -198,11 +249,26 @@ describe("fetchGamificationSnapshot", () => {
     );
   });
 
+  it("propagates errors from the me-profile call", async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (url === "/api/v1/users/me/profile") {
+        return Promise.resolve(fail(500, { message: "Profile lookup failed" }));
+      }
+      return Promise.resolve(ok([]));
+    });
+
+    await expect(fetchGamificationSnapshot("user-1")).rejects.toThrow(
+      "Profile lookup failed",
+    );
+  });
+
   it("returns an empty-but-valid snapshot when there are no challenges", async () => {
     mockGet.mockImplementation((url: string) => {
       if (url === "/api/v1/users/{userId}/badges")
         return Promise.resolve(ok([]));
       if (url === "/api/v1/challenges") return Promise.resolve(ok([]));
+      if (url === "/api/v1/users/me/profile")
+        return Promise.resolve(ok(ME_PROFILE_RESPONSE));
       return Promise.resolve(fail(404));
     });
 

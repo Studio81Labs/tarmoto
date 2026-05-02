@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "9852c12f-6dc7-4e1f-840e-34b6974f59ad",
+    "_postman_id": "2af0f315-b851-4a40-8d6f-9f13fc3592f3",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -662,12 +662,35 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"lat\": 49.1,\n  \"lng\": 16.75,\n  \"hazard_type\": \"pothole\",\n  \"severity\": \"medium\",\n  \"note\": \"\"\n}",
+              "raw": "{\n  \"lat\": 49.1,\n  \"lng\": 16.75,\n  \"hazard_type\": \"pothole\",\n  \"severity\": \"medium\",\n  \"note\": \"\",\n  \"photo_url\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
+            }
+          }
+        },
+        {
+          "name": "Upload a photo for a hazard report",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/hazards/photos",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "hazards", "photos"]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": ""
+                }
+              ]
             }
           }
         },
@@ -953,6 +976,68 @@
       ]
     },
     {
+      "name": "weather",
+      "item": [
+        {
+          "name": "Get current weather at a location",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/weather/current",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "weather", "current"],
+              "query": [
+                {
+                  "key": "lat",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                },
+                {
+                  "key": "lng",
+                  "value": "",
+                  "description": "",
+                  "disabled": false
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get weather conditions along a route",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/weather/route",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "weather", "route"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "users",
       "item": [
         {
@@ -999,6 +1084,23 @@
           }
         },
         {
+          "name": "Get current rider's profile summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/me/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", "me", "profile"]
+            }
+          }
+        },
+        {
           "name": "Get a rider's public profile",
           "request": {
             "method": "GET",
@@ -1016,6 +1118,43 @@
                 {
                   "key": "userId",
                   "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List a rider's shared rides",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/:userId/shared-rides",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "users", ":userId", "shared-rides"],
+              "variable": [
+                {
+                  "key": "userId",
+                  "value": ""
+                }
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                },
+                {
+                  "key": "offset",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
                 }
               ]
             }
@@ -1139,37 +1278,6 @@
                   "value": ""
                 }
               ]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "sensor",
-      "item": [
-        {
-          "name": "Upload batched accelerometer readings",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/sensor/upload",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "sensor", "upload"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"ride_id\": \"\",\n  \"device_model\": \"iPhone 15 Pro\",\n  \"client_model_version\": \"rsc-v1.0.0\",\n  \"readings\": [\n    {\n      \"t\": 0,\n      \"ax\": 0,\n      \"ay\": 0,\n      \"az\": 0,\n      \"lat\": 0,\n      \"lng\": 0,\n      \"speed\": 0,\n      \"lean_deg\": 0\n    }\n  ]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
             }
           }
         }
@@ -1373,6 +1481,37 @@
                   "disabled": true
                 }
               ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "sensor",
+      "item": [
+        {
+          "name": "Upload batched accelerometer readings",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sensor/upload",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sensor", "upload"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ride_id\": \"\",\n  \"device_model\": \"iPhone 15 Pro\",\n  \"client_model_version\": \"rsc-v1.0.0\",\n  \"readings\": [\n    {\n      \"t\": 0,\n      \"ax\": 0,\n      \"ay\": 0,\n      \"az\": 0,\n      \"lat\": 0,\n      \"lng\": 0,\n      \"speed\": 0,\n      \"lean_deg\": 0\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           }
         }
@@ -3114,68 +3253,6 @@
                   "disabled": true
                 }
               ]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "weather",
-      "item": [
-        {
-          "name": "Get current weather at a location",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/weather/current",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "weather", "current"],
-              "query": [
-                {
-                  "key": "lat",
-                  "value": "",
-                  "description": "",
-                  "disabled": false
-                },
-                {
-                  "key": "lng",
-                  "value": "",
-                  "description": "",
-                  "disabled": false
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Get weather conditions along a route",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/weather/route",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "weather", "route"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"route\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
             }
           }
         }

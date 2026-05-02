@@ -43,6 +43,7 @@ import {
   ContactResponseDto,
 } from './dto/user-response.dto.js';
 import { PublicProfileDto } from './dto/public-profile.dto.js';
+import { MeProfileDto } from './dto/me-profile.dto.js';
 
 @ApiTags('users')
 @Controller('users')
@@ -70,6 +71,24 @@ export class UsersController {
     @Body() dto: UpdateProfileDto,
   ): Promise<UserResponseDto> {
     return this.usersService.updateProfile(req.user!.userId, dto);
+  }
+
+  // Declared before `:userId/profile` so the literal `me` segment wins the
+  // route match — Nest delegates to Express, which matches in registration
+  // order, and `:userId/profile` would otherwise capture `me` as a UUID
+  // param and reach `getPublicProfile` instead.
+  @Get('me/profile')
+  @ApiOperation({
+    summary: "Get current rider's profile summary",
+    description:
+      'Authenticated rider summary surfacing `joined_at`, `total_hours`, ' +
+      'and basic counts (rides, distance, roads, hazards, follows, ' +
+      'badges) — closes the gap left by #302 where the gamification ' +
+      'snapshot fell back to zero/epoch defaults.',
+  })
+  @ApiResponse({ status: 200, type: MeProfileDto })
+  async getMeProfile(@Req() req: express.Request): Promise<MeProfileDto> {
+    return this.usersService.getMeProfile(req.user!.userId);
   }
 
   @Get(':userId/profile')

@@ -38,7 +38,8 @@ import Avatar from "@/components/Avatar";
 import StatTile from "@/components/StatTile";
 import SharedRidesSection from "@/components/SharedRidesSection";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
-import type { PublicProfile, UserBadge } from "@/types";
+import type { MeProfile, PublicProfile, UserBadge } from "@/types";
+import { formatDistance } from "@tarmoto/shared";
 import { formatCount, formatJoinedLabel } from "./riderProfile.helpers";
 
 type ProfileNav = NativeStackNavigationProp<ProfileStackParamList, "Profile">;
@@ -51,6 +52,12 @@ export default function ProfileScreen() {
   const logout = useAuthStore((s) => s.logout);
 
   const [profile, setProfile] = useState<PublicProfile | null>(null);
+  // Authoritative source for `joined_at` and `total_hours` (issue #334).
+  // Fetched in parallel with the public profile so the header renders in
+  // one round trip; a failure here is silently tolerated — the screen
+  // still renders the public-profile data while the stat line falls back
+  // to hiding the unavailable fields.
+  const [summary, setSummary] = useState<MeProfile | null>(null);
   const [badges, setBadges] = useState<UserBadge[]>([]);
   const [phase, setPhase] = useState<Phase>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -87,13 +94,15 @@ export default function ProfileScreen() {
       }
 
       try {
-        const [nextProfile, nextBadges] = await Promise.all([
+        const [nextProfile, nextBadges, nextSummary] = await Promise.all([
           api.getPublicProfile(userId),
           api.listUserBadges(userId).catch(() => [] as UserBadge[]),
+          api.getMyProfile().catch(() => null),
         ]);
         if (signal.cancelled) return;
         setProfile(nextProfile);
         setBadges(nextBadges);
+        setSummary(nextSummary);
         setPhase("ready");
       } catch (err) {
         if (signal.cancelled) return;
@@ -203,9 +212,17 @@ export default function ProfileScreen() {
   const avatarUrl = user.avatar_url ?? displayProfile?.avatar_url ?? null;
   const bio = displayProfile?.bio ?? user.bio ?? null;
   const homeRegion = displayProfile?.home_region ?? user.home_region ?? null;
-  const joinedAt = displayProfile?.created_at ?? user.created_at;
+  // Prefer the me-profile `joined_at` (issue #334) so the header displays
+  // the same canonical value the gamification surfaces use; the public
+  // profile `created_at` is the fallback if the summary call failed.
+  const joinedAt =
+    summary?.joined_at ?? displayProfile?.created_at ?? user.created_at;
   const followerCount = displayProfile?.follower_count ?? 0;
   const followingCount = displayProfile?.following_count ?? 0;
+  const unitsPref = user.preferences?.units ?? "metric";
+  const ridingStatLabel = summary
+    ? buildRidingStatLabel(summary, unitsPref)
+    : null;
 
   return (
     <ScrollView
@@ -244,6 +261,9 @@ export default function ProfileScreen() {
         </TouchableOpacity>
         <Text style={styles.displayName}>{displayName}</Text>
         <Text style={styles.metaLine}>{formatJoinedLabel(joinedAt)}</Text>
+        {ridingStatLabel ? (
+          <Text style={styles.metaLine}>{ridingStatLabel}</Text>
+        ) : null}
         {homeRegion ? (
           <View style={styles.metaInline}>
             <Icon
@@ -335,6 +355,33 @@ export default function ProfileScreen() {
       ) : null}
     </ScrollView>
   );
+}
+
+/**
+ * Compact "X · Y · Z" line summarising the rider's lifetime numbers from
+ * the `/users/me/profile` endpoint. Skips zero-value segments so a brand-
+ * new rider sees nothing instead of "0 km · 0h · 0 rides", and returns
+ * null when every segment would be skipped so the parent can render no
+ * line at all.
+ */
+function buildRidingStatLabel(
+  summary: MeProfile,
+  units: "metric" | "imperial",
+): string | null {
+  const parts: string[] = [];
+  if (summary.total_distance_km > 0) {
+    parts.push(formatDistance(Math.round(summary.total_distance_km), units));
+  }
+  if (summary.total_hours > 0) {
+    parts.push(`${Math.round(summary.total_hours)}h`);
+  }
+  if (summary.total_rides > 0) {
+    parts.push(
+      `${summary.total_rides} ride${summary.total_rides === 1 ? "" : "s"}`,
+    );
+  }
+  if (parts.length === 0) return null;
+  return parts.join(" · ");
 }
 
 interface ActionRowProps {

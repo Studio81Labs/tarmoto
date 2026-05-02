@@ -17,6 +17,8 @@
 import type { components } from "@tarmoto/openapi";
 import type { Badge, RiderStats } from "@/lib/types";
 
+type MeProfileDto = components["schemas"]["MeProfileDto"];
+
 // ── Types ──
 
 export type ChallengeCategory =
@@ -557,7 +559,9 @@ export function mapChallengeDto(
  * Derives a partial `RiderStats` from badge progress values. The badges
  * endpoint is the only API that exposes per-metric current values; rides /
  * hours / joined-at are not available there and fall back to zeros so the
- * milestone tracker still renders.
+ * milestone tracker still renders. Callers that have access to the
+ * `/users/me/profile` summary should prefer `riderStatsFromMeProfile`,
+ * which fills in the gaps.
  */
 export function riderStatsFromBadges(
   badges: readonly BadgeDto[],
@@ -575,9 +579,33 @@ export function riderStatsFromBadges(
 }
 
 /**
+ * Builds `RiderStats` from the authenticated rider's `/users/me/profile`
+ * summary (issue #334). This endpoint is the only source for `totalHours`
+ * and `joinedAt`, which the badges endpoint does not expose; the other
+ * fields agree with `BadgesService.computeStats` server-side so either
+ * source is fine for them, but using one source keeps the values
+ * consistent between renders.
+ */
+export function riderStatsFromMeProfile(me: MeProfileDto): RiderStats {
+  return {
+    totalKm: me.total_distance_km,
+    totalRides: me.total_rides,
+    totalHours: me.total_hours,
+    roadsDiscovered: me.roads_discovered,
+    hazardsReported: me.hazards_reported,
+    joinedAt: me.joined_at,
+  };
+}
+
+/**
  * Builds a full `GamificationSnapshot` from the data the backend exposes.
  * Real fetches go through `gamification-fetch.ts`; this is the pure
  * transform so it can be tested without touching network.
+ *
+ * `meProfile` is optional so the demo / fixture path still works without a
+ * signed-in user. When present (the live dashboard always passes it),
+ * `total_hours` and `joined_at` come from the dedicated summary endpoint —
+ * the badges endpoint does not surface those fields.
  *
  * The regional leaderboard is fetched separately (region selection is
  * interactive) and is therefore not part of the snapshot — see
@@ -586,6 +614,7 @@ export function riderStatsFromBadges(
 export function buildLiveSnapshot(input: {
   badges: readonly BadgeDto[];
   challengeDetails: readonly ChallengeDetailDto[];
+  meProfile?: MeProfileDto | null;
 }): GamificationSnapshot {
   const badges = input.badges.map(mapBadgeDto);
   const challenges = input.challengeDetails.map((d) =>
@@ -604,7 +633,9 @@ export function buildLiveSnapshot(input: {
     challengeMeta,
     milestones: DEFAULT_MILESTONES,
     seasonal: null,
-    stats: riderStatsFromBadges(input.badges),
+    stats: input.meProfile
+      ? riderStatsFromMeProfile(input.meProfile)
+      : riderStatsFromBadges(input.badges),
   };
 }
 

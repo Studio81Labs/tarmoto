@@ -54,6 +54,18 @@ describe('UsersController', () => {
     is_self: false,
   };
 
+  const mockMeProfile = {
+    joined_at: '2026-04-13T10:00:00.000Z',
+    total_hours: 42.5,
+    total_rides: 18,
+    total_distance_km: 1234.5,
+    roads_discovered: 73,
+    hazards_reported: 6,
+    follower_count: 11,
+    following_count: 7,
+    badges_earned: 5,
+  };
+
   const mockSharedRidesResponse = {
     items: [
       {
@@ -95,6 +107,7 @@ describe('UsersController', () => {
     delete process.env.TARMOTO_NODE_ENV;
     const mockService = {
       getProfile: jest.fn().mockResolvedValue(mockUser),
+      getMeProfile: jest.fn().mockResolvedValue(mockMeProfile),
       getPublicProfile: jest.fn().mockResolvedValue(mockPublicProfile),
       updateProfile: jest.fn().mockResolvedValue(mockUser),
       uploadAvatar: jest.fn().mockResolvedValue(mockUser),
@@ -137,6 +150,17 @@ describe('UsersController', () => {
       await controller.updateProfile(mockReq, dto);
 
       expect(service.updateProfile).toHaveBeenCalledWith('user-1', dto);
+    });
+  });
+
+  describe('GET /users/me/profile', () => {
+    it('returns the rider summary for the authenticated user', async () => {
+      const result = await controller.getMeProfile(mockReq);
+
+      expect(service.getMeProfile).toHaveBeenCalledWith('user-1');
+      expect(result.total_hours).toBe(42.5);
+      expect(result.joined_at).toBe('2026-04-13T10:00:00.000Z');
+      expect(result.badges_earned).toBe(5);
     });
   });
 

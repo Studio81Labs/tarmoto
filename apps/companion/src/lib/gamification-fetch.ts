@@ -25,6 +25,7 @@ import {
 type BadgeDto = components["schemas"]["BadgeDto"];
 type ChallengeDto = components["schemas"]["ChallengeDto"];
 type ChallengeDetailDto = components["schemas"]["ChallengeDetailDto"];
+type MeProfileDto = components["schemas"]["MeProfileDto"];
 
 export class GamificationFetchError extends Error {
   readonly status: number | null;
@@ -88,6 +89,22 @@ export async function fetchActiveChallenges(
   return data ?? [];
 }
 
+export async function fetchMeProfile(
+  options: FetchOptions = {},
+): Promise<MeProfileDto> {
+  const { data, error, response } = await api.GET("/api/v1/users/me/profile", {
+    signal: options.signal,
+  });
+  const status = response.status;
+  if (error || !data) {
+    throw new GamificationFetchError(
+      errorMessage(error, "Could not load your profile summary"),
+      status,
+    );
+  }
+  return data;
+}
+
 export async function fetchChallengeDetail(
   challengeId: string,
   options: FetchOptions = {},
@@ -129,10 +146,15 @@ export async function joinChallenge(challengeId: string): Promise<void> {
 }
 
 /**
- * Loads the snapshot of badges + challenges for the signed-in rider.
- * Badges and challenges run in parallel; per-challenge details fan out in
+ * Loads the snapshot of badges + challenges + rider summary for the
+ * signed-in rider. The three top-level reads (badges, active challenges,
+ * `/users/me/profile`) run in parallel; per-challenge details fan out in
  * a second parallel batch. A failure in any step throws so the caller can
  * render a single error fallback rather than a half-populated page.
+ *
+ * The me-profile read backfills `totalHours` and `joinedAt` on
+ * `RiderStats`, both of which the badges endpoint does not expose
+ * (issue #334).
  *
  * The optional `signal` cancels every in-flight request when the page
  * unmounts or the user switches accounts, so abandoned fetches stop
@@ -143,14 +165,15 @@ export async function fetchGamificationSnapshot(
   options: FetchOptions = {},
 ): Promise<GamificationSnapshot> {
   const { signal } = options;
-  const [badges, challenges] = await Promise.all([
+  const [badges, challenges, meProfile] = await Promise.all([
     fetchBadges(userId, { signal }),
     fetchActiveChallenges({ signal }),
+    fetchMeProfile({ signal }),
   ]);
   const challengeDetails = await Promise.all(
     challenges.map((c) => fetchChallengeDetail(c.id, { signal })),
   );
-  return buildLiveSnapshot({ badges, challengeDetails });
+  return buildLiveSnapshot({ badges, challengeDetails, meProfile });
 }
 
 export interface FetchRegionalLeaderboardsOptions extends FetchOptions {
