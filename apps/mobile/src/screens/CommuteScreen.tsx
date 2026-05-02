@@ -98,6 +98,22 @@ export default function CommuteScreen() {
     });
   }, [navigation]);
 
+  const navigateAlternative = useCallback(
+    (alt: CommuteAlternativeRoute) => {
+      // #342: launch turn-by-turn nav over the alternative's polyline.
+      // We register `Navigate` on the Home stack precisely so the rider
+      // stays on this tab when they end the session — no cross-tab hop
+      // and no trip-day shim. The screen itself is polyline-aware now.
+      if (alt.geometry.length < 2) return;
+      navigation.navigate("Navigate", {
+        source: "polyline",
+        polyline: alt.geometry,
+        title: `Alternative · ${alt.distance_km.toFixed(1)} km`,
+      });
+    },
+    [navigation],
+  );
+
   // NEW hazard markers stay sticky until the rider explicitly taps
   // "Mark all seen" below. Avoid auto-acknowledging on unmount: the
   // `acknowledge` callback's identity changes on every refresh, which
@@ -194,6 +210,7 @@ export default function CommuteScreen() {
           primaryDistanceKm={route.distance_km}
           primaryDurationMin={route.avg_duration_min}
           onStart={startCommuteRide}
+          onNavigate={navigateAlternative}
         />
       ) : null}
 
@@ -410,6 +427,7 @@ function AlternativesCard({
   primaryDistanceKm,
   primaryDurationMin,
   onStart,
+  onNavigate,
 }: {
   alternatives: CommuteAlternativesResponse;
   // Both fields can be missing at runtime: backend's
@@ -419,6 +437,7 @@ function AlternativesCard({
   primaryDistanceKm: number | null | undefined;
   primaryDurationMin: number | null | undefined;
   onStart: () => void;
+  onNavigate: (alt: CommuteAlternativeRoute) => void;
 }) {
   const ranked = rankAlternatives(alternatives.alternatives);
 
@@ -455,6 +474,7 @@ function AlternativesCard({
           primaryDistanceKm={primaryDistanceKm}
           primaryDurationMin={primaryDurationMin}
           onStart={onStart}
+          onNavigate={onNavigate}
         />
       ))}
     </View>
@@ -466,11 +486,13 @@ function AlternativeRow({
   primaryDistanceKm,
   primaryDurationMin,
   onStart,
+  onNavigate,
 }: {
   alt: CommuteAlternativeRoute;
   primaryDistanceKm: number | null | undefined;
   primaryDurationMin: number | null | undefined;
   onStart: () => void;
+  onNavigate: (alt: CommuteAlternativeRoute) => void;
 }) {
   // Compute deltas only when the primary value is actually a finite
   // number. The backend's primary route DTO doesn't carry
@@ -485,18 +507,23 @@ function AlternativeRow({
     Number.isFinite(primaryDurationMin)
       ? alt.duration_min - primaryDurationMin
       : null;
+  // Nav button is disabled when geometry is empty so we don't push a
+  // dead Navigate screen. Backend currently always returns geometry on
+  // alternatives, but defensive — same shape we already enforce on the
+  // trip-day Start Navigation button.
+  const navDisabled = alt.geometry.length < 2;
   return (
-    <TouchableOpacity
-      style={styles.altRow}
-      onPress={onStart}
-      accessibilityRole="button"
-      accessibilityLabel={
-        `Start commute on alternative route, ${alt.distance_km.toFixed(1)} ` +
-        `kilometres, ${alt.duration_min} minutes, ${alt.hazard_count} ` +
-        `hazard${alt.hazard_count === 1 ? "" : "s"}`
-      }
-    >
-      <View style={styles.altMain}>
+    <View style={styles.altRow}>
+      <TouchableOpacity
+        style={styles.altMain}
+        onPress={onStart}
+        accessibilityRole="button"
+        accessibilityLabel={
+          `Start commute on alternative route, ${alt.distance_km.toFixed(1)} ` +
+          `kilometres, ${alt.duration_min} minutes, ${alt.hazard_count} ` +
+          `hazard${alt.hazard_count === 1 ? "" : "s"}`
+        }
+      >
         <View style={styles.altHeaderRow}>
           <Text style={styles.altTitle}>
             {alt.distance_km.toFixed(1)} km · {alt.duration_min} min
@@ -536,9 +563,22 @@ function AlternativeRow({
             valueColor={qualityColor(alt.avg_quality ?? 0)}
           />
         </View>
-      </View>
-      <Icon name="chevron-right" size={20} color={colors.textTertiary} />
-    </TouchableOpacity>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[styles.altNavBtn, navDisabled && styles.altNavBtnDisabled]}
+        onPress={() => onNavigate(alt)}
+        disabled={navDisabled}
+        accessibilityRole="button"
+        accessibilityLabel={`Navigate alternative route, ${alt.distance_km.toFixed(1)} kilometres`}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        <Icon
+          name="navigation-variant"
+          size={20}
+          color={navDisabled ? colors.textTertiary : colors.primary}
+        />
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -1161,6 +1201,19 @@ const styles = StyleSheet.create({
   altMain: {
     flex: 1,
     gap: spacing.sm,
+  },
+  altNavBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  altNavBtnDisabled: {
+    opacity: 0.4,
   },
   altHeaderRow: {
     flexDirection: "row",

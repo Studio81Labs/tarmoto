@@ -194,6 +194,57 @@ describe("CommuteScreen", () => {
     });
   });
 
+  it("launches NavigationScreen with the alternative's polyline when the navigate button is tapped (#342)", () => {
+    // Same fixture as `baseAlternatives` but with real geometry on the
+    // first ranked alternative so the navigate button isn't disabled.
+    // The screen passes the polyline straight through the new
+    // `source: 'polyline'` discriminator — no trip-day shim required.
+    const altGeometry = [
+      { lat: 49.2, lng: 16.6 },
+      { lat: 49.21, lng: 16.61 },
+    ];
+    mockUseCommuteResult = buildResult({
+      alternatives: {
+        ...baseAlternatives,
+        alternatives: [
+          {
+            distance_km: 14.6,
+            duration_min: 28,
+            avg_quality: 4.4,
+            hazard_count: 0,
+            geometry: altGeometry,
+          },
+        ],
+      },
+    });
+
+    render(<CommuteScreen />);
+
+    fireEvent.press(
+      screen.getByLabelText("Navigate alternative route, 14.6 kilometres"),
+    );
+
+    expect(mockNavigate).toHaveBeenCalledWith("Navigate", {
+      source: "polyline",
+      polyline: altGeometry,
+      title: "Alternative · 14.6 km",
+    });
+  });
+
+  it("does not crash when the navigate button is tapped on an alternative without geometry", () => {
+    // Defensive: alternatives backend currently always returns geometry
+    // but the new nav button is disabled when geometry has < 2 points
+    // so a tap is a no-op (the rider sees the disabled state).
+    render(<CommuteScreen />);
+
+    // The base fixture has empty geometry on every alternative.
+    fireEvent.press(
+      screen.getByLabelText("Navigate alternative route, 14.6 kilometres"),
+    );
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
   it("surfaces an alert and clears the spinner when setPrimary rejects", async () => {
     const secondary: CommuteRoute = {
       ...baseRoute,

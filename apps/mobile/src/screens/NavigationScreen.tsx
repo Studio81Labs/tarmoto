@@ -1,9 +1,9 @@
 /**
  * NavigationScreen — US-16 turn-by-turn voice navigation.
  *
- * Live navigation over a trip day's planned polyline. The heavy lifting
- * (maneuver extraction, tick processing, TTS) lives in services/hooks —
- * this screen is a thin rendering layer that:
+ * Live navigation over a planned polyline. The heavy lifting (maneuver
+ * extraction, tick processing, TTS) lives in services/hooks — this
+ * screen is a thin rendering layer that:
  *
  *   - Renders the planned route on a MapLibre base map with the live
  *     location puck.
@@ -17,6 +17,12 @@
  *   - Flags off-route state with a full-width banner — the banner sits
  *     above the next-turn card so the rider can't miss it while the
  *     state machine suppresses maneuver announcements.
+ *
+ * The route input is polymorphic: trip-day callers pass `{ tripId,
+ * dayNumber }` and the screen resolves polyline / waypoints / title from
+ * `useTripStore`; commute (and any future ad-hoc routing) callers pass
+ * `{ polyline, title?, waypoints? }` directly. See `NavigateParams` in
+ * `RootNavigator` for the full shape.
  *
  * We keep the screen awake while it's mounted (rider stares at it). The
  * screen is designed for portrait motorcycle handlebar mounts; a
@@ -52,18 +58,29 @@ import { useNavigationSession } from "@/hooks/useNavigationSession";
 import { useVehicleNavigationDisplay } from "@/hooks/useVehicleNavigationDisplay";
 import { usePreferencesStore, useTripStore } from "@/stores";
 import { WeatherAlertBanner } from "@/components/WeatherAlertBanner";
-import type { LatLng, TripDay, Waypoint } from "@/types";
-import type { TripsStackParamList } from "@/navigation/RootNavigator";
+import type { LatLng, Waypoint } from "@/types";
+import type {
+  HomeStackParamList,
+  TripsStackParamList,
+} from "@/navigation/RootNavigator";
 import {
   MANEUVER_LABELS,
   type Maneuver,
   type ManeuverType,
 } from "@/services/navigation";
 import { DEV_MAP_STYLE_URL } from "./MapScreen.helpers";
+import { resolveNavigationRoute } from "./NavigationScreen.helpers";
 import { navigationWaypointsForRoadNames } from "./TripScreens.helpers";
 
-type NavRoute = RouteProp<TripsStackParamList, "Navigate">;
-type Nav = NativeStackNavigationProp<TripsStackParamList, "Navigate">;
+// `Navigate` is registered on both TripsStack (the planned-trip flow)
+// and HomeStack (commute), with identical params. Either RouteProp is a
+// valid annotation; the union keeps the screen agnostic to which stack
+// pushed it.
+type NavRoute = RouteProp<TripsStackParamList | HomeStackParamList, "Navigate">;
+type Nav = NativeStackNavigationProp<
+  TripsStackParamList | HomeStackParamList,
+  "Navigate"
+>;
 type IconName = ComponentProps<typeof Icon>["name"];
 
 const MANEUVER_ICONS: Record<ManeuverType, IconName> = {
@@ -82,7 +99,6 @@ const MANEUVER_ICONS: Record<ManeuverType, IconName> = {
 export default function NavigationScreen() {
   const { params } = useRoute<NavRoute>();
   const nav = useNavigation<Nav>();
-  const trip = useTripStore((s) => s.activeTrip);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [weatherDetailOpen, setWeatherDetailOpen] = useState(false);
   const weatherAlertsEnabled = usePreferencesStore(
@@ -90,15 +106,20 @@ export default function NavigationScreen() {
   );
   useKeepAwake(true);
 
-  const day = useMemo<TripDay | null>(() => {
-    if (!trip || trip.id !== params.tripId) return null;
-    return trip.days.find((d) => d.day_number === params.dayNumber) ?? null;
-  }, [trip, params.tripId, params.dayNumber]);
-
-  const polyline: LatLng[] = useMemo(
-    () => day?.route_geometry ?? [],
-    [day?.route_geometry],
+  // Trip-day callers carry only the IDs and rely on `useTripStore` for
+  // the geometry; the polyline branch carries the route inline. Reading
+  // the store unconditionally keeps the hook order stable and is cheap
+  // (a single Zustand selector) — the selector returns null for the
+  // polyline branch so React doesn't re-render on unrelated trip edits.
+  const activeTrip = useTripStore((s) =>
+    params.source === "trip-day" ? s.activeTrip : null,
   );
+  const route = useMemo(
+    () => resolveNavigationRoute(params, activeTrip),
+    [params, activeTrip],
+  );
+  const polyline = route.polyline;
+
   // Pull road names off the waypoints when the vertex aligns with one —
   // the planner snaps waypoints onto polyline vertices, so an index-based
   // lookup is stable enough for spoken guidance. When no waypoint matches
@@ -109,9 +130,9 @@ export default function NavigationScreen() {
     () =>
       buildRoadNameLookup(
         polyline,
-        navigationWaypointsForRoadNames(day?.waypoints ?? []),
+        navigationWaypointsForRoadNames(route.waypoints),
       ),
-    [polyline, day?.waypoints],
+    [polyline, route.waypoints],
   );
 
   const { tick, maneuvers, liveLocation } = useNavigationSession({
@@ -165,7 +186,7 @@ export default function NavigationScreen() {
       : (maneuvers[1] ?? maneuvers[0] ?? null));
 
   useVehicleNavigationDisplay({
-    title: day?.title ?? `Day ${params.dayNumber}`,
+    title: route.title,
     polyline,
     tick,
     liveLocation,
@@ -180,7 +201,7 @@ export default function NavigationScreen() {
     setVoiceEnabled((v) => !v);
   }, []);
 
-  if (!day || polyline.length < 2) {
+  if (polyline.length < 2) {
     return (
       <View style={styles.empty}>
         <Icon
@@ -190,7 +211,9 @@ export default function NavigationScreen() {
         />
         <Text style={styles.emptyTitle}>No route to navigate</Text>
         <Text style={styles.emptyBody}>
-          Open this day from the trip detail and try again.
+          {params.source === "trip-day"
+            ? "Open this day from the trip detail and try again."
+            : "We couldn't load this route's geometry. Go back and try again."}
         </Text>
         <TouchableOpacity onPress={handleEnd} style={styles.endSecondary}>
           <Text style={styles.endSecondaryLabel}>Back</Text>
