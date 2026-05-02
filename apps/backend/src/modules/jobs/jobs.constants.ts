@@ -76,6 +76,18 @@ export const QUEUE_NAMES = {
    * the same day deletes zero rows the second time.
    */
   LOCATION_RETENTION_SWEEP: 'location-retention-sweep',
+
+  /**
+   * Recurring (every 15 minutes). Iterates riders whose group-ride
+   * session is still active and whose `last_position_at` is recent,
+   * looks up current weather at their last broadcast position via
+   * `WeatherService`, and dispatches a `weather_alert` push when
+   * severe conditions (storm, ice, or wind > 60 km/h) are detected.
+   * Per-(user, kind) cooldown via `weather_alert_dispatches` keeps
+   * the same rider from being paged repeatedly inside one storm
+   * cell. Push-pref + quiet-hours gating happens inside `PushService`.
+   */
+  WEATHER_ALERT_SWEEP: 'weather-alert-sweep',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -99,6 +111,7 @@ export const JOB_NAMES = {
   FUNZONE_RECOMPUTE_RUN: 'run',
   PUSH_NOTIFICATION_SEND: 'send',
   LOCATION_RETENTION_SWEEP_RUN: 'run',
+  WEATHER_ALERT_SWEEP_RUN: 'run',
 } as const;
 
 /**
@@ -108,6 +121,8 @@ export const JOB_NAMES = {
 export const RECURRING_PATTERNS = {
   /** Top of every hour. */
   HOURLY: '0 * * * *',
+  /** Every 15 minutes (severe-weather sweep). */
+  EVERY_15_MINUTES: '*/15 * * * *',
   /** Daily at 03:30. */
   DAILY_0330: '30 3 * * *',
   /** Daily at 04:00 (retention sweep). */

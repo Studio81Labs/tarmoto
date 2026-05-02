@@ -37,7 +37,7 @@ export interface QueueHealthSnapshot {
  * Thin read-side aggregator for the queue health endpoint. All work
  * is read-only — this service never enqueues, retries, or removes
  * jobs. It exists so the controller stays trivial and so unit tests
- * can drive a single mock instead of injecting eight queues.
+ * can drive a single mock instead of injecting every queue.
  *
  * Per-queue failures are reported as the single most recent failure
  * because that's the actionable signal for on-call: when an
@@ -67,6 +67,8 @@ export class QueueHealthService {
     private readonly pushNotification: Queue,
     @InjectQueue(QUEUE_NAMES.LOCATION_RETENTION_SWEEP)
     private readonly locationRetentionSweep: Queue,
+    @InjectQueue(QUEUE_NAMES.WEATHER_ALERT_SWEEP)
+    private readonly weatherAlertSweep: Queue,
   ) {}
 
   private byName(): Record<QueueName, Queue> {
@@ -80,6 +82,7 @@ export class QueueHealthService {
       [QUEUE_NAMES.FUNZONE_RECOMPUTE]: this.funzoneRecompute,
       [QUEUE_NAMES.PUSH_NOTIFICATION]: this.pushNotification,
       [QUEUE_NAMES.LOCATION_RETENTION_SWEEP]: this.locationRetentionSweep,
+      [QUEUE_NAMES.WEATHER_ALERT_SWEEP]: this.weatherAlertSweep,
     };
   }
 
