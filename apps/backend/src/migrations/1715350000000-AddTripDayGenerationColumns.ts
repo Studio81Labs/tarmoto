@@ -22,8 +22,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * collab/messaging migrations stay valid; the auto-generator backfills
  * them whenever it runs.
  */
-export class AddTripDayGenerationColumns1715300000000 implements MigrationInterface {
-  name = 'AddTripDayGenerationColumns1715300000000';
+export class AddTripDayGenerationColumns1715350000000 implements MigrationInterface {
+  name = 'AddTripDayGenerationColumns1715350000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
