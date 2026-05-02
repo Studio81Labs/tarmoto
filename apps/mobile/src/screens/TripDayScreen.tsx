@@ -212,6 +212,7 @@ export default function TripDayScreen() {
         disabled={day.route_geometry.length < 2}
         onPress={() =>
           navigation.navigate("Navigate", {
+            source: "trip-day",
             tripId: trip.id,
             dayNumber: day.day_number,
           })

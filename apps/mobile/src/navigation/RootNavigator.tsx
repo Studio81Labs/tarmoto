@@ -14,7 +14,7 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import Icon from "@react-native-vector-icons/material-design-icons";
 type IconName = React.ComponentProps<typeof Icon>["name"];
 import { colors } from "@/theme";
-import type { HazardType } from "@/types";
+import type { HazardType, LatLng, Waypoint } from "@/types";
 import CarPlayRideMirror from "@/components/CarPlayRideMirror";
 import RideDurationTicker from "@/components/RideDurationTicker";
 import CrashDetectionRunner from "@/components/CrashDetectionRunner";
@@ -66,9 +66,31 @@ export type RootTabParamList = {
   ProfileTab: NavigatorScreenParams<ProfileStackParamList> | undefined;
 };
 
+/**
+ * `NavigationScreen` accepts two shapes:
+ *   - `trip-day`: resolves polyline + waypoints from the active trip in
+ *     `useTripStore`. Used by the trips flow where the rider taps Start
+ *     Navigation on a planned day.
+ *   - `polyline`: caller passes the route geometry directly. Used by
+ *     commute (and any future ad-hoc routing surface) so the screen
+ *     doesn't need a fake trip-day shim.
+ *
+ * Both stacks that register `Navigate` (Trips for the legacy flow, Home
+ * for commute) share this exact param type.
+ */
+export type NavigateParams =
+  | { source: "trip-day"; tripId: string; dayNumber: number }
+  | {
+      source: "polyline";
+      polyline: LatLng[];
+      title?: string;
+      waypoints?: Waypoint[];
+    };
+
 export type HomeStackParamList = {
   Home: undefined;
   Commute: undefined;
+  Navigate: NavigateParams;
   RideDetail: { rideId: string };
 };
 
@@ -100,7 +122,7 @@ export type TripsStackParamList = {
   TripImport: { tripId?: string; token?: string } | undefined;
   TripDetail: { tripId: string };
   TripDay: { tripId: string; dayNumber: number };
-  Navigate: { tripId: string; dayNumber: number };
+  Navigate: NavigateParams;
   RoadPreview: { segmentId: string };
 };
 
@@ -172,6 +194,19 @@ function HomeNavigator() {
         options={{ headerShown: false }}
       />
       <HomeStack.Screen name="Commute" component={CommuteScreen} />
+      {/*
+        US-15 / #342 follow-up: commute callers (CommuteScreen alternative
+        cards today, primary-route geometry once the backend caches it)
+        push `Navigate` with a polyline directly. Registering the screen
+        on this stack keeps the rider on the Home tab when they end the
+        nav session — same footgun-avoidance pattern used for the Map
+        tab's HazardReport mirror.
+      */}
+      <HomeStack.Screen
+        name="Navigate"
+        component={NavigationScreen}
+        options={{ headerShown: false, presentation: "fullScreenModal" }}
+      />
       <HomeStack.Screen
         name="RideDetail"
         component={RideDetailScreen}
