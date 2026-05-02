@@ -11,6 +11,7 @@ import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { CommuteModule } from '../commute/index.js';
 import { EventsModule } from '../events/events.module.js';
 import { TripActivityModule } from '../trip-activity/index.js';
+import { TripSharesModule } from '../trip-shares/trip-shares.module.js';
 import { TripsController } from './trips.controller.js';
 import { TripsService } from './trips.service.js';
 import { TripGeneratorService } from './trip-generator.service.js';
@@ -31,6 +32,10 @@ import { TripCollabService } from './trip-collab.service.js';
     ]),
     EventsModule,
     TripActivityModule,
+    // TripSharesModule re-exports TripSharesService so `POST /trips/
+    // from-share` (#357) can read the snapshot stored under a share
+    // token without bumping its public view counter.
+    TripSharesModule,
     // CommuteModule re-exports ROUTING_PROVIDER so the trip generator
     // can reuse the configured OSRM (or other) routing engine without
     // re-registering the provider here.

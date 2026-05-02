@@ -37,19 +37,7 @@ export class TripSharesService {
   }
 
   async getByToken(token: string): Promise<TripSharePublicDto> {
-    const share = await this.tripShareRepo.findOne({
-      where: { share_token: token },
-      relations: ['owner'],
-    });
-    // Soft-deleted owners (US-62) — pretend the share doesn't exist so
-    // share-link traffic during the grace window can't surface the
-    // owner's identity (`owner_name` / snapshot). 404 mirrors the
-    // unknown-token response so a visitor can't side-channel whether
-    // the owner deleted their account or the link was always invalid.
-    if (!share || share.owner?.deleted_at != null) {
-      throw new NotFoundException('Trip share not found');
-    }
-
+    const share = await this.findActiveByToken(token);
     // Atomic UPDATE ... view_count = view_count + 1 so concurrent viewers
     // can't race each other into a lost-update on the counter. The loaded
     // row is stale by one after this, so we bump it in-memory for the
@@ -58,6 +46,28 @@ export class TripSharesService {
     share.view_count = (share.view_count ?? 0) + 1;
 
     return this.toPublicResponse(share);
+  }
+
+  /**
+   * Look up an active share by token without bumping `view_count`.
+   *
+   * Used by `POST /trips/from-share` (#357) to materialise the snapshot
+   * into a real multi-day trip. The view counter is meant to track
+   * external link traffic (web preview opens) — counting an
+   * authenticated server-side import would inflate that signal and
+   * defeat its purpose. Soft-deleted owners (US-62) collapse to the
+   * same 404 the public reader returns so an importing client can't
+   * side-channel whether the owner deleted their account.
+   */
+  async findActiveByToken(token: string): Promise<TripShare> {
+    const share = await this.tripShareRepo.findOne({
+      where: { share_token: token },
+      relations: ['owner'],
+    });
+    if (!share || share.owner?.deleted_at != null) {
+      throw new NotFoundException('Trip share not found');
+    }
+    return share;
   }
 
   async listMine(userId: string): Promise<TripShareListResponseDto> {

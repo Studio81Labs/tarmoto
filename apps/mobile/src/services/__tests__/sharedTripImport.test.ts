@@ -1,13 +1,13 @@
 /**
- * Coverage for the shared-trip import helpers (US-39 / #283).
- * Validates the snapshot → preview / import-request mapping the deep-link
- * landing screen relies on.
+ * Coverage for the shared-trip preview helper (US-39 / #283 / #357).
+ * Validates the snapshot → preview mapping the deep-link landing screen
+ * relies on. The legacy snapshot → import-request flattener was removed
+ * with #357 — the screen now hands the share token to
+ * `POST /trips/from-share` instead, and the backend reconstructs the
+ * full multi-day trip from the stored snapshot.
  */
 
-import {
-  buildSharedTripPreview,
-  sharedSnapshotToImportRequest,
-} from "../sharedTripImport";
+import { buildSharedTripPreview } from "../sharedTripImport";
 import type { TripSharePublic } from "@/types";
 
 function share(snapshot: Record<string, unknown>): TripSharePublic {
@@ -75,6 +75,28 @@ describe("buildSharedTripPreview", () => {
     expect(preview?.stopCount).toBe(0);
   });
 
+  it("counts accommodation waypoints as stops (multi-day overnight handoff)", () => {
+    // The `/trips/from-share` flow preserves accommodation waypoints
+    // server-side (they survive the snapshot → trip_days roundtrip);
+    // the preview row should reflect them so the rider sees a stop
+    // count consistent with what they'll find inside the trip.
+    const preview = buildSharedTripPreview(
+      share({
+        days: [
+          {
+            distanceKm: 200,
+            waypoints: [
+              { id: "a", type: "start" },
+              { id: "b", type: "accommodation" },
+              { id: "c", type: "end" },
+            ],
+          },
+        ],
+      }),
+    );
+    expect(preview?.stopCount).toBe(1);
+  });
+
   it("returns null when the snapshot is missing days", () => {
     expect(buildSharedTripPreview(share({ name: "broken" }))).toBeNull();
   });
@@ -88,165 +110,5 @@ describe("buildSharedTripPreview", () => {
       title: "",
     });
     expect(preview?.title).toBe("From snapshot");
-  });
-});
-
-describe("sharedSnapshotToImportRequest", () => {
-  it("flattens day route geometry across all days", () => {
-    const request = sharedSnapshotToImportRequest(
-      share({
-        days: [
-          {
-            routeGeometry: {
-              coordinates: [
-                [10.0, 46.0],
-                [10.1, 46.05],
-              ],
-            },
-            waypoints: [],
-          },
-          {
-            routeGeometry: {
-              coordinates: [
-                [10.2, 46.1],
-                [10.3, 46.15],
-              ],
-            },
-            waypoints: [],
-          },
-        ],
-      }),
-    );
-    expect(request).not.toBeNull();
-    expect(request!.geometry).toEqual([
-      { lat: 46.0, lng: 10.0 },
-      { lat: 46.05, lng: 10.1 },
-      { lat: 46.1, lng: 10.2 },
-      { lat: 46.15, lng: 10.3 },
-    ]);
-    expect(request!.source_format).toBe("gpx");
-  });
-
-  it("collects waypoints from each day with name passthrough", () => {
-    const request = sharedSnapshotToImportRequest(
-      share({
-        days: [
-          {
-            routeGeometry: {
-              coordinates: [
-                [10, 46],
-                [11, 47],
-              ],
-            },
-            waypoints: [
-              {
-                location: { lat: 46.4, lng: 10.4 },
-                name: "Bormio",
-                type: "start",
-              },
-              { location: { lat: 46.5, lng: 10.5 }, type: "via" },
-            ],
-          },
-        ],
-      }),
-    );
-    expect(request!.waypoints).toEqual([
-      { lat: 46.4, lng: 10.4, name: "Bormio" },
-      { lat: 46.5, lng: 10.5, name: undefined },
-    ]);
-  });
-
-  it("falls back to waypoint coordinates when no day carries route geometry", () => {
-    const request = sharedSnapshotToImportRequest(
-      share({
-        days: [
-          {
-            waypoints: [
-              { location: { lat: 1, lng: 2 }, name: "A", type: "start" },
-              { location: { lat: 3, lng: 4 }, name: "B", type: "end" },
-            ],
-          },
-        ],
-      }),
-    );
-    expect(request).not.toBeNull();
-    expect(request!.geometry).toEqual([
-      { lat: 1, lng: 2 },
-      { lat: 3, lng: 4 },
-    ]);
-  });
-
-  it("returns null when neither geometry nor waypoints make a 2-point line", () => {
-    expect(
-      sharedSnapshotToImportRequest(
-        share({
-          days: [
-            { waypoints: [{ location: { lat: 1, lng: 2 }, type: "start" }] },
-          ],
-        }),
-      ),
-    ).toBeNull();
-  });
-
-  it("returns null when the snapshot shape is unrecognised", () => {
-    expect(
-      sharedSnapshotToImportRequest(share({ unrelated: true })),
-    ).toBeNull();
-  });
-
-  it("discards a single salvaged geometry point before falling back to waypoints", () => {
-    // Mostly-malformed coords leave geometry with exactly one valid
-    // entry. Without clearing it we'd draw the imported line from that
-    // arbitrary mid-route point to the first waypoint — a wrong route.
-    const request = sharedSnapshotToImportRequest(
-      share({
-        days: [
-          {
-            routeGeometry: {
-              coordinates: [
-                [10.0, 46.0],
-                ["bad", "data"],
-                [null, null],
-              ],
-            },
-            waypoints: [
-              { location: { lat: 1, lng: 2 }, name: "A", type: "start" },
-              { location: { lat: 3, lng: 4 }, name: "B", type: "end" },
-            ],
-          },
-        ],
-      }),
-    );
-    expect(request).not.toBeNull();
-    expect(request!.geometry).toEqual([
-      { lat: 1, lng: 2 },
-      { lat: 3, lng: 4 },
-    ]);
-  });
-
-  it("skips malformed coordinate entries instead of throwing", () => {
-    const request = sharedSnapshotToImportRequest(
-      share({
-        days: [
-          {
-            routeGeometry: {
-              coordinates: [
-                [10.0, 46.0],
-                ["bad", "data"],
-                [10.1, 46.05],
-                null,
-                [10.2, 46.1],
-              ],
-            },
-            waypoints: [],
-          },
-        ],
-      }),
-    );
-    expect(request!.geometry).toEqual([
-      { lat: 46.0, lng: 10.0 },
-      { lat: 46.05, lng: 10.1 },
-      { lat: 46.1, lng: 10.2 },
-    ]);
   });
 });

@@ -14,7 +14,9 @@ import { TripMember } from '../../entities/trip-member.entity.js';
 import { TripWaypoint } from '../../entities/trip-waypoint.entity.js';
 import { EventsGateway } from '../events/events.gateway.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
+import { TripSharesService } from '../trip-shares/trip-shares.service.js';
 import { CreateTripDto } from './dto/create-trip.dto.js';
+import { FromShareTripDto } from './dto/from-share-trip.dto.js';
 import { ImportTripDto } from './dto/import-trip.dto.js';
 import { ListTripsDto } from './dto/list-trips.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
@@ -59,6 +61,7 @@ export class TripsService {
     private readonly memberRepo: Repository<TripMember>,
     private readonly events: EventsGateway,
     private readonly activity: TripActivityService,
+    private readonly tripShares: TripSharesService,
   ) {}
 
   async create(userId: string, dto: CreateTripDto): Promise<TripDetailDto> {
@@ -251,6 +254,151 @@ export class TripsService {
           }),
         );
         await manager.save(rows);
+      }
+
+      return savedTrip.id;
+    });
+  }
+
+  /**
+   * #357 — materialise a shared trip into the caller's library while
+   * preserving its multi-day structure.
+   *
+   * The web companion mints a trip share via `POST /trip-shares` whose
+   * snapshot contains the full `days[]` array with per-day route geometry
+   * and waypoints. The legacy mobile path (`POST /trips/import`) flattens
+   * those days into a single planned day because `ImportTripDto` only
+   * carries one geometry. This method reads the snapshot directly from
+   * the shares row (so the request body is just a token — no chance of
+   * client-side tampering between fetch and import) and creates one
+   * `trip_days` row per snapshot day with the original day_number,
+   * geometry, distance, and waypoints intact.
+   *
+   * Snapshot validation is intentionally lenient: the snapshot is opaque
+   * JSONB the companion writes verbatim, so this method tolerates
+   * partially-malformed days (missing geometry, unknown waypoint type)
+   * by skipping the offending field rather than 400-ing the whole
+   * import. A snapshot with NO usable days (all empty/malformed) is
+   * rejected so the rider sees a clear error instead of an empty trip.
+   */
+  async importFromShare(
+    userId: string,
+    dto: FromShareTripDto,
+  ): Promise<TripDetailDto> {
+    const share = await this.tripShares.findActiveByToken(dto.share_token);
+    const days = parseSnapshotDays(share.snapshot);
+    if (days.length === 0) {
+      // Empty array means we found `days[]` but couldn't extract a single
+      // usable day (no geometry, no waypoints, all malformed). Surface a
+      // distinct error from the 404 the share-lookup throws so the
+      // mobile error banner can give riders an actionable hint.
+      throw new BadRequestException(
+        'Shared trip has no usable route data — ask the planner to re-export it.',
+      );
+    }
+
+    const totalKm = days.reduce((sum, d) => sum + d.distance_km, 0);
+    const dailyKms = days.map((d) => d.distance_km);
+    // Snapshot may have zero-distance days (e.g. waypoint-only fallbacks).
+    // Floor each at 1 km when computing the trip's daily-bounds bookends
+    // so the schema's positive-number constraint isn't tripped, and so a
+    // mixed snapshot (one fat day + one stub day) doesn't collapse to
+    // (0, x) with min < 1.
+    const bounds = {
+      totalKm,
+      dailyKmMin: Math.max(1, Math.round(Math.min(...dailyKms))),
+      dailyKmMax: Math.max(1, Math.round(Math.max(...dailyKms))),
+    };
+
+    const tripId = await this.allocateAndPersistSharedTrip(
+      userId,
+      share.title,
+      days,
+      bounds,
+    );
+    return this.getDetail(userId, tripId);
+  }
+
+  private async allocateAndPersistSharedTrip(
+    userId: string,
+    title: string,
+    days: ParsedSnapshotDay[],
+    bounds: { totalKm: number; dailyKmMin: number; dailyKmMax: number },
+  ): Promise<string> {
+    return this.withInviteCodeAllocation(async (manager, inviteCode) => {
+      const trip = manager.create(Trip, {
+        owner_id: userId,
+        title,
+        region: null,
+        num_days: days.length,
+        daily_km_min: bounds.dailyKmMin,
+        daily_km_max: bounds.dailyKmMax,
+        min_quality: DEFAULT_MIN_QUALITY,
+        road_preference: DEFAULT_ROAD_PREFERENCE,
+        // Snapshot trips are routes the rider already has — surface
+        // them as `planned` (matching the GPX/KML import path), not
+        // `draft`, so they appear in the trip list ready to ride.
+        status: 'planned',
+        invite_code: inviteCode,
+      });
+      const savedTrip = await manager.save(trip);
+
+      await manager.save(
+        manager.create(TripMember, {
+          trip_id: savedTrip.id,
+          user_id: userId,
+          role: 'owner',
+        }),
+      );
+
+      // Persist days in snapshot order. We renumber to 1..N rather than
+      // honouring snapshot.dayNumber so a snapshot with sparse/duplicate
+      // dayNumbers (older companion exports were known to skip numbers
+      // when a day was deleted client-side) doesn't trip the
+      // `(trip_id, day_number)` unique index or leave gaps that confuse
+      // the day-list UI.
+      for (let i = 0; i < days.length; i++) {
+        const parsed = days[i];
+        const dayNumber = i + 1;
+        const day = manager.create(TripDay, {
+          trip_id: savedTrip.id,
+          day_number: dayNumber,
+          title: parsed.title ?? `Day ${dayNumber}`,
+          distance_km: Number(parsed.distance_km.toFixed(2)),
+          // 55 km/h heuristic mirrors `importFromRoute` so the two
+          // import paths produce comparable estimates. Floor at 30
+          // minutes so a sub-km test snapshot doesn't render as "0 min".
+          estimated_time:
+            parsed.duration_min != null && parsed.duration_min > 0
+              ? `${Math.round(parsed.duration_min)} minutes`
+              : `${Math.max(30, Math.round((parsed.distance_km / 55) * 60))} minutes`,
+          avg_quality: parsed.avg_quality,
+          curviness_score: null,
+          scenic_score: null,
+          elevation_gain: parsed.elevation_gain,
+          elevation_loss: null,
+          route_geom:
+            parsed.geometry.length >= 2
+              ? {
+                  type: 'LineString',
+                  coordinates: parsed.geometry.map((p) => [p.lng, p.lat]),
+                }
+              : null,
+        });
+        const savedDay = await manager.save(day);
+
+        if (parsed.waypoints.length > 0) {
+          const rows = parsed.waypoints.map((w, idx) =>
+            manager.create(TripWaypoint, {
+              trip_day_id: savedDay.id,
+              sequence: idx,
+              location: latLngToPoint({ lat: w.lat, lng: w.lng }),
+              name: w.name ?? null,
+              waypoint_type: w.waypoint_type,
+            }),
+          );
+          await manager.save(rows);
+        }
       }
 
       return savedTrip.id;
@@ -670,6 +818,195 @@ function samePoint(
     Math.abs(a.lat - b.lat) < SAME_POINT_EPSILON &&
     Math.abs(a.lng - b.lng) < SAME_POINT_EPSILON
   );
+}
+
+// ── shared-trip snapshot parsing (#357) ──────────────────────────────
+//
+// The trip-share snapshot is opaque JSONB the companion writes verbatim
+// (see `apps/companion/src/lib/types.ts` Trip + TripDay + Waypoint), so
+// we can't trust the shape blindly. The helpers below narrow it into
+// the minimal subset we need to reconstruct multi-day rows, skipping
+// (rather than 400-ing) malformed individual fields. A snapshot with
+// no usable days at all is rejected by the caller.
+
+interface ParsedSnapshotDay {
+  title: string | null;
+  distance_km: number;
+  duration_min: number | null;
+  avg_quality: number | null;
+  elevation_gain: number | null;
+  geometry: Array<{ lat: number; lng: number }>;
+  waypoints: BuiltWaypoint[];
+}
+
+// Mirrors the companion's `Waypoint['type']` vocabulary
+// (apps/companion/src/lib/types.ts). `accommodation` is included so
+// overnight stops survive the shared → backend round-trip — the legacy
+// flat `/trips/import` path drops them because its DTO doesn't accept
+// the type.
+const SNAPSHOT_WAYPOINT_TYPES = new Set([
+  'start',
+  'via',
+  'end',
+  'fuel',
+  'rest',
+  'photo',
+  'accommodation',
+]);
+
+// Hard caps mirrored from `import-trip.dto.ts` so a malformed (or
+// abusive) snapshot can't blow up DB write volume even though the
+// snapshot itself was already capped at MAX_TRIP_SNAPSHOT_BYTES (1MB).
+// Per-day rather than per-trip so a 5-day snapshot doesn't get a 5×
+// concession on either dimension.
+const SNAPSHOT_MAX_GEOMETRY_POINTS_PER_DAY = 50_000;
+const SNAPSHOT_MAX_WAYPOINTS_PER_DAY = 5_000;
+
+function parseSnapshotDays(snapshot: unknown): ParsedSnapshotDay[] {
+  if (typeof snapshot !== 'object' || snapshot === null) return [];
+  const rawDays = (snapshot as { days?: unknown }).days;
+  if (!Array.isArray(rawDays)) return [];
+
+  const out: ParsedSnapshotDay[] = [];
+  for (const raw of rawDays) {
+    const parsed = parseSnapshotDay(raw);
+    // A day with neither geometry nor waypoints carries no information
+    // the rider could ride. Drop it rather than persisting an empty row
+    // — the renumbering in `allocateAndPersistSharedTrip` handles the
+    // gap.
+    if (parsed.geometry.length === 0 && parsed.waypoints.length === 0) {
+      continue;
+    }
+    out.push(parsed);
+  }
+  return out;
+}
+
+function parseSnapshotDay(raw: unknown): ParsedSnapshotDay {
+  const day = (raw ?? {}) as Record<string, unknown>;
+
+  const title = typeof day.title === 'string' ? day.title : null;
+
+  const rawDistance = day.distanceKm;
+  const distance_km =
+    typeof rawDistance === 'number' &&
+    Number.isFinite(rawDistance) &&
+    rawDistance >= 0
+      ? rawDistance
+      : 0;
+
+  const rawDuration = day.durationMinutes;
+  const duration_min =
+    typeof rawDuration === 'number' &&
+    Number.isFinite(rawDuration) &&
+    rawDuration > 0
+      ? rawDuration
+      : null;
+
+  const rawQuality = day.avgQuality;
+  const avg_quality =
+    typeof rawQuality === 'number' &&
+    Number.isFinite(rawQuality) &&
+    rawQuality > 0
+      ? rawQuality
+      : null;
+
+  const rawElevation = day.elevationGain;
+  const elevation_gain =
+    typeof rawElevation === 'number' && Number.isFinite(rawElevation)
+      ? rawElevation
+      : null;
+
+  const geometry = parseSnapshotGeometry(day.routeGeometry);
+  const waypoints = parseSnapshotWaypoints(day.waypoints);
+
+  // Recompute distance from geometry when the snapshot didn't carry it
+  // (older shares predating the per-day distance field) — the trip-list
+  // UI reads `distance_km` and a zero would surface as "0 km" next to a
+  // route the rider just imported.
+  const effectiveDistance =
+    distance_km > 0 || geometry.length < 2
+      ? distance_km
+      : totalDistanceKm(geometry);
+
+  return {
+    title,
+    distance_km: effectiveDistance,
+    duration_min,
+    avg_quality,
+    elevation_gain,
+    geometry,
+    waypoints,
+  };
+}
+
+function parseSnapshotGeometry(
+  raw: unknown,
+): Array<{ lat: number; lng: number }> {
+  if (typeof raw !== 'object' || raw === null) return [];
+  const coords = (raw as { coordinates?: unknown }).coordinates;
+  if (!Array.isArray(coords)) return [];
+
+  const out: Array<{ lat: number; lng: number }> = [];
+  for (const entry of coords) {
+    if (out.length >= SNAPSHOT_MAX_GEOMETRY_POINTS_PER_DAY) break;
+    if (!Array.isArray(entry) || entry.length < 2) continue;
+    const [lng, lat] = entry as [unknown, unknown];
+    if (
+      typeof lat !== 'number' ||
+      typeof lng !== 'number' ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng) ||
+      lat < -90 ||
+      lat > 90 ||
+      lng < -180 ||
+      lng > 180
+    ) {
+      continue;
+    }
+    out.push({ lat, lng });
+  }
+  return out;
+}
+
+function parseSnapshotWaypoints(raw: unknown): BuiltWaypoint[] {
+  if (!Array.isArray(raw)) return [];
+
+  const out: BuiltWaypoint[] = [];
+  for (const entry of raw) {
+    if (out.length >= SNAPSHOT_MAX_WAYPOINTS_PER_DAY) break;
+    if (typeof entry !== 'object' || entry === null) continue;
+    const e = entry as {
+      location?: { lat?: unknown; lng?: unknown };
+      name?: unknown;
+      type?: unknown;
+    };
+    const lat = e.location?.lat;
+    const lng = e.location?.lng;
+    if (
+      typeof lat !== 'number' ||
+      typeof lng !== 'number' ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng) ||
+      lat < -90 ||
+      lat > 90 ||
+      lng < -180 ||
+      lng > 180
+    ) {
+      continue;
+    }
+    const type =
+      typeof e.type === 'string' && SNAPSHOT_WAYPOINT_TYPES.has(e.type)
+        ? (e.type as BuiltWaypoint['waypoint_type'])
+        : 'via';
+    out.push({
+      lat,
+      lng,
+      name: typeof e.name === 'string' ? e.name : undefined,
+      waypoint_type: type,
+    });
+  }
+  return out;
 }
 
 /**

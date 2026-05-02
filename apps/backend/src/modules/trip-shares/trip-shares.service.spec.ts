@@ -126,6 +126,47 @@ describe('TripSharesService', () => {
     });
   });
 
+  describe('findActiveByToken', () => {
+    // Internal counterpart to getByToken used by `POST /trips/from-share`
+    // (#357). Same 404 surface, but no view_count side-effect — server-
+    // side imports shouldn't inflate the public traffic counter.
+
+    it('returns the raw share row without bumping view_count', async () => {
+      const result = await service.findActiveByToken('a'.repeat(32));
+
+      expect(repo.findOne).toHaveBeenCalledWith({
+        where: { share_token: 'a'.repeat(32) },
+        relations: ['owner'],
+      });
+      expect(repo.increment).not.toHaveBeenCalled();
+      // Returns the entity (not the public DTO) — callers materialise
+      // the snapshot directly.
+      expect(result.id).toBe('share-1');
+      expect(result.snapshot).toEqual({ days: [] });
+      // Counter stays at the pre-call value.
+      expect(result.view_count).toBe(3);
+    });
+
+    it('throws 404 when the token does not resolve', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValueOnce(null);
+      await expect(service.findActiveByToken('missing')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('hides shares owned by a soft-deleted account (US-62 grace window)', async () => {
+      // Mirrors getByToken so the import path can't side-channel an
+      // account-deletion via a different response code.
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...mockShare,
+        owner: { ...mockShare.owner, deleted_at: new Date() },
+      });
+      await expect(service.findActiveByToken('a'.repeat(32))).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
   describe('listMine', () => {
     it('returns only shares owned by the caller, newest first', async () => {
       const result = await service.listMine('user-1');

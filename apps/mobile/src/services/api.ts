@@ -782,6 +782,22 @@ class ApiService {
     return unwrap(result, "Failed to load trip");
   }
 
+  /**
+   * Materialise a shared trip into the rider's library while preserving
+   * its multi-day structure (#357). Use this for the deep-link handoff
+   * flow (`tarmoto://trips/import?token=...`) instead of
+   * `importTripFromRoute`, which collapses everything to a single
+   * planned day. The backend reads the snapshot from `trip_shares`
+   * under the supplied token and reconstructs one `trip_days` row per
+   * snapshot day with the original geometry, distance, and waypoints.
+   */
+  async importTripFromShare(shareToken: string): Promise<Trip> {
+    const result = await client.POST("/api/v1/trips/from-share", {
+      body: { share_token: shareToken },
+    });
+    return unwrap(result, "Failed to import shared trip");
+  }
+
   async generateTripRoute(
     tripId: string,
     startLocation: LatLng,
