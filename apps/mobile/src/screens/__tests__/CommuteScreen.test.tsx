@@ -348,19 +348,16 @@ describe("CommuteScreen", () => {
     expect(screen.queryByText("+1.0")).toBeNull();
   });
 
-  it("renders a Δ time placeholder instead of NaN when the primary's avg_duration_min is missing", () => {
-    // Backend's `CommuteRouteResponseDto` doesn't return
-    // `avg_duration_min`, so at runtime it's `undefined`. Without the
-    // guard, the alternative row's Δ time chip would compute
-    // `alt.duration_min - undefined` = NaN and render "NaN min" for
-    // every alternative — visibly broken UX. The chip should fall
-    // back to "—" instead.
-    const routeWithoutDuration = {
+  it("renders a Δ time placeholder instead of NaN when the primary's avg_duration_min is null", () => {
+    // Backend caches `avg_duration_min` on `CommuteRouteResponseDto` but
+    // leaves it null until the routing provider resolves the route (and
+    // on a provider outage). Without the guard, the alternative row's
+    // Δ time chip would compute `alt.duration_min - null` = NaN and
+    // render "NaN min" for every alternative — visibly broken UX. The
+    // chip should fall back to "—" instead.
+    const routeWithoutDuration: CommuteRoute = {
       ...baseRoute,
-      // Strip the field while keeping the other numbers populated so
-      // the unrelated primary "Avg time" metric strip path isn't
-      // exercised here (separate pre-existing latent bug).
-      avg_duration_min: undefined as unknown as number,
+      avg_duration_min: null,
     };
     mockUseCommuteResult = buildResult({
       route: routeWithoutDuration,

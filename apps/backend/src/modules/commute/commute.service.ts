@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { pointToLatLng, latLngToPoint } from '@tarmoto/shared';
@@ -22,6 +22,8 @@ const FUEL_L_PER_KM = 0.05; // ~5L/100km average motorcycle
 
 @Injectable()
 export class CommuteService {
+  private readonly logger = new Logger(CommuteService.name);
+
   constructor(
     @InjectRepository(CommuteRoute)
     private readonly routeRepo: Repository<CommuteRoute>,
@@ -37,6 +39,16 @@ export class CommuteService {
       where: { user_id: userId },
       order: { created_at: 'DESC' },
     });
+    // Lazily backfill the primary route's cache so legacy rows (saved
+    // before route_geom/distance_km/avg_duration were populated) gain a
+    // polyline + duration without a separate migration. Only the primary
+    // is filled here — backfilling every saved row would amplify a list
+    // call into N×OSRM hits, which is wasteful for routes the rider may
+    // not be looking at right now.
+    const primary = routes.find((r) => r.is_primary);
+    if (primary && this.needsCacheFill(primary)) {
+      await this.fillRouteCache(primary);
+    }
     return routes.map((r) => this.toRouteResponse(r));
   }
 
@@ -63,6 +75,11 @@ export class CommuteService {
 
       return manager.save(route);
     });
+
+    // Resolve the route via the routing provider after the row has been
+    // committed: a network failure shouldn't reject the whole creation,
+    // and lazy backfill on subsequent reads will retry. Best-effort.
+    await this.fillRouteCache(saved);
 
     return this.toRouteResponse(saved);
   }
@@ -135,6 +152,10 @@ export class CommuteService {
     });
     if (!route) {
       throw new NotFoundException('No primary commute route configured');
+    }
+
+    if (this.needsCacheFill(route)) {
+      await this.fillRouteCache(route);
     }
 
     const hazardCount = await this.countHazardsNearLine(route);
@@ -272,6 +293,10 @@ export class CommuteService {
       throw new NotFoundException('No primary commute route configured');
     }
 
+    if (this.needsCacheFill(route)) {
+      await this.fillRouteCache(route);
+    }
+
     const [originLng, originLat] = this.getCoords(route.origin);
     const [destLng, destLat] = this.getCoords(route.destination);
 
@@ -394,6 +419,8 @@ export class CommuteService {
       origin: pointToLatLng(route.origin)!,
       destination: pointToLatLng(route.destination)!,
       distance_km: route.distance_km,
+      avg_duration_min: this.parseIntervalMinutes(route.avg_duration),
+      route_geometry: this.lineStringToLatLngs(route.route_geom),
       avg_quality: route.avg_quality,
       is_primary: route.is_primary,
       created_at: route.created_at.toISOString(),
@@ -403,5 +430,158 @@ export class CommuteService {
   private getCoords(point: unknown): [number, number] {
     const geo = point as { coordinates: [number, number] };
     return geo.coordinates;
+  }
+
+  /**
+   * True when the cached routing-engine fields haven't been populated
+   * yet — either because the route was created before this cache existed
+   * or because a previous fillRouteCache call failed (OSRM unreachable
+   * etc.). The geometry is the canonical signal: distance/duration
+   * without geometry would mean a partial fill, which we never write.
+   */
+  private needsCacheFill(route: CommuteRoute): boolean {
+    return route.route_geom == null;
+  }
+
+  /**
+   * Resolve route_geom, distance_km, and avg_duration by hitting the
+   * routing provider and persisting the result on the entity.
+   * Best-effort: any failure is logged and swallowed so callers can
+   * continue serving the row with the cache fields still null. The
+   * route argument is mutated in place so the caller doesn't need to
+   * re-fetch after the write.
+   */
+  private async fillRouteCache(route: CommuteRoute): Promise<void> {
+    const [originLng, originLat] = this.getCoords(route.origin);
+    const [destLng, destLat] = this.getCoords(route.destination);
+
+    let resolved;
+    try {
+      // includePrimary: true so we get the engine's main route (lowest
+      // duration), not just alternatives. Asking for one route keeps
+      // the upstream payload small.
+      const candidates = await this.routingProvider.getAlternatives(
+        originLat,
+        originLng,
+        destLat,
+        destLng,
+        1,
+        { includePrimary: true },
+      );
+      resolved = candidates[0];
+    } catch (err) {
+      this.logger.warn(
+        `Failed to resolve commute route ${route.id} via routing provider: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return;
+    }
+
+    if (!resolved || resolved.geometry.length < 2) {
+      this.logger.debug(
+        `Routing provider returned no geometry for commute route ${route.id}; leaving cache fields null.`,
+      );
+      return;
+    }
+
+    // Round duration here rather than at the SQL boundary: postgres'
+    // `make_interval(mins => …)` takes an `int`, and a fractional
+    // value sent through the pg driver would parse-fail every retry,
+    // pinning the cache permanently null for that route. The
+    // RoutingProvider interface allows non-integer minutes (OSRM
+    // happens to round, but a future provider doesn't have to).
+    const durationMin = Math.round(resolved.duration_min);
+
+    try {
+      // `geometryToWkt` validates each coordinate with `Number.isFinite`
+      // and throws on a bad point — wrapping it in this try makes that
+      // a logged warning, consistent with the rest of fillRouteCache.
+      const wkt = this.geometryToWkt(resolved.geometry);
+      await this.routeRepo.query(
+        `UPDATE commute_routes
+         SET route_geom = ST_GeomFromText($1, 4326),
+             distance_km = $2,
+             avg_duration = make_interval(mins => $3)
+         WHERE id = $4`,
+        [wkt, resolved.distance_km, durationMin, route.id],
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Failed to persist commute route ${route.id} cache: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return;
+    }
+
+    // Mirror the persisted values onto the in-memory entity so the
+    // current request returns a populated DTO without a re-fetch.
+    route.route_geom = {
+      type: 'LineString',
+      coordinates: resolved.geometry.map((p) => [p.lng, p.lat]),
+    };
+    route.distance_km = resolved.distance_km;
+    // Canonical HH:MM:SS form so the parser produces the same number
+    // we just persisted when this entity is reloaded later.
+    const hh = Math.floor(durationMin / 60);
+    const mm = durationMin % 60;
+    route.avg_duration = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`;
+  }
+
+  private lineStringToLatLngs(
+    geom: unknown,
+  ): Array<{ lat: number; lng: number }> | null {
+    if (geom == null) return null;
+    const line = geom as { coordinates?: number[][] };
+    if (!Array.isArray(line.coordinates) || line.coordinates.length === 0) {
+      return null;
+    }
+    return line.coordinates.map((c) => ({ lat: c[1], lng: c[0] }));
+  }
+
+  /**
+   * Parse a Postgres interval into whole minutes. TypeORM types the
+   * column as `string` but the pg driver's default parser returns an
+   * object (`{ days, hours, minutes, seconds, milliseconds }`); both
+   * shapes show up at runtime depending on driver configuration, so
+   * accept either. Anything we can't parse is reported as null so the
+   * wire shape stays predictable rather than emitting NaN.
+   */
+  private parseIntervalMinutes(interval: unknown): number | null {
+    if (interval == null) return null;
+
+    if (typeof interval === 'object') {
+      const v = interval as {
+        days?: number;
+        hours?: number;
+        minutes?: number;
+        seconds?: number;
+      };
+      const total =
+        (v.days ?? 0) * 1440 +
+        (v.hours ?? 0) * 60 +
+        (v.minutes ?? 0) +
+        (v.seconds ?? 0) / 60;
+      return Number.isFinite(total) ? Math.round(total) : null;
+    }
+
+    if (typeof interval !== 'string') return null;
+
+    const match = /(?:(\d+) days? )?(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(interval);
+    if (!match) return null;
+    const days = match[1] ? Number(match[1]) : 0;
+    const hours = Number(match[2]);
+    const minutes = Number(match[3]);
+    const seconds = Number(match[4]);
+    if (
+      !Number.isFinite(days) ||
+      !Number.isFinite(hours) ||
+      !Number.isFinite(minutes) ||
+      !Number.isFinite(seconds)
+    ) {
+      return null;
+    }
+    return Math.round(days * 1440 + hours * 60 + minutes + seconds / 60);
   }
 }
