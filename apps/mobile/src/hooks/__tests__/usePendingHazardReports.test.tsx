@@ -16,6 +16,7 @@ import { usePendingHazardReports } from "../usePendingHazardReports";
 import { api } from "@/services/api";
 import {
   __setStorageForTest,
+  clearHazardQueue,
   enqueueHazardReport,
 } from "@/services/hazardQueue";
 
@@ -152,6 +153,60 @@ describe("usePendingHazardReports", () => {
       flushed: 0,
       failed: 0,
       remaining: 2,
+    });
+  });
+
+  it("clears lastResult when the queue drifts away from the post-retry snapshot", async () => {
+    enqueueHazardReport({
+      lat: 49.2,
+      lng: 16.6,
+      hazardType: "pothole",
+      severity: "medium",
+    });
+
+    (api.flushPendingHazardReports as jest.Mock).mockImplementation(
+      async () => {
+        // Mirror a clean drain through the queue's own API so the
+        // listeners stay attached — the realistic path the rider's
+        // retry takes.
+        clearHazardQueue();
+        return {
+          flushed: 1,
+          remaining: 0,
+          networkFailed: false,
+          transientServerError: false,
+        };
+      },
+    );
+
+    const { result } = renderHook(() => usePendingHazardReports());
+    await act(async () => {
+      await result.current.retry();
+    });
+
+    // Drain settled cleanly — the success outcome is rendered.
+    expect(result.current.lastResult).toEqual({
+      flushed: 1,
+      failed: 0,
+      remaining: 0,
+    });
+    expect(result.current.count).toBe(0);
+
+    // Rider submits another report offline. The previous "Uploaded 1
+    // report." outcome no longer describes the queue and must clear,
+    // otherwise it would sit next to the fresh pending-count copy.
+    act(() => {
+      enqueueHazardReport({
+        lat: 49.3,
+        lng: 16.7,
+        hazardType: "gravel",
+        severity: "low",
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.count).toBe(1);
+      expect(result.current.lastResult).toBeNull();
     });
   });
 
