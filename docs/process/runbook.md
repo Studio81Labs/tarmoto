@@ -562,6 +562,17 @@ API token). To enable:
    to construct the URL it comments on PRs and smoke-tests.
 4. Optionally override the Worker name with
    `COMPANION_WORKER_NAME` (default: `tarmoto-companion`).
+5. **One-time bootstrap.** Before any PR preview can resolve, the
+   Worker must have at least one production deployment so
+   `wrangler versions upload --preview-alias` has a baseline to
+   inherit settings/routes from. Trigger one of:
+   - **Actions → Companion Deploy → Run workflow** on `main`
+     (workflow_dispatch falls through to `wrangler deploy`), or
+   - locally:
+     `pnpm --filter @tarmoto/companion exec wrangler deploy`
+     against `main`.
+     Without this, both prod and preview URLs return 404 and the
+     smoke step fails on the very first PR.
 
 Once enabled:
 
