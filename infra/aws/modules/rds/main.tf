@@ -97,6 +97,31 @@ resource "random_password" "master" {
   special = false
 }
 
+# RDS Enhanced Monitoring requires a dedicated IAM role granted the
+# AWS-managed AmazonRDSEnhancedMonitoringRole policy. Without it
+# `terraform apply` fails with InvalidParameterCombination because
+# `monitoring_interval > 0` requires `monitoring_role_arn`.
+data "aws_iam_policy_document" "enhanced_monitoring_assume" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["monitoring.rds.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "enhanced_monitoring" {
+  name               = "tarmoto-${var.env}-rds-enhanced-monitoring"
+  assume_role_policy = data.aws_iam_policy_document.enhanced_monitoring_assume.json
+}
+
+resource "aws_iam_role_policy_attachment" "enhanced_monitoring" {
+  role       = aws_iam_role.enhanced_monitoring.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
+}
+
 resource "aws_secretsmanager_secret" "db" {
   name = "tarmoto/${var.env}/database"
 }
@@ -145,6 +170,7 @@ resource "aws_db_instance" "this" {
 
   performance_insights_enabled    = true
   monitoring_interval             = 60
+  monitoring_role_arn             = aws_iam_role.enhanced_monitoring.arn
   enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
 
   tags = { Name = "tarmoto-${var.env}-db" }

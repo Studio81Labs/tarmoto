@@ -54,6 +54,13 @@ data "aws_caller_identity" "current" {}
 locals {
   state_bucket_name = "tarmoto-tfstate-${var.env}-${data.aws_caller_identity.current.account_id}"
   oidc_role_name    = "tarmoto-github-actions-${var.env}"
+  # The deploy workflow's `environment:` field uses GitHub's
+  # production-environment naming convention ("production"), while
+  # this Terraform module is parametrised on `var.env` ("prod"). The
+  # OIDC `sub` claim carries the GitHub environment name verbatim,
+  # so the trust policy must match it. Map prod -> production;
+  # staging stays as-is.
+  github_environment = var.env == "prod" ? "production" : var.env
 }
 
 resource "aws_s3_bucket" "tfstate" {
@@ -136,7 +143,7 @@ data "aws_iam_policy_document" "github_assume" {
       values = [
         "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/main",
         "repo:${var.github_org}/${var.github_repo}:ref:refs/tags/*",
-        "repo:${var.github_org}/${var.github_repo}:environment:${var.env}",
+        "repo:${var.github_org}/${var.github_repo}:environment:${local.github_environment}",
       ]
     }
   }
