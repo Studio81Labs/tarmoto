@@ -363,17 +363,23 @@ export default function ProfileScreen() {
  * new rider sees nothing instead of "0 km · 0h · 0 rides", and returns
  * null when every segment would be skipped so the parent can render no
  * line at all.
+ *
+ * The zero-check happens AFTER rounding — a raw value like `0.3` is `> 0`
+ * but `Math.round(0.3) === 0`, so a pre-rounding check would still let
+ * "0 km" / "0h" through and contradict the documented intent.
  */
 function buildRidingStatLabel(
   summary: MeProfile,
   units: "metric" | "imperial",
 ): string | null {
   const parts: string[] = [];
-  if (summary.total_distance_km > 0) {
-    parts.push(formatDistance(Math.round(summary.total_distance_km), units));
+  const km = Math.round(summary.total_distance_km);
+  if (km > 0) {
+    parts.push(formatDistance(km, units));
   }
-  if (summary.total_hours > 0) {
-    parts.push(`${Math.round(summary.total_hours)}h`);
+  const hours = Math.round(summary.total_hours);
+  if (hours > 0) {
+    parts.push(`${hours}h`);
   }
   if (summary.total_rides > 0) {
     parts.push(

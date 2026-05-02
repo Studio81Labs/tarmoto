@@ -231,6 +231,32 @@ describe("ProfileScreen", () => {
     expect(screen.queryByText(/·/)).toBeNull();
   });
 
+  it("hides stat segments that round down to zero so a brand-new rider doesn't see '0 km · 0h'", async () => {
+    // 0.3 km / 0.4h pass a naïve `> 0` guard but `Math.round` collapses
+    // them to 0; the line must skip those segments outright.
+    mockedApi.getMyProfile.mockResolvedValueOnce({
+      joined_at: "2025-04-01T10:00:00.000Z",
+      total_hours: 0.4,
+      total_rides: 1,
+      total_distance_km: 0.3,
+      roads_discovered: 0,
+      hazards_reported: 0,
+      follower_count: 0,
+      following_count: 0,
+      badges_earned: 0,
+    });
+
+    render(<ProfileScreen />);
+
+    await waitFor(() =>
+      expect(mockedApi.getMyProfile).toHaveBeenCalledTimes(1),
+    );
+    // Only the ride count survives the rounding floor.
+    expect(await screen.findByText("1 ride")).toBeTruthy();
+    expect(screen.queryByText(/0 km/)).toBeNull();
+    expect(screen.queryByText(/0h/)).toBeNull();
+  });
+
   it("opens the EditProfile modal when Edit profile is tapped", async () => {
     render(<ProfileScreen />);
     await waitFor(() => expect(mockedApi.getPublicProfile).toHaveBeenCalled());
