@@ -4,13 +4,13 @@
 
 Version 1.1 | April 2026 | CONFIDENTIAL
 
-| Field | Value |
-|-------|-------|
-| Document Status | Draft |
-| Author | Product Team |
-| Last Updated | April 14, 2026 |
+| Field           | Value                                        |
+| --------------- | -------------------------------------------- |
+| Document Status | Draft                                        |
+| Author          | Product Team                                 |
+| Last Updated    | April 14, 2026                               |
 | Target Platform | iOS & Android (React Native) + Web (Next.js) |
-| Target Launch | Q1 2027 (MVP — Mobile + Web) |
+| Target Launch   | Q1 2027 (MVP — Mobile + Web)                 |
 
 ---
 
@@ -30,16 +30,16 @@ Motorcycle riders face three critical unmet needs:
 
 ### 1.2 Target Users
 
-| Persona | Description | Primary Need |
-|---------|-------------|--------------|
-| Daily Commuter | Rides to work 5 days/week, wants the safest and fastest route | Real-time hazard alerts, road quality on commute routes |
-| Weekend Explorer | Rides for fun on weekends, looking for great roads nearby | Fun-factor road discovery, surface quality assurance |
-| Touring Group | Plans multi-day trips with friends, needs collaborative tools | Multi-day trip builder, road preview, group coordination |
-| Adventure Rider | Off-road and mixed-terrain, needs surface type information | Surface type classification (asphalt/gravel/dirt) |
+| Persona          | Description                                                   | Primary Need                                             |
+| ---------------- | ------------------------------------------------------------- | -------------------------------------------------------- |
+| Daily Commuter   | Rides to work 5 days/week, wants the safest and fastest route | Real-time hazard alerts, road quality on commute routes  |
+| Weekend Explorer | Rides for fun on weekends, looking for great roads nearby     | Fun-factor road discovery, surface quality assurance     |
+| Touring Group    | Plans multi-day trips with friends, needs collaborative tools | Multi-day trip builder, road preview, group coordination |
+| Adventure Rider  | Off-road and mixed-terrain, needs surface type information    | Surface type classification (asphalt/gravel/dirt)        |
 
 ### 1.3 Unique Value Proposition
 
-> ***"Know the road before you ride it."*** Tarmoto is the only motorcycle app that tells you how good the actual asphalt is, not just how curvy the road looks on a map.
+> **_"Know the road before you ride it."_** Tarmoto is the only motorcycle app that tells you how good the actual asphalt is, not just how curvy the road looks on a map.
 
 ---
 
@@ -47,21 +47,21 @@ Motorcycle riders face three critical unmet needs:
 
 The motorcycle app market has several established players, each with distinct strengths but a common blind spot: none address road surface quality or provide real-time rider safety intelligence.
 
-| Feature | Calimoto | Kurviger | Scenic | REVER | Tarmoto |
-|---------|----------|----------|--------|-------|---------|
-| Curvy road routing | ✓ | ✓ | ✓ | ✓ | ✓ |
-| **Road surface quality** | ✗ | ✗ | ✗ | ✗ | **✓** |
-| **Real-time hazard alerts** | ✗ | ✗ | ✗ | ✗ | **✓** |
-| **Multi-day trip AI builder** | Limited | Web only | ✗ | ✗ | **✓** |
-| **Road preview cards** | ✗ | ✗ | ✗ | ✗ | **✓** |
-| **Collaborative planning** | ✗ | ✗ | ✗ | Basic | **✓** |
-| Crash detection | ✗ | ✗ | ✗ | ✗ | **✓** |
-| CarPlay + Android Auto | CarPlay only | AA only | ✗ | ✗ | **Both** |
-| Commuter mode | ✗ | ✗ | ✗ | ✗ | **✓** |
-| **Web companion app** | ✗ | **✓** (planner only) | ✗ | Basic | **✓ (full)** |
-| Offline maps | ✓ (paid) | ✓ (paid) | ✓ | ✗ | ✓ |
-| Social / community | Basic | Forum | ✗ | ✓ | ✓ |
-| Pricing | $60/yr | $30/yr | $25 lifetime | Free+ | Freemium |
+| Feature                       | Calimoto     | Kurviger             | Scenic       | REVER | Tarmoto      |
+| ----------------------------- | ------------ | -------------------- | ------------ | ----- | ------------ |
+| Curvy road routing            | ✓            | ✓                    | ✓            | ✓     | ✓            |
+| **Road surface quality**      | ✗            | ✗                    | ✗            | ✗     | **✓**        |
+| **Real-time hazard alerts**   | ✗            | ✗                    | ✗            | ✗     | **✓**        |
+| **Multi-day trip AI builder** | Limited      | Web only             | ✗            | ✗     | **✓**        |
+| **Road preview cards**        | ✗            | ✗                    | ✗            | ✗     | **✓**        |
+| **Collaborative planning**    | ✗            | ✗                    | ✗            | Basic | **✓**        |
+| Crash detection               | ✗            | ✗                    | ✗            | ✗     | **✓**        |
+| CarPlay + Android Auto        | CarPlay only | AA only              | ✗            | ✗     | **Both**     |
+| Commuter mode                 | ✗            | ✗                    | ✗            | ✗     | **✓**        |
+| **Web companion app**         | ✗            | **✓** (planner only) | ✗            | Basic | **✓ (full)** |
+| Offline maps                  | ✓ (paid)     | ✓ (paid)             | ✓            | ✗     | ✓            |
+| Social / community            | Basic        | Forum                | ✗            | ✓     | ✓            |
+| Pricing                       | $60/yr       | $30/yr               | $25 lifetime | Free+ | Freemium     |
 
 ---
 
@@ -85,13 +85,13 @@ Every rider using Tarmoto passively collects road surface quality data via smart
 
 **Technical Approach:**
 
-| Component | Technology | Notes |
-|-----------|-----------|-------|
-| Vibration capture | Accelerometer + Gyroscope (50Hz sampling) | Background service, low battery impact |
-| Surface classification | ML model (TensorFlow Lite) | Trained on labeled road segments: smooth/fair/rough/gravel/dirt |
-| Data aggregation | Server-side pipeline | Multiple rider passes → confidence score per 100m segment |
-| Map overlay | Vector tiles with quality heatmap | Color-coded: green/yellow/orange/red |
-| Hazard reports | Real-time event system | Time-decay: hazards auto-expire after 24–72h unless re-confirmed |
+| Component              | Technology                                | Notes                                                            |
+| ---------------------- | ----------------------------------------- | ---------------------------------------------------------------- |
+| Vibration capture      | Accelerometer + Gyroscope (50Hz sampling) | Background service, low battery impact                           |
+| Surface classification | ML model (TensorFlow Lite)                | Trained on labeled road segments: smooth/fair/rough/gravel/dirt  |
+| Data aggregation       | Server-side pipeline                      | Multiple rider passes → confidence score per 100m segment        |
+| Map overlay            | Vector tiles with quality heatmap         | Color-coded: green/yellow/orange/red                             |
+| Hazard reports         | Real-time event system                    | Time-decay: hazards auto-expire after 24–72h unless re-confirmed |
 
 ### 3.2 EPIC 2: Smart Multi-Day Trip Planner
 
@@ -170,23 +170,23 @@ The system analyzes road geometry (curviness from OSM), elevation data, surface 
 
 ## 4. Product Roadmap
 
-| Phase | Timeline | Epics | Key Deliverables |
-|-------|----------|-------|------------------|
-| **Phase 1: MVP** | Q3–Q4 2026 | Road Surface Intelligence, Trip Planner, Safety, Navigation | Core mobile app with surface quality sensing, basic trip planning, crash detection, turn-by-turn nav, CarPlay/AA. **Web:** Trip planner, road quality explorer, account management |
-| **Phase 2: Growth** | Q1–Q2 2027 | Commuter Mode, Community & Social | Daily commute features, ride sharing, group features, road reviews. **Web:** Community hub, ride history dashboard, analytics |
-| **Phase 3: Engagement** | Q3 2027+ | Gamification, Advanced Analytics | Badges, challenges, personal road maps, advanced ride stats, API for 3rd parties. **Web:** Gamification dashboard, public route embeds, API docs |
+| Phase                   | Timeline   | Epics                                                       | Key Deliverables                                                                                                                                                                   |
+| ----------------------- | ---------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Phase 1: MVP**        | Q3–Q4 2026 | Road Surface Intelligence, Trip Planner, Safety, Navigation | Core mobile app with surface quality sensing, basic trip planning, crash detection, turn-by-turn nav, CarPlay/AA. **Web:** Trip planner, road quality explorer, account management |
+| **Phase 2: Growth**     | Q1–Q2 2027 | Commuter Mode, Community & Social                           | Daily commute features, ride sharing, group features, road reviews. **Web:** Community hub, ride history dashboard, analytics                                                      |
+| **Phase 3: Engagement** | Q3 2027+   | Gamification, Advanced Analytics                            | Badges, challenges, personal road maps, advanced ride stats, API for 3rd parties. **Web:** Gamification dashboard, public route embeds, API docs                                   |
 
 ### 4.1 MVP Success Criteria
 
-| Metric | Target (6 months post-launch) | Measurement |
-|--------|-------------------------------|-------------|
-| Downloads | 50,000+ | App store analytics |
-| Monthly Active Riders | 15,000+ | In-app analytics |
-| Road segments with quality data | 500,000+ segments | Backend database |
-| Avg. session duration | > 8 min (planning), > 30 min (riding) | Analytics |
-| Hazard reports per day | 1,000+ | Community activity |
-| App Store rating | 4.5+ | Store reviews |
-| Premium conversion rate | > 8% | Revenue analytics |
+| Metric                          | Target (6 months post-launch)         | Measurement         |
+| ------------------------------- | ------------------------------------- | ------------------- |
+| Downloads                       | 50,000+                               | App store analytics |
+| Monthly Active Riders           | 15,000+                               | In-app analytics    |
+| Road segments with quality data | 500,000+ segments                     | Backend database    |
+| Avg. session duration           | > 8 min (planning), > 30 min (riding) | Analytics           |
+| Hazard reports per day          | 1,000+                                | Community activity  |
+| App Store rating                | 4.5+                                  | Store reviews       |
+| Premium conversion rate         | > 8%                                  | Revenue analytics   |
 
 ---
 
@@ -194,17 +194,17 @@ The system analyzes road geometry (curviness from OSM), elevation data, surface 
 
 ### 5.1 Tech Stack
 
-| Layer | Technology | Rationale |
-|-------|-----------|-----------|
-| Mobile App | React Native (bare) | Cross-platform, CarPlay/AA support, background sensor access |
-| **Web App** | **Next.js (TypeScript)** | **Shared TS ecosystem with mobile + backend, SSR for landing/SEO, SPA for app views** |
-| Maps | MapLibre GL + custom vector tiles | Open-source, customizable styling, offline support, no Google licensing costs |
-| Backend API | Node.js (NestJS) or Python (FastAPI) | High-performance, well-suited for real-time data processing |
-| Database | PostgreSQL + PostGIS | Geospatial queries, road segment indexing, proven at scale |
-| Real-time | WebSockets (Socket.io) + Redis Pub/Sub | Live hazard alerts, group ride tracking |
-| ML Pipeline | TensorFlow Lite (on-device) + Python (server) | On-device road classification, server-side aggregation |
-| Cloud | AWS (ECS, RDS, S3, CloudFront) | Scalable, cost-effective, CDN for map tiles |
-| Analytics | PostHog (self-hosted) or Mixpanel | Privacy-first analytics, funnel tracking |
+| Layer       | Technology                                    | Rationale                                                                             |
+| ----------- | --------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Mobile App  | React Native (bare)                           | Cross-platform, CarPlay/AA support, background sensor access                          |
+| **Web App** | **Next.js (TypeScript)**                      | **Shared TS ecosystem with mobile + backend, SSR for landing/SEO, SPA for app views** |
+| Maps        | MapLibre GL + custom vector tiles             | Open-source, customizable styling, offline support, no Google licensing costs         |
+| Backend API | Node.js (NestJS) or Python (FastAPI)          | High-performance, well-suited for real-time data processing                           |
+| Database    | PostgreSQL + PostGIS                          | Geospatial queries, road segment indexing, proven at scale                            |
+| Real-time   | WebSockets (Socket.io) + Redis Pub/Sub        | Live hazard alerts, group ride tracking                                               |
+| ML Pipeline | TensorFlow Lite (on-device) + Python (server) | On-device road classification, server-side aggregation                                |
+| Cloud       | AWS (ECS, RDS, S3, CloudFront)                | Scalable, cost-effective, CDN for map tiles                                           |
+| Analytics   | PostHog (self-hosted) or Mixpanel             | Privacy-first analytics, funnel tracking                                              |
 
 ### 5.2 Road Quality Data Pipeline
 
@@ -222,56 +222,56 @@ The road quality pipeline is the core innovation and consists of four stages:
 
 ## 6. Monetization Strategy
 
-| Tier | Price | Features |
-|------|-------|----------|
-| **Free** | $0 | Basic navigation, ride tracking, road quality overlay (limited zoom), hazard alerts, community access, 1 active trip plan |
-| **Premium** | $29.99/year | Unlimited trip planning, full road quality zoom, offline maps, commuter mode, advanced ride stats, GPX export, collaborative trips (up to 5 riders) |
-| **Pro** | $49.99/year | Everything in Premium + group rides (unlimited), priority hazard alerts, API access, route export to Garmin, advanced analytics dashboard |
+| Tier        | Price       | Features                                                                                                                                            |
+| ----------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Free**    | €0          | Basic navigation, ride tracking, road quality overlay (limited zoom), hazard alerts, community access, 1 active trip plan                           |
+| **Premium** | €29.99/year | Unlimited trip planning, full road quality zoom, offline maps, commuter mode, advanced ride stats, GPX export, collaborative trips (up to 5 riders) |
+| **Pro**     | €49.99/year | Everything in Premium + group rides (unlimited), priority hazard alerts, API access, route export to Garmin, advanced analytics dashboard           |
 
-The pricing strategy is deliberately positioned below Calimoto ($60/year) and above Kurviger ($30/year), offering significantly more value. The free tier must be compelling enough to drive adoption (and road quality data collection), while premium features create clear upgrade motivation.
+Prices are EUR-denominated; see ADR-0003 and `SUBSCRIPTION_PRICING` in `@tarmoto/shared`. The pricing strategy is deliberately positioned below Calimoto (~€55/year) and above Kurviger (~€28/year), offering significantly more value. The free tier must be compelling enough to drive adoption (and road quality data collection), while premium features create clear upgrade motivation.
 
 ### 6.1 Revenue Projections (Year 1)
 
-| Quarter | Downloads (cumulative) | MAU | Premium Conv. | MRR Estimate |
-|---------|----------------------|-----|---------------|--------------|
-| Q1 2027 (Launch) | 10,000 | 3,000 | 5% | €1,250 |
-| Q2 2027 | 30,000 | 10,000 | 7% | €4,375 |
-| Q3 2027 (Season) | 80,000 | 30,000 | 9% | €16,875 |
-| Q4 2027 | 120,000 | 25,000 | 10% | €15,625 |
+| Quarter          | Downloads (cumulative) | MAU    | Premium Conv. | MRR Estimate |
+| ---------------- | ---------------------- | ------ | ------------- | ------------ |
+| Q1 2027 (Launch) | 10,000                 | 3,000  | 5%            | €1,250       |
+| Q2 2027          | 30,000                 | 10,000 | 7%            | €4,375       |
+| Q3 2027 (Season) | 80,000                 | 30,000 | 9%            | €16,875      |
+| Q4 2027          | 120,000                | 25,000 | 10%           | €15,625      |
 
 ---
 
 ## 7. Risks & Mitigations
 
-| Risk | Impact | Likelihood | Mitigation |
-|------|--------|------------|------------|
-| **Cold start: no road data at launch** | High | High | Pre-seed data by partnering with cycling/driving communities. Organize beta rider campaigns in key regions. Import OpenStreetMap surface tags where available. |
-| Battery drain from sensors | Medium | Medium | Optimize sampling rate (reduce when on straight roads). Batch upload data on Wi-Fi. Provide battery usage dashboard to users. |
-| Accelerometer accuracy varies by phone | Medium | High | Calibration routine on first use. ML model trained on diverse phone models. Aggregate multiple readings to smooth out device variance. |
-| Competitor copies the feature | Medium | Medium | First-mover advantage + network effect. The more riders, the better the data — hard to replicate. Patent core algorithms where possible. |
-| Privacy concerns with location tracking | High | Low | Data anonymized before upload. No personal identifiers attached to road quality data. Clear opt-in consent. GDPR/privacy-by-design from day one. |
-| Map licensing costs at scale | Medium | Medium | Use open-source MapLibre + OpenStreetMap. Custom tile server. No dependency on Google Maps pricing. |
-| Web/mobile feature parity drift | Medium | Medium | Shared NestJS API means one backend. Establish clear "web-first" vs "mobile-first" feature ownership per epic. Shared TypeScript types via monorepo or published package. |
-| SEO & discoverability for web app | Medium | Low | Next.js SSR for public pages (route collections, road quality explorer). Structured data for routes. Content marketing via "Best Roads in [Region]" pages. |
+| Risk                                    | Impact | Likelihood | Mitigation                                                                                                                                                                |
+| --------------------------------------- | ------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Cold start: no road data at launch**  | High   | High       | Pre-seed data by partnering with cycling/driving communities. Organize beta rider campaigns in key regions. Import OpenStreetMap surface tags where available.            |
+| Battery drain from sensors              | Medium | Medium     | Optimize sampling rate (reduce when on straight roads). Batch upload data on Wi-Fi. Provide battery usage dashboard to users.                                             |
+| Accelerometer accuracy varies by phone  | Medium | High       | Calibration routine on first use. ML model trained on diverse phone models. Aggregate multiple readings to smooth out device variance.                                    |
+| Competitor copies the feature           | Medium | Medium     | First-mover advantage + network effect. The more riders, the better the data — hard to replicate. Patent core algorithms where possible.                                  |
+| Privacy concerns with location tracking | High   | Low        | Data anonymized before upload. No personal identifiers attached to road quality data. Clear opt-in consent. GDPR/privacy-by-design from day one.                          |
+| Map licensing costs at scale            | Medium | Medium     | Use open-source MapLibre + OpenStreetMap. Custom tile server. No dependency on Google Maps pricing.                                                                       |
+| Web/mobile feature parity drift         | Medium | Medium     | Shared NestJS API means one backend. Establish clear "web-first" vs "mobile-first" feature ownership per epic. Shared TypeScript types via monorepo or published package. |
+| SEO & discoverability for web app       | Medium | Low        | Next.js SSR for public pages (route collections, road quality explorer). Structured data for routes. Content marketing via "Best Roads in [Region]" pages.                |
 
 ---
 
 ## 8. Next Steps
 
-| # | Action Item | Owner | Due Date | Status |
-|---|-------------|-------|----------|--------|
-| 1 | Validate road quality ML model with test rides (3 phone models, 5 road types) | Tech Lead | May 2026 | Not Started |
-| 2 | Create interactive wireframes for core flows (trip planner, ride mode, road quality overlay) | Design Lead | May 2026 | ✅ Done |
-| 3 | Set up backend infrastructure (PostGIS, tile server, API scaffold) | Backend Dev | June 2026 | Not Started |
-| 4 | Beta rider recruitment (target: 200 riders in CZ/SK region) | Product | June 2026 | Not Started |
-| 5 | Legal review: privacy policy, GDPR compliance, location data handling | Legal | July 2026 | Not Started |
-| 6 | **Web: scaffold Next.js project, auth integration, MapLibre GL setup** | **Frontend Dev** | **June 2026** | **Not Started** |
-| 7 | **Web: trip planner MVP (map drawing, route generation, road preview cards)** | **Frontend Dev** | **Aug 2026** | **Not Started** |
-| 8 | **Web: road quality explorer + ride history dashboard** | **Frontend Dev** | **Sep 2026** | **Not Started** |
-| 9 | **Web: community hub + account management** | **Frontend Dev** | **Oct 2026** | **Not Started** |
-| 10 | MVP feature-complete build (mobile + web) | Engineering | Oct 2026 | Not Started |
-| 11 | Closed beta launch (CZ/SK/AT) | Product | Nov 2026 | Not Started |
-| 12 | Public launch on App Store, Google Play & web | All | Q1 2027 | Not Started |
+| #   | Action Item                                                                                  | Owner            | Due Date      | Status          |
+| --- | -------------------------------------------------------------------------------------------- | ---------------- | ------------- | --------------- |
+| 1   | Validate road quality ML model with test rides (3 phone models, 5 road types)                | Tech Lead        | May 2026      | Not Started     |
+| 2   | Create interactive wireframes for core flows (trip planner, ride mode, road quality overlay) | Design Lead      | May 2026      | ✅ Done         |
+| 3   | Set up backend infrastructure (PostGIS, tile server, API scaffold)                           | Backend Dev      | June 2026     | Not Started     |
+| 4   | Beta rider recruitment (target: 200 riders in CZ/SK region)                                  | Product          | June 2026     | Not Started     |
+| 5   | Legal review: privacy policy, GDPR compliance, location data handling                        | Legal            | July 2026     | Not Started     |
+| 6   | **Web: scaffold Next.js project, auth integration, MapLibre GL setup**                       | **Frontend Dev** | **June 2026** | **Not Started** |
+| 7   | **Web: trip planner MVP (map drawing, route generation, road preview cards)**                | **Frontend Dev** | **Aug 2026**  | **Not Started** |
+| 8   | **Web: road quality explorer + ride history dashboard**                                      | **Frontend Dev** | **Sep 2026**  | **Not Started** |
+| 9   | **Web: community hub + account management**                                                  | **Frontend Dev** | **Oct 2026**  | **Not Started** |
+| 10  | MVP feature-complete build (mobile + web)                                                    | Engineering      | Oct 2026      | Not Started     |
+| 11  | Closed beta launch (CZ/SK/AT)                                                                | Product          | Nov 2026      | Not Started     |
+| 12  | Public launch on App Store, Google Play & web                                                | All              | Q1 2027       | Not Started     |
 
 ---
 
@@ -281,22 +281,22 @@ The pricing strategy is deliberately positioned below Calimoto ($60/year) and ab
 
 The Tarmoto web companion (`app.tarmoto.app`) is a full-featured browser application that complements the mobile app. The core philosophy is **plan on desktop, ride on mobile** — each platform plays to its strengths.
 
-The web interface is not a secondary experience. For the trip planning workflow, it is the *primary* experience. Drawing regions on a full-screen map, comparing road preview cards side-by-side, and collaborating with a riding group are all fundamentally desktop-first interactions.
+The web interface is not a secondary experience. For the trip planning workflow, it is the _primary_ experience. Drawing regions on a full-screen map, comparing road preview cards side-by-side, and collaborating with a riding group are all fundamentally desktop-first interactions.
 
 **Platform responsibility matrix:**
 
-| Capability | Web | Mobile | Notes |
-|-----------|-----|--------|-------|
-| Trip planning & route building | **Primary** | Secondary | Full-screen map, drag-and-drop, collaboration |
-| Road quality explorer | **Primary** | Secondary | Large map, detailed segment panels |
-| Ride recording & sensors | ✗ | **Primary** | Accelerometer, GPS, background services |
-| Turn-by-turn navigation | ✗ | **Primary** | CarPlay/AA, voice, offline |
-| Ride history & analytics | **Primary** | Summary view | Charts, comparisons, data export |
-| Community browsing | **Primary** | Feed view | Route discovery, reviews, profiles |
-| Hazard reporting | Review/manage | **Primary** | One-tap reporting during rides |
-| Account & settings | **Primary** | Basic | Subscription, privacy, data export |
-| Real-time safety alerts | ✗ | **Primary** | Crash detection, weather, hazards |
-| Commuter mode | ✗ | **Primary** | Daily route, quick launch |
+| Capability                     | Web           | Mobile       | Notes                                         |
+| ------------------------------ | ------------- | ------------ | --------------------------------------------- |
+| Trip planning & route building | **Primary**   | Secondary    | Full-screen map, drag-and-drop, collaboration |
+| Road quality explorer          | **Primary**   | Secondary    | Large map, detailed segment panels            |
+| Ride recording & sensors       | ✗             | **Primary**  | Accelerometer, GPS, background services       |
+| Turn-by-turn navigation        | ✗             | **Primary**  | CarPlay/AA, voice, offline                    |
+| Ride history & analytics       | **Primary**   | Summary view | Charts, comparisons, data export              |
+| Community browsing             | **Primary**   | Feed view    | Route discovery, reviews, profiles            |
+| Hazard reporting               | Review/manage | **Primary**  | One-tap reporting during rides                |
+| Account & settings             | **Primary**   | Basic        | Subscription, privacy, data export            |
+| Real-time safety alerts        | ✗             | **Primary**  | Crash detection, weather, hazards             |
+| Commuter mode                  | ✗             | **Primary**  | Daily route, quick launch                     |
 
 **Shared backend:** Both platforms consume the same NestJS API. No BFF layer — the API is designed with platform-agnostic endpoints. Authentication is shared via JWT tokens (same login works on web and mobile). Real-time features (hazard alerts, group ride tracking) use the same WebSocket/Redis Pub/Sub infrastructure.
 
@@ -325,13 +325,13 @@ This is the flagship web feature. The full-screen trip planner provides a dramat
 
 **Key UX elements:**
 
-| Element | Description |
-|---------|-------------|
-| Map canvas | Full-screen MapLibre GL JS with road quality heatmap, Fun Zone clusters, and route overlay |
-| Segment sidebar | Scrollable list of Road Preview Cards, each expandable for full detail |
-| Parameter panel | Collapsible panel for trip settings: days, km/day, road preferences, avoidance |
-| Collaboration bar | Shows connected group members, their cursor positions on the map, and pending suggestions |
-| Timeline strip | Bottom strip showing daily route breakdown with distance, elevation, and stops per day |
+| Element           | Description                                                                                |
+| ----------------- | ------------------------------------------------------------------------------------------ |
+| Map canvas        | Full-screen MapLibre GL JS with road quality heatmap, Fun Zone clusters, and route overlay |
+| Segment sidebar   | Scrollable list of Road Preview Cards, each expandable for full detail                     |
+| Parameter panel   | Collapsible panel for trip settings: days, km/day, road preferences, avoidance             |
+| Collaboration bar | Shows connected group members, their cursor positions on the map, and pending suggestions  |
+| Timeline strip    | Bottom strip showing daily route breakdown with distance, elevation, and stops per day     |
 
 #### 9.2.2 WEB-EPIC 2: Road Quality Explorer
 
@@ -399,18 +399,18 @@ Account management is a baseline requirement. The web interface is the primary p
 
 The web app shares the NestJS backend with mobile. No BFF — the same API endpoints serve both clients. Web-specific concerns are handled in the frontend layer.
 
-| Layer | Technology | Notes |
-|-------|-----------|-------|
-| Framework | Next.js 14+ (App Router, TypeScript) | SSR for public/SEO pages, SPA for authenticated app views |
-| Styling | Tailwind CSS | Consistent with mobile design tokens, rapid development |
-| State management | Zustand | Same library as mobile — potential for shared store patterns |
-| Map engine | MapLibre GL JS | Same tile format as mobile. Road quality heatmap via vector tile layer |
-| Real-time | Socket.io client | Collaborative planning cursors, live hazard updates |
-| Charts & analytics | Recharts or D3.js | Ride stats, road quality trends, dashboard charts |
-| Auth | NextAuth.js → shared JWT with NestJS | SSO: same account works on web and mobile |
-| API client | Generated from NestJS OpenAPI spec (`openapi-typescript-codegen`) | Type-safe, always in sync with backend |
-| Hosting | Vercel or Cloudflare Pages | Edge-deployed, fast globally, pairs with Cloudflare domain |
-| Testing | Playwright (E2E), Vitest (unit) | Critical flows: trip creation, auth, payment |
+| Layer              | Technology                                                        | Notes                                                                  |
+| ------------------ | ----------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Framework          | Next.js 14+ (App Router, TypeScript)                              | SSR for public/SEO pages, SPA for authenticated app views              |
+| Styling            | Tailwind CSS                                                      | Consistent with mobile design tokens, rapid development                |
+| State management   | Zustand                                                           | Same library as mobile — potential for shared store patterns           |
+| Map engine         | MapLibre GL JS                                                    | Same tile format as mobile. Road quality heatmap via vector tile layer |
+| Real-time          | Socket.io client                                                  | Collaborative planning cursors, live hazard updates                    |
+| Charts & analytics | Recharts or D3.js                                                 | Ride stats, road quality trends, dashboard charts                      |
+| Auth               | NextAuth.js → shared JWT with NestJS                              | SSO: same account works on web and mobile                              |
+| API client         | Generated from NestJS OpenAPI spec (`openapi-typescript-codegen`) | Type-safe, always in sync with backend                                 |
+| Hosting            | Vercel or Cloudflare Pages                                        | Edge-deployed, fast globally, pairs with Cloudflare domain             |
+| Testing            | Playwright (E2E), Vitest (unit)                                   | Critical flows: trip creation, auth, payment                           |
 
 **Shared code strategy:** TypeScript types (API request/response shapes, road quality enums, segment models) are published as an internal npm package or monorepo shared directory, consumed by mobile (React Native), web (Next.js), and backend (NestJS). This eliminates type drift between platforms.
 
@@ -420,26 +420,26 @@ The web app shares the NestJS backend with mobile. No BFF — the same API endpo
 
 The web roadmap runs in parallel with mobile, with the trip planner delivered first to validate the desktop-first planning hypothesis.
 
-| Phase | Timeline | Epics | Key Deliverables |
-|-------|----------|-------|------------------|
-| **Web Alpha** | Q3 2026 | WEB-EPIC 1, WEB-EPIC 5 (partial) | Next.js scaffold, auth, MapLibre integration, basic trip planner with Fun Zone map and route building. Account creation and profile management. |
-| **Web MVP** | Q4 2026 | WEB-EPIC 1 (full), WEB-EPIC 2, WEB-EPIC 5 | Full trip planner with collaboration, Road Preview Cards, GPX import/export. Road quality explorer with public pages. Full account management. |
-| **Web Phase 2** | Q1–Q2 2027 | WEB-EPIC 3, WEB-EPIC 4 | Ride history dashboard, analytics, personal road map. Community hub, route collections, profiles, gamification dashboard. |
-| **Web Phase 3** | Q3 2027+ | Enhancements | Embeddable widgets, API documentation portal, advanced analytics, public API explorer. |
+| Phase           | Timeline   | Epics                                     | Key Deliverables                                                                                                                                |
+| --------------- | ---------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Web Alpha**   | Q3 2026    | WEB-EPIC 1, WEB-EPIC 5 (partial)          | Next.js scaffold, auth, MapLibre integration, basic trip planner with Fun Zone map and route building. Account creation and profile management. |
+| **Web MVP**     | Q4 2026    | WEB-EPIC 1 (full), WEB-EPIC 2, WEB-EPIC 5 | Full trip planner with collaboration, Road Preview Cards, GPX import/export. Road quality explorer with public pages. Full account management.  |
+| **Web Phase 2** | Q1–Q2 2027 | WEB-EPIC 3, WEB-EPIC 4                    | Ride history dashboard, analytics, personal road map. Community hub, route collections, profiles, gamification dashboard.                       |
+| **Web Phase 3** | Q3 2027+   | Enhancements                              | Embeddable widgets, API documentation portal, advanced analytics, public API explorer.                                                          |
 
 ### 9.5 Web MVP Success Criteria
 
-| Metric | Target (3 months post-launch) | Measurement |
-|--------|-------------------------------|-------------|
-| Monthly active web users | 5,000+ | Analytics |
-| Trips created via web | 60%+ of all trip plans | Backend metrics |
-| Web → mobile install conversion | 25%+ of web users install mobile | Attribution tracking |
-| Avg. planning session duration | > 12 min | Analytics |
-| Road quality explorer page views | 50,000+/month | Analytics (incl. SEO traffic) |
-| "Best Roads" pages indexed by Google | 100+ region pages | Search Console |
+| Metric                               | Target (3 months post-launch)    | Measurement                   |
+| ------------------------------------ | -------------------------------- | ----------------------------- |
+| Monthly active web users             | 5,000+                           | Analytics                     |
+| Trips created via web                | 60%+ of all trip plans           | Backend metrics               |
+| Web → mobile install conversion      | 25%+ of web users install mobile | Attribution tracking          |
+| Avg. planning session duration       | > 12 min                         | Analytics                     |
+| Road quality explorer page views     | 50,000+/month                    | Analytics (incl. SEO traffic) |
+| "Best Roads" pages indexed by Google | 100+ region pages                | Search Console                |
 
 ---
 
-*End of Document*
+_End of Document_
 
 **Tarmoto — Know the road before you ride it.**

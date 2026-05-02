@@ -63,9 +63,9 @@ function describeSubscription(userId: string) {
   // would be silently treated as a "preview" fallback (portal disabled,
   // checkout button disabled), which would break the upgrade tests.
   const planLabels: Record<string, { name: string; price: string }> = {
-    free: { name: "Free", price: "$0" },
-    premium: { name: "Premium", price: "$29.99/yr" },
-    pro: { name: "Pro", price: "$49.99/yr" },
+    free: { name: "Free", price: "€0" },
+    premium: { name: "Premium", price: "€29.99/yr" },
+    pro: { name: "Pro", price: "€49.99/yr" },
   };
   return {
     current_plan: {
@@ -81,20 +81,20 @@ function describeSubscription(userId: string) {
       {
         tier: "free",
         name: "Free",
-        price_label: "$0",
+        price_label: "€0",
         features: ["Basic navigation", "Hazard alerts"],
       },
       {
         tier: "premium",
         name: "Premium",
-        price_label: "$29.99/yr",
+        price_label: "€29.99/yr",
         highlighted: true,
         features: ["Unlimited trip planning", "Offline maps"],
       },
       {
         tier: "pro",
         name: "Pro",
-        price_label: "$49.99/yr",
+        price_label: "€49.99/yr",
         features: ["Everything in Premium", "Priority alerts"],
       },
     ],
