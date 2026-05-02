@@ -352,6 +352,7 @@ describe("applyVoteDelta", () => {
   // reading.
   const baseline: RoadReview = {
     id: "r",
+    user_id: "user-jane",
     user_display_name: "Jane",
     rating: 4,
     comment: null,

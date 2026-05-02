@@ -48,6 +48,7 @@ function makePayload(
 function makeReview(overrides: Partial<RoadReview> = {}): RoadReview {
   return {
     id: "review-1",
+    user_id: "user-1",
     user_display_name: "Rider",
     rating: 4,
     comment: null,

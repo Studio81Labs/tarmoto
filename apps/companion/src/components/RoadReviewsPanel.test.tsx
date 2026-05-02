@@ -37,6 +37,13 @@ function jpegFile(name: string, size = 1024) {
 function review(overrides: Partial<RoadReview> & { id: string }): RoadReview {
   return {
     id: overrides.id,
+    // user_id is the byline → profile deep-link target (#335). Default
+    // to a stable placeholder so tests don't have to set it explicitly.
+    // Use `in`-based pickup so callers can pass `user_id: null` to
+    // exercise the soft-deleted-author path without the default kicking
+    // back in.
+    user_id:
+      "user_id" in overrides ? (overrides.user_id ?? null) : "user-author",
     user_display_name: overrides.user_display_name ?? "John Rider",
     rating: overrides.rating ?? 4,
     comment: overrides.comment ?? "Fresh asphalt and smooth sweepers.",
@@ -113,6 +120,74 @@ describe("RoadReviewsPanel", () => {
     expect(screen.getByText("Jane Rider")).toBeInTheDocument();
     expect(screen.getByText("4.0 ★ average")).toBeInTheDocument();
     expect(screen.getByText("2 reviews")).toBeInTheDocument();
+  });
+
+  it("renders the reviewer byline as a profile link for other riders (#335)", async () => {
+    getReviewsMock.mockResolvedValueOnce({
+      data: [
+        review({
+          id: "review-1",
+          user_id: "rider/with spaces?and#hash",
+          user_display_name: "Jane Rider",
+        }),
+      ],
+    });
+
+    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+    const byline = await screen.findByRole("link", { name: "Jane Rider" });
+    // user_id is encodeURIComponent'd to keep funky ids safe in the URL.
+    expect(byline).toHaveAttribute(
+      "href",
+      "/community/rider%2Fwith%20spaces%3Fand%23hash",
+    );
+  });
+
+  it("renders the reviewer byline as plain text when the author is masked (#335)", async () => {
+    // Soft-deleted authors come back from the backend with `user_id: null`
+    // (paired with the masked "Deleted user" display name) — the card
+    // must NOT render a profile link in that case, otherwise tapping the
+    // byline would deep-link to a tombstoned profile route.
+    getReviewsMock.mockResolvedValueOnce({
+      data: [
+        review({
+          id: "review-1",
+          user_id: null,
+          user_display_name: "Deleted user",
+        }),
+      ],
+    });
+
+    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+    expect(await screen.findByText("Deleted user")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Deleted user" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders the reviewer byline as plain text on the viewer's own review (#335)", async () => {
+    // A profile link to your own profile from your own review byline
+    // would be a useless self-link — the card already shows a "You"
+    // chip and edit controls, so collapse to plain text.
+    setAuthenticatedViewer();
+    getReviewsMock.mockResolvedValueOnce({
+      data: [
+        review({
+          id: "review-1",
+          user_id: "user-1",
+          user_display_name: "John Rider",
+          is_mine: true,
+        }),
+      ],
+    });
+
+    render(<RoadReviewsPanel segmentId={firstSegmentId} />);
+
+    expect(await screen.findByText("John Rider")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "John Rider" }),
+    ).not.toBeInTheDocument();
   });
 
   it("does not fetch reviews for synthetic planner segment ids", () => {

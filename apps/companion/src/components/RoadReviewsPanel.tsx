@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   useEffect,
   useMemo,
@@ -886,9 +887,18 @@ function ReviewCard({
     <article className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-medium text-white">
-            {review.user_display_name}
-          </p>
+          {review.user_id && !review.is_mine ? (
+            <Link
+              href={`/community/${encodeURIComponent(review.user_id)}`}
+              className="text-sm font-medium text-white transition hover:text-tarmoto-cyan"
+            >
+              {review.user_display_name}
+            </Link>
+          ) : (
+            <p className="text-sm font-medium text-white">
+              {review.user_display_name}
+            </p>
+          )}
           <p className="text-xs text-slate-500">
             {formatRelativeTime(review.created_at)}
           </p>

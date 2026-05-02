@@ -719,6 +719,13 @@ export const passesApi = {
 
 export interface RoadReview {
   id: string;
+  /**
+   * Author user id, used to deep-link the review byline to
+   * `/community/[riderId]`. `null` when the author has been soft-deleted
+   * (paired with the masked "Deleted user" display name) — the card
+   * should render the name as plain text instead of a link.
+   */
+  user_id: string | null;
   user_display_name: string;
   rating: number;
   comment: string | null;

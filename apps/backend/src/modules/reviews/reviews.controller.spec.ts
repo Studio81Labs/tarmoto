@@ -18,6 +18,7 @@ describe('ReviewsController', () => {
 
   const mockReview = {
     id: 'review-1',
+    user_id: 'user-1',
     user_display_name: 'John Rider',
     rating: 4,
     comment: 'Smooth asphalt, great ride!',

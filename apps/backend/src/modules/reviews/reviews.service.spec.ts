@@ -144,6 +144,9 @@ describe('ReviewsService', () => {
       expect(result[0].id).toBe('review-1');
       expect(result[0].rating).toBe(4);
       expect(result[0].user_display_name).toBe('John Rider');
+      // user_id ships alongside display_name so review cards can deep-link
+      // to the rider profile without a second round trip (#335).
+      expect(result[0].user_id).toBe('user-1');
       // No votes seeded → zeros + null caller vote.
       expect(result[0].helpful_count).toBe(0);
       expect(result[0].not_helpful_count).toBe(0);
@@ -203,6 +206,9 @@ describe('ReviewsService', () => {
       // After US-62 GDPR deletion, both a missing relation and a
       // soft-deleted author flow through the same masked-name path.
       expect(result[0].user_display_name).toBe('Deleted user');
+      // #335: user_id is masked alongside the display name so the review
+      // card has nothing to link a profile route to for tombstoned authors.
+      expect(result[0].user_id).toBeNull();
     });
 
     it('should mask user_display_name when the author is soft-deleted with deleted_at set', async () => {
@@ -210,12 +216,13 @@ describe('ReviewsService', () => {
         {
           ...mockReview,
           user: { ...mockReview.user, deleted_at: new Date() },
-        } as unknown as RoadReview,
+        },
       ]);
 
       const result = await service.listForSegment('seg-1');
 
       expect(result[0].user_display_name).toBe('Deleted user');
+      expect(result[0].user_id).toBeNull();
     });
   });
 
@@ -416,7 +423,7 @@ describe('ReviewsService', () => {
           'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-keep.jpg',
           'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-drop.jpg',
         ],
-      } as unknown as RoadReview);
+      });
 
       await service.update('user-1', 'seg-1', {
         rating: 4,
@@ -439,7 +446,7 @@ describe('ReviewsService', () => {
         photos: [
           'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-same.jpg',
         ],
-      } as unknown as RoadReview);
+      });
 
       await service.update('user-1', 'seg-1', {
         rating: 4,
@@ -458,7 +465,7 @@ describe('ReviewsService', () => {
           'https://cdn.example.com/foreign.jpg',
           'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-managed.jpg',
         ],
-      } as unknown as RoadReview);
+      });
 
       await service.update('user-1', 'seg-1', { rating: 4, photos: [] });
 
@@ -483,7 +490,7 @@ describe('ReviewsService', () => {
           'https://app.tarmoto.test/uploads/road-review-photos/..%2F..%2Fsecrets.txt',
           'https://app.tarmoto.test/uploads/road-review-photos/%00pwn.jpg',
         ],
-      } as unknown as RoadReview);
+      });
 
       await service.update('user-1', 'seg-1', { rating: 4, photos: [] });
 
@@ -501,7 +508,7 @@ describe('ReviewsService', () => {
         photos: [
           'https://app.tarmoto.test/uploads/road-review-photos/seg-1-other-user-foreign.jpg',
         ],
-      } as unknown as RoadReview);
+      });
 
       await service.update('user-1', 'seg-1', { rating: 4, photos: [] });
 
@@ -567,7 +574,7 @@ describe('ReviewsService', () => {
         photos: [
           '  https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-keep.jpg  ',
         ],
-      } as unknown as RoadReview);
+      });
 
       await service.update('user-1', 'seg-1', {
         rating: 4,
@@ -620,7 +627,7 @@ describe('ReviewsService', () => {
           'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-keep.jpg',
           'https://cdn.example.com/external.jpg', // not managed → skipped
         ],
-      } as unknown as RoadReview);
+      });
 
       await service.delete('user-1', 'seg-1');
 
@@ -643,7 +650,7 @@ describe('ReviewsService', () => {
         photos: [
           'https://app.tarmoto.test/uploads/road-review-photos/seg-1-other-user-foreign.jpg',
         ],
-      } as unknown as RoadReview);
+      });
 
       await service.delete('user-1', 'seg-1');
 
@@ -655,7 +662,7 @@ describe('ReviewsService', () => {
       reviewRepo.findOne!.mockResolvedValueOnce({
         ...mockReview,
         photos: null,
-      } as unknown as RoadReview);
+      });
 
       await service.delete('user-1', 'seg-1');
 
@@ -668,7 +675,7 @@ describe('ReviewsService', () => {
         photos: [
           'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-missing.jpg',
         ],
-      } as unknown as RoadReview);
+      });
       jest
         .mocked(unlink)
         .mockRejectedValueOnce(
@@ -812,7 +819,7 @@ describe('ReviewsService', () => {
       const freshReview = {
         ...mockReview,
         created_at: new Date('2026-04-14T10:00:00Z'),
-      } as unknown as RoadReview;
+      };
       reviewRepo.find!.mockResolvedValueOnce([freshReview]);
 
       const result = await service.listForSegment('seg-1');
@@ -838,6 +845,7 @@ describe('ReviewsService', () => {
 
       expect(result[0]).toEqual({
         id: 'review-1',
+        user_id: 'user-1',
         user_display_name: 'John Rider',
         rating: 4,
         comment: 'Smooth asphalt, great ride!',
