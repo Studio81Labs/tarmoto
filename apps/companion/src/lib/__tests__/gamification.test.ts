@@ -11,19 +11,19 @@ import {
   formatMilestoneLabel,
   humanizeRewardBadgeKey,
   iconForBadgeKey,
+  labelForDimension,
   mapBadgeDto,
   mapChallengeDto,
-  mapPrimaryLeaderboardEntry,
+  mapDimensionLeaderboard,
+  mapRegionalLeaderboardEntry,
+  mapRegionalLeaderboards,
   milestoneProgress,
-  myLeaderboardRank,
   pickNextMilestone,
-  pickPrimaryChallenge,
   riderStatsFromBadges,
   seasonalProgress,
-  sortLeaderboard,
   unitForChallengeMetric,
+  LEADERBOARD_DIMENSION_KEYS,
   type Challenge,
-  type LeaderboardEntry,
   type Milestone,
   type SeasonalChallenge,
 } from "../gamification";
@@ -51,18 +51,6 @@ function challenge(overrides: Partial<Challenge> & { id: string }): Challenge {
     target: 100,
     unit: "km",
     endsAt: new Date(NOW.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    ...overrides,
-  };
-}
-
-function entry(
-  overrides: Partial<LeaderboardEntry> & { riderId: string },
-): LeaderboardEntry {
-  return {
-    displayName: "Rider",
-    totalKm: 0,
-    roadsDiscovered: 0,
-    hazardsReported: 0,
     ...overrides,
   };
 }
@@ -129,50 +117,6 @@ describe("activeChallenges", () => {
   it("treats malformed endsAt as expired", () => {
     const bad = challenge({ id: "bad", endsAt: "not-a-date" });
     expect(activeChallenges([bad], NOW)).toEqual([]);
-  });
-});
-
-describe("sortLeaderboard", () => {
-  it("sorts by the requested metric descending", () => {
-    const sorted = sortLeaderboard(
-      [
-        entry({ riderId: "a", totalKm: 10 }),
-        entry({ riderId: "b", totalKm: 100 }),
-        entry({ riderId: "c", totalKm: 50 }),
-      ],
-      "totalKm",
-    );
-    expect(sorted.map((e) => e.riderId)).toEqual(["b", "c", "a"]);
-  });
-
-  it("does not mutate the input array", () => {
-    const input = [
-      entry({ riderId: "a", roadsDiscovered: 1 }),
-      entry({ riderId: "b", roadsDiscovered: 5 }),
-    ];
-    const snapshot = [...input];
-    sortLeaderboard(input, "roadsDiscovered");
-    expect(input).toEqual(snapshot);
-  });
-});
-
-describe("myLeaderboardRank", () => {
-  it("returns the 1-based rank of the entry flagged as me", () => {
-    const rank = myLeaderboardRank(
-      [
-        entry({ riderId: "a", totalKm: 10 }),
-        entry({ riderId: "me", totalKm: 100, isMe: true }),
-        entry({ riderId: "c", totalKm: 50 }),
-      ],
-      "totalKm",
-    );
-    expect(rank).toBe(1);
-  });
-
-  it("returns null when no entry is flagged", () => {
-    expect(
-      myLeaderboardRank([entry({ riderId: "a", totalKm: 1 })], "totalKm"),
-    ).toBeNull();
   });
 });
 
@@ -510,87 +454,107 @@ describe("riderStatsFromBadges", () => {
   });
 });
 
-describe("mapPrimaryLeaderboardEntry", () => {
-  it("flags isMe when the user_id matches", () => {
-    const e = mapPrimaryLeaderboardEntry(
-      {
-        rank: 2,
-        user_id: "user-1",
-        display_name: "Me",
-        progress: 12,
-        completed: false,
-      },
-      "user-1",
+describe("regional leaderboard mappers", () => {
+  function entryDto(
+    overrides: Partial<{
+      rank: number;
+      user_id: string;
+      display_name: string;
+      home_region: string | null;
+      value: number;
+    }> = {},
+  ) {
+    return {
+      rank: 1,
+      user_id: "user-1",
+      display_name: "Rider",
+      home_region: "Beskydy",
+      value: 100,
+      ...overrides,
+    };
+  }
+
+  it("flags isMe when the user id matches the current user", () => {
+    const mapped = mapRegionalLeaderboardEntry(
+      entryDto({ user_id: "me" }),
+      "me",
     );
-    expect(e.isMe).toBe(true);
+    expect(mapped.isMe).toBe(true);
+    expect(mapped.userId).toBe("me");
   });
 
-  it("does not flag isMe for other users or null current user", () => {
+  it("does not flag isMe for other users or anonymous viewers", () => {
     expect(
-      mapPrimaryLeaderboardEntry(
-        {
-          rank: 1,
-          user_id: "user-1",
-          display_name: "Other",
-          progress: 10,
-          completed: false,
-        },
-        "user-2",
-      ).isMe,
+      mapRegionalLeaderboardEntry(entryDto({ user_id: "u1" }), "u2").isMe,
     ).toBe(false);
-    expect(
-      mapPrimaryLeaderboardEntry(
-        {
-          rank: 1,
-          user_id: "user-1",
-          display_name: "Other",
-          progress: 10,
-          completed: false,
+    expect(mapRegionalLeaderboardEntry(entryDto(), null).isMe).toBe(false);
+  });
+
+  it("maps a dimension leaderboard, propagating me", () => {
+    const dim = mapDimensionLeaderboard(
+      {
+        dimension: "total_distance_km",
+        unit: "km",
+        entries: [entryDto({ user_id: "u1", rank: 1, value: 500 })],
+        me: entryDto({ user_id: "me", rank: 47, value: 12 }),
+      },
+      "me",
+    );
+    expect(dim.dimension).toBe("total_distance_km");
+    expect(dim.unit).toBe("km");
+    expect(dim.entries).toHaveLength(1);
+    expect(dim.entries[0]?.isMe).toBe(false);
+    expect(dim.me?.userId).toBe("me");
+    expect(dim.me?.isMe).toBe(true);
+  });
+
+  it("maps the full regional response with three dimensions", () => {
+    const full = mapRegionalLeaderboards(
+      {
+        region: "Beskydy",
+        generated_at: "2026-05-01T00:00:00Z",
+        total_distance_km: {
+          dimension: "total_distance_km",
+          unit: "km",
+          entries: [entryDto({ user_id: "u1", value: 500 })],
+          me: null,
         },
-        null,
-      ).isMe,
-    ).toBe(false);
+        roads_discovered: {
+          dimension: "roads_discovered",
+          unit: "roads",
+          entries: [entryDto({ user_id: "me", value: 12 })],
+          me: entryDto({ user_id: "me", value: 12 }),
+        },
+        hazards_reported: {
+          dimension: "hazards_reported",
+          unit: "reports",
+          entries: [],
+          me: null,
+        },
+      },
+      "me",
+    );
+    expect(full.region).toBe("Beskydy");
+    expect(full.total_distance_km.entries[0]?.isMe).toBe(false);
+    expect(full.roads_discovered.me?.isMe).toBe(true);
+    expect(full.hazards_reported.entries).toEqual([]);
   });
 });
 
-describe("pickPrimaryChallenge", () => {
-  it("returns null for an empty list", () => {
-    expect(pickPrimaryChallenge([])).toBeNull();
-  });
-
-  it("picks the challenge with the most participants", () => {
-    const a = challengeDetailDto({ id: "a", participant_count: 5 });
-    const b = challengeDetailDto({ id: "b", participant_count: 12 });
-    expect(pickPrimaryChallenge([a, b])?.id).toBe("b");
-  });
-
-  it("breaks ties by ends_at soonest", () => {
-    const soon = challengeDetailDto({
-      id: "soon",
-      participant_count: 10,
-      ends_at: "2026-05-01T00:00:00Z",
-    });
-    const later = challengeDetailDto({
-      id: "later",
-      participant_count: 10,
-      ends_at: "2026-06-01T00:00:00Z",
-    });
-    expect(pickPrimaryChallenge([later, soon])?.id).toBe("soon");
+describe("labelForDimension", () => {
+  it("returns a human-readable label per dimension", () => {
+    for (const dim of LEADERBOARD_DIMENSION_KEYS) {
+      expect(labelForDimension(dim)).toBeTruthy();
+    }
   });
 });
 
 describe("buildLiveSnapshot", () => {
   it("produces an empty snapshot when no data is available", () => {
-    const snap = buildLiveSnapshot({
-      badges: [],
-      challengeDetails: [],
-      currentUserId: "user-1",
-    });
+    const snap = buildLiveSnapshot({ badges: [], challengeDetails: [] });
     expect(snap.badges).toEqual([]);
     expect(snap.challenges).toEqual([]);
-    expect(snap.primaryLeaderboard).toBeNull();
     expect(snap.seasonal).toBeNull();
-    expect(snap.leaderboard).toEqual([]);
     expect(snap.milestones.length).toBeGreaterThan(0);
   });
 
@@ -600,11 +564,7 @@ describe("buildLiveSnapshot", () => {
       participant_count: 7,
       my_progress: 3,
     });
-    const snap = buildLiveSnapshot({
-      badges: [],
-      challengeDetails: [detail],
-      currentUserId: "user-1",
-    });
+    const snap = buildLiveSnapshot({ badges: [], challengeDetails: [detail] });
     expect(snap.challengeMeta["ch-1"]).toEqual({
       joined: true,
       participantCount: 7,
@@ -618,54 +578,9 @@ describe("buildLiveSnapshot", () => {
       participant_count: 0,
       my_progress: null,
     });
-    const snap = buildLiveSnapshot({
-      badges: [],
-      challengeDetails: [detail],
-      currentUserId: "user-1",
-    });
+    const snap = buildLiveSnapshot({ badges: [], challengeDetails: [detail] });
     expect(snap.challengeMeta["ch-1"]?.joined).toBe(false);
     expect(snap.challenges[0]?.current).toBe(0);
-  });
-
-  it("builds the primary leaderboard from the most-popular challenge", () => {
-    const popular = challengeDetailDto({
-      id: "popular",
-      participant_count: 50,
-      title: "Big",
-      metric: "total_distance",
-      leaderboard: [
-        {
-          rank: 1,
-          user_id: "user-1",
-          display_name: "Top",
-          progress: 100,
-          completed: false,
-        },
-        {
-          rank: 2,
-          user_id: "me",
-          display_name: "Me",
-          progress: 50,
-          completed: false,
-        },
-      ],
-    });
-    const small = challengeDetailDto({
-      id: "small",
-      participant_count: 1,
-      leaderboard: [],
-    });
-    const snap = buildLiveSnapshot({
-      badges: [],
-      challengeDetails: [small, popular],
-      currentUserId: "me",
-    });
-    expect(snap.primaryLeaderboard?.challengeId).toBe("popular");
-    expect(snap.primaryLeaderboard?.challengeTitle).toBe("Big");
-    expect(snap.primaryLeaderboard?.unit).toBe("km");
-    expect(snap.primaryLeaderboard?.entries.find((e) => e.isMe)?.userId).toBe(
-      "me",
-    );
   });
 
   it("derives stats from the badges payload", () => {
@@ -682,7 +597,6 @@ describe("buildLiveSnapshot", () => {
         }),
       ],
       challengeDetails: [],
-      currentUserId: null,
     });
     expect(snap.stats.totalKm).toBe(8_000);
   });
@@ -693,12 +607,6 @@ describe("buildDemoSnapshot", () => {
     const a = buildDemoSnapshot("rider-1", NOW);
     const b = buildDemoSnapshot("rider-1", NOW);
     expect(a).toEqual(b);
-  });
-
-  it("includes the signed-in rider in the leaderboard", () => {
-    const snap = buildDemoSnapshot("rider-1", NOW);
-    const me = snap.leaderboard.find((e) => e.isMe);
-    expect(me?.riderId).toBe("rider-1");
   });
 
   it("emits future-dated challenges so they render on the dashboard", () => {

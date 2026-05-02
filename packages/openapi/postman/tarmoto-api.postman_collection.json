@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "377e311c-5128-4cfc-9555-52035fae96c4",
+    "_postman_id": "9852c12f-6dc7-4e1f-840e-34b6974f59ad",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -33,6 +33,23 @@
               "raw": "{{baseUrl}}/api/v1",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1"]
+            }
+          }
+        },
+        {
+          "name": "AppController_getHealth",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/healthz",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "healthz"]
             }
           }
         }
@@ -3587,6 +3604,42 @@
                 {
                   "key": "challengeId",
                   "value": ""
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "leaderboards",
+      "item": [
+        {
+          "name": "Multi-dimensional regional leaderboards",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/leaderboards/regional",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "leaderboards", "regional"],
+              "query": [
+                {
+                  "key": "region",
+                  "value": "",
+                  "description": "Filter to riders whose `home_region` matches (case-insensitive, trimmed). Omit for a global ranking.",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": "Top-N rows returned per dimension.",
+                  "disabled": true
                 }
               ]
             }

@@ -26,6 +26,7 @@ import { RouteCollectionsModule } from './modules/route-collections/index.js';
 import { FollowersModule } from './modules/followers/index.js';
 import { BadgesModule } from './modules/badges/index.js';
 import { ChallengesModule } from './modules/challenges/index.js';
+import { LeaderboardsModule } from './modules/leaderboards/index.js';
 import { ExplorationModule } from './modules/exploration/index.js';
 import { PassesModule } from './modules/passes/index.js';
 import { PoiModule } from './modules/poi/index.js';
@@ -74,6 +75,7 @@ import { StorageModule } from './modules/storage/index.js';
     FollowersModule,
     BadgesModule,
     ChallengesModule,
+    LeaderboardsModule,
     ExplorationModule,
     PassesModule,
     PoiModule,

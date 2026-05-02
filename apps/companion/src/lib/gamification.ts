@@ -2,9 +2,13 @@
  * Types, mappers and helpers for the gamification dashboard (US-57).
  *
  * The dashboard surfaces four data surfaces on top of the rider's profile
- * badges: active challenges with progress, a per-challenge leaderboard, the
- * next milestone the rider is working toward, and an optional long-running
- * seasonal challenge banner.
+ * badges: active challenges with progress, a multi-dimensional regional
+ * leaderboard (km / roads / hazards), the next milestone the rider is
+ * working toward, and an optional long-running seasonal challenge banner.
+ *
+ * The regional leaderboard is fetched on its own (region selection is
+ * interactive) and is therefore not part of `GamificationSnapshot` —
+ * see `fetchRegionalLeaderboards` in `gamification-fetch.ts`.
  *
  * `buildDemoSnapshot` is retained as a typed test fixture only — production
  * rendering goes through `gamification-fetch.ts` and the real backend.
@@ -43,15 +47,51 @@ export type LeaderboardMetric =
   | "roadsDiscovered"
   | "hazardsReported";
 
-export interface LeaderboardEntry {
-  riderId: string;
+/**
+ * Backend dimension keys for the multi-dimensional regional leaderboard
+ * (`/leaderboards/regional`). Mirrors the API enum exactly so OpenAPI types
+ * line up without translation.
+ */
+export type LeaderboardDimensionKey =
+  | "total_distance_km"
+  | "roads_discovered"
+  | "hazards_reported";
+
+export const LEADERBOARD_DIMENSION_KEYS: readonly LeaderboardDimensionKey[] = [
+  "total_distance_km",
+  "roads_discovered",
+  "hazards_reported",
+];
+
+export interface RegionalLeaderboardEntry {
+  rank: number;
+  userId: string;
   displayName: string;
-  homeRegion?: string;
-  totalKm: number;
-  roadsDiscovered: number;
-  hazardsReported: number;
-  /** Whether this entry is the signed-in rider (highlighted in the table). */
-  isMe?: boolean;
+  homeRegion: string | null;
+  /** Score in the dimension's unit (km, count). */
+  value: number;
+  /** True when the entry belongs to the signed-in rider. */
+  isMe: boolean;
+}
+
+export interface RegionalDimensionLeaderboard {
+  dimension: LeaderboardDimensionKey;
+  unit: string;
+  entries: RegionalLeaderboardEntry[];
+  /**
+   * Signed-in rider's row even when outside the top N. Null when the rider
+   * has no score in this dimension or is anonymous.
+   */
+  me: RegionalLeaderboardEntry | null;
+}
+
+export interface RegionalLeaderboards {
+  /** The region filter the backend applied (`null` for global rankings). */
+  region: string | null;
+  generatedAt: string;
+  total_distance_km: RegionalDimensionLeaderboard;
+  roads_discovered: RegionalDimensionLeaderboard;
+  hazards_reported: RegionalDimensionLeaderboard;
 }
 
 export interface Milestone {
@@ -100,43 +140,11 @@ export interface ChallengeMeta {
   participantCount: number;
 }
 
-export interface PrimaryLeaderboardEntry {
-  rank: number;
-  userId: string;
-  displayName: string;
-  /** Progress in the challenge's metric/unit. */
-  progress: number;
-  completed: boolean;
-  isMe: boolean;
-}
-
-/**
- * Single-dimension leaderboard surfaced for the challenge with the most
- * participants. Backend leaderboards are scoped per challenge, so the multi-
- * dimensional regional leaderboard (km / roads / hazards) shown by the demo
- * snapshot is a follow-up — see issue notes.
- */
-export interface PrimaryLeaderboard {
-  challengeId: string;
-  challengeTitle: string;
-  metric: string;
-  unit: string;
-  entries: PrimaryLeaderboardEntry[];
-}
-
 export interface GamificationSnapshot {
   badges: Badge[];
   challenges: Challenge[];
   /** Backend metadata per challenge id (joined flag, participant count). */
   challengeMeta: Record<string, ChallengeMeta>;
-  /**
-   * Legacy multi-dimensional regional leaderboard. Demo fixtures populate it;
-   * production data leaves it empty (the backend exposes per-challenge
-   * leaderboards only — see `primaryLeaderboard`).
-   */
-  leaderboard: LeaderboardEntry[];
-  /** Per-challenge leaderboard surfaced in the dashboard, or null if none. */
-  primaryLeaderboard: PrimaryLeaderboard | null;
   milestones: Milestone[];
   /** Optional seasonal banner — hidden when no long-running challenge fits. */
   seasonal: SeasonalChallenge | null;
@@ -169,27 +177,6 @@ export function activeChallenges(
     const t = new Date(c.endsAt).getTime();
     return Number.isFinite(t) && t >= cutoff;
   });
-}
-
-export function sortLeaderboard(
-  entries: readonly LeaderboardEntry[],
-  metric: LeaderboardMetric,
-): LeaderboardEntry[] {
-  return [...entries].sort((a, b) => b[metric] - a[metric]);
-}
-
-/**
- * Returns the 1-based rank of the signed-in rider for `metric`, or `null` if
- * none of the entries are flagged `isMe`. Ties preserve the natural order of
- * `sortLeaderboard`, which is good enough for a dashboard rank pill.
- */
-export function myLeaderboardRank(
-  entries: readonly LeaderboardEntry[],
-  metric: LeaderboardMetric,
-): number | null {
-  const sorted = sortLeaderboard(entries, metric);
-  const idx = sorted.findIndex((e) => e.isMe);
-  return idx === -1 ? null : idx + 1;
 }
 
 export function milestoneProgress(
@@ -431,50 +418,6 @@ export function buildDemoSnapshot(
     },
   ];
 
-  const leaderboard: LeaderboardEntry[] = [
-    {
-      riderId: "leader-1",
-      displayName: "Marek Novák",
-      homeRegion: "Beskydy",
-      totalKm: 21_400,
-      roadsDiscovered: 356,
-      hazardsReported: 62,
-    },
-    {
-      riderId: "leader-2",
-      displayName: "Karolína Dvořáková",
-      homeRegion: "Beskydy",
-      totalKm: 18_900,
-      roadsDiscovered: 298,
-      hazardsReported: 71,
-    },
-    {
-      riderId,
-      displayName: "You",
-      homeRegion: "Beskydy",
-      totalKm: stats.totalKm,
-      roadsDiscovered: stats.roadsDiscovered,
-      hazardsReported: stats.hazardsReported,
-      isMe: true,
-    },
-    {
-      riderId: "leader-4",
-      displayName: "Tomáš Svoboda",
-      homeRegion: "Beskydy",
-      totalKm: 14_220,
-      roadsDiscovered: 241,
-      hazardsReported: 39,
-    },
-    {
-      riderId: "leader-5",
-      displayName: "Lenka Procházková",
-      homeRegion: "Beskydy",
-      totalKm: 12_880,
-      roadsDiscovered: 213,
-      hazardsReported: 28,
-    },
-  ];
-
   const seasonal: SeasonalChallenge = {
     id: "alpine-spring-2026",
     name: "Alpine Spring",
@@ -493,8 +436,6 @@ export function buildDemoSnapshot(
     badges,
     challenges,
     challengeMeta: {},
-    leaderboard,
-    primaryLeaderboard: null,
     milestones: DEFAULT_MILESTONES,
     seasonal,
     stats,
@@ -506,7 +447,6 @@ export function buildDemoSnapshot(
 type BadgeDto = components["schemas"]["BadgeDto"];
 type ChallengeDto = components["schemas"]["ChallengeDto"];
 type ChallengeDetailDto = components["schemas"]["ChallengeDetailDto"];
-type LeaderboardEntryDto = components["schemas"]["LeaderboardEntryDto"];
 
 /**
  * Lucide icon name for a badge key. Backend keys are stable identifiers, so a
@@ -635,50 +575,17 @@ export function riderStatsFromBadges(
 }
 
 /**
- * Maps a backend per-challenge leaderboard row, marking the signed-in rider
- * with `isMe` so the table can highlight their position.
- */
-export function mapPrimaryLeaderboardEntry(
-  dto: LeaderboardEntryDto,
-  currentUserId: string | null,
-): PrimaryLeaderboardEntry {
-  return {
-    rank: dto.rank,
-    userId: dto.user_id,
-    displayName: dto.display_name,
-    progress: dto.progress,
-    completed: dto.completed,
-    isMe: currentUserId !== null && dto.user_id === currentUserId,
-  };
-}
-
-/**
- * Picks the most-popular active challenge as the leaderboard the dashboard
- * surfaces. Ties prefer the challenge ending soonest (fresher signal). The
- * caller passes the full set of challenge details — we use them both to pick
- * and to extract the leaderboard payload.
- */
-export function pickPrimaryChallenge(
-  details: readonly ChallengeDetailDto[],
-): ChallengeDetailDto | null {
-  if (details.length === 0) return null;
-  return [...details].sort((a, b) => {
-    if (b.participant_count !== a.participant_count) {
-      return b.participant_count - a.participant_count;
-    }
-    return new Date(a.ends_at).getTime() - new Date(b.ends_at).getTime();
-  })[0]!;
-}
-
-/**
  * Builds a full `GamificationSnapshot` from the data the backend exposes.
  * Real fetches go through `gamification-fetch.ts`; this is the pure
  * transform so it can be tested without touching network.
+ *
+ * The regional leaderboard is fetched separately (region selection is
+ * interactive) and is therefore not part of the snapshot — see
+ * `fetchRegionalLeaderboards` and `mapRegionalLeaderboards`.
  */
 export function buildLiveSnapshot(input: {
   badges: readonly BadgeDto[];
   challengeDetails: readonly ChallengeDetailDto[];
-  currentUserId: string | null;
 }): GamificationSnapshot {
   const badges = input.badges.map(mapBadgeDto);
   const challenges = input.challengeDetails.map((d) =>
@@ -691,27 +598,82 @@ export function buildLiveSnapshot(input: {
       participantCount: d.participant_count,
     };
   }
-  const primary = pickPrimaryChallenge(input.challengeDetails);
-  const primaryLeaderboard: PrimaryLeaderboard | null = primary
-    ? {
-        challengeId: primary.id,
-        challengeTitle: primary.title,
-        metric: primary.metric,
-        unit: unitForChallengeMetric(primary.metric),
-        entries: primary.leaderboard.map((e) =>
-          mapPrimaryLeaderboardEntry(e, input.currentUserId),
-        ),
-      }
-    : null;
   return {
     badges,
     challenges,
     challengeMeta,
-    leaderboard: [],
-    primaryLeaderboard,
     milestones: DEFAULT_MILESTONES,
     seasonal: null,
     stats: riderStatsFromBadges(input.badges),
+  };
+}
+
+// ── Regional leaderboards ──
+
+type RegionalLeaderboardsResponseDto =
+  components["schemas"]["RegionalLeaderboardsResponseDto"];
+type RegionalDimensionLeaderboardDto =
+  components["schemas"]["DimensionLeaderboardDto"];
+type RegionalLeaderboardEntryDto =
+  components["schemas"]["RegionalLeaderboardEntryDto"];
+
+const DIMENSION_LABELS: Record<LeaderboardDimensionKey, string> = {
+  total_distance_km: "Distance",
+  roads_discovered: "Roads discovered",
+  hazards_reported: "Hazards reported",
+};
+
+export function labelForDimension(dim: LeaderboardDimensionKey): string {
+  return DIMENSION_LABELS[dim];
+}
+
+export function mapRegionalLeaderboardEntry(
+  dto: RegionalLeaderboardEntryDto,
+  currentUserId: string | null,
+): RegionalLeaderboardEntry {
+  return {
+    rank: dto.rank,
+    userId: dto.user_id,
+    displayName: dto.display_name,
+    homeRegion: dto.home_region,
+    value: dto.value,
+    isMe: currentUserId !== null && dto.user_id === currentUserId,
+  };
+}
+
+export function mapDimensionLeaderboard(
+  dto: RegionalDimensionLeaderboardDto,
+  currentUserId: string | null,
+): RegionalDimensionLeaderboard {
+  return {
+    dimension: dto.dimension as LeaderboardDimensionKey,
+    unit: dto.unit,
+    entries: dto.entries.map((e) =>
+      mapRegionalLeaderboardEntry(e, currentUserId),
+    ),
+    me: dto.me ? mapRegionalLeaderboardEntry(dto.me, currentUserId) : null,
+  };
+}
+
+export function mapRegionalLeaderboards(
+  dto: RegionalLeaderboardsResponseDto,
+  currentUserId: string | null,
+): RegionalLeaderboards {
+  return {
+    region: dto.region,
+    generatedAt: dto.generated_at,
+    total_distance_km: mapDimensionLeaderboard(
+      dto.total_distance_km,
+      currentUserId,
+    ),
+    roads_discovered: mapDimensionLeaderboard(
+      dto.roads_discovered,
+      currentUserId,
+    ),
+    hazards_reported: mapDimensionLeaderboard(
+      dto.hazards_reported,
+      currentUserId,
+    ),
   };
 }
 

@@ -73,6 +73,7 @@ import { AddRideStatsLeanDistribution1716200000000 } from './migrations/17162000
 import { MigrateLegacyNotificationPreferences1716300000000 } from './migrations/1716300000000-MigrateLegacyNotificationPreferences.js';
 import { AddPrivacyPreferences1716400000000 } from './migrations/1716400000000-AddPrivacyPreferences.js';
 import { AddRouteCollections1716500000000 } from './migrations/1716500000000-AddRouteCollections.js';
+import { AddHomeRegionIndex1716600000000 } from './migrations/1716600000000-AddHomeRegionIndex.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -164,6 +165,7 @@ export const AppDataSource = new DataSource({
     MigrateLegacyNotificationPreferences1716300000000,
     AddPrivacyPreferences1716400000000,
     AddRouteCollections1716500000000,
+    AddHomeRegionIndex1716600000000,
   ],
   synchronize: false,
 });

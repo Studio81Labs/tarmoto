@@ -1,22 +1,25 @@
 /**
  * Fetcher for the gamification dashboard (US-57).
  *
- * Composes three real backend endpoints into a single `GamificationSnapshot`:
+ * The dashboard composes three independent backend reads:
  *   - GET /users/{userId}/badges       → badge list with per-tier progress
  *   - GET /challenges                  → active challenges
- *   - GET /challenges/{id}             → leaderboard + my_progress per
+ *   - GET /challenges/{id}             → my_progress + participant count per
  *                                        active challenge (parallel)
  *
- * Per-challenge progress is recomputed on every call; the page treats this
- * as cheap enough to refetch on each visit and stale-while-revalidate on
- * window focus.
+ * The multi-dimensional regional leaderboard
+ * (`GET /leaderboards/regional`) is fetched on its own from the dashboard
+ * widget — region selection is interactive, so it isn't part of the
+ * one-shot `fetchGamificationSnapshot`.
  */
 
 import type { components } from "@tarmoto/openapi";
 import { api } from "@/lib/api";
 import {
   buildLiveSnapshot,
+  mapRegionalLeaderboards,
   type GamificationSnapshot,
+  type RegionalLeaderboards,
 } from "@/lib/gamification";
 
 type BadgeDto = components["schemas"]["BadgeDto"];
@@ -126,10 +129,10 @@ export async function joinChallenge(challengeId: string): Promise<void> {
 }
 
 /**
- * Loads the full gamification snapshot for the signed-in rider. Badges and
- * challenges run in parallel; per-challenge details fan out in a second
- * parallel batch. A failure in any step throws so the caller can render a
- * single error fallback rather than a half-populated page.
+ * Loads the snapshot of badges + challenges for the signed-in rider.
+ * Badges and challenges run in parallel; per-challenge details fan out in
+ * a second parallel batch. A failure in any step throws so the caller can
+ * render a single error fallback rather than a half-populated page.
  *
  * The optional `signal` cancels every in-flight request when the page
  * unmounts or the user switches accounts, so abandoned fetches stop
@@ -147,9 +150,50 @@ export async function fetchGamificationSnapshot(
   const challengeDetails = await Promise.all(
     challenges.map((c) => fetchChallengeDetail(c.id, { signal })),
   );
-  return buildLiveSnapshot({
-    badges,
-    challengeDetails,
-    currentUserId: userId,
-  });
+  return buildLiveSnapshot({ badges, challengeDetails });
+}
+
+export interface FetchRegionalLeaderboardsOptions extends FetchOptions {
+  /**
+   * Region filter — matched case-insensitively against the rider's
+   * `home_region` server-side. Omit for a global ranking.
+   */
+  region?: string | null;
+  /** Top-N rows returned per dimension (1..100, defaults server-side to 20). */
+  limit?: number;
+  /**
+   * The signed-in rider's id, used by the mapper to flag the `isMe` row in
+   * each dimension. The backend already returns the rider's row as `me`, but
+   * letting the client tag entries lets the table highlight rows that show
+   * up in both `entries` and `me`.
+   */
+  currentUserId?: string | null;
+}
+
+/**
+ * Fetches the multi-dimensional regional leaderboards (km / roads / hazards)
+ * for the gamification dashboard's leaderboard widget. Returns a typed
+ * client-side `RegionalLeaderboards` shape rather than the raw DTO so the
+ * `isMe` highlight is consistent with the rest of the dashboard.
+ */
+export async function fetchRegionalLeaderboards(
+  options: FetchRegionalLeaderboardsOptions = {},
+): Promise<RegionalLeaderboards> {
+  const region = options.region?.trim() ?? "";
+  const query: Record<string, string | number | undefined> = {};
+  if (region.length > 0) query.region = region;
+  if (options.limit !== undefined) query.limit = options.limit;
+
+  const { data, error, response } = await api.GET(
+    "/api/v1/leaderboards/regional",
+    { params: { query }, signal: options.signal },
+  );
+  const status = response.status;
+  if (error || !data) {
+    throw new GamificationFetchError(
+      errorMessage(error, "Could not load regional leaderboards"),
+      status,
+    );
+  }
+  return mapRegionalLeaderboards(data, options.currentUserId ?? null);
 }
