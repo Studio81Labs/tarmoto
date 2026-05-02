@@ -252,6 +252,19 @@ describe('LeaderboardsService', () => {
     expect(sql).toContain("'private'");
   });
 
+  it('SQL uses DENSE_RANK so the "Your rank" pill skips no values after ties', async () => {
+    mockTopRows([], [], []);
+
+    await service.getRegional({});
+
+    const sql = dataSource.query.mock.calls[0][0] as string;
+    // RANK() leaves gaps after ties (1, 1, 3) — for a leaderboard pill we
+    // want DENSE_RANK (1, 1, 2) so a rider just past a tie doesn't see
+    // their position inflated by the size of the tie group.
+    expect(sql).toMatch(/DENSE_RANK\(\)/);
+    expect(sql).not.toMatch(/[^_]RANK\(\)/);
+  });
+
   it('SQL inner-joins users to dim_values so inactive riders are not scanned', async () => {
     mockTopRows([], [], []);
 

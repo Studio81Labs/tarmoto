@@ -193,7 +193,7 @@ export class LeaderboardsService {
       ),
       ranked AS (
         SELECT user_id, display_name, home_region, value,
-               RANK() OVER (ORDER BY value DESC) AS rank
+               DENSE_RANK() OVER (ORDER BY value DESC) AS rank
         FROM eligible
         WHERE value > 0
       )
