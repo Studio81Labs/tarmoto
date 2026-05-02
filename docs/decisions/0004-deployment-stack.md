@@ -44,15 +44,17 @@ State lives in an S3 bucket per AWS account with a DynamoDB lock table; bootstra
 - Secrets via AWS Secrets Manager; injected into the task at runtime through the task-definition `secrets` block. Plain config (non-secret env) goes through SSM Parameter Store so changing a value doesn't require a redeploy.
 - ECR for container images. The deploy workflow tags by commit SHA; rollback is a re-deploy of a previous SHA's task definition revision.
 
-### Companion: Cloudflare Pages
+### Companion: Cloudflare Workers (OpenNext)
 
-Cloudflare Pages, not Vercel. Rationale:
+Cloudflare, not Vercel. Rationale:
 
-- The PoC sensor is already on Cloudflare Pages, so the team already has the tokens, the wrangler tooling, and the operational habits.
-- Cloudflare Pages PR previews are first-class and free.
+- The PoC sensor already lives on Cloudflare, so the team already has the tokens, the wrangler tooling, and the operational habits.
+- Cloudflare's per-version preview URLs are first-class and free.
 - Vercel pricing/seat model becomes a budget conversation we don't need to have today.
 
-Wrangler builds the static Next.js export (`@cloudflare/next-on-pages`), the deploy workflow runs on every PR for previews and on `main` for production.
+The companion ships as a single Cloudflare Worker via `@opennextjs/cloudflare` (Workers + Static Assets). Production goes out through `wrangler deploy` on push to `main`; PRs use `wrangler versions upload --preview-alias pr-<n>` for an aliased preview URL that the workflow comments on the PR.
+
+The original 2026-04 plan was Cloudflare Pages with `@cloudflare/next-on-pages`, but `next-on-pages` is deprecated upstream and broke against Next 16's Turbopack workspace-root inference (see [companion-deploy.yml](../../.github/workflows/companion-deploy.yml)).
 
 ### Mobile: Fastlane + manual-dispatch GitHub workflow
 

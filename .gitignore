@@ -6,6 +6,12 @@ node_modules/
 dist/
 build/
 .next/
+.open-next/
+
+# Cloudflare Workers (companion)
+.wrangler/
+apps/companion/.dev.vars
+apps/companion/cloudflare-env.d.ts
 
 # Expo
 .expo/

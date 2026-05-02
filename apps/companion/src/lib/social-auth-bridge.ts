@@ -1,4 +1,3 @@
-import { createHmac } from "crypto";
 import { API_BASE_SERVER } from "@/lib/config";
 import { SOCIAL_ACCOUNT_CONFLICT_MESSAGE } from "@/lib/auth-errors";
 
@@ -47,13 +46,30 @@ async function readErrorMessage(response: Response): Promise<string | null> {
   return message;
 }
 
-export function buildSocialBridgePassword(
+// Uses Web Crypto (subtle) instead of node:crypto so the auth module can
+// also load inside the Edge-runtime middleware without dragging in a
+// node-only dependency. Both Node 18+ and the workerd Edge runtime expose
+// the same SubtleCrypto API.
+export async function buildSocialBridgePassword(
   email: string,
   bridgeSecret: string,
-): string {
-  return createHmac("sha256", bridgeSecret)
-    .update(normalizeEmail(email))
-    .digest("hex");
+): Promise<string> {
+  const encoder = new TextEncoder();
+  const key = await globalThis.crypto.subtle.importKey(
+    "raw",
+    encoder.encode(bridgeSecret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await globalThis.crypto.subtle.sign(
+    "HMAC",
+    key,
+    encoder.encode(normalizeEmail(email)),
+  );
+  return Array.from(new Uint8Array(signature))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 /**
@@ -77,7 +93,7 @@ export async function exchangeOAuthUserForBackendTokens(
     throw new Error("AUTH_SECRET must be configured for social sign-in.");
   }
 
-  const password = buildSocialBridgePassword(email, bridgeSecret);
+  const password = await buildSocialBridgePassword(email, bridgeSecret);
   const displayName = user.displayName?.trim() || fallbackDisplayName(email);
   const fetchImpl = options.fetchImpl ?? fetch;
   const apiBaseServer = options.apiBaseServer ?? API_BASE_SERVER;
