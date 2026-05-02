@@ -8,7 +8,6 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { randomUUID } from 'node:crypto';
-import { pointToLatLng } from '@tarmoto/shared';
 import { User } from '../../entities/user.entity.js';
 import { UserContact } from '../../entities/user-contact.entity.js';
 import { UserFollow } from '../../entities/user-follow.entity.js';
@@ -24,6 +23,7 @@ import {
 } from './dto/user-response.dto.js';
 import { PublicProfileDto } from './dto/public-profile.dto.js';
 import { AVATAR_KEY_PREFIX, avatarKeyFromUrl } from './avatar-storage-key.js';
+import { toUserResponse } from './user-response.mapper.js';
 
 const ALLOWED_AVATAR_TYPES = new Map<string, string>([
   ['image/jpeg', '.jpg'],
@@ -52,7 +52,7 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    return this.toUserResponse(user);
+    return toUserResponse(user);
   }
 
   /**
@@ -169,7 +169,7 @@ export class UsersService {
     ) {
       await this.cleanupPreviousAvatar(userId, previousAvatarUrl);
     }
-    return this.toUserResponse(saved);
+    return toUserResponse(saved);
   }
 
   async uploadAvatar(
@@ -224,7 +224,7 @@ export class UsersService {
     }
 
     await this.cleanupPreviousAvatar(userId, previousAvatarUrl);
-    return this.toUserResponse(saved);
+    return toUserResponse(saved);
   }
 
   async listContacts(userId: string): Promise<ContactResponseDto[]> {
@@ -312,22 +312,6 @@ export class UsersService {
         }`,
       );
     }
-  }
-
-  private toUserResponse(user: User): UserResponseDto {
-    return {
-      id: user.id,
-      email: user.email,
-      display_name: user.display_name,
-      phone: user.phone,
-      avatar_url: user.avatar_url,
-      bio: user.bio,
-      home_region: user.home_region,
-      home_location: pointToLatLng(user.home_location),
-      work_location: pointToLatLng(user.work_location),
-      preferences: user.preferences,
-      created_at: user.created_at.toISOString(),
-    };
   }
 
   private toContactResponse(contact: UserContact): ContactResponseDto {
