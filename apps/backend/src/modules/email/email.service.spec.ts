@@ -124,7 +124,7 @@ describe('EmailService', () => {
         {
           displayName: 'Rider',
           planName: 'Premium',
-          priceLabel: '$29.99/yr',
+          priceLabel: '€29.99/yr',
           renewsAt: new Date('2027-04-30T00:00:00Z'),
           manageBillingUrl: 'https://app.tarmoto.app/settings/subscription',
         },

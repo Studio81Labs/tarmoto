@@ -8,7 +8,7 @@ class SubscriptionPlanDto {
   @ApiProperty()
   name!: string;
 
-  @ApiProperty({ example: '$29.99/yr' })
+  @ApiProperty({ example: '€29.99/yr' })
   price_label!: string;
 
   @ApiProperty({ type: [String] })
@@ -31,7 +31,7 @@ class CurrentSubscriptionPlanDto {
   @ApiProperty({ enum: ['active', 'trialing', 'past_due', 'canceled'] })
   status!: 'active' | 'trialing' | 'past_due' | 'canceled';
 
-  @ApiProperty({ example: '$29.99/yr' })
+  @ApiProperty({ example: '€29.99/yr' })
   price_label!: string;
 
   @ApiPropertyOptional({ type: String, nullable: true })

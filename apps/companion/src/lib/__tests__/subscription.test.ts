@@ -35,7 +35,7 @@ describe("normalizeSubscriptionSnapshot", () => {
         {
           id: "inv_1",
           date: "2026-03-15T00:00:00.000Z",
-          amount_label: "$29.99",
+          amount_label: "€29.99",
           status: "paid",
           invoice_url: "https://billing.example.com/invoices/inv_1.pdf",
         },
@@ -45,7 +45,7 @@ describe("normalizeSubscriptionSnapshot", () => {
     expect(snapshot.preview).toBe(true);
     expect(snapshot.currentPlan.tier).toBe("premium");
     expect(snapshot.currentPlan.status).toBe("active");
-    expect(snapshot.currentPlan.priceLabel).toBe("$29.99/yr");
+    expect(snapshot.currentPlan.priceLabel).toBe("€29.99/yr");
     expect(snapshot.billingHistory[0]?.invoiceUrl).toBe(
       "https://billing.example.com/invoices/inv_1.pdf",
     );
@@ -57,14 +57,14 @@ describe("normalizeSubscriptionSnapshot", () => {
         tier: "premium",
         name: "Premium",
         status: "active",
-        price_label: "$29.99/yr",
+        price_label: "€29.99/yr",
         manage_url: "javascript:alert('xss')",
       },
       plans: [
         {
           tier: "premium",
           name: "Premium",
-          price_label: "$29.99/yr",
+          price_label: "€29.99/yr",
           features: ["Unlimited trip planning"],
         },
       ],
@@ -72,7 +72,7 @@ describe("normalizeSubscriptionSnapshot", () => {
         {
           id: "inv_1",
           date: "2026-03-15T00:00:00.000Z",
-          amount_label: "$29.99",
+          amount_label: "€29.99",
           status: "paid",
           invoice_url: "data:text/html,hello",
         },
@@ -89,14 +89,14 @@ describe("normalizeSubscriptionSnapshot", () => {
         tier: "premium",
         name: "Premium",
         status: "active",
-        price_label: "$29.99/yr",
+        price_label: "€29.99/yr",
         manage_url: "https://billing.example.com/portal",
       },
       plans: [
         {
           tier: "premium",
           name: "Premium",
-          price_label: "$29.99/yr",
+          price_label: "€29.99/yr",
           features: ["Unlimited trip planning"],
         },
       ],
@@ -104,7 +104,7 @@ describe("normalizeSubscriptionSnapshot", () => {
         {
           id: "inv_1",
           date: "2026-03-15T00:00:00.000Z",
-          amount_label: "$29.99",
+          amount_label: "€29.99",
           status: "paid",
           invoice_url: "http://billing.example.com/invoices/inv_1.pdf",
         },

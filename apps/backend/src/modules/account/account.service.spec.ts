@@ -151,7 +151,7 @@ describe('AccountService', () => {
           {
             id: 'inv_1',
             date: '2026-04-23T12:00:00.000Z',
-            amountLabel: '$29.99',
+            amountLabel: '€29.99',
             status: 'paid',
             invoiceUrl: 'https://billing.example.com/invoices/inv_1.pdf',
           },
@@ -167,7 +167,7 @@ describe('AccountService', () => {
       expect(snapshot.current_plan).toMatchObject({
         tier: 'premium',
         status: 'active',
-        price_label: '$29.99/yr',
+        price_label: '€29.99/yr',
       });
       expect(snapshot.payment_method).toMatchObject({
         brand: 'visa',
