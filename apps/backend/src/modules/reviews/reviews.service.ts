@@ -579,6 +579,7 @@ export class ReviewsService {
     const authorVisible = review.user != null && review.user.deleted_at == null;
     return {
       id: review.id,
+      user_id: authorVisible ? review.user_id : null,
       user_display_name: authorVisible
         ? review.user.display_name
         : 'Deleted user',

@@ -17,7 +17,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { RouteProp, useRoute } from "@react-navigation/native";
+import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import Svg, { Path } from "react-native-svg";
 import {
@@ -33,6 +34,7 @@ import {
 } from "@/theme";
 import { api } from "@/services/api";
 import { useAuthStore, usePreferencesStore } from "@/stores";
+import type { RootTabParamList } from "@/navigation/RootNavigator";
 import type { Hazard, RoadReview, RoadSegmentDetail } from "@/types";
 import ReviewFormModal, {
   type ReviewFormSubmitResult,
@@ -812,11 +814,37 @@ function ReviewRow({
   onEditOwn?: () => void;
 }) {
   const photos = Array.isArray(review.photos) ? review.photos : [];
+  // US-27 follow-up (#335): tapping a reviewer name opens their profile
+  // in the Profile tab. RoadPreview lives in HomeStack, so we cross-tab
+  // navigate to keep the Profile back-stack clean. user_id is null for
+  // soft-deleted authors — fall back to plain text in that case.
+  const rootNav = useNavigation<NativeStackNavigationProp<RootTabParamList>>();
+  const profileUserId = review.is_mine ? null : review.user_id;
+  const openProfile =
+    profileUserId == null
+      ? null
+      : () =>
+          rootNav.navigate("ProfileTab", {
+            screen: "ViewProfile",
+            params: { userId: profileUserId },
+          });
   return (
     <View style={styles.reviewRow}>
       <View style={styles.reviewHeader}>
         <View style={styles.reviewAuthorRow}>
-          <Text style={styles.reviewAuthor}>{review.user_display_name}</Text>
+          {openProfile ? (
+            <TouchableOpacity
+              onPress={openProfile}
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${review.user_display_name}'s profile`}
+            >
+              <Text style={styles.reviewAuthorLink}>
+                {review.user_display_name}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <Text style={styles.reviewAuthor}>{review.user_display_name}</Text>
+          )}
           {review.is_mine ? (
             <View style={styles.reviewMineBadge}>
               <Text style={styles.reviewMineBadgeLabel}>You</Text>
@@ -1374,6 +1402,11 @@ const styles = StyleSheet.create({
   },
   reviewAuthor: {
     color: colors.textPrimary,
+    fontSize: fontSize.md,
+    fontWeight: fontWeight.semibold,
+  },
+  reviewAuthorLink: {
+    color: colors.primary,
     fontSize: fontSize.md,
     fontWeight: fontWeight.semibold,
   },

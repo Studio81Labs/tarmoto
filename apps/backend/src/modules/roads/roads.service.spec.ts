@@ -173,7 +173,10 @@ describe('RoadsService', () => {
         ])
         // Mock: review stats
         .mockResolvedValueOnce([{ count: 4, avg_rating: 4.3 }])
-        // Mock: review rows (top N)
+        // Mock: review rows (top N). The mapper now also reads
+        // `user_id`, `user_join_id`, and `user_deleted_at` so it can
+        // mask both `user_id` and the byline when the author has been
+        // soft-deleted (#335).
         .mockResolvedValueOnce([
           {
             id: 'r-1',
@@ -182,6 +185,9 @@ describe('RoadsService', () => {
             bike_model: 'Ducati Monster',
             photos: ['https://media.tarmoto.app/r/abc.jpg'],
             created_at: reviewCreatedAt,
+            user_id: 'user-1',
+            user_join_id: 'user-1',
+            user_deleted_at: null,
             display_name: 'John Rider',
           },
         ])
@@ -218,6 +224,7 @@ describe('RoadsService', () => {
       expect(result.recent_reviews).toHaveLength(1);
       expect(result.recent_reviews[0]).toMatchObject({
         id: 'r-1',
+        user_id: 'user-1',
         user_display_name: 'John Rider',
         rating: 5,
         comment: 'Smooth tarmac',
@@ -317,6 +324,9 @@ describe('RoadsService', () => {
               'https://media.tarmoto.app/g.jpg', // 6th valid URL — should be dropped
             ],
             created_at: new Date('2026-04-12T10:00:00Z'),
+            user_id: 'user-2',
+            user_join_id: 'user-2',
+            user_deleted_at: null,
             display_name: 'Safe Rider',
           },
         ])

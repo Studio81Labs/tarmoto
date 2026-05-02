@@ -118,6 +118,15 @@ export class ReviewResponseDto {
   @ApiProperty()
   id!: string;
 
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Author user id, used by clients to deep-link to the rider profile. ' +
+      '`null` when the author has been soft-deleted (matches the masked ' +
+      '`user_display_name`), so the client should not render a profile link.',
+  })
+  user_id!: string | null;
+
   @ApiProperty()
   user_display_name!: string;
 

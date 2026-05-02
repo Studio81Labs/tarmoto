@@ -187,8 +187,14 @@ export class RoadsService {
         // embedded reviews on /roads/:id are served to anonymous callers,
         // and the standalone /roads/:id/reviews endpoint is where the
         // authenticated viewer personalisation lives.
+        // `u.id` and `u.deleted_at` are surfaced so the mapper can mask
+        // both `user_id` and the display name when the author has been
+        // soft-deleted or hard-deleted (#335) — the review row stays for
+        // road-quality history, but the byline must not deep-link to a
+        // tombstoned profile.
         `SELECT
           rr.id, rr.rating, rr.comment, rr.bike_model, rr.photos, rr.created_at,
+          rr.user_id, u.id AS user_join_id, u.deleted_at AS user_deleted_at,
           u.display_name,
           COALESCE(vc.helpful_count, 0) AS helpful_count,
           COALESCE(vc.not_helpful_count, 0) AS not_helpful_count
@@ -477,22 +483,30 @@ function mapHazardRows(rows: unknown): HazardResponseDto[] {
 
 function mapReviewRows(rows: unknown): ReviewResponseDto[] {
   if (!Array.isArray(rows)) return [];
-  return (rows as Array<Record<string, unknown>>).map((r) => ({
-    id: r.id as string,
-    user_display_name: (r.display_name as string) ?? 'Unknown',
-    rating: r.rating as number,
-    comment: (r.comment as string) ?? null,
-    bike_model: (r.bike_model as string) ?? null,
-    photos: sanitizeReviewPhotos(r.photos),
-    created_at: (r.created_at as Date).toISOString(),
-    helpful_count: (r.helpful_count as number) ?? 0,
-    not_helpful_count: (r.not_helpful_count as number) ?? 0,
-    // Embedded-reviews on /roads/:id is an anonymous-friendly endpoint;
-    // per-viewer state belongs on /roads/:id/reviews, which uses the
-    // OptionalAuthGuard.
-    my_vote: null,
-    is_mine: false,
-  }));
+  return (rows as Array<Record<string, unknown>>).map((r) => {
+    // Mirror `ReviewsService.toResponse`: an author is "visible" only
+    // when the join produced a row AND that row is not soft-deleted.
+    // When invisible, both `user_id` and `user_display_name` are masked
+    // so the client doesn't render a profile link to a tombstone (#335).
+    const authorVisible = r.user_join_id != null && r.user_deleted_at == null;
+    return {
+      id: r.id as string,
+      user_id: authorVisible ? (r.user_id as string) : null,
+      user_display_name: authorVisible ? (r.display_name as string) : 'Unknown',
+      rating: r.rating as number,
+      comment: (r.comment as string) ?? null,
+      bike_model: (r.bike_model as string) ?? null,
+      photos: sanitizeReviewPhotos(r.photos),
+      created_at: (r.created_at as Date).toISOString(),
+      helpful_count: (r.helpful_count as number) ?? 0,
+      not_helpful_count: (r.not_helpful_count as number) ?? 0,
+      // Embedded-reviews on /roads/:id is an anonymous-friendly endpoint;
+      // per-viewer state belongs on /roads/:id/reviews, which uses the
+      // OptionalAuthGuard.
+      my_vote: null,
+      is_mine: false,
+    };
+  });
 }
 
 // Validate the elevation_profile column matches the geometry length so a stale

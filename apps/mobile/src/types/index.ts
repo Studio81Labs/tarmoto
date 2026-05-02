@@ -468,6 +468,13 @@ export interface TripSharePublic {
 
 export interface RoadReview {
   id: string;
+  /**
+   * Author user id, used to deep-link the review byline to the rider
+   * profile. `null` when the author has been soft-deleted (paired with
+   * the masked "Deleted user" display name) — the card should hide the
+   * profile link in that case.
+   */
+  user_id: string | null;
   user_display_name: string;
   rating: number;
   // Matches `ReviewResponseDto`: both fields are always present in the
