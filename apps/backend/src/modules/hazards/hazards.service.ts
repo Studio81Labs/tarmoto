@@ -8,11 +8,14 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { HazardType, HazardSeverity } from '@tarmoto/shared';
-import { hasControlCharacters } from '../../common/control-characters.js';
-import { LOOPBACK_HOSTS } from '../../common/loopback-hosts.js';
+import {
+  resolveManagedPhoto,
+  type ManagedPhoto,
+} from '../../common/managed-photo-url.js';
+import { buildTrustedManagedOriginCheck } from '../../common/trusted-managed-origin.js';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { CreateHazardDto, EXPIRY_HOURS } from './dto/create-hazard.dto.js';
@@ -31,104 +34,28 @@ import { PushService } from '../push/index.js';
 const HAZARD_PHOTO_UPLOAD_DIR = join(process.cwd(), 'uploads', 'hazard-photos');
 
 /**
- * Decide whether a `<scheme>://<host>` origin belongs to *our* hazard
- * upload storage. Mirrors the review-photo helper: a third-party URL
- * that happens to share the `/uploads/hazard-photos/` pathname must
- * never be misclassified as managed, otherwise a delete-on-update
- * cascade could `unlink` an unrelated file in our managed directory
- * just because the path matched. Treat as managed iff the origin
- * matches `TARMOTO_PUBLIC_BASE_URL` OR (outside production) the host
- * is loopback — same trust posture the upload endpoint uses when it
- * builds outgoing URLs.
- */
-function buildTrustedManagedOriginCheck(
-  config: ConfigService,
-): (parsed: URL) => boolean {
-  const configured = config.get<string>('TARMOTO_PUBLIC_BASE_URL')?.trim();
-  let configuredOrigin: string | null = null;
-  if (configured && configured.length > 0) {
-    try {
-      configuredOrigin = new URL(configured).origin;
-    } catch {
-      // Bad config falls through; the upload endpoint's own probe will
-      // surface the 500 with a clearer error.
-    }
-  }
-  return (parsed: URL): boolean => {
-    if (configuredOrigin && parsed.origin === configuredOrigin) return true;
-    if (
-      process.env.TARMOTO_NODE_ENV !== 'production' &&
-      LOOPBACK_HOSTS.has(parsed.hostname)
-    ) {
-      return true;
-    }
-    return false;
-  };
-}
-
-interface ManagedHazardPhoto {
-  filename: string;
-  filePath: string;
-}
-
-/**
  * Resolve a hazard photo URL to its managed filename + on-disk path,
- * or `null` when the URL is not one we own. Same defense-in-depth as
- * the review-photo resolver: only honour the URL when the origin is
- * trusted AND the pathname carries the managed prefix, and reject
- * decoded filenames with path separators, control chars, or `.`/`..`
- * segments so a crafted `photo_url` can't make a delete escape the
- * managed directory.
+ * or `null` when the URL is not one we own. Thin wrapper around the
+ * shared `resolveManagedPhoto` so the path-traversal guard stays
+ * single-sourced — see that helper's comment for the full
+ * separator/control-char/dot-segment rationale.
  */
 function resolveManagedHazardPhoto(
   photoUrl: string | null,
   isTrustedOrigin: (parsed: URL) => boolean,
-): ManagedHazardPhoto | null {
-  if (!photoUrl) return null;
-
-  let parsed: URL;
-  try {
-    parsed = new URL(photoUrl);
-  } catch {
-    return null;
-  }
-
-  if (!isTrustedOrigin(parsed)) return null;
-  if (!parsed.pathname.startsWith(HAZARD_PHOTO_PATH_PREFIX)) return null;
-
-  const encodedFilename = parsed.pathname.slice(
-    HAZARD_PHOTO_PATH_PREFIX.length,
-  );
-  if (!encodedFilename) return null;
-
-  let filename: string;
-  try {
-    filename = decodeURIComponent(encodedFilename);
-  } catch {
-    return null;
-  }
-  if (
-    filename === '.' ||
-    filename === '..' ||
-    filename !== basename(filename) ||
-    filename.includes('/') ||
-    filename.includes('\\') ||
-    hasControlCharacters(filename)
-  ) {
-    return null;
-  }
-
-  return { filename, filePath: join(HAZARD_PHOTO_UPLOAD_DIR, filename) };
+): ManagedPhoto | null {
+  return resolveManagedPhoto(photoUrl, {
+    pathPrefix: HAZARD_PHOTO_PATH_PREFIX,
+    uploadDir: HAZARD_PHOTO_UPLOAD_DIR,
+    isTrustedOrigin,
+  });
 }
 
 function buildOwnedPrefix(userId: string): string {
   return `${userId}-`;
 }
 
-function isOwnedManagedPhoto(
-  photo: ManagedHazardPhoto,
-  userId: string,
-): boolean {
+function isOwnedManagedPhoto(photo: ManagedPhoto, userId: string): boolean {
   return photo.filename.startsWith(buildOwnedPrefix(userId));
 }
 

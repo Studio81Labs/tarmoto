@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import maplibregl, {
-  type ExpressionSpecification,
   type GeoJSONSource,
   type Map as MapLibreMap,
   type MapLayerMouseEvent,
 } from "maplibre-gl";
+import type { ExpressionSpecification } from "@/lib/maplibre-expression";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Feature, FeatureCollection, Point } from "geojson";
 import { MapCanvas, type MapCanvasHandle } from "@/components/map/MapCanvas";

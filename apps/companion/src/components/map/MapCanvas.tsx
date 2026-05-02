@@ -7,10 +7,8 @@ import {
   useRef,
   useState,
 } from "react";
-import maplibregl, {
-  type ExpressionSpecification,
-  type Map as MapLibreMap,
-} from "maplibre-gl";
+import maplibregl, { type Map as MapLibreMap } from "maplibre-gl";
+import type { ExpressionSpecification } from "@/lib/maplibre-expression";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { API_BASE, MAP_STYLE_URL } from "@/lib/config";
 import { useMapColorScheme } from "@/hooks/useMapColorScheme";
