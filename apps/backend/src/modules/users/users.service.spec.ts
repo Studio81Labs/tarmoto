@@ -6,20 +6,34 @@ import { Repository } from 'typeorm';
 import { Readable } from 'node:stream';
 import { DEFAULT_PRIVACY_PREFERENCES } from '@tarmoto/shared';
 import { UsersService } from './users.service.js';
+import { Ride } from '../../entities/ride.entity.js';
 import { User } from '../../entities/user.entity.js';
+import { UserBadge } from '../../entities/user-badge.entity.js';
 import { UserContact } from '../../entities/user-contact.entity.js';
 import { UserFollow } from '../../entities/user-follow.entity.js';
 import { OBJECT_STORAGE } from '../storage/storage.tokens.js';
 import type { ObjectStorage } from '../storage/object-storage.interface.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
+import { BadgesService } from '../badges/badges.service.js';
 
 describe('UsersService', () => {
   let service: UsersService;
   let userRepo: Partial<jest.Mocked<Repository<User>>>;
   let contactRepo: Partial<jest.Mocked<Repository<UserContact>>>;
   let userFollowRepo: Partial<jest.Mocked<Repository<UserFollow>>>;
+  let userBadgeRepo: Partial<jest.Mocked<Repository<UserBadge>>>;
+  let rideRepo: Partial<jest.Mocked<Repository<Ride>>> & {
+    createQueryBuilder: jest.Mock;
+  };
+  let rideHoursQb: {
+    select: jest.Mock;
+    where: jest.Mock;
+    andWhere: jest.Mock;
+    getRawOne: jest.Mock;
+  };
   let storage: jest.Mocked<ObjectStorage>;
   let privacy: { loadPreferences: jest.Mock };
+  let badgesService: { computeStats: jest.Mock };
 
   // Factory, not a shared instance — updateProfile mutates the entity it
   // loads via findOne, so any two tests sharing the same object would leak
@@ -67,7 +81,7 @@ describe('UsersService', () => {
         .mockImplementation((key: string) =>
           Promise.resolve(`/uploads/${key}`),
         ),
-    } as unknown as jest.Mocked<ObjectStorage>;
+    };
 
     userRepo = {
       findOne: jest
@@ -88,10 +102,35 @@ describe('UsersService', () => {
       count: jest.fn().mockResolvedValue(0),
       findOne: jest.fn().mockResolvedValue(null),
     };
+    userBadgeRepo = {
+      count: jest.fn().mockResolvedValue(0),
+    };
+    rideHoursQb = {
+      select: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getRawOne: jest.fn().mockResolvedValue({ hours: '0' }),
+    };
+    rideRepo = {
+      createQueryBuilder: jest.fn(() => rideHoursQb),
+    } as unknown as Partial<jest.Mocked<Repository<Ride>>> & {
+      createQueryBuilder: jest.Mock;
+    };
     privacy = {
       loadPreferences: jest
         .fn()
         .mockResolvedValue({ ...DEFAULT_PRIVACY_PREFERENCES }),
+    };
+    badgesService = {
+      computeStats: jest.fn().mockResolvedValue({
+        total_distance: 0,
+        single_ride: 0,
+        ride_count: 0,
+        roads_discovered: 0,
+        reviews_written: 0,
+        hazards_reported: 0,
+        rides_shared: 0,
+      }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -100,8 +139,11 @@ describe('UsersService', () => {
         { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: getRepositoryToken(UserContact), useValue: contactRepo },
         { provide: getRepositoryToken(UserFollow), useValue: userFollowRepo },
+        { provide: getRepositoryToken(UserBadge), useValue: userBadgeRepo },
+        { provide: getRepositoryToken(Ride), useValue: rideRepo },
         { provide: OBJECT_STORAGE, useValue: storage },
         { provide: PrivacyPreferencesService, useValue: privacy },
+        { provide: BadgesService, useValue: badgesService },
       ],
     }).compile();
 
@@ -130,7 +172,7 @@ describe('UsersService', () => {
       userRepo.findOne!.mockResolvedValueOnce({
         ...buildMockUser(),
         home_location: { type: 'Point', coordinates: [16.75, 49.1] },
-      } as User);
+      });
 
       const result = await service.getProfile('user-1');
 
@@ -196,7 +238,7 @@ describe('UsersService', () => {
       userRepo.findOne!.mockResolvedValueOnce({
         ...buildMockUser(),
         deleted_at: new Date('2026-04-30T10:00:00Z'),
-      } as User);
+      });
 
       await expect(
         service.getPublicProfile('viewer-1', 'user-1'),
@@ -240,6 +282,98 @@ describe('UsersService', () => {
 
       expect(result.id).toBe('user-1');
       expect(privacy.loadPreferences).toHaveBeenCalledWith('user-1');
+    });
+  });
+
+  describe('getMeProfile', () => {
+    it('returns joined_at, total_hours, and basic counts for the rider', async () => {
+      badgesService.computeStats.mockResolvedValueOnce({
+        total_distance: 1234.5,
+        single_ride: 412,
+        ride_count: 18,
+        roads_discovered: 73,
+        reviews_written: 4,
+        hazards_reported: 6,
+        rides_shared: 2,
+      });
+      rideHoursQb.getRawOne.mockResolvedValueOnce({ hours: '42.5' });
+      userFollowRepo
+        .count!.mockResolvedValueOnce(11) // followers (following_id = userId)
+        .mockResolvedValueOnce(7); // following (follower_id = userId)
+      userBadgeRepo.count!.mockResolvedValueOnce(5);
+
+      const result = await service.getMeProfile('user-1');
+
+      expect(result).toEqual({
+        joined_at: '2026-04-13T10:00:00.000Z',
+        total_hours: 42.5,
+        total_rides: 18,
+        total_distance_km: 1234.5,
+        roads_discovered: 73,
+        hazards_reported: 6,
+        follower_count: 11,
+        following_count: 7,
+        badges_earned: 5,
+      });
+      expect(badgesService.computeStats).toHaveBeenCalledWith('user-1');
+      // Followers count uses the target as `following_id`; the inverse
+      // (`follower_id`) gives the following count. Lock the two queries
+      // in this order so a future refactor can't silently swap them.
+      expect(userFollowRepo.count).toHaveBeenNthCalledWith(1, {
+        where: { following_id: 'user-1' },
+      });
+      expect(userFollowRepo.count).toHaveBeenNthCalledWith(2, {
+        where: { follower_id: 'user-1' },
+      });
+      expect(userBadgeRepo.count).toHaveBeenCalledWith({
+        where: { user_id: 'user-1' },
+      });
+    });
+
+    it('coerces empty aggregations to numeric zero defaults', async () => {
+      // Brand-new rider: no rides, no follows, no badges. The hours query
+      // returns `'0'` from `COALESCE(SUM(...), 0)` and we must surface
+      // that as a number, not a string, so the wire matches `MeProfile`.
+      rideHoursQb.getRawOne.mockResolvedValueOnce({ hours: '0' });
+
+      const result = await service.getMeProfile('user-1');
+
+      expect(result.total_hours).toBe(0);
+      expect(result.total_rides).toBe(0);
+      expect(result.total_distance_km).toBe(0);
+      expect(result.roads_discovered).toBe(0);
+      expect(result.hazards_reported).toBe(0);
+      expect(result.follower_count).toBe(0);
+      expect(result.following_count).toBe(0);
+      expect(result.badges_earned).toBe(0);
+    });
+
+    it('only counts hours from completed rides with an end timestamp', async () => {
+      // A ride still in progress (`ended_at IS NULL`) would yield NULL
+      // from `EXTRACT(EPOCH ...)` and pull the SUM down to NULL — guard
+      // against that with the `ended_at IS NOT NULL` filter.
+      await service.getMeProfile('user-1');
+
+      expect(rideHoursQb.where).toHaveBeenCalledWith('r.user_id = :userId', {
+        userId: 'user-1',
+      });
+      const andWhereCalls = (
+        rideHoursQb.andWhere.mock.calls as ReadonlyArray<readonly unknown[]>
+      ).map((args) => args[0] as string);
+      expect(andWhereCalls).toEqual(
+        expect.arrayContaining([
+          "r.status = 'completed'",
+          'r.ended_at IS NOT NULL',
+        ]),
+      );
+    });
+
+    it('throws NotFoundException for missing user', async () => {
+      userRepo.findOne!.mockResolvedValueOnce(null);
+
+      await expect(service.getMeProfile('missing')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -369,7 +503,7 @@ describe('UsersService', () => {
       userRepo.findOne!.mockResolvedValueOnce({
         ...buildMockUser(),
         avatar_url: '/uploads/avatars/..%2F..%2Fsecrets.txt',
-      } as User);
+      });
 
       await service.updateProfile('user-1', {
         avatar_url: 'https://cdn.example.com/u/1.png',
@@ -382,7 +516,7 @@ describe('UsersService', () => {
       userRepo.findOne!.mockResolvedValueOnce({
         ...buildMockUser(),
         avatar_url: '/uploads/avatars/%00avatar.png',
-      } as User);
+      });
 
       await service.updateProfile('user-1', {
         avatar_url: 'https://cdn.example.com/u/1.png',
@@ -395,7 +529,7 @@ describe('UsersService', () => {
       userRepo.findOne!.mockResolvedValueOnce({
         ...buildMockUser(),
         avatar_url: '/uploads/avatars/%2e%2e',
-      } as User);
+      });
 
       await service.updateProfile('user-1', {
         avatar_url: 'https://cdn.example.com/u/1.png',
@@ -413,7 +547,7 @@ describe('UsersService', () => {
       userRepo.findOne!.mockResolvedValueOnce({
         ...buildMockUser(),
         avatar_url: 'https://app.tarmoto.test/uploads/avatars/old-avatar.png',
-      } as User);
+      });
       const warnSpy = jest
         .spyOn(Logger.prototype, 'warn')
         .mockImplementation(() => undefined);
@@ -445,7 +579,7 @@ describe('UsersService', () => {
       userRepo.findOne!.mockResolvedValueOnce({
         ...buildMockUser(),
         avatar_url: 'https://app.tarmoto.test/uploads/avatars/old-avatar.png',
-      } as User);
+      });
 
       const result = await service.uploadAvatar(
         'user-1',
@@ -483,7 +617,7 @@ describe('UsersService', () => {
       userRepo.findOne!.mockResolvedValueOnce({
         ...buildMockUser(),
         avatar_url: null,
-      } as User);
+      });
       // S3Storage returns an absolute URL. The service should use
       // it verbatim — prefixing the request base URL would yield
       // an obvious nonsense double-host.
@@ -518,7 +652,7 @@ describe('UsersService', () => {
       userRepo.findOne!.mockResolvedValueOnce({
         ...buildMockUser(),
         avatar_url: 'https://app.tarmoto.test/uploads/avatars/old-avatar.png',
-      } as User);
+      });
       // From the caller's perspective the upload already succeeded —
       // the row is saved, the new object is in storage. A flaky
       // delete of the now-orphaned previous object must NOT turn
@@ -554,7 +688,7 @@ describe('UsersService', () => {
       userRepo.findOne!.mockResolvedValueOnce({
         ...buildMockUser(),
         avatar_url: null,
-      } as User);
+      });
       userRepo.save!.mockRejectedValueOnce(new Error('db down'));
 
       await expect(

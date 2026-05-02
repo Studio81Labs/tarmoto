@@ -104,6 +104,7 @@ jest.mock("@/stores", () => ({
 jest.mock("@/services/api", () => ({
   api: {
     getPublicProfile: jest.fn(),
+    getMyProfile: jest.fn(),
     listUserBadges: jest.fn(),
     listUserSharedRides: jest.fn(),
     uploadAvatar: jest.fn(),
@@ -168,6 +169,17 @@ describe("ProfileScreen", () => {
         progress: { current: 1, bronze: 1, silver: 5, gold: 10 },
       },
     ]);
+    mockedApi.getMyProfile.mockResolvedValue({
+      joined_at: "2025-04-01T10:00:00.000Z",
+      total_hours: 42.5,
+      total_rides: 18,
+      total_distance_km: 1234.5,
+      roads_discovered: 73,
+      hazards_reported: 6,
+      follower_count: 12,
+      following_count: 7,
+      badges_earned: 1,
+    });
     mockedApi.listUserSharedRides.mockResolvedValue({
       items: [],
       total: 0,
@@ -189,6 +201,60 @@ describe("ProfileScreen", () => {
     expect(screen.getByText("7")).toBeTruthy();
     // 1 earned badge in fixture
     expect(screen.getByText("1")).toBeTruthy();
+  });
+
+  it("renders riding totals from the me-profile summary (#334)", async () => {
+    render(<ProfileScreen />);
+
+    await waitFor(() =>
+      expect(mockedApi.getMyProfile).toHaveBeenCalledTimes(1),
+    );
+    // Compact "X km · Yh · N rides" line. Distance is rounded to whole km
+    // and `total_hours` is rounded to whole hours so the meta line stays
+    // dense. Stat values come from the fixture in `beforeEach`.
+    expect(await screen.findByText("1235 km · 43h · 18 rides")).toBeTruthy();
+  });
+
+  it("falls back gracefully when the me-profile call fails", async () => {
+    mockedApi.getMyProfile.mockRejectedValueOnce(new Error("offline"));
+
+    render(<ProfileScreen />);
+
+    await waitFor(() => expect(mockedApi.getPublicProfile).toHaveBeenCalled());
+    // The header still renders the public-profile fields even if the
+    // summary endpoint is unreachable — the screen does not surface an
+    // error banner for the missing summary, the riding stat line just
+    // disappears.
+    expect(await screen.findByText("Rider One")).toBeTruthy();
+    // The riding-stat line uses a "·" separator, so its absence proves
+    // the line wasn't rendered when the summary call failed.
+    expect(screen.queryByText(/·/)).toBeNull();
+  });
+
+  it("hides stat segments that round down to zero so a brand-new rider doesn't see '0 km · 0h'", async () => {
+    // 0.3 km / 0.4h pass a naïve `> 0` guard but `Math.round` collapses
+    // them to 0; the line must skip those segments outright.
+    mockedApi.getMyProfile.mockResolvedValueOnce({
+      joined_at: "2025-04-01T10:00:00.000Z",
+      total_hours: 0.4,
+      total_rides: 1,
+      total_distance_km: 0.3,
+      roads_discovered: 0,
+      hazards_reported: 0,
+      follower_count: 0,
+      following_count: 0,
+      badges_earned: 0,
+    });
+
+    render(<ProfileScreen />);
+
+    await waitFor(() =>
+      expect(mockedApi.getMyProfile).toHaveBeenCalledTimes(1),
+    );
+    // Only the ride count survives the rounding floor.
+    expect(await screen.findByText("1 ride")).toBeTruthy();
+    expect(screen.queryByText(/0 km/)).toBeNull();
+    expect(screen.queryByText(/0h/)).toBeNull();
   });
 
   it("opens the EditProfile modal when Edit profile is tapped", async () => {

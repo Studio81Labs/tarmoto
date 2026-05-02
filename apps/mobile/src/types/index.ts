@@ -10,6 +10,10 @@
 // guarantees the wire format stays in lock-step.
 export type { PublicProfile } from "@tarmoto/shared";
 
+// Authenticated rider's own profile summary (issue #334). Re-exported from
+// `@tarmoto/shared` so backend, mobile, and companion share one definition.
+export type { MeProfile } from "@tarmoto/shared";
+
 // ── Primitives ──
 
 export interface LatLng {

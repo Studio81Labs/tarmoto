@@ -20,6 +20,7 @@ import {
   milestoneProgress,
   pickNextMilestone,
   riderStatsFromBadges,
+  riderStatsFromMeProfile,
   seasonalProgress,
   unitForChallengeMetric,
   LEADERBOARD_DIMENSION_KEYS,
@@ -454,6 +455,31 @@ describe("riderStatsFromBadges", () => {
   });
 });
 
+describe("riderStatsFromMeProfile", () => {
+  it("maps all RiderStats fields directly from the me-profile DTO", () => {
+    const stats = riderStatsFromMeProfile({
+      joined_at: "2025-01-15T10:00:00.000Z",
+      total_hours: 87.4,
+      total_rides: 42,
+      total_distance_km: 3_217.6,
+      roads_discovered: 198,
+      hazards_reported: 11,
+      follower_count: 5,
+      following_count: 9,
+      badges_earned: 4,
+    });
+
+    expect(stats).toEqual({
+      totalKm: 3_217.6,
+      totalRides: 42,
+      totalHours: 87.4,
+      roadsDiscovered: 198,
+      hazardsReported: 11,
+      joinedAt: "2025-01-15T10:00:00.000Z",
+    });
+  });
+});
+
 describe("regional leaderboard mappers", () => {
   function entryDto(
     overrides: Partial<{
@@ -599,6 +625,39 @@ describe("buildLiveSnapshot", () => {
       challengeDetails: [],
     });
     expect(snap.stats.totalKm).toBe(8_000);
+  });
+
+  it("prefers the me-profile summary for stats when supplied (totalHours / joinedAt only available there)", () => {
+    const snap = buildLiveSnapshot({
+      badges: [
+        badgeDto({
+          key: "total_distance",
+          // Stale badge value — me-profile should win.
+          progress: {
+            current: 100,
+            bronze: 100,
+            silver: 1_000,
+            gold: 10_000,
+          },
+        }),
+      ],
+      challengeDetails: [],
+      meProfile: {
+        joined_at: "2024-01-15T10:00:00.000Z",
+        total_hours: 120.5,
+        total_rides: 18,
+        total_distance_km: 1_234.5,
+        roads_discovered: 73,
+        hazards_reported: 6,
+        follower_count: 11,
+        following_count: 7,
+        badges_earned: 3,
+      },
+    });
+
+    expect(snap.stats.totalKm).toBe(1_234.5);
+    expect(snap.stats.totalHours).toBe(120.5);
+    expect(snap.stats.joinedAt).toBe("2024-01-15T10:00:00.000Z");
   });
 });
 
