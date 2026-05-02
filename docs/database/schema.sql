@@ -65,7 +65,9 @@ CREATE TABLE surface_readings (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     road_segment_id UUID NOT NULL REFERENCES road_segments(id),
     ride_id         UUID,  -- FK added after rides table
-    user_id         UUID REFERENCES users(id),
+    -- US-62: anonymized road-quality data is retained on account deletion;
+    -- the user_id FK is SET NULL so contributions stay in the community dataset.
+    user_id         UUID REFERENCES users(id) ON DELETE SET NULL,
     iri_value       FLOAT NOT NULL,          -- International Roughness Index
     classification  VARCHAR(20) NOT NULL,    -- excellent, good, fair, poor, very_poor
     surface_type    VARCHAR(30),
@@ -84,7 +86,7 @@ CREATE INDEX idx_surface_readings_time ON surface_readings(recorded_at DESC);
 
 CREATE TABLE rides (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id         UUID NOT NULL REFERENCES users(id),
+    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     started_at      TIMESTAMPTZ NOT NULL,
     ended_at        TIMESTAMPTZ,
     distance_km     FLOAT,
@@ -142,7 +144,7 @@ CREATE TABLE ride_stats (
 
 CREATE TABLE hazard_reports (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id         UUID NOT NULL REFERENCES users(id),
+    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     road_segment_id UUID REFERENCES road_segments(id),
     location        GEOMETRY(Point, 4326) NOT NULL,
     hazard_type     VARCHAR(30) NOT NULL,    -- pothole, gravel, oil_spill, roadworks, animals, police, flooding, ice, other
@@ -165,7 +167,7 @@ CREATE INDEX idx_hazard_reports_segment ON hazard_reports(road_segment_id);
 
 CREATE TABLE road_reviews (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id         UUID NOT NULL REFERENCES users(id),
+    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     road_segment_id UUID NOT NULL REFERENCES road_segments(id),
     rating          SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
     comment         TEXT,
@@ -183,7 +185,7 @@ CREATE UNIQUE INDEX idx_road_reviews_unique ON road_reviews(user_id, road_segmen
 
 CREATE TABLE trips (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    owner_id        UUID NOT NULL REFERENCES users(id),
+    owner_id        UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     title           VARCHAR(200) NOT NULL,
     region          VARCHAR(200),
     num_days        INT NOT NULL DEFAULT 1,
@@ -201,7 +203,7 @@ CREATE INDEX idx_trips_owner ON trips(owner_id);
 CREATE TABLE trip_members (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     trip_id         UUID NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
-    user_id         UUID NOT NULL REFERENCES users(id),
+    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     role            VARCHAR(20) DEFAULT 'member', -- owner, admin, member
     joined_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(trip_id, user_id)
@@ -267,7 +269,7 @@ CREATE TABLE fun_zone_roads (
 
 CREATE TABLE commute_routes (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id         UUID NOT NULL REFERENCES users(id),
+    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name            VARCHAR(100) DEFAULT 'Default',
     origin          GEOMETRY(Point, 4326) NOT NULL,
     destination     GEOMETRY(Point, 4326) NOT NULL,
