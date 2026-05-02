@@ -23,28 +23,13 @@ import {
 } from "react-native";
 import { io, type Socket } from "socket.io-client";
 import { createMMKV } from "react-native-mmkv";
-import { API_BASE_URL } from "@/config";
+import { resolveEventsUrl } from "./eventsSocketUrl";
 import type { HazardAlertEvent } from "@/types";
 
 const tokenStorage = createMMKV({ id: "tarmoto-auth" });
 
 /** Default radius the gateway uses to compute covering cells. */
 const DEFAULT_SUBSCRIBE_RADIUS_M = 10000;
-
-/**
- * Resolve the `/events` namespace URL from the API base. The API base
- * carries no path prefix today, but `groupRideSocket` strips a possible
- * `/v1` suffix the same way — keep the two services in sync so a future
- * base change only has to land in one place mentally.
- */
-function resolveEventsUrl(): string {
-  try {
-    const url = new URL(API_BASE_URL);
-    return `${url.protocol}//${url.host}/events`;
-  } catch {
-    return `${API_BASE_URL.replace(/\/v1\/?$/, "")}/events`;
-  }
-}
 
 export interface HazardSubscription {
   lat: number;
