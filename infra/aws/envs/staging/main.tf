@@ -73,6 +73,25 @@ variable "companion_origin" {
   default     = "https://staging.tarmoto.app"
 }
 
+# Push provider activation gates. ECS rejects a task whose `secrets`
+# reference a JSON key that doesn't exist in the underlying secret,
+# so we only wire the FCM/APN env vars into the task definition once
+# the operator has populated `tarmoto/staging/{fcm,apn}` in Secrets
+# Manager. Flip these in `terraform.tfvars` after running the
+# `aws secretsmanager put-secret-value` calls documented in
+# `docs/process/runbook.md` § "Push notifications (FCM + APN)".
+variable "fcm_secret_enabled" {
+  description = "Wire TARMOTO_FCM_* into the backend task. Set to true only after populating tarmoto/staging/fcm with project_id / client_email / private_key keys."
+  type        = bool
+  default     = false
+}
+
+variable "apn_secret_enabled" {
+  description = "Wire TARMOTO_APN_* into the backend task. Set to true only after populating tarmoto/staging/apn with key / key_id / team_id / topic / production keys."
+  type        = bool
+  default     = false
+}
+
 module "vpc" {
   source             = "../../modules/vpc"
   env                = "staging"
@@ -97,6 +116,11 @@ module "alb" {
 module "secrets" {
   source = "../../modules/secrets"
   env    = "staging"
+  # `fcm` / `apn` are created empty here so ops can populate them via
+  # `aws secretsmanager put-secret-value` ahead of flipping the
+  # `*_secret_enabled` gates above. See runbook § "Push notifications
+  # (FCM + APN)".
+  secret_names = ["jwt", "stripe", "weather", "fcm", "apn"]
 }
 
 module "uploads_bucket" {
@@ -166,16 +190,30 @@ module "ecs_service" {
     TARMOTO_DATABASE_NAME    = module.rds.db_name
   }
 
-  secret_arns = {
-    TARMOTO_DATABASE_PASSWORD       = "${module.rds.secret_arn}:password::"
-    TARMOTO_DATABASE_USER           = "${module.rds.secret_arn}:username::"
-    TARMOTO_JWT_SECRET              = module.secrets.arns["jwt"]
-    TARMOTO_STRIPE_SECRET_KEY       = "${module.secrets.arns["stripe"]}:secret_key::"
-    TARMOTO_STRIPE_WEBHOOK_SECRET   = "${module.secrets.arns["stripe"]}:webhook_secret::"
-    TARMOTO_STRIPE_PREMIUM_PRICE_ID = "${module.secrets.arns["stripe"]}:premium_price_id::"
-    TARMOTO_STRIPE_PRO_PRICE_ID     = "${module.secrets.arns["stripe"]}:pro_price_id::"
-    TARMOTO_OWM_API_KEY             = module.secrets.arns["weather"]
-  }
+  secret_arns = merge(
+    {
+      TARMOTO_DATABASE_PASSWORD       = "${module.rds.secret_arn}:password::"
+      TARMOTO_DATABASE_USER           = "${module.rds.secret_arn}:username::"
+      TARMOTO_JWT_SECRET              = module.secrets.arns["jwt"]
+      TARMOTO_STRIPE_SECRET_KEY       = "${module.secrets.arns["stripe"]}:secret_key::"
+      TARMOTO_STRIPE_WEBHOOK_SECRET   = "${module.secrets.arns["stripe"]}:webhook_secret::"
+      TARMOTO_STRIPE_PREMIUM_PRICE_ID = "${module.secrets.arns["stripe"]}:premium_price_id::"
+      TARMOTO_STRIPE_PRO_PRICE_ID     = "${module.secrets.arns["stripe"]}:pro_price_id::"
+      TARMOTO_OWM_API_KEY             = module.secrets.arns["weather"]
+    },
+    var.fcm_secret_enabled ? {
+      TARMOTO_FCM_PROJECT_ID   = "${module.secrets.arns["fcm"]}:project_id::"
+      TARMOTO_FCM_CLIENT_EMAIL = "${module.secrets.arns["fcm"]}:client_email::"
+      TARMOTO_FCM_PRIVATE_KEY  = "${module.secrets.arns["fcm"]}:private_key::"
+    } : {},
+    var.apn_secret_enabled ? {
+      TARMOTO_APN_KEY        = "${module.secrets.arns["apn"]}:key::"
+      TARMOTO_APN_KEY_ID     = "${module.secrets.arns["apn"]}:key_id::"
+      TARMOTO_APN_TEAM_ID    = "${module.secrets.arns["apn"]}:team_id::"
+      TARMOTO_APN_TOPIC      = "${module.secrets.arns["apn"]}:topic::"
+      TARMOTO_APN_PRODUCTION = "${module.secrets.arns["apn"]}:production::"
+    } : {},
+  )
 }
 
 module "rds" {

@@ -691,6 +691,132 @@ Common failures:
   uploaded, Play rejects the second attempt; bump the patch
   version and run again rather than trying to overwrite.
 
+### Push notifications (FCM + APN) — staging provisioning + smoke test
+
+The push module ships a `log` provider when no credentials are
+configured, so the backend boots cleanly in any environment.
+"Provisioning" is the one-time act of putting real FCM and APN keys
+into staging Secrets Manager and flipping the activation gates in
+`infra/aws/envs/staging/main.tf`. Tracked by issue #347.
+
+**One-time setup (staging).**
+
+1. Run the next staging deploy or `terraform apply` after the
+   `secret_names` change lands. This creates empty
+   `tarmoto/staging/fcm` and `tarmoto/staging/apn` secrets in
+   Secrets Manager — the activation gates default to `false`, so the
+   ECS task definition does not yet reference either secret and the
+   deploy is unaffected.
+
+2. **FCM** — in the Firebase Console (project: `tarmoto-staging`),
+   open _Project settings → Service accounts → Generate new private
+   key_. The downloaded JSON contains `project_id`, `client_email`,
+   and `private_key`. Push only those three fields into the secret
+   (not the whole JSON):
+
+   ```bash
+   aws secretsmanager put-secret-value \
+     --secret-id tarmoto/staging/fcm \
+     --secret-string "$(jq -c '{project_id, client_email, private_key}' \
+       ~/Downloads/tarmoto-staging-firebase-adminsdk-*.json)"
+   ```
+
+   Verify the JSON shape:
+   `aws secretsmanager get-secret-value --secret-id tarmoto/staging/fcm --query SecretString --output text | jq 'keys'`
+   should print `["client_email","private_key","project_id"]`.
+
+3. **APN** — once the Apple Developer account is provisioned, in
+   _Certificates, Identifiers & Profiles → Keys_, create a key with
+   _Apple Push Notifications service (APNs)_ enabled. Download the
+   `.p8` file once (it is unrecoverable). Note the **Key ID** shown
+   on the key detail page and the **Team ID** in the membership
+   page. The **topic** is the iOS bundle id of the build users have
+   installed — verify against `PRODUCT_BUNDLE_IDENTIFIER` in
+   `apps/mobile/ios/TarmotoApp.xcodeproj/project.pbxproj` (currently
+   `app.tarmoto`; if a separate staging bundle id is introduced
+   later, use that here).
+
+   ```bash
+   aws secretsmanager put-secret-value \
+     --secret-id tarmoto/staging/apn \
+     --secret-string "$(jq -nc \
+       --arg key   "$(cat ~/Downloads/AuthKey_<KEYID>.p8)" \
+       --arg keyId "<KEYID>" \
+       --arg team  "<TEAMID>" \
+       --arg topic "<BUNDLE_ID>" \
+       '{key: $key, key_id: $keyId, team_id: $team, topic: $topic, production: "false"}')"
+   ```
+
+   Use `production: "true"` only when targeting builds installed
+   from the App Store / TestFlight production track. Sandbox
+   (`"false"`, the default) is correct for everything signed with
+   the development profile, including TestFlight internal testing.
+
+4. **Flip the activation gate** in
+   `infra/aws/envs/staging/terraform.tfvars` (gitignored):
+
+   ```hcl
+   fcm_secret_enabled = true
+   apn_secret_enabled = true   # leave false until step 3 is done
+   ```
+
+   Run `terraform apply` from `infra/aws/envs/staging`. This adds
+   the `TARMOTO_FCM_*` / `TARMOTO_APN_*` entries to the ECS task
+   definition. Force a new deployment so running tasks pick up the
+   new secrets at boot:
+
+   ```bash
+   aws ecs update-service \
+     --cluster tarmoto-staging \
+     --service tarmoto-staging-backend \
+     --force-new-deployment
+   aws ecs wait services-stable \
+     --cluster tarmoto-staging --services tarmoto-staging-backend
+   ```
+
+5. **Verify provider initialisation.** Tail the new task's logs and
+   look for one of these `PushModule` lines:
+   - `Push provider: FCM enabled — serves Android natively and iOS via APN handoff`
+   - `Push provider: APN enabled (used for iOS only when FCM is not configured)`
+
+   If you see `Push provider: log (no FCM or APN credentials configured)`,
+   one of the secret JSON keys is missing or misnamed — re-check
+   step 2/3.
+
+**End-to-end smoke test (staging).** Run after step 5 with one
+Android and one iOS staging device, both signed in to a Tarmoto
+test account that has registered a device token (any sign-in does
+this; check `device_tokens` in RDS to confirm). Trigger each
+category from the app or via API; expect a single notification per
+category on each device. Categories currently dispatched by the
+backend:
+
+| Category               | How to trigger                                                                                                       |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `new_follower`         | From a second account, follow the test account.                                                                      |
+| `hazard_alert`         | Save a commute on the test account, then create a hazard within 200m of the route from another account.              |
+| `trip_collaboration`   | Add the test account as a collaborator on a trip; have the owner post a comment.                                     |
+| `crash_followup`       | Trigger a synthetic crash via the safety endpoint; the followup push fires after the confirm window.                 |
+| `weather_alert`        | The sweep runs every 15 min on the worker (`weather-alert-sweep` queue) — wait one tick after creating a saved ride. |
+| `subscription_billing` | Replay a Stripe `customer.subscription.updated` webhook with `status=past_due`.                                      |
+
+For each category, check:
+
+- the device shows the notification (foreground banner OR background
+  alert depending on app state)
+- the backend logs include the `PushService` line
+  `push category=<cat> user=<id> provider=<fcm|apn|log> delivered=N/M pruned=K`
+  with `provider` ≠ `log` and `delivered` ≥ 1
+- the device token row in `device_tokens` is **not** soft-deleted
+  (i.e. provider did not flag it dead)
+
+If a delivery fails, check the FCM / APN provider logs for the
+specific error code — `UNREGISTERED` / `BadDeviceToken` mark the
+token row dead and are usually a stale token from a previous build,
+not a credential problem. `MismatchSenderId` (FCM) or `BadTopic`
+(APN) means the credentials don't match the app's bundle id /
+sender id — re-check steps 2 and 3.
+
 ### Secret rotation (prod)
 
 Backend secrets live in AWS Secrets Manager under
