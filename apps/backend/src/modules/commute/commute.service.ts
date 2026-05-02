@@ -4,6 +4,10 @@ import { Repository, DataSource } from 'typeorm';
 import { pointToLatLng, latLngToPoint } from '@tarmoto/shared';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
+import { HazardsService } from '../hazards/hazards.service.js';
+import { WeatherService } from '../weather/weather.service.js';
+import type { HazardResponseDto } from '../hazards/dto/hazard-response.dto.js';
+import type { WeatherResponseDto } from '../weather/dto/weather.dto.js';
 import {
   ROUTING_PROVIDER,
   type RoutingProvider,
@@ -32,6 +36,8 @@ export class CommuteService {
     private readonly dataSource: DataSource,
     @Inject(ROUTING_PROVIDER)
     private readonly routingProvider: RoutingProvider,
+    private readonly hazardsService: HazardsService,
+    private readonly weatherService: WeatherService,
   ) {}
 
   async listRoutes(userId: string): Promise<CommuteRouteResponseDto[]> {
@@ -158,16 +164,29 @@ export class CommuteService {
       await this.fillRouteCache(route);
     }
 
-    const hazardCount = await this.countHazardsNearLine(route);
+    // Fan-out: pre-#353 the mobile client fired three requests
+    // (status, hazards, weather) and stitched them together. We do the
+    // composition server-side now so the rider gets one round-trip and
+    // a consistent response shape. Weather is best-effort — a provider
+    // outage shouldn't blank the whole commute card, so we surface
+    // `null` and let the client decide whether to show a placeholder.
+    const [hazards, weather] = await Promise.all([
+      this.findHazardsAlongRoute(route),
+      this.fetchOriginWeather(route),
+    ]);
 
-    let status: string = 'clear';
-    if (hazardCount > 0) status = 'hazards';
+    const hazardCount = hazards.length;
+    const status: string = hazardCount > 0 ? 'hazards' : 'clear';
+    const estimatedTimeMin = this.parseIntervalMinutes(route.avg_duration);
 
     const response = this.toRouteResponse(route);
 
     return {
       route: response,
+      hazards,
       hazard_count: hazardCount,
+      weather,
+      estimated_time_min: estimatedTimeMin,
       route_quality: route.avg_quality,
       status,
     };
@@ -334,6 +353,65 @@ export class CommuteService {
       primary_hazard_count: primaryHazardCount,
       alternatives,
     };
+  }
+
+  /**
+   * Build the polyline used to look up hazards on the rider's commute.
+   * Prefers the cached `route_geom` so we follow the actual road shape;
+   * falls back to a straight origin → destination line when the cache
+   * hasn't been populated yet. The 500 m buffer matches the legacy
+   * `countHazardsNearLine` semantics so `hazard_count` doesn't change
+   * meaning when we ship #353.
+   */
+  private routeLineForHazards(
+    route: CommuteRoute,
+  ): Array<{ lat: number; lng: number }> {
+    const cached = this.lineStringToLatLngs(route.route_geom);
+    if (cached && cached.length >= 2) return cached;
+    const [originLng, originLat] = this.getCoords(route.origin);
+    const [destLng, destLat] = this.getCoords(route.destination);
+    return [
+      { lat: originLat, lng: originLng },
+      { lat: destLat, lng: destLng },
+    ];
+  }
+
+  /**
+   * Active hazards within 500 m of the commute route. Delegates to
+   * `HazardsService.findAlongRoute` so the wire shape, ordering, and
+   * filtering rules stay single-sourced — fixing a hazard query bug
+   * doesn't need a parallel patch here.
+   */
+  private async findHazardsAlongRoute(
+    route: CommuteRoute,
+  ): Promise<HazardResponseDto[]> {
+    const line = this.routeLineForHazards(route);
+    return this.hazardsService.findAlongRoute({ route: line, buffer_m: 500 });
+  }
+
+  /**
+   * Sample current conditions at the route origin — that's where the
+   * rider is when they open the commute card. Best-effort: a provider
+   * outage logs a warning and returns `null` so the rest of the
+   * status response (route, hazards, quality) still reaches the
+   * client. The `WeatherService` itself doesn't surface a partial
+   * shape, so we wrap the call instead of pushing the try/catch
+   * downstream.
+   */
+  private async fetchOriginWeather(
+    route: CommuteRoute,
+  ): Promise<WeatherResponseDto | null> {
+    const [lng, lat] = this.getCoords(route.origin);
+    try {
+      return await this.weatherService.getCurrentWeather(lat, lng);
+    } catch (err) {
+      this.logger.warn(
+        `Weather lookup failed for commute route ${route.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return null;
+    }
   }
 
   private async countHazardsNearLine(route: CommuteRoute): Promise<number> {

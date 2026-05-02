@@ -197,7 +197,7 @@ export default function CommuteScreen() {
         </TouchableOpacity>
       </View>
 
-      <WeatherCard weather={status.weather} />
+      {status.weather ? <WeatherCard weather={status.weather} /> : null}
 
       <HazardsCard
         hazards={hazards}

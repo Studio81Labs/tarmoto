@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
+import { HazardsModule } from '../hazards/hazards.module.js';
+import { WeatherModule } from '../weather/weather.module.js';
 import { CommuteController } from './commute.controller.js';
 import { CommuteService } from './commute.service.js';
 import { ROUTING_PROVIDER } from './routing-provider.interface.js';
@@ -10,9 +12,18 @@ import { OsrmProvider } from './providers/osrm.provider.js';
 /**
  * To swap the routing engine (e.g., to GraphHopper or Mapbox), change
  * the ROUTING_PROVIDER useClass below.
+ *
+ * `HazardsModule` and `WeatherModule` are imported so
+ * `/commute/status` can return hazards + weather inline (#353). Both
+ * modules expose their service publicly via `exports`, so we just
+ * import them directly.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([CommuteRoute, Ride])],
+  imports: [
+    TypeOrmModule.forFeature([CommuteRoute, Ride]),
+    HazardsModule,
+    WeatherModule,
+  ],
   controllers: [CommuteController],
   providers: [
     CommuteService,

@@ -9,6 +9,8 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { LatLngResponseDto } from '../../../common/lat-lng.dto.js';
+import { HazardResponseDto } from '../../hazards/dto/hazard-response.dto.js';
+import { WeatherResponseDto } from '../../weather/dto/weather.dto.js';
 
 class LatLngDto {
   @IsNumber()
@@ -88,8 +90,41 @@ export class CommuteStatusResponseDto {
   @ApiProperty({ type: CommuteRouteResponseDto })
   route!: CommuteRouteResponseDto;
 
-  @ApiProperty()
+  @ApiProperty({
+    type: [HazardResponseDto],
+    description:
+      'Active hazards within 500 m of the resolved commute route ' +
+      'polyline (or the origin → destination line when the polyline ' +
+      'has not been cached yet). Ordered by `created_at` desc.',
+  })
+  hazards!: HazardResponseDto[];
+
+  @ApiProperty({
+    description:
+      'Convenience count equal to `hazards.length`. Kept on the wire so ' +
+      'lightweight callers (HomeScreen card, notification badges) can ' +
+      'read a number without scanning the list.',
+  })
   hazard_count!: number;
+
+  @ApiProperty({
+    type: WeatherResponseDto,
+    nullable: true,
+    description:
+      'Current conditions sampled at the route origin. Null when the ' +
+      'weather provider was unreachable on this request — the rest of ' +
+      'the response is still served so the rider sees their commute.',
+  })
+  weather!: WeatherResponseDto | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Same value as `route.avg_duration_min`, lifted to the top level ' +
+      'so the mobile screen can render the headline number without ' +
+      'reaching into the nested route object.',
+  })
+  estimated_time_min!: number | null;
 
   @ApiProperty({ nullable: true })
   route_quality!: number | null;

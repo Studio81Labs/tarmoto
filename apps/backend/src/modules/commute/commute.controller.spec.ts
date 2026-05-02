@@ -34,7 +34,17 @@ describe('CommuteController', () => {
       deleteRoute: jest.fn().mockResolvedValue(undefined),
       getStatus: jest.fn().mockResolvedValue({
         route: mockRoute,
+        hazards: [],
         hazard_count: 0,
+        weather: {
+          temperature_c: 14,
+          condition: 'clear',
+          wind_kmh: 8,
+          precipitation_chance: 0.1,
+          road_condition: 'dry',
+          description: '14°C · Dry roads · Wind 8 km/h',
+        },
+        estimated_time_min: 18,
         route_quality: 4.1,
         status: 'clear',
       }),

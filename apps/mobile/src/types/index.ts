@@ -543,20 +543,17 @@ export interface CommuteRoute {
 }
 
 /**
- * Mobile-side commute status shape. The wire DTO
- * (`CommuteStatusResponseDto`) is slimmer — it only carries
- * `hazard_count`, `route_quality`, and `status`. The mobile hooks
- * consume a richer object with `hazards`, `weather`, and
- * `estimated_time_min` populated client-side from separate `/hazards`
- * and `/weather/route` calls before the screen mounts. Keeping the type
- * rich here matches the in-app contract; the API boundary takes a
- * documented cast.
+ * Mobile-side commute status shape. Mirrors the wire DTO
+ * `CommuteStatusResponseDto` — backend composes hazards + weather
+ * inline (#353) so the rider gets one round-trip. Weather is
+ * nullable because the backend serves the rest of the payload even
+ * when the weather provider is briefly unreachable.
  */
 export interface CommuteStatus {
   route: CommuteRoute;
   hazards: Hazard[];
-  weather: Weather;
-  estimated_time_min: number;
+  weather: Weather | null;
+  estimated_time_min: number | null;
   route_quality: number | null;
   status: "clear" | "hazards" | "weather_warning" | "delays";
 }
