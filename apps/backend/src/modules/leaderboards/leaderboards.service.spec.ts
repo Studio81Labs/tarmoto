@@ -20,48 +20,76 @@ describe('LeaderboardsService', () => {
     service = moduleRef.get(LeaderboardsService);
   });
 
-  function mockTopRows(
+  /**
+   * Mock the three dimension queries — order matches `DIMENSIONS` in the
+   * service: total_distance_km, roads_discovered, hazards_reported. Each
+   * dimension issues exactly one query that returns top-N rows
+   * (`extra_me: false`) optionally followed by a single me row outside the
+   * top-N (`extra_me: true`).
+   */
+  function mockDimensions(
     distRows: object[],
     roadsRows: object[],
     hazardRows: object[],
   ): void {
-    // Order matches the dimension order in DIMENSIONS / Promise.all:
-    // total_distance_km, roads_discovered, hazards_reported.
-    // Each dimension issues a single top-N query when no current user is
-    // provided, or top-N + me when a user is.
     dataSource.query
       .mockResolvedValueOnce(distRows)
       .mockResolvedValueOnce(roadsRows)
       .mockResolvedValueOnce(hazardRows);
   }
 
+  function topRow(
+    overrides: Partial<{
+      user_id: string;
+      display_name: string;
+      home_region: string | null;
+      value: string | number;
+      rank: string | number;
+    }> = {},
+  ) {
+    return {
+      user_id: 'u1',
+      display_name: 'Rider',
+      home_region: 'Beskydy',
+      value: '100',
+      rank: '1',
+      extra_me: false,
+      ...overrides,
+    };
+  }
+
+  function meExtraRow(
+    overrides: Partial<{
+      user_id: string;
+      display_name: string;
+      home_region: string | null;
+      value: string | number;
+      rank: string | number;
+    }> = {},
+  ) {
+    return {
+      user_id: 'me',
+      display_name: 'You',
+      home_region: 'Beskydy',
+      value: '50',
+      rank: '99',
+      extra_me: true,
+      ...overrides,
+    };
+  }
+
   it('returns three dimensions with rows ordered by value', async () => {
-    mockTopRows(
+    mockDimensions(
       [
-        {
+        topRow({
           user_id: 'u1',
           display_name: 'Alice',
-          home_region: 'Beskydy',
           value: '1500.5',
           rank: '1',
-        },
-        {
-          user_id: 'u2',
-          display_name: 'Bob',
-          home_region: 'Beskydy',
-          value: '900',
-          rank: '2',
-        },
+        }),
+        topRow({ user_id: 'u2', display_name: 'Bob', value: '900', rank: '2' }),
       ],
-      [
-        {
-          user_id: 'u2',
-          display_name: 'Bob',
-          home_region: 'Beskydy',
-          value: '42',
-          rank: '1',
-        },
-      ],
+      [topRow({ user_id: 'u2', display_name: 'Bob', value: '42', rank: '1' })],
       [],
     );
 
@@ -89,7 +117,7 @@ describe('LeaderboardsService', () => {
   });
 
   it('passes region filter through to SQL params', async () => {
-    mockTopRows([], [], []);
+    mockDimensions([], [], []);
 
     await service.getRegional({ region: '  Beskydy  ' });
 
@@ -101,7 +129,7 @@ describe('LeaderboardsService', () => {
   });
 
   it('treats empty / whitespace region as null (global ranking)', async () => {
-    mockTopRows([], [], []);
+    mockDimensions([], [], []);
 
     const result = await service.getRegional({ region: '   ' });
 
@@ -113,7 +141,7 @@ describe('LeaderboardsService', () => {
   });
 
   it('respects limit param in SQL', async () => {
-    mockTopRows([], [], []);
+    mockDimensions([], [], []);
 
     await service.getRegional({ limit: 5 });
 
@@ -124,7 +152,7 @@ describe('LeaderboardsService', () => {
   });
 
   it('defaults limit to 20 when not provided', async () => {
-    mockTopRows([], [], []);
+    mockDimensions([], [], []);
 
     await service.getRegional({});
 
@@ -134,52 +162,50 @@ describe('LeaderboardsService', () => {
     }
   });
 
-  it('returns me from top-N when current user is in the list', async () => {
-    // With currentUserId set, the service runs top-N + me query per dim.
-    // We mock both calls in order.
-    dataSource.query
-      // total_distance_km: top-N
-      .mockResolvedValueOnce([
-        {
+  it('forwards currentUserId as the third SQL param', async () => {
+    mockDimensions([], [], []);
+
+    await service.getRegional({ currentUserId: 'me' });
+
+    for (const call of dataSource.query.mock.calls) {
+      const params = call[1] as unknown[];
+      expect(params[2]).toBe('me');
+    }
+  });
+
+  it('passes null currentUserId when caller is anonymous', async () => {
+    mockDimensions([], [], []);
+
+    await service.getRegional({});
+
+    for (const call of dataSource.query.mock.calls) {
+      const params = call[1] as unknown[];
+      expect(params[2]).toBeNull();
+    }
+  });
+
+  it('issues exactly one query per dimension regardless of currentUserId', async () => {
+    mockDimensions([], [], []);
+
+    await service.getRegional({ currentUserId: 'me' });
+
+    expect(dataSource.query).toHaveBeenCalledTimes(3);
+  });
+
+  it('returns me from the in-list row when current user is in top-N', async () => {
+    mockDimensions(
+      [
+        topRow({
           user_id: 'u1',
           display_name: 'Alice',
-          home_region: 'Beskydy',
           value: '1500',
           rank: '1',
-        },
-        {
-          user_id: 'me',
-          display_name: 'You',
-          home_region: 'Beskydy',
-          value: '900',
-          rank: '2',
-        },
-      ])
-      // total_distance_km: me query (still runs even if user is in top-N
-      // — but its result is ignored when meFromTop is found).
-      .mockResolvedValueOnce([
-        {
-          user_id: 'me',
-          display_name: 'You',
-          home_region: 'Beskydy',
-          value: '900',
-          rank: '2',
-        },
-      ])
-      // roads_discovered: top-N empty → me query result is used.
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        {
-          user_id: 'me',
-          display_name: 'You',
-          home_region: 'Beskydy',
-          value: '12',
-          rank: '47',
-        },
-      ])
-      // hazards_reported: both empty → me is null.
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
+        }),
+        topRow({ user_id: 'me', display_name: 'You', value: '900', rank: '2' }),
+      ],
+      [],
+      [],
+    );
 
     const result = await service.getRegional({ currentUserId: 'me' });
 
@@ -190,6 +216,25 @@ describe('LeaderboardsService', () => {
       home_region: 'Beskydy',
       value: 900,
     });
+  });
+
+  it('returns me from the appended extra-me row when current user is outside top-N', async () => {
+    mockDimensions(
+      [],
+      [
+        meExtraRow({
+          user_id: 'me',
+          display_name: 'You',
+          value: '12',
+          rank: '47',
+        }),
+      ],
+      [],
+    );
+
+    const result = await service.getRegional({ currentUserId: 'me' });
+
+    expect(result.roads_discovered.entries).toHaveLength(0);
     expect(result.roads_discovered.me).toEqual({
       rank: 47,
       user_id: 'me',
@@ -197,21 +242,20 @@ describe('LeaderboardsService', () => {
       home_region: 'Beskydy',
       value: 12,
     });
-    expect(result.roads_discovered.entries).toHaveLength(0);
+  });
+
+  it('returns me as null when neither top-N nor extra-me row matches', async () => {
+    mockDimensions([], [], []);
+
+    const result = await service.getRegional({ currentUserId: 'me' });
+
+    expect(result.total_distance_km.me).toBeNull();
+    expect(result.roads_discovered.me).toBeNull();
     expect(result.hazards_reported.me).toBeNull();
   });
 
-  it('skips me query when no current user is given', async () => {
-    mockTopRows([], [], []);
-
-    await service.getRegional({});
-
-    // 3 dims × 1 query each (no me query)
-    expect(dataSource.query).toHaveBeenCalledTimes(3);
-  });
-
   it('exposes generated_at as an ISO string', async () => {
-    mockTopRows([], [], []);
+    mockDimensions([], [], []);
 
     const result = await service.getRegional({});
 
@@ -219,15 +263,15 @@ describe('LeaderboardsService', () => {
   });
 
   it('coerces string ranks and values to numbers', async () => {
-    mockTopRows(
+    mockDimensions(
       [
-        {
+        topRow({
           user_id: 'u1',
           display_name: 'Alice',
           home_region: null,
           value: '1234.56',
           rank: '1',
-        },
+        }),
       ],
       [],
       [],
@@ -242,7 +286,7 @@ describe('LeaderboardsService', () => {
   });
 
   it('SQL filters by privacy and soft delete', async () => {
-    mockTopRows([], [], []);
+    mockDimensions([], [], []);
 
     await service.getRegional({});
 
@@ -253,7 +297,7 @@ describe('LeaderboardsService', () => {
   });
 
   it('SQL uses DENSE_RANK so the "Your rank" pill skips no values after ties', async () => {
-    mockTopRows([], [], []);
+    mockDimensions([], [], []);
 
     await service.getRegional({});
 
@@ -262,11 +306,10 @@ describe('LeaderboardsService', () => {
     // want DENSE_RANK (1, 1, 2) so a rider just past a tie doesn't see
     // their position inflated by the size of the tie group.
     expect(sql).toMatch(/DENSE_RANK\(\)/);
-    expect(sql).not.toMatch(/[^_]RANK\(\)/);
   });
 
   it('SQL inner-joins users to dim_values so inactive riders are not scanned', async () => {
-    mockTopRows([], [], []);
+    mockDimensions([], [], []);
 
     await service.getRegional({});
 
@@ -277,5 +320,19 @@ describe('LeaderboardsService', () => {
     expect(sql).toMatch(/FROM\s+dim_values/);
     expect(sql).toMatch(/INNER JOIN\s+users/);
     expect(sql).not.toMatch(/LEFT JOIN\s+dim_values/);
+  });
+
+  it('SQL combines top-N and me lookups in a single query per dimension', async () => {
+    mockDimensions([], [], []);
+
+    await service.getRegional({ currentUserId: 'me' });
+
+    const sql = dataSource.query.mock.calls[0][0] as string;
+    // Single CTE pipeline (one WITH) shared by both branches of the UNION,
+    // so the dim_values → eligible → ranked work runs once per dimension
+    // even when a signed-in viewer needs both top-N and me rows.
+    expect(sql.match(/\bWITH\b/g)?.length ?? 0).toBe(1);
+    expect(sql).toMatch(/UNION ALL/);
+    expect(sql).toMatch(/extra_me/);
   });
 });

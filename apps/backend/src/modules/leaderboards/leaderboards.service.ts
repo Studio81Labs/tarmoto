@@ -14,6 +14,13 @@ interface RankedRow {
   home_region: string | null;
   value: string | number | null;
   rank: string | number;
+  /**
+   * True iff this row is the signed-in rider's row appended outside the
+   * top-N window. False for top-N rows (whether or not they happen to
+   * match the current user). Lets the JS partition the combined query
+   * result without re-comparing user ids.
+   */
+  extra_me: boolean;
 }
 
 interface DimensionConfig {
@@ -108,68 +115,69 @@ export class LeaderboardsService {
     limit: number,
     currentUserId: string | null,
   ): Promise<DimensionLeaderboardDto> {
-    const [topRows, meRow] = await Promise.all([
-      this.queryTopN(cfg, region, limit),
-      currentUserId
-        ? this.queryMeRow(cfg, region, currentUserId)
-        : Promise.resolve(null),
-    ]);
+    const rows = await this.queryDimension(cfg, region, limit, currentUserId);
 
-    const entries = topRows.map((r) => this.toEntry(r));
+    const entries = rows.filter((r) => !r.extra_me).map((r) => this.toEntry(r));
     // Reuse the in-list me row when present so rank/value match exactly the
     // top-N rendering (same query, same tiebreakers).
     const meFromTop = currentUserId
       ? (entries.find((e) => e.user_id === currentUserId) ?? null)
       : null;
-    const me = meFromTop ?? (meRow ? this.toEntry(meRow) : null);
+    const meExtraRow = rows.find((r) => r.extra_me);
+    const me = meFromTop ?? (meExtraRow ? this.toEntry(meExtraRow) : null);
 
     return { dimension: cfg.dimension, unit: cfg.unit, entries, me };
   }
 
-  private async queryTopN(
+  /**
+   * Single round-trip per dimension that returns the top-N rows plus, when
+   * applicable, the signed-in rider's row appended outside that window. The
+   * `dim_values → eligible → ranked` pipeline runs once and is reused for
+   * both branches, so a signed-in viewer pays one CTE evaluation per
+   * dimension instead of two.
+   *
+   * `currentUserId` is forwarded as `$3::uuid`; passing `null` makes the
+   * me-row branch match nothing, which is the same as not running it. The
+   * me-row branch is also gated on `rn > $2` so a rider already in the
+   * top-N doesn't appear twice — that case is handled in the caller via
+   * `meFromTop` over the existing top-N rows.
+   */
+  private async queryDimension(
     cfg: DimensionConfig,
     region: string | null,
     limit: number,
+    currentUserId: string | null,
   ): Promise<RankedRow[]> {
     const sql = `
       ${this.cteHeader(cfg)}
-      SELECT user_id, display_name, home_region, value, rank
+      SELECT user_id, display_name, home_region, value, rank, false AS extra_me
       FROM ranked
-      ORDER BY value DESC, user_id ASC
-      LIMIT $2
-    `;
-    return await this.dataSource.query<RankedRow[]>(sql, [region, limit]);
-  }
-
-  private async queryMeRow(
-    cfg: DimensionConfig,
-    region: string | null,
-    userId: string,
-  ): Promise<RankedRow | null> {
-    const sql = `
-      ${this.cteHeader(cfg)}
-      SELECT user_id, display_name, home_region, value, rank
+      WHERE rn <= $2
+      UNION ALL
+      SELECT user_id, display_name, home_region, value, rank, true AS extra_me
       FROM ranked
-      WHERE user_id = $2
-      LIMIT 1
+      WHERE $3::uuid IS NOT NULL AND user_id = $3::uuid AND rn > $2
+      ORDER BY extra_me ASC, rn ASC
     `;
-    const rows = await this.dataSource.query<RankedRow[]>(sql, [
+    return await this.dataSource.query<RankedRow[]>(sql, [
       region,
-      userId,
+      limit,
+      currentUserId,
     ]);
-    return rows[0] ?? null;
   }
 
   /**
-   * Common CTE prefix used by both the top-N and me-row queries.
+   * Common CTE prefix shared across all dimensions.
    *
    * `dim_values` produces per-rider scores from the dimension's source — its
    * `GROUP BY user_id` already excludes riders with no activity, so joining
    * `users` with INNER JOIN means we only ever pay for active riders rather
    * than scanning every non-deleted account on each request. The privacy /
-   * soft-delete / region filters then narrow further. `ranked` projects the
-   * dense competition rank used in the response — splitting it from the
-   * filter step keeps ties consistent with the visible top-N order.
+   * soft-delete / region filters then narrow further. `ranked` projects two
+   * window expressions: the dense competition rank used in the response
+   * (so a tie of two at #1 is followed by #2, not #3) and a stable
+   * `rn` row-number used to slice the top-N window — splitting them lets
+   * ties share a `rank` while `rn` still gives a deterministic ordering.
    *
    * `WHERE value > 0` in `ranked` is defence-in-depth: dim_values can in
    * principle emit a zero (e.g. SUM of all-zero distances) and we never want
@@ -193,7 +201,8 @@ export class LeaderboardsService {
       ),
       ranked AS (
         SELECT user_id, display_name, home_region, value,
-               DENSE_RANK() OVER (ORDER BY value DESC) AS rank
+               DENSE_RANK() OVER (ORDER BY value DESC) AS rank,
+               ROW_NUMBER() OVER (ORDER BY value DESC, user_id ASC) AS rn
         FROM eligible
         WHERE value > 0
       )
