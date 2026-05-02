@@ -70,6 +70,12 @@ jest.mock("@/hooks", () => ({
     lastFlushed: null,
     retry: jest.fn(),
   }),
+  usePendingHazardReports: () => ({
+    count: 0,
+    isRetrying: false,
+    lastResult: null,
+    retry: jest.fn(),
+  }),
 }));
 
 jest.mock("@react-navigation/native", () => ({
