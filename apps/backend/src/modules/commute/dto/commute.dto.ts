@@ -8,6 +8,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import { LatLngResponseDto } from '../../../common/lat-lng.dto.js';
 
 class LatLngDto {
   @IsNumber()
@@ -49,14 +50,29 @@ export class CommuteRouteResponseDto {
   @ApiProperty()
   name!: string;
 
-  @ApiProperty({ type: LatLngDto })
+  @ApiProperty({ type: LatLngResponseDto })
   origin!: { lat: number; lng: number };
 
-  @ApiProperty({ type: LatLngDto })
+  @ApiProperty({ type: LatLngResponseDto })
   destination!: { lat: number; lng: number };
 
   @ApiProperty({ nullable: true })
   distance_km!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Average commute duration in minutes derived from the cached routing engine response. Null when the route has not been resolved yet (the routing provider was unreachable on the most recent attempt).',
+  })
+  avg_duration_min!: number | null;
+
+  @ApiProperty({
+    type: [LatLngResponseDto],
+    nullable: true,
+    description:
+      'Cached polyline of the resolved primary route, suitable for map preview and navigation. Null when the route has not been resolved yet.',
+  })
+  route_geometry!: { lat: number; lng: number }[] | null;
 
   @ApiProperty({ nullable: true })
   avg_quality!: number | null;
@@ -98,14 +114,6 @@ class DailyBreakdownDto {
   duration_min!: number;
 }
 
-class RouteGeometryPointDto {
-  @ApiProperty()
-  lat!: number;
-
-  @ApiProperty()
-  lng!: number;
-}
-
 export class AlternativeRouteDto {
   @ApiProperty()
   distance_km!: number;
@@ -119,7 +127,7 @@ export class AlternativeRouteDto {
   @ApiProperty()
   hazard_count!: number;
 
-  @ApiProperty({ type: [RouteGeometryPointDto] })
+  @ApiProperty({ type: [LatLngResponseDto] })
   geometry!: Array<{ lat: number; lng: number }>;
 }
 

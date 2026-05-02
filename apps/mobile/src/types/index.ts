@@ -521,12 +521,11 @@ export interface ReviewVoteResult {
 // ── Commute ──
 
 /**
- * Saved commute route. The wire shape is `CommuteRouteResponseDto` —
- * `distance_km` / `avg_quality` are nullable (zero-row routes haven't
- * been driven yet) and `avg_duration_min` / `route_geometry` are absent
- * entirely. The mobile screens already handle both as optional, so the
- * type matches the actual contract instead of hiding the gap behind a
- * cast.
+ * Saved commute route. Mirrors the wire shape `CommuteRouteResponseDto`.
+ * The cache fields (`distance_km`, `avg_duration_min`, `route_geometry`)
+ * are nullable: a freshly-saved row stays null until the routing
+ * provider resolves it, and the backend logs+leaves them null on a
+ * provider outage so the screen can still render the rest of the route.
  */
 export interface CommuteRoute {
   id: string;
@@ -534,15 +533,13 @@ export interface CommuteRoute {
   origin: LatLng;
   destination: LatLng;
   distance_km: number | null;
+  avg_duration_min: number | null;
+  route_geometry: LatLng[] | null;
   avg_quality: number | null;
   is_primary: boolean;
   /** ISO timestamp from the backend. Optional only because pre-existing
    *  test fixtures predate the field — the wire shape is required. */
   created_at?: string;
-  /** Backend doesn't currently surface duration; future work. */
-  avg_duration_min?: number;
-  /** Backend doesn't currently cache route geometry; future work. */
-  route_geometry?: LatLng[];
 }
 
 /**

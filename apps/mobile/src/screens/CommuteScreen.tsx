@@ -444,12 +444,12 @@ function AlternativesCard({
   onNavigate,
 }: {
   alternatives: CommuteAlternativesResponse;
-  // Both fields can be missing at runtime: backend's
-  // `CommuteRouteResponseDto` returns `distance_km` as nullable and
-  // does not include `avg_duration_min` at all. Without this guard the
-  // delta chips render `NaN km` / `NaN min` for every alternative.
-  primaryDistanceKm: number | null | undefined;
-  primaryDurationMin: number | null | undefined;
+  // Backend now caches `distance_km` and `avg_duration_min` on
+  // `CommuteRouteResponseDto`, but both stay null until the routing
+  // provider resolves the route (and on a provider outage). Guard the
+  // delta chips against null so they render "—" instead of "NaN km"/"NaN min".
+  primaryDistanceKm: number | null;
+  primaryDurationMin: number | null;
   onStart: () => void;
   onNavigate: (alt: CommuteAlternativeRoute) => void;
 }) {
@@ -503,15 +503,13 @@ function AlternativeRow({
   onNavigate,
 }: {
   alt: CommuteAlternativeRoute;
-  primaryDistanceKm: number | null | undefined;
-  primaryDurationMin: number | null | undefined;
+  primaryDistanceKm: number | null;
+  primaryDurationMin: number | null;
   onStart: () => void;
   onNavigate: (alt: CommuteAlternativeRoute) => void;
 }) {
-  // Compute deltas only when the primary value is actually a finite
-  // number. The backend's primary route DTO doesn't carry
-  // `avg_duration_min` and treats `distance_km` as nullable, so naive
-  // subtraction would produce NaN and the chip would render "NaN km".
+  // Backend treats both cache fields as nullable (unresolved or routing
+  // provider outage), so guard against null/NaN before subtracting.
   const distanceDelta =
     typeof primaryDistanceKm === "number" && Number.isFinite(primaryDistanceKm)
       ? alt.distance_km - primaryDistanceKm

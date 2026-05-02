@@ -16,6 +16,11 @@ describe('CommuteController', () => {
     origin: { lat: 49.2, lng: 16.6 },
     destination: { lat: 49.1, lng: 16.75 },
     distance_km: 12.5,
+    avg_duration_min: 18,
+    route_geometry: [
+      { lat: 49.2, lng: 16.6 },
+      { lat: 49.1, lng: 16.75 },
+    ],
     avg_quality: 4.1,
     is_primary: true,
     created_at: '2026-04-14T10:00:00.000Z',

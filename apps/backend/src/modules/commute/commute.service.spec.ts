@@ -16,7 +16,9 @@ const mockTransactionManager = {
     id: 'route-new',
     created_at: new Date('2026-04-15T10:00:00Z'),
     distance_km: null,
+    avg_duration: null,
     avg_quality: null,
+    route_geom: null,
     is_primary: true,
     ...(data as Record<string, unknown>),
   })),
@@ -36,7 +38,16 @@ describe('CommuteService', () => {
     name: 'Home → Work',
     origin: { type: 'Point', coordinates: [16.6, 49.2] },
     destination: { type: 'Point', coordinates: [16.75, 49.1] },
+    route_geom: {
+      type: 'LineString',
+      coordinates: [
+        [16.6, 49.2],
+        [16.7, 49.15],
+        [16.75, 49.1],
+      ],
+    },
     distance_km: 12.5,
+    avg_duration: '00:18:00',
     avg_quality: 4.1,
     is_primary: true,
     created_at: new Date('2026-04-14T10:00:00Z'),
@@ -80,7 +91,20 @@ describe('CommuteService', () => {
         {
           provide: ROUTING_PROVIDER,
           useValue: {
-            getAlternatives: jest.fn().mockResolvedValue([]),
+            // Default: routing returns one resolved candidate so cache-fill
+            // paths produce geometry. Tests that exercise routing failures
+            // override this per-test.
+            getAlternatives: jest.fn().mockResolvedValue([
+              {
+                distance_km: 12.5,
+                duration_min: 18,
+                geometry: [
+                  { lat: 49.2, lng: 16.6 },
+                  { lat: 49.15, lng: 16.7 },
+                  { lat: 49.1, lng: 16.75 },
+                ],
+              },
+            ]),
           },
         },
       ],
@@ -93,12 +117,119 @@ describe('CommuteService', () => {
   });
 
   describe('listRoutes', () => {
-    it('should return user commute routes', async () => {
+    it('should return user commute routes with cached geometry and duration surfaced', async () => {
       const result = await service.listRoutes('user-1');
 
       expect(result).toHaveLength(1);
       expect(result[0].name).toBe('Home → Work');
       expect(result[0].origin).toEqual({ lat: 49.2, lng: 16.6 });
+      expect(result[0].avg_duration_min).toBe(18);
+      expect(result[0].route_geometry).toEqual([
+        { lat: 49.2, lng: 16.6 },
+        { lat: 49.15, lng: 16.7 },
+        { lat: 49.1, lng: 16.75 },
+      ]);
+    });
+
+    it('lazily backfills the primary route when its cache fields are null', async () => {
+      // Legacy row: saved before route_geom/distance_km/avg_duration were
+      // populated. The list call should resolve it via the routing
+      // provider, persist the result, and surface populated fields in the
+      // response.
+      const legacy = {
+        ...mockRoute,
+        route_geom: null,
+        distance_km: null,
+        avg_duration: null,
+        is_primary: true,
+      };
+      routeRepo.find!.mockResolvedValueOnce([legacy] as never);
+
+      const routingProvider = service['routingProvider'] as jest.Mocked<{
+        getAlternatives: jest.Mock;
+      }>;
+
+      const result = await service.listRoutes('user-1');
+
+      expect(routingProvider.getAlternatives).toHaveBeenCalledWith(
+        49.2,
+        16.6,
+        49.1,
+        16.75,
+        1,
+        { includePrimary: true },
+      );
+      // The persisted UPDATE goes through routeRepo.query.
+      expect(routeRepo.query).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE commute_routes'),
+        expect.arrayContaining([
+          expect.stringContaining('LINESTRING'),
+          12.5,
+          18,
+          'route-1',
+        ]),
+      );
+      expect(result[0].route_geometry).toEqual([
+        { lat: 49.2, lng: 16.6 },
+        { lat: 49.15, lng: 16.7 },
+        { lat: 49.1, lng: 16.75 },
+      ]);
+      expect(result[0].distance_km).toBe(12.5);
+      expect(result[0].avg_duration_min).toBe(18);
+    });
+
+    it('skips backfill when no saved routes are primary', async () => {
+      // listRoutes only fills the primary; a non-primary saved row with
+      // missing cache fields stays null until the rider promotes it.
+      const nonPrimary = {
+        ...mockRoute,
+        route_geom: null,
+        distance_km: null,
+        avg_duration: null,
+        is_primary: false,
+      };
+      routeRepo.find!.mockResolvedValueOnce([nonPrimary] as never);
+
+      const routingProvider = service['routingProvider'] as jest.Mocked<{
+        getAlternatives: jest.Mock;
+      }>;
+
+      const result = await service.listRoutes('user-1');
+
+      expect(routingProvider.getAlternatives).not.toHaveBeenCalled();
+      expect(result[0].route_geometry).toBeNull();
+      expect(result[0].distance_km).toBeNull();
+      expect(result[0].avg_duration_min).toBeNull();
+    });
+
+    it('serves a route with null cache fields when the routing provider fails', async () => {
+      // Best-effort backfill: a transient routing-provider outage must
+      // not block the list response. The fields stay null and the next
+      // list call retries.
+      const legacy = {
+        ...mockRoute,
+        route_geom: null,
+        distance_km: null,
+        avg_duration: null,
+        is_primary: true,
+      };
+      routeRepo.find!.mockResolvedValueOnce([legacy] as never);
+      const routingProvider = service['routingProvider'] as jest.Mocked<{
+        getAlternatives: jest.Mock;
+      }>;
+      routingProvider.getAlternatives.mockRejectedValueOnce(
+        new Error('OSRM down'),
+      );
+
+      const result = await service.listRoutes('user-1');
+
+      expect(result[0].route_geometry).toBeNull();
+      expect(result[0].distance_km).toBeNull();
+      expect(result[0].avg_duration_min).toBeNull();
+      expect(routeRepo.query).not.toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE commute_routes'),
+        expect.anything(),
+      );
     });
   });
 
@@ -147,6 +278,106 @@ describe('CommuteService', () => {
       expect(mockTransactionManager.create).toHaveBeenCalledWith(
         CommuteRoute,
         expect.objectContaining({ name: 'Default' }),
+      );
+    });
+
+    it('resolves and persists the route polyline + duration after insert', async () => {
+      const routingProvider = service['routingProvider'] as jest.Mocked<{
+        getAlternatives: jest.Mock;
+      }>;
+
+      const result = await service.createRoute('user-1', {
+        origin: { lat: 49.2, lng: 16.6 },
+        destination: { lat: 49.1, lng: 16.75 },
+      });
+
+      expect(routingProvider.getAlternatives).toHaveBeenCalledWith(
+        49.2,
+        16.6,
+        49.1,
+        16.75,
+        1,
+        { includePrimary: true },
+      );
+      expect(routeRepo.query).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE commute_routes'),
+        expect.arrayContaining([
+          expect.stringContaining('LINESTRING'),
+          12.5,
+          18,
+          'route-new',
+        ]),
+      );
+      expect(result.route_geometry).toEqual([
+        { lat: 49.2, lng: 16.6 },
+        { lat: 49.15, lng: 16.7 },
+        { lat: 49.1, lng: 16.75 },
+      ]);
+      expect(result.avg_duration_min).toBe(18);
+      expect(result.distance_km).toBe(12.5);
+    });
+
+    it('rounds fractional duration_min before passing it to make_interval', async () => {
+      // Regression guard: postgres' `make_interval(mins => …)` expects
+      // an `int`. If a `RoutingProvider` returns a non-integer minute
+      // count, the pg driver would send "18.5" as text, the query
+      // would fail to parse, and the catch would swallow it — pinning
+      // the cache permanently null on every retry. Force a fractional
+      // duration and assert the SQL parameter is the rounded int.
+      const routingProvider = service['routingProvider'] as jest.Mocked<{
+        getAlternatives: jest.Mock;
+      }>;
+      routingProvider.getAlternatives.mockResolvedValueOnce([
+        {
+          distance_km: 12.5,
+          duration_min: 18.5,
+          geometry: [
+            { lat: 49.2, lng: 16.6 },
+            { lat: 49.1, lng: 16.75 },
+          ],
+        },
+      ]);
+
+      const result = await service.createRoute('user-1', {
+        origin: { lat: 49.2, lng: 16.6 },
+        destination: { lat: 49.1, lng: 16.75 },
+      });
+
+      const updateCall = routeRepo.query!.mock.calls.find((call) =>
+        String(call[0]).includes('UPDATE commute_routes'),
+      );
+      expect(updateCall).toBeDefined();
+      // make_interval bind: [wkt, distance_km, duration_min, id].
+      const params = updateCall![1] as unknown[];
+      expect(params[2]).toBe(19);
+      expect(Number.isInteger(params[2])).toBe(true);
+      // In-memory mirror agrees with the persisted value.
+      expect(result.avg_duration_min).toBe(19);
+    });
+
+    it('still returns the saved route when the routing provider fails', async () => {
+      // Resolution is best-effort: a transient OSRM failure shouldn't
+      // reject the create — we keep the row, log, and let lazy backfill
+      // on subsequent reads retry.
+      const routingProvider = service['routingProvider'] as jest.Mocked<{
+        getAlternatives: jest.Mock;
+      }>;
+      routingProvider.getAlternatives.mockRejectedValueOnce(
+        new Error('OSRM unreachable'),
+      );
+
+      const result = await service.createRoute('user-1', {
+        origin: { lat: 49.2, lng: 16.6 },
+        destination: { lat: 49.1, lng: 16.75 },
+      });
+
+      expect(result.id).toBe('route-new');
+      expect(result.route_geometry).toBeNull();
+      expect(result.avg_duration_min).toBeNull();
+      expect(result.distance_km).toBeNull();
+      expect(routeRepo.query).not.toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE commute_routes'),
+        expect.anything(),
       );
     });
   });
@@ -252,6 +483,35 @@ describe('CommuteService', () => {
       expect(result.status).toBe('clear');
       expect(result.hazard_count).toBe(0);
       expect(result.route.id).toBe('route-1');
+      expect(result.route.avg_duration_min).toBe(18);
+      expect(result.route.route_geometry).toHaveLength(3);
+    });
+
+    it('lazily backfills the cache when the primary route lacks geometry', async () => {
+      const legacy = {
+        ...mockRoute,
+        route_geom: null,
+        distance_km: null,
+        avg_duration: null,
+      };
+      routeRepo.findOne!.mockResolvedValueOnce(legacy);
+      const routingProvider = service['routingProvider'] as jest.Mocked<{
+        getAlternatives: jest.Mock;
+      }>;
+
+      const result = await service.getStatus('user-1');
+
+      expect(routingProvider.getAlternatives).toHaveBeenCalledWith(
+        49.2,
+        16.6,
+        49.1,
+        16.75,
+        1,
+        { includePrimary: true },
+      );
+      expect(result.route.route_geometry).toHaveLength(3);
+      expect(result.route.avg_duration_min).toBe(18);
+      expect(result.route.distance_km).toBe(12.5);
     });
 
     it('should return hazards status when hazards found', async () => {
@@ -402,11 +662,81 @@ describe('CommuteService', () => {
     });
 
     it('should return empty alternatives when routing provider returns none', async () => {
+      // The default mock returns one route so cache-fill paths produce
+      // geometry; for the "no alternatives" assertion we drop both the
+      // cache-fill candidate and the alternatives candidate.
+      const routingProvider = service['routingProvider'] as jest.Mocked<{
+        getAlternatives: jest.Mock;
+      }>;
+      routingProvider.getAlternatives.mockResolvedValue([]);
       routeRepo.query!.mockResolvedValueOnce([{ count: 0 }]); // primary hazards
 
       const result = await service.getAlternatives('user-1');
 
       expect(result.alternatives).toHaveLength(0);
+    });
+
+    it('lazily backfills the primary route cache when geometry is missing', async () => {
+      // Legacy primary lacks the cache fields, so getAlternatives should
+      // resolve it once before fanning out to the alternatives lookup.
+      // The first routing-provider call is the cache-fill; the second is
+      // the alternatives query that always runs.
+      const legacy = {
+        ...mockRoute,
+        route_geom: null,
+        distance_km: null,
+        avg_duration: null,
+      };
+      routeRepo.findOne!.mockResolvedValueOnce(legacy);
+      routeRepo.query!.mockResolvedValueOnce([{ count: 0 }]); // primary hazards
+
+      const routingProvider = service['routingProvider'] as jest.Mocked<{
+        getAlternatives: jest.Mock;
+      }>;
+
+      const result = await service.getAlternatives('user-1');
+
+      expect(routingProvider.getAlternatives).toHaveBeenNthCalledWith(
+        1,
+        49.2,
+        16.6,
+        49.1,
+        16.75,
+        1,
+        { includePrimary: true },
+      );
+      expect(result.primary_route.route_geometry).toHaveLength(3);
+      expect(result.primary_route.avg_duration_min).toBe(18);
+      expect(result.primary_route.distance_km).toBe(12.5);
+    });
+  });
+
+  describe('parseIntervalMinutes', () => {
+    // The parser sees both shapes at runtime: pg's default returns a
+    // PostgresInterval object, but TypeORM types the column as string,
+    // and tests construct strings. The mapper needs to accept either.
+
+    it('parses HH:MM:SS strings', () => {
+      const fn = service['parseIntervalMinutes'].bind(service);
+      expect(fn('00:18:00')).toBe(18);
+      expect(fn('01:30:30')).toBe(91);
+    });
+
+    it('parses N days HH:MM:SS strings', () => {
+      const fn = service['parseIntervalMinutes'].bind(service);
+      expect(fn('1 day 02:00:00')).toBe(1560);
+    });
+
+    it('parses pg PostgresInterval objects', () => {
+      const fn = service['parseIntervalMinutes'].bind(service);
+      expect(fn({ hours: 0, minutes: 18, seconds: 0 })).toBe(18);
+      expect(fn({ hours: 1, minutes: 30 })).toBe(90);
+    });
+
+    it('returns null for null and unparseable input', () => {
+      const fn = service['parseIntervalMinutes'].bind(service);
+      expect(fn(null)).toBeNull();
+      expect(fn('not an interval')).toBeNull();
     });
   });
 });
