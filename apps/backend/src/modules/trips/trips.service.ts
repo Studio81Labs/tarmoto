@@ -801,11 +801,30 @@ function totalDistanceKm(points: Array<{ lat: number; lng: number }>): number {
   return total;
 }
 
+// Single source of truth for the waypoint vocabulary the backend
+// persists. `accommodation` is in here even though the GPX/KML
+// `ImportTripDto` doesn't accept it from clients — the snapshot parser
+// for `POST /trips/from-share` (#357) does, and a `BuiltWaypoint`
+// reaching the persistence layer with an `accommodation` type must be
+// representable in the type system. Pulling the constant out of a
+// `const` tuple keeps `BuiltWaypoint['waypoint_type']` and the runtime
+// `SNAPSHOT_WAYPOINT_TYPES` set in lockstep.
+const BUILT_WAYPOINT_TYPES = [
+  'start',
+  'via',
+  'end',
+  'fuel',
+  'rest',
+  'photo',
+  'accommodation',
+] as const;
+type BuiltWaypointType = (typeof BUILT_WAYPOINT_TYPES)[number];
+
 interface BuiltWaypoint {
   lat: number;
   lng: number;
   name?: string;
-  waypoint_type: 'start' | 'via' | 'fuel' | 'rest' | 'photo' | 'end';
+  waypoint_type: BuiltWaypointType;
 }
 
 const SAME_POINT_EPSILON = 1e-5;
@@ -839,20 +858,21 @@ interface ParsedSnapshotDay {
   waypoints: BuiltWaypoint[];
 }
 
-// Mirrors the companion's `Waypoint['type']` vocabulary
-// (apps/companion/src/lib/types.ts). `accommodation` is included so
-// overnight stops survive the shared → backend round-trip — the legacy
-// flat `/trips/import` path drops them because its DTO doesn't accept
-// the type.
-const SNAPSHOT_WAYPOINT_TYPES = new Set([
-  'start',
-  'via',
-  'end',
-  'fuel',
-  'rest',
-  'photo',
-  'accommodation',
-]);
+// Snapshot waypoints round-trip the same vocabulary the backend
+// persists — including `accommodation`, which the legacy flat `/trips/
+// import` path drops because its DTO doesn't accept the type. Derived
+// from `BUILT_WAYPOINT_TYPES` so the runtime allow-list and the
+// `BuiltWaypoint['waypoint_type']` union can't drift apart.
+const SNAPSHOT_WAYPOINT_TYPES: ReadonlySet<BuiltWaypointType> = new Set(
+  BUILT_WAYPOINT_TYPES,
+);
+
+function isBuiltWaypointType(value: unknown): value is BuiltWaypointType {
+  return (
+    typeof value === 'string' &&
+    SNAPSHOT_WAYPOINT_TYPES.has(value as BuiltWaypointType)
+  );
+}
 
 // Hard caps mirrored from `import-trip.dto.ts` so a malformed (or
 // abusive) snapshot can't blow up DB write volume even though the
@@ -995,10 +1015,9 @@ function parseSnapshotWaypoints(raw: unknown): BuiltWaypoint[] {
     ) {
       continue;
     }
-    const type =
-      typeof e.type === 'string' && SNAPSHOT_WAYPOINT_TYPES.has(e.type)
-        ? (e.type as BuiltWaypoint['waypoint_type'])
-        : 'via';
+    const type: BuiltWaypointType = isBuiltWaypointType(e.type)
+      ? e.type
+      : 'via';
     out.push({
       lat,
       lng,
