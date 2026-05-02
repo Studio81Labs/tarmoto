@@ -30,6 +30,7 @@ import type {
   PublicProfile,
   FollowerListItem,
   UserBadge,
+  UserSharedRidesResponse,
   RideResponse,
   RideSummary,
   RoadSegment,
@@ -281,6 +282,25 @@ class ApiService {
       params: { path: { userId } },
     });
     return unwrap(result, "Failed to load badges") as UserBadge[];
+  }
+
+  /**
+   * #336: paginated shared rides for the rider's profile. The backend
+   * returns only public shares for non-self viewers and 404s for
+   * soft-deleted or `profile_visibility = private` riders, so a 404 here
+   * is the right cue to render an empty section without an error.
+   */
+  async listUserSharedRides(
+    userId: string,
+    params: { limit?: number; offset?: number } = {},
+  ): Promise<UserSharedRidesResponse> {
+    const result = await client.GET("/api/v1/users/{userId}/shared-rides", {
+      params: { path: { userId }, query: params },
+    });
+    return unwrap(
+      result,
+      "Failed to load shared rides",
+    ) as UserSharedRidesResponse;
   }
 
   /**

@@ -36,6 +36,7 @@ import { useAuthStore } from "@/stores";
 import { capturePhoto } from "@/services/photoCapture";
 import Avatar from "@/components/Avatar";
 import StatTile from "@/components/StatTile";
+import SharedRidesSection from "@/components/SharedRidesSection";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import type { PublicProfile, UserBadge } from "@/types";
 import { formatCount, formatJoinedLabel } from "./riderProfile.helpers";
@@ -282,6 +283,8 @@ export default function ProfileScreen() {
           accessibilityLabel={`${earnedBadges.length} badges earned, open achievements`}
         />
       </View>
+
+      <SharedRidesSection userId={user.id} isSelf displayName={displayName} />
 
       <View style={styles.actionsCard}>
         <ActionRow

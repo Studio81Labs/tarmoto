@@ -7,6 +7,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   Req,
   UseGuards,
   HttpCode,
@@ -28,6 +29,11 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import * as express from 'express';
 import { resolvePublicBaseUrl } from '../../common/public-base-url.js';
 import { AuthGuard } from '../auth/auth.guard.js';
+import { SharingService } from '../sharing/sharing.service.js';
+import {
+  UserSharedRidesQueryDto,
+  UserSharedRidesResponseDto,
+} from '../sharing/dto/sharing.dto.js';
 import { UsersService } from './users.service.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { CreateContactDto } from './dto/create-contact.dto.js';
@@ -45,6 +51,7 @@ import { PublicProfileDto } from './dto/public-profile.dto.js';
 export class UsersController {
   constructor(
     private readonly usersService: UsersService,
+    private readonly sharingService: SharingService,
     private readonly config: ConfigService,
   ) {}
 
@@ -74,6 +81,27 @@ export class UsersController {
     @Param('userId', ParseUUIDPipe) userId: string,
   ): Promise<PublicProfileDto> {
     return this.usersService.getPublicProfile(req.user!.userId, userId);
+  }
+
+  @Get(':userId/shared-rides')
+  @ApiOperation({
+    summary: "List a rider's shared rides",
+    description:
+      "Paginated list of the rider's shared rides for their profile. " +
+      'Non-self viewers only see public shares; the rider viewing their ' +
+      'own profile sees both public and private shares so they can spot ' +
+      'rides they later flipped to private. 404s for soft-deleted users ' +
+      'and for non-self viewers when the rider has set their profile to ' +
+      'private (#279).',
+  })
+  @ApiResponse({ status: 200, type: UserSharedRidesResponseDto })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async listSharedRides(
+    @Req() req: express.Request,
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Query() query: UserSharedRidesQueryDto,
+  ): Promise<UserSharedRidesResponseDto> {
+    return this.sharingService.listForUser(req.user!.userId, userId, query);
   }
 
   @Post('me/avatar')

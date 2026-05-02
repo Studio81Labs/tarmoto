@@ -30,6 +30,7 @@ import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
 import { ApiError, api } from "@/services/api";
 import Avatar from "@/components/Avatar";
 import StatTile from "@/components/StatTile";
+import SharedRidesSection from "@/components/SharedRidesSection";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 import type { PublicProfile, UserBadge } from "@/types";
 import { formatCount, formatJoinedLabel } from "./riderProfile.helpers";
@@ -289,6 +290,12 @@ export default function ViewProfileScreen() {
         />
         <StatTile label="Badges" value={formatCount(earnedBadges.length)} />
       </View>
+
+      <SharedRidesSection
+        userId={profile.id}
+        isSelf={profile.is_self}
+        displayName={profile.display_name}
+      />
 
       <View style={styles.badgesCard}>
         <Text style={styles.cardTitle}>Badges earned</Text>

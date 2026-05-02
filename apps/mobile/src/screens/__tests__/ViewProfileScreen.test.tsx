@@ -52,6 +52,7 @@ jest.mock("@/services/api", () => ({
   api: {
     getPublicProfile: jest.fn(),
     listUserBadges: jest.fn(),
+    listUserSharedRides: jest.fn(),
     followUser: jest.fn(),
     unfollowUser: jest.fn(),
   },
@@ -96,6 +97,12 @@ describe("ViewProfileScreen", () => {
     jest.clearAllMocks();
     mockedApi.getPublicProfile.mockResolvedValue(buildProfile());
     mockedApi.listUserBadges.mockResolvedValue([]);
+    mockedApi.listUserSharedRides.mockResolvedValue({
+      items: [],
+      total: 0,
+      limit: 5,
+      offset: 0,
+    });
   });
 
   it("renders the rider profile after fetch", async () => {

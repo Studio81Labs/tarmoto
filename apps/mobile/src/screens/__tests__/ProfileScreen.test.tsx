@@ -105,8 +105,19 @@ jest.mock("@/services/api", () => ({
   api: {
     getPublicProfile: jest.fn(),
     listUserBadges: jest.fn(),
+    listUserSharedRides: jest.fn(),
     uploadAvatar: jest.fn(),
     logout: jest.fn(),
+  },
+  ApiError: class ApiError extends Error {
+    status: number;
+    body: unknown;
+    constructor(message: string, status: number, body: unknown) {
+      super(message);
+      this.name = "ApiError";
+      this.status = status;
+      this.body = body;
+    }
   },
 }));
 
@@ -157,6 +168,12 @@ describe("ProfileScreen", () => {
         progress: { current: 1, bronze: 1, silver: 5, gold: 10 },
       },
     ]);
+    mockedApi.listUserSharedRides.mockResolvedValue({
+      items: [],
+      total: 0,
+      limit: 5,
+      offset: 0,
+    });
   });
 
   it("renders the rider's display name and follower/following counts after fetch", async () => {

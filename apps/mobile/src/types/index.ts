@@ -59,6 +59,48 @@ export interface FollowerListItem {
   followed_at: string;
 }
 
+/**
+ * #336: per-rider shared-ride card returned by
+ * `GET /users/:userId/shared-rides`. Drives the "Shared rides" section on
+ * both own-profile and view-profile screens. The wire shape mirrors the
+ * backend `UserSharedRideDto` — fields stay nullable when the underlying
+ * stat hasn't been computed yet so the UI can render placeholders.
+ */
+export interface UserSharedRide {
+  /** Underlying ride id — used to navigate into the ride detail screen. */
+  id: string;
+  share_token: string;
+  ride_type: string;
+  /**
+   * Whether the share is publicly visible. Always true for non-self viewers
+   * (private shares are filtered server-side); both states appear when the
+   * rider is viewing their own list so they can spot rides they later
+   * flipped to private.
+   */
+  is_public: boolean;
+  started_at: string;
+  ended_at: string | null;
+  distance_km: number | null;
+  avg_speed: number | null;
+  avg_road_quality: number | null;
+  avg_curviness: number | null;
+  duration_min: number | null;
+  view_count: number;
+  /** ISO 8601 timestamp of when the rider shared the ride (sort key). */
+  shared_at: string;
+  /** Polyline preview for profile cards. Null when the ride has no track. */
+  route_geometry: LatLng[] | null;
+}
+
+/** Paginated `GET /users/:userId/shared-rides` response. */
+export interface UserSharedRidesResponse {
+  items: UserSharedRide[];
+  /** Total matches for the rider visible to the viewer (ignores limit/offset). */
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 /** US-27: badge entry as returned by /users/:userId/badges. */
 export interface UserBadge {
   key: string;

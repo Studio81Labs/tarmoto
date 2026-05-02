@@ -5,6 +5,7 @@ import { UserContact } from '../../entities/user-contact.entity.js';
 import { UserFollow } from '../../entities/user-follow.entity.js';
 import { StorageModule } from '../storage/index.js';
 import { AccountModule } from '../account/index.js';
+import { SharingModule } from '../sharing/index.js';
 import { UsersController } from './users.controller.js';
 import { UsersService } from './users.service.js';
 
@@ -13,6 +14,7 @@ import { UsersService } from './users.service.js';
     TypeOrmModule.forFeature([User, UserContact, UserFollow]),
     StorageModule,
     AccountModule,
+    SharingModule,
   ],
   controllers: [UsersController],
   providers: [UsersService],

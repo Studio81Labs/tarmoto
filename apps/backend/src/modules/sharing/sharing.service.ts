@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, SelectQueryBuilder } from 'typeorm';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
+import { User } from '../../entities/user.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import {
   SharedRideResponseDto,
@@ -16,6 +17,9 @@ import {
   CommunityRidesResponseDto,
   CommunityRidesQueryDto,
   type CommunityRideSort,
+  UserSharedRideDto,
+  UserSharedRidesQueryDto,
+  UserSharedRidesResponseDto,
 } from './dto/sharing.dto.js';
 
 @Injectable()
@@ -25,6 +29,8 @@ export class SharingService {
     private readonly sharedRideRepo: Repository<SharedRide>,
     @InjectRepository(Ride)
     private readonly rideRepo: Repository<Ride>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
     private readonly privacy: PrivacyPreferencesService,
   ) {}
 
@@ -260,6 +266,74 @@ export class SharingService {
     };
   }
 
+  /**
+   * Per-rider list of shared rides for the profile screen (#336).
+   *
+   * Privacy gates mirror the read paths elsewhere in this module:
+   *   - soft-deleted owners 404 (don't surface identity during the
+   *     30-day grace window — same gate as `getByToken`)
+   *   - non-self viewer + `profile_visibility === 'private'` 404 so
+   *     callers can't side-channel "exists but hidden" vs "doesn't
+   *     exist"
+   *   - `riders-only` and `public` both pass — every caller of this
+   *     endpoint is authenticated (route is behind AuthGuard), so a
+   *     `riders-only` audience is always satisfied
+   *
+   * Per-share visibility:
+   *   - non-self viewers only see `is_public = true` rows (a private
+   *     share is the rider's "off" toggle on a per-ride basis)
+   *   - the rider viewing themselves sees both, so they can spot a
+   *     ride they shared but later flipped to private
+   *
+   * Sorted newest-first by `shared_at` (sr.created_at) with `sr.id`
+   * as a stable secondary key — paging stays reproducible if two
+   * shares land in the same microsecond.
+   */
+  async listForUser(
+    viewerId: string,
+    userId: string,
+    query: UserSharedRidesQueryDto,
+  ): Promise<UserSharedRidesResponseDto> {
+    const limit = query.limit ?? 20;
+    const offset = query.offset ?? 0;
+    const isSelf = viewerId === userId;
+
+    const owner = await this.userRepo.findOne({ where: { id: userId } });
+    if (!owner || owner.deleted_at != null) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (!isSelf) {
+      const ownerPrefs = await this.privacy.loadPreferences(userId);
+      if (ownerPrefs.profile_visibility === 'private') {
+        throw new NotFoundException('User not found');
+      }
+    }
+
+    const qb = this.sharedRideRepo
+      .createQueryBuilder('sr')
+      .innerJoinAndSelect('sr.ride', 'ride')
+      .where('sr.user_id = :userId', { userId });
+
+    if (!isSelf) {
+      qb.andWhere('sr.is_public = true');
+    }
+
+    qb.orderBy('sr.created_at', 'DESC')
+      .addOrderBy('sr.id', 'DESC')
+      .skip(offset)
+      .take(limit);
+
+    const [rows, total] = await qb.getManyAndCount();
+
+    return {
+      items: rows.map((sr) => this.toUserSharedRideDto(sr)),
+      total,
+      limit,
+      offset,
+    };
+  }
+
   private applySort(
     qb: SelectQueryBuilder<SharedRide>,
     sort: CommunityRideSort,
@@ -375,6 +449,28 @@ export class SharingService {
       avg_curviness: ride.avg_curviness ?? null,
       duration_min: this.calcDurationMin(ride),
       view_count: sr.view_count ?? 0,
+      route_geometry: this.toRoutePreviewGeometry(ride),
+    };
+  }
+
+  private toUserSharedRideDto(
+    sr: SharedRide & { ride: Ride },
+  ): UserSharedRideDto {
+    const ride = sr.ride;
+    return {
+      id: ride.id,
+      share_token: sr.share_token,
+      ride_type: ride.ride_type,
+      is_public: sr.is_public,
+      started_at: ride.started_at.toISOString(),
+      ended_at: ride.ended_at?.toISOString() ?? null,
+      distance_km: ride.distance_km,
+      avg_speed: ride.avg_speed,
+      avg_road_quality: ride.avg_road_quality,
+      avg_curviness: ride.avg_curviness ?? null,
+      duration_min: this.calcDurationMin(ride),
+      view_count: sr.view_count ?? 0,
+      shared_at: sr.created_at.toISOString(),
       route_geometry: this.toRoutePreviewGeometry(ride),
     };
   }
