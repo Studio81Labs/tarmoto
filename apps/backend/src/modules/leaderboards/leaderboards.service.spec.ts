@@ -335,4 +335,38 @@ describe('LeaderboardsService', () => {
     expect(sql).toMatch(/UNION ALL/);
     expect(sql).toMatch(/extra_me/);
   });
+
+  it('SQL ORDER BY after UNION only references columns in the SELECT lists', async () => {
+    mockDimensions([], [], []);
+
+    await service.getRegional({ currentUserId: 'me' });
+
+    const sql = dataSource.query.mock.calls[0][0] as string;
+    // PostgreSQL forbids ORDER BY referencing internal CTE columns after a
+    // UNION ALL — only the combined result's output columns are addressable.
+    // Forgetting that would crash every request with "column rn does not
+    // exist", and the mocked-DB unit tests can't catch it at runtime.
+    //
+    // The window function inside `ranked` also has `OVER (ORDER BY ...)`,
+    // so we anchor against the last `ORDER BY` in the string — that's the
+    // one applied to the UNION result.
+    const lastOrderBy = sql.lastIndexOf('ORDER BY');
+    expect(lastOrderBy).toBeGreaterThan(-1);
+    const orderBy = sql.slice(lastOrderBy + 'ORDER BY'.length);
+    // The output columns of either UNION branch are exactly these six.
+    const allowed = new Set([
+      'user_id',
+      'display_name',
+      'home_region',
+      'value',
+      'rank',
+      'extra_me',
+    ]);
+    const referenced = (orderBy.match(/\b[a-z_][a-z_0-9]*\b/gi) ?? []).filter(
+      (tok) => !['ASC', 'DESC', 'NULLS', 'FIRST', 'LAST'].includes(tok),
+    );
+    for (const tok of referenced) {
+      expect(allowed.has(tok)).toBe(true);
+    }
+  });
 });

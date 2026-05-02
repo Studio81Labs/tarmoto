@@ -148,6 +148,11 @@ export class LeaderboardsService {
     limit: number,
     currentUserId: string | null,
   ): Promise<RankedRow[]> {
+    // ORDER BY on a UNION ALL can only reference output columns of the
+    // combined result, not internal CTE columns — sorting by `value DESC,
+    // user_id ASC` reproduces the same order the `rn` row-number window
+    // imposes inside `ranked`, but using columns that exist in the SELECT
+    // list of both branches.
     const sql = `
       ${this.cteHeader(cfg)}
       SELECT user_id, display_name, home_region, value, rank, false AS extra_me
@@ -157,7 +162,7 @@ export class LeaderboardsService {
       SELECT user_id, display_name, home_region, value, rank, true AS extra_me
       FROM ranked
       WHERE $3::uuid IS NOT NULL AND user_id = $3::uuid AND rn > $2
-      ORDER BY extra_me ASC, rn ASC
+      ORDER BY extra_me ASC, value DESC, user_id ASC
     `;
     return await this.dataSource.query<RankedRow[]>(sql, [
       region,
