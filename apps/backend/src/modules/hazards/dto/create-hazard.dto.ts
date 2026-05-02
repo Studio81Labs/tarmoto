@@ -6,6 +6,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { IsHazardPhotoUrl } from './hazard-photo.dto.js';
 
 export const HAZARD_TYPES = [
   'pothole',
@@ -60,4 +61,14 @@ export class CreateHazardDto {
   @IsString()
   @MaxLength(500)
   note?: string;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'URL of a hazard photo hosted on Tarmoto media storage. Use ' +
+      'POST /hazards/photos to obtain this URL.',
+  })
+  @IsOptional()
+  @IsHazardPhotoUrl()
+  photo_url?: string;
 }

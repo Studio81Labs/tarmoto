@@ -37,6 +37,9 @@ export class HazardReport {
   @Column({ type: 'text', nullable: true })
   note!: string | null;
 
+  @Column({ type: 'text', nullable: true })
+  photo_url!: string | null;
+
   @Column({ type: 'int', default: 0 })
   confirmations!: number;
 

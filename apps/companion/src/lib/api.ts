@@ -444,6 +444,8 @@ export interface HazardResponse {
   hazard_type: string;
   severity: string;
   note: string | null;
+  /** Public URL of the rider-attached photo, when present. */
+  photo_url: string | null;
   confirmations: number;
   reporter: string | null;
   road_name: string | null;

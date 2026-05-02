@@ -8,12 +8,12 @@ import {
   Min,
   Max,
   MaxLength,
-  ValidateBy,
-  buildMessage,
-  type ValidationOptions,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { LOOPBACK_HOSTS } from '../../../common/loopback-hosts.js';
+import {
+  buildManagedPhotoUrlValidator,
+  isAllowedManagedPhotoUrl,
+} from '../../../common/managed-photo-url.js';
 
 export const MAX_REVIEW_PHOTOS = 5;
 export const MAX_REVIEW_PHOTO_BYTES = 5 * 1024 * 1024;
@@ -31,59 +31,16 @@ export const ALLOWED_REVIEW_PHOTO_TYPES: ReadonlyMap<string, string> = new Map([
   ['image/webp', '.webp'],
 ]);
 
-function isProductionEnv(): boolean {
-  // Mirror the runtime check the bootstrapper uses (`apps/backend/src/main.ts`)
-  // so the loopback-http allowance below stays in lockstep with the env that
-  // determines whether helmet's full CSP is on, etc.
-  return process.env.TARMOTO_NODE_ENV === 'production';
-}
-
 /**
- * Validate a photo URL against the same rule the response sanitizer enforces:
- * `https://` always wins. Plain `http://` is accepted only on loopback hosts
- * (IPv4 + IPv6) AND only outside production — local dev's
- * `req.protocol`-derived URLs need to round-trip through the create / update
- * DTO, but a production client must never persist a non-https URL. A stored
- * `http://localhost/...` would render as `<img src="http://localhost/...">`
- * in every viewer's browser, hitting each viewer's own machine (broken
- * images at best, SSRF-by-rendering at worst).
+ * Re-exported for callers that need the same protocol check on their
+ * own DB-loaded values (e.g. `sanitizeReviewPhotos`). The underlying
+ * rule lives in `common/managed-photo-url.ts` so review and hazard
+ * photo surfaces stay in lockstep — see that module's comment for
+ * the full https-vs-loopback rationale.
  */
-export function isAllowedReviewPhotoUrl(value: string): boolean {
-  let parsed: URL;
-  try {
-    parsed = new URL(value);
-  } catch {
-    return false;
-  }
-  if (parsed.hostname.length === 0) return false;
-  if (parsed.protocol === 'https:') return true;
-  if (parsed.protocol === 'http:') {
-    if (isProductionEnv()) return false;
-    return LOOPBACK_HOSTS.has(parsed.hostname);
-  }
-  return false;
-}
+export const isAllowedReviewPhotoUrl = isAllowedManagedPhotoUrl;
 
-const IS_REVIEW_PHOTO_URL = 'isReviewPhotoUrl';
-
-function IsReviewPhotoUrl(options?: ValidationOptions) {
-  return ValidateBy(
-    {
-      name: IS_REVIEW_PHOTO_URL,
-      validator: {
-        validate: (value: unknown): boolean =>
-          typeof value === 'string' && isAllowedReviewPhotoUrl(value.trim()),
-        defaultMessage: buildMessage(
-          (eachPrefix) =>
-            eachPrefix +
-            '$property must be an https URL (loopback http is only accepted in local development).',
-          options,
-        ),
-      },
-    },
-    options,
-  );
-}
+const IsReviewPhotoUrl = buildManagedPhotoUrlValidator('isReviewPhotoUrl');
 
 /**
  * Coerce a raw photos value from the DB into the DTO contract: keep only

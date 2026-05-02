@@ -8,10 +8,13 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { hasControlCharacters } from '../../common/control-characters.js';
-import { LOOPBACK_HOSTS } from '../../common/loopback-hosts.js';
+import {
+  resolveManagedPhoto,
+  type ManagedPhoto,
+} from '../../common/managed-photo-url.js';
+import { buildTrustedManagedOriginCheck } from '../../common/trusted-managed-origin.js';
 import { RoadReview } from '../../entities/road-review.entity.js';
 import { RoadReviewVote } from '../../entities/road-review-vote.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
@@ -33,106 +36,22 @@ const REVIEW_PHOTO_UPLOAD_DIR = join(
 );
 
 /**
- * Decide whether a `<scheme>://<host>` origin belongs to *our* upload
- * storage. The pathname-prefix check inside `resolveManagedReviewPhoto`
- * isn't enough on its own: a third-party URL like
- * `https://cdn.example.com/uploads/road-review-photos/...` would
- * otherwise be misclassified as managed, and the caller's ownership-
- * prefix check would either 400 spuriously or, for the cascade-delete
- * path, attempt a local `unlink` against a coincidentally-matching
- * filename in our managed directory. Treat as managed iff the origin
- * matches `TARMOTO_PUBLIC_BASE_URL` OR (outside production) the host
- * is loopback — same trust posture the upload endpoint uses when it
- * builds outgoing URLs.
- */
-function buildTrustedManagedOriginCheck(
-  config: ConfigService,
-): (parsed: URL) => boolean {
-  const configured = config.get<string>('TARMOTO_PUBLIC_BASE_URL')?.trim();
-  let configuredOrigin: string | null = null;
-  if (configured && configured.length > 0) {
-    try {
-      configuredOrigin = new URL(configured).origin;
-    } catch {
-      // Bad config falls through; the upload endpoint's own probe will
-      // surface the 500 with a clearer error than this resolver could.
-    }
-  }
-  return (parsed: URL): boolean => {
-    if (configuredOrigin && parsed.origin === configuredOrigin) return true;
-    // Loopback hosts are only trusted outside production — same rule
-    // `isAllowedReviewPhotoUrl` enforces, so a stored prod row that
-    // somehow points at localhost can't be silently deleted.
-    if (
-      process.env.TARMOTO_NODE_ENV !== 'production' &&
-      LOOPBACK_HOSTS.has(parsed.hostname)
-    ) {
-      return true;
-    }
-    return false;
-  };
-}
-
-interface ManagedPhoto {
-  /** Decoded basename (e.g. `seg-1-user-1-1700000000-uuid.jpg`). */
-  filename: string;
-  /** Resolved absolute path inside `REVIEW_PHOTO_UPLOAD_DIR`. */
-  filePath: string;
-}
-
-/**
- * Resolve a photo URL to its managed filename + on-disk path inside the
- * upload directory, or `null` when the URL is not one we own. Mirrors the
- * `users.service` avatar pattern: parse the URL, only honor it when the
- * origin is trusted (configured public base URL or a loopback dev host)
- * AND the pathname carries the managed prefix, and reject decoded
- * filenames that include path separators, control characters, or
- * `.`/`..` segments so a crafted `photos[]` entry can't make a cascade
- * delete escape the managed directory.
+ * Resolve a review photo URL to its managed filename + on-disk path
+ * inside the review-photos upload directory, or `null` when the URL
+ * is not one we own. Thin wrapper around the shared
+ * `resolveManagedPhoto` so the path-traversal guard stays
+ * single-sourced — see that helper's comment for the full
+ * separator/control-char/dot-segment rationale.
  */
 function resolveManagedReviewPhoto(
   photoUrl: string | null,
   isTrustedOrigin: (parsed: URL) => boolean,
 ): ManagedPhoto | null {
-  if (!photoUrl) return null;
-
-  let parsed: URL;
-  try {
-    parsed = new URL(photoUrl);
-  } catch {
-    // Treat relative URLs as untrusted: we never emit relative photo
-    // URLs from the upload endpoint, so anything without a scheme is
-    // either a legacy or third-party value that can't be cleaned up
-    // by the cascade.
-    return null;
-  }
-
-  if (!isTrustedOrigin(parsed)) return null;
-  if (!parsed.pathname.startsWith(REVIEW_PHOTO_PATH_PREFIX)) return null;
-
-  const encodedFilename = parsed.pathname.slice(
-    REVIEW_PHOTO_PATH_PREFIX.length,
-  );
-  if (!encodedFilename) return null;
-
-  let filename: string;
-  try {
-    filename = decodeURIComponent(encodedFilename);
-  } catch {
-    return null;
-  }
-  if (
-    filename === '.' ||
-    filename === '..' ||
-    filename !== basename(filename) ||
-    filename.includes('/') ||
-    filename.includes('\\') ||
-    hasControlCharacters(filename)
-  ) {
-    return null;
-  }
-
-  return { filename, filePath: join(REVIEW_PHOTO_UPLOAD_DIR, filename) };
+  return resolveManagedPhoto(photoUrl, {
+    pathPrefix: REVIEW_PHOTO_PATH_PREFIX,
+    uploadDir: REVIEW_PHOTO_UPLOAD_DIR,
+    isTrustedOrigin,
+  });
 }
 
 /**

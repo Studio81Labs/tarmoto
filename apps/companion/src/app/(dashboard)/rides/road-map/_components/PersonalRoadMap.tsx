@@ -10,10 +10,10 @@ import {
   useState,
 } from "react";
 import maplibregl, {
-  type ExpressionSpecification,
   type Map as MapLibreMap,
   type MapMouseEvent,
 } from "maplibre-gl";
+import type { ExpressionSpecification } from "@/lib/maplibre-expression";
 import { MapCanvas, type MapCanvasHandle } from "@/components/map/MapCanvas";
 import {
   DIM_LINE_COLOR,

@@ -1,6 +1,11 @@
 /* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { authGuardTestProviders } from '../auth/auth-test-providers.js';
 import { HazardsController } from './hazards.controller.js';
 import { HazardsService } from './hazards.service.js';
@@ -9,6 +14,7 @@ import { HazardResponseDto } from './dto/hazard-response.dto.js';
 describe('HazardsController', () => {
   let controller: HazardsController;
   let service: jest.Mocked<HazardsService>;
+  let configGet: jest.Mock;
 
   const mockResponse: HazardResponseDto = {
     id: '123e4567-e89b-12d3-a456-426614174000',
@@ -17,6 +23,7 @@ describe('HazardsController', () => {
     hazard_type: 'pothole',
     severity: 'medium',
     note: 'Big pothole',
+    photo_url: null,
     confirmations: 0,
     reporter: 'TestRider',
     road_name: 'D35',
@@ -33,12 +40,19 @@ describe('HazardsController', () => {
         .mockResolvedValue({ ...mockResponse, confirmations: 1 }),
       dismiss: jest.fn().mockResolvedValue(undefined),
       findAlongRoute: jest.fn().mockResolvedValue([mockResponse]),
+      uploadPhoto: jest.fn().mockResolvedValue({
+        photo_url:
+          'https://app.tarmoto.test/uploads/hazard-photos/user-1-1700000000000-abc.jpg',
+      }),
     };
+
+    configGet = jest.fn().mockReturnValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [HazardsController],
       providers: [
         { provide: HazardsService, useValue: mockService },
+        { provide: ConfigService, useValue: { get: configGet } },
         ...authGuardTestProviders,
       ],
     }).compile();
@@ -140,6 +154,104 @@ describe('HazardsController', () => {
       await controller.findAlongRoute(dto);
 
       expect(service.findAlongRoute).toHaveBeenCalledWith(dto);
+    });
+  });
+
+  describe('POST /hazards/photos (uploadPhoto)', () => {
+    it('should prefer TARMOTO_PUBLIC_BASE_URL over the request-derived host', async () => {
+      // Same TLS-terminator scenario as the review-photo controller
+      // tests: behind a reverse proxy `req.protocol` reports `http`,
+      // so the configured value is the source of truth.
+      configGet.mockImplementation((key: string) =>
+        key === 'TARMOTO_PUBLIC_BASE_URL'
+          ? 'https://api.tarmoto.app'
+          : undefined,
+      );
+      const file = {
+        mimetype: 'image/jpeg',
+        buffer: Buffer.from('jpg'),
+      } as Express.Multer.File;
+      const req = {
+        user: { userId: 'user-1' },
+        protocol: 'http',
+        get: jest.fn().mockReturnValue('internal.tarmoto.svc'),
+      } as never;
+
+      await controller.uploadPhoto(req, file);
+
+      expect(service.uploadPhoto).toHaveBeenCalledWith(
+        'user-1',
+        file,
+        'https://api.tarmoto.app',
+      );
+    });
+
+    it('should fall back to the request-derived host when TARMOTO_PUBLIC_BASE_URL is unset', async () => {
+      // Local-dev path: the API serves over plain http on localhost
+      // and `isAllowedHazardPhotoUrl` accepts loopback http outside
+      // production so the round-trip works.
+      configGet.mockReturnValue(undefined);
+      const file = {
+        mimetype: 'image/jpeg',
+        buffer: Buffer.from('jpg'),
+      } as Express.Multer.File;
+      const req = {
+        user: { userId: 'user-1' },
+        protocol: 'http',
+        get: jest.fn().mockReturnValue('localhost:3000'),
+      } as never;
+
+      await controller.uploadPhoto(req, file);
+
+      expect(service.uploadPhoto).toHaveBeenCalledWith(
+        'user-1',
+        file,
+        'http://localhost:3000',
+      );
+    });
+
+    it('should 500 in production when TARMOTO_PUBLIC_BASE_URL is unset', async () => {
+      const previous = process.env.TARMOTO_NODE_ENV;
+      process.env.TARMOTO_NODE_ENV = 'production';
+      configGet.mockReturnValue(undefined);
+      try {
+        const file = {
+          mimetype: 'image/jpeg',
+          buffer: Buffer.from('jpg'),
+        } as Express.Multer.File;
+        const req = {
+          user: { userId: 'user-1' },
+          protocol: 'https',
+          get: jest.fn().mockReturnValue('api.example.com'),
+        } as never;
+
+        await expect(controller.uploadPhoto(req, file)).rejects.toThrow(
+          InternalServerErrorException,
+        );
+        expect(service.uploadPhoto).not.toHaveBeenCalled();
+      } finally {
+        if (previous === undefined) {
+          delete process.env.TARMOTO_NODE_ENV;
+        } else {
+          process.env.TARMOTO_NODE_ENV = previous;
+        }
+      }
+    });
+
+    it('should reject when no file was uploaded', async () => {
+      // Multer hands us undefined when the multipart form has no `file`
+      // entry; the controller surfaces a 400 itself because the
+      // service-level mime-gate never gets a chance to run.
+      const req = {
+        user: { userId: 'user-1' },
+        protocol: 'https',
+        get: jest.fn().mockReturnValue('app.tarmoto.test'),
+      } as never;
+
+      await expect(controller.uploadPhoto(req, undefined)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(service.uploadPhoto).not.toHaveBeenCalled();
     });
   });
 });

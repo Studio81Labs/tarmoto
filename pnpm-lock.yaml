@@ -237,6 +237,9 @@ importers:
 
   apps/companion:
     dependencies:
+      '@maplibre/maplibre-gl-style-spec':
+        specifier: 24.8.1
+        version: 24.8.1
       '@opennextjs/cloudflare':
         specifier: ^1.19.5
         version: 1.19.5(next@16.2.4(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@playwright/test@1.59.1)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(wrangler@4.87.0)

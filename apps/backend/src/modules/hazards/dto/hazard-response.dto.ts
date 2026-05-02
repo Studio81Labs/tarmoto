@@ -25,6 +25,14 @@ export class HazardResponseDto {
   @ApiProperty({ nullable: true })
   note!: string | null;
 
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Public URL of the photo attached to this hazard, when present. ' +
+      'Hosted on Tarmoto media storage and safe to render directly.',
+  })
+  photo_url!: string | null;
+
   @ApiProperty()
   confirmations!: number;
 

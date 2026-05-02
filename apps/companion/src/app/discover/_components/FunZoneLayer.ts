@@ -1,8 +1,5 @@
-import type {
-  ExpressionSpecification,
-  GeoJSONSource,
-  Map as MapLibreMap,
-} from "maplibre-gl";
+import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
+import type { ExpressionSpecification } from "@/lib/maplibre-expression";
 import type { Feature, FeatureCollection, Polygon } from "geojson";
 import type { FunZoneListItem } from "@/lib/discover";
 

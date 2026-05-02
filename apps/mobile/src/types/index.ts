@@ -275,6 +275,12 @@ export interface Hazard {
   hazard_type: HazardType;
   severity: Severity;
   note: string | null;
+  /**
+   * Public URL of the photo attached to this hazard, when present.
+   * Hosted on Tarmoto media storage and safe to render directly via
+   * `<Image source={{ uri: photo_url }} />` in the hazard callout.
+   */
+  photo_url: string | null;
   confirmations: number;
   reporter: string | null;
   road_name: string | null;
