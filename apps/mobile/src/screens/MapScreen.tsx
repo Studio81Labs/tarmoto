@@ -61,8 +61,9 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import HazardReportFab from "@/components/HazardReportFab";
 import { api } from "@/services/api";
+import { hazardSocket } from "@/services/hazardSocket";
 import type { MapStackParamList } from "@/navigation/RootNavigator";
-import type { HazardType } from "@/types";
+import type { Hazard, HazardType } from "@/types";
 import { getDefaultDocsDir } from "@/services/offlineRegions";
 import {
   findBestOfflineRegion,
@@ -81,6 +82,7 @@ import {
   spacing,
 } from "@/theme";
 import {
+  applyHazardAlert,
   bboxFromVisibleBounds,
   buildQualityLineStyle,
   DEV_MAP_STYLE_URL,
@@ -89,6 +91,8 @@ import {
   funZoneLineStyle,
   funZonesToFeatureCollection,
   getQualityTileUrlTemplate,
+  hazardsToFeatureCollection,
+  hazardMarkerStyle,
   PASS_STATUS_COLORS,
   PASS_STATUS_LABELS,
   passesToFeatureCollection,
@@ -122,11 +126,13 @@ export default function MapScreen() {
   const center = useMapStore((s) => s.center);
   const zoom = useMapStore((s) => s.zoom);
   const showQualityOverlay = useMapStore((s) => s.showQualityOverlay);
+  const showHazardOverlay = useMapStore((s) => s.showHazardOverlay);
   const showPassesOverlay = useMapStore((s) => s.showPassesOverlay);
   const showFunZonesOverlay = useMapStore((s) => s.showFunZonesOverlay);
   const setCenter = useMapStore((s) => s.setCenter);
   const setZoom = useMapStore((s) => s.setZoom);
   const toggleQuality = useMapStore((s) => s.toggleQuality);
+  const toggleHazards = useMapStore((s) => s.toggleHazards);
   const togglePasses = useMapStore((s) => s.togglePasses);
   const toggleFunZones = useMapStore((s) => s.toggleFunZones);
   const minQuality = usePreferencesStore((s) => s.minQuality);
@@ -212,6 +218,91 @@ export default function MapScreen() {
       cancelled = true;
     };
   }, []);
+
+  // #341 — hazards on the map. Seed via REST so the rider sees the
+  // current state on cold load, then keep up to date via the
+  // `hazard:new` WS fan-out. Re-seed when the camera centre crosses a
+  // ~5 km threshold so a long pan eventually reflects what the gateway
+  // covers — anything tighter would thrash the network on every settle
+  // for no rider-visible benefit.
+  const [hazards, setHazards] = useState<Hazard[]>([]);
+  // Snapshot of the (lat, lng) we last fetched hazards for. Compared
+  // against current centre via a coarse great-circle distance to decide
+  // whether the next settle warrants a refetch.
+  const lastHazardFetchRef = useRef<{ lat: number; lng: number } | null>(null);
+
+  useEffect(() => {
+    if (!showHazardOverlay) {
+      // Soft reset on toggle-off so flipping back on doesn't briefly
+      // flash the previous viewport's pins before the new fetch lands.
+      lastHazardFetchRef.current = null;
+      setHazards((prev) => (prev.length === 0 ? prev : []));
+      return;
+    }
+
+    const last = lastHazardFetchRef.current;
+    const movedFar =
+      !last || Math.hypot(last.lat - center.lat, last.lng - center.lng) > 0.05; // ~5 km
+    if (!movedFar) return;
+
+    let cancelled = false;
+    // Stash a stable reference for THIS fetch's snapshot so the catch
+    // handler can tell whether a newer settle has since taken over the
+    // ref. Comparing against `last` (the pre-fetch value) would always
+    // be false because we overwrite the ref on the very next line, so
+    // a failed fetch would silently pin the coordinate and block the
+    // next retry until the rider moved >5 km.
+    const snapshot = { lat: center.lat, lng: center.lng };
+    lastHazardFetchRef.current = snapshot;
+    void api
+      .getHazards(center.lat, center.lng)
+      .then((next) => {
+        if (cancelled) return;
+        setHazards(next);
+      })
+      .catch(() => {
+        // Soft failure — clear our snapshot so the next settle retries
+        // rather than pinning a failed coordinate forever. Skip the
+        // clear if a newer fetch has already taken over the ref so we
+        // don't clobber an in-flight fetch's coordinate.
+        if (lastHazardFetchRef.current === snapshot) {
+          lastHazardFetchRef.current = null;
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showHazardOverlay, center.lat, center.lng]);
+
+  // Subscribe to the gateway fan-out while the overlay is on. The
+  // service handles AppState (foreground = connected, background =
+  // disconnected) and socket.io reconnects internally, so the screen
+  // only has to bind handlers and update the geographic subscription
+  // when the rider pans far enough.
+  useEffect(() => {
+    if (!showHazardOverlay) return;
+    hazardSocket.start(
+      { lat: center.lat, lng: center.lng },
+      {
+        onHazard: (event) => {
+          setHazards((prev) => applyHazardAlert(prev, event));
+        },
+      },
+    );
+    return () => {
+      hazardSocket.stop();
+    };
+  }, [showHazardOverlay]);
+
+  useEffect(() => {
+    if (!showHazardOverlay) return;
+    hazardSocket.updateSubscription({ lat: center.lat, lng: center.lng });
+  }, [showHazardOverlay, center.lat, center.lng]);
+
+  const hazardFc = useMemo(
+    () => hazardsToFeatureCollection(hazards),
+    [hazards],
+  );
 
   // US-6: fun-zone overlay state. Fetches are keyed on the viewport bbox
   // string so repeated region events at the same camera position don't
@@ -396,6 +487,17 @@ export default function MapScreen() {
           </GeoJSONSource>
         ) : null}
 
+        {showHazardOverlay && hazardFc.features.length > 0 ? (
+          <GeoJSONSource id="tarmoto-hazards" data={hazardFc}>
+            <Layer
+              type="circle"
+              id="tarmoto-hazards-markers"
+              source="tarmoto-hazards"
+              style={hazardMarkerStyle}
+            />
+          </GeoJSONSource>
+        ) : null}
+
         {showFunZonesOverlay && funZoneFc.features.length > 0 ? (
           <GeoJSONSource
             id="tarmoto-fun-zones"
@@ -425,6 +527,12 @@ export default function MapScreen() {
           label="Quality"
           active={showQualityOverlay}
           onPress={toggleQuality}
+        />
+        <ToggleFab
+          icon="alert-circle"
+          label="Hazards"
+          active={showHazardOverlay}
+          onPress={toggleHazards}
         />
         <ToggleFab
           icon="terrain"

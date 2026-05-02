@@ -1,4 +1,5 @@
 import {
+  applyHazardAlert,
   BELOW_THRESHOLD_OPACITY,
   bboxFromVisibleBounds,
   buildQualityLineStyle,
@@ -8,6 +9,9 @@ import {
   funZoneFillStyle,
   funZoneLineStyle,
   funZonesToFeatureCollection,
+  HAZARD_SEVERITY_COLORS,
+  hazardsToFeatureCollection,
+  hazardMarkerStyle,
   PASS_STATUS_COLORS,
   QUALITY_STEP_BREAKS,
   getQualityTileUrlTemplate,
@@ -16,7 +20,13 @@ import {
   qualityLineStyle,
 } from "../MapScreen.helpers";
 import { colors } from "@/theme";
-import type { FunZone, LatLng, MountainPass } from "@/types";
+import type {
+  FunZone,
+  Hazard,
+  HazardAlertEvent,
+  LatLng,
+  MountainPass,
+} from "@/types";
 
 function makePass(overrides: Partial<MountainPass> = {}): MountainPass {
   return {
@@ -422,5 +432,100 @@ describe("funZoneFillStyle / funZoneLineStyle", () => {
     const opacityAtLowZoom = expr[4] as number;
     const opacityAtHighZoom = expr[expr.length - 1] as number;
     expect(opacityAtLowZoom).toBeGreaterThan(opacityAtHighZoom);
+  });
+});
+
+// ── #341 Hazard helpers ──
+
+function makeHazard(overrides: Partial<Hazard> = {}): Hazard {
+  return {
+    id: "h-1",
+    lat: 49.8,
+    lng: 18.2,
+    hazard_type: "pothole",
+    severity: "medium",
+    note: null,
+    photo_url: null,
+    confirmations: 0,
+    reporter: null,
+    road_name: null,
+    created_at: "2026-05-02T10:00:00.000Z",
+    expires_at: "2026-05-03T10:00:00.000Z",
+    ...overrides,
+  };
+}
+
+describe("hazardsToFeatureCollection", () => {
+  it("emits one Point feature per hazard with severity + type on properties", () => {
+    const fc = hazardsToFeatureCollection([
+      makeHazard({ id: "a", severity: "high", hazard_type: "ice" }),
+      makeHazard({ id: "b", severity: "low", hazard_type: "gravel" }),
+    ]);
+    expect(fc.type).toBe("FeatureCollection");
+    expect(fc.features).toHaveLength(2);
+    expect(fc.features[0]?.properties).toEqual({
+      id: "a",
+      severity: "high",
+      hazard_type: "ice",
+    });
+    expect(fc.features[0]?.geometry).toEqual({
+      type: "Point",
+      coordinates: [18.2, 49.8],
+    });
+  });
+
+  it("handles an empty list without throwing", () => {
+    expect(hazardsToFeatureCollection([]).features).toEqual([]);
+  });
+});
+
+describe("hazardMarkerStyle", () => {
+  it("data-drives circleColor off the severity property", () => {
+    const expr = hazardMarkerStyle.circleColor as unknown as unknown[];
+    expect(expr[0]).toBe("match");
+    expect(expr[1]).toEqual(["get", "severity"]);
+    expect(expr).toContain(HAZARD_SEVERITY_COLORS.high);
+    expect(expr).toContain(HAZARD_SEVERITY_COLORS.medium);
+    expect(expr).toContain(HAZARD_SEVERITY_COLORS.low);
+  });
+});
+
+describe("applyHazardAlert", () => {
+  it("appends a hazard the local list doesn't yet have", () => {
+    const list: Hazard[] = [makeHazard({ id: "old" })];
+    const event: HazardAlertEvent = makeHazard({ id: "new" });
+    const next = applyHazardAlert(list, event);
+    expect(next).toHaveLength(2);
+    expect(next.map((h) => h.id)).toEqual(["old", "new"]);
+  });
+
+  it("replaces an existing hazard by id (covers the confirm rebroadcast path)", () => {
+    const list: Hazard[] = [makeHazard({ id: "h1", confirmations: 0 })];
+    const event: HazardAlertEvent = makeHazard({ id: "h1", confirmations: 3 });
+    const next = applyHazardAlert(list, event);
+    expect(next).toHaveLength(1);
+    expect(next[0]?.confirmations).toBe(3);
+  });
+
+  it("removes a hazard when the wire severity is 'dismissed'", () => {
+    const list: Hazard[] = [
+      makeHazard({ id: "keep" }),
+      makeHazard({ id: "drop" }),
+    ];
+    const event = {
+      ...makeHazard({ id: "drop" }),
+      severity: "dismissed" as const,
+    };
+    const next = applyHazardAlert(list, event);
+    expect(next.map((h) => h.id)).toEqual(["keep"]);
+  });
+
+  it("preserves referential equality when nothing changes", () => {
+    const list: Hazard[] = [makeHazard({ id: "h1" })];
+    const event = {
+      ...makeHazard({ id: "absent" }),
+      severity: "dismissed" as const,
+    };
+    expect(applyHazardAlert(list, event)).toBe(list);
   });
 });

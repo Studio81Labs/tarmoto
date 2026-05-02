@@ -17,7 +17,15 @@ import type {
 } from "@maplibre/maplibre-react-native";
 import { API_BASE_URL } from "@/config";
 import { colors, MIN_QUALITY_BOUNDS } from "@/theme";
-import type { FunZone, LatLng, MountainPass, PassStatus } from "@/types";
+import type {
+  FunZone,
+  Hazard,
+  HazardAlertEvent,
+  LatLng,
+  MountainPass,
+  PassStatus,
+  Severity,
+} from "@/types";
 
 /**
  * Return the MapLibre xyz tile URL template for the road-quality MVT layer.
@@ -384,3 +392,90 @@ export const funZoneLineStyle: LineLayerStyle = {
   lineOpacity: 0.85,
   lineJoin: "round",
 };
+
+// ── #341 Hazard markers ──
+
+/**
+ * Severity → marker fill color. Mirrors `severityColor` in CommuteScreen
+ * so a hazard pin on the map and its row in the commute list always
+ * read the same.
+ */
+export const HAZARD_SEVERITY_COLORS: Record<Severity, string> = {
+  high: colors.danger,
+  medium: colors.warning,
+  low: colors.info,
+};
+
+/**
+ * Build a GeoJSON FeatureCollection from a list of hazards. Carries
+ * `severity` on the feature properties so a single circle layer can
+ * colour markers data-driven via a `match` expression — no per-feature
+ * rendering churn.
+ */
+export function hazardsToFeatureCollection(
+  hazards: Hazard[],
+): GeoJSON.FeatureCollection<
+  GeoJSON.Point,
+  { id: string; severity: Severity; hazard_type: string }
+> {
+  return {
+    type: "FeatureCollection",
+    features: hazards.map((h) => ({
+      type: "Feature",
+      id: h.id,
+      properties: {
+        id: h.id,
+        severity: h.severity,
+        hazard_type: h.hazard_type,
+      },
+      geometry: { type: "Point", coordinates: [h.lng, h.lat] },
+    })),
+  };
+}
+
+/**
+ * Marker style for the hazard layer. Markers grow with zoom so they're
+ * still visible at country level but don't dominate at street level.
+ */
+export const hazardMarkerStyle: CircleLayerStyle = {
+  circleColor: [
+    "match",
+    ["get", "severity"],
+    "high",
+    HAZARD_SEVERITY_COLORS.high,
+    "medium",
+    HAZARD_SEVERITY_COLORS.medium,
+    HAZARD_SEVERITY_COLORS.low,
+  ],
+  circleRadius: ["interpolate", ["linear"], ["zoom"], 6, 4, 10, 6, 14, 9],
+  circleStrokeColor: colors.bg,
+  circleStrokeWidth: 2,
+  circleOpacity: 0.9,
+};
+
+/**
+ * Apply a `hazard:new` WebSocket event to a local hazard list and
+ * return the updated list (or the original list if nothing changed,
+ * to keep `===` referential equality stable for memoization).
+ *
+ * - `severity === "dismissed"` removes the hazard.
+ * - An incoming hazard whose `id` already exists is replaced (covers
+ *   the confirm path which re-broadcasts the full updated payload).
+ * - Otherwise the hazard is appended.
+ */
+export function applyHazardAlert(
+  hazards: Hazard[],
+  event: HazardAlertEvent,
+): Hazard[] {
+  if (event.severity === "dismissed") {
+    const next = hazards.filter((h) => h.id !== event.id);
+    return next.length === hazards.length ? hazards : next;
+  }
+  // After the dismissed branch above, the union narrows to `Severity`.
+  const incoming: Hazard = { ...event, severity: event.severity };
+  const idx = hazards.findIndex((h) => h.id === incoming.id);
+  if (idx === -1) return [...hazards, incoming];
+  const next = hazards.slice();
+  next[idx] = incoming;
+  return next;
+}

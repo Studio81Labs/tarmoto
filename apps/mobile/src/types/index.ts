@@ -288,6 +288,23 @@ export interface Hazard {
   expires_at: string;
 }
 
+/**
+ * Wire shape of the `hazard:new` WebSocket event broadcast by the
+ * backend `EventsGateway`. Structurally compatible with `Hazard` for
+ * create/confirm broadcasts so clients can render the marker directly
+ * from the event without a follow-up REST fetch.
+ *
+ * Dismissals reuse the same channel with `severity: "dismissed"` —
+ * clients use this to prune the hazard from the local map without a
+ * follow-up poll. The narrow `Severity` enum can't carry it, so the
+ * wire type widens severity to a union.
+ */
+export type HazardAlertSeverity = Severity | "dismissed";
+
+export interface HazardAlertEvent extends Omit<Hazard, "severity"> {
+  severity: HazardAlertSeverity;
+}
+
 // ── Trips ──
 
 export type TripStatus = "draft" | "planned" | "active" | "completed";

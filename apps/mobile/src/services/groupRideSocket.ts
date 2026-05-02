@@ -13,7 +13,7 @@
  */
 import { io, type Socket } from "socket.io-client";
 import { createMMKV } from "react-native-mmkv";
-import { API_BASE_URL } from "@/config";
+import { resolveEventsUrl } from "./eventsSocketUrl";
 import type {
   GroupEndedEvent,
   GroupJoinedEvent,
@@ -28,22 +28,6 @@ const tokenStorage = createMMKV({ id: "tarmoto-auth" });
 // (e.g. 1100ms) would let one in eight ticks through, so we mirror the
 // server value exactly and add a small jitter cushion below.
 const POSITION_PUBLISH_INTERVAL_MS = 1000;
-
-/**
- * Resolve the `/events` namespace URL from the API base. The API base
- * carries a `/v1` suffix that the gateway namespace does not, so we
- * strip the path before joining `/events`.
- */
-function resolveEventsUrl(): string {
-  try {
-    const url = new URL(API_BASE_URL);
-    return `${url.protocol}//${url.host}/events`;
-  } catch {
-    // Fallback for malformed bases (shouldn't happen at runtime, but
-    // keeps the import side-effect-free under test environments).
-    return `${API_BASE_URL.replace(/\/v1\/?$/, "")}/events`;
-  }
-}
 
 export interface GroupRideSocketHandlers {
   onPosition: (event: GroupPositionEvent) => void;
