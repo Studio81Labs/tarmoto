@@ -62,19 +62,16 @@ function makeHazard(overrides: Partial<Hazard> = {}): Hazard {
 }
 
 function makeNetworkError(): Error {
-  const err = new Error("Network Error") as Error & {
-    code?: string;
-    response?: unknown;
-  };
-  err.code = "ERR_NETWORK";
-  return err;
+  // Mirrors a fetch transport-level failure — message contains
+  // "network", `status` is absent. The classifier uses the latter
+  // to distinguish link-down from server-returned errors.
+  return new Error("Network Error");
 }
 
 function makeServerError(status: number): Error {
-  const err = new Error(`HTTP ${status}`) as Error & {
-    response?: { status: number };
-  };
-  err.response = { status };
+  // Mirrors the `ApiError` shape the typed-client facade throws.
+  const err = new Error(`HTTP ${status}`) as Error & { status?: number };
+  err.status = status;
   return err;
 }
 

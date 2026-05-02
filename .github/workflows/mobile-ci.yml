@@ -45,6 +45,17 @@ jobs:
       - name: Build shared package
         run: pnpm build:shared
 
+      - name: Generate OpenAPI client
+        # Mobile imports from @tarmoto/openapi, whose types.ts is
+        # generated from the backend's swagger spec (both types.ts and
+        # openapi.yaml are gitignored). Without this step the mobile
+        # typecheck fails with "Cannot find module './types.js'" — and
+        # because openapi-fetch's overloaded methods can't resolve
+        # path types when `paths` is unknown, callers' `bodySerializer`
+        # parameters silently fall back to implicit `any`, which
+        # produces additional spurious TS7006 errors downstream.
+        run: pnpm generate:api
+
       - name: Lint
         run: pnpm --filter @tarmoto/mobile lint
 

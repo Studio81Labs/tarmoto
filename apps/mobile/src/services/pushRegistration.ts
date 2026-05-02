@@ -26,8 +26,6 @@
 
 import { PermissionsAndroid, Platform } from "react-native";
 import DeviceInfo from "react-native-device-info";
-import axios, { type AxiosInstance } from "axios";
-import { API_BASE_URL } from "@/config";
 import { requestWithRationale } from "./permissions";
 
 type FirebaseMessagingModule =
@@ -97,16 +95,19 @@ async function requestPermission(
   return status === 1 || status === 2;
 }
 
+/**
+ * Callback bag the api facade hands `registerForPush` / `unregisterPush`.
+ * The facade owns transport (typed client for register, raw fetch for
+ * unregister so the device-token DELETE bypasses the 401 → refresh
+ * middleware on logout — see `unregisterPush` for the loop history).
+ */
 export interface PushRegistrationApi {
-  client: AxiosInstance;
-  /**
-   * Optional explicit bearer for the DELETE in `unregisterPush`. The
-   * logout flow snapshots the access token before clearing MMKV and
-   * passes it through here so the request can authenticate even after
-   * the local credentials have been wiped (and even if a concurrent
-   * relogin has populated MMKV with a different user's token).
-   */
-  bearer?: string | undefined;
+  registerDevice: (payload: {
+    platform: "ios" | "android";
+    token: string;
+    app_version?: string;
+  }) => Promise<void>;
+  unregisterDevice: (token: string) => Promise<void>;
 }
 
 /**
@@ -141,11 +142,7 @@ export async function registerForPush(api: PushRegistrationApi): Promise<void> {
     const appVersion = await safeAppVersion();
     if (mySession !== registrationSession) return;
 
-    await api.client.post("/me/devices", {
-      platform,
-      token,
-      app_version: appVersion,
-    });
+    await api.registerDevice({ platform, token, app_version: appVersion });
 
     // Final session check before mutating module state. A logout
     // that fired during the POST round-trip must NOT leave the
@@ -172,7 +169,7 @@ export async function registerForPush(api: PushRegistrationApi): Promise<void> {
       // version-gated dispatch decisions downstream.
       void safeAppVersion()
         .then((latestVersion) =>
-          api.client.post("/me/devices", {
+          api.registerDevice({
             platform,
             token: nextToken,
             app_version: latestVersion,
@@ -216,39 +213,28 @@ export async function unregisterPush(api: PushRegistrationApi): Promise<void> {
 
   if (!token) return;
 
-  // Use a bare `axios.delete` rather than the shared client so the
-  // request bypasses the instance interceptors entirely. The 401
-  // response interceptor on the shared client triggers a refresh +
-  // retry on auth failure — fine for normal traffic, but on the
-  // logout path it spins into an infinite loop:
+  // `unregisterDevice` is wired by the api facade to a bare `fetch`
+  // that bypasses the typed-client refresh middleware. The shared
+  // client's 401 → refresh → retry path spins into an infinite loop
+  // on this code path:
   //
   //   1. Snapshotted bearer is expired → server returns 401.
-  //   2. Interceptor calls `refreshToken()`.
+  //   2. Middleware calls `refreshAccessToken()`.
   //   3. If a different user logged in between `clearTokens()` and
   //      the 401 landing, MMKV holds their refresh token, so refresh
   //      succeeds.
-  //   4. Interceptor retries `error.config` — which still carries
-  //      our explicit Authorization header — and the request
-  //      interceptor's "honour explicit bearer" path skips MMKV,
-  //      so the retry uses the same expired snapshot, 401s again,
-  //      and the loop never terminates.
+  //   4. Middleware retries the cloned request, which still carries
+  //      our explicit Authorization header (the snapshotted
+  //      bearer), so the retry uses the same expired snapshot,
+  //      401s again, and the loop never terminates.
   //
-  // The bare axios call has no interceptors, so a 401 just rejects
-  // and the surrounding catch swallows it. The backend's dispatch
-  // path will soft-delete the token on its next attempted send
-  // anyway — the DELETE is best-effort cleanup, not a load-bearing
-  // operation.
+  // The raw-fetch path has no middleware: a 401 just resolves with
+  // a non-ok response and the surrounding catch swallows it. The
+  // backend's dispatch loop will soft-delete the token on its next
+  // attempted send anyway — the DELETE is best-effort cleanup, not
+  // load-bearing.
   try {
-    await axios.delete(`${API_BASE_URL}/me/devices`, {
-      // The token rides in the request body, not the URL — keeps a
-      // ~150-char opaque credential out of access logs and sidesteps
-      // Express path-match edge cases for variable-length values.
-      data: { token },
-      timeout: 15_000,
-      headers: api.bearer
-        ? { Authorization: `Bearer ${api.bearer}` }
-        : undefined,
-    });
+    await api.unregisterDevice(token);
   } catch {
     // Best-effort — backend will eventually soft-delete the token
     // on next dispatch failure if this call never lands.

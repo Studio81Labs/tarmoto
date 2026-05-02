@@ -24,11 +24,10 @@ import {
   View,
 } from "react-native";
 import Icon from "@react-native-vector-icons/material-design-icons";
-import { isAxiosError } from "axios";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
-import { api } from "@/services/api";
+import { ApiError, api } from "@/services/api";
 import Avatar from "@/components/Avatar";
 import StatTile from "@/components/StatTile";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
@@ -129,7 +128,7 @@ export default function ViewProfileScreen() {
       // 409 on follow (already following) and 404 on unfollow (not
       // following) are idempotent from the user's perspective — the
       // server is already in the state we wanted, so swallow them.
-      const status = isAxiosError(err) ? err.response?.status : undefined;
+      const status = err instanceof ApiError ? err.status : undefined;
       if (
         (!wasFollowing && status === 409) ||
         (wasFollowing && status === 404)

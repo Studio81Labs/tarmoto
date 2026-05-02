@@ -1,11 +1,11 @@
 /**
- * Shared axios error classifiers used by every offline-aware queue
- * (sensor uploads, hazard reports). Three buckets drive each queue's
- * drain behavior:
+ * Shared error classifiers used by every offline-aware queue (sensor
+ * uploads, hazard reports, review submission). Three buckets drive
+ * each queue's drain behavior:
  *
- *   - Network failures (no `response`) mean the link itself is down.
- *     Stop draining, flag `networkFailed`, and leave everything queued
- *     for next time.
+ *   - Network failures (no HTTP status, e.g. fetch threw before a
+ *     response landed) mean the link itself is down. Stop draining,
+ *     flag `networkFailed`, and leave everything queued for next time.
  *
  *   - Transient server failures (5xx, 408, 429) reach the server but
  *     indicate a temporary condition — an outage, a cold cache, a
@@ -18,33 +18,45 @@
  *     same bytes forever won't fix it. Callers bump attempts and drop
  *     after a conservative threshold so one bad report can't starve
  *     the rest.
+ *
+ * The classifiers accept the `ApiError` thrown by the typed facade
+ * (carries `.status`) AND raw `TypeError`s thrown by fetch when the
+ * link is down — that's what React Native surfaces for offline /
+ * timeout / DNS failures since fetch has no axios-style code field.
  */
 
-import type { AxiosError } from "axios";
+function getStatus(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const status = (error as { status?: unknown }).status;
+  return typeof status === "number" ? status : undefined;
+}
 
 export function isNetworkDownError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
-  const axiosErr = error as AxiosError;
-  if (axiosErr.response) return false;
-  const code = axiosErr.code ?? "";
-  if (
-    code === "ERR_NETWORK" ||
-    code === "ECONNABORTED" ||
-    code === "ETIMEDOUT" ||
-    code === "ENOTFOUND"
-  ) {
-    return true;
-  }
-  const message = typeof axiosErr.message === "string" ? axiosErr.message : "";
-  return /network|timeout|offline|disconnected/i.test(message);
+  // A response landed → not a transport-level failure.
+  if (getStatus(error) !== undefined) return false;
+  // Our 15 s request-timeout helper substitutes a `TimeoutError`
+  // for the generic `AbortError` whenever its timer fires, so
+  // matching by name routes ONLY timer-driven aborts to the
+  // queue's "queue for later" path. A generic `AbortError` from
+  // caller-driven cancellation (e.g. rider taps × on a photo
+  // upload) keeps its native shape and bubbles up to the caller —
+  // otherwise a future cancellable operation routed through one
+  // of the queues would silently re-queue cancelled requests.
+  const name = (error as { name?: unknown }).name;
+  if (typeof name === "string" && name === "TimeoutError") return true;
+  const message =
+    typeof (error as { message?: unknown }).message === "string"
+      ? (error as { message: string }).message
+      : "";
+  return /network|timeout|offline|disconnected|fetch/i.test(message);
 }
 
 export function isTransientServerError(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  const status = (error as AxiosError).response?.status;
+  const status = getStatus(error);
   if (typeof status !== "number") return false;
-  // 408 and 429 are explicitly retry-safe per RFC 9110; 5xx covers the
-  // catch-all server-side faults.
+  // 408 and 429 are explicitly retry-safe per RFC 9110; 5xx covers
+  // the catch-all server-side faults.
   return status === 408 || status === 429 || (status >= 500 && status < 600);
 }
 

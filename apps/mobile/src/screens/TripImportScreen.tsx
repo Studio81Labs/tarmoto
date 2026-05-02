@@ -26,7 +26,7 @@ import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Icon from "@react-native-vector-icons/material-design-icons";
 import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
-import { api } from "@/services/api";
+import { ApiError, api } from "@/services/api";
 import {
   buildSharedTripPreview,
   sharedSnapshotToImportRequest,
@@ -79,8 +79,7 @@ export default function TripImportScreen() {
       })
       .catch((err) => {
         if (cancelled) return;
-        const status =
-          (err as { response?: { status?: number } })?.response?.status ?? 0;
+        const status = err instanceof ApiError ? err.status : 0;
         setErrorMessage(
           status === 404
             ? "This handoff link has expired or was revoked."

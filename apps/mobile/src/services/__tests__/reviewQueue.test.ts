@@ -63,19 +63,16 @@ function makeReview(overrides: Partial<RoadReview> = {}): RoadReview {
 }
 
 function makeNetworkError(): Error {
-  const err = new Error("Network Error") as Error & {
-    code?: string;
-    response?: unknown;
-  };
-  err.code = "ERR_NETWORK";
-  return err;
+  // Mirrors a fetch transport-level failure — message contains
+  // "network", `status` is absent so the classifier flags it as
+  // link-down rather than a server-returned error.
+  return new Error("Network Error");
 }
 
 function makeServerError(status: number): Error {
-  const err = new Error(`HTTP ${status}`) as Error & {
-    response?: { status: number };
-  };
-  err.response = { status };
+  // Mirrors the `ApiError` shape the typed-client facade throws.
+  const err = new Error(`HTTP ${status}`) as Error & { status?: number };
+  err.status = status;
   return err;
 }
 
@@ -148,7 +145,7 @@ describe("reviewQueue", () => {
 
       await expect(
         submitReviewWithQueue(makePayload(), uploader, "user-1"),
-      ).rejects.toMatchObject({ response: { status: 409 } });
+      ).rejects.toMatchObject({ status: 409 });
       // 4xx must not silently land in the queue — the form needs to
       // see the rejection and switch to edit mode.
       expect(getPendingCount()).toBe(0);
