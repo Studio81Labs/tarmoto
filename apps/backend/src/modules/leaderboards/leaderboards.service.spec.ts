@@ -251,4 +251,18 @@ describe('LeaderboardsService', () => {
     expect(sql).toContain('profile_visibility');
     expect(sql).toContain("'private'");
   });
+
+  it('SQL inner-joins users to dim_values so inactive riders are not scanned', async () => {
+    mockTopRows([], [], []);
+
+    await service.getRegional({});
+
+    const sql = dataSource.query.mock.calls[0][0] as string;
+    // Driving the FROM with `dim_values` means only riders with a row in
+    // the per-dimension CTE are considered, instead of scanning every
+    // non-deleted user and filtering with `WHERE value > 0` afterwards.
+    expect(sql).toMatch(/FROM\s+dim_values/);
+    expect(sql).toMatch(/INNER JOIN\s+users/);
+    expect(sql).not.toMatch(/LEFT JOIN\s+dim_values/);
+  });
 });

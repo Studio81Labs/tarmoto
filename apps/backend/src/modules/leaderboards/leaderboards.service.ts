@@ -21,8 +21,9 @@ interface DimensionConfig {
   unit: string;
   /**
    * SELECT producing `(user_id, value)` per rider for this dimension. Wrapped
-   * as the `dim_values` CTE in `buildSql` so the privacy/region filter is
-   * applied identically for every dimension.
+   * as the `dim_values` CTE in `cteHeader` so the privacy/region filter is
+   * applied identically for every dimension. The GROUP BY only emits riders
+   * with at least one matching row, so the eligible CTE can INNER-JOIN it.
    */
   sourceCte: string;
 }
@@ -160,12 +161,19 @@ export class LeaderboardsService {
   }
 
   /**
-   * Common CTE prefix used by both the top-N and me-row queries. `dim_values`
-   * holds raw per-rider scores; `eligible` applies privacy / soft-delete /
-   * region filters; `ranked` projects the dense competition rank used in the
-   * response. Splitting the rank out lets a rider tied with another at the
-   * boundary still land on the same `rank` they'd see if both showed up
-   * adjacent in the top-N.
+   * Common CTE prefix used by both the top-N and me-row queries.
+   *
+   * `dim_values` produces per-rider scores from the dimension's source — its
+   * `GROUP BY user_id` already excludes riders with no activity, so joining
+   * `users` with INNER JOIN means we only ever pay for active riders rather
+   * than scanning every non-deleted account on each request. The privacy /
+   * soft-delete / region filters then narrow further. `ranked` projects the
+   * dense competition rank used in the response — splitting it from the
+   * filter step keeps ties consistent with the visible top-N order.
+   *
+   * `WHERE value > 0` in `ranked` is defence-in-depth: dim_values can in
+   * principle emit a zero (e.g. SUM of all-zero distances) and we never want
+   * those riders on the board.
    */
   private cteHeader(cfg: DimensionConfig): string {
     return `
@@ -175,9 +183,9 @@ export class LeaderboardsService {
           u.id AS user_id,
           u.display_name,
           u.home_region,
-          COALESCE(dv.value, 0)::float AS value
-        FROM users u
-        LEFT JOIN dim_values dv ON dv.user_id = u.id
+          dv.value::float AS value
+        FROM dim_values dv
+        INNER JOIN users u ON u.id = dv.user_id
         LEFT JOIN privacy_preferences pp ON pp.user_id = u.id
         WHERE u.deleted_at IS NULL
           AND (pp.profile_visibility IS NULL OR pp.profile_visibility <> 'private')
