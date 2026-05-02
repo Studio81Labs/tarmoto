@@ -330,3 +330,100 @@ export class CommunityRidesResponseDto {
   @ApiProperty()
   offset!: number;
 }
+
+export class UserSharedRidesQueryDto {
+  @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 50 })
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  @Min(1)
+  @Max(50)
+  limit?: number;
+
+  @ApiPropertyOptional({ default: 0, minimum: 0, maximum: 10_000 })
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  @Min(0)
+  @Max(10_000)
+  offset?: number;
+}
+
+export class UserSharedRideDto {
+  @ApiProperty({ description: 'Underlying ride id.' })
+  id!: string;
+
+  @ApiProperty()
+  share_token!: string;
+
+  @ApiProperty()
+  ride_type!: string;
+
+  @ApiProperty({
+    description:
+      'Whether the share is publicly visible. Always true for non-self viewers (private shares are filtered out server-side); both states appear when the rider is viewing their own list so they can spot private shares.',
+  })
+  is_public!: boolean;
+
+  @ApiProperty()
+  started_at!: string;
+
+  @ApiProperty({ nullable: true })
+  ended_at!: string | null;
+
+  @ApiProperty({ nullable: true })
+  distance_km!: number | null;
+
+  @ApiProperty({ nullable: true })
+  avg_speed!: number | null;
+
+  @ApiProperty({ nullable: true })
+  avg_road_quality!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Length-weighted average `curviness_score` across the road segments this ride crossed.',
+  })
+  avg_curviness!: number | null;
+
+  @ApiProperty({ nullable: true })
+  duration_min!: number | null;
+
+  @ApiProperty({
+    description:
+      'Number of times this shared ride has been viewed via its token.',
+  })
+  view_count!: number;
+
+  @ApiProperty({
+    description:
+      'ISO 8601 timestamp of when the rider shared this ride (not when the ride happened — see `started_at` for that). Drives the newest-first sort.',
+  })
+  shared_at!: string;
+
+  @ApiProperty({
+    nullable: true,
+    type: [RouteGeometryPointDto],
+    description:
+      'Polyline used for profile-card mini-previews. Null when the ride has no stored route geometry.',
+  })
+  route_geometry!: Array<{ lat: number; lng: number }> | null;
+}
+
+export class UserSharedRidesResponseDto {
+  @ApiProperty({ type: [UserSharedRideDto] })
+  items!: UserSharedRideDto[];
+
+  @ApiProperty({
+    description:
+      'Total number of shared rides for the rider visible to the viewer (ignores limit/offset). Lets clients render "page X of N".',
+  })
+  total!: number;
+
+  @ApiProperty()
+  limit!: number;
+
+  @ApiProperty()
+  offset!: number;
+}

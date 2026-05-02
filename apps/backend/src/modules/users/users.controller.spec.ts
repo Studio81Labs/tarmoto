@@ -7,12 +7,14 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { authGuardTestProviders } from '../auth/auth-test-providers.js';
+import { SharingService } from '../sharing/sharing.service.js';
 import { UsersController } from './users.controller.js';
 import { UsersService } from './users.service.js';
 
 describe('UsersController', () => {
   let controller: UsersController;
   let service: jest.Mocked<UsersService>;
+  let sharingService: jest.Mocked<SharingService>;
 
   const mockReq = {
     user: { userId: 'user-1' },
@@ -52,6 +54,30 @@ describe('UsersController', () => {
     is_self: false,
   };
 
+  const mockSharedRidesResponse = {
+    items: [
+      {
+        id: 'ride-1',
+        share_token: 'tok-1',
+        ride_type: 'free',
+        is_public: true,
+        started_at: '2026-04-14T09:00:00.000Z',
+        ended_at: '2026-04-14T10:30:00.000Z',
+        distance_km: 42.5,
+        avg_speed: 65.3,
+        avg_road_quality: 4.2,
+        avg_curviness: 3.1,
+        duration_min: 90,
+        view_count: 7,
+        shared_at: '2026-04-14T11:00:00.000Z',
+        route_geometry: null,
+      },
+    ],
+    total: 1,
+    limit: 20,
+    offset: 0,
+  };
+
   // Per-test config override for `TARMOTO_PUBLIC_BASE_URL` and
   // `TARMOTO_NODE_ENV`. Tests reach into this and call `set()` to
   // simulate prod / configured-base-url scenarios.
@@ -77,11 +103,15 @@ describe('UsersController', () => {
       updateContact: jest.fn().mockResolvedValue(mockContact),
       deleteContact: jest.fn().mockResolvedValue(undefined),
     };
+    const mockSharingService = {
+      listForUser: jest.fn().mockResolvedValue(mockSharedRidesResponse),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [UsersController],
       providers: [
         { provide: UsersService, useValue: mockService },
+        { provide: SharingService, useValue: mockSharingService },
         { provide: ConfigService, useValue: mockConfigService },
         ...authGuardTestProviders,
       ],
@@ -89,6 +119,7 @@ describe('UsersController', () => {
 
     controller = module.get<UsersController>(UsersController);
     service = module.get(UsersService);
+    sharingService = module.get(SharingService);
   });
 
   describe('GET /users/me', () => {
@@ -122,6 +153,41 @@ describe('UsersController', () => {
 
       await expect(
         controller.getPublicProfile(mockReq, 'missing-user'),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('GET /users/:userId/shared-rides', () => {
+    it('passes the viewer id, target id, and query through to the sharing service', async () => {
+      const result = await controller.listSharedRides(mockReq, 'user-2', {
+        limit: 10,
+        offset: 5,
+      });
+
+      expect(sharingService.listForUser).toHaveBeenCalledWith(
+        'user-1',
+        'user-2',
+        { limit: 10, offset: 5 },
+      );
+      expect(result.items).toHaveLength(1);
+      expect(result.total).toBe(1);
+    });
+
+    it('uses defaults when no query parameters are supplied', async () => {
+      await controller.listSharedRides(mockReq, 'user-2', {});
+
+      expect(sharingService.listForUser).toHaveBeenCalledWith(
+        'user-1',
+        'user-2',
+        {},
+      );
+    });
+
+    it('propagates NotFoundException for missing or hidden riders', async () => {
+      sharingService.listForUser.mockRejectedValueOnce(new NotFoundException());
+
+      await expect(
+        controller.listSharedRides(mockReq, 'missing-user', {}),
       ).rejects.toThrow(NotFoundException);
     });
   });

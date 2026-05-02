@@ -7,13 +7,21 @@ import { DEFAULT_PRIVACY_PREFERENCES } from '@tarmoto/shared';
 import { SharingService } from './sharing.service.js';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
+import { User } from '../../entities/user.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 
 describe('SharingService', () => {
   let service: SharingService;
   let sharedRideRepo: Partial<jest.Mocked<Repository<SharedRide>>>;
   let rideRepo: Partial<jest.Mocked<Repository<Ride>>>;
+  let userRepo: Partial<jest.Mocked<Repository<User>>>;
   let privacy: { loadPreferences: jest.Mock };
+
+  const mockOwner = {
+    id: 'user-1',
+    display_name: 'John Rider',
+    deleted_at: null,
+  } as unknown as User;
 
   const mockRide = {
     id: 'ride-1',
@@ -64,11 +72,12 @@ describe('SharingService', () => {
   };
 
   beforeEach(async () => {
-    // Reset view_count because the service mutates the loaded row in
-    // `getByToken` to reflect the post-increment value, and the mock row
-    // is shared by reference across the `findOne` return values.
+    // Reset mutable fields because the service mutates the loaded row
+    // (e.g. `getByToken` bumps view_count, `toggleShare` flips is_public)
+    // and the mock row is shared by reference across `findOne` returns.
     mockShared.view_count = 7;
     mockShared.embed_click_count = 3;
+    mockShared.is_public = true;
 
     sharedRideRepo = {
       findOne: jest.fn().mockResolvedValue(mockShared),
@@ -84,6 +93,9 @@ describe('SharingService', () => {
     rideRepo = {
       findOne: jest.fn().mockResolvedValue(mockRide),
     };
+    userRepo = {
+      findOne: jest.fn().mockResolvedValue(mockOwner),
+    };
     privacy = {
       loadPreferences: jest
         .fn()
@@ -95,6 +107,7 @@ describe('SharingService', () => {
         SharingService,
         { provide: getRepositoryToken(SharedRide), useValue: sharedRideRepo },
         { provide: getRepositoryToken(Ride), useValue: rideRepo },
+        { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: PrivacyPreferencesService, useValue: privacy },
       ],
     }).compile();
@@ -150,7 +163,7 @@ describe('SharingService', () => {
       rideRepo.findOne!.mockResolvedValueOnce({
         ...mockRide,
         status: 'active',
-      } as unknown as Ride);
+      });
 
       await expect(
         service.toggleShare('user-1', 'ride-1', true),
@@ -239,7 +252,7 @@ describe('SharingService', () => {
       const privateShared = {
         ...mockShared,
         is_public: false,
-      } as unknown as SharedRide;
+      };
       sharedRideRepo.findOne!.mockResolvedValueOnce(privateShared);
 
       const result = await service.getByToken(
@@ -701,6 +714,137 @@ describe('SharingService', () => {
 
       expect(mockQueryBuilder.skip).toHaveBeenCalledWith(40);
       expect(mockQueryBuilder.take).toHaveBeenCalledWith(10);
+    });
+  });
+
+  describe('listForUser', () => {
+    it('returns the rider page with default pagination and newest-first order', async () => {
+      const result = await service.listForUser('viewer-1', 'user-1', {});
+
+      expect(userRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+      });
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        'sr.user_id = :userId',
+        { userId: 'user-1' },
+      );
+      // Non-self viewer: only public shares are returned.
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'sr.is_public = true',
+      );
+      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
+        'sr.created_at',
+        'DESC',
+      );
+      // Stable secondary sort so paging is reproducible when two
+      // shares land in the same microsecond.
+      expect(mockQueryBuilder.addOrderBy).toHaveBeenCalledWith('sr.id', 'DESC');
+      expect(mockQueryBuilder.skip).toHaveBeenCalledWith(0);
+      expect(mockQueryBuilder.take).toHaveBeenCalledWith(20);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toEqual(
+        expect.objectContaining({
+          id: 'ride-1',
+          share_token: 'abc123def456abc123def456abc12345',
+          ride_type: 'free',
+          is_public: true,
+          distance_km: 42.5,
+          duration_min: 90,
+          view_count: 7,
+          shared_at: '2026-04-14T11:00:00.000Z',
+        }),
+      );
+      expect(result.items[0].route_geometry).toHaveLength(3);
+      expect(result.total).toBe(1);
+      expect(result.limit).toBe(20);
+      expect(result.offset).toBe(0);
+    });
+
+    it('does not filter by is_public when the viewer is the rider themselves', async () => {
+      // Self viewer should see private shares too so they can spot a
+      // ride they shared then later flipped to private.
+      await service.listForUser('user-1', 'user-1', {});
+
+      const isPublicCalls = mockQueryBuilder.andWhere.mock.calls.filter(
+        (call: unknown[]) => call[0] === 'sr.is_public = true',
+      );
+      expect(isPublicCalls).toHaveLength(0);
+    });
+
+    it('applies caller-specified limit and offset', async () => {
+      await service.listForUser('viewer-1', 'user-1', {
+        limit: 5,
+        offset: 10,
+      });
+
+      expect(mockQueryBuilder.skip).toHaveBeenCalledWith(10);
+      expect(mockQueryBuilder.take).toHaveBeenCalledWith(5);
+    });
+
+    it('throws NotFoundException when the rider does not exist', async () => {
+      userRepo.findOne!.mockResolvedValueOnce(null);
+
+      await expect(
+        service.listForUser('viewer-1', 'missing', {}),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws NotFoundException for a soft-deleted rider (US-62 grace window)', async () => {
+      userRepo.findOne!.mockResolvedValueOnce({
+        ...mockOwner,
+        deleted_at: new Date('2026-04-30T10:00:00Z'),
+      });
+
+      await expect(
+        service.listForUser('viewer-1', 'user-1', {}),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('hides the list from non-self viewers when the rider has set their profile to private (#279)', async () => {
+      privacy.loadPreferences.mockResolvedValueOnce({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        profile_visibility: 'private',
+      });
+
+      // 404 — same response as a missing rider so non-self callers
+      // can't side-channel "exists but hidden" vs "doesn't exist".
+      await expect(
+        service.listForUser('viewer-1', 'user-1', {}),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('still returns the list to the rider themselves when their profile is private', async () => {
+      privacy.loadPreferences.mockResolvedValueOnce({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        profile_visibility: 'private',
+      });
+
+      const result = await service.listForUser('user-1', 'user-1', {});
+
+      expect(result.items).toHaveLength(1);
+      // Self-lookup short-circuits the privacy check, so the privacy
+      // service mock isn't even consulted.
+      expect(privacy.loadPreferences).not.toHaveBeenCalled();
+    });
+
+    it('passes the riders-only audience through (every caller is authenticated)', async () => {
+      privacy.loadPreferences.mockResolvedValueOnce({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        profile_visibility: 'riders-only',
+      });
+
+      const result = await service.listForUser('viewer-1', 'user-1', {});
+
+      expect(result.items).toHaveLength(1);
+    });
+
+    it('returns an empty page when the rider has no shared rides', async () => {
+      mockQueryBuilder.getManyAndCount.mockResolvedValueOnce([[], 0]);
+
+      const result = await service.listForUser('viewer-1', 'user-1', {});
+
+      expect(result.items).toEqual([]);
+      expect(result.total).toBe(0);
     });
   });
 });

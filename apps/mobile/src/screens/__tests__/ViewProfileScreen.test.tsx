@@ -46,12 +46,23 @@ jest.mock("@react-navigation/native", () => ({
     setOptions: mockSetOptions,
   }),
   useRoute: () => ({ params: routeParams }),
+  // Mirrors the real useFocusEffect: run the callback on mount and
+  // whenever its identity changes. SharedRidesSection (rendered inside
+  // ViewProfileScreen) relies on it for its initial fetch.
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    const ReactLib = require("react");
+    ReactLib.useEffect(() => {
+      const cleanup = cb();
+      return typeof cleanup === "function" ? cleanup : undefined;
+    }, [cb]);
+  },
 }));
 
 jest.mock("@/services/api", () => ({
   api: {
     getPublicProfile: jest.fn(),
     listUserBadges: jest.fn(),
+    listUserSharedRides: jest.fn(),
     followUser: jest.fn(),
     unfollowUser: jest.fn(),
   },
@@ -96,6 +107,12 @@ describe("ViewProfileScreen", () => {
     jest.clearAllMocks();
     mockedApi.getPublicProfile.mockResolvedValue(buildProfile());
     mockedApi.listUserBadges.mockResolvedValue([]);
+    mockedApi.listUserSharedRides.mockResolvedValue({
+      items: [],
+      total: 0,
+      limit: 5,
+      offset: 0,
+    });
   });
 
   it("renders the rider profile after fetch", async () => {
