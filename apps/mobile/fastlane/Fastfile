@@ -132,14 +132,29 @@ platform :android do
       },
     )
 
+    # `upload_to_play_store` (supply) does not take an inline
+    # changelog — it reads them from
+    # `<metadata_path>/<lang>/changelogs/<versionCode>.txt`. Write
+    # the file before the upload so `skip_upload_changelogs: false`
+    # actually has something to send. Play caps the body at 500
+    # chars; cap on character count (not bytes) so multi-byte
+    # codepoints aren't cut in half.
+    metadata_root  = File.expand_path("../android/fastlane/metadata/android", __dir__)
+    changelog_dir  = File.join(metadata_root, "en-US", "changelogs")
+    FileUtils.mkdir_p(changelog_dir)
+    changelog_path = File.join(changelog_dir, "#{build_number.to_i}.txt")
+    File.write(changelog_path, release_notes.to_s.slice(0, 500))
+    UI.message("Wrote Android changelog to #{changelog_path}")
+
     upload_to_play_store(
-      track:                "internal",
-      aab:                  "android/app/build/outputs/bundle/release/app-release.aab",
-      json_key_data:        ENV.fetch("PLAY_STORE_JSON_KEY"),
-      skip_upload_apk:      true,
-      skip_upload_metadata: true,
-      skip_upload_changelogs: false,
-      release_status:       "completed",
+      track:                       "internal",
+      aab:                         "android/app/build/outputs/bundle/release/app-release.aab",
+      json_key_data:               ENV.fetch("PLAY_STORE_JSON_KEY"),
+      metadata_path:               metadata_root,
+      skip_upload_apk:             true,
+      skip_upload_metadata:        true,
+      skip_upload_changelogs:      false,
+      release_status:              "completed",
       changes_not_sent_for_review: true,
     )
   end
