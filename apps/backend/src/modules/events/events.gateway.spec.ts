@@ -831,7 +831,7 @@ describe('EventsGateway', () => {
       };
       expect(updateCall.last_position_at).toBeInstanceOf(Date);
       expect(updateCall.recent_path).toEqual([
-        { lat: 49.1, lng: 16.5, at: expect.any(String) as unknown as string },
+        { lat: 49.1, lng: 16.5, at: expect.any(String) as string },
       ]);
       // `client.to(room)` excludes sender — that's the AC for "fan out
       // to group members only" (the sender already has their own

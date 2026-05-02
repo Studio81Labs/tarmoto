@@ -6,56 +6,37 @@ import Link from "next/link";
 import {
   ArrowLeft,
   Award,
-  Bike as BikeIcon,
   Calendar,
-  Compass,
-  Gauge,
   Loader2,
   Lock,
   MapPin,
-  Moon,
-  Mountain,
-  Route,
   Trophy,
   UserCheck,
   UserPlus,
-  Wind,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
-import { formatDate, formatDistance, formatDuration } from "@/lib/utils";
 import {
-  buildStatTiles,
-  countEarnedBadges,
-  fetchRiderProfile,
+  fetchPublicBadges,
+  fetchPublicProfile,
   followRider,
-  formatHours,
+  formatCount,
   formatJoinedLabel,
   initialsFromName,
-  pickShowcaseBike,
   RiderProfileNotFoundError,
-  sortBadges,
   unfollowRider,
-  type RiderProfileDetail,
+  type PublicProfile,
+  type UserBadge,
 } from "@/lib/rider-profile";
-
-const BADGE_ICON: Record<string, React.ComponentType<{ size?: number }>> = {
-  compass: Compass,
-  mountain: Mountain,
-  moon: Moon,
-  wind: Wind,
-  trophy: Trophy,
-};
 
 export default function RiderProfilePage() {
   const { riderId } = useParams<{ riderId: string }>();
-  const currentUserId = useAuthStore((s) => s.user?.id);
   const accessToken = useAuthStore((s) => s.accessToken);
 
-  const [profile, setProfile] = useState<RiderProfileDetail | null>(null);
+  const [profile, setProfile] = useState<PublicProfile | null>(null);
+  const [badges, setBadges] = useState<UserBadge[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [usingDemo, setUsingDemo] = useState(false);
   const [followPending, setFollowPending] = useState(false);
   const [followError, setFollowError] = useState<string | null>(null);
   // Tracks whichever rider this page is currently rendering. Read inside
@@ -65,30 +46,28 @@ export default function RiderProfilePage() {
 
   useEffect(() => {
     if (!riderId) return;
-    // `cancelled` guards every setState inside the async chain, including the
-    // `.finally`, because AbortError is swallowed by the fetcher. Without this
-    // the old effect's `setLoading(false)` can land after the new effect has
-    // already called `setLoading(true)`, flashing stale content during a
-    // riderId or accessToken switch. Pattern matches the other ride pages.
+    // `cancelled` guards every setState inside the async chain because
+    // AbortError is swallowed by the typed openapi client. Without this
+    // the old effect's `setLoading(false)` can land after the new effect
+    // has called `setLoading(true)`, flashing stale content during a
+    // riderId or accessToken switch.
     let cancelled = false;
     const controller = new AbortController();
     activeRiderIdRef.current = riderId;
     setLoading(true);
     setNotFound(false);
     setError(null);
-    // Follow state is per-rider — drop any stale pending/error from the
-    // previous profile so a failed toggle on rider A doesn't show up on
-    // rider B's page after navigation.
     setFollowPending(false);
     setFollowError(null);
-    fetchRiderProfile(riderId, {
-      signal: controller.signal,
-      accessToken,
-    })
-      .then(({ profile: next, fromFallback }) => {
+
+    Promise.all([
+      fetchPublicProfile(riderId, { signal: controller.signal }),
+      fetchPublicBadges(riderId, { signal: controller.signal }),
+    ])
+      .then(([nextProfile, nextBadges]) => {
         if (cancelled) return;
-        setProfile(next);
-        setUsingDemo(fromFallback);
+        setProfile(nextProfile);
+        setBadges(nextBadges);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -107,27 +86,19 @@ export default function RiderProfilePage() {
       cancelled = true;
       controller.abort();
     };
+    // accessToken is captured by the typed client through the auth store; we
+    // still depend on it so a sign-in / sign-out re-issues the requests.
   }, [riderId, accessToken]);
 
-  const isSelf = profile?.id === currentUserId;
-  const showcaseBike = useMemo(
-    () => (profile ? pickShowcaseBike(profile.bikes) : null),
-    [profile],
+  const earnedBadges = useMemo(
+    () => badges.filter((b) => b.earned_at != null),
+    [badges],
   );
-  const statTiles = useMemo(
-    () => (profile ? buildStatTiles(profile.stats) : []),
-    [profile],
-  );
-  const badgeEntries = useMemo(
-    () => (profile ? sortBadges(profile.badges) : []),
-    [profile],
-  );
-  const earnedCount = countEarnedBadges(badgeEntries);
 
   async function handleFollowToggle() {
-    if (!profile || followPending || isSelf) return;
+    if (!profile || followPending || profile.is_self) return;
     const targetId = profile.id;
-    const wasFollowing = profile.isFollowing;
+    const wasFollowing = profile.is_following === true;
     // Optimistic toggle via the functional setter so a concurrent profile
     // re-fetch (e.g. token refresh) isn't silently overwritten by this stale
     // closure. The rider-id guard on every state update means a request
@@ -135,22 +106,36 @@ export default function RiderProfilePage() {
     // newly loaded profile or surface a stale error/pending flag.
     setProfile((prev) =>
       prev && prev.id === targetId
-        ? { ...prev, isFollowing: !wasFollowing }
+        ? {
+            ...prev,
+            is_following: !wasFollowing,
+            follower_count: Math.max(
+              0,
+              prev.follower_count + (wasFollowing ? -1 : 1),
+            ),
+          }
         : prev,
     );
     setFollowPending(true);
     setFollowError(null);
     try {
       if (wasFollowing) {
-        await unfollowRider(targetId, accessToken);
+        await unfollowRider(targetId);
       } else {
-        await followRider(targetId, accessToken);
+        await followRider(targetId);
       }
     } catch (err) {
       if (activeRiderIdRef.current !== targetId) return;
       setProfile((prev) =>
         prev && prev.id === targetId
-          ? { ...prev, isFollowing: wasFollowing }
+          ? {
+              ...prev,
+              is_following: wasFollowing,
+              follower_count: Math.max(
+                0,
+                prev.follower_count + (wasFollowing ? 1 : -1),
+              ),
+            }
           : prev,
       );
       const message =
@@ -186,41 +171,16 @@ export default function RiderProfilePage() {
         />
       ) : (
         <>
-          {usingDemo && (
-            <div className="mb-4 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2 text-xs text-slate-400">
-              Showing a preview profile — the community backend is still being
-              wired up, so these numbers are illustrative.
-            </div>
-          )}
-
           <Header
             profile={profile}
-            isSelf={isSelf}
             followPending={followPending}
             followError={followError}
             onToggleFollow={handleFollowToggle}
-            showcaseBike={showcaseBike}
           />
 
-          <StatsRow tiles={statTiles} totalHours={profile.stats.totalHours} />
+          <StatsRow profile={profile} earnedBadgeCount={earnedBadges.length} />
 
-          <BadgesSection
-            badges={badgeEntries}
-            earnedCount={earnedCount}
-            total={badgeEntries.length}
-          />
-
-          <CollectionsSection
-            collections={profile.collections}
-            displayName={profile.displayName}
-          />
-
-          <RecentRidesSection
-            rides={profile.recentRides}
-            displayName={profile.displayName}
-          />
-
-          <GarageSection bikes={profile.bikes} />
+          <BadgesSection badges={earnedBadges} totalBadges={badges.length} />
         </>
       )}
     </div>
@@ -230,33 +190,29 @@ export default function RiderProfilePage() {
 // ── Header ──
 
 interface HeaderProps {
-  profile: RiderProfileDetail;
-  isSelf: boolean;
+  profile: PublicProfile;
   followPending: boolean;
   followError: string | null;
   onToggleFollow: () => void;
-  showcaseBike: ReturnType<typeof pickShowcaseBike>;
 }
 
 function Header({
   profile,
-  isSelf,
   followPending,
   followError,
   onToggleFollow,
-  showcaseBike,
 }: HeaderProps) {
-  const initials = initialsFromName(profile.displayName);
+  const initials = initialsFromName(profile.display_name);
 
   return (
     <section className="rounded-2xl bg-slate-900 border border-slate-800 p-6 mb-6">
       <div className="flex flex-col sm:flex-row sm:items-center gap-5">
         <div className="shrink-0">
-          {profile.avatarUrl ? (
+          {profile.avatar_url ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={profile.avatarUrl}
-              alt={profile.displayName}
+              src={profile.avatar_url}
+              alt={profile.display_name}
               className="w-20 h-20 rounded-full object-cover border-2 border-slate-800"
             />
           ) : (
@@ -268,22 +224,17 @@ function Header({
 
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold text-white truncate">
-            {profile.displayName}
+            {profile.display_name}
           </h1>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-sm text-slate-400">
-            {profile.homeRegion && (
+            {profile.home_region && (
               <span className="inline-flex items-center gap-1">
-                <MapPin size={12} /> {profile.homeRegion}
+                <MapPin size={12} /> {profile.home_region}
               </span>
             )}
             <span className="inline-flex items-center gap-1">
-              <Calendar size={12} /> {formatJoinedLabel(profile.stats.joinedAt)}
+              <Calendar size={12} /> {formatJoinedLabel(profile.created_at)}
             </span>
-            {showcaseBike && (
-              <span className="inline-flex items-center gap-1">
-                <BikeIcon size={12} /> {showcaseBike.make} {showcaseBike.model}
-              </span>
-            )}
           </div>
           {profile.bio && (
             <p className="text-sm text-slate-300 mt-3 leading-relaxed">
@@ -293,7 +244,7 @@ function Header({
         </div>
 
         <div className="shrink-0 flex flex-col items-stretch sm:items-end gap-2">
-          {isSelf ? (
+          {profile.is_self ? (
             <Link
               href="/settings"
               className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm hover:bg-slate-700 transition"
@@ -305,21 +256,21 @@ function Header({
               type="button"
               onClick={onToggleFollow}
               disabled={followPending}
-              aria-pressed={profile.isFollowing}
+              aria-pressed={profile.is_following === true}
               className={`inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition disabled:opacity-60 disabled:cursor-not-allowed ${
-                profile.isFollowing
+                profile.is_following
                   ? "bg-slate-800 text-slate-200 hover:bg-slate-700"
                   : "bg-tarmoto-cyan text-slate-950 hover:bg-tarmoto-cyan/90"
               }`}
             >
               {followPending ? (
                 <Loader2 size={14} className="animate-spin" />
-              ) : profile.isFollowing ? (
+              ) : profile.is_following ? (
                 <UserCheck size={14} />
               ) : (
                 <UserPlus size={14} />
               )}
-              {profile.isFollowing ? "Following" : "Follow"}
+              {profile.is_following ? "Following" : "Follow"}
             </button>
           )}
           {followError && (
@@ -336,13 +287,18 @@ function Header({
 // ── Stats ──
 
 interface StatsRowProps {
-  tiles: ReturnType<typeof buildStatTiles>;
-  totalHours: number;
+  profile: PublicProfile;
+  earnedBadgeCount: number;
 }
 
-function StatsRow({ tiles, totalHours }: StatsRowProps) {
+function StatsRow({ profile, earnedBadgeCount }: StatsRowProps) {
+  const tiles = [
+    { key: "followers", label: "Followers", value: profile.follower_count },
+    { key: "following", label: "Following", value: profile.following_count },
+    { key: "badges", label: "Badges earned", value: earnedBadgeCount },
+  ];
   return (
-    <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+    <section className="grid grid-cols-3 gap-3 mb-6">
       {tiles.map((tile) => (
         <div
           key={tile.key}
@@ -352,13 +308,8 @@ function StatsRow({ tiles, totalHours }: StatsRowProps) {
             {tile.label}
           </p>
           <p className="text-xl font-bold text-white mt-1 tabular-nums">
-            {tile.value}
+            {formatCount(tile.value)}
           </p>
-          {tile.key === "totalRides" && (
-            <p className="text-xs text-slate-500 mt-1">
-              {formatHours(totalHours)} on the saddle
-            </p>
-          )}
         </div>
       ))}
     </section>
@@ -368,226 +319,52 @@ function StatsRow({ tiles, totalHours }: StatsRowProps) {
 // ── Badges ──
 
 interface BadgesSectionProps {
-  badges: ReturnType<typeof sortBadges>;
-  earnedCount: number;
-  total: number;
+  badges: UserBadge[];
+  totalBadges: number;
 }
 
-function BadgesSection({ badges, earnedCount, total }: BadgesSectionProps) {
+function BadgesSection({ badges, totalBadges }: BadgesSectionProps) {
   return (
     <section className="rounded-2xl bg-slate-900 border border-slate-800 p-6 mb-6">
       <header className="flex items-center justify-between mb-4">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-          <Award size={14} /> Badges
+          <Award size={14} /> Badges earned
         </h2>
         <span className="text-xs text-slate-500 tabular-nums">
-          {earnedCount} of {total} earned
+          {badges.length} of {totalBadges}
         </span>
       </header>
-      {badges.length === 0 ? (
+      {totalBadges === 0 ? (
         <p className="text-sm text-slate-500">No badges available yet.</p>
+      ) : badges.length === 0 ? (
+        <p className="text-sm text-slate-500 inline-flex items-center gap-2">
+          <Lock size={12} /> No badges earned yet.
+        </p>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-          {badges.map((entry) => {
-            const Icon = BADGE_ICON[entry.badge.icon] ?? Trophy;
-            return (
-              <div
-                key={entry.badge.id}
-                className={`rounded-xl border p-3 flex flex-col items-center text-center transition ${
-                  entry.earned
-                    ? "border-tarmoto-cyan/30 bg-tarmoto-cyan/5"
-                    : "border-slate-800 bg-slate-950/50 opacity-60"
-                }`}
-              >
-                <div
-                  className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 ${
-                    entry.earned
-                      ? "bg-tarmoto-cyan/20 text-tarmoto-cyan"
-                      : "bg-slate-800 text-slate-500"
-                  }`}
-                >
-                  {entry.earned ? <Icon size={20} /> : <Lock size={16} />}
-                </div>
-                <p className="text-xs font-semibold text-slate-200">
-                  {entry.badge.name}
-                </p>
-                <p className="text-[11px] text-slate-500 mt-1 leading-tight">
-                  {entry.badge.description}
-                </p>
-                {entry.earnedLabel && (
-                  <p className="text-[10px] text-tarmoto-cyan mt-1 tabular-nums">
-                    {entry.earnedLabel}
-                  </p>
-                )}
+          {badges.map((badge) => (
+            <div
+              key={badge.key}
+              className="rounded-xl border border-tarmoto-cyan/30 bg-tarmoto-cyan/5 p-3 flex flex-col items-center text-center"
+            >
+              <div className="w-10 h-10 rounded-full bg-tarmoto-cyan/20 text-tarmoto-cyan flex items-center justify-center mb-2">
+                <Trophy size={20} />
               </div>
-            );
-          })}
+              <p className="text-xs font-semibold text-slate-200">
+                {badge.name}
+              </p>
+              <p className="text-[11px] text-slate-500 mt-1 leading-tight">
+                {badge.description}
+              </p>
+              {badge.tier && (
+                <p className="text-[10px] uppercase tracking-wider text-tarmoto-cyan mt-1">
+                  {badge.tier}
+                </p>
+              )}
+            </div>
+          ))}
         </div>
       )}
-    </section>
-  );
-}
-
-// ── Collections ──
-
-interface CollectionsSectionProps {
-  collections: RiderProfileDetail["collections"];
-  displayName: string;
-}
-
-function CollectionsSection({
-  collections,
-  displayName,
-}: CollectionsSectionProps) {
-  return (
-    <section className="rounded-2xl bg-slate-900 border border-slate-800 p-6 mb-6">
-      <header className="flex items-center justify-between mb-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-          <Route size={14} /> Route collections
-        </h2>
-        <span className="text-xs text-slate-500 tabular-nums">
-          {collections.length}
-        </span>
-      </header>
-      {collections.length === 0 ? (
-        <p className="text-sm text-slate-500">
-          {displayName} hasn&apos;t published any route collections yet.
-        </p>
-      ) : (
-        <ul className="grid gap-2 sm:grid-cols-2">
-          {collections.map((collection) => (
-            <li key={collection.id}>
-              <Link
-                href={`/community/collections/${collection.id}`}
-                className="block rounded-xl bg-slate-950/40 border border-slate-800 p-4 hover:border-slate-700 transition"
-              >
-                <p className="font-medium text-white">{collection.name}</p>
-                {collection.description && (
-                  <p className="text-xs text-slate-400 mt-1 line-clamp-2">
-                    {collection.description}
-                  </p>
-                )}
-                <p className="text-[11px] text-slate-500 mt-2">
-                  {collection.routes.length} route
-                  {collection.routes.length === 1 ? "" : "s"} ·{" "}
-                  {formatDate(collection.createdAt)}
-                </p>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-// ── Activity feed ──
-
-interface RecentRidesSectionProps {
-  rides: RiderProfileDetail["recentRides"];
-  displayName: string;
-}
-
-function RecentRidesSection({ rides, displayName }: RecentRidesSectionProps) {
-  return (
-    <section className="rounded-2xl bg-slate-900 border border-slate-800 p-6 mb-6">
-      <header className="flex items-center justify-between mb-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-          <Gauge size={14} /> Recent shared rides
-        </h2>
-        <span className="text-xs text-slate-500 tabular-nums">
-          {rides.length}
-        </span>
-      </header>
-      {rides.length === 0 ? (
-        <p className="text-sm text-slate-500">
-          {displayName} hasn&apos;t shared any rides recently.
-        </p>
-      ) : (
-        <ul className="space-y-2">
-          {rides.map((ride) => (
-            <li
-              key={ride.id}
-              className="flex items-center gap-4 p-3 rounded-xl bg-slate-950/40 border border-slate-800"
-            >
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-white truncate">
-                  {ride.name ?? `Ride on ${formatDate(ride.startedAt)}`}
-                </p>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-slate-400">
-                  <span className="inline-flex items-center gap-1">
-                    <Calendar size={11} /> {formatDate(ride.startedAt)}
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <Route size={11} /> {formatDistance(ride.distanceKm)}
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <Gauge size={11} /> {formatDuration(ride.durationMinutes)}
-                  </span>
-                  {ride.region && (
-                    <span className="inline-flex items-center gap-1">
-                      <MapPin size={11} /> {ride.region}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div className="shrink-0 text-right">
-                <p className="text-xs text-slate-500">Avg quality</p>
-                <p className="text-sm font-semibold text-white tabular-nums">
-                  {ride.avgQuality.toFixed(1)} / 5
-                </p>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-// ── Garage ──
-
-interface GarageSectionProps {
-  bikes: RiderProfileDetail["bikes"];
-}
-
-function GarageSection({ bikes }: GarageSectionProps) {
-  if (bikes.length === 0) return null;
-  return (
-    <section className="rounded-2xl bg-slate-900 border border-slate-800 p-6">
-      <header className="flex items-center justify-between mb-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-          <BikeIcon size={14} /> Garage
-        </h2>
-        <span className="text-xs text-slate-500 tabular-nums">
-          {bikes.length}
-        </span>
-      </header>
-      <ul className="grid gap-2 sm:grid-cols-2">
-        {bikes.map((bike) => (
-          <li
-            key={bike.id}
-            className="flex items-center gap-3 p-3 rounded-xl bg-slate-950/40 border border-slate-800"
-          >
-            <div className="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center text-slate-400 shrink-0">
-              <BikeIcon size={18} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-medium text-white truncate">
-                {bike.make} {bike.model}
-              </p>
-              <p className="text-xs text-slate-500 tabular-nums">
-                {bike.year} · {Math.round(bike.totalKm).toLocaleString()} km
-              </p>
-            </div>
-            {bike.isActive && (
-              <span className="text-[10px] uppercase tracking-wider text-tarmoto-cyan bg-tarmoto-cyan/10 rounded-full px-2 py-0.5">
-                Active
-              </span>
-            )}
-          </li>
-        ))}
-      </ul>
     </section>
   );
 }
@@ -598,8 +375,8 @@ function ProfileSkeleton() {
   return (
     <div className="space-y-6">
       <div className="h-40 rounded-2xl bg-slate-900 border border-slate-800 animate-pulse" />
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[1, 2, 3, 4].map((i) => (
+      <div className="grid grid-cols-3 gap-3">
+        {[1, 2, 3].map((i) => (
           <div
             key={i}
             className="h-20 rounded-xl bg-slate-900 border border-slate-800 animate-pulse"
