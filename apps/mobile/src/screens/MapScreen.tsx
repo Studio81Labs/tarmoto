@@ -246,7 +246,14 @@ export default function MapScreen() {
     if (!movedFar) return;
 
     let cancelled = false;
-    lastHazardFetchRef.current = { lat: center.lat, lng: center.lng };
+    // Stash a stable reference for THIS fetch's snapshot so the catch
+    // handler can tell whether a newer settle has since taken over the
+    // ref. Comparing against `last` (the pre-fetch value) would always
+    // be false because we overwrite the ref on the very next line, so
+    // a failed fetch would silently pin the coordinate and block the
+    // next retry until the rider moved >5 km.
+    const snapshot = { lat: center.lat, lng: center.lng };
+    lastHazardFetchRef.current = snapshot;
     void api
       .getHazards(center.lat, center.lng)
       .then((next) => {
@@ -254,9 +261,11 @@ export default function MapScreen() {
         setHazards(next);
       })
       .catch(() => {
-        // Soft failure — clear the snapshot so the next settle retries
-        // rather than pinning a failed coordinate forever.
-        if (lastHazardFetchRef.current === last) {
+        // Soft failure — clear our snapshot so the next settle retries
+        // rather than pinning a failed coordinate forever. Skip the
+        // clear if a newer fetch has already taken over the ref so we
+        // don't clobber an in-flight fetch's coordinate.
+        if (lastHazardFetchRef.current === snapshot) {
           lastHazardFetchRef.current = null;
         }
       });
