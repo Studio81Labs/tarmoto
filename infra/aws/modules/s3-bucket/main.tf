@@ -14,15 +14,35 @@ variable "versioning_enabled" {
   type    = bool
   default = false
 }
-variable "lifecycle_expiration_days" {
-  description = "Days after which non-current and incomplete objects are expired. 0 disables."
+variable "multipart_abort_days" {
+  description = "Days after which incomplete multipart uploads are aborted. Set 0 to disable; default 7 keeps abandoned uploads from accumulating storage cost."
   type        = number
-  default     = 0
+  default     = 7
+}
+variable "noncurrent_version_expiration_days" {
+  description = "Days after which non-current object versions are expired. Has no effect unless versioning_enabled = true. Set 0 to disable."
+  type        = number
+  default     = 30
+}
+variable "lifecycle_rules" {
+  description = "Per-prefix expiration rules. Each entry expires the current version of objects under prefix after expiration_days. Use this for buckets where part of the contents (e.g. exports/) should auto-expire while the rest is retained."
+  type = list(object({
+    id              = string
+    prefix          = optional(string, "")
+    expiration_days = number
+  }))
+  default = []
 }
 variable "cors_allowed_origins" {
   description = "Origins permitted for browser CORS. Empty disables CORS entirely."
   type        = list(string)
   default     = []
+}
+
+locals {
+  has_multipart_rule        = var.multipart_abort_days > 0
+  has_noncurrent_rule       = var.versioning_enabled && var.noncurrent_version_expiration_days > 0
+  has_any_lifecycle_content = local.has_multipart_rule || local.has_noncurrent_rule || length(var.lifecycle_rules) > 0
 }
 
 resource "aws_s3_bucket" "this" {
@@ -56,25 +76,50 @@ resource "aws_s3_bucket_public_access_block" "this" {
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "this" {
-  count  = var.lifecycle_expiration_days > 0 ? 1 : 0
+  count  = local.has_any_lifecycle_content ? 1 : 0
   bucket = aws_s3_bucket.this.id
 
-  rule {
-    id     = "expire-noncurrent"
-    status = "Enabled"
+  dynamic "rule" {
+    for_each = local.has_multipart_rule ? [1] : []
+    content {
+      id     = "abort-incomplete-multipart"
+      status = "Enabled"
 
-    filter {}
+      filter {}
 
-    abort_incomplete_multipart_upload {
-      days_after_initiation = 7
+      abort_incomplete_multipart_upload {
+        days_after_initiation = var.multipart_abort_days
+      }
     }
+  }
 
-    noncurrent_version_expiration {
-      noncurrent_days = var.lifecycle_expiration_days
+  dynamic "rule" {
+    for_each = local.has_noncurrent_rule ? [1] : []
+    content {
+      id     = "expire-noncurrent-versions"
+      status = "Enabled"
+
+      filter {}
+
+      noncurrent_version_expiration {
+        noncurrent_days = var.noncurrent_version_expiration_days
+      }
     }
+  }
 
-    expiration {
-      days = var.lifecycle_expiration_days
+  dynamic "rule" {
+    for_each = { for r in var.lifecycle_rules : r.id => r }
+    content {
+      id     = rule.value.id
+      status = "Enabled"
+
+      filter {
+        prefix = rule.value.prefix
+      }
+
+      expiration {
+        days = rule.value.expiration_days
+      }
     }
   }
 }
