@@ -546,9 +546,11 @@ ElastiCache Redis:
 
 The `companion-deploy.yml` workflow ships the companion as a
 single Cloudflare Worker via `@opennextjs/cloudflare` (Workers +
-Static Assets). It is gated behind a repo variable so it lands as
-scaffolding without blocking every PR before the Cloudflare
-account is wired up. To enable:
+Static Assets). It is gated behind a `COMPANION_DEPLOY_ENABLED`
+repo variable, which doubles as a kill switch — flip it back to
+`false` to halt PR previews and prod deploys without a code
+change (e.g. during a Cloudflare incident or while rotating the
+API token). To enable:
 
 1. Set `COMPANION_DEPLOY_ENABLED=true` under
    **Settings → Secrets and variables → Actions → Variables**.
