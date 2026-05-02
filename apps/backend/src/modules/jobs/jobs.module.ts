@@ -3,11 +3,14 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from '../../entities/user.entity.js';
+import { WeatherAlertDispatch } from '../../entities/weather-alert-dispatch.entity.js';
 import { HazardsModule } from '../hazards/index.js';
 import { BadgesModule } from '../badges/index.js';
 import { AccountModule } from '../account/index.js';
 import { DataExportModule } from '../account/data-export/data-export.module.js';
 import { RoadsModule } from '../roads/index.js';
+import { PushModule } from '../push/push.module.js';
+import { WeatherModule } from '../weather/weather.module.js';
 import { ALL_QUEUE_NAMES } from './jobs.constants.js';
 import { buildJobsConfig, type JobsConfig } from './jobs.config.js';
 import { JOBS_CONFIG_TOKEN } from './jobs.tokens.js';
@@ -24,6 +27,7 @@ import { AccountDeletionFinalizeProcessor } from './processors/account-deletion-
 import { FunzoneRecomputeProcessor } from './processors/funzone-recompute.processor.js';
 import { PushNotificationProcessor } from './processors/push-notification.processor.js';
 import { LocationRetentionSweepProcessor } from './processors/location-retention-sweep.processor.js';
+import { WeatherAlertSweepProcessor } from './processors/weather-alert-sweep.processor.js';
 
 const JOBS_CONFIG_PROVIDER: Provider = {
   provide: JOBS_CONFIG_TOKEN,
@@ -41,13 +45,14 @@ const PROCESSOR_PROVIDERS: Provider[] = [
   FunzoneRecomputeProcessor,
   PushNotificationProcessor,
   LocationRetentionSweepProcessor,
+  WeatherAlertSweepProcessor,
 ];
 
 /**
  * Background job system (BullMQ on Redis). Owns:
  *
  *   - shared Redis connection (re-uses existing TARMOTO_REDIS_* env vars);
- *   - eight named queues (see `jobs.constants.ts`);
+ *   - ten named queues (see `jobs.constants.ts`);
  *   - the `JobsScheduler` that registers recurring schedules on boot;
  *   - the `JobsProducer` that the rest of the app uses to enqueue work;
  *   - per-queue processors;
@@ -84,12 +89,14 @@ export class JobsModule {
       module: JobsModule,
       imports: [
         ConfigModule,
-        TypeOrmModule.forFeature([User]),
+        TypeOrmModule.forFeature([User, WeatherAlertDispatch]),
         HazardsModule,
         BadgesModule,
         AccountModule,
         DataExportModule,
         RoadsModule,
+        PushModule,
+        WeatherModule,
         BullModule.forRootAsync({
           imports: [ConfigModule],
           inject: [ConfigService],

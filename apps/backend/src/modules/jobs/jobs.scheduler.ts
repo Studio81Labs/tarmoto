@@ -58,6 +58,8 @@ export class JobsScheduler implements OnApplicationBootstrap {
     private readonly funzoneRecompute: Queue,
     @InjectQueue(QUEUE_NAMES.LOCATION_RETENTION_SWEEP)
     private readonly locationRetentionSweep: Queue,
+    @InjectQueue(QUEUE_NAMES.WEATHER_ALERT_SWEEP)
+    private readonly weatherAlertSweep: Queue,
     @Inject(JOBS_CONFIG_TOKEN)
     private readonly config: JobsConfig,
   ) {}
@@ -125,6 +127,12 @@ export class JobsScheduler implements OnApplicationBootstrap {
         name: JOB_NAMES.LOCATION_RETENTION_SWEEP_RUN,
         pattern: RECURRING_PATTERNS.DAILY_0400,
         description: 'daily privacy retention sweep (#279)',
+      },
+      {
+        queue: this.weatherAlertSweep,
+        name: JOB_NAMES.WEATHER_ALERT_SWEEP_RUN,
+        pattern: RECURRING_PATTERNS.EVERY_15_MINUTES,
+        description: 'severe-weather push sweep for active riders (#333)',
       },
     ];
   }
