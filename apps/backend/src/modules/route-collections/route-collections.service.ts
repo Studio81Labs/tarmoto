@@ -9,11 +9,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { RouteCollection } from '../../entities/route-collection.entity.js';
 import { RouteCollectionItem } from '../../entities/route-collection-item.entity.js';
+import { RouteCollectionFollow } from '../../entities/route-collection-follow.entity.js';
 import {
   AddRouteCollectionItemDto,
   CreateRouteCollectionDto,
   RouteCollectionDetailDto,
+  RouteCollectionFollowResponseDto,
   RouteCollectionItemResponseDto,
+  RouteCollectionLibraryResponseDto,
   RouteCollectionListResponseDto,
   RouteCollectionSummaryDto,
   UpdateRouteCollectionDto,
@@ -29,6 +32,8 @@ export class RouteCollectionsService {
     private readonly collectionRepo: Repository<RouteCollection>,
     @InjectRepository(RouteCollectionItem)
     private readonly itemRepo: Repository<RouteCollectionItem>,
+    @InjectRepository(RouteCollectionFollow)
+    private readonly followRepo: Repository<RouteCollectionFollow>,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -68,6 +73,66 @@ export class RouteCollectionsService {
     return { items, total: items.length };
   }
 
+  /**
+   * Owned + followed collections in one payload. The dashboard library page
+   * renders both lists from a single round trip; the previous shape (one call
+   * per list) opened a flicker window where the two arrived out of order.
+   *
+   * Followed collections that have been demoted back to `private` since the
+   * follow was created are filtered out — the slug is no longer dereferenceable
+   * so showing them in the library would link to a 404. The follow row stays
+   * in the table so re-promoting the collection re-surfaces it without the
+   * viewer needing to re-follow.
+   */
+  async listLibrary(
+    userId: string,
+  ): Promise<RouteCollectionLibraryResponseDto> {
+    const owned = (await this.listMine(userId)).items;
+
+    // Followed: join through the follow table → collection → item count, with
+    // the same id-keyed pairing trick as listMine. Filtered to non-private,
+    // non-soft-deleted owners so the UI never links to a 404.
+    const rows = await this.collectionRepo
+      .createQueryBuilder('c')
+      .innerJoin(
+        RouteCollectionFollow,
+        'f',
+        'f.collection_id = c.id AND f.user_id = :userId',
+        { userId },
+      )
+      .leftJoin('c.items', 'i')
+      .leftJoin('c.owner', 'owner')
+      .where("c.visibility <> 'private'")
+      .andWhere('owner.deleted_at IS NULL')
+      .select([
+        'c.id',
+        'c.owner_id',
+        'c.title',
+        'c.description',
+        'c.visibility',
+        'c.slug',
+        'c.created_at',
+        'c.updated_at',
+      ])
+      .addSelect('COUNT(i.id)', 'item_count')
+      .addSelect('f.created_at', 'followed_at')
+      .groupBy('c.id')
+      .addGroupBy('f.created_at')
+      .orderBy('f.created_at', 'DESC')
+      .getRawAndEntities();
+
+    const countById = new Map<string, number>();
+    for (const raw of rows.raw as { c_id?: string; item_count?: string }[]) {
+      if (raw.c_id) countById.set(raw.c_id, Number(raw.item_count ?? 0));
+    }
+
+    const followed = rows.entities.map((c) =>
+      this.toSummaryResponse(c, countById.get(c.id) ?? 0),
+    );
+
+    return { owned, followed };
+  }
+
   async create(
     userId: string,
     dto: CreateRouteCollectionDto,
@@ -92,7 +157,7 @@ export class RouteCollectionsService {
       where: { id: created.id },
       relations: ['owner'],
     });
-    return this.toDetailResponse(withOwner ?? created, []);
+    return this.toDetailResponse(withOwner ?? created, [], userId, false);
   }
 
   async getOwned(
@@ -113,10 +178,15 @@ export class RouteCollectionsService {
       throw new NotFoundException('Collection not found');
     }
     const items = await this.loadItems(collection.id);
-    return this.toDetailResponse(collection, items);
+    // Owners are represented with viewer_is_owner=true and
+    // viewer_is_following=false; the UI hides the follow CTA for owners.
+    return this.toDetailResponse(collection, items, userId, false);
   }
 
-  async getBySlug(slug: string): Promise<RouteCollectionDetailDto> {
+  async getBySlug(
+    slug: string,
+    viewerId: string | null,
+  ): Promise<RouteCollectionDetailDto> {
     const collection = await this.collectionRepo.findOne({
       where: { slug },
       relations: ['owner'],
@@ -134,7 +204,18 @@ export class RouteCollectionsService {
       throw new NotFoundException('Collection not found');
     }
     const items = await this.loadItems(collection.id);
-    return this.toDetailResponse(collection, items);
+    const viewerIsFollowing =
+      viewerId != null && viewerId !== collection.owner_id
+        ? await this.followRepo.exists({
+            where: { user_id: viewerId, collection_id: collection.id },
+          })
+        : false;
+    return this.toDetailResponse(
+      collection,
+      items,
+      viewerId,
+      viewerIsFollowing,
+    );
   }
 
   async update(
@@ -169,7 +250,7 @@ export class RouteCollectionsService {
 
     await this.collectionRepo.save(collection);
     const items = await this.loadItems(collection.id);
-    return this.toDetailResponse(collection, items);
+    return this.toDetailResponse(collection, items, userId, false);
   }
 
   async delete(userId: string, id: string): Promise<void> {
@@ -180,7 +261,7 @@ export class RouteCollectionsService {
     if (collection.owner_id !== userId) {
       throw new ForbiddenException('Not the owner of this collection');
     }
-    // Items cascade-delete via the FK ON DELETE CASCADE constraint.
+    // Items + follows cascade-delete via the FK ON DELETE CASCADE constraint.
     await this.collectionRepo.remove(collection);
   }
 
@@ -286,6 +367,75 @@ export class RouteCollectionsService {
     await this.collectionRepo.save(collection);
   }
 
+  /**
+   * Follow a collection — adds it to the caller's library. Idempotent: a
+   * duplicate POST returns the existing row instead of erroring, so a flaky
+   * client retry doesn't surface as a confusing 409.
+   *
+   * Visibility gating mirrors `getBySlug`:
+   *  - private collections 404 (not 403) so id existence isn't a side
+   *    channel for unlisted ones the caller hasn't seen.
+   *  - the owner cannot follow their own collection — it already lives in
+   *    `owned` and the UI hides the CTA for owners; we 400 here as a
+   *    structural guard rather than silently accepting a no-op row.
+   *  - soft-deleted owners (US-62) hide their collections, so a follow
+   *    against one of their slugs 404s during the grace window.
+   */
+  async follow(
+    userId: string,
+    collectionId: string,
+  ): Promise<RouteCollectionFollowResponseDto> {
+    const collection = await this.collectionRepo.findOne({
+      where: { id: collectionId },
+      relations: ['owner'],
+    });
+    if (
+      !collection ||
+      collection.visibility === 'private' ||
+      collection.owner?.deleted_at != null
+    ) {
+      throw new NotFoundException('Collection not found');
+    }
+    if (collection.owner_id === userId) {
+      throw new BadRequestException('You cannot follow your own collection');
+    }
+
+    const existing = await this.followRepo.findOne({
+      where: { user_id: userId, collection_id: collectionId },
+    });
+    if (existing) {
+      return {
+        collection_id: collectionId,
+        followed_at: existing.created_at.toISOString(),
+      };
+    }
+
+    const saved = await this.followRepo.save(
+      this.followRepo.create({
+        user_id: userId,
+        collection_id: collectionId,
+      }),
+    );
+    return {
+      collection_id: collectionId,
+      followed_at: saved.created_at.toISOString(),
+    };
+  }
+
+  /**
+   * Unfollow a collection. Idempotent — succeeds (204) whether or not a row
+   * exists, so the client doesn't have to track follow state to call it
+   * safely. We do NOT validate that the underlying collection still exists:
+   * if the curator deleted the collection, the follow row was already
+   * cascade-deleted, and the unfollow becomes a clean no-op.
+   */
+  async unfollow(userId: string, collectionId: string): Promise<void> {
+    await this.followRepo.delete({
+      user_id: userId,
+      collection_id: collectionId,
+    });
+  }
+
   // ── private helpers ──
 
   private async loadItems(
@@ -332,11 +482,15 @@ export class RouteCollectionsService {
   private toDetailResponse(
     c: RouteCollection,
     items: RouteCollectionItem[],
+    viewerId: string | null,
+    viewerIsFollowing: boolean,
   ): RouteCollectionDetailDto {
     return {
       ...this.toSummaryResponse(c, items.length),
       items: items.map((i) => this.toItemResponse(i)),
       owner_name: c.owner?.display_name ?? '',
+      viewer_is_owner: viewerId != null && viewerId === c.owner_id,
+      viewer_is_following: viewerIsFollowing,
     };
   }
 

@@ -35,6 +35,7 @@ import { NotificationPreferencesRow } from './entities/notification-preferences.
 import { PrivacyPreferencesRow } from './entities/privacy-preferences.entity.js';
 import { RouteCollection } from './entities/route-collection.entity.js';
 import { RouteCollectionItem } from './entities/route-collection-item.entity.js';
+import { RouteCollectionFollow } from './entities/route-collection-follow.entity.js';
 import { WeatherAlertDispatch } from './entities/weather-alert-dispatch.entity.js';
 import { InitSchema1713000000000 } from './migrations/1713000000000-InitSchema.js';
 import { AddPasswordHash1713100000000 } from './migrations/1713100000000-AddPasswordHash.js';
@@ -76,6 +77,7 @@ import { AddPrivacyPreferences1716400000000 } from './migrations/1716400000000-A
 import { AddRouteCollections1716500000000 } from './migrations/1716500000000-AddRouteCollections.js';
 import { AddHomeRegionIndex1716600000000 } from './migrations/1716600000000-AddHomeRegionIndex.js';
 import { AddWeatherAlertDispatches1716700000000 } from './migrations/1716700000000-AddWeatherAlertDispatches.js';
+import { AddRouteCollectionFollows1716800000000 } from './migrations/1716800000000-AddRouteCollectionFollows.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -120,6 +122,7 @@ export const AppDataSource = new DataSource({
     PrivacyPreferencesRow,
     RouteCollection,
     RouteCollectionItem,
+    RouteCollectionFollow,
     WeatherAlertDispatch,
   ],
   migrations: [
@@ -170,6 +173,7 @@ export const AppDataSource = new DataSource({
     AddRouteCollections1716500000000,
     AddHomeRegionIndex1716600000000,
     AddWeatherAlertDispatches1716700000000,
+    AddRouteCollectionFollows1716800000000,
   ],
   synchronize: false,
 });

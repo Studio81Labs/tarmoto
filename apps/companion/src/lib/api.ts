@@ -342,6 +342,23 @@ export interface RouteCollectionItemResponse {
 export interface RouteCollectionDetail extends RouteCollectionSummary {
   items: RouteCollectionItemResponse[];
   owner_name: string;
+  /**
+   * Personalised flags. Anonymous viewers always see `false` for both. The
+   * server reads the optional Bearer token on `/collections/by-slug/:slug`
+   * to populate them.
+   */
+  viewer_is_owner: boolean;
+  viewer_is_following: boolean;
+}
+
+export interface RouteCollectionFollowResponse {
+  collection_id: string;
+  followed_at: string;
+}
+
+export interface RouteCollectionLibraryResponse {
+  owned: RouteCollectionSummary[];
+  followed: RouteCollectionSummary[];
 }
 
 export interface CreateRouteCollectionInput {
@@ -363,6 +380,8 @@ export interface RouteCollectionListResponse {
 
 export const routeCollectionsApi = {
   listMine: () => apiFetch<RouteCollectionListResponse>("/collections/me"),
+  listLibrary: () =>
+    apiFetch<RouteCollectionLibraryResponse>("/collections/me/library"),
   create: (input: CreateRouteCollectionInput) =>
     apiFetch<RouteCollectionDetail>("/collections", {
       method: "POST",
@@ -393,6 +412,15 @@ export const routeCollectionsApi = {
       `/collections/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}`,
       { method: "DELETE" },
     ),
+  follow: (id: string) =>
+    apiFetch<RouteCollectionFollowResponse>(
+      `/collections/${encodeURIComponent(id)}/follow`,
+      { method: "POST" },
+    ),
+  unfollow: (id: string) =>
+    apiFetch<void>(`/collections/${encodeURIComponent(id)}/follow`, {
+      method: "DELETE",
+    }),
 };
 
 // ── Map shares (US-50: read-only personal road-map snapshots) ──

@@ -44,7 +44,7 @@ export class CreateRouteCollectionDto {
     default: 'private',
   })
   @IsOptional()
-  @IsIn(ROUTE_COLLECTION_VISIBILITIES as unknown as string[])
+  @IsIn(ROUTE_COLLECTION_VISIBILITIES)
   visibility?: RouteCollectionVisibilityDto;
 }
 
@@ -72,7 +72,7 @@ export class UpdateRouteCollectionDto {
 
   @ApiProperty({ required: false, enum: ROUTE_COLLECTION_VISIBILITIES })
   @IsOptional()
-  @IsIn(ROUTE_COLLECTION_VISIBILITIES as unknown as string[])
+  @IsIn(ROUTE_COLLECTION_VISIBILITIES)
   visibility?: RouteCollectionVisibilityDto;
 }
 
@@ -171,6 +171,18 @@ export class RouteCollectionDetailDto extends RouteCollectionSummaryDto {
       'Display name of the owning rider (for unlisted/public viewing). Empty for soft-deleted accounts; the controller 404s in that case.',
   })
   owner_name!: string;
+
+  @ApiProperty({
+    description:
+      'True when the calling user follows this collection. False for the owner, anonymous viewers, and signed-in viewers who have not yet followed.',
+  })
+  viewer_is_following!: boolean;
+
+  @ApiProperty({
+    description:
+      'True when the calling user owns this collection. The owner uses the dashboard CRUD surface rather than the follow CTA.',
+  })
+  viewer_is_owner!: boolean;
 }
 
 export class RouteCollectionListResponseDto {
@@ -179,4 +191,33 @@ export class RouteCollectionListResponseDto {
 
   @ApiProperty()
   total!: number;
+}
+
+/**
+ * Library response — owned and followed collections in one payload so the
+ * dashboard renders without two round trips. Each side is sorted independently
+ * (owned by `updated_at` desc; followed by `followed_at` desc) and returned in
+ * its own array so the UI can label them differently.
+ */
+export class RouteCollectionLibraryResponseDto {
+  @ApiProperty({
+    type: [RouteCollectionSummaryDto],
+    description: 'Collections the caller owns.',
+  })
+  owned!: RouteCollectionSummaryDto[];
+
+  @ApiProperty({
+    type: [RouteCollectionSummaryDto],
+    description:
+      'Collections the caller follows. Excludes private collections — if a curator demotes a collection back to private after being followed, the row is filtered out here so the library never lists an inaccessible link.',
+  })
+  followed!: RouteCollectionSummaryDto[];
+}
+
+export class RouteCollectionFollowResponseDto {
+  @ApiProperty()
+  collection_id!: string;
+
+  @ApiProperty()
+  followed_at!: string;
 }

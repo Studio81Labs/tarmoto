@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { fetchSharedCollection } from "@/lib/route-collection-share";
 import { RouteCollectionVisibilityPill } from "@/components/RouteCollectionVisibilityPill";
+import { RouteCollectionFollowCta } from "@/components/RouteCollectionFollowCta";
 import { formatRelativeTime } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -141,20 +142,12 @@ export default async function SharedCollectionPage({
         )}
       </section>
 
-      <section className="mt-10 rounded-2xl border border-slate-800 bg-slate-900 p-6">
-        <h2 className="text-sm font-semibold text-white mb-1">
-          Want to save this collection?
-        </h2>
-        <p className="text-sm text-slate-400 mb-4">
-          Sign in to Tarmoto to follow the curator and add their routes to your
-          own planner.
-        </p>
-        <Link
-          href="/auth/login"
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light transition"
-        >
-          Sign in
-        </Link>
+      <section className="mt-10">
+        <RouteCollectionFollowCta
+          collectionId={detail.id}
+          slug={detail.slug}
+          ownerName={detail.owner_name}
+        />
       </section>
     </main>
   );
