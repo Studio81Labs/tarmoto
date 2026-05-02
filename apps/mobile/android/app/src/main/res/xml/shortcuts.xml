@@ -20,11 +20,16 @@
   the saddle" UX. Custom intents are first-class for App Actions and
   the Assistant Plugin's preview tool tests them the same way.
 
-  Inline inventory: each `<shortcut>` binds a list of spoken-language
-  synonyms (defined in `res/values/arrays.xml`) to the canonical
-  hazard type the URL template emits. The synonyms cover natural
-  phrasing the rider is likely to say (e.g. "potholes" / "hole") so
-  the Assistant doesn't bounce on minor wording differences.
+  Inline inventory: each `<shortcut>` represents one canonical
+  hazard type. The Assistant matches user phrasing against the
+  `<string-array>` of synonyms in `res/values/arrays.xml` (bound via
+  `<parameter-binding>`); when one matches, the **shortcutId** of the
+  enclosing shortcut is what gets substituted into the URL template
+  parameter — the synonym list only drives natural-language matching,
+  not the emitted value. The shortcutId therefore MUST equal the
+  canonical hazard type string in `HAZARD_TYPES` (`pothole`,
+  `oil_spill`, …) so the resulting deep-link param round-trips
+  through `parseHazardTypeParam` without being rejected.
 
   URL template parameter is named `preselectedType` to match the
   existing React Navigation route param shape — keeps the linking
@@ -42,7 +47,7 @@
   </capability>
 
   <shortcut
-    android:shortcutId="hazard_pothole"
+    android:shortcutId="pothole"
     android:enabled="true"
     android:shortcutShortLabel="@string/hazard_pothole_label">
     <capability-binding android:key="custom.actions.intent.REPORT_HAZARD">
@@ -53,7 +58,7 @@
   </shortcut>
 
   <shortcut
-    android:shortcutId="hazard_gravel"
+    android:shortcutId="gravel"
     android:enabled="true"
     android:shortcutShortLabel="@string/hazard_gravel_label">
     <capability-binding android:key="custom.actions.intent.REPORT_HAZARD">
@@ -64,7 +69,7 @@
   </shortcut>
 
   <shortcut
-    android:shortcutId="hazard_oil_spill"
+    android:shortcutId="oil_spill"
     android:enabled="true"
     android:shortcutShortLabel="@string/hazard_oil_spill_label">
     <capability-binding android:key="custom.actions.intent.REPORT_HAZARD">
@@ -75,7 +80,7 @@
   </shortcut>
 
   <shortcut
-    android:shortcutId="hazard_roadworks"
+    android:shortcutId="roadworks"
     android:enabled="true"
     android:shortcutShortLabel="@string/hazard_roadworks_label">
     <capability-binding android:key="custom.actions.intent.REPORT_HAZARD">
@@ -86,7 +91,7 @@
   </shortcut>
 
   <shortcut
-    android:shortcutId="hazard_animals"
+    android:shortcutId="animals"
     android:enabled="true"
     android:shortcutShortLabel="@string/hazard_animals_label">
     <capability-binding android:key="custom.actions.intent.REPORT_HAZARD">
@@ -97,7 +102,7 @@
   </shortcut>
 
   <shortcut
-    android:shortcutId="hazard_police"
+    android:shortcutId="police"
     android:enabled="true"
     android:shortcutShortLabel="@string/hazard_police_label">
     <capability-binding android:key="custom.actions.intent.REPORT_HAZARD">
@@ -108,7 +113,7 @@
   </shortcut>
 
   <shortcut
-    android:shortcutId="hazard_flooding"
+    android:shortcutId="flooding"
     android:enabled="true"
     android:shortcutShortLabel="@string/hazard_flooding_label">
     <capability-binding android:key="custom.actions.intent.REPORT_HAZARD">
@@ -119,7 +124,7 @@
   </shortcut>
 
   <shortcut
-    android:shortcutId="hazard_ice"
+    android:shortcutId="ice"
     android:enabled="true"
     android:shortcutShortLabel="@string/hazard_ice_label">
     <capability-binding android:key="custom.actions.intent.REPORT_HAZARD">
@@ -130,7 +135,7 @@
   </shortcut>
 
   <shortcut
-    android:shortcutId="hazard_other"
+    android:shortcutId="other"
     android:enabled="true"
     android:shortcutShortLabel="@string/hazard_other_label">
     <capability-binding android:key="custom.actions.intent.REPORT_HAZARD">

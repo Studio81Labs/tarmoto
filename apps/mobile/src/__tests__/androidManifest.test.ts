@@ -96,4 +96,25 @@ describe("Android App Actions wiring", () => {
       );
     },
   );
+
+  it.each(HAZARD_TYPES)(
+    "uses the canonical %s string as the shortcutId",
+    (type) => {
+      // App Actions inline inventory substitutes the **shortcutId**
+      // (not the matched synonym) into the URL template parameter,
+      // so the id MUST equal the canonical hazard-type string in
+      // `HAZARD_TYPES`. A prefixed id (e.g. "hazard_pothole") would
+      // arrive at `parseHazardTypeParam` as an unknown value and the
+      // voice flow would silently fall back to no-preselection.
+      // This regex matches a `<shortcut>` element whose shortcutId
+      // is exactly `type` and whose capability-binding ties back to
+      // the matching synonym array — guarding against both halves
+      // of the wiring drifting apart.
+      expect(shortcuts).toMatch(
+        new RegExp(
+          `<shortcut[\\s\\S]*?android:shortcutId="${type}"[\\s\\S]*?@array/hazard_${type}_synonyms`,
+        ),
+      );
+    },
+  );
 });
