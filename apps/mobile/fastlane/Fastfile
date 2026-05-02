@@ -16,6 +16,17 @@
 
 default_platform(:ios)
 
+# Ruby treats `""` as truthy, so the bare `||` chain wouldn't fall
+# through to the default when the env var is set-but-empty (e.g. the
+# tag-push path used to leave RELEASE_NOTES blank). Use this helper
+# everywhere we want "set, non-empty, otherwise default" semantics.
+def first_non_blank(*candidates)
+  candidates.each do |c|
+    return c if c.is_a?(String) && !c.strip.empty?
+  end
+  nil
+end
+
 # ---------- iOS ----------
 platform :ios do
   before_all do
@@ -24,9 +35,9 @@ platform :ios do
 
   desc "Build & upload TestFlight build"
   lane :beta_ios do |options|
-    version       = options[:version]   || ENV["RELEASE_VERSION"]
-    build_number  = options[:build]     || ENV["BUILD_NUMBER"] || ENV["GITHUB_RUN_NUMBER"]
-    release_notes = options[:notes]     || ENV["RELEASE_NOTES"] || "Internal build"
+    version       = first_non_blank(options[:version], ENV["RELEASE_VERSION"])
+    build_number  = first_non_blank(options[:build],   ENV["BUILD_NUMBER"], ENV["GITHUB_RUN_NUMBER"])
+    release_notes = first_non_blank(options[:notes],   ENV["RELEASE_NOTES"]) || "Internal build"
 
     UI.user_error!("RELEASE_VERSION is required") if version.nil? || version.empty?
     UI.user_error!("BUILD_NUMBER is required")    if build_number.nil? || build_number.empty?
@@ -89,9 +100,9 @@ end
 platform :android do
   desc "Build & upload to Play Internal track"
   lane :beta_android do |options|
-    version       = options[:version]  || ENV["RELEASE_VERSION"]
-    build_number  = options[:build]    || ENV["BUILD_NUMBER"] || ENV["GITHUB_RUN_NUMBER"]
-    release_notes = options[:notes]    || ENV["RELEASE_NOTES"] || "Internal build"
+    version       = first_non_blank(options[:version], ENV["RELEASE_VERSION"])
+    build_number  = first_non_blank(options[:build],   ENV["BUILD_NUMBER"], ENV["GITHUB_RUN_NUMBER"])
+    release_notes = first_non_blank(options[:notes],   ENV["RELEASE_NOTES"]) || "Internal build"
 
     UI.user_error!("RELEASE_VERSION is required") if version.nil? || version.empty?
     UI.user_error!("BUILD_NUMBER is required")    if build_number.nil? || build_number.empty?

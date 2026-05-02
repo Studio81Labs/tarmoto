@@ -38,6 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.resolve.outputs.version }}
+      release_notes: ${{ steps.resolve.outputs.release_notes }}
       run_ios: ${{ steps.resolve.outputs.run_ios }}
       run_android: ${{ steps.resolve.outputs.run_android }}
     steps:
@@ -46,6 +47,7 @@ jobs:
         env:
           DISPATCH_VERSION: ${{ github.event.inputs.version }}
           DISPATCH_PLATFORMS: ${{ github.event.inputs.platforms }}
+          DISPATCH_NOTES: ${{ github.event.inputs.release_notes }}
           REF_NAME: ${{ github.ref_name }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
@@ -53,9 +55,14 @@ jobs:
           if [ "$EVENT_NAME" = "push" ]; then
             VERSION="${REF_NAME#mobile-v}"
             PLATFORMS="both"
+            # Tag-driven release: synthesise a non-empty changelog so
+            # TestFlight / Play Internal don't show a blank "what's
+            # new". Dispatch invocations supply their own notes.
+            NOTES="Release ${REF_NAME}"
           else
             VERSION="$DISPATCH_VERSION"
             PLATFORMS="$DISPATCH_PLATFORMS"
+            NOTES="$DISPATCH_NOTES"
           fi
           # Reject anything that isn't a strict semver — the tag /
           # input value flows directly into Info.plist and
@@ -64,17 +71,24 @@ jobs:
             echo "::error::Version '$VERSION' is not a strict X.Y.Z semver"
             exit 1
           fi
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          if [ "$PLATFORMS" = "both" ] || [ "$PLATFORMS" = "ios" ]; then
-            echo "run_ios=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run_ios=false" >> "$GITHUB_OUTPUT"
-          fi
-          if [ "$PLATFORMS" = "both" ] || [ "$PLATFORMS" = "android" ]; then
-            echo "run_android=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run_android=false" >> "$GITHUB_OUTPUT"
-          fi
+          {
+            echo "version=${VERSION}"
+            # Multiline output via heredoc so dispatch-supplied notes
+            # with embedded newlines round-trip cleanly.
+            echo "release_notes<<RELEASE_NOTES_EOF"
+            printf '%s\n' "$NOTES"
+            echo "RELEASE_NOTES_EOF"
+            if [ "$PLATFORMS" = "both" ] || [ "$PLATFORMS" = "ios" ]; then
+              echo "run_ios=true"
+            else
+              echo "run_ios=false"
+            fi
+            if [ "$PLATFORMS" = "both" ] || [ "$PLATFORMS" = "android" ]; then
+              echo "run_android=true"
+            else
+              echo "run_android=false"
+            fi
+          } >> "$GITHUB_OUTPUT"
 
   ios:
     name: iOS — TestFlight
@@ -119,7 +133,7 @@ jobs:
           CI: "true"
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
           BUILD_NUMBER: ${{ github.run_number }}
-          RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
+          RELEASE_NOTES: ${{ needs.prepare.outputs.release_notes }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
@@ -185,7 +199,7 @@ jobs:
           CI: "true"
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
           BUILD_NUMBER: ${{ github.run_number }}
-          RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
+          RELEASE_NOTES: ${{ needs.prepare.outputs.release_notes }}
           ANDROID_KEYSTORE_PATH: ${{ steps.keystore.outputs.path }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
