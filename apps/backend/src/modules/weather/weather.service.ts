@@ -15,8 +15,15 @@ import { haversineKm } from '@tarmoto/shared';
 /** Sample points every ~20km along the route */
 const ROUTE_SAMPLE_INTERVAL_KM = 20;
 
-/** Wind threshold (km/h) that crosses from a regular gust into an alert. */
-const WIND_ALERT_THRESHOLD_KMH = 60;
+/**
+ * Wind threshold (km/h) that crosses from a regular gust into an alert.
+ *
+ * Exported because the scheduled severe-weather push sweep (#333) keys
+ * off the same threshold — keeping it here as the single source of
+ * truth means the in-app weather banner and the push fanout cannot
+ * silently disagree on what counts as a wind alert.
+ */
+export const WIND_ALERT_THRESHOLD_KMH = 60;
 
 @Injectable()
 export class WeatherService {

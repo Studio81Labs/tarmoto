@@ -7,7 +7,10 @@ import type {
   WeatherAlertKind,
   WeatherResponseDto,
 } from '../../weather/dto/weather.dto.js';
-import { WeatherService } from '../../weather/weather.service.js';
+import {
+  WeatherService,
+  WIND_ALERT_THRESHOLD_KMH,
+} from '../../weather/weather.service.js';
 import { PushService } from '../../push/push.service.js';
 import { WeatherAlertDispatch } from '../../../entities/weather-alert-dispatch.entity.js';
 import { QUEUE_NAMES } from '../jobs.constants.js';
@@ -29,13 +32,6 @@ const LIVE_POSITION_WINDOW_MIN = 15;
  * surfaces.
  */
 const COOLDOWN_WINDOW_MIN = 60;
-
-/**
- * Wind threshold (km/h). Mirrors `WIND_ALERT_THRESHOLD_KMH` in
- * `WeatherService` so the sweep's "should I push?" answer matches
- * what the in-app weather banner already considers warning-worthy.
- */
-const WIND_ALERT_THRESHOLD_KMH = 60;
 
 /**
  * Spatial bucket size (degrees) for memoising weather lookups within
