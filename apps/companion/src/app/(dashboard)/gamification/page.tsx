@@ -10,6 +10,7 @@ import {
   Heart,
   Loader2,
   Lock,
+  Map as MapIcon,
   Medal,
   Moon,
   Mountain,
@@ -24,24 +25,30 @@ import {
 import clsx from "clsx";
 import { useAuthStore } from "@/stores/auth";
 import type { Badge as BadgeType } from "@/lib/types";
+import { usersApi } from "@/lib/api";
 import {
   activeChallenges,
   challengeProgress,
   formatDaysRemaining,
   formatMilestoneLabel,
+  labelForDimension,
   pickNextMilestone,
   seasonalProgress,
+  LEADERBOARD_DIMENSION_KEYS,
   type Challenge,
   type ChallengeCategory,
   type ChallengeMeta,
   type GamificationSnapshot,
+  type LeaderboardDimensionKey,
   type MilestoneProgress,
-  type PrimaryLeaderboard,
-  type PrimaryLeaderboardEntry,
+  type RegionalDimensionLeaderboard,
+  type RegionalLeaderboardEntry,
+  type RegionalLeaderboards,
   type SeasonalChallenge,
 } from "@/lib/gamification";
 import {
   fetchGamificationSnapshot,
+  fetchRegionalLeaderboards,
   joinChallenge,
 } from "@/lib/gamification-fetch";
 
@@ -389,17 +396,7 @@ function Dashboard({
         )}
       </section>
 
-      {snapshot.primaryLeaderboard && (
-        <section aria-labelledby="leaderboard-heading">
-          <SectionHeader
-            id="leaderboard-heading"
-            icon={<Trophy size={16} />}
-            title="Challenge leaderboard"
-            subtitle={`Top riders in "${snapshot.primaryLeaderboard.challengeTitle}"`}
-          />
-          <PrimaryLeaderboardTable leaderboard={snapshot.primaryLeaderboard} />
-        </section>
-      )}
+      <RegionalLeaderboardsSection />
 
       {nextMilestone && (
         <section aria-labelledby="milestone-heading">
@@ -627,13 +624,249 @@ function ChallengeCard({
   );
 }
 
-// ── Leaderboard ──
+// ── Regional leaderboards ──
 
-function PrimaryLeaderboardTable({
-  leaderboard,
+type RegionScope = "region" | "global";
+
+type LeaderboardLoad =
+  | { status: "loading" }
+  | { status: "ready"; data: RegionalLeaderboards }
+  | { status: "error"; message: string };
+
+/**
+ * Multi-dimensional regional leaderboard widget. Manages its own region /
+ * dimension state and refetches independently of the page's snapshot load —
+ * region selection is interactive and changing it shouldn't reload badges,
+ * challenges, or milestones.
+ *
+ * The "My region" toggle is only enabled once the rider's `home_region`
+ * has been resolved from `/users/me`; until then we surface the global
+ * ranking so the section is never blank.
+ */
+function RegionalLeaderboardsSection() {
+  const [homeRegion, setHomeRegion] = useState<string | null>(null);
+  const [scope, setScope] = useState<RegionScope>("global");
+  const [dimension, setDimension] =
+    useState<LeaderboardDimensionKey>("total_distance_km");
+  const [load, setLoad] = useState<LeaderboardLoad>({ status: "loading" });
+  // Each fetch wins-or-loses against any in-flight predecessor by aborting
+  // the controller stored here; older responses don't get to overwrite the
+  // newer state when they resolve late.
+  const controllerRef = useRef<AbortController | null>(null);
+  const userId = useAuthStore((s) => s.user?.id ?? null);
+
+  // Resolve home_region once per user. We don't error out if the request
+  // fails — the global ranking still renders, the toggle just stays on
+  // global.
+  useEffect(() => {
+    let cancelled = false;
+    void usersApi
+      .getMe()
+      .then(({ data }) => {
+        if (cancelled) return;
+        const region = data.home_region?.trim() ?? "";
+        const next = region.length > 0 ? region : null;
+        setHomeRegion(next);
+        // Promote to "My region" automatically when one is set so the
+        // first render shows the most contextual ranking.
+        if (next !== null) setScope("region");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setHomeRegion(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  const region = scope === "region" ? homeRegion : null;
+
+  const load_ = useCallback(
+    async (signal: AbortSignal) => {
+      try {
+        const data = await fetchRegionalLeaderboards({
+          region,
+          currentUserId: userId,
+          signal,
+        });
+        if (signal.aborted) return;
+        setLoad({ status: "ready", data });
+      } catch (err) {
+        if (signal.aborted) return;
+        setLoad({
+          status: "error",
+          message:
+            err instanceof Error ? err.message : "Could not load leaderboards.",
+        });
+      }
+    },
+    [region, userId],
+  );
+
+  useEffect(() => {
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    setLoad({ status: "loading" });
+    void load_(controller.signal);
+    return () => controller.abort();
+  }, [load_]);
+
+  const dim: RegionalDimensionLeaderboard | null = useMemo(() => {
+    if (load.status !== "ready") return null;
+    return load.data[dimension];
+  }, [load, dimension]);
+
+  return (
+    <section aria-labelledby="leaderboard-heading">
+      <SectionHeader
+        id="leaderboard-heading"
+        icon={<Trophy size={16} />}
+        title="Regional leaderboards"
+        subtitle={
+          scope === "region" && homeRegion
+            ? `Top riders in ${homeRegion}, ranked by ${labelForDimension(dimension).toLowerCase()}.`
+            : `Top riders worldwide, ranked by ${labelForDimension(dimension).toLowerCase()}.`
+        }
+      />
+
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <RegionToggle
+          scope={scope}
+          homeRegion={homeRegion}
+          onChange={setScope}
+        />
+        <DimensionTabs current={dimension} onChange={setDimension} />
+      </div>
+
+      {load.status === "error" ? (
+        <div
+          role="alert"
+          className="rounded-2xl border border-red-900/60 bg-red-950/30 p-6 text-center"
+        >
+          <AlertTriangle className="mx-auto text-red-300 mb-2" size={24} />
+          <p className="text-red-200 font-medium">
+            Could not load leaderboards
+          </p>
+          <p className="text-red-300/80 text-sm mt-1">{load.message}</p>
+        </div>
+      ) : load.status === "loading" || dim === null ? (
+        <div className="h-48 rounded-2xl bg-slate-900 border border-slate-800 animate-pulse" />
+      ) : (
+        <RegionalLeaderboardTable dim={dim} />
+      )}
+    </section>
+  );
+}
+
+function RegionToggle({
+  scope,
+  homeRegion,
+  onChange,
 }: {
-  leaderboard: PrimaryLeaderboard;
+  scope: RegionScope;
+  homeRegion: string | null;
+  onChange: (scope: RegionScope) => void;
 }) {
+  // Hide the My-region option when no home_region is set — toggling to it
+  // would just show the global ranking again with extra steps.
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Region scope"
+      className="inline-flex rounded-lg border border-slate-800 bg-slate-900 p-0.5 text-xs"
+    >
+      <ToggleButton
+        active={scope === "global"}
+        onClick={() => onChange("global")}
+        ariaLabel="Global ranking"
+      >
+        Global
+      </ToggleButton>
+      {homeRegion && (
+        <ToggleButton
+          active={scope === "region"}
+          onClick={() => onChange("region")}
+          ariaLabel={`Riders from ${homeRegion}`}
+        >
+          <MapIcon size={12} className="mr-1 inline" />
+          {homeRegion}
+        </ToggleButton>
+      )}
+    </div>
+  );
+}
+
+function DimensionTabs({
+  current,
+  onChange,
+}: {
+  current: LeaderboardDimensionKey;
+  onChange: (dim: LeaderboardDimensionKey) => void;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label="Leaderboard dimension"
+      className="inline-flex rounded-lg border border-slate-800 bg-slate-900 p-0.5 text-xs"
+    >
+      {LEADERBOARD_DIMENSION_KEYS.map((dim) => (
+        <ToggleButton
+          key={dim}
+          active={current === dim}
+          onClick={() => onChange(dim)}
+          ariaLabel={labelForDimension(dim)}
+        >
+          {labelForDimension(dim)}
+        </ToggleButton>
+      ))}
+    </div>
+  );
+}
+
+function ToggleButton({
+  active,
+  onClick,
+  ariaLabel,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  ariaLabel: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      aria-label={ariaLabel}
+      onClick={onClick}
+      className={clsx(
+        "px-3 py-1.5 rounded-md transition",
+        active
+          ? "bg-tarmoto-cyan/15 text-tarmoto-cyan"
+          : "text-slate-400 hover:text-slate-200",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function RegionalLeaderboardTable({
+  dim,
+}: {
+  dim: RegionalDimensionLeaderboard;
+}) {
+  // Surface `me` even when outside the top N. The backend already excludes
+  // duplicates by design — `entries` and `me` only ever overlap on the same
+  // row when the rider ranks in the visible window, in which case `me.rank`
+  // matches one of the entries.
+  const showOutsideTop =
+    dim.me !== null && !dim.entries.some((e) => e.userId === dim.me?.userId);
+
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900 overflow-hidden">
       <div className="overflow-x-auto">
@@ -642,47 +875,60 @@ function PrimaryLeaderboardTable({
             <tr className="text-left text-xs uppercase tracking-wider text-slate-500 bg-slate-900/80">
               <th className="py-3 px-4 font-semibold w-12">#</th>
               <th className="py-3 px-4 font-semibold">Rider</th>
-              <th className="py-3 px-4 font-semibold text-right">
-                Progress ({leaderboard.unit})
-              </th>
+              <th className="py-3 px-4 font-semibold text-right">{dim.unit}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800">
-            {leaderboard.entries.length === 0 ? (
+            {dim.entries.length === 0 ? (
               <tr>
                 <td
                   colSpan={3}
                   className="py-8 px-4 text-center text-sm text-slate-500"
                 >
-                  No riders have joined this challenge yet.
+                  No riders ranked in this region yet.
                 </td>
               </tr>
             ) : (
-              leaderboard.entries.map((entry) => (
-                <PrimaryLeaderboardRow
+              dim.entries.map((entry) => (
+                <RegionalLeaderboardRow
                   key={entry.userId}
                   entry={entry}
-                  unit={leaderboard.unit}
+                  unit={dim.unit}
                 />
               ))
+            )}
+            {showOutsideTop && dim.me && (
+              <RegionalLeaderboardRow
+                entry={dim.me}
+                unit={dim.unit}
+                outsideTop
+              />
             )}
           </tbody>
         </table>
       </div>
-      <PrimaryLeaderboardSummary leaderboard={leaderboard} />
+      {dim.me && <RegionalLeaderboardSummary me={dim.me} unit={dim.unit} />}
     </div>
   );
 }
 
-function PrimaryLeaderboardRow({
+function RegionalLeaderboardRow({
   entry,
   unit,
+  outsideTop = false,
 }: {
-  entry: PrimaryLeaderboardEntry;
+  entry: RegionalLeaderboardEntry;
   unit: string;
+  outsideTop?: boolean;
 }) {
   return (
-    <tr className={clsx("text-slate-200", entry.isMe && "bg-tarmoto-cyan/5")}>
+    <tr
+      className={clsx(
+        "text-slate-200",
+        entry.isMe && "bg-tarmoto-cyan/5",
+        outsideTop && "border-t-2 border-slate-700/60",
+      )}
+    >
       <td className="py-3 px-4">
         <RankBadge rank={entry.rank} />
       </td>
@@ -694,27 +940,27 @@ function PrimaryLeaderboardRow({
               You
             </span>
           )}
-          {entry.completed && (
-            <span className="ml-2 text-[10px] uppercase tracking-widest text-emerald-300">
-              Completed
+          {entry.homeRegion && (
+            <span className="ml-2 text-[11px] text-slate-500">
+              · {entry.homeRegion}
             </span>
           )}
         </div>
       </td>
       <td className="py-3 px-4 text-right tabular-nums">
-        {Math.round(entry.progress).toLocaleString()} {unit}
+        {Math.round(entry.value).toLocaleString()} {unit}
       </td>
     </tr>
   );
 }
 
-function PrimaryLeaderboardSummary({
-  leaderboard,
+function RegionalLeaderboardSummary({
+  me,
+  unit,
 }: {
-  leaderboard: PrimaryLeaderboard;
+  me: RegionalLeaderboardEntry;
+  unit: string;
 }) {
-  const me = leaderboard.entries.find((e) => e.isMe);
-  if (!me) return null;
   return (
     <div className="border-t border-slate-800 px-4 py-3 flex flex-wrap gap-x-6 gap-y-2 text-xs text-slate-400">
       <span className="text-slate-500 uppercase tracking-widest font-semibold">
@@ -723,7 +969,7 @@ function PrimaryLeaderboardSummary({
       <span className="tabular-nums">
         #{me.rank}{" "}
         <span className="text-slate-500">
-          · {Math.round(me.progress).toLocaleString()} {leaderboard.unit}
+          · {Math.round(me.value).toLocaleString()} {unit}
         </span>
       </span>
     </div>

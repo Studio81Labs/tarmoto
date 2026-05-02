@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fetchGamificationSnapshot,
+  fetchRegionalLeaderboards,
   GamificationFetchError,
   joinChallenge,
 } from "../gamification-fetch";
@@ -166,7 +167,6 @@ describe("fetchGamificationSnapshot", () => {
       joined: true,
       participantCount: 12,
     });
-    expect(snap.primaryLeaderboard?.entries[0]?.isMe).toBe(true);
   });
 
   it("propagates errors from the badges call", async () => {
@@ -208,7 +208,6 @@ describe("fetchGamificationSnapshot", () => {
 
     const snap = await fetchGamificationSnapshot("user-1");
     expect(snap.challenges).toEqual([]);
-    expect(snap.primaryLeaderboard).toBeNull();
     expect(snap.milestones.length).toBeGreaterThan(0);
   });
 
@@ -224,5 +223,88 @@ describe("fetchGamificationSnapshot", () => {
       const init = call[1] as { signal?: AbortSignal } | undefined;
       expect(init?.signal).toBe(controller.signal);
     }
+  });
+});
+
+describe("fetchRegionalLeaderboards", () => {
+  function regionalDto(overrides: Partial<{ region: string | null }> = {}) {
+    return {
+      region: null,
+      generated_at: "2026-05-01T00:00:00Z",
+      total_distance_km: {
+        dimension: "total_distance_km" as const,
+        unit: "km",
+        entries: [
+          {
+            rank: 1,
+            user_id: "u1",
+            display_name: "Alice",
+            home_region: "Beskydy",
+            value: 1500,
+          },
+        ],
+        me: null,
+      },
+      roads_discovered: {
+        dimension: "roads_discovered" as const,
+        unit: "roads",
+        entries: [],
+        me: null,
+      },
+      hazards_reported: {
+        dimension: "hazards_reported" as const,
+        unit: "reports",
+        entries: [],
+        me: null,
+      },
+      ...overrides,
+    };
+  }
+
+  it("calls GET /leaderboards/regional and maps to UI shape", async () => {
+    mockGet.mockResolvedValueOnce(ok(regionalDto({ region: "Beskydy" })));
+
+    const result = await fetchRegionalLeaderboards({
+      region: "Beskydy",
+      currentUserId: "u1",
+    });
+
+    expect(mockGet).toHaveBeenCalledWith("/api/v1/leaderboards/regional", {
+      params: { query: { region: "Beskydy" } },
+      signal: undefined,
+    });
+    expect(result.region).toBe("Beskydy");
+    expect(result.total_distance_km.entries[0]?.isMe).toBe(true);
+  });
+
+  it("omits the region query when empty / whitespace", async () => {
+    mockGet.mockResolvedValueOnce(ok(regionalDto()));
+
+    await fetchRegionalLeaderboards({ region: "   " });
+
+    expect(mockGet).toHaveBeenCalledWith("/api/v1/leaderboards/regional", {
+      params: { query: {} },
+      signal: undefined,
+    });
+  });
+
+  it("forwards limit through to the query", async () => {
+    mockGet.mockResolvedValueOnce(ok(regionalDto()));
+
+    await fetchRegionalLeaderboards({ limit: 5 });
+
+    const call = mockGet.mock.calls[0];
+    const opts = call?.[1] as
+      | { params?: { query?: Record<string, unknown> } }
+      | undefined;
+    expect(opts?.params?.query?.limit).toBe(5);
+  });
+
+  it("throws GamificationFetchError on HTTP error", async () => {
+    mockGet.mockResolvedValueOnce(fail(503, { message: "Down" }));
+
+    await expect(fetchRegionalLeaderboards()).rejects.toBeInstanceOf(
+      GamificationFetchError,
+    );
   });
 });
