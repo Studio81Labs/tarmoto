@@ -12,7 +12,6 @@
 import {
   routeCollectionsApi,
   type RouteCollectionDetail,
-  type RouteCollectionItemResponse,
   type RouteCollectionSummary,
   type RouteCollectionVisibility,
 } from "@/lib/api";
@@ -24,8 +23,17 @@ export interface CollectionTripRef {
   itemId: string;
   /** Server-assigned position; preserved for ordering. */
   position: number;
-  /** The referenced trip uuid. The companion only handles trips for now. */
+  /** The referenced trip uuid. */
   tripId: string;
+}
+
+export interface CollectionRideRef {
+  /** Server-assigned join-row id; required for `removeItem`. */
+  itemId: string;
+  /** Server-assigned position; preserved for ordering. */
+  position: number;
+  /** The referenced ride uuid. */
+  rideId: string;
 }
 
 export interface RouteCollectionView {
@@ -40,6 +48,10 @@ export interface RouteCollectionView {
   tripRefs: CollectionTripRef[];
   /** Convenience derived list — the existing UI binds to `tripIds`. */
   tripIds: string[];
+  /** Ride refs in server position order. Includes `itemId` for delete. */
+  rideRefs: CollectionRideRef[];
+  /** Convenience derived list, mirrors `tripIds`. */
+  rideIds: string[];
   itemCount: number;
   createdAt: string;
   updatedAt: string;
@@ -88,17 +100,31 @@ export function validateCollectionDescription(
 export function mapDetailToView(
   detail: RouteCollectionDetail,
 ): RouteCollectionView {
-  const tripRefs = detail.items
-    .filter(
-      (item): item is RouteCollectionItemResponse & { trip_id: string } =>
-        typeof item.trip_id === "string",
-    )
-    .sort((a, b) => a.position - b.position)
-    .map((item) => ({
-      itemId: item.id,
-      position: item.position,
-      tripId: item.trip_id,
-    }));
+  // The DB CHECK enforces XOR, so each item is either trip-keyed or ride-
+  // keyed. Split into the two ref lists, each independently ordered by
+  // position so trip-only and ride-only consumers (the picker tabs, the
+  // public-page list) keep stable rendering.
+  const sortedItems = detail.items
+    .slice()
+    .sort((a, b) => a.position - b.position);
+
+  const tripRefs: CollectionTripRef[] = [];
+  const rideRefs: CollectionRideRef[] = [];
+  for (const item of sortedItems) {
+    if (typeof item.trip_id === "string") {
+      tripRefs.push({
+        itemId: item.id,
+        position: item.position,
+        tripId: item.trip_id,
+      });
+    } else if (typeof item.ride_id === "string") {
+      rideRefs.push({
+        itemId: item.id,
+        position: item.position,
+        rideId: item.ride_id,
+      });
+    }
+  }
 
   return {
     id: detail.id,
@@ -110,6 +136,8 @@ export function mapDetailToView(
     slug: detail.slug,
     tripRefs,
     tripIds: tripRefs.map((r) => r.tripId),
+    rideRefs,
+    rideIds: rideRefs.map((r) => r.rideId),
     itemCount: detail.item_count,
     createdAt: detail.created_at,
     updatedAt: detail.updated_at,
@@ -129,6 +157,8 @@ export function mapSummaryToView(
     slug: summary.slug,
     tripRefs: [],
     tripIds: [],
+    rideRefs: [],
+    rideIds: [],
     itemCount: summary.item_count,
     createdAt: summary.created_at,
     updatedAt: summary.updated_at,

@@ -1,7 +1,13 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { Calendar, MapPin, Route as RouteIcon, User } from "lucide-react";
+import {
+  Calendar,
+  Gauge,
+  MapPin,
+  Route as RouteIcon,
+  User,
+} from "lucide-react";
 import { fetchSharedCollection } from "@/lib/route-collection-share";
 import { RouteCollectionVisibilityPill } from "@/components/RouteCollectionVisibilityPill";
 import { formatRelativeTime } from "@/lib/utils";
@@ -97,28 +103,40 @@ export default async function SharedCollectionPage({
           </div>
         ) : (
           <ul className="space-y-3">
-            {detail.items.map((item, idx) => (
-              <li
-                key={item.id}
-                className="rounded-2xl border border-slate-800 bg-slate-900 p-4 flex items-center gap-3"
-              >
-                <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-slate-950 border border-slate-800 text-xs font-semibold text-slate-400">
-                  {idx + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-white truncate">
-                    {item.trip_id ? "Planner trip" : "Recorded ride"}
-                  </p>
-                  <p className="text-[11px] text-slate-500 font-mono truncate">
-                    {item.trip_id ?? item.ride_id}
-                  </p>
-                </div>
-                <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
-                  <MapPin size={12} aria-hidden="true" />
-                  Position {item.position + 1}
-                </span>
-              </li>
-            ))}
+            {detail.items.map((item, idx) => {
+              const isRide = item.ride_id != null;
+              const kindLabel = isRide ? "Recorded ride" : "Planner trip";
+              const KindIcon = isRide ? Gauge : RouteIcon;
+              return (
+                <li
+                  key={item.id}
+                  className="rounded-2xl border border-slate-800 bg-slate-900 p-4 flex items-center gap-3"
+                >
+                  <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-slate-950 border border-slate-800 text-xs font-semibold text-slate-400">
+                    {idx + 1}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-white truncate inline-flex items-center gap-1.5">
+                      <KindIcon
+                        size={14}
+                        className={
+                          isRide ? "text-emerald-400" : "text-tarmoto-cyan"
+                        }
+                        aria-hidden="true"
+                      />
+                      {kindLabel}
+                    </p>
+                    <p className="text-[11px] text-slate-500 font-mono truncate">
+                      {item.trip_id ?? item.ride_id}
+                    </p>
+                  </div>
+                  <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
+                    <MapPin size={12} aria-hidden="true" />
+                    Position {item.position + 1}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
