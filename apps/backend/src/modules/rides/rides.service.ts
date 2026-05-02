@@ -21,6 +21,7 @@ import {
   RideDetailDto,
   RideListResponseDto,
   RideTracksResponseDto,
+  type RideStatus,
 } from './dto/ride-response.dto.js';
 import { CsvService } from './csv.service.js';
 import { normalizeLeanDistribution } from '@tarmoto/shared';
@@ -269,7 +270,7 @@ export class RidesService {
 
     return {
       id: ride.id,
-      status: ride.status as 'active' | 'completed' | 'cancelled',
+      status: ride.status as RideStatus,
       ride_type: ride.ride_type as RideType,
       started_at: ride.started_at.toISOString(),
       ended_at: ride.ended_at?.toISOString() ?? null,
@@ -451,7 +452,7 @@ ${tracks.join('\n')}
   private toRideResponse(ride: Ride): RideResponseDto {
     return {
       id: ride.id,
-      status: ride.status as 'active' | 'completed' | 'cancelled',
+      status: ride.status as RideStatus,
       ride_type: ride.ride_type as RideType,
       started_at: ride.started_at.toISOString(),
       ended_at: ride.ended_at?.toISOString() ?? null,

@@ -1,16 +1,26 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { LatLngResponseDto } from '../../../common/lat-lng.dto.js';
 
-const TRIP_STATUSES = ['draft', 'planned', 'active', 'completed'] as const;
-type TripStatus = (typeof TRIP_STATUSES)[number];
+export const TRIP_STATUSES = [
+  'draft',
+  'planned',
+  'active',
+  'completed',
+] as const;
+export type TripStatus = (typeof TRIP_STATUSES)[number];
 
-const TRIP_ROAD_PREFERENCES = ['curvy', 'scenic', 'fast', 'mixed'] as const;
-type TripRoadPreference = (typeof TRIP_ROAD_PREFERENCES)[number];
+export const TRIP_ROAD_PREFERENCES = [
+  'curvy',
+  'scenic',
+  'fast',
+  'mixed',
+] as const;
+export type TripRoadPreference = (typeof TRIP_ROAD_PREFERENCES)[number];
 
-const TRIP_MEMBER_ROLES = ['owner', 'admin', 'member'] as const;
-type TripMemberRole = (typeof TRIP_MEMBER_ROLES)[number];
+export const TRIP_MEMBER_ROLES = ['owner', 'admin', 'member'] as const;
+export type TripMemberRole = (typeof TRIP_MEMBER_ROLES)[number];
 
-const TRIP_WAYPOINT_TYPES = [
+export const TRIP_WAYPOINT_TYPES = [
   'start',
   'via',
   'fuel',
@@ -20,7 +30,7 @@ const TRIP_WAYPOINT_TYPES = [
   'photo',
   'end',
 ] as const;
-type TripWaypointType = (typeof TRIP_WAYPOINT_TYPES)[number];
+export type TripWaypointType = (typeof TRIP_WAYPOINT_TYPES)[number];
 
 export class TripSummaryDto {
   @ApiProperty()

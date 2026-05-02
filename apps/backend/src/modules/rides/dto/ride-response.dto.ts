@@ -2,8 +2,8 @@ import { ApiProperty } from '@nestjs/swagger';
 import { RIDE_TYPES, type RideType } from '@tarmoto/shared';
 import { LatLngResponseDto } from '../../../common/lat-lng.dto.js';
 
-const RIDE_STATUSES = ['active', 'completed', 'cancelled'] as const;
-type RideStatus = (typeof RIDE_STATUSES)[number];
+export const RIDE_STATUSES = ['active', 'completed', 'cancelled'] as const;
+export type RideStatus = (typeof RIDE_STATUSES)[number];
 
 /**
  * Per-ride lean histogram (US-19). Counts of 1-second sensor windows in

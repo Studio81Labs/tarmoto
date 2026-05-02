@@ -27,7 +27,11 @@ import {
   type AllowedSurface,
   type TripGenerationOptionId,
 } from './dto/generate-trip.dto.js';
-import { TripDayDto, TripWaypointDto } from './dto/trip-response.dto.js';
+import {
+  TripDayDto,
+  TripWaypointDto,
+  type TripWaypointType,
+} from './dto/trip-response.dto.js';
 import {
   buildDayChain,
   chunkDistance,
@@ -811,15 +815,7 @@ export class TripGeneratorService {
               lat: w.lat,
               lng: w.lng,
               name: w.name,
-              waypoint_type: w.waypoint_type as
-                | 'start'
-                | 'via'
-                | 'fuel'
-                | 'food'
-                | 'coffee'
-                | 'hotel'
-                | 'photo'
-                | 'end',
+              waypoint_type: w.waypoint_type as TripWaypointType,
               road_segment_id: null,
               notes: w.notes,
               duration_min: w.duration_min,
