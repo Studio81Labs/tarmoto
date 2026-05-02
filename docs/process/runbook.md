@@ -544,9 +544,21 @@ ElastiCache Redis:
 
 ### Companion (Cloudflare Pages)
 
-- PR previews deploy automatically on every PR via
-  `companion-deploy.yml`. The workflow comments the preview URL
-  on the PR.
+The `companion-deploy.yml` workflow is gated behind a repo
+variable so it lands as scaffolding without blocking every PR
+before the Cloudflare project is wired up. To enable:
+
+1. Set `COMPANION_DEPLOY_ENABLED=true` under
+   **Settings → Secrets and variables → Actions → Variables**.
+2. Add `CLOUDFLARE_API_TOKEN` (Pages:Edit, Account:Read, Zone:Read)
+   and `CLOUDFLARE_ACCOUNT_ID` to the repo secrets.
+3. Optionally override the Pages project name with
+   `COMPANION_PAGES_PROJECT` (default: `tarmoto-companion`).
+
+Once enabled:
+
+- PR previews deploy automatically on every PR. The workflow
+  comments the preview URL on the PR.
 - Production deploys on push to `main`. The smoke step checks
   the home page returns 200 and contains the Tarmoto app shell
   marker.
@@ -557,6 +569,14 @@ ElastiCache Redis:
   Regenerate at https://dash.cloudflare.com/profile/api-tokens
   using the "Edit Cloudflare Pages" template scoped to the
   production account.
+- **Build fails inside `@cloudflare/next-on-pages` with "Next.js
+  inferred your workspace root"** — Vercel CLI (invoked by
+  next-on-pages) does its own `pnpm install` scoped to
+  `apps/companion`, which loses the workspace topology.
+  `@cloudflare/next-on-pages` is also deprecated upstream in
+  favour of `@opennextjs/cloudflare`. Migration to OpenNext is a
+  separate follow-up; until that lands, validate the build
+  locally before flipping `COMPANION_DEPLOY_ENABLED=true`.
 
 ### Mobile (TestFlight + Play Internal)
 

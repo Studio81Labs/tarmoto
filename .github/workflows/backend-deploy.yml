@@ -136,6 +136,24 @@ jobs:
           role-to-assume: ${{ steps.env.outputs.name == 'prod' && secrets.AWS_DEPLOY_ROLE_ARN_PROD || secrets.AWS_DEPLOY_ROLE_ARN_STAGING }}
           aws-region: ${{ vars.AWS_REGION || 'eu-central-1' }}
 
+      - name: Snapshot current service task definition
+        # Capture the *running* service's task-definition ARN before
+        # we register any new revisions. The rollback step at the end
+        # of the job uses this exact ARN, so it cannot get confused by
+        # the migration revision (which is registered between this
+        # snapshot and the deploy).
+        id: prev
+        env:
+          CLUSTER: ${{ steps.env.outputs.cluster }}
+          SERVICE: ${{ steps.env.outputs.service }}
+        run: |
+          set -euo pipefail
+          PREV_TASKDEF=$(aws ecs describe-services \
+            --cluster "$CLUSTER" --services "$SERVICE" \
+            --query 'services[0].taskDefinition' --output text)
+          echo "taskdef=${PREV_TASKDEF}" >> "$GITHUB_OUTPUT"
+          echo "Previous task definition: ${PREV_TASKDEF}"
+
       - name: Fetch current task definition
         id: taskdef
         env:
@@ -181,12 +199,17 @@ jobs:
             --filters "Name=group-name,Values=tarmoto-${ENV_NAME}-backend-svc" \
             --query 'SecurityGroups[0].GroupId' --output text)
 
+          # Same migration command the local dev workflow uses
+          # (apps/backend/package.json `db:migrate`). typeorm CLI is
+          # in the runtime image; the data source compiles to
+          # apps/backend/dist/data-source.js. We `cd` into the package
+          # so node_modules resolution matches the local invocation.
           TASK_ARN=$(aws ecs run-task \
             --cluster "$CLUSTER" \
             --task-definition "$NEW_TASKDEF_ARN" \
             --launch-type FARGATE \
             --network-configuration "awsvpcConfiguration={subnets=[${SUBNETS}],securityGroups=[${SG}],assignPublicIp=DISABLED}" \
-            --overrides '{"containerOverrides":[{"name":"backend","command":["node","apps/backend/dist/scripts/migrate.js"]}]}' \
+            --overrides '{"containerOverrides":[{"name":"backend","command":["sh","-c","cd apps/backend && npx typeorm migration:run -d dist/data-source.js"]}]}' \
             --started-by "gha-${GITHUB_RUN_ID}" \
             --query 'tasks[0].taskArn' --output text)
 
@@ -243,23 +266,23 @@ jobs:
         env:
           CLUSTER: ${{ steps.env.outputs.cluster }}
           SERVICE: ${{ steps.env.outputs.service }}
-          TASK_FAMILY: ${{ steps.env.outputs.task_family }}
+          PREV_TASKDEF: ${{ steps.prev.outputs.taskdef }}
         run: |
           echo "::warning::Smoke test failed after deploy — rolling back."
-          PREV_REVISION=$(aws ecs list-task-definitions \
-            --family-prefix "$TASK_FAMILY" \
-            --status ACTIVE --sort DESC \
-            --query 'taskDefinitionArns[1]' --output text)
-          if [ -n "$PREV_REVISION" ] && [ "$PREV_REVISION" != "None" ]; then
+          # Use the task-def ARN captured BEFORE we registered the
+          # migration + deploy revisions. Listing the family by
+          # `taskDefinitionArns[1]` would land on the migration
+          # revision (same broken image), not the last good service.
+          if [ -n "$PREV_TASKDEF" ] && [ "$PREV_TASKDEF" != "None" ]; then
             aws ecs update-service \
               --cluster "$CLUSTER" \
               --service "$SERVICE" \
-              --task-definition "$PREV_REVISION" \
+              --task-definition "$PREV_TASKDEF" \
               --force-new-deployment
             aws ecs wait services-stable \
               --cluster "$CLUSTER" \
               --services "$SERVICE"
-            echo "::notice::Rolled back to ${PREV_REVISION}"
+            echo "::notice::Rolled back to ${PREV_TASKDEF}"
           else
             echo "::error::No previous task definition — manual recovery required. See docs/process/runbook.md."
           fi

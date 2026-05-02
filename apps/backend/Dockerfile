@@ -14,6 +14,9 @@ ARG NODE_VERSION=24-alpine
 ARG PNPM_VERSION=10
 
 FROM node:${NODE_VERSION} AS base
+# Re-declare ARGs after FROM so they're visible to RUN below.
+# Globally-declared ARGs only flow into FROM/AS lines.
+ARG PNPM_VERSION
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
@@ -38,6 +41,9 @@ RUN pnpm --filter @tarmoto/shared build \
 
 # ---------- runtime ----------
 FROM node:${NODE_VERSION} AS runtime
+# Same reason as the base stage — ARGs from before the first FROM
+# don't reach RUN unless redeclared in each stage.
+ARG PNPM_VERSION
 ENV NODE_ENV=production \
     TARMOTO_NODE_ENV=production \
     PNPM_HOME=/pnpm \

@@ -7,9 +7,17 @@ name: Companion Deploy
 # Cloudflare Workers.
 #
 # Required repo secrets / vars:
-#   CLOUDFLARE_API_TOKEN   — Pages:Edit, Account:Read, Zone:Read.
-#   CLOUDFLARE_ACCOUNT_ID  — account hosting the project.
+#   CLOUDFLARE_API_TOKEN          — Pages:Edit, Account:Read, Zone:Read.
+#   CLOUDFLARE_ACCOUNT_ID         — account hosting the project.
 #   COMPANION_PAGES_PROJECT (var) — project name, default tarmoto-companion.
+#   COMPANION_DEPLOY_ENABLED (var) — gate: must be the literal string
+#                                   "true" before this workflow runs
+#                                   end-to-end. Lets us land the
+#                                   scaffold without blocking every
+#                                   PR until the operator has actually
+#                                   provisioned the Cloudflare project
+#                                   and Pages-on-pnpm-monorepo build
+#                                   has been validated.
 
 on:
   push:
@@ -42,6 +50,10 @@ concurrency:
 jobs:
   deploy:
     name: Build & deploy to Cloudflare Pages
+    # Skip until the operator opts in via the repo variable. See the
+    # `COMPANION_DEPLOY_ENABLED` note in the header. Until then the
+    # job no-ops and the PR check stays green.
+    if: vars.COMPANION_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment:
       name: ${{ github.event_name == 'pull_request' && 'companion-preview' || 'companion-production' }}
