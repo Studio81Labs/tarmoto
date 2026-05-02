@@ -2,7 +2,6 @@ import { Module, type DynamicModule, type Provider } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { User } from '../../entities/user.entity.js';
 import { WeatherAlertDispatch } from '../../entities/weather-alert-dispatch.entity.js';
 import { HazardsModule } from '../hazards/index.js';
 import { BadgesModule } from '../badges/index.js';
@@ -89,7 +88,7 @@ export class JobsModule {
       module: JobsModule,
       imports: [
         ConfigModule,
-        TypeOrmModule.forFeature([User, WeatherAlertDispatch]),
+        TypeOrmModule.forFeature([WeatherAlertDispatch]),
         HazardsModule,
         BadgesModule,
         AccountModule,
