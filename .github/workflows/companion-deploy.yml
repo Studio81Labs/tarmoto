@@ -163,8 +163,13 @@ jobs:
           URL: ${{ steps.deploy.outputs.url }}
         run: |
           set -euo pipefail
+          # Follow redirects: an unauthenticated GET /  302s to /login
+          # via NextAuth middleware, which is the expected steady state
+          # for the gated companion. We care that the final response is
+          # 200 and contains the app shell marker, not that the root
+          # path served 200 directly.
           for attempt in 1 2 3; do
-            STATUS=$(curl -s -o response.html -w "%{http_code}" "$URL" || true)
+            STATUS=$(curl -sL -o response.html -w "%{http_code}" "$URL" || true)
             if [ "$STATUS" = "200" ] && grep -qi "tarmoto" response.html; then
               echo "::notice::Companion smoke OK ($URL)"
               exit 0
