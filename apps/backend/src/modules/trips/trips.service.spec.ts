@@ -12,8 +12,10 @@ import { Repository } from 'typeorm';
 import { TripsService } from './trips.service.js';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
+import { TripShare } from '../../entities/trip-share.entity.js';
 import { EventsGateway } from '../events/events.gateway.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
+import { TripSharesService } from '../trip-shares/trip-shares.service.js';
 
 const OWNER_ID = '00000000-0000-0000-0000-000000000001';
 const OTHER_ID = '00000000-0000-0000-0000-000000000002';
@@ -121,6 +123,7 @@ describe('TripsService', () => {
   let transactionMock: jest.Mock;
   let events: jest.Mocked<Pick<EventsGateway, 'emitToTrip'>>;
   let activity: jest.Mocked<Pick<TripActivityService, 'recordSafe'>>;
+  let tripShares: jest.Mocked<Pick<TripSharesService, 'findActiveByToken'>>;
 
   beforeEach(async () => {
     // The transactional `create` flow calls `tripRepo.manager.transaction`
@@ -184,6 +187,7 @@ describe('TripsService', () => {
 
     events = { emitToTrip: jest.fn() };
     activity = { recordSafe: jest.fn().mockResolvedValue(undefined) };
+    tripShares = { findActiveByToken: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -192,6 +196,7 @@ describe('TripsService', () => {
         { provide: getRepositoryToken(TripMember), useValue: memberRepo },
         { provide: EventsGateway, useValue: events },
         { provide: TripActivityService, useValue: activity },
+        { provide: TripSharesService, useValue: tripShares },
       ],
     }).compile();
 
@@ -561,6 +566,530 @@ describe('TripsService', () => {
     });
   });
 
+  describe('importFromShare', () => {
+    /**
+     * Build a snapshot in the companion's `Trip` shape with N days. Each
+     * day gets a 4-point geometry, an explicit distance, and a small
+     * waypoint list covering the full type vocabulary so we can assert
+     * `accommodation` (which the legacy flat-import path drops) survives
+     * the round-trip.
+     */
+    function makeShare(
+      days: Array<{
+        title?: string;
+        distanceKm?: number;
+        durationMinutes?: number;
+        avgQuality?: number;
+        elevationGain?: number;
+        coordinates?: Array<[number, number]>;
+        waypoints?: Array<{
+          lat: number;
+          lng: number;
+          name?: string;
+          type?: string;
+        }>;
+      }>,
+    ): TripShare {
+      return {
+        id: 'share-1',
+        owner_id: 'owner-x',
+        share_token: 'tok-deadbeef',
+        title: 'Alps loop — 3 days',
+        view_count: 7,
+        created_at: NOW,
+        updated_at: NOW,
+        snapshot: {
+          name: 'Alps loop snapshot',
+          days: days.map((d, i) => ({
+            dayNumber: i + 1,
+            title: d.title ?? `Day ${i + 1}`,
+            distanceKm: d.distanceKm ?? 100,
+            durationMinutes: d.durationMinutes ?? 180,
+            avgQuality: d.avgQuality ?? 3.8,
+            elevationGain: d.elevationGain ?? 800,
+            routeGeometry: d.coordinates
+              ? { type: 'LineString', coordinates: d.coordinates }
+              : undefined,
+            waypoints: (d.waypoints ?? []).map((w, idx) => ({
+              id: `wp-${i}-${idx}`,
+              location: { lat: w.lat, lng: w.lng },
+              name: w.name,
+              type: w.type ?? 'via',
+            })),
+          })),
+        },
+        owner: { display_name: 'Adam' },
+      } as unknown as TripShare;
+    }
+
+    /** Pull the per-day TripDay create() bodies out of the mock in order. */
+    function dayBodies(): Array<Record<string, unknown>> {
+      return manager.create.mock.calls
+        .map(([, body]) => body as Record<string, unknown>)
+        .filter(
+          (b) => 'day_number' in b && 'trip_id' in b && 'route_geom' in b,
+        );
+    }
+
+    /** Pull the waypoint create() bodies grouped per saved trip_day_id. */
+    function waypointBodiesByDayId(): Map<
+      string | undefined,
+      Array<Record<string, unknown>>
+    > {
+      const byDay = new Map<
+        string | undefined,
+        Array<Record<string, unknown>>
+      >();
+      for (const [, body] of manager.create.mock.calls) {
+        const b = body as Record<string, unknown>;
+        if (!('waypoint_type' in b)) continue;
+        const id = b.trip_day_id as string | undefined;
+        const list = byDay.get(id) ?? [];
+        list.push(b);
+        byDay.set(id, list);
+      }
+      return byDay;
+    }
+
+    beforeEach(() => {
+      // Hand each saved entity a stable id so the day → waypoint
+      // grouping in `waypointBodiesByDayId` lines up across calls. The
+      // default mock recycles the same TRIP_ID for every entity which
+      // would collapse multi-day waypoints into one bucket.
+      let saveSeq = 0;
+      manager.save.mockImplementation((entity: { id?: string }) => {
+        saveSeq += 1;
+        return Promise.resolve({
+          ...entity,
+          id: entity.id ?? `entity-${saveSeq}`,
+          created_at: NOW,
+          updated_at: NOW,
+          joined_at: NOW,
+        });
+      });
+    });
+
+    it('reconstructs a 3-day trip with one trip_days row per snapshot day (acceptance test)', async () => {
+      // The acceptance criterion in #357: a 3-day shared trip imports as
+      // 3 days. This test asserts day_number, per-day geometry, distance,
+      // and waypoint preservation for the canonical happy path.
+      tripShares.findActiveByToken.mockResolvedValueOnce(
+        makeShare([
+          {
+            distanceKm: 220,
+            coordinates: [
+              [10.0, 46.0],
+              [10.1, 46.05],
+              [10.2, 46.1],
+            ],
+            waypoints: [
+              { lat: 46.0, lng: 10.0, name: 'Start', type: 'start' },
+              { lat: 46.05, lng: 10.1, name: 'Lunch', type: 'rest' },
+            ],
+          },
+          {
+            distanceKm: 180,
+            coordinates: [
+              [10.2, 46.1],
+              [10.3, 46.2],
+              [10.4, 46.3],
+            ],
+            waypoints: [
+              { lat: 46.1, lng: 10.2, name: 'Hotel A', type: 'accommodation' },
+              { lat: 46.3, lng: 10.4, name: 'Photo stop', type: 'photo' },
+            ],
+          },
+          {
+            distanceKm: 250,
+            coordinates: [
+              [10.4, 46.3],
+              [10.5, 46.4],
+              [10.6, 46.5],
+            ],
+            waypoints: [
+              { lat: 46.4, lng: 10.5, name: 'Fuel', type: 'fuel' },
+              { lat: 46.5, lng: 10.6, name: 'Finish', type: 'end' },
+            ],
+          },
+        ]),
+      );
+      mockGetDetailReturns(
+        makeOwnedTrip({
+          status: 'planned',
+          num_days: 3,
+          title: 'Alps loop — 3 days',
+        }),
+      );
+
+      const result = await service.importFromShare(OWNER_ID, {
+        share_token: 'tok-deadbeef',
+      });
+
+      // Trip row carries num_days = 3 and per-day distance bookends.
+      // min/max are computed from the snapshot's per-day distances:
+      // min(180, 220, 250)=180, max=250.
+      expect(manager.create).toHaveBeenCalledWith(
+        Trip,
+        expect.objectContaining({
+          owner_id: OWNER_ID,
+          title: 'Alps loop — 3 days',
+          num_days: 3,
+          daily_km_min: 180,
+          daily_km_max: 250,
+          status: 'planned',
+          invite_code: expect.stringMatching(/^[A-Z2-9]{8}$/),
+        }),
+      );
+
+      // 3 trip_days rows, numbered 1..3 in snapshot order, each with
+      // the day's own [lng,lat] geometry preserved.
+      const days = dayBodies();
+      expect(days).toHaveLength(3);
+      expect(days.map((d) => d.day_number)).toEqual([1, 2, 3]);
+      expect(days[0].distance_km).toBeCloseTo(220);
+      expect(days[1].distance_km).toBeCloseTo(180);
+      expect(days[2].distance_km).toBeCloseTo(250);
+      const day1Coords = (days[0].route_geom as { coordinates: number[][] })
+        .coordinates;
+      expect(day1Coords[0]).toEqual([10.0, 46.0]);
+      expect(day1Coords[2]).toEqual([10.2, 46.1]);
+      const day3Coords = (days[2].route_geom as { coordinates: number[][] })
+        .coordinates;
+      expect(day3Coords[0]).toEqual([10.4, 46.3]);
+      expect(day3Coords[2]).toEqual([10.6, 46.5]);
+
+      // Each saved day gets its OWN waypoints — the rich type vocabulary
+      // (rest, accommodation, photo, fuel, start, end) all survives. The
+      // legacy `/trips/import` path drops `accommodation` entirely
+      // because its DTO doesn't accept the type — this assertion guards
+      // the regression.
+      const wpByDay = waypointBodiesByDayId();
+      const allTypes = Array.from(wpByDay.values())
+        .flat()
+        .map((w) => w.waypoint_type);
+      expect(allTypes).toContain('start');
+      expect(allTypes).toContain('rest');
+      expect(allTypes).toContain('accommodation');
+      expect(allTypes).toContain('photo');
+      expect(allTypes).toContain('fuel');
+      expect(allTypes).toContain('end');
+
+      // Sequence is per-day 0..n-1 (so the per-day index stays clean).
+      for (const list of wpByDay.values()) {
+        expect(list.map((w) => w.sequence)).toEqual(
+          Array.from({ length: list.length }, (_, i) => i),
+        );
+      }
+
+      expect(result.status).toBe('planned');
+    });
+
+    it('preserves multi-day structure for a 1-day snapshot (no flattening regression)', async () => {
+      tripShares.findActiveByToken.mockResolvedValueOnce(
+        makeShare([
+          {
+            distanceKm: 95,
+            coordinates: [
+              [10, 46],
+              [10.05, 46.05],
+              [10.1, 46.1],
+            ],
+            waypoints: [
+              { lat: 46, lng: 10, name: 'Start', type: 'start' },
+              { lat: 46.1, lng: 10.1, name: 'End', type: 'end' },
+            ],
+          },
+        ]),
+      );
+      mockGetDetailReturns(makeOwnedTrip({ status: 'planned', num_days: 1 }));
+
+      await service.importFromShare(OWNER_ID, {
+        share_token: 'tok-1d',
+      });
+
+      expect(manager.create).toHaveBeenCalledWith(
+        Trip,
+        expect.objectContaining({
+          num_days: 1,
+          daily_km_min: 95,
+          daily_km_max: 95,
+        }),
+      );
+      expect(dayBodies()).toHaveLength(1);
+    });
+
+    it('renumbers days so a snapshot with sparse/duplicate dayNumbers still satisfies the (trip_id, day_number) unique index', async () => {
+      // Older companion exports could emit `dayNumber: 1, 1, 3` after
+      // a mid-list day was deleted client-side. We renumber to 1..N to
+      // avoid tripping the unique index and to keep the day list dense.
+      const share = makeShare([
+        { distanceKm: 100 },
+        { distanceKm: 110 },
+        { distanceKm: 120 },
+      ]);
+      // Mutate dayNumbers in the snapshot to (1, 1, 3) — the bug shape.
+      (
+        share.snapshot as { days: Array<{ dayNumber: number }> }
+      ).days[1].dayNumber = 1;
+      (
+        share.snapshot as { days: Array<{ dayNumber: number }> }
+      ).days[2].dayNumber = 3;
+      tripShares.findActiveByToken.mockResolvedValueOnce(share);
+      mockGetDetailReturns(makeOwnedTrip({ status: 'planned', num_days: 3 }));
+
+      // Each day still needs at least geometry OR waypoints to survive
+      // the "no usable data" filter — give every day a 2-point line.
+      for (const d of (
+        share.snapshot as { days: Array<{ routeGeometry: unknown }> }
+      ).days) {
+        d.routeGeometry = {
+          type: 'LineString',
+          coordinates: [
+            [10, 46],
+            [10.1, 46.1],
+          ],
+        };
+      }
+
+      await service.importFromShare(OWNER_ID, { share_token: 'tok-renum' });
+
+      const days = dayBodies();
+      expect(days).toHaveLength(3);
+      expect(days.map((d) => d.day_number)).toEqual([1, 2, 3]);
+    });
+
+    it('drops days with neither geometry nor waypoints rather than persisting empty rows', async () => {
+      // Empty days carry no information the rider could ride. They get
+      // skipped, and the surviving days are renumbered so the day_number
+      // sequence stays dense (no gap at the dropped position).
+      tripShares.findActiveByToken.mockResolvedValueOnce(
+        makeShare([
+          {
+            distanceKm: 50,
+            coordinates: [
+              [10, 46],
+              [10.1, 46.1],
+            ],
+          },
+          // Empty middle day — no geometry, no waypoints.
+          { distanceKm: 0, waypoints: [] },
+          {
+            distanceKm: 75,
+            coordinates: [
+              [10.2, 46.2],
+              [10.3, 46.3],
+            ],
+          },
+        ]),
+      );
+      mockGetDetailReturns(makeOwnedTrip({ status: 'planned', num_days: 2 }));
+
+      await service.importFromShare(OWNER_ID, { share_token: 'tok-empty' });
+
+      const days = dayBodies();
+      expect(days).toHaveLength(2);
+      expect(days.map((d) => d.day_number)).toEqual([1, 2]);
+    });
+
+    it('400s when the snapshot has zero usable days', async () => {
+      // Every day is empty/malformed — the rider should see a clear
+      // "snapshot is broken" error, not a 201 returning an empty trip.
+      tripShares.findActiveByToken.mockResolvedValueOnce(
+        makeShare([
+          { distanceKm: 0, waypoints: [] },
+          { distanceKm: 0, waypoints: [] },
+        ]),
+      );
+
+      await expect(
+        service.importFromShare(OWNER_ID, { share_token: 'tok-broken' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('400s when the snapshot has no days[] array at all', async () => {
+      tripShares.findActiveByToken.mockResolvedValueOnce({
+        id: 'share-1',
+        owner_id: 'owner-x',
+        share_token: 'tok-shape',
+        title: 'Broken shape',
+        view_count: 0,
+        created_at: NOW,
+        updated_at: NOW,
+        snapshot: { name: 'no days here' },
+        owner: { display_name: 'Adam' },
+      } as unknown as TripShare);
+
+      await expect(
+        service.importFromShare(OWNER_ID, { share_token: 'tok-shape' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('falls back to waypoint coordinates when a day carries no route geometry', async () => {
+      // Older shares (or freshly-edited days the planner hasn't routed
+      // yet) can land here without a `routeGeometry` block. The day
+      // still carries information — skip the geometry but persist the
+      // waypoints so the rider sees the planned stops.
+      tripShares.findActiveByToken.mockResolvedValueOnce(
+        makeShare([
+          {
+            distanceKm: 30,
+            // No coordinates — only waypoints carry geographic info.
+            waypoints: [
+              { lat: 46, lng: 10, name: 'Start', type: 'start' },
+              { lat: 46.1, lng: 10.1, name: 'End', type: 'end' },
+            ],
+          },
+        ]),
+      );
+      mockGetDetailReturns(makeOwnedTrip({ status: 'planned', num_days: 1 }));
+
+      await service.importFromShare(OWNER_ID, { share_token: 'tok-nogeom' });
+
+      const days = dayBodies();
+      expect(days).toHaveLength(1);
+      // route_geom stays null (geometry < 2 points) but the waypoints
+      // still get persisted under that day.
+      expect(days[0].route_geom).toBeNull();
+      const wpByDay = waypointBodiesByDayId();
+      const wps = Array.from(wpByDay.values()).flat();
+      expect(wps.map((w) => w.waypoint_type)).toEqual(['start', 'end']);
+    });
+
+    it('skips malformed coordinate entries and out-of-range lat/lng without throwing', async () => {
+      tripShares.findActiveByToken.mockResolvedValueOnce(
+        makeShare([
+          {
+            distanceKm: 50,
+            coordinates: [
+              [10, 46],
+              [200, 91] as [number, number], // out of range — skipped
+              [10.1, 46.1],
+              // malformed entries below the cast — TS won't accept them
+              // in the helper signature, but the runtime parser must
+              // tolerate them since snapshots are opaque JSONB.
+              ['bad', 'data'] as unknown as [number, number],
+              [10.2, 46.2],
+            ],
+          },
+        ]),
+      );
+      mockGetDetailReturns(makeOwnedTrip({ status: 'planned', num_days: 1 }));
+
+      await service.importFromShare(OWNER_ID, {
+        share_token: 'tok-bad-coords',
+      });
+
+      const days = dayBodies();
+      const coords = (days[0].route_geom as { coordinates: number[][] })
+        .coordinates;
+      // Only the 3 valid entries survive — the in-range ones, in order.
+      expect(coords).toEqual([
+        [10, 46],
+        [10.1, 46.1],
+        [10.2, 46.2],
+      ]);
+    });
+
+    it('coerces an unknown waypoint type to via instead of dropping the waypoint', async () => {
+      // A snapshot from a future companion that introduces a new type
+      // (e.g. `viewpoint`) shouldn't lose the stop entirely — fall back
+      // to `via` so the rider still sees a planned waypoint there.
+      tripShares.findActiveByToken.mockResolvedValueOnce(
+        makeShare([
+          {
+            distanceKm: 50,
+            coordinates: [
+              [10, 46],
+              [10.1, 46.1],
+            ],
+            waypoints: [
+              { lat: 46, lng: 10, name: 'Mystery', type: 'viewpoint' },
+            ],
+          },
+        ]),
+      );
+      mockGetDetailReturns(makeOwnedTrip({ status: 'planned', num_days: 1 }));
+
+      await service.importFromShare(OWNER_ID, {
+        share_token: 'tok-future-type',
+      });
+
+      const wps = Array.from(waypointBodiesByDayId().values()).flat();
+      expect(wps).toHaveLength(1);
+      expect(wps[0]).toMatchObject({ waypoint_type: 'via', name: 'Mystery' });
+    });
+
+    it('propagates the share lookup 404 when the token is unknown', async () => {
+      // The trip-shares service collapses unknown-token and
+      // soft-deleted-owner into the same NotFoundException; the import
+      // path must surface that as-is so the mobile client can render
+      // "this handoff link has expired or was revoked."
+      tripShares.findActiveByToken.mockRejectedValueOnce(
+        new NotFoundException('Trip share not found'),
+      );
+
+      await expect(
+        service.importFromShare(OWNER_ID, { share_token: 'tok-unknown' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
+    it('does NOT bump the share view_count (analytics integrity)', async () => {
+      // The view counter is meant to track external link traffic — an
+      // authenticated server-side import would inflate that signal.
+      // Asserting we route through `findActiveByToken` (the no-bump
+      // method) rather than `getByToken` is what guarantees this.
+      tripShares.findActiveByToken.mockResolvedValueOnce(
+        makeShare([
+          {
+            distanceKm: 50,
+            coordinates: [
+              [10, 46],
+              [10.1, 46.1],
+            ],
+          },
+        ]),
+      );
+      mockGetDetailReturns(makeOwnedTrip({ status: 'planned', num_days: 1 }));
+
+      await service.importFromShare(OWNER_ID, { share_token: 'tok-quiet' });
+
+      expect(tripShares.findActiveByToken).toHaveBeenCalledTimes(1);
+      expect(tripShares.findActiveByToken).toHaveBeenCalledWith('tok-quiet');
+    });
+
+    it('recovers per-day distance from geometry when the snapshot omits distanceKm', async () => {
+      // Older shares (pre-distanceKm field) would otherwise surface as
+      // "0 km" days in the trip list. Falling back to a haversine sum
+      // over the geometry keeps the import useful.
+      tripShares.findActiveByToken.mockResolvedValueOnce(
+        makeShare([
+          {
+            distanceKm: 0,
+            coordinates: [
+              [10.0, 46.0],
+              [10.1, 46.1],
+              [10.2, 46.2],
+            ],
+          },
+        ]),
+      );
+      mockGetDetailReturns(makeOwnedTrip({ status: 'planned', num_days: 1 }));
+
+      await service.importFromShare(OWNER_ID, { share_token: 'tok-no-dist' });
+
+      const days = dayBodies();
+      expect(days).toHaveLength(1);
+      // Two ~14km legs ≈ 28km total, well above zero. We don't assert
+      // an exact value (haversine on these coords is an approximation)
+      // but it must be > 0 and the day must satisfy the schema's
+      // positive-number constraint via the floor in the bounds calc.
+      expect(days[0].distance_km as number).toBeGreaterThan(0);
+    });
+  });
+
   describe('list', () => {
     it('returns a summary per visible trip, ordered newest-first', async () => {
       const trips = [
@@ -852,9 +1381,7 @@ describe('TripsService', () => {
       memberRepo.findOne.mockResolvedValueOnce({
         role: 'owner',
       } as TripMember);
-      tripRepo.findOne.mockResolvedValueOnce(
-        makeOwnedTrip() as unknown as Trip,
-      ); // empty-PATCH existence probe
+      tripRepo.findOne.mockResolvedValueOnce(makeOwnedTrip()); // empty-PATCH existence probe
       mockGetDetailReturns(makeOwnedTrip());
 
       await service.update(OWNER_ID, TRIP_ID, {});

@@ -2,9 +2,11 @@
  * TripImportScreen — landing surface for the web companion's "Push to
  * mobile" handoff (US-39 / #283). The deep link
  * `tarmoto://trips/import?tripId=...&token=...` opens this screen with
- * both query params; we fetch `/trip-shares/:token`, show a preview of
- * the shared trip, and on confirmation post to `/trips/import` to
- * materialise the trip in the rider's library.
+ * both query params; we fetch `/trip-shares/:token` for the preview UI,
+ * and on confirmation post the token to `/trips/from-share` (#357) so
+ * the backend can reconstruct the original multi-day structure rather
+ * than collapsing the trip into a single planned day the way the
+ * legacy `/trips/import` endpoint does.
  *
  * Auth note: `/trip-shares/:token` is a public read-only endpoint so the
  * fetch works whether or not the rider is signed in. The actual import
@@ -29,7 +31,6 @@ import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
 import { ApiError, api } from "@/services/api";
 import {
   buildSharedTripPreview,
-  sharedSnapshotToImportRequest,
   type SharedTripPreview,
 } from "@/services/sharedTripImport";
 import type { TripSharePublic } from "@/types";
@@ -96,24 +97,28 @@ export default function TripImportScreen() {
 
   const handleImport = useCallback(async () => {
     if (!share || importingRef.current) return;
-    const request = sharedSnapshotToImportRequest(share);
-    if (!request) {
-      setErrorMessage(
-        "This shared trip doesn't carry route geometry — ask the planner to re-export it.",
-      );
-      return;
-    }
     importingRef.current = true;
     setImporting(true);
     setErrorMessage(null);
     try {
-      const trip = await api.importTripFromRoute(request);
+      // POST /trips/from-share preserves the multi-day structure the
+      // planner exported (#357). The backend reads the snapshot from
+      // `trip_shares` under the supplied token — we only need to send
+      // the token, not re-post the snapshot.
+      const trip = await api.importTripFromShare(share.share_token);
       // Replace, not push: the import landing screen has no value as a
       // back target once the trip is in the rider's library.
       navigation.replace("TripDetail", { tripId: trip.id });
     } catch (err) {
+      const status = err instanceof ApiError ? err.status : 0;
       const message =
-        err instanceof Error ? err.message : "Couldn't import this trip.";
+        status === 400
+          ? "This shared trip doesn't carry route data — ask the planner to re-export it."
+          : status === 404
+            ? "This handoff link has expired or was revoked."
+            : err instanceof Error
+              ? err.message
+              : "Couldn't import this trip.";
       setErrorMessage(message);
     } finally {
       importingRef.current = false;
