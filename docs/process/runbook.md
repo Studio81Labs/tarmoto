@@ -542,41 +542,52 @@ ElastiCache Redis:
   depth chart on CloudWatch is climbing for >15 min, check
   `GET /jobs/health` per "Background jobs aren't running" above.
 
-### Companion (Cloudflare Pages)
+### Companion (Cloudflare Workers)
 
-The `companion-deploy.yml` workflow is gated behind a repo
-variable so it lands as scaffolding without blocking every PR
-before the Cloudflare project is wired up. To enable:
+The `companion-deploy.yml` workflow ships the companion as a
+single Cloudflare Worker via `@opennextjs/cloudflare` (Workers +
+Static Assets). It is gated behind a repo variable so it lands as
+scaffolding without blocking every PR before the Cloudflare
+account is wired up. To enable:
 
 1. Set `COMPANION_DEPLOY_ENABLED=true` under
    **Settings → Secrets and variables → Actions → Variables**.
-2. Add `CLOUDFLARE_API_TOKEN` (Pages:Edit, Account:Read, Zone:Read)
-   and `CLOUDFLARE_ACCOUNT_ID` to the repo secrets.
-3. Optionally override the Pages project name with
-   `COMPANION_PAGES_PROJECT` (default: `tarmoto-companion`).
+2. Add `CLOUDFLARE_API_TOKEN` (Workers Scripts:Edit, Workers
+   Subdomain:Read, Account:Read) and `CLOUDFLARE_ACCOUNT_ID` to
+   the repo secrets.
+3. Set `COMPANION_WORKERS_SUBDOMAIN` to the account's
+   `workers.dev` subdomain (e.g. `tarmoto`). The workflow uses it
+   to construct the URL it comments on PRs and smoke-tests.
+4. Optionally override the Worker name with
+   `COMPANION_WORKER_NAME` (default: `tarmoto-companion`).
 
 Once enabled:
 
-- PR previews deploy automatically on every PR. The workflow
-  comments the preview URL on the PR.
-- Production deploys on push to `main`. The smoke step checks
-  the home page returns 200 and contains the Tarmoto app shell
-  marker.
-- **Rollback**: Cloudflare Pages dashboard → Deployments →
-  promote a previous successful build to production.
+- PR previews deploy automatically on every PR via
+  `wrangler versions upload --preview-alias pr-<n>`. Each PR
+  ends up on `https://pr-<n>-<worker>.<subdomain>.workers.dev`
+  and the workflow comments the URL on the PR.
+- Production deploys on push to `main` via `wrangler deploy`.
+  The smoke step checks the home page returns 200 and contains
+  the Tarmoto app shell marker.
+- **Rollback**: Cloudflare dashboard → Workers & Pages →
+  `<worker>` → Deployments → roll back to a previous version.
+  `wrangler rollback` works the same from a checkout of `main`.
 - **Deploy failed with auth error** — `CLOUDFLARE_API_TOKEN` is
-  missing or has lost the Pages:Edit / Account:Read scopes.
-  Regenerate at https://dash.cloudflare.com/profile/api-tokens
-  using the "Edit Cloudflare Pages" template scoped to the
-  production account.
-- **Build fails inside `@cloudflare/next-on-pages` with "Next.js
-  inferred your workspace root"** — Vercel CLI (invoked by
-  next-on-pages) does its own `pnpm install` scoped to
-  `apps/companion`, which loses the workspace topology.
-  `@cloudflare/next-on-pages` is also deprecated upstream in
-  favour of `@opennextjs/cloudflare`. Migration to OpenNext is a
-  separate follow-up; until that lands, validate the build
-  locally before flipping `COMPANION_DEPLOY_ENABLED=true`.
+  missing or has lost the Workers Scripts:Edit / Workers
+  Subdomain:Read / Account:Read scopes. Regenerate at
+  https://dash.cloudflare.com/profile/api-tokens using the
+  "Edit Cloudflare Workers" template scoped to the production
+  account.
+- **Build fails with "Node.js middleware is not currently
+  supported"** — `@opennextjs/cloudflare` requires Edge
+  middleware, but Next 16's `proxy.ts` defaults to the Node
+  runtime and refuses to opt in. Keep the file named
+  `apps/companion/src/middleware.ts` (Next 16 still honours the
+  legacy filename) and pin
+  `runtime: "experimental-edge"` on the exported `config`. Track
+  https://github.com/opennextjs/opennextjs-cloudflare/issues/617
+  for native Node-middleware support.
 
 ### Mobile (TestFlight + Play Internal)
 

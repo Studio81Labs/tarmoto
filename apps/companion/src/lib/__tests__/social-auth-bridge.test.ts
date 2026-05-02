@@ -15,10 +15,10 @@ describe("social auth bridge", () => {
     vi.unstubAllGlobals();
   });
 
-  it("derives a stable backend password from the normalized email", () => {
-    expect(buildSocialBridgePassword(" Rider@Example.com ", "secret-key")).toBe(
-      buildSocialBridgePassword("rider@example.com", "secret-key"),
-    );
+  it("derives a stable backend password from the normalized email", async () => {
+    expect(
+      await buildSocialBridgePassword(" Rider@Example.com ", "secret-key"),
+    ).toBe(await buildSocialBridgePassword("rider@example.com", "secret-key"));
   });
 
   it("registers a new OAuth rider against the backend", async () => {
@@ -66,7 +66,10 @@ describe("social auth bridge", () => {
     ).toEqual({
       email: "rider@example.com",
       display_name: "Rider One",
-      password: buildSocialBridgePassword("rider@example.com", "secret-key"),
+      password: await buildSocialBridgePassword(
+        "rider@example.com",
+        "secret-key",
+      ),
     });
     expect(result.access_token).toBe("access-token");
   });
@@ -123,7 +126,10 @@ describe("social auth bridge", () => {
       JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body ?? "")),
     ).toEqual({
       email: "rider@example.com",
-      password: buildSocialBridgePassword("rider@example.com", "secret-key"),
+      password: await buildSocialBridgePassword(
+        "rider@example.com",
+        "secret-key",
+      ),
     });
     expect(result.refresh_token).toBe("refresh-token");
   });

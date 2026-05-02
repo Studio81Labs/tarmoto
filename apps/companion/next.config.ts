@@ -1,4 +1,6 @@
+import path from "node:path";
 import type { NextConfig } from "next";
+import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -7,6 +9,18 @@ const nextConfig: NextConfig = {
   // tightens cross-origin asset requests in dev mode and blocks anything
   // not on this list, which breaks tests served via 127.0.0.1.
   allowedDevOrigins: ["127.0.0.1", "localhost"],
+  // Pin Turbopack's project root to the workspace root. Without this Next
+  // walks up looking for the closest lockfile and can land on the wrong
+  // directory in the pnpm monorepo, which produced the
+  // "We couldn't find the next/package.json" failure under the old
+  // next-on-pages build.
+  turbopack: {
+    root: path.join(__dirname, "..", ".."),
+  },
 };
+
+// Wires Cloudflare bindings into `next dev` so getCloudflareContext() works
+// locally. No-op outside `next dev`.
+initOpenNextCloudflareForDev();
 
 export default nextConfig;

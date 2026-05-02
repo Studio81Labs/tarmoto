@@ -15,8 +15,12 @@ export default [
   {
     ignores: [
       ".next/**",
+      // Build output from `opennextjs-cloudflare build` — Worker bundle
+      // and assets, not source.
+      ".open-next/**",
       "node_modules/**",
       "next-env.d.ts",
+      "cloudflare-env.d.ts",
       // Playwright tests live under e2e/ and use Playwright's fixture
       // function `use`, which `react-hooks/rules-of-hooks` flags as a
       // misused React hook. The suite has its own runner and tsconfig;
