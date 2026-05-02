@@ -15,10 +15,18 @@
  *   - whether the per-card "private" pill is shown — only visible on
  *     own-profile, since for other riders the backend has already
  *     filtered out their private shares
+ *
+ * Refresh model: the section re-fetches every time the host screen
+ * gains focus (via `useFocusEffect`) so a rider who shares a new ride
+ * and navigates back to their profile sees the new card immediately.
+ * `refreshKey` is an opt-in nudge for the parent: bump it from a
+ * pull-to-refresh handler (or anywhere else) to force a re-fetch
+ * without unmounting the section.
  */
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import Icon from "@react-native-vector-icons/material-design-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
 import { ApiError, api } from "@/services/api";
 import type { UserSharedRide } from "@/types";
@@ -33,6 +41,12 @@ interface SharedRidesSectionProps {
   isSelf: boolean;
   /** Rider display name — used in the empty-state copy. */
   displayName: string;
+  /**
+   * Bump from the parent to force a re-fetch — typically wired to
+   * pull-to-refresh on the host screen. Identity-compared, so any
+   * change (number bump or new object reference) triggers a reload.
+   */
+  refreshKey?: number;
 }
 
 type Phase = "loading" | "ready" | "error";
@@ -43,6 +57,7 @@ export default function SharedRidesSection({
   userId,
   isSelf,
   displayName,
+  refreshKey,
 }: SharedRidesSectionProps) {
   const [items, setItems] = useState<UserSharedRide[]>([]);
   const [phase, setPhase] = useState<Phase>("loading");
@@ -83,14 +98,23 @@ export default function SharedRidesSection({
         err instanceof Error ? err.message : "Could not load shared rides.",
       );
     }
-  }, [userId]);
+    // refreshKey is a refresh nudge — including it in deps makes
+    // bumping it re-run `load`, which re-runs the focus effect below.
+  }, [userId, refreshKey]);
 
-  useEffect(() => {
-    void load();
-    return () => {
-      if (fetchSignalRef.current) fetchSignalRef.current.cancelled = true;
-    };
-  }, [load]);
+  // Refresh on every focus: when the host screen comes back into view
+  // after the rider shared a new ride elsewhere (or unshared one), the
+  // list is re-fetched. `useFocusEffect` also runs when `load` changes
+  // identity while the screen is focused, so a `userId` change or a
+  // `refreshKey` bump from the parent both trigger a reload too.
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+      return () => {
+        if (fetchSignalRef.current) fetchSignalRef.current.cancelled = true;
+      };
+    }, [load]),
+  );
 
   return (
     <View style={styles.card}>

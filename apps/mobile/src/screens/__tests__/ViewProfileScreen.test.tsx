@@ -46,6 +46,16 @@ jest.mock("@react-navigation/native", () => ({
     setOptions: mockSetOptions,
   }),
   useRoute: () => ({ params: routeParams }),
+  // Mirrors the real useFocusEffect: run the callback on mount and
+  // whenever its identity changes. SharedRidesSection (rendered inside
+  // ViewProfileScreen) relies on it for its initial fetch.
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    const ReactLib = require("react");
+    ReactLib.useEffect(() => {
+      const cleanup = cb();
+      return typeof cleanup === "function" ? cleanup : undefined;
+    }, [cb]);
+  },
 }));
 
 jest.mock("@/services/api", () => ({

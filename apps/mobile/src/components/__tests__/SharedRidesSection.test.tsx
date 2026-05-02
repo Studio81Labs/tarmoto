@@ -15,6 +15,19 @@ jest.mock("@react-native-vector-icons/material-design-icons", () => {
   };
 });
 
+// `useFocusEffect` runs on every screen focus in the real navigator;
+// mirror that semantic by re-running the callback whenever its identity
+// changes (which happens when `userId` or `refreshKey` change).
+jest.mock("@react-navigation/native", () => ({
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    const ReactLib = require("react");
+    ReactLib.useEffect(() => {
+      const cleanup = cb();
+      return typeof cleanup === "function" ? cleanup : undefined;
+    }, [cb]);
+  },
+}));
+
 jest.mock("@/services/api", () => ({
   api: {
     listUserSharedRides: jest.fn(),
@@ -178,5 +191,71 @@ describe("SharedRidesSection", () => {
     );
 
     expect(await screen.findByText("offline")).toBeTruthy();
+  });
+
+  it("re-fetches when refreshKey is bumped (parent pull-to-refresh nudge)", async () => {
+    // Cursor Bugbot regression guard: before the fix this section only
+    // fetched once on mount and stayed stale on pull-to-refresh.
+    mockedApi.listUserSharedRides.mockResolvedValue({
+      items: [buildRide()],
+      total: 1,
+      limit: 5,
+      offset: 0,
+    });
+
+    const { rerender } = render(
+      <SharedRidesSection
+        userId="user-2"
+        isSelf={false}
+        displayName="Other"
+        refreshKey={0}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(mockedApi.listUserSharedRides).toHaveBeenCalledTimes(1),
+    );
+
+    rerender(
+      <SharedRidesSection
+        userId="user-2"
+        isSelf={false}
+        displayName="Other"
+        refreshKey={1}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(mockedApi.listUserSharedRides).toHaveBeenCalledTimes(2),
+    );
+  });
+
+  it("re-fetches when userId changes (e.g. ViewProfile navigates rider→rider)", async () => {
+    mockedApi.listUserSharedRides.mockResolvedValue({
+      items: [],
+      total: 0,
+      limit: 5,
+      offset: 0,
+    });
+
+    const { rerender } = render(
+      <SharedRidesSection userId="user-2" isSelf={false} displayName="A" />,
+    );
+
+    await waitFor(() =>
+      expect(mockedApi.listUserSharedRides).toHaveBeenCalledWith("user-2", {
+        limit: 5,
+      }),
+    );
+
+    rerender(
+      <SharedRidesSection userId="user-3" isSelf={false} displayName="B" />,
+    );
+
+    await waitFor(() =>
+      expect(mockedApi.listUserSharedRides).toHaveBeenCalledWith("user-3", {
+        limit: 5,
+      }),
+    );
   });
 });

@@ -57,6 +57,10 @@ export default function ProfileScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
+  // Bumped on pull-to-refresh and after avatar upload so SharedRidesSection
+  // re-fetches in lock-step with the rest of the profile data — without it
+  // the section would keep stale rows after a manual refresh.
+  const [sharedRidesRefreshKey, setSharedRidesRefreshKey] = useState(0);
 
   // Cancellation token shared between the focus effect and pull-to-refresh
   // so an in-flight fetch can't write to state after the screen unmounts
@@ -210,7 +214,10 @@ export default function ProfileScreen() {
       refreshControl={
         <RefreshControl
           refreshing={isRefreshing}
-          onRefresh={() => void load("refresh")}
+          onRefresh={() => {
+            setSharedRidesRefreshKey((k) => k + 1);
+            void load("refresh");
+          }}
           tintColor={colors.primary}
         />
       }
@@ -284,7 +291,12 @@ export default function ProfileScreen() {
         />
       </View>
 
-      <SharedRidesSection userId={user.id} isSelf displayName={displayName} />
+      <SharedRidesSection
+        userId={user.id}
+        isSelf
+        displayName={displayName}
+        refreshKey={sharedRidesRefreshKey}
+      />
 
       <View style={styles.actionsCard}>
         <ActionRow
