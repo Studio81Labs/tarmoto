@@ -128,18 +128,29 @@ jobs:
             exit 1
           fi
           SHORT_SHA="${GITHUB_SHA::7}"
+          # Disable wrangler 4's --experimental-autoconfig (default on
+          # in 4.x): when wrangler detects a Next.js project it delegates
+          # the deploy to `opennextjs-cloudflare`, whose CLI wrapper
+          # re-quotes our `--message` arg and breaks on the space (yargs
+          # then complains "Unknown argument: <short_sha>"). We've
+          # already built explicitly via `cf:build` and wrangler.jsonc
+          # points at `.open-next/worker.js` + `.open-next/assets`, so
+          # there's nothing for autoconfig to orchestrate — bypass it
+          # for deterministic arg handling.
           if [ "$IS_PR" = "true" ]; then
             ALIAS="pr-${PR_NUMBER}"
             # `versions upload` produces a static, aliased preview URL
             # without rolling traffic to it — same model as the old
             # pages.dev branch preview, on Workers.
             pnpm exec wrangler versions upload \
+              --x-autoconfig=false \
               --name "$WORKER_NAME" \
               --preview-alias "$ALIAS" \
               --message "PR #${PR_NUMBER} (${SHORT_SHA})"
             URL="https://${ALIAS}-${WORKER_NAME}.${WORKERS_SUBDOMAIN}.workers.dev"
           else
             pnpm exec wrangler deploy \
+              --x-autoconfig=false \
               --name "$WORKER_NAME" \
               --message "main @ ${SHORT_SHA}"
             URL="https://${WORKER_NAME}.${WORKERS_SUBDOMAIN}.workers.dev"
