@@ -12,6 +12,12 @@ export type {
 export { usePendingUploads } from "./usePendingUploads";
 export type { PendingUploadsState } from "./usePendingUploads";
 
+export { usePendingHazardReports } from "./usePendingHazardReports";
+export type {
+  PendingHazardReportsState,
+  PendingHazardReportsRetryOutcome,
+} from "./usePendingHazardReports";
+
 export { useOfflineRegions } from "./useOfflineRegions";
 export type {
   AddRegionOutcome,

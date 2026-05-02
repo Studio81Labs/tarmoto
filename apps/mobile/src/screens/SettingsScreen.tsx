@@ -26,7 +26,7 @@ import {
 import QualityThresholdSlider from "@/components/QualityThresholdSlider";
 import FuelRangePicker from "@/components/FuelRangePicker";
 import { useAuthStore, useOfflineStore, usePreferencesStore } from "@/stores";
-import { usePendingUploads } from "@/hooks";
+import { usePendingHazardReports, usePendingUploads } from "@/hooks";
 import { api } from "@/services/api";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
 
@@ -102,6 +102,8 @@ export default function SettingsScreen() {
       <BulkExportCard />
 
       <PendingUploadsCard />
+
+      <PendingHazardReportsCard />
     </ScrollView>
   );
 }
@@ -396,6 +398,99 @@ function PendingUploadsCard() {
   );
 }
 
+// US-4 follow-up: parallel surface to PendingUploadsCard, but for the
+// hazard-report queue. Riders can submit hazards offline (tunnels,
+// passes, dead-zones) and this is where they see the backlog and
+// trigger a manual drain when they're back on a good network.
+function PendingHazardReportsCard() {
+  const { count, isRetrying, lastResult, retry } = usePendingHazardReports();
+
+  const hasPending = count > 0;
+  const description = hasPending
+    ? `${count} hazard report${count === 1 ? "" : "s"} waiting to upload. We'll retry automatically next time you submit a report.`
+    : "All your hazard reports are synced to the Tarmoto community.";
+
+  const resultMessage = formatHazardRetryResult(lastResult, isRetrying);
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.uploadsHeader}>
+        <Icon
+          name={hasPending ? "alert-outline" : "shield-check-outline"}
+          size={22}
+          color={hasPending ? colors.warning : colors.success}
+        />
+        <Text style={styles.sectionTitle}>Hazard reports</Text>
+      </View>
+      <Text style={styles.sectionBody}>{description}</Text>
+
+      {hasPending ? (
+        <TouchableOpacity
+          onPress={retry}
+          disabled={isRetrying}
+          style={[styles.retryBtn, isRetrying ? styles.retryBtnDisabled : null]}
+          accessibilityRole="button"
+          accessibilityLabel="Retry pending hazard reports"
+          accessibilityState={{ disabled: isRetrying }}
+        >
+          {isRetrying ? (
+            <ActivityIndicator color={colors.textInverse} size="small" />
+          ) : (
+            <Text style={styles.retryBtnLabel}>Retry now</Text>
+          )}
+        </TouchableOpacity>
+      ) : null}
+
+      {resultMessage ? (
+        <Text
+          style={
+            resultMessage.tone === "success"
+              ? styles.retrySuccess
+              : styles.retryWarning
+          }
+        >
+          {resultMessage.text}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+interface HazardRetryToast {
+  text: string;
+  tone: "success" | "warning";
+}
+
+// Builds the "success / N failed / N still queued" outcome text from a
+// drain result. Returns null when there's nothing to show (no retry yet
+// or one is in flight). Exported for direct unit testing — keeps the
+// branching logic out of the JSX.
+export function formatHazardRetryResult(
+  lastResult: { flushed: number; failed: number; remaining: number } | null,
+  isRetrying: boolean,
+): HazardRetryToast | null {
+  if (isRetrying || lastResult === null) return null;
+  const { flushed, failed, remaining } = lastResult;
+  if (flushed === 0 && failed === 0 && remaining === 0) return null;
+
+  const parts: string[] = [];
+  if (flushed > 0) {
+    parts.push(`Uploaded ${flushed} report${flushed === 1 ? "" : "s"}`);
+  }
+  if (failed > 0) {
+    parts.push(`${failed} failed`);
+  }
+  if (remaining > 0) {
+    parts.push(`${remaining} still queued`);
+  }
+  // Pure-failure / pure-stuck outcomes get a warning tone; anything
+  // with a successful flush leans on success styling because the rider
+  // actually moved their backlog forward.
+  const tone: "success" | "warning" =
+    flushed > 0 && failed === 0 && remaining === 0 ? "success" : "warning";
+  return { text: `${parts.join(" · ")}.`, tone };
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -456,6 +551,11 @@ const styles = StyleSheet.create({
   },
   retrySuccess: {
     color: colors.success,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
+  },
+  retryWarning: {
+    color: colors.warning,
     fontSize: fontSize.sm,
     fontWeight: fontWeight.semibold,
   },
