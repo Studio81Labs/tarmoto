@@ -187,6 +187,27 @@ export interface FunZone {
 export type RideType = "free" | "commute" | "trip" | "tracked";
 export type RideStatus = "active" | "completed" | "cancelled";
 
+/**
+ * Slim ride shape returned by `/rides/start` and `/rides/stop` (the
+ * backend's `RideResponseDto`). It only carries the columns owned by
+ * the `rides` row itself — `name` / `duration_min` (computed at list
+ * time) and the detail-only enrichments (`segments`, `route_geometry`,
+ * `lean_distribution`, …) are absent. Use this when receiving a
+ * just-started or just-stopped ride; call `getRide` for the full
+ * `RideDetail`.
+ */
+export interface RideResponse {
+  id: string;
+  ride_type: RideType;
+  status: RideStatus;
+  started_at: string;
+  ended_at: string | null;
+  distance_km: number | null;
+  avg_speed: number | null;
+  avg_road_quality: number | null;
+  avg_curviness: number | null;
+}
+
 export interface RideSummary {
   id: string;
   ride_type: RideType;

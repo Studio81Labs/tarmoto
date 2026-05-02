@@ -30,6 +30,7 @@ import type {
   PublicProfile,
   FollowerListItem,
   UserBadge,
+  RideResponse,
   RideSummary,
   RoadSegment,
   RoadSegmentDetail,
@@ -352,27 +353,25 @@ class ApiService {
   async startRide(
     type: string = "free",
     tripDayId?: string,
-  ): Promise<RideDetail> {
+  ): Promise<RideResponse> {
     const result = await client.POST("/api/v1/rides/start", {
       body: {
         ride_type: type as Schemas["StartRideDto"]["ride_type"],
         trip_day_id: tripDayId,
       },
     });
-    // The /start response is a RideResponseDto (the slim shape) but the
-    // mobile UI expects a RideDetail. The two share the same key set —
-    // detail-only fields (route_geometry, segments, lean_distribution)
-    // come back null/empty for a freshly-started ride — so a structural
-    // cast at the boundary is safe rather than a drift-hiding `unknown`.
-    return unwrap(result, "Failed to start ride") as RideDetail;
+    // /start returns the slim `RideResponseDto`. Detail-only fields
+    // (segments, route_geometry, lean_distribution, …) are absent from
+    // the JSON, not nulls — call `getRide` to populate them.
+    return unwrap(result, "Failed to start ride");
   }
 
-  async stopRide(rideId: string): Promise<RideDetail> {
+  async stopRide(rideId: string): Promise<RideResponse> {
     const result = await client.POST("/api/v1/rides/{rideId}/stop", {
       params: { path: { rideId } },
     });
-    // /stop returns the slim RideResponseDto — see `startRide`.
-    return unwrap(result, "Failed to stop ride") as RideDetail;
+    // /stop returns the same slim `RideResponseDto` — see `startRide`.
+    return unwrap(result, "Failed to stop ride");
   }
 
   async getRide(rideId: string): Promise<RideDetail> {

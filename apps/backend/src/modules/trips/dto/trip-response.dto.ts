@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { LatLngResponseDto } from '../../../common/lat-lng.dto.js';
 
 const TRIP_STATUSES = ['draft', 'planned', 'active', 'completed'] as const;
 type TripStatus = (typeof TRIP_STATUSES)[number];
@@ -20,14 +21,6 @@ const TRIP_WAYPOINT_TYPES = [
   'end',
 ] as const;
 type TripWaypointType = (typeof TRIP_WAYPOINT_TYPES)[number];
-
-class TripDayGeometryPointDto {
-  @ApiProperty()
-  lat!: number;
-
-  @ApiProperty()
-  lng!: number;
-}
 
 export class TripSummaryDto {
   @ApiProperty()
@@ -140,10 +133,10 @@ export class TripDayDto {
   estimated_time_min!: number;
 
   @ApiProperty({
-    type: [TripDayGeometryPointDto],
+    type: [LatLngResponseDto],
     description: 'Polyline points (lat/lng) of the day route.',
   })
-  route_geometry!: TripDayGeometryPointDto[];
+  route_geometry!: LatLngResponseDto[];
 
   @ApiProperty({ type: [TripWaypointDto] })
   waypoints!: TripWaypointDto[];

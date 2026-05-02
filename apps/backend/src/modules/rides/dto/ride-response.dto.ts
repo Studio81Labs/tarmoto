@@ -1,16 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { RIDE_TYPES, type RideType } from '@tarmoto/shared';
+import { LatLngResponseDto } from '../../../common/lat-lng.dto.js';
 
 const RIDE_STATUSES = ['active', 'completed', 'cancelled'] as const;
 type RideStatus = (typeof RIDE_STATUSES)[number];
-
-class RideRouteGeometryPointDto {
-  @ApiProperty()
-  lat!: number;
-
-  @ApiProperty()
-  lng!: number;
-}
 
 /**
  * Per-ride lean histogram (US-19). Counts of 1-second sensor windows in
@@ -99,8 +92,8 @@ export class RideDetailDto extends RideSummaryDto {
   @ApiProperty({ nullable: true })
   max_speed!: number | null;
 
-  @ApiProperty({ type: [RideRouteGeometryPointDto], nullable: true })
-  route_geometry!: RideRouteGeometryPointDto[] | null;
+  @ApiProperty({ type: [LatLngResponseDto], nullable: true })
+  route_geometry!: LatLngResponseDto[] | null;
 
   @ApiProperty({ nullable: true })
   elevation_gain!: number | null;

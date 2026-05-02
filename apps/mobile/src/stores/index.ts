@@ -6,7 +6,7 @@ import { create } from "zustand";
 import type {
   User,
   RideSummary,
-  RideDetail,
+  RideResponse,
   Hazard,
   Trip,
   TripSummary,
@@ -48,8 +48,11 @@ export const useAuthStore = create<AuthState>((set) => ({
 // ── Ride Store ──
 
 interface RideState {
-  // Active ride
-  activeRide: RideDetail | null;
+  // Active ride. Stored as the slim `RideResponse` shape returned by
+  // `/rides/start` / `/rides/stop` — detail-only fields (segments,
+  // route_geometry, lean_distribution) only become available via
+  // `api.getRide`, which the detail screen runs separately.
+  activeRide: RideResponse | null;
   isRiding: boolean;
   rideType: "free" | "commute" | "trip";
   /**
@@ -87,7 +90,7 @@ interface RideState {
   // Actions
   startRide: (type?: "free" | "commute" | "trip") => void;
   stopRide: () => void;
-  setActiveRide: (ride: RideDetail | null) => void;
+  setActiveRide: (ride: RideResponse | null) => void;
   updateSpeed: (speed: number) => void;
   updateQuality: (quality: ClassificationResult) => void;
   updateLocation: (location: LocationUpdate) => void;
