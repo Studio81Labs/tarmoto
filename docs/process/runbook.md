@@ -760,19 +760,25 @@ into staging Secrets Manager and flipping the activation gates in
    apn_secret_enabled = true   # leave false until step 3 is done
    ```
 
-   Run `terraform apply` from `infra/aws/envs/staging`. This adds
-   the `TARMOTO_FCM_*` / `TARMOTO_APN_*` entries to the ECS task
-   definition. Force a new deployment so running tasks pick up the
-   new secrets at boot:
+   Run `terraform apply` from `infra/aws/envs/staging`. Terraform
+   registers a new revision of the `tarmoto-staging-backend`
+   task-definition family carrying the FCM / APN env vars, but the
+   running service does **not** roll over to it on its own — the
+   `ecs-service` module pins
+   `lifecycle.ignore_changes = [task_definition]` so Terraform never
+   fights the deploy workflow over which revision is live.
 
-   ```bash
-   aws ecs update-service \
-     --cluster tarmoto-staging \
-     --service tarmoto-staging-backend \
-     --force-new-deployment
-   aws ecs wait services-stable \
-     --cluster tarmoto-staging --services tarmoto-staging-backend
-   ```
+   To cut the running service over to the new revision, re-run the
+   **Backend Deploy** workflow on `main` (Actions → Backend Deploy
+   → Run workflow → `environment=staging`). The workflow reads the
+   family's latest active revision (now Terraform's, with the new
+   secrets), renders it against the current backend image,
+   registers another revision on top, and updates the service with
+   `--task-definition <new-arn>`. The post-deploy smoke gate
+   handles rollback if the new task fails to boot — never run
+   `aws ecs update-service --force-new-deployment` without
+   `--task-definition` here, since that just redeploys the
+   currently-live (old) revision.
 
 5. **Verify provider initialisation.** Tail the new task's logs and
    look for one of these `PushModule` lines:
