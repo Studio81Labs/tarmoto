@@ -657,7 +657,10 @@ function RegionalLeaderboardsSection() {
 
   // Resolve home_region once per user. We don't error out if the request
   // fails — the global ranking still renders, the toggle just stays on
-  // global.
+  // global. `scope` is realigned to whatever the new user's region permits
+  // so a switch from a region-toggled User A to a region-less User B can't
+  // leave `scope === "region"` while the My-region button is hidden,
+  // which would show the global ranking with neither toggle button active.
   useEffect(() => {
     let cancelled = false;
     void usersApi
@@ -667,20 +670,23 @@ function RegionalLeaderboardsSection() {
         const region = data.home_region?.trim() ?? "";
         const next = region.length > 0 ? region : null;
         setHomeRegion(next);
-        // Promote to "My region" automatically when one is set so the
-        // first render shows the most contextual ranking.
-        if (next !== null) setScope("region");
+        setScope(next !== null ? "region" : "global");
       })
       .catch(() => {
         if (cancelled) return;
         setHomeRegion(null);
+        setScope("global");
       });
     return () => {
       cancelled = true;
     };
   }, [userId]);
 
-  const region = scope === "region" ? homeRegion : null;
+  // Belt-and-suspenders: if `scope` is "region" but no home_region is
+  // available, the visible ranking is global — derive the effective region
+  // accordingly so we never send a `region=null` request with a stale
+  // "region" toggle visible.
+  const region = scope === "region" && homeRegion !== null ? homeRegion : null;
 
   const load_ = useCallback(
     async (signal: AbortSignal) => {
