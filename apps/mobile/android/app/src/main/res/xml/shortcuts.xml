@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  US-17 follow-up (#343) — Google Assistant App Actions for hazard
+  reporting on Android Auto and the phone Assistant.
+
+  Declares a custom App Actions capability that voice queries like
+    "Hey Google, ask Tarmoto to report a pothole"
+  can match against. The Assistant resolves the spoken hazard noun
+  through the inline inventory below, then fires the capability's
+  intent — a `tarmoto://hazard/report?preselectedType=<type>` deep
+  link aimed at MainActivity. The existing React Navigation linking
+  config (see `RootNavigator.tsx`) routes that URL to the Map tab's
+  HazardReport modal with the hazard type pre-selected, so voice
+  triggers land on the same flow as the in-app FAB.
+
+  Why custom intent over a built-in intent (BII): there's no BII for
+  "report road hazard" — `actions.intent.OPEN_APP_FEATURE` would lose
+  the hazard-type parameter, and the report-creation BIIs assume a
+  messaging/note shape that doesn't fit the rider's "single tap from
+  the saddle" UX. Custom intents are first-class for App Actions and
+  the Assistant Plugin's preview tool tests them the same way.
+
+  Inline inventory: each `<shortcut>` binds a list of spoken-language
+  synonyms (defined in `res/values/arrays.xml`) to the canonical
+  hazard type the URL template emits. The synonyms cover natural
+  phrasing the rider is likely to say (e.g. "potholes" / "hole") so
+  the Assistant doesn't bounce on minor wording differences.
+
+  URL template parameter is named `preselectedType` to match the
+  existing React Navigation route param shape — keeps the linking
+  config a straight `parse` rather than a renamed mapping.
+-->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <capability android:name="custom.actions.intent.REPORT_HAZARD">
+    <intent
+      android:action="android.intent.action.VIEW"
+      android:targetPackage="app.tarmoto"
+      android:targetClass="app.tarmoto.MainActivity">
+      <url-template android:value="tarmoto://hazard/report{?preselectedType}" />
+    </intent>
+  </capability>
+
+  <shortcut
+    android:shortcutId="hazard_pothole"
+    android:enabled="true"
+    android:shortcutShortLabel="@string/hazard_pothole_label">
+    <capability-binding android:key="custom.actions.intent.REPORT_HAZARD">
+      <parameter-binding
+        android:key="preselectedType"
+        android:value="@array/hazard_pothole_synonyms" />
+    </capability-binding>
+  </shortcut>
+
+  <shortcut
+    android:shortcutId="hazard_gravel"
+    android:enabled="true"
+    android:shortcutShortLabel="@string/hazard_gravel_label">
+    <capability-binding android:key="custom.actions.intent.REPORT_HAZARD">
+      <parameter-binding
+        android:key="preselectedType"
+        android:value="@array/hazard_gravel_synonyms" />
+    </capability-binding>
+  </shortcut>
+
+  <shortcut
+    android:shortcutId="hazard_oil_spill"
+    android:enabled="true"
+    android:shortcutShortLabel="@string/hazard_oil_spill_label">
+    <capability-binding android:key="custom.actions.intent.REPORT_HAZARD">
+      <parameter-binding
+        android:key="preselectedType"
+        android:value="@array/hazard_oil_spill_synonyms" />
+    </capability-binding>
+  </shortcut>
+
+  <shortcut
+    android:shortcutId="hazard_roadworks"
+    android:enabled="true"
+    android:shortcutShortLabel="@string/hazard_roadworks_label">
+    <capability-binding android:key="custom.actions.intent.REPORT_HAZARD">
+      <parameter-binding
+        android:key="preselectedType"
+        android:value="@array/hazard_roadworks_synonyms" />
+    </capability-binding>
+  </shortcut>
+
+  <shortcut
+    android:shortcutId="hazard_animals"
+    android:enabled="true"
+    android:shortcutShortLabel="@string/hazard_animals_label">
+    <capability-binding android:key="custom.actions.intent.REPORT_HAZARD">
+      <parameter-binding
+        android:key="preselectedType"
+        android:value="@array/hazard_animals_synonyms" />
+    </capability-binding>
+  </shortcut>
+
+  <shortcut
+    android:shortcutId="hazard_police"
+    android:enabled="true"
+    android:shortcutShortLabel="@string/hazard_police_label">
+    <capability-binding android:key="custom.actions.intent.REPORT_HAZARD">
+      <parameter-binding
+        android:key="preselectedType"
+        android:value="@array/hazard_police_synonyms" />
+    </capability-binding>
+  </shortcut>
+
+  <shortcut
+    android:shortcutId="hazard_flooding"
+    android:enabled="true"
+    android:shortcutShortLabel="@string/hazard_flooding_label">
+    <capability-binding android:key="custom.actions.intent.REPORT_HAZARD">
+      <parameter-binding
+        android:key="preselectedType"
+        android:value="@array/hazard_flooding_synonyms" />
+    </capability-binding>
+  </shortcut>
+
+  <shortcut
+    android:shortcutId="hazard_ice"
+    android:enabled="true"
+    android:shortcutShortLabel="@string/hazard_ice_label">
+    <capability-binding android:key="custom.actions.intent.REPORT_HAZARD">
+      <parameter-binding
+        android:key="preselectedType"
+        android:value="@array/hazard_ice_synonyms" />
+    </capability-binding>
+  </shortcut>
+
+  <shortcut
+    android:shortcutId="hazard_other"
+    android:enabled="true"
+    android:shortcutShortLabel="@string/hazard_other_label">
+    <capability-binding android:key="custom.actions.intent.REPORT_HAZARD">
+      <parameter-binding
+        android:key="preselectedType"
+        android:value="@array/hazard_other_synonyms" />
+    </capability-binding>
+  </shortcut>
+
+</shortcuts>

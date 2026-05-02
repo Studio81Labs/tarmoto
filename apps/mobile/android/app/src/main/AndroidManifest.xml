@@ -114,6 +114,23 @@
             <category android:name="android.intent.category.BROWSABLE" />
             <data android:scheme="tarmoto" />
         </intent-filter>
+
+        <!--
+          US-17 follow-up (#343) — Google Assistant App Actions.
+          Points the system at `res/xml/shortcuts.xml`, which declares
+          the `custom.actions.intent.REPORT_HAZARD` capability and the
+          inline inventory of hazard-type synonyms. The Assistant uses
+          this metadata to match voice queries like "Hey Google, ask
+          Tarmoto to report a pothole" on both Android Auto and the
+          phone Assistant; the matched capability fires a
+          `tarmoto://hazard/report?preselectedType=<type>` deep link
+          aimed at this activity. React Navigation's linking config
+          (in src/navigation/RootNavigator.tsx) then routes the URL to
+          the HazardReport modal with the type pre-selected.
+        -->
+        <meta-data
+          android:name="android.app.shortcuts"
+          android:resource="@xml/shortcuts" />
       </activity>
     </application>
 </manifest>
