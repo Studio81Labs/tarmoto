@@ -10,10 +10,6 @@ variable "vpc_id" { type = string }
 variable "private_subnet_ids" { type = list(string) }
 variable "alb_security_group_id" { type = string }
 variable "target_group_arn" { type = string }
-variable "alb_listener_arn" {
-  description = "ALB listener ARN — depend on it so the service is created after the listener is ready."
-  type        = string
-}
 
 variable "image" {
   description = "Initial container image. CI overrides this on every deploy via aws-actions/amazon-ecs-deploy-task-definition."
@@ -260,7 +256,12 @@ resource "aws_ecs_service" "this" {
     ignore_changes = [task_definition, desired_count]
   }
 
-  depends_on = [var.alb_listener_arn]
+  # Ordering against the ALB listener is not declared here: the
+  # implicit edge through `target_group_arn` already gates the
+  # service on the TG, and the listener (created in the alb module)
+  # also depends on the same TG. So by the time the service
+  # registers, the listener is up — without needing a meaningless
+  # `depends_on` on a variable, which Terraform silently ignores.
 }
 
 output "cluster_name" { value = aws_ecs_cluster.this.name }

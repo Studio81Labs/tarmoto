@@ -70,7 +70,8 @@ http_check() {
 echo "[smoke] Target: ${BASE_URL}"
 
 # Liveness — must succeed without DB/Redis. See app.controller.ts.
-http_check "/api/v1/healthz" 200 '"status"\s*:\s*"ok"'
+# `[[:space:]]` is POSIX — `\s` is GNU-only and breaks BSD grep on macOS.
+http_check "/api/v1/healthz" 200 '"status"[[:space:]]*:[[:space:]]*"ok"'
 
 # Jobs health — exercises BullMQ + Redis. The workflow runs this
 # after ECS service is stable, so any 5xx here is a real regression

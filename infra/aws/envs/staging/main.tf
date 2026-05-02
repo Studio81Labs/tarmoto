@@ -142,7 +142,6 @@ module "ecs_service" {
   private_subnet_ids    = module.vpc.private_subnet_ids
   alb_security_group_id = module.alb.alb_security_group_id
   target_group_arn      = module.alb.target_group_arn
-  alb_listener_arn      = module.alb.listener_arn
 
   # First apply uses a placeholder image. CI takes over from there;
   # `lifecycle.ignore_changes = [task_definition]` in the module

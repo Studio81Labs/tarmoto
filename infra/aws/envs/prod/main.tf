@@ -132,7 +132,6 @@ module "ecs_service" {
   private_subnet_ids    = module.vpc.private_subnet_ids
   alb_security_group_id = module.alb.alb_security_group_id
   target_group_arn      = module.alb.target_group_arn
-  alb_listener_arn      = module.alb.listener_arn
 
   image         = "public.ecr.aws/docker/library/busybox:stable"
   desired_count = 3
