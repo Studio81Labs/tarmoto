@@ -198,10 +198,13 @@ function HeaderCard({
   ]
     .filter(Boolean)
     .join(" · ");
-  const belowThreshold = !meetsQualityThreshold(
-    segment.quality_score,
-    minQuality,
-  );
+  // Only flag "below your minimum" when there's an actual score to
+  // compare against. An unscored segment (no rides have enriched it
+  // yet) is not "below the threshold" — it has no threshold-relevant
+  // signal at all, so the badge would be misleading.
+  const belowThreshold =
+    segment.quality_score != null &&
+    !meetsQualityThreshold(segment.quality_score, minQuality);
   return (
     <View
       style={[
@@ -248,17 +251,20 @@ function QualityCard({
   minQuality: number;
 }) {
   const color = qualityColorWithThreshold(segment.quality_score, minQuality);
-  const belowThreshold = !meetsQualityThreshold(
-    segment.quality_score,
-    minQuality,
-  );
+  // Only flag "below your minimum" when there's an actual score; see
+  // `RoadHeaderCard` for the rationale (unscored ≠ below threshold).
+  const belowThreshold =
+    segment.quality_score != null &&
+    !meetsQualityThreshold(segment.quality_score, minQuality);
   return (
     <View style={styles.card}>
       <SectionTitle icon="road-variant" title="Surface quality" />
       <View style={styles.qualityHeader}>
         <View>
           <Text style={[styles.qualityScore, { color }]}>
-            {segment.quality_score.toFixed(1)}
+            {segment.quality_score != null
+              ? segment.quality_score.toFixed(1)
+              : "—"}
           </Text>
           <Text style={styles.qualitySubtitle}>
             {qualityLabel(segment.quality_score)} ·{" "}

@@ -149,9 +149,20 @@ export default function CommuteScreen() {
         <View style={styles.metricsRow}>
           <Metric
             label="Distance"
-            value={`${route.distance_km.toFixed(1)} km`}
+            value={
+              route.distance_km != null
+                ? `${route.distance_km.toFixed(1)} km`
+                : "—"
+            }
           />
-          <Metric label="Avg time" value={`${route.avg_duration_min} min`} />
+          <Metric
+            label="Avg time"
+            value={
+              route.avg_duration_min != null
+                ? `${route.avg_duration_min} min`
+                : "—"
+            }
+          />
           <Metric
             label="Quality"
             value={qualityLabel(status.route_quality)}

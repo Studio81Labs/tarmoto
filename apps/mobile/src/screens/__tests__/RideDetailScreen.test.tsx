@@ -86,13 +86,16 @@ jest.mock("@/services/api", () => ({
 
 const RIDE: RideDetail = {
   id: "ride-1",
+  ride_type: "free",
+  status: "completed",
   started_at: "2026-04-17T14:32:00",
+  ended_at: "2026-04-17T16:02:00",
   distance_km: 42.5,
   duration_min: 90,
   avg_speed: 45,
   avg_road_quality: 4.0,
-  ride_type: "free",
-  status: "completed",
+  avg_curviness: null,
+  name: null,
   route_geometry: [
     { lat: 49.0, lng: 18.0 },
     { lat: 49.1, lng: 18.1 },
@@ -113,12 +116,14 @@ const RIDE: RideDetail = {
   segments: [
     {
       road_segment_id: "s1",
+      road_name: null,
       quality_reading: 4.5,
       speed_avg: 60,
       lean_angle_max: 20,
     },
     {
       road_segment_id: "s2",
+      road_name: null,
       quality_reading: 3.0,
       speed_avg: 40,
       lean_angle_max: 12,
@@ -181,12 +186,14 @@ describe("RideDetailScreen", () => {
         // Two no-data rows that the histogram drops.
         {
           road_segment_id: "s3",
+          road_name: null,
           quality_reading: 0,
           speed_avg: 0,
           lean_angle_max: 0,
         },
         {
           road_segment_id: "s4",
+          road_name: null,
           quality_reading: Number.NaN,
           speed_avg: 0,
           lean_angle_max: 0,

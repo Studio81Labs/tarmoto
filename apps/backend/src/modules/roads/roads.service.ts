@@ -8,7 +8,12 @@ import {
   ReviewResponseDto,
   sanitizeReviewPhotos,
 } from '../reviews/dto/review.dto.js';
-import { findRegion } from '@tarmoto/shared';
+import {
+  findRegion,
+  type SurfaceType,
+  type HazardType,
+  type HazardSeverity,
+} from '@tarmoto/shared';
 import { QueryNearbyDto } from './dto/query-nearby.dto.js';
 import {
   RoadSegmentDto,
@@ -79,7 +84,7 @@ export class RoadsService {
       road_number: (row.road_number as string) ?? null,
       quality_score: (row.quality_score as number) ?? null,
       curviness_score: row.curviness_score as number,
-      surface_type: row.surface_type as string,
+      surface_type: row.surface_type as SurfaceType,
       length_m: row.length_m as number,
       confidence: row.confidence as number,
       reading_count: row.reading_count as number,
@@ -243,7 +248,7 @@ export class RoadsService {
       road_number: (row.road_number as string) ?? null,
       quality_score: (row.quality_score as number) ?? null,
       curviness_score: row.curviness_score as number,
-      surface_type: row.surface_type as string,
+      surface_type: row.surface_type as SurfaceType,
       length_m: row.length_m as number,
       confidence: row.confidence as number,
       reading_count: row.reading_count as number,
@@ -306,7 +311,7 @@ export class RoadsService {
           road_number: (row.road_number as string) ?? null,
           quality_score: (row.quality_score as number) ?? null,
           curviness_score: row.curviness_score as number,
-          surface_type: row.surface_type as string,
+          surface_type: row.surface_type as SurfaceType,
           length_m: row.length_m as number,
           confidence: row.confidence as number,
           geometry: geojson.coordinates.map((c) => ({ lat: c[1], lng: c[0] })),
@@ -421,7 +426,7 @@ export class RoadsService {
         road_number: (row.road_number as string) ?? null,
         quality_score: (row.quality_score as number) ?? null,
         curviness_score: row.curviness_score as number,
-        surface_type: row.surface_type as string,
+        surface_type: row.surface_type as SurfaceType,
         length_m: row.length_m as number,
         confidence: row.confidence as number,
         elevation_min: (row.elevation_min as number) ?? null,
@@ -457,8 +462,8 @@ function mapHazardRows(rows: unknown): HazardResponseDto[] {
     id: r.id as string,
     lat: Number(r.lat),
     lng: Number(r.lng),
-    hazard_type: r.hazard_type as string,
-    severity: r.severity as string,
+    hazard_type: r.hazard_type as HazardType,
+    severity: r.severity as HazardSeverity,
     note: (r.note as string) ?? null,
     confirmations: r.confirmations as number,
     reporter: (r.reporter as string) ?? null,

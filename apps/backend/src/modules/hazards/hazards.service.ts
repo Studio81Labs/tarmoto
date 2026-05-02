@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import type { HazardType, HazardSeverity } from '@tarmoto/shared';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { CreateHazardDto, EXPIRY_HOURS } from './dto/create-hazard.dto.js';
@@ -211,8 +212,15 @@ export class HazardsService {
     hazard.is_active = false;
     await this.hazardRepo.save(hazard);
 
-    // Broadcast dismissal to nearby riders
-    this.emitHazardEvent({ ...response, severity: 'dismissed' });
+    // Broadcast dismissal to nearby riders. The wire-level event uses
+    // a looser `severity: string` so we can repurpose the field as a
+    // `dismissed` signal — clients use this to prune the hazard from
+    // the local map without a follow-up REST poll. The DTO's narrow
+    // `HazardSeverity` enum can't carry it, so we cast at the boundary.
+    this.eventsGateway.emitHazardAlert(response.lat, response.lng, {
+      ...response,
+      severity: 'dismissed',
+    });
   }
 
   async findAlongRoute(dto: RouteHazardsDto): Promise<HazardResponseDto[]> {
@@ -283,8 +291,8 @@ export class HazardsService {
       id: hazard.id,
       lat: coords[1],
       lng: coords[0],
-      hazard_type: hazard.hazard_type,
-      severity: hazard.severity,
+      hazard_type: hazard.hazard_type as HazardType,
+      severity: hazard.severity as HazardSeverity,
       note: hazard.note,
       confirmations: hazard.confirmations,
       reporter: hazard.user?.display_name ?? null,
@@ -303,8 +311,8 @@ export class HazardsService {
       id: row.id as string,
       lat: row.lat as number,
       lng: row.lng as number,
-      hazard_type: row.hazard_type as string,
-      severity: row.severity as string,
+      hazard_type: row.hazard_type as HazardType,
+      severity: row.severity as HazardSeverity,
       note: (row.note as string) ?? null,
       confirmations: row.confirmations as number,
       reporter: (row.reporter as string) ?? null,

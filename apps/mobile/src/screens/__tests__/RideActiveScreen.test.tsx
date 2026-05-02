@@ -7,7 +7,7 @@ import { api } from "@/services/api";
 import { locationService } from "@/services/location";
 import { sensorService, type ClassificationResult } from "@/services/sensors";
 import { requestWithRationale } from "@/services/permissions";
-import type { RideDetail } from "@/types";
+import type { RideResponse } from "@/types";
 
 const mockGoBack = jest.fn();
 const mockStartRideAction = jest.fn();
@@ -145,19 +145,11 @@ describe("RideActiveScreen", () => {
       ride_type: "free",
       status: "active",
       started_at: "2026-04-25T10:00:00",
+      ended_at: null,
       distance_km: 0,
-      duration_min: 0,
       avg_speed: 0,
       avg_road_quality: 0,
-      route_geometry: [],
-      max_speed: 0,
-      elevation_gain: 0,
-      elevation_loss: 0,
-      curve_count: 0,
-      max_lean_angle: 0,
-      fuel_estimate_l: 0,
-      lean_distribution: null,
-      segments: [],
+      avg_curviness: null,
     });
     mockState = {
       isRiding: true,
@@ -267,7 +259,7 @@ describe("RideActiveScreen", () => {
     mockState.activeRide = null;
     startRideMock.mockReset();
     startRideMock.mockImplementationOnce(
-      () => new Promise<RideDetail>(() => undefined),
+      () => new Promise<RideResponse>(() => undefined),
     );
     const sensorStart = sensorService.start as jest.MockedFunction<
       typeof sensorService.start
@@ -318,19 +310,11 @@ describe("RideActiveScreen", () => {
       ride_type: "free",
       status: "active",
       started_at: "2026-04-25T10:00:00",
+      ended_at: null,
       distance_km: 0,
-      duration_min: 0,
       avg_speed: 0,
       avg_road_quality: 0,
-      route_geometry: [],
-      max_speed: 0,
-      elevation_gain: 0,
-      elevation_loss: 0,
-      curve_count: 0,
-      max_lean_angle: 0,
-      fuel_estimate_l: 0,
-      lean_distribution: null,
-      segments: [],
+      avg_curviness: null,
     });
 
     render(<RideActiveScreen />);
@@ -360,12 +344,12 @@ describe("RideActiveScreen", () => {
     // Capture the promise's resolve so the test can fire it after
     // mutating store state. Typed as a holder so TS doesn't narrow
     // it to `null` based on lexical analysis of the closure.
-    const startResolver: { fn: ((ride: RideDetail) => void) | null } = {
+    const startResolver: { fn: ((ride: RideResponse) => void) | null } = {
       fn: null,
     };
     startRideMock.mockImplementationOnce(
       () =>
-        new Promise<RideDetail>((resolve) => {
+        new Promise<RideResponse>((resolve) => {
           startResolver.fn = resolve;
         }),
     );
@@ -386,19 +370,11 @@ describe("RideActiveScreen", () => {
       ride_type: "free",
       status: "active",
       started_at: "2026-04-25T10:00:00",
+      ended_at: null,
       distance_km: 0,
-      duration_min: 0,
       avg_speed: 0,
       avg_road_quality: 0,
-      route_geometry: [],
-      max_speed: 0,
-      elevation_gain: 0,
-      elevation_loss: 0,
-      curve_count: 0,
-      max_lean_angle: 0,
-      fuel_estimate_l: 0,
-      lean_distribution: null,
-      segments: [],
+      avg_curviness: null,
     });
 
     await waitFor(() => expect(stopRideMock).toHaveBeenCalledWith("ride-99"));

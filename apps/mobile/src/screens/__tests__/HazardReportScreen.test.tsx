@@ -112,8 +112,10 @@ function makeHazard() {
     lng: 18.26,
     hazard_type: "pothole" as const,
     severity: "medium" as const,
+    note: null,
     confirmations: 0,
     reporter: "rider-1",
+    road_name: null,
     created_at: "2026-04-25T08:00:00.000Z",
     expires_at: "2026-04-26T08:00:00.000Z",
   };

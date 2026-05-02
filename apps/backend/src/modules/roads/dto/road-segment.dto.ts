@@ -1,4 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { SURFACE_TYPES, type SurfaceType } from '@tarmoto/shared';
+import { LatLngResponseDto } from '../../../common/lat-lng.dto.js';
 import { HazardResponseDto } from '../../hazards/dto/hazard-response.dto.js';
 import { ReviewResponseDto } from '../../reviews/dto/review.dto.js';
 
@@ -18,8 +20,8 @@ export class RoadSegmentDto {
   @ApiProperty({ description: '0-5 scale' })
   curviness_score!: number;
 
-  @ApiProperty()
-  surface_type!: string;
+  @ApiProperty({ enum: SURFACE_TYPES })
+  surface_type!: SurfaceType;
 
   @ApiProperty()
   length_m!: number;
@@ -58,8 +60,8 @@ export class QualityBreakdownDto {
 }
 
 export class RoadSegmentDetailDto extends RoadSegmentDto {
-  @ApiProperty({ type: [Object] })
-  geometry!: Array<{ lat: number; lng: number }>;
+  @ApiProperty({ type: [LatLngResponseDto] })
+  geometry!: LatLngResponseDto[];
 
   @ApiProperty({ nullable: true })
   elevation_min!: number | null;

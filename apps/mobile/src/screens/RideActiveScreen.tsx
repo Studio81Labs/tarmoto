@@ -69,7 +69,7 @@ import { sensorService } from "@/services/sensors";
 import { ttsService } from "@/services/tts";
 import { usePreferencesStore, useRideStore } from "@/stores";
 import type { RideStackParamList } from "@/navigation/RootNavigator";
-import type { HazardType, RideDetail } from "@/types";
+import type { HazardType, RideResponse } from "@/types";
 import {
   formatDistanceKm,
   formatSpeedKmh,
@@ -106,7 +106,7 @@ const HAPTIC_CONFIG = {
  * Cleared by the success / error handler so a stale resolved promise
  * can't be awaited after the ride has already been stopped.
  */
-let pendingStartPromise: Promise<RideDetail> | null = null;
+let pendingStartPromise: Promise<RideResponse> | null = null;
 
 /**
  * Test-only escape hatch for resetting the module-level

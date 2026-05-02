@@ -83,7 +83,10 @@ export default function HomeScreen() {
             <View style={styles.cardBody}>
               <Text style={styles.startTitle}>Start commute</Text>
               <Text style={styles.startBody}>
-                {route.name} · {route.distance_km.toFixed(1)} km
+                {route.name}
+                {route.distance_km != null
+                  ? ` · ${route.distance_km.toFixed(1)} km`
+                  : ""}
               </Text>
             </View>
             <Icon

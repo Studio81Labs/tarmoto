@@ -132,13 +132,16 @@ describe("RideScreen", () => {
     mockRecentRides = [
       {
         id: "ride-1",
+        ride_type: "free",
+        status: "completed",
         started_at: "2026-04-17T14:32:00",
+        ended_at: "2026-04-17T16:02:00",
         distance_km: 42.5,
         duration_min: 90,
         avg_speed: 45,
         avg_road_quality: 4.0,
-        ride_type: "free",
-        status: "completed",
+        avg_curviness: null,
+        name: null,
       },
     ];
     listMock.mockResolvedValueOnce({ rides: mockRecentRides, total: 1 });
@@ -154,13 +157,16 @@ describe("RideScreen", () => {
     mockRecentRides = [
       {
         id: "ride-1",
+        ride_type: "free",
+        status: "completed",
         started_at: "2026-04-17T14:32:00",
+        ended_at: "2026-04-17T16:02:00",
         distance_km: 42.5,
         duration_min: 90,
         avg_speed: 45,
         avg_road_quality: 4.0,
-        ride_type: "free",
-        status: "completed",
+        avg_curviness: null,
+        name: null,
       },
     ];
     listMock.mockResolvedValueOnce({

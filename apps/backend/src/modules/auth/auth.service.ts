@@ -9,9 +9,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User } from '../../entities/user.entity.js';
+import { toUserResponse } from '../users/user-response.mapper.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
 import { EmailVerificationService } from './email-verification.service.js';
+import { AuthResponseDto } from './dto/auth-response.dto.js';
 
 const ACCESS_TOKEN_EXPIRY = 60 * 60; // 1 hour
 const REFRESH_TOKEN_EXPIRY = 90 * 24 * 60 * 60; // 90 days
@@ -151,7 +153,7 @@ export class AuthService {
     return this.buildAuthResponse(user, sessionStart);
   }
 
-  private buildAuthResponse(user: User, origIat?: number) {
+  private buildAuthResponse(user: User, origIat?: number): AuthResponseDto {
     const now = Math.floor(Date.now() / 1000);
 
     const accessToken = this.jwt.sign(
@@ -164,17 +166,16 @@ export class AuthService {
       { expiresIn: REFRESH_TOKEN_EXPIRY },
     );
 
+    // `toUserResponse` is the shared mapper that `/users/me` also uses,
+    // so login / register / refresh hand back the same rich profile
+    // shape — mobile reads `user.preferences.crash_detection` and the
+    // rest of the profile fields immediately on login, no follow-up
+    // `/users/me` call needed.
     return {
       access_token: accessToken,
       refresh_token: refreshToken,
       expires_in: ACCESS_TOKEN_EXPIRY,
-      user: {
-        id: user.id,
-        email: user.email,
-        display_name: user.display_name,
-        phone: user.phone,
-        created_at: user.created_at.toISOString(),
-      },
+      user: toUserResponse(user),
     };
   }
 }

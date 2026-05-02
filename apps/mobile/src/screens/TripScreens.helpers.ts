@@ -198,6 +198,9 @@ export function withSuggestedOvernightStop(
     lat: choice.lat,
     lng: choice.lng,
     waypoint_type: "hotel",
+    road_segment_id: null,
+    notes: null,
+    duration_min: null,
   };
 
   const sorted = [...day.waypoints].sort((a, b) => a.sequence - b.sequence);
