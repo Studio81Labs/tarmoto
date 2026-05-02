@@ -3,6 +3,13 @@
  * Mirrors the OpenAPI schema — keep in sync with backend DTOs.
  */
 
+// Canonical wire shape for the public rider profile (US-27 / convergence
+// US-345). Re-exported from `@tarmoto/shared` so backend, mobile, and
+// companion all consume the same definition; a field added there propagates
+// here automatically and the backend DTO `implements PublicProfile`
+// guarantees the wire format stays in lock-step.
+export type { PublicProfile } from "@tarmoto/shared";
+
 // ── Primitives ──
 
 export interface LatLng {
@@ -43,25 +50,6 @@ export interface User {
    */
   preferences: Partial<UserPreferences>;
   created_at: string;
-}
-
-/**
- * Public-facing rider profile (US-27). Backed by GET /users/:userId/profile.
- * `is_following` is null when viewing your own profile so the client can
- * hide the follow button rather than render it in a misleading state.
- */
-export interface PublicProfile {
-  id: string;
-  display_name: string;
-  avatar_url: string | null;
-  bio: string | null;
-  home_region: string | null;
-  /** ISO 8601 join timestamp. */
-  created_at: string;
-  follower_count: number;
-  following_count: number;
-  is_following: boolean | null;
-  is_self: boolean;
 }
 
 /** Single row from /users/:userId/followers and /users/:userId/following. */
