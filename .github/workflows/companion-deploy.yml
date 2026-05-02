@@ -21,13 +21,14 @@ name: Companion Deploy
 #                                      subdomain (e.g. tarmoto). Used
 #                                      to construct the URL we comment
 #                                      on PRs and smoke-test.
-#   COMPANION_DEPLOY_ENABLED (var)    — gate: must be the literal string
-#                                      "true" before this workflow
-#                                      runs end-to-end. Lets us land
-#                                      the scaffold without blocking
-#                                      every PR until the operator has
-#                                      provisioned the Cloudflare
-#                                      account.
+#   COMPANION_DEPLOY_ENABLED (var)    — gate / kill switch: must be
+#                                      the literal string "true" for
+#                                      the workflow to run end-to-end.
+#                                      Flip back to "false" to halt
+#                                      previews + prod deploys without
+#                                      a code change (e.g. during a
+#                                      Cloudflare incident or while
+#                                      rotating the API token).
 
 on:
   push:
@@ -138,7 +139,20 @@ jobs:
               --message "PR #${PR_NUMBER} (${SHORT_SHA})"
             URL="https://${ALIAS}-${WORKER_NAME}.${WORKERS_SUBDOMAIN}.workers.dev"
           else
+            # Disable wrangler 4's --experimental-autoconfig (default
+            # on in 4.x): when wrangler detects a Next.js project it
+            # delegates `wrangler deploy` to `opennextjs-cloudflare`,
+            # whose CLI wrapper re-quotes our `--message` arg and
+            # breaks on the space (yargs then fails with "Unknown
+            # argument: <short_sha>"). We've already built explicitly
+            # via `cf:build` and wrangler.jsonc points at
+            # `.open-next/worker.js` + `.open-next/assets`, so there's
+            # nothing for autoconfig to orchestrate — bypass it for
+            # deterministic arg handling. Only `wrangler deploy`
+            # honors this flag; `versions upload` doesn't go through
+            # autoconfig and rejects the flag as unknown.
             pnpm exec wrangler deploy \
+              --x-autoconfig=false \
               --name "$WORKER_NAME" \
               --message "main @ ${SHORT_SHA}"
             URL="https://${WORKER_NAME}.${WORKERS_SUBDOMAIN}.workers.dev"
@@ -151,8 +165,13 @@ jobs:
           URL: ${{ steps.deploy.outputs.url }}
         run: |
           set -euo pipefail
+          # Follow redirects: an unauthenticated GET /  302s to /login
+          # via NextAuth middleware, which is the expected steady state
+          # for the gated companion. We care that the final response is
+          # 200 and contains the app shell marker, not that the root
+          # path served 200 directly.
           for attempt in 1 2 3; do
-            STATUS=$(curl -s -o response.html -w "%{http_code}" "$URL" || true)
+            STATUS=$(curl -sL -o response.html -w "%{http_code}" "$URL" || true)
             if [ "$STATUS" = "200" ] && grep -qi "tarmoto" response.html; then
               echo "::notice::Companion smoke OK ($URL)"
               exit 0
