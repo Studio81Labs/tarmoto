@@ -1,24 +1,21 @@
-/* eslint-disable @typescript-eslint/no-unsafe-return */
-jest.mock('node:fs/promises', () => ({
-  mkdir: jest.fn(),
-  unlink: jest.fn(),
-  writeFile: jest.fn(),
-}));
-
+/* eslint-disable @typescript-eslint/no-unsafe-return, @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import {
   BadRequestException,
+  Logger,
   NotFoundException,
   ConflictException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { Readable } from 'node:stream';
 import { ReviewsService } from './reviews.service.js';
 import { RoadReview } from '../../entities/road-review.entity.js';
 import { RoadReviewVote } from '../../entities/road-review-vote.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
+import { OBJECT_STORAGE } from '../storage/storage.tokens.js';
+import type { ObjectStorage } from '../storage/object-storage.interface.js';
 
 interface VoteRow {
   road_review_id: string;
@@ -34,6 +31,8 @@ describe('ReviewsService', () => {
   let voteInsert: { execute: jest.Mock };
   let voteGroupRows: VoteRow[];
   let viewerVotes: Array<{ road_review_id: string; is_helpful: boolean }>;
+  let storage: jest.Mocked<ObjectStorage>;
+  let configGet: jest.Mock;
 
   const mockUser = { display_name: 'John Rider' };
 
@@ -51,11 +50,48 @@ describe('ReviewsService', () => {
 
   const mockSegment = { id: 'seg-1' } as unknown as RoadSegment;
 
+  // Build a service whose storage mock returns LocalStorage-shape URLs
+  // (server-relative). The default test fixture uses
+  // `https://app.tarmoto.test` as the trusted public base URL — same
+  // origin every managed-photo URL in the asserts is anchored at.
+  const createService = async (
+    storageOverrides: Partial<jest.Mocked<ObjectStorage>> = {},
+  ): Promise<void> => {
+    storage = {
+      put: jest.fn().mockResolvedValue({ byteSize: 12 }),
+      read: jest.fn().mockResolvedValue(Readable.from(Buffer.from(''))),
+      delete: jest.fn().mockResolvedValue(undefined),
+      exists: jest.fn().mockResolvedValue(true),
+      // Default: LocalStorage-style relative URL — exercises the
+      // service's "lift to absolute via publicBaseUrl" branch and the
+      // managed-origin trust set built from `TARMOTO_PUBLIC_BASE_URL`.
+      publicUrl: jest
+        .fn()
+        .mockImplementation((key: string) => `/uploads/${key}`),
+      signedUrl: jest
+        .fn()
+        .mockImplementation((key: string) =>
+          Promise.resolve(`/uploads/${key}`),
+        ),
+      ...storageOverrides,
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ReviewsService,
+        { provide: getRepositoryToken(RoadReview), useValue: reviewRepo },
+        { provide: getRepositoryToken(RoadSegment), useValue: segmentRepo },
+        { provide: getRepositoryToken(RoadReviewVote), useValue: voteRepo },
+        { provide: OBJECT_STORAGE, useValue: storage },
+        { provide: ConfigService, useValue: { get: configGet } },
+      ],
+    }).compile();
+
+    service = module.get<ReviewsService>(ReviewsService);
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
-    jest.mocked(mkdir).mockResolvedValue(undefined);
-    jest.mocked(unlink).mockResolvedValue(undefined);
-    jest.mocked(writeFile).mockResolvedValue(undefined);
 
     reviewRepo = {
       find: jest.fn().mockResolvedValue([mockReview]),
@@ -95,9 +131,6 @@ describe('ReviewsService', () => {
     };
     voteRepo = {
       createQueryBuilder: jest.fn().mockImplementation(() => {
-        // Each call returns a fresh chain; `aggregateVotes` uses the
-        // select/where chain, `castVote` uses the insert chain. Both
-        // coexist on one proxy.
         return {
           ...selectQb,
           ...insertQb,
@@ -107,28 +140,18 @@ describe('ReviewsService', () => {
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
     };
 
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        ReviewsService,
-        { provide: getRepositoryToken(RoadReview), useValue: reviewRepo },
-        { provide: getRepositoryToken(RoadSegment), useValue: segmentRepo },
-        { provide: getRepositoryToken(RoadReviewVote), useValue: voteRepo },
-        // Test fixtures use `https://app.tarmoto.test/...` everywhere —
-        // configure that as the trusted public base URL so the service's
-        // origin guard treats those URLs as ours.
-        {
-          provide: ConfigService,
-          useValue: {
-            get: (key: string) =>
-              key === 'TARMOTO_PUBLIC_BASE_URL'
-                ? 'https://app.tarmoto.test'
-                : undefined,
-          },
-        },
-      ],
-    }).compile();
+    // Test fixtures use `https://app.tarmoto.test/...` everywhere —
+    // configure that as the trusted public base URL so the service's
+    // origin guard treats those URLs as ours.
+    configGet = jest
+      .fn()
+      .mockImplementation((key: string) =>
+        key === 'TARMOTO_PUBLIC_BASE_URL'
+          ? 'https://app.tarmoto.test'
+          : undefined,
+      );
 
-    service = module.get<ReviewsService>(ReviewsService);
+    await createService();
   });
 
   describe('listForSegment', () => {
@@ -349,7 +372,7 @@ describe('ReviewsService', () => {
     it('should accept own managed photos and third-party URLs', async () => {
       // Owned managed URLs (filename starts with `<seg>-<user>-`) and
       // arbitrary third-party https URLs both pass — the ownership rule
-      // only kicks in when the URL resolves to our managed directory.
+      // only kicks in when the URL resolves to our managed namespace.
       const dto = {
         rating: 5,
         photos: [
@@ -412,11 +435,12 @@ describe('ReviewsService', () => {
 
     it('should cascade-delete managed photos that the new payload dropped', async () => {
       // Editing a review that previously referenced two managed photos
-      // and now only keeps one must unlink the file behind the dropped
-      // URL — otherwise removing a photo from the UI leaves an orphan
-      // that nothing will ever clean up before the S3 lifecycle lands.
-      // Photo basenames must carry the `<segmentId>-<userId>-` prefix so
-      // the cascade-delete recognizes them as the caller's own files.
+      // and now only keeps one must delete the storage object behind the
+      // dropped URL — otherwise removing a photo from the UI leaves an
+      // orphan that nothing will ever clean up before the S3 lifecycle
+      // sweep lands. Photo basenames must carry the `<segmentId>-<userId>-`
+      // prefix so the cascade-delete recognizes them as the caller's
+      // own files.
       reviewRepo.findOne!.mockResolvedValueOnce({
         ...mockReview,
         photos: [
@@ -432,15 +456,13 @@ describe('ReviewsService', () => {
         ],
       });
 
-      expect(unlink).toHaveBeenCalledTimes(1);
-      expect(unlink).toHaveBeenCalledWith(
-        expect.stringContaining(
-          '/uploads/road-review-photos/seg-1-user-1-drop.jpg',
-        ),
+      expect(storage.delete).toHaveBeenCalledTimes(1);
+      expect(storage.delete).toHaveBeenCalledWith(
+        'road-review-photos/seg-1-user-1-drop.jpg',
       );
     });
 
-    it('should not unlink anything when photos are unchanged', async () => {
+    it('should not delete anything when photos are unchanged', async () => {
       reviewRepo.findOne!.mockResolvedValueOnce({
         ...mockReview,
         photos: [
@@ -455,7 +477,7 @@ describe('ReviewsService', () => {
         ],
       });
 
-      expect(unlink).not.toHaveBeenCalled();
+      expect(storage.delete).not.toHaveBeenCalled();
     });
 
     it('should ignore dropped third-party URLs that are not managed', async () => {
@@ -471,19 +493,18 @@ describe('ReviewsService', () => {
 
       // The foreign URL is left alone — we never wrote it, we don't own
       // the lifecycle for it. Only the managed file is removed.
-      expect(unlink).toHaveBeenCalledTimes(1);
-      expect(unlink).toHaveBeenCalledWith(
-        expect.stringContaining(
-          '/uploads/road-review-photos/seg-1-user-1-managed.jpg',
-        ),
+      expect(storage.delete).toHaveBeenCalledTimes(1);
+      expect(storage.delete).toHaveBeenCalledWith(
+        'road-review-photos/seg-1-user-1-managed.jpg',
       );
     });
 
-    it('should not unlink files for path-traversal attempts in stored photo URLs', async () => {
+    it('should not delete keys for path-traversal attempts in stored photo URLs', async () => {
       // A row whose photos[] was crafted (or migrated from legacy data)
-      // to include a `..%2F..%2F` segment must NOT cause unlink to be
-      // called with anything outside the managed directory. The path
-      // resolver returns null for those, mirroring the avatar pattern.
+      // to include a `..%2F..%2F` segment must NOT cause storage.delete
+      // to be called with anything that escapes the managed namespace.
+      // The URL resolver returns null for those, mirroring the avatar
+      // pattern.
       reviewRepo.findOne!.mockResolvedValueOnce({
         ...mockReview,
         photos: [
@@ -494,10 +515,10 @@ describe('ReviewsService', () => {
 
       await service.update('user-1', 'seg-1', { rating: 4, photos: [] });
 
-      expect(unlink).not.toHaveBeenCalled();
+      expect(storage.delete).not.toHaveBeenCalled();
     });
 
-    it('should not unlink a managed file uploaded by another user', async () => {
+    it('should not delete a managed file uploaded by another user', async () => {
       // Defense in depth for legacy rows that predate the create/update
       // ownership check: even if a row carries a URL whose filename
       // belongs to a different `(segmentId, userId)`, removing the row
@@ -512,14 +533,14 @@ describe('ReviewsService', () => {
 
       await service.update('user-1', 'seg-1', { rating: 4, photos: [] });
 
-      expect(unlink).not.toHaveBeenCalled();
+      expect(storage.delete).not.toHaveBeenCalled();
     });
 
     it("should reject when the payload references another user's managed photo", async () => {
       // The DTO accepts any well-formed photo URL — without this guard,
-      // user-1 could attach user-2's `/uploads/road-review-photos/...`
-      // URL to their own review, and a later cascade-delete on user-1's
-      // review would then remove user-2's file. The owner check at the
+      // user-1 could attach user-2's `/road-review-photos/...` URL to
+      // their own review, and a later cascade-delete on user-1's review
+      // would then remove user-2's file. The owner check at the
       // create/update boundary refuses to persist the cross-attachment
       // in the first place.
       await expect(
@@ -532,17 +553,18 @@ describe('ReviewsService', () => {
       ).rejects.toThrow(BadRequestException);
 
       expect(reviewRepo.save).not.toHaveBeenCalled();
-      expect(unlink).not.toHaveBeenCalled();
+      expect(storage.delete).not.toHaveBeenCalled();
     });
 
     it('should treat URLs from a third-party CDN with a colliding pathname as not managed', async () => {
       // A third-party origin like `cdn.example.com` happens to expose a
       // file at `/uploads/road-review-photos/<our-prefix>-x.jpg` — the
-      // pathname-only resolver would have classified this as managed and
-      // rejected with 400 even though the URL points at someone else's
-      // server. The origin guard restricts "managed" detection to the
-      // configured `TARMOTO_PUBLIC_BASE_URL` (or loopback in dev), so a
-      // foreign CDN URL passes through untouched as a third-party photo.
+      // pathname-only resolver would have classified this as managed
+      // and rejected with 400 even though the URL points at someone
+      // else's server. The origin guard restricts "managed" detection
+      // to the configured `TARMOTO_PUBLIC_BASE_URL` (or loopback in
+      // dev) plus the configured storage origin, so a foreign CDN URL
+      // passes through untouched as a third-party photo.
       const result = await service.update('user-1', 'seg-1', {
         rating: 4,
         photos: [
@@ -557,7 +579,7 @@ describe('ReviewsService', () => {
           ],
         }),
       );
-      expect(unlink).not.toHaveBeenCalled();
+      expect(storage.delete).not.toHaveBeenCalled();
       expect(result.photos).toEqual([
         'https://cdn.example.com/uploads/road-review-photos/seg-1-other-user-shot.jpg',
       ]);
@@ -567,7 +589,7 @@ describe('ReviewsService', () => {
       // `IsReviewPhotoUrl` validates `value.trim()`, so a row could land
       // in the DB with surrounding whitespace via direct API use. If the
       // set-difference compared raw strings, the next update sending the
-      // same URL trimmed would mark it as removed and unlink the file
+      // same URL trimmed would mark it as removed and delete the file
       // out from under the still-saved (now-normalized) review row.
       reviewRepo.findOne!.mockResolvedValueOnce({
         ...mockReview,
@@ -583,7 +605,7 @@ describe('ReviewsService', () => {
         ],
       });
 
-      expect(unlink).not.toHaveBeenCalled();
+      expect(storage.delete).not.toHaveBeenCalled();
       // Saved row carries the trimmed form so future diffs stay
       // consistent with the response sanitizer.
       expect(reviewRepo.save).toHaveBeenCalledWith(
@@ -614,11 +636,11 @@ describe('ReviewsService', () => {
       );
     });
 
-    it('should cascade-delete managed photo files after removing the review', async () => {
+    it('should cascade-delete managed photo objects after removing the review', async () => {
       // Files referenced by the deleted review live under our managed
-      // /uploads/road-review-photos/ prefix and must be unlinked so the
-      // user-driven delete actually frees disk — third-party URLs are
-      // left alone and missing files are tolerated. Filenames must carry
+      // `road-review-photos/` storage prefix and must be deleted so the
+      // user-driven delete actually frees space — third-party URLs are
+      // left alone and missing keys are tolerated. Filenames must carry
       // the `<segmentId>-<userId>-` prefix to be recognized as the
       // caller's own.
       reviewRepo.findOne!.mockResolvedValueOnce({
@@ -632,19 +654,17 @@ describe('ReviewsService', () => {
       await service.delete('user-1', 'seg-1');
 
       expect(reviewRepo.remove).toHaveBeenCalled();
-      expect(unlink).toHaveBeenCalledTimes(1);
-      expect(unlink).toHaveBeenCalledWith(
-        expect.stringContaining(
-          '/uploads/road-review-photos/seg-1-user-1-keep.jpg',
-        ),
+      expect(storage.delete).toHaveBeenCalledTimes(1);
+      expect(storage.delete).toHaveBeenCalledWith(
+        'road-review-photos/seg-1-user-1-keep.jpg',
       );
     });
 
-    it("should not unlink another user's managed photo even if the row points at it", async () => {
+    it("should not delete another user's managed photo even if the row points at it", async () => {
       // Same defense-in-depth as the update path: a legacy row that
-      // somehow references user-2's filename must NOT cause unlink when
-      // user-1 deletes their review. The cascade-delete is bound to the
-      // caller's `<segmentId>-<userId>-` namespace, period.
+      // somehow references user-2's filename must NOT cause storage.delete
+      // when user-1 deletes their review. The cascade-delete is bound to
+      // the caller's `<segmentId>-<userId>-` namespace, period.
       reviewRepo.findOne!.mockResolvedValueOnce({
         ...mockReview,
         photos: [
@@ -655,10 +675,10 @@ describe('ReviewsService', () => {
       await service.delete('user-1', 'seg-1');
 
       expect(reviewRepo.remove).toHaveBeenCalled();
-      expect(unlink).not.toHaveBeenCalled();
+      expect(storage.delete).not.toHaveBeenCalled();
     });
 
-    it('should not call unlink when the review has no photos', async () => {
+    it('should not call storage.delete when the review has no photos', async () => {
       reviewRepo.findOne!.mockResolvedValueOnce({
         ...mockReview,
         photos: null,
@@ -666,25 +686,32 @@ describe('ReviewsService', () => {
 
       await service.delete('user-1', 'seg-1');
 
-      expect(unlink).not.toHaveBeenCalled();
+      expect(storage.delete).not.toHaveBeenCalled();
     });
 
-    it('should swallow ENOENT but rethrow other unlink errors', async () => {
+    it('should swallow storage.delete errors after the row is already removed', async () => {
+      // Cascade-delete is best-effort — the row is already gone, so a
+      // transient storage hiccup (S3 5xx, FS permission blip) must not
+      // turn the user-driven delete into a 500. Mirrors
+      // `cleanupPreviousAvatar`. The next upload (or a future GC sweep)
+      // reclaims the orphan.
       reviewRepo.findOne!.mockResolvedValueOnce({
         ...mockReview,
         photos: [
           'https://app.tarmoto.test/uploads/road-review-photos/seg-1-user-1-missing.jpg',
         ],
       });
-      jest
-        .mocked(unlink)
-        .mockRejectedValueOnce(
-          Object.assign(new Error('not found'), { code: 'ENOENT' }),
-        );
+      storage.delete.mockRejectedValueOnce(new Error('transient S3 5xx'));
+      // Silence the warn log so the test output stays clean — the
+      // service intentionally logs at warn level but the assertion is
+      // about the resolved Promise, not the log line.
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => {});
 
-      // ENOENT is benign — the file was already gone, the row is the
-      // source of truth. The delete must still resolve.
       await expect(service.delete('user-1', 'seg-1')).resolves.toBeUndefined();
+      expect(warn).toHaveBeenCalled();
+      warn.mockRestore();
     });
   });
 
@@ -702,7 +729,7 @@ describe('ReviewsService', () => {
       await expect(
         service.uploadPhotos('user-1', 'seg-1', [], 'https://app.tarmoto.test'),
       ).rejects.toThrow(BadRequestException);
-      expect(writeFile).not.toHaveBeenCalled();
+      expect(storage.put).not.toHaveBeenCalled();
     });
 
     it('should reject when the segment does not exist', async () => {
@@ -716,7 +743,7 @@ describe('ReviewsService', () => {
           'https://app.tarmoto.test',
         ),
       ).rejects.toThrow(NotFoundException);
-      expect(writeFile).not.toHaveBeenCalled();
+      expect(storage.put).not.toHaveBeenCalled();
     });
 
     it('should reject unsupported mimetypes before writing any file', async () => {
@@ -733,10 +760,10 @@ describe('ReviewsService', () => {
           'https://app.tarmoto.test',
         ),
       ).rejects.toThrow(BadRequestException);
-      // Validation runs over the whole batch before any disk write so a
-      // bad file in the middle of a gallery doesn't leave a half-uploaded
-      // mess on disk.
-      expect(writeFile).not.toHaveBeenCalled();
+      // Validation runs over the whole batch before any storage write so
+      // a bad file in the middle of a gallery doesn't leave a half-uploaded
+      // mess in the bucket.
+      expect(storage.put).not.toHaveBeenCalled();
     });
 
     it('should reject when too many files are uploaded at once', async () => {
@@ -750,10 +777,10 @@ describe('ReviewsService', () => {
           'https://app.tarmoto.test',
         ),
       ).rejects.toThrow(BadRequestException);
-      expect(writeFile).not.toHaveBeenCalled();
+      expect(storage.put).not.toHaveBeenCalled();
     });
 
-    it('should write each accepted file and return public URLs', async () => {
+    it('should put each accepted file under road-review-photos/ and return absolute URLs lifted via publicBaseUrl (LocalStorage)', async () => {
       const result = await service.uploadPhotos(
         'user-1',
         'seg-1',
@@ -761,22 +788,26 @@ describe('ReviewsService', () => {
         'https://app.tarmoto.test',
       );
 
-      expect(writeFile).toHaveBeenCalledTimes(2);
-      expect(writeFile).toHaveBeenNthCalledWith(
-        1,
-        expect.stringMatching(
-          /\/uploads\/road-review-photos\/seg-1-user-1-.*\.jpg$/,
-        ),
-        fileA.buffer,
+      expect(storage.put).toHaveBeenCalledTimes(2);
+      // Inspect the call args directly rather than via expect.stringMatching
+      // inside objectContaining — the matcher returns `any` which the lint
+      // rule (no-unsafe-assignment) trips on against `PutArgs.key: string`.
+      const firstCall = storage.put.mock.calls[0][0];
+      expect(firstCall.key).toMatch(
+        /^road-review-photos\/seg-1-user-1-.*\.jpg$/,
       );
-      expect(writeFile).toHaveBeenNthCalledWith(
-        2,
-        expect.stringMatching(
-          /\/uploads\/road-review-photos\/seg-1-user-1-.*\.webp$/,
-        ),
-        fileB.buffer,
+      expect(firstCall.body).toBe(fileA.buffer);
+      expect(firstCall.contentType).toBe('image/jpeg');
+      const secondCall = storage.put.mock.calls[1][0];
+      expect(secondCall.key).toMatch(
+        /^road-review-photos\/seg-1-user-1-.*\.webp$/,
       );
+      expect(secondCall.body).toBe(fileB.buffer);
+      expect(secondCall.contentType).toBe('image/webp');
       expect(result.photos).toHaveLength(2);
+      // LocalStorage returned a relative `/uploads/<key>` URL; the
+      // service must lift it to absolute via the controller-supplied
+      // public base URL so mobile / web clients can fetch it directly.
       expect(result.photos[0]).toMatch(
         /^https:\/\/app\.tarmoto\.test\/uploads\/road-review-photos\/seg-1-user-1-.*\.jpg$/,
       );
@@ -785,13 +816,35 @@ describe('ReviewsService', () => {
       );
     });
 
-    it('should roll back already-written files when a later write fails', async () => {
-      jest
-        .mocked(writeFile)
-        .mockResolvedValueOnce(undefined)
-        .mockRejectedValueOnce(
-          Object.assign(new Error('disk full'), { code: 'ENOSPC' }),
-        );
+    it('should return absolute URLs verbatim when storage emits them (S3 / CDN)', async () => {
+      // S3Storage.publicUrl() returns absolute CDN URLs already — the
+      // service must NOT re-prefix them with publicBaseUrl, otherwise we'd
+      // emit invalid URLs like `https://app.tarmoto.test/https://cdn.../`.
+      await createService({
+        publicUrl: jest
+          .fn()
+          .mockImplementation(
+            (key: string) => `https://cdn.tarmoto.app/${key}`,
+          ),
+      });
+
+      const result = await service.uploadPhotos(
+        'user-1',
+        'seg-1',
+        [fileA],
+        'https://app.tarmoto.test',
+      );
+
+      expect(result.photos).toHaveLength(1);
+      expect(result.photos[0]).toMatch(
+        /^https:\/\/cdn\.tarmoto\.app\/road-review-photos\/seg-1-user-1-.*\.jpg$/,
+      );
+    });
+
+    it('should roll back already-written keys when a later put fails', async () => {
+      storage.put
+        .mockResolvedValueOnce({ byteSize: 12 })
+        .mockRejectedValueOnce(new Error('storage backend down'));
 
       await expect(
         service.uploadPhotos(
@@ -800,17 +853,33 @@ describe('ReviewsService', () => {
           [fileA, fileB],
           'https://app.tarmoto.test',
         ),
-      ).rejects.toThrow('disk full');
+      ).rejects.toThrow('storage backend down');
 
-      // The first file made it to disk before the second failed — the
-      // rollback unlink must remove it so callers either get every URL
-      // or none. Anything else leaks storage on retry.
-      expect(unlink).toHaveBeenCalledTimes(1);
-      expect(unlink).toHaveBeenCalledWith(
-        expect.stringMatching(
-          /\/uploads\/road-review-photos\/seg-1-user-1-.*\.jpg$/,
-        ),
+      // The first object made it to storage before the second failed —
+      // the rollback must delete it so callers either get every URL or
+      // none. Anything else leaks storage on retry.
+      expect(storage.delete).toHaveBeenCalledTimes(1);
+      expect(storage.delete).toHaveBeenCalledWith(
+        expect.stringMatching(/^road-review-photos\/seg-1-user-1-.*\.jpg$/),
       );
+    });
+
+    it('should swallow rollback delete errors so the original write error surfaces', async () => {
+      storage.put
+        .mockResolvedValueOnce({ byteSize: 12 })
+        .mockRejectedValueOnce(new Error('storage backend down'));
+      storage.delete.mockRejectedValueOnce(new Error('rollback also failed'));
+
+      // The original `storage backend down` is what the caller cares
+      // about — swallowing the rollback failure keeps that error visible.
+      await expect(
+        service.uploadPhotos(
+          'user-1',
+          'seg-1',
+          [fileA, fileB],
+          'https://app.tarmoto.test',
+        ),
+      ).rejects.toThrow('storage backend down');
     });
   });
 
@@ -1078,6 +1147,57 @@ describe('ReviewsService', () => {
         NotFoundException,
       );
       expect(voteRepo.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('S3 / CDN trusted-origin extension', () => {
+    it('treats the storage CDN origin as managed in the cascade-delete', async () => {
+      // S3 deploys emit URLs anchored at the CDN origin (different from
+      // `TARMOTO_PUBLIC_BASE_URL`). The service must extend its trusted
+      // set with that origin so own-emitted URLs are recognized as
+      // managed — otherwise the cascade-delete on update / delete would
+      // silently no-op even though we own the keys.
+      await createService({
+        publicUrl: jest
+          .fn()
+          .mockImplementation(
+            (key: string) => `https://cdn.tarmoto.app/${key}`,
+          ),
+      });
+      reviewRepo.findOne!.mockResolvedValueOnce({
+        ...mockReview,
+        photos: [
+          'https://cdn.tarmoto.app/road-review-photos/seg-1-user-1-x.jpg',
+        ],
+      });
+
+      await service.delete('user-1', 'seg-1');
+
+      expect(storage.delete).toHaveBeenCalledWith(
+        'road-review-photos/seg-1-user-1-x.jpg',
+      );
+    });
+
+    it('still rejects cross-user attaches when the URL uses the storage CDN origin', async () => {
+      // The CDN origin is trusted, but the ownership filename-prefix
+      // check still runs — user-1 cannot attach a CDN URL whose
+      // filename belongs to user-2 just because the origin matches.
+      await createService({
+        publicUrl: jest
+          .fn()
+          .mockImplementation(
+            (key: string) => `https://cdn.tarmoto.app/${key}`,
+          ),
+      });
+
+      await expect(
+        service.create('user-1', 'seg-1', {
+          rating: 4,
+          photos: [
+            'https://cdn.tarmoto.app/road-review-photos/seg-1-other-user-shot.jpg',
+          ],
+        }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 });
