@@ -22,12 +22,6 @@ export type LeaderboardDimension =
   | 'roads_discovered'
   | 'hazards_reported';
 
-export const LEADERBOARD_DIMENSIONS: readonly LeaderboardDimension[] = [
-  'total_distance_km',
-  'roads_discovered',
-  'hazards_reported',
-];
-
 export class RegionalLeaderboardEntryDto {
   @ApiProperty()
   rank!: number;

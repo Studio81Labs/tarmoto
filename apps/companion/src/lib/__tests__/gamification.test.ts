@@ -22,7 +22,6 @@ import {
   riderStatsFromBadges,
   seasonalProgress,
   unitForChallengeMetric,
-  unitForDimension,
   LEADERBOARD_DIMENSION_KEYS,
   type Challenge,
   type Milestone,
@@ -542,13 +541,7 @@ describe("regional leaderboard mappers", () => {
   });
 });
 
-describe("dimension labels and units", () => {
-  it("returns a stable unit per dimension", () => {
-    expect(unitForDimension("total_distance_km")).toBe("km");
-    expect(unitForDimension("roads_discovered")).toBe("roads");
-    expect(unitForDimension("hazards_reported")).toBe("reports");
-  });
-
+describe("labelForDimension", () => {
   it("returns a human-readable label per dimension", () => {
     for (const dim of LEADERBOARD_DIMENSION_KEYS) {
       expect(labelForDimension(dim)).toBeTruthy();

@@ -617,21 +617,11 @@ type RegionalDimensionLeaderboardDto =
 type RegionalLeaderboardEntryDto =
   components["schemas"]["RegionalLeaderboardEntryDto"];
 
-const DIMENSION_UNITS: Record<LeaderboardDimensionKey, string> = {
-  total_distance_km: "km",
-  roads_discovered: "roads",
-  hazards_reported: "reports",
-};
-
 const DIMENSION_LABELS: Record<LeaderboardDimensionKey, string> = {
   total_distance_km: "Distance",
   roads_discovered: "Roads discovered",
   hazards_reported: "Hazards reported",
 };
-
-export function unitForDimension(dim: LeaderboardDimensionKey): string {
-  return DIMENSION_UNITS[dim];
-}
 
 export function labelForDimension(dim: LeaderboardDimensionKey): string {
   return DIMENSION_LABELS[dim];
