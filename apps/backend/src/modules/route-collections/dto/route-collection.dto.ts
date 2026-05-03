@@ -173,15 +173,14 @@ export class RouteCollectionDetailDto extends RouteCollectionSummaryDto {
   @ApiProperty({ type: [RouteCollectionItemResponseDto] })
   items!: RouteCollectionItemResponseDto[];
 
-  // Detail responses always populate owner_name (empty string for soft-deleted
-  // accounts, since the controller 404s in that case). The base summary
-  // declares it as nullable for endpoints that don't surface it; `declare`
-  // narrows the subclass type without re-emitting the field.
-  @ApiProperty({
-    description:
-      'Display name of the owning rider (for unlisted/public viewing). Empty for soft-deleted accounts; the controller 404s in that case.',
-  })
-  declare owner_name: string;
+  // owner_name is inherited from the summary as `string | null`. Detail
+  // responses always populate it (empty string for soft-deleted accounts,
+  // since the controller 404s in that case before reaching the response),
+  // but we keep the inherited type rather than narrowing — a `declare`
+  // override does not reliably re-emit the @ApiProperty metadata across
+  // TypeScript versions, so the OpenAPI schema would silently disagree
+  // with the runtime. The slightly looser `nullable: true` schema is
+  // harmless and matches what we report on the summary.
 
   @ApiProperty({
     description:

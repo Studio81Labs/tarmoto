@@ -347,7 +347,10 @@ export interface RouteCollectionItemResponse {
 
 export interface RouteCollectionDetail extends RouteCollectionSummary {
   items: RouteCollectionItemResponse[];
-  owner_name: string;
+  // `owner_name` inherits `string | null` from the summary. The backend always
+  // sends a string for detail responses (empty for soft-deleted owners, but
+  // those 404 before reaching here), but keeping the looser type matches the
+  // OpenAPI schema and frees consumers from a redundant override.
   /**
    * Personalised flags. Anonymous viewers always see `false` for both. The
    * server reads the optional Bearer token on `/collections/by-slug/:slug`

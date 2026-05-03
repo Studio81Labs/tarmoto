@@ -129,7 +129,7 @@ export function mapDetailToView(
   return {
     id: detail.id,
     ownerId: detail.owner_id,
-    ownerName: detail.owner_name,
+    ownerName: detail.owner_name ?? "",
     title: detail.title,
     description: detail.description,
     visibility: detail.visibility,

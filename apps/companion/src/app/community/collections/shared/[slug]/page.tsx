@@ -32,7 +32,7 @@ export async function generateMetadata({
     title: `${detail.title} — Tarmoto collection`,
     description:
       detail.description ??
-      `${detail.item_count} curated route${detail.item_count === 1 ? "" : "s"} shared by ${detail.owner_name}`,
+      `${detail.item_count} curated route${detail.item_count === 1 ? "" : "s"} shared by ${detail.owner_name || "a Tarmoto rider"}`,
     // Public collections may surface on the discover page later; unlisted
     // ones must stay out of the index. We don't know which is which from
     // metadata generation in advance of the fetch, so we set robots based on
@@ -146,7 +146,7 @@ export default async function SharedCollectionPage({
         <RouteCollectionFollowCta
           collectionId={detail.id}
           slug={detail.slug}
-          ownerName={detail.owner_name}
+          ownerName={detail.owner_name ?? ""}
         />
       </section>
     </main>
