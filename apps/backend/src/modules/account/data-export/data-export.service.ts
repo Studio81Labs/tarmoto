@@ -5,10 +5,8 @@ import { In, Repository } from 'typeorm';
 import { DataExportRequest } from '../../../entities/data-export-request.entity.js';
 import { DataExportRequestDto } from './dto/data-export-request.dto.js';
 import { signDownloadUrl } from './signed-url.js';
-import {
-  EXPORT_STORAGE,
-  type ExportStorage,
-} from './storage/export-storage.interface.js';
+import { OBJECT_STORAGE } from '../../storage/storage.tokens.js';
+import type { ObjectStorage } from '../../storage/object-storage.interface.js';
 
 const ACTIVE: DataExportRequest['status'][] = ['queued', 'processing', 'ready'];
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -30,8 +28,8 @@ export class DataExportService {
     @InjectRepository(DataExportRequest)
     private readonly repo: Repository<DataExportRequest>,
     private readonly config: ConfigService,
-    @Inject(EXPORT_STORAGE)
-    private readonly storage: ExportStorage,
+    @Inject(OBJECT_STORAGE)
+    private readonly storage: ObjectStorage,
   ) {}
 
   async requestExport(

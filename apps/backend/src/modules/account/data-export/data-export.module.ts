@@ -1,10 +1,8 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ConfigModule } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { QUEUE_NAMES } from '../../jobs/jobs.constants.js';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type { Repository } from 'typeorm';
 import { User } from '../../../entities/user.entity.js';
 import { UserContact } from '../../../entities/user-contact.entity.js';
@@ -23,18 +21,21 @@ import { PrivacyPreferencesRow } from '../../../entities/privacy-preferences.ent
 import { DataExportRequest } from '../../../entities/data-export-request.entity.js';
 import { AuthModule } from '../../auth/index.js';
 import { EmailModule } from '../../email/index.js';
+import { StorageModule } from '../../storage/index.js';
 import { DataExportController } from './data-export.controller.js';
 import { DataExportService } from './data-export.service.js';
 import { DataExportProcessor } from './data-export.processor.js';
 import { BundleAssembler } from './assembler/bundle-assembler.js';
-import { LocalExportStorage } from './storage/local-export-storage.js';
-import { EXPORT_STORAGE } from './storage/export-storage.interface.js';
 
 @Module({
   imports: [
     ConfigModule,
     AuthModule,
     EmailModule,
+    // Shared `ObjectStorage` provider — same backend (local FS or
+    // S3/R2) avatars and review photos already use. Bundles land
+    // under the `exports/` prefix (see runbook §"Object storage").
+    StorageModule,
     // Register the data-export BullMQ queue here so the controller can
     // inject it and enqueue at request time. The connection comes from
     // JobsModule's `BullModule.forRoot`; this `registerQueue` is a
@@ -62,15 +63,6 @@ import { EXPORT_STORAGE } from './storage/export-storage.interface.js';
   providers: [
     DataExportService,
     DataExportProcessor,
-    {
-      provide: EXPORT_STORAGE,
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) =>
-        new LocalExportStorage(
-          config.get<string>('TARMOTO_EXPORT_STORAGE_DIR') ??
-            join(tmpdir(), 'tarmoto-exports'),
-        ),
-    },
     {
       provide: BundleAssembler,
       inject: [

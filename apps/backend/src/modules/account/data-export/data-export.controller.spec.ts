@@ -5,10 +5,8 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { PassThrough, Readable } from 'node:stream';
 import { DataExportController } from './data-export.controller.js';
 import { DataExportService } from './data-export.service.js';
-import {
-  EXPORT_STORAGE,
-  type ExportStorage,
-} from './storage/export-storage.interface.js';
+import { OBJECT_STORAGE } from '../../storage/storage.tokens.js';
+import type { ObjectStorage } from '../../storage/object-storage.interface.js';
 import { signDownloadUrl } from './signed-url.js';
 import { User } from '../../../entities/user.entity.js';
 import { QUEUE_NAMES, JOB_NAMES } from '../../jobs/jobs.constants.js';
@@ -33,14 +31,26 @@ describe('DataExportController', () => {
     signingSecret: () => 'test-secret',
   };
   const queue = { add: jest.fn().mockResolvedValue(undefined) };
-  const storage: ExportStorage = {
-    write: jest.fn(),
+  const storage: ObjectStorage = {
+    put: jest.fn(),
     read: jest.fn(),
     delete: jest.fn(),
+    exists: jest.fn(),
+    publicUrl: jest.fn(),
+    // Default: LocalStorage-style relative path → controller falls
+    // through to the streaming path. The S3 redirect tests override
+    // this per-call.
+    signedUrl: jest.fn().mockResolvedValue('/uploads/exports/u1/req-1.zip'),
   };
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    // Re-establish the LocalStorage-style default so the bulk of
+    // download tests stay on the streaming path; clearAllMocks above
+    // wipes the mockResolvedValue set at construction time.
+    (storage.signedUrl as jest.Mock).mockResolvedValue(
+      '/uploads/exports/u1/req-1.zip',
+    );
     const module = await Test.createTestingModule({
       controllers: [DataExportController],
       providers: [
@@ -49,7 +59,7 @@ describe('DataExportController', () => {
           provide: getQueueToken(QUEUE_NAMES.DATA_EXPORT),
           useValue: queue,
         },
-        { provide: EXPORT_STORAGE, useValue: storage },
+        { provide: OBJECT_STORAGE, useValue: storage },
         { provide: JwtService, useValue: { verifyAsync: jest.fn() } },
         // AuthGuard pulls UserRepository now (post-#295) for token-aware
         // user lookups; tests don't exercise the guard but DI needs it.
@@ -149,6 +159,117 @@ describe('DataExportController', () => {
     await expect(
       controller.get({ user: { userId: 'u1' } } as never, 'req-1'),
     ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('GET download 302s to a bucket-native pre-signed URL when storage advertises one', async () => {
+    // S3/R2 case: signedUrl returns an absolute https URL — the
+    // controller hands the client straight to the bucket so the GDPR
+    // ZIP doesn't burn API replicas' bandwidth. LocalStorage returns
+    // a server-relative `/uploads/...` path which would dump the
+    // unauthenticated static-files route, so the absolute-URL gate
+    // is what keeps that case on the streaming path.
+    const requestId = 'req-1';
+    const expiresAt = Date.now() + 60_000;
+    const sig = signDownloadUrl({
+      userId: 'u1',
+      requestId,
+      expiresAt,
+      secret: 'test-secret',
+    });
+    service.findById.mockResolvedValue({
+      id: requestId,
+      user_id: 'u1',
+      status: 'ready',
+      storage_key: 'exports/u1/req-1.zip',
+      expires_at: new Date(expiresAt),
+    });
+    const presigned =
+      'https://tarmoto-staging-uploads.s3.us-east-1.amazonaws.com/exports/u1/req-1.zip?X-Amz-Signature=abc';
+    (storage.signedUrl as jest.Mock).mockResolvedValue(presigned);
+    const res = {
+      set: jest.fn(),
+      status: jest.fn().mockReturnThis(),
+      send: jest.fn(),
+      redirect: jest.fn(),
+    };
+    await controller.download(requestId, sig, String(expiresAt), res as never);
+    expect(
+      (storage as unknown as { signedUrl: jest.Mock }).signedUrl,
+    ).toHaveBeenCalledWith('exports/u1/req-1.zip', expect.any(Number));
+    expect(res.redirect).toHaveBeenCalledWith(302, presigned);
+    expect(
+      (storage as unknown as { read: jest.Mock }).read,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('GET download falls back to streaming when signedUrl throws (defensive)', async () => {
+    const requestId = 'req-1';
+    const expiresAt = Date.now() + 60_000;
+    const sig = signDownloadUrl({
+      userId: 'u1',
+      requestId,
+      expiresAt,
+      secret: 'test-secret',
+    });
+    service.findById.mockResolvedValue({
+      id: requestId,
+      user_id: 'u1',
+      status: 'ready',
+      storage_key: 'exports/u1/req-1.zip',
+      expires_at: new Date(expiresAt),
+    });
+    (storage.signedUrl as jest.Mock).mockRejectedValue(new Error('s3 503'));
+    const stream = Readable.from(Buffer.from('zipdata'));
+    (storage.read as jest.Mock).mockResolvedValue(stream);
+    const writes: Buffer[] = [];
+    const res = new PassThrough();
+    res.on('data', (c: Buffer) => writes.push(c));
+    Object.assign(res, {
+      set: jest.fn(),
+      status: jest.fn().mockReturnThis(),
+      send: jest.fn(),
+      redirect: jest.fn(),
+    });
+    await controller.download(requestId, sig, String(expiresAt), res as never);
+    expect(
+      (res as unknown as { redirect: jest.Mock }).redirect,
+    ).not.toHaveBeenCalled();
+    expect(Buffer.concat(writes).toString()).toBe('zipdata');
+  });
+
+  it('GET download returns 410 when S3 reports the object is missing (404)', async () => {
+    // S3 surfaces a missing object via $metadata.httpStatusCode === 404
+    // (NoSuchKey), not the ENOENT the local-FS path used to throw.
+    // The controller folds both into a 410 so a row whose ZIP was
+    // garbage-collected returns the same "gone" status either way.
+    const requestId = 'req-1';
+    const expiresAt = Date.now() + 60_000;
+    const sig = signDownloadUrl({
+      userId: 'u1',
+      requestId,
+      expiresAt,
+      secret: 'test-secret',
+    });
+    service.findById.mockResolvedValue({
+      id: requestId,
+      user_id: 'u1',
+      status: 'ready',
+      storage_key: 'exports/u1/req-1.zip',
+      expires_at: new Date(expiresAt),
+    });
+    (storage.read as jest.Mock).mockRejectedValue(
+      Object.assign(new Error('NoSuchKey'), {
+        $metadata: { httpStatusCode: 404 },
+      }),
+    );
+    await expect(
+      controller.download(requestId, sig, String(expiresAt), {
+        set: jest.fn(),
+        status: jest.fn(),
+        send: jest.fn(),
+        redirect: jest.fn(),
+      } as never),
+    ).rejects.toMatchObject({ status: 410 });
   });
 
   it('GET download streams the archive when signature is valid', async () => {

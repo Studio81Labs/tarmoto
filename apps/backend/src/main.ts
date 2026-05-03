@@ -95,7 +95,10 @@ async function bootstrap() {
   app.use(isProd ? helmet() : helmet({ contentSecurityPolicy: false }));
   app.setGlobalPrefix('api/v1');
 
-  // Serve locally-stored uploads (avatars today; review photos next).
+  // Serve locally-stored uploads (avatars, review photos). GDPR
+  // data-export ZIPs share the same `LocalStorage` baseDir but are
+  // never reached via this static route — `/account/data-export/:id/
+  // download` always streams them through an HMAC-checked endpoint.
   // The path prefix and base directory mirror `LocalStorage` so a
   // contributor running with default env config gets working avatar
   // fetches without touching MinIO.
@@ -114,6 +117,15 @@ async function bootstrap() {
     (process.env.TARMOTO_LOCAL_STORAGE_PUBLIC_PATH ?? '/uploads')
       .trim()
       .replace(/\/+$/, '') || '/uploads';
+  // Hard 404 for the GDPR `exports/` prefix BEFORE serve-static gets
+  // a chance: those ZIPs are personal data and must only flow out via
+  // the HMAC-checked `/account/data-export/:id/download` route. With
+  // LocalStorage they live under the same baseDir as avatars, so
+  // without this guard `/uploads/exports/<userId>/<requestId>.zip`
+  // would hand the bundle to anyone who knew the two UUIDs.
+  app.use(`${publicPath}/exports`, (_req: Request, res: Response) => {
+    res.status(404).send('Not Found');
+  });
   app.use(publicPath, serveStatic(localDir));
 
   app.useGlobalPipes(

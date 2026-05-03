@@ -21,8 +21,8 @@ const OBJECT_STORAGE_PROVIDER: Provider = {
 /**
  * Provides the shared `ObjectStorage` instance under the
  * `OBJECT_STORAGE` token. Imported by feature modules that persist
- * user-uploaded binaries (users for avatars; reviews and
- * data-export to follow).
+ * user-uploaded binaries (users for avatars, reviews for road-review
+ * photos, data-export for GDPR bundles).
  *
  * The provider choice is driven by `TARMOTO_STORAGE_DRIVER`
  * (`local` by default, `s3` opts into the S3-compatible backend).

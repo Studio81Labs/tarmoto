@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataExportService } from './data-export.service.js';
 import { DataExportRequest } from '../../../entities/data-export-request.entity.js';
-import { EXPORT_STORAGE } from './storage/export-storage.interface.js';
+import { OBJECT_STORAGE } from '../../storage/storage.tokens.js';
 
 describe('DataExportService', () => {
   let service: DataExportService;
@@ -21,10 +21,12 @@ describe('DataExportService', () => {
     update: jest.fn(),
   };
   const storage = {
-    write: jest.fn(),
+    put: jest.fn(),
     read: jest.fn(),
     delete: jest.fn().mockResolvedValue(undefined),
     exists: jest.fn().mockResolvedValue(true),
+    publicUrl: jest.fn(),
+    signedUrl: jest.fn(),
   };
   const config = {
     get: jest.fn((k: string) => {
@@ -56,7 +58,7 @@ describe('DataExportService', () => {
         DataExportService,
         { provide: getRepositoryToken(DataExportRequest), useValue: repo },
         { provide: ConfigService, useValue: config },
-        { provide: EXPORT_STORAGE, useValue: storage },
+        { provide: OBJECT_STORAGE, useValue: storage },
       ],
     }).compile();
     service = module.get(DataExportService);
