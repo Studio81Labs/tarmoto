@@ -124,18 +124,38 @@ module "secrets" {
 }
 
 module "uploads_bucket" {
-  source                    = "../../modules/s3-bucket"
-  env                       = "staging"
-  name                      = "uploads"
-  cors_allowed_origins      = [var.companion_origin]
-  lifecycle_expiration_days = 0
+  source               = "../../modules/s3-bucket"
+  env                  = "staging"
+  name                 = "uploads"
+  cors_allowed_origins = [var.companion_origin]
+
+  # Avatars (`avatars/`) and review photos (`road-review-photos/`) are
+  # retained for the lifetime of the user / review — never bulk-expired.
+  # The runbook documents that data-export bundles also live in this
+  # bucket under `exports/` once that wiring lands; the prefix rule
+  # below auto-expires those without affecting retained imagery.
+  lifecycle_rules = [
+    {
+      id              = "expire-exports-prefix"
+      prefix          = "exports/"
+      expiration_days = 30
+    },
+  ]
 }
 
 module "exports_bucket" {
-  source                    = "../../modules/s3-bucket"
-  env                       = "staging"
-  name                      = "exports"
-  lifecycle_expiration_days = 30
+  source = "../../modules/s3-bucket"
+  env    = "staging"
+  name   = "exports"
+
+  # Whole-bucket fallback retention for the dedicated exports bucket
+  # (kept for parity with prod / future wiring options).
+  lifecycle_rules = [
+    {
+      id              = "expire-all"
+      expiration_days = 30
+    },
+  ]
 }
 
 module "tiles_bucket" {

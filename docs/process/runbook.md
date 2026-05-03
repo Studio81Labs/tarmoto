@@ -463,6 +463,81 @@ When you fully cut over to S3 / R2:
    upload after cutover renders end-to-end and edits / deletes
    continue to clean up orphans.
 
+### Bucket lifecycle policies (staging / prod)
+
+The `s3-bucket` Terraform module
+(`infra/aws/modules/s3-bucket/main.tf`) applies the following
+lifecycle defaults to every bucket it creates, then layers
+per-bucket rules on top via the `lifecycle_rules` input:
+
+| Rule                         | Default                         | Why                                                                                                                                          |
+| ---------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `abort-incomplete-multipart` | abort after 7 days              | Avatar / review-photo / export uploads stream via multipart; an interrupted upload would otherwise sit indefinitely and accrue storage cost. |
+| `expire-noncurrent-versions` | expire after 30 days, prod only | Only kicks in when `versioning_enabled = true` (today: prod `uploads`). Cleans up replaced avatars so old objects don't accumulate.          |
+
+Per-bucket rules currently in effect (see
+`infra/aws/envs/{staging,prod}/main.tf`):
+
+| Bucket                  | Retained content                                                                         | Auto-expire                                                                                                                                                      |
+| ----------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tarmoto-<env>-uploads` | `avatars/*`, `road-review-photos/*` (kept until the user / review is deleted by the app) | `exports/*` after 30 days (prefix rule covers data-export bundles once they are wired through `ObjectStorage` per the runbook's "keep them in one bucket" model) |
+| `tarmoto-<env>-exports` | none — every object expires                                                              | every object after 30 days (whole-bucket fallback)                                                                                                               |
+| `tarmoto-<env>-tiles`   | vector tiles (immutable, URL-versioned)                                                  | none — only the multipart-abort default                                                                                                                          |
+
+#### Verifying in staging
+
+After `terraform apply` in `infra/aws/envs/staging/`:
+
+```bash
+# Multipart abort + any layered rules.
+aws s3api get-bucket-lifecycle-configuration \
+  --bucket tarmoto-staging-uploads
+aws s3api get-bucket-lifecycle-configuration \
+  --bucket tarmoto-staging-exports
+aws s3api get-bucket-lifecycle-configuration \
+  --bucket tarmoto-staging-tiles
+```
+
+Expected: `tarmoto-staging-uploads` returns the
+`abort-incomplete-multipart` rule plus the
+`expire-exports-prefix` rule (no `Expiration` on retained
+prefixes). `tarmoto-staging-exports` returns
+`abort-incomplete-multipart` plus `expire-all` (30 days).
+`tarmoto-staging-tiles` returns `abort-incomplete-multipart`
+only.
+
+To smoke-test multipart abort without waiting 7 days, start a
+multipart upload manually and confirm AWS reports it as in
+progress, then leave it for the operator to verify the abort
+fires:
+
+```bash
+aws s3api create-multipart-upload \
+  --bucket tarmoto-staging-uploads \
+  --key tmp/lifecycle-smoke
+aws s3api list-multipart-uploads \
+  --bucket tarmoto-staging-uploads
+# clean up immediately if you don't want to wait:
+aws s3api abort-multipart-upload \
+  --bucket tarmoto-staging-uploads \
+  --key tmp/lifecycle-smoke \
+  --upload-id <id>
+```
+
+#### Adding a new prefix rule
+
+To expire a new prefix (for example a future
+`crash-reports/` bundle), append an entry to the bucket's
+`lifecycle_rules` list — `id` must be unique within the
+bucket and `prefix` matches what the backend writes:
+
+```hcl
+lifecycle_rules = [
+  { id = "expire-exports-prefix", prefix = "exports/",       expiration_days = 30 },
+  { id = "expire-crash-reports", prefix = "crash-reports/", expiration_days = 14 },
+]
+```
+
 ### Symptoms and fixes
 
 - **Avatar uploads return 500 with "invalid storage key"** — the
@@ -853,4 +928,3 @@ Backend secrets live in AWS Secrets Manager under
 - Multi-region DR
 - Automated secret rotation lambdas
 - Phased iOS release automation
-- S3 bucket lifecycle for failed export uploads (today: 30-day expiry on the exports bucket only)
