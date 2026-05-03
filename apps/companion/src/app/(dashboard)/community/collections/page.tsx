@@ -116,14 +116,30 @@ export default function RouteCollectionsPage() {
     }
   };
 
+  const needle = search.trim().toLowerCase();
+
   const visible = useMemo(() => {
-    const needle = search.trim().toLowerCase();
     return collections.filter((c) => {
       if (!needle) return true;
       const hay = `${c.title} ${c.description ?? ""}`.toLowerCase();
       return hay.includes(needle);
     });
-  }, [collections, search]);
+  }, [collections, needle]);
+
+  // Apply the same search to followed collections so a search that hides the
+  // owned grid doesn't leave unfiltered followed cards visible below it (the
+  // search box label says "Search collections…" generically). Followed cards
+  // also key on `ownerName` since "by Jane Rider" is a meaningful axis to
+  // search by — it's the only thing that distinguishes a followed collection
+  // from the owned grid.
+  const visibleFollowed = useMemo(() => {
+    return followed.filter((c) => {
+      if (!needle) return true;
+      const hay =
+        `${c.title} ${c.description ?? ""} ${c.ownerName}`.toLowerCase();
+      return hay.includes(needle);
+    });
+  }, [followed, needle]);
 
   const showSkeleton = status === "loading" && collections.length === 0;
   const showLoadError = status === "error" && collections.length === 0;
@@ -223,21 +239,26 @@ export default function RouteCollectionsPage() {
         </div>
       )}
 
-      {followed.length > 0 && (
+      {visibleFollowed.length > 0 && (
         <section className="mt-10">
           <div className="flex items-center gap-2 mb-3">
             <Bookmark size={14} className="text-tarmoto-cyan" />
             <h2 className="text-sm font-semibold text-white">
               Followed collections
             </h2>
-            <span className="text-xs text-slate-500">· {followed.length}</span>
+            <span className="text-xs text-slate-500">
+              · {visibleFollowed.length}
+              {needle && visibleFollowed.length !== followed.length
+                ? ` of ${followed.length}`
+                : ""}
+            </span>
           </div>
           <p className="text-xs text-slate-500 mb-3">
             Collections from other riders you&apos;ve saved. They show up here
             until you unfollow.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {followed.map((collection) => (
+            {visibleFollowed.map((collection) => (
               <FollowedCollectionCard
                 key={collection.id}
                 collection={collection}
