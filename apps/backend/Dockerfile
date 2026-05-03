@@ -6,9 +6,9 @@
 # compiled `dist/`. The build stage uses pnpm with the workspace
 # enabled because the backend depends on `@tarmoto/shared`.
 #
-# Built and pushed to ECR by .github/workflows/backend-deploy.yml.
-# Image tag is `sha-<git-sha>`; ECR lifecycle policy keeps SHA-tagged
-# images for 90 days.
+# Built by Render's Web Service runtime off `main` per
+# infra/render/render.yaml. The Dockerfile is also runnable locally
+# (`docker build -f apps/backend/Dockerfile .` from the repo root).
 
 ARG NODE_VERSION=24-alpine
 ARG PNPM_VERSION=10
