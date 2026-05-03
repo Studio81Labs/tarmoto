@@ -21,13 +21,12 @@ export type { PublicProfile } from "@tarmoto/shared";
 // `@tarmoto/shared` so backend, mobile, and companion share one definition.
 export type { MeProfile } from "@tarmoto/shared";
 
-// Generated OpenAPI components — re-exported so screens, services, and
-// stores can refer to spec-derived shapes through `@/types` instead of
-// importing from `@tarmoto/openapi` directly. The `Schemas` helper
-// shortens `components["schemas"]["FooDto"]` to `Schemas["FooDto"]` at
-// call sites.
+// Generated OpenAPI component schemas — re-exported so screens, services,
+// and stores can refer to spec-derived shapes through `@/types` instead
+// of importing from `@tarmoto/openapi` directly. `Schemas["FooDto"]`
+// reads cleaner at call sites than the underlying
+// `components["schemas"]["FooDto"]`.
 import type { components } from "@tarmoto/openapi";
-export type { components };
 export type Schemas = components["schemas"];
 
 // ── Primitives ──
