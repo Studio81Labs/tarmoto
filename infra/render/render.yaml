@@ -12,7 +12,11 @@ databases:
   - name: tarmoto-prod-db
     databaseName: tarmoto
     user: tarmoto
-    plan: standard
+    # Render renamed Postgres plans in 2026: legacy `standard` is no
+    # longer accepted for new databases. `basic-4gb` is the closest
+    # equivalent (4 GB RAM, ~$19/mo). Bump to `pro-4gb` (or higher)
+    # if/when traffic warrants PITR + the larger compute envelope.
+    plan: basic-4gb
     region: frankfurt
     postgresMajorVersion: "16"
     # The PostGIS extension is created via the existing TypeORM
