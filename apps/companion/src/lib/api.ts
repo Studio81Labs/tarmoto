@@ -327,6 +327,12 @@ export interface RouteCollectionSummary {
   visibility: RouteCollectionVisibility;
   slug: string;
   item_count: number;
+  /**
+   * Display name of the owner. Populated for endpoints that surface other
+   * riders' collections (e.g. the followed list); null on `/collections/me`
+   * since the rider already knows their own name.
+   */
+  owner_name: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -582,7 +582,6 @@ describe('RouteCollectionsService', () => {
         owner_id: ownerId,
         visibility: 'public',
       });
-      (followRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
 
       const result = await service.follow(otherId, collectionId);
 
@@ -595,12 +594,19 @@ describe('RouteCollectionsService', () => {
       expect(result.followed_at).toBe('2026-04-20T11:00:00.000Z');
     });
 
-    it('returns the existing row on duplicate follow (idempotent)', async () => {
+    it('falls back to the existing row on a unique-violation race (idempotent)', async () => {
+      // Simulates two concurrent POSTs both passing the visibility check and
+      // racing to insert. The losing call hits SQLSTATE 23505; the service
+      // re-reads the canonical row instead of bubbling a 500.
       (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
         ...baseCollection,
         owner_id: ownerId,
         visibility: 'public',
       });
+      const uniqueViolation = Object.assign(new Error('duplicate'), {
+        code: '23505',
+      });
+      (followRepo.save as jest.Mock).mockRejectedValueOnce(uniqueViolation);
       (followRepo.findOne as jest.Mock).mockResolvedValueOnce({
         id: 'follow-existing',
         user_id: otherId,
@@ -609,8 +615,45 @@ describe('RouteCollectionsService', () => {
       });
 
       const result = await service.follow(otherId, collectionId);
-      expect(followRepo.save).not.toHaveBeenCalled();
       expect(result.followed_at).toBe('2026-04-19T10:00:00.000Z');
+    });
+
+    it('detects the unique violation when wrapped in a QueryFailedError shape', async () => {
+      // TypeORM wraps the raw pg error; the `code` lives on `driverError`.
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        owner_id: ownerId,
+        visibility: 'public',
+      });
+      const wrapped = Object.assign(new Error('query failed'), {
+        driverError: { code: '23505' },
+      });
+      (followRepo.save as jest.Mock).mockRejectedValueOnce(wrapped);
+      (followRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        id: 'follow-existing',
+        user_id: otherId,
+        collection_id: collectionId,
+        created_at: new Date('2026-04-19T10:00:00Z'),
+      });
+
+      const result = await service.follow(otherId, collectionId);
+      expect(result.followed_at).toBe('2026-04-19T10:00:00.000Z');
+    });
+
+    it('rethrows non-unique save errors so 500s are not swallowed', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        owner_id: ownerId,
+        visibility: 'public',
+      });
+      const dbDown = Object.assign(new Error('connection lost'), {
+        code: '08006',
+      });
+      (followRepo.save as jest.Mock).mockRejectedValueOnce(dbDown);
+
+      await expect(service.follow(otherId, collectionId)).rejects.toThrow(
+        'connection lost',
+      );
     });
 
     it('rejects when the owner tries to follow their own collection', async () => {

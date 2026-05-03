@@ -155,6 +155,13 @@ export class RouteCollectionSummaryDto {
   @ApiProperty({ description: 'Total items in the collection.' })
   item_count!: number;
 
+  @ApiProperty({
+    nullable: true,
+    description:
+      "Display name of the owning rider. Populated for endpoints that surface other riders' collections (e.g. the followed list); `null` on the caller's own list since the rider already knows their own name.",
+  })
+  owner_name!: string | null;
+
   @ApiProperty()
   created_at!: string;
 
@@ -166,11 +173,15 @@ export class RouteCollectionDetailDto extends RouteCollectionSummaryDto {
   @ApiProperty({ type: [RouteCollectionItemResponseDto] })
   items!: RouteCollectionItemResponseDto[];
 
+  // Detail responses always populate owner_name (empty string for soft-deleted
+  // accounts, since the controller 404s in that case). The base summary
+  // declares it as nullable for endpoints that don't surface it; `declare`
+  // narrows the subclass type without re-emitting the field.
   @ApiProperty({
     description:
       'Display name of the owning rider (for unlisted/public viewing). Empty for soft-deleted accounts; the controller 404s in that case.',
   })
-  owner_name!: string;
+  declare owner_name: string;
 
   @ApiProperty({
     description:

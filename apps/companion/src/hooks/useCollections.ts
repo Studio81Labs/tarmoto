@@ -153,22 +153,36 @@ export function useCollections(userId: string | null): UseCollectionsResult {
     [removeOne],
   );
 
-  const unfollowCollection = useCallback(
-    async (id: string) => {
-      // Optimistic drop — the unfollow endpoint is idempotent (US-56) so a
-      // network failure won't leave the row in a half-state. Restore via a
-      // refresh on error rather than tracking a per-row pending flag.
-      const previous = followed;
-      setFollowed((prev) => prev.filter((c) => c.id !== id));
-      try {
-        await routeCollectionsApi.unfollow(id);
-      } catch (err) {
-        setFollowed(previous);
-        throw err;
+  const unfollowCollection = useCallback(async (id: string) => {
+    // Optimistic drop — the unfollow endpoint is idempotent (US-56) so a
+    // network failure won't leave the row in a half-state. We capture the
+    // single dropped row (not the full list) so a rapid second unfollow
+    // landing while the first is in-flight doesn't see the closure restore
+    // an old snapshot that re-adds rows another call has already removed.
+    // Held as `.current` on a stable object so TypeScript's control-flow
+    // analysis doesn't narrow the value to `null` after assignment inside
+    // the setState callback.
+    const removed: { current: RouteCollectionView | null } = { current: null };
+    setFollowed((prev) => {
+      const target = prev.find((c) => c.id === id);
+      if (!target) return prev;
+      removed.current = target;
+      return prev.filter((c) => c.id !== id);
+    });
+    try {
+      await routeCollectionsApi.unfollow(id);
+    } catch (err) {
+      // Re-insert just the failed row, keeping any other concurrent
+      // optimistic updates intact.
+      const restored = removed.current;
+      if (restored != null) {
+        setFollowed((prev) =>
+          prev.some((c) => c.id === restored.id) ? prev : [...prev, restored],
+        );
       }
-    },
-    [followed],
-  );
+      throw err;
+    }
+  }, []);
 
   // Item-level mutations (add/remove trip) live on the detail page rather
   // than this hook. The detail page already loads /collections/:id and

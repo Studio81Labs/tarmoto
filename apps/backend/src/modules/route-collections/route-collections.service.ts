@@ -91,7 +91,9 @@ export class RouteCollectionsService {
 
     // Followed: join through the follow table → collection → item count, with
     // the same id-keyed pairing trick as listMine. Filtered to non-private,
-    // non-soft-deleted owners so the UI never links to a 404.
+    // non-soft-deleted owners so the UI never links to a 404. Also pulls the
+    // owner's display name so the dashboard can surface "by Jane Rider" on
+    // the followed cards (otherwise the rider's curation context is lost).
     const rows = await this.collectionRepo
       .createQueryBuilder('c')
       .innerJoin(
@@ -116,18 +118,32 @@ export class RouteCollectionsService {
       ])
       .addSelect('COUNT(i.id)', 'item_count')
       .addSelect('f.created_at', 'followed_at')
+      .addSelect('owner.display_name', 'owner_name')
       .groupBy('c.id')
       .addGroupBy('f.created_at')
+      .addGroupBy('owner.display_name')
       .orderBy('f.created_at', 'DESC')
       .getRawAndEntities();
 
     const countById = new Map<string, number>();
-    for (const raw of rows.raw as { c_id?: string; item_count?: string }[]) {
-      if (raw.c_id) countById.set(raw.c_id, Number(raw.item_count ?? 0));
+    const ownerNameById = new Map<string, string | null>();
+    for (const raw of rows.raw as {
+      c_id?: string;
+      item_count?: string;
+      owner_name?: string | null;
+    }[]) {
+      if (raw.c_id) {
+        countById.set(raw.c_id, Number(raw.item_count ?? 0));
+        ownerNameById.set(raw.c_id, raw.owner_name ?? null);
+      }
     }
 
     const followed = rows.entities.map((c) =>
-      this.toSummaryResponse(c, countById.get(c.id) ?? 0),
+      this.toSummaryResponse(
+        c,
+        countById.get(c.id) ?? 0,
+        ownerNameById.get(c.id) ?? null,
+      ),
     );
 
     return { owned, followed };
@@ -400,26 +416,40 @@ export class RouteCollectionsService {
       throw new BadRequestException('You cannot follow your own collection');
     }
 
-    const existing = await this.followRepo.findOne({
-      where: { user_id: userId, collection_id: collectionId },
-    });
-    if (existing) {
+    // Insert directly and fall back to a re-find on the unique violation.
+    // A check-then-insert pattern would race under concurrency: two parallel
+    // POSTs can both pass the existence check and the second hits the
+    // `uq_route_collection_follows_user_collection` constraint, which would
+    // surface as a 500 and break the documented idempotency guarantee.
+    try {
+      const saved = await this.followRepo.save(
+        this.followRepo.create({
+          user_id: userId,
+          collection_id: collectionId,
+        }),
+      );
+      return {
+        collection_id: collectionId,
+        followed_at: saved.created_at.toISOString(),
+      };
+    } catch (err) {
+      if (!isUniqueViolation(err)) throw err;
+      // Lost the race — the row exists. Re-read it so we can return the
+      // canonical `followed_at` from the winning insert.
+      const existing = await this.followRepo.findOne({
+        where: { user_id: userId, collection_id: collectionId },
+      });
+      if (!existing) {
+        // Truly unreachable: the unique violation says a row exists, but a
+        // parallel unfollow could have removed it between catch and re-read.
+        // Re-throw so the client sees a real error instead of a stale ok.
+        throw err;
+      }
       return {
         collection_id: collectionId,
         followed_at: existing.created_at.toISOString(),
       };
     }
-
-    const saved = await this.followRepo.save(
-      this.followRepo.create({
-        user_id: userId,
-        collection_id: collectionId,
-      }),
-    );
-    return {
-      collection_id: collectionId,
-      followed_at: saved.created_at.toISOString(),
-    };
   }
 
   /**
@@ -465,6 +495,7 @@ export class RouteCollectionsService {
   private toSummaryResponse(
     c: RouteCollection,
     item_count: number,
+    owner_name: string | null = null,
   ): RouteCollectionSummaryDto {
     return {
       id: c.id,
@@ -474,6 +505,7 @@ export class RouteCollectionsService {
       visibility: c.visibility,
       slug: c.slug,
       item_count,
+      owner_name,
       created_at: c.created_at.toISOString(),
       updated_at: c.updated_at.toISOString(),
     };
@@ -485,10 +517,11 @@ export class RouteCollectionsService {
     viewerId: string | null,
     viewerIsFollowing: boolean,
   ): RouteCollectionDetailDto {
+    const ownerName = c.owner?.display_name ?? '';
     return {
-      ...this.toSummaryResponse(c, items.length),
+      ...this.toSummaryResponse(c, items.length, ownerName || null),
       items: items.map((i) => this.toItemResponse(i)),
-      owner_name: c.owner?.display_name ?? '',
+      owner_name: ownerName,
       viewer_is_owner: viewerId != null && viewerId === c.owner_id,
       viewer_is_following: viewerIsFollowing,
     };
@@ -511,6 +544,30 @@ function normaliseDescription(value: string | null | undefined): string | null {
   if (value == null) return null;
   const trimmed = value.trim();
   return trimmed === '' ? null : trimmed;
+}
+
+/**
+ * PostgreSQL surfaces a `unique_violation` (SQLSTATE 23505) when a duplicate
+ * INSERT hits a unique constraint. TypeORM wraps the raw pg error as a
+ * `QueryFailedError`, but the `code` survives intact on the wrapped error
+ * shape — checking it lets the caller treat the duplicate as the no-op
+ * idempotent case instead of surfacing a 500.
+ */
+function isUniqueViolation(err: unknown): boolean {
+  if (err == null || typeof err !== 'object') return false;
+  if ('code' in err && (err as { code?: unknown }).code === '23505') {
+    return true;
+  }
+  const driver = (err as { driverError?: unknown }).driverError;
+  if (
+    driver != null &&
+    typeof driver === 'object' &&
+    'code' in driver &&
+    (driver as { code?: unknown }).code === '23505'
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function generateSlug(): string {
