@@ -194,17 +194,17 @@ The system analyzes road geometry (curviness from OSM), elevation data, surface 
 
 ### 5.1 Tech Stack
 
-| Layer       | Technology                                    | Rationale                                                                             |
-| ----------- | --------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Mobile App  | React Native (bare)                           | Cross-platform, CarPlay/AA support, background sensor access                          |
-| **Web App** | **Next.js (TypeScript)**                      | **Shared TS ecosystem with mobile + backend, SSR for landing/SEO, SPA for app views** |
-| Maps        | MapLibre GL + custom vector tiles             | Open-source, customizable styling, offline support, no Google licensing costs         |
-| Backend API | Node.js (NestJS) or Python (FastAPI)          | High-performance, well-suited for real-time data processing                           |
-| Database    | PostgreSQL + PostGIS                          | Geospatial queries, road segment indexing, proven at scale                            |
-| Real-time   | WebSockets (Socket.io) + Redis Pub/Sub        | Live hazard alerts, group ride tracking                                               |
-| ML Pipeline | TensorFlow Lite (on-device) + Python (server) | On-device road classification, server-side aggregation                                |
-| Cloud       | AWS (ECS, RDS, S3, CloudFront)                | Scalable, cost-effective, CDN for map tiles                                           |
-| Analytics   | PostHog (self-hosted) or Mixpanel             | Privacy-first analytics, funnel tracking                                              |
+| Layer       | Technology                                                          | Rationale                                                                             |
+| ----------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Mobile App  | React Native (bare)                                                 | Cross-platform, CarPlay/AA support, background sensor access                          |
+| **Web App** | **Next.js (TypeScript)**                                            | **Shared TS ecosystem with mobile + backend, SSR for landing/SEO, SPA for app views** |
+| Maps        | MapLibre GL + custom vector tiles                                   | Open-source, customizable styling, offline support, no Google licensing costs         |
+| Backend API | Node.js (NestJS) or Python (FastAPI)                                | High-performance, well-suited for real-time data processing                           |
+| Database    | PostgreSQL + PostGIS                                                | Geospatial queries, road segment indexing, proven at scale                            |
+| Real-time   | WebSockets (Socket.io) + Redis Pub/Sub                              | Live hazard alerts, group ride tracking                                               |
+| ML Pipeline | TensorFlow Lite (on-device) + Python (server)                       | On-device road classification, server-side aggregation                                |
+| Cloud       | Render (backend + Postgres + Redis) + Cloudflare (R2, Workers, DNS) | Cost-optimized PaaS, no egress fees on R2, single CDN for tiles + companion           |
+| Analytics   | PostHog (self-hosted) or Mixpanel                                   | Privacy-first analytics, funnel tracking                                              |
 
 ### 5.2 Road Quality Data Pipeline
 

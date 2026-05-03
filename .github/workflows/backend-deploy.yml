@@ -1,17 +1,26 @@
 name: Backend Deploy
 
-# Auto-deploys to staging on every push to main that touches the
-# backend or its shared deps. Prod is gated behind the `production`
-# GitHub environment (manual approval).
+# Render handles the Docker build + deploy itself, off `git push` to
+# main (see infra/render/render.yaml's autoDeploy flag). This workflow
+# waits for Render to finish, runs a smoke test, and triggers a
+# rollback on smoke failure.
 #
-# Tag-driven prod release: pushing a tag matching `backend-v*` cuts
-# a prod deploy. Workflow_dispatch covers hotfixes against either env.
+# Tag-driven prod release: pushing `backend-v*` POSTs to the prod
+# service's deploy hook (since prod has autoDeploy: false), then waits
+# + smoke-tests. Workflow_dispatch covers hotfixes.
 #
-# IaC and image build glue lives in:
-#   - apps/backend/Dockerfile
-#   - infra/aws/envs/<env>/  (Terraform — must be applied once before
-#                             the first deploy can succeed)
-#   - scripts/smoke/smoke.sh (post-deploy verification)
+# Choice rationale: docs/decisions/0005-deployment-stack-render.md
+# Day-2 ops: docs/process/runbook.md
+#
+# Required repo secrets:
+#   RENDER_API_KEY              Render account API key
+#   RENDER_SERVICE_ID_STAGING   `srv-...` for the staging Web Service
+#   RENDER_SERVICE_ID_PROD      `srv-...` for the prod Web Service (when added)
+#   RENDER_DEPLOY_HOOK_PROD     Deploy-hook URL for prod (autoDeploy: false)
+#
+# Required repo variables:
+#   BACKEND_URL_STAGING         e.g. https://api.staging.tarmoto.app
+#   BACKEND_URL_PROD            e.g. https://api.tarmoto.app
 
 on:
   push:
@@ -21,7 +30,7 @@ on:
       - "apps/backend/**"
       - "packages/shared/**"
       - "packages/openapi/**"
-      - "infra/aws/**"
+      - "infra/render/**"
       - ".github/workflows/backend-deploy.yml"
       - "scripts/smoke/**"
   workflow_dispatch:
@@ -35,21 +44,19 @@ on:
 
 permissions:
   contents: read
-  id-token: write # OIDC assume-role into AWS
 
 concurrency:
   group: backend-deploy-${{ github.event.inputs.environment || (startsWith(github.ref, 'refs/tags/') && 'prod') || 'staging' }}
   cancel-in-progress: false
 
 jobs:
-  build-and-push:
-    name: Build & push image
+  deploy:
+    name: Deploy & verify
     runs-on: ubuntu-latest
 
-    outputs:
-      image: ${{ steps.meta.outputs.image }}
-      image_tag: ${{ steps.meta.outputs.image_tag }}
-      env_name: ${{ steps.env.outputs.name }}
+    # `staging` and `production` GitHub environments enforce required
+    # reviewers / branch protections. Prod gets a manual approval.
+    environment: ${{ (github.event.inputs.environment == 'prod' || startsWith(github.ref, 'refs/tags/backend-v')) && 'production' || 'staging' }}
 
     steps:
       - uses: actions/checkout@v6
@@ -60,229 +67,151 @@ jobs:
           DISPATCH_ENV: ${{ github.event.inputs.environment }}
           REF_NAME: ${{ github.ref }}
           EVENT_NAME: ${{ github.event_name }}
+          SERVICE_ID_STAGING: ${{ secrets.RENDER_SERVICE_ID_STAGING }}
+          SERVICE_ID_PROD: ${{ secrets.RENDER_SERVICE_ID_PROD }}
+          URL_STAGING: ${{ vars.BACKEND_URL_STAGING }}
+          URL_PROD: ${{ vars.BACKEND_URL_PROD }}
         run: |
+          set -euo pipefail
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            echo "name=${DISPATCH_ENV}" >> "$GITHUB_OUTPUT"
+            ENV_NAME="$DISPATCH_ENV"
           elif [[ "$REF_NAME" == refs/tags/backend-v* ]]; then
-            echo "name=prod" >> "$GITHUB_OUTPUT"
+            ENV_NAME="prod"
           else
-            echo "name=staging" >> "$GITHUB_OUTPUT"
+            ENV_NAME="staging"
           fi
+          if [ "$ENV_NAME" = "prod" ]; then
+            SERVICE_ID="$SERVICE_ID_PROD"
+            URL="$URL_PROD"
+          else
+            SERVICE_ID="$SERVICE_ID_STAGING"
+            URL="$URL_STAGING"
+          fi
+          {
+            echo "name=${ENV_NAME}"
+            echo "service_id=${SERVICE_ID}"
+            echo "url=${URL}"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ steps.env.outputs.name == 'prod' && secrets.AWS_DEPLOY_ROLE_ARN_PROD || secrets.AWS_DEPLOY_ROLE_ARN_STAGING }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-central-1' }}
-
-      - name: Login to Amazon ECR
-        id: ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Compute image metadata
-        id: meta
+      - name: Trigger prod deploy hook
+        # Staging auto-deploys from `git push`; prod has autoDeploy: false
+        # in the blueprint, so we POST the deploy hook explicitly.
+        # `?ref=$GITHUB_SHA` pins the deploy to the tagged commit —
+        # without it, Render builds the configured branch's HEAD,
+        # which may have advanced past the tag and would cause the
+        # subsequent "Wait for deploy" step to never find a match.
+        if: steps.env.outputs.name == 'prod'
         env:
-          REGISTRY: ${{ steps.ecr.outputs.registry }}
-          ENV_NAME: ${{ steps.env.outputs.name }}
-        run: |
-          REPO="tarmoto-backend-${ENV_NAME}"
-          TAG="sha-${GITHUB_SHA::12}"
-          echo "image=${REGISTRY}/${REPO}:${TAG}" >> "$GITHUB_OUTPUT"
-          echo "image_tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "registry=${REGISTRY}" >> "$GITHUB_OUTPUT"
-          echo "repo=${REPO}" >> "$GITHUB_OUTPUT"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: apps/backend/Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.image }}
-          # GHA cache so subsequent deploys reuse the deps layer.
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          provenance: false
-
-  deploy:
-    name: Deploy to ECS
-    needs: build-and-push
-    runs-on: ubuntu-latest
-
-    # The `staging` and `production` GitHub environments enforce
-    # required reviewers / branch protections. Prod gets a manual
-    # approval here even though the build step has already run.
-    environment: ${{ needs.build-and-push.outputs.env_name == 'prod' && 'production' || 'staging' }}
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Resolve target environment
-        id: env
-        env:
-          ENV_NAME: ${{ needs.build-and-push.outputs.env_name }}
-        run: |
-          echo "name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
-          echo "cluster=tarmoto-${ENV_NAME}" >> "$GITHUB_OUTPUT"
-          echo "service=tarmoto-${ENV_NAME}-backend" >> "$GITHUB_OUTPUT"
-          echo "task_family=tarmoto-${ENV_NAME}-backend" >> "$GITHUB_OUTPUT"
-
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ steps.env.outputs.name == 'prod' && secrets.AWS_DEPLOY_ROLE_ARN_PROD || secrets.AWS_DEPLOY_ROLE_ARN_STAGING }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-central-1' }}
-
-      - name: Snapshot current service task definition
-        # Capture the *running* service's task-definition ARN before
-        # we register any new revisions. The rollback step at the end
-        # of the job uses this exact ARN, so it cannot get confused by
-        # the migration revision (which is registered between this
-        # snapshot and the deploy).
-        id: prev
-        env:
-          CLUSTER: ${{ steps.env.outputs.cluster }}
-          SERVICE: ${{ steps.env.outputs.service }}
+          DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_PROD }}
         run: |
           set -euo pipefail
-          PREV_TASKDEF=$(aws ecs describe-services \
-            --cluster "$CLUSTER" --services "$SERVICE" \
-            --query 'services[0].taskDefinition' --output text)
-          echo "taskdef=${PREV_TASKDEF}" >> "$GITHUB_OUTPUT"
-          echo "Previous task definition: ${PREV_TASKDEF}"
-
-      - name: Fetch current task definition
-        id: taskdef
-        env:
-          TASK_FAMILY: ${{ steps.env.outputs.task_family }}
-        run: |
-          aws ecs describe-task-definition \
-            --task-definition "$TASK_FAMILY" \
-            --query 'taskDefinition' \
-            > taskdef.json
-          # ecs-deploy-task-definition rejects fields it can't set.
-          jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)' \
-            taskdef.json > taskdef.cleaned.json
-          echo "path=taskdef.cleaned.json" >> "$GITHUB_OUTPUT"
-
-      - name: Render new image into task definition
-        id: render
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
-        with:
-          task-definition: ${{ steps.taskdef.outputs.path }}
-          container-name: backend
-          image: ${{ needs.build-and-push.outputs.image }}
-
-      - name: Run DB migrations
-        # ECS RunTask with the freshly-rendered task definition so
-        # migrations run against the same image we're about to deploy.
-        env:
-          ENV_NAME: ${{ steps.env.outputs.name }}
-          CLUSTER: ${{ steps.env.outputs.cluster }}
-          RENDERED_TASKDEF: ${{ steps.render.outputs.task-definition }}
-        run: |
-          set -euo pipefail
-          NEW_TASKDEF_ARN=$(aws ecs register-task-definition \
-            --cli-input-json "file://${RENDERED_TASKDEF}" \
-            --query 'taskDefinition.taskDefinitionArn' --output text)
-          echo "Registered: $NEW_TASKDEF_ARN"
-
-          SUBNETS=$(aws ec2 describe-subnets \
-            --filters "Name=tag:Project,Values=tarmoto" \
-                      "Name=tag:Environment,Values=${ENV_NAME}" \
-                      "Name=tag:Tier,Values=private" \
-            --query 'Subnets[].SubnetId' --output text | tr '\t' ',')
-          SG=$(aws ec2 describe-security-groups \
-            --filters "Name=group-name,Values=tarmoto-${ENV_NAME}-backend-svc" \
-            --query 'SecurityGroups[0].GroupId' --output text)
-
-          # Same migration command the local dev workflow uses
-          # (apps/backend/package.json `db:migrate`). typeorm CLI is
-          # in the runtime image; the data source compiles to
-          # apps/backend/dist/data-source.js. We `cd` into the package
-          # so node_modules resolution matches the local invocation.
-          TASK_ARN=$(aws ecs run-task \
-            --cluster "$CLUSTER" \
-            --task-definition "$NEW_TASKDEF_ARN" \
-            --launch-type FARGATE \
-            --network-configuration "awsvpcConfiguration={subnets=[${SUBNETS}],securityGroups=[${SG}],assignPublicIp=DISABLED}" \
-            --overrides '{"containerOverrides":[{"name":"backend","command":["sh","-c","cd apps/backend && npx typeorm migration:run -d dist/data-source.js"]}]}' \
-            --started-by "gha-${GITHUB_RUN_ID}" \
-            --query 'tasks[0].taskArn' --output text)
-
-          echo "Migration task: $TASK_ARN"
-          aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$TASK_ARN"
-
-          EXIT=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK_ARN" \
-            --query 'tasks[0].containers[0].exitCode' --output text)
-          if [ "$EXIT" != "0" ]; then
-            echo "::error::Migration container exited with $EXIT"
-            START_TIME=$(($(date -u +%s%3N) - 600000))
-            aws logs filter-log-events \
-              --log-group-name "/tarmoto/${ENV_NAME}/backend" \
-              --start-time "$START_TIME" \
-              --query 'events[].message' --output text || true
+          if [ -z "$DEPLOY_HOOK" ]; then
+            echo "::error::RENDER_DEPLOY_HOOK_PROD is not set"
             exit 1
           fi
-
-      - name: Deploy task definition
-        id: deploy
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
-        with:
-          task-definition: ${{ steps.render.outputs.task-definition }}
-          service: ${{ steps.env.outputs.service }}
-          cluster: ${{ steps.env.outputs.cluster }}
-          wait-for-service-stability: true
-          wait-for-minutes: 15
-
-      - name: Resolve API URL
-        id: url
-        env:
-          ENV_NAME: ${{ steps.env.outputs.name }}
-          BACKEND_URL_PROD: ${{ vars.BACKEND_URL_PROD }}
-          BACKEND_URL_STAGING: ${{ vars.BACKEND_URL_STAGING }}
-        run: |
-          if [ "$ENV_NAME" = "prod" ]; then
-            URL="$BACKEND_URL_PROD"
+          # Append ?ref= correctly whether the hook URL already has
+          # query params or not.
+          if [[ "$DEPLOY_HOOK" == *\?* ]]; then
+            HOOK_URL="${DEPLOY_HOOK}&ref=${GITHUB_SHA}"
           else
-            URL="$BACKEND_URL_STAGING"
+            HOOK_URL="${DEPLOY_HOOK}?ref=${GITHUB_SHA}"
           fi
-          if [ -z "$URL" ]; then
-            DNS=$(aws elbv2 describe-load-balancers \
-              --names "tarmoto-${ENV_NAME}-alb" \
-              --query 'LoadBalancers[0].DNSName' --output text)
-            URL="https://${DNS}"
-          fi
-          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+          curl --fail --silent --show-error -X POST "$HOOK_URL" > /dev/null
+          echo "Triggered prod deploy hook for ${GITHUB_SHA}."
+
+      - name: Wait for deploy to go live
+        id: wait
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ steps.env.outputs.service_id }}
+        run: |
+          set -euo pipefail
+          # Poll /v1/services/{id}/deploys until we see a deploy whose
+          # commit matches $GITHUB_SHA reach status=live (success) or
+          # one of the terminal failure statuses. 20 min cap matches
+          # Render's own deploy timeout.
+          DEADLINE=$(( $(date +%s) + 1200 ))
+          SHA_SHORT="${GITHUB_SHA:0:7}"
+          while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+            DEPLOYS=$(curl --fail --silent \
+              -H "Authorization: Bearer $RENDER_API_KEY" \
+              -H "Accept: application/json" \
+              "https://api.render.com/v1/services/${SERVICE_ID}/deploys?limit=20")
+
+            DEPLOY=$(echo "$DEPLOYS" | jq --arg sha "$SHA_SHORT" '
+              [.[] | select(.deploy.commit.id // "" | startswith($sha))][0].deploy // empty
+            ')
+            if [ -z "$DEPLOY" ] || [ "$DEPLOY" = "null" ]; then
+              echo "No deploy yet for ${SHA_SHORT}; waiting..."
+              sleep 15
+              continue
+            fi
+
+            STATUS=$(echo "$DEPLOY" | jq -r '.status')
+            DEPLOY_ID=$(echo "$DEPLOY" | jq -r '.id')
+            echo "Deploy ${DEPLOY_ID}: ${STATUS}"
+
+            case "$STATUS" in
+              live)
+                echo "deploy_id=${DEPLOY_ID}" >> "$GITHUB_OUTPUT"
+                exit 0
+                ;;
+              build_failed|update_failed|canceled|deactivated|pre_deploy_failed)
+                echo "::error::Deploy ${DEPLOY_ID} terminated with status=${STATUS}"
+                exit 1
+                ;;
+              *)
+                sleep 15
+                ;;
+            esac
+          done
+          echo "::error::Timed out waiting for deploy of ${SHA_SHORT}"
+          exit 1
 
       - name: Smoke test
-        run: scripts/smoke/smoke.sh "${{ steps.url.outputs.url }}"
+        env:
+          BASE_URL: ${{ steps.env.outputs.url }}
+        run: scripts/smoke/smoke.sh "$BASE_URL"
 
       - name: Roll back on smoke failure
-        if: failure() && steps.deploy.outcome == 'success'
+        if: failure() && steps.wait.outcome == 'success'
         env:
-          CLUSTER: ${{ steps.env.outputs.cluster }}
-          SERVICE: ${{ steps.env.outputs.service }}
-          PREV_TASKDEF: ${{ steps.prev.outputs.taskdef }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SERVICE_ID: ${{ steps.env.outputs.service_id }}
         run: |
-          echo "::warning::Smoke test failed after deploy — rolling back."
-          # Use the task-def ARN captured BEFORE we registered the
-          # migration + deploy revisions. Listing the family by
-          # `taskDefinitionArns[1]` would land on the migration
-          # revision (same broken image), not the last good service.
-          if [ -n "$PREV_TASKDEF" ] && [ "$PREV_TASKDEF" != "None" ]; then
-            aws ecs update-service \
-              --cluster "$CLUSTER" \
-              --service "$SERVICE" \
-              --task-definition "$PREV_TASKDEF" \
-              --force-new-deployment
-            aws ecs wait services-stable \
-              --cluster "$CLUSTER" \
-              --services "$SERVICE"
-            echo "::notice::Rolled back to ${PREV_TASKDEF}"
-          else
-            echo "::error::No previous task definition — manual recovery required. See docs/process/runbook.md."
+          set -euo pipefail
+          echo "::warning::Smoke test failed — rolling back."
+          SHA_SHORT="${GITHUB_SHA:0:7}"
+          # Find the most recent successful deploy *before* the one
+          # we just shipped, then POST it to /rollback. In Render's
+          # deploy lifecycle, only the currently-serving deploy has
+          # status=live; previously-successful deploys move to
+          # status=deactivated when superseded. Our broken just-shipped
+          # deploy is still "live" at this point (smoke runs after the
+          # health-check gate flips traffic), so we accept either
+          # status and exclude the current SHA — the most recent match
+          # is the predecessor we want to roll back to.
+          PREV=$(curl --fail --silent \
+            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -H "Accept: application/json" \
+            "https://api.render.com/v1/services/${SERVICE_ID}/deploys?limit=20" \
+            | jq --arg sha "$SHA_SHORT" -r '
+              [.[]
+                | .deploy
+                | select(.status == "live" or .status == "deactivated")
+                | select((.commit.id // "") | startswith($sha) | not)
+              ][0].id // empty
+            ')
+          if [ -z "$PREV" ]; then
+            echo "::error::No previous successful deploy to roll back to — manual recovery required."
+            exit 1
           fi
+          # Render's rollback endpoint is /v1/services/{id}/deploys/{deployId}/rollback
+          # — deploy ID is a path parameter, no body required. The
+          # service-level /rollback URL with deployId in the body
+          # returns 404.
+          curl --fail --silent --show-error -X POST \
+            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -H "Accept: application/json" \
+            "https://api.render.com/v1/services/${SERVICE_ID}/deploys/${PREV}/rollback" > /dev/null
+          echo "::notice::Rolled back to ${PREV}"

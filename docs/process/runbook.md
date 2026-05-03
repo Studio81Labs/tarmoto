@@ -1,6 +1,6 @@
 # Runbook
 
-What to do when things break. Today this focuses on **local dev** and the **PoC sensor deploy** — the backend and companion are not yet deployed to production. Expand this doc with production playbooks (AWS ECS, RDS, observability) when those land.
+What to do when things break. Today this focuses on **local dev** and the **PoC sensor deploy** — the backend and companion are not yet deployed to production. Expand this doc with production playbooks (Render service health, Postgres restore, observability) when those land.
 
 For first-time setup see [../../README.md](../../README.md) and [../../CONTRIBUTING.md](../../CONTRIBUTING.md). For system overview see [../reference/architecture.md](../reference/architecture.md).
 
@@ -318,7 +318,7 @@ share one bucket in S3 / R2.
 | Driver  | When to use                                                                                      | Notes                                                                                                   |
 | ------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
 | `local` | Local dev. Single-instance prototype deploys.                                                    | Writes to `${TARMOTO_LOCAL_STORAGE_DIR}` (default `<cwd>/uploads`). Served via `/uploads` static route. |
-| `s3`    | Any deploy with **more than one backend replica**. Required once we move behind a load balancer. | AWS S3, Cloudflare R2, or MinIO. Uses `@aws-sdk/client-s3` with optional endpoint override.             |
+| `s3`    | Any deploy with **more than one backend replica**. Required once we move behind a load balancer. | Cloudflare R2 (production), AWS S3, or MinIO. Uses `@aws-sdk/client-s3` with endpoint override.         |
 
 Local dev never needs an S3 bucket — leaving `TARMOTO_STORAGE_DRIVER`
 unset keeps the existing filesystem behaviour. The static-file
@@ -341,17 +341,17 @@ derived origin is fine, so dev needs no env wiring.
 reviews already use — it's the single source of truth for the
 public origin.
 
-### S3 / R2 / MinIO env vars (staging / prod)
+### R2 / S3 / MinIO env vars (staging / prod)
 
 | Variable                       | Required when `s3` | Notes                                                                                                                                                                       |
 | ------------------------------ | :----------------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `TARMOTO_STORAGE_DRIVER`       |        yes         | Set to `s3`. Anything else (or unset) selects `local`.                                                                                                                      |
 | `TARMOTO_S3_BUCKET`            |        yes         | Bucket name. The backend writes under `avatars/`, `road-review-photos/`, `exports/` prefixes — keep them in one bucket.                                                     |
-| `TARMOTO_S3_REGION`            |        yes         | AWS region. R2 accepts any string but typically `auto`. MinIO accepts `us-east-1`.                                                                                          |
-| `TARMOTO_S3_ACCESS_KEY_ID`     |        yes         | Treat as secret. Store in 1Password / SSM / R2 token.                                                                                                                       |
+| `TARMOTO_S3_REGION`            |        yes         | R2 accepts any string but typically `auto`. AWS S3 expects a real region. MinIO accepts `us-east-1`.                                                                        |
+| `TARMOTO_S3_ACCESS_KEY_ID`     |        yes         | Treat as secret. Store in the Render dashboard (env var) or R2 API token vault.                                                                                             |
 | `TARMOTO_S3_SECRET_ACCESS_KEY` |        yes         | Treat as secret.                                                                                                                                                            |
 | `TARMOTO_S3_ENDPOINT`          |         no         | Endpoint override. Required for R2 (`https://<accountid>.r2.cloudflarestorage.com`) and MinIO (`http://minio:9000`).                                                        |
-| `TARMOTO_S3_FORCE_PATH_STYLE`  |         no         | `true` for MinIO and convenient for R2. Default `false` (virtual-hosted, AWS native).                                                                                       |
+| `TARMOTO_S3_FORCE_PATH_STYLE`  |         no         | `true` for MinIO. Default `false` (virtual-hosted, works for R2 and AWS).                                                                                                   |
 | `TARMOTO_S3_PUBLIC_URL_BASE`   |         no         | Public URL base for the bucket (CDN domain or R2 custom domain). When unset the backend builds a URL from endpoint + bucket — fine for MinIO, rarely what production wants. |
 
 Avatars and review photos are world-readable, so the bucket must
@@ -466,78 +466,40 @@ When you fully cut over to S3 / R2:
 
 ### Bucket lifecycle policies (staging / prod)
 
-The `s3-bucket` Terraform module
-(`infra/aws/modules/s3-bucket/main.tf`) applies the following
-lifecycle defaults to every bucket it creates, then layers
-per-bucket rules on top via the `lifecycle_rules` input:
-
-| Rule                         | Default                         | Why                                                                                                                                          |
-| ---------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `abort-incomplete-multipart` | abort after 7 days              | Avatar / review-photo / export uploads stream via multipart; an interrupted upload would otherwise sit indefinitely and accrue storage cost. |
-| `expire-noncurrent-versions` | expire after 30 days, prod only | Only kicks in when `versioning_enabled = true` (today: prod `uploads`). Cleans up replaced avatars so old objects don't accumulate.          |
-
-Per-bucket rules currently in effect (see
-`infra/aws/envs/{staging,prod}/main.tf`):
+We use one R2 bucket per env (e.g. `tarmoto-staging-uploads`)
+that holds avatars, road-review photos, and GDPR exports under
+distinct key prefixes; tiles live in a separate public bucket.
+Tile bytes are immutable and URL-versioned, so the only
+lifecycle rule we run is on the data bucket:
 
 | Bucket                  | Retained content                                                                         | Auto-expire                                                                                                                                        |
 | ----------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `tarmoto-<env>-uploads` | `avatars/*`, `road-review-photos/*` (kept until the user / review is deleted by the app) | `exports/*` after 30 days (prefix rule covers GDPR data-export bundles, which share this bucket per the runbook's "keep them in one bucket" model) |
-| `tarmoto-<env>-exports` | none — every object expires                                                              | every object after 30 days (whole-bucket fallback)                                                                                                 |
-| `tarmoto-<env>-tiles`   | vector tiles (immutable, URL-versioned)                                                  | none — only the multipart-abort default                                                                                                            |
+| `tarmoto-<env>-tiles`   | vector tiles (immutable, URL-versioned)                                                  | none                                                                                                                                               |
 
-#### Verifying in staging
+R2 aborts incomplete multipart uploads after 7 days by default —
+no rule needed for that.
 
-After `terraform apply` in `infra/aws/envs/staging/`:
+#### Configuring the prefix rule on R2
 
-```bash
-# Multipart abort + any layered rules.
-aws s3api get-bucket-lifecycle-configuration \
-  --bucket tarmoto-staging-uploads
-aws s3api get-bucket-lifecycle-configuration \
-  --bucket tarmoto-staging-exports
-aws s3api get-bucket-lifecycle-configuration \
-  --bucket tarmoto-staging-tiles
-```
+Cloudflare dashboard → **R2** → bucket → **Settings** →
+**Object lifecycle rules** → **Add rule**:
 
-Expected: `tarmoto-staging-uploads` returns the
-`abort-incomplete-multipart` rule plus the
-`expire-exports-prefix` rule (no `Expiration` on retained
-prefixes). `tarmoto-staging-exports` returns
-`abort-incomplete-multipart` plus `expire-all` (30 days).
-`tarmoto-staging-tiles` returns `abort-incomplete-multipart`
-only.
+- **Name**: `expire-exports-prefix`
+- **Apply to**: prefix `exports/`
+- **Action**: Delete objects after 30 days
 
-To smoke-test multipart abort without waiting 7 days, start a
-multipart upload manually and confirm AWS reports it as in
-progress, then leave it for the operator to verify the abort
-fires:
-
-```bash
-aws s3api create-multipart-upload \
-  --bucket tarmoto-staging-uploads \
-  --key tmp/lifecycle-smoke
-aws s3api list-multipart-uploads \
-  --bucket tarmoto-staging-uploads
-# clean up immediately if you don't want to wait:
-aws s3api abort-multipart-upload \
-  --bucket tarmoto-staging-uploads \
-  --key tmp/lifecycle-smoke \
-  --upload-id <id>
-```
+Alternatively via the Cloudflare API
+(`PUT /accounts/{id}/r2/buckets/{name}/lifecycle`) — keep the
+JSON checked into `infra/render/` if/when we automate it.
 
 #### Adding a new prefix rule
 
 To expire a new prefix (for example a future
-`crash-reports/` bundle), append an entry to the bucket's
-`lifecycle_rules` list — `id` must be unique within the
-bucket and `prefix` matches what the backend writes:
-
-```hcl
-lifecycle_rules = [
-  { id = "expire-exports-prefix", prefix = "exports/",       expiration_days = 30 },
-  { id = "expire-crash-reports", prefix = "crash-reports/", expiration_days = 14 },
-]
-```
+`crash-reports/` bundle), add another rule in the R2 dashboard
+with the same shape: prefix matches what the backend writes,
+expiration in days. Document the new rule in this table when
+it lands.
 
 ### Symptoms and fixes
 
@@ -581,88 +543,79 @@ When production deploys land, this section grows. Template for now:
 ## Production deploys
 
 The deployment stack is described in
-[ADR 0004](../decisions/0004-deployment-stack.md). Terraform IaC
-lives under `infra/aws/`; deploy workflows are
-`.github/workflows/{backend,companion,mobile-release}.yml`.
+[ADR 0005](../decisions/0005-deployment-stack-render.md). The
+Render Blueprint lives under [`infra/render/`](../../infra/render/);
+deploy workflows are `.github/workflows/{backend,companion,mobile-release}.yml`.
 
-### Backend (AWS ECS Fargate)
+### Backend (Render Web Service)
 
 Normal flow:
 
-1. Merging a backend-touching PR to `main` triggers
-   `backend-deploy.yml`, which builds the image, pushes it to ECR
-   (`tarmoto-backend-staging:sha-<sha12>`), runs migrations as a
-   one-shot ECS RunTask against the new task definition, then
-   updates the staging service and waits for stability.
-2. The post-deploy smoke step (`scripts/smoke/smoke.sh`) hits
-   `/api/v1/healthz`, `/api/v1/jobs/health`, and the auth probe.
-   On failure, the workflow rolls the service back to the previous
-   active task-definition revision automatically.
+1. Merging a backend-touching PR to `main` triggers Render's
+   git-push auto-deploy on the staging Web Service. Render builds
+   the image from [`apps/backend/Dockerfile`](../../apps/backend/Dockerfile),
+   runs `preDeployCommand` (TypeORM migrations) against the new
+   image, and promotes the version once the health check passes.
+2. `backend-deploy.yml` polls the Render API for the deploy
+   matching the commit SHA, then runs `scripts/smoke/smoke.sh`
+   against `BACKEND_URL_STAGING`. On smoke failure, the workflow
+   POSTs `/v1/services/{id}/rollback` with the previous live
+   deploy ID — Render switches traffic back automatically.
 3. Promoting to prod is **manual**: tag the chosen commit with
    `backend-vX.Y.Z` and push the tag, or run the workflow with
-   `workflow_dispatch -> environment=prod`. The `production`
-   GitHub environment requires reviewer approval before the
-   deploy step runs.
+   `workflow_dispatch -> environment=prod`. The prod Web Service
+   has `autoDeploy: false` in the blueprint; the workflow POSTs
+   the prod deploy hook (`RENDER_DEPLOY_HOOK_PROD`) and the
+   `production` GitHub environment gates the step on reviewer
+   approval.
 
 Manual rollback (if the auto-rollback failed or you need a
-different revision):
+different revision): Render dashboard → Web Service → **Deploys** →
+pick a previous live deploy → **Rollback**. Or via the API:
 
 ```bash
-ENV=prod  # or staging
-aws ecs list-task-definitions \
-  --family-prefix "tarmoto-${ENV}-backend" \
-  --status ACTIVE --sort DESC --max-items 10
-# Pick the revision you want, then:
-aws ecs update-service \
-  --cluster "tarmoto-${ENV}" \
-  --service "tarmoto-${ENV}-backend" \
-  --task-definition "tarmoto-${ENV}-backend:NN" \
-  --force-new-deployment
-aws ecs wait services-stable \
-  --cluster "tarmoto-${ENV}" --services "tarmoto-${ENV}-backend"
+# Replace SERVICE_ID and DEPLOY_ID; needs RENDER_API_KEY.
+# Deploy ID is a path parameter; no body required.
+curl -X POST \
+  -H "Authorization: Bearer $RENDER_API_KEY" \
+  -H "Accept: application/json" \
+  "https://api.render.com/v1/services/$SERVICE_ID/deploys/$DEPLOY_ID/rollback"
 ```
 
 Common failures:
 
-- **"unable to assume role" on OIDC step** — `AWS_DEPLOY_ROLE_ARN_<ENV>`
-  secret is missing or the bootstrap role's trust policy isn't
-  scoped to this repo's main branch. Re-run
-  `infra/aws/bootstrap` and update the role ARN secret.
-- **Migration RunTask exits non-zero** — the failing migration is
-  echoed from CloudWatch in the workflow log. The ECS service is
-  not updated when the migration fails, so the previous task def
-  is still serving traffic. Fix the migration on a hotfix branch,
-  re-run the deploy.
+- **`preDeployCommand` (migrations) exits non-zero** — Render's
+  deploy log echoes the failing migration. The new version is
+  **not** promoted; the previous version keeps serving traffic.
+  Fix the migration on a hotfix branch, re-run the deploy.
 - **Healthcheck fails after deploy** — most often a missing or
-  wrong secret in Secrets Manager (e.g. an unrotated Stripe key).
-  Inspect `aws secretsmanager describe-secret --secret-id
-tarmoto/<env>/<name>` and confirm the JSON shape matches the
-  `secret_arns` map in `infra/aws/envs/<env>/main.tf`. After
-  fixing, force a new deployment to pick up the rotated value:
+  wrong env var (e.g. an unrotated Stripe key, or an R2 token
+  that was rotated without updating the dashboard). Inspect the
+  Render service logs, confirm the env-var values, then **Manual
+  Deploy → Deploy latest commit** to pick up corrections.
+- **Build fails with "no Dockerfile found"** — the Render service
+  is misconfigured. Check the Blueprint's `dockerfilePath:
+./apps/backend/Dockerfile` and `dockerContext: .` are reflected
+  in the dashboard's **Settings → Build & Deploy** tab.
 
-  ```bash
-  aws ecs update-service --cluster tarmoto-<env> \
-    --service tarmoto-<env>-backend --force-new-deployment
-  ```
+Render Postgres + PostGIS:
 
-RDS Postgres + PostGIS:
+- **Backups** — Render takes daily logical backups (retained per
+  the plan; PITR is available on `pro` tiers). Restore via
+  dashboard → **Database → Recovery** → pick a snapshot. Restore
+  writes a new instance; update `TARMOTO_DATABASE_*` env vars
+  on the Web Service to point at it, then **Manual Deploy**.
+- **PostGIS extension** — created by the first TypeORM migration
+  on fresh provisioning. Render's managed Postgres is vanilla
+  PG16; nothing else is needed.
 
-- **Backups** — point-in-time restore is enabled for 30 days in
-  prod (staging: 7). To restore in place, use the AWS console
-  (RDS → Snapshots → Restore) which writes a new instance; cut
-  over by re-applying Terraform with the new endpoint.
-- **PostGIS extension** — created by the first backend migration
-  on fresh provisioning. The custom parameter group's
-  `shared_preload_libraries` is set to `pg_stat_statements` for
-  query observability.
+Render Key Value (Redis):
 
-ElastiCache Redis:
-
-- BullMQ jobs that were in flight when Redis failed retry
-  idempotently on next enqueue. After a Redis outage, a
-  `jobs.cleanup` cycle catches up within an hour. If the queue
-  depth chart on CloudWatch is climbing for >15 min, check
-  `GET /jobs/health` per "Background jobs aren't running" above.
+- BullMQ jobs that were in flight when Key Value restarted retry
+  idempotently on next enqueue. After an outage, a
+  `jobs.cleanup` cycle catches up within an hour. If queue depth
+  is climbing for >15 min, check `GET /jobs/health` per
+  "Background jobs aren't running" above.
 
 ### Companion (Cloudflare Workers)
 
@@ -769,106 +722,63 @@ Common failures:
 
 ### Push notifications (FCM + APN) — staging provisioning + smoke test
 
-The push module ships a `log` provider when no credentials are
-configured, so the backend boots cleanly in any environment.
-"Provisioning" is the one-time act of putting real FCM and APN keys
-into staging Secrets Manager and flipping the activation gates in
-`infra/aws/envs/staging/main.tf`. Tracked by issue #347.
+The push module in [`apps/backend/src/modules/push/push.module.ts`](../../apps/backend/src/modules/push/push.module.ts)
+returns `null` for either provider when its env vars are unset, so
+the backend boots cleanly with no FCM / APN credentials configured
+(it falls through to the `log` provider). "Provisioning" is the
+one-time act of pasting real FCM and APN keys into the Render Web
+Service's environment.
 
 **One-time setup (staging).**
 
-1. Run the next staging deploy or `terraform apply` after the
-   `secret_names` change lands. This creates empty
-   `tarmoto/staging/fcm` and `tarmoto/staging/apn` secrets in
-   Secrets Manager — the activation gates default to `false`, so the
-   ECS task definition does not yet reference either secret and the
-   deploy is unaffected.
-
-2. **FCM** — in the Firebase Console (project: `tarmoto-staging`),
+1. **FCM** — in the Firebase Console (project: `tarmoto-staging`),
    open _Project settings → Service accounts → Generate new private
    key_. The downloaded JSON contains `project_id`, `client_email`,
-   and `private_key`. Push only those three fields into the secret
-   (not the whole JSON):
+   and `private_key`. In the Render dashboard for the staging
+   backend, **Environment** → set:
+   - `TARMOTO_FCM_PROJECT_ID` = the JSON's `project_id`
+   - `TARMOTO_FCM_CLIENT_EMAIL` = the JSON's `client_email`
+   - `TARMOTO_FCM_PRIVATE_KEY` = the JSON's `private_key` (paste
+     verbatim; Render preserves newlines, but the backend also
+     normalises `\n` escapes if you've stored it on one line)
 
-   ```bash
-   aws secretsmanager put-secret-value \
-     --secret-id tarmoto/staging/fcm \
-     --secret-string "$(jq -c '{project_id, client_email, private_key}' \
-       ~/Downloads/tarmoto-staging-firebase-adminsdk-*.json)"
-   ```
-
-   Verify the JSON shape:
-   `aws secretsmanager get-secret-value --secret-id tarmoto/staging/fcm --query SecretString --output text | jq 'keys'`
-   should print `["client_email","private_key","project_id"]`.
-
-3. **APN** — once the Apple Developer account is provisioned, in
+2. **APN** — once the Apple Developer account is provisioned, in
    _Certificates, Identifiers & Profiles → Keys_, create a key with
    _Apple Push Notifications service (APNs)_ enabled. Download the
-   `.p8` file once (it is unrecoverable). Note the **Key ID** shown
-   on the key detail page and the **Team ID** in the membership
-   page. The **topic** is the iOS bundle id of the build users have
+   `.p8` file once (it is unrecoverable). Note the **Key ID** on
+   the key detail page and the **Team ID** in the membership page.
+   The **topic** is the iOS bundle id of the build users have
    installed — verify against `PRODUCT_BUNDLE_IDENTIFIER` in
    `apps/mobile/ios/TarmotoApp.xcodeproj/project.pbxproj` (currently
    `app.tarmoto`; if a separate staging bundle id is introduced
    later, use that here).
 
-   ```bash
-   aws secretsmanager put-secret-value \
-     --secret-id tarmoto/staging/apn \
-     --secret-string "$(jq -nc \
-       --arg key   "$(cat ~/Downloads/AuthKey_<KEYID>.p8)" \
-       --arg keyId "<KEYID>" \
-       --arg team  "<TEAMID>" \
-       --arg topic "<BUNDLE_ID>" \
-       '{key: $key, key_id: $keyId, team_id: $team, topic: $topic, production: "false"}')"
-   ```
+   In the Render dashboard for the staging backend, **Environment**:
+   - `TARMOTO_APN_KEY` = full contents of the `.p8` file
+   - `TARMOTO_APN_KEY_ID` = the Key ID
+   - `TARMOTO_APN_TEAM_ID` = the Team ID
+   - `TARMOTO_APN_TOPIC` = the bundle id
+   - `TARMOTO_APN_PRODUCTION` = `false` (sandbox is correct for
+     anything signed with the development profile, including
+     TestFlight internal testing); flip to `true` only when
+     targeting App Store builds.
 
-   Use `production: "true"` only when targeting builds installed
-   from the App Store / TestFlight production track. Sandbox
-   (`"false"`, the default) is correct for everything signed with
-   the development profile, including TestFlight internal testing.
+3. **Re-deploy.** Render restarts the service automatically when
+   env vars change, but if you set several at once and want a clean
+   pickup, **Manual Deploy → Deploy latest commit**.
 
-4. **Flip the activation gate** in
-   `infra/aws/envs/staging/terraform.tfvars` (gitignored):
-
-   ```hcl
-   fcm_secret_enabled = true
-   apn_secret_enabled = true   # leave false until step 3 is done
-   ```
-
-   Run `terraform apply` from `infra/aws/envs/staging`. Terraform
-   registers a new revision of the `tarmoto-staging-backend`
-   task-definition family carrying the FCM / APN env vars, but the
-   running service does **not** roll over to it on its own — the
-   `ecs-service` module pins
-   `lifecycle.ignore_changes = [task_definition]` so Terraform never
-   fights the deploy workflow over which revision is live.
-
-   To cut the running service over to the new revision, re-run the
-   **Backend Deploy** workflow on `main` (Actions → Backend Deploy
-   → Run workflow → `environment=staging`). The workflow reads the
-   family's latest active revision (now Terraform's, with the new
-   secrets), renders it against the current backend image,
-   registers another revision on top, and updates the service with
-   `--task-definition <new-arn>`. The post-deploy smoke gate
-   handles rollback if the new task fails to boot — never run
-   `aws ecs update-service --force-new-deployment` without
-   `--task-definition` here, since that just redeploys the
-   currently-live (old) revision.
-
-5. **Verify provider initialisation.** Tail the new task's logs and
-   look for one of these `PushModule` lines:
+4. **Verify provider initialisation.** In the Render service logs,
+   look for one of these `PushModule` lines on boot:
    - `Push provider: FCM enabled — serves Android natively and iOS via APN handoff`
    - `Push provider: APN enabled (used for iOS only when FCM is not configured)`
 
    If you see `Push provider: log (no FCM or APN credentials configured)`,
-   one of the secret JSON keys is missing or misnamed — re-check
-   step 2/3.
+   one of the env vars is missing or misnamed — re-check step 1/2.
 
-**End-to-end smoke test (staging).** Run after step 5 with one
+**End-to-end smoke test (staging).** Run after step 4 with one
 Android and one iOS staging device, both signed in to a Tarmoto
 test account that has registered a device token (any sign-in does
-this; check `device_tokens` in RDS to confirm). Trigger each
+this; check `device_tokens` in Postgres to confirm). Trigger each
 category from the app or via API; expect a single notification per
 category on each device. Categories currently dispatched by the
 backend:
@@ -901,26 +811,15 @@ sender id — re-check steps 2 and 3.
 
 ### Secret rotation (prod)
 
-Backend secrets live in AWS Secrets Manager under
-`tarmoto/<env>/<name>`. Rotation is operator-driven:
+Backend secrets are env vars on the Render Web Service (marked
+secret in the dashboard). Rotation is operator-driven:
 
-1. Update the secret value:
-   ```bash
-   aws secretsmanager put-secret-value \
-     --secret-id tarmoto/prod/jwt \
-     --secret-string '"new-value"'
-   ```
-   For composite secrets (e.g. `tarmoto/prod/stripe`) the value
-   must be a single JSON document — see the keys referenced in
-   `infra/aws/envs/prod/main.tf` `secret_arns`.
-2. Force a new ECS deployment so running tasks pick up the
-   rotated value at boot:
-   ```bash
-   aws ecs update-service \
-     --cluster tarmoto-prod \
-     --service tarmoto-prod-backend \
-     --force-new-deployment
-   ```
+1. Render dashboard → prod backend service → **Environment** →
+   edit the value (e.g. `TARMOTO_JWT_SECRET`,
+   `TARMOTO_STRIPE_SECRET_KEY`, an R2 token). Render saves the new
+   value and triggers an automatic re-deploy on save.
+2. If you changed several values at once and want a single clean
+   restart, **Manual Deploy → Deploy latest commit**.
 3. Verify with `scripts/smoke/smoke.sh https://api.tarmoto.app`.
 
 ## Out-of-scope (yet)
