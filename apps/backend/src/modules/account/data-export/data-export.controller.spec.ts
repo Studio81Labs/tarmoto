@@ -51,6 +51,10 @@ describe('DataExportController', () => {
     (storage.signedUrl as jest.Mock).mockResolvedValue(
       '/uploads/exports/u1/req-1.zip',
     );
+    // Default: the object is present in the bucket. The S3 redirect
+    // path checks this before 302-ing so a swept ZIP can't smuggle a
+    // raw bucket 404 past the documented 410 contract.
+    (storage.exists as jest.Mock).mockResolvedValue(true);
     const module = await Test.createTestingModule({
       controllers: [DataExportController],
       providers: [
@@ -200,6 +204,85 @@ describe('DataExportController', () => {
     expect(
       (storage as unknown as { read: jest.Mock }).read,
     ).not.toHaveBeenCalled();
+  });
+
+  it('GET download returns 410 (not 302) when the bucket reports the object is gone', async () => {
+    // Pre-signed URL generation never checks existence — without an
+    // explicit exists() guard, a row whose ZIP was already swept
+    // (lifecycle rule, operator cleanup) would 302 the user to a dead
+    // bucket URL and they'd see a raw S3 404 XML instead of our
+    // documented 410.
+    const requestId = 'req-1';
+    const expiresAt = Date.now() + 60_000;
+    const sig = signDownloadUrl({
+      userId: 'u1',
+      requestId,
+      expiresAt,
+      secret: 'test-secret',
+    });
+    service.findById.mockResolvedValue({
+      id: requestId,
+      user_id: 'u1',
+      status: 'ready',
+      storage_key: 'exports/u1/req-1.zip',
+      expires_at: new Date(expiresAt),
+    });
+    (storage.signedUrl as jest.Mock).mockResolvedValue(
+      'https://tarmoto-staging-uploads.s3.us-east-1.amazonaws.com/exports/u1/req-1.zip?X-Amz-Signature=abc',
+    );
+    (storage.exists as jest.Mock).mockResolvedValue(false);
+    const res = {
+      set: jest.fn(),
+      status: jest.fn(),
+      send: jest.fn(),
+      redirect: jest.fn(),
+    };
+    await expect(
+      controller.download(requestId, sig, String(expiresAt), res as never),
+    ).rejects.toMatchObject({ status: 410 });
+    expect(res.redirect).not.toHaveBeenCalled();
+  });
+
+  it('GET download falls back to streaming when exists() throws (transient bucket error)', async () => {
+    // Defensive parity with `DataExportService.isRowReusable`: a
+    // transient exists() error is not strong enough evidence to 410.
+    // Drop into the streaming path, whose `read()` would surface a
+    // real 404 if the object is genuinely gone.
+    const requestId = 'req-1';
+    const expiresAt = Date.now() + 60_000;
+    const sig = signDownloadUrl({
+      userId: 'u1',
+      requestId,
+      expiresAt,
+      secret: 'test-secret',
+    });
+    service.findById.mockResolvedValue({
+      id: requestId,
+      user_id: 'u1',
+      status: 'ready',
+      storage_key: 'exports/u1/req-1.zip',
+      expires_at: new Date(expiresAt),
+    });
+    (storage.signedUrl as jest.Mock).mockResolvedValue(
+      'https://tarmoto-staging-uploads.s3.us-east-1.amazonaws.com/exports/u1/req-1.zip?X-Amz-Signature=abc',
+    );
+    (storage.exists as jest.Mock).mockRejectedValue(new Error('s3 503'));
+    const stream = Readable.from(Buffer.from('zipdata'));
+    (storage.read as jest.Mock).mockResolvedValue(stream);
+    const writes: Buffer[] = [];
+    const res = new PassThrough();
+    res.on('data', (c: Buffer) => writes.push(c));
+    Object.assign(res, {
+      set: jest.fn(),
+      status: jest.fn().mockReturnThis(),
+      send: jest.fn(),
+      redirect: jest.fn(),
+    });
+    await controller.download(requestId, sig, String(expiresAt), res as never);
+    expect(
+      (res as unknown as { redirect: jest.Mock }).redirect,
+    ).not.toHaveBeenCalled();
+    expect(Buffer.concat(writes).toString()).toBe('zipdata');
   });
 
   it('GET download falls back to streaming when signedUrl throws (defensive)', async () => {

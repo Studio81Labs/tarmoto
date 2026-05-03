@@ -225,9 +225,38 @@ export class DataExportController {
         `signedUrl failed for export ${id} key ${row.storage_key}; falling back to stream: ${msg}`,
       );
     }
-    if (signed && /^https?:\/\//i.test(signed)) {
-      res.redirect(302, signed);
-      return;
+    const redirectUrl = signed && /^https?:\/\//i.test(signed) ? signed : null;
+    if (redirectUrl) {
+      // Pre-signed URL generation is a CPU-only op that doesn't probe
+      // the bucket, so a row whose ZIP was already swept (lifecycle
+      // rule, operator cleanup) would still hand the client a working-
+      // looking redirect — the user would then hit a raw S3 404 XML
+      // instead of our documented 410. Confirm the object is present
+      // before sending the 302.
+      let existsVerdict: 'present' | 'gone' | 'unknown';
+      try {
+        existsVerdict = (await this.storage.exists(row.storage_key))
+          ? 'present'
+          : 'gone';
+      } catch (err) {
+        // Mirrors `DataExportService.isRowReusable`: a transient
+        // exists() failure (S3 5xx) is not strong enough evidence to
+        // 410. Fall through to the streaming path, whose `read()`
+        // surfaces a real 404 if the object truly is gone.
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          `storage.exists failed for ${row.storage_key} before redirect (falling back to stream): ${msg}`,
+        );
+        existsVerdict = 'unknown';
+      }
+      if (existsVerdict === 'present') {
+        res.redirect(302, redirectUrl);
+        return;
+      }
+      if (existsVerdict === 'gone') {
+        throw new HttpException('not available', 410);
+      }
+      // 'unknown' → drop into the streaming branch below.
     }
 
     let stream;
