@@ -19,12 +19,19 @@ import {
   RouteCollectionItemResponseDto,
   RouteCollectionLibraryResponseDto,
   RouteCollectionListResponseDto,
+  RouteCollectionPreviewItemDto,
+  RouteCollectionPreviewResponseDto,
   RouteCollectionSummaryDto,
   UpdateRouteCollectionDto,
 } from './dto/route-collection.dto.js';
 
 const SLUG_LENGTH = 11;
 const SLUG_ALLOC_RETRIES = 5;
+
+// ~50 m at mid-latitudes — same tolerance the rides tracks endpoint uses.
+// Keeps the polyline recognisable at typical map zoom levels while bounding
+// the payload for a 20+ item collection (the issue's perf target).
+const PREVIEW_SIMPLIFY_TOLERANCE_DEG = 0.0005;
 
 @Injectable()
 export class RouteCollectionsService {
@@ -233,6 +240,113 @@ export class RouteCollectionsService {
       viewerId,
       viewerIsFollowing,
     );
+  }
+
+  /**
+   * Map preview geometries for the public/unlisted shared collection page.
+   * Mirrors `getBySlug`'s visibility gating exactly so a preview never
+   * leaks data the detail endpoint would 404 on (private slug, soft-
+   * deleted owner).
+   *
+   * Geometries are simplified server-side via `ST_Simplify` (~50 m
+   * tolerance) and pulled in two batched queries — one over `trip_days`
+   * for the trip items and one over `rides` for the ride items — so a
+   * 20+ item collection still resolves in a single round-trip per kind
+   * regardless of item count. Items whose underlying trip/ride was
+   * deleted (or whose geometry is missing) are returned with an empty
+   * `lines` array; the client renders them in position order without a
+   * track instead of dropping them silently.
+   */
+  async getPreviewBySlug(
+    slug: string,
+  ): Promise<RouteCollectionPreviewResponseDto> {
+    const collection = await this.collectionRepo.findOne({
+      where: { slug },
+      relations: ['owner'],
+    });
+    if (
+      !collection ||
+      collection.visibility === 'private' ||
+      collection.owner?.deleted_at != null
+    ) {
+      throw new NotFoundException('Collection not found');
+    }
+
+    const items = await this.loadItems(collection.id);
+    if (items.length === 0) {
+      return { routes: [] };
+    }
+
+    const tripIds = items
+      .map((i) => i.trip_id)
+      .filter((id): id is string => id != null);
+    const rideIds = items
+      .map((i) => i.ride_id)
+      .filter((id): id is string => id != null);
+
+    type TripDayRow = { trip_id: string; geometry: string | null };
+    type RideRow = { id: string; geometry: string | null };
+
+    // Batch each kind into a single SQL round-trip. Ordering at this layer
+    // doesn't matter — the controller emits items in the collection's
+    // canonical position order; we just need a lookup keyed by trip/ride id.
+    const [tripRows, rideRows] = await Promise.all([
+      tripIds.length === 0
+        ? Promise.resolve<TripDayRow[]>([])
+        : this.dataSource.query<TripDayRow[]>(
+            `SELECT trip_id,
+                    ST_AsGeoJSON(ST_SimplifyPreserveTopology(route_geom, $1)) AS geometry
+             FROM trip_days
+             WHERE trip_id = ANY($2::uuid[])
+               AND route_geom IS NOT NULL
+             ORDER BY trip_id, day_number`,
+            [PREVIEW_SIMPLIFY_TOLERANCE_DEG, tripIds],
+          ),
+      rideIds.length === 0
+        ? Promise.resolve<RideRow[]>([])
+        : this.dataSource.query<RideRow[]>(
+            `SELECT id,
+                    ST_AsGeoJSON(ST_SimplifyPreserveTopology(route_geom, $1)) AS geometry
+             FROM rides
+             WHERE id = ANY($2::uuid[])
+               AND route_geom IS NOT NULL`,
+            [PREVIEW_SIMPLIFY_TOLERANCE_DEG, rideIds],
+          ),
+    ]);
+
+    const linesByTripId = new Map<string, number[][][]>();
+    for (const row of tripRows) {
+      const coords = parseLineStringCoords(row.geometry);
+      if (!coords) continue;
+      const existing = linesByTripId.get(row.trip_id);
+      if (existing) {
+        existing.push(coords);
+      } else {
+        linesByTripId.set(row.trip_id, [coords]);
+      }
+    }
+
+    const linesByRideId = new Map<string, number[][][]>();
+    for (const row of rideRows) {
+      const coords = parseLineStringCoords(row.geometry);
+      if (!coords) continue;
+      linesByRideId.set(row.id, [coords]);
+    }
+
+    const routes: RouteCollectionPreviewItemDto[] = items.map((item) => {
+      const isRide = item.ride_id != null;
+      const lines = isRide
+        ? (linesByRideId.get(item.ride_id!) ?? [])
+        : (linesByTripId.get(item.trip_id!) ?? []);
+      return {
+        item_id: item.id,
+        position: item.position,
+        kind: isRide ? 'ride' : 'trip',
+        lines,
+      };
+    });
+
+    return { routes };
   }
 
   async update(
@@ -655,6 +769,44 @@ function isUniqueViolation(err: unknown): boolean {
     return true;
   }
   return false;
+}
+
+/**
+ * Parse the JSON string returned by `ST_AsGeoJSON` into a coordinate array.
+ * Returns null when the input is missing, malformed, or has fewer than two
+ * points (a degenerate geometry isn't useful for a polyline preview).
+ */
+function parseLineStringCoords(
+  geojson: string | null | undefined,
+): number[][] | null {
+  if (!geojson) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(geojson);
+  } catch {
+    return null;
+  }
+  if (
+    parsed == null ||
+    typeof parsed !== 'object' ||
+    !('coordinates' in parsed)
+  ) {
+    return null;
+  }
+  const coords = (parsed as { coordinates?: unknown }).coordinates;
+  if (!Array.isArray(coords) || coords.length < 2) return null;
+  const out: number[][] = [];
+  for (const c of coords) {
+    if (
+      Array.isArray(c) &&
+      c.length >= 2 &&
+      typeof c[0] === 'number' &&
+      typeof c[1] === 'number'
+    ) {
+      out.push([c[0], c[1]]);
+    }
+  }
+  return out.length >= 2 ? out : null;
 }
 
 function generateSlug(): string {

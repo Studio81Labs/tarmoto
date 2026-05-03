@@ -17,6 +17,7 @@ describe('RouteCollectionsService', () => {
   let collectionRepo: Partial<jest.Mocked<Repository<RouteCollection>>>;
   let itemRepo: Partial<jest.Mocked<Repository<RouteCollectionItem>>>;
   let followRepo: Partial<jest.Mocked<Repository<RouteCollectionFollow>>>;
+  let queryMock: jest.Mock;
 
   const ownerId = 'user-1';
   const otherId = 'user-2';
@@ -91,7 +92,9 @@ describe('RouteCollectionsService', () => {
 
     // The service's `addItem` opens a transaction; mock it to invoke the
     // callback with a manager that returns the same mocks. Avoids needing a
-    // real DataSource for unit tests.
+    // real DataSource for unit tests. `query` is mocked to return [] by
+    // default — `getPreviewBySlug` tests override per-call via mockReturnValueOnce.
+    queryMock = jest.fn().mockResolvedValue([]);
     const dataSource: Partial<DataSource> = {
       transaction: jest
         .fn()
@@ -101,6 +104,7 @@ describe('RouteCollectionsService', () => {
               target === RouteCollection ? collectionRepo : itemRepo,
           }),
         ),
+      query: queryMock,
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -401,6 +405,238 @@ describe('RouteCollectionsService', () => {
       expect(followRepo.exists).toHaveBeenCalledWith({
         where: { user_id: otherId, collection_id: collectionId },
       });
+    });
+  });
+
+  describe('getPreviewBySlug (map preview geometries)', () => {
+    const tripA = '00000000-0000-0000-0000-000000000010';
+    const tripB = '00000000-0000-0000-0000-000000000011';
+    const rideA = '00000000-0000-0000-0000-000000000020';
+
+    function lineStringJson(coords: number[][]): string {
+      return JSON.stringify({ type: 'LineString', coordinates: coords });
+    }
+
+    it('404s for private slugs (matches getBySlug gating)', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        visibility: 'private',
+      });
+      await expect(service.getPreviewBySlug('abcDEF12345')).rejects.toThrow(
+        NotFoundException,
+      );
+      // No geometry queries should fire when the gate trips.
+      expect(queryMock).not.toHaveBeenCalled();
+    });
+
+    it('404s when the owner is in the deletion grace window', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        visibility: 'public',
+        owner: { display_name: 'Jane Rider', deleted_at: new Date() },
+      });
+      await expect(service.getPreviewBySlug('abcDEF12345')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(queryMock).not.toHaveBeenCalled();
+    });
+
+    it('404s when the slug does not resolve', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
+      await expect(service.getPreviewBySlug('missing')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('returns an empty routes array for an empty collection without hitting geometry tables', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        visibility: 'public',
+      });
+      (itemRepo.find as jest.Mock).mockResolvedValueOnce([]);
+      const result = await service.getPreviewBySlug('abcDEF12345');
+      expect(result).toEqual({ routes: [] });
+      expect(queryMock).not.toHaveBeenCalled();
+    });
+
+    it('aggregates trip days into per-trip lines and pairs ride geometry by id', async () => {
+      const items = [
+        {
+          id: 'item-trip-a',
+          collection_id: collectionId,
+          trip_id: tripA,
+          ride_id: null,
+          position: 0,
+          created_at: new Date(),
+        },
+        {
+          id: 'item-ride-a',
+          collection_id: collectionId,
+          trip_id: null,
+          ride_id: rideA,
+          position: 1,
+          created_at: new Date(),
+        },
+        {
+          id: 'item-trip-b',
+          collection_id: collectionId,
+          trip_id: tripB,
+          ride_id: null,
+          position: 2,
+          created_at: new Date(),
+        },
+      ];
+
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        visibility: 'public',
+      });
+      (itemRepo.find as jest.Mock).mockResolvedValueOnce(items);
+
+      // Two batched queries: trip_days first (because tripIds is not empty),
+      // then rides. Order is determined by Promise.all argument position.
+      queryMock
+        .mockResolvedValueOnce([
+          // tripA has two days; tripB has one. The service must group them
+          // per trip_id, so tripA ends up with two lines and tripB with one.
+          {
+            trip_id: tripA,
+            geometry: lineStringJson([
+              [10, 50],
+              [11, 50.1],
+            ]),
+          },
+          {
+            trip_id: tripA,
+            geometry: lineStringJson([
+              [11, 50.1],
+              [12, 50.2],
+            ]),
+          },
+          {
+            trip_id: tripB,
+            geometry: lineStringJson([
+              [20, 49],
+              [21, 49.1],
+            ]),
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: rideA,
+            geometry: lineStringJson([
+              [14, 50],
+              [14.1, 50.1],
+              [14.2, 50.15],
+            ]),
+          },
+        ]);
+
+      const result = await service.getPreviewBySlug('abcDEF12345');
+      expect(result.routes).toHaveLength(3);
+
+      // Items remain in collection (position) order.
+      expect(result.routes[0]).toMatchObject({
+        item_id: 'item-trip-a',
+        kind: 'trip',
+        position: 0,
+      });
+      expect(result.routes[0]?.lines).toHaveLength(2);
+      expect(result.routes[1]).toMatchObject({
+        item_id: 'item-ride-a',
+        kind: 'ride',
+        position: 1,
+      });
+      expect(result.routes[1]?.lines).toHaveLength(1);
+      expect(result.routes[2]).toMatchObject({
+        item_id: 'item-trip-b',
+        kind: 'trip',
+        position: 2,
+      });
+      expect(result.routes[2]?.lines).toHaveLength(1);
+
+      // Two queries — one per kind — regardless of how many items.
+      expect(queryMock).toHaveBeenCalledTimes(2);
+      // Trip query targets trip_days; ride query targets rides. Use the SQL
+      // text rather than positional args so refactors that re-order params
+      // don't silently invalidate the assertion.
+      const calls = queryMock.mock.calls.map((c) => c[0] as string);
+      expect(calls.some((sql) => /FROM\s+trip_days/i.test(sql))).toBe(true);
+      expect(calls.some((sql) => /FROM\s+rides/i.test(sql))).toBe(true);
+      // Both queries must apply the simplification — that's the perf lever
+      // for 20+ item collections (the issue's acceptance criterion).
+      expect(
+        calls.every((sql) => /ST_SimplifyPreserveTopology/.test(sql)),
+      ).toBe(true);
+    });
+
+    it('returns empty lines for items whose underlying trip/ride has been deleted', async () => {
+      const items = [
+        {
+          id: 'item-orphan-trip',
+          collection_id: collectionId,
+          trip_id: tripA,
+          ride_id: null,
+          position: 0,
+          created_at: new Date(),
+        },
+        {
+          id: 'item-orphan-ride',
+          collection_id: collectionId,
+          trip_id: null,
+          ride_id: rideA,
+          position: 1,
+          created_at: new Date(),
+        },
+      ];
+
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        visibility: 'public',
+      });
+      (itemRepo.find as jest.Mock).mockResolvedValueOnce(items);
+      // Both batched queries return no rows — simulates trip_days /
+      // rides rows being deleted while the collection item rows still
+      // reference the original ids.
+      queryMock.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+
+      const result = await service.getPreviewBySlug('abcDEF12345');
+      expect(result.routes).toHaveLength(2);
+      // The order/position is preserved so the client can keep the list
+      // aligned with the detail response; missing items just have no
+      // polylines to draw.
+      expect(result.routes[0]?.lines).toEqual([]);
+      expect(result.routes[1]?.lines).toEqual([]);
+    });
+
+    it('drops degenerate geometries (fewer than 2 valid points)', async () => {
+      const items = [
+        {
+          id: 'item-trip-a',
+          collection_id: collectionId,
+          trip_id: tripA,
+          ride_id: null,
+          position: 0,
+          created_at: new Date(),
+        },
+      ];
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        visibility: 'public',
+      });
+      (itemRepo.find as jest.Mock).mockResolvedValueOnce(items);
+      queryMock
+        .mockResolvedValueOnce([
+          // ST_SimplifyPreserveTopology can theoretically return a point
+          // with only one coord, or even null. The helper must drop those
+          // rather than passing them through as a malformed LineString.
+          { trip_id: tripA, geometry: lineStringJson([[10, 50]]) },
+          { trip_id: tripA, geometry: null },
+        ])
+        .mockResolvedValueOnce([]);
+
+      const result = await service.getPreviewBySlug('abcDEF12345');
+      expect(result.routes[0]?.lines).toEqual([]);
     });
   });
 

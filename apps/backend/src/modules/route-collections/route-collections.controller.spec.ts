@@ -36,6 +36,7 @@ describe('RouteCollectionsController', () => {
       create: jest.fn().mockResolvedValue(detail),
       getOwned: jest.fn().mockResolvedValue(detail),
       getBySlug: jest.fn().mockResolvedValue(detail),
+      getPreviewBySlug: jest.fn().mockResolvedValue({ routes: [] }),
       update: jest.fn().mockResolvedValue(detail),
       delete: jest.fn().mockResolvedValue(undefined),
       addItem: jest.fn().mockResolvedValue({
@@ -105,6 +106,12 @@ describe('RouteCollectionsController', () => {
     // viewer_is_following stays branch-free (it does `viewerId != null`).
     await controller.getBySlug(anonReq, 'abcDEF12345');
     expect(service.getBySlug).toHaveBeenCalledWith('abcDEF12345', null);
+  });
+
+  it('GET /collections/by-slug/:slug/preview delegates to getPreviewBySlug', async () => {
+    const result = await controller.getPreviewBySlug('abcDEF12345');
+    expect(service.getPreviewBySlug).toHaveBeenCalledWith('abcDEF12345');
+    expect(result.routes).toEqual([]);
   });
 
   it('GET /collections/:id delegates to getOwned', async () => {

@@ -258,3 +258,55 @@ export class RouteCollectionFollowResponseDto {
   @ApiProperty()
   followed_at!: string;
 }
+
+/**
+ * Preview entry for one item in a shared collection. Each entry carries the
+ * polylines that should render on the map for that item:
+ *  - rides contribute one polyline (the recorded `route_geom`).
+ *  - trips contribute one polyline per `trip_days.route_geom` (a multi-day
+ *    plan can have non-contiguous days, so we keep them as separate
+ *    polylines instead of concatenating into one).
+ *
+ * Items whose underlying trip/ride has been deleted, or whose geometry is
+ * missing, return an empty `lines` array — the client renders those items
+ * without a map track but still preserves the position in the list. This is
+ * the same "missing item" handling the dashboard detail page already uses.
+ *
+ * Geometries are simplified server-side via `ST_Simplify` to keep the
+ * payload bounded for ~20+ item collections (target tolerance ~0.0005°,
+ * roughly 50 m, which still gives a recognisable preview at typical zoom
+ * levels).
+ */
+export class RouteCollectionPreviewItemDto {
+  @ApiProperty({ description: 'ID of the route_collection_items row.' })
+  item_id!: string;
+
+  @ApiProperty({
+    description: 'Position of the item in the collection (zero-based).',
+  })
+  position!: number;
+
+  @ApiProperty({ enum: ['trip', 'ride'] })
+  kind!: 'trip' | 'ride';
+
+  @ApiProperty({
+    type: 'array',
+    items: {
+      type: 'array',
+      items: {
+        type: 'array',
+        items: { type: 'number' },
+        minItems: 2,
+        maxItems: 2,
+      },
+    },
+    description:
+      'Array of polylines for this item. Each polyline is an array of [lng, lat] pairs (GeoJSON LineString coordinates). Empty array if the underlying trip/ride is missing or has no geometry.',
+  })
+  lines!: number[][][];
+}
+
+export class RouteCollectionPreviewResponseDto {
+  @ApiProperty({ type: [RouteCollectionPreviewItemDto] })
+  routes!: RouteCollectionPreviewItemDto[];
+}

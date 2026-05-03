@@ -387,6 +387,25 @@ export interface RouteCollectionListResponse {
   total: number;
 }
 
+/**
+ * Map-preview payload for the public collection page (#358). Each item is a
+ * collection_items row with the simplified polylines that should render on
+ * the map. `lines` is empty when the underlying trip/ride was deleted or
+ * has no recorded geometry — the map drops those silently while the list
+ * still renders a placeholder row.
+ */
+export interface RouteCollectionPreviewItem {
+  item_id: string;
+  position: number;
+  kind: "trip" | "ride";
+  /** Each entry is a polyline as an array of [lng, lat] pairs (GeoJSON LineString). */
+  lines: number[][][];
+}
+
+export interface RouteCollectionPreviewResponse {
+  routes: RouteCollectionPreviewItem[];
+}
+
 export const routeCollectionsApi = {
   listMine: () => apiFetch<RouteCollectionListResponse>("/collections/me"),
   listLibrary: () =>
@@ -401,6 +420,10 @@ export const routeCollectionsApi = {
   getBySlug: (slug: string) =>
     apiFetch<RouteCollectionDetail>(
       `/collections/by-slug/${encodeURIComponent(slug)}`,
+    ),
+  getPreviewBySlug: (slug: string) =>
+    apiFetch<RouteCollectionPreviewResponse>(
+      `/collections/by-slug/${encodeURIComponent(slug)}/preview`,
     ),
   update: (id: string, input: UpdateRouteCollectionInput) =>
     apiFetch<RouteCollectionDetail>(`/collections/${encodeURIComponent(id)}`, {
