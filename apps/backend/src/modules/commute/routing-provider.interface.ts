@@ -39,6 +39,18 @@ export interface RoutingOptions {
  */
 export interface RoutingProvider {
   /**
+   * Stable identifier for the routing engine + algorithm version
+   * persisted alongside cached results so callers can invalidate
+   * stale geometry when the upstream engine changes (#361 — commute
+   * primary-route polyline cache). Bump this whenever a swap changes
+   * the road network, exclusion semantics, or the geometry shape
+   * enough that previously-cached polylines should be re-resolved.
+   * Implementations should keep the value short and opaque (e.g.
+   * `osrm-v1`, `graphhopper-v2`) — callers compare by string equality.
+   */
+  readonly version: string;
+
+  /**
    * Get alternative routes between two points.
    * Returns up to `maxAlternatives` routes sorted by duration.
    *

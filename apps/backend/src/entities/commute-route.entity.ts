@@ -45,6 +45,9 @@ export class CommuteRoute {
   @Column({ type: 'float', nullable: true })
   avg_quality!: number | null;
 
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  routing_engine_version!: string | null;
+
   @Column({ type: 'boolean', default: true })
   is_primary!: boolean;
 

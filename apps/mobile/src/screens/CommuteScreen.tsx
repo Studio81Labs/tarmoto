@@ -115,6 +115,21 @@ export default function CommuteScreen() {
     [navigation],
   );
 
+  const navigatePrimary = useCallback(() => {
+    // #361: launch turn-by-turn nav over the cached primary polyline.
+    // The backend lazily populates `route_geometry` on first read; we
+    // gate the tap on `length >= 2` (same defensive shape as the
+    // alternative button) so a route with an unresolved cache or a
+    // routing-provider outage just shows the disabled button instead
+    // of pushing a dead Navigate screen.
+    if (!route?.route_geometry || route.route_geometry.length < 2) return;
+    navigation.navigate("Navigate", {
+      source: "polyline",
+      polyline: route.route_geometry,
+      title: route.name,
+    });
+  }, [navigation, route]);
+
   // NEW hazard markers stay sticky until the rider explicitly taps
   // "Mark all seen" below. Avoid auto-acknowledging on unmount: the
   // `acknowledge` callback's identity changes on every refresh, which
@@ -186,15 +201,46 @@ export default function CommuteScreen() {
             valueColor={qualityColor(status.route_quality)}
           />
         </View>
-        <TouchableOpacity
-          style={styles.startCommuteBtn}
-          onPress={startCommuteRide}
-          accessibilityRole="button"
-          accessibilityLabel={`Start commute ride to ${route.name}`}
-        >
-          <Icon name="play-circle" size={20} color={colors.textInverse} />
-          <Text style={styles.startCommuteLabel}>Start commute</Text>
-        </TouchableOpacity>
+        <View style={styles.primaryCtaRow}>
+          <TouchableOpacity
+            style={styles.startCommuteBtn}
+            onPress={startCommuteRide}
+            accessibilityRole="button"
+            accessibilityLabel={`Start commute ride to ${route.name}`}
+          >
+            <Icon name="play-circle" size={20} color={colors.textInverse} />
+            <Text style={styles.startCommuteLabel}>Start commute</Text>
+          </TouchableOpacity>
+          {/*
+            #361: opt-in turn-by-turn nav for the primary route, mirroring
+            the navigate button on alternative cards (#342). Disabled
+            until the backend has resolved `route_geometry` (fresh route,
+            routing-provider outage) so we don't push a dead Navigate.
+          */}
+          <TouchableOpacity
+            style={[
+              styles.primaryNavBtn,
+              !route.route_geometry || route.route_geometry.length < 2
+                ? styles.primaryNavBtnDisabled
+                : null,
+            ]}
+            onPress={navigatePrimary}
+            disabled={!route.route_geometry || route.route_geometry.length < 2}
+            accessibilityRole="button"
+            accessibilityLabel={`Navigate primary commute route to ${route.name}`}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Icon
+              name="navigation-variant"
+              size={20}
+              color={
+                !route.route_geometry || route.route_geometry.length < 2
+                  ? colors.textTertiary
+                  : colors.primary
+              }
+            />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {status.weather ? <WeatherCard weather={status.weather} /> : null}
@@ -1096,7 +1142,14 @@ const styles = StyleSheet.create({
     fontWeight: fontWeight.bold,
     marginTop: 4,
   },
+  primaryCtaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
   startCommuteBtn: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -1104,12 +1157,24 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     paddingVertical: spacing.md,
     borderRadius: borderRadius.pill,
-    marginTop: spacing.sm,
   },
   startCommuteLabel: {
     color: colors.textInverse,
     fontWeight: fontWeight.bold,
     fontSize: fontSize.md,
+  },
+  primaryNavBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  primaryNavBtnDisabled: {
+    opacity: 0.4,
   },
   weatherRow: {
     flexDirection: "row",
