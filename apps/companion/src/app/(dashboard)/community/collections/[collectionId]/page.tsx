@@ -9,6 +9,7 @@ import {
   Check,
   Copy,
   Gauge,
+  GripVertical,
   Loader2,
   MapPin,
   Plus,
@@ -17,6 +18,22 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useUserTrips } from "@/hooks/useUserTrips";
 import { useUserRides, type UserRide } from "@/hooks/useUserRides";
 import {
@@ -27,6 +44,10 @@ import {
 import { RouteCollectionVisibilityPill } from "@/components/RouteCollectionVisibilityPill";
 import {
   mapDetailToView,
+  moveItem,
+  reorderPayload,
+  type CollectionRideRef,
+  type CollectionTripRef,
   type RouteCollectionView,
 } from "@/lib/route-collections";
 import { tripDistanceKm } from "@/lib/trip-filters";
@@ -119,6 +140,74 @@ export default function CollectionDetailPage() {
     } catch (err) {
       setActionError(
         err instanceof Error ? err.message : "Failed to add routes",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleReorder = async (
+    section: "trips" | "rides",
+    fromIndex: number,
+    toIndex: number,
+  ) => {
+    if (!collection) return;
+    if (fromIndex === toIndex) return;
+    const sourceRefs =
+      section === "trips" ? collection.tripRefs : collection.rideRefs;
+    if (
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= sourceRefs.length ||
+      toIndex >= sourceRefs.length
+    ) {
+      return;
+    }
+    // Optimistic: rebuild the view with the new in-section order so the row
+    // animates to its new spot immediately. The server is the source of
+    // truth for `position`; we only renumber locally on success (after the
+    // refetch from `reorderItems`).
+    const optimistic: RouteCollectionView =
+      section === "trips"
+        ? (() => {
+            const nextRefs: CollectionTripRef[] = moveItem(
+              collection.tripRefs,
+              fromIndex,
+              toIndex,
+            );
+            return {
+              ...collection,
+              tripRefs: nextRefs,
+              tripIds: nextRefs.map((r) => r.tripId),
+            };
+          })()
+        : (() => {
+            const nextRefs: CollectionRideRef[] = moveItem(
+              collection.rideRefs,
+              fromIndex,
+              toIndex,
+            );
+            return {
+              ...collection,
+              rideRefs: nextRefs,
+              rideIds: nextRefs.map((r) => r.rideId),
+            };
+          })();
+    setLoad({ phase: "ready", collection: optimistic });
+    setActionError(null);
+    setBusy(true);
+    try {
+      const { data } = await routeCollectionsApi.reorderItems(
+        collection.id,
+        reorderPayload(optimistic),
+      );
+      setLoad({ phase: "ready", collection: mapDetailToView(data) });
+    } catch (err) {
+      // Roll back to the pre-reorder snapshot — the user sees the row snap
+      // back to its original position so they know the change didn't take.
+      setLoad({ phase: "ready", collection });
+      setActionError(
+        err instanceof Error ? err.message : "Failed to reorder routes",
       );
     } finally {
       setBusy(false);
@@ -223,26 +312,12 @@ export default function CollectionDetailPage() {
   }
 
   // ready
-  const memberTrips: (Trip | { id: string; itemId: string; missing: true })[] =
-    collection!.tripRefs.map((ref) => {
-      const trip = tripById.get(ref.tripId);
-      if (trip) return trip;
-      return { id: ref.tripId, itemId: ref.itemId, missing: true };
-    });
-  const memberRides: (
-    | UserRide
-    | { id: string; itemId: string; missing: true }
-  )[] = collection!.rideRefs.map((ref) => {
-    const ride = rideById.get(ref.rideId);
-    if (ride) return ride;
-    return { id: ref.rideId, itemId: ref.itemId, missing: true };
-  });
-  const presentTrips = memberTrips.filter(
-    (entry): entry is Trip => !("missing" in entry),
-  );
-  const presentRides = memberRides.filter(
-    (entry): entry is UserRide => !("missing" in entry),
-  );
+  const presentTrips = collection!.tripRefs
+    .map((ref) => tripById.get(ref.tripId))
+    .filter((t): t is Trip => t != null);
+  const presentRides = collection!.rideRefs
+    .map((ref) => rideById.get(ref.rideId))
+    .filter((r): r is UserRide => r != null);
   // Distance covers both trips (planner geometry) and rides (recorded distance).
   // Trip distance is computed from per-day route geometry; ride distance comes
   // straight from the backend `distance_km` field.
@@ -253,19 +328,15 @@ export default function CollectionDetailPage() {
   // multi-day plans. A separate "Rides" stat surfaces recorded-ride count
   // alongside the planner-day count.
   const totalDays = presentTrips.reduce((sum, t) => sum + t.days.length, 0);
-  const missingTripCount = collection!.tripRefs.length - presentTrips.length;
-  const missingRideCount = collection!.rideRefs.length - presentRides.length;
-  const totalMissing = missingTripCount + missingRideCount;
+  const totalMissing =
+    collection!.tripRefs.length -
+    presentTrips.length +
+    (collection!.rideRefs.length - presentRides.length);
   const memberTripIds = new Set(collection!.tripIds);
   const memberRideIds = new Set(collection!.rideIds);
   const availableTrips = trips.filter((t) => !memberTripIds.has(t.id));
   const availableRides = rides.filter((r) => !memberRideIds.has(r.id));
-  const itemIdByTripId = new Map(
-    collection!.tripRefs.map((r) => [r.tripId, r.itemId]),
-  );
-  const itemIdByRideId = new Map(
-    collection!.rideRefs.map((r) => [r.rideId, r.itemId]),
-  );
+  const totalRefs = collection!.tripRefs.length + collection!.rideRefs.length;
   const loadingMembers = loadingTrips || loadingRides;
   const memberLoadError = tripsError || ridesError;
 
@@ -363,7 +434,7 @@ export default function CollectionDetailPage() {
         <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">
           Routes
         </h2>
-        {memberTrips.length === 0 && memberRides.length === 0 ? (
+        {totalRefs === 0 ? (
           <EmptyRoutes onAdd={() => setShowPicker(true)} />
         ) : loadingMembers || memberLoadError ? (
           <>
@@ -376,53 +447,80 @@ export default function CollectionDetailPage() {
               </div>
             )}
             <ul className="space-y-3">
-              {memberTrips.map((entry) => (
-                <LoadingTripRow key={`trip-${entry.id}`} />
+              {collection!.tripRefs.map((ref) => (
+                <LoadingTripRow key={`trip-${ref.itemId}`} />
               ))}
-              {memberRides.map((entry) => (
-                <LoadingTripRow key={`ride-${entry.id}`} />
+              {collection!.rideRefs.map((ref) => (
+                <LoadingTripRow key={`ride-${ref.itemId}`} />
               ))}
             </ul>
           </>
         ) : (
-          <ul className="space-y-3">
-            {memberTrips.map((entry) =>
-              "missing" in entry ? (
-                <MissingItemRow
-                  key={entry.itemId}
-                  kind="trip"
-                  onRemove={() => void handleRemoveItem(entry.itemId)}
-                />
-              ) : (
-                <TripRow
-                  key={`trip-${entry.id}`}
-                  trip={entry}
-                  onRemove={() => {
-                    const itemId = itemIdByTripId.get(entry.id);
-                    if (itemId) void handleRemoveItem(itemId);
-                  }}
-                />
-              ),
+          <>
+            {collection!.tripRefs.length > 0 && (
+              <SortableItemList
+                ariaLabel="Trips in this collection. Drag handle to reorder."
+                ids={collection!.tripRefs.map((r) => r.itemId)}
+                disabled={busy || collection!.tripRefs.length < 2}
+                onReorder={(from, to) => void handleReorder("trips", from, to)}
+              >
+                {collection!.tripRefs.map((ref) => {
+                  const trip = tripById.get(ref.tripId);
+                  return (
+                    <SortableRow
+                      key={ref.itemId}
+                      id={ref.itemId}
+                      disabled={busy || collection!.tripRefs.length < 2}
+                    >
+                      {trip ? (
+                        <TripRow
+                          trip={trip}
+                          onRemove={() => void handleRemoveItem(ref.itemId)}
+                        />
+                      ) : (
+                        <MissingItemRow
+                          kind="trip"
+                          onRemove={() => void handleRemoveItem(ref.itemId)}
+                        />
+                      )}
+                    </SortableRow>
+                  );
+                })}
+              </SortableItemList>
             )}
-            {memberRides.map((entry) =>
-              "missing" in entry ? (
-                <MissingItemRow
-                  key={entry.itemId}
-                  kind="ride"
-                  onRemove={() => void handleRemoveItem(entry.itemId)}
-                />
-              ) : (
-                <RideRow
-                  key={`ride-${entry.id}`}
-                  ride={entry}
-                  onRemove={() => {
-                    const itemId = itemIdByRideId.get(entry.id);
-                    if (itemId) void handleRemoveItem(itemId);
-                  }}
-                />
-              ),
+            {collection!.rideRefs.length > 0 && (
+              <SortableItemList
+                ariaLabel="Rides in this collection. Drag handle to reorder."
+                ids={collection!.rideRefs.map((r) => r.itemId)}
+                disabled={busy || collection!.rideRefs.length < 2}
+                className={collection!.tripRefs.length > 0 ? "mt-3" : undefined}
+                onReorder={(from, to) => void handleReorder("rides", from, to)}
+              >
+                {collection!.rideRefs.map((ref) => {
+                  const ride = rideById.get(ref.rideId);
+                  return (
+                    <SortableRow
+                      key={ref.itemId}
+                      id={ref.itemId}
+                      disabled={busy || collection!.rideRefs.length < 2}
+                    >
+                      {ride ? (
+                        <RideRow
+                          ride={ride}
+                          onRemove={() => void handleRemoveItem(ref.itemId)}
+                        />
+                      ) : (
+                        <MissingItemRow
+                          kind="ride"
+                          onRemove={() => void handleRemoveItem(ref.itemId)}
+                        />
+                      )}
+                    </SortableRow>
+                  );
+                })}
+              </SortableItemList>
             )}
-          </ul>
+          </>
         )}
       </section>
 
@@ -566,6 +664,122 @@ function Stat({
   );
 }
 
+/**
+ * Wraps a list of `SortableRow` children in dnd-kit's `DndContext` +
+ * `SortableContext`. The component is intentionally generic — it doesn't
+ * know whether the rows are trips or rides, only that each child carries an
+ * `id` matching one of the `ids` prop entries. The owner page uses two
+ * separate instances (one for trips, one for rides) so each section
+ * reorders independently and the public-page positions stay grouped by
+ * kind, mirroring the on-screen layout.
+ */
+function SortableItemList({
+  ariaLabel,
+  ids,
+  disabled,
+  className,
+  onReorder,
+  children,
+}: {
+  ariaLabel: string;
+  ids: readonly string[];
+  disabled: boolean;
+  className?: string;
+  onReorder: (fromIndex: number, toIndex: number) => void;
+  children: React.ReactNode;
+}) {
+  // Pointer threshold of 5px stops a click on the drag handle from being
+  // treated as a drag — without it the handle's `cursor: grab` UX is
+  // useless because every accidental jiggle starts a drag-and-drop.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const from = ids.indexOf(String(active.id));
+    const to = ids.indexOf(String(over.id));
+    if (from === -1 || to === -1) return;
+    onReorder(from, to);
+  };
+
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={disabled ? undefined : handleDragEnd}
+    >
+      <SortableContext
+        items={ids as string[]}
+        strategy={verticalListSortingStrategy}
+      >
+        <ul aria-label={ariaLabel} className={`space-y-3 ${className ?? ""}`}>
+          {children}
+        </ul>
+      </SortableContext>
+    </DndContext>
+  );
+}
+
+/**
+ * One sortable row. Renders a drag handle on the left and the row body to
+ * its right. The handle (not the whole row) carries the drag listeners so
+ * inner `<Link>` clicks for navigation keep working.
+ */
+function SortableRow({
+  id,
+  disabled,
+  children,
+}: {
+  id: string;
+  disabled: boolean;
+  children: React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id, disabled });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    // Lift the dragged row above its neighbours and dim the rest so the
+    // drop target is visually obvious. `touchAction: none` on the handle
+    // (below) keeps mobile scrolling intact while still allowing drag.
+    zIndex: isDragging ? 10 : undefined,
+    opacity: isDragging ? 0.85 : undefined,
+  };
+
+  return (
+    <li ref={setNodeRef} style={style} className="flex items-stretch gap-2">
+      <button
+        type="button"
+        ref={setActivatorNodeRef}
+        {...attributes}
+        {...listeners}
+        disabled={disabled}
+        aria-label="Reorder"
+        className={`shrink-0 self-stretch flex items-center px-1 rounded-lg text-slate-600 hover:text-slate-300 hover:bg-slate-800/50 disabled:opacity-30 disabled:cursor-not-allowed transition ${
+          disabled ? "" : "cursor-grab active:cursor-grabbing"
+        }`}
+        style={{ touchAction: "none" }}
+      >
+        <GripVertical size={16} aria-hidden="true" />
+      </button>
+      <div className="flex-1 min-w-0">{children}</div>
+    </li>
+  );
+}
+
 function EmptyRoutes({ onAdd }: { onAdd: () => void }) {
   return (
     <div className="rounded-2xl bg-slate-900 border border-dashed border-slate-800 p-10 text-center">
@@ -591,7 +805,7 @@ function TripRow({ trip, onRemove }: { trip: Trip; onRemove: () => void }) {
   const distance = tripDistanceKm(trip);
 
   return (
-    <li className="rounded-2xl border border-slate-800 bg-slate-900 hover:border-slate-700 transition">
+    <div className="rounded-2xl border border-slate-800 bg-slate-900 hover:border-slate-700 transition">
       <div className="flex items-stretch gap-0">
         <Link
           href={`/trips/${trip.id}`}
@@ -646,7 +860,7 @@ function TripRow({ trip, onRemove }: { trip: Trip; onRemove: () => void }) {
           <Trash2 size={16} />
         </button>
       </div>
-    </li>
+    </div>
   );
 }
 
@@ -655,7 +869,7 @@ function RideRow({ ride, onRemove }: { ride: UserRide; onRemove: () => void }) {
     ride.name ?? `Ride on ${new Date(ride.started_at).toLocaleDateString()}`;
 
   return (
-    <li className="rounded-2xl border border-slate-800 bg-slate-900 hover:border-slate-700 transition">
+    <div className="rounded-2xl border border-slate-800 bg-slate-900 hover:border-slate-700 transition">
       <div className="flex items-stretch gap-0">
         <Link
           href={`/rides/${ride.id}`}
@@ -699,7 +913,7 @@ function RideRow({ ride, onRemove }: { ride: UserRide; onRemove: () => void }) {
           <Trash2 size={16} />
         </button>
       </div>
-    </li>
+    </div>
   );
 }
 
@@ -712,7 +926,7 @@ function MissingItemRow({
 }) {
   const label = kind === "trip" ? "Trip" : "Ride";
   return (
-    <li className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/50 p-4 flex items-center justify-between gap-4">
+    <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/50 p-4 flex items-center justify-between gap-4">
       <div className="min-w-0">
         <p className="text-sm text-slate-400">{label} no longer available</p>
         <p className="text-[11px] text-slate-600">
@@ -726,7 +940,7 @@ function MissingItemRow({
       >
         <X size={12} /> Remove
       </button>
-    </li>
+    </div>
   );
 }
 

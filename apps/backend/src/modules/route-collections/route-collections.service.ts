@@ -13,6 +13,7 @@ import { RouteCollectionFollow } from '../../entities/route-collection-follow.en
 import {
   AddRouteCollectionItemDto,
   CreateRouteCollectionDto,
+  ReorderRouteCollectionItemsDto,
   RouteCollectionDetailDto,
   RouteCollectionFollowResponseDto,
   RouteCollectionItemResponseDto,
@@ -355,6 +356,92 @@ export class RouteCollectionsService {
       await collectionRepo.save(collection);
 
       return this.toItemResponse(saved);
+    });
+  }
+
+  async reorderItems(
+    userId: string,
+    collectionId: string,
+    dto: ReorderRouteCollectionItemsDto,
+  ): Promise<RouteCollectionDetailDto> {
+    // Catch duplicate ids before opening a transaction — saves a round trip
+    // for an obvious client bug, and the set-equality check below would
+    // otherwise mask the duplicate (a duplicate plus a missing id of the
+    // same length would still match on size).
+    const uniqueIds = new Set(dto.item_ids);
+    if (uniqueIds.size !== dto.item_ids.length) {
+      throw new BadRequestException('item_ids must not contain duplicates');
+    }
+
+    return this.dataSource.transaction(async (manager) => {
+      const collectionRepo = manager.getRepository(RouteCollection);
+      const itemRepo = manager.getRepository(RouteCollectionItem);
+
+      // Pessimistic write lock on the parent row, mirroring `addItem`.
+      // Without it a concurrent add/remove between our `find` and the bulk
+      // `save` could produce an inconsistent renumber (e.g. a row added
+      // mid-flight that's not in `item_ids` would keep its old position and
+      // collide with a row we just renumbered to that value). Locking the
+      // parent serialises every concurrent mutation for this collection.
+      const collection = await collectionRepo.findOne({
+        where: { id: collectionId },
+        relations: ['owner'],
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!collection) {
+        throw new NotFoundException('Collection not found');
+      }
+      if (collection.owner_id !== userId) {
+        throw new ForbiddenException('Not the owner of this collection');
+      }
+
+      const currentItems = await itemRepo.find({
+        where: { collection_id: collectionId },
+      });
+
+      // Set equality: every existing item must be in the payload, and every
+      // payload id must reference an item in this collection. We 400 on any
+      // mismatch so a stale client (e.g. another tab added an item between
+      // load and drag) can re-fetch instead of silently dropping a row.
+      if (currentItems.length !== dto.item_ids.length) {
+        throw new BadRequestException(
+          'item_ids must include every current item exactly once',
+        );
+      }
+      const currentById = new Map(currentItems.map((i) => [i.id, i]));
+      for (const id of dto.item_ids) {
+        if (!currentById.has(id)) {
+          throw new BadRequestException(
+            'item_ids references an item that is not in this collection',
+          );
+        }
+      }
+
+      // Renumber 0..N-1 in the requested order. We mutate-then-save the
+      // existing entities (rather than building new ones) so audit columns
+      // stay accurate and any future @BeforeUpdate hooks fire normally.
+      const reordered: RouteCollectionItem[] = [];
+      for (let i = 0; i < dto.item_ids.length; i += 1) {
+        const item = currentById.get(dto.item_ids[i])!;
+        item.position = i;
+        reordered.push(item);
+      }
+      await itemRepo.save(reordered);
+
+      // Bump parent updated_at so listing sort surfaces the change to other
+      // tabs and the public-page cache.
+      collection.updated_at = new Date();
+      await collectionRepo.save(collection);
+
+      // Return the canonical view — re-read so positions reflect the saved
+      // state and the order matches `loadItems` (position ASC, created_at ASC).
+      const items = await itemRepo.find({
+        where: { collection_id: collectionId },
+        order: { position: 'ASC', created_at: 'ASC' },
+      });
+      // Owner-only path: viewer is the owner, so viewer_is_following is
+      // false by definition (the follow endpoint 400s on owner-self-follow).
+      return this.toDetailResponse(collection, items, userId, false);
     });
   }
 

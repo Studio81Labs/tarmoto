@@ -15,9 +15,10 @@ import { RouteCollection } from './route-collection.entity.js';
  * "exactly one is set" via a CHECK constraint declared in the migration so the
  * row can't drift into a both-null or both-populated state.
  *
- * `position` is server-assigned monotonic on insert (max+1). Reordering is
- * out of scope for the first slice — the field exists so reorder can ship
- * without a schema change.
+ * `position` is server-assigned monotonic on insert (max+1). On reorder
+ * (PATCH `/collections/:id/items/reorder`) the service renumbers every item
+ * 0..N-1 in one transaction under a parent-row write lock so the dense
+ * monotonic invariant holds even under concurrent adds.
  */
 @Entity('route_collection_items')
 @Index('idx_route_collection_items_collection', ['collection_id', 'position'])

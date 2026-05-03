@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { mapDetailToView, mapSummaryToView } from "@/lib/route-collections";
+import {
+  mapDetailToView,
+  mapSummaryToView,
+  moveItem,
+  reorderPayload,
+} from "@/lib/route-collections";
 import type {
   RouteCollectionDetail,
   RouteCollectionItemResponse,
@@ -154,6 +159,76 @@ describe("mapDetailToView", () => {
       detail([tripItem(), rideItem()], { item_count: 99 }),
     );
     expect(view.itemCount).toBe(99);
+  });
+});
+
+describe("moveItem", () => {
+  it("moves an element forward and returns a new array", () => {
+    const source = ["a", "b", "c", "d"];
+    const result = moveItem(source, 0, 2);
+    expect(result).toEqual(["b", "c", "a", "d"]);
+    // Don't mutate the input — components hold the previous list in state
+    // and would re-render incorrectly if the underlying array shifted.
+    expect(source).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("moves an element backward", () => {
+    expect(moveItem(["a", "b", "c", "d"], 3, 1)).toEqual(["a", "d", "b", "c"]);
+  });
+
+  it("returns the same array reference for a no-op", () => {
+    // Reference identity is the React contract: dnd-kit fires `onDragEnd`
+    // on every drag, even when nothing moved (drop on the same row). The
+    // page state setter is keyed on the array, so handing back the same
+    // ref skips a render.
+    const source = ["a", "b", "c"];
+    expect(moveItem(source, 1, 1)).toBe(source);
+    expect(moveItem(source, -1, 0)).toBe(source);
+    expect(moveItem(source, 0, 5)).toBe(source);
+  });
+});
+
+describe("reorderPayload", () => {
+  it("emits trip ids first, then ride ids, in current view order", () => {
+    // The owner page renders trips above rides; the public page renders by
+    // raw position. Concatenating in [trips, rides] order is what makes
+    // both views agree after a reorder.
+    const view = mapDetailToView(
+      detail([
+        tripItem({ id: "t-1", position: 0 }),
+        tripItem({
+          id: "t-2",
+          trip_id: "11111111-1111-1111-1111-111111111002",
+          position: 1,
+        }),
+        rideItem({ id: "r-1", position: 2 }),
+        rideItem({
+          id: "r-2",
+          ride_id: "22222222-2222-2222-2222-222222222002",
+          position: 3,
+        }),
+      ]),
+    );
+    expect(reorderPayload(view)).toEqual(["t-1", "t-2", "r-1", "r-2"]);
+  });
+
+  it("reflects an in-place trip swap in the payload order", () => {
+    const view = mapDetailToView(
+      detail([
+        tripItem({ id: "t-1", position: 0 }),
+        tripItem({
+          id: "t-2",
+          trip_id: "11111111-1111-1111-1111-111111111002",
+          position: 1,
+        }),
+        rideItem({ id: "r-1", position: 2 }),
+      ]),
+    );
+    const swapped = {
+      ...view,
+      tripRefs: [view.tripRefs[1]!, view.tripRefs[0]!],
+    };
+    expect(reorderPayload(swapped)).toEqual(["t-2", "t-1", "r-1"]);
   });
 });
 

@@ -25,6 +25,7 @@ import { RouteCollectionsService } from './route-collections.service.js';
 import {
   AddRouteCollectionItemDto,
   CreateRouteCollectionDto,
+  ReorderRouteCollectionItemsDto,
   RouteCollectionDetailDto,
   RouteCollectionFollowResponseDto,
   RouteCollectionItemResponseDto,
@@ -161,6 +162,29 @@ export class RouteCollectionsController {
     @Body() dto: AddRouteCollectionItemDto,
   ): Promise<RouteCollectionItemResponseDto> {
     return this.routeCollectionsService.addItem(req.user!.userId, id, dto);
+  }
+
+  @Patch(':id/items/reorder')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Reorder all items in a collection (owner only). Send the full list of item ids in the desired order.',
+  })
+  @ApiResponse({ status: 200, type: RouteCollectionDetailDto })
+  @ApiResponse({
+    status: 400,
+    description:
+      'item_ids does not match the current item set (missing, extras, or duplicates)',
+  })
+  @ApiResponse({ status: 403, description: 'Not the owner' })
+  @ApiResponse({ status: 404, description: 'Collection not found' })
+  async reorderItems(
+    @Req() req: express.Request,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReorderRouteCollectionItemsDto,
+  ): Promise<RouteCollectionDetailDto> {
+    return this.routeCollectionsService.reorderItems(req.user!.userId, id, dto);
   }
 
   @Delete(':id/items/:itemId')

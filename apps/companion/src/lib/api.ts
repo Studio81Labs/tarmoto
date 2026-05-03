@@ -421,6 +421,11 @@ export const routeCollectionsApi = {
       `/collections/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}`,
       { method: "DELETE" },
     ),
+  reorderItems: (id: string, itemIds: readonly string[]) =>
+    apiFetch<RouteCollectionDetail>(
+      `/collections/${encodeURIComponent(id)}/items/reorder`,
+      { method: "PATCH", body: JSON.stringify({ item_ids: itemIds }) },
+    ),
   follow: (id: string) =>
     apiFetch<RouteCollectionFollowResponse>(
       `/collections/${encodeURIComponent(id)}/follow`,

@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "28060090-b71f-4a78-bf8b-1fc00f4270ed",
+    "_postman_id": "4d383621-cfca-435d-aaa4-6be488a9ca3e",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -1893,6 +1893,38 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"trip_id\": \"\",\n  \"ride_id\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Reorder all items in a collection (owner only). Send the full list of item ids in the desired order.",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/collections/:id/items/reorder",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "collections", ":id", "items", "reorder"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"item_ids\": [\n    \"\",\n    \"\"\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
