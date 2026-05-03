@@ -575,11 +575,11 @@ pick a previous live deploy → **Rollback**. Or via the API:
 
 ```bash
 # Replace SERVICE_ID and DEPLOY_ID; needs RENDER_API_KEY.
+# Deploy ID is a path parameter; no body required.
 curl -X POST \
   -H "Authorization: Bearer $RENDER_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d "{\"deployId\":\"$DEPLOY_ID\"}" \
-  "https://api.render.com/v1/services/$SERVICE_ID/rollback"
+  -H "Accept: application/json" \
+  "https://api.render.com/v1/services/$SERVICE_ID/deploys/$DEPLOY_ID/rollback"
 ```
 
 Common failures:

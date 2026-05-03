@@ -96,6 +96,10 @@ jobs:
       - name: Trigger prod deploy hook
         # Staging auto-deploys from `git push`; prod has autoDeploy: false
         # in the blueprint, so we POST the deploy hook explicitly.
+        # `?ref=$GITHUB_SHA` pins the deploy to the tagged commit —
+        # without it, Render builds the configured branch's HEAD,
+        # which may have advanced past the tag and would cause the
+        # subsequent "Wait for deploy" step to never find a match.
         if: steps.env.outputs.name == 'prod'
         env:
           DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_PROD }}
@@ -105,7 +109,14 @@ jobs:
             echo "::error::RENDER_DEPLOY_HOOK_PROD is not set"
             exit 1
           fi
-          curl --fail --silent --show-error -X POST "$DEPLOY_HOOK" > /dev/null
+          # Append ?ref= correctly whether the hook URL already has
+          # query params or not.
+          if [[ "$DEPLOY_HOOK" == *\?* ]]; then
+            HOOK_URL="${DEPLOY_HOOK}&ref=${GITHUB_SHA}"
+          else
+            HOOK_URL="${DEPLOY_HOOK}?ref=${GITHUB_SHA}"
+          fi
+          curl --fail --silent --show-error -X POST "$HOOK_URL" > /dev/null
           echo "Triggered prod deploy hook for ${GITHUB_SHA}."
 
       - name: Wait for deploy to go live
@@ -195,9 +206,12 @@ jobs:
             echo "::error::No previous successful deploy to roll back to — manual recovery required."
             exit 1
           fi
+          # Render's rollback endpoint is /v1/services/{id}/deploys/{deployId}/rollback
+          # — deploy ID is a path parameter, no body required. The
+          # service-level /rollback URL with deployId in the body
+          # returns 404.
           curl --fail --silent --show-error -X POST \
             -H "Authorization: Bearer $RENDER_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d "{\"deployId\":\"${PREV}\"}" \
-            "https://api.render.com/v1/services/${SERVICE_ID}/rollback" > /dev/null
+            -H "Accept: application/json" \
+            "https://api.render.com/v1/services/${SERVICE_ID}/deploys/${PREV}/rollback" > /dev/null
           echo "::notice::Rolled back to ${PREV}"
