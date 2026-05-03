@@ -15,9 +15,9 @@
  * appropriate typed-client call.
  */
 
-import type { components } from "@tarmoto/openapi";
 import type { NotificationPreferences } from "@tarmoto/shared";
 import type {
+  Schemas,
   HazardType,
   Hazard,
   RideDetail,
@@ -94,8 +94,6 @@ import {
   type SubmitReviewResult,
 } from "./reviewQueue";
 import { registerForPush, unregisterPush } from "./pushRegistration";
-
-type Schemas = components["schemas"];
 
 /** Top-level error thrown by every facade method on a non-2xx response.
  *  Carries the HTTP status + raw body so callers can branch on auth
