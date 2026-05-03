@@ -115,20 +115,23 @@ export default function CommuteScreen() {
     [navigation],
   );
 
+  // #361: gate the primary nav button on a resolved polyline (>= 2
+  // points). The backend lazily populates `route_geometry` on first
+  // read; while it's null (fresh route, routing-provider outage) we
+  // disable the button instead of pushing a dead Navigate screen.
+  // Computed once and shared with the callback + JSX so the tap-guard
+  // and the disabled rendering can't drift out of sync.
+  const primaryNavDisabled =
+    !route?.route_geometry || route.route_geometry.length < 2;
+
   const navigatePrimary = useCallback(() => {
-    // #361: launch turn-by-turn nav over the cached primary polyline.
-    // The backend lazily populates `route_geometry` on first read; we
-    // gate the tap on `length >= 2` (same defensive shape as the
-    // alternative button) so a route with an unresolved cache or a
-    // routing-provider outage just shows the disabled button instead
-    // of pushing a dead Navigate screen.
-    if (!route?.route_geometry || route.route_geometry.length < 2) return;
+    if (primaryNavDisabled || !route?.route_geometry) return;
     navigation.navigate("Navigate", {
       source: "polyline",
       polyline: route.route_geometry,
       title: route.name,
     });
-  }, [navigation, route]);
+  }, [navigation, route, primaryNavDisabled]);
 
   // NEW hazard markers stay sticky until the rider explicitly taps
   // "Mark all seen" below. Avoid auto-acknowledging on unmount: the
@@ -213,19 +216,17 @@ export default function CommuteScreen() {
           </TouchableOpacity>
           {/*
             #361: opt-in turn-by-turn nav for the primary route, mirroring
-            the navigate button on alternative cards (#342). Disabled
-            until the backend has resolved `route_geometry` (fresh route,
-            routing-provider outage) so we don't push a dead Navigate.
+            the navigate button on alternative cards (#342). `primaryNavDisabled`
+            (computed above) keeps the style, `disabled`, and icon-color
+            branches in lockstep so the visual state can't lie about the tap.
           */}
           <TouchableOpacity
             style={[
               styles.primaryNavBtn,
-              !route.route_geometry || route.route_geometry.length < 2
-                ? styles.primaryNavBtnDisabled
-                : null,
+              primaryNavDisabled ? styles.primaryNavBtnDisabled : null,
             ]}
             onPress={navigatePrimary}
-            disabled={!route.route_geometry || route.route_geometry.length < 2}
+            disabled={primaryNavDisabled}
             accessibilityRole="button"
             accessibilityLabel={`Navigate primary commute route to ${route.name}`}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -233,11 +234,7 @@ export default function CommuteScreen() {
             <Icon
               name="navigation-variant"
               size={20}
-              color={
-                !route.route_geometry || route.route_geometry.length < 2
-                  ? colors.textTertiary
-                  : colors.primary
-              }
+              color={primaryNavDisabled ? colors.textTertiary : colors.primary}
             />
           </TouchableOpacity>
         </View>
