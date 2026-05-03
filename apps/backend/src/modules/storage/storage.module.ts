@@ -26,8 +26,8 @@ const OBJECT_STORAGE_PROVIDER: Provider = {
  *
  * The provider choice is driven by `TARMOTO_STORAGE_DRIVER`
  * (`local` by default, `s3` opts into the S3-compatible backend).
- * See `docs/process/runbook.md` for env-var setup in staging/prod
- * and the local-MinIO recipe.
+ * See `docs/process/runbook.md` for env-var setup in prod and the
+ * local-MinIO recipe.
  */
 @Module({
   imports: [ConfigModule],

@@ -13,7 +13,7 @@ export interface JobsConfig {
    * When true, this process attaches workers to every registered
    * queue. When false, the process can still produce jobs (enqueue)
    * but will not consume any — useful for splitting API and worker
-   * containers in staging/prod.
+   * containers in prod.
    *
    * Defaults to true so single-container dev deployments don't need
    * any extra env wiring.

@@ -152,7 +152,7 @@ The `POST /safety/crash-alert` endpoint dispatches SMS (and a voice call when
 implementation is `TwilioCrashAlertNotifier`. Without credentials the notifier
 silently falls back to log-only mode so dev and CI continue to work.
 
-### Required env vars (staging)
+### Required env vars
 
 | Variable                         | Required | Notes                                      |
 | -------------------------------- | -------- | ------------------------------------------ |
@@ -169,7 +169,7 @@ Twilio crash-alert notifier disabled — set TARMOTO_TWILIO_ACCOUNT_SID, ...
 
 …on boot, and every dispatch records `channel=log` instead of `sms`/`voice`.
 
-### Smoke test on staging
+### Smoke test
 
 1. Add yourself as an emergency contact under your test account
    (`POST /users/me/contacts` with `is_emergency: true`).
@@ -179,7 +179,7 @@ Twilio crash-alert notifier disabled — set TARMOTO_TWILIO_ACCOUNT_SID, ...
    `SM…` SID):
 
    ```bash
-   curl -sS -X POST https://staging.tarmoto.app/api/v1/safety/crash-alert \
+   curl -sS -X POST https://api.tarmoto.app/api/v1/safety/crash-alert \
      -H "Authorization: Bearer $JWT" \
      -H "Content-Type: application/json" \
      -d '{
@@ -251,17 +251,18 @@ Grep for the `[verification]` / `[password-reset]` / `[subscription-confirmed]`
 tag to find a specific mail. The verification / reset URL is in the
 plain-text body — copy/paste it into the browser to consume the token.
 
-### Staging / preview
+### Local dev with real Resend (optional)
 
-Same defaults as dev unless you want to test real delivery. To enable
-Resend:
+Same defaults as dev unless you want to test real delivery before
+shipping. Use a Resend test-mode key — it bills nothing and sends
+to a sandbox inbox:
 
 ```env
 TARMOTO_EMAIL_PROVIDER=resend
 TARMOTO_RESEND_API_KEY=re_test_xxx        # Resend test mode keys are fine
-TARMOTO_EMAIL_FROM="Tarmoto <noreply@your-staging-domain.app>"
-TARMOTO_EMAIL_REPLY_TO="support@your-staging-domain.app"   # optional
-TARMOTO_COMPANION_URL=https://staging.tarmoto.app          # required for token URLs
+TARMOTO_EMAIL_FROM="Tarmoto <noreply@tarmoto.app>"
+TARMOTO_EMAIL_REPLY_TO="support@tarmoto.app"   # optional
+TARMOTO_COMPANION_URL=http://localhost:3001    # required for token URLs
 ```
 
 If `TARMOTO_EMAIL_PROVIDER=resend` is set but the API key or `From` is
@@ -341,7 +342,7 @@ derived origin is fine, so dev needs no env wiring.
 reviews already use — it's the single source of truth for the
 public origin.
 
-### R2 / S3 / MinIO env vars (staging / prod)
+### R2 / S3 / MinIO env vars (prod)
 
 | Variable                       | Required when `s3` | Notes                                                                                                                                                                       |
 | ------------------------------ | :----------------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -464,18 +465,18 @@ When you fully cut over to S3 / R2:
    upload after cutover renders end-to-end and edits / deletes
    continue to clean up orphans.
 
-### Bucket lifecycle policies (staging / prod)
+### Bucket lifecycle policies (prod)
 
-We use one R2 bucket per env (e.g. `tarmoto-staging-uploads`)
-that holds avatars, road-review photos, and GDPR exports under
-distinct key prefixes; tiles live in a separate public bucket.
-Tile bytes are immutable and URL-versioned, so the only
-lifecycle rule we run is on the data bucket:
+We use one R2 bucket (`tarmoto-prod-uploads`) that holds avatars,
+road-review photos, and GDPR exports under distinct key prefixes;
+tiles live in a separate public bucket. Tile bytes are immutable
+and URL-versioned, so the only lifecycle rule we run is on the
+data bucket:
 
-| Bucket                  | Retained content                                                                         | Auto-expire                                                                                                                                        |
-| ----------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tarmoto-<env>-uploads` | `avatars/*`, `road-review-photos/*` (kept until the user / review is deleted by the app) | `exports/*` after 30 days (prefix rule covers GDPR data-export bundles, which share this bucket per the runbook's "keep them in one bucket" model) |
-| `tarmoto-<env>-tiles`   | vector tiles (immutable, URL-versioned)                                                  | none                                                                                                                                               |
+| Bucket                 | Retained content                                                                         | Auto-expire                                                                                                                                        |
+| ---------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tarmoto-prod-uploads` | `avatars/*`, `road-review-photos/*` (kept until the user / review is deleted by the app) | `exports/*` after 30 days (prefix rule covers GDPR data-export bundles, which share this bucket per the runbook's "keep them in one bucket" model) |
+| `tarmoto-prod-tiles`   | vector tiles (immutable, URL-versioned)                                                  | none                                                                                                                                               |
 
 R2 aborts incomplete multipart uploads after 7 days by default —
 no rule needed for that.
@@ -552,22 +553,19 @@ deploy workflows are `.github/workflows/{backend,companion,mobile-release}.yml`.
 Normal flow:
 
 1. Merging a backend-touching PR to `main` triggers Render's
-   git-push auto-deploy on the staging Web Service. Render builds
+   git-push auto-deploy on the prod Web Service. Render builds
    the image from [`apps/backend/Dockerfile`](../../apps/backend/Dockerfile),
    runs `preDeployCommand` (TypeORM migrations) against the new
    image, and promotes the version once the health check passes.
 2. `backend-deploy.yml` polls the Render API for the deploy
    matching the commit SHA, then runs `scripts/smoke/smoke.sh`
-   against `BACKEND_URL_STAGING`. On smoke failure, the workflow
-   POSTs `/v1/services/{id}/rollback` with the previous live
-   deploy ID — Render switches traffic back automatically.
-3. Promoting to prod is **manual**: tag the chosen commit with
-   `backend-vX.Y.Z` and push the tag, or run the workflow with
-   `workflow_dispatch -> environment=prod`. The prod Web Service
-   has `autoDeploy: false` in the blueprint; the workflow POSTs
-   the prod deploy hook (`RENDER_DEPLOY_HOOK_PROD`) and the
-   `production` GitHub environment gates the step on reviewer
-   approval.
+   against `BACKEND_URL_PROD`. On smoke failure, the workflow
+   POSTs `/v1/services/{id}/deploys/{deployId}/rollback` for the
+   previous live deploy — Render switches traffic back
+   automatically. The `production` GitHub environment can gate
+   the workflow on reviewer approval (configured in repo
+   settings); when enabled, smoke + rollback only runs after
+   approval, while the Render auto-deploy itself is unaffected.
 
 Manual rollback (if the auto-rollback failed or you need a
 different revision): Render dashboard → Web Service → **Deploys** →
@@ -720,7 +718,7 @@ Common failures:
   uploaded, Play rejects the second attempt; bump the patch
   version and run again rather than trying to overwrite.
 
-### Push notifications (FCM + APN) — staging provisioning + smoke test
+### Push notifications (FCM + APN) — provisioning + smoke test
 
 The push module in [`apps/backend/src/modules/push/push.module.ts`](../../apps/backend/src/modules/push/push.module.ts)
 returns `null` for either provider when its env vars are unset, so
@@ -729,12 +727,12 @@ the backend boots cleanly with no FCM / APN credentials configured
 one-time act of pasting real FCM and APN keys into the Render Web
 Service's environment.
 
-**One-time setup (staging).**
+**One-time setup.**
 
-1. **FCM** — in the Firebase Console (project: `tarmoto-staging`),
-   open _Project settings → Service accounts → Generate new private
+1. **FCM** — in the Firebase Console for the Tarmoto project, open
+   _Project settings → Service accounts → Generate new private
    key_. The downloaded JSON contains `project_id`, `client_email`,
-   and `private_key`. In the Render dashboard for the staging
+   and `private_key`. In the Render dashboard for the prod
    backend, **Environment** → set:
    - `TARMOTO_FCM_PROJECT_ID` = the JSON's `project_id`
    - `TARMOTO_FCM_CLIENT_EMAIL` = the JSON's `client_email`
@@ -750,18 +748,16 @@ Service's environment.
    The **topic** is the iOS bundle id of the build users have
    installed — verify against `PRODUCT_BUNDLE_IDENTIFIER` in
    `apps/mobile/ios/TarmotoApp.xcodeproj/project.pbxproj` (currently
-   `app.tarmoto`; if a separate staging bundle id is introduced
-   later, use that here).
+   `app.tarmoto`).
 
-   In the Render dashboard for the staging backend, **Environment**:
+   In the Render dashboard for the prod backend, **Environment**:
    - `TARMOTO_APN_KEY` = full contents of the `.p8` file
    - `TARMOTO_APN_KEY_ID` = the Key ID
    - `TARMOTO_APN_TEAM_ID` = the Team ID
    - `TARMOTO_APN_TOPIC` = the bundle id
-   - `TARMOTO_APN_PRODUCTION` = `false` (sandbox is correct for
-     anything signed with the development profile, including
-     TestFlight internal testing); flip to `true` only when
-     targeting App Store builds.
+   - `TARMOTO_APN_PRODUCTION` = `true` for App Store / production
+     APNs; `false` for sandbox (development profile builds and
+     TestFlight internal testing).
 
 3. **Re-deploy.** Render restarts the service automatically when
    env vars change, but if you set several at once and want a clean
@@ -775,13 +771,12 @@ Service's environment.
    If you see `Push provider: log (no FCM or APN credentials configured)`,
    one of the env vars is missing or misnamed — re-check step 1/2.
 
-**End-to-end smoke test (staging).** Run after step 4 with one
-Android and one iOS staging device, both signed in to a Tarmoto
-test account that has registered a device token (any sign-in does
-this; check `device_tokens` in Postgres to confirm). Trigger each
-category from the app or via API; expect a single notification per
-category on each device. Categories currently dispatched by the
-backend:
+**End-to-end smoke test.** Run after step 4 with one Android and
+one iOS device, both signed in to a Tarmoto test account that has
+registered a device token (any sign-in does this; check
+`device_tokens` in Postgres to confirm). Trigger each category
+from the app or via API; expect a single notification per category
+on each device. Categories currently dispatched by the backend:
 
 | Category               | How to trigger                                                                                                       |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------- |

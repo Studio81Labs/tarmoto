@@ -3,12 +3,12 @@
 # Post-deploy smoke test for the Tarmoto backend.
 #
 # Usage: scripts/smoke/smoke.sh <base-url>
-#   <base-url>   Backend root, e.g. https://api.staging.tarmoto.app
+#   <base-url>   Backend root, e.g. https://api.tarmoto.app
 #                Trailing slash is fine; the script normalises.
 #
 # Exits 0 on success, non-zero on failure. Designed to be run by:
-#   - .github/workflows/backend-deploy.yml after the ECS deploy
-#     stabilises.
+#   - .github/workflows/backend-deploy.yml after the Render deploy
+#     reaches status=live.
 #   - operators following docs/process/runbook.md "production deploy"
 #     to verify a manual rollback or a hotfix.
 #
@@ -74,8 +74,8 @@ echo "[smoke] Target: ${BASE_URL}"
 http_check "/api/v1/healthz" 200 '"status"[[:space:]]*:[[:space:]]*"ok"'
 
 # Jobs health — exercises BullMQ + Redis. The workflow runs this
-# after ECS service is stable, so any 5xx here is a real regression
-# (probably config drift between Secrets Manager and the task def).
+# after the Render deploy is live, so any 5xx here is a real
+# regression (probably env-var drift in the Render dashboard).
 http_check "/api/v1/jobs/health" 200 '"queues"'
 
 # Public auth probe: the login endpoint must respond at all (we

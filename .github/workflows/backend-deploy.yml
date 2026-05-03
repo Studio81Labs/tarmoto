@@ -5,27 +5,23 @@ name: Backend Deploy
 # waits for Render to finish, runs a smoke test, and triggers a
 # rollback on smoke failure.
 #
-# Tag-driven prod release: pushing `backend-v*` POSTs to the prod
-# service's deploy hook (since prod has autoDeploy: false), then waits
-# + smoke-tests. Workflow_dispatch covers hotfixes.
+# There is no staging environment — `main` is prod. workflow_dispatch
+# covers re-running the smoke + rollback flow against the current prod
+# deploy after a manual Render redeploy.
 #
 # Choice rationale: docs/decisions/0005-deployment-stack-render.md
 # Day-2 ops: docs/process/runbook.md
 #
 # Required repo secrets:
 #   RENDER_API_KEY              Render account API key
-#   RENDER_SERVICE_ID_STAGING   `srv-...` for the staging Web Service
-#   RENDER_SERVICE_ID_PROD      `srv-...` for the prod Web Service (when added)
-#   RENDER_DEPLOY_HOOK_PROD     Deploy-hook URL for prod (autoDeploy: false)
+#   RENDER_SERVICE_ID_PROD      `srv-...` for the prod Web Service
 #
 # Required repo variables:
-#   BACKEND_URL_STAGING         e.g. https://api.staging.tarmoto.app
 #   BACKEND_URL_PROD            e.g. https://api.tarmoto.app
 
 on:
   push:
     branches: [main]
-    tags: ["backend-v*"]
     paths:
       - "apps/backend/**"
       - "packages/shared/**"
@@ -34,19 +30,12 @@ on:
       - ".github/workflows/backend-deploy.yml"
       - "scripts/smoke/**"
   workflow_dispatch:
-    inputs:
-      environment:
-        description: "Target environment"
-        required: true
-        type: choice
-        default: staging
-        options: [staging, prod]
 
 permissions:
   contents: read
 
 concurrency:
-  group: backend-deploy-${{ github.event.inputs.environment || (startsWith(github.ref, 'refs/tags/') && 'prod') || 'staging' }}
+  group: backend-deploy-prod
   cancel-in-progress: false
 
 jobs:
@@ -54,76 +43,18 @@ jobs:
     name: Deploy & verify
     runs-on: ubuntu-latest
 
-    # `staging` and `production` GitHub environments enforce required
-    # reviewers / branch protections. Prod gets a manual approval.
-    environment: ${{ (github.event.inputs.environment == 'prod' || startsWith(github.ref, 'refs/tags/backend-v')) && 'production' || 'staging' }}
+    # The `production` GitHub environment enforces required reviewers
+    # / branch protections configured in the repo settings.
+    environment: production
 
     steps:
       - uses: actions/checkout@v6
-
-      - name: Resolve target environment
-        id: env
-        env:
-          DISPATCH_ENV: ${{ github.event.inputs.environment }}
-          REF_NAME: ${{ github.ref }}
-          EVENT_NAME: ${{ github.event_name }}
-          SERVICE_ID_STAGING: ${{ secrets.RENDER_SERVICE_ID_STAGING }}
-          SERVICE_ID_PROD: ${{ secrets.RENDER_SERVICE_ID_PROD }}
-          URL_STAGING: ${{ vars.BACKEND_URL_STAGING }}
-          URL_PROD: ${{ vars.BACKEND_URL_PROD }}
-        run: |
-          set -euo pipefail
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            ENV_NAME="$DISPATCH_ENV"
-          elif [[ "$REF_NAME" == refs/tags/backend-v* ]]; then
-            ENV_NAME="prod"
-          else
-            ENV_NAME="staging"
-          fi
-          if [ "$ENV_NAME" = "prod" ]; then
-            SERVICE_ID="$SERVICE_ID_PROD"
-            URL="$URL_PROD"
-          else
-            SERVICE_ID="$SERVICE_ID_STAGING"
-            URL="$URL_STAGING"
-          fi
-          {
-            echo "name=${ENV_NAME}"
-            echo "service_id=${SERVICE_ID}"
-            echo "url=${URL}"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Trigger prod deploy hook
-        # Staging auto-deploys from `git push`; prod has autoDeploy: false
-        # in the blueprint, so we POST the deploy hook explicitly.
-        # `?ref=$GITHUB_SHA` pins the deploy to the tagged commit —
-        # without it, Render builds the configured branch's HEAD,
-        # which may have advanced past the tag and would cause the
-        # subsequent "Wait for deploy" step to never find a match.
-        if: steps.env.outputs.name == 'prod'
-        env:
-          DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_PROD }}
-        run: |
-          set -euo pipefail
-          if [ -z "$DEPLOY_HOOK" ]; then
-            echo "::error::RENDER_DEPLOY_HOOK_PROD is not set"
-            exit 1
-          fi
-          # Append ?ref= correctly whether the hook URL already has
-          # query params or not.
-          if [[ "$DEPLOY_HOOK" == *\?* ]]; then
-            HOOK_URL="${DEPLOY_HOOK}&ref=${GITHUB_SHA}"
-          else
-            HOOK_URL="${DEPLOY_HOOK}?ref=${GITHUB_SHA}"
-          fi
-          curl --fail --silent --show-error -X POST "$HOOK_URL" > /dev/null
-          echo "Triggered prod deploy hook for ${GITHUB_SHA}."
 
       - name: Wait for deploy to go live
         id: wait
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          SERVICE_ID: ${{ steps.env.outputs.service_id }}
+          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID_PROD }}
         run: |
           set -euo pipefail
           # Poll /v1/services/{id}/deploys until we see a deploy whose
@@ -170,14 +101,14 @@ jobs:
 
       - name: Smoke test
         env:
-          BASE_URL: ${{ steps.env.outputs.url }}
+          BASE_URL: ${{ vars.BACKEND_URL_PROD }}
         run: scripts/smoke/smoke.sh "$BASE_URL"
 
       - name: Roll back on smoke failure
         if: failure() && steps.wait.outcome == 'success'
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          SERVICE_ID: ${{ steps.env.outputs.service_id }}
+          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID_PROD }}
         run: |
           set -euo pipefail
           echo "::warning::Smoke test failed — rolling back."
