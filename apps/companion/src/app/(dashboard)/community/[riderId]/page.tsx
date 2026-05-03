@@ -27,6 +27,7 @@ import {
   type PublicProfile,
   type UserBadge,
 } from "@/lib/rider-profile";
+import { SharedRidesSection } from "@/components/community/SharedRidesSection";
 
 export default function RiderProfilePage() {
   const { riderId } = useParams<{ riderId: string }>();
@@ -181,6 +182,12 @@ export default function RiderProfilePage() {
           <StatsRow profile={profile} earnedBadgeCount={earnedBadges.length} />
 
           <BadgesSection badges={earnedBadges} totalBadges={badges.length} />
+
+          <SharedRidesSection
+            userId={profile.id}
+            isSelf={profile.is_self}
+            displayName={profile.display_name}
+          />
         </>
       )}
     </div>
