@@ -1,8 +1,9 @@
 # 0005 — Deployment stack: Render for backend, Cloudflare for everything web-facing, Fastlane for mobile
 
-**Status:** Proposed
+**Status:** Superseded by [ADR-0006](./0006-deployment-stack-hetzner-coolify.md)
 **Date:** 2026-05-03
 **Supersedes:** [ADR-0004](./0004-deployment-stack.md)
+**Superseded by:** [ADR-0006](./0006-deployment-stack-hetzner-coolify.md) on 2026-05-03 — Render's new Postgres tier (`basic-4gb` at $79.50/mo, replacing the legacy `standard` at $19/mo) blew the $55 cost floor this ADR assumed; pivoted to Hetzner CX33 + Coolify at €8.46/mo for both apps.
 
 ## Context
 
