@@ -58,7 +58,7 @@ services:
       - key: TARMOTO_TRUST_PROXY_HOPS
         value: "1"
       - key: TARMOTO_COMPANION_URL
-        value: https://tarmoto.app
+        value: https://app.tarmoto.app
 
       # --- Postgres (managed by Render) ---
       - key: TARMOTO_DATABASE_HOST
