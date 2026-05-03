@@ -12,7 +12,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *      same shape but is intended for ops/manual recovery.
  *   2. Outside production, seed a small set of demo road segments in
  *      the curated regions and run one full clustering pass so a fresh
- *      dev/staging DB has non-empty `fun_zones`. Production is skipped
+ *      dev or test DB has non-empty `fun_zones`. Production is skipped
  *      to avoid polluting real road data — production gets fun zones
  *      from the rider-driven clustering CLI.
  *
@@ -182,14 +182,14 @@ export class AddFunZoneClusteringSeed1715300000000 implements MigrationInterface
       $$ LANGUAGE plpgsql;
     `);
 
-    // ── 2. Demo seed for dev/staging only. Default-safe: skip
+    // ── 2. Demo seed for dev / test only. Default-safe: skip
     // unless the operator has explicitly declared a non-production
     // environment. A missing `TARMOTO_NODE_ENV` (common on a
     // production restore that only sets DB credentials) MUST NOT
     // be treated as "development" — that would let synthetic
     // road_segments + a recluster mutate real production data. Only
     // these explicit values turn the seed on. ──
-    const SEED_ENVS = new Set(['development', 'staging', 'test']);
+    const SEED_ENVS = new Set(['development', 'test']);
     const env = process.env['TARMOTO_NODE_ENV'];
     if (!env || !SEED_ENVS.has(env)) {
       return;

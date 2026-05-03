@@ -321,8 +321,8 @@ export class ReviewsService {
    * arbitrary UUIDs can't be used to spam the storage bucket.
    *
    * Storage routes through the pluggable `ObjectStorage` provider so a
-   * staging / prod deploy on multiple replicas can use S3 / R2 without
-   * sticky uploads. `LocalStorage.publicUrl()` returns a server-relative
+   * prod deploy on multiple replicas can use S3 / R2 without sticky
+   * uploads. `LocalStorage.publicUrl()` returns a server-relative
    * path which we lift to absolute via `publicBaseUrl` (mobile / web
    * clients pass the value straight to `<Image source>` and that doesn't
    * auto-resolve relative URLs); `S3Storage.publicUrl()` returns an

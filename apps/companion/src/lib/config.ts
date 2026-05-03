@@ -20,8 +20,8 @@ export const API_BASE_SERVER = `${API_HOST || "http://localhost:3000"}/api/v1`;
 
 /**
  * Base MapLibre style URL. Companion maps apply Tarmoto restyling and a
- * dark-mode variant at runtime while this env still allows staging to point
- * at a different hosted basemap when needed.
+ * dark-mode variant at runtime while this env still allows pointing at a
+ * different hosted basemap when needed (e.g. local development).
  */
 export const MAP_STYLE_URL =
   process.env.NEXT_PUBLIC_MAP_STYLE_URL ??

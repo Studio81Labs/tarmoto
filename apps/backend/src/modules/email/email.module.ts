@@ -27,10 +27,10 @@ const emailProviderFactory = (config: ConfigService): EmailProvider => {
     const from = config.get<string>('TARMOTO_EMAIL_FROM')?.trim();
     if (!apiKey || !from) {
       // Per AC: missing config logs a startup warning and falls back
-      // to logging. We don't throw — staging/preview environments
-      // routinely boot without real provider creds, and forcing an
-      // exception there would break unrelated CI flows. Production
-      // ops folks see the warning in the boot log.
+      // to logging. We don't throw — local dev and CI routinely boot
+      // without real provider creds, and forcing an exception there
+      // would break unrelated CI flows. Production ops folks see the
+      // warning in the boot log.
       BOOTSTRAP_LOGGER.warn(
         'TARMOTO_EMAIL_PROVIDER=resend but TARMOTO_RESEND_API_KEY ' +
           'and/or TARMOTO_EMAIL_FROM are not set. Falling back to ' +

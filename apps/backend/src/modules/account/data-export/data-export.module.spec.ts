@@ -13,7 +13,7 @@ import { DataExportProcessor } from './data-export.processor.js';
  * "can't resolve dependencies of DataExportQueueProcessor".
  *
  * This test reads the Nest module metadata directly so the regression
- * fails in unit-test land instead of at runtime in staging.
+ * fails in unit-test land instead of at runtime in prod.
  */
 describe('DataExportModule', () => {
   it('exports DataExportProcessor so the BullMQ worker in JobsModule can inject it', () => {

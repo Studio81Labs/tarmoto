@@ -19,7 +19,7 @@ ADR-0004 was accepted on 2026-05-02 and committed Terraform, ECS, RDS, ElastiCac
 | Secrets            | Secrets Manager $0.40/secret     | env vars, free                     |
 | **Floor**          | **~$160–180**                    | **~$55**                           |
 
-Roughly 3× per env, and we want staging _and_ prod. For a pre-revenue MVP that's a real budget pull. The team also already runs a NestJS + Postgres workload on Render on a sibling project — operational know-how exists; AWS would be a fresh learning curve for whoever is on call.
+Roughly 3× per env. We're also choosing to run prod only — the local Docker Compose stack (`pnpm db:up`, `pnpm dev:backend`) is the pre-prod loop, so there's no staging Render environment to budget for. For a pre-revenue MVP that's a real budget pull. The team also already runs a NestJS + Postgres workload on Render on a sibling project — operational know-how exists; AWS would be a fresh learning curve for whoever is on call.
 
 ADR-0004's stated technical objections to non-AWS deploys were:
 
@@ -34,11 +34,11 @@ So ADR-0004's rejection of "all-Cloudflare backend" still stands, but it doesn't
 ### Backend: Render
 
 - **Web Service** running the existing NestJS Docker image (we'll add a `Dockerfile` to `apps/backend/`).
-- **Render Postgres** with `postgis` extension created via the existing TypeORM migration. One instance per env.
-- **Render Key Value** (Redis-compatible) for BullMQ + pub/sub. One instance per env.
+- **Render Postgres** with `postgis` extension created via the existing TypeORM migration. Prod only.
+- **Render Key Value** (Redis-compatible) for BullMQ + pub/sub. Prod only.
 - **Render Cron Jobs** for the scheduled work currently expected to run via the same task with `TARMOTO_QUEUE_WORKER_ENABLED`. We keep the env-flag pattern; cron just hits a worker entrypoint.
-- Config via Render's Environment Groups (one per env). Secrets are env vars marked secret in the dashboard — no separate secret-store service.
-- Deploys are git-push-based via [`render.yaml`](https://render.com/docs/blueprint-spec) Blueprint, committed under `infra/render/`. The Blueprint is the IaC; preview environments use Render's PR Preview feature where applicable.
+- Config via Render's environment variables on the Web Service. Secrets are env vars marked secret in the dashboard — no separate secret-store service.
+- Deploys are git-push-based via [`render.yaml`](https://render.com/docs/blueprint-spec) Blueprint, committed under `infra/render/`. The Blueprint is the IaC. There is no staging Render environment — pre-prod validation runs against the local Docker Compose stack.
 - Rollback is "redeploy a previous commit" from the Render dashboard or CLI.
 
 ### Object storage: Cloudflare R2

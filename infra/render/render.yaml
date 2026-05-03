@@ -4,14 +4,12 @@
 # Choice rationale: docs/decisions/0005-deployment-stack-render.md
 # Day-2 ops: docs/process/runbook.md
 #
-# Scope: STAGING ONLY. Prod is intentionally out-of-band until the app
-# is closer to a real launch — keeping it manual avoids paying for a
-# second stack we won't exercise. Adding a prod section later is a
-# duplicate of the staging block with `prod` in the names and
-# `autoDeploy: false` (deploys driven by tag pushes via deploy hook).
+# Scope: PROD ONLY. There is no staging environment — the local
+# Docker Compose stack (`pnpm db:up`, `pnpm dev:backend`) is the
+# pre-prod loop. `main` deploys to prod via Render auto-deploy.
 
 databases:
-  - name: tarmoto-staging-db
+  - name: tarmoto-prod-db
     databaseName: tarmoto
     user: tarmoto
     plan: standard
@@ -24,7 +22,7 @@ databases:
 
 services:
   - type: keyvalue
-    name: tarmoto-staging-redis
+    name: tarmoto-prod-redis
     plan: starter
     region: frankfurt
     # BullMQ requires noeviction so jobs aren't dropped under
@@ -35,7 +33,7 @@ services:
     ipAllowList: [] # internal-only
 
   - type: web
-    name: tarmoto-staging-backend
+    name: tarmoto-prod-backend
     runtime: docker
     plan: standard
     region: frankfurt
@@ -60,27 +58,27 @@ services:
       - key: TARMOTO_TRUST_PROXY_HOPS
         value: "1"
       - key: TARMOTO_COMPANION_URL
-        value: https://staging.tarmoto.app
+        value: https://tarmoto.app
 
       # --- Postgres (managed by Render) ---
       - key: TARMOTO_DATABASE_HOST
-        fromDatabase: { name: tarmoto-staging-db, property: host }
+        fromDatabase: { name: tarmoto-prod-db, property: host }
       - key: TARMOTO_DATABASE_PORT
-        fromDatabase: { name: tarmoto-staging-db, property: port }
+        fromDatabase: { name: tarmoto-prod-db, property: port }
       - key: TARMOTO_DATABASE_NAME
-        fromDatabase: { name: tarmoto-staging-db, property: database }
+        fromDatabase: { name: tarmoto-prod-db, property: database }
       - key: TARMOTO_DATABASE_USER
-        fromDatabase: { name: tarmoto-staging-db, property: user }
+        fromDatabase: { name: tarmoto-prod-db, property: user }
       - key: TARMOTO_DATABASE_PASSWORD
-        fromDatabase: { name: tarmoto-staging-db, property: password }
+        fromDatabase: { name: tarmoto-prod-db, property: password }
 
       # --- Redis (Render Key Value) ---
       - key: TARMOTO_REDIS_HOST
         fromService:
-          { type: keyvalue, name: tarmoto-staging-redis, property: host }
+          { type: keyvalue, name: tarmoto-prod-redis, property: host }
       - key: TARMOTO_REDIS_PORT
         fromService:
-          { type: keyvalue, name: tarmoto-staging-redis, property: port }
+          { type: keyvalue, name: tarmoto-prod-redis, property: port }
 
       # --- Object storage: Cloudflare R2 (S3-compatible) ---
       # The S3 driver in apps/backend/src/modules/storage/s3-storage.ts
@@ -92,7 +90,7 @@ services:
       - key: TARMOTO_S3_FORCE_PATH_STYLE
         value: "false"
       - key: TARMOTO_S3_BUCKET
-        sync: false # e.g. tarmoto-staging-uploads
+        sync: false # e.g. tarmoto-prod-uploads
       - key: TARMOTO_S3_ENDPOINT
         sync: false # https://<account-id>.r2.cloudflarestorage.com
       - key: TARMOTO_S3_ACCESS_KEY_ID
@@ -100,7 +98,7 @@ services:
       - key: TARMOTO_S3_SECRET_ACCESS_KEY
         sync: false
       - key: TARMOTO_S3_PUBLIC_URL_BASE
-        sync: false # custom R2 domain, e.g. https://uploads.staging.tarmoto.app
+        sync: false # custom R2 domain, e.g. https://uploads.tarmoto.app
 
       # --- App secrets ---
       - key: TARMOTO_JWT_SECRET

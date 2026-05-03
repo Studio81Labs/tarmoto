@@ -188,7 +188,7 @@ describe('DataExportController', () => {
       expires_at: new Date(expiresAt),
     });
     const presigned =
-      'https://tarmoto-staging-uploads.s3.us-east-1.amazonaws.com/exports/u1/req-1.zip?X-Amz-Signature=abc';
+      'https://tarmoto-prod-uploads.s3.us-east-1.amazonaws.com/exports/u1/req-1.zip?X-Amz-Signature=abc';
     (storage.signedUrl as jest.Mock).mockResolvedValue(presigned);
     const res = {
       set: jest.fn(),
@@ -228,7 +228,7 @@ describe('DataExportController', () => {
       expires_at: new Date(expiresAt),
     });
     (storage.signedUrl as jest.Mock).mockResolvedValue(
-      'https://tarmoto-staging-uploads.s3.us-east-1.amazonaws.com/exports/u1/req-1.zip?X-Amz-Signature=abc',
+      'https://tarmoto-prod-uploads.s3.us-east-1.amazonaws.com/exports/u1/req-1.zip?X-Amz-Signature=abc',
     );
     (storage.exists as jest.Mock).mockResolvedValue(false);
     const res = {
@@ -264,7 +264,7 @@ describe('DataExportController', () => {
       expires_at: new Date(expiresAt),
     });
     (storage.signedUrl as jest.Mock).mockResolvedValue(
-      'https://tarmoto-staging-uploads.s3.us-east-1.amazonaws.com/exports/u1/req-1.zip?X-Amz-Signature=abc',
+      'https://tarmoto-prod-uploads.s3.us-east-1.amazonaws.com/exports/u1/req-1.zip?X-Amz-Signature=abc',
     );
     (storage.exists as jest.Mock).mockRejectedValue(new Error('s3 503'));
     const stream = Readable.from(Buffer.from('zipdata'));
