@@ -2,8 +2,8 @@ import type { Readable } from 'node:stream';
 
 /**
  * Pluggable object-storage abstraction. Used by features that persist
- * user-uploaded binaries (avatars today; review photos and GDPR
- * exports next) so the backend can run as multiple replicas without
+ * user-uploaded binaries (avatars, review photos, GDPR data-export
+ * bundles) so the backend can run as multiple replicas without
  * sticky uploads.
  *
  * Two providers ship with the backend:

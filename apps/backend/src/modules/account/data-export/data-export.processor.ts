@@ -4,11 +4,10 @@ import { Repository } from 'typeorm';
 import { User } from '../../../entities/user.entity.js';
 import { EmailService } from '../../email/email.service.js';
 import { DataExportService } from './data-export.service.js';
-import {
-  EXPORT_STORAGE,
-  type ExportStorage,
-} from './storage/export-storage.interface.js';
+import { OBJECT_STORAGE } from '../../storage/storage.tokens.js';
+import type { ObjectStorage } from '../../storage/object-storage.interface.js';
 import { BundleAssembler } from './assembler/bundle-assembler.js';
+import { exportStorageKey } from './export-storage-key.js';
 
 @Injectable()
 export class DataExportProcessor {
@@ -18,8 +17,8 @@ export class DataExportProcessor {
     @InjectRepository(User)
     private readonly users: Repository<User>,
     private readonly service: DataExportService,
-    @Inject(EXPORT_STORAGE)
-    private readonly storage: ExportStorage,
+    @Inject(OBJECT_STORAGE)
+    private readonly storage: ObjectStorage,
     private readonly assembler: BundleAssembler,
     private readonly email: EmailService,
   ) {}
@@ -49,8 +48,12 @@ export class DataExportProcessor {
         return;
       }
       const archiveStream = await this.assembler.assemble(user);
-      const key = `${userId}/${requestId}.zip`;
-      const { byteSize } = await this.storage.write(key, archiveStream);
+      const key = exportStorageKey(userId, requestId);
+      const { byteSize } = await this.storage.put({
+        key,
+        body: archiveStream,
+        contentType: 'application/zip',
+      });
       await this.service.markReady(requestId, key, byteSize);
       this.logger.log(
         `data export ${requestId} ready (${byteSize} bytes) for user ${userId}`,

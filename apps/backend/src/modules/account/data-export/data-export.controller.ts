@@ -25,14 +25,19 @@ import type * as express from 'express';
 import { AuthGuard } from '../../auth/auth.guard.js';
 import { DataExportService } from './data-export.service.js';
 import { DataExportRequestDto } from './dto/data-export-request.dto.js';
-import {
-  EXPORT_STORAGE,
-  type ExportStorage,
-} from './storage/export-storage.interface.js';
+import { OBJECT_STORAGE } from '../../storage/storage.tokens.js';
+import type { ObjectStorage } from '../../storage/object-storage.interface.js';
 import { verifyDownloadSignature } from './signed-url.js';
 import { JOB_NAMES, QUEUE_NAMES } from '../../jobs/jobs.constants.js';
 import { DEFAULT_JOB_OPTIONS } from '../../jobs/jobs.config.js';
 import type { DataExportJobData } from '../../jobs/jobs.producer.js';
+
+// Short TTL for the bucket-native pre-signed URL: the user is
+// redirected to it the instant they hit our `/download` endpoint, so
+// 5 minutes is more than enough for any realistic download to start
+// AND complete. Longer TTLs would let the bucket URL outlive the
+// per-user HMAC check we just performed.
+const DOWNLOAD_TTL_SECONDS = 5 * 60;
 
 @ApiTags('account')
 @Controller('account/data-export')
@@ -43,8 +48,8 @@ export class DataExportController {
     private readonly service: DataExportService,
     @InjectQueue(QUEUE_NAMES.DATA_EXPORT)
     private readonly queue: Queue<DataExportJobData>,
-    @Inject(EXPORT_STORAGE)
-    private readonly storage: ExportStorage,
+    @Inject(OBJECT_STORAGE)
+    private readonly storage: ObjectStorage,
   ) {}
 
   @Post()
@@ -148,10 +153,14 @@ export class DataExportController {
   @ApiOperation({
     summary: 'Download a ready data export bundle (signed URL)',
     description:
-      'Authenticated via the signed URL produced by the create/status endpoints; bearer auth not required.',
+      'Authenticated via the signed URL produced by the create/status endpoints; bearer auth not required. When the backend is configured against an S3-compatible bucket the response is a 302 to a short-lived bucket-native pre-signed URL; otherwise the ZIP is streamed inline.',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'application/zip stream' })
+  @ApiResponse({
+    status: 302,
+    description: 'redirect to bucket-native pre-signed download URL',
+  })
   @ApiResponse({ status: 403 })
   @ApiResponse({ status: 410 })
   async download(
@@ -196,14 +205,72 @@ export class DataExportController {
       throw new HttpException('link expired', 410);
     }
 
+    // When the storage backend exposes a native pre-signed URL (S3/R2),
+    // redirect the client straight at it rather than streaming through
+    // the backend. This keeps the GDPR ZIP off the API replicas'
+    // bandwidth/CPU and lets the bucket's CDN edge handle the transfer.
+    // `LocalStorage.signedUrl` returns a server-relative `/uploads/...`
+    // path (the same value as `publicUrl`) — redirecting there would
+    // hit the static-files middleware unauthenticated and expose
+    // personal data, so the absolute-URL check below is the gate.
+    let signed: string | null = null;
+    try {
+      signed = await this.storage.signedUrl(
+        row.storage_key,
+        DOWNLOAD_TTL_SECONDS,
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `signedUrl failed for export ${id} key ${row.storage_key}; falling back to stream: ${msg}`,
+      );
+    }
+    const redirectUrl = signed && /^https?:\/\//i.test(signed) ? signed : null;
+    if (redirectUrl) {
+      // Pre-signed URL generation is a CPU-only op that doesn't probe
+      // the bucket, so a row whose ZIP was already swept (lifecycle
+      // rule, operator cleanup) would still hand the client a working-
+      // looking redirect — the user would then hit a raw S3 404 XML
+      // instead of our documented 410. Confirm the object is present
+      // before sending the 302.
+      let existsVerdict: 'present' | 'gone' | 'unknown';
+      try {
+        existsVerdict = (await this.storage.exists(row.storage_key))
+          ? 'present'
+          : 'gone';
+      } catch (err) {
+        // Mirrors `DataExportService.isRowReusable`: a transient
+        // exists() failure (S3 5xx) is not strong enough evidence to
+        // 410. Fall through to the streaming path, whose `read()`
+        // surfaces a real 404 if the object truly is gone.
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          `storage.exists failed for ${row.storage_key} before redirect (falling back to stream): ${msg}`,
+        );
+        existsVerdict = 'unknown';
+      }
+      if (existsVerdict === 'present') {
+        res.redirect(302, redirectUrl);
+        return;
+      }
+      if (existsVerdict === 'gone') {
+        throw new HttpException('not available', 410);
+      }
+      // 'unknown' → drop into the streaming branch below.
+    }
+
     let stream;
     try {
       stream = await this.storage.read(row.storage_key);
     } catch (err) {
       // Storage object missing/unreadable while the row says ready —
       // treat as gone (e.g. operator-side cleanup or partial expire).
+      // S3 surfaces a 404 via NoSuchKey rather than ENOENT, so we
+      // probe both.
       const code = (err as NodeJS.ErrnoException | undefined)?.code;
-      if (code === 'ENOENT') {
+      const status = (err as { $metadata?: { httpStatusCode?: number } })
+        .$metadata?.httpStatusCode;
+      if (code === 'ENOENT' || status === 404) {
         throw new HttpException('not available', 410);
       }
       throw err;

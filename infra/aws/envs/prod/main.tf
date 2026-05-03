@@ -97,11 +97,10 @@ module "uploads_bucket" {
 
   # Avatars (`avatars/`) and review photos (`road-review-photos/`) are
   # retained for the lifetime of the user / review — never bulk-expired.
-  # The runbook documents that data-export bundles also live in this
-  # bucket under `exports/` once that wiring lands; the prefix rule
-  # below auto-expires those without affecting retained imagery. The
-  # 30-day non-current expiration in the module default cleans up old
-  # versions left behind when a user replaces an avatar.
+  # GDPR data-export bundles share this bucket under `exports/`; the
+  # prefix rule below auto-expires those without affecting retained
+  # imagery. The 30-day non-current expiration in the module default
+  # cleans up old versions left behind when a user replaces an avatar.
   lifecycle_rules = [
     {
       id              = "expire-exports-prefix"

@@ -308,9 +308,10 @@ var, and revoking the old key.
 User-uploaded binaries flow through a pluggable `ObjectStorage`
 interface (see `apps/backend/src/modules/storage/`). The driver is
 chosen by `TARMOTO_STORAGE_DRIVER` and defaults to `local` so
-contributors get working uploads without env wiring. Avatars and
-review photos both consume the interface; data-export bundles still
-use the legacy `ExportStorage` adapter pending its own migration.
+contributors get working uploads without env wiring. Avatars
+(`avatars/`), review photos (`road-review-photos/`), and GDPR
+data-export bundles (`exports/`) all consume the same interface and
+share one bucket in S3 / R2.
 
 ### Drivers
 
@@ -478,11 +479,11 @@ per-bucket rules on top via the `lifecycle_rules` input:
 Per-bucket rules currently in effect (see
 `infra/aws/envs/{staging,prod}/main.tf`):
 
-| Bucket                  | Retained content                                                                         | Auto-expire                                                                                                                                                      |
-| ----------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tarmoto-<env>-uploads` | `avatars/*`, `road-review-photos/*` (kept until the user / review is deleted by the app) | `exports/*` after 30 days (prefix rule covers data-export bundles once they are wired through `ObjectStorage` per the runbook's "keep them in one bucket" model) |
-| `tarmoto-<env>-exports` | none — every object expires                                                              | every object after 30 days (whole-bucket fallback)                                                                                                               |
-| `tarmoto-<env>-tiles`   | vector tiles (immutable, URL-versioned)                                                  | none — only the multipart-abort default                                                                                                                          |
+| Bucket                  | Retained content                                                                         | Auto-expire                                                                                                                                        |
+| ----------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tarmoto-<env>-uploads` | `avatars/*`, `road-review-photos/*` (kept until the user / review is deleted by the app) | `exports/*` after 30 days (prefix rule covers GDPR data-export bundles, which share this bucket per the runbook's "keep them in one bucket" model) |
+| `tarmoto-<env>-exports` | none — every object expires                                                              | every object after 30 days (whole-bucket fallback)                                                                                                 |
+| `tarmoto-<env>-tiles`   | vector tiles (immutable, URL-versioned)                                                  | none — only the multipart-abort default                                                                                                            |
 
 #### Verifying in staging
 

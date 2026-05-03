@@ -19,9 +19,12 @@ describe('DataExportProcessor', () => {
     buildPublicView: jest.fn(),
   };
   const storage = {
-    write: jest.fn(),
+    put: jest.fn(),
     read: jest.fn(),
     delete: jest.fn(),
+    exists: jest.fn(),
+    publicUrl: jest.fn(),
+    signedUrl: jest.fn(),
   };
   const assembler = {
     assemble: jest.fn(),
@@ -41,7 +44,7 @@ describe('DataExportProcessor', () => {
     return new DataExportProcessor(
       usersRepo as never,
       service as never,
-      storage as never,
+      storage,
       assembler as never,
       email as never,
     );
@@ -50,7 +53,7 @@ describe('DataExportProcessor', () => {
   it('writes the archive to storage, marks ready, and emails the rider', async () => {
     usersRepo.findOne.mockResolvedValue(baseUser);
     assembler.assemble.mockResolvedValue(Readable.from(Buffer.from('zip')));
-    storage.write.mockResolvedValue({ byteSize: 3 });
+    storage.put.mockResolvedValue({ byteSize: 3 });
     const expiresAt = new Date('2026-05-07T00:00:00Z');
     service.findById.mockResolvedValue({
       id: 'req-1',
@@ -73,11 +76,18 @@ describe('DataExportProcessor', () => {
     await processor.process('req-1', 'u1');
 
     expect(service.markProcessing).toHaveBeenCalledWith('req-1');
-    expect(storage.write).toHaveBeenCalledWith(
-      'u1/req-1.zip',
-      expect.any(Readable),
+    // Bundles land under the shared `exports/` prefix the runbook
+    // documents — bucket lifecycle rules auto-expire that prefix.
+    expect(storage.put).toHaveBeenCalledWith({
+      key: 'exports/u1/req-1.zip',
+      body: expect.any(Readable),
+      contentType: 'application/zip',
+    });
+    expect(service.markReady).toHaveBeenCalledWith(
+      'req-1',
+      'exports/u1/req-1.zip',
+      3,
     );
-    expect(service.markReady).toHaveBeenCalledWith('req-1', 'u1/req-1.zip', 3);
     expect(service.markFailed).not.toHaveBeenCalled();
     // Wait one micro-tick for the fire-and-forget email promise to
     // settle so its assertion sees the awaited send call.
@@ -95,7 +105,7 @@ describe('DataExportProcessor', () => {
   it('skips the email when the row is no longer ready (expired-during-write race)', async () => {
     usersRepo.findOne.mockResolvedValue(baseUser);
     assembler.assemble.mockResolvedValue(Readable.from(Buffer.from('zip')));
-    storage.write.mockResolvedValue({ byteSize: 3 });
+    storage.put.mockResolvedValue({ byteSize: 3 });
     // Row was swept to 'expired' by the cleanup cron between
     // markReady and the post-write findById.
     service.findById.mockResolvedValue({ id: 'req-1', status: 'expired' });
@@ -121,7 +131,7 @@ describe('DataExportProcessor', () => {
   it('marks failed on storage error', async () => {
     usersRepo.findOne.mockResolvedValue(baseUser);
     assembler.assemble.mockResolvedValue(Readable.from(Buffer.from('zip')));
-    storage.write.mockRejectedValue(new Error('disk full'));
+    storage.put.mockRejectedValue(new Error('disk full'));
 
     const processor = makeProcessor();
     await processor.process('req-1', 'u1');
@@ -152,7 +162,7 @@ describe('DataExportProcessor', () => {
     await processor.process('req-1', 'u1');
     expect(usersRepo.findOne).not.toHaveBeenCalled();
     expect(assembler.assemble).not.toHaveBeenCalled();
-    expect(storage.write).not.toHaveBeenCalled();
+    expect(storage.put).not.toHaveBeenCalled();
     expect(service.markReady).not.toHaveBeenCalled();
     expect(service.markFailed).not.toHaveBeenCalled();
   });
@@ -165,6 +175,6 @@ describe('DataExportProcessor', () => {
       'req-1',
       expect.stringContaining('user not found'),
     );
-    expect(storage.write).not.toHaveBeenCalled();
+    expect(storage.put).not.toHaveBeenCalled();
   });
 });
