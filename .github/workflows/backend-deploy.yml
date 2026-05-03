@@ -172,7 +172,14 @@ jobs:
           echo "::warning::Smoke test failed — rolling back."
           SHA_SHORT="${GITHUB_SHA:0:7}"
           # Find the most recent successful deploy *before* the one
-          # we just shipped, then POST it to /rollback.
+          # we just shipped, then POST it to /rollback. In Render's
+          # deploy lifecycle, only the currently-serving deploy has
+          # status=live; previously-successful deploys move to
+          # status=deactivated when superseded. Our broken just-shipped
+          # deploy is still "live" at this point (smoke runs after the
+          # health-check gate flips traffic), so we accept either
+          # status and exclude the current SHA — the most recent match
+          # is the predecessor we want to roll back to.
           PREV=$(curl --fail --silent \
             -H "Authorization: Bearer $RENDER_API_KEY" \
             -H "Accept: application/json" \
@@ -180,12 +187,12 @@ jobs:
             | jq --arg sha "$SHA_SHORT" -r '
               [.[]
                 | .deploy
-                | select(.status == "live")
+                | select(.status == "live" or .status == "deactivated")
                 | select((.commit.id // "") | startswith($sha) | not)
               ][0].id // empty
             ')
           if [ -z "$PREV" ]; then
-            echo "::error::No previous live deploy to roll back to — manual recovery required."
+            echo "::error::No previous successful deploy to roll back to — manual recovery required."
             exit 1
           fi
           curl --fail --silent --show-error -X POST \
