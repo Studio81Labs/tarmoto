@@ -268,17 +268,18 @@ CREATE TABLE fun_zone_roads (
 -- ============================================================
 
 CREATE TABLE commute_routes (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name            VARCHAR(100) DEFAULT 'Default',
-    origin          GEOMETRY(Point, 4326) NOT NULL,
-    destination     GEOMETRY(Point, 4326) NOT NULL,
-    route_geom      GEOMETRY(LineString, 4326),
-    distance_km     FLOAT,
-    avg_duration    INTERVAL,
-    avg_quality     FLOAT,
-    is_primary      BOOLEAN DEFAULT TRUE,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id                 UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name                    VARCHAR(100) DEFAULT 'Default',
+    origin                  GEOMETRY(Point, 4326) NOT NULL,
+    destination             GEOMETRY(Point, 4326) NOT NULL,
+    route_geom              GEOMETRY(LineString, 4326),
+    distance_km             FLOAT,
+    avg_duration            INTERVAL,
+    avg_quality             FLOAT,
+    routing_engine_version  VARCHAR(64),
+    is_primary              BOOLEAN DEFAULT TRUE,
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_commute_routes_user ON commute_routes(user_id);

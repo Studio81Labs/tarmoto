@@ -147,4 +147,12 @@ describe('OsrmProvider', () => {
     expect(out).toHaveLength(1);
     expect(out[0].distance_km).toBe(1);
   });
+
+  it('exposes a stable version identifier so cached commute geometry can be invalidated on a swap (#361)', () => {
+    // The string itself is opaque; what matters is that callers see a
+    // non-empty value that changes when the engine semantics change.
+    // Bump this assertion in lockstep with the provider when the
+    // contract is broken.
+    expect(provider.version).toBe('osrm-v1');
+  });
 });

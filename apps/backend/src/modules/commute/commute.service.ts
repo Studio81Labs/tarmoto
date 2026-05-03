@@ -514,11 +514,26 @@ export class CommuteService {
    * True when the cached routing-engine fields haven't been populated
    * yet — either because the route was created before this cache existed
    * or because a previous fillRouteCache call failed (OSRM unreachable
-   * etc.). The geometry is the canonical signal: distance/duration
-   * without geometry would mean a partial fill, which we never write.
+   * etc.) — OR because the cached geometry was produced by a routing
+   * engine version that no longer matches the active provider (#361
+   * — engine swap or material algorithm bump should invalidate the
+   * cache lazily on next read). The geometry is the canonical signal
+   * for the null case: distance/duration without geometry would mean
+   * a partial fill, which we never write.
+   *
+   * `routing_engine_version` is nullable on legacy rows that were
+   * resolved before the column existed; treat null-but-geometry-set
+   * as a stale fill so the next read upgrades them to the current
+   * version. Origin/destination changes are out-of-band today (no
+   * UPDATE endpoint exists; mutating either requires a re-create
+   * which yields a fresh row with route_geom = null), so this method
+   * doesn't compare against the cached endpoints — but it would be
+   * the natural place to add that check if a future PR introduces an
+   * UPDATE path.
    */
   private needsCacheFill(route: CommuteRoute): boolean {
-    return route.route_geom == null;
+    if (route.route_geom == null) return true;
+    return route.routing_engine_version !== this.routingProvider.version;
   }
 
   /**
@@ -571,18 +586,25 @@ export class CommuteService {
     // happens to round, but a future provider doesn't have to).
     const durationMin = Math.round(resolved.duration_min);
 
+    const engineVersion = this.routingProvider.version;
+
     try {
       // `geometryToWkt` validates each coordinate with `Number.isFinite`
       // and throws on a bad point — wrapping it in this try makes that
       // a logged warning, consistent with the rest of fillRouteCache.
       const wkt = this.geometryToWkt(resolved.geometry);
+      // `routing_engine_version` is written atomically with the cache
+      // payload so a reader can never observe geometry from one engine
+      // tagged with a different engine's version (#361 — keeps the
+      // invalidation check honest under retry).
       await this.routeRepo.query(
         `UPDATE commute_routes
          SET route_geom = ST_GeomFromText($1, 4326),
              distance_km = $2,
-             avg_duration = make_interval(mins => $3)
-         WHERE id = $4`,
-        [wkt, resolved.distance_km, durationMin, route.id],
+             avg_duration = make_interval(mins => $3),
+             routing_engine_version = $4
+         WHERE id = $5`,
+        [wkt, resolved.distance_km, durationMin, engineVersion, route.id],
       );
     } catch (err) {
       this.logger.warn(
@@ -600,6 +622,7 @@ export class CommuteService {
       coordinates: resolved.geometry.map((p) => [p.lng, p.lat]),
     };
     route.distance_km = resolved.distance_km;
+    route.routing_engine_version = engineVersion;
     // Canonical HH:MM:SS form so the parser produces the same number
     // we just persisted when this entity is reloaded later.
     const hh = Math.floor(durationMin / 60);

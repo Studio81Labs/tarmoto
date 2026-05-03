@@ -166,6 +166,53 @@ describe("CommuteScreen", () => {
     });
   });
 
+  it("launches NavigationScreen with the primary route's polyline when the navigate button is tapped (#361)", () => {
+    // Same `source: 'polyline'` discriminator the alternative cards use
+    // (#342) — keeps the trip-day shim out of the commute hot path.
+    const primaryGeometry = [
+      { lat: 49.2, lng: 16.6 },
+      { lat: 49.18, lng: 16.65 },
+      { lat: 49.1, lng: 16.75 },
+    ];
+    const resolvedRoute: CommuteRoute = {
+      ...baseRoute,
+      route_geometry: primaryGeometry,
+    };
+    mockUseCommuteResult = buildResult({
+      route: resolvedRoute,
+      savedRoutes: [resolvedRoute],
+      status: { ...baseStatus, route: resolvedRoute },
+      alternatives: { ...baseAlternatives, primary_route: resolvedRoute },
+    });
+
+    render(<CommuteScreen />);
+
+    fireEvent.press(
+      screen.getByLabelText("Navigate primary commute route to Home → Work"),
+    );
+
+    expect(mockNavigate).toHaveBeenCalledWith("Navigate", {
+      source: "polyline",
+      polyline: primaryGeometry,
+      title: "Home → Work",
+    });
+  });
+
+  it("does not push Navigate when the primary route polyline has not been resolved yet (#361)", () => {
+    // Backend lazily fills `route_geometry` after the first read; while
+    // it's still null (fresh route, routing-provider outage) the nav
+    // button should be disabled rather than push a dead Navigate.
+    // `baseRoute.route_geometry` is `[]` in the fixture so the button
+    // renders disabled and the tap is a no-op.
+    render(<CommuteScreen />);
+
+    fireEvent.press(
+      screen.getByLabelText("Navigate primary commute route to Home → Work"),
+    );
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
   it("renders alternative routes ranked by hazards then duration", () => {
     render(<CommuteScreen />);
 

@@ -115,6 +115,24 @@ export default function CommuteScreen() {
     [navigation],
   );
 
+  // #361: gate the primary nav button on a resolved polyline (>= 2
+  // points). The backend lazily populates `route_geometry` on first
+  // read; while it's null (fresh route, routing-provider outage) we
+  // disable the button instead of pushing a dead Navigate screen.
+  // Computed once and shared with the callback + JSX so the tap-guard
+  // and the disabled rendering can't drift out of sync.
+  const primaryNavDisabled =
+    !route?.route_geometry || route.route_geometry.length < 2;
+
+  const navigatePrimary = useCallback(() => {
+    if (primaryNavDisabled || !route?.route_geometry) return;
+    navigation.navigate("Navigate", {
+      source: "polyline",
+      polyline: route.route_geometry,
+      title: route.name,
+    });
+  }, [navigation, route, primaryNavDisabled]);
+
   // NEW hazard markers stay sticky until the rider explicitly taps
   // "Mark all seen" below. Avoid auto-acknowledging on unmount: the
   // `acknowledge` callback's identity changes on every refresh, which
@@ -186,15 +204,40 @@ export default function CommuteScreen() {
             valueColor={qualityColor(status.route_quality)}
           />
         </View>
-        <TouchableOpacity
-          style={styles.startCommuteBtn}
-          onPress={startCommuteRide}
-          accessibilityRole="button"
-          accessibilityLabel={`Start commute ride to ${route.name}`}
-        >
-          <Icon name="play-circle" size={20} color={colors.textInverse} />
-          <Text style={styles.startCommuteLabel}>Start commute</Text>
-        </TouchableOpacity>
+        <View style={styles.primaryCtaRow}>
+          <TouchableOpacity
+            style={styles.startCommuteBtn}
+            onPress={startCommuteRide}
+            accessibilityRole="button"
+            accessibilityLabel={`Start commute ride to ${route.name}`}
+          >
+            <Icon name="play-circle" size={20} color={colors.textInverse} />
+            <Text style={styles.startCommuteLabel}>Start commute</Text>
+          </TouchableOpacity>
+          {/*
+            #361: opt-in turn-by-turn nav for the primary route, mirroring
+            the navigate button on alternative cards (#342). `primaryNavDisabled`
+            (computed above) keeps the style, `disabled`, and icon-color
+            branches in lockstep so the visual state can't lie about the tap.
+          */}
+          <TouchableOpacity
+            style={[
+              styles.primaryNavBtn,
+              primaryNavDisabled ? styles.primaryNavBtnDisabled : null,
+            ]}
+            onPress={navigatePrimary}
+            disabled={primaryNavDisabled}
+            accessibilityRole="button"
+            accessibilityLabel={`Navigate primary commute route to ${route.name}`}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Icon
+              name="navigation-variant"
+              size={20}
+              color={primaryNavDisabled ? colors.textTertiary : colors.primary}
+            />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {status.weather ? <WeatherCard weather={status.weather} /> : null}
@@ -1096,7 +1139,14 @@ const styles = StyleSheet.create({
     fontWeight: fontWeight.bold,
     marginTop: 4,
   },
+  primaryCtaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
   startCommuteBtn: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -1104,12 +1154,24 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     paddingVertical: spacing.md,
     borderRadius: borderRadius.pill,
-    marginTop: spacing.sm,
   },
   startCommuteLabel: {
     color: colors.textInverse,
     fontWeight: fontWeight.bold,
     fontSize: fontSize.md,
+  },
+  primaryNavBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  primaryNavBtnDisabled: {
+    opacity: 0.4,
   },
   weatherRow: {
     flexDirection: "row",

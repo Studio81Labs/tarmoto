@@ -21,6 +21,7 @@ const mockTransactionManager = {
     avg_duration: null,
     avg_quality: null,
     route_geom: null,
+    routing_engine_version: null,
     is_primary: true,
     ...(data as Record<string, unknown>),
   })),
@@ -62,6 +63,10 @@ describe('CommuteService', () => {
     distance_km: 12.5,
     avg_duration: '00:18:00',
     avg_quality: 4.1,
+    // Tagged with the active provider's version so the default
+    // fixture represents a fresh cache. Tests exercising stale-cache
+    // / engine-swap paths override this to trigger re-fill (#361).
+    routing_engine_version: 'osrm-v1',
     is_primary: true,
     created_at: new Date('2026-04-14T10:00:00Z'),
   } as unknown as CommuteRoute;
@@ -126,6 +131,11 @@ describe('CommuteService', () => {
                 ],
               },
             ]),
+            // Identifier persisted alongside cached geometry so
+            // `needsCacheFill` can detect engine swaps (#361). Default
+            // matches `mockRoute.routing_engine_version` so the
+            // default fixture represents a fresh cache.
+            version: 'osrm-v1',
           },
         },
       ],
@@ -166,7 +176,9 @@ describe('CommuteService', () => {
       };
       routeRepo.find!.mockResolvedValueOnce([legacy] as never);
 
-      const routingProvider = service['routingProvider'] as jest.Mocked<{
+      const routingProvider = service[
+        'routingProvider'
+      ] as unknown as jest.Mocked<{
         getAlternatives: jest.Mock;
       }>;
 
@@ -211,7 +223,9 @@ describe('CommuteService', () => {
       };
       routeRepo.find!.mockResolvedValueOnce([nonPrimary] as never);
 
-      const routingProvider = service['routingProvider'] as jest.Mocked<{
+      const routingProvider = service[
+        'routingProvider'
+      ] as unknown as jest.Mocked<{
         getAlternatives: jest.Mock;
       }>;
 
@@ -235,7 +249,9 @@ describe('CommuteService', () => {
         is_primary: true,
       };
       routeRepo.find!.mockResolvedValueOnce([legacy] as never);
-      const routingProvider = service['routingProvider'] as jest.Mocked<{
+      const routingProvider = service[
+        'routingProvider'
+      ] as unknown as jest.Mocked<{
         getAlternatives: jest.Mock;
       }>;
       routingProvider.getAlternatives.mockRejectedValueOnce(
@@ -251,6 +267,87 @@ describe('CommuteService', () => {
         expect.stringContaining('UPDATE commute_routes'),
         expect.anything(),
       );
+    });
+
+    it('re-resolves a route whose cache was filled by a different routing-engine version (#361)', async () => {
+      // A row with populated geometry but tagged with a stale engine
+      // version (legacy null tag, prior provider, or a self-hosted
+      // OSRM bumped through `osrm-v2` semantics) should be treated as
+      // stale: the active provider re-resolves and persists the
+      // current version atomically with the new payload.
+      const stale = {
+        ...mockRoute,
+        routing_engine_version: 'osrm-prehistoric',
+        is_primary: true,
+      };
+      routeRepo.find!.mockResolvedValueOnce([stale] as never);
+      const routingProvider = service[
+        'routingProvider'
+      ] as unknown as jest.Mocked<{
+        getAlternatives: jest.Mock;
+      }>;
+
+      await service.listRoutes('user-1');
+
+      expect(routingProvider.getAlternatives).toHaveBeenCalledWith(
+        49.2,
+        16.6,
+        49.1,
+        16.75,
+        1,
+        { includePrimary: true },
+      );
+      // Engine version is written atomically with the cache payload —
+      // the UPDATE bind list is [wkt, distance_km, duration_min,
+      // engineVersion, id], so 'osrm-v1' lives at index 3.
+      const updateCall = routeRepo.query!.mock.calls.find((call) =>
+        String(call[0]).includes('UPDATE commute_routes'),
+      );
+      expect(updateCall).toBeDefined();
+      const params = updateCall![1] as unknown[];
+      expect(params[3]).toBe('osrm-v1');
+      expect(params[4]).toBe('route-1');
+    });
+
+    it('skips re-resolve when the cached engine version matches the active provider (#361)', async () => {
+      // Cache hit path — version matches → no upstream call. This is
+      // the rider's hot path; without this we'd burn a routing call
+      // on every CommuteScreen mount.
+      const routingProvider = service[
+        'routingProvider'
+      ] as unknown as jest.Mocked<{
+        getAlternatives: jest.Mock;
+      }>;
+
+      await service.listRoutes('user-1');
+
+      expect(routingProvider.getAlternatives).not.toHaveBeenCalled();
+      expect(routeRepo.query).not.toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE commute_routes'),
+        expect.anything(),
+      );
+    });
+
+    it('treats a populated cache with a null engine version as stale (#361)', async () => {
+      // Legacy row that was resolved before `routing_engine_version`
+      // existed: geometry is present but the version column is null,
+      // so we should re-resolve and tag it on first read rather than
+      // serving forever-stale geometry.
+      const legacyTagless = {
+        ...mockRoute,
+        routing_engine_version: null,
+        is_primary: true,
+      };
+      routeRepo.find!.mockResolvedValueOnce([legacyTagless] as never);
+      const routingProvider = service[
+        'routingProvider'
+      ] as unknown as jest.Mocked<{
+        getAlternatives: jest.Mock;
+      }>;
+
+      await service.listRoutes('user-1');
+
+      expect(routingProvider.getAlternatives).toHaveBeenCalled();
     });
   });
 
@@ -303,7 +400,9 @@ describe('CommuteService', () => {
     });
 
     it('resolves and persists the route polyline + duration after insert', async () => {
-      const routingProvider = service['routingProvider'] as jest.Mocked<{
+      const routingProvider = service[
+        'routingProvider'
+      ] as unknown as jest.Mocked<{
         getAlternatives: jest.Mock;
       }>;
 
@@ -345,7 +444,9 @@ describe('CommuteService', () => {
       // would fail to parse, and the catch would swallow it — pinning
       // the cache permanently null on every retry. Force a fractional
       // duration and assert the SQL parameter is the rounded int.
-      const routingProvider = service['routingProvider'] as jest.Mocked<{
+      const routingProvider = service[
+        'routingProvider'
+      ] as unknown as jest.Mocked<{
         getAlternatives: jest.Mock;
       }>;
       routingProvider.getAlternatives.mockResolvedValueOnce([
@@ -380,7 +481,9 @@ describe('CommuteService', () => {
       // Resolution is best-effort: a transient OSRM failure shouldn't
       // reject the create — we keep the row, log, and let lazy backfill
       // on subsequent reads retry.
-      const routingProvider = service['routingProvider'] as jest.Mocked<{
+      const routingProvider = service[
+        'routingProvider'
+      ] as unknown as jest.Mocked<{
         getAlternatives: jest.Mock;
       }>;
       routingProvider.getAlternatives.mockRejectedValueOnce(
@@ -542,7 +645,9 @@ describe('CommuteService', () => {
         avg_duration: null,
       };
       routeRepo.findOne!.mockResolvedValueOnce(legacy);
-      const routingProvider = service['routingProvider'] as jest.Mocked<{
+      const routingProvider = service[
+        'routingProvider'
+      ] as unknown as jest.Mocked<{
         getAlternatives: jest.Mock;
       }>;
       routingProvider.getAlternatives.mockResolvedValueOnce([]);
@@ -566,7 +671,9 @@ describe('CommuteService', () => {
         avg_duration: null,
       };
       routeRepo.findOne!.mockResolvedValueOnce(legacy);
-      const routingProvider = service['routingProvider'] as jest.Mocked<{
+      const routingProvider = service[
+        'routingProvider'
+      ] as unknown as jest.Mocked<{
         getAlternatives: jest.Mock;
       }>;
 
@@ -731,7 +838,9 @@ describe('CommuteService', () => {
   describe('getAlternatives', () => {
     it('should return alternatives with hazard and quality enrichment', async () => {
       // Mock routing provider with alternatives
-      const routingProvider = service['routingProvider'] as jest.Mocked<{
+      const routingProvider = service[
+        'routingProvider'
+      ] as unknown as jest.Mocked<{
         getAlternatives: jest.Mock;
       }>;
       routingProvider.getAlternatives.mockResolvedValueOnce([
@@ -773,7 +882,9 @@ describe('CommuteService', () => {
       // The default mock returns one route so cache-fill paths produce
       // geometry; for the "no alternatives" assertion we drop both the
       // cache-fill candidate and the alternatives candidate.
-      const routingProvider = service['routingProvider'] as jest.Mocked<{
+      const routingProvider = service[
+        'routingProvider'
+      ] as unknown as jest.Mocked<{
         getAlternatives: jest.Mock;
       }>;
       routingProvider.getAlternatives.mockResolvedValue([]);
@@ -798,7 +909,9 @@ describe('CommuteService', () => {
       routeRepo.findOne!.mockResolvedValueOnce(legacy);
       routeRepo.query!.mockResolvedValueOnce([{ count: 0 }]); // primary hazards
 
-      const routingProvider = service['routingProvider'] as jest.Mocked<{
+      const routingProvider = service[
+        'routingProvider'
+      ] as unknown as jest.Mocked<{
         getAlternatives: jest.Mock;
       }>;
 

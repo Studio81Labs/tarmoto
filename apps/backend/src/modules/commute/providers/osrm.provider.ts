@@ -31,6 +31,14 @@ export class OsrmProvider implements RoutingProvider {
   private readonly logger = new Logger(OsrmProvider.name);
   private readonly baseUrl: string;
 
+  /**
+   * Identifier for the cached `route_geom` invalidation contract
+   * (#361). Bump this when OSRM's exclusion handling, the driving
+   * profile, or the geojson decoding changes shape enough that
+   * previously-cached commute polylines should be re-resolved.
+   */
+  readonly version = 'osrm-v1';
+
   constructor(config: ConfigService) {
     this.baseUrl =
       config.get<string>('TARMOTO_OSRM_BASE_URL') ??
