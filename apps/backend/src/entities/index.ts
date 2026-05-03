@@ -49,4 +49,5 @@ export { PrivacyPreferencesRow } from './privacy-preferences.entity.js';
 export { RouteCollection } from './route-collection.entity.js';
 export type { RouteCollectionVisibility } from './route-collection.entity.js';
 export { RouteCollectionItem } from './route-collection-item.entity.js';
+export { RouteCollectionFollow } from './route-collection-follow.entity.js';
 export { WeatherAlertDispatch } from './weather-alert-dispatch.entity.js';

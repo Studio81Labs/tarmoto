@@ -327,6 +327,12 @@ export interface RouteCollectionSummary {
   visibility: RouteCollectionVisibility;
   slug: string;
   item_count: number;
+  /**
+   * Display name of the owner. Populated for endpoints that surface other
+   * riders' collections (e.g. the followed list); null on `/collections/me`
+   * since the rider already knows their own name.
+   */
+  owner_name: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -341,7 +347,27 @@ export interface RouteCollectionItemResponse {
 
 export interface RouteCollectionDetail extends RouteCollectionSummary {
   items: RouteCollectionItemResponse[];
-  owner_name: string;
+  // `owner_name` inherits `string | null` from the summary. The backend always
+  // sends a string for detail responses (empty for soft-deleted owners, but
+  // those 404 before reaching here), but keeping the looser type matches the
+  // OpenAPI schema and frees consumers from a redundant override.
+  /**
+   * Personalised flags. Anonymous viewers always see `false` for both. The
+   * server reads the optional Bearer token on `/collections/by-slug/:slug`
+   * to populate them.
+   */
+  viewer_is_owner: boolean;
+  viewer_is_following: boolean;
+}
+
+export interface RouteCollectionFollowResponse {
+  collection_id: string;
+  followed_at: string;
+}
+
+export interface RouteCollectionLibraryResponse {
+  owned: RouteCollectionSummary[];
+  followed: RouteCollectionSummary[];
 }
 
 export interface CreateRouteCollectionInput {
@@ -363,6 +389,8 @@ export interface RouteCollectionListResponse {
 
 export const routeCollectionsApi = {
   listMine: () => apiFetch<RouteCollectionListResponse>("/collections/me"),
+  listLibrary: () =>
+    apiFetch<RouteCollectionLibraryResponse>("/collections/me/library"),
   create: (input: CreateRouteCollectionInput) =>
     apiFetch<RouteCollectionDetail>("/collections", {
       method: "POST",
@@ -393,6 +421,15 @@ export const routeCollectionsApi = {
       `/collections/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}`,
       { method: "DELETE" },
     ),
+  follow: (id: string) =>
+    apiFetch<RouteCollectionFollowResponse>(
+      `/collections/${encodeURIComponent(id)}/follow`,
+      { method: "POST" },
+    ),
+  unfollow: (id: string) =>
+    apiFetch<void>(`/collections/${encodeURIComponent(id)}/follow`, {
+      method: "DELETE",
+    }),
 };
 
 // ── Map shares (US-50: read-only personal road-map snapshots) ──

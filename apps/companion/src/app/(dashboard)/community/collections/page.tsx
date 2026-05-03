@@ -11,6 +11,7 @@ import {
 import Link from "next/link";
 import {
   AlertTriangle,
+  Bookmark,
   FolderOpen,
   MoreVertical,
   Pencil,
@@ -18,6 +19,7 @@ import {
   Route as RouteIcon,
   Search,
   Trash2,
+  User,
 } from "lucide-react";
 import { useAuthStore } from "@/stores/auth";
 import { useCollections } from "@/hooks/useCollections";
@@ -42,12 +44,14 @@ export default function RouteCollectionsPage() {
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const {
     collections,
+    followed,
     status,
     errorMessage,
     refresh,
     createCollection,
     updateCollection,
     removeCollection,
+    unfollowCollection,
     migration,
   } = useCollections(userId);
 
@@ -58,6 +62,18 @@ export default function RouteCollectionsPage() {
     | null
   >(null);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  const unfollow = async (collection: RouteCollectionView) => {
+    if (!confirm(`Stop following "${collection.title}"?`)) return;
+    setActionError(null);
+    try {
+      await unfollowCollection(collection.id);
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to unfollow collection",
+      );
+    }
+  };
 
   // Throws on failure so the modal stays open and renders the error inside
   // its own form. The earlier shape (catch + setActionError + leave modal
@@ -100,14 +116,30 @@ export default function RouteCollectionsPage() {
     }
   };
 
+  const needle = search.trim().toLowerCase();
+
   const visible = useMemo(() => {
-    const needle = search.trim().toLowerCase();
     return collections.filter((c) => {
       if (!needle) return true;
       const hay = `${c.title} ${c.description ?? ""}`.toLowerCase();
       return hay.includes(needle);
     });
-  }, [collections, search]);
+  }, [collections, needle]);
+
+  // Apply the same search to followed collections so a search that hides the
+  // owned grid doesn't leave unfiltered followed cards visible below it (the
+  // search box label says "Search collections…" generically). Followed cards
+  // also key on `ownerName` since "by Jane Rider" is a meaningful axis to
+  // search by — it's the only thing that distinguishes a followed collection
+  // from the owned grid.
+  const visibleFollowed = useMemo(() => {
+    return followed.filter((c) => {
+      if (!needle) return true;
+      const hay =
+        `${c.title} ${c.description ?? ""} ${c.ownerName}`.toLowerCase();
+      return hay.includes(needle);
+    });
+  }, [followed, needle]);
 
   const showSkeleton = status === "loading" && collections.length === 0;
   const showLoadError = status === "error" && collections.length === 0;
@@ -205,6 +237,36 @@ export default function RouteCollectionsPage() {
             />
           ))}
         </div>
+      )}
+
+      {visibleFollowed.length > 0 && (
+        <section className="mt-10">
+          <div className="flex items-center gap-2 mb-3">
+            <Bookmark size={14} className="text-tarmoto-cyan" />
+            <h2 className="text-sm font-semibold text-white">
+              Followed collections
+            </h2>
+            <span className="text-xs text-slate-500">
+              · {visibleFollowed.length}
+              {needle && visibleFollowed.length !== followed.length
+                ? ` of ${followed.length}`
+                : ""}
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 mb-3">
+            Collections from other riders you&apos;ve saved. They show up here
+            until you unfollow.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {visibleFollowed.map((collection) => (
+              <FollowedCollectionCard
+                key={collection.id}
+                collection={collection}
+                onUnfollow={() => void unfollow(collection)}
+              />
+            ))}
+          </div>
+        </section>
       )}
 
       {modal && (
@@ -409,6 +471,76 @@ function CollectionCard({
           />
         </CardMenu>
       )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+// Followed collection card
+// ─────────────────────────────────────────────────────────
+
+function FollowedCollectionCard({
+  collection,
+  onUnfollow,
+}: {
+  collection: RouteCollectionView;
+  onUnfollow: () => void;
+}) {
+  return (
+    <div className="rounded-2xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition relative">
+      <Link
+        href={`/community/collections/shared/${encodeURIComponent(collection.slug)}`}
+        className="block p-5 pr-12 group"
+      >
+        <div className="flex items-start gap-2 mb-3">
+          <h3 className="font-semibold text-white group-hover:text-tarmoto-cyan transition line-clamp-2 flex-1">
+            {collection.title}
+          </h3>
+          <RouteCollectionVisibilityPill
+            visibility={collection.visibility}
+            className="shrink-0"
+          />
+        </div>
+
+        {collection.description && (
+          <p className="text-xs text-slate-500 line-clamp-2 mb-3">
+            {collection.description}
+          </p>
+        )}
+
+        <div className="flex items-center gap-3 text-sm text-slate-400">
+          <span className="inline-flex items-center gap-1">
+            <RouteIcon size={13} />
+            <span>
+              {collection.itemCount} route
+              {collection.itemCount === 1 ? "" : "s"}
+            </span>
+          </span>
+          {collection.ownerName && (
+            <span className="inline-flex items-center gap-1 text-slate-500">
+              <User size={13} />
+              <span className="truncate">{collection.ownerName}</span>
+            </span>
+          )}
+        </div>
+
+        <p className="mt-3 text-[11px] text-slate-600">
+          Updated {formatRelativeTime(collection.updatedAt)}
+        </p>
+      </Link>
+
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onUnfollow();
+        }}
+        aria-label={`Unfollow ${collection.title}`}
+        className="absolute top-3 right-3 p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-slate-800 transition"
+      >
+        <Trash2 size={16} />
+      </button>
     </div>
   );
 }

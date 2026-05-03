@@ -26,7 +26,15 @@ export interface MigrationOpportunity {
 }
 
 export interface UseCollectionsResult {
+  /** Collections the user owns (sorted by name). */
   collections: RouteCollectionView[];
+  /**
+   * Collections the user has followed via the public/unlisted slug page,
+   * sorted server-side by `followed_at desc`. The library page renders these
+   * alongside `collections` so the user can act on saved collections from
+   * other riders without leaving their dashboard.
+   */
+  followed: RouteCollectionView[];
   status: CollectionsStatus;
   errorMessage: string | null;
   /** Reload the list from the server. */
@@ -39,6 +47,11 @@ export interface UseCollectionsResult {
     input: UpdateRouteCollectionInput,
   ) => Promise<RouteCollectionView>;
   removeCollection: (id: string) => Promise<void>;
+  /**
+   * Unfollow a saved collection. Optimistic — drops the row locally first,
+   * then re-fetches on failure so the UI doesn't strand a stale entry.
+   */
+  unfollowCollection: (id: string) => Promise<void>;
   /**
    * If the user has legacy localStorage collections AND has not yet been
    * prompted, this is non-null and the page can render a banner asking the
@@ -58,6 +71,7 @@ export interface UseCollectionsResult {
  */
 export function useCollections(userId: string | null): UseCollectionsResult {
   const [collections, setCollections] = useState<RouteCollectionView[]>([]);
+  const [followed, setFollowed] = useState<RouteCollectionView[]>([]);
   const [status, setStatus] = useState<CollectionsStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [migration, setMigration] = useState<MigrationOpportunity | null>(null);
@@ -83,16 +97,24 @@ export function useCollections(userId: string | null): UseCollectionsResult {
     const owner = activeUserIdRef.current;
     if (!owner) {
       setCollections([]);
+      setFollowed([]);
       setStatus("ready");
       return;
     }
     setStatus("loading");
     setErrorMessage(null);
     try {
-      const { data } = await routeCollectionsApi.listMine();
+      // Single round trip — the library endpoint returns owned + followed in
+      // one response so the page never renders one half of the library while
+      // waiting on the other.
+      const { data } = await routeCollectionsApi.listLibrary();
       // Drop the result if the user has switched accounts mid-flight.
       if (activeUserIdRef.current !== owner) return;
-      setCollections(sortCollectionsByName(data.items.map(mapSummaryToView)));
+      setCollections(sortCollectionsByName(data.owned.map(mapSummaryToView)));
+      // Followed list keeps server order (followed_at desc) so the most
+      // recently saved collection lands at the top, matching how curators
+      // expect their own additions to surface.
+      setFollowed(data.followed.map(mapSummaryToView));
       setStatus("ready");
     } catch (err) {
       if (activeUserIdRef.current !== owner) return;
@@ -131,6 +153,37 @@ export function useCollections(userId: string | null): UseCollectionsResult {
     [removeOne],
   );
 
+  const unfollowCollection = useCallback(async (id: string) => {
+    // Optimistic drop — the unfollow endpoint is idempotent (US-56) so a
+    // network failure won't leave the row in a half-state. We capture the
+    // single dropped row (not the full list) so a rapid second unfollow
+    // landing while the first is in-flight doesn't see the closure restore
+    // an old snapshot that re-adds rows another call has already removed.
+    // Held as `.current` on a stable object so TypeScript's control-flow
+    // analysis doesn't narrow the value to `null` after assignment inside
+    // the setState callback.
+    const removed: { current: RouteCollectionView | null } = { current: null };
+    setFollowed((prev) => {
+      const target = prev.find((c) => c.id === id);
+      if (!target) return prev;
+      removed.current = target;
+      return prev.filter((c) => c.id !== id);
+    });
+    try {
+      await routeCollectionsApi.unfollow(id);
+    } catch (err) {
+      // Re-insert just the failed row, keeping any other concurrent
+      // optimistic updates intact.
+      const restored = removed.current;
+      if (restored != null) {
+        setFollowed((prev) =>
+          prev.some((c) => c.id === restored.id) ? prev : [...prev, restored],
+        );
+      }
+      throw err;
+    }
+  }, []);
+
   // Item-level mutations (add/remove trip) live on the detail page rather
   // than this hook. The detail page already loads /collections/:id and
   // owns the item state — routing those calls through the hook would just
@@ -140,6 +193,7 @@ export function useCollections(userId: string | null): UseCollectionsResult {
   // Initial load + migration-opportunity check whenever userId changes.
   useEffect(() => {
     setCollections([]);
+    setFollowed([]);
     setMigration(null);
     if (!userId) {
       setStatus("ready");
@@ -185,12 +239,14 @@ export function useCollections(userId: string | null): UseCollectionsResult {
 
   return {
     collections,
+    followed,
     status,
     errorMessage,
     refresh,
     createCollection,
     updateCollection,
     removeCollection,
+    unfollowCollection,
     migration,
   };
 }

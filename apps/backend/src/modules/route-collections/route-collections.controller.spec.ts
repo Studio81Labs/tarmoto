@@ -9,6 +9,7 @@ describe('RouteCollectionsController', () => {
   let service: jest.Mocked<RouteCollectionsService>;
 
   const mockReq = { user: { userId: 'user-1' } } as never;
+  const anonReq = {} as never;
   const collectionId = '00000000-0000-0000-0000-000000000001';
   const itemId = '00000000-0000-0000-0000-000000000002';
 
@@ -22,6 +23,8 @@ describe('RouteCollectionsController', () => {
     item_count: 0,
     items: [],
     owner_name: 'Jane Rider',
+    viewer_is_owner: true,
+    viewer_is_following: false,
     created_at: '2026-04-20T10:00:00.000Z',
     updated_at: '2026-04-20T10:00:00.000Z',
   };
@@ -29,6 +32,7 @@ describe('RouteCollectionsController', () => {
   beforeEach(async () => {
     const mockService = {
       listMine: jest.fn().mockResolvedValue({ items: [], total: 0 }),
+      listLibrary: jest.fn().mockResolvedValue({ owned: [], followed: [] }),
       create: jest.fn().mockResolvedValue(detail),
       getOwned: jest.fn().mockResolvedValue(detail),
       getBySlug: jest.fn().mockResolvedValue(detail),
@@ -42,6 +46,11 @@ describe('RouteCollectionsController', () => {
         created_at: '2026-04-20T10:00:00.000Z',
       }),
       removeItem: jest.fn().mockResolvedValue(undefined),
+      follow: jest.fn().mockResolvedValue({
+        collection_id: collectionId,
+        followed_at: '2026-04-20T11:00:00.000Z',
+      }),
+      unfollow: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -64,6 +73,13 @@ describe('RouteCollectionsController', () => {
     expect(result.total).toBe(0);
   });
 
+  it('GET /collections/me/library delegates to listLibrary', async () => {
+    const result = await controller.listLibrary(mockReq);
+    expect(service.listLibrary).toHaveBeenCalledWith('user-1');
+    expect(result.owned).toEqual([]);
+    expect(result.followed).toEqual([]);
+  });
+
   it('POST /collections forwards the dto to create', async () => {
     const result = await controller.create(mockReq, {
       title: 'Beskydy Loops',
@@ -76,10 +92,18 @@ describe('RouteCollectionsController', () => {
     expect(result.id).toBe(collectionId);
   });
 
-  it('GET /collections/by-slug/:slug skips auth and forwards the slug', async () => {
-    const result = await controller.getBySlug('abcDEF12345');
-    expect(service.getBySlug).toHaveBeenCalledWith('abcDEF12345');
+  it('GET /collections/by-slug/:slug forwards the slug + viewer userId', async () => {
+    const result = await controller.getBySlug(mockReq, 'abcDEF12345');
+    expect(service.getBySlug).toHaveBeenCalledWith('abcDEF12345', 'user-1');
     expect(result.slug).toBe('abcDEF12345');
+  });
+
+  it('GET /collections/by-slug/:slug passes null viewer when no token is present', async () => {
+    // OptionalAuthGuard leaves req.user undefined when the caller is anonymous.
+    // The controller must coerce that to `null` so the service path that gates
+    // viewer_is_following stays branch-free (it does `viewerId != null`).
+    await controller.getBySlug(anonReq, 'abcDEF12345');
+    expect(service.getBySlug).toHaveBeenCalledWith('abcDEF12345', null);
   });
 
   it('GET /collections/:id delegates to getOwned', async () => {
@@ -125,5 +149,18 @@ describe('RouteCollectionsController', () => {
       collectionId,
       itemId,
     );
+  });
+
+  it('POST /collections/:id/follow delegates to follow', async () => {
+    const result = await controller.follow(mockReq, collectionId);
+    expect(service.follow).toHaveBeenCalledWith('user-1', collectionId);
+    expect(result.collection_id).toBe(collectionId);
+  });
+
+  it('DELETE /collections/:id/follow delegates to unfollow', async () => {
+    await expect(
+      controller.unfollow(mockReq, collectionId),
+    ).resolves.toBeUndefined();
+    expect(service.unfollow).toHaveBeenCalledWith('user-1', collectionId);
   });
 });

@@ -20,12 +20,15 @@ import {
 } from '@nestjs/swagger';
 import * as express from 'express';
 import { AuthGuard } from '../auth/auth.guard.js';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard.js';
 import { RouteCollectionsService } from './route-collections.service.js';
 import {
   AddRouteCollectionItemDto,
   CreateRouteCollectionDto,
   RouteCollectionDetailDto,
+  RouteCollectionFollowResponseDto,
   RouteCollectionItemResponseDto,
+  RouteCollectionLibraryResponseDto,
   RouteCollectionListResponseDto,
   UpdateRouteCollectionDto,
 } from './dto/route-collection.dto.js';
@@ -48,6 +51,20 @@ export class RouteCollectionsController {
     return this.routeCollectionsService.listMine(req.user!.userId);
   }
 
+  @Get('me/library')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      "List the caller's owned and followed collections in one payload (US-56 follow/save).",
+  })
+  @ApiResponse({ status: 200, type: RouteCollectionLibraryResponseDto })
+  async listLibrary(
+    @Req() req: express.Request,
+  ): Promise<RouteCollectionLibraryResponseDto> {
+    return this.routeCollectionsService.listLibrary(req.user!.userId);
+  }
+
   @Post()
   @UseGuards(AuthGuard)
   @ApiBearerAuth()
@@ -61,16 +78,21 @@ export class RouteCollectionsController {
   }
 
   @Get('by-slug/:slug')
+  @UseGuards(OptionalAuthGuard)
   @ApiOperation({
     summary:
-      'Read an unlisted/public collection by its slug (no auth required)',
+      'Read an unlisted/public collection by its slug (auth optional). Personalises `viewer_is_following` / `viewer_is_owner` when a valid Bearer token is supplied.',
   })
   @ApiResponse({ status: 200, type: RouteCollectionDetailDto })
   @ApiResponse({ status: 404, description: 'Collection not found or private' })
   async getBySlug(
+    @Req() req: express.Request,
     @Param('slug') slug: string,
   ): Promise<RouteCollectionDetailDto> {
-    return this.routeCollectionsService.getBySlug(slug);
+    return this.routeCollectionsService.getBySlug(
+      slug,
+      req.user?.userId ?? null,
+    );
   }
 
   @Get(':id')
@@ -155,5 +177,38 @@ export class RouteCollectionsController {
     @Param('itemId', ParseUUIDPipe) itemId: string,
   ): Promise<void> {
     await this.routeCollectionsService.removeItem(req.user!.userId, id, itemId);
+  }
+
+  @Post(':id/follow')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      "Follow a collection so it appears in the caller's library (idempotent).",
+  })
+  @ApiResponse({ status: 201, type: RouteCollectionFollowResponseDto })
+  @ApiResponse({
+    status: 400,
+    description: 'You cannot follow your own collection',
+  })
+  @ApiResponse({ status: 404, description: 'Collection not found or private' })
+  async follow(
+    @Req() req: express.Request,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<RouteCollectionFollowResponseDto> {
+    return this.routeCollectionsService.follow(req.user!.userId, id);
+  }
+
+  @Delete(':id/follow')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Unfollow a collection (idempotent).' })
+  @ApiResponse({ status: 204 })
+  async unfollow(
+    @Req() req: express.Request,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.routeCollectionsService.unfollow(req.user!.userId, id);
   }
 }

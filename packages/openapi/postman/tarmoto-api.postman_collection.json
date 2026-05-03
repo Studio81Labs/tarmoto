@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "2af0f315-b851-4a40-8d6f-9f13fc3592f3",
+    "_postman_id": "28060090-b71f-4a78-bf8b-1fc00f4270ed",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -1726,6 +1726,23 @@
           }
         },
         {
+          "name": "List the caller's owned and followed collections in one payload (US-56 follow/save).",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/collections/me/library",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "collections", "me", "library"]
+            }
+          }
+        },
+        {
           "name": "Create a new route collection",
           "request": {
             "method": "POST",
@@ -1752,7 +1769,7 @@
           }
         },
         {
-          "name": "Read an unlisted/public collection by its slug (no auth required)",
+          "name": "Read an unlisted/public collection by its slug (auth optional). Personalises `viewer_is_following` / `viewer_is_owner` when a valid Bearer token is supplied.",
           "request": {
             "method": "GET",
             "header": [
@@ -1905,6 +1922,52 @@
                 },
                 {
                   "key": "itemId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Follow a collection so it appears in the caller's library (idempotent).",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/collections/:id/follow",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "collections", ":id", "follow"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Unfollow a collection (idempotent).",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/collections/:id/follow",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "collections", ":id", "follow"],
+              "variable": [
+                {
+                  "key": "id",
                   "value": ""
                 }
               ]
@@ -2415,6 +2478,32 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"title\": \"\",\n  \"region\": \"\",\n  \"source_format\": \"gpx\",\n  \"geometry\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"waypoints\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0,\n      \"name\": \"\",\n      \"type\": \"via\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Materialise a shared trip into the caller's library, preserving multi-day structure (#357)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/from-share",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", "from-share"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"share_token\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"

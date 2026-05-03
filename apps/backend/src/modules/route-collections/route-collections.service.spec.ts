@@ -9,12 +9,14 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { RouteCollection } from '../../entities/route-collection.entity.js';
 import { RouteCollectionItem } from '../../entities/route-collection-item.entity.js';
+import { RouteCollectionFollow } from '../../entities/route-collection-follow.entity.js';
 import { RouteCollectionsService } from './route-collections.service.js';
 
 describe('RouteCollectionsService', () => {
   let service: RouteCollectionsService;
   let collectionRepo: Partial<jest.Mocked<Repository<RouteCollection>>>;
   let itemRepo: Partial<jest.Mocked<Repository<RouteCollectionItem>>>;
+  let followRepo: Partial<jest.Mocked<Repository<RouteCollectionFollow>>>;
 
   const ownerId = 'user-1';
   const otherId = 'user-2';
@@ -75,6 +77,18 @@ describe('RouteCollectionsService', () => {
       }),
     };
 
+    followRepo = {
+      exists: jest.fn().mockResolvedValue(false),
+      findOne: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockImplementation((data) => ({
+        id: 'follow-new',
+        created_at: new Date('2026-04-20T11:00:00Z'),
+        ...data,
+      })),
+      save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
+      delete: jest.fn().mockResolvedValue({ affected: 0 }),
+    };
+
     // The service's `addItem` opens a transaction; mock it to invoke the
     // callback with a manager that returns the same mocks. Avoids needing a
     // real DataSource for unit tests.
@@ -99,6 +113,10 @@ describe('RouteCollectionsService', () => {
         {
           provide: getRepositoryToken(RouteCollectionItem),
           useValue: itemRepo,
+        },
+        {
+          provide: getRepositoryToken(RouteCollectionFollow),
+          useValue: followRepo,
         },
         { provide: DataSource, useValue: dataSource },
       ],
@@ -169,6 +187,57 @@ describe('RouteCollectionsService', () => {
     });
   });
 
+  describe('listLibrary', () => {
+    it('returns owned collections from listMine plus joined follows', async () => {
+      const ownedCol = { ...baseCollection };
+      const followedCol = {
+        ...baseCollection,
+        id: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+        owner_id: otherId,
+        visibility: 'public',
+        title: 'Followed by me',
+      };
+
+      // listMine queries first, then listLibrary's followed query — return
+      // distinct query builders in order.
+      (collectionRepo.createQueryBuilder as jest.Mock)
+        .mockReturnValueOnce({
+          leftJoin: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          select: jest.fn().mockReturnThis(),
+          addSelect: jest.fn().mockReturnThis(),
+          groupBy: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          getRawAndEntities: jest.fn().mockResolvedValue({
+            entities: [ownedCol],
+            raw: [{ c_id: ownedCol.id, item_count: '2' }],
+          }),
+        })
+        .mockReturnValueOnce({
+          innerJoin: jest.fn().mockReturnThis(),
+          leftJoin: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          select: jest.fn().mockReturnThis(),
+          addSelect: jest.fn().mockReturnThis(),
+          groupBy: jest.fn().mockReturnThis(),
+          addGroupBy: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          getRawAndEntities: jest.fn().mockResolvedValue({
+            entities: [followedCol],
+            raw: [{ c_id: followedCol.id, item_count: '4' }],
+          }),
+        });
+
+      const result = await service.listLibrary(ownerId);
+      expect(result.owned).toHaveLength(1);
+      expect(result.owned[0]?.id).toBe(ownedCol.id);
+      expect(result.followed).toHaveLength(1);
+      expect(result.followed[0]?.id).toBe(followedCol.id);
+      expect(result.followed[0]?.item_count).toBe(4);
+    });
+  });
+
   describe('create', () => {
     it('allocates a slug and persists the trimmed title', async () => {
       // Stub the post-save owner re-load so toDetailResponse can populate
@@ -197,6 +266,10 @@ describe('RouteCollectionsService', () => {
       // Re-load uses relations: ['owner'] so the response carries owner_name
       // — without that, every POST /collections response was `owner_name: ''`.
       expect(result.owner_name).toBe('Jane Rider');
+      // Owners always render with viewer_is_owner=true, viewer_is_following=false
+      // so the create response never surfaces a stale follow flag.
+      expect(result.viewer_is_owner).toBe(true);
+      expect(result.viewer_is_following).toBe(false);
     });
 
     it('falls back to private visibility when none is supplied', async () => {
@@ -230,6 +303,8 @@ describe('RouteCollectionsService', () => {
       );
       const result = await service.getOwned(ownerId, collectionId);
       expect(result.id).toBe(collectionId);
+      expect(result.viewer_is_owner).toBe(true);
+      expect(result.viewer_is_following).toBe(false);
     });
 
     it('404s for non-owners (no 403 — id existence is not a side channel)', async () => {
@@ -249,15 +324,17 @@ describe('RouteCollectionsService', () => {
     });
   });
 
-  describe('getBySlug (visibility gating)', () => {
+  describe('getBySlug (visibility gating + viewer flags)', () => {
     it('returns public collections to anyone', async () => {
       (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
         ...baseCollection,
         visibility: 'public',
       });
-      const result = await service.getBySlug('abcDEF12345');
+      const result = await service.getBySlug('abcDEF12345', null);
       expect(result.visibility).toBe('public');
       expect(result.owner_name).toBe('Jane Rider');
+      expect(result.viewer_is_owner).toBe(false);
+      expect(result.viewer_is_following).toBe(false);
     });
 
     it('returns unlisted collections to anyone with the slug', async () => {
@@ -265,7 +342,7 @@ describe('RouteCollectionsService', () => {
         ...baseCollection,
         visibility: 'unlisted',
       });
-      const result = await service.getBySlug('abcDEF12345');
+      const result = await service.getBySlug('abcDEF12345', null);
       expect(result.visibility).toBe('unlisted');
     });
 
@@ -274,7 +351,7 @@ describe('RouteCollectionsService', () => {
         ...baseCollection,
         visibility: 'private',
       });
-      await expect(service.getBySlug('abcDEF12345')).rejects.toThrow(
+      await expect(service.getBySlug('abcDEF12345', null)).rejects.toThrow(
         NotFoundException,
       );
     });
@@ -285,16 +362,45 @@ describe('RouteCollectionsService', () => {
         visibility: 'public',
         owner: { display_name: 'Jane Rider', deleted_at: new Date() },
       });
-      await expect(service.getBySlug('abcDEF12345')).rejects.toThrow(
+      await expect(service.getBySlug('abcDEF12345', null)).rejects.toThrow(
         NotFoundException,
       );
     });
 
     it('404s when the slug does not resolve', async () => {
       (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
-      await expect(service.getBySlug('missing')).rejects.toThrow(
+      await expect(service.getBySlug('missing', null)).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it('flags viewer_is_owner when the signed-in viewer is the owner', async () => {
+      // Owners viewing their own public/unlisted slug get viewer_is_owner=true
+      // so the public page hides the follow CTA (they already have CRUD).
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        visibility: 'public',
+      });
+      const result = await service.getBySlug('abcDEF12345', ownerId);
+      expect(result.viewer_is_owner).toBe(true);
+      expect(result.viewer_is_following).toBe(false);
+      // Owner check skips the followRepo.exists call — there's no point
+      // looking up a row we'd never write.
+      expect(followRepo.exists).not.toHaveBeenCalled();
+    });
+
+    it('flags viewer_is_following when the signed-in viewer follows', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        visibility: 'public',
+      });
+      (followRepo.exists as jest.Mock).mockResolvedValueOnce(true);
+      const result = await service.getBySlug('abcDEF12345', otherId);
+      expect(result.viewer_is_owner).toBe(false);
+      expect(result.viewer_is_following).toBe(true);
+      expect(followRepo.exists).toHaveBeenCalledWith({
+        where: { user_id: otherId, collection_id: collectionId },
+      });
     });
   });
 
@@ -466,6 +572,146 @@ describe('RouteCollectionsService', () => {
       await expect(
         service.removeItem(ownerId, collectionId, 'item-1'),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('follow', () => {
+    it('creates a follow row for a public collection', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        owner_id: ownerId,
+        visibility: 'public',
+      });
+
+      const result = await service.follow(otherId, collectionId);
+
+      expect(followRepo.create).toHaveBeenCalledWith({
+        user_id: otherId,
+        collection_id: collectionId,
+      });
+      expect(followRepo.save).toHaveBeenCalled();
+      expect(result.collection_id).toBe(collectionId);
+      expect(result.followed_at).toBe('2026-04-20T11:00:00.000Z');
+    });
+
+    it('falls back to the existing row on a unique-violation race (idempotent)', async () => {
+      // Simulates two concurrent POSTs both passing the visibility check and
+      // racing to insert. The losing call hits SQLSTATE 23505; the service
+      // re-reads the canonical row instead of bubbling a 500.
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        owner_id: ownerId,
+        visibility: 'public',
+      });
+      const uniqueViolation = Object.assign(new Error('duplicate'), {
+        code: '23505',
+      });
+      (followRepo.save as jest.Mock).mockRejectedValueOnce(uniqueViolation);
+      (followRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        id: 'follow-existing',
+        user_id: otherId,
+        collection_id: collectionId,
+        created_at: new Date('2026-04-19T10:00:00Z'),
+      });
+
+      const result = await service.follow(otherId, collectionId);
+      expect(result.followed_at).toBe('2026-04-19T10:00:00.000Z');
+    });
+
+    it('detects the unique violation when wrapped in a QueryFailedError shape', async () => {
+      // TypeORM wraps the raw pg error; the `code` lives on `driverError`.
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        owner_id: ownerId,
+        visibility: 'public',
+      });
+      const wrapped = Object.assign(new Error('query failed'), {
+        driverError: { code: '23505' },
+      });
+      (followRepo.save as jest.Mock).mockRejectedValueOnce(wrapped);
+      (followRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        id: 'follow-existing',
+        user_id: otherId,
+        collection_id: collectionId,
+        created_at: new Date('2026-04-19T10:00:00Z'),
+      });
+
+      const result = await service.follow(otherId, collectionId);
+      expect(result.followed_at).toBe('2026-04-19T10:00:00.000Z');
+    });
+
+    it('rethrows non-unique save errors so 500s are not swallowed', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        owner_id: ownerId,
+        visibility: 'public',
+      });
+      const dbDown = Object.assign(new Error('connection lost'), {
+        code: '08006',
+      });
+      (followRepo.save as jest.Mock).mockRejectedValueOnce(dbDown);
+
+      await expect(service.follow(otherId, collectionId)).rejects.toThrow(
+        'connection lost',
+      );
+    });
+
+    it('rejects when the owner tries to follow their own collection', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        visibility: 'public',
+      });
+      // Owners are surfaced with viewer_is_owner=true and have CRUD on
+      // /collections/:id; following their own would create a no-op row in
+      // the library. 400 (BadRequest) keeps it loud rather than silent.
+      await expect(service.follow(ownerId, collectionId)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('404s when the collection is private', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        visibility: 'private',
+      });
+      await expect(service.follow(otherId, collectionId)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('404s when the owner is in the deletion grace window', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        visibility: 'public',
+        owner: { display_name: 'Jane Rider', deleted_at: new Date() },
+      });
+      await expect(service.follow(otherId, collectionId)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('404s when the collection does not exist', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
+      await expect(service.follow(otherId, collectionId)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('unfollow', () => {
+    it('issues a delete keyed by the (user, collection) pair', async () => {
+      await service.unfollow(otherId, collectionId);
+      expect(followRepo.delete).toHaveBeenCalledWith({
+        user_id: otherId,
+        collection_id: collectionId,
+      });
+    });
+
+    it('is idempotent — succeeds when no row exists', async () => {
+      (followRepo.delete as jest.Mock).mockResolvedValueOnce({ affected: 0 });
+      await expect(
+        service.unfollow(otherId, collectionId),
+      ).resolves.toBeUndefined();
     });
   });
 });

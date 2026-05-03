@@ -44,7 +44,7 @@ export class CreateRouteCollectionDto {
     default: 'private',
   })
   @IsOptional()
-  @IsIn(ROUTE_COLLECTION_VISIBILITIES as unknown as string[])
+  @IsIn(ROUTE_COLLECTION_VISIBILITIES)
   visibility?: RouteCollectionVisibilityDto;
 }
 
@@ -72,7 +72,7 @@ export class UpdateRouteCollectionDto {
 
   @ApiProperty({ required: false, enum: ROUTE_COLLECTION_VISIBILITIES })
   @IsOptional()
-  @IsIn(ROUTE_COLLECTION_VISIBILITIES as unknown as string[])
+  @IsIn(ROUTE_COLLECTION_VISIBILITIES)
   visibility?: RouteCollectionVisibilityDto;
 }
 
@@ -155,6 +155,13 @@ export class RouteCollectionSummaryDto {
   @ApiProperty({ description: 'Total items in the collection.' })
   item_count!: number;
 
+  @ApiProperty({
+    nullable: true,
+    description:
+      "Display name of the owning rider. Populated for endpoints that surface other riders' collections (e.g. the followed list); `null` on the caller's own list since the rider already knows their own name.",
+  })
+  owner_name!: string | null;
+
   @ApiProperty()
   created_at!: string;
 
@@ -166,11 +173,26 @@ export class RouteCollectionDetailDto extends RouteCollectionSummaryDto {
   @ApiProperty({ type: [RouteCollectionItemResponseDto] })
   items!: RouteCollectionItemResponseDto[];
 
+  // owner_name is inherited from the summary as `string | null`. Detail
+  // responses always populate it (empty string for soft-deleted accounts,
+  // since the controller 404s in that case before reaching the response),
+  // but we keep the inherited type rather than narrowing — a `declare`
+  // override does not reliably re-emit the @ApiProperty metadata across
+  // TypeScript versions, so the OpenAPI schema would silently disagree
+  // with the runtime. The slightly looser `nullable: true` schema is
+  // harmless and matches what we report on the summary.
+
   @ApiProperty({
     description:
-      'Display name of the owning rider (for unlisted/public viewing). Empty for soft-deleted accounts; the controller 404s in that case.',
+      'True when the calling user follows this collection. False for the owner, anonymous viewers, and signed-in viewers who have not yet followed.',
   })
-  owner_name!: string;
+  viewer_is_following!: boolean;
+
+  @ApiProperty({
+    description:
+      'True when the calling user owns this collection. The owner uses the dashboard CRUD surface rather than the follow CTA.',
+  })
+  viewer_is_owner!: boolean;
 }
 
 export class RouteCollectionListResponseDto {
@@ -179,4 +201,33 @@ export class RouteCollectionListResponseDto {
 
   @ApiProperty()
   total!: number;
+}
+
+/**
+ * Library response — owned and followed collections in one payload so the
+ * dashboard renders without two round trips. Each side is sorted independently
+ * (owned by `updated_at` desc; followed by `followed_at` desc) and returned in
+ * its own array so the UI can label them differently.
+ */
+export class RouteCollectionLibraryResponseDto {
+  @ApiProperty({
+    type: [RouteCollectionSummaryDto],
+    description: 'Collections the caller owns.',
+  })
+  owned!: RouteCollectionSummaryDto[];
+
+  @ApiProperty({
+    type: [RouteCollectionSummaryDto],
+    description:
+      'Collections the caller follows. Excludes private collections — if a curator demotes a collection back to private after being followed, the row is filtered out here so the library never lists an inaccessible link.',
+  })
+  followed!: RouteCollectionSummaryDto[];
+}
+
+export class RouteCollectionFollowResponseDto {
+  @ApiProperty()
+  collection_id!: string;
+
+  @ApiProperty()
+  followed_at!: string;
 }

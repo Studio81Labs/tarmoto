@@ -66,6 +66,8 @@ function detail(
       },
     ],
     owner_name: "Jane Rider",
+    viewer_is_owner: true,
+    viewer_is_following: false,
     created_at: "2026-04-15T10:00:00.000Z",
     updated_at: "2026-04-15T10:00:00.000Z",
     ...over,
@@ -75,11 +77,14 @@ function detail(
 function makeMockClient() {
   return {
     listMine: vi.fn(),
+    listLibrary: vi.fn(),
     create: vi.fn().mockResolvedValue({ data: detail() }),
     get: vi.fn().mockResolvedValue({ data: detail() }),
     getBySlug: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
+    follow: vi.fn(),
+    unfollow: vi.fn(),
     addItem: vi.fn().mockResolvedValue({
       data: {
         id: "item-new",

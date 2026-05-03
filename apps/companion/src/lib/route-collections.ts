@@ -129,7 +129,7 @@ export function mapDetailToView(
   return {
     id: detail.id,
     ownerId: detail.owner_id,
-    ownerName: detail.owner_name,
+    ownerName: detail.owner_name ?? "",
     title: detail.title,
     description: detail.description,
     visibility: detail.visibility,
@@ -150,7 +150,10 @@ export function mapSummaryToView(
   return {
     id: summary.id,
     ownerId: summary.owner_id,
-    ownerName: "",
+    // The summary endpoint populates `owner_name` for other riders' collections
+    // (e.g. the followed list); the rider's own list returns `null` since the
+    // UI never surfaces the caller's own name.
+    ownerName: summary.owner_name ?? "",
     title: summary.title,
     description: summary.description,
     visibility: summary.visibility,

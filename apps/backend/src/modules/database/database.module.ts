@@ -40,6 +40,7 @@ import { MigrateLegacyNotificationPreferences1716300000000 } from '../../migrati
 import { AddPrivacyPreferences1716400000000 } from '../../migrations/1716400000000-AddPrivacyPreferences.js';
 import { AddRouteCollections1716500000000 } from '../../migrations/1716500000000-AddRouteCollections.js';
 import { AddWeatherAlertDispatches1716700000000 } from '../../migrations/1716700000000-AddWeatherAlertDispatches.js';
+import { AddRouteCollectionFollows1716800000000 } from '../../migrations/1716800000000-AddRouteCollectionFollows.js';
 import {
   User,
   UserContact,
@@ -82,6 +83,7 @@ import {
   PrivacyPreferencesRow,
   RouteCollection,
   RouteCollectionItem,
+  RouteCollectionFollow,
   WeatherAlertDispatch,
 } from '../../entities/index.js';
 
@@ -127,6 +129,7 @@ const entities = [
   PrivacyPreferencesRow,
   RouteCollection,
   RouteCollectionItem,
+  RouteCollectionFollow,
   WeatherAlertDispatch,
 ];
 
@@ -190,6 +193,7 @@ const entities = [
             AddPrivacyPreferences1716400000000,
             AddRouteCollections1716500000000,
             AddWeatherAlertDispatches1716700000000,
+            AddRouteCollectionFollows1716800000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.
