@@ -1,6 +1,13 @@
 /**
  * Tarmoto Core Types
  * Mirrors the OpenAPI schema — keep in sync with backend DTOs.
+ *
+ * Generated `components["schemas"]` from `@tarmoto/openapi` are re-exported
+ * below so screen-level consumers can refer to the spec-derived shapes
+ * without reaching into the openapi-typescript output directly. Drift in a
+ * backend DTO that matters to a screen propagates through these aliases
+ * and surfaces at the call site, not just at the `services/api.ts`
+ * boundary (#354 / source PR #330).
  */
 
 // Canonical wire shape for the public rider profile (US-27 / convergence
@@ -13,6 +20,15 @@ export type { PublicProfile } from "@tarmoto/shared";
 // Authenticated rider's own profile summary (issue #334). Re-exported from
 // `@tarmoto/shared` so backend, mobile, and companion share one definition.
 export type { MeProfile } from "@tarmoto/shared";
+
+// Generated OpenAPI components — re-exported so screens, services, and
+// stores can refer to spec-derived shapes through `@/types` instead of
+// importing from `@tarmoto/openapi` directly. The `Schemas` helper
+// shortens `components["schemas"]["FooDto"]` to `Schemas["FooDto"]` at
+// call sites.
+import type { components } from "@tarmoto/openapi";
+export type { components };
+export type Schemas = components["schemas"];
 
 // ── Primitives ──
 
@@ -131,13 +147,14 @@ export interface UserPreferences {
   crash_detection: boolean;
 }
 
-export interface EmergencyContact {
-  id: string;
-  name: string;
-  phone: string;
-  is_emergency: boolean;
-  created_at: string;
-}
+/**
+ * Schema-derived alias for the ContactResponseDto wire shape. Routing
+ * `EmergencyContact` through `Schemas` means a backend rename or removal
+ * surfaces as a typecheck failure at the consuming screen
+ * (`EmergencyContactsScreen`) instead of being absorbed by the cast on
+ * the `services/api.ts` boundary.
+ */
+export type EmergencyContact = Schemas["ContactResponseDto"];
 
 /** Payload for creating or editing a contact. */
 export interface EmergencyContactInput {

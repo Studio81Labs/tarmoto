@@ -17,10 +17,10 @@
 
 import { createMMKV } from "react-native-mmkv";
 import { createApiClient } from "@tarmoto/openapi/client";
-import type { components } from "@tarmoto/openapi";
+import type { Schemas } from "@/types";
 import { API_BASE_URL } from "@/config";
 
-type AuthResponse = components["schemas"]["AuthResponseDto"];
+type AuthResponse = Schemas["AuthResponseDto"];
 
 const storage = createMMKV({ id: "tarmoto-auth" });
 
