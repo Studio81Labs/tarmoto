@@ -58,10 +58,11 @@ const PROCESSOR_PROVIDERS: Provider[] = [
  *   - the `GET /jobs/health` endpoint.
  *
  * Local dev runs both producers and workers in-process (the default).
- * Staging/prod can split: set `TARMOTO_QUEUE_WORKER_ENABLED=false` on
- * the API container and run a separate process where it's true. The
- * producers in the API still enqueue successfully because BullModule
- * registers the queues regardless of the worker toggle.
+ * A multi-instance deploy can split them: set
+ * `TARMOTO_QUEUE_WORKER_ENABLED=false` on the API container and run a
+ * separate process where it's true. The producers in the API still
+ * enqueue successfully because BullModule registers the queues
+ * regardless of the worker toggle.
  *
  * The processors and scheduler are registered conditionally: when
  * workers are disabled, the API process registers ONLY queue clients
