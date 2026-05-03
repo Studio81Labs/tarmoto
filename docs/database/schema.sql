@@ -132,9 +132,6 @@ CREATE TABLE ride_stats (
     duration                INTERVAL,
     avg_lean_angle          FLOAT,
     max_lean_angle          FLOAT,
-    -- US-19: per-ride lean histogram. Bucket boundaries owned by
-    -- `@tarmoto/shared` (`LEAN_BUCKETS`).
-    lean_distribution_json  JSONB,
     calories_est            INT
 );
 
