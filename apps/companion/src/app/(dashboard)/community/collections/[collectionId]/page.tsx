@@ -653,10 +653,6 @@ function TripRow({ trip, onRemove }: { trip: Trip; onRemove: () => void }) {
 function RideRow({ ride, onRemove }: { ride: UserRide; onRemove: () => void }) {
   const displayName =
     ride.name ?? `Ride on ${new Date(ride.started_at).toLocaleDateString()}`;
-  const quality =
-    ride.avg_road_quality != null
-      ? Math.min(5, Math.max(1, Math.round(ride.avg_road_quality)))
-      : null;
 
   return (
     <li className="rounded-2xl border border-slate-800 bg-slate-900 hover:border-slate-700 transition">
@@ -683,9 +679,9 @@ function RideRow({ ride, onRemove }: { ride: UserRide; onRemove: () => void }) {
                   {formatDistance(ride.distance_km)}
                 </span>
               )}
-              {quality != null && (
+              {ride.avg_road_quality != null && (
                 <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
-                  Quality {ride.avg_road_quality?.toFixed(1)}
+                  Quality {ride.avg_road_quality.toFixed(1)}
                 </span>
               )}
               <span className="text-[11px] text-slate-600 uppercase tracking-widest">
