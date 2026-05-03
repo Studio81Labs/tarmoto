@@ -1,4 +1,6 @@
 import {
+  ArrayMinSize,
+  IsArray,
   IsIn,
   IsOptional,
   IsString,
@@ -114,6 +116,31 @@ export class AddRouteCollectionItemDto {
   @ValidateIf((o: AddRouteCollectionItemDto) => o.ride_id !== undefined)
   @IsUUID()
   ride_id?: string;
+}
+
+/**
+ * Reorder every item in a collection by submitting the desired full order.
+ *
+ * The contract is intentionally "send the whole list" rather than per-item
+ * position deltas: the UI naturally produces a final ordering on drop, and a
+ * full-list payload makes the server side trivially atomic — we renumber
+ * 0..N-1 in one transaction, no merging of concurrent partial updates.
+ *
+ * `item_ids` must be the exact set of the collection's current items (no
+ * missing, no extras, no duplicates). The service rejects any mismatch with a
+ * 400 so a stale client can't silently drop a row that another tab just added.
+ */
+export class ReorderRouteCollectionItemsDto {
+  @ApiProperty({
+    type: [String],
+    minItems: 2,
+    description:
+      'Full ordered list of the collection item ids (the join-row uuids returned by add-item / detail). Must exactly match the current set of items in the collection.',
+  })
+  @IsArray()
+  @ArrayMinSize(2)
+  @IsUUID('all', { each: true })
+  item_ids!: string[];
 }
 
 export class RouteCollectionItemResponseDto {

@@ -537,6 +537,161 @@ describe('RouteCollectionsService', () => {
     });
   });
 
+  describe('reorderItems', () => {
+    const itemA = {
+      id: '00000000-0000-0000-0000-0000000000a1',
+      collection_id: collectionId,
+      trip_id: tripId,
+      ride_id: null,
+      position: 0,
+      created_at: new Date('2026-04-20T10:00:00Z'),
+    } as RouteCollectionItem;
+    const itemB = {
+      id: '00000000-0000-0000-0000-0000000000a2',
+      collection_id: collectionId,
+      trip_id: '00000000-0000-0000-0000-000000000011',
+      ride_id: null,
+      position: 1,
+      created_at: new Date('2026-04-20T10:01:00Z'),
+    } as RouteCollectionItem;
+    const itemC = {
+      id: '00000000-0000-0000-0000-0000000000a3',
+      collection_id: collectionId,
+      trip_id: '00000000-0000-0000-0000-000000000012',
+      ride_id: null,
+      position: 2,
+      created_at: new Date('2026-04-20T10:02:00Z'),
+    } as RouteCollectionItem;
+
+    it('rejects duplicate ids in item_ids before opening the transaction', async () => {
+      // Set-equality on size + membership would silently accept a duplicate
+      // paired with a missing id of the same length. Catch it explicitly so
+      // the client gets a precise 400 instead of a confusing "missing item".
+      await expect(
+        service.reorderItems(ownerId, collectionId, {
+          item_ids: [itemA.id, itemA.id, itemC.id],
+        }),
+      ).rejects.toThrow(BadRequestException);
+      // Pre-flight rejects must not even open the txn.
+      expect(itemRepo.find).not.toHaveBeenCalled();
+    });
+
+    it('rejects when item_ids size differs from the current item count', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce(
+        baseCollection,
+      );
+      (itemRepo.find as jest.Mock).mockResolvedValueOnce([itemA, itemB, itemC]);
+      await expect(
+        service.reorderItems(ownerId, collectionId, {
+          item_ids: [itemA.id, itemB.id],
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(itemRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('rejects when item_ids references an id that is not in the collection', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce(
+        baseCollection,
+      );
+      (itemRepo.find as jest.Mock).mockResolvedValueOnce([itemA, itemB]);
+      await expect(
+        service.reorderItems(ownerId, collectionId, {
+          item_ids: [itemA.id, 'ffffffff-ffff-ffff-ffff-ffffffffffff'],
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(itemRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('throws 403 when the caller is not the owner', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce(
+        baseCollection,
+      );
+      await expect(
+        service.reorderItems(otherId, collectionId, {
+          item_ids: [itemA.id, itemB.id],
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('throws 404 when the collection does not exist', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
+      await expect(
+        service.reorderItems(ownerId, collectionId, {
+          item_ids: [itemA.id, itemB.id],
+        }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('renumbers positions 0..N-1 in the requested order and bumps updated_at', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        // Mutable copy so the updated_at bump is observable across calls.
+        updated_at: new Date('2026-04-20T10:00:00Z'),
+      });
+      (itemRepo.find as jest.Mock)
+        .mockResolvedValueOnce([itemA, itemB, itemC])
+        // Final re-read after save returns the renumbered rows in the
+        // ORDER BY position output the helper would deliver.
+        .mockResolvedValueOnce([
+          { ...itemC, position: 0 },
+          { ...itemA, position: 1 },
+          { ...itemB, position: 2 },
+        ]);
+
+      const result = await service.reorderItems(ownerId, collectionId, {
+        item_ids: [itemC.id, itemA.id, itemB.id],
+      });
+
+      // Single bulk save — assert the entities passed to save() carry the
+      // new positions in the requested order. Renumbering 0..N-1 keeps the
+      // ordering scheme dense and lets a future "insert at position 2"
+      // editor stay simple.
+      expect(itemRepo.save).toHaveBeenCalledTimes(1);
+      const savedArg = (itemRepo.save as jest.Mock).mock.calls[0]![0] as
+        | RouteCollectionItem[]
+        | RouteCollectionItem;
+      const saved = Array.isArray(savedArg) ? savedArg : [savedArg];
+      expect(saved.map((i) => [i.id, i.position])).toEqual([
+        [itemC.id, 0],
+        [itemA.id, 1],
+        [itemB.id, 2],
+      ]);
+      // Items in the response come from the ORDER BY re-read, so they're
+      // 0..N-1 monotonically — same shape as the rest of the API.
+      expect(result.items.map((i) => i.position)).toEqual([0, 1, 2]);
+      expect(result.items.map((i) => i.id)).toEqual([
+        itemC.id,
+        itemA.id,
+        itemB.id,
+      ]);
+      // Bumping updated_at keeps the listing sort and the public-page cache
+      // honest — without it a reorder would look like a non-event.
+      expect(collectionRepo.save).toHaveBeenCalled();
+    });
+
+    it('locks the parent row to serialise concurrent reorders / adds', async () => {
+      // Same hazard as addItem — without a parent-row write lock a
+      // concurrent add could insert a row mid-renumber that ends up with a
+      // colliding position. The lock survives any future refactor only if
+      // we assert it here.
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce(
+        baseCollection,
+      );
+      (itemRepo.find as jest.Mock).mockResolvedValueOnce([itemA, itemB]);
+
+      await service.reorderItems(ownerId, collectionId, {
+        item_ids: [itemB.id, itemA.id],
+      });
+
+      expect(collectionRepo.findOne).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: collectionId },
+          lock: { mode: 'pessimistic_write' },
+        }),
+      );
+    });
+  });
+
   describe('removeItem', () => {
     it('removes the item for the owner', async () => {
       const item = {

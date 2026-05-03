@@ -95,6 +95,7 @@ function makeMockClient() {
       },
     }),
     removeItem: vi.fn(),
+    reorderItems: vi.fn(),
   };
 }
 

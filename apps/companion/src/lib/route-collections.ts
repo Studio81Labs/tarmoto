@@ -168,6 +168,49 @@ export function mapSummaryToView(
   };
 }
 
+/**
+ * Move an array element from `from` to `to`, returning a new array. The
+ * `position` field on each ref is left untouched — the server will renumber
+ * 0..N-1 after the reorder PATCH succeeds. We rebuild the view from the
+ * server response on success, so per-ref `position` only matters for sort
+ * stability while the request is in flight.
+ *
+ * Returns the same array instance when the move is a no-op (out-of-range
+ * indices or identical positions) so React can skip a re-render.
+ */
+export function moveItem<T>(
+  items: readonly T[],
+  from: number,
+  to: number,
+): T[] {
+  if (
+    from === to ||
+    from < 0 ||
+    to < 0 ||
+    from >= items.length ||
+    to >= items.length
+  ) {
+    return items as T[];
+  }
+  const next = items.slice();
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved!);
+  return next;
+}
+
+/**
+ * Build the `item_ids` payload for `PATCH /collections/:id/items/reorder`
+ * from a view. Order matches the on-screen layout (trips above rides on the
+ * owner page) so the public page — which lists items in raw position order
+ * — reflects what the user just saw.
+ */
+export function reorderPayload(view: RouteCollectionView): string[] {
+  return [
+    ...view.tripRefs.map((r) => r.itemId),
+    ...view.rideRefs.map((r) => r.itemId),
+  ];
+}
+
 export function sortCollectionsByName<T extends { title: string }>(
   collections: readonly T[],
 ): T[] {
