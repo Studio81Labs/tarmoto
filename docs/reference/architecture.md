@@ -168,12 +168,12 @@ No Firebase, no push notification service, no paid external APIs today.
 
 ## Deploy topology
 
-Stack rationale lives in [ADR 0004](../decisions/0004-deployment-stack.md). Operational playbooks (rollback per platform, secret rotation) live in [../process/runbook.md](../process/runbook.md#production-deploys).
+Stack rationale lives in [ADR 0005](../decisions/0005-deployment-stack-render.md). Operational playbooks (rollback per platform, secret rotation) live in [../process/runbook.md](../process/runbook.md#production-deploys).
 
-- **Backend** runs on **AWS ECS Fargate** behind an Application Load Balancer (HTTPS via ACM). Postgres + PostGIS on **RDS**, Redis on **ElastiCache**, uploads / exports / tile cache on **S3** fronted by **CloudFront**, secrets in **Secrets Manager**, logs in **CloudWatch Logs** with Container Insights enabled. IaC is **Terraform** under [`infra/aws/`](../../infra/aws/) with per-environment root modules (`envs/staging`, `envs/prod`).
+- **Backend** runs as a **Render Web Service** from [`apps/backend/Dockerfile`](../../apps/backend/Dockerfile). Postgres + PostGIS on **Render Postgres** (extension created via TypeORM migration), Redis on **Render Key Value** (Redis-compatible, BullMQ + socket.io adapter), uploads / exports on **Cloudflare R2** (S3-compatible — same `@aws-sdk/client-s3` driver, endpoint override). Tile cache on **R2** fronted by Cloudflare's edge. App secrets are env vars on the Render service (marked secret). Blueprint is committed under [`infra/render/`](../../infra/render/).
 - **Companion** runs on **Cloudflare Workers** (Workers + Static Assets) via [`@opennextjs/cloudflare`](https://opennext.js.org/cloudflare). Every PR gets a versioned preview deploy commented on the PR; production deploys on push to `main` via `wrangler deploy`.
 - **Mobile** ships via **Fastlane** to **TestFlight** (iOS) and **Play Internal** (Android). Releases are manual — `workflow_dispatch` or a `mobile-vX.Y.Z` git tag — and gated behind a `mobile-release` GitHub environment for credential isolation.
 - **PoC sensor** stays on **Cloudflare Pages** via the existing `poc-deploy.yml`.
 - **Local dev** uses Docker Compose for Postgres + Redis (`infra/docker/docker-compose.yml`); the backend runs via `pnpm dev:backend`, mobile via Metro, companion via `pnpm dev:companion`.
 
-Workflows: [`backend-deploy.yml`](../../.github/workflows/backend-deploy.yml) (build, ECR push, ECS deploy with auto-rollback on smoke failure), [`companion-deploy.yml`](../../.github/workflows/companion-deploy.yml) (PR previews + prod), [`mobile-release.yml`](../../.github/workflows/mobile-release.yml) (TestFlight + Play Internal). Post-deploy verification is `scripts/smoke/smoke.sh`.
+Workflows: [`backend-deploy.yml`](../../.github/workflows/backend-deploy.yml) (waits for Render's auto-deploy, runs smoke test, rolls back via Render API on failure), [`companion-deploy.yml`](../../.github/workflows/companion-deploy.yml) (PR previews + prod), [`mobile-release.yml`](../../.github/workflows/mobile-release.yml) (TestFlight + Play Internal). Post-deploy verification is `scripts/smoke/smoke.sh`.

@@ -1,0 +1,139 @@
+# Tarmoto backend on Render — Blueprint spec
+# https://render.com/docs/blueprint-spec
+#
+# Choice rationale: docs/decisions/0005-deployment-stack-render.md
+# Day-2 ops: docs/process/runbook.md
+#
+# Scope: STAGING ONLY. Prod is intentionally out-of-band until the app
+# is closer to a real launch — keeping it manual avoids paying for a
+# second stack we won't exercise. Adding a prod section later is a
+# duplicate of the staging block with `prod` in the names and
+# `autoDeploy: false` (deploys driven by tag pushes via deploy hook).
+
+databases:
+  - name: tarmoto-staging-db
+    databaseName: tarmoto
+    user: tarmoto
+    plan: standard
+    region: frankfurt
+    postgresMajorVersion: "16"
+    # The PostGIS extension is created via the existing TypeORM
+    # migration in apps/backend/src/migrations/. Render's managed
+    # Postgres is vanilla PG16; nothing extra to enable here.
+    ipAllowList: [] # internal-only
+
+services:
+  - type: keyvalue
+    name: tarmoto-staging-redis
+    plan: starter
+    region: frankfurt
+    # BullMQ requires noeviction so jobs aren't dropped under
+    # memory pressure. Pub/sub channels (socket.io adapter,
+    # ride-stream broadcasts) tolerate eviction but the queue
+    # contract dominates this knob.
+    maxmemoryPolicy: noeviction
+    ipAllowList: [] # internal-only
+
+  - type: web
+    name: tarmoto-staging-backend
+    runtime: docker
+    plan: standard
+    region: frankfurt
+    branch: main
+    rootDir: .
+    dockerfilePath: ./apps/backend/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/v1/healthz
+    autoDeploy: true
+
+    # Migrations run in a clone of the new image before the new
+    # version is promoted. Failure aborts the deploy — the previous
+    # service version keeps serving traffic.
+    preDeployCommand: cd apps/backend && pnpm exec typeorm migration:run -d dist/data-source.js
+
+    envVars:
+      # --- Runtime basics ---
+      - key: TARMOTO_NODE_ENV
+        value: production
+      - key: TARMOTO_PORT
+        value: "3000"
+      - key: TARMOTO_TRUST_PROXY_HOPS
+        value: "1"
+      - key: TARMOTO_COMPANION_URL
+        value: https://staging.tarmoto.app
+
+      # --- Postgres (managed by Render) ---
+      - key: TARMOTO_DATABASE_HOST
+        fromDatabase: { name: tarmoto-staging-db, property: host }
+      - key: TARMOTO_DATABASE_PORT
+        fromDatabase: { name: tarmoto-staging-db, property: port }
+      - key: TARMOTO_DATABASE_NAME
+        fromDatabase: { name: tarmoto-staging-db, property: database }
+      - key: TARMOTO_DATABASE_USER
+        fromDatabase: { name: tarmoto-staging-db, property: user }
+      - key: TARMOTO_DATABASE_PASSWORD
+        fromDatabase: { name: tarmoto-staging-db, property: password }
+
+      # --- Redis (Render Key Value) ---
+      - key: TARMOTO_REDIS_HOST
+        fromService:
+          { type: keyvalue, name: tarmoto-staging-redis, property: host }
+      - key: TARMOTO_REDIS_PORT
+        fromService:
+          { type: keyvalue, name: tarmoto-staging-redis, property: port }
+
+      # --- Object storage: Cloudflare R2 (S3-compatible) ---
+      # The S3 driver in apps/backend/src/modules/storage/s3-storage.ts
+      # already supports R2 via endpoint override — no code changes.
+      - key: TARMOTO_STORAGE_DRIVER
+        value: s3
+      - key: TARMOTO_S3_REGION
+        value: auto
+      - key: TARMOTO_S3_FORCE_PATH_STYLE
+        value: "false"
+      - key: TARMOTO_S3_BUCKET
+        sync: false # e.g. tarmoto-staging-uploads
+      - key: TARMOTO_S3_ENDPOINT
+        sync: false # https://<account-id>.r2.cloudflarestorage.com
+      - key: TARMOTO_S3_ACCESS_KEY_ID
+        sync: false
+      - key: TARMOTO_S3_SECRET_ACCESS_KEY
+        sync: false
+      - key: TARMOTO_S3_PUBLIC_URL_BASE
+        sync: false # custom R2 domain, e.g. https://uploads.staging.tarmoto.app
+
+      # --- App secrets ---
+      - key: TARMOTO_JWT_SECRET
+        generateValue: true
+      - key: TARMOTO_STRIPE_SECRET_KEY
+        sync: false
+      - key: TARMOTO_STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: TARMOTO_STRIPE_PREMIUM_PRICE_ID
+        sync: false
+      - key: TARMOTO_STRIPE_PRO_PRICE_ID
+        sync: false
+      - key: TARMOTO_OWM_API_KEY
+        sync: false # OpenWeatherMap
+
+      # --- Push notifications ---
+      # Both providers in apps/backend/src/modules/push/push.module.ts
+      # return null when env vars are unset, so the service boots fine
+      # without these populated. Replaces the AWS Secrets Manager
+      # activation-gate scaffolding (closed: #347, #381).
+      - key: TARMOTO_FCM_PROJECT_ID
+        sync: false
+      - key: TARMOTO_FCM_CLIENT_EMAIL
+        sync: false
+      - key: TARMOTO_FCM_PRIVATE_KEY
+        sync: false
+      - key: TARMOTO_APN_KEY
+        sync: false
+      - key: TARMOTO_APN_KEY_ID
+        sync: false
+      - key: TARMOTO_APN_TEAM_ID
+        sync: false
+      - key: TARMOTO_APN_TOPIC
+        sync: false
+      - key: TARMOTO_APN_PRODUCTION
+        sync: false

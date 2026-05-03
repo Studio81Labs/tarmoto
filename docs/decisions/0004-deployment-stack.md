@@ -1,6 +1,6 @@
 # 0004 — Deployment stack: Terraform on AWS, Cloudflare Pages for companion, Fastlane for mobile
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-0005](./0005-deployment-stack-render.md)
 **Date:** 2026-05-02
 
 ## Context

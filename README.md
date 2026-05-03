@@ -87,7 +87,7 @@ tarmoto/
 │   └── database/            PostgreSQL + PostGIS schema
 ├── infra/
 │   ├── docker/              docker-compose (Postgres + Redis)
-│   └── aws/                 Terraform IaC (VPC, ECS, RDS, ElastiCache, S3, CloudFront)
+│   └── render/              Render Blueprint (Postgres + Key Value + backend Web Service)
 └── .github/                 CI workflows, issue templates, deploy pipelines
 ```
 
@@ -159,12 +159,12 @@ For database schema changes, see [docs/process/typeorm-migrations.md](./docs/pro
 
 ## Deployment
 
-- **Backend** — AWS ECS Fargate behind ALB; RDS Postgres + PostGIS; ElastiCache Redis; S3 + CloudFront for assets. IaC under [`infra/aws/`](./infra/aws/), deploy via [`.github/workflows/backend-deploy.yml`](./.github/workflows/backend-deploy.yml). Staging deploys on push to `main`; prod is gated behind a manual approval and tag-driven (`backend-vX.Y.Z`).
-- **Companion** — Cloudflare Pages with PR previews; deploy via [`.github/workflows/companion-deploy.yml`](./.github/workflows/companion-deploy.yml).
+- **Backend** — Render Web Service running the [`apps/backend/Dockerfile`](./apps/backend/Dockerfile); managed Render Postgres (PostGIS via migration) and Render Key Value (Redis-compatible) for queues / pub-sub; Cloudflare R2 for object storage. Blueprint under [`infra/render/`](./infra/render/), deploy via [`.github/workflows/backend-deploy.yml`](./.github/workflows/backend-deploy.yml). Staging auto-deploys on push to `main`; prod is gated behind a manual approval and tag-driven (`backend-vX.Y.Z`).
+- **Companion** — Cloudflare Workers (OpenNext) with PR previews; deploy via [`.github/workflows/companion-deploy.yml`](./.github/workflows/companion-deploy.yml).
 - **Mobile** — Fastlane lanes for iOS TestFlight and Android Play Internal track; manual `workflow_dispatch` or `mobile-vX.Y.Z` tag, see [`.github/workflows/mobile-release.yml`](./.github/workflows/mobile-release.yml).
 - **PoC sensor** — Cloudflare Pages on push to `main` via [`poc-deploy.yml`](./.github/workflows/poc-deploy.yml).
 
-Stack rationale and tradeoffs are in [ADR 0004](./docs/decisions/0004-deployment-stack.md). Deploy / rollback runbook is in [docs/process/runbook.md](./docs/process/runbook.md#production-deploys).
+Stack rationale and tradeoffs are in [ADR 0005](./docs/decisions/0005-deployment-stack-render.md). Deploy / rollback runbook is in [docs/process/runbook.md](./docs/process/runbook.md#production-deploys).
 
 ## Bootstrap Details
 
