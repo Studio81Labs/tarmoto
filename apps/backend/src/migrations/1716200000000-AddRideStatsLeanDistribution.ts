@@ -19,7 +19,7 @@ export class AddRideStatsLeanDistribution1716200000000 implements MigrationInter
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `ALTER TABLE ride_stats ADD COLUMN lean_distribution_json JSONB`,
+      `ALTER TABLE ride_stats ADD COLUMN IF NOT EXISTS lean_distribution_json JSONB`,
     );
   }
 
