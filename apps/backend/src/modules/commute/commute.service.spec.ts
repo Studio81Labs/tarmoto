@@ -6,6 +6,8 @@ import { Repository, DataSource } from 'typeorm';
 import { CommuteService } from './commute.service.js';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
+import { HazardsService } from '../hazards/hazards.service.js';
+import { WeatherService } from '../weather/weather.service.js';
 import { ROUTING_PROVIDER } from './routing-provider.interface.js';
 
 const mockTransactionManager = {
@@ -27,10 +29,21 @@ const mockTransactionManager = {
     .mockImplementation((entity: unknown) => Promise.resolve(entity)),
 };
 
+const mockWeather = {
+  temperature_c: 14,
+  condition: 'clear' as const,
+  wind_kmh: 8,
+  precipitation_chance: 0.1,
+  road_condition: 'dry' as const,
+  description: '14°C · Dry roads · Wind 8 km/h',
+};
+
 describe('CommuteService', () => {
   let service: CommuteService;
   let routeRepo: Partial<jest.Mocked<Repository<CommuteRoute>>>;
   let rideRepo: Partial<jest.Mocked<Repository<Ride>>>;
+  let hazardsService: jest.Mocked<Pick<HazardsService, 'findAlongRoute'>>;
+  let weatherService: jest.Mocked<Pick<WeatherService, 'getCurrentWeather'>>;
 
   const mockRoute = {
     id: 'route-1',
@@ -68,12 +81,20 @@ describe('CommuteService', () => {
     rideRepo = {
       query: jest.fn().mockResolvedValue([]),
     };
+    hazardsService = {
+      findAlongRoute: jest.fn().mockResolvedValue([]),
+    };
+    weatherService = {
+      getCurrentWeather: jest.fn().mockResolvedValue(mockWeather),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CommuteService,
         { provide: getRepositoryToken(CommuteRoute), useValue: routeRepo },
         { provide: getRepositoryToken(Ride), useValue: rideRepo },
+        { provide: HazardsService, useValue: hazardsService },
+        { provide: WeatherService, useValue: weatherService },
         {
           provide: DataSource,
           useValue: {
@@ -477,14 +498,64 @@ describe('CommuteService', () => {
   });
 
   describe('getStatus', () => {
-    it('should return clear status when no hazards', async () => {
+    it('should return clear status, weather, and estimated time when no hazards', async () => {
       const result = await service.getStatus('user-1');
 
       expect(result.status).toBe('clear');
       expect(result.hazard_count).toBe(0);
+      expect(result.hazards).toEqual([]);
+      expect(result.weather).toEqual(mockWeather);
+      expect(result.estimated_time_min).toBe(18);
+      expect(result.route_quality).toBe(4.1);
       expect(result.route.id).toBe('route-1');
       expect(result.route.avg_duration_min).toBe(18);
       expect(result.route.route_geometry).toHaveLength(3);
+    });
+
+    it('queries hazards along the cached route polyline (not the straight line)', async () => {
+      // Pre-#353 the legacy `countHazardsNearLine` always used a
+      // straight origin → destination line. The combined endpoint
+      // should follow the actual road shape when the cache is
+      // populated so the hazard list matches what the rider will
+      // actually pass through.
+      await service.getStatus('user-1');
+
+      expect(hazardsService.findAlongRoute).toHaveBeenCalledWith({
+        route: [
+          { lat: 49.2, lng: 16.6 },
+          { lat: 49.15, lng: 16.7 },
+          { lat: 49.1, lng: 16.75 },
+        ],
+        buffer_m: 500,
+      });
+    });
+
+    it('falls back to origin → destination line when route_geom is missing', async () => {
+      // After cache-fill resolves below, but the routing provider
+      // returns no geometry, the service still needs hazards. We
+      // stub a no-op cache-fill (provider returns nothing) so the
+      // fallback line is exercised.
+      const legacy = {
+        ...mockRoute,
+        route_geom: null,
+        distance_km: null,
+        avg_duration: null,
+      };
+      routeRepo.findOne!.mockResolvedValueOnce(legacy);
+      const routingProvider = service['routingProvider'] as jest.Mocked<{
+        getAlternatives: jest.Mock;
+      }>;
+      routingProvider.getAlternatives.mockResolvedValueOnce([]);
+
+      await service.getStatus('user-1');
+
+      expect(hazardsService.findAlongRoute).toHaveBeenCalledWith({
+        route: [
+          { lat: 49.2, lng: 16.6 },
+          { lat: 49.1, lng: 16.75 },
+        ],
+        buffer_m: 500,
+      });
     });
 
     it('lazily backfills the cache when the primary route lacks geometry', async () => {
@@ -512,15 +583,52 @@ describe('CommuteService', () => {
       expect(result.route.route_geometry).toHaveLength(3);
       expect(result.route.avg_duration_min).toBe(18);
       expect(result.route.distance_km).toBe(12.5);
+      expect(result.estimated_time_min).toBe(18);
     });
 
-    it('should return hazards status when hazards found', async () => {
-      routeRepo.query!.mockResolvedValueOnce([{ count: 3 }]);
+    it('returns hazards status with the inline list when hazards are found', async () => {
+      const hazardFixture = {
+        id: 'h-1',
+        lat: 49.15,
+        lng: 16.7,
+        hazard_type: 'pothole' as const,
+        severity: 'medium' as const,
+        note: null,
+        photo_url: null,
+        confirmations: 0,
+        reporter: 'Adam',
+        road_name: 'M Highway',
+        created_at: '2026-04-30T10:00:00.000Z',
+        expires_at: '2026-05-01T10:00:00.000Z',
+      };
+      hazardsService.findAlongRoute.mockResolvedValueOnce([hazardFixture]);
 
       const result = await service.getStatus('user-1');
 
       expect(result.status).toBe('hazards');
-      expect(result.hazard_count).toBe(3);
+      expect(result.hazard_count).toBe(1);
+      expect(result.hazards).toEqual([hazardFixture]);
+    });
+
+    it('samples weather at the route origin', async () => {
+      await service.getStatus('user-1');
+
+      expect(weatherService.getCurrentWeather).toHaveBeenCalledWith(49.2, 16.6);
+    });
+
+    it('returns null weather when the provider fails so the rest of the response still reaches the client', async () => {
+      // Best-effort weather: a transient OpenWeatherMap outage shouldn't
+      // blank the whole commute card. The route, hazards, and quality
+      // fields are still served, and `weather` falls through to null.
+      weatherService.getCurrentWeather.mockRejectedValueOnce(
+        new Error('OpenWeatherMap unreachable'),
+      );
+
+      const result = await service.getStatus('user-1');
+
+      expect(result.weather).toBeNull();
+      expect(result.route.id).toBe('route-1');
+      expect(result.estimated_time_min).toBe(18);
     });
 
     it('should throw NotFoundException when no primary route', async () => {

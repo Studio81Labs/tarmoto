@@ -1033,17 +1033,7 @@ class ApiService {
 
   async getCommuteStatus(): Promise<CommuteStatus> {
     const result = await client.GET("/api/v1/commute/status");
-    // TODO drift-detection: backend returns the slim
-    // `CommuteStatusResponseDto` (hazard_count, route_quality, status).
-    // The mobile `CommuteStatus` is the rich in-app shape with
-    // `hazards`, `weather`, and `estimated_time_min` populated by
-    // separate fetches before the screen mounts. Either move those
-    // composite fields to backend (single round trip, real DTO match)
-    // or split the mobile type into a wire shape + a screen view-model.
-    return unwrap(
-      result,
-      "Failed to load commute status",
-    ) as unknown as CommuteStatus;
+    return unwrap(result, "Failed to load commute status");
   }
 
   async getCommuteAlternatives(): Promise<CommuteAlternativesResponse> {
