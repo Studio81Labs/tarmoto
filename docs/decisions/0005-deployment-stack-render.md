@@ -11,7 +11,7 @@ ADR-0004 was accepted on 2026-05-02 and committed Terraform, ECS, RDS, ElastiCac
 | Surface            | AWS as planned (per env, /mo)    | Render + Cloudflare (per env, /mo) |
 | ------------------ | -------------------------------- | ---------------------------------- |
 | Backend container  | ECS Fargate ~$15–20              | Web Service Standard ~$25          |
-| Postgres + PostGIS | RDS db.t4g.medium ~$60+          | Managed Postgres Standard ~$19     |
+| Postgres + PostGIS | RDS db.t4g.medium ~$60+          | Managed Postgres `basic-4gb` ~$19  |
 | Redis              | ElastiCache cache.t4g.small ~$25 | Render Key Value Starter ~$10      |
 | Load balancer      | ALB ~$20                         | included with Web Service          |
 | Egress / NAT       | NAT GW ~$32                      | included                           |

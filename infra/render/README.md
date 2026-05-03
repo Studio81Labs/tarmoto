@@ -21,16 +21,18 @@ infra/render/
 
 ## What the Blueprint creates
 
-- **`tarmoto-prod-db`** — Render Postgres, plan `standard`, region `frankfurt`, PG16. PostGIS is enabled by the existing TypeORM migration on first deploy.
+- **`tarmoto-prod-db`** — Render Postgres, plan `basic-4gb`, region `frankfurt`, PG16. PostGIS is enabled by the existing TypeORM migration on first deploy.
 - **`tarmoto-prod-redis`** — Render Key Value (Redis-compatible), plan `starter`, `noeviction` (BullMQ requirement).
 - **`tarmoto-prod-backend`** — Web Service running `apps/backend/Dockerfile`. Auto-deploys on push to `main`. Runs `typeorm migration:run` as `preDeployCommand`; if migrations fail, the previous version keeps serving traffic.
+
+> Render renamed Postgres plans in 2026 — the legacy `standard` is no longer accepted for new databases. `basic-4gb` is the closest equivalent (~4 GB RAM). Bump to `pro-4gb` (or higher) if/when you need PITR and a larger compute envelope.
 
 ## Cost (rough, /month)
 
 | Service     | Plan                      | Cost     |
 | ----------- | ------------------------- | -------- |
 | Web Service | Standard (0.5 CPU / 2 GB) | ~$25     |
-| Postgres    | Standard                  | ~$19     |
+| Postgres    | basic-4gb                 | ~$19     |
 | Key Value   | Starter                   | ~$10     |
 | **Total**   |                           | **~$55** |
 
