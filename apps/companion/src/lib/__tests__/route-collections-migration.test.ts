@@ -81,6 +81,7 @@ function makeMockClient() {
     create: vi.fn().mockResolvedValue({ data: detail() }),
     get: vi.fn().mockResolvedValue({ data: detail() }),
     getBySlug: vi.fn(),
+    getPreviewBySlug: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
     follow: vi.fn(),

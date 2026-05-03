@@ -31,6 +31,7 @@ import {
   RouteCollectionItemResponseDto,
   RouteCollectionLibraryResponseDto,
   RouteCollectionListResponseDto,
+  RouteCollectionPreviewResponseDto,
   UpdateRouteCollectionDto,
 } from './dto/route-collection.dto.js';
 
@@ -94,6 +95,19 @@ export class RouteCollectionsController {
       slug,
       req.user?.userId ?? null,
     );
+  }
+
+  @Get('by-slug/:slug/preview')
+  @ApiOperation({
+    summary:
+      'Map preview geometries (simplified polylines) for the items in a public/unlisted collection. No auth — visibility gating mirrors `/collections/by-slug/:slug`.',
+  })
+  @ApiResponse({ status: 200, type: RouteCollectionPreviewResponseDto })
+  @ApiResponse({ status: 404, description: 'Collection not found or private' })
+  async getPreviewBySlug(
+    @Param('slug') slug: string,
+  ): Promise<RouteCollectionPreviewResponseDto> {
+    return this.routeCollectionsService.getPreviewBySlug(slug);
   }
 
   @Get(':id')

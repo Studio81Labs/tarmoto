@@ -12,6 +12,7 @@ import { fetchSharedCollection } from "@/lib/route-collection-share";
 import { RouteCollectionVisibilityPill } from "@/components/RouteCollectionVisibilityPill";
 import { RouteCollectionFollowCta } from "@/components/RouteCollectionFollowCta";
 import { formatRelativeTime } from "@/lib/utils";
+import { CollectionPreviewMap } from "./_components/CollectionPreviewMap";
 
 export const dynamic = "force-dynamic";
 
@@ -88,6 +89,16 @@ export default async function SharedCollectionPage({
           </Pill>
         </div>
       </header>
+
+      <section className="mb-8">
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">
+          Map preview
+        </h2>
+        <CollectionPreviewMap
+          slug={detail.slug}
+          itemCount={detail.item_count}
+        />
+      </section>
 
       <section>
         <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">
