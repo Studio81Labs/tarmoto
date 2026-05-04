@@ -27,12 +27,7 @@ describe('NotificationPreferencesService', () => {
           updated_at: new Date('2026-04-25T10:00:00Z'),
         }),
       ),
-    } as unknown as jest.Mocked<
-      Pick<
-        Repository<NotificationPreferencesRow>,
-        'findOne' | 'create' | 'save'
-      >
-    >;
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [

@@ -473,7 +473,7 @@ function isResourceMissing(err: unknown): boolean {
     typeof err === 'object' &&
     err !== null &&
     'code' in err &&
-    (err as { code: unknown }).code === 'resource_missing'
+    err.code === 'resource_missing'
   );
 }
 

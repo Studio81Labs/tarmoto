@@ -96,7 +96,7 @@ export class GenerateTripDto {
    */
   @ApiProperty({ required: false, enum: TRIP_GENERATION_OPTIONS })
   @IsOptional()
-  @IsIn(TRIP_GENERATION_OPTIONS as unknown as string[])
+  @IsIn(TRIP_GENERATION_OPTIONS)
   option?: TripGenerationOptionId;
 
   @ApiProperty({ required: false, default: false })
@@ -126,6 +126,6 @@ export class GenerateTripDto {
   @IsArray()
   @ArrayUnique()
   @ArrayMaxSize(ALLOWED_SURFACES.length)
-  @IsIn(ALLOWED_SURFACES as unknown as string[], { each: true })
+  @IsIn(ALLOWED_SURFACES, { each: true })
   surfaces?: AllowedSurface[];
 }

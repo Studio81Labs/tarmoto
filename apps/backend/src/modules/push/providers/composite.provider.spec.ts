@@ -21,7 +21,7 @@ function makeProvider(name: string): jest.Mocked<PushProvider> {
       invalidTokens: [],
       providerName: name,
     }),
-  } as unknown as jest.Mocked<PushProvider>;
+  };
 }
 
 describe('CompositePushProvider', () => {

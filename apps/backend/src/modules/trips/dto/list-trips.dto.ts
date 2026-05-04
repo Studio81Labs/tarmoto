@@ -6,6 +6,6 @@ const TRIP_STATUSES = ['draft', 'planned', 'active', 'completed'] as const;
 export class ListTripsDto {
   @ApiProperty({ required: false, enum: TRIP_STATUSES })
   @IsOptional()
-  @IsIn(TRIP_STATUSES as unknown as string[])
+  @IsIn(TRIP_STATUSES)
   status?: (typeof TRIP_STATUSES)[number];
 }

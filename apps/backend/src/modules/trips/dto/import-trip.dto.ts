@@ -74,7 +74,7 @@ class ImportTripWaypointDto extends ImportTripPointDto {
 
   @ApiProperty({ required: false, enum: WAYPOINT_TYPES })
   @IsOptional()
-  @IsIn(WAYPOINT_TYPES as unknown as string[])
+  @IsIn(WAYPOINT_TYPES)
   type?: ImportWaypointType;
 }
 
@@ -97,7 +97,7 @@ export class ImportTripDto {
   region?: string;
 
   @ApiProperty({ enum: SOURCE_FORMATS })
-  @IsIn(SOURCE_FORMATS as unknown as string[])
+  @IsIn(SOURCE_FORMATS)
   source_format!: (typeof SOURCE_FORMATS)[number];
 
   @ApiProperty({ type: [ImportTripPointDto], minItems: 2 })

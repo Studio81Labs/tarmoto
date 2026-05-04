@@ -593,7 +593,7 @@ describe('PoiService', () => {
       await expect(
         service.findPointsOfInterestAlongRoute({
           route: [route[0]],
-        } as unknown as never),
+        }),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -605,7 +605,7 @@ describe('PoiService', () => {
       const result = await service.findPointsOfInterestAlongRoute({
         route,
         buffer_km: 3,
-      } as never);
+      });
 
       expect(result.pois).toEqual([]);
       expect(result.buffer_km).toBe(3);
@@ -621,13 +621,13 @@ describe('PoiService', () => {
       const zero = await service.findPointsOfInterestAlongRoute({
         route,
         buffer_km: 0,
-      } as never);
+      });
       expect(zero.buffer_km).toBe(2);
 
       const huge = await service.findPointsOfInterestAlongRoute({
         route,
         buffer_km: 999,
-      } as never);
+      });
       expect(huge.buffer_km).toBe(10);
     });
 
@@ -661,7 +661,7 @@ describe('PoiService', () => {
       const result = await service.findPointsOfInterestAlongRoute({
         route,
         buffer_km: 2,
-      } as never);
+      });
 
       expect(result.pois.map((p) => p.external_id)).toEqual([
         'osm:node:on-route',
@@ -703,7 +703,7 @@ describe('PoiService', () => {
       const result = await service.findPointsOfInterestAlongRoute({
         route,
         buffer_km: 2,
-      } as never);
+      });
 
       expect(result.pois).toHaveLength(1);
       expect(result.pois[0].distance_from_route_km).toBeLessThan(0.1);
@@ -719,7 +719,7 @@ describe('PoiService', () => {
       await service.findPointsOfInterestAlongRoute({
         route,
         buffer_km: 25, // big enough to stride 2+ samples over ~440 km
-      } as never);
+      });
 
       const passedSamples =
         provider.findPointsOfInterestAroundPoints.mock.calls[0][0];
@@ -732,7 +732,7 @@ describe('PoiService', () => {
 
       await service.findPointsOfInterestAlongRoute({
         route,
-      } as never);
+      });
 
       const passedKinds =
         provider.findPointsOfInterestAroundPoints.mock.calls[0][2];
@@ -813,7 +813,7 @@ describe('PoiService', () => {
       const result = await service.findPointsOfInterestAlongRoute({
         route,
         buffer_km: 2,
-      } as never);
+      });
 
       expect(result.pois.map((p) => p.external_id)).toEqual([
         'osm:node:early',

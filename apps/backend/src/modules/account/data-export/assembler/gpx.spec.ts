@@ -91,8 +91,8 @@ describe('rideToGpx', () => {
       route: {
         type: 'LineString',
         coordinates: [
-          [-122.0, 37.0, NaN as unknown as number],
-          [-122.1, 37.1, Infinity as unknown as number],
+          [-122.0, 37.0, NaN],
+          [-122.1, 37.1, Infinity],
         ],
       } as never,
     });

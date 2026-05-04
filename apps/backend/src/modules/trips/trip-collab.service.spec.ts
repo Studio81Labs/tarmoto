@@ -471,7 +471,7 @@ describe('TripCollabService', () => {
           suggestion_id: SUGGESTION_ID,
           user_id: USER_ID,
           vote: 'up',
-        } as unknown as TripSuggestionVote);
+        });
       txManager.update.mockResolvedValueOnce({
         affected: 1,
         raw: [],
@@ -500,7 +500,7 @@ describe('TripCollabService', () => {
           suggestion_id: SUGGESTION_ID,
           user_id: USER_ID,
           vote: 'up',
-        } as unknown as TripSuggestionVote);
+        });
       txManager.update.mockResolvedValueOnce({
         affected: 1,
         raw: [],
@@ -815,7 +815,7 @@ describe('TripCollabService', () => {
         addOrderBy: jest.fn(),
         take: jest.fn(),
         getMany: jest.fn().mockResolvedValue(rows),
-      } as MessagesQbMock;
+      };
       for (const fn of [
         'leftJoinAndSelect',
         'where',

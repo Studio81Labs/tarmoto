@@ -154,7 +154,7 @@ describe('RidesService', () => {
       rideRepo.findOne!.mockResolvedValueOnce({
         ...mockRide,
         status: 'completed',
-      } as Ride);
+      });
 
       await expect(service.stop('user-1', 'ride-1')).rejects.toThrow(
         BadRequestException,
@@ -376,7 +376,7 @@ describe('RidesService', () => {
         max_quality: 5,
         type: 'trip',
         q: 'sunday',
-      } as never);
+      });
 
       const predicates = andWhere.mock.calls.map(
         (c: unknown[]) => c[0] as string,
@@ -403,7 +403,7 @@ describe('RidesService', () => {
         near_lat: 49.2,
         near_lng: 16.6,
         near_km: 25,
-      } as never);
+      });
 
       const call = andWhere.mock.calls.find(
         (c: unknown[]) =>
@@ -426,7 +426,7 @@ describe('RidesService', () => {
       (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
 
       await expect(
-        service.list('user-1', { near_lat: 49.2, near_lng: 16.6 } as never),
+        service.list('user-1', { near_lat: 49.2, near_lng: 16.6 }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
@@ -434,7 +434,7 @@ describe('RidesService', () => {
       const { qb, andWhere } = makeQbSpy();
       (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
 
-      await service.list('user-1', {} as never);
+      await service.list('user-1', {});
 
       const calls = andWhere.mock.calls.map((c: unknown[]) => c[0] as string);
       expect(calls.some((p) => p.includes('ST_DWithin'))).toBe(false);
@@ -444,7 +444,7 @@ describe('RidesService', () => {
       const { qb, andWhere } = makeQbSpy();
       (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
 
-      await service.list('user-1', { q: '50%_\\off' } as never);
+      await service.list('user-1', { q: '50%_\\off' });
 
       const ilikeCall = andWhere.mock.calls.find(
         (c: unknown[]) =>
@@ -474,7 +474,7 @@ describe('RidesService', () => {
       const { qb, orderBy } = makeQbSpy();
       (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
 
-      await service.list('user-1', {} as never);
+      await service.list('user-1', {});
 
       expect(orderBy).toHaveBeenCalledWith('ride.started_at', 'DESC');
     });
@@ -653,7 +653,7 @@ describe('RidesService', () => {
         ...mockRide,
         ended_at: new Date('2026-04-14T11:30:00Z'),
         distance_km: 42,
-      } as Ride);
+      });
       statsRepo.findOne!.mockResolvedValueOnce({
         elevation_gain: 100,
       } as RideStats);
@@ -686,8 +686,8 @@ describe('RidesService', () => {
 
     it('joins rides with their stats by ride_id', async () => {
       rideRepo.find!.mockResolvedValueOnce([
-        { ...mockRide, id: 'ride-1' } as Ride,
-        { ...mockRide, id: 'ride-2' } as Ride,
+        { ...mockRide, id: 'ride-1' },
+        { ...mockRide, id: 'ride-2' },
       ]);
       statsRepo.find!.mockResolvedValueOnce([
         { ride_id: 'ride-1', elevation_gain: 100 } as RideStats,
@@ -740,7 +740,7 @@ describe('RidesService', () => {
       );
       (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
 
-      const res = await service.getTracks('user-1', {} as never);
+      const res = await service.getTracks('user-1', {});
 
       expect(res.tracks).toEqual([
         {
@@ -761,7 +761,7 @@ describe('RidesService', () => {
       const qb = makeTracksQbSpy([], 501);
       (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
 
-      const res = await service.getTracks('user-1', {} as never);
+      const res = await service.getTracks('user-1', {});
       expect(res.truncated).toBe(true);
     });
 
@@ -769,7 +769,7 @@ describe('RidesService', () => {
       const qb = makeTracksQbSpy([], 0);
       (rideRepo.createQueryBuilder as jest.Mock).mockReturnValue(qb);
 
-      await service.getTracks('user-1', {} as never);
+      await service.getTracks('user-1', {});
 
       const predicates = qb.andWhere.mock.calls.map(
         (c: unknown[]) => c[0] as string,
@@ -794,7 +794,7 @@ describe('RidesService', () => {
 
     it('skips rides without route_geom', async () => {
       rideRepo.find!.mockResolvedValueOnce([
-        { ...mockRide, id: 'ride-1', route_geom: null } as Ride,
+        { ...mockRide, id: 'ride-1', route_geom: null },
         {
           ...mockRide,
           id: 'ride-2',

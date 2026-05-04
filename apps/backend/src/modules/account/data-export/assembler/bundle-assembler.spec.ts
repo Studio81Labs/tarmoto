@@ -61,7 +61,7 @@ function emptyRepos() {
 describe('BundleAssembler', () => {
   it('emits the documented file set when all sources are empty', async () => {
     const user = makeUser();
-    const assembler = new BundleAssembler(emptyRepos() as never);
+    const assembler = new BundleAssembler(emptyRepos());
     const buf = await streamToBuffer(await assembler.assemble(user));
     const entries = await listEntries(buf);
 
@@ -125,7 +125,7 @@ describe('BundleAssembler', () => {
       analytics_consent: false,
       personalized_recommendations_consent: true,
     });
-    const assembler = new BundleAssembler(repos as never);
+    const assembler = new BundleAssembler(repos);
     const buf = await streamToBuffer(await assembler.assemble(user));
     const entries = await listEntries(buf);
     expect(JSON.parse(entries.get('privacy.json')!)).toEqual({
@@ -165,7 +165,7 @@ describe('BundleAssembler', () => {
     };
     const repos = emptyRepos();
     repos.rides.find.mockResolvedValue([ride]);
-    const assembler = new BundleAssembler(repos as never);
+    const assembler = new BundleAssembler(repos);
     const buf = await streamToBuffer(await assembler.assemble(user));
     const entries = await listEntries(buf);
     expect(entries.has('rides/r1.gpx')).toBe(true);
@@ -183,7 +183,7 @@ describe('BundleAssembler', () => {
     };
     const repos = emptyRepos();
     repos.rides.find.mockResolvedValue([ride]);
-    const assembler = new BundleAssembler(repos as never);
+    const assembler = new BundleAssembler(repos);
     const buf = await streamToBuffer(await assembler.assemble(user));
     const entries = await listEntries(buf);
     expect(entries.has('rides/r2.gpx')).toBe(false);
@@ -220,7 +220,7 @@ describe('BundleAssembler', () => {
     repos.tripMembers.find.mockResolvedValue([memberTrip]);
     repos.tripDays.find.mockResolvedValue([day1, day2]);
 
-    const assembler = new BundleAssembler(repos as never);
+    const assembler = new BundleAssembler(repos);
     const buf = await streamToBuffer(await assembler.assemble(user));
     const entries = await listEntries(buf);
     expect(entries.has('trips/t1/day-1.gpx')).toBe(true);
@@ -246,7 +246,7 @@ describe('BundleAssembler', () => {
   it('skips the trip_days query entirely when the user has no trips', async () => {
     const user = makeUser();
     const repos = emptyRepos();
-    const assembler = new BundleAssembler(repos as never);
+    const assembler = new BundleAssembler(repos);
     await streamToBuffer(await assembler.assemble(user));
     expect(repos.tripDays.find).not.toHaveBeenCalled();
   });

@@ -162,7 +162,7 @@ describe('ChallengesService', () => {
       challengeRepo.findOne!.mockResolvedValueOnce({
         ...mockChallenge,
         ends_at: new Date(now.getTime() - 86400000),
-      } as unknown as Challenge);
+      });
 
       await expect(service.join('user-1', 'ch-1')).rejects.toThrow(
         BadRequestException,
@@ -173,7 +173,7 @@ describe('ChallengesService', () => {
       challengeRepo.findOne!.mockResolvedValueOnce({
         ...mockChallenge,
         starts_at: new Date(now.getTime() + 86400000 * 10),
-      } as unknown as Challenge);
+      });
 
       await expect(service.join('user-1', 'ch-1')).rejects.toThrow(
         BadRequestException,
@@ -213,7 +213,7 @@ describe('ChallengesService', () => {
         progress: 15,
         completed: true,
         completed_at: new Date(),
-      } as unknown as ChallengeEntry);
+      });
 
       const result = await service.getProgress('user-1', 'ch-1');
 
@@ -227,7 +227,7 @@ describe('ChallengesService', () => {
         ...mockEntry,
         progress: 0,
         challenge: zeroTargetChallenge,
-      } as unknown as ChallengeEntry);
+      });
 
       const result = await service.getProgress('user-1', 'ch-1');
 
@@ -263,7 +263,7 @@ describe('ChallengesService', () => {
         progress: 3,
         completed: false,
         completed_at: null,
-      } as unknown as ChallengeEntry);
+      });
 
       await service.updateProgress('user-1', 'ch-1', 7);
 
@@ -280,7 +280,7 @@ describe('ChallengesService', () => {
         ...mockEntry,
         completed: true,
         completed_at: new Date('2026-04-10T10:00:00Z'),
-      } as unknown as ChallengeEntry);
+      });
 
       await service.updateProgress('user-1', 'ch-1', 12);
 

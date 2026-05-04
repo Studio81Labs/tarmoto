@@ -142,7 +142,7 @@ export class ListRidesDto {
 
   @ApiProperty({ required: false, enum: SORTABLE })
   @IsOptional()
-  @IsIn(SORTABLE as unknown as string[])
+  @IsIn(SORTABLE)
   sort?: RidesSortField;
 
   @ApiProperty({ required: false, enum: ['asc', 'desc'] })

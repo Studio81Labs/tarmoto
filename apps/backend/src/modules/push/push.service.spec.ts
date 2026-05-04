@@ -59,15 +59,11 @@ describe('PushService', () => {
         },
       ]),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
-    } as unknown as jest.Mocked<
-      Pick<Repository<DeviceToken>, 'find' | 'update'>
-    >;
+    };
 
     prefsRepo = {
       findOne: jest.fn().mockResolvedValue(null),
-    } as unknown as jest.Mocked<
-      Pick<Repository<NotificationPreferencesRow>, 'findOne'>
-    >;
+    };
 
     provider = {
       name: 'mock',
@@ -79,7 +75,7 @@ describe('PushService', () => {
             providerName: 'mock',
           }),
       ),
-    } as unknown as jest.Mocked<PushProvider>;
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [

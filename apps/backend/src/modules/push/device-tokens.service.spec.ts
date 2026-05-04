@@ -28,9 +28,7 @@ describe('DeviceTokensService', () => {
         }),
       ),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
-    } as unknown as jest.Mocked<
-      Pick<Repository<DeviceToken>, 'findOne' | 'create' | 'save' | 'update'>
-    >;
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [

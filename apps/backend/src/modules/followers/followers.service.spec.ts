@@ -271,7 +271,7 @@ describe('FollowersService', () => {
       const sr = {
         ...mockSharedRide,
         ride: activeRide,
-      } as unknown as SharedRide;
+      };
       mockQueryBuilder.getMany.mockResolvedValueOnce([sr]);
 
       const result = await service.getFeed('user-1');

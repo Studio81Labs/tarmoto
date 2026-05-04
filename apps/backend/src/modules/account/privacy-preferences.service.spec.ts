@@ -27,9 +27,7 @@ describe('PrivacyPreferencesService', () => {
           updated_at: new Date('2026-05-01T10:00:00Z'),
         }),
       ),
-    } as unknown as jest.Mocked<
-      Pick<Repository<PrivacyPreferencesRow>, 'findOne' | 'create' | 'save'>
-    >;
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [

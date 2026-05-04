@@ -48,7 +48,7 @@ describe('SensorService', () => {
               '10_20': batchDist['10_20'] ?? 0,
               '20_30': batchDist['20_30'] ?? 0,
               '30_plus': batchDist['30_plus'] ?? 0,
-            } as RideStats['lean_distribution_json'],
+            },
           };
         } else {
           const existingDist =
@@ -64,7 +64,7 @@ describe('SensorService', () => {
             '20_30': (existingDist['20_30'] ?? 0) + (batchDist['20_30'] ?? 0),
             '30_plus':
               (existingDist['30_plus'] ?? 0) + (batchDist['30_plus'] ?? 0),
-          } as RideStats['lean_distribution_json'];
+          };
         }
         return Promise.resolve([]);
       }),
@@ -544,7 +544,7 @@ describe('SensorService', () => {
           '20_30': 0,
           '30_plus': 0,
         },
-      } as RideStats;
+      };
 
       const dto = {
         ride_id: 'ride-1',

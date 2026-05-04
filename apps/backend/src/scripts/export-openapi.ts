@@ -38,11 +38,11 @@ async function exportSpec(): Promise<void> {
   // at startup (even with retryAttempts: 0). We suppress that so the export can
   // complete: the database connection failure is expected and harmless because
   // the OpenAPI document is generated from metadata, not live data.
-  const realExit = process.exit.bind(process) as (code?: number) => never;
+  const realExit = process.exit.bind(process);
   let exportDone = false;
   let hangTimeout: NodeJS.Timeout | undefined;
 
-  process.exit = ((code?: number) => {
+  process.exit = (code?: number) => {
     if ((code ?? 0) !== 0 && !exportDone) {
       // Swallow premature exits from NestJS's error handler — we will call
       // realExit ourselves once the spec has been written.
@@ -59,7 +59,7 @@ async function exportSpec(): Promise<void> {
       return undefined as never;
     }
     return realExit(code);
-  }) as (code?: number) => never;
+  };
 
   try {
     const app = await NestFactory.create(AppModule, {

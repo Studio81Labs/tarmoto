@@ -58,7 +58,7 @@ describe('AuthGuard (US-62 soft-delete check)', () => {
     em.findOne.mockResolvedValueOnce({
       id: 'user-1',
       deleted_at: new Date('2026-04-25T12:00:00Z'),
-    } as User);
+    });
     const ctx = makeContext('Bearer good-token');
     await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
       UnauthorizedException,
@@ -84,7 +84,7 @@ describe('AuthGuard (US-62 soft-delete check)', () => {
     jwt.verifyAsync.mockResolvedValueOnce({
       sub: 'user-1',
       type: 'refresh',
-    } as never);
+    });
     await expect(
       guard.canActivate(makeContext('Bearer refresh-token')),
     ).rejects.toBeInstanceOf(UnauthorizedException);
@@ -127,7 +127,7 @@ describe('OptionalAuthGuard (US-62 soft-delete check)', () => {
     em.findOne.mockResolvedValueOnce({
       id: 'user-1',
       deleted_at: new Date(),
-    } as User);
+    });
     const req = {
       headers: { authorization: 'Bearer good-token' },
     } as unknown as Request;

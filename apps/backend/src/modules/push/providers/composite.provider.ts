@@ -77,7 +77,7 @@ export class CompositePushProvider implements PushProvider {
         // runtime a stale schema row could still surface a value
         // outside the enum we control.
         this.logger.warn(
-          `unknown device platform "${String(target.platform as unknown)}" — routing through fallback`,
+          `unknown device platform "${String(target.platform)}" — routing through fallback`,
         );
         orphanTargets.push(target);
       }

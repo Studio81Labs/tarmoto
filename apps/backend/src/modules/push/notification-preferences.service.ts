@@ -33,7 +33,7 @@ export class NotificationPreferencesService {
 
   async get(userId: string): Promise<NotificationPreferencesResponseDto> {
     const row = await this.repo.findOne({ where: { user_id: userId } });
-    return mergeWithDefaults(row) as NotificationPreferencesResponseDto;
+    return mergeWithDefaults(row);
   }
 
   async update(
@@ -62,7 +62,7 @@ export class NotificationPreferencesService {
     row.categories = merged.categories;
 
     const saved = await this.repo.save(row);
-    return mergeWithDefaults(saved) as NotificationPreferencesResponseDto;
+    return mergeWithDefaults(saved);
   }
 }
 

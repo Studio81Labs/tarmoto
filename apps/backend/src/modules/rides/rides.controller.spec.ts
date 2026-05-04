@@ -152,7 +152,7 @@ describe('RidesController', () => {
     it('forwards the user and filters to the service', async () => {
       const result = await controller.tracks(mockReq, {
         type: 'trip',
-      } as never);
+      });
       expect(service.getTracks).toHaveBeenCalledWith('user-1', {
         type: 'trip',
       });

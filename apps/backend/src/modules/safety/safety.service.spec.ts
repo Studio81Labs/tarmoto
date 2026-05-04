@@ -121,7 +121,7 @@ describe('SafetyService', () => {
         channel: 'sms',
         provider_message_id: 'SM-mock',
       }),
-    } as unknown as jest.Mocked<CrashAlertNotifier>;
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -220,7 +220,7 @@ describe('SafetyService', () => {
       userRepo.findOne!.mockResolvedValueOnce({
         ...mockUser,
         preferences: { locale: 'xx-YY' },
-      } as User);
+      });
 
       await service.sendCrashAlert('user-1', { lat: 49.1, lng: 16.75 });
 

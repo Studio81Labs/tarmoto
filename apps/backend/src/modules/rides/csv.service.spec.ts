@@ -50,7 +50,7 @@ describe('CsvService', () => {
 
     it('emits empty strings for nulls (not the literal "null")', () => {
       const csv = service.buildRideCsv(
-        { ...ride, ended_at: null, distance_km: null, avg_speed: null } as Ride,
+        { ...ride, ended_at: null, distance_km: null, avg_speed: null },
         null,
       );
       const row = csv.trimEnd().split('\r\n')[1].split(',');
@@ -77,7 +77,7 @@ describe('CsvService', () => {
 
   describe('buildRidesCsv', () => {
     it('emits header + one row per ride', () => {
-      const second = { ...ride, id: 'ride-2' } as Ride;
+      const second = { ...ride, id: 'ride-2' };
       const csv = service.buildRidesCsv([
         { ride, stats },
         { ride: second, stats: null },
@@ -99,19 +99,19 @@ describe('CsvService', () => {
 
   describe('escaping', () => {
     it('quotes and doubles embedded double-quotes', () => {
-      const quirky = { ...ride, ride_type: 'free "weekend"' } as Ride;
+      const quirky = { ...ride, ride_type: 'free "weekend"' };
       const csv = service.buildRideCsv(quirky, stats);
       expect(csv).toContain('"free ""weekend"""');
     });
 
     it('quotes values containing commas', () => {
-      const quirky = { ...ride, status: 'paused,completed' } as Ride;
+      const quirky = { ...ride, status: 'paused,completed' };
       const csv = service.buildRideCsv(quirky, stats);
       expect(csv).toContain('"paused,completed"');
     });
 
     it('quotes values containing newlines', () => {
-      const quirky = { ...ride, ride_type: 'free\nride' } as Ride;
+      const quirky = { ...ride, ride_type: 'free\nride' };
       const csv = service.buildRideCsv(quirky, stats);
       expect(csv).toContain('"free\nride"');
     });

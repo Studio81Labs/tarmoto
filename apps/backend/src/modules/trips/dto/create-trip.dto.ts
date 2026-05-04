@@ -39,7 +39,7 @@ export class CreateTripDto {
 
   @ApiProperty({ required: false, enum: ROAD_PREFERENCES })
   @IsOptional()
-  @IsIn(ROAD_PREFERENCES as unknown as string[])
+  @IsIn(ROAD_PREFERENCES)
   road_preference?: (typeof ROAD_PREFERENCES)[number];
 
   @ApiProperty({ required: false, minimum: 1, maximum: 1000 })

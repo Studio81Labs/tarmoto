@@ -48,7 +48,7 @@ export class UpdateTripDto {
 
   @ApiProperty({ required: false, enum: ROAD_PREFERENCES })
   @IsOptional()
-  @IsIn(ROAD_PREFERENCES as unknown as string[])
+  @IsIn(ROAD_PREFERENCES)
   road_preference?: (typeof ROAD_PREFERENCES)[number];
 
   @ApiProperty({ required: false, minimum: 1, maximum: 1000 })
@@ -67,6 +67,6 @@ export class UpdateTripDto {
 
   @ApiProperty({ required: false, enum: TRIP_STATUSES })
   @IsOptional()
-  @IsIn(TRIP_STATUSES as unknown as string[])
+  @IsIn(TRIP_STATUSES)
   status?: (typeof TRIP_STATUSES)[number];
 }

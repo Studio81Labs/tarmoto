@@ -60,7 +60,7 @@ describe('AccountService', () => {
         andWhere: jest.fn().mockReturnThis(),
         execute: activationClaimExecute,
       }),
-    } as unknown as typeof userRepo;
+    };
 
     stripe = {
       ensureCustomer: jest.fn(),
