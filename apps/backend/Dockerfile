@@ -70,4 +70,7 @@ HEALTHCHECK --interval=15s --timeout=5s --retries=3 --start-period=30s \
   CMD curl --fail --silent http://127.0.0.1:3000/api/v1/healthz || exit 1
 
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["node", "apps/backend/dist/main.js"]
+# Run pending TypeORM migrations before starting the server so schema
+# changes ship atomically with the code that depends on them. Migrations
+# are idempotent — already-applied ones are skipped.
+CMD ["sh", "-c", "cd apps/backend && npx typeorm migration:run -d dist/data-source.js && cd /app && node apps/backend/dist/main.js"]
