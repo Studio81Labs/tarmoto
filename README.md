@@ -16,10 +16,10 @@ That single command installs dependencies, starts Postgres + Redis, builds share
 After bootstrap:
 
 ```bash
-pnpm dev:backend                 # Backend watch mode
-pnpm dev:mobile                  # Metro bundler (then `pnpm ios` / `pnpm android`)
-pnpm dev:companion               # Next.js companion (web)
-pnpm dev:docs                    # Design docs viewer on :4200
+pnpm backend:dev                 # Backend watch mode
+pnpm mobile:dev                  # Metro bundler (then `pnpm mobile:ios` / `pnpm mobile:android`)
+pnpm companion:dev               # Next.js companion (web)
+pnpm docs:dev                    # Design docs viewer on :4200
 ```
 
 ## Prerequisites
@@ -39,10 +39,10 @@ cp apps/backend/.env.example apps/backend/.env
 cp apps/mobile/.env.example apps/mobile/.env
 cp apps/companion/.env.example apps/companion/.env
 pnpm db:up               # Start PostgreSQL + Redis in Docker
-pnpm build:shared        # Build @tarmoto/shared (backend depends on it)
-pnpm build:backend       # Compile backend (TypeORM reads compiled data-source)
+pnpm shared:build        # Build @tarmoto/shared (backend depends on it)
+pnpm backend:build       # Compile backend (TypeORM reads compiled data-source)
 pnpm db:migrate          # Run migrations against Postgres
-pnpm dev:backend         # Start backend in watch mode
+pnpm backend:dev         # Start backend in watch mode
 ```
 
 ### After editing `Info.plist` or `AndroidManifest.xml`
@@ -54,11 +54,11 @@ still embeds the old manifest. After editing either file:
 ```bash
 # iOS
 cd apps/mobile/ios && pod install && cd -
-pnpm ios     # forces a fresh xcodebuild
+pnpm mobile:ios     # forces a fresh xcodebuild
 
 # Android
 cd apps/mobile/android && ./gradlew clean && cd -
-pnpm android
+pnpm mobile:android
 ```
 
 If location, sensors, notifications, or photo capture stop working
@@ -86,47 +86,49 @@ tarmoto/
 │   ├── design/              Wireframes, ERD
 │   └── database/            PostgreSQL + PostGIS schema
 ├── infra/
-│   ├── docker/              docker-compose (Postgres + Redis)
-│   └── render/              Render Blueprint (Postgres + Key Value + backend Web Service)
+│   └── docker/              docker-compose (Postgres + Redis)
 └── .github/                 CI workflows, issue templates, deploy pipelines
 ```
 
 ## Commands
 
-| Command                     | Description                                            |
-| --------------------------- | ------------------------------------------------------ |
-| `pnpm bootstrap`            | Full dev environment setup                             |
-| `pnpm install`              | Install workspace dependencies                         |
-| `pnpm dev:backend`          | Start backend in watch mode                            |
-| `pnpm dev:mobile`           | Start Metro bundler                                    |
-| `pnpm ios` / `pnpm android` | Run mobile on simulator / emulator                     |
-| `pnpm dev:companion`        | Start companion (Next.js) dev server                   |
-| `pnpm dev:poc`              | Start PoC sensor dev server                            |
-| `pnpm dev:docs`             | Design docs viewer (wireframes + ERD) on `:4200`       |
-| `pnpm build:backend`        | Build backend                                          |
-| `pnpm build:companion`      | Build companion                                        |
-| `pnpm build:shared`         | Build shared package                                   |
-| `pnpm build:poc`            | Build PoC sensor                                       |
-| `pnpm db:up`                | Start PostgreSQL + Redis via Docker                    |
-| `pnpm db:down`              | Stop Docker services                                   |
-| `pnpm db:migrate`           | Build backend + run TypeORM migrations                 |
-| `pnpm generate:api`         | Generate OpenAPI spec + TypeScript client from backend |
-| `pnpm lint`                 | Lint all packages                                      |
-| `pnpm test`                 | Run backend tests                                      |
-| `pnpm clean`                | Remove `dist/` + `node_modules/`                       |
+| Command                                   | Description                                            |
+| ----------------------------------------- | ------------------------------------------------------ |
+| `pnpm bootstrap`                          | Full dev environment setup                             |
+| `pnpm install`                            | Install workspace dependencies                         |
+| `pnpm backend:dev`                        | Start backend in watch mode                            |
+| `pnpm backend:build`                      | Build backend                                          |
+| `pnpm backend:lint`                       | Lint backend                                           |
+| `pnpm backend:test`                       | Run backend tests                                      |
+| `pnpm backend:db:migrate`                 | Build backend + run TypeORM migrations                 |
+| `pnpm mobile:dev`                         | Start Metro bundler                                    |
+| `pnpm mobile:ios` / `pnpm mobile:android` | Run mobile on simulator / emulator                     |
+| `pnpm companion:dev`                      | Start companion (Next.js) dev server                   |
+| `pnpm companion:build`                    | Build companion                                        |
+| `pnpm poc:dev`                            | Start PoC sensor dev server                            |
+| `pnpm poc:build`                          | Build PoC sensor                                       |
+| `pnpm shared:build`                       | Build shared package                                   |
+| `pnpm openapi:gen`                        | Generate OpenAPI spec + TypeScript client from backend |
+| `pnpm docs:dev`                           | Design docs viewer (wireframes + ERD) on `:4200`       |
+| `pnpm db:up`                              | Start PostgreSQL + Redis via Docker                    |
+| `pnpm db:down`                            | Stop Docker services                                   |
+| `pnpm db:migrate`                         | Alias for `backend:db:migrate`                         |
+| `pnpm lint`                               | Lint all packages                                      |
+| `pnpm test`                               | Run all tests                                          |
+| `pnpm clean`                              | Remove `dist/` + `node_modules/`                       |
 
 ## Development Workflow
 
 ```
 Backend (NestJS + TypeORM + PostGIS)
-    ↓  pnpm generate:api
+    ↓  pnpm openapi:gen
 OpenAPI spec + TypeScript client  (packages/openapi/ — gitignored)
     ↓
 Mobile (React Native) & Companion (Next.js) consume @tarmoto/openapi
 ```
 
 1. Make backend changes in `apps/backend/` with `@nestjs/swagger` decorators.
-2. Run `pnpm generate:api` to regenerate the OpenAPI spec and TypeScript client.
+2. Run `pnpm openapi:gen` to regenerate the OpenAPI spec and TypeScript client.
 3. Mobile and companion import the typed client from `@tarmoto/openapi`.
 
 For database schema changes, see [docs/process/typeorm-migrations.md](./docs/process/typeorm-migrations.md).
@@ -159,12 +161,12 @@ For database schema changes, see [docs/process/typeorm-migrations.md](./docs/pro
 
 ## Deployment
 
-- **Backend** — Render Web Service running the [`apps/backend/Dockerfile`](./apps/backend/Dockerfile); managed Render Postgres (PostGIS via migration) and Render Key Value (Redis-compatible) for queues / pub-sub; Cloudflare R2 for object storage. Blueprint under [`infra/render/`](./infra/render/), deploy via [`.github/workflows/backend-deploy.yml`](./.github/workflows/backend-deploy.yml). Push to `main` triggers Render's auto-deploy; the workflow waits for it to go live, smoke-tests `/api/v1/healthz`, and auto-rolls back on smoke failure. The `production` GitHub environment can gate the smoke + rollback step on reviewer approval. No separate staging environment — pre-prod validation runs against the local Docker Compose stack ([ADR-0005](./docs/decisions/0005-deployment-stack-render.md)).
+- **Backend** — Hetzner CX33 + Coolify running the [`apps/backend/Dockerfile`](./apps/backend/Dockerfile); Coolify-managed Postgres (PostGIS via migration) and Redis for queues / pub-sub; Cloudflare R2 for object storage. Push to `main` triggers Coolify's auto-deploy; the deploy workflow in [`.github/workflows/backend-deploy.yml`](./.github/workflows/backend-deploy.yml) waits for healthcheck, smoke-tests, and auto-rolls back on failure. The `production` GitHub environment can gate the smoke + rollback step on reviewer approval. No separate staging environment — pre-prod validation runs against the local Docker Compose stack ([ADR-0006](./docs/decisions/0006-deployment-stack-hetzner-coolify.md)).
 - **Companion** — Cloudflare Workers (OpenNext) with PR previews; deploy via [`.github/workflows/companion-deploy.yml`](./.github/workflows/companion-deploy.yml).
 - **Mobile** — Fastlane lanes for iOS TestFlight and Android Play Internal track; manual `workflow_dispatch` or `mobile-vX.Y.Z` tag, see [`.github/workflows/mobile-release.yml`](./.github/workflows/mobile-release.yml).
 - **PoC sensor** — Cloudflare Pages on push to `main` via [`poc-deploy.yml`](./.github/workflows/poc-deploy.yml).
 
-Stack rationale and tradeoffs are in [ADR 0005](./docs/decisions/0005-deployment-stack-render.md). Deploy / rollback runbook is in [docs/process/runbook.md](./docs/process/runbook.md#production-deploys).
+Stack rationale and tradeoffs are in [ADR 0006](./docs/decisions/0006-deployment-stack-hetzner-coolify.md). Deploy / rollback runbook is in [docs/process/runbook.md](./docs/process/runbook.md#production-deploys).
 
 ## Bootstrap Details
 
