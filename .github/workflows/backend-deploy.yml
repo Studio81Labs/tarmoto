@@ -10,13 +10,13 @@ name: Backend Deploy
 #
 # Required repo secrets:
 #   COOLIFY_API_TOKEN                Coolify API token (Keys & Tokens)
-#   COOLIFY_DEPLOY_WEBHOOK_URL       Production Coolify app deploy webhook
+#   COOLIFY_PROD_DEPLOY_WEBHOOK_URL   Production Coolify app deploy webhook
 #   COOLIFY_STAGING_DEPLOY_WEBHOOK_URL  Staging Coolify app deploy webhook
 #
 # Required repo variables:
 #   BACKEND_URL_PROD                 e.g. https://api.tarmoto.app
 #   BACKEND_URL_STAGING              e.g. https://api.staging.tarmoto.app
-#   COOLIFY_APPLICATION_UUID         Production Coolify app UUID
+#   COOLIFY_PROD_APPLICATION_UUID     Production Coolify app UUID
 #   COOLIFY_STAGING_APPLICATION_UUID Staging Coolify app UUID
 
 on:
@@ -74,7 +74,7 @@ jobs:
       - name: Trigger Coolify deploy (production only)
         if: steps.env.outputs.name == 'production'
         env:
-          WEBHOOK_URL: ${{ secrets.COOLIFY_DEPLOY_WEBHOOK_URL }}
+          WEBHOOK_URL: ${{ secrets.COOLIFY_PROD_DEPLOY_WEBHOOK_URL }}
         run: |
           echo "Triggering production deploy..."
           curl --fail --silent --show-error -X POST "$WEBHOOK_URL"
@@ -112,7 +112,7 @@ jobs:
         if: failure()
         env:
           COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
-          APPLICATION_UUID: ${{ steps.env.outputs.name == 'production' && vars.COOLIFY_APPLICATION_UUID || vars.COOLIFY_STAGING_APPLICATION_UUID }}
+          APPLICATION_UUID: ${{ steps.env.outputs.name == 'production' && vars.COOLIFY_PROD_APPLICATION_UUID || vars.COOLIFY_STAGING_APPLICATION_UUID }}
           COOLIFY_URL: https://coolify.studio81.cz
         run: |
           set -euo pipefail

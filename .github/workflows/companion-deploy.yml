@@ -14,7 +14,7 @@ name: Companion Deploy
 # Required repo variables:
 #   CLOUDFLARE_ACCOUNT_ID              Account hosting the Worker
 #   COMPANION_WORKERS_SUBDOMAIN (var)  workers.dev subdomain (e.g. studio81)
-#   COMPANION_WORKER_NAME (var)        Production worker name (default: tarmoto-companion)
+#   COMPANION_PROD_WORKER_NAME (var)    Production worker name (default: tarmoto-companion)
 #   COMPANION_STAGING_WORKER_NAME (var) Staging worker name (default: tarmoto-companion-staging)
 #   COMPANION_DEPLOY_ENABLED (var)     Kill switch: must be "true" to run
 #   NEXT_PUBLIC_API_URL (var)          Production backend URL for companion build
@@ -113,7 +113,7 @@ jobs:
       - name: Resolve worker name
         id: worker
         env:
-          PROD_NAME: ${{ vars.COMPANION_WORKER_NAME || 'tarmoto-companion' }}
+          PROD_NAME: ${{ vars.COMPANION_PROD_WORKER_NAME || 'tarmoto-companion' }}
           STAGING_NAME: ${{ vars.COMPANION_STAGING_WORKER_NAME || 'tarmoto-companion-staging' }}
           IS_PR: ${{ github.event_name == 'pull_request' }}
           IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
