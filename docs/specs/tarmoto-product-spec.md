@@ -77,11 +77,11 @@ Every rider using Tarmoto passively collects road surface quality data via smart
 
 **User Stories:**
 
-- **US-1:** As a rider, I want to see a road quality overlay on the map so that I can avoid roads with poor asphalt before I ride them.
-- **US-2:** As a rider, I want my phone to automatically record road surface data while I ride so that I contribute to the community without any extra effort.
-- **US-3:** As a rider, I want to see a Road Quality Score (1–5) for each road segment so that I can quickly assess if a road is worth riding.
-- **US-4:** As a rider, I want to report specific hazards (pothole, gravel, oil spill) with a single tap so that other riders are warned immediately.
-- **US-5:** As a route planner, I want to filter routes by minimum road quality so that I only see routes with good asphalt.
+- 🚧 **US-1:** As a rider, I want to see a road quality overlay on the map so that I can avoid roads with poor asphalt before I ride them.
+- 🚧 **US-2:** As a rider, I want my phone to automatically record road surface data while I ride so that I contribute to the community without any extra effort.
+- ✅ **US-3:** As a rider, I want to see a Road Quality Score (1–5) for each road segment so that I can quickly assess if a road is worth riding.
+- ✅ **US-4:** As a rider, I want to report specific hazards (pothole, gravel, oil spill) with a single tap so that other riders are warned immediately.
+- 🚧 **US-5:** As a route planner, I want to filter routes by minimum road quality so that I only see routes with good asphalt.
 
 **Technical Approach:**
 
@@ -101,12 +101,12 @@ The trip planner replaces the manual process of checking roads via Street View a
 
 **User Stories:**
 
-- **US-6:** As a group leader, I want to draw a region on the map and see a heatmap of the best roads so that I can plan our trip around fun zones instead of A→B navigation.
-- **US-7:** As a rider, I want to set trip parameters (days, daily km, road type preference) and get an auto-generated multi-day route so that planning takes minutes instead of hours.
-- **US-8:** As a group member, I want to join a shared trip, suggest road segments, and vote on alternatives so that trip planning is collaborative.
-- **US-9:** As a rider, I want to see Road Preview Cards for every segment (surface quality, curviness, elevation, photos, hazards) so that I don't need to check Street View.
-- **US-10:** As a rider, I want the app to suggest accommodations and fuel stops near the best riding zones so that logistics fit around the riding, not the other way around.
-- **US-11:** As a rider, I want to see seasonal/pass availability data so I don't plan a trip around a closed mountain pass.
+- ✅ **US-6:** As a group leader, I want to draw a region on the map and see a heatmap of the best roads so that I can plan our trip around fun zones instead of A→B navigation.
+- ✅ **US-7:** As a rider, I want to set trip parameters (days, daily km, road type preference) and get an auto-generated multi-day route so that planning takes minutes instead of hours.
+- ✅ **US-8:** As a group member, I want to join a shared trip, suggest road segments, and vote on alternatives so that trip planning is collaborative.
+- ✅ **US-9:** As a rider, I want to see Road Preview Cards for every segment (surface quality, curviness, elevation, photos, hazards) so that I don't need to check Street View.
+- ✅ **US-10:** As a rider, I want the app to suggest accommodations and fuel stops near the best riding zones so that logistics fit around the riding, not the other way around.
+- ✅ **US-11:** As a rider, I want to see seasonal/pass availability data so I don't plan a trip around a closed mountain pass.
 
 **Fun Zone Discovery Algorithm:**
 
@@ -118,10 +118,10 @@ The system analyzes road geometry (curviness from OSM), elevation data, surface 
 
 **User Stories:**
 
-- **US-12:** As a rider, I want crash detection that automatically alerts my emergency contacts if I'm in an accident so that help arrives even if I'm unconscious.
-- **US-13:** As a rider, I want real-time weather alerts along my route so that I can reroute to avoid storms.
-- **US-14:** As a rider, I want Waze-style community hazard alerts (oil, gravel, roadworks, animals, police) so that I'm warned about dangers ahead.
-- **US-15:** As a commuter, I want the app to learn my usual route and proactively warn me about new hazards on my daily commute.
+- ✅ **US-12:** As a rider, I want crash detection that automatically alerts my emergency contacts if I'm in an accident so that help arrives even if I'm unconscious.
+- ✅ **US-13:** As a rider, I want real-time weather alerts along my route so that I can reroute to avoid storms.
+- ✅ **US-14:** As a rider, I want Waze-style community hazard alerts (oil, gravel, roadworks, animals, police) so that I'm warned about dangers ahead.
+- 🚧 **US-15:** As a commuter, I want the app to learn my usual route and proactively warn me about new hazards on my daily commute.
 
 ### 3.4 EPIC 4: Navigation & Ride Tracking
 
@@ -129,11 +129,11 @@ The system analyzes road geometry (curviness from OSM), elevation data, surface 
 
 **User Stories:**
 
-- **US-16:** As a rider, I want turn-by-turn voice navigation with motorcycle-specific instructions so that I don't miss turns.
-- **US-17:** As a rider, I want full CarPlay and Android Auto support from day one so that I can use my bike's display.
-- **US-18:** As a rider, I want offline maps and navigation so that I can ride in areas without cell coverage.
-- **US-19:** As a rider, I want automatic ride tracking with stats (distance, duration, elevation, lean angles, top speed) so that I can review my rides.
-- **US-20:** As a rider, I want GPX import/export so that I can use routes from other platforms.
+- ⬜ **US-16:** As a rider, I want turn-by-turn voice navigation with motorcycle-specific instructions so that I don't miss turns.
+- ⬜ **US-17:** As a rider, I want full CarPlay and Android Auto support from day one so that I can use my bike's display.
+- 🚧 **US-18:** As a rider, I want offline maps and navigation so that I can ride in areas without cell coverage.
+- ✅ **US-19:** As a rider, I want automatic ride tracking with stats (distance, duration, elevation, lean angles, top speed) so that I can review my rides.
+- ✅ **US-20:** As a rider, I want GPX import/export so that I can use routes from other platforms.
 
 ### 3.5 EPIC 5: Commuter Mode
 
@@ -141,9 +141,9 @@ The system analyzes road geometry (curviness from OSM), elevation data, surface 
 
 **User Stories:**
 
-- **US-21:** As a commuter, I want a one-tap "Commute" button that navigates my daily route with real-time hazard and traffic info.
-- **US-22:** As a commuter, I want the app to suggest alternative routes when my usual commute has issues (roadworks, accidents, weather).
-- **US-23:** As a commuter, I want to see a weekly summary of my commute rides (time, distance, fuel estimate).
+- 🚧 **US-21:** As a commuter, I want a one-tap "Commute" button that navigates my daily route with real-time hazard and traffic info.
+- 🚧 **US-22:** As a commuter, I want the app to suggest alternative routes when my usual commute has issues (roadworks, accidents, weather).
+- 🚧 **US-23:** As a commuter, I want to see a weekly summary of my commute rides (time, distance, fuel estimate).
 
 ### 3.6 EPIC 6: Community & Social
 
@@ -151,10 +151,10 @@ The system analyzes road geometry (curviness from OSM), elevation data, surface 
 
 **User Stories:**
 
-- **US-24:** As a rider, I want to share my rides and routes with the community so that others can discover great roads.
-- **US-25:** As a rider, I want to rate and review road segments with photos so that the community database improves over time.
-- **US-26:** As a group rider, I want real-time location sharing with my riding group so that we stay connected on the road.
-- **US-27:** As a rider, I want to follow other riders and see their recommended routes in my area.
+- ✅ **US-24:** As a rider, I want to share my rides and routes with the community so that others can discover great roads.
+- ✅ **US-25:** As a rider, I want to rate and review road segments with photos so that the community database improves over time.
+- ✅ **US-26:** As a group rider, I want real-time location sharing with my riding group so that we stay connected on the road.
+- ✅ **US-27:** As a rider, I want to follow other riders and see their recommended routes in my area.
 
 ### 3.7 EPIC 7: Gamification & Engagement
 
@@ -162,9 +162,9 @@ The system analyzes road geometry (curviness from OSM), elevation data, surface 
 
 **User Stories:**
 
-- **US-28:** As a rider, I want to earn badges for riding milestones (km ridden, roads discovered, hazards reported) so that I stay engaged.
-- **US-29:** As a rider, I want seasonal challenges (e.g., "Ride 10 new roads this month") to motivate exploration.
-- **US-30:** As a rider, I want a personal road map showing which roads I've ridden vs. haven't, motivating me to explore new areas.
+- ✅ **US-28:** As a rider, I want to earn badges for riding milestones (km ridden, roads discovered, hazards reported) so that I stay engaged.
+- ✅ **US-29:** As a rider, I want seasonal challenges (e.g., "Ride 10 new roads this month") to motivate exploration.
+- 🚧 **US-30:** As a rider, I want a personal road map showing which roads I've ridden vs. haven't, motivating me to explore new areas.
 
 ---
 
@@ -339,16 +339,16 @@ This is the flagship web feature. The full-screen trip planner provides a dramat
 
 **User Stories:**
 
-- **US-31:** As a rider, I want to open a full-screen map and draw a region of interest so that I can discover Fun Zones (high-value road clusters) within that area.
-- **US-32:** As a rider, I want to drag-and-drop waypoints on the map and see the route auto-adjust through the best road segments so that route building feels intuitive and visual.
-- **US-33:** As a rider, I want a sidebar showing Road Preview Cards for each segment of my planned route (surface quality score, curviness rating, elevation profile, street-level photos, active hazards) so that I can evaluate every section without leaving the planner.
-- **US-34:** As a rider, I want to set trip parameters (number of days, daily km target, road type preference, avoidance criteria) and click "Generate" to receive an AI-optimized multi-day itinerary so that planning takes minutes, not hours.
-- **US-35:** As a group leader, I want to share a trip link with my riding group, where each member can suggest alternative road segments, add waypoints, and vote on route options so that planning is collaborative.
-- **US-36:** As a rider, I want the planner to suggest accommodations, fuel stops, and points of interest near Fun Zones and along the route so that logistics fit around the riding.
-- **US-37:** As a rider, I want to save multiple trip drafts, duplicate and modify existing trips, and organize trips into folders (e.g., "Summer 2026 Alps", "Weekend Beskydy") so that I can manage my plans over time.
-- **US-38:** As a rider, I want to import GPX/KML files into the planner and see them overlaid with road quality data so that I can evaluate routes from other sources.
-- **US-39:** As a rider, I want to export my planned route as GPX for Garmin devices, as a shareable link, or push it directly to the Tarmoto mobile app so that the transition from planning to riding is seamless.
-- **US-40:** As a rider, I want to see seasonal road closures, mountain pass status, and construction zones on the planner map so that I don't plan trips around unavailable roads.
+- ✅ **US-31:** As a rider, I want to open a full-screen map and draw a region of interest so that I can discover Fun Zones (high-value road clusters) within that area.
+- ✅ **US-32:** As a rider, I want to drag-and-drop waypoints on the map and see the route auto-adjust through the best road segments so that route building feels intuitive and visual.
+- ✅ **US-33:** As a rider, I want a sidebar showing Road Preview Cards for each segment of my planned route (surface quality score, curviness rating, elevation profile, street-level photos, active hazards) so that I can evaluate every section without leaving the planner.
+- ✅ **US-34:** As a rider, I want to set trip parameters (number of days, daily km target, road type preference, avoidance criteria) and click "Generate" to receive an AI-optimized multi-day itinerary so that planning takes minutes, not hours.
+- ✅ **US-35:** As a group leader, I want to share a trip link with my riding group, where each member can suggest alternative road segments, add waypoints, and vote on route options so that planning is collaborative.
+- ✅ **US-36:** As a rider, I want the planner to suggest accommodations, fuel stops, and points of interest near Fun Zones and along the route so that logistics fit around the riding.
+- 🚧 **US-37:** As a rider, I want to save multiple trip drafts, duplicate and modify existing trips, and organize trips into folders (e.g., "Summer 2026 Alps", "Weekend Beskydy") so that I can manage my plans over time.
+- ✅ **US-38:** As a rider, I want to import GPX/KML files into the planner and see them overlaid with road quality data so that I can evaluate routes from other sources.
+- ✅ **US-39:** As a rider, I want to export my planned route as GPX for Garmin devices, as a shareable link, or push it directly to the Tarmoto mobile app so that the transition from planning to riding is seamless.
+- 🚧 **US-40:** As a rider, I want to see seasonal road closures, mountain pass status, and construction zones on the planner map so that I don't plan trips around unavailable roads.
 
 **Key UX elements:**
 
@@ -368,12 +368,12 @@ The road quality explorer is the public-facing showcase of Tarmoto's crowdsource
 
 **User Stories:**
 
-- **US-41:** As a visitor (no account required), I want to browse a full-screen road quality heatmap so that I can see road conditions in any region.
-- **US-42:** As a rider, I want to click any road segment and see a detail panel (quality score, surface type, confidence level, number of rider passes, last updated, trend over time, photos) so that I get a complete picture of road conditions.
-- **US-43:** As a rider, I want to filter the map by quality tier (Excellent→Very Poor), surface type (asphalt/concrete/cobblestone/gravel/dirt), and curviness rating so that I find exactly the kind of roads I'm looking for.
-- **US-44:** As a rider, I want to see active hazard markers on the map with details (type, reporter, time, confirmations) so that I can check current dangers before heading out.
-- **US-45:** As a rider, I want to view a road quality trend graph for any segment (how quality has changed over months/years) so that I can see if a road is deteriorating or recently repaired.
-- **US-46:** As a visitor, I want curated "Best Roads" pages (e.g., "Best Roads in Beskydy", "Top 10 Alpine Passes") auto-generated from community data so that I discover great rides through search engines.
+- ✅ **US-41:** As a visitor (no account required), I want to browse a full-screen road quality heatmap so that I can see road conditions in any region.
+- ✅ **US-42:** As a rider, I want to click any road segment and see a detail panel (quality score, surface type, confidence level, number of rider passes, last updated, trend over time, photos) so that I get a complete picture of road conditions.
+- 🚧 **US-43:** As a rider, I want to filter the map by quality tier (Excellent→Very Poor), surface type (asphalt/concrete/cobblestone/gravel/dirt), and curviness rating so that I find exactly the kind of roads I'm looking for.
+- ✅ **US-44:** As a rider, I want to see active hazard markers on the map with details (type, reporter, time, confirmations) so that I can check current dangers before heading out.
+- 🚧 **US-45:** As a rider, I want to view a road quality trend graph for any segment (how quality has changed over months/years) so that I can see if a road is deteriorating or recently repaired.
+- ✅ **US-46:** As a visitor, I want curated "Best Roads" pages (e.g., "Best Roads in Beskydy", "Top 10 Alpine Passes") auto-generated from community data so that I discover great rides through search engines.
 
 **SEO strategy:** Public road quality pages and "Best Roads in [Region]" pages are server-side rendered (Next.js SSR) with structured data markup. These pages drive organic traffic and convert visitors → app installs. The explorer doubles as Tarmoto's content marketing engine.
 
@@ -385,12 +385,12 @@ The web dashboard gives riders a rich view of their riding data — something a 
 
 **User Stories:**
 
-- **US-47:** As a rider, I want to see all my past rides on a map with filterable list view (by date, distance, duration, road quality encountered) so that I can browse my riding history.
-- **US-48:** As a rider, I want to click any ride and see a detailed view: route on map, elevation profile, speed graph, road quality breakdown per segment, and ride stats (distance, time, avg speed, elevation gain) so that I can relive and analyze my rides.
-- **US-49:** As a rider, I want a stats dashboard showing my all-time totals, monthly/yearly trends (km ridden, rides taken, roads discovered), and comparative charts so that I can track my riding over time.
-- **US-50:** As a rider, I want a personal road map — a map overlay showing every road I've ridden (highlighted) vs. roads I haven't (dimmed) — so that I'm motivated to explore new areas.
-- **US-51:** As a rider, I want to compare two rides side-by-side (same route at different times, or two different routes) so that I can see how conditions or my riding changed.
-- **US-52:** As a rider, I want to export my ride data as CSV, GPX, or via the API so that I can use it in other tools.
+- ✅ **US-47:** As a rider, I want to see all my past rides on a map with filterable list view (by date, distance, duration, road quality encountered) so that I can browse my riding history.
+- ✅ **US-48:** As a rider, I want to click any ride and see a detailed view: route on map, elevation profile, speed graph, road quality breakdown per segment, and ride stats (distance, time, avg speed, elevation gain) so that I can relive and analyze my rides.
+- ✅ **US-49:** As a rider, I want a stats dashboard showing my all-time totals, monthly/yearly trends (km ridden, rides taken, roads discovered), and comparative charts so that I can track my riding over time.
+- ✅ **US-50:** As a rider, I want a personal road map — a map overlay showing every road I've ridden (highlighted) vs. roads I haven't (dimmed) — so that I'm motivated to explore new areas.
+- ✅ **US-51:** As a rider, I want to compare two rides side-by-side (same route at different times, or two different routes) so that I can see how conditions or my riding changed.
+- ✅ **US-52:** As a rider, I want to export my ride data as CSV, GPX, or via the API so that I can use it in other tools.
 
 #### 9.2.4 WEB-EPIC 4: Community Hub
 
@@ -400,12 +400,12 @@ The community hub turns Tarmoto from a utility into a destination. Riders browse
 
 **User Stories:**
 
-- **US-53:** As a rider, I want to browse a feed of shared routes and rides from the community, filterable by region, distance, curviness, road quality, and popularity so that I discover new roads.
-- **US-54:** As a rider, I want to view other riders' public profiles (rides shared, roads discovered, badges earned, route collections) so that I can follow riders with good taste in roads.
-- **US-55:** As a rider, I want to rate and write reviews for road segments with photo uploads so that I help the community database grow beyond sensor data.
-- **US-56:** As a rider, I want to create and share route collections (e.g., "My Favorite Beskydy Loops", "Best Gravel Roads in Moravia") so that I can curate recommendations.
-- **US-57:** As a rider, I want to see a gamification dashboard with my badges, active challenges, leaderboard position, and progress toward next milestones so that I stay engaged.
-- **US-58:** As a rider, I want to embed a route or road quality widget on external sites (forums, blogs) so that I can share Tarmoto data outside the app.
+- ✅ **US-53:** As a rider, I want to browse a feed of shared routes and rides from the community, filterable by region, distance, curviness, road quality, and popularity so that I discover new roads.
+- ✅ **US-54:** As a rider, I want to view other riders' public profiles (rides shared, roads discovered, badges earned, route collections) so that I can follow riders with good taste in roads.
+- ✅ **US-55:** As a rider, I want to rate and write reviews for road segments with photo uploads so that I help the community database grow beyond sensor data.
+- ✅ **US-56:** As a rider, I want to create and share route collections (e.g., "My Favorite Beskydy Loops", "Best Gravel Roads in Moravia") so that I can curate recommendations.
+- ✅ **US-57:** As a rider, I want to see a gamification dashboard with my badges, active challenges, leaderboard position, and progress toward next milestones so that I stay engaged.
+- 🚧 **US-58:** As a rider, I want to embed a route or road quality widget on external sites (forums, blogs) so that I can share Tarmoto data outside the app.
 
 #### 9.2.5 WEB-EPIC 5: Account & Settings
 
@@ -415,12 +415,12 @@ Account management is a baseline requirement. The web interface is the primary p
 
 **User Stories:**
 
-- **US-59:** As a user, I want to create an account (email or social login), manage my profile (display name, avatar, bike info, home region), and link my mobile app so that my data syncs across platforms.
-- **US-60:** As a user, I want to manage my subscription tier (Free/Premium/Pro), view billing history, and update payment methods so that I control my account from the web.
-- **US-61:** As a user, I want to configure my privacy settings (profile visibility, ride sharing defaults, road data contribution opt-in/out, location data retention) so that I control what I share.
-- **US-62:** As a user, I want to export all my data (rides, routes, profile) or delete my account and all associated data so that Tarmoto complies with GDPR.
-- **US-63:** As a user, I want to manage notification preferences (email digests, hazard alerts for saved routes, community activity) so that I only receive relevant communications.
-- **US-64:** As a user, I want to manage my bikes (make, model, year) and set the active bike so that ride stats and recommendations are bike-aware.
+- ✅ **US-59:** As a user, I want to create an account (email or social login), manage my profile (display name, avatar, bike info, home region), and link my mobile app so that my data syncs across platforms.
+- 🚧 **US-60:** As a user, I want to manage my subscription tier (Free/Premium/Pro), view billing history, and update payment methods so that I control my account from the web.
+- ✅ **US-61:** As a user, I want to configure my privacy settings (profile visibility, ride sharing defaults, road data contribution opt-in/out, location data retention) so that I control what I share.
+- ✅ **US-62:** As a user, I want to export all my data (rides, routes, profile) or delete my account and all associated data so that Tarmoto complies with GDPR.
+- ✅ **US-63:** As a user, I want to manage notification preferences (email digests, hazard alerts for saved routes, community activity) so that I only receive relevant communications.
+- 🚧 **US-64:** As a user, I want to manage my bikes (make, model, year) and set the active bike so that ride stats and recommendations are bike-aware.
 
 ### 9.3 Web Technical Architecture
 
