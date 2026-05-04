@@ -1,14 +1,13 @@
 import { Test } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import { getQueueToken } from '@nestjs/bullmq';
-import { getRepositoryToken, getEntityManagerToken } from '@nestjs/typeorm';
+import { getEntityManagerToken } from '@nestjs/typeorm';
 import { PassThrough, Readable } from 'node:stream';
 import { DataExportController } from './data-export.controller.js';
 import { DataExportService } from './data-export.service.js';
 import { OBJECT_STORAGE } from '../../storage/storage.tokens.js';
 import type { ObjectStorage } from '../../storage/object-storage.interface.js';
 import { signDownloadUrl } from './signed-url.js';
-import { User } from '../../../entities/user.entity.js';
 import { QUEUE_NAMES, JOB_NAMES } from '../../jobs/jobs.constants.js';
 
 describe('DataExportController', () => {
