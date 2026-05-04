@@ -229,12 +229,8 @@ From the Coolify dashboard: **Application → Deployments → previous successfu
 
 Coolify does not snapshot DB state on deploy, so a rollback that reverts a migration must be paired with a manual `typeorm migration:revert` (documented in the runbook).
 
-## Decommissioning Render
+## Render decommissioned
 
-Once the first Coolify deploy has served real traffic for ≥24 h:
-
-1. Cancel the Render Web Service (`tarmoto-prod-backend`).
-2. Cancel the Render Postgres (`tarmoto-prod-db`).
-3. Cancel the Render Key Value (`tarmoto-prod-redis`).
-4. Remove `RENDER_API_KEY`, `RENDER_SERVICE_ID_PROD` GitHub secrets.
-5. Open a follow-up PR to delete `infra/render/`. ADR-0005 stays as historical record.
+Render was never used for production — the stack went straight to Coolify.
+`infra/render/` and its secrets have been removed. ADR-0005 is retained as
+a historical decision record (status: Superseded by ADR-0006).

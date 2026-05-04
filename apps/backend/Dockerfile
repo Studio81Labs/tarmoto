@@ -6,9 +6,8 @@
 # compiled `dist/`. The build stage uses pnpm with the workspace
 # enabled because the backend depends on `@tarmoto/shared`.
 #
-# Built by Render's Web Service runtime off `main` per
-# infra/render/render.yaml. The Dockerfile is also runnable locally
-# (`docker build -f apps/backend/Dockerfile .` from the repo root).
+# Built by Coolify off `main` (Dockerfile build pack, repo root context).
+# Also runnable locally (`docker build -f apps/backend/Dockerfile .`).
 
 ARG NODE_VERSION=24-alpine
 ARG PNPM_VERSION=10

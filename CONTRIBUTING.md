@@ -96,7 +96,7 @@ See [docs/process/typeorm-migrations.md](./docs/process/typeorm-migrations.md). 
 
 - Real `.env` files (only `.env.example` goes in git)
 - Database passwords, JWT secrets, OAuth client secrets
-- Cloudflare API tokens, Render API keys, Firebase / APNs keys when added
+- Cloudflare API tokens, Coolify API tokens, Firebase / APNs keys when added
 - Any file matching the rough pattern `*-token*`, `*-secret*`, `*.pem`, `*.key`
 
 **Rules of thumb:**
