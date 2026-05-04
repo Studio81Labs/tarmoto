@@ -11,6 +11,7 @@ import { FunZoneDto } from './dto/fun-zone.dto.js';
 import { FunZoneDetailDto } from './dto/fun-zone-detail.dto.js';
 import { QueryBestRoadsDto } from './dto/query-best-roads.dto.js';
 import { BestRoadsResponseDto } from './dto/best-roads.dto.js';
+import { RoadTrendDto } from './dto/road-trend.dto.js';
 
 @ApiTags('roads')
 @Controller('roads')
@@ -65,5 +66,17 @@ export class RoadsController {
     @Param('segmentId', ParseUUIDPipe) segmentId: string,
   ): Promise<RoadSegmentDetailDto> {
     return this.roadsService.findById(segmentId);
+  }
+
+  @Get(':segmentId/trend')
+  @ApiOperation({
+    summary:
+      'Get monthly quality trend for a road segment from surface readings',
+  })
+  @ApiResponse({ status: 200, type: RoadTrendDto })
+  async getTrend(
+    @Param('segmentId', ParseUUIDPipe) segmentId: string,
+  ): Promise<RoadTrendDto> {
+    return this.roadsService.getSegmentTrend(segmentId);
   }
 }

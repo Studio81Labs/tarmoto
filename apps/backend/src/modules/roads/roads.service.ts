@@ -138,6 +138,8 @@ export class RoadsService {
       reviewStatsRows,
       reviewRows,
       riderRows,
+      qualityHistoryRows,
+      regionalQualityRows,
     ] = await Promise.all([
       this.segmentRepo.query(
         `SELECT classification, COUNT(*)::int AS count
@@ -219,6 +221,33 @@ export class RoadsService {
           AND recorded_at > NOW() - INTERVAL '30 days'`,
         [segmentId],
       ),
+      // US-45: quality trend — monthly average IRI for the last 2 years.
+      this.segmentRepo.query(
+        `SELECT
+          TO_CHAR(DATE_TRUNC('month', recorded_at), 'YYYY-MM') AS month,
+          ROUND(AVG(iri_value)::numeric, 2) AS score
+        FROM surface_readings
+        WHERE road_segment_id = $1
+          AND recorded_at > NOW() - INTERVAL '24 months'
+        GROUP BY DATE_TRUNC('month', recorded_at)
+        ORDER BY month`,
+        [segmentId],
+      ),
+      // US-45: regional comparison trend — average across segments within 5 km.
+      this.segmentRepo.query(
+        `SELECT
+          TO_CHAR(DATE_TRUNC('month', sr.recorded_at), 'YYYY-MM') AS month,
+          ROUND(AVG(sr.iri_value)::numeric, 2) AS score
+        FROM surface_readings sr
+        INNER JOIN road_segments rs2 ON rs2.id = sr.road_segment_id
+        INNER JOIN road_segments rs ON rs.id = $1
+        WHERE ST_DWithin(rs.geom, rs2.geom, 5000)
+          AND sr.road_segment_id != $1
+          AND sr.recorded_at > NOW() - INTERVAL '24 months'
+        GROUP BY DATE_TRUNC('month', sr.recorded_at)
+        ORDER BY month`,
+        [segmentId],
+      ),
     ]);
     /* eslint-enable @typescript-eslint/no-unsafe-assignment */
 
@@ -273,6 +302,12 @@ export class RoadsService {
         ? Math.round(reviewStats.avg_rating * 10) / 10
         : null,
       riders_per_month: ridersPerMonth,
+      quality_history: (
+        qualityHistoryRows as Array<{ month: string; score: number }>
+      ).map((r) => ({ month: r.month, score: r.score })),
+      regional_quality_history: (
+        regionalQualityRows as Array<{ month: string; score: number }>
+      ).map((r) => ({ month: r.month, score: r.score })),
     };
   }
 
@@ -459,6 +494,39 @@ export class RoadsService {
         boundary,
       },
       top_roads,
+    };
+  }
+
+  async getSegmentTrend(
+    segmentId: string,
+  ): Promise<{
+    segment_id: string;
+    points: { month: string; avg_iri: number; reading_count: number }[];
+  }> {
+    const rows: {
+      month: string;
+      avg_iri: string;
+      reading_count: string;
+    }[] = await this.segmentRepo.query(
+      `SELECT
+         TO_CHAR(DATE_TRUNC('month', recorded_at), 'YYYY-MM') AS month,
+         AVG(iri_value) AS avg_iri,
+         COUNT(*)::int AS reading_count
+       FROM surface_readings
+       WHERE road_segment_id = $1
+         AND recorded_at > NOW() - INTERVAL '24 months'
+       GROUP BY DATE_TRUNC('month', recorded_at)
+       ORDER BY month`,
+      [segmentId],
+    );
+
+    return {
+      segment_id: segmentId,
+      points: rows.map((r) => ({
+        month: r.month,
+        avg_iri: Math.round(parseFloat(r.avg_iri) * 100) / 100,
+        reading_count: parseInt(r.reading_count, 10),
+      })),
     };
   }
 }

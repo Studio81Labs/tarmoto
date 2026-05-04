@@ -3,6 +3,7 @@ import { SURFACE_TYPES, type SurfaceType } from '@tarmoto/shared';
 import { LatLngResponseDto } from '../../../common/lat-lng.dto.js';
 import { HazardResponseDto } from '../../hazards/dto/hazard-response.dto.js';
 import { ReviewResponseDto } from '../../reviews/dto/review.dto.js';
+import { TrendPointDto } from './trend-point.dto.js';
 
 export class RoadSegmentDto {
   @ApiProperty()
@@ -97,4 +98,17 @@ export class RoadSegmentDetailDto extends RoadSegmentDto {
 
   @ApiProperty()
   riders_per_month!: number;
+
+  @ApiProperty({
+    type: [TrendPointDto],
+    description: 'Monthly quality trend from surface readings (US-45).',
+  })
+  quality_history!: TrendPointDto[];
+
+  @ApiProperty({
+    type: [TrendPointDto],
+    description:
+      'Regional average quality trend for comparison (US-45). Empty when no regional data is available.',
+  })
+  regional_quality_history!: TrendPointDto[];
 }
