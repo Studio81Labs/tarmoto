@@ -93,6 +93,12 @@ async function bootstrap() {
   }
 
   app.use(isProd ? helmet() : helmet({ contentSecurityPolicy: false }));
+
+  app.enableCors({
+    origin: isProd ? ['https://app.tarmoto.app', 'https://tarmoto.app'] : true,
+    credentials: true,
+  });
+
   app.setGlobalPrefix('api/v1');
 
   // Serve locally-stored uploads (avatars, review photos). GDPR
