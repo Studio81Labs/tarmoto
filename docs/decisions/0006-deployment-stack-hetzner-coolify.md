@@ -1,7 +1,7 @@
 # 0006 — Deployment stack: Hetzner CX33 + Coolify (self-hosted), Cloudflare unchanged
 
-**Status:** Proposed
-**Date:** 2026-05-03
+**Status:** Accepted
+**Date:** 2026-05-04
 **Supersedes:** [ADR-0005](./0005-deployment-stack-render.md)
 
 ## Context
