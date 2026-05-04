@@ -19,8 +19,5 @@
   },
   "observability": {
     "enabled": true
-  },
-  "vars": {
-    "AUTH_SECRET": "placeholder-set-at-build-time"
   }
 }
