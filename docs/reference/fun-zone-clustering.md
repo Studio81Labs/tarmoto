@@ -124,7 +124,7 @@ pnpm --filter @tarmoto/backend cluster:fun-zones
 #   --no-prune
 ```
 
-The CLI requires `pnpm build:backend` first (or `pnpm db:migrate` which builds along the way).
+The CLI requires `pnpm backend:build` first (or `pnpm db:migrate` which builds along the way).
 
 ### Stored function
 

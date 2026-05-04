@@ -125,7 +125,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build shared package
-        run: pnpm build:shared
+        run: pnpm shared:build
 
       - name: Run beta_ios lane
         working-directory: apps/mobile
@@ -181,7 +181,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build shared package
-        run: pnpm build:shared
+        run: pnpm shared:build
 
       - name: Decode signing keystore
         id: keystore

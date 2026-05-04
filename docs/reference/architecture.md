@@ -174,6 +174,6 @@ Stack rationale lives in [ADR 0005](../decisions/0005-deployment-stack-render.md
 - **Companion** runs on **Cloudflare Workers** (Workers + Static Assets) via [`@opennextjs/cloudflare`](https://opennext.js.org/cloudflare). Every PR gets a versioned preview deploy commented on the PR; production deploys on push to `main` via `wrangler deploy`.
 - **Mobile** ships via **Fastlane** to **TestFlight** (iOS) and **Play Internal** (Android). Releases are manual — `workflow_dispatch` or a `mobile-vX.Y.Z` git tag — and gated behind a `mobile-release` GitHub environment for credential isolation.
 - **PoC sensor** stays on **Cloudflare Pages** via the existing `poc-deploy.yml`.
-- **Local dev** uses Docker Compose for Postgres + Redis (`infra/docker/docker-compose.yml`); the backend runs via `pnpm dev:backend`, mobile via Metro, companion via `pnpm dev:companion`.
+- **Local dev** uses Docker Compose for Postgres + Redis (`infra/docker/docker-compose.yml`); the backend runs via `pnpm backend:dev`, mobile via Metro, companion via `pnpm companion:dev`.
 
 Workflows: [`backend-deploy.yml`](../../.github/workflows/backend-deploy.yml) (waits for Render's auto-deploy, runs smoke test, rolls back via Render API on failure), [`companion-deploy.yml`](../../.github/workflows/companion-deploy.yml) (PR previews + prod), [`mobile-release.yml`](../../.github/workflows/mobile-release.yml) (TestFlight + Play Internal). Post-deploy verification is `scripts/smoke/smoke.sh`.

@@ -95,7 +95,7 @@ Tarmoto is a motorcycle companion app with crowdsourced road surface quality int
 - `docs/decisions/` - ADRs
 - `docs/reference/` - Architecture overview and technical reference
 - `docs/process/` - Runbooks, testing strategy, migrations, definition of done, issue workflow
-- `docs/design/` - Wireframes and ERD (`pnpm dev:docs`)
+- `docs/design/` - Wireframes and ERD (`pnpm docs:dev`)
 - `docs/database/` - PostgreSQL and PostGIS schema documentation
 
 ## Tech stack
@@ -112,20 +112,20 @@ Tarmoto is a motorcycle companion app with crowdsourced road surface quality int
 
 ```bash
 pnpm install              # Install all workspace deps
-pnpm dev:backend          # NestJS dev server (watch mode)
-pnpm dev:mobile           # Metro bundler
+pnpm backend:dev          # NestJS dev server (watch mode)
+pnpm mobile:dev           # Metro bundler
 pnpm ios                  # Run on iOS simulator
 pnpm android              # Run on Android emulator
-pnpm dev:companion        # Companion web dev server
-pnpm dev:docs             # Design docs viewer on :4200
-pnpm dev:poc              # PoC sensor app dev server
+pnpm companion:dev        # Companion web dev server
+pnpm docs:dev             # Design docs viewer on :4200
+pnpm poc:dev              # PoC sensor app dev server
 pnpm db:up                # Start PostgreSQL + Redis via Docker
 pnpm db:down              # Stop Docker services
 pnpm db:migrate           # Build backend + run TypeORM migrations
-pnpm build:backend        # Build backend
-pnpm build:companion      # Build companion
-pnpm build:poc            # Build PoC sensor
-pnpm build:shared         # Build shared package
+pnpm backend:build        # Build backend
+pnpm companion:build      # Build companion
+pnpm poc:build            # Build PoC sensor
+pnpm shared:build         # Build shared package
 pnpm test                 # Run tests
 pnpm lint                 # Run linting
 ```

@@ -8,7 +8,7 @@ Human-facing contribution guide. For agent-specific instructions see [AGENTS.md]
 2. Get the dev environment running:
    ```bash
    pnpm bootstrap           # Installs, starts Postgres + Redis, builds, migrates
-   pnpm dev:backend         # Start backend in watch mode
+   pnpm backend:dev         # Start backend in watch mode
    ```
    The bootstrap script is documented in [README.md#bootstrap-details](./README.md#bootstrap-details).
 3. Skim [docs/reference/architecture.md](./docs/reference/architecture.md) to understand the shape of the system.
@@ -57,9 +57,9 @@ pnpm test --filter backend -- --coverage   # Coverage if you care about a specif
 # E2E tests on backend:
 pnpm --filter @tarmoto/backend test:e2e    # Requires `pnpm db:up`
 
-pnpm build:backend        # Verify backend compiles
-pnpm build:companion      # Verify companion builds
-pnpm build:shared         # Verify shared package builds
+pnpm backend:build        # Verify backend compiles
+pnpm companion:build      # Verify companion builds
+pnpm shared:build         # Verify shared package builds
 ```
 
 Mobile and companion don't have tests yet — contribute tests alongside features where reasonable. See [docs/process/testing-strategy.md](./docs/process/testing-strategy.md).
@@ -84,7 +84,7 @@ See [docs/process/testing-strategy.md](./docs/process/testing-strategy.md) for w
 See [docs/process/typeorm-migrations.md](./docs/process/typeorm-migrations.md). Key points:
 
 - Edit an entity in `apps/backend/src/entities/`.
-- Rebuild: `pnpm build:backend`.
+- Rebuild: `pnpm backend:build`.
 - Generate a migration: `pnpm --filter @tarmoto/backend typeorm migration:generate src/migrations/<Name> -d dist/data-source.js`.
 - Review the generated SQL.
 - Run locally: `pnpm db:migrate`.

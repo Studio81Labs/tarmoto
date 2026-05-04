@@ -20,7 +20,7 @@ ADR-0004 was accepted on 2026-05-02 and committed Terraform, ECS, RDS, ElastiCac
 | Secrets            | Secrets Manager $0.40/secret     | env vars, free                     |
 | **Floor**          | **~$160–180**                    | **~$55**                           |
 
-Roughly 3× per env. We're also choosing to run prod only — the local Docker Compose stack (`pnpm db:up`, `pnpm dev:backend`) is the pre-prod loop, so there's no staging Render environment to budget for. For a pre-revenue MVP that's a real budget pull. The team also already runs a NestJS + Postgres workload on Render on a sibling project — operational know-how exists; AWS would be a fresh learning curve for whoever is on call.
+Roughly 3× per env. We're also choosing to run prod only — the local Docker Compose stack (`pnpm db:up`, `pnpm backend:dev`) is the pre-prod loop, so there's no staging Render environment to budget for. For a pre-revenue MVP that's a real budget pull. The team also already runs a NestJS + Postgres workload on Render on a sibling project — operational know-how exists; AWS would be a fresh learning curve for whoever is on call.
 
 ADR-0004's stated technical objections to non-AWS deploys were:
 

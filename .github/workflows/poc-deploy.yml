@@ -31,7 +31,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build PoC sensor app
-        run: pnpm build:poc
+        run: pnpm poc:build
 
       - name: Create Cloudflare Pages project (if not exists)
         run: npx wrangler pages project create tarmoto-poc-sensor --production-branch=main || true

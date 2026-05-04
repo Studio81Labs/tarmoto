@@ -33,11 +33,11 @@ Migrations **do not** run automatically when the backend starts — you must run
 ```
 1. Edit entities under apps/backend/src/entities/
 2. pnpm db:up                    # Make sure Postgres is running
-3. pnpm build:backend             # Compile — TypeORM needs dist/data-source.js
+3. pnpm backend:build             # Compile — TypeORM needs dist/data-source.js
 4. pnpm --filter @tarmoto/backend typeorm migration:generate \
        src/migrations/<ShortName> -d dist/data-source.js
 5. Review the generated migration.sql (.ts file) under apps/backend/src/migrations/
-6. pnpm build:backend             # Rebuild so the new migration is in dist/
+6. pnpm backend:build             # Rebuild so the new migration is in dist/
 7. pnpm db:migrate                # Apply locally
 8. pnpm test && pnpm --filter @tarmoto/backend test:e2e
 9. Commit entity + migration together in one commit
@@ -53,6 +53,7 @@ PascalCase, short, verb-first:
 - `AddPasswordHash`
 
 Rules of thumb:
+
 - Under ~40 characters.
 - No timestamps in the name — TypeORM prepends them when generating.
 - If the migration does more than one thing, name the main change and cover the rest in a code comment at the top of the file.
@@ -80,20 +81,24 @@ Open the generated `.ts` file and confirm:
 Some changes are unsafe as a single migration because the old deploy and the new schema run simultaneously during deploy. Split into phases.
 
 ### Rename a column
+
 1. Migration A: add new column, backfill from old, write to both in code.
 2. Deploy → let the app write to both columns for at least one release.
 3. Migration B: drop old column after code is switched to read from the new one.
 
 ### Change a column type
+
 1. Migration A: add new column, backfill, update code to write to both.
 2. Migration B: flip reads to new column.
 3. Migration C: drop old column.
 
 ### Add a `NOT NULL` column to a non-empty table
+
 1. Migration A: add as nullable with a sensible default.
 2. Migration B (after backfill completes): flip to `NOT NULL`.
 
 ### Drop a column
+
 1. Remove all code references first, deploy.
 2. In a follow-up migration, drop the column.
 
@@ -126,6 +131,7 @@ pnpm db:migrate           # Should apply all migrations cleanly from empty DB
 ## Rolling back
 
 ### The safe way (recommended)
+
 Write a new forward migration that reverses the previous one:
 
 ```bash
@@ -135,4 +141,5 @@ pnpm --filter @tarmoto/backend typeorm migration:create \
 ```
 
 ### The fast way (local only)
+
 `pnpm db:revert` — runs the `down()` of the most recent migration. Fine for local experimentation; **do not rely on this in production** (you may not have a working `down()`, and TypeORM's auto-generated `down()` can be incomplete for complex changes).

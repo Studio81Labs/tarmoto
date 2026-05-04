@@ -7,10 +7,10 @@ For first-time setup see [../../README.md](../../README.md) and [../../CONTRIBUT
 ## Backend won't build
 
 1. Check the error — most common culprits:
-   - `@tarmoto/shared` not built yet → `pnpm build:shared`
+   - `@tarmoto/shared` not built yet → `pnpm shared:build`
    - Node version mismatch → confirm Node 24 (see `.nvmrc`)
    - Stale `node_modules` after big dependency bumps → `pnpm install` or `pnpm clean && pnpm install`
-2. If TypeScript complains about missing types from `@tarmoto/shared`, the shared package wasn't rebuilt after a change. Run `pnpm build:shared` and retry.
+2. If TypeScript complains about missing types from `@tarmoto/shared`, the shared package wasn't rebuilt after a change. Run `pnpm shared:build` and retry.
 
 ## Backend won't start / crashes on boot
 
@@ -18,7 +18,7 @@ For first-time setup see [../../README.md](../../README.md) and [../../CONTRIBUT
 2. If containers aren't up: `pnpm db:up`.
 3. If Postgres is up but backend can't connect, check the `TARMOTO_DATABASE_*` env vars or Docker Compose defaults match your backend config.
 4. If Redis isn't up or the URL is wrong, WebSocket pub/sub will fail — check the Redis URL in backend config.
-5. Tail logs: `pnpm dev:backend` prints NestJS startup errors at the top of the stream.
+5. Tail logs: `pnpm backend:dev` prints NestJS startup errors at the top of the stream.
 
 ## Database migration failed
 
@@ -52,7 +52,7 @@ For first-time setup see [../../README.md](../../README.md) and [../../CONTRIBUT
 1. Open the `deploy-poc.yml` workflow run in GitHub Actions. Read the failing step.
 2. Common causes:
    - `CLOUDFLARE_API_TOKEN` or `CLOUDFLARE_ACCOUNT_ID` secret missing or expired.
-   - Build failure in `apps/poc-sensor/` — run `pnpm build:poc` locally to reproduce.
+   - Build failure in `apps/poc-sensor/` — run `pnpm poc:build` locally to reproduce.
    - Path filter didn't trigger — workflow only runs on `apps/poc-sensor/**` changes. Manual trigger via `workflow_dispatch` works for non-code updates.
 3. Rollback: Cloudflare Pages dashboard → Deployments → promote a previous successful build to production.
 
@@ -71,7 +71,7 @@ For first-time setup see [../../README.md](../../README.md) and [../../CONTRIBUT
 
 ## Mobile build / sensor issues (RN Metro)
 
-1. Common fix for mysterious RN issues: `pnpm dev:mobile -- --reset-cache`.
+1. Common fix for mysterious RN issues: `pnpm mobile:dev -- --reset-cache`.
 2. iOS: `cd apps/mobile/ios && pod install` if CocoaPods stale.
 3. Android: nuke `~/.gradle/caches` if build errors reference missing dependencies that are clearly declared.
 4. If sensors don't emit data in the simulator, that's expected — TF Lite inference requires real device sensor input.
@@ -85,7 +85,7 @@ After any change to `apps/mobile/ios/TarmotoApp/Info.plist` or
    the install on Android, and iOS caches the plist purpose strings
    shown in Settings → Privacy.
 2. iOS: `cd apps/mobile/ios && pod install` after touching the plist
-   and re-run `pnpm ios`.
+   and re-run `pnpm mobile:ios`.
 3. Android: `cd apps/mobile/android && ./gradlew clean` then `pnpm
 android` to drop the merged-manifest cache.
 
@@ -141,7 +141,7 @@ the two failure modes above.
 Test locally with:
 
 ```bash
-TARMOTO_TRUST_PROXY_HOPS=1 pnpm dev:backend
+TARMOTO_TRUST_PROXY_HOPS=1 pnpm backend:dev
 curl -H "X-Forwarded-For: 1.2.3.4" -sS http://localhost:3000/api/v1/...
 ```
 
@@ -380,7 +380,7 @@ export TARMOTO_S3_ENDPOINT=http://localhost:9000
 export TARMOTO_S3_ACCESS_KEY_ID=minioadmin
 export TARMOTO_S3_SECRET_ACCESS_KEY=minioadmin
 export TARMOTO_S3_FORCE_PATH_STYLE=true
-pnpm dev:backend
+pnpm backend:dev
 ```
 
 ### Migrating existing avatars from local FS to S3
@@ -508,7 +508,7 @@ it lands.
   storage backend rejected a key. Check the request log for the
   full key; the most common cause is a contributor running with a
   stale build that still passes a constructed path. Rebuild with
-  `pnpm build:backend`.
+  `pnpm backend:build`.
 - **Avatars 404 in prod after a hostname change** — old rows
   embedded the previous public hostname into `users.avatar_url`.
   Run a one-off SQL update to rewrite the host (preview against a

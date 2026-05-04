@@ -43,7 +43,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build shared package
-        run: pnpm build:shared
+        run: pnpm shared:build
 
       - name: Generate OpenAPI client
         # Mobile imports from @tarmoto/openapi, whose types.ts is
@@ -54,7 +54,7 @@ jobs:
         # path types when `paths` is unknown, callers' `bodySerializer`
         # parameters silently fall back to implicit `any`, which
         # produces additional spurious TS7006 errors downstream.
-        run: pnpm generate:api
+        run: pnpm openapi:gen
 
       - name: Lint
         run: pnpm --filter @tarmoto/mobile lint

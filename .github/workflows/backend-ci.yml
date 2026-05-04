@@ -43,10 +43,10 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build shared package
-        run: pnpm build:shared
+        run: pnpm shared:build
 
       - name: Build backend
-        run: pnpm build:backend
+        run: pnpm backend:build
 
       - name: Lint backend
         run: pnpm --filter @tarmoto/backend lint

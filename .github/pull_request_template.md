@@ -61,7 +61,7 @@
 - [ ] PR title uses conventional commit format with a scope
 - [ ] Scope label(s) are present on the PR (auto-applied or added manually)
 - [ ] Linked issue includes priority and scope labels
-- [ ] Code compiles without errors (`pnpm build:backend && pnpm build:shared`)
+- [ ] Code compiles without errors (`pnpm backend:build && pnpm shared:build`)
 - [ ] Tests pass (`pnpm test`)
 - [ ] Lint passes (`pnpm lint`)
 - [ ] No sensitive data committed (env vars, keys, tokens)

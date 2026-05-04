@@ -45,14 +45,14 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build shared package
-        run: pnpm build:shared
+        run: pnpm shared:build
 
       - name: Generate OpenAPI client
         # Companion imports from @tarmoto/openapi, whose types.ts is
         # generated from the backend's swagger spec (both types.ts and
         # openapi.yaml are gitignored). Without this step the companion
         # typecheck fails with "Cannot find module './types.js'".
-        run: pnpm generate:api
+        run: pnpm openapi:gen
 
       - name: Lint
         run: pnpm --filter @tarmoto/companion lint
