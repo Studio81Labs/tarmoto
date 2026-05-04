@@ -123,8 +123,15 @@ jobs:
             -H "Accept: application/json" \
             "${COOLIFY_URL}/api/v1/applications/${APPLICATION_UUID}")
 
-          CURRENT=$(echo "$DEPLOYS" | jq -r '.deployments[0].id // empty')
-          PREV=$(echo "$DEPLOYS" | jq -r '.deployments[1].id // empty')
+          # Coolify returns the application object with .deployments array,
+          # but if the API returns a plain array, normalize it.
+          if echo "$DEPLOYS" | jq -e 'type == "array"' > /dev/null 2>&1; then
+            CURRENT=$(echo "$DEPLOYS" | jq -r '.[0].id // empty')
+            PREV=$(echo "$DEPLOYS" | jq -r '.[1].id // empty')
+          else
+            CURRENT=$(echo "$DEPLOYS" | jq -r '.deployments[0].id // empty')
+            PREV=$(echo "$DEPLOYS" | jq -r '.deployments[1].id // empty')
+          fi
 
           if [ -z "$PREV" ]; then
             echo "::error::No previous deployment to roll back to."
