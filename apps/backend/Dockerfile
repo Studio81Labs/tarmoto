@@ -58,7 +58,7 @@ COPY --from=build /workspace/apps/backend/package.json apps/backend/package.json
 COPY --from=build /workspace/packages/shared/package.json packages/shared/package.json
 COPY --from=build /workspace/packages/openapi/package.json packages/openapi/package.json
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --frozen-lockfile --prod --filter @tarmoto/backend...
+    pnpm install --frozen-lockfile --prod --ignore-scripts --filter @tarmoto/backend...
 
 COPY --from=build /workspace/apps/backend/dist apps/backend/dist
 COPY --from=build /workspace/packages/shared/dist packages/shared/dist
