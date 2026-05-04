@@ -5,7 +5,7 @@
  * Strips any trailing /api/v1 in case the env var includes it.
  */
 export const API_HOST = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(
-  /\/api\/v1\/?$/,
+  /\/(api\/)?v1\/?$/,
   "",
 );
 
