@@ -20,6 +20,41 @@ describe('buildJobsConfig', () => {
     expect(cfg.connection).toMatchObject({ host: 'redis', port: 6380 });
   });
 
+  it('omits Redis auth fields when env vars are unset (dev fallback)', () => {
+    const cfg = buildJobsConfig(fakeConfig({}));
+    expect(
+      (cfg.connection as Record<string, unknown>).username,
+    ).toBeUndefined();
+    expect(
+      (cfg.connection as Record<string, unknown>).password,
+    ).toBeUndefined();
+  });
+
+  it('passes Redis username and password through when both env vars are set', () => {
+    const cfg = buildJobsConfig(
+      fakeConfig({
+        TARMOTO_REDIS_USERNAME: 'default',
+        TARMOTO_REDIS_PASSWORD: 'rotated-secret',
+      }),
+    );
+    expect(cfg.connection).toMatchObject({
+      username: 'default',
+      password: 'rotated-secret',
+    });
+  });
+
+  it('treats empty-string Redis auth env vars as unset (Coolify-style)', () => {
+    const cfg = buildJobsConfig(
+      fakeConfig({ TARMOTO_REDIS_USERNAME: '', TARMOTO_REDIS_PASSWORD: '' }),
+    );
+    expect(
+      (cfg.connection as Record<string, unknown>).username,
+    ).toBeUndefined();
+    expect(
+      (cfg.connection as Record<string, unknown>).password,
+    ).toBeUndefined();
+  });
+
   it('defaults workersEnabled=true when the toggle is unset (single-container dev)', () => {
     const cfg = buildJobsConfig(fakeConfig({}));
     expect(cfg.workersEnabled).toBe(true);
