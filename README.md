@@ -98,13 +98,20 @@ tarmoto/
 | `pnpm install`                            | Install workspace dependencies                         |
 | `pnpm backend:dev`                        | Start backend in watch mode                            |
 | `pnpm backend:build`                      | Build backend                                          |
+| `pnpm backend:start`                      | Start backend in production mode                       |
 | `pnpm backend:lint`                       | Lint backend                                           |
-| `pnpm backend:test`                       | Run backend tests                                      |
+| `pnpm backend:test`                       | Run backend unit tests                                 |
+| `pnpm backend:test:watch`                 | Run backend tests in watch mode                        |
+| `pnpm backend:test:cov`                   | Run backend tests with coverage                        |
+| `pnpm backend:test:e2e`                   | Run backend E2E tests (requires `pnpm db:up`)          |
 | `pnpm backend:db:migrate`                 | Build backend + run TypeORM migrations                 |
-| `pnpm mobile:dev`                         | Start Metro bundler                                    |
-| `pnpm mobile:ios` / `pnpm mobile:android` | Run mobile on simulator / emulator                     |
 | `pnpm companion:dev`                      | Start companion (Next.js) dev server                   |
 | `pnpm companion:build`                    | Build companion                                        |
+| `pnpm companion:start`                    | Start companion in production mode                     |
+| `pnpm companion:lint`                     | Lint companion                                         |
+| `pnpm companion:test`                     | Run companion tests (Vitest)                           |
+| `pnpm mobile:dev`                         | Start Metro bundler                                    |
+| `pnpm mobile:ios` / `pnpm mobile:android` | Run mobile on simulator / emulator                     |
 | `pnpm poc:dev`                            | Start PoC sensor dev server                            |
 | `pnpm poc:build`                          | Build PoC sensor                                       |
 | `pnpm shared:build`                       | Build shared package                                   |
