@@ -77,9 +77,9 @@ ok "Postgres is ready"
 # ── 6. Build shared + backend (TypeORM reads compiled data-source) ──
 echo ""
 echo "Building shared + backend..."
-pnpm build:shared
+pnpm shared:build
 ok "shared built"
-pnpm build:backend
+pnpm backend:build
 ok "backend built"
 
 # ── 7. Run TypeORM migrations ───────────────────────────────────────
@@ -97,14 +97,14 @@ echo ""
 echo "  Next steps:"
 echo ""
 echo "    # Start the backend (watch mode)"
-echo "    pnpm dev:backend"
+echo "    pnpm backend:dev"
 echo ""
 echo "    # Run the mobile app"
-echo "    pnpm dev:mobile   # then: pnpm ios  or  pnpm android"
+echo "    pnpm mobile:dev   # then: pnpm mobile:ios  or  pnpm mobile:android"
 echo ""
 echo "    # Run the web companion"
-echo "    pnpm dev:companion"
+echo "    pnpm companion:dev"
 echo ""
 echo "    # Regenerate the OpenAPI client (after API changes)"
-echo "    pnpm generate:api"
+echo "    pnpm openapi:gen"
 echo ""
