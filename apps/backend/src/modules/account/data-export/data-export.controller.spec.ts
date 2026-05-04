@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import { getQueueToken } from '@nestjs/bullmq';
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { getRepositoryToken, getEntityManagerToken } from '@nestjs/typeorm';
 import { PassThrough, Readable } from 'node:stream';
 import { DataExportController } from './data-export.controller.js';
 import { DataExportService } from './data-export.service.js';
@@ -65,9 +65,9 @@ describe('DataExportController', () => {
         },
         { provide: OBJECT_STORAGE, useValue: storage },
         { provide: JwtService, useValue: { verifyAsync: jest.fn() } },
-        // AuthGuard pulls UserRepository now (post-#295) for token-aware
-        // user lookups; tests don't exercise the guard but DI needs it.
-        { provide: getRepositoryToken(User), useValue: { findOne: jest.fn() } },
+        // AuthGuard injects EntityManager for the soft-delete check
+        // (US-62); tests don't exercise the guard but DI needs it.
+        { provide: getEntityManagerToken(), useValue: { findOne: jest.fn() } },
       ],
     }).compile();
     controller = module.get(DataExportController);
