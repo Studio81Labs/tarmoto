@@ -157,9 +157,7 @@ export class EventsGateway
       this.subClient = sub;
       // @socket.io/redis-adapter v8 returns a factory (nsp => Adapter)
       // that socket.io's server.adapter() accepts as AdapterConstructor.
-      // @socket.io/redis-adapter v8 returns a factory (nsp => Adapter)
-      // that socket.io's server.adapter() accepts as AdapterConstructor.
-      this.server.adapter(createAdapter(pub, sub));
+      server.adapter(createAdapter(pub, sub));
       this.logger.log(`Redis adapter connected (${redisHost}:${redisPort})`);
     } catch (err) {
       // Clean up any partially connected clients
