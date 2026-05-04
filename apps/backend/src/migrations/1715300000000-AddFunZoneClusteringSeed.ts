@@ -91,14 +91,14 @@ export class AddFunZoneClusteringSeed1715300000000 implements MigrationInterface
         WITH scored AS (
           SELECT
             zone_id,
-            ROUND(
+            ROUND((
               (
                 0.40 * LEAST(GREATEST(avg_curviness / 5.0, 0), 1)
                 + 0.25 * LEAST(GREATEST((avg_quality - 1) / 4.0, 0), 1)
                 + 0.15 * LEAST(GREATEST(elevation_range_m / 1500.0, 0), 1)
                 + 0.15 * LEAST(GREATEST(road_count::float / 30.0, 0), 1)
               ) * 100.0
-            ::numeric, 2)::float AS composite_score
+            )::numeric, 2)::float AS composite_score
           FROM tmp_fz_clusters
         ),
         seasoned AS (
