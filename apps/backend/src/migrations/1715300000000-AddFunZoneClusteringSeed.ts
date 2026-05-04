@@ -147,20 +147,15 @@ export class AddFunZoneClusteringSeed1715300000000 implements MigrationInterface
         INSERT INTO fun_zone_roads (fun_zone_id, road_segment_id, contribution_score)
         SELECT
           t.zone_id,
-          m.member_id,
+          t.member_ids[i],
           ROUND(
             (
-              LEAST(GREATEST(m.curviness / 5.0, 0), 1)
-              * LEAST(GREATEST((COALESCE(m.quality, 1) - 1) / 4.0, 0), 1)
-              * LEAST(GREATEST(m.length_m / 5000.0, 0), 1)
+              LEAST(GREATEST(t.curviness_scores[i] / 5.0, 0), 1)
+              * LEAST(GREATEST((COALESCE(t.quality_scores[i], 1) - 1) / 4.0, 0), 1)
+              * LEAST(GREATEST(t.lengths_m[i] / 5000.0, 0), 1)
             )::numeric, 3)::float
         FROM tmp_fz_clusters t
-        CROSS JOIN LATERAL ROWS FROM(
-          UNNEST(t.member_ids),
-          UNNEST(t.curviness_scores),
-          UNNEST(t.quality_scores),
-          UNNEST(t.lengths_m)
-        ) AS m(member_id UUID, curviness FLOAT, quality FLOAT, length_m FLOAT);
+        CROSS JOIN LATERAL generate_subscripts(t.member_ids, 1) AS i;
 
         -- Prune zones that disappeared from the latest run so the
         -- table stays in sync with the input data.
