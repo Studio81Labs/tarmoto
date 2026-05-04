@@ -22,7 +22,7 @@
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
-    "@maplibre/maplibre-gl-style-spec": "24.8.1",
+    "@maplibre/maplibre-gl-style-spec": "24.8.3",
     "@opennextjs/cloudflare": "^1.19.5",
     "@tarmoto/openapi": "workspace:*",
     "@tarmoto/shared": "workspace:*",
