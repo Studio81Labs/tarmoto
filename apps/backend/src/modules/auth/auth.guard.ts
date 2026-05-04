@@ -5,8 +5,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectEntityManager } from '@nestjs/typeorm';
+import { EntityManager } from 'typeorm';
 import * as express from 'express';
 import { User } from '../../entities/user.entity.js';
 
@@ -14,8 +14,8 @@ import { User } from '../../entities/user.entity.js';
 export class AuthGuard implements CanActivate {
   constructor(
     private readonly jwt: JwtService,
-    @InjectRepository(User)
-    private readonly userRepo: Repository<User>,
+    @InjectEntityManager()
+    private readonly em: EntityManager,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -46,7 +46,7 @@ export class AuthGuard implements CanActivate {
     // selecting only the columns we need, so it adds ~1 indexed read
     // per authenticated request. Worth the cost vs. leaving deleted
     // accounts addressable for up to an hour after deletion.
-    const account = await this.userRepo.findOne({
+    const account = await this.em.findOne(User, {
       where: { id: userId },
       select: { id: true, deleted_at: true },
     });

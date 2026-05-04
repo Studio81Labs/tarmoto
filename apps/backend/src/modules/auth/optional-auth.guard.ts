@@ -1,7 +1,7 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectEntityManager } from '@nestjs/typeorm';
+import { EntityManager } from 'typeorm';
 import * as express from 'express';
 import { User } from '../../entities/user.entity.js';
 
@@ -17,8 +17,8 @@ import { User } from '../../entities/user.entity.js';
 export class OptionalAuthGuard implements CanActivate {
   constructor(
     private readonly jwt: JwtService,
-    @InjectRepository(User)
-    private readonly userRepo: Repository<User>,
+    @InjectEntityManager()
+    private readonly em: EntityManager,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -35,7 +35,7 @@ export class OptionalAuthGuard implements CanActivate {
       // Treat a soft-deleted account as anonymous on optional-auth
       // routes — drop the personalization rather than blocking the
       // read. The required-auth path (`AuthGuard`) blocks outright.
-      const account = await this.userRepo.findOne({
+      const account = await this.em.findOne(User, {
         where: { id: payload.sub },
         select: { id: true, deleted_at: true },
       });

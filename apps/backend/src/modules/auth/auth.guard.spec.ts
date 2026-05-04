@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { getEntityManagerToken } from '@nestjs/typeorm';
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
-import { Repository } from 'typeorm';
+import { EntityManager } from 'typeorm';
 import type { Request } from 'express';
 import { AuthGuard } from './auth.guard.js';
 import { OptionalAuthGuard } from './optional-auth.guard.js';
@@ -20,7 +20,7 @@ function makeContext(authHeader?: string): ExecutionContext {
 describe('AuthGuard (US-62 soft-delete check)', () => {
   let guard: AuthGuard;
   let jwt: jest.Mocked<JwtService>;
-  let userRepo: jest.Mocked<Pick<Repository<User>, 'findOne'>>;
+  let em: jest.Mocked<Pick<EntityManager, 'findOne'>>;
 
   beforeEach(async () => {
     jwt = {
@@ -28,7 +28,7 @@ describe('AuthGuard (US-62 soft-delete check)', () => {
         .fn()
         .mockResolvedValue({ sub: 'user-1', type: 'access' }),
     } as unknown as jest.Mocked<JwtService>;
-    userRepo = {
+    em = {
       findOne: jest.fn().mockResolvedValue({ id: 'user-1', deleted_at: null }),
     };
 
@@ -36,7 +36,7 @@ describe('AuthGuard (US-62 soft-delete check)', () => {
       providers: [
         AuthGuard,
         { provide: JwtService, useValue: jwt },
-        { provide: getRepositoryToken(User), useValue: userRepo },
+        { provide: getEntityManagerToken(), useValue: em },
       ],
     }).compile();
     guard = module.get(AuthGuard);
@@ -45,7 +45,7 @@ describe('AuthGuard (US-62 soft-delete check)', () => {
   it('allows requests from a non-deleted user', async () => {
     const ctx = makeContext('Bearer good-token');
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
-    expect(userRepo.findOne).toHaveBeenCalledWith({
+    expect(em.findOne).toHaveBeenCalledWith(User, {
       where: { id: 'user-1' },
       select: { id: true, deleted_at: true },
     });
@@ -55,7 +55,7 @@ describe('AuthGuard (US-62 soft-delete check)', () => {
     // Regression for US-62: previously the guard only verified the JWT
     // signature, so a rider's existing access token (1h TTL) kept
     // working for up to an hour after they hit DELETE /account.
-    userRepo.findOne.mockResolvedValueOnce({
+    em.findOne.mockResolvedValueOnce({
       id: 'user-1',
       deleted_at: new Date('2026-04-25T12:00:00Z'),
     } as User);
@@ -66,7 +66,7 @@ describe('AuthGuard (US-62 soft-delete check)', () => {
   });
 
   it('rejects requests when the user row is gone (post-purge token replay)', async () => {
-    userRepo.findOne.mockResolvedValueOnce(null);
+    em.findOne.mockResolvedValueOnce(null);
     const ctx = makeContext('Bearer good-token');
     await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
       UnauthorizedException,
@@ -77,7 +77,7 @@ describe('AuthGuard (US-62 soft-delete check)', () => {
     await expect(guard.canActivate(makeContext())).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
-    expect(userRepo.findOne).not.toHaveBeenCalled();
+    expect(em.findOne).not.toHaveBeenCalled();
   });
 
   it('rejects when the token type is refresh (not access)', async () => {
@@ -88,14 +88,14 @@ describe('AuthGuard (US-62 soft-delete check)', () => {
     await expect(
       guard.canActivate(makeContext('Bearer refresh-token')),
     ).rejects.toBeInstanceOf(UnauthorizedException);
-    expect(userRepo.findOne).not.toHaveBeenCalled();
+    expect(em.findOne).not.toHaveBeenCalled();
   });
 });
 
 describe('OptionalAuthGuard (US-62 soft-delete check)', () => {
   let guard: OptionalAuthGuard;
   let jwt: jest.Mocked<JwtService>;
-  let userRepo: jest.Mocked<Pick<Repository<User>, 'findOne'>>;
+  let em: jest.Mocked<Pick<EntityManager, 'findOne'>>;
 
   beforeEach(async () => {
     jwt = {
@@ -103,7 +103,7 @@ describe('OptionalAuthGuard (US-62 soft-delete check)', () => {
         .fn()
         .mockResolvedValue({ sub: 'user-1', type: 'access' }),
     } as unknown as jest.Mocked<JwtService>;
-    userRepo = {
+    em = {
       findOne: jest.fn().mockResolvedValue({ id: 'user-1', deleted_at: null }),
     };
 
@@ -111,7 +111,7 @@ describe('OptionalAuthGuard (US-62 soft-delete check)', () => {
       providers: [
         OptionalAuthGuard,
         { provide: JwtService, useValue: jwt },
-        { provide: getRepositoryToken(User), useValue: userRepo },
+        { provide: getEntityManagerToken(), useValue: em },
       ],
     }).compile();
     guard = module.get(OptionalAuthGuard);
@@ -120,11 +120,11 @@ describe('OptionalAuthGuard (US-62 soft-delete check)', () => {
   it('lets the request through unauthenticated when no token is present', async () => {
     const ctx = makeContext();
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
-    expect(userRepo.findOne).not.toHaveBeenCalled();
+    expect(em.findOne).not.toHaveBeenCalled();
   });
 
   it('treats a soft-deleted account as anonymous (does not block the request)', async () => {
-    userRepo.findOne.mockResolvedValueOnce({
+    em.findOne.mockResolvedValueOnce({
       id: 'user-1',
       deleted_at: new Date(),
     } as User);
