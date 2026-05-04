@@ -111,6 +111,18 @@ jobs:
           NAME="${NAME_VAR:-tarmoto-companion}"
           echo "name=${NAME}" >> "$GITHUB_OUTPUT"
 
+      - name: Push AUTH_SECRET to Worker
+        if: github.event_name != 'pull_request'
+        working-directory: apps/companion
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+          WORKER_NAME: ${{ steps.worker.outputs.name }}
+        run: |
+          echo "$AUTH_SECRET" | pnpm exec wrangler secret put AUTH_SECRET \
+            --name "$WORKER_NAME"
+
       - name: Deploy
         id: deploy
         working-directory: apps/companion
