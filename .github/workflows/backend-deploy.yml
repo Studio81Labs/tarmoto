@@ -1,22 +1,28 @@
 name: Backend Deploy
 
-# Coolify auto-deploys on push to main (Dockerfile build + healthcheck
-# rolling update). This workflow waits for the new container to pass its
-# healthcheck, runs a smoke test, and triggers a rollback on failure.
+# Deploy model (ADR-0006 + staging extension):
+#   push to main  → staging  (Coolify auto-deploys)
+#   push tag v*   → production (CI triggers Coolify webhook)
+#   workflow_dispatch → choose staging or production
 #
-# Deploy target: Hetzner CX33 + Coolify per ADR-0006.
-# Day-2 ops: docs/process/runbook.md, infra/coolify/README.md
+# Deploy target: Hetzner CX33 + Coolify.
+# Day-2 ops: docs/process/runbook.md
 #
 # Required repo secrets:
-#   COOLIFY_API_TOKEN           Coolify API token (Keys & Tokens)
-#   COOLIFY_APPLICATION_UUID    Application UUID from Coolify URL
+#   COOLIFY_API_TOKEN                Coolify API token (Keys & Tokens)
+#   COOLIFY_DEPLOY_WEBHOOK_URL       Production Coolify app deploy webhook
+#   COOLIFY_STAGING_DEPLOY_WEBHOOK_URL  Staging Coolify app deploy webhook
 #
 # Required repo variables:
-#   BACKEND_URL_PROD            e.g. https://api.tarmoto.app
+#   BACKEND_URL_PROD                 e.g. https://api.tarmoto.app
+#   BACKEND_URL_STAGING              e.g. https://api.staging.tarmoto.app
+#   COOLIFY_APPLICATION_UUID         Production Coolify app UUID
+#   COOLIFY_STAGING_APPLICATION_UUID Staging Coolify app UUID
 
 on:
   push:
     branches: [main]
+    tags: ["v*"]
     paths:
       - "apps/backend/**"
       - "packages/shared/**"
@@ -25,26 +31,58 @@ on:
       - ".github/workflows/backend-deploy.yml"
       - "scripts/smoke/**"
   workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: ["staging", "production"]
+        default: "staging"
 
 permissions:
   contents: read
 
 concurrency:
-  group: backend-deploy-prod
+  group: backend-deploy-${{ inputs.environment || (startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging') }}
   cancel-in-progress: false
 
 jobs:
   deploy:
     name: Deploy & verify
     runs-on: ubuntu-latest
-    environment: production
+    environment:
+      name: ${{ inputs.environment || (startsWith(github.ref, 'refs/tags/v') && 'production' || 'staging') }}
 
     steps:
       - uses: actions/checkout@v6
 
+      - name: Resolve environment
+        id: env
+        env:
+          INPUT_ENV: ${{ inputs.environment || '' }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          if [ "$IS_TAG" = "true" ]; then
+            ENV_NAME="production"
+          elif [ -n "$INPUT_ENV" ]; then
+            ENV_NAME="$INPUT_ENV"
+          else
+            ENV_NAME="staging"
+          fi
+          echo "name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger Coolify deploy (production only)
+        if: steps.env.outputs.name == 'production'
+        env:
+          WEBHOOK_URL: ${{ secrets.COOLIFY_DEPLOY_WEBHOOK_URL }}
+        run: |
+          echo "Triggering production deploy..."
+          curl --fail --silent --show-error -X POST "$WEBHOOK_URL"
+          echo "Webhook accepted — Coolify is building."
+
       - name: Wait for deploy to go live
         env:
-          BASE_URL: ${{ vars.BACKEND_URL_PROD }}
+          BASE_URL: ${{ steps.env.outputs.name == 'production' && vars.BACKEND_URL_PROD || vars.BACKEND_URL_STAGING }}
         run: |
           set -euo pipefail
           # Coolify's rolling update builds the image, starts a new
@@ -67,14 +105,14 @@ jobs:
 
       - name: Smoke test
         env:
-          BASE_URL: ${{ vars.BACKEND_URL_PROD }}
+          BASE_URL: ${{ steps.env.outputs.name == 'production' && vars.BACKEND_URL_PROD || vars.BACKEND_URL_STAGING }}
         run: scripts/smoke/smoke.sh "$BASE_URL"
 
       - name: Roll back on smoke failure
         if: failure()
         env:
           COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
-          APPLICATION_UUID: ${{ vars.COOLIFY_APPLICATION_UUID }}
+          APPLICATION_UUID: ${{ steps.env.outputs.name == 'production' && vars.COOLIFY_APPLICATION_UUID || vars.COOLIFY_STAGING_APPLICATION_UUID }}
           COOLIFY_URL: https://coolify.studio81.cz
         run: |
           set -euo pipefail
