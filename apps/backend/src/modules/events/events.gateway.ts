@@ -155,7 +155,16 @@ export class EventsGateway
       await Promise.all([pub.connect(), sub.connect()]);
       this.pubClient = pub;
       this.subClient = sub;
-      server.adapter(createAdapter(pub, sub));
+      // @socket.io/redis-adapter v8 returns a factory (nsp => Adapter)
+      // that socket.io's server.adapter() accepts as AdapterConstructor.
+      const adapterFactory = createAdapter(pub, sub);
+      if (typeof server.adapter === 'function') {
+        server.adapter(adapterFactory);
+      } else {
+        // NestJS socket.io wrapper may shadow the raw Server methods —
+        // fall back to direct property assignment.
+        (server as unknown as Record<string, unknown>).adapter = adapterFactory;
+      }
       this.logger.log(`Redis adapter connected (${redisHost}:${redisPort})`);
     } catch (err) {
       // Clean up any partially connected clients
