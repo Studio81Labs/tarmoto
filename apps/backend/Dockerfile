@@ -62,6 +62,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
 
 COPY --from=build /workspace/apps/backend/dist apps/backend/dist
 COPY --from=build /workspace/packages/shared/dist packages/shared/dist
+COPY --from=build /workspace/docs/database/ docs/database/
 
 USER tarmoto
 EXPOSE 3000
