@@ -258,20 +258,47 @@ Prices are EUR-denominated; see ADR-0003 and `SUBSCRIPTION_PRICING` in `@tarmoto
 
 ## 8. Next Steps
 
-| #   | Action Item                                                                                  | Owner            | Due Date      | Status          |
-| --- | -------------------------------------------------------------------------------------------- | ---------------- | ------------- | --------------- |
-| 1   | Validate road quality ML model with test rides (3 phone models, 5 road types)                | Tech Lead        | May 2026      | Not Started     |
-| 2   | Create interactive wireframes for core flows (trip planner, ride mode, road quality overlay) | Design Lead      | May 2026      | ✅ Done         |
-| 3   | Set up backend infrastructure (PostGIS, tile server, API scaffold)                           | Backend Dev      | June 2026     | Not Started     |
-| 4   | Beta rider recruitment (target: 200 riders in CZ/SK region)                                  | Product          | June 2026     | Not Started     |
-| 5   | Legal review: privacy policy, GDPR compliance, location data handling                        | Legal            | July 2026     | Not Started     |
-| 6   | **Web: scaffold Next.js project, auth integration, MapLibre GL setup**                       | **Frontend Dev** | **June 2026** | **Not Started** |
-| 7   | **Web: trip planner MVP (map drawing, route generation, road preview cards)**                | **Frontend Dev** | **Aug 2026**  | **Not Started** |
-| 8   | **Web: road quality explorer + ride history dashboard**                                      | **Frontend Dev** | **Sep 2026**  | **Not Started** |
-| 9   | **Web: community hub + account management**                                                  | **Frontend Dev** | **Oct 2026**  | **Not Started** |
-| 10  | MVP feature-complete build (mobile + web)                                                    | Engineering      | Oct 2026      | Not Started     |
-| 11  | Closed beta launch (CZ/SK/AT)                                                                | Product          | Nov 2026      | Not Started     |
-| 12  | Public launch on App Store, Google Play & web                                                | All              | Q1 2027       | Not Started     |
+| #   | Action Item                                                                                  | Owner            | Due Date      | Status         |
+| --- | -------------------------------------------------------------------------------------------- | ---------------- | ------------- | -------------- |
+| 1   | Validate road quality ML model with test rides (3 phone models, 5 road types)                | Tech Lead        | May 2026      | Not Started    |
+| 2   | Create interactive wireframes for core flows (trip planner, ride mode, road quality overlay) | Design Lead      | May 2026      | ✅ Done        |
+| 3   | Set up backend infrastructure (PostGIS, tile server, API scaffold)                           | Backend Dev      | June 2026     | ✅ Done        |
+| 4   | Beta rider recruitment (target: 200 riders in CZ/SK region)                                  | Product          | June 2026     | Not Started    |
+| 5   | Legal review: privacy policy, GDPR compliance, location data handling                        | Legal            | July 2026     | Not Started    |
+| 6   | **Web: scaffold Next.js project, auth integration, MapLibre GL setup**                       | **Frontend Dev** | **June 2026** | ✅ Done        |
+| 7   | **Web: trip planner MVP (map drawing, route generation, road preview cards)**                | **Frontend Dev** | **Aug 2026**  | 🚧 In Progress |
+| 8   | **Web: road quality explorer + ride history dashboard**                                      | **Frontend Dev** | **Sep 2026**  | 🚧 In Progress |
+| 9   | **Web: community hub + account management**                                                  | **Frontend Dev** | **Oct 2026**  | 🚧 In Progress |
+| 10  | MVP feature-complete build (mobile + web)                                                    | Engineering      | Oct 2026      | 🚧 In Progress |
+| 11  | Closed beta launch (CZ/SK/AT)                                                                | Product          | Nov 2026      | Not Started    |
+| 12  | Public launch on App Store, Google Play & web                                                | All              | Q1 2027       | Not Started    |
+
+### 8.1 Infrastructure (Completed May 2026)
+
+| Item                                                                | Status |
+| ------------------------------------------------------------------- | ------ |
+| Hetzner CX33 VPS provisioned (Helsinki, €8.46/mo)                   | ✅     |
+| Coolify self-hosted PaaS (`coolify.studio81.cz`)                    | ✅     |
+| PostGIS 17 + Redis 8 (prod + staging)                               | ✅     |
+| Cloudflare R2 object storage (avatars, exports, tiles)              | ✅     |
+| CI/CD: GitHub Actions (backend-deploy, companion-deploy, mobile CI) | ✅     |
+| ADR-0006: Hetzner + Coolify stack (Accepted)                        | ✅     |
+| Staging environment (`api-staging.tarmoto.app`)                     | ✅     |
+| Auto-migration on deploy (TypeORM)                                  | ✅     |
+| Smoke tests + auto-rollback on deploy failure                       | ✅     |
+
+### 8.2 What's Still Needed Before Launch
+
+| Item                                                            | Priority |
+| --------------------------------------------------------------- | -------- |
+| Stripe subscription keys (live)                                 | P0       |
+| Push notification credentials (FCM + APN)                       | P1       |
+| Production email provider (Resend or SMTP — currently log-only) | P1       |
+| App Store / Google Play developer accounts                      | P0       |
+| OpenWeatherMap API key                                          | P2       |
+| Legal review (privacy policy, GDPR)                             | P0       |
+| Beta rider recruitment                                          | P1       |
+| Mobile release build pipeline end-to-end                        | P1       |
 
 ---
 
