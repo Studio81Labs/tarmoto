@@ -21,6 +21,6 @@
     "enabled": true
   },
   "vars": {
-    "AUTH_SECRET": ""
+    "AUTH_SECRET": "placeholder-set-at-build-time"
   }
 }

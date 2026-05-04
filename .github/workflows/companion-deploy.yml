@@ -97,7 +97,6 @@ jobs:
         env:
           NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL || 'https://api.tarmoto.app' }}
           NEXT_PUBLIC_WS_URL: ${{ vars.NEXT_PUBLIC_WS_URL || 'wss://api.tarmoto.app' }}
-          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
         # `cf:build` runs `next build` then applies the OpenNext
         # transform that emits .open-next/worker.js + .open-next/assets,
         # which `wrangler deploy` / `wrangler versions upload` consume.
