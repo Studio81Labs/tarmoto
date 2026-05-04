@@ -370,7 +370,7 @@ The road quality explorer is the public-facing showcase of Tarmoto's crowdsource
 
 - ✅ **US-41:** As a visitor (no account required), I want to browse a full-screen road quality heatmap so that I can see road conditions in any region.
 - ✅ **US-42:** As a rider, I want to click any road segment and see a detail panel (quality score, surface type, confidence level, number of rider passes, last updated, trend over time, photos) so that I get a complete picture of road conditions.
-- 🚧 **US-43:** As a rider, I want to filter the map by quality tier (Excellent→Very Poor), surface type (asphalt/concrete/cobblestone/gravel/dirt), and curviness rating so that I find exactly the kind of roads I'm looking for.
+- ✅ **US-43:** As a rider, I want to filter the map by quality tier (Excellent→Very Poor), surface type (asphalt/concrete/cobblestone/gravel/dirt), and curviness rating so that I find exactly the kind of roads I'm looking for.
 - ✅ **US-44:** As a rider, I want to see active hazard markers on the map with details (type, reporter, time, confirmations) so that I can check current dangers before heading out.
 - 🚧 **US-45:** As a rider, I want to view a road quality trend graph for any segment (how quality has changed over months/years) so that I can see if a road is deteriorating or recently repaired.
 - ✅ **US-46:** As a visitor, I want curated "Best Roads" pages (e.g., "Best Roads in Beskydy", "Top 10 Alpine Passes") auto-generated from community data so that I discover great rides through search engines.
