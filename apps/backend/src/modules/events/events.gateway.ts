@@ -137,8 +137,18 @@ export class EventsGateway
   async afterInit(server: Server): Promise<void> {
     const redisHost = this.config.get<string>('redis.host', 'localhost');
     const redisPort = this.config.get<number>('redis.port', 6379);
+    // Auth is optional — dev runs without, Coolify-managed Redis sets
+    // both. We pass them through node-redis' options shape rather than
+    // building a URL so passwords with special characters don't need
+    // URL-encoding.
+    const redisUsername = this.config.get<string | undefined>('redis.username');
+    const redisPassword = this.config.get<string | undefined>('redis.password');
 
-    const pub = createClient({ url: `redis://${redisHost}:${redisPort}` });
+    const pub = createClient({
+      socket: { host: redisHost, port: redisPort },
+      ...(redisUsername ? { username: redisUsername } : {}),
+      ...(redisPassword ? { password: redisPassword } : {}),
+    });
     const sub = pub.duplicate();
 
     try {
