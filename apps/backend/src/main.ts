@@ -94,8 +94,16 @@ async function bootstrap() {
 
   app.use(isProd ? helmet() : helmet({ contentSecurityPolicy: false }));
 
+  // CORS origins: env override (comma-separated) takes precedence,
+  // then the hardcoded production list, then wide-open in dev.
+  const corsOrigin = process.env.TARMOTO_CORS_ORIGIN
+    ? process.env.TARMOTO_CORS_ORIGIN.split(',').map((s) => s.trim())
+    : isProd
+      ? ['https://app.tarmoto.app', 'https://tarmoto.app']
+      : true;
+
   app.enableCors({
-    origin: isProd ? ['https://app.tarmoto.app', 'https://tarmoto.app'] : true,
+    origin: corsOrigin,
     credentials: true,
   });
 
