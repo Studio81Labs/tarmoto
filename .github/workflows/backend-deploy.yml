@@ -1,20 +1,15 @@
 name: Backend Deploy
 
-# Render handles the Docker build + deploy itself, off `git push` to
-# main (see infra/render/render.yaml's autoDeploy flag). This workflow
-# waits for Render to finish, runs a smoke test, and triggers a
-# rollback on smoke failure.
+# Coolify auto-deploys on push to main (Dockerfile build + healthcheck
+# rolling update). This workflow waits for the new container to pass its
+# healthcheck, runs a smoke test, and triggers a rollback on failure.
 #
-# There is no staging environment — `main` is prod. workflow_dispatch
-# covers re-running the smoke + rollback flow against the current prod
-# deploy after a manual Render redeploy.
-#
-# Choice rationale: docs/decisions/0005-deployment-stack-render.md
-# Day-2 ops: docs/process/runbook.md
+# Deploy target: Hetzner CX33 + Coolify per ADR-0006.
+# Day-2 ops: docs/process/runbook.md, infra/coolify/README.md
 #
 # Required repo secrets:
-#   RENDER_API_KEY              Render account API key
-#   RENDER_SERVICE_ID_PROD      `srv-...` for the prod Web Service
+#   COOLIFY_API_TOKEN           Coolify API token (Keys & Tokens)
+#   COOLIFY_APPLICATION_UUID    Application UUID from Coolify URL
 #
 # Required repo variables:
 #   BACKEND_URL_PROD            e.g. https://api.tarmoto.app
@@ -26,7 +21,7 @@ on:
       - "apps/backend/**"
       - "packages/shared/**"
       - "packages/openapi/**"
-      - "infra/render/**"
+      - "docs/database/**"
       - ".github/workflows/backend-deploy.yml"
       - "scripts/smoke/**"
   workflow_dispatch:
@@ -42,61 +37,32 @@ jobs:
   deploy:
     name: Deploy & verify
     runs-on: ubuntu-latest
-
-    # The `production` GitHub environment enforces required reviewers
-    # / branch protections configured in the repo settings.
     environment: production
 
     steps:
       - uses: actions/checkout@v6
 
       - name: Wait for deploy to go live
-        id: wait
         env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID_PROD }}
+          BASE_URL: ${{ vars.BACKEND_URL_PROD }}
         run: |
           set -euo pipefail
-          # Poll /v1/services/{id}/deploys until we see a deploy whose
-          # commit matches $GITHUB_SHA reach status=live (success) or
-          # one of the terminal failure statuses. 20 min cap matches
-          # Render's own deploy timeout.
-          DEADLINE=$(( $(date +%s) + 1200 ))
-          SHA_SHORT="${GITHUB_SHA:0:7}"
+          # Coolify's rolling update builds the image, starts a new
+          # container, and waits for the Docker HEALTHCHECK to pass
+          # before switching traffic. We poll the app healthcheck
+          # endpoint until it returns 200 — the new container is live.
+          DEADLINE=$(( $(date +%s) + 600 ))
           while [ "$(date +%s)" -lt "$DEADLINE" ]; do
-            DEPLOYS=$(curl --fail --silent \
-              -H "Authorization: Bearer $RENDER_API_KEY" \
-              -H "Accept: application/json" \
-              "https://api.render.com/v1/services/${SERVICE_ID}/deploys?limit=20")
-
-            DEPLOY=$(echo "$DEPLOYS" | jq --arg sha "$SHA_SHORT" '
-              [.[] | select(.deploy.commit.id // "" | startswith($sha))][0].deploy // empty
-            ')
-            if [ -z "$DEPLOY" ] || [ "$DEPLOY" = "null" ]; then
-              echo "No deploy yet for ${SHA_SHORT}; waiting..."
-              sleep 15
-              continue
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+              "${BASE_URL}/api/v1/healthz" || echo '000')
+            if [ "$CODE" = "200" ]; then
+              echo "Healthcheck passed (200)"
+              exit 0
             fi
-
-            STATUS=$(echo "$DEPLOY" | jq -r '.status')
-            DEPLOY_ID=$(echo "$DEPLOY" | jq -r '.id')
-            echo "Deploy ${DEPLOY_ID}: ${STATUS}"
-
-            case "$STATUS" in
-              live)
-                echo "deploy_id=${DEPLOY_ID}" >> "$GITHUB_OUTPUT"
-                exit 0
-                ;;
-              build_failed|update_failed|canceled|deactivated|pre_deploy_failed)
-                echo "::error::Deploy ${DEPLOY_ID} terminated with status=${STATUS}"
-                exit 1
-                ;;
-              *)
-                sleep 15
-                ;;
-            esac
+            echo "Healthcheck returned ${CODE}; waiting..."
+            sleep 10
           done
-          echo "::error::Timed out waiting for deploy of ${SHA_SHORT}"
+          echo "::error::Timed out waiting for healthy deploy"
           exit 1
 
       - name: Smoke test
@@ -105,44 +71,33 @@ jobs:
         run: scripts/smoke/smoke.sh "$BASE_URL"
 
       - name: Roll back on smoke failure
-        if: failure() && steps.wait.outcome == 'success'
+        if: failure()
         env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID_PROD }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          APPLICATION_UUID: ${{ secrets.COOLIFY_APPLICATION_UUID }}
+          COOLIFY_URL: https://coolify.studio81.cz
         run: |
           set -euo pipefail
-          echo "::warning::Smoke test failed — rolling back."
-          SHA_SHORT="${GITHUB_SHA:0:7}"
-          # Find the most recent successful deploy *before* the one
-          # we just shipped, then POST it to /rollback. In Render's
-          # deploy lifecycle, only the currently-serving deploy has
-          # status=live; previously-successful deploys move to
-          # status=deactivated when superseded. Our broken just-shipped
-          # deploy is still "live" at this point (smoke runs after the
-          # health-check gate flips traffic), so we accept either
-          # status and exclude the current SHA — the most recent match
-          # is the predecessor we want to roll back to.
-          PREV=$(curl --fail --silent \
-            -H "Authorization: Bearer $RENDER_API_KEY" \
+          echo "::warning::Smoke test failed — rolling back via Coolify API."
+
+          DEPLOYS=$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
             -H "Accept: application/json" \
-            "https://api.render.com/v1/services/${SERVICE_ID}/deploys?limit=20" \
-            | jq --arg sha "$SHA_SHORT" -r '
-              [.[]
-                | .deploy
-                | select(.status == "live" or .status == "deactivated")
-                | select((.commit.id // "") | startswith($sha) | not)
-              ][0].id // empty
-            ')
+            "${COOLIFY_URL}/api/v1/applications/${APPLICATION_UUID}")
+
+          CURRENT=$(echo "$DEPLOYS" | jq -r '.deployments[0].id // empty')
+          PREV=$(echo "$DEPLOYS" | jq -r '.deployments[1].id // empty')
+
           if [ -z "$PREV" ]; then
-            echo "::error::No previous successful deploy to roll back to — manual recovery required."
+            echo "::error::No previous deployment to roll back to."
+            echo "::error::Open Coolify → Deployments → Redeploy a previous successful deploy."
             exit 1
           fi
-          # Render's rollback endpoint is /v1/services/{id}/deploys/{deployId}/rollback
-          # — deploy ID is a path parameter, no body required. The
-          # service-level /rollback URL with deployId in the body
-          # returns 404.
+
+          echo "Rolling back from ${CURRENT} to ${PREV}..."
           curl --fail --silent --show-error -X POST \
-            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
             -H "Accept: application/json" \
-            "https://api.render.com/v1/services/${SERVICE_ID}/deploys/${PREV}/rollback" > /dev/null
-          echo "::notice::Rolled back to ${PREV}"
+            "${COOLIFY_URL}/api/v1/applications/${APPLICATION_UUID}/deployments/${PREV}/rollback" \
+            > /dev/null
+          echo "::notice::Rolled back to deployment ${PREV}"

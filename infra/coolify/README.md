@@ -126,6 +126,11 @@ TARMOTO_DATABASE_USER=tarmoto
 TARMOTO_DATABASE_PASSWORD=<from Postgres resource page>
 TARMOTO_REDIS_HOST=<from Redis resource page>
 TARMOTO_REDIS_PORT=6379
+# Auth is optional — omit for local dev. Coolify password-protects
+# Redis by default, so production must set both. The standard Redis ACL
+# username is `default` unless overridden at resource creation.
+TARMOTO_REDIS_USERNAME=default
+TARMOTO_REDIS_PASSWORD=<from Redis resource page>
 ```
 
 #### Operator secrets (filled from external dashboards)
