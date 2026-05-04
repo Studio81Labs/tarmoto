@@ -42,6 +42,18 @@
   "pnpm": {
     "overrides": {
       "@maplibre/maplibre-gl-style-spec": "24.8.3"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "@firebase/util",
+      "@nestjs/core",
+      "@scarf/scarf",
+      "bcrypt",
+      "esbuild",
+      "msgpackr-extract",
+      "protobufjs",
+      "sharp",
+      "unrs-resolver",
+      "workerd"
+    ]
   }
 }
