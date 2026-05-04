@@ -155,8 +155,11 @@ export class AddFunZoneClusteringSeed1715300000000 implements MigrationInterface
               * LEAST(GREATEST(m.length_m / 5000.0, 0), 1)
             )::numeric, 3)::float
         FROM tmp_fz_clusters t
-        CROSS JOIN LATERAL UNNEST(
-          t.member_ids, t.curviness_scores, t.quality_scores, t.lengths_m
+        CROSS JOIN LATERAL ROWS FROM(
+          UNNEST(t.member_ids),
+          UNNEST(t.curviness_scores),
+          UNNEST(t.quality_scores),
+          UNNEST(t.lengths_m)
         ) AS m(member_id UUID, curviness FLOAT, quality FLOAT, length_m FLOAT);
 
         -- Prune zones that disappeared from the latest run so the
