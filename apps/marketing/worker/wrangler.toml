@@ -1,0 +1,7 @@
+name = "tarmoto-waitlist"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+
+[[kv_namespaces]]
+binding = "TARMOTO_WAITLIST"
+id = "9f5684c40eda4cfe83a6fbfc6b2c5df0"

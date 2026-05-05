@@ -1,10 +1,11 @@
 packages:
   - "apps/*"
+  - "apps/*/worker"
   - "packages/*"
   - "docs/design"
 onlyBuiltDependencies:
   - "@nestjs/core"
-  - '@scarf/scarf'
+  - "@scarf/scarf"
   - "bcrypt"
   - "esbuild"
   - sharp
