@@ -27,7 +27,7 @@ export class BikesService {
       const isFirst = count === 0;
 
       // First bike is always active; explicit active flag also deactivates others.
-      const shouldActivate = isFirst || dto.is_active;
+      const shouldActivate = isFirst || (dto.is_active ?? false);
       if (shouldActivate) {
         await bikeRepo.update({ user_id: userId }, { is_active: false });
       }

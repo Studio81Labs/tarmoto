@@ -20,6 +20,11 @@ export class AddBikes1716900000000 implements MigrationInterface {
     await queryRunner.query(`
       CREATE INDEX idx_bikes_user ON bikes(user_id)
     `);
+    // Enforce at most one active bike per user.
+    await queryRunner.query(`
+      CREATE UNIQUE INDEX idx_bikes_user_active ON bikes(user_id)
+      WHERE is_active = true
+    `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
