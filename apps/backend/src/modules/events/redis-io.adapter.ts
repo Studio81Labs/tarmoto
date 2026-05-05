@@ -50,10 +50,13 @@ export class RedisIoAdapter extends IoAdapter {
   }
 
   override createIOServer(port: number, options?: ServerOptions) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const server = super.createIOServer(port, options);
     if (this.redisAdapter) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
       server.adapter(this.redisAdapter);
     }
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return server;
   }
 }
