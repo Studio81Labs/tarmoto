@@ -29,7 +29,13 @@ export class BikesService {
       // First bike is always active; explicit active flag also deactivates others.
       const shouldActivate = isFirst || (dto.is_active ?? false);
       if (shouldActivate) {
-        await bikeRepo.update({ user_id: userId }, { is_active: false });
+        const activeBikes = await bikeRepo.find({
+          where: { user_id: userId, is_active: true },
+        });
+        for (const ab of activeBikes) {
+          ab.is_active = false;
+          await bikeRepo.save(ab);
+        }
       }
 
       const bike = bikeRepo.create({
@@ -40,8 +46,26 @@ export class BikesService {
         is_active: shouldActivate,
         photo_url: dto.photo_url ?? null,
       });
-      const saved = await bikeRepo.save(bike);
-      return this.toDto(saved);
+
+      try {
+        const saved = await bikeRepo.save(bike);
+        return this.toDto(saved);
+      } catch (err: unknown) {
+        // Unique partial index on (user_id WHERE is_active) prevents two
+        // concurrent first-bike creates from both becoming active. If the
+        // constraint fires, retry with is_active = false — another request
+        // already claimed the active slot.
+        if (
+          err instanceof Error &&
+          'code' in err &&
+          (err as Record<string, string>).code === '23505'
+        ) {
+          bike.is_active = false;
+          const saved = await bikeRepo.save(bike);
+          return this.toDto(saved);
+        }
+        throw err;
+      }
     });
   }
 
@@ -59,7 +83,15 @@ export class BikesService {
 
       // If activating, deactivate others.
       if (dto.is_active) {
-        await bikeRepo.update({ user_id: userId }, { is_active: false });
+        const activeBikes = await bikeRepo.find({
+          where: { user_id: userId, is_active: true },
+        });
+        for (const ab of activeBikes) {
+          if (ab.id !== bikeId) {
+            ab.is_active = false;
+            await bikeRepo.save(ab);
+          }
+        }
       }
 
       // Only set explicitly provided fields — don't clear fields the

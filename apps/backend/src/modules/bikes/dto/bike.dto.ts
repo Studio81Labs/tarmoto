@@ -8,17 +8,20 @@ import {
   Max,
   MaxLength,
   Min,
+  MinLength,
 } from 'class-validator';
 import { Expose } from 'class-transformer';
 
 export class CreateBikeDto {
-  @ApiProperty({ example: 'Honda' })
+  @ApiProperty({ example: 'Honda', minLength: 1 })
   @IsString()
+  @MinLength(1)
   @MaxLength(100)
   make!: string;
 
-  @ApiProperty({ example: 'Africa Twin' })
+  @ApiProperty({ example: 'Africa Twin', minLength: 1 })
   @IsString()
+  @MinLength(1)
   @MaxLength(100)
   model!: string;
 
