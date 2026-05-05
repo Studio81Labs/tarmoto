@@ -179,7 +179,7 @@ async function bootstrap() {
 
   // Gracefully disconnect Redis on shutdown.
   const shutdown = () => {
-    void redisAdapter.closeRedisClients().finally(() => app.close());
+    void app.close().finally(() => redisAdapter.closeRedisClients());
   };
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);

@@ -180,11 +180,12 @@ describe("trip-itinerary-generator", () => {
       firstRegenerated.days[1]?.dayNumber,
     );
     expect(secondRegenerated.days[1]?.waypoints).toBeDefined();
+    expect(secondRegenerated.days[1]?.segments).toBeDefined();
 
-    // Regeneration reconstructs the route — the output day title should
-    // still carry a generated preset name (not be empty or original).
+    // The regenerated day should still be day 2 of a multi-day trip.
+    expect(secondRegenerated.days).toHaveLength(firstRegenerated.days.length);
+    expect(firstRegenerated.days[1]?.title).toBeTruthy();
     expect(secondRegenerated.days[1]?.title).toBeTruthy();
-    expect(typeof secondRegenerated.days[1]?.title).toBe("string");
   });
 
   it("keeps the original trip-level parameters when regenerating a single day", () => {

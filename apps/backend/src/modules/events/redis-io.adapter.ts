@@ -46,15 +46,17 @@ export class RedisIoAdapter extends IoAdapter {
       // caller falls back to in-memory pub/sub. On success, both
       // clients keep their default reconnect logic for runtime recovery.
       const CONNECT_TIMEOUT_MS = 5000;
+      let timer: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([
         Promise.all([pub.connect(), sub.connect()]),
-        new Promise<never>((_, reject) =>
-          setTimeout(
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
             () => reject(new Error('Redis connect timed out')),
             CONNECT_TIMEOUT_MS,
-          ),
-        ),
+          );
+        }),
       ]);
+      clearTimeout(timer);
       this.pubClient = pub;
       this.subClient = sub;
       this.redisAdapter = createAdapter(pub, sub);
