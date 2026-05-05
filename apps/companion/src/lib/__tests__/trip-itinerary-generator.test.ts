@@ -167,6 +167,11 @@ describe("trip-itinerary-generator", () => {
   });
 
   it("regenerates a different itinerary variant on repeated runs", () => {
+    // Pin the random sequence so the test isn't flaky when two
+    // consecutive calls happen to land on the same variant.
+    const randomSpy = vi.spyOn(Math, "random");
+    randomSpy.mockReturnValueOnce(0.2).mockReturnValueOnce(0.8);
+
     const trip = generateTripOptions({
       ...params,
       days: 3,
@@ -181,6 +186,8 @@ describe("trip-itinerary-generator", () => {
     expect(secondRegenerated.days[1]?.distanceKm).not.toBe(
       firstRegenerated.days[1]?.distanceKm,
     );
+
+    randomSpy.mockRestore();
   });
 
   it("keeps the original trip-level parameters when regenerating a single day", () => {
