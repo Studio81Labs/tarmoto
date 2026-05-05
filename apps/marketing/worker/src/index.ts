@@ -46,9 +46,10 @@ async function fetchAllSignups(
   return signups;
 }
 
-function escapeCsv(value: string): string {
-  let escaped = value;
-  if (/^[=+\-@]/.test(escaped)) {
+function escapeCsv(value: unknown): string {
+  const str = String(value ?? "");
+  let escaped = str;
+  if (/^\s*[=+\-@]/.test(escaped)) {
     escaped = `'${escaped}`;
   }
   if (/[,\n\r"]/.test(escaped)) {
