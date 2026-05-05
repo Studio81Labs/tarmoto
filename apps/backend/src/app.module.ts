@@ -33,6 +33,7 @@ import { PoiModule } from './modules/poi/index.js';
 import { GeocodeModule } from './modules/geocode/index.js';
 import { ClosuresModule } from './modules/closures/index.js';
 import { AccountModule } from './modules/account/index.js';
+import { BikesModule } from './modules/bikes/bikes.module.js';
 import { EmailModule } from './modules/email/index.js';
 import { TripsModule } from './modules/trips/index.js';
 import { TripActivityModule } from './modules/trip-activity/index.js';
@@ -53,6 +54,7 @@ import { StorageModule } from './modules/storage/index.js';
     StorageModule,
     AuthModule,
     AccountModule,
+    BikesModule,
     JobsModule.forRoot(),
     UsersModule,
     HazardsModule,
