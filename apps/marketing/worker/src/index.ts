@@ -48,11 +48,11 @@ async function fetchAllSignups(
 
 function escapeCsv(value: string): string {
   let escaped = value;
-  if (/[,\n\r"]/.test(value)) {
-    escaped = `"${value.replace(/"/g, '""')}"`;
-  }
   if (/^[=+\-@]/.test(escaped)) {
     escaped = `'${escaped}`;
+  }
+  if (/[,\n\r"]/.test(escaped)) {
+    escaped = `"${escaped.replace(/"/g, '""')}"`;
   }
   return escaped;
 }

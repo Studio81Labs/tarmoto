@@ -35,6 +35,7 @@ jobs:
             deps
             docs
             cross
+            marketing
           requireScope: true
           subjectPattern: ^(?![A-Z]).+$
           subjectPatternError: |

@@ -39,3 +39,6 @@ jobs:
 
       - name: Build marketing site
         run: pnpm marketing:build
+
+      - name: Typecheck worker
+        run: pnpm --filter @tarmoto/worker typecheck
