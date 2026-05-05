@@ -44,14 +44,15 @@ jobs:
         run: pnpm marketing:build
 
       - name: Deploy marketing site to Cloudflare Pages
+        working-directory: apps/marketing/worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-        run: pnpm --filter @tarmoto/worker exec wrangler pages deploy apps/marketing/dist --project-name=tarmoto-website
+        run: pnpm exec wrangler pages deploy ../dist --project-name=tarmoto-website --commit-dirty=true
 
       - name: Deploy waitlist worker
+        working-directory: apps/marketing/worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-        working-directory: apps/marketing/worker
-        run: pnpm --filter @tarmoto/worker exec wrangler deploy
+        run: pnpm exec wrangler deploy
