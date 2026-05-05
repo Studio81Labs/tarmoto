@@ -24,7 +24,7 @@ flowchart LR
     REST --- WS
   end
 
-  PG[("PostgreSQL 16<br/>+ PostGIS 3.4")]
+  PG[("PostgreSQL 17<br/>+ PostGIS 3.4")]
   Redis[("Redis<br/>pub/sub + BullMQ")]
   Jobs["Background workers<br/>(in-process, toggleable)"]
 
@@ -157,7 +157,7 @@ Background work runs on **BullMQ** (Redis-backed). The `jobs` module owns the co
 
 | Dependency                         | Purpose                                              | Failure behavior                                                                                                                                                                                                     |
 | ---------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PostgreSQL 16 + PostGIS 3.4        | Primary store + geospatial queries                   | Migrations run manually via `pnpm db:migrate`; not auto on boot                                                                                                                                                      |
+| PostgreSQL 17 + PostGIS 3.4        | Primary store + geospatial queries                   | Migrations run on container start via `typeorm migration:run`; already-applied migrations are skipped                                                                                                                |
 | Redis                              | WebSocket pub/sub + BullMQ background job queue      | Real-time features degrade; queues stop draining (existing rows accumulate, new submissions still 202 with row in `queued` state); REST still works                                                                  |
 | Stripe Billing                     | Web subscription checkout, customer portal, invoices | Account billing actions fail closed; existing persisted subscription state remains readable                                                                                                                          |
 | TensorFlow Lite on device (mobile) | Road surface classification                          | Mobile falls back to the v0 RMS heuristic in `services/sensors.ts` if the model fails to load (single warning logged); each upload tags rows with `model_version` so retired classifiers can be filtered server-side |
