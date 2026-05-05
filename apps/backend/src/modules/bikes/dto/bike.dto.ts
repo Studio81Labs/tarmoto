@@ -93,32 +93,26 @@ export class BikeDto {
   year!: number | null;
 
   @ApiProperty({ example: true })
-  @Expose({ name: 'isActive' })
-  is_active!: boolean;
+  isActive!: boolean;
 
   @ApiProperty({ nullable: true })
-  @Expose({ name: 'photoUrl' })
-  photo_url!: string | null;
+  photoUrl!: string | null;
 
   @ApiProperty({
     example: 0,
     description: 'Total kilometers recorded with this bike',
   })
-  @Expose({ name: 'totalKm' })
-  total_km!: number;
+  totalKm!: number;
 
   @ApiProperty({
     example: 0,
     description: 'Number of rides recorded with this bike',
   })
-  @Expose({ name: 'totalRides' })
-  total_rides!: number;
+  totalRides!: number;
 
   @ApiProperty({ example: '2026-05-05T00:00:00Z' })
-  @Expose({ name: 'createdAt' })
-  created_at!: string;
+  createdAt!: string;
 
   @ApiProperty({ example: '2026-05-05T00:00:00Z' })
-  @Expose({ name: 'updatedAt' })
-  updated_at!: string;
+  updatedAt!: string;
 }

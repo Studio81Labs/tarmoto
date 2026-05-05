@@ -95,6 +95,6 @@ export class BikesService {
       totalRides: 0,
       createdAt: b.created_at.toISOString(),
       updatedAt: b.updated_at.toISOString(),
-    } as unknown as BikeDto;
+    };
   }
 }
