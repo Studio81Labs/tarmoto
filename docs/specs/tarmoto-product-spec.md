@@ -420,7 +420,7 @@ Account management is a baseline requirement. The web interface is the primary p
 - ✅ **US-61:** As a user, I want to configure my privacy settings (profile visibility, ride sharing defaults, road data contribution opt-in/out, location data retention) so that I control what I share.
 - ✅ **US-62:** As a user, I want to export all my data (rides, routes, profile) or delete my account and all associated data so that Tarmoto complies with GDPR.
 - ✅ **US-63:** As a user, I want to manage notification preferences (email digests, hazard alerts for saved routes, community activity) so that I only receive relevant communications.
-- 🚧 **US-64:** As a user, I want to manage my bikes (make, model, year) and set the active bike so that ride stats and recommendations are bike-aware.
+- ✅ **US-64:** As a user, I want to manage my bikes (make, model, year) and set the active bike so that ride stats and recommendations are bike-aware.
 
 ### 9.3 Web Technical Architecture
 
