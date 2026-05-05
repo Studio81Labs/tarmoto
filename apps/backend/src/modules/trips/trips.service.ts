@@ -113,7 +113,7 @@ export class TripsService {
         const dup = await em.save(
           em.create(Trip, {
             owner_id: userId,
-            title: `${source.title} (copy)`,
+            title: nextCopyName(source.title),
             region: source.region,
             num_days: source.num_days,
             daily_km_min: source.daily_km_min,
@@ -1153,4 +1153,11 @@ function buildImportedWaypoints(dto: ImportTripDto): BuiltWaypoint[] {
     }));
 
   return [start, ...vias, end];
+}
+
+function nextCopyName(name: string): string {
+  const base = name.replace(/\s+\(copy(?:\s+\d+)?\)$/i, '').trim() || 'Trip';
+  const copy = `${base} (copy)`;
+  // Truncate to 200 chars (trips.title is varchar(200)).
+  return copy.length > 200 ? copy.slice(0, 197) + '...' : copy;
 }
