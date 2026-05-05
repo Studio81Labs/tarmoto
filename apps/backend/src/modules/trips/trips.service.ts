@@ -108,57 +108,70 @@ export class TripsService {
       throw new NotFoundException('Trip not found');
     }
 
-    // Deep-copy as a new draft via a single transaction.
-    const dupId = await this.tripRepo.manager.transaction(async (em) => {
-      const dup = await em.save(
-        em.create(Trip, {
-          owner_id: userId,
-          title: `${source.title} (copy)`,
-          region: source.region,
-          num_days: source.num_days,
-          daily_km_min: source.daily_km_min,
-          daily_km_max: source.daily_km_max,
-          min_quality: source.min_quality,
-          road_preference: source.road_preference,
-          status: 'draft',
-        }),
-      );
-
-      for (const day of source.days) {
-        const savedDay = await em.save(
-          em.create(TripDay, {
-            trip_id: dup.id,
-            day_number: day.day_number,
-            title: day.title,
-            distance_km: day.distance_km,
-            avg_quality: day.avg_quality,
-            elevation_gain: day.elevation_gain,
-            elevation_loss: day.elevation_loss,
-            curviness_score: day.curviness_score,
-            scenic_score: day.scenic_score,
-            estimated_time: day.estimated_time,
+    const dupId = await this.withInviteCodeAllocation(
+      async (em, inviteCode) => {
+        const dup = await em.save(
+          em.create(Trip, {
+            owner_id: userId,
+            title: `${source.title} (copy)`,
+            region: source.region,
+            num_days: source.num_days,
+            daily_km_min: source.daily_km_min,
+            daily_km_max: source.daily_km_max,
+            min_quality: source.min_quality,
+            road_preference: source.road_preference,
+            invite_code: inviteCode,
+            status: 'draft',
           }),
         );
 
-        if (day.waypoints?.length) {
-          const waypoints = day.waypoints.map((wp) =>
-            em.create(TripWaypoint, {
-              trip_day_id: savedDay.id,
-              location: wp.location,
-              sequence: wp.sequence,
-              name: wp.name,
-              waypoint_type: wp.waypoint_type,
-              road_segment_id: wp.road_segment_id,
-              notes: wp.notes,
-              duration_min: wp.duration_min,
+        // Owner membership — required for visibility (every other creation
+        // path adds it, and getDetail gates on it).
+        await em.save(
+          em.create(TripMember, {
+            trip_id: dup.id,
+            user_id: userId,
+            role: 'owner',
+          }),
+        );
+
+        for (const day of source.days) {
+          const savedDay = await em.save(
+            em.create(TripDay, {
+              trip_id: dup.id,
+              day_number: day.day_number,
+              title: day.title,
+              distance_km: day.distance_km,
+              route_geom: day.route_geom,
+              avg_quality: day.avg_quality,
+              elevation_gain: day.elevation_gain,
+              elevation_loss: day.elevation_loss,
+              curviness_score: day.curviness_score,
+              scenic_score: day.scenic_score,
+              estimated_time: day.estimated_time,
             }),
           );
-          await em.save(waypoints);
-        }
-      }
 
-      return dup.id;
-    });
+          if (day.waypoints?.length) {
+            const waypoints = day.waypoints.map((wp) =>
+              em.create(TripWaypoint, {
+                trip_day_id: savedDay.id,
+                location: wp.location,
+                sequence: wp.sequence,
+                name: wp.name,
+                waypoint_type: wp.waypoint_type,
+                road_segment_id: wp.road_segment_id,
+                notes: wp.notes,
+                duration_min: wp.duration_min,
+              }),
+            );
+            await em.save(waypoints);
+          }
+        }
+
+        return dup.id;
+      },
+    );
 
     return this.getDetail(userId, dupId);
   }
