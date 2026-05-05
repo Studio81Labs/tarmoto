@@ -1,22 +1,23 @@
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import type { INestApplicationContext } from '@nestjs/common';
 import { createAdapter } from '@socket.io/redis-adapter';
-import type { ServerOptions } from 'socket.io';
+import type { Server, ServerOptions } from 'socket.io';
 import type { createClient } from 'redis';
 
 let adapterInstance: RedisIoAdapter | undefined;
 
 /**
  * Custom IoAdapter that wires the Redis pub/sub adapter into the socket.io
- * server during creation. This avoids the NestJS v11 `afterInit` proxy issue
- * where `server.adapter()` is shadowed.
+ * server. NestJS v11 proxies the `afterInit` server object and shadows
+ * `server.adapter()`, so we apply the Redis adapter from within the IoAdapter.
  *
- * Call `RedisIoAdapter.setAdapterClients(pub, sub)` from `afterInit` (where
- * Redis config is available), then the adapter is applied when the socket.io
- * server starts.
+ * Lifecycle:
+ * 1. `createIOServer` stores the raw socket.io server.
+ * 2. `afterInit` connects Redis, calls `setAdapterClients`.
+ * 3. `setAdapterClients` applies the Redis adapter to the stored server.
  */
 export class RedisIoAdapter extends IoAdapter {
-  private redisAdapter: ReturnType<typeof createAdapter> | undefined;
+  private ioServer: Server | undefined;
 
   constructor(app: INestApplicationContext) {
     super(app);
@@ -28,16 +29,15 @@ export class RedisIoAdapter extends IoAdapter {
     pubClient: ReturnType<typeof createClient>,
     subClient: ReturnType<typeof createClient>,
   ): void {
-    if (adapterInstance) {
-      adapterInstance.redisAdapter = createAdapter(pubClient, subClient);
+    const inst = adapterInstance;
+    if (inst?.ioServer) {
+      inst.ioServer.adapter(createAdapter(pubClient, subClient));
     }
   }
 
-  override createIOServer(port: number, options?: ServerOptions) {
+  override createIOServer(port: number, options?: ServerOptions): Server {
     const server = super.createIOServer(port, options);
-    if (this.redisAdapter) {
-      server.adapter(this.redisAdapter);
-    }
+    this.ioServer = server;
     return server;
   }
 }
