@@ -12,6 +12,7 @@ import {
 } from 'express';
 import { join } from 'node:path';
 import { AppModule } from './app.module.js';
+import { RedisIoAdapter } from './modules/events/redis-io.adapter.js';
 import { createSwaggerConfig } from './config/swagger.config.js';
 import { loadTrustProxyConfig } from './config/trust-proxy.config.js';
 import { MAX_TRIP_SNAPSHOT_BYTES } from './modules/trip-shares/dto/trip-share.dto.js';
@@ -33,6 +34,12 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bodyParser: false,
   });
+
+  // Use a custom IoAdapter so the socket.io Redis adapter can be wired
+  // via NestJS rather than in afterInit (where NestJS v11 proxies the
+  // server object and shadows the raw adapter method).
+  const redisAdapter = new RedisIoAdapter(app);
+  app.useWebSocketAdapter(redisAdapter);
 
   const captureRawBody = (
     req: Request & { rawBody?: Buffer },

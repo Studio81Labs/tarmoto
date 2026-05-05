@@ -16,7 +16,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
 import { createClient } from 'redis';
-import { createAdapter } from '@socket.io/redis-adapter';
+import { RedisIoAdapter } from './redis-io.adapter.js';
 import { Ride } from '../../entities/ride.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { GroupRideMember } from '../../entities/group-ride-member.entity.js';
@@ -155,9 +155,10 @@ export class EventsGateway
       await Promise.all([pub.connect(), sub.connect()]);
       this.pubClient = pub;
       this.subClient = sub;
-      // @socket.io/redis-adapter v8 returns a factory (nsp => Adapter)
-      // that socket.io's server.adapter() accepts as AdapterConstructor.
-      server.adapter(createAdapter(pub, sub));
+      // Pass clients to the custom IoAdapter (main.ts). NestJS v11 proxies
+      // the afterInit server object and shadows server.adapter() — the
+      // IoAdapter applies the Redis adapter during createIOServer instead.
+      RedisIoAdapter.setAdapterClients(pub, sub);
       this.logger.log(`Redis adapter connected (${redisHost}:${redisPort})`);
     } catch (err) {
       // Clean up any partially connected clients
