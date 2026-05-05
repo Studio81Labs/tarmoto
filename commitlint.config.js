@@ -36,6 +36,7 @@ module.exports = {
         "docs",
         "deps",
         "cross",
+        "marketing",
       ],
     ],
     "scope-empty": [2, "never"],

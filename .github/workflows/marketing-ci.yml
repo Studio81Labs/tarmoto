@@ -1,0 +1,47 @@
+name: Marketing CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/marketing/**"
+      - "packages/brand/**"
+      - ".github/workflows/marketing-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build brand
+        run: pnpm brand:build
+
+      - name: Build marketing site
+        run: pnpm marketing:build
+
+      - name: Typecheck marketing site
+        run: pnpm marketing:typecheck
+
+      - name: Typecheck worker
+        run: pnpm --filter @tarmoto/worker typecheck
