@@ -35,11 +35,27 @@ async function bootstrap() {
     bodyParser: false,
   });
 
-  // Use a custom IoAdapter so the socket.io Redis adapter can be wired
-  // via NestJS rather than in afterInit (where NestJS v11 proxies the
-  // server object and shadows the raw adapter method).
+  // Use a custom IoAdapter so the socket.io Redis adapter is applied
+  // before the server starts (NestJS v11 proxies the afterInit server
+  // object and shadows server.adapter()).
   const redisAdapter = new RedisIoAdapter(app);
   app.useWebSocketAdapter(redisAdapter);
+
+  // Connect to Redis (graceful: logs a warning and falls back to
+  // in-memory pub/sub if Redis is unreachable).
+  try {
+    await redisAdapter.connectRedis({
+      host: process.env.TARMOTO_REDIS_HOST || 'localhost',
+      port: parseInt(process.env.TARMOTO_REDIS_PORT || '6379', 10),
+      username: process.env.TARMOTO_REDIS_USERNAME || undefined,
+      password: process.env.TARMOTO_REDIS_PASSWORD || undefined,
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(
+      `Redis adapter not available (${msg}), falling back to in-memory pub/sub`,
+    );
+  }
 
   const captureRawBody = (
     req: Request & { rawBody?: Buffer },
