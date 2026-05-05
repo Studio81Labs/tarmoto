@@ -30,7 +30,12 @@ export class RedisIoAdapter extends IoAdapter {
     password?: string;
   }): Promise<void> {
     const pub = createClient({
-      socket: { host: redisConfig.host, port: redisConfig.port },
+      socket: {
+        host: redisConfig.host,
+        port: redisConfig.port,
+        connectTimeout: 5000,
+        reconnectStrategy: false,
+      },
       ...(redisConfig.username ? { username: redisConfig.username } : {}),
       ...(redisConfig.password ? { password: redisConfig.password } : {}),
     });
