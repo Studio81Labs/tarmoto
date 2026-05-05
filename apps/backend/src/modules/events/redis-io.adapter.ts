@@ -49,6 +49,12 @@ export class RedisIoAdapter extends IoAdapter {
     }
   }
 
+  /** Gracefully disconnect Redis clients. Call on application shutdown. */
+  async closeRedisClients(): Promise<void> {
+    if (this.pubClient) await this.pubClient.close().catch(() => {});
+    if (this.subClient) await this.subClient.close().catch(() => {});
+  }
+
   override createIOServer(port: number, options?: ServerOptions) {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const server = super.createIOServer(port, options);

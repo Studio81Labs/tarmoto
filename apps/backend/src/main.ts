@@ -13,6 +13,7 @@ import {
 import { join } from 'node:path';
 import { AppModule } from './app.module.js';
 import { RedisIoAdapter } from './modules/events/redis-io.adapter.js';
+import { redisConfig } from './config/redis.config.js';
 import { createSwaggerConfig } from './config/swagger.config.js';
 import { loadTrustProxyConfig } from './config/trust-proxy.config.js';
 import { MAX_TRIP_SNAPSHOT_BYTES } from './modules/trip-shares/dto/trip-share.dto.js';
@@ -43,13 +44,9 @@ async function bootstrap() {
 
   // Connect to Redis (graceful: logs a warning and falls back to
   // in-memory pub/sub if Redis is unreachable).
+  const redisCfg = redisConfig();
   try {
-    await redisAdapter.connectRedis({
-      host: process.env.TARMOTO_REDIS_HOST || 'localhost',
-      port: parseInt(process.env.TARMOTO_REDIS_PORT || '6379', 10),
-      username: process.env.TARMOTO_REDIS_USERNAME || undefined,
-      password: process.env.TARMOTO_REDIS_PASSWORD || undefined,
-    });
+    await redisAdapter.connectRedis(redisCfg);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(
@@ -179,6 +176,13 @@ async function bootstrap() {
   }
 
   await app.listen(process.env.TARMOTO_PORT ?? 3000);
+
+  // Gracefully disconnect Redis on shutdown.
+  const shutdown = () => {
+    void redisAdapter.closeRedisClients().finally(() => app.close());
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 void bootstrap();
