@@ -34,7 +34,6 @@ export class RedisIoAdapter extends IoAdapter {
         host: redisConfig.host,
         port: redisConfig.port,
         connectTimeout: 5000,
-        reconnectStrategy: false,
       },
       ...(redisConfig.username ? { username: redisConfig.username } : {}),
       ...(redisConfig.password ? { password: redisConfig.password } : {}),
@@ -42,7 +41,20 @@ export class RedisIoAdapter extends IoAdapter {
     const sub = pub.duplicate();
 
     try {
-      await Promise.all([pub.connect(), sub.connect()]);
+      // Race the connect against a 5 s timeout so bootstrap doesn't
+      // hang when Redis is unreachable. If it fails, we throw and the
+      // caller falls back to in-memory pub/sub. On success, both
+      // clients keep their default reconnect logic for runtime recovery.
+      const CONNECT_TIMEOUT_MS = 5000;
+      await Promise.race([
+        Promise.all([pub.connect(), sub.connect()]),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error('Redis connect timed out')),
+            CONNECT_TIMEOUT_MS,
+          ),
+        ),
+      ]);
       this.pubClient = pub;
       this.subClient = sub;
       this.redisAdapter = createAdapter(pub, sub);
