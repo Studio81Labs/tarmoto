@@ -12,6 +12,8 @@ import {
 } from 'express';
 import { join } from 'node:path';
 import { AppModule } from './app.module.js';
+import { RedisIoAdapter } from './modules/events/redis-io.adapter.js';
+import { redisConfig } from './config/redis.config.js';
 import { createSwaggerConfig } from './config/swagger.config.js';
 import { loadTrustProxyConfig } from './config/trust-proxy.config.js';
 import { MAX_TRIP_SNAPSHOT_BYTES } from './modules/trip-shares/dto/trip-share.dto.js';
@@ -33,6 +35,24 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bodyParser: false,
   });
+
+  // Use a custom IoAdapter so the socket.io Redis adapter is applied
+  // before the server starts (NestJS v11 proxies the afterInit server
+  // object and shadows server.adapter()).
+  const redisAdapter = new RedisIoAdapter(app);
+  app.useWebSocketAdapter(redisAdapter);
+
+  // Connect to Redis (graceful: logs a warning and falls back to
+  // in-memory pub/sub if Redis is unreachable).
+  const redisCfg = redisConfig();
+  try {
+    await redisAdapter.connectRedis(redisCfg);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(
+      `Redis adapter not available (${msg}), falling back to in-memory pub/sub`,
+    );
+  }
 
   const captureRawBody = (
     req: Request & { rawBody?: Buffer },
@@ -156,6 +176,13 @@ async function bootstrap() {
   }
 
   await app.listen(process.env.TARMOTO_PORT ?? 3000);
+
+  // Gracefully disconnect Redis on shutdown.
+  const shutdown = () => {
+    void app.close().finally(() => redisAdapter.closeRedisClients());
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 void bootstrap();

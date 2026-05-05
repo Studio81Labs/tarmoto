@@ -497,9 +497,7 @@ export class RoadsService {
     };
   }
 
-  async getSegmentTrend(
-    segmentId: string,
-  ): Promise<{
+  async getSegmentTrend(segmentId: string): Promise<{
     segment_id: string;
     points: { month: string; avg_iri: number; reading_count: number }[];
   }> {

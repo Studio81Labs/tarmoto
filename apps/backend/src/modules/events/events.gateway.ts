@@ -8,15 +8,12 @@ import {
   ConnectedSocket,
   MessageBody,
 } from '@nestjs/websockets';
-import { Logger, OnModuleDestroy } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
-import { createClient } from 'redis';
-import { createAdapter } from '@socket.io/redis-adapter';
 import { Ride } from '../../entities/ride.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { GroupRideMember } from '../../entities/group-ride-member.entity.js';
@@ -102,25 +99,18 @@ const GROUP_POSITION_THROTTLE_MS = 1000;
   namespace: '/events',
 })
 export class EventsGateway
-  implements
-    OnGatewayInit,
-    OnGatewayConnection,
-    OnGatewayDisconnect,
-    OnModuleDestroy
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
   @WebSocketServer()
   server!: Server;
 
   private readonly logger = new Logger(EventsGateway.name);
-  private pubClient: ReturnType<typeof createClient> | null = null;
-  private subClient: ReturnType<typeof createClient> | null = null;
   // Per `(group_ride_id, user_id)` last-broadcast timestamp used to
   // enforce the 1 Hz floor on `group:position` events. See
   // `GROUP_POSITION_THROTTLE_MS`.
   private readonly groupPositionThrottle = new Map<string, number>();
 
   constructor(
-    private readonly config: ConfigService,
     private readonly jwt: JwtService,
     @InjectRepository(Ride)
     private readonly rideRepo: Repository<Ride>,
@@ -134,52 +124,11 @@ export class EventsGateway
     private readonly groupRideMemberRepo: Repository<GroupRideMember>,
   ) {}
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async afterInit(server: Server): Promise<void> {
-    const redisHost = this.config.get<string>('redis.host', 'localhost');
-    const redisPort = this.config.get<number>('redis.port', 6379);
-    // Auth is optional — dev runs without, Coolify-managed Redis sets
-    // both. We pass them through node-redis' options shape rather than
-    // building a URL so passwords with special characters don't need
-    // URL-encoding.
-    const redisUsername = this.config.get<string | undefined>('redis.username');
-    const redisPassword = this.config.get<string | undefined>('redis.password');
-
-    const pub = createClient({
-      socket: { host: redisHost, port: redisPort },
-      ...(redisUsername ? { username: redisUsername } : {}),
-      ...(redisPassword ? { password: redisPassword } : {}),
-    });
-    const sub = pub.duplicate();
-
-    try {
-      await Promise.all([pub.connect(), sub.connect()]);
-      this.pubClient = pub;
-      this.subClient = sub;
-      // @socket.io/redis-adapter v8 returns a factory (nsp => Adapter)
-      // that socket.io's server.adapter() accepts as AdapterConstructor.
-      server.adapter(createAdapter(pub, sub));
-      this.logger.log(`Redis adapter connected (${redisHost}:${redisPort})`);
-    } catch (err) {
-      // Clean up any partially connected clients
-      await pub.close().catch(() => {});
-      await sub.close().catch(() => {});
-      this.pubClient = null;
-      this.subClient = null;
-      this.logger.warn(
-        'Redis adapter not available, falling back to in-memory',
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-  }
-
-  async onModuleDestroy(): Promise<void> {
-    // Gracefully close independently so one failure doesn't skip the other
-    if (this.pubClient) {
-      await this.pubClient.close().catch(() => {});
-    }
-    if (this.subClient) {
-      await this.subClient.close().catch(() => {});
-    }
+    // Redis adapter is wired via RedisIoAdapter in main.ts. This hook
+    // must exist for OnGatewayInit but the adapter is already configured
+    // before createIOServer runs.
   }
 
   async handleConnection(client: Socket): Promise<void> {
