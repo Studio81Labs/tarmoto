@@ -77,11 +77,11 @@ Every rider using Tarmoto passively collects road surface quality data via smart
 
 **User Stories:**
 
-- 🚧 **US-1:** As a rider, I want to see a road quality overlay on the map so that I can avoid roads with poor asphalt before I ride them.
-- 🚧 **US-2:** As a rider, I want my phone to automatically record road surface data while I ride so that I contribute to the community without any extra effort.
+- ✅ **US-1:** As a rider, I want to see a road quality overlay on the map so that I can avoid roads with poor asphalt before I ride them.
+- ✅ **US-2:** As a rider, I want my phone to automatically record road surface data while I ride so that I contribute to the community without any extra effort.
 - ✅ **US-3:** As a rider, I want to see a Road Quality Score (1–5) for each road segment so that I can quickly assess if a road is worth riding.
 - ✅ **US-4:** As a rider, I want to report specific hazards (pothole, gravel, oil spill) with a single tap so that other riders are warned immediately.
-- 🚧 **US-5:** As a route planner, I want to filter routes by minimum road quality so that I only see routes with good asphalt.
+- ✅ **US-5:** As a route planner, I want to filter routes by minimum road quality so that I only see routes with good asphalt.
 
 **Technical Approach:**
 
@@ -121,7 +121,7 @@ The system analyzes road geometry (curviness from OSM), elevation data, surface 
 - ✅ **US-12:** As a rider, I want crash detection that automatically alerts my emergency contacts if I'm in an accident so that help arrives even if I'm unconscious.
 - ✅ **US-13:** As a rider, I want real-time weather alerts along my route so that I can reroute to avoid storms.
 - ✅ **US-14:** As a rider, I want Waze-style community hazard alerts (oil, gravel, roadworks, animals, police) so that I'm warned about dangers ahead.
-- 🚧 **US-15:** As a commuter, I want the app to learn my usual route and proactively warn me about new hazards on my daily commute.
+- ✅ **US-15:** As a commuter, I want the app to learn my usual route and proactively warn me about new hazards on my daily commute.
 
 ### 3.4 EPIC 4: Navigation & Ride Tracking
 
@@ -129,9 +129,9 @@ The system analyzes road geometry (curviness from OSM), elevation data, surface 
 
 **User Stories:**
 
-- ⬜ **US-16:** As a rider, I want turn-by-turn voice navigation with motorcycle-specific instructions so that I don't miss turns.
-- ⬜ **US-17:** As a rider, I want full CarPlay and Android Auto support from day one so that I can use my bike's display.
-- 🚧 **US-18:** As a rider, I want offline maps and navigation so that I can ride in areas without cell coverage.
+- 🚧 **US-16:** As a rider, I want turn-by-turn voice navigation with motorcycle-specific instructions so that I don't miss turns.
+- 🚧 **US-17:** As a rider, I want full CarPlay and Android Auto support from day one so that I can use my bike's display.
+- ✅ **US-18:** As a rider, I want offline maps and navigation so that I can ride in areas without cell coverage.
 - ✅ **US-19:** As a rider, I want automatic ride tracking with stats (distance, duration, elevation, lean angles, top speed) so that I can review my rides.
 - ✅ **US-20:** As a rider, I want GPX import/export so that I can use routes from other platforms.
 
@@ -141,9 +141,9 @@ The system analyzes road geometry (curviness from OSM), elevation data, surface 
 
 **User Stories:**
 
-- 🚧 **US-21:** As a commuter, I want a one-tap "Commute" button that navigates my daily route with real-time hazard and traffic info.
+- ✅ **US-21:** As a commuter, I want a one-tap "Commute" button that navigates my daily route with real-time hazard and traffic info.
 - ✅ **US-22:** As a commuter, I want the app to suggest alternative routes when my usual commute has issues (roadworks, accidents, weather).
-- 🚧 **US-23:** As a commuter, I want to see a weekly summary of my commute rides (time, distance, fuel estimate).
+- ✅ **US-23:** As a commuter, I want to see a weekly summary of my commute rides (time, distance, fuel estimate).
 
 ### 3.6 EPIC 6: Community & Social
 
@@ -405,7 +405,7 @@ The community hub turns Tarmoto from a utility into a destination. Riders browse
 - ✅ **US-55:** As a rider, I want to rate and write reviews for road segments with photo uploads so that I help the community database grow beyond sensor data.
 - ✅ **US-56:** As a rider, I want to create and share route collections (e.g., "My Favorite Beskydy Loops", "Best Gravel Roads in Moravia") so that I can curate recommendations.
 - ✅ **US-57:** As a rider, I want to see a gamification dashboard with my badges, active challenges, leaderboard position, and progress toward next milestones so that I stay engaged.
-- 🚧 **US-58:** As a rider, I want to embed a route or road quality widget on external sites (forums, blogs) so that I can share Tarmoto data outside the app.
+- ✅ **US-58:** As a rider, I want to embed a route or road quality widget on external sites (forums, blogs) so that I can share Tarmoto data outside the app.
 
 #### 9.2.5 WEB-EPIC 5: Account & Settings
 
@@ -416,7 +416,7 @@ Account management is a baseline requirement. The web interface is the primary p
 **User Stories:**
 
 - ✅ **US-59:** As a user, I want to create an account (email or social login), manage my profile (display name, avatar, bike info, home region), and link my mobile app so that my data syncs across platforms.
-- 🚧 **US-60:** As a user, I want to manage my subscription tier (Free/Premium/Pro), view billing history, and update payment methods so that I control my account from the web.
+- ✅ **US-60:** As a user, I want to manage my subscription tier (Free/Premium/Pro), view billing history, and update payment methods so that I control my account from the web.
 - ✅ **US-61:** As a user, I want to configure my privacy settings (profile visibility, ride sharing defaults, road data contribution opt-in/out, location data retention) so that I control what I share.
 - ✅ **US-62:** As a user, I want to export all my data (rides, routes, profile) or delete my account and all associated data so that Tarmoto complies with GDPR.
 - ✅ **US-63:** As a user, I want to manage notification preferences (email digests, hazard alerts for saved routes, community activity) so that I only receive relevant communications.
