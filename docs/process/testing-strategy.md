@@ -48,7 +48,7 @@ How we test Tarmoto. For CI details see `.github/workflows/`. For running locall
 
 ### Current state
 
-Jest and `@testing-library/react-native` are installed but **no tests are written yet**. As features stabilize, start covering them.
+Jest and `@testing-library/react-native` are configured with tests covering stores, screens, and build assertions. See `apps/mobile/src/__tests__/` and per-feature `__tests__/` directories for the current suite. Continue adding tests as features stabilize.
 
 ### Priority surfaces
 
@@ -63,7 +63,7 @@ When adding tests, colocate next to source (`screens/HomeScreen.test.tsx` next t
 
 ### Command
 
-`pnpm --filter @tarmoto/mobile test` (once wired; currently the mobile workspace may not run tests through the root alias).
+`pnpm --filter @tarmoto/mobile test` (runs in CI via `mobile-ci.yml`).
 
 ## Companion (Next.js web)
 
@@ -85,7 +85,7 @@ When adding tests, colocate next to source (`screens/HomeScreen.test.tsx` next t
 
 The companion E2E suite drives the real Next.js dev server but proxies the backend through a small in-process Express stub at `apps/companion/e2e/mock-backend/server.ts`. The stub:
 
-- Implements just the endpoints the suites exercise (auth, trips, suggestions, account, subscription).
+- Implements endpoints the suites exercise (auth, trips, account, suggestions, closures, passes, hazards, and more — see `e2e/mock-backend/server.ts` for the full list).
 - Holds state in memory and resets per test via the `mockApi` fixture.
 - Is hard-wired to never reach Stripe; tests assert on the request payload going to `/account/subscription/{checkout,portal}` instead.
 
