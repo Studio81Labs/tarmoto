@@ -7,7 +7,7 @@ One-page system map for Tarmoto. For product behavior see [../specs/tarmoto-prod
 ```mermaid
 flowchart LR
   subgraph Mobile["React Native app"]
-    Screens["14 screens<br/>home · map · ride · trip · commute · hazard ..."]
+    Screens["37 screens<br/>home · map · ride · trip · commute · hazard ..."]
     Stores["Zustand stores<br/>auth · ride · hazard · trip · map"]
     Sensor["On-device sensing<br/>GPS · accelerometer · TF Lite classifier"]
     Screens --> Stores
@@ -19,12 +19,12 @@ flowchart LR
   end
 
   subgraph Backend["NestJS API"]
-    REST["REST API<br/>18 modules"]
+    REST["REST API<br/>35+ modules"]
     WS["WebSocket events"]
     REST --- WS
   end
 
-  PG[("PostgreSQL 16<br/>+ PostGIS 3.4")]
+  PG[("PostgreSQL 17<br/>+ PostGIS 3.4")]
   Redis[("Redis<br/>pub/sub + BullMQ")]
   Jobs["Background workers<br/>(in-process, toggleable)"]
 
@@ -88,7 +88,7 @@ Located under `apps/mobile/src/`.
 
 | Folder        | Purpose                                                                                         |
 | ------------- | ----------------------------------------------------------------------------------------------- |
-| `screens/`    | 14 screens — feature-based (home, map, ride, trip, commute, hazard, settings, ...)              |
+| `screens/`    | 37 screens — feature-based (home, map, ride, trip, commute, hazard, settings, ...)              |
 | `stores/`     | Zustand stores: `useAuthStore`, `useRideStore`, `useHazardStore`, `useTripStore`, `useMapStore` |
 | `services/`   | API client, location tracking, sensor / ML classification                                       |
 | `hooks/`      | Custom React hooks                                                                              |
@@ -157,7 +157,7 @@ Background work runs on **BullMQ** (Redis-backed). The `jobs` module owns the co
 
 | Dependency                         | Purpose                                              | Failure behavior                                                                                                                                                                                                     |
 | ---------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PostgreSQL 16 + PostGIS 3.4        | Primary store + geospatial queries                   | Migrations run manually via `pnpm db:migrate`; not auto on boot                                                                                                                                                      |
+| PostgreSQL 17 + PostGIS 3.4        | Primary store + geospatial queries                   | Migrations run on container start via `typeorm migration:run`; already-applied migrations are skipped                                                                                                                |
 | Redis                              | WebSocket pub/sub + BullMQ background job queue      | Real-time features degrade; queues stop draining (existing rows accumulate, new submissions still 202 with row in `queued` state); REST still works                                                                  |
 | Stripe Billing                     | Web subscription checkout, customer portal, invoices | Account billing actions fail closed; existing persisted subscription state remains readable                                                                                                                          |
 | TensorFlow Lite on device (mobile) | Road surface classification                          | Mobile falls back to the v0 RMS heuristic in `services/sensors.ts` if the model fails to load (single warning logged); each upload tags rows with `model_version` so retired classifiers can be filtered server-side |
@@ -168,12 +168,12 @@ No Firebase, no push notification service, no paid external APIs today.
 
 ## Deploy topology
 
-Stack rationale lives in [ADR 0005](../decisions/0005-deployment-stack-render.md). Operational playbooks (rollback per platform, secret rotation) live in [../process/runbook.md](../process/runbook.md#production-deploys).
+Stack rationale lives in [ADR 0006](../decisions/0006-deployment-stack-hetzner-coolify.md). Operational playbooks (rollback per platform, secret rotation) live in [../process/runbook.md](../process/runbook.md#production-deploys).
 
-- **Backend** runs as a **Render Web Service** from [`apps/backend/Dockerfile`](../../apps/backend/Dockerfile). Postgres + PostGIS on **Render Postgres** (extension created via TypeORM migration), Redis on **Render Key Value** (Redis-compatible, BullMQ + socket.io adapter), uploads / exports on **Cloudflare R2** (S3-compatible — same `@aws-sdk/client-s3` driver, endpoint override). Tile cache on **R2** fronted by Cloudflare's edge. App secrets are env vars on the Render service (marked secret). Blueprint is committed under [`infra/render/`](../../infra/render/).
-- **Companion** runs on **Cloudflare Workers** (Workers + Static Assets) via [`@opennextjs/cloudflare`](https://opennext.js.org/cloudflare). Every PR gets a versioned preview deploy commented on the PR; production deploys on push to `main` via `wrangler deploy`.
+- **Backend** runs on **Hetzner CX33 + Coolify** from [`apps/backend/Dockerfile`](../../apps/backend/Dockerfile). Postgres + PostGIS on **Coolify-managed Postgres** (`postgis/postgis:17-3.4-alpine`, extension created via TypeORM migration), Redis on **Coolify-managed Redis** (`redis:8-alpine`, BullMQ + socket.io adapter), uploads / exports on **Cloudflare R2** (S3-compatible — same `@aws-sdk/client-s3` driver, endpoint override). TLS via **Caddy** (Let's Encrypt). App secrets are env vars on the Coolify application. Auto-migration runs on container start via `typeorm migration:run`. Deploy model: push to `main` → staging, push tag `v*` → production.
+- **Companion** runs on **Cloudflare Workers** (Workers + Static Assets) via [`@opennextjs/cloudflare`](https://opennext.js.org/cloudflare). PR previews via `wrangler versions upload`, staging on push to `main`, production on tag `v*`.
 - **Mobile** ships via **Fastlane** to **TestFlight** (iOS) and **Play Internal** (Android). Releases are manual — `workflow_dispatch` or a `mobile-vX.Y.Z` git tag — and gated behind a `mobile-release` GitHub environment for credential isolation.
 - **PoC sensor** stays on **Cloudflare Pages** via the existing `poc-deploy.yml`.
 - **Local dev** uses Docker Compose for Postgres + Redis (`infra/docker/docker-compose.yml`); the backend runs via `pnpm backend:dev`, mobile via Metro, companion via `pnpm companion:dev`.
 
-Workflows: [`backend-deploy.yml`](../../.github/workflows/backend-deploy.yml) (waits for Render's auto-deploy, runs smoke test, rolls back via Render API on failure), [`companion-deploy.yml`](../../.github/workflows/companion-deploy.yml) (PR previews + prod), [`mobile-release.yml`](../../.github/workflows/mobile-release.yml) (TestFlight + Play Internal). Post-deploy verification is `scripts/smoke/smoke.sh`.
+Workflows: [`backend-deploy.yml`](../../.github/workflows/backend-deploy.yml) (waits for Coolify deploy, runs smoke test, rolls back via Coolify API on failure), [`companion-deploy.yml`](../../.github/workflows/companion-deploy.yml) (PR previews + staging + production), [`mobile-release.yml`](../../.github/workflows/mobile-release.yml) (TestFlight + Play Internal). Post-deploy verification is `scripts/smoke/smoke.sh`.
