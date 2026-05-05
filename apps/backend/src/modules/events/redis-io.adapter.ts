@@ -4,7 +4,7 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import type { Server, ServerOptions } from 'socket.io';
 import type { createClient } from 'redis';
 
-let adapterInstance: RedisIoAdapter | undefined;
+const instances = new Set<RedisIoAdapter>();
 
 /**
  * Custom IoAdapter that wires the Redis pub/sub adapter into the socket.io
@@ -21,7 +21,7 @@ export class RedisIoAdapter extends IoAdapter {
 
   constructor(app: INestApplicationContext) {
     super(app);
-    adapterInstance = this;
+    instances.add(this);
   }
 
   /** Call from afterInit with connected Redis clients. */
@@ -29,14 +29,15 @@ export class RedisIoAdapter extends IoAdapter {
     pubClient: ReturnType<typeof createClient>,
     subClient: ReturnType<typeof createClient>,
   ): void {
-    const inst = adapterInstance;
-    if (inst?.ioServer) {
-      inst.ioServer.adapter(createAdapter(pubClient, subClient));
+    for (const inst of instances) {
+      if (inst.ioServer) {
+        inst.ioServer.adapter(createAdapter(pubClient, subClient));
+      }
     }
   }
 
-  override createIOServer(port: number, options?: ServerOptions): Server {
-    const server = super.createIOServer(port, options);
+  override createIOServer(port: number, options?: ServerOptions) {
+    const server = super.createIOServer(port, options) as Server;
     this.ioServer = server;
     return server;
   }

@@ -134,6 +134,7 @@ export class EventsGateway
     private readonly groupRideMemberRepo: Repository<GroupRideMember>,
   ) {}
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async afterInit(server: Server): Promise<void> {
     const redisHost = this.config.get<string>('redis.host', 'localhost');
     const redisPort = this.config.get<number>('redis.port', 6379);
