@@ -29,6 +29,9 @@ export class Bike {
   @Column({ type: 'boolean', default: false })
   is_active!: boolean;
 
+  @Column({ type: 'varchar', length: 2048, nullable: true })
+  photo_url!: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
 

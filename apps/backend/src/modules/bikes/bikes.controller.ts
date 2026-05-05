@@ -5,6 +5,8 @@ import {
   Patch,
   Delete,
   Body,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Req,
@@ -55,6 +57,7 @@ export class BikesController {
   }
 
   @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a bike' })
   @ApiResponse({ status: 204 })
   @ApiResponse({ status: 404 })

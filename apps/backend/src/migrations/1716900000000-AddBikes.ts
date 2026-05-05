@@ -12,6 +12,7 @@ export class AddBikes1716900000000 implements MigrationInterface {
         model VARCHAR(100) NOT NULL,
         year SMALLINT,
         is_active BOOLEAN NOT NULL DEFAULT false,
+        photo_url VARCHAR(2048),
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
