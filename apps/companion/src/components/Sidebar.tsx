@@ -21,6 +21,7 @@ import {
   FolderOpen,
 } from "lucide-react";
 import clsx from "clsx";
+import { AppLogo } from "./AppLogo";
 
 const NAV_SECTIONS = [
   {
@@ -80,11 +81,7 @@ export function Sidebar() {
     >
       {/* Logo */}
       <div className="flex h-16 items-center justify-between px-4 border-b border-slate-800">
-        {!collapsed && (
-          <span className="text-lg font-bold tracking-tight">
-            <span className="text-tarmoto-cyan">T</span>armoto
-          </span>
-        )}
+        <AppLogo collapsed={collapsed} />
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
