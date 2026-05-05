@@ -39,6 +39,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build marketing site
+        env:
+          PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL || 'https://tarmoto-waitlist.studio81.workers.dev' }}
         run: pnpm marketing:build
 
       - name: Deploy marketing site to Cloudflare Pages

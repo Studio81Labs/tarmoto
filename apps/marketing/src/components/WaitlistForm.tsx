@@ -36,6 +36,10 @@ export default function WaitlistForm({ apiUrl }: WaitlistFormProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: trimmed, source: "landing_page" }),
       });
+      if (!res.ok) {
+        setStatus("error");
+        return;
+      }
       const data = await res.json();
       setStatus("success");
       if (data.count) setCount(data.count);

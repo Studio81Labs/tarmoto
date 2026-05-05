@@ -30,6 +30,33 @@ function jsonResponse(
   });
 }
 
+async function fetchAllSignups(
+  kv: KVNamespace,
+): Promise<SignupRecord[]> {
+  const signups: SignupRecord[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await kv.list({ prefix: "email:", cursor });
+    for (const entry of page.keys) {
+      const data = await kv.get(entry.name);
+      if (data) signups.push(JSON.parse(data) as SignupRecord);
+    }
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+  return signups;
+}
+
+function escapeCsv(value: string): string {
+  let escaped = value;
+  if (/[,\n\r"]/.test(value)) {
+    escaped = `"${value.replace(/"/g, '""')}"`;
+  }
+  if (/^[=+\-@]/.test(escaped)) {
+    escaped = `'${escaped}`;
+  }
+  return escaped;
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -86,6 +113,9 @@ export default {
           JSON.stringify(signup),
         );
 
+        // Best-effort counter — eventual consistency is acceptable for a
+        // public waitlist display. Use a per-signup key timestamp to derive
+        // a rough count when consistency matters.
         const count =
           parseInt((await env.TARMOTO_WAITLIST.get("meta:count")) ?? "0") + 1;
         await env.TARMOTO_WAITLIST.put("meta:count", count.toString());
@@ -110,13 +140,7 @@ export default {
           return jsonResponse({ error: "Unauthorized" }, 401, corsHeaders);
         }
 
-        const list = await env.TARMOTO_WAITLIST.list({ prefix: "email:" });
-        const signups: SignupRecord[] = [];
-        for (const entry of list.keys) {
-          const data = await env.TARMOTO_WAITLIST.get(entry.name);
-          if (data) signups.push(JSON.parse(data) as SignupRecord);
-        }
-
+        const signups = await fetchAllSignups(env.TARMOTO_WAITLIST);
         signups.sort(
           (a, b) =>
             new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
@@ -134,14 +158,10 @@ export default {
           return jsonResponse({ error: "Unauthorized" }, 401, corsHeaders);
         }
 
-        const list = await env.TARMOTO_WAITLIST.list({ prefix: "email:" });
+        const signups = await fetchAllSignups(env.TARMOTO_WAITLIST);
         let csv = "email,timestamp,country,source\n";
-        for (const entry of list.keys) {
-          const data = await env.TARMOTO_WAITLIST.get(entry.name);
-          if (data) {
-            const s = JSON.parse(data) as SignupRecord;
-            csv += `${s.email},${s.timestamp},${s.ip_country},${s.source}\n`;
-          }
+        for (const s of signups) {
+          csv += `${escapeCsv(s.email)},${escapeCsv(s.timestamp)},${escapeCsv(s.ip_country)},${escapeCsv(s.source)}\n`;
         }
 
         return new Response(csv, {
