@@ -79,7 +79,7 @@ export class BikesService {
       const saved = await this.bikeRepo.save(bike);
       return this.toDto(saved);
     } catch (err: unknown) {
-      if (isUniqueViolation(err)) {
+      if (isUniqueViolation(err) && dto.is_active) {
         // A concurrent request activated a different bike. Deactivate
         // the conflicting one and retry.
         await this.deactivateAllExcept(userId, bikeId);
@@ -103,7 +103,6 @@ export class BikesService {
   private async deactivateAll(userId: string): Promise<void> {
     const active = await this.bikeRepo.find({
       where: { user_id: userId, is_active: true },
-      select: { id: true, is_active: true },
     });
     for (const b of active) {
       b.is_active = false;
@@ -117,7 +116,6 @@ export class BikesService {
   ): Promise<void> {
     const active = await this.bikeRepo.find({
       where: { user_id: userId, is_active: true },
-      select: { id: true, is_active: true },
     });
     for (const b of active) {
       if (b.id !== exceptId) {

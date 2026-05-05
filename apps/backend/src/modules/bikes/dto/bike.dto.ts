@@ -10,16 +10,22 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
-import { Expose } from 'class-transformer';
+import { Expose, Transform } from 'class-transformer';
+
+const trim = Transform(({ value }: { value: unknown }) =>
+  typeof value === 'string' ? value.trim() : value,
+);
 
 export class CreateBikeDto {
   @ApiProperty({ example: 'Honda', minLength: 1 })
+  @trim
   @IsString()
   @MinLength(1)
   @MaxLength(100)
   make!: string;
 
   @ApiProperty({ example: 'Africa Twin', minLength: 1 })
+  @trim
   @IsString()
   @MinLength(1)
   @MaxLength(100)
@@ -50,6 +56,7 @@ export class CreateBikeDto {
 export class UpdateBikeDto {
   @ApiProperty({ required: false, example: 'Honda' })
   @IsOptional()
+  @trim
   @IsString()
   @MinLength(1)
   @MaxLength(100)
@@ -57,6 +64,7 @@ export class UpdateBikeDto {
 
   @ApiProperty({ required: false, example: 'Africa Twin' })
   @IsOptional()
+  @trim
   @IsString()
   @MinLength(1)
   @MaxLength(100)
