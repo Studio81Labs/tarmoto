@@ -190,10 +190,6 @@ Stack rationale and tradeoffs are in [ADR 0006](./docs/decisions/0006-deployment
 6. Runs TypeORM migrations
 7. Prints the next local commands
 
-## Related Repos
-
-- The marketing site (`tarmoto-web`) was merged into this monorepo as `apps/marketing/` and `packages/brand/`. The old standalone repo is archived.
-
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for branching, commit conventions, PR flow, and what not to commit. For a system overview see [docs/reference/architecture.md](./docs/reference/architecture.md).
