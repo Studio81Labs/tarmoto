@@ -89,12 +89,12 @@ export class BikesService {
       make: b.make,
       model: b.model,
       year: b.year ?? null,
-      is_active: b.is_active,
-      photo_url: b.photo_url ?? null,
-      total_km: 0,
-      total_rides: 0,
-      created_at: b.created_at.toISOString(),
-      updated_at: b.updated_at.toISOString(),
-    };
+      isActive: b.is_active,
+      photoUrl: b.photo_url ?? null,
+      totalKm: 0,
+      totalRides: 0,
+      createdAt: b.created_at.toISOString(),
+      updatedAt: b.updated_at.toISOString(),
+    } as unknown as BikeDto;
   }
 }
