@@ -76,7 +76,9 @@ export default {
     try {
       if (path === "/signup" && request.method === "POST") {
         const body = (await request.json()) as SignupBody;
-        const email = (body.email ?? "").trim().toLowerCase();
+        const raw = body.email;
+        const email =
+          typeof raw === "string" ? raw.trim().toLowerCase() : "";
 
         if (!email || !email.includes("@") || !email.includes(".")) {
           return jsonResponse(
