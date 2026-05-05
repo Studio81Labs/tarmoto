@@ -115,6 +115,7 @@ export default function WaitlistForm({ apiUrl }: WaitlistFormProps) {
 const styles: Record<string, React.CSSProperties> = {
   form: {
     display: "flex",
+    flexWrap: "wrap",
     gap: "10px",
     maxWidth: "440px",
     margin: "0 auto",

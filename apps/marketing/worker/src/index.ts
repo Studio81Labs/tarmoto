@@ -76,6 +76,13 @@ export default {
     try {
       if (path === "/signup" && request.method === "POST") {
         const body = (await request.json()) as SignupBody;
+        if (!body || typeof body !== "object") {
+          return jsonResponse(
+            { error: "Invalid request body" },
+            400,
+            corsHeaders,
+          );
+        }
         const raw = body.email;
         const email =
           typeof raw === "string" ? raw.trim().toLowerCase() : "";
