@@ -51,12 +51,14 @@ export class UpdateBikeDto {
   @ApiProperty({ required: false, example: 'Honda' })
   @IsOptional()
   @IsString()
+  @MinLength(1)
   @MaxLength(100)
   make?: string;
 
   @ApiProperty({ required: false, example: 'Africa Twin' })
   @IsOptional()
   @IsString()
+  @MinLength(1)
   @MaxLength(100)
   model?: string;
 

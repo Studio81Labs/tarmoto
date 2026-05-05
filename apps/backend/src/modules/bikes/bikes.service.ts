@@ -1,15 +1,16 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Bike } from '../../entities/bike.entity.js';
 import { CreateBikeDto, UpdateBikeDto, BikeDto } from './dto/bike.dto.js';
+
+const PG_UNIQUE_VIOLATION = '23505';
 
 @Injectable()
 export class BikesService {
   constructor(
     @InjectRepository(Bike)
     private readonly bikeRepo: Repository<Bike>,
-    private readonly dataSource: DataSource,
   ) {}
 
   async list(userId: string): Promise<BikeDto[]> {
@@ -21,52 +22,36 @@ export class BikesService {
   }
 
   async create(userId: string, dto: CreateBikeDto): Promise<BikeDto> {
-    return this.dataSource.transaction(async (em) => {
-      const bikeRepo = em.getRepository(Bike);
-      const count = await bikeRepo.count({ where: { user_id: userId } });
-      const isFirst = count === 0;
+    const count = await this.bikeRepo.count({ where: { user_id: userId } });
+    const isFirst = count === 0;
+    const shouldActivate = isFirst || (dto.is_active ?? false);
 
-      // First bike is always active; explicit active flag also deactivates others.
-      const shouldActivate = isFirst || (dto.is_active ?? false);
-      if (shouldActivate) {
-        const activeBikes = await bikeRepo.find({
-          where: { user_id: userId, is_active: true },
-        });
-        for (const ab of activeBikes) {
-          ab.is_active = false;
-          await bikeRepo.save(ab);
-        }
-      }
+    if (shouldActivate) {
+      await this.deactivateAll(userId);
+    }
 
-      const bike = bikeRepo.create({
-        user_id: userId,
-        make: dto.make,
-        model: dto.model,
-        year: dto.year ?? null,
-        is_active: shouldActivate,
-        photo_url: dto.photo_url ?? null,
-      });
-
-      try {
-        const saved = await bikeRepo.save(bike);
-        return this.toDto(saved);
-      } catch (err: unknown) {
-        // Unique partial index on (user_id WHERE is_active) prevents two
-        // concurrent first-bike creates from both becoming active. If the
-        // constraint fires, retry with is_active = false — another request
-        // already claimed the active slot.
-        if (
-          err instanceof Error &&
-          'code' in err &&
-          (err as Record<string, string>).code === '23505'
-        ) {
-          bike.is_active = false;
-          const saved = await bikeRepo.save(bike);
-          return this.toDto(saved);
-        }
-        throw err;
-      }
+    const bike = this.bikeRepo.create({
+      user_id: userId,
+      make: dto.make,
+      model: dto.model,
+      year: dto.year ?? null,
+      is_active: shouldActivate,
+      photo_url: dto.photo_url ?? null,
     });
+
+    try {
+      const saved = await this.bikeRepo.save(bike);
+      return this.toDto(saved);
+    } catch (err: unknown) {
+      if (isUniqueViolation(err)) {
+        // A concurrent request activated a bike between our deactivation
+        // and insert. Retry without activation.
+        bike.is_active = false;
+        const saved = await this.bikeRepo.save(bike);
+        return this.toDto(saved);
+      }
+      throw err;
+    }
   }
 
   async update(
@@ -74,37 +59,35 @@ export class BikesService {
     bikeId: string,
     dto: UpdateBikeDto,
   ): Promise<BikeDto> {
-    return this.dataSource.transaction(async (em) => {
-      const bikeRepo = em.getRepository(Bike);
-      const bike = await bikeRepo.findOne({
-        where: { id: bikeId, user_id: userId },
-      });
-      if (!bike) throw new NotFoundException('Bike not found');
-
-      // If activating, deactivate others.
-      if (dto.is_active) {
-        const activeBikes = await bikeRepo.find({
-          where: { user_id: userId, is_active: true },
-        });
-        for (const ab of activeBikes) {
-          if (ab.id !== bikeId) {
-            ab.is_active = false;
-            await bikeRepo.save(ab);
-          }
-        }
-      }
-
-      // Only set explicitly provided fields — don't clear fields the
-      // caller didn't include in the payload.
-      if (dto.make !== undefined) bike.make = dto.make;
-      if (dto.model !== undefined) bike.model = dto.model;
-      if (dto.year !== undefined) bike.year = dto.year;
-      if (dto.is_active !== undefined) bike.is_active = dto.is_active;
-      if (dto.photo_url !== undefined) bike.photo_url = dto.photo_url;
-
-      const saved = await bikeRepo.save(bike);
-      return this.toDto(saved);
+    const bike = await this.bikeRepo.findOne({
+      where: { id: bikeId, user_id: userId },
     });
+    if (!bike) throw new NotFoundException('Bike not found');
+
+    // If activating, deactivate others.
+    if (dto.is_active) {
+      await this.deactivateAllExcept(userId, bikeId);
+    }
+
+    if (dto.make !== undefined) bike.make = dto.make;
+    if (dto.model !== undefined) bike.model = dto.model;
+    if (dto.year !== undefined) bike.year = dto.year;
+    if (dto.is_active !== undefined) bike.is_active = dto.is_active;
+    if (dto.photo_url !== undefined) bike.photo_url = dto.photo_url;
+
+    try {
+      const saved = await this.bikeRepo.save(bike);
+      return this.toDto(saved);
+    } catch (err: unknown) {
+      if (isUniqueViolation(err)) {
+        // A concurrent request activated a different bike. Deactivate
+        // the conflicting one and retry.
+        await this.deactivateAllExcept(userId, bikeId);
+        const saved = await this.bikeRepo.save(bike);
+        return this.toDto(saved);
+      }
+      throw err;
+    }
   }
 
   async delete(userId: string, bikeId: string): Promise<void> {
@@ -113,6 +96,35 @@ export class BikesService {
       user_id: userId,
     });
     if (result.affected === 0) throw new NotFoundException('Bike not found');
+  }
+
+  // ── helpers ──
+
+  private async deactivateAll(userId: string): Promise<void> {
+    const active = await this.bikeRepo.find({
+      where: { user_id: userId, is_active: true },
+      select: { id: true, is_active: true },
+    });
+    for (const b of active) {
+      b.is_active = false;
+      await this.bikeRepo.save(b);
+    }
+  }
+
+  private async deactivateAllExcept(
+    userId: string,
+    exceptId: string,
+  ): Promise<void> {
+    const active = await this.bikeRepo.find({
+      where: { user_id: userId, is_active: true },
+      select: { id: true, is_active: true },
+    });
+    for (const b of active) {
+      if (b.id !== exceptId) {
+        b.is_active = false;
+        await this.bikeRepo.save(b);
+      }
+    }
   }
 
   private toDto(b: Bike): BikeDto {
@@ -129,4 +141,12 @@ export class BikesService {
       updatedAt: b.updated_at.toISOString(),
     };
   }
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    err instanceof Error &&
+    'code' in err &&
+    (err as Record<string, string>).code === PG_UNIQUE_VIOLATION
+  );
 }
