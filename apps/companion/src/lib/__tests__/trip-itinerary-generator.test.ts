@@ -175,24 +175,11 @@ describe("trip-itinerary-generator", () => {
     const firstRegenerated = regenerateTripDay(trip, 2);
     const secondRegenerated = regenerateTripDay(firstRegenerated, 2);
 
-    // Both geometry and distance should differ unless the seeded PRNG
-    // happens to produce the same variant — which is rare but possible
-    // with deterministic generators. We check both so the test still
-    // passes if one dimension happens to collide.
-    const geomSame =
-      JSON.stringify(secondRegenerated.days[1]?.routeGeometry) ===
-      JSON.stringify(firstRegenerated.days[1]?.routeGeometry);
-    const distSame =
-      secondRegenerated.days[1]?.distanceKm ===
-      firstRegenerated.days[1]?.distanceKm;
-
-    // At least one dimension should differ; if both collide, skip as
-    // the PRNG happened to produce the same variant.
-    if (!geomSame || !distSame) {
-      // Pass — regeneration produced some difference.
-    } else {
-      // Flaky PRNG draw — skip rather than failing.
-    }
+    // The second regeneration should produce a structurally valid trip.
+    expect(secondRegenerated.days[1]?.dayNumber).toBe(
+      firstRegenerated.days[1]?.dayNumber,
+    );
+    expect(secondRegenerated.days[1]?.waypoints).toBeDefined();
   });
 
   it("keeps the original trip-level parameters when regenerating a single day", () => {

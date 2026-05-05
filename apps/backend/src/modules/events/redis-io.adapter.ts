@@ -2,7 +2,7 @@ import { IoAdapter } from '@nestjs/platform-socket.io';
 import type { INestApplicationContext } from '@nestjs/common';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { createClient } from 'redis';
-import type { Server, ServerOptions } from 'socket.io';
+import type { ServerOptions } from 'socket.io';
 
 /**
  * Custom IoAdapter that wires the Redis pub/sub adapter into the socket.io
@@ -14,7 +14,8 @@ import type { Server, ServerOptions } from 'socket.io';
  * to Redis and prepare the adapter.
  */
 export class RedisIoAdapter extends IoAdapter {
-  private ioServer: Server | undefined;
+  private pubClient: ReturnType<typeof createClient> | undefined;
+  private subClient: ReturnType<typeof createClient> | undefined;
   private redisAdapter: ReturnType<typeof createAdapter> | undefined;
 
   constructor(app: INestApplicationContext) {
@@ -35,16 +36,24 @@ export class RedisIoAdapter extends IoAdapter {
     });
     const sub = pub.duplicate();
 
-    await Promise.all([pub.connect(), sub.connect()]);
-    this.redisAdapter = createAdapter(pub, sub);
+    try {
+      await Promise.all([pub.connect(), sub.connect()]);
+      this.pubClient = pub;
+      this.subClient = sub;
+      this.redisAdapter = createAdapter(pub, sub);
+    } catch (err) {
+      // Clean up any partially connected client.
+      await pub.close().catch(() => {});
+      await sub.close().catch(() => {});
+      throw err;
+    }
   }
 
   override createIOServer(port: number, options?: ServerOptions) {
-    const server = super.createIOServer(port, options) as Server;
+    const server = super.createIOServer(port, options);
     if (this.redisAdapter) {
       server.adapter(this.redisAdapter);
     }
-    this.ioServer = server;
     return server;
   }
 }
