@@ -96,6 +96,86 @@ export class TripsService {
     return this.getDetail(userId, savedId);
   }
 
+  async duplicate(userId: string, tripId: string): Promise<TripDetailDto> {
+    const source = await this.tripRepo.findOne({
+      where: { id: tripId },
+      relations: { days: { waypoints: true }, members: true },
+    });
+    if (!source) throw new NotFoundException('Trip not found');
+
+    const isMember = source.members.some((m) => m.user_id === userId);
+    if (source.owner_id !== userId && !isMember) {
+      throw new NotFoundException('Trip not found');
+    }
+
+    const dupId = await this.withInviteCodeAllocation(
+      async (em, inviteCode) => {
+        const dup = await em.save(
+          em.create(Trip, {
+            owner_id: userId,
+            title: nextCopyName(source.title),
+            region: source.region,
+            num_days: source.num_days,
+            daily_km_min: source.daily_km_min,
+            daily_km_max: source.daily_km_max,
+            min_quality: source.min_quality,
+            road_preference: source.road_preference,
+            invite_code: inviteCode,
+            status: 'draft',
+          }),
+        );
+
+        // Owner membership — required for visibility (every other creation
+        // path adds it, and getDetail gates on it).
+        await em.save(
+          em.create(TripMember, {
+            trip_id: dup.id,
+            user_id: userId,
+            role: 'owner',
+          }),
+        );
+
+        for (const day of source.days) {
+          const savedDay = await em.save(
+            em.create(TripDay, {
+              trip_id: dup.id,
+              day_number: day.day_number,
+              title: day.title,
+              distance_km: day.distance_km,
+              route_geom: day.route_geom,
+              avg_quality: day.avg_quality,
+              elevation_gain: day.elevation_gain,
+              elevation_loss: day.elevation_loss,
+              curviness_score: day.curviness_score,
+              scenic_score: day.scenic_score,
+              estimated_time: day.estimated_time,
+            }),
+          );
+
+          if (day.waypoints?.length) {
+            const waypoints = day.waypoints.map((wp) =>
+              em.create(TripWaypoint, {
+                trip_day_id: savedDay.id,
+                location: wp.location,
+                sequence: wp.sequence,
+                name: wp.name,
+                waypoint_type: wp.waypoint_type,
+                road_segment_id: wp.road_segment_id,
+                notes: wp.notes,
+                duration_min: wp.duration_min,
+              }),
+            );
+            await em.save(waypoints);
+          }
+        }
+
+        return dup.id;
+      },
+    );
+
+    return this.getDetail(userId, dupId);
+  }
+
   private async allocateAndPersistTrip(
     userId: string,
     dto: CreateTripDto,
@@ -1073,4 +1153,11 @@ function buildImportedWaypoints(dto: ImportTripDto): BuiltWaypoint[] {
     }));
 
   return [start, ...vias, end];
+}
+
+function nextCopyName(name: string): string {
+  const base = name.replace(/\s+\(copy(?:\s+\d+)?\)$/i, '').trim() || 'Trip';
+  const copy = `${base} (copy)`;
+  // Truncate to 200 chars (trips.title is varchar(200)).
+  return copy.length > 200 ? copy.slice(0, 197) + '...' : copy;
 }
