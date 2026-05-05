@@ -48,7 +48,7 @@ How we test Tarmoto. For CI details see `.github/workflows/`. For running locall
 
 ### Current state
 
-Jest and `@testing-library/react-native` are configured. Tests cover stores (ride, auth, commute, preferences, offline), screens (RideActive), and build assertions (AndroidManifest, Info.plist, smoke). Continue adding tests as features stabilize.
+Jest and `@testing-library/react-native` are configured with tests covering stores, screens, and build assertions. See `apps/mobile/src/__tests__/` and per-feature `__tests__/` directories for the current suite. Continue adding tests as features stabilize.
 
 ### Priority surfaces
 
