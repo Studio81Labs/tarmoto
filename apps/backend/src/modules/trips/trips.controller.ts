@@ -166,6 +166,22 @@ export class TripsController {
     return this.tripGenerator.generate(req.user!.userId, tripId, dto);
   }
 
+  @Post(':tripId/duplicate')
+  @ApiOperation({
+    summary: 'Duplicate a trip as a new draft',
+    description:
+      'Deep-copies the trip, its days, and waypoints into a new draft owned ' +
+      'by the caller. Members, suggestions, votes, and activity are not copied.',
+  })
+  @ApiResponse({ status: 201, type: TripDetailDto })
+  @ApiResponse({ status: 404, description: 'Trip not found or not visible' })
+  async duplicate(
+    @Req() req: express.Request,
+    @Param('tripId', ParseUUIDPipe) tripId: string,
+  ): Promise<TripDetailDto> {
+    return this.tripsService.duplicate(req.user!.userId, tripId);
+  }
+
   @Delete(':tripId')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
