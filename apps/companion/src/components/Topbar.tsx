@@ -9,8 +9,7 @@ export function Topbar() {
   const user = session?.user;
 
   return (
-    <header className="flex h-16 items-center justify-between border-b border-slate-800 px-6">
-      <div />
+    <header className="flex h-16 items-center justify-end border-b border-slate-800 px-6">
       <div className="flex items-center gap-4">
         <OfflineIndicator />
         <button className="relative p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition">
