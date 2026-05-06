@@ -298,12 +298,16 @@ export default function TripPlannerPage() {
         return;
       }
 
-      // Server trips have real UUIDs — update in place. Planner drafts
-      // have local ids (e.g. "generated-best-fit") — create new.
-      const isServerTrip =
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      // Prefer a known serverTripId from collaboration/deep links. Promoted
+      // drafts keep local in-memory ids, but their suggestions and activity
+      // already belong to the promoted backend trip.
+      const existingTripId =
+        serverTripId ??
+        (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
           displayedTrip.id,
-        );
+        )
+          ? displayedTrip.id
+          : null);
       const basePayload = {
         title: displayedTrip.name,
         num_days: p.days,
@@ -313,11 +317,14 @@ export default function TripPlannerPage() {
         daily_km_max: dailyKmTarget,
       };
 
-      const { data: saved } = isServerTrip
-        ? await tripsApi.update(displayedTrip.id, basePayload)
+      const { data: saved } = existingTripId
+        ? await tripsApi.update(existingTripId, basePayload)
         : await tripsApi.create(basePayload);
-      const tripId = (saved as { id: string }).id;
-      const createdTripId = isServerTrip ? null : tripId;
+      const tripId = (saved as { id?: string }).id ?? existingTripId;
+      if (!tripId) {
+        throw new Error("Trip save response did not include an id");
+      }
+      const createdTripId = existingTripId ? null : tripId;
 
       try {
         await tripsApi.generate(tripId, {
@@ -348,7 +355,7 @@ export default function TripPlannerPage() {
       console.warn("Failed to save trip", err);
       setSaving(false);
     }
-  }, [displayedTrip, router, saving, selectedOptionId]);
+  }, [displayedTrip, router, saving, selectedOptionId, serverTripId]);
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     if (!Array.from(e.dataTransfer.types).includes("Files")) return;

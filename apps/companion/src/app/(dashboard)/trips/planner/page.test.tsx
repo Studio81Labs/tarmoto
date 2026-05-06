@@ -30,6 +30,7 @@ const mockedPassesPanel = vi.fn((_props?: unknown) => (
 const mockedClosuresPanel = vi.fn((_props?: unknown) => (
   <div data-testid="closures-panel" />
 ));
+const mockedTripCollaborateModal = vi.fn((_props?: unknown) => null);
 
 vi.mock("@/hooks/useClosures", () => ({
   useClosures: vi.fn(),
@@ -107,6 +108,10 @@ vi.mock("@/components/TripExportMenu", () => ({
 
 vi.mock("@/components/TripImportDialog", () => ({
   TripImportDialog: () => null,
+}));
+
+vi.mock("@/components/TripCollaborateModal", () => ({
+  TripCollaborateModal: (props: unknown) => mockedTripCollaborateModal(props),
 }));
 
 function buildTrip(name: string): Trip {
@@ -247,6 +252,7 @@ describe("TripPlannerPage", () => {
     mockedTripPlannerMap.mockClear();
     mockedPassesPanel.mockClear();
     mockedClosuresPanel.mockClear();
+    mockedTripCollaborateModal.mockClear();
     mockPush.mockClear();
     setActiveTrip.mockReset();
     setGenerating.mockReset();
@@ -894,5 +900,38 @@ describe("TripPlannerPage", () => {
       expect(mockPush).toHaveBeenCalledWith("/trips/server-trip-1"),
     );
     expect(screen.getByRole("button", { name: "Saving…" })).toBeDisabled();
+  });
+
+  it("updates the promoted server trip instead of creating a duplicate draft", async () => {
+    const promotedTripId = "11111111-2222-4333-8444-555555555555";
+    tripsApiUpdateMock.mockResolvedValueOnce({
+      data: { id: promotedTripId },
+    } as never);
+    storeState.activeTrip = activeTrip;
+
+    render(<TripPlannerPage />);
+
+    const latestModalProps = mockedTripCollaborateModal.mock.calls.at(
+      -1,
+    )?.[0] as { onPromoted?: (tripId: string) => void } | undefined;
+
+    await act(async () => {
+      latestModalProps?.onPromoted?.(promotedTripId);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(tripsApiUpdateMock).toHaveBeenCalledWith(
+        promotedTripId,
+        expect.any(Object),
+      ),
+    );
+    expect(tripsApiCreateMock).not.toHaveBeenCalled();
+    expect(tripsApiGenerateMock).toHaveBeenCalledWith(
+      promotedTripId,
+      expect.objectContaining({ option: undefined }),
+    );
+    expect(mockPush).toHaveBeenCalledWith(`/trips/${promotedTripId}`);
   });
 });
