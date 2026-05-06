@@ -268,18 +268,30 @@ export default function TripPlannerPage() {
     setSaving(true);
     try {
       const p = displayedTrip.parameters;
-      // 1. Create the trip with basic metadata.
-      const { data: created } = await tripsApi.create({
+      // "direct" is the planner's term; the backend uses "fast".
+      const roadPreference =
+        p.roadPreference === "direct" ? "fast" : p.roadPreference;
+
+      // Server trips have real UUIDs — update in place. Planner drafts
+      // have local ids (e.g. "generated-best-fit") — create new.
+      const isServerTrip =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          displayedTrip.id,
+        );
+      const basePayload = {
         title: displayedTrip.name,
         num_days: p.days,
         min_quality: p.minQuality,
-        road_preference: p.roadPreference,
+        road_preference: roadPreference,
         daily_km_max: p.dailyKmTarget || undefined,
-      });
-      const tripId = (created as { id: string }).id;
+      };
 
-      // 2. Generate the route using the first waypoint as start_location.
-      // The backend falls back to a default radius when bbox is omitted.
+      const { data: saved } = isServerTrip
+        ? await tripsApi.update(displayedTrip.id, basePayload)
+        : await tripsApi.create(basePayload);
+      const tripId = (saved as { id: string }).id;
+
+      // Generate the route using the first waypoint as start_location.
       const firstDay = displayedTrip.days[0];
       const startWp = firstDay?.waypoints[0];
       if (startWp) {
@@ -288,6 +300,7 @@ export default function TripPlannerPage() {
             lat: startWp.location.lat,
             lng: startWp.location.lng,
           },
+          option: selectedOptionId || undefined,
           avoid_highways: p.avoidHighways,
           avoid_tolls: p.avoidTolls,
           avoid_unpaved: p.avoidUnpaved,
