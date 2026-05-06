@@ -267,18 +267,14 @@ export default function TripPlannerPage() {
     if (!displayedTrip || saving) return;
     setSaving(true);
     try {
+      const p = displayedTrip.parameters;
       const payload = {
-        name: displayedTrip.name,
-        status: "draft" as const,
-        days: displayedTrip.days.map((d) => ({
-          dayNumber: d.dayNumber,
-          waypoints: d.waypoints.map((w) => ({
-            name: w.name,
-            location: { lng: w.location.lng, lat: w.location.lat },
-            type: w.type,
-          })),
-        })),
-        parameters: displayedTrip.parameters,
+        title: displayedTrip.name,
+        num_days: p.days,
+        min_quality: p.minQuality,
+        road_preference: p.roadPreference,
+        daily_km_min: undefined,
+        daily_km_max: p.dailyKmTarget || undefined,
       };
       const { data } = displayedTrip.id
         ? await tripsApi.update(displayedTrip.id, payload)
