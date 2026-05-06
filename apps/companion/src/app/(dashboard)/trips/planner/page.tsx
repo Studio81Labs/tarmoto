@@ -278,6 +278,16 @@ export default function TripPlannerPage() {
     try {
       setGenerationError(null);
       const p = displayedTrip.parameters;
+      // Prefer a known serverTripId from collaboration/deep links. Promoted
+      // drafts keep local in-memory ids, but their suggestions and activity
+      // already belong to the promoted backend trip.
+      const existingTripId =
+        serverTripId ??
+        (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          displayedTrip.id,
+        )
+          ? displayedTrip.id
+          : null);
       const importedRoutePayload = buildImportedRoutePayload(displayedTrip);
       if (displayedTrip.id.startsWith("imported-") && !importedRoutePayload) {
         setGenerationError(
@@ -287,9 +297,13 @@ export default function TripPlannerPage() {
         return;
       }
       if (importedRoutePayload) {
-        const { data: saved } =
-          await tripsApi.importRoute(importedRoutePayload);
-        const tripId = (saved as { id?: string }).id;
+        const { data: saved } = existingTripId
+          ? await tripsApi.replaceImportedRoute(
+              existingTripId,
+              importedRoutePayload,
+            )
+          : await tripsApi.importRoute(importedRoutePayload);
+        const tripId = existingTripId ?? (saved as { id?: string }).id;
         if (!tripId) {
           throw new Error("Imported trip save response did not include an id");
         }
@@ -323,16 +337,6 @@ export default function TripPlannerPage() {
         return;
       }
 
-      // Prefer a known serverTripId from collaboration/deep links. Promoted
-      // drafts keep local in-memory ids, but their suggestions and activity
-      // already belong to the promoted backend trip.
-      const existingTripId =
-        serverTripId ??
-        (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-          displayedTrip.id,
-        )
-          ? displayedTrip.id
-          : null);
       const basePayload = {
         title: displayedTrip.name,
         num_days: p.days,
@@ -350,28 +354,36 @@ export default function TripPlannerPage() {
         throw new Error("Trip save response did not include an id");
       }
       const createdTripId = existingTripId ? null : tripId;
+      const shouldGenerate =
+        selectedOptionId !== null ||
+        !existingTripId ||
+        displayedTrip.id !== existingTripId;
 
-      try {
-        await tripsApi.generate(tripId, {
-          start_location: {
-            lat: startWp.location.lat,
-            lng: startWp.location.lng,
-          },
-          option: selectedOptionId || undefined,
-          avoid_highways: p.avoidHighways,
-          avoid_tolls: p.avoidTolls,
-          avoid_unpaved: p.avoidUnpaved,
-          surfaces: generationSurfaces.length ? generationSurfaces : undefined,
-        });
-      } catch (generateError) {
-        if (createdTripId) {
-          try {
-            await tripsApi.delete(createdTripId);
-          } catch (cleanupError) {
-            console.warn("Failed to clean up unsaved trip", cleanupError);
+      if (shouldGenerate) {
+        try {
+          await tripsApi.generate(tripId, {
+            start_location: {
+              lat: startWp.location.lat,
+              lng: startWp.location.lng,
+            },
+            option: selectedOptionId || undefined,
+            avoid_highways: p.avoidHighways,
+            avoid_tolls: p.avoidTolls,
+            avoid_unpaved: p.avoidUnpaved,
+            surfaces: generationSurfaces.length
+              ? generationSurfaces
+              : undefined,
+          });
+        } catch (generateError) {
+          if (createdTripId) {
+            try {
+              await tripsApi.delete(createdTripId);
+            } catch (cleanupError) {
+              console.warn("Failed to clean up unsaved trip", cleanupError);
+            }
           }
+          throw generateError;
         }
-        throw generateError;
       }
 
       router.push(`/trips/${tripId}`);

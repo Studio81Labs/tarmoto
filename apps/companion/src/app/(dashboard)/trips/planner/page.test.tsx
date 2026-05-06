@@ -60,6 +60,7 @@ vi.mock("@/lib/api", () => ({
     update: vi.fn(),
     delete: vi.fn(),
     importRoute: vi.fn(),
+    replaceImportedRoute: vi.fn(),
     generate: vi.fn(),
   },
 }));
@@ -217,6 +218,9 @@ describe("TripPlannerPage", () => {
   const tripsApiGenerateMock = vi.mocked(tripsApi.generate);
   const tripsApiGetMock = vi.mocked(tripsApi.get);
   const tripsApiImportRouteMock = vi.mocked(tripsApi.importRoute);
+  const tripsApiReplaceImportedRouteMock = vi.mocked(
+    tripsApi.replaceImportedRoute,
+  );
   const tripsApiUpdateMock = vi.mocked(tripsApi.update);
 
   const closuresData: ClosuresQueryResult = {
@@ -267,6 +271,7 @@ describe("TripPlannerPage", () => {
     tripsApiGenerateMock.mockReset();
     tripsApiGetMock.mockReset();
     tripsApiImportRouteMock.mockReset();
+    tripsApiReplaceImportedRouteMock.mockReset();
     tripsApiUpdateMock.mockReset();
     tripsApiCreateMock.mockResolvedValue({
       data: { id: "server-trip-1" },
@@ -276,6 +281,9 @@ describe("TripPlannerPage", () => {
     tripsApiGetMock.mockResolvedValue({ data: {} } as never);
     tripsApiImportRouteMock.mockResolvedValue({
       data: { id: "imported-server-trip-1" },
+    } as never);
+    tripsApiReplaceImportedRouteMock.mockResolvedValue({
+      data: { id: "promoted-imported-trip-1" },
     } as never);
     tripsApiUpdateMock.mockResolvedValue({
       data: { id: "server-trip-1" },
@@ -957,6 +965,83 @@ describe("TripPlannerPage", () => {
     expect(tripsApiCreateMock).not.toHaveBeenCalled();
     expect(tripsApiGenerateMock).not.toHaveBeenCalled();
     expect(mockPush).toHaveBeenCalledWith("/trips/imported-server-trip-1");
+  });
+
+  it("writes an imported draft into the promoted server trip instead of creating a duplicate", async () => {
+    const promotedTripId = "11111111-2222-4333-8444-555555555555";
+    storeState.activeTrip = {
+      ...activeTrip,
+      id: "imported-456",
+      name: "Promoted import",
+      importSourceFormat: "gpx",
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          routeGeometry: {
+            type: "LineString",
+            coordinates: [
+              [10.37, 46.47],
+              [10.57, 46.61],
+            ],
+          },
+        },
+      ],
+    };
+
+    render(<TripPlannerPage />);
+
+    const latestModalProps = mockedTripCollaborateModal.mock.calls.at(
+      -1,
+    )?.[0] as { onPromoted?: (tripId: string) => void } | undefined;
+
+    await act(async () => {
+      latestModalProps?.onPromoted?.(promotedTripId);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(tripsApiReplaceImportedRouteMock).toHaveBeenCalledWith(
+        promotedTripId,
+        expect.objectContaining({
+          title: "Promoted import",
+          source_format: "gpx",
+          geometry: [
+            { lng: 10.37, lat: 46.47 },
+            { lng: 10.57, lat: 46.61 },
+          ],
+        }),
+      ),
+    );
+    expect(tripsApiImportRouteMock).not.toHaveBeenCalled();
+    expect(tripsApiCreateMock).not.toHaveBeenCalled();
+    expect(tripsApiGenerateMock).not.toHaveBeenCalled();
+    expect(mockPush).toHaveBeenCalledWith(`/trips/${promotedTripId}`);
+  });
+
+  it("updates server-loaded trips without regenerating existing route geometry", async () => {
+    const serverTripId = "11111111-2222-4333-8444-555555555555";
+    tripsApiUpdateMock.mockResolvedValueOnce({
+      data: { id: serverTripId },
+    } as never);
+    storeState.activeTrip = {
+      ...activeTrip,
+      id: serverTripId,
+      name: "Server loaded route",
+    };
+
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(tripsApiUpdateMock).toHaveBeenCalledWith(
+        serverTripId,
+        expect.objectContaining({ title: "Server loaded route" }),
+      ),
+    );
+    expect(tripsApiGenerateMock).not.toHaveBeenCalled();
+    expect(mockPush).toHaveBeenCalledWith(`/trips/${serverTripId}`);
   });
 
   it("keeps the save button disabled after successful save while navigation is pending", async () => {

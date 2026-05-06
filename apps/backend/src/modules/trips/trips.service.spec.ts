@@ -11,6 +11,7 @@ import {
 import { Repository } from 'typeorm';
 import { TripsService } from './trips.service.js';
 import { Trip } from '../../entities/trip.entity.js';
+import { TripDay } from '../../entities/trip-day.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { TripShare } from '../../entities/trip-share.entity.js';
 import { EventsGateway } from '../events/events.gateway.js';
@@ -116,6 +117,7 @@ describe('TripsService', () => {
     save: jest.Mock;
     findOne: jest.Mock;
     update: jest.Mock;
+    delete: jest.Mock;
   };
   // Pulled out alongside `manager` so tests can call `mockImplementation`
   // / `mockRejectedValue` on a properly-typed `jest.Mock` without lint
@@ -147,6 +149,7 @@ describe('TripsService', () => {
       ),
       findOne: jest.fn().mockResolvedValue(null),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
+      delete: jest.fn().mockResolvedValue({ affected: 1 }),
     };
 
     transactionMock = jest
@@ -563,6 +566,52 @@ describe('TripsService', () => {
         waypoint_type: 'end',
         name: 'Prato',
       });
+    });
+
+    it('replaces an existing server trip with imported geometry without creating a duplicate trip', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        trip_id: TRIP_ID,
+        user_id: OWNER_ID,
+        role: 'owner',
+      } as TripMember);
+      manager.findOne.mockResolvedValueOnce(
+        makeOwnedTrip({ id: TRIP_ID, daily_km_min: 150, daily_km_max: 350 }),
+      );
+      mockGetDetailReturns(makeOwnedTrip({ id: TRIP_ID, status: 'planned' }));
+
+      await service.replaceWithImportedRoute(OWNER_ID, TRIP_ID, ROUTE_DTO);
+
+      expect(transactionMock).toHaveBeenCalledTimes(1);
+      expect(manager.findOne).toHaveBeenCalledWith(
+        Trip,
+        expect.objectContaining({
+          where: { id: TRIP_ID },
+          lock: { mode: 'pessimistic_write' },
+        }),
+      );
+      expect(manager.update).toHaveBeenCalledWith(
+        Trip,
+        { id: TRIP_ID },
+        expect.objectContaining({
+          title: 'Stelvio loop',
+          num_days: 1,
+          status: 'planned',
+        }),
+      );
+      expect(manager.delete).toHaveBeenCalledWith(TripDay, {
+        trip_id: TRIP_ID,
+      });
+      expect(manager.create).not.toHaveBeenCalledWith(
+        TripMember,
+        expect.anything(),
+      );
+      expect(manager.create).not.toHaveBeenCalledWith(Trip, expect.anything());
+      expect(activity.recordSafe).toHaveBeenCalledWith(
+        TRIP_ID,
+        OWNER_ID,
+        'trip_updated',
+        expect.objectContaining({ fields: ['imported_route'] }),
+      );
     });
   });
 

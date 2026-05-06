@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   UseGuards,
@@ -79,6 +80,29 @@ export class TripsController {
     @Body() dto: ImportTripDto,
   ): Promise<TripDetailDto> {
     return this.tripsService.importFromRoute(req.user!.userId, dto);
+  }
+
+  @Put(':tripId/import')
+  @ApiOperation({
+    summary: 'Replace an existing trip with a parsed GPX/KML route',
+    description:
+      'Owner/admin only. Reuses the same normalised import payload as ' +
+      '`POST /trips/import`, but writes the supplied geometry and waypoints ' +
+      'into an existing server trip. This keeps collaboration suggestions, ' +
+      'activity, invite code, and membership attached to the promoted trip.',
+  })
+  @ApiResponse({ status: 200, type: TripDetailDto })
+  @ApiResponse({ status: 404, description: 'Trip not found or not visible' })
+  async replaceImportedRoute(
+    @Req() req: express.Request,
+    @Param('tripId', ParseUUIDPipe) tripId: string,
+    @Body() dto: ImportTripDto,
+  ): Promise<TripDetailDto> {
+    return this.tripsService.replaceWithImportedRoute(
+      req.user!.userId,
+      tripId,
+      dto,
+    );
   }
 
   @Post('from-share')
