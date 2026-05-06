@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { signOut } from "next-auth/react";
 import {
   Home,
   Map,
@@ -11,9 +10,6 @@ import {
   History,
   BarChart3,
   Users,
-  Settings,
-  Bike,
-  LogOut,
   ChevronLeft,
   ChevronRight,
   MapPin,
@@ -55,22 +51,11 @@ const NAV_SECTIONS = [
       { href: "/gamification", icon: Trophy, label: "Achievements" },
     ],
   },
-  {
-    label: "Account",
-    items: [
-      { href: "/settings", icon: Settings, label: "Settings" },
-      { href: "/settings/bikes", icon: Bike, label: "My Bikes" },
-    ],
-  },
 ];
 
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
-
-  const handleLogout = () => {
-    signOut({ callbackUrl: "/login" });
-  };
 
   return (
     <aside
@@ -131,20 +116,6 @@ export function Sidebar() {
           </div>
         ))}
       </nav>
-
-      {/* User section */}
-      <div className="border-t border-slate-800 p-3">
-        <button
-          onClick={handleLogout}
-          className={clsx(
-            "flex items-center gap-3 w-full rounded-lg px-3 py-2 text-sm text-slate-400 hover:text-red-400 hover:bg-red-400/5 transition",
-            collapsed && "justify-center px-0",
-          )}
-        >
-          <LogOut size={18} />
-          {!collapsed && <span>Log out</span>}
-        </button>
-      </div>
     </aside>
   );
 }
