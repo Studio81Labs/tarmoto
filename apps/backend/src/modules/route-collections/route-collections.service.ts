@@ -102,57 +102,68 @@ export class RouteCollectionsService {
     // non-soft-deleted owners so the UI never links to a 404. Also pulls the
     // owner's display name so the dashboard can surface "by Jane Rider" on
     // the followed cards (otherwise the rider's curation context is lost).
-    const rows = await this.collectionRepo
-      .createQueryBuilder('c')
-      .innerJoin(
-        RouteCollectionFollow,
-        'f',
-        'f.collection_id = c.id AND f.user_id = :userId',
-        { userId },
-      )
-      .leftJoin('c.items', 'i')
-      .leftJoin('c.owner', 'owner')
-      .where("c.visibility <> 'private'")
-      .andWhere('owner.deleted_at IS NULL')
-      .select([
-        'c.id',
-        'c.owner_id',
-        'c.title',
-        'c.description',
-        'c.visibility',
-        'c.slug',
-        'c.created_at',
-        'c.updated_at',
-      ])
-      .addSelect('COUNT(i.id)', 'item_count')
-      .addSelect('f.created_at', 'followed_at')
-      .addSelect('owner.display_name', 'owner_name')
-      .groupBy('c.id')
-      .addGroupBy('f.created_at')
-      .addGroupBy('owner.display_name')
-      .orderBy('f.created_at', 'DESC')
-      .getRawAndEntities();
+    //
+    // Wrapped in a try-catch so a missing follow table (pre-migration staging)
+    // or a transient DB error doesn't break the whole library endpoint — the
+    // owned list is the primary data; followed is additive.
+    let followed: RouteCollectionSummaryDto[] = [];
+    try {
+      const rows = await this.collectionRepo
+        .createQueryBuilder('c')
+        .innerJoin(
+          RouteCollectionFollow,
+          'f',
+          'f.collection_id = c.id AND f.user_id = :userId',
+          { userId },
+        )
+        .leftJoin('c.items', 'i')
+        .leftJoin('c.owner', 'owner')
+        .where("c.visibility <> 'private'")
+        .andWhere('owner.deleted_at IS NULL')
+        .select([
+          'c.id',
+          'c.owner_id',
+          'c.title',
+          'c.description',
+          'c.visibility',
+          'c.slug',
+          'c.created_at',
+          'c.updated_at',
+        ])
+        .addSelect('COUNT(i.id)', 'item_count')
+        .addSelect('f.created_at', 'followed_at')
+        .addSelect('owner.display_name', 'owner_name')
+        .groupBy('c.id')
+        .addGroupBy('f.created_at')
+        .addGroupBy('owner.display_name')
+        .orderBy('f.created_at', 'DESC')
+        .getRawAndEntities();
 
-    const countById = new Map<string, number>();
-    const ownerNameById = new Map<string, string | null>();
-    for (const raw of rows.raw as {
-      c_id?: string;
-      item_count?: string;
-      owner_name?: string | null;
-    }[]) {
-      if (raw.c_id) {
-        countById.set(raw.c_id, Number(raw.item_count ?? 0));
-        ownerNameById.set(raw.c_id, raw.owner_name ?? null);
+      const countById = new Map<string, number>();
+      const ownerNameById = new Map<string, string | null>();
+      for (const raw of rows.raw as {
+        c_id?: string;
+        item_count?: string;
+        owner_name?: string | null;
+      }[]) {
+        if (raw.c_id) {
+          countById.set(raw.c_id, Number(raw.item_count ?? 0));
+          ownerNameById.set(raw.c_id, raw.owner_name ?? null);
+        }
       }
-    }
 
-    const followed = rows.entities.map((c) =>
-      this.toSummaryResponse(
-        c,
-        countById.get(c.id) ?? 0,
-        ownerNameById.get(c.id) ?? null,
-      ),
-    );
+      followed = rows.entities.map((c) =>
+        this.toSummaryResponse(
+          c,
+          countById.get(c.id) ?? 0,
+          ownerNameById.get(c.id) ?? null,
+        ),
+      );
+    } catch {
+      // Followed query failed — return owned only so the UI still works.
+      // The most likely cause is a missing migration; follow data will
+      // surface once the route_collection_follows table is created.
+    }
 
     return { owned, followed };
   }
