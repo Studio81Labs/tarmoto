@@ -268,26 +268,36 @@ export default function TripPlannerPage() {
     setSaving(true);
     try {
       const p = displayedTrip.parameters;
-      const payload = {
+      // 1. Create the trip with basic metadata.
+      const { data: created } = await tripsApi.create({
         title: displayedTrip.name,
         num_days: p.days,
         min_quality: p.minQuality,
         road_preference: p.roadPreference,
-        daily_km_min: undefined,
         daily_km_max: p.dailyKmTarget || undefined,
-      };
-      // Planner drafts use local ids (e.g. planner-2026…), not server UUIDs.
-      // Always create — updates only apply to server-persisted trips loaded
-      // via /trips/[id]/edit where the id is a real UUID.
-      const isServerTrip =
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-          displayedTrip.id,
-        );
-      const { data } = isServerTrip
-        ? await tripsApi.update(displayedTrip.id, payload)
-        : await tripsApi.create(payload);
-      const saved = data as { id: string };
-      router.push(`/trips/${saved.id}`);
+      });
+      const tripId = (created as { id: string }).id;
+
+      // 2. Generate the route using the first waypoint as start_location.
+      // The backend falls back to a default radius when bbox is omitted.
+      const firstDay = displayedTrip.days[0];
+      const startWp = firstDay?.waypoints[0];
+      if (startWp) {
+        await tripsApi.generate(tripId, {
+          start_location: {
+            lat: startWp.location.lat,
+            lng: startWp.location.lng,
+          },
+          avoid_highways: p.avoidHighways,
+          avoid_tolls: p.avoidTolls,
+          avoid_unpaved: p.avoidUnpaved,
+          surfaces: p.surfacePreference.length
+            ? p.surfacePreference
+            : undefined,
+        });
+      }
+
+      router.push(`/trips/${tripId}`);
     } catch (err) {
       console.warn("Failed to save trip", err);
     } finally {
