@@ -841,7 +841,8 @@ function TripCard({
           <div className="flex items-center gap-2">
             <Calendar size={13} />
             <span>
-              {trip.days.length} day{trip.days.length === 1 ? "" : "s"}
+              {trip.days?.length ?? 0} day
+              {(trip.days?.length ?? 0) === 1 ? "" : "s"}
             </span>
           </div>
           <div className="flex items-center gap-2">
