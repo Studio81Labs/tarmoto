@@ -137,7 +137,9 @@ export class RouteCollectionsService {
         .addSelect('f.created_at', 'followed_at')
         .addSelect('owner.display_name', 'owner_name')
         .groupBy('c.id')
+        .addGroupBy('f.id')
         .addGroupBy('f.created_at')
+        .addGroupBy('owner.id')
         .addGroupBy('owner.display_name')
         .orderBy('f.created_at', 'DESC')
         .getRawAndEntities();
