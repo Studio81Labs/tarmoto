@@ -292,10 +292,7 @@ function ExplorerPageInner() {
         )}
 
         {/* Map */}
-        <div
-          className="flex-1 relative bg-slate-900"
-          style={{ minHeight: "calc(100dvh - 4rem)" }}
-        >
+        <div className="flex-1 relative bg-slate-900">
           <QualityMap
             center={center}
             zoom={zoom}

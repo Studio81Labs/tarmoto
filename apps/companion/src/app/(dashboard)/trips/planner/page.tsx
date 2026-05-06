@@ -852,7 +852,6 @@ export default function TripPlannerPage() {
         {/* Map canvas */}
         <div
           className="flex-1 relative bg-slate-900"
-          style={{ minHeight: "calc(100dvh - 4rem)" }}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
