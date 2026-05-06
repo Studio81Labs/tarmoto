@@ -100,6 +100,8 @@ export const tripsApi = {
   get: (id: string) => apiFetch(`/trips/${id}`),
   create: (data: unknown) =>
     apiFetch("/trips", { method: "POST", body: JSON.stringify(data) }),
+  importRoute: (data: unknown) =>
+    apiFetch("/trips/import", { method: "POST", body: JSON.stringify(data) }),
   update: (id: string, data: unknown) =>
     apiFetch(`/trips/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   delete: (id: string) => apiFetch(`/trips/${id}`, { method: "DELETE" }),

@@ -59,6 +59,7 @@ vi.mock("@/lib/api", () => ({
     create: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
+    importRoute: vi.fn(),
     generate: vi.fn(),
   },
 }));
@@ -215,6 +216,7 @@ describe("TripPlannerPage", () => {
   const tripsApiDeleteMock = vi.mocked(tripsApi.delete);
   const tripsApiGenerateMock = vi.mocked(tripsApi.generate);
   const tripsApiGetMock = vi.mocked(tripsApi.get);
+  const tripsApiImportRouteMock = vi.mocked(tripsApi.importRoute);
   const tripsApiUpdateMock = vi.mocked(tripsApi.update);
 
   const closuresData: ClosuresQueryResult = {
@@ -264,6 +266,7 @@ describe("TripPlannerPage", () => {
     tripsApiDeleteMock.mockReset();
     tripsApiGenerateMock.mockReset();
     tripsApiGetMock.mockReset();
+    tripsApiImportRouteMock.mockReset();
     tripsApiUpdateMock.mockReset();
     tripsApiCreateMock.mockResolvedValue({
       data: { id: "server-trip-1" },
@@ -271,6 +274,9 @@ describe("TripPlannerPage", () => {
     tripsApiDeleteMock.mockResolvedValue({ data: undefined } as never);
     tripsApiGenerateMock.mockResolvedValue({ data: {} } as never);
     tripsApiGetMock.mockResolvedValue({ data: {} } as never);
+    tripsApiImportRouteMock.mockResolvedValue({
+      data: { id: "imported-server-trip-1" },
+    } as never);
     tripsApiUpdateMock.mockResolvedValue({
       data: { id: "server-trip-1" },
     } as never);
@@ -885,6 +891,72 @@ describe("TripPlannerPage", () => {
     expect(tripsApiCreateMock).not.toHaveBeenCalled();
     expect(tripsApiGenerateMock).not.toHaveBeenCalled();
     expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("preserves imported route geometry when saving an imported draft", async () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      id: "imported-123",
+      name: "Passo loop import",
+      importSourceFormat: "kml",
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          routeGeometry: {
+            type: "LineString",
+            coordinates: [
+              [10.37, 46.47],
+              [10.45, 46.55],
+              [10.57, 46.61],
+            ],
+          },
+          waypoints: [
+            {
+              id: "wp-start",
+              name: "Bormio",
+              type: "start",
+              location: { lng: 10.37, lat: 46.47 },
+            },
+            {
+              id: "wp-via",
+              name: "Umbrail",
+              type: "photo",
+              location: { lng: 10.45, lat: 46.55 },
+            },
+            {
+              id: "wp-end",
+              name: "Prato allo Stelvio",
+              type: "end",
+              location: { lng: 10.57, lat: 46.61 },
+            },
+          ],
+        },
+      ],
+    };
+
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(tripsApiImportRouteMock).toHaveBeenCalledWith({
+        title: "Passo loop import",
+        source_format: "kml",
+        geometry: [
+          { lng: 10.37, lat: 46.47 },
+          { lng: 10.45, lat: 46.55 },
+          { lng: 10.57, lat: 46.61 },
+        ],
+        waypoints: [
+          { lng: 10.37, lat: 46.47, name: "Bormio" },
+          { lng: 10.45, lat: 46.55, name: "Umbrail", type: "photo" },
+          { lng: 10.57, lat: 46.61, name: "Prato allo Stelvio" },
+        ],
+      }),
+    );
+    expect(tripsApiCreateMock).not.toHaveBeenCalled();
+    expect(tripsApiGenerateMock).not.toHaveBeenCalled();
+    expect(mockPush).toHaveBeenCalledWith("/trips/imported-server-trip-1");
   });
 
   it("keeps the save button disabled after successful save while navigation is pending", async () => {

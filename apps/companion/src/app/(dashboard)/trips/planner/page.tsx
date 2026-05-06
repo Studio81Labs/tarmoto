@@ -41,6 +41,7 @@ import { useAuthStore } from "@/stores/auth";
 import { tripsApi } from "@/lib/api";
 import { buildTripClosureRoutes } from "@/lib/closures-summary";
 import { DEMO_TRIP } from "@/lib/demo-trip";
+import { UNPAVED_SURFACES } from "@/lib/surface-preferences";
 import {
   generateTripOptions,
   regenerateTripDay,
@@ -52,7 +53,7 @@ import {
   tripFromDetail,
   type TripDetailResponse,
 } from "@/lib/trip-from-detail";
-import type { SurfaceType, Trip, TripParameters } from "@/lib/types";
+import type { SurfaceType, Trip, TripParameters, Waypoint } from "@/lib/types";
 import { formatDuration } from "@/lib/utils";
 
 /**
@@ -69,8 +70,13 @@ const SURFACE_OPTIONS: { value: SurfaceType; label: string }[] = [
   { value: "dirt", label: "Dirt" },
 ];
 
-const UNPAVED_SURFACES = new Set<SurfaceType>(["gravel", "dirt"]);
 const MIN_BACKEND_DAILY_KM = 1;
+const IMPORTABLE_WAYPOINT_TYPES = new Set<Waypoint["type"]>([
+  "via",
+  "fuel",
+  "rest",
+  "photo",
+]);
 
 export default function TripPlannerPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -272,6 +278,25 @@ export default function TripPlannerPage() {
     try {
       setGenerationError(null);
       const p = displayedTrip.parameters;
+      const importedRoutePayload = buildImportedRoutePayload(displayedTrip);
+      if (displayedTrip.id.startsWith("imported-") && !importedRoutePayload) {
+        setGenerationError(
+          "Imported routes need at least two route points before saving.",
+        );
+        setSaving(false);
+        return;
+      }
+      if (importedRoutePayload) {
+        const { data: saved } =
+          await tripsApi.importRoute(importedRoutePayload);
+        const tripId = (saved as { id?: string }).id;
+        if (!tripId) {
+          throw new Error("Imported trip save response did not include an id");
+        }
+        router.push(`/trips/${tripId}`);
+        return;
+      }
+
       // "direct" is the planner's term; the backend uses "fast".
       const roadPreference =
         p.roadPreference === "direct" ? "fast" : p.roadPreference;
@@ -1134,6 +1159,35 @@ function clampNumberInput(
 function normalizeBackendDailyKm(value: number) {
   if (!Number.isFinite(value)) return MIN_BACKEND_DAILY_KM;
   return Math.max(MIN_BACKEND_DAILY_KM, Math.round(value));
+}
+
+function buildImportedRoutePayload(trip: Trip) {
+  if (!trip.id.startsWith("imported-")) return null;
+  const firstDay = trip.days[0];
+  const coordinates = firstDay?.routeGeometry?.coordinates ?? [];
+  if (coordinates.length < 2) return null;
+
+  return {
+    title: trip.name,
+    source_format: trip.importSourceFormat ?? "gpx",
+    geometry: coordinates.map(([lng, lat]) => ({ lng, lat })),
+    waypoints: (firstDay?.waypoints ?? []).map((waypoint) => {
+      const payload: {
+        lat: number;
+        lng: number;
+        name?: string;
+        type?: "via" | "fuel" | "rest" | "photo";
+      } = {
+        lat: waypoint.location.lat,
+        lng: waypoint.location.lng,
+      };
+      if (waypoint.name) payload.name = waypoint.name;
+      if (IMPORTABLE_WAYPOINT_TYPES.has(waypoint.type)) {
+        payload.type = waypoint.type as "via" | "fuel" | "rest" | "photo";
+      }
+      return payload;
+    }),
+  };
 }
 
 function delay(ms: number) {

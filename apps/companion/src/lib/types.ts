@@ -91,6 +91,7 @@ export interface Trip {
   id: string;
   name: string;
   description?: string;
+  importSourceFormat?: "gpx" | "kml";
   status: "draft" | "planned" | "active" | "completed";
   days: TripDay[];
   parameters: TripParameters;
