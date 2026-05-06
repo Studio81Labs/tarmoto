@@ -69,6 +69,9 @@ const SURFACE_OPTIONS: { value: SurfaceType; label: string }[] = [
   { value: "dirt", label: "Dirt" },
 ];
 
+const UNPAVED_SURFACES = new Set<SurfaceType>(["gravel", "dirt"]);
+const MIN_BACKEND_DAILY_KM = 1;
+
 export default function TripPlannerPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [paramsOpen, setParamsOpen] = useState(true);
@@ -267,10 +270,33 @@ export default function TripPlannerPage() {
     if (!displayedTrip || saving) return;
     setSaving(true);
     try {
+      setGenerationError(null);
       const p = displayedTrip.parameters;
       // "direct" is the planner's term; the backend uses "fast".
       const roadPreference =
         p.roadPreference === "direct" ? "fast" : p.roadPreference;
+      const dailyKmTarget = normalizeBackendDailyKm(p.dailyKmTarget);
+      const generationSurfaces = p.avoidUnpaved
+        ? p.surfacePreference.filter(
+            (surface) => !UNPAVED_SURFACES.has(surface),
+          )
+        : p.surfacePreference;
+      if (p.surfacePreference.length > 0 && generationSurfaces.length === 0) {
+        setGenerationError(
+          "Select at least one paved surface or turn off Avoid unpaved roads before saving.",
+        );
+        setSaving(false);
+        return;
+      }
+
+      // Generate the route using the first waypoint as start_location.
+      const firstDay = displayedTrip.days[0];
+      const startWp = firstDay?.waypoints[0];
+      if (!startWp) {
+        setGenerationError("Add a start waypoint before saving this trip.");
+        setSaving(false);
+        return;
+      }
 
       // Server trips have real UUIDs — update in place. Planner drafts
       // have local ids (e.g. "generated-best-fit") — create new.
@@ -283,7 +309,8 @@ export default function TripPlannerPage() {
         num_days: p.days,
         min_quality: p.minQuality,
         road_preference: roadPreference,
-        daily_km_max: p.dailyKmTarget || undefined,
+        daily_km_min: dailyKmTarget,
+        daily_km_max: dailyKmTarget,
       };
 
       const { data: saved } = isServerTrip
@@ -292,41 +319,33 @@ export default function TripPlannerPage() {
       const tripId = (saved as { id: string }).id;
       const createdTripId = isServerTrip ? null : tripId;
 
-      // Generate the route using the first waypoint as start_location.
-      const firstDay = displayedTrip.days[0];
-      const startWp = firstDay?.waypoints[0];
-      if (startWp) {
-        try {
-          await tripsApi.generate(tripId, {
-            start_location: {
-              lat: startWp.location.lat,
-              lng: startWp.location.lng,
-            },
-            option: selectedOptionId || undefined,
-            avoid_highways: p.avoidHighways,
-            avoid_tolls: p.avoidTolls,
-            avoid_unpaved: p.avoidUnpaved,
-            surfaces: p.surfacePreference.length
-              ? p.surfacePreference
-              : undefined,
-          });
-        } catch (generateError) {
-          if (createdTripId) {
-            try {
-              await tripsApi.delete(createdTripId);
-            } catch (cleanupError) {
-              console.warn("Failed to clean up unsaved trip", cleanupError);
-            }
+      try {
+        await tripsApi.generate(tripId, {
+          start_location: {
+            lat: startWp.location.lat,
+            lng: startWp.location.lng,
+          },
+          option: selectedOptionId || undefined,
+          avoid_highways: p.avoidHighways,
+          avoid_tolls: p.avoidTolls,
+          avoid_unpaved: p.avoidUnpaved,
+          surfaces: generationSurfaces.length ? generationSurfaces : undefined,
+        });
+      } catch (generateError) {
+        if (createdTripId) {
+          try {
+            await tripsApi.delete(createdTripId);
+          } catch (cleanupError) {
+            console.warn("Failed to clean up unsaved trip", cleanupError);
           }
-          throw generateError;
         }
+        throw generateError;
       }
 
       router.push(`/trips/${tripId}`);
     } catch (err) {
       setGenerationError("Could not save this trip. Please try again.");
       console.warn("Failed to save trip", err);
-    } finally {
       setSaving(false);
     }
   }, [displayedTrip, router, saving, selectedOptionId]);
@@ -1103,6 +1122,11 @@ function clampNumberInput(
   const parsed = Number(rawValue);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(max, Math.max(min, Math.round(parsed)));
+}
+
+function normalizeBackendDailyKm(value: number) {
+  if (!Number.isFinite(value)) return MIN_BACKEND_DAILY_KM;
+  return Math.max(MIN_BACKEND_DAILY_KM, Math.round(value));
 }
 
 function delay(ms: number) {

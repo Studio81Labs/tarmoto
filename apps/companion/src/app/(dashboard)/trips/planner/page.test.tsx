@@ -788,4 +788,111 @@ describe("TripPlannerPage", () => {
     );
     expect(mockPush).not.toHaveBeenCalled();
   });
+
+  it("sends a valid daily-km band when saving a short daily target", async () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      parameters: {
+        ...activeTrip.parameters,
+        dailyKmTarget: 100,
+      },
+    };
+
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(tripsApiCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          daily_km_min: 100,
+          daily_km_max: 100,
+        }),
+      ),
+    );
+  });
+
+  it("normalizes zero daily-km targets to the backend minimum instead of dropping them", async () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      parameters: {
+        ...activeTrip.parameters,
+        dailyKmTarget: 0,
+      },
+    };
+
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(tripsApiCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          daily_km_min: 1,
+          daily_km_max: 1,
+        }),
+      ),
+    );
+  });
+
+  it("blocks contradictory unpaved surface filters before creating a trip", async () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      parameters: {
+        ...activeTrip.parameters,
+        surfacePreference: ["gravel"],
+        avoidUnpaved: true,
+      },
+    };
+
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(
+      await screen.findByText(
+        "Select at least one paved surface or turn off Avoid unpaved roads before saving.",
+      ),
+    ).toBeInTheDocument();
+    expect(tripsApiCreateMock).not.toHaveBeenCalled();
+    expect(tripsApiGenerateMock).not.toHaveBeenCalled();
+  });
+
+  it("does not save or redirect when the trip has no start waypoint", async () => {
+    storeState.activeTrip = {
+      ...activeTrip,
+      days: [
+        {
+          ...activeTrip.days[0]!,
+          waypoints: [],
+        },
+      ],
+    };
+
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(
+      await screen.findByText("Add a start waypoint before saving this trip."),
+    ).toBeInTheDocument();
+    expect(tripsApiCreateMock).not.toHaveBeenCalled();
+    expect(tripsApiGenerateMock).not.toHaveBeenCalled();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("keeps the save button disabled after successful save while navigation is pending", async () => {
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() => expect(setActiveTrip).toHaveBeenCalledWith(activeTrip));
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mockPush).toHaveBeenCalledWith("/trips/server-trip-1"),
+    );
+    expect(screen.getByRole("button", { name: "Saving…" })).toBeDisabled();
+  });
 });
