@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -35,6 +36,8 @@ const PREVIEW_SIMPLIFY_TOLERANCE_DEG = 0.0005;
 
 @Injectable()
 export class RouteCollectionsService {
+  private readonly logger = new Logger(RouteCollectionsService.name);
+
   constructor(
     @InjectRepository(RouteCollection)
     private readonly collectionRepo: Repository<RouteCollection>,
@@ -102,57 +105,75 @@ export class RouteCollectionsService {
     // non-soft-deleted owners so the UI never links to a 404. Also pulls the
     // owner's display name so the dashboard can surface "by Jane Rider" on
     // the followed cards (otherwise the rider's curation context is lost).
-    const rows = await this.collectionRepo
-      .createQueryBuilder('c')
-      .innerJoin(
-        RouteCollectionFollow,
-        'f',
-        'f.collection_id = c.id AND f.user_id = :userId',
-        { userId },
-      )
-      .leftJoin('c.items', 'i')
-      .leftJoin('c.owner', 'owner')
-      .where("c.visibility <> 'private'")
-      .andWhere('owner.deleted_at IS NULL')
-      .select([
-        'c.id',
-        'c.owner_id',
-        'c.title',
-        'c.description',
-        'c.visibility',
-        'c.slug',
-        'c.created_at',
-        'c.updated_at',
-      ])
-      .addSelect('COUNT(i.id)', 'item_count')
-      .addSelect('f.created_at', 'followed_at')
-      .addSelect('owner.display_name', 'owner_name')
-      .groupBy('c.id')
-      .addGroupBy('f.created_at')
-      .addGroupBy('owner.display_name')
-      .orderBy('f.created_at', 'DESC')
-      .getRawAndEntities();
+    //
+    // Wrapped in a try-catch so a missing follow table (pre-migration staging)
+    // or a transient DB error doesn't break the whole library endpoint — the
+    // owned list is the primary data; followed is additive.
+    let followed: RouteCollectionSummaryDto[] = [];
+    try {
+      const rows = await this.collectionRepo
+        .createQueryBuilder('c')
+        .innerJoin(
+          RouteCollectionFollow,
+          'f',
+          'f.collection_id = c.id AND f.user_id = :userId',
+          { userId },
+        )
+        .leftJoin('c.items', 'i')
+        .leftJoin('c.owner', 'owner')
+        .where("c.visibility <> 'private'")
+        .andWhere('owner.deleted_at IS NULL')
+        .select([
+          'c.id',
+          'c.owner_id',
+          'c.title',
+          'c.description',
+          'c.visibility',
+          'c.slug',
+          'c.created_at',
+          'c.updated_at',
+        ])
+        .addSelect('COUNT(i.id)', 'item_count')
+        .addSelect('f.created_at', 'followed_at')
+        .addSelect('owner.display_name', 'owner_name')
+        .groupBy('c.id')
+        .addGroupBy('f.id')
+        .addGroupBy('f.created_at')
+        .addGroupBy('owner.id')
+        .addGroupBy('owner.display_name')
+        .orderBy('f.created_at', 'DESC')
+        .getRawAndEntities();
 
-    const countById = new Map<string, number>();
-    const ownerNameById = new Map<string, string | null>();
-    for (const raw of rows.raw as {
-      c_id?: string;
-      item_count?: string;
-      owner_name?: string | null;
-    }[]) {
-      if (raw.c_id) {
-        countById.set(raw.c_id, Number(raw.item_count ?? 0));
-        ownerNameById.set(raw.c_id, raw.owner_name ?? null);
+      const countById = new Map<string, number>();
+      const ownerNameById = new Map<string, string | null>();
+      for (const raw of rows.raw as {
+        c_id?: string;
+        item_count?: string;
+        owner_name?: string | null;
+      }[]) {
+        if (raw.c_id) {
+          countById.set(raw.c_id, Number(raw.item_count ?? 0));
+          ownerNameById.set(raw.c_id, raw.owner_name ?? null);
+        }
+      }
+
+      followed = rows.entities.map((c) =>
+        this.toSummaryResponse(
+          c,
+          countById.get(c.id) ?? 0,
+          ownerNameById.get(c.id) ?? null,
+        ),
+      );
+    } catch (err) {
+      if (isMissingTableError(err)) {
+        this.logger.warn(
+          'route_collection_follows table is missing — returning owned ' +
+            'collections only. Run the AddRouteCollectionFollows migration.',
+        );
+      } else {
+        throw err;
       }
     }
-
-    const followed = rows.entities.map((c) =>
-      this.toSummaryResponse(
-        c,
-        countById.get(c.id) ?? 0,
-        ownerNameById.get(c.id) ?? null,
-      ),
-    );
 
     return { owned, followed };
   }
@@ -748,23 +769,31 @@ function normaliseDescription(value: string | null | undefined): string | null {
 }
 
 /**
- * PostgreSQL surfaces a `unique_violation` (SQLSTATE 23505) when a duplicate
- * INSERT hits a unique constraint. TypeORM wraps the raw pg error as a
- * `QueryFailedError`, but the `code` survives intact on the wrapped error
- * shape — checking it lets the caller treat the duplicate as the no-op
- * idempotent case instead of surfacing a 500.
+ * PostgreSQL code `42P01` (undefined_table) — the `route_collection_follows`
+ * migration hasn't been run yet on the target database. Only this specific
+ * error is swallowed in `listLibrary`; all other failures propagate.
+ */
+function isMissingTableError(err: unknown): boolean {
+  return hasPgCode(err, '42P01');
+}
+
+/**
+ * PostgreSQL `unique_violation` (SQLSTATE 23505) — lets the `follow` caller
+ * treat a duplicate insert as the idempotent case instead of a 500.
  */
 function isUniqueViolation(err: unknown): boolean {
+  return hasPgCode(err, '23505');
+}
+
+function hasPgCode(err: unknown, code: string): boolean {
   if (err == null || typeof err !== 'object') return false;
-  if ('code' in err && (err as { code?: unknown }).code === '23505') {
-    return true;
-  }
-  const driver = (err as { driverError?: unknown }).driverError;
+  const e = err as Record<string, unknown>;
+  if (e.code === code) return true;
+  const driver = e.driverError;
   if (
     driver != null &&
     typeof driver === 'object' &&
-    'code' in driver &&
-    (driver as { code?: unknown }).code === '23505'
+    (driver as Record<string, unknown>).code === code
   ) {
     return true;
   }
