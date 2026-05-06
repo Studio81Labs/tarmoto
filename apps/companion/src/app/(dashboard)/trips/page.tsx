@@ -849,10 +849,10 @@ function TripCard({
             <MapPin size={13} />
             <span>{Math.round(distance)} km total</span>
           </div>
-          {trip.collaborators.length > 1 && (
+          {(trip.collaborators?.length ?? 0) > 1 && (
             <div className="flex items-center gap-2">
               <Users size={13} />
-              <span>{trip.collaborators.length} riders</span>
+              <span>{trip.collaborators?.length ?? 0} riders</span>
             </div>
           )}
           {currentFolder && (
