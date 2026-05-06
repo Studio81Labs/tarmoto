@@ -276,7 +276,14 @@ export default function TripPlannerPage() {
         daily_km_min: undefined,
         daily_km_max: p.dailyKmTarget || undefined,
       };
-      const { data } = displayedTrip.id
+      // Planner drafts use local ids (e.g. planner-2026…), not server UUIDs.
+      // Always create — updates only apply to server-persisted trips loaded
+      // via /trips/[id]/edit where the id is a real UUID.
+      const isServerTrip =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          displayedTrip.id,
+        );
+      const { data } = isServerTrip
         ? await tripsApi.update(displayedTrip.id, payload)
         : await tripsApi.create(payload);
       const saved = data as { id: string };
