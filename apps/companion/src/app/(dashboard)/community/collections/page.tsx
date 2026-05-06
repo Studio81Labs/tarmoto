@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  useMemo,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -62,9 +62,16 @@ export default function RouteCollectionsPage() {
     | null
   >(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<RouteCollectionView | null>(
+    null,
+  );
+  const [unfollowTarget, setUnfollowTarget] =
+    useState<RouteCollectionView | null>(null);
 
-  const unfollow = async (collection: RouteCollectionView) => {
-    if (!confirm(`Stop following "${collection.title}"?`)) return;
+  const confirmUnfollow = async () => {
+    const collection = unfollowTarget;
+    if (!collection) return;
+    setUnfollowTarget(null);
     setActionError(null);
     try {
       await unfollowCollection(collection.id);
@@ -98,14 +105,10 @@ export default function RouteCollectionsPage() {
     setModal(null);
   };
 
-  const deleteCollection = async (collection: RouteCollectionView) => {
-    if (
-      !confirm(
-        `Delete "${collection.title}"? The routes inside won't be affected.`,
-      )
-    ) {
-      return;
-    }
+  const confirmDelete = async () => {
+    const collection = deleteTarget;
+    if (!collection) return;
+    setDeleteTarget(null);
     setActionError(null);
     try {
       await removeCollection(collection.id);
@@ -233,7 +236,7 @@ export default function RouteCollectionsPage() {
               key={collection.id}
               collection={collection}
               onEdit={() => setModal({ mode: "edit", collection })}
-              onDelete={() => void deleteCollection(collection)}
+              onDelete={() => setDeleteTarget(collection)}
             />
           ))}
         </div>
@@ -262,7 +265,7 @@ export default function RouteCollectionsPage() {
               <FollowedCollectionCard
                 key={collection.id}
                 collection={collection}
-                onUnfollow={() => void unfollow(collection)}
+                onUnfollow={() => setUnfollowTarget(collection)}
               />
             ))}
           </div>
@@ -285,6 +288,26 @@ export default function RouteCollectionsPage() {
           excludeId={modal.mode === "edit" ? modal.collection.id : undefined}
           onClose={() => setModal(null)}
           onSubmit={submitModal}
+        />
+      )}
+
+      {deleteTarget && (
+        <ConfirmDialog
+          title="Delete collection"
+          message={`Delete "${deleteTarget.title}"? The routes inside won't be affected.`}
+          confirmLabel="Delete"
+          onConfirm={() => void confirmDelete()}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+
+      {unfollowTarget && (
+        <ConfirmDialog
+          title="Stop following"
+          message={`Stop following "${unfollowTarget.title}"?`}
+          confirmLabel="Unfollow"
+          onConfirm={() => void confirmUnfollow()}
+          onCancel={() => setUnfollowTarget(null)}
         />
       )}
     </div>
@@ -847,5 +870,86 @@ function CardMenuItem({
       <span className="text-slate-500">{icon}</span>
       <span className="flex-1">{label}</span>
     </button>
+  );
+}
+
+function ConfirmDialog({
+  title,
+  message,
+  confirmLabel,
+  onConfirm,
+  onCancel,
+}: {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    cancelRef.current?.focus();
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        onCancel();
+        return;
+      }
+      if (e.key === "Tab") {
+        const first = cancelRef.current;
+        const last = confirmRef.current;
+        if (!first || !last) return;
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [onCancel]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirm-dialog-title"
+      aria-describedby="confirm-dialog-message"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+    >
+      <div className="w-full max-w-sm rounded-2xl border border-slate-800 bg-slate-950 p-6 shadow-xl">
+        <h2
+          id="confirm-dialog-title"
+          className="text-lg font-semibold text-white"
+        >
+          {title}
+        </h2>
+        <p id="confirm-dialog-message" className="mt-2 text-sm text-slate-400">
+          {message}
+        </p>
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            ref={cancelRef}
+            type="button"
+            onClick={onCancel}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 transition"
+          >
+            Cancel
+          </button>
+          <button
+            ref={confirmRef}
+            type="button"
+            onClick={onConfirm}
+            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500 transition"
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
