@@ -1,25 +1,27 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
 import { Settings, LogOut } from "lucide-react";
+import { useClickOutside } from "@/hooks";
 
 export function UserMenu() {
   const { data: session } = useSession();
   const user = session?.user;
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+
+  const close = useCallback(() => setOpen(false), []);
+  const ref = useClickOutside(close);
 
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+    if (!open) return;
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [open]);
 
   const handleLogout = () => {
     setOpen(false);
