@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -35,6 +36,8 @@ const PREVIEW_SIMPLIFY_TOLERANCE_DEG = 0.0005;
 
 @Injectable()
 export class RouteCollectionsService {
+  private readonly logger = new Logger(RouteCollectionsService.name);
+
   constructor(
     @InjectRepository(RouteCollection)
     private readonly collectionRepo: Repository<RouteCollection>,
@@ -161,9 +164,10 @@ export class RouteCollectionsService {
       );
     } catch (err) {
       if (isMissingTableError(err)) {
-        // Follow table doesn't exist yet (pre-migration staging) — return
-        // owned only so the UI still works. Follow data will surface once
-        // the route_collection_follows table is created.
+        this.logger.warn(
+          'route_collection_follows table is missing — returning owned ' +
+            'collections only. Run the AddRouteCollectionFollows migration.',
+        );
       } else {
         throw err;
       }
