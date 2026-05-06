@@ -5,7 +5,11 @@ import Link from "next/link";
 import { Bell, Settings } from "lucide-react";
 import { useClickOutside } from "@/hooks";
 
-export function NotificationBell() {
+export function NotificationBell({
+  hasUnread = false,
+}: {
+  hasUnread?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
   const ref = useClickOutside(close);
@@ -18,7 +22,9 @@ export function NotificationBell() {
         aria-label="Notifications"
       >
         <Bell size={18} />
-        <span className="absolute top-1 right-1 w-2 h-2 bg-tarmoto-cyan rounded-full" />
+        {hasUnread && (
+          <span className="absolute top-1 right-1 w-2 h-2 bg-tarmoto-cyan rounded-full" />
+        )}
       </button>
 
       {open && (
