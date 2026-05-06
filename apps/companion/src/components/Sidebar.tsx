@@ -80,8 +80,13 @@ export function Sidebar() {
       )}
     >
       {/* Logo */}
-      <div className="flex h-16 items-center justify-between px-4 border-b border-slate-800">
-        <AppLogo collapsed={collapsed} />
+      <div
+        className={clsx(
+          "flex h-16 items-center border-b border-slate-800 px-4",
+          collapsed ? "justify-center" : "justify-between",
+        )}
+      >
+        {!collapsed && <AppLogo />}
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"

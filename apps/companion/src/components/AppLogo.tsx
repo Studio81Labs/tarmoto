@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export function LogoMark({ size = 28 }: { size?: number }) {
+function LogoMark({ size = 28 }: { size?: number }) {
   return (
     <svg
       width={size}
@@ -23,16 +23,14 @@ export function LogoMark({ size = 28 }: { size?: number }) {
   );
 }
 
-export function AppLogo({ collapsed = false }: { collapsed?: boolean }) {
+export function AppLogo() {
   return (
     <Link href="/" className="flex items-center gap-2 shrink-0">
       <LogoMark size={28} />
-      {!collapsed && (
-        <span className="text-lg font-bold tracking-tight">
-          <span className="text-tarmoto-cyan">TAR</span>
-          MOTO
-        </span>
-      )}
+      <span className="text-lg font-bold tracking-tight">
+        <span className="text-tarmoto-cyan">TAR</span>
+        MOTO
+      </span>
     </Link>
   );
 }
