@@ -35,8 +35,8 @@ const NAV_SECTIONS = [
     label: "Riding",
     items: [
       { href: "/rides", icon: History, label: "Ride History" },
-      { href: "/stats", icon: BarChart3, label: "Statistics" },
-      { href: "/road-map", icon: MapPin, label: "My Road Map" },
+      { href: "/rides/stats", icon: BarChart3, label: "Statistics" },
+      { href: "/rides/road-map", icon: MapPin, label: "My Road Map" },
     ],
   },
   {
