@@ -1,32 +1,20 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { Bell, Settings } from "lucide-react";
-import { useClickOutside } from "@/hooks";
+import { useDropdown } from "@/hooks";
 
 export function NotificationBell({
   hasUnread = false,
 }: {
   hasUnread?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const close = useCallback(() => setOpen(false), []);
-  const ref = useClickOutside(close);
-
-  useEffect(() => {
-    if (!open) return;
-    function handleEscape(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("keydown", handleEscape);
-    return () => document.removeEventListener("keydown", handleEscape);
-  }, [open]);
+  const { open, close, toggle, ref } = useDropdown();
 
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={() => setOpen(!open)}
+        onClick={toggle}
         className="relative p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
         aria-label="Notifications"
       >
@@ -44,7 +32,7 @@ export function NotificationBell({
             </span>
             <Link
               href="/settings/notifications"
-              onClick={() => setOpen(false)}
+              onClick={close}
               className="p-1 rounded text-slate-500 hover:text-slate-300 transition"
               aria-label="Notification settings"
             >
