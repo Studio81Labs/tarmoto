@@ -106,7 +106,7 @@ function sortTrips(trips: Trip[], sort: TripSortKey): Trip[] {
 }
 
 export function tripDistanceKm(trip: Trip): number {
-  return trip.days.reduce((sum, d) => sum + d.distanceKm, 0);
+  return (trip.days ?? []).reduce((sum, d) => sum + d.distanceKm, 0);
 }
 
 // Returns how many trips sit in each status, regardless of the current search
