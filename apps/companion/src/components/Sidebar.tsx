@@ -35,8 +35,8 @@ const NAV_SECTIONS = [
     label: "Riding",
     items: [
       { href: "/rides", icon: History, label: "Ride History" },
-      { href: "/stats", icon: BarChart3, label: "Statistics" },
-      { href: "/road-map", icon: MapPin, label: "My Road Map" },
+      { href: "/rides/stats", icon: BarChart3, label: "Statistics" },
+      { href: "/rides/road-map", icon: MapPin, label: "My Road Map" },
     ],
   },
   {
@@ -91,10 +91,18 @@ export function Sidebar() {
             )}
             <div className="space-y-0.5">
               {section.items.map((item) => {
-                const isActive =
-                  item.href === "/"
-                    ? pathname === "/"
-                    : pathname.startsWith(item.href);
+                const isActive = (() => {
+                  if (!pathname.startsWith(item.href)) return false;
+                  if (item.href === "/") return pathname === "/";
+                  const allItems = NAV_SECTIONS.flatMap((s) => s.items);
+                  const hasMoreSpecific = allItems.some(
+                    (other) =>
+                      other.href !== item.href &&
+                      other.href.startsWith(item.href) &&
+                      pathname.startsWith(other.href),
+                  );
+                  return !hasMoreSpecific;
+                })();
                 return (
                   <Link
                     key={item.href}
