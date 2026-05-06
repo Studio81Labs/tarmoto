@@ -28,8 +28,8 @@ export function AppLogo() {
     <Link href="/" className="flex items-center gap-2 shrink-0">
       <LogoMark size={28} />
       <span className="text-lg font-bold tracking-tight">
-        <span className="text-tarmoto-cyan">TAR</span>
-        MOTO
+        {"TAR"}
+        <span className="text-tarmoto-cyan">MOTO</span>
       </span>
     </Link>
   );
