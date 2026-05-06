@@ -108,7 +108,7 @@ function ExplorerPageInner() {
   const isDefault = filtersEqual(filters, DEFAULT_MAP_FILTERS);
 
   return (
-    <div className="flex flex-col min-h-0 flex-1">
+    <div className="flex flex-col h-full">
       {/* Search bar */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-800">
         <div className="relative flex-1 max-w-md">
@@ -292,7 +292,10 @@ function ExplorerPageInner() {
         )}
 
         {/* Map */}
-        <div className="flex-1 relative bg-slate-900">
+        <div
+          className="flex-1 relative bg-slate-900"
+          style={{ minHeight: "calc(100dvh - 4rem)" }}
+        >
           <QualityMap
             center={center}
             zoom={zoom}

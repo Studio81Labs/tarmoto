@@ -96,7 +96,7 @@ export default function CommunityFeedPage() {
   const pageCount = Math.max(Math.ceil(total / PAGE_SIZE), 1);
 
   return (
-    <div className="mx-auto max-w-7xl animate-fade-in p-6 overflow-y-auto h-full">
+    <div className="mx-auto max-w-7xl animate-fade-in p-6">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Community</h1>
