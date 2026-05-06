@@ -10,8 +10,6 @@ import {
   History,
   BarChart3,
   Users,
-  Settings,
-  Bike,
   ChevronLeft,
   ChevronRight,
   MapPin,
@@ -51,13 +49,6 @@ const NAV_SECTIONS = [
         label: "Collections",
       },
       { href: "/gamification", icon: Trophy, label: "Achievements" },
-    ],
-  },
-  {
-    label: "Account",
-    items: [
-      { href: "/settings", icon: Settings, label: "Settings" },
-      { href: "/settings/bikes", icon: Bike, label: "My Bikes" },
     ],
   },
 ];
