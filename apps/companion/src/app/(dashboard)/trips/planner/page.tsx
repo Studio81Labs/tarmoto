@@ -1,8 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useTripStore } from "@/stores/trip";
 import {
+  Loader2,
+  Save,
   Clock3,
   GripVertical,
   Layers,
@@ -77,6 +80,8 @@ export default function TripPlannerPage() {
     currentUtcMonth(),
   );
   const [days, setDays] = useState(3);
+  const [saving, setSaving] = useState(false);
+  const router = useRouter();
   const [dailyKmTarget, setDailyKmTarget] = useState(250);
   const [roadPreference, setRoadPreference] =
     useState<TripParameters["roadPreference"]>("mixed");
@@ -257,6 +262,35 @@ export default function TripPlannerPage() {
       setSelectedDayIndex(Math.max(0, activeTrip.days.length - 1));
     }
   }, [activeTrip, selectedDayIndex]);
+
+  const handleSave = useCallback(async () => {
+    if (!displayedTrip || saving) return;
+    setSaving(true);
+    try {
+      const payload = {
+        name: displayedTrip.name,
+        status: "draft" as const,
+        days: displayedTrip.days.map((d) => ({
+          dayNumber: d.dayNumber,
+          waypoints: d.waypoints.map((w) => ({
+            name: w.name,
+            location: { lng: w.location.lng, lat: w.location.lat },
+            type: w.type,
+          })),
+        })),
+        parameters: displayedTrip.parameters,
+      };
+      const { data } = displayedTrip.id
+        ? await tripsApi.update(displayedTrip.id, payload)
+        : await tripsApi.create(payload);
+      const saved = data as { id: string };
+      router.push(`/trips/${saved.id}`);
+    } catch (err) {
+      console.warn("Failed to save trip", err);
+    } finally {
+      setSaving(false);
+    }
+  }, [displayedTrip, saving, router]);
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     if (!Array.from(e.dataTransfer.types).includes("Files")) return;
@@ -506,6 +540,19 @@ export default function TripPlannerPage() {
             Import GPX
           </button>
           <TripExportMenu trip={displayedTrip} context="planner" />
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || !displayedTrip}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light transition disabled:opacity-60"
+          >
+            {saving ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Save size={14} />
+            )}
+            {saving ? "Saving…" : "Save"}
+          </button>
           {!displayedTrip && (
             <button
               type="button"
