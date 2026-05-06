@@ -290,33 +290,46 @@ export default function TripPlannerPage() {
         ? await tripsApi.update(displayedTrip.id, basePayload)
         : await tripsApi.create(basePayload);
       const tripId = (saved as { id: string }).id;
+      const createdTripId = isServerTrip ? null : tripId;
 
       // Generate the route using the first waypoint as start_location.
       const firstDay = displayedTrip.days[0];
       const startWp = firstDay?.waypoints[0];
       if (startWp) {
-        await tripsApi.generate(tripId, {
-          start_location: {
-            lat: startWp.location.lat,
-            lng: startWp.location.lng,
-          },
-          option: selectedOptionId || undefined,
-          avoid_highways: p.avoidHighways,
-          avoid_tolls: p.avoidTolls,
-          avoid_unpaved: p.avoidUnpaved,
-          surfaces: p.surfacePreference.length
-            ? p.surfacePreference
-            : undefined,
-        });
+        try {
+          await tripsApi.generate(tripId, {
+            start_location: {
+              lat: startWp.location.lat,
+              lng: startWp.location.lng,
+            },
+            option: selectedOptionId || undefined,
+            avoid_highways: p.avoidHighways,
+            avoid_tolls: p.avoidTolls,
+            avoid_unpaved: p.avoidUnpaved,
+            surfaces: p.surfacePreference.length
+              ? p.surfacePreference
+              : undefined,
+          });
+        } catch (generateError) {
+          if (createdTripId) {
+            try {
+              await tripsApi.delete(createdTripId);
+            } catch (cleanupError) {
+              console.warn("Failed to clean up unsaved trip", cleanupError);
+            }
+          }
+          throw generateError;
+        }
       }
 
       router.push(`/trips/${tripId}`);
     } catch (err) {
+      setGenerationError("Could not save this trip. Please try again.");
       console.warn("Failed to save trip", err);
     } finally {
       setSaving(false);
     }
-  }, [displayedTrip, saving, router]);
+  }, [displayedTrip, router, saving, selectedOptionId]);
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     if (!Array.from(e.dataTransfer.types).includes("Files")) return;

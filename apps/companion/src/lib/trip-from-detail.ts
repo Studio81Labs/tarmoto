@@ -195,11 +195,7 @@ function parametersFromDetail(detail: TripDetailResponse): TripParameters {
     // persisted [min, max] band so re-entering the planner shows a sane
     // default the rider can adjust.
     dailyKmTarget: Math.round((min + max) / 2),
-    roadPreference: VALID_ROAD_PREFERENCES.has(
-      detail.road_preference as TripParameters["roadPreference"],
-    )
-      ? (detail.road_preference as TripParameters["roadPreference"])
-      : "mixed",
+    roadPreference: mapRoadPreference(detail.road_preference),
     // The backend doesn't persist the surface filter or avoidance flags
     // yet; default to the planner's initial values so the UI loads in a
     // consistent state. Once the backend grows these columns this should
@@ -210,6 +206,13 @@ function parametersFromDetail(detail: TripDetailResponse): TripParameters {
     avoidUnpaved: true,
     minQuality: detail.min_quality ?? 3,
   };
+}
+
+function mapRoadPreference(value: string): TripParameters["roadPreference"] {
+  if (value === "fast") return "direct";
+  return VALID_ROAD_PREFERENCES.has(value as TripParameters["roadPreference"])
+    ? (value as TripParameters["roadPreference"])
+    : "mixed";
 }
 
 function mapMemberRoleToCollaboratorRole(

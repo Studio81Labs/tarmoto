@@ -14,7 +14,12 @@ import {
   generateTripOptions,
   regenerateTripDay,
 } from "@/lib/trip-itinerary-generator";
+import { tripsApi } from "@/lib/api";
 import type { Trip } from "@/lib/types";
+
+const { mockPush } = vi.hoisted(() => ({
+  mockPush: vi.fn(),
+}));
 
 const mockedTripPlannerMap = vi.fn((_props?: unknown) => (
   <div data-testid="trip-planner-map" />
@@ -41,6 +46,20 @@ vi.mock("@/stores/trip", () => ({
 vi.mock("@/lib/trip-itinerary-generator", () => ({
   generateTripOptions: vi.fn(),
   regenerateTripDay: vi.fn(),
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: mockPush }),
+}));
+
+vi.mock("@/lib/api", () => ({
+  tripsApi: {
+    get: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    generate: vi.fn(),
+  },
 }));
 
 vi.mock("@/lib/closures-summary", async () => {
@@ -187,6 +206,11 @@ describe("TripPlannerPage", () => {
   const useTripStoreMock = vi.mocked(useTripStore);
   const generateTripOptionsMock = vi.mocked(generateTripOptions);
   const regenerateTripDayMock = vi.mocked(regenerateTripDay);
+  const tripsApiCreateMock = vi.mocked(tripsApi.create);
+  const tripsApiDeleteMock = vi.mocked(tripsApi.delete);
+  const tripsApiGenerateMock = vi.mocked(tripsApi.generate);
+  const tripsApiGetMock = vi.mocked(tripsApi.get);
+  const tripsApiUpdateMock = vi.mocked(tripsApi.update);
 
   const closuresData: ClosuresQueryResult = {
     closures: [],
@@ -223,12 +247,27 @@ describe("TripPlannerPage", () => {
     mockedTripPlannerMap.mockClear();
     mockedPassesPanel.mockClear();
     mockedClosuresPanel.mockClear();
+    mockPush.mockClear();
     setActiveTrip.mockReset();
     setGenerating.mockReset();
     useClosuresMock.mockReset();
     usePassesMock.mockReset();
     generateTripOptionsMock.mockReset();
     regenerateTripDayMock.mockReset();
+    tripsApiCreateMock.mockReset();
+    tripsApiDeleteMock.mockReset();
+    tripsApiGenerateMock.mockReset();
+    tripsApiGetMock.mockReset();
+    tripsApiUpdateMock.mockReset();
+    tripsApiCreateMock.mockResolvedValue({
+      data: { id: "server-trip-1" },
+    } as never);
+    tripsApiDeleteMock.mockResolvedValue({ data: undefined } as never);
+    tripsApiGenerateMock.mockResolvedValue({ data: {} } as never);
+    tripsApiGetMock.mockResolvedValue({ data: {} } as never);
+    tripsApiUpdateMock.mockResolvedValue({
+      data: { id: "server-trip-1" },
+    } as never);
     setActiveTrip.mockImplementation((trip) => {
       storeState.activeTrip = trip;
     });
@@ -708,5 +747,45 @@ describe("TripPlannerPage", () => {
     );
     expect(screen.getByText("0.0/5")).toBeInTheDocument();
     expect(screen.queryByText("NaN")).not.toBeInTheDocument();
+  });
+
+  it("saves the selected generated option to the backend", async () => {
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Fastest line/i })),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Fastest line/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(tripsApiGenerateMock).toHaveBeenCalledWith(
+        "server-trip-1",
+        expect.objectContaining({
+          option: "fastest",
+        }),
+      ),
+    );
+    expect(mockPush).toHaveBeenCalledWith("/trips/server-trip-1");
+  });
+
+  it("deletes a newly created metadata-only trip when route generation fails", async () => {
+    tripsApiGenerateMock.mockRejectedValueOnce(new Error("route failed"));
+
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() => expect(setActiveTrip).toHaveBeenCalledWith(activeTrip));
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(tripsApiDeleteMock).toHaveBeenCalledWith("server-trip-1"),
+    );
+    expect(mockPush).not.toHaveBeenCalled();
   });
 });
