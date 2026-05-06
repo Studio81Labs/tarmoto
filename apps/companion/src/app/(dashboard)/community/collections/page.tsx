@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  useMemo,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -886,13 +886,38 @@ function ConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    cancelRef.current?.focus();
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onCancel();
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [onCancel]);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirm-dialog-title"
+      aria-describedby="confirm-dialog-message"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+    >
       <div className="w-full max-w-sm rounded-2xl border border-slate-800 bg-slate-950 p-6 shadow-xl">
-        <h2 className="text-lg font-semibold text-white">{title}</h2>
-        <p className="mt-2 text-sm text-slate-400">{message}</p>
+        <h2
+          id="confirm-dialog-title"
+          className="text-lg font-semibold text-white"
+        >
+          {title}
+        </h2>
+        <p id="confirm-dialog-message" className="mt-2 text-sm text-slate-400">
+          {message}
+        </p>
         <div className="mt-6 flex justify-end gap-3">
           <button
+            ref={cancelRef}
             type="button"
             onClick={onCancel}
             className="rounded-lg px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 transition"
