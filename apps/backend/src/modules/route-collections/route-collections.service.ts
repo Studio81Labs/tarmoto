@@ -159,10 +159,14 @@ export class RouteCollectionsService {
           ownerNameById.get(c.id) ?? null,
         ),
       );
-    } catch {
-      // Followed query failed — return owned only so the UI still works.
-      // The most likely cause is a missing migration; follow data will
-      // surface once the route_collection_follows table is created.
+    } catch (err) {
+      if (isMissingTableError(err)) {
+        // Follow table doesn't exist yet (pre-migration staging) — return
+        // owned only so the UI still works. Follow data will surface once
+        // the route_collection_follows table is created.
+      } else {
+        throw err;
+      }
     }
 
     return { owned, followed };
@@ -759,23 +763,31 @@ function normaliseDescription(value: string | null | undefined): string | null {
 }
 
 /**
- * PostgreSQL surfaces a `unique_violation` (SQLSTATE 23505) when a duplicate
- * INSERT hits a unique constraint. TypeORM wraps the raw pg error as a
- * `QueryFailedError`, but the `code` survives intact on the wrapped error
- * shape — checking it lets the caller treat the duplicate as the no-op
- * idempotent case instead of surfacing a 500.
+ * PostgreSQL code `42P01` (undefined_table) — the `route_collection_follows`
+ * migration hasn't been run yet on the target database. Only this specific
+ * error is swallowed in `listLibrary`; all other failures propagate.
+ */
+function isMissingTableError(err: unknown): boolean {
+  return hasPgCode(err, '42P01');
+}
+
+/**
+ * PostgreSQL `unique_violation` (SQLSTATE 23505) — lets the `follow` caller
+ * treat a duplicate insert as the idempotent case instead of a 500.
  */
 function isUniqueViolation(err: unknown): boolean {
+  return hasPgCode(err, '23505');
+}
+
+function hasPgCode(err: unknown, code: string): boolean {
   if (err == null || typeof err !== 'object') return false;
-  if ('code' in err && (err as { code?: unknown }).code === '23505') {
-    return true;
-  }
-  const driver = (err as { driverError?: unknown }).driverError;
+  const e = err as Record<string, unknown>;
+  if (e.code === code) return true;
+  const driver = e.driverError;
   if (
     driver != null &&
     typeof driver === 'object' &&
-    'code' in driver &&
-    (driver as { code?: unknown }).code === '23505'
+    (driver as Record<string, unknown>).code === code
   ) {
     return true;
   }
