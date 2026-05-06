@@ -306,7 +306,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
 
   return (
     <div className="relative w-full h-full">
-      <div ref={containerRef} className="absolute inset-0" />
+      <div ref={containerRef} className="absolute inset-0 h-full w-full" />
       {children}
     </div>
   );
