@@ -240,6 +240,81 @@ describe('RouteCollectionsService', () => {
       expect(result.followed[0]?.id).toBe(followedCol.id);
       expect(result.followed[0]?.item_count).toBe(4);
     });
+
+    it('returns owned list with empty followed when follow table is missing (42P01)', async () => {
+      const ownedCol = { ...baseCollection };
+      (collectionRepo.createQueryBuilder as jest.Mock)
+        .mockReturnValueOnce({
+          leftJoin: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          select: jest.fn().mockReturnThis(),
+          addSelect: jest.fn().mockReturnThis(),
+          groupBy: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          getRawAndEntities: jest.fn().mockResolvedValue({
+            entities: [ownedCol],
+            raw: [{ c_id: ownedCol.id, item_count: '1' }],
+          }),
+        })
+        .mockReturnValueOnce({
+          innerJoin: jest.fn().mockReturnThis(),
+          leftJoin: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          select: jest.fn().mockReturnThis(),
+          addSelect: jest.fn().mockReturnThis(),
+          groupBy: jest.fn().mockReturnThis(),
+          addGroupBy: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          getRawAndEntities: jest.fn().mockRejectedValue(
+            Object.assign(new Error('relation does not exist'), {
+              code: '42P01',
+            }),
+          ),
+        });
+
+      const result = await service.listLibrary(ownerId);
+      expect(result.owned).toHaveLength(1);
+      expect(result.owned[0]?.id).toBe(ownedCol.id);
+      expect(result.followed).toEqual([]);
+    });
+
+    it('rethrows non-42P01 errors from the followed query so they are not silently swallowed', async () => {
+      const ownedCol = { ...baseCollection };
+      (collectionRepo.createQueryBuilder as jest.Mock)
+        .mockReturnValueOnce({
+          leftJoin: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          select: jest.fn().mockReturnThis(),
+          addSelect: jest.fn().mockReturnThis(),
+          groupBy: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          getRawAndEntities: jest.fn().mockResolvedValue({
+            entities: [ownedCol],
+            raw: [{ c_id: ownedCol.id, item_count: '1' }],
+          }),
+        })
+        .mockReturnValueOnce({
+          innerJoin: jest.fn().mockReturnThis(),
+          leftJoin: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          select: jest.fn().mockReturnThis(),
+          addSelect: jest.fn().mockReturnThis(),
+          groupBy: jest.fn().mockReturnThis(),
+          addGroupBy: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          getRawAndEntities: jest.fn().mockRejectedValue(
+            Object.assign(new Error('connection lost'), {
+              code: '08006',
+            }),
+          ),
+        });
+
+      await expect(service.listLibrary(ownerId)).rejects.toThrow(
+        'connection lost',
+      );
+    });
   });
 
   describe('create', () => {
