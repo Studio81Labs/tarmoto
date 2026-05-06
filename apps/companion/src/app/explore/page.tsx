@@ -108,7 +108,7 @@ function ExplorerPageInner() {
   const isDefault = filtersEqual(filters, DEFAULT_MAP_FILTERS);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col min-h-0 flex-1">
       {/* Search bar */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-800">
         <div className="relative flex-1 max-w-md">
