@@ -1,5 +1,11 @@
 import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { AuthGuard } from '../auth/auth.guard.js';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard.js';
 import { PassesService } from './passes.service.js';
 import {
@@ -9,18 +15,19 @@ import {
   MountainPassDto,
 } from './dto/passes.dto.js';
 
-// Mountain pass status is public reference data — anyone planning a trip
-// (including unauthenticated visitors landing on /trips/planner) needs to
-// see open/closed status. We use OptionalAuthGuard so the endpoint stays
-// reachable without a Bearer token while still attaching `req.user` if a
-// valid one is supplied for future personalization.
 @ApiTags('passes')
 @Controller('passes')
-@UseGuards(OptionalAuthGuard)
 export class PassesController {
   constructor(private readonly passesService: PassesService) {}
 
+  // Mountain pass status is public reference data — unauthenticated
+  // visitors landing on /trips/planner (#475) need to see open/closed
+  // status without first being forced to sign in. OptionalAuthGuard keeps
+  // the endpoint reachable for anonymous callers while still attaching
+  // `req.user` if a valid bearer token is supplied for future
+  // personalization.
   @Get()
+  @UseGuards(OptionalAuthGuard)
   @ApiOperation({
     summary: 'List mountain passes (optionally filtered by bbox)',
     description:
@@ -33,7 +40,14 @@ export class PassesController {
     return this.passesService.list(query.bbox, query.for_month);
   }
 
+  // `check-route` accepts arbitrary coordinates and runs an expensive
+  // PostGIS spatial query (`ST_DWithin` over a user-supplied LINESTRING).
+  // Keep this one behind AuthGuard so we don't expose unbounded
+  // geospatial compute to anonymous traffic — the read at `GET /passes`
+  // is enough for the planner's first-paint use case.
   @Post('check-route')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({
     summary: 'Check which mountain passes a planned route crosses',
     description:
