@@ -14,6 +14,7 @@ import {
 import {
   createRegionDrawControl,
   type RegionDrawControl,
+  type RegionDrawMode,
 } from "@/components/map/RegionDrawControl";
 import { useDiscoverStore } from "./useDiscoverStore";
 import { Square, X } from "lucide-react";
@@ -34,7 +35,7 @@ export function DiscoverMap({
   const handleRef = useRef<MapCanvasHandle>(null);
   const drawRef = useRef<RegionDrawControl | null>(null);
   const [ready, setReady] = useState(false);
-  const [drawMode, setDrawMode] = useState<"idle" | "drawing">("idle");
+  const [drawMode, setDrawMode] = useState<RegionDrawMode>("idle");
   const prevRequestKeyRef = useRef<string | null>(null);
   // Bumps every time the fun-zones source data changes so the zone-fit
   // effect can retry after a deep-linked `?zone=<id>` when the data
@@ -74,26 +75,35 @@ export function DiscoverMap({
     installFunZoneLayer(map);
     drawRef.current = createRegionDrawControl(map, {
       onRegionDrawn: (bbox) => setDrawnBbox(bbox),
+      onRegionCleared: () => clearDrawnBbox(),
       onModeChange: setDrawMode,
     });
+    // Skip fun-zone hover styling and selection during draw/edit so
+    // the region tool's resize/move cursors and click semantics are
+    // not clobbered by an underlying zone the rectangle overlaps.
     const pointerOn = () => {
+      if (drawRef.current?.getMode() !== "idle") return;
       map.getCanvas().style.cursor = "pointer";
     };
     const pointerOff = () => {
-      if (drawRef.current?.getMode() === "drawing") return;
+      if (drawRef.current?.getMode() !== "idle") return;
       map.getCanvas().style.cursor = "";
     };
     map.on("mouseenter", FUN_ZONES_FILL, pointerOn);
     map.on("mouseleave", FUN_ZONES_FILL, pointerOff);
     map.on("click", FUN_ZONES_FILL, (e: MapLayerMouseEvent) => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      if (drawRef.current?.hitTest(e.point)) return;
       const feature = e.features?.[0];
       const id = feature?.properties?.id as string | undefined;
       if (!id) return;
       setSelectedZoneId(id);
     });
-    // Click on bare map (no zone) → clear selection, unless user is drawing.
+    // Click on bare map (no zone) → clear selection, unless user is
+    // drawing or editing the bbox region.
     map.on("click", (e) => {
-      if (drawRef.current?.getMode() === "drawing") return;
+      if (drawRef.current?.getMode() !== "idle") return;
+      if (drawRef.current?.hitTest(e.point)) return;
       const features = map.queryRenderedFeatures(e.point, {
         layers: [FUN_ZONES_FILL],
       });
@@ -231,16 +241,7 @@ export function DiscoverMap({
     >
       {/* Draw controls overlay (absolute-positioned inside MapCanvas's wrapper) */}
       <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
-        {drawMode === "idle" ? (
-          <button
-            type="button"
-            onClick={() => drawRef.current?.start()}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900/90 border border-slate-700 text-slate-100 text-sm hover:bg-slate-800 transition"
-          >
-            <Square size={14} />
-            {t("Draw region ")}
-          </button>
-        ) : (
+        {drawMode === "drawing" ? (
           <button
             type="button"
             onClick={() => drawRef.current?.cancel()}
@@ -249,14 +250,20 @@ export function DiscoverMap({
             <X size={14} />
             {t("Cancel drawing ")}
           </button>
-        )}
-        {drawnBbox && drawMode === "idle" ? (
+        ) : (
           <button
             type="button"
-            onClick={() => {
-              drawRef.current?.clearDrawn();
-              clearDrawnBbox();
-            }}
+            onClick={() => drawRef.current?.start()}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900/90 border border-slate-700 text-slate-100 text-sm hover:bg-slate-800 transition"
+          >
+            <Square size={14} />
+            {drawnBbox ? t("Redraw region ") : t("Draw region ")}
+          </button>
+        )}
+        {drawnBbox && drawMode !== "drawing" ? (
+          <button
+            type="button"
+            onClick={() => drawRef.current?.clearDrawn()}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900/90 border border-slate-700 text-slate-300 text-sm hover:bg-slate-800 transition"
           >
             <X size={12} />
