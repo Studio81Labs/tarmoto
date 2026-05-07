@@ -184,8 +184,8 @@ export default function RideDetailPage() {
           <div className="flex-1 min-w-0">
             <h1 className="text-2xl font-bold truncate">{rideName}</h1>
             <p className="text-sm text-slate-400 mt-0.5">
-              {new Date(ride.started_at).toLocaleString()} · {rideTypeLabel}{" "}
-              {t("ride ")}
+              {new Date(ride.started_at).toLocaleString()} ·{" "}
+              {t("{rideType} ride", { rideType: rideTypeLabel })}
             </p>
           </div>
           <button

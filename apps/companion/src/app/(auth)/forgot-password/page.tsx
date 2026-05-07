@@ -27,9 +27,10 @@ export default function ForgotPasswordPage() {
         </div>
         <h2 className="text-2xl font-bold mb-2">{t("Check your email")}</h2>
         <p className="text-slate-400 mb-8">
-          {t("If an account exists for ")}
-          {email}
-          {t(", we've sent a password reset link. ")}
+          {t(
+            "If an account exists for {email}, we've sent a password reset link.",
+            { email },
+          )}
         </p>
         <Link
           href="/login"
@@ -67,7 +68,7 @@ export default function ForgotPasswordPage() {
           disabled={loading}
           className="w-full py-2.5 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold hover:bg-tarmoto-cyan-light disabled:opacity-50 transition"
         >
-          {loading ? "Sending..." : "Send reset link"}
+          {loading ? t("Sending...") : t("Send reset link")}
         </button>
       </form>
 

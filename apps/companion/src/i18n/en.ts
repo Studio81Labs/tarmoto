@@ -2,11 +2,8 @@ export const en = {
   " image URL from your CDN, photo host, or social profile. ":
     " image URL from your CDN, photo host, or social profile. ",
   "% explored ": "% explored ",
-  "'s": "'s",
   "(optional)": "(optional)",
   "+ Add day ": "+ Add day ",
-  ", we've sent a password reset link. ":
-    ", we've sent a password reset link. ",
   "-only perks switch off after the current cycle ends. ":
     "-only perks switch off after the current cycle ends. ",
   ". Click the map to begin the route. ":
@@ -303,7 +300,8 @@ export const en = {
     "How long your raw GPS traces are kept. Aggregate road-quality contributions (not linked to your account) remain indefinitely. ",
   "How newly recorded rides are shared. You can always change visibility per ride. ":
     "How newly recorded rides are shared. You can always change visibility per ride. ",
-  "If an account exists for ": "If an account exists for ",
+  "If an account exists for {email}, we've sent a password reset link.":
+    "If an account exists for {email}, we've sent a password reset link.",
   "If timing is the issue, downgrading keeps your ride history and billing continuity intact. ":
     "If timing is the issue, downgrading keeps your ride history and billing continuity intact. ",
   "Import GPX ": "Import GPX ",
@@ -634,6 +632,8 @@ export const en = {
   Segments: "Segments",
   "Segments ": "Segments ",
   "Select review photos": "Select review photos",
+  "Send reset link": "Send reset link",
+  "Sending...": "Sending...",
   "Set active ": "Set active ",
   Settings: "Settings",
   "Settings ": "Settings ",
@@ -851,7 +851,6 @@ export const en = {
   region: "region",
   repair: "repair",
   "ridden ": "ridden ",
-  "ride ": "ride ",
   "ride \u00b7": "ride \u00b7",
   "rider@example.com": "rider@example.com",
   riders: "riders",
@@ -886,6 +885,8 @@ export const en = {
   "{distance} ridden": "{distance} ridden",
   "{label} no longer available": "{label} no longer available",
   "{percent}% explored": "{percent}% explored",
+  "{riderName}'s {rideType} ride": "{riderName}'s {rideType} ride",
+  "{rideType} ride": "{rideType} ride",
   "Found 1 collection saved on this device. Move it to your Tarmoto account so it syncs across devices and survives clearing browser storage. ":
     "Found 1 collection saved on this device. Move it to your Tarmoto account so it syncs across devices and survives clearing browser storage. ",
   "Found {count} collections saved on this device. Move them to your Tarmoto account so they sync across devices and survive clearing browser storage. ":

@@ -59,9 +59,10 @@ export default async function SharedRidePage({
           {t("Public route share ")}
         </p>
         <h1 className="mt-3 text-3xl font-bold tracking-tight">
-          {ride.rider_name}
-          {t("'s")} {formatRideType(ride.ride_type).toLowerCase()}
-          {t("ride ")}
+          {t("{riderName}'s {rideType} ride", {
+            riderName: ride.rider_name,
+            rideType: formatRideType(ride.ride_type).toLowerCase(),
+          })}
         </h1>
         <p className="mt-3 max-w-3xl text-slate-300">
           {t(
