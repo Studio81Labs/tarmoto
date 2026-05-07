@@ -1,6 +1,7 @@
-import type { Trip } from "@/lib/types";
+import type { RoutePreviewSegment, Trip } from "@/lib/types";
 import {
   buildTripPlannerRouteCollection,
+  buildTripPlannerSegmentHighlightCollection,
   buildTripPlannerWaypointCollection,
   getTripPlannerBounds,
 } from "../trip-planner-map";
@@ -247,6 +248,271 @@ describe("buildTripPlannerWaypointCollection", () => {
     );
 
     expect(collection.features[0]?.properties.label).toBe("Waypoint");
+  });
+});
+
+describe("buildTripPlannerSegmentHighlightCollection", () => {
+  function segment(
+    overrides: Partial<RoutePreviewSegment>,
+  ): RoutePreviewSegment {
+    return {
+      id: "seg-default",
+      name: "Segment",
+      dayNumber: 2,
+      orderInDay: 0,
+      distanceKm: 10,
+      qualityScore: 4,
+      qualityTier: "good",
+      surfaceType: "asphalt",
+      curvinessScore: 50,
+      elevationProfile: [],
+      photos: [],
+      activeHazards: [],
+      ...overrides,
+    };
+  }
+
+  // Five vertices stepping due east along the equator: each leg has the
+  // same haversine length, so a 50/50 segment split lands exactly on the
+  // middle vertex and the assertions stay independent of haversine drift.
+  function evenlySpacedTrip(): Trip {
+    return trip({
+      days: [
+        {
+          dayNumber: 1,
+          title: "Empty day",
+          distanceKm: 0,
+          durationMinutes: 0,
+          elevationGain: 0,
+          avgQuality: 0,
+          waypoints: [],
+          segments: [],
+        },
+        {
+          dayNumber: 2,
+          title: "Day two",
+          distanceKm: 12,
+          durationMinutes: 30,
+          elevationGain: 90,
+          avgQuality: 4,
+          routeGeometry: {
+            type: "LineString",
+            coordinates: [
+              [0, 0],
+              [1, 0],
+              [2, 0],
+              [3, 0],
+              [4, 0],
+            ],
+          },
+          waypoints: [
+            {
+              id: "start-2",
+              name: "Start",
+              location: { lng: 0, lat: 0 },
+              type: "start",
+            },
+            {
+              id: "end-2",
+              name: "End",
+              location: { lng: 4, lat: 0 },
+              type: "end",
+            },
+          ],
+          segments: [
+            segment({ id: "seg-2-1", orderInDay: 0, distanceKm: 6 }),
+            segment({ id: "seg-2-2", orderInDay: 1, distanceKm: 6 }),
+          ],
+        },
+      ],
+    });
+  }
+
+  it("returns an empty collection when no segment is focused", () => {
+    expect(
+      buildTripPlannerSegmentHighlightCollection(evenlySpacedTrip(), null)
+        .features,
+    ).toEqual([]);
+  });
+
+  it("returns an empty collection when the trip is null", () => {
+    expect(
+      buildTripPlannerSegmentHighlightCollection(null, "seg-2-1").features,
+    ).toEqual([]);
+  });
+
+  it("returns an empty collection for an unknown segment id", () => {
+    expect(
+      buildTripPlannerSegmentHighlightCollection(
+        evenlySpacedTrip(),
+        "seg-missing",
+      ).features,
+    ).toEqual([]);
+  });
+
+  it("slices the day route into the chunk for the first segment", () => {
+    const collection = buildTripPlannerSegmentHighlightCollection(
+      evenlySpacedTrip(),
+      "seg-2-1",
+    );
+
+    expect(collection.features).toHaveLength(1);
+    expect(collection.features[0]?.properties).toEqual({
+      segmentId: "seg-2-1",
+      dayNumber: 2,
+      orderInDay: 0,
+    });
+    expect(collection.features[0]?.geometry.coordinates).toEqual([
+      [0, 0],
+      [1, 0],
+      [2, 0],
+    ]);
+  });
+
+  it("slices the day route into the chunk for the last segment", () => {
+    const collection = buildTripPlannerSegmentHighlightCollection(
+      evenlySpacedTrip(),
+      "seg-2-2",
+    );
+
+    expect(collection.features[0]?.geometry.coordinates).toEqual([
+      [2, 0],
+      [3, 0],
+      [4, 0],
+    ]);
+  });
+
+  it("uses cumulative distance when polyline vertices are unevenly spaced", () => {
+    // The first three legs are ~111 km each; the last leg jumps ~890 km.
+    // An index-based midpoint would land at coords[2] (~22% of the
+    // total km), highlighting the wrong stretch. The distance-based
+    // slice should instead reach into the long final leg.
+    const unevenTrip = trip({
+      days: [
+        {
+          dayNumber: 1,
+          title: "Uneven",
+          distanceKm: 1110,
+          durationMinutes: 600,
+          elevationGain: 0,
+          avgQuality: 4,
+          routeGeometry: {
+            type: "LineString",
+            coordinates: [
+              [0, 0],
+              [1, 0],
+              [2, 0],
+              [10, 0],
+            ],
+          },
+          waypoints: [
+            { id: "start", location: { lng: 0, lat: 0 }, type: "start" },
+            { id: "end", location: { lng: 10, lat: 0 }, type: "end" },
+          ],
+          segments: [
+            segment({
+              id: "uneven-a",
+              dayNumber: 1,
+              orderInDay: 0,
+              distanceKm: 555,
+            }),
+            segment({
+              id: "uneven-b",
+              dayNumber: 1,
+              orderInDay: 1,
+              distanceKm: 555,
+            }),
+          ],
+        },
+      ],
+    });
+
+    const collection = buildTripPlannerSegmentHighlightCollection(
+      unevenTrip,
+      "uneven-a",
+    );
+    const coords = collection.features[0]?.geometry.coordinates ?? [];
+
+    expect(coords[0]).toEqual([0, 0]);
+    expect(coords).toContainEqual([1, 0]);
+    expect(coords).toContainEqual([2, 0]);
+    // The slice's terminal point sits well past coords[2]; with even legs
+    // along the equator a 50% distance split lands near lng 5.
+    const last = coords[coords.length - 1]!;
+    expect(last[0]).toBeGreaterThan(4);
+    expect(last[0]).toBeLessThan(6);
+    expect(last[1]).toBeCloseTo(0, 9);
+  });
+
+  it("falls back to even fractions when segments lack a usable distance", () => {
+    const noDistanceTrip = trip({
+      days: [
+        {
+          dayNumber: 1,
+          title: "No distance",
+          distanceKm: 0,
+          durationMinutes: 0,
+          elevationGain: 0,
+          avgQuality: 0,
+          routeGeometry: {
+            type: "LineString",
+            coordinates: [
+              [0, 0],
+              [1, 0],
+              [2, 0],
+              [3, 0],
+              [4, 0],
+            ],
+          },
+          waypoints: [
+            { id: "s", location: { lng: 0, lat: 0 }, type: "start" },
+            { id: "e", location: { lng: 4, lat: 0 }, type: "end" },
+          ],
+          segments: [
+            segment({ id: "fb-1", dayNumber: 1, orderInDay: 0, distanceKm: 0 }),
+            segment({ id: "fb-2", dayNumber: 1, orderInDay: 1, distanceKm: 0 }),
+          ],
+        },
+      ],
+    });
+
+    const collection = buildTripPlannerSegmentHighlightCollection(
+      noDistanceTrip,
+      "fb-2",
+    );
+
+    expect(collection.features[0]?.geometry.coordinates).toEqual([
+      [2, 0],
+      [3, 0],
+      [4, 0],
+    ]);
+  });
+
+  it("falls back to the day waypoints line when route geometry is missing", () => {
+    const trip = evenlySpacedTrip();
+    const day = trip.days[1]!;
+    delete (day as { routeGeometry?: unknown }).routeGeometry;
+
+    const collection = buildTripPlannerSegmentHighlightCollection(
+      trip,
+      "seg-2-1",
+    );
+
+    expect(collection.features).toHaveLength(1);
+    // With only two waypoints (start and end), the highlight degrades to a
+    // half-of-the-straight-line slice — better than no feedback at all.
+    const coords = collection.features[0]!.geometry.coordinates;
+    expect(coords[0]).toEqual([0, 0]);
+    expect(coords[coords.length - 1]![0]).toBeCloseTo(2, 9);
+    expect(coords[coords.length - 1]![1]).toBeCloseTo(0, 9);
+  });
+
+  it("ignores days that have no segments", () => {
+    const collection = buildTripPlannerSegmentHighlightCollection(
+      evenlySpacedTrip(),
+      "seg-1-anything",
+    );
+    expect(collection.features).toEqual([]);
   });
 });
 

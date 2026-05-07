@@ -12,6 +12,7 @@ import { createRegionDrawControl } from "@/components/map/RegionDrawControl";
 import { useClosures } from "@/hooks/useClosures";
 import { usePasses } from "@/hooks/usePasses";
 import { buildTripClosureRoutes } from "@/lib/closures-summary";
+import { useTripStore } from "@/stores/trip";
 
 const mockMap = {
   addSource: vi.fn(),
@@ -625,6 +626,125 @@ describe("TripPlannerMap", () => {
     expect(
       screen.queryByText("No route closures or pass warnings for this month."),
     ).not.toBeInTheDocument();
+  });
+
+  it("registers the segment-highlight source and renders nothing when no segment is focused", () => {
+    useTripStore.setState({
+      activeTrip: null,
+      focusedSegmentId: null,
+      hoveredSegmentId: null,
+      undoStack: [],
+      redoStack: [],
+      canUndo: false,
+      canRedo: false,
+    });
+
+    render(<TripPlannerMap trip={trip()} month={7} />);
+
+    const highlightCalls = mockMap.addSource.mock.calls.filter(
+      ([sourceId]) => sourceId === "trip-planner-segment-highlight",
+    );
+    expect(highlightCalls.length).toBeGreaterThan(0);
+    const lastData = highlightCalls.at(-1)?.[1] as {
+      data: { features: unknown[] };
+    };
+    expect(lastData.data.features).toEqual([]);
+
+    expect(mockMap.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "trip-planner-segment-highlight-glow",
+        source: "trip-planner-segment-highlight",
+        type: "line",
+      }),
+    );
+    expect(mockMap.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "trip-planner-segment-highlight-line",
+        source: "trip-planner-segment-highlight",
+        type: "line",
+      }),
+    );
+  });
+
+  it("publishes the focused segment's geometry as a highlight feature", async () => {
+    useTripStore.setState({
+      activeTrip: null,
+      focusedSegmentId: null,
+      hoveredSegmentId: null,
+      undoStack: [],
+      redoStack: [],
+      canUndo: false,
+      canRedo: false,
+    });
+
+    const tripWithSegments: Trip = {
+      ...trip(),
+      days: [
+        {
+          ...trip().days[0]!,
+          segments: [
+            {
+              id: "seg-1",
+              dayNumber: 1,
+              orderInDay: 0,
+              distanceKm: 6,
+              qualityScore: 4,
+              qualityTier: "good",
+              surfaceType: "asphalt",
+              curvinessScore: 50,
+              elevationProfile: [],
+              photos: [],
+              activeHazards: [],
+            },
+            {
+              id: "seg-2",
+              dayNumber: 1,
+              orderInDay: 1,
+              distanceKm: 6,
+              qualityScore: 4.2,
+              qualityTier: "good",
+              surfaceType: "asphalt",
+              curvinessScore: 60,
+              elevationProfile: [],
+              photos: [],
+              activeHazards: [],
+            },
+          ],
+        },
+      ],
+    };
+
+    render(<TripPlannerMap trip={tripWithSegments} month={7} />);
+
+    act(() => {
+      useTripStore.getState().focusSegment("seg-2");
+    });
+
+    await waitFor(() => {
+      const highlightCalls = mockMap.addSource.mock.calls.filter(
+        ([sourceId]) => sourceId === "trip-planner-segment-highlight",
+      );
+      const lastData = highlightCalls.at(-1)?.[1] as {
+        data: { features: Array<{ properties: { segmentId: string } }> };
+      };
+      expect(lastData.data.features).toHaveLength(1);
+      expect(lastData.data.features[0]?.properties.segmentId).toBe("seg-2");
+    });
+
+    // Clearing the focus drops the highlight feature.
+    act(() => {
+      useTripStore.getState().focusSegment(null);
+    });
+
+    await waitFor(() => {
+      const highlightCalls = mockMap.addSource.mock.calls.filter(
+        ([sourceId]) => sourceId === "trip-planner-segment-highlight",
+      );
+      const lastData = highlightCalls.at(-1)?.[1] as {
+        data: { features: unknown[] };
+      };
+      expect(lastData.data.features).toEqual([]);
+    });
   });
 
   it("reuses parent-loaded conditions without refetching route data", () => {
