@@ -508,22 +508,31 @@ function TripPlannerMapContent({
       waypointId: string;
       startX: number;
       startY: number;
+      moved: boolean;
     } | null = null;
 
     const setCursor = (cursor: string) => {
       canvas.style.cursor = cursor;
     };
 
-    const releaseSwallowOnceMoved = (point: { x: number; y: number }) => {
-      if (!active || !swallowNextClickRef.current) return;
+    // Returns true once the gesture has travelled past the click
+    // tolerance (sticky — once moved, stays moved). Used both to disarm
+    // the swallow flag and to decide whether `finishDrag` should commit.
+    const noteIfPastTolerance = (point: { x: number; y: number }): boolean => {
+      if (!active) return false;
+      if (active.moved) return true;
       const dx = point.x - active.startX;
       const dy = point.y - active.startY;
       if (dx * dx + dy * dy > CLICK_TOLERANCE_PX * CLICK_TOLERANCE_PX) {
+        active.moved = true;
         // Pointer travelled far enough that MapLibre will not emit a
-        // synthetic `click` for this gesture, so disarm the flag — leaving
-        // it true would swallow the rider's next legitimate map click.
+        // synthetic `click` for this gesture, so disarm the swallow
+        // flag — leaving it true would silently eat the rider's next
+        // legitimate map click.
         swallowNextClickRef.current = false;
+        return true;
       }
+      return false;
     };
 
     const handleEnter = () => {
@@ -536,12 +545,12 @@ function TripPlannerMapContent({
       if (!active) return;
       event.preventDefault();
       setCursor("grabbing");
-      releaseSwallowOnceMoved(event.point);
+      noteIfPastTolerance(event.point);
     };
     const handleTouchMove = (event: MapTouchEvent) => {
       if (!active) return;
       event.preventDefault();
-      releaseSwallowOnceMoved(event.point);
+      noteIfPastTolerance(event.point);
     };
     const finishDrag = (
       lngLat: { lng: number; lat: number },
@@ -551,18 +560,24 @@ function TripPlannerMapContent({
       },
     ) => {
       if (!active) return;
-      // If the gesture became a real drag, MapLibre will not emit a
-      // post-pointer `click` — make sure we never carry the swallow flag
-      // into a future map click that the rider actually intends.
-      if (point) releaseSwallowOnceMoved(point);
+      // Last chance to detect a real drag — touch backends sometimes
+      // fire only `touchstart` + `touchend` without an interim move.
+      if (point) noteIfPastTolerance(point);
+      const drag = active;
+      active = null;
+      setCursor("");
+      // Tap-without-drag: the layer hit can land anywhere inside the
+      // marker circle, so committing the mouseup `lngLat` would
+      // silently shift the waypoint by a few pixels. Bail out and let
+      // `swallowNextClickRef` swallow the synthetic click so the tap is
+      // a true no-op.
+      if (!drag.moved) return;
       const snapped = point ? snapPointerToRoad(map, point, lngLat) : null;
       const target = snapped ?? {
         lng: roundCoordinate(lngLat.lng),
         lat: roundCoordinate(lngLat.lat),
       };
-      onMoveWaypointRef.current?.(active.dayNumber, active.waypointId, target);
-      active = null;
-      setCursor("");
+      onMoveWaypointRef.current?.(drag.dayNumber, drag.waypointId, target);
       // The `move`/`touchmove` listeners are kept registered: their
       // `if (!active) return` guard makes them no-ops between drags,
       // and a no-op drop (same coords) does not re-render so this
@@ -597,12 +612,13 @@ function TripPlannerMapContent({
         waypointId: props.waypointId,
         startX: event.point.x,
         startY: event.point.y,
+        moved: false,
       };
       // Even with `preventDefault()` here, MapLibre still fires a `click`
       // when the pointer never moves beyond `clickTolerance` (see its
       // `map_events.test`). Flag the upcoming click so `handleMapClick`
       // ignores it instead of treating the drop as a fresh map click.
-      // The flag is cleared by `releaseSwallowOnceMoved` as soon as the
+      // The flag is cleared by `noteIfPastTolerance` as soon as the
       // gesture exceeds clickTolerance, so a real drag does not swallow
       // the rider's next legitimate map click.
       swallowNextClickRef.current = true;

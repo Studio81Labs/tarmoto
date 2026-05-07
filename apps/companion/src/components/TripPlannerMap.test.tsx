@@ -848,13 +848,19 @@ describe("TripPlannerMap", () => {
       <TripPlannerMap trip={trip()} month={7} onMoveWaypoint={firstMove} />,
     );
 
-    // Begin a drag with the first callback installed.
+    // Begin a real drag (past click tolerance) with the first callback
+    // installed.
     act(() => {
       layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
         preventDefault: vi.fn(),
         features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
         point: { x: 100, y: 100 },
         lngLat: { lng: 14.41, lat: 50.08 },
+      });
+      mapHandlers.get("mousemove")?.({
+        preventDefault: vi.fn(),
+        point: { x: 200, y: 160 },
+        lngLat: { lng: 14.48, lat: 50.12 },
       });
     });
 
@@ -1116,12 +1122,20 @@ describe("TripPlannerMap", () => {
     expect(mapHandlers.has("mousemove")).toBe(true);
     expect(mapHandlers.has("touchmove")).toBe(true);
 
+    // Real drag past tolerance that returns to the original location —
+    // exercises the no-op-store-update path so we can verify the
+    // listeners stay attached even when React does not re-render.
     act(() => {
       layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
         preventDefault: vi.fn(),
         features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
         point: { x: 100, y: 100 },
         lngLat: { lng: 14.41, lat: 50.08 },
+      });
+      mapHandlers.get("mousemove")?.({
+        preventDefault: vi.fn(),
+        point: { x: 220, y: 180 },
+        lngLat: { lng: 14.5, lat: 50.13 },
       });
       mapHandlers.get("mouseup")?.({
         point: { x: 100, y: 100 },
@@ -1159,6 +1173,68 @@ describe("TripPlannerMap", () => {
       });
     });
     expect(preventDefault).toHaveBeenCalled();
+  });
+
+  it("treats a tap on a waypoint without movement as a no-op", () => {
+    const handleAddWaypoint = vi.fn();
+    const handleMoveWaypoint = vi.fn();
+    const layerHandlers = new Map<string, (event: unknown) => void>();
+    const mapHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation(
+      (event: string, layerOrHandler: unknown, maybeHandler?: unknown) => {
+        if (typeof layerOrHandler === "string") {
+          layerHandlers.set(
+            `${event}:${layerOrHandler}`,
+            maybeHandler as (event: unknown) => void,
+          );
+        } else {
+          mapHandlers.set(event, layerOrHandler as (event: unknown) => void);
+        }
+        return mockMap;
+      },
+    );
+    mockMap.off.mockImplementation((event: string, layerOrHandler: unknown) => {
+      if (typeof layerOrHandler === "string") {
+        layerHandlers.delete(`${event}:${layerOrHandler}`);
+      } else {
+        mapHandlers.delete(event);
+      }
+      return mockMap;
+    });
+    mockMap.queryRenderedFeatures.mockReturnValue([]);
+
+    render(
+      <TripPlannerMap
+        trip={trip()}
+        month={7}
+        onAddWaypoint={handleAddWaypoint}
+        onMoveWaypoint={handleMoveWaypoint}
+      />,
+    );
+
+    // Tap inside the waypoint circle but slightly off centre — the
+    // mouseup `lngLat` differs from the marker's stored location, so
+    // committing it would silently nudge the waypoint by a few pixels.
+    act(() => {
+      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+        preventDefault: vi.fn(),
+        features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
+        point: { x: 100, y: 100 },
+        lngLat: { lng: 14.41, lat: 50.08 },
+      });
+      mapHandlers.get("mouseup")?.({
+        point: { x: 102, y: 101 },
+        lngLat: { lng: 14.412, lat: 50.082 },
+        preventDefault: vi.fn(),
+      });
+      mapHandlers.get("click")?.({
+        point: { x: 102, y: 101 },
+        lngLat: { lng: 14.412, lat: 50.082 },
+      });
+    });
+
+    expect(handleMoveWaypoint).not.toHaveBeenCalled();
+    expect(handleAddWaypoint).not.toHaveBeenCalled();
   });
 
   it("snaps a dropped waypoint to a nearby road when one is visible", () => {
