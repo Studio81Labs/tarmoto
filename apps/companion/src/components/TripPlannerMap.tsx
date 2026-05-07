@@ -1,7 +1,12 @@
 "use client";
 import { t } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
+import type {
+  GeoJSONSource,
+  Map as MapLibreMap,
+  MapMouseEvent,
+  MapTouchEvent,
+} from "maplibre-gl";
 import {
   AlertTriangle,
   Layers3,
@@ -71,6 +76,16 @@ interface TripPlannerMapProps {
   closuresData?: ClosuresQueryResult;
   passesData?: PassesQueryResult;
   onAddWaypoint?: (location: { lng: number; lat: number }) => void;
+  /**
+   * Called when a rider finishes dragging an existing waypoint marker.
+   * `dayNumber` identifies which trip day owns the waypoint (1-indexed).
+   * Pass undefined to keep waypoints non-draggable.
+   */
+  onMoveWaypoint?: (
+    dayNumber: number,
+    waypointId: string,
+    location: { lng: number; lat: number },
+  ) => void;
   selectedDayNumber?: number;
   /** Live cursors from other collaborators keyed by user id. */
   collaboratorCursors?: Map<string, CollaboratorCursor>;
@@ -93,6 +108,7 @@ export function TripPlannerMap({
   closuresData,
   passesData,
   onAddWaypoint,
+  onMoveWaypoint,
   selectedDayNumber,
   collaboratorCursors,
   suggestions,
@@ -106,6 +122,7 @@ export function TripPlannerMap({
         closuresData={closuresData}
         passesData={passesData}
         onAddWaypoint={onAddWaypoint}
+        onMoveWaypoint={onMoveWaypoint}
         selectedDayNumber={selectedDayNumber}
         collaboratorCursors={collaboratorCursors}
         suggestions={suggestions}
@@ -118,6 +135,7 @@ export function TripPlannerMap({
       trip={trip}
       month={month}
       onAddWaypoint={onAddWaypoint}
+      onMoveWaypoint={onMoveWaypoint}
       selectedDayNumber={selectedDayNumber}
       collaboratorCursors={collaboratorCursors}
       suggestions={suggestions}
@@ -129,6 +147,7 @@ function FetchedTripPlannerMap({
   trip,
   month,
   onAddWaypoint,
+  onMoveWaypoint,
   selectedDayNumber,
   collaboratorCursors,
   suggestions,
@@ -137,6 +156,11 @@ function FetchedTripPlannerMap({
   trip: Trip | null;
   month: number;
   onAddWaypoint?: (location: { lng: number; lat: number }) => void;
+  onMoveWaypoint?: (
+    dayNumber: number,
+    waypointId: string,
+    location: { lng: number; lat: number },
+  ) => void;
   selectedDayNumber?: number;
   collaboratorCursors?: Map<string, CollaboratorCursor>;
   suggestions?: TripSuggestion[];
@@ -152,6 +176,7 @@ function FetchedTripPlannerMap({
       closuresData={closuresData}
       passesData={passesData}
       onAddWaypoint={onAddWaypoint}
+      onMoveWaypoint={onMoveWaypoint}
       selectedDayNumber={selectedDayNumber}
       collaboratorCursors={collaboratorCursors}
       suggestions={suggestions}
@@ -165,6 +190,7 @@ function TripPlannerMapContent({
   closuresData,
   passesData,
   onAddWaypoint,
+  onMoveWaypoint,
   selectedDayNumber,
   collaboratorCursors,
   suggestions,
@@ -175,6 +201,11 @@ function TripPlannerMapContent({
   closuresData: ClosuresQueryResult;
   passesData: PassesQueryResult;
   onAddWaypoint?: (location: { lng: number; lat: number }) => void;
+  onMoveWaypoint?: (
+    dayNumber: number,
+    waypointId: string,
+    location: { lng: number; lat: number },
+  ) => void;
   selectedDayNumber?: number;
   collaboratorCursors?: Map<string, CollaboratorCursor>;
   suggestions?: TripSuggestion[];
@@ -183,6 +214,21 @@ function TripPlannerMapContent({
   const handleRef = useRef<MapCanvasHandle>(null);
   const drawRef = useRef<RegionDrawControl | null>(null);
   const fittedBoundsKeyRef = useRef<string | null>(null);
+  // Set true on `mousedown`/`touchstart` over a waypoint so the synthetic
+  // `click` MapLibre fires for tap-without-drag (the pointer never moved
+  // beyond `clickTolerance`) is swallowed by `handleMapClick` instead of
+  // appending a duplicate waypoint at the same spot.
+  const swallowNextClickRef = useRef(false);
+  // Bounce `onMoveWaypoint` through a ref so a fresh callback identity
+  // on every parent render (the planner page passes an inline arrow,
+  // and live collab cursor/suggestion updates re-render mid-drag) does
+  // not retrigger the drag effect and discard the in-flight `active`
+  // state — that bug would silently drop the rider's drop.
+  const onMoveWaypointRef = useRef(onMoveWaypoint);
+  useEffect(() => {
+    onMoveWaypointRef.current = onMoveWaypoint;
+  }, [onMoveWaypoint]);
+  const dragEnabled = onMoveWaypoint != null;
   const [ready, setReady] = useState(false);
   const [showQuality, setShowQuality] = useState(true);
   const [showSurface, setShowSurface] = useState(false);
@@ -311,40 +357,21 @@ function TripPlannerMapContent({
       };
     }) => {
       if (!onAddWaypoint || drawMode !== "idle") return;
+      // A tap-without-drag on a waypoint still fires a synthetic `click`
+      // even after we `preventDefault()` on `mousedown`; without this
+      // gate the planner would append a brand-new waypoint at the
+      // existing one's position on every short tap.
+      if (swallowNextClickRef.current) {
+        swallowNextClickRef.current = false;
+        return;
+      }
       const map = handleRef.current?.map;
       if (!map) return;
       // Skip waypoint adds when the click landed on the drawn region or
       // its edit handles — those clicks belong to the region tool.
       if (drawRef.current?.hitTest(event.point)) return;
-      const features: RoadSnapFeature[] = map
-        .queryRenderedFeatures(
-          [
-            [event.point.x - 12, event.point.y - 12],
-            [event.point.x + 12, event.point.y + 12],
-          ],
-          {
-            layers: ["tarmoto-quality", "tarmoto-surface"],
-          },
-        )
-        .map((feature) => ({
-          geometry:
-            feature.geometry.type === "LineString" ||
-            feature.geometry.type === "MultiLineString"
-              ? feature.geometry
-              : null,
-          properties: {
-            quality_score: feature.properties?.quality_score,
-          },
-        }));
-      const snapped = snapWaypointToRoadFeatures(
-        {
-          lng: event.lngLat.lng,
-          lat: event.lngLat.lat,
-        },
-        features,
-      );
       onAddWaypoint(
-        snapped ?? {
+        snapPointerToRoad(map, event.point, event.lngLat) ?? {
           lng: roundCoordinate(event.lngLat.lng),
           lat: roundCoordinate(event.lngLat.lat),
         },
@@ -461,6 +488,219 @@ function TripPlannerMapContent({
       map.off("click", handleMapClick);
     };
   }, [handleMapClick, onAddWaypoint, ready]);
+  // ── Waypoint dragging (#471) ──
+  // MapLibre treats every gesture on the canvas as a pan unless we
+  // intercept the pointer-down on the waypoint layer with
+  // `e.preventDefault()`. Without that intercept, "drag a waypoint"
+  // landed as a map pan and the marker stayed put.
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready || !dragEnabled || drawMode !== "idle") return;
+
+    const canvas = map.getCanvas();
+    // Match MapLibre's `clickTolerance` exactly: it suppresses the
+    // synthetic post-pointer `click` once total movement is `> 3 px`,
+    // so we must clear the swallow flag (and mark the drag committed)
+    // at the same boundary. A higher value left a gap where MapLibre
+    // suppressed the click but we still treated the gesture as a tap,
+    // swallowing the rider's next legitimate map click. MapCanvas
+    // constructs the map without overriding `clickTolerance`, so the
+    // default of 3 is in effect — keep this in sync if that changes.
+    const CLICK_TOLERANCE_PX = 3;
+    let active: {
+      dayNumber: number;
+      waypointId: string;
+      startX: number;
+      startY: number;
+      moved: boolean;
+    } | null = null;
+
+    const setCursor = (cursor: string) => {
+      canvas.style.cursor = cursor;
+    };
+
+    // Returns true once the gesture has travelled past the click
+    // tolerance (sticky — once moved, stays moved). Used both to disarm
+    // the swallow flag and to decide whether `finishDrag` should commit.
+    const noteIfPastTolerance = (point: { x: number; y: number }): boolean => {
+      if (!active) return false;
+      if (active.moved) return true;
+      const dx = point.x - active.startX;
+      const dy = point.y - active.startY;
+      if (dx * dx + dy * dy > CLICK_TOLERANCE_PX * CLICK_TOLERANCE_PX) {
+        active.moved = true;
+        // Pointer travelled far enough that MapLibre will not emit a
+        // synthetic `click` for this gesture, so disarm the swallow
+        // flag — leaving it true would silently eat the rider's next
+        // legitimate map click.
+        swallowNextClickRef.current = false;
+        return true;
+      }
+      return false;
+    };
+
+    const handleEnter = () => {
+      if (!active) setCursor("move");
+    };
+    const handleLeave = () => {
+      if (!active) setCursor("");
+    };
+    const handleMouseMove = (event: MapMouseEvent) => {
+      if (!active) return;
+      event.preventDefault();
+      setCursor("grabbing");
+      noteIfPastTolerance(event.point);
+    };
+    const handleTouchMove = (event: MapTouchEvent) => {
+      if (!active) return;
+      event.preventDefault();
+      noteIfPastTolerance(event.point);
+    };
+    const cancelDrag = () => {
+      // Used when the gesture ends without a usable pointer position
+      // (e.g. `touchcancel`, or a `touchend` with no `changedTouches`):
+      // clear in-flight state so the cursor and listeners reset, but
+      // do not commit a move to a fallback location.
+      if (!active) return;
+      active = null;
+      setCursor("");
+      // A cancelled touch never produces the synthetic post-pointer
+      // `click` that would normally clear this flag — without this,
+      // the rider's next legitimate map click would be silently
+      // swallowed by `handleMapClick`.
+      swallowNextClickRef.current = false;
+    };
+    const finishDrag = (
+      lngLat: { lng: number; lat: number },
+      point?: {
+        x: number;
+        y: number;
+      },
+    ) => {
+      if (!active) return;
+      // Last chance to detect a real drag — touch backends sometimes
+      // fire only `touchstart` + `touchend` without an interim move.
+      if (point) noteIfPastTolerance(point);
+      const drag = active;
+      active = null;
+      setCursor("");
+      // Tap-without-drag: the layer hit can land anywhere inside the
+      // marker circle, so committing the mouseup `lngLat` would
+      // silently shift the waypoint by a few pixels. Bail out and let
+      // `swallowNextClickRef` swallow the synthetic click so the tap is
+      // a true no-op.
+      if (!drag.moved) return;
+      const snapped = point ? snapPointerToRoad(map, point, lngLat) : null;
+      const target = snapped ?? {
+        lng: roundCoordinate(lngLat.lng),
+        lat: roundCoordinate(lngLat.lat),
+      };
+      onMoveWaypointRef.current?.(drag.dayNumber, drag.waypointId, target);
+      // The `move`/`touchmove` listeners are kept registered: their
+      // `if (!active) return` guard makes them no-ops between drags,
+      // and a no-op drop (same coords) does not re-render so this
+      // effect does not re-run — detaching them here would silently
+      // strip preventDefault from every subsequent drag.
+    };
+    const handleMouseUp = (event: MapMouseEvent) => {
+      finishDrag(event.lngLat, event.point);
+    };
+    const handleTouchEnd = (event: MapTouchEvent) => {
+      finishDrag(event.lngLat, event.point);
+    };
+    const beginDrag = (event: MapMouseEvent | MapTouchEvent) => {
+      const features = (event as MapMouseEvent & { features?: unknown[] })
+        .features as
+        | Array<{
+            properties?: { dayNumber?: number; waypointId?: string };
+          }>
+        | undefined;
+      const feature = features?.[0];
+      const props = feature?.properties;
+      if (
+        !props ||
+        typeof props.waypointId !== "string" ||
+        typeof props.dayNumber !== "number"
+      ) {
+        return;
+      }
+      event.preventDefault();
+      active = {
+        dayNumber: props.dayNumber,
+        waypointId: props.waypointId,
+        startX: event.point.x,
+        startY: event.point.y,
+        moved: false,
+      };
+      // Even with `preventDefault()` here, MapLibre still fires a `click`
+      // when the pointer never moves beyond `clickTolerance` (see its
+      // `map_events.test`). Flag the upcoming click so `handleMapClick`
+      // ignores it instead of treating the drop as a fresh map click.
+      // The flag is cleared by `noteIfPastTolerance` as soon as the
+      // gesture exceeds clickTolerance, so a real drag does not swallow
+      // the rider's next legitimate map click.
+      swallowNextClickRef.current = true;
+      setCursor("grabbing");
+    };
+
+    map.on("mouseenter", WAYPOINT_CIRCLE, handleEnter);
+    map.on("mouseleave", WAYPOINT_CIRCLE, handleLeave);
+    map.on("mousedown", WAYPOINT_CIRCLE, beginDrag);
+    map.on("touchstart", WAYPOINT_CIRCLE, beginDrag);
+    map.on("mousemove", handleMouseMove);
+    map.on("touchmove", handleTouchMove);
+    map.on("mouseup", handleMouseUp);
+    map.on("touchend", handleTouchEnd);
+
+    // ── Window-level fallbacks ──
+    // `map.on("mouseup", …)` only fires when the release lands on the
+    // canvas. If the rider drags out past the map edge and lets go in
+    // the surrounding chrome, the map handler never runs — so `active`
+    // would stay set, the cursor would stick on "grabbing", and the
+    // drop would be lost. Mirror the up handlers at the window level
+    // so a release anywhere still finishes the gesture; both `active`
+    // and `swallowNextClickRef` already guard against double-firing
+    // when the release is over the canvas.
+    const finishFromClient = (clientX: number, clientY: number) => {
+      if (!active) return;
+      const rect = canvas.getBoundingClientRect();
+      const point = { x: clientX - rect.left, y: clientY - rect.top };
+      const lngLat = map.unproject([point.x, point.y]);
+      finishDrag({ lng: lngLat.lng, lat: lngLat.lat }, point);
+    };
+    const onWindowMouseUp = (event: MouseEvent) => {
+      finishFromClient(event.clientX, event.clientY);
+    };
+    const onWindowTouchEnd = (event: TouchEvent) => {
+      const touch = event.changedTouches[0];
+      if (!touch) {
+        cancelDrag();
+        return;
+      }
+      finishFromClient(touch.clientX, touch.clientY);
+    };
+    const onWindowTouchCancel = () => {
+      cancelDrag();
+    };
+    window.addEventListener("mouseup", onWindowMouseUp);
+    window.addEventListener("touchend", onWindowTouchEnd);
+    window.addEventListener("touchcancel", onWindowTouchCancel);
+
+    return () => {
+      map.off("mouseenter", WAYPOINT_CIRCLE, handleEnter);
+      map.off("mouseleave", WAYPOINT_CIRCLE, handleLeave);
+      map.off("mousedown", WAYPOINT_CIRCLE, beginDrag);
+      map.off("touchstart", WAYPOINT_CIRCLE, beginDrag);
+      map.off("mousemove", handleMouseMove);
+      map.off("touchmove", handleTouchMove);
+      map.off("mouseup", handleMouseUp);
+      map.off("touchend", handleTouchEnd);
+      window.removeEventListener("mouseup", onWindowMouseUp);
+      window.removeEventListener("touchend", onWindowTouchEnd);
+      window.removeEventListener("touchcancel", onWindowTouchCancel);
+      setCursor("");
+    };
+  }, [drawMode, dragEnabled, ready]);
   useEffect(() => {
     const map = handleRef.current?.map;
     if (
@@ -708,6 +948,37 @@ function dedupeMessages(messages: Array<string | null>): string[] {
       messages.filter((message): message is string => message !== null),
     ),
   ];
+}
+
+function snapPointerToRoad(
+  map: MapLibreMap,
+  point: { x: number; y: number },
+  lngLat: { lng: number; lat: number },
+): { lng: number; lat: number } | null {
+  const features: RoadSnapFeature[] = map
+    .queryRenderedFeatures(
+      [
+        [point.x - 12, point.y - 12],
+        [point.x + 12, point.y + 12],
+      ],
+      {
+        layers: ["tarmoto-quality", "tarmoto-surface"],
+      },
+    )
+    .map((feature) => ({
+      geometry:
+        feature.geometry.type === "LineString" ||
+        feature.geometry.type === "MultiLineString"
+          ? feature.geometry
+          : null,
+      properties: {
+        quality_score: feature.properties?.quality_score,
+      },
+    }));
+  return snapWaypointToRoadFeatures(
+    { lng: lngLat.lng, lat: lngLat.lat },
+    features,
+  );
 }
 function ensurePlannerLayers(map: MapLibreMap): void {
   if (!map.getSource(ROUTE_SOURCE)) {

@@ -127,6 +127,7 @@ export default function TripPlannerPage() {
   const redo = useTripStore((s) => s.redo);
   const appendPlannerWaypoint = useTripStore((s) => s.appendPlannerWaypoint);
   const reorderWaypoints = useTripStore((s) => s.reorderWaypoints);
+  const moveWaypoint = useTripStore((s) => s.moveWaypoint);
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   const displayedTrip = activeTrip ?? selectedOption?.trip ?? null;
   // ── Collab session wiring (US-35) ─────────────────────────────────
@@ -1020,6 +1021,9 @@ export default function TripPlannerPage() {
             selectedDayNumber={selectedDay?.dayNumber ?? 1}
             onAddWaypoint={(location) =>
               appendPlannerWaypoint(selectedDayIndex, location, plannerParams)
+            }
+            onMoveWaypoint={(dayNumber, waypointId, location) =>
+              moveWaypoint(dayNumber - 1, waypointId, location, plannerParams)
             }
             collaboratorCursors={collabSession.cursors}
             suggestions={collabSession.suggestions}

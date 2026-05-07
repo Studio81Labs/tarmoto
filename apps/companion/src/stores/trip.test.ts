@@ -175,6 +175,119 @@ describe("useTripStore planner editing", () => {
     expect(useTripStore.getState().hoveredSegmentId).toBeNull();
   });
 
+  it("moves an existing routing waypoint and rebuilds the day route geometry", () => {
+    const store = useTripStore.getState();
+
+    store.appendPlannerWaypoint(0, { lng: 14.41, lat: 50.08 });
+    store.appendPlannerWaypoint(0, { lng: 14.61, lat: 50.19 });
+
+    const beforeMove = useTripStore.getState().activeTrip?.days[0];
+    const startWaypoint = beforeMove?.waypoints[0];
+    expect(startWaypoint?.type).toBe("start");
+    expect(startWaypoint?.id).toBeDefined();
+    const beforeGeometry = beforeMove?.routeGeometry?.coordinates ?? [];
+    expect(beforeGeometry.length).toBeGreaterThan(0);
+
+    useTripStore
+      .getState()
+      .moveWaypoint(0, startWaypoint!.id, { lng: 14.5, lat: 50.12 });
+
+    const afterMove = useTripStore.getState().activeTrip?.days[0];
+    expect(afterMove?.waypoints[0]?.location).toEqual({
+      lng: 14.5,
+      lat: 50.12,
+    });
+    expect(afterMove?.waypoints[0]?.id).toBe(startWaypoint!.id);
+    expect(afterMove?.routeGeometry?.coordinates).not.toEqual(beforeGeometry);
+    expect(afterMove?.routeGeometry?.coordinates[0]).toEqual([14.5, 50.12]);
+    expect(useTripStore.getState().canUndo).toBe(true);
+
+    useTripStore.getState().undo();
+    const restored = useTripStore.getState().activeTrip?.days[0];
+    expect(restored?.waypoints[0]?.location).toEqual({
+      lng: 14.41,
+      lat: 50.08,
+    });
+  });
+
+  it("ignores moveWaypoint calls that do not match an existing waypoint or change location", () => {
+    const store = useTripStore.getState();
+
+    store.appendPlannerWaypoint(0, { lng: 14.41, lat: 50.08 });
+    store.appendPlannerWaypoint(0, { lng: 14.61, lat: 50.19 });
+
+    const tripBefore = useTripStore.getState().activeTrip;
+    const undoBefore = useTripStore.getState().undoStack.length;
+
+    useTripStore
+      .getState()
+      .moveWaypoint(0, "missing-id", { lng: 14.5, lat: 50.12 });
+    expect(useTripStore.getState().activeTrip).toBe(tripBefore);
+    expect(useTripStore.getState().undoStack).toHaveLength(undoBefore);
+
+    const startWaypoint = tripBefore?.days[0]?.waypoints[0];
+    useTripStore
+      .getState()
+      .moveWaypoint(0, startWaypoint!.id, startWaypoint!.location);
+    expect(useTripStore.getState().activeTrip).toBe(tripBefore);
+    expect(useTripStore.getState().undoStack).toHaveLength(undoBefore);
+  });
+
+  it("rebuilds the moved waypoint's day with the supplied planner parameters", () => {
+    const store = useTripStore.getState();
+
+    // Seed the trip with one set of parameters so we can prove the
+    // rebuild uses the *fresh* params passed alongside the move, not
+    // the trip's persisted ones.
+    const initialParameters: TripParameters = {
+      days: 1,
+      dailyKmTarget: 200,
+      roadPreference: "direct",
+      surfacePreference: ["asphalt"],
+      avoidHighways: true,
+      avoidTolls: false,
+      avoidUnpaved: true,
+      minQuality: 3,
+    };
+    store.appendPlannerWaypoint(
+      0,
+      { lng: 14.41, lat: 50.08 },
+      initialParameters,
+    );
+    store.appendPlannerWaypoint(
+      0,
+      { lng: 14.61, lat: 50.19 },
+      initialParameters,
+    );
+
+    const startWaypoint =
+      useTripStore.getState().activeTrip?.days[0]?.waypoints[0];
+    expect(startWaypoint).toBeDefined();
+
+    const updatedParameters: TripParameters = {
+      ...initialParameters,
+      roadPreference: "curvy",
+      minQuality: 4,
+      dailyKmTarget: 320,
+    };
+
+    useTripStore
+      .getState()
+      .moveWaypoint(
+        0,
+        startWaypoint!.id,
+        { lng: 14.5, lat: 50.12 },
+        updatedParameters,
+      );
+
+    const after = useTripStore.getState().activeTrip;
+    expect(after?.parameters).toEqual({ ...updatedParameters, days: 1 });
+    expect(after?.days[0]?.waypoints[0]?.location).toEqual({
+      lng: 14.5,
+      lat: 50.12,
+    });
+  });
+
   it("preserves existing route geometry when adding stop suggestions", () => {
     useTripStore.setState({
       activeTrip: {

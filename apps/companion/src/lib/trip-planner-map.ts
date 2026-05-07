@@ -13,6 +13,7 @@ type RouteProperties = {
 
 type WaypointProperties = {
   dayNumber: number;
+  waypointId: string;
   waypointType: string;
   label: string;
 };
@@ -68,6 +69,7 @@ export function buildTripPlannerWaypointCollection(
         type: "Feature",
         properties: {
           dayNumber: day.dayNumber,
+          waypointId: waypoint.id,
           waypointType: waypoint.type,
           label: waypoint.name ?? fallbackWaypointLabel(waypoint.type),
         },

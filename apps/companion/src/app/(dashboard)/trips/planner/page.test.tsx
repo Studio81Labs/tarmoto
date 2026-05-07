@@ -198,6 +198,12 @@ type TripStoreSnapshot = {
   ) => void;
   insertWaypointBeforeEnd: (dayIndex: number, waypoint: unknown) => void;
   removeWaypoint: (dayIndex: number, waypointId: string) => void;
+  moveWaypoint: (
+    dayIndex: number,
+    waypointId: string,
+    location: { lng: number; lat: number },
+    parameters?: Trip["parameters"],
+  ) => void;
   reorderWaypoints: (
     dayIndex: number,
     fromIndex: number,
@@ -313,6 +319,7 @@ describe("TripPlannerPage", () => {
       appendPlannerWaypoint: vi.fn(),
       insertWaypointBeforeEnd: vi.fn(),
       removeWaypoint: vi.fn(),
+      moveWaypoint: vi.fn(),
       reorderWaypoints: vi.fn(),
       undo: vi.fn(),
       redo: vi.fn(),
@@ -432,6 +439,55 @@ describe("TripPlannerPage", () => {
         avoidTolls: true,
         avoidUnpaved: true,
         minQuality: 3,
+      },
+    );
+  });
+
+  it("dispatches moveWaypoint with the matching day index and live planner params when a marker is dropped on the map", () => {
+    render(<TripPlannerPage />);
+
+    // Change controls so the test can assert the *live* sidebar values
+    // are forwarded — not the trip's persisted parameters. Without
+    // threading these through, drag-rebuilds would silently use the
+    // last saved parameters and ignore the rider's current settings.
+    fireEvent.change(screen.getByLabelText("Number of days"), {
+      target: { value: "5" },
+    });
+    fireEvent.change(screen.getByLabelText("Road preference"), {
+      target: { value: "scenic" },
+    });
+    fireEvent.change(screen.getByLabelText("Minimum road quality"), {
+      target: { value: "4" },
+    });
+
+    const latestMapProps = mockedTripPlannerMap.mock.calls.at(-1)?.[0] as
+      | {
+          onMoveWaypoint?: (
+            dayNumber: number,
+            waypointId: string,
+            location: { lng: number; lat: number },
+          ) => void;
+        }
+      | undefined;
+    const onMoveWaypoint = latestMapProps?.onMoveWaypoint;
+
+    expect(onMoveWaypoint).toBeDefined();
+
+    onMoveWaypoint?.(2, "wp-via-1", { lng: 14.55, lat: 50.12 });
+
+    expect(storeState.moveWaypoint).toHaveBeenCalledWith(
+      1,
+      "wp-via-1",
+      { lng: 14.55, lat: 50.12 },
+      {
+        days: 5,
+        dailyKmTarget: 250,
+        roadPreference: "scenic",
+        surfacePreference: ["asphalt"],
+        avoidHighways: true,
+        avoidTolls: false,
+        avoidUnpaved: true,
+        minQuality: 4,
       },
     );
   });
