@@ -37,10 +37,10 @@ export class RideTagEvent {
   @Column({ type: 'bigint' })
   t!: string;
 
-  @Column({ type: 'float', nullable: true })
+  @Column({ type: 'double precision', nullable: true })
   lat!: number | null;
 
-  @Column({ type: 'float', nullable: true })
+  @Column({ type: 'double precision', nullable: true })
   lng!: number | null;
 
   /**

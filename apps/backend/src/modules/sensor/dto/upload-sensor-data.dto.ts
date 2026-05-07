@@ -13,7 +13,11 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-import { SURFACE_LABELS, type SurfaceLabel } from '@tarmoto/shared';
+import {
+  MAX_TAG_EVENTS_PER_UPLOAD,
+  SURFACE_LABELS,
+  type SurfaceLabel,
+} from '@tarmoto/shared';
 
 export class SensorReadingDto {
   @ApiProperty({ description: 'Unix timestamp milliseconds' })
@@ -156,10 +160,14 @@ export class UploadSensorDataDto {
    * a per-window join (`surface_readings.rider_*_label`) so future
    * training queries can read either resolution.
    */
-  @ApiProperty({ type: [RideTagEventDto], required: false, maxItems: 500 })
+  @ApiProperty({
+    type: [RideTagEventDto],
+    required: false,
+    maxItems: MAX_TAG_EVENTS_PER_UPLOAD,
+  })
   @IsOptional()
   @IsArray()
-  @ArrayMaxSize(500)
+  @ArrayMaxSize(MAX_TAG_EVENTS_PER_UPLOAD)
   @ValidateNested({ each: true })
   @Type(() => RideTagEventDto)
   tag_events?: RideTagEventDto[];

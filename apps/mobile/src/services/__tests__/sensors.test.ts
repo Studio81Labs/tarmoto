@@ -198,6 +198,27 @@ describe("sensorService.tagSurface (research issue #7)", () => {
     expect(event!.lng).toBeUndefined();
   });
 
+  it("caps the tag buffer at MAX_TAG_EVENTS_PER_UPLOAD by trimming oldest taps", () => {
+    // Regression: without the cap, a long labelling ride that exceeds
+    // the backend DTO's @ArrayMaxSize(500) would produce a payload the
+    // backend rejects with HTTP 400, and the offline queue treats 4xx
+    // as non-retriable — so the entire upload (tags AND readings)
+    // gets dropped. The client-side cap keeps the most-recent 500
+    // taps so the upload always validates.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { MAX_TAG_EVENTS_PER_UPLOAD } =
+      require("@tarmoto/shared") as typeof import("@tarmoto/shared");
+
+    sensorService.start(() => undefined);
+    for (let i = 0; i < MAX_TAG_EVENTS_PER_UPLOAD + 5; i++) {
+      sensorService.tagSurface("smooth_asphalt");
+    }
+
+    expect(sensorService.getTagEvents()).toHaveLength(
+      MAX_TAG_EVENTS_PER_UPLOAD,
+    );
+  });
+
   it("preserves a real 0° GPS fix instead of dropping it as falsy", () => {
     // Regression: a previous version used `this.currentLat || undefined`
     // which silently dropped the equator (lat 0) and the prime meridian

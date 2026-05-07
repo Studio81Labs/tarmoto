@@ -13,7 +13,11 @@ import {
 import { Subscription } from "rxjs";
 import { map, bufferCount } from "rxjs/operators";
 import type { SensorReading, QualityClass, SurfaceType } from "@/types";
-import type { RideTagEvent, SurfaceLabel } from "@tarmoto/shared";
+import {
+  MAX_TAG_EVENTS_PER_UPLOAD,
+  type RideTagEvent,
+  type SurfaceLabel,
+} from "@tarmoto/shared";
 import * as mlClassifier from "./mlClassifier";
 import { LeanAngleFilter, type CalibrationStats } from "./leanAngle";
 
@@ -294,6 +298,21 @@ class SensorService {
       label,
     };
     this.tagEvents.push(event);
+    // Cap the buffer to match the backend DTO's @ArrayMaxSize. Without
+    // this, a long labelling ride that exceeds MAX_TAG_EVENTS_PER_UPLOAD
+    // would produce a payload the backend rejects with HTTP 400 — and
+    // the offline queue treats 4xx as non-retriable, so BOTH the tags
+    // AND the readings for that ride get dropped instead of queued.
+    // Trimming the head keeps the most recent taps (the ones the rider
+    // most likely cares about) and silently drops the oldest. This is
+    // a defensive cap — at one tap every ~3 s a 500-cap absorbs a 25-
+    // minute ride, so it should rarely fire in practice.
+    if (this.tagEvents.length > MAX_TAG_EVENTS_PER_UPLOAD) {
+      this.tagEvents.splice(
+        0,
+        this.tagEvents.length - MAX_TAG_EVENTS_PER_UPLOAD,
+      );
+    }
     return event;
   }
 

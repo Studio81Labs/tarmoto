@@ -22,6 +22,13 @@ export interface LocationRetentionSweepResult {
   surface_readings_deleted: number;
   /** Total ride-route geometries cleared. */
   ride_geoms_cleared: number;
+  /**
+   * Total rider-asserted surface tag rows deleted (research issue #7).
+   * Each row carries a tap timestamp + optional lat/lng so it falls
+   * under the same `location_retention` privacy contract as
+   * `surface_readings`.
+   */
+  ride_tag_events_deleted: number;
   /** Number of users whose data was touched. */
   users_swept: number;
 }
@@ -45,6 +52,11 @@ export interface LocationRetentionSweepResult {
  *      cutoff. We keep the ride row itself (distance, duration, stats)
  *      so the rider's history graph and totals stay intact — only the
  *      raw GPS trace is purged.
+ *   3. Delete `ride_tag_events` rows whose tap time is older than the
+ *      cutoff (research issue #7). Each row carries a timestamp +
+ *      optional lat/lng, so it's exactly the location-bearing data
+ *      the privacy contract is meant to cover. `t` is stored as a
+ *      bigint (ms since epoch), so the cutoff is compared in ms.
  *
  * Users who chose `forever` are skipped entirely — no retention
  * pressure means no work to do. Users with no privacy_preferences row
@@ -68,6 +80,7 @@ export class LocationRetentionSweepProcessor extends WorkerHost {
   async process(job: Job): Promise<LocationRetentionSweepResult> {
     let totalReadings = 0;
     let totalRides = 0;
+    let totalTagEvents = 0;
     const users = new Set<string>();
 
     // Iterate through every retention bucket the user could have
@@ -80,6 +93,7 @@ export class LocationRetentionSweepProcessor extends WorkerHost {
       const result = await this.sweepBucket(retention, days);
       totalReadings += result.surface_readings_deleted;
       totalRides += result.ride_geoms_cleared;
+      totalTagEvents += result.ride_tag_events_deleted;
       for (const id of result.user_ids) users.add(id);
     }
 
@@ -91,13 +105,15 @@ export class LocationRetentionSweepProcessor extends WorkerHost {
       const result = await this.sweepDefaultUsers(defaultDays);
       totalReadings += result.surface_readings_deleted;
       totalRides += result.ride_geoms_cleared;
+      totalTagEvents += result.ride_tag_events_deleted;
       for (const id of result.user_ids) users.add(id);
     }
 
-    if (totalReadings > 0 || totalRides > 0) {
+    if (totalReadings > 0 || totalRides > 0 || totalTagEvents > 0) {
       this.logger.log(
         `[${job.id ?? 'no-id'}] retention sweep: deleted ${totalReadings} ` +
-          `surface_reading row(s), cleared ${totalRides} ride geom(s) across ` +
+          `surface_reading row(s), cleared ${totalRides} ride geom(s), ` +
+          `deleted ${totalTagEvents} ride_tag_event row(s) across ` +
           `${users.size} user(s)`,
       );
     }
@@ -105,6 +121,7 @@ export class LocationRetentionSweepProcessor extends WorkerHost {
     return {
       surface_readings_deleted: totalReadings,
       ride_geoms_cleared: totalRides,
+      ride_tag_events_deleted: totalTagEvents,
       users_swept: users.size,
     };
   }
@@ -115,6 +132,7 @@ export class LocationRetentionSweepProcessor extends WorkerHost {
   ): Promise<{
     surface_readings_deleted: number;
     ride_geoms_cleared: number;
+    ride_tag_events_deleted: number;
     user_ids: string[];
   }> {
     const userRows: UserIdRow[] = await this.dataSource.query(
@@ -126,6 +144,7 @@ export class LocationRetentionSweepProcessor extends WorkerHost {
       return {
         surface_readings_deleted: 0,
         ride_geoms_cleared: 0,
+        ride_tag_events_deleted: 0,
         user_ids: [],
       };
     }
@@ -137,6 +156,7 @@ export class LocationRetentionSweepProcessor extends WorkerHost {
   private async sweepDefaultUsers(days: number): Promise<{
     surface_readings_deleted: number;
     ride_geoms_cleared: number;
+    ride_tag_events_deleted: number;
     user_ids: string[];
   }> {
     // Users who haven't saved preferences yet inherit the default
@@ -169,15 +189,31 @@ export class LocationRetentionSweepProcessor extends WorkerHost {
       [cutoff],
     );
 
+    // Research issue #7 — same default-user filter as the surface_readings
+    // path above. `t` is stored as bigint (ms since epoch), so the cutoff
+    // gets converted to ms for the comparison.
+    const tagEventResult: UserIdRow[] = await this.dataSource.query(
+      `DELETE FROM ride_tag_events rte
+       USING users u
+       LEFT JOIN privacy_preferences pp ON pp.user_id = u.id
+       WHERE rte.user_id = u.id
+         AND pp.user_id IS NULL
+         AND rte.t < $1
+       RETURNING rte.user_id`,
+      [cutoff.getTime()],
+    );
+
     const userIds = new Set<string>();
     for (const r of surfaceResult) {
       if (r.user_id) userIds.add(r.user_id);
     }
     for (const r of rideResult) userIds.add(r.user_id);
+    for (const r of tagEventResult) userIds.add(r.user_id);
 
     return {
       surface_readings_deleted: surfaceResult.length,
       ride_geoms_cleared: rideResult.length,
+      ride_tag_events_deleted: tagEventResult.length,
       user_ids: Array.from(userIds),
     };
   }
@@ -188,6 +224,7 @@ export class LocationRetentionSweepProcessor extends WorkerHost {
   ): Promise<{
     surface_readings_deleted: number;
     ride_geoms_cleared: number;
+    ride_tag_events_deleted: number;
     user_ids: string[];
   }> {
     const cutoff = this.cutoffDate(days);
@@ -210,15 +247,28 @@ export class LocationRetentionSweepProcessor extends WorkerHost {
       [userIds, cutoff],
     );
 
+    // Research issue #7 — purge tag events older than the cutoff for
+    // users in this retention bucket. `t` is bigint ms since epoch, so
+    // the cutoff is converted to ms for comparison.
+    const tagEventResult: UserIdRow[] = await this.dataSource.query(
+      `DELETE FROM ride_tag_events
+       WHERE user_id = ANY($1::uuid[])
+         AND t < $2
+       RETURNING user_id`,
+      [userIds, cutoff.getTime()],
+    );
+
     const touched = new Set<string>();
     for (const r of surfaceResult) {
       if (r.user_id) touched.add(r.user_id);
     }
     for (const r of rideResult) touched.add(r.user_id);
+    for (const r of tagEventResult) touched.add(r.user_id);
 
     return {
       surface_readings_deleted: surfaceResult.length,
       ride_geoms_cleared: rideResult.length,
+      ride_tag_events_deleted: tagEventResult.length,
       user_ids: Array.from(touched),
     };
   }

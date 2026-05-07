@@ -65,6 +65,27 @@ export interface RideTagEvent {
 export const POINT_TAG_HALF_WINDOW_MS = 1000;
 
 /**
+ * Maximum number of `RideTagEvent`s permitted in a single
+ * `POST /sensor/upload` payload. Bound enforced by both:
+ *
+ *   - the backend DTO's `@ArrayMaxSize(MAX_TAG_EVENTS_PER_UPLOAD)`
+ *     (rejects oversized requests with HTTP 400)
+ *   - the mobile sensor service's tag buffer (drops oldest taps
+ *     past the cap so a long labelling ride never produces a
+ *     payload the backend has to reject)
+ *
+ * Keeping these in sync via a shared constant prevents the
+ * failure mode where the offline queue's non-retriable 4xx path
+ * silently drops both the tags AND the readings of a long ride.
+ *
+ * 500 covers a generous ~30-minute ride at one tap every ~3 s.
+ * Riders who tag more aggressively still get their most recent
+ * 500 taps; the older taps are dropped client-side rather than
+ * the entire batch being rejected.
+ */
+export const MAX_TAG_EVENTS_PER_UPLOAD = 500;
+
+/**
  * Canonicalises one rider tap into the storage-side label pair plus
  * its temporal kind. The backend uses this in two places:
  *
