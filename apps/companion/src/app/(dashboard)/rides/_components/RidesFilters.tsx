@@ -17,12 +17,12 @@ export function RidesFilters({ state, update, reset }: Props) {
     setSearchLocal(state.q ?? "");
   }, [state.q]);
   useEffect(() => {
-    const t = setTimeout(() => {
+    const debounceId = setTimeout(() => {
       if ((state.q ?? "") !== searchLocal) {
         update({ q: searchLocal || undefined });
       }
     }, 300);
-    return () => clearTimeout(t);
+    return () => clearTimeout(debounceId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchLocal]);
   const hasAny = Boolean(
@@ -167,12 +167,12 @@ export function RidesFilters({ state, update, reset }: Props) {
               active={!state.type}
               onClick={() => update({ type: undefined })}
             />
-            {RIDE_TYPES.map((t) => (
+            {RIDE_TYPES.map((rideType) => (
               <TypeChip
-                key={t}
-                label={t}
-                active={state.type === t}
-                onClick={() => update({ type: t })}
+                key={rideType}
+                label={rideType}
+                active={state.type === rideType}
+                onClick={() => update({ type: rideType })}
               />
             ))}
           </div>

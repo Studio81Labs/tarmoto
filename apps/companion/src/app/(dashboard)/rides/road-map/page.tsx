@@ -796,9 +796,9 @@ function MapLegend({ riddenCount }: MapLegendProps) {
     <div className="absolute top-4 left-4 z-10 rounded-xl bg-slate-950/80 border border-slate-800 backdrop-blur px-4 py-3 text-xs text-slate-300 space-y-2 pointer-events-none">
       <div className="flex items-center gap-2">
         <span className="h-1 w-6 rounded-full bg-tarmoto-cyan" />
-        {t("Ridden (")}
-        {riddenCount.toLocaleString()}
-        {t("segments) ")}
+        {t("Ridden ({count} segments)", {
+          count: riddenCount.toLocaleString(),
+        })}
       </div>
       <div className="flex items-center gap-2">
         <span className="h-1 w-6 rounded-full bg-slate-600" />

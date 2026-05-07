@@ -170,7 +170,7 @@ export default function TripListPage() {
   );
   const statusCounts = useMemo(() => countByStatus(trips), [trips]);
   const unfiledCount = useMemo(
-    () => trips.filter((t) => !t.folderId).length,
+    () => trips.filter((storedTrip) => !storedTrip.folderId).length,
     [trips],
   );
   const tripsPerFolder = useMemo(() => {
@@ -203,14 +203,20 @@ export default function TripListPage() {
     // Read fresh store state so rapid successive actions from the same
     // render cycle don't clobber each other's optimistic updates.
     const current = useTripStore.getState().trips;
-    const affected = current.filter((t) => t.folderId === folder.id);
+    const affected = current.filter(
+      (storedTrip) => storedTrip.folderId === folder.id,
+    );
     setTrips(
-      current.map((t) =>
-        t.folderId === folder.id ? { ...t, folderId: undefined } : t,
+      current.map((storedTrip) =>
+        storedTrip.folderId === folder.id
+          ? { ...storedTrip, folderId: undefined }
+          : storedTrip,
       ),
     );
     const failures = await Promise.allSettled(
-      affected.map((t) => tripsApi.update(t.id, { folderId: null })),
+      affected.map((storedTrip) =>
+        tripsApi.update(storedTrip.id, { folderId: null }),
+      ),
     );
     if (failures.some((r) => r.status === "rejected")) {
       setErrorBanner(
@@ -225,8 +231,10 @@ export default function TripListPage() {
     setTrips(
       useTripStore
         .getState()
-        .trips.map((t) =>
-          t.id === trip.id ? { ...t, folderId: folderId ?? undefined } : t,
+        .trips.map((storedTrip) =>
+          storedTrip.id === trip.id
+            ? { ...storedTrip, folderId: folderId ?? undefined }
+            : storedTrip,
         ),
     );
     markBusy(trip.id);
@@ -238,8 +246,10 @@ export default function TripListPage() {
       setTrips(
         useTripStore
           .getState()
-          .trips.map((t) =>
-            t.id === trip.id ? { ...t, folderId: previousFolderId } : t,
+          .trips.map((storedTrip) =>
+            storedTrip.id === trip.id
+              ? { ...storedTrip, folderId: previousFolderId }
+              : storedTrip,
           ),
       );
       setErrorBanner("Couldn't move the trip. Try again.");
@@ -279,8 +289,10 @@ export default function TripListPage() {
     // Read fresh state so concurrent optimistic updates don't clobber each
     // other when two actions fire in the same render.
     const before = useTripStore.getState().trips;
-    const indexBefore = before.findIndex((t) => t.id === trip.id);
-    setTrips(before.filter((t) => t.id !== trip.id));
+    const indexBefore = before.findIndex(
+      (storedTrip) => storedTrip.id === trip.id,
+    );
+    setTrips(before.filter((storedTrip) => storedTrip.id !== trip.id));
     markBusy(trip.id);
     try {
       await tripsApi.delete(trip.id);

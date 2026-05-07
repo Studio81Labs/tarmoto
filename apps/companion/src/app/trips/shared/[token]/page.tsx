@@ -69,8 +69,7 @@ export default async function SharedTripPage({
         <div className="mt-4 flex flex-wrap gap-2 text-sm text-slate-300">
           <Pill icon={<User size={14} />}>{share.owner_name}</Pill>
           <Pill icon={<Eye size={14} />}>
-            {share.view_count}
-            {t("views")}
+            {t("{count} views", { count: share.view_count })}
           </Pill>
           {summary && (
             <>

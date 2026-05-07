@@ -332,9 +332,10 @@ function BadgesSection({ badges, totalBadges }: BadgesSectionProps) {
           {t("Badges earned ")}
         </h2>
         <span className="text-xs text-slate-500 tabular-nums">
-          {badges.length}
-          {t("of ")}
-          {totalBadges}
+          {t("{count} of {total}", {
+            count: badges.length,
+            total: totalBadges,
+          })}
         </span>
       </header>
       {totalBadges === 0 ? (

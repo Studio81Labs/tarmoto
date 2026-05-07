@@ -56,26 +56,28 @@ export default async function SharedRoadMapPage({
           </div>
           {snapshot && (
             <div className="px-3 py-1.5 rounded-xl bg-tarmoto-cyan/10 text-tarmoto-cyan font-semibold text-sm tabular-nums">
-              {snapshot.stats.percent_explored}
-              {t("% explored ")}
+              {t("{percent}% explored", {
+                percent: snapshot.stats.percent_explored,
+              })}
             </div>
           )}
         </div>
         <div className="mt-3 flex flex-wrap gap-2 text-sm text-slate-300">
           <Pill icon={<User size={14} />}>{share.owner_name}</Pill>
           <Pill icon={<Eye size={14} />}>
-            {share.view_count}
-            {t("views")}
+            {t("{count} views", { count: share.view_count })}
           </Pill>
           {snapshot && (
             <>
               <Pill icon={<MapPin size={14} />}>
-                {snapshot.segments.length.toLocaleString()}
-                {t("segments highlighted ")}
+                {t("{count} segments highlighted", {
+                  count: snapshot.segments.length.toLocaleString(),
+                })}
               </Pill>
               <Pill icon={<RouteIcon size={14} />}>
-                {formatDistance(snapshot.stats.total_distance_km)}
-                {t("ridden ")}
+                {t("{distance} ridden", {
+                  distance: formatDistance(snapshot.stats.total_distance_km),
+                })}
               </Pill>
               <Pill>{TIME_PERIOD_LABELS[snapshot.period]}</Pill>
             </>
@@ -115,9 +117,9 @@ function SnapshotLegend({ snapshot }: { snapshot: MapShareSnapshot }) {
     <div className="absolute top-4 left-4 z-10 rounded-xl bg-slate-950/80 border border-slate-800 backdrop-blur px-4 py-3 text-xs text-slate-300 space-y-2 pointer-events-none">
       <div className="flex items-center gap-2">
         <span className="h-1 w-6 rounded-full bg-tarmoto-cyan" />
-        {t("Ridden (")}
-        {snapshot.segments.length.toLocaleString()}
-        {t("segments) ")}
+        {t("Ridden ({count} segments)", {
+          count: snapshot.segments.length.toLocaleString(),
+        })}
       </div>
       <div className="flex items-center gap-2">
         <span className="h-1 w-6 rounded-full bg-slate-600" />

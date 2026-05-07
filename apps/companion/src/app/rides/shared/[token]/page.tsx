@@ -73,12 +73,12 @@ export default async function SharedRidePage({
             {formatRelativeTime(ride.started_at)}
           </Pill>
           <Pill icon={<Activity size={14} />}>
-            {ride.view_count}
-            {t("views")}
+            {t("{count} views", { count: ride.view_count })}
           </Pill>
           <Pill icon={<MousePointerClick size={14} />}>
-            {ride.embed_click_count}
-            {t("embed clicks ")}
+            {ride.embed_click_count === 1
+              ? t("1 embed click")
+              : t("{count} embed clicks", { count: ride.embed_click_count })}
           </Pill>
         </div>
       </header>

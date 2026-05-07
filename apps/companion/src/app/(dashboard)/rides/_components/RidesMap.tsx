@@ -156,12 +156,12 @@ export function RidesMap({
       | undefined;
     if (!src) return;
     const features = tracks
-      .filter((t) => t.geometry)
-      .map((t) => ({
+      .filter((track) => track.geometry)
+      .map((track) => ({
         type: "Feature" as const,
-        id: t.id,
-        properties: { id: t.id },
-        geometry: t.geometry!,
+        id: track.id,
+        properties: { id: track.id },
+        geometry: track.geometry!,
       }));
     src.setData({ type: "FeatureCollection", features });
     // Fit to bounds once on first non-empty payload, then preserve the user's
@@ -196,10 +196,10 @@ export function RidesMap({
         { source: SOURCE_ID, id: selectedId },
         { selected: true },
       );
-      const t = tracks.find((x) => x.id === selectedId);
-      if (t?.geometry?.coordinates.length) {
+      const selectedTrack = tracks.find((x) => x.id === selectedId);
+      if (selectedTrack?.geometry?.coordinates.length) {
         const bounds = new maplibregl.LngLatBounds();
-        for (const c of t.geometry.coordinates) {
+        for (const c of selectedTrack.geometry.coordinates) {
           bounds.extend([c[0], c[1]]);
         }
         if (!bounds.isEmpty()) {

@@ -359,7 +359,10 @@ function FilterBar({ filters, years, onChange }: FilterBarProps) {
         }
         options={[
           { value: "all", label: "All types" },
-          ...RIDE_TYPES.map((t) => ({ value: t, label: RIDE_TYPE_LABELS[t] })),
+          ...RIDE_TYPES.map((rideType) => ({
+            value: rideType,
+            label: RIDE_TYPE_LABELS[rideType],
+          })),
         ]}
       />
     </div>

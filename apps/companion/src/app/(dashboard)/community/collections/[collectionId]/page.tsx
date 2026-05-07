@@ -316,7 +316,7 @@ export default function CollectionDetailPage() {
   // ready
   const presentTrips = collection!.tripRefs
     .map((ref) => tripById.get(ref.tripId))
-    .filter((t): t is Trip => t != null);
+    .filter((trip): trip is Trip => trip != null);
   const presentRides = collection!.rideRefs
     .map((ref) => rideById.get(ref.rideId))
     .filter((r): r is UserRide => r != null);
@@ -324,19 +324,22 @@ export default function CollectionDetailPage() {
   // Trip distance is computed from per-day route geometry; ride distance comes
   // straight from the backend `distance_km` field.
   const totalDistance =
-    presentTrips.reduce((sum, t) => sum + tripDistanceKm(t), 0) +
+    presentTrips.reduce((sum, trip) => sum + tripDistanceKm(trip), 0) +
     presentRides.reduce((sum, r) => sum + (r.distance_km ?? 0), 0);
   // Riding days only counts trip days — recorded rides are point-in-time, not
   // multi-day plans. A separate "Rides" stat surfaces recorded-ride count
   // alongside the planner-day count.
-  const totalDays = presentTrips.reduce((sum, t) => sum + t.days.length, 0);
+  const totalDays = presentTrips.reduce(
+    (sum, trip) => sum + trip.days.length,
+    0,
+  );
   const totalMissing =
     collection!.tripRefs.length -
     presentTrips.length +
     (collection!.rideRefs.length - presentRides.length);
   const memberTripIds = new Set(collection!.tripIds);
   const memberRideIds = new Set(collection!.rideIds);
-  const availableTrips = trips.filter((t) => !memberTripIds.has(t.id));
+  const availableTrips = trips.filter((trip) => !memberTripIds.has(trip.id));
   const availableRides = rides.filter((r) => !memberRideIds.has(r.id));
   const totalRefs = collection!.tripRefs.length + collection!.rideRefs.length;
   const loadingMembers = loadingTrips || loadingRides;
@@ -591,8 +594,8 @@ function ShareButton({ collection }: { collection: RouteCollectionView }) {
   );
   useEffect(() => {
     if (copyState === "idle") return;
-    const t = window.setTimeout(() => setCopyState("idle"), 2000);
-    return () => window.clearTimeout(t);
+    const timeoutId = window.setTimeout(() => setCopyState("idle"), 2000);
+    return () => window.clearTimeout(timeoutId);
   }, [copyState]);
   const sharable = collection.visibility !== "private";
   const url =
@@ -832,9 +835,9 @@ function TripRow({ trip, onRemove }: { trip: Trip; onRemove: () => void }) {
             <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
               <span className="inline-flex items-center gap-1">
                 <Calendar size={12} />
-                {trip.days.length}
-                {t("day")}
-                {trip.days.length === 1 ? "" : "s"}
+                {trip.days.length === 1
+                  ? t("1 day")
+                  : t("{count} days", { count: trip.days.length })}
               </span>
               <span className="inline-flex items-center gap-1">
                 <MapPin size={12} />
@@ -1008,8 +1011,8 @@ function RoutePickerModal({
   const visibleTrips = useMemo(() => {
     const needle = search.trim().toLowerCase();
     if (!needle) return trips;
-    return trips.filter((t) =>
-      `${t.name} ${t.description ?? ""}`.toLowerCase().includes(needle),
+    return trips.filter((trip) =>
+      `${trip.name} ${trip.description ?? ""}`.toLowerCase().includes(needle),
     );
   }, [trips, search]);
   const visibleRides = useMemo(() => {

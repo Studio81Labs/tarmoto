@@ -320,15 +320,17 @@ function MigrationBanner({
 }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const word = migration.count === 1 ? "collection" : "collections";
   return (
     <div className="mb-4 rounded-xl border border-tarmoto-cyan/20 bg-tarmoto-cyan/5 p-4">
       <p className="text-sm text-slate-200">
-        {t("Found ")}
-        {migration.count} {word}
-        {t(
-          "saved on this device. Move them to your Tarmoto account so they sync across devices and survive clearing browser storage. ",
-        )}
+        {migration.count === 1
+          ? t(
+              "Found 1 collection saved on this device. Move it to your Tarmoto account so it syncs across devices and survives clearing browser storage. ",
+            )
+          : t(
+              "Found {count} collections saved on this device. Move them to your Tarmoto account so they sync across devices and survive clearing browser storage. ",
+              { count: migration.count },
+            )}
       </p>
       {error && (
         <p className="mt-2 text-xs text-amber-300" role="alert">
