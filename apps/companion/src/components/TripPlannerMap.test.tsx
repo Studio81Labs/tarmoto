@@ -32,11 +32,13 @@ const drawControl = {
   setDrawn: vi.fn(),
   destroy: vi.fn(),
   getMode: vi.fn(() => "idle" as const),
+  hitTest: vi.fn(() => false),
 };
 
 let lastDrawOptions: {
   onRegionDrawn: (bbox: [number, number, number, number]) => void;
-  onModeChange?: (mode: "idle" | "drawing") => void;
+  onRegionCleared?: () => void;
+  onModeChange?: (mode: "idle" | "drawing" | "editing") => void;
 } | null = null;
 
 vi.mock("@/components/map/MapCanvas", () => ({
@@ -161,6 +163,8 @@ describe("TripPlannerMap", () => {
     drawControl.clearDrawn.mockReset();
     drawControl.setDrawn.mockReset();
     drawControl.destroy.mockReset();
+    drawControl.hitTest.mockReset();
+    drawControl.hitTest.mockReturnValue(false);
     drawControl.getMode.mockReturnValue("idle");
     mockMap.addSource.mockReset();
     mockMap.getSource.mockReset();
@@ -282,9 +286,122 @@ describe("TripPlannerMap", () => {
     expect(
       screen.getByRole("button", { name: "Clear region" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Redraw region" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Drag the region to move it, drag a handle to resize, or press Delete to remove\./,
+      ),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Clear region" }));
     expect(drawControl.clearDrawn).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByRole("button", { name: "Clear region" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Draw region" }),
+    ).toBeInTheDocument();
+  });
+
+  it("clears the drawn region when the rider presses Delete or Backspace", () => {
+    render(<TripPlannerMap trip={trip()} month={7} />);
+
+    act(() => {
+      lastDrawOptions?.onRegionDrawn([14.4, 50.08, 14.7, 50.3]);
+      lastDrawOptions?.onModeChange?.("idle");
+    });
+    expect(
+      screen.getByRole("button", { name: "Clear region" }),
+    ).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "Delete" });
+    expect(drawControl.clearDrawn).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByRole("button", { name: "Clear region" }),
+    ).not.toBeInTheDocument();
+
+    // After clearing, Backspace must not trigger another clearDrawn call.
+    fireEvent.keyDown(window, { key: "Backspace" });
+    expect(drawControl.clearDrawn).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not clear the drawn region when Delete fires from a text field", () => {
+    render(
+      <div>
+        <input data-testid="trip-name" />
+        <TripPlannerMap trip={trip()} month={7} />
+      </div>,
+    );
+
+    act(() => {
+      lastDrawOptions?.onRegionDrawn([14.4, 50.08, 14.7, 50.3]);
+      lastDrawOptions?.onModeChange?.("idle");
+    });
+
+    const input = screen.getByTestId("trip-name") as HTMLInputElement;
+    input.focus();
+    fireEvent.keyDown(input, { key: "Delete" });
+    expect(drawControl.clearDrawn).not.toHaveBeenCalled();
+  });
+
+  it("hides the Cancel drawing button while editing the drawn region", () => {
+    render(<TripPlannerMap trip={trip()} month={7} />);
+
+    act(() => {
+      lastDrawOptions?.onRegionDrawn([14.4, 50.08, 14.7, 50.3]);
+      lastDrawOptions?.onModeChange?.("idle");
+    });
+    act(() => {
+      lastDrawOptions?.onModeChange?.("editing");
+    });
+
+    expect(
+      screen.queryByRole("button", { name: "Cancel drawing" }),
+    ).not.toBeInTheDocument();
+    // The "Redraw region" entry-point should still be reachable so the
+    // rider can outline a fresh rectangle even while a drag is active.
+    expect(
+      screen.getByRole("button", { name: "Redraw region" }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not add a waypoint when the click lands on the drawn region", () => {
+    const handleAddWaypoint = vi.fn();
+    const eventHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation((event, handler) => {
+      eventHandlers.set(event, handler);
+      return mockMap;
+    });
+    mockMap.off.mockImplementation((event) => {
+      eventHandlers.delete(event);
+      return mockMap;
+    });
+    drawControl.hitTest.mockReturnValue(true);
+
+    render(
+      <TripPlannerMap
+        trip={trip()}
+        month={7}
+        onAddWaypoint={handleAddWaypoint}
+      />,
+    );
+
+    act(() => {
+      lastDrawOptions?.onRegionDrawn([14.4, 50.08, 14.7, 50.3]);
+      lastDrawOptions?.onModeChange?.("idle");
+    });
+
+    act(() => {
+      eventHandlers.get("click")?.({
+        point: { x: 200, y: 200 },
+        lngLat: { lng: 14.55, lat: 50.2 },
+      });
+    });
+
+    expect(drawControl.hitTest).toHaveBeenCalledWith({ x: 200, y: 200 });
+    expect(handleAddWaypoint).not.toHaveBeenCalled();
   });
 
   it("re-fits the map when trip bounds change on the same trip id", () => {

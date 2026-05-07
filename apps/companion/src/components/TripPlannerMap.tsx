@@ -15,6 +15,7 @@ import {
   createRegionDrawControl,
   type RegionDrawControl,
   type RegionDrawBbox,
+  type RegionDrawMode,
 } from "@/components/map/RegionDrawControl";
 import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
 import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
@@ -180,7 +181,7 @@ function TripPlannerMapContent({
   const [ready, setReady] = useState(false);
   const [showQuality, setShowQuality] = useState(true);
   const [showSurface, setShowSurface] = useState(false);
-  const [drawMode, setDrawMode] = useState<"idle" | "drawing">("idle");
+  const [drawMode, setDrawMode] = useState<RegionDrawMode>("idle");
   const [drawnRegion, setDrawnRegion] = useState<RegionDrawBbox | null>(null);
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const hydratePreferences = usePreferencesStore((s) => s.hydrate);
@@ -300,6 +301,9 @@ function TripPlannerMapContent({
       if (!onAddWaypoint || drawMode !== "idle") return;
       const map = handleRef.current?.map;
       if (!map) return;
+      // Skip waypoint adds when the click landed on the drawn region or
+      // its edit handles — those clicks belong to the region tool.
+      if (drawRef.current?.hitTest(event.point)) return;
       const features: RoadSnapFeature[] = map
         .queryRenderedFeatures(
           [
@@ -341,6 +345,7 @@ function TripPlannerMapContent({
     drawRef.current?.destroy();
     drawRef.current = createRegionDrawControl(map, {
       onRegionDrawn: (bbox) => setDrawnRegion(bbox),
+      onRegionCleared: () => setDrawnRegion(null),
       onModeChange: setDrawMode,
     });
     setReady(true);
@@ -404,6 +409,33 @@ function TripPlannerMapContent({
     if (!ready) return;
     drawRef.current?.setDrawn(drawnRegion);
   }, [drawnRegion, ready]);
+  useEffect(() => {
+    if (!drawnRegion || drawMode === "drawing") return;
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key !== "Delete" && event.key !== "Backspace") return;
+      // Don't steal Delete from text inputs or contenteditable surfaces
+      // — riders may be editing trip names while a region is drawn.
+      const target = event.target as HTMLElement | null;
+      if (target) {
+        const tag = target.tagName;
+        if (
+          tag === "INPUT" ||
+          tag === "TEXTAREA" ||
+          tag === "SELECT" ||
+          target.isContentEditable
+        ) {
+          return;
+        }
+      }
+      event.preventDefault();
+      drawRef.current?.clearDrawn();
+      setDrawnRegion(null);
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => {
+      window.removeEventListener("keydown", handleKey);
+    };
+  }, [drawMode, drawnRegion]);
   useEffect(() => {
     const map = handleRef.current?.map;
     if (!map || !ready || !onAddWaypoint) return;
@@ -475,16 +507,7 @@ function TripPlannerMapContent({
           </button>
         </div>
 
-        {drawMode === "idle" ? (
-          <button
-            type="button"
-            onClick={() => drawRef.current?.start()}
-            className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/90 px-3 py-2 text-sm text-slate-100 transition hover:bg-slate-800"
-          >
-            <Square size={14} />
-            {t("Draw region ")}
-          </button>
-        ) : (
+        {drawMode === "drawing" ? (
           <button
             type="button"
             onClick={() => drawRef.current?.cancel()}
@@ -493,9 +516,18 @@ function TripPlannerMapContent({
             <X size={14} />
             {t("Cancel drawing ")}
           </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => drawRef.current?.start()}
+            className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/90 px-3 py-2 text-sm text-slate-100 transition hover:bg-slate-800"
+          >
+            <Square size={14} />
+            {drawnRegion ? t("Redraw region ") : t("Draw region ")}
+          </button>
         )}
 
-        {drawnRegion && drawMode === "idle" ? (
+        {drawnRegion && drawMode !== "drawing" ? (
           <button
             type="button"
             onClick={() => {
@@ -510,9 +542,25 @@ function TripPlannerMapContent({
         ) : null}
 
         <div className="rounded-lg border border-slate-700 bg-slate-950/85 px-3 py-2 text-xs text-slate-300 shadow-sm">
-          {t("Click the map to add waypoints ")}
-          {selectedDayNumber ? ` for Day ${selectedDayNumber}` : ""}
-          {t(". We snap to nearby roads when visible. ")}
+          {drawMode === "drawing" ? (
+            <>
+              {t(
+                "Click and drag on the map to outline a region. Release to finish. ",
+              )}
+            </>
+          ) : drawnRegion ? (
+            <>
+              {t(
+                "Drag the region to move it, drag a handle to resize, or press Delete to remove. ",
+              )}
+            </>
+          ) : (
+            <>
+              {t("Click the map to add waypoints ")}
+              {selectedDayNumber ? ` for Day ${selectedDayNumber}` : ""}
+              {t(". We snap to nearby roads when visible. ")}
+            </>
+          )}
         </div>
       </div>
 
