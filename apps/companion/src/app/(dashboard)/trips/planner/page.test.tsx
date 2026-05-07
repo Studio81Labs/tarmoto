@@ -1019,7 +1019,7 @@ describe("TripPlannerPage", () => {
     expect(mockPush).toHaveBeenCalledWith(`/trips/${promotedTripId}`);
   });
 
-  it("updates server-loaded trips without regenerating existing route geometry", async () => {
+  it("updates server-loaded trips from the current controls without regenerating existing route geometry", async () => {
     const serverTripId = "11111111-2222-4333-8444-555555555555";
     tripsApiUpdateMock.mockResolvedValueOnce({
       data: { id: serverTripId },
@@ -1032,12 +1032,33 @@ describe("TripPlannerPage", () => {
 
     render(<TripPlannerPage />);
 
+    fireEvent.change(screen.getByLabelText("Number of days"), {
+      target: { value: "5" },
+    });
+    fireEvent.change(screen.getByLabelText("Daily km target"), {
+      target: { value: "180" },
+    });
+    fireEvent.change(screen.getByLabelText("Road preference"), {
+      target: { value: "direct" },
+    });
+    fireEvent.change(screen.getByLabelText("Minimum road quality"), {
+      target: { value: "4" },
+    });
+    fireEvent.click(screen.getByLabelText("Avoid highways"));
+
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
       expect(tripsApiUpdateMock).toHaveBeenCalledWith(
         serverTripId,
-        expect.objectContaining({ title: "Server loaded route" }),
+        expect.objectContaining({
+          title: "Server loaded route",
+          num_days: 5,
+          daily_km_min: 180,
+          daily_km_max: 180,
+          min_quality: 4,
+          road_preference: "fast",
+        }),
       ),
     );
     expect(tripsApiGenerateMock).not.toHaveBeenCalled();

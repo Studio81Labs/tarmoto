@@ -13,6 +13,7 @@ import { TripsService } from './trips.service.js';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
+import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
 import { TripShare } from '../../entities/trip-share.entity.js';
 import { EventsGateway } from '../events/events.gateway.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
@@ -597,6 +598,11 @@ describe('TripsService', () => {
           num_days: 1,
           status: 'planned',
         }),
+      );
+      expect(manager.update).toHaveBeenCalledWith(
+        TripSuggestion,
+        { trip_id: TRIP_ID },
+        { trip_day_id: null },
       );
       expect(manager.delete).toHaveBeenCalledWith(TripDay, {
         trip_id: TRIP_ID,

@@ -112,6 +112,7 @@ export default function TripPlannerPage() {
   const activeTripRef = useRef<Trip | null>(null);
   const generatedOptionsRef = useRef<GeneratedTripOption[]>([]);
   const selectedOptionIdRef = useRef<string | null>(null);
+  const syncedControlsTripIdRef = useRef<string | null>(null);
   const activeTrip = useTripStore((s) => s.activeTrip);
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
   const isGenerating = useTripStore((s) => s.isGenerating);
@@ -277,7 +278,7 @@ export default function TripPlannerPage() {
     setSaving(true);
     try {
       setGenerationError(null);
-      const p = displayedTrip.parameters;
+      const p = plannerParams;
       // Prefer a known serverTripId from collaboration/deep links. Promoted
       // drafts keep local in-memory ids, but their suggestions and activity
       // already belong to the promoted backend trip.
@@ -392,7 +393,14 @@ export default function TripPlannerPage() {
       console.warn("Failed to save trip", err);
       setSaving(false);
     }
-  }, [displayedTrip, router, saving, selectedOptionId, serverTripId]);
+  }, [
+    displayedTrip,
+    plannerParams,
+    router,
+    saving,
+    selectedOptionId,
+    serverTripId,
+  ]);
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     if (!Array.from(e.dataTransfer.types).includes("Files")) return;
@@ -441,6 +449,25 @@ export default function TripPlannerPage() {
 
   useEffect(() => {
     activeTripRef.current = activeTrip;
+  }, [activeTrip]);
+
+  useEffect(() => {
+    const tripId = activeTrip?.id ?? null;
+    if (!activeTrip) {
+      syncedControlsTripIdRef.current = null;
+      return;
+    }
+    if (syncedControlsTripIdRef.current === tripId) return;
+    syncedControlsTripIdRef.current = tripId;
+    const params = activeTrip.parameters;
+    setDays(params.days);
+    setDailyKmTarget(params.dailyKmTarget);
+    setRoadPreference(params.roadPreference);
+    setSurfacePreference(params.surfacePreference);
+    setMinQuality(params.minQuality);
+    setAvoidHighways(params.avoidHighways);
+    setAvoidTolls(params.avoidTolls);
+    setAvoidUnpaved(params.avoidUnpaved);
   }, [activeTrip]);
 
   useEffect(() => {

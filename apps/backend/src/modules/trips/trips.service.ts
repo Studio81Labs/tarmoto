@@ -11,6 +11,7 @@ import { haversineKm, latLngToPoint, pointToLatLng } from '@tarmoto/shared';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
+import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
 import { TripWaypoint } from '../../entities/trip-waypoint.entity.js';
 import { EventsGateway } from '../events/events.gateway.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
@@ -303,6 +304,11 @@ export class TripsService {
           daily_km_max: dailyKm,
           status: 'planned',
         },
+      );
+      await manager.update(
+        TripSuggestion,
+        { trip_id: tripId },
+        { trip_day_id: null },
       );
       await manager.delete(TripDay, { trip_id: tripId });
       await this.persistImportedRouteDay(manager, tripId, dto, totalKm);
