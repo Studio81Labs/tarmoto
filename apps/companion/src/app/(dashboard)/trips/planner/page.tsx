@@ -116,35 +116,33 @@ export default function TripPlannerPage() {
   const [travelMonth, setTravelMonth] = useState<number>(() =>
     currentUtcMonth(),
   );
-  // Hydrate planner controls from the URL once on mount so a shared link
-  // like `/trips/planner?days=5&road=scenic` lands directly on those values
-  // instead of flashing the defaults first. The same parsed snapshot seeds
-  // every individual useState below.
-  const [initialPlannerControls] = useState(readInitialPlannerControls);
-  const [days, setDays] = useState(initialPlannerControls.days);
+  // Planner controls render with their defaults during SSR/static
+  // prerender (where `window` doesn't exist) and on the client's first
+  // render so the prerendered HTML and the hydrated tree always agree.
+  // The post-mount effect below re-applies any values pulled from
+  // `?days=…&road=…` etc., so a shared URL still lands on the right
+  // panel state — just on the second client render rather than the first.
+  const [days, setDays] = useState(PLANNER_DEFAULTS.days);
   const [saving, setSaving] = useState(false);
   const router = useRouter();
   const [dailyKmTarget, setDailyKmTarget] = useState(
-    initialPlannerControls.dailyKmTarget,
+    PLANNER_DEFAULTS.dailyKmTarget,
   );
   const [roadPreference, setRoadPreference] = useState<
     TripParameters["roadPreference"]
-  >(initialPlannerControls.roadPreference);
+  >(PLANNER_DEFAULTS.roadPreference);
   const [surfacePreference, setSurfacePreference] = useState<SurfaceType[]>(
-    initialPlannerControls.surfacePreference,
+    () => [...PLANNER_DEFAULTS.surfacePreference],
   );
-  const [minQuality, setMinQuality] = useState(
-    initialPlannerControls.minQuality,
-  );
+  const [minQuality, setMinQuality] = useState(PLANNER_DEFAULTS.minQuality);
   const [avoidHighways, setAvoidHighways] = useState(
-    initialPlannerControls.avoidHighways,
+    PLANNER_DEFAULTS.avoidHighways,
   );
-  const [avoidTolls, setAvoidTolls] = useState(
-    initialPlannerControls.avoidTolls,
-  );
+  const [avoidTolls, setAvoidTolls] = useState(PLANNER_DEFAULTS.avoidTolls);
   const [avoidUnpaved, setAvoidUnpaved] = useState(
-    initialPlannerControls.avoidUnpaved,
+    PLANNER_DEFAULTS.avoidUnpaved,
   );
+  const urlControlsHydratedRef = useRef(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [generatedOptions, setGeneratedOptions] = useState<
     GeneratedTripOption[]
@@ -505,12 +503,43 @@ export default function TripPlannerPage() {
     setAvoidTolls(params.avoidTolls);
     setAvoidUnpaved(params.avoidUnpaved);
   }, [activeTrip]);
-  // Reflect planner control changes in the URL so that the rider's current
-  // setup is part of the shareable / reloadable address. Uses
-  // history.replaceState (not the Next router) to keep the page
-  // statically prerenderable and to avoid stacking history entries on every
-  // tweak. Existing search params (notably `tripId`) are preserved.
+  // Hydrate the planner controls from `?days=…&road=…` etc. **after** mount
+  // so that the SSR/static prerender and the client's first render both
+  // start from the same defaults — reading `window.location` during render
+  // would diverge the two trees and break hydration. The same effect then
+  // mirrors any subsequent control edits back into the URL via
+  // history.replaceState (not the Next router) so the page stays
+  // statically prerenderable and we don't stack a history entry per tweak.
+  // Existing search params (notably `tripId`) are preserved.
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!urlControlsHydratedRef.current) {
+      urlControlsHydratedRef.current = true;
+      const fromUrl = readPlannerControlsFromUrl();
+      const dirty =
+        fromUrl.days !== PLANNER_DEFAULTS.days ||
+        fromUrl.dailyKmTarget !== PLANNER_DEFAULTS.dailyKmTarget ||
+        fromUrl.roadPreference !== PLANNER_DEFAULTS.roadPreference ||
+        !surfacesEqualDefault(fromUrl.surfacePreference) ||
+        fromUrl.minQuality !== PLANNER_DEFAULTS.minQuality ||
+        fromUrl.avoidHighways !== PLANNER_DEFAULTS.avoidHighways ||
+        fromUrl.avoidTolls !== PLANNER_DEFAULTS.avoidTolls ||
+        fromUrl.avoidUnpaved !== PLANNER_DEFAULTS.avoidUnpaved;
+      if (dirty) {
+        setDays(fromUrl.days);
+        setDailyKmTarget(fromUrl.dailyKmTarget);
+        setRoadPreference(fromUrl.roadPreference);
+        setSurfacePreference(fromUrl.surfacePreference);
+        setMinQuality(fromUrl.minQuality);
+        setAvoidHighways(fromUrl.avoidHighways);
+        setAvoidTolls(fromUrl.avoidTolls);
+        setAvoidUnpaved(fromUrl.avoidUnpaved);
+        // Skip the URL write on this pass — we'd just be writing back what
+        // we just read. The follow-up render triggered by the setStates
+        // above will sync any sanitized values (e.g. clamped numbers).
+        return;
+      }
+    }
     syncPlannerControlsToUrl({
       days,
       dailyKmTarget,
@@ -1268,19 +1297,7 @@ type PlannerControls = {
   avoidTolls: boolean;
   avoidUnpaved: boolean;
 };
-function readInitialPlannerControls(): PlannerControls {
-  if (typeof window === "undefined") {
-    return {
-      days: PLANNER_DEFAULTS.days,
-      dailyKmTarget: PLANNER_DEFAULTS.dailyKmTarget,
-      roadPreference: PLANNER_DEFAULTS.roadPreference,
-      surfacePreference: [...PLANNER_DEFAULTS.surfacePreference],
-      minQuality: PLANNER_DEFAULTS.minQuality,
-      avoidHighways: PLANNER_DEFAULTS.avoidHighways,
-      avoidTolls: PLANNER_DEFAULTS.avoidTolls,
-      avoidUnpaved: PLANNER_DEFAULTS.avoidUnpaved,
-    };
-  }
+function readPlannerControlsFromUrl(): PlannerControls {
   const search = new URLSearchParams(window.location.search);
   return {
     days: parseClampedIntParam(
@@ -1328,10 +1345,9 @@ function parseClampedIntParam(
   max: number,
   fallback: number,
 ): number {
-  if (raw === null) return fallback;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(max, Math.max(min, Math.round(parsed)));
+  // Reuse the same clamp the input handlers go through so a hand-edited
+  // URL and an in-app edit can never disagree on what's a valid value.
+  return raw === null ? fallback : clampNumberInput(raw, min, max, fallback);
 }
 function parseBooleanParam(raw: string | null, fallback: boolean): boolean {
   if (raw === "1") return true;
