@@ -11,6 +11,7 @@ export * from "./me-profile";
 export * from "./notifications";
 export * from "./privacy";
 export * from "./public-profile";
+export * from "./ride-tag-events";
 export * from "./rider-format";
 export * from "./trip-gpx";
 export * from "./units";

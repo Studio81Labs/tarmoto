@@ -74,6 +74,7 @@ describe("offlineQueue", () => {
         [makeReading(1)],
         "iPhone",
         "rsc-v1.0.0",
+        [],
         uploader,
       );
 
@@ -87,6 +88,7 @@ describe("offlineQueue", () => {
         [makeReading(1)],
         "iPhone",
         "rsc-v1.0.0",
+        [],
       );
     });
 
@@ -100,6 +102,7 @@ describe("offlineQueue", () => {
         [makeReading(1)],
         "iPhone",
         null,
+        [],
         uploader,
       );
 
@@ -123,6 +126,7 @@ describe("offlineQueue", () => {
           [makeReading(1)],
           "iPhone",
           null,
+          [],
           uploader,
         ),
       ).rejects.toThrow("HTTP 400");
@@ -142,6 +146,7 @@ describe("offlineQueue", () => {
         [makeReading(2)],
         "iPhone",
         null,
+        [],
         uploader,
       );
 
@@ -163,6 +168,7 @@ describe("offlineQueue", () => {
         [makeReading(1)],
         "iPhone",
         null,
+        [],
         uploader,
       );
 
@@ -191,6 +197,7 @@ describe("offlineQueue", () => {
         [makeReading(2)],
         "iPhone",
         null,
+        [],
         uploader,
       );
 
@@ -218,6 +225,7 @@ describe("offlineQueue", () => {
         [makeReading(2)],
         "iPhone",
         null,
+        [],
         uploader,
       );
 
@@ -244,6 +252,7 @@ describe("offlineQueue", () => {
         [makeReading(2)],
         "iPhone",
         null,
+        [],
         uploader,
       );
 
@@ -496,6 +505,52 @@ describe("offlineQueue", () => {
       await drainOfflineQueue(uploader);
 
       expect(calls).toEqual(["rsc-v1.0.0", null]);
+    });
+
+    it("forwards tag events through enqueue → drain → uploader (issue #7)", async () => {
+      // Research issue #7: rider-asserted surface labels travel with
+      // the readings through the offline queue. Losing them on the
+      // queue round-trip would silently drop ground-truth data, so
+      // assert the uploader sees the same array we enqueued.
+      enqueueUpload("ride-tagged", [makeReading(1)], "iPhone", null, [
+        { t: 1_000, label: "smooth_asphalt" },
+      ]);
+
+      const seen: Array<unknown> = [];
+      const uploader: SensorUploader = async (
+        _id,
+        _r,
+        _model,
+        _version,
+        tags,
+      ) => {
+        seen.push(tags);
+        return { accepted: 1, segments_updated: 1 };
+      };
+      await drainOfflineQueue(uploader);
+
+      expect(seen).toEqual([[{ t: 1_000, label: "smooth_asphalt" }]]);
+    });
+
+    it("normalises pre-#7 entries lacking tagEvents to []", () => {
+      // A persisted blob from an older app build is missing the
+      // field. The drain path needs a stable shape to pass into the
+      // uploader, so the read path normalises to an empty array.
+      const legacyEntry = {
+        id: "legacy-1",
+        rideId: "ride-1",
+        deviceModel: "iPhone",
+        readings: [makeReading(1)],
+        modelVersion: null,
+        enqueuedAt: 1,
+        attempts: 0,
+        // tagEvents intentionally omitted
+      };
+      storage.raw.set("pending", JSON.stringify([legacyEntry]));
+
+      const restored = getPendingUploads();
+      expect(restored).toHaveLength(1);
+      expect(restored[0].tagEvents).toEqual([]);
     });
 
     it("normalises pre-US-3 entries lacking modelVersion to null", () => {

@@ -7,6 +7,7 @@ import { SensorService } from './sensor.service.js';
 import { SurfaceReading } from '../../entities/surface-reading.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { RideStats } from '../../entities/ride-stats.entity.js';
+import { RideTagEvent } from '../../entities/ride-tag-event.entity.js';
 import { SensorReadingDto } from './dto/upload-sensor-data.dto.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 
@@ -15,6 +16,8 @@ describe('SensorService', () => {
   let readingRepo: Partial<jest.Mocked<Repository<SurfaceReading>>>;
   let segmentRepo: Partial<jest.Mocked<Repository<RoadSegment>>>;
   let statsRepo: Partial<jest.Mocked<Repository<RideStats>>>;
+  let tagEventRepo: Partial<jest.Mocked<Repository<RideTagEvent>>>;
+  let savedTagEvents: Array<Partial<RideTagEvent>>;
   let storedStats: Partial<RideStats> | null;
   let privacy: { loadPreferences: jest.Mock };
 
@@ -76,12 +79,23 @@ describe('SensorService', () => {
         .mockResolvedValue({ ...DEFAULT_PRIVACY_PREFERENCES }),
     };
 
+    savedTagEvents = [];
+    tagEventRepo = {
+      create: jest.fn().mockImplementation((data) => data),
+      save: jest.fn().mockImplementation((rows) => {
+        const list = Array.isArray(rows) ? rows : [rows];
+        savedTagEvents.push(...(list as Array<Partial<RideTagEvent>>));
+        return Promise.resolve(rows);
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SensorService,
         { provide: getRepositoryToken(SurfaceReading), useValue: readingRepo },
         { provide: getRepositoryToken(RoadSegment), useValue: segmentRepo },
         { provide: getRepositoryToken(RideStats), useValue: statsRepo },
+        { provide: getRepositoryToken(RideTagEvent), useValue: tagEventRepo },
         { provide: PrivacyPreferencesService, useValue: privacy },
       ],
     }).compile();
@@ -653,6 +667,165 @@ describe('SensorService', () => {
         '20_30': 0,
         '30_plus': 0,
       });
+    });
+  });
+
+  describe('rider tag events (research issue #7)', () => {
+    function rideReading(t: number, i: number): SensorReadingDto {
+      return {
+        t,
+        ax: 0.1,
+        ay: 0.2,
+        az: 9.8,
+        lat: 49.1 + i * 0.00001,
+        lng: 16.75,
+        speed: 15,
+      };
+    }
+
+    it('persists rider tag events verbatim and joins them to surface_readings by midpoint timestamp', async () => {
+      const t0 = 1_700_000_000_000;
+      const dto = {
+        ride_id: 'ride-tagged',
+        readings: Array.from({ length: 50 }, (_, i) =>
+          rideReading(t0 + i * 20, i),
+        ),
+        // Tag fires at the very start of the batch — every segment's
+        // midpoint falls inside its sustained span, so every persisted
+        // surface_reading should carry the rider label.
+        tag_events: [
+          {
+            t: t0 - 1000,
+            lat: 49.1,
+            lng: 16.75,
+            label: 'rough_asphalt' as const,
+          },
+        ],
+      };
+
+      const result = await service.processUpload('user-1', dto);
+
+      expect(result.segments_updated).toBeGreaterThanOrEqual(1);
+      expect(savedTagEvents).toHaveLength(1);
+      expect(savedTagEvents[0]).toMatchObject({
+        ride_id: 'ride-tagged',
+        user_id: 'user-1',
+        label: 'rough_asphalt',
+      });
+
+      const createArg = (readingRepo.create as jest.Mock).mock.calls[0][0];
+      expect(createArg.rider_surface_label).toBe('rough_asphalt');
+      // rough_asphalt → asphalt + poor (per SURFACE_LABEL_TO_TRUTH).
+      expect(createArg.rider_quality_label).toBe('poor');
+    });
+
+    it('leaves rider_* columns null on segments captured before any tag fires', async () => {
+      const t0 = 1_700_000_000_000;
+      const dto = {
+        ride_id: 'ride-late-tag',
+        readings: Array.from({ length: 50 }, (_, i) =>
+          rideReading(t0 + i * 20, i),
+        ),
+        // Tag fires AFTER every reading in the batch — no segment
+        // midpoint can resolve to it. Backend must keep the rider
+        // columns null rather than retroactively labelling.
+        tag_events: [{ t: t0 + 60_000, label: 'cobblestone' as const }],
+      };
+
+      await service.processUpload('user-1', dto);
+
+      // Tag was still persisted for audit even though no segment used it.
+      expect(savedTagEvents).toHaveLength(1);
+      const createArg = (readingRepo.create as jest.Mock).mock.calls[0][0];
+      expect(createArg.rider_surface_label).toBeNull();
+      expect(createArg.rider_quality_label).toBeNull();
+    });
+
+    it('lets a pothole point tag override the surrounding span tag', async () => {
+      // Build a long enough ride that we get >=2 segments — first
+      // segment ought to get the span label, the segment containing
+      // the pothole's timestamp ought to flip to the point label.
+      const t0 = 1_700_000_000_000;
+      const readings: SensorReadingDto[] = [];
+      for (let i = 0; i < 200; i++) {
+        readings.push({
+          t: t0 + i * 20,
+          ax: 0.1,
+          ay: 0.2,
+          az: 9.8,
+          // ~33m per step at this latitude → ~6.6 km total → many segments.
+          lat: 49.1 + i * 0.0003,
+          lng: 16.75,
+          speed: 15,
+        });
+      }
+      const lastT = t0 + 199 * 20;
+      const dto = {
+        ride_id: 'ride-pothole',
+        readings,
+        tag_events: [
+          { t: t0, label: 'smooth_asphalt' as const },
+          // Point tag near the END so the last segment's midpoint falls
+          // inside the pothole's ±1s point window.
+          { t: lastT, label: 'pothole' as const },
+        ],
+      };
+
+      await service.processUpload('user-1', dto);
+
+      const calls = (readingRepo.create as jest.Mock).mock.calls;
+      expect(calls.length).toBeGreaterThanOrEqual(2);
+      const firstLabel = calls[0][0].rider_surface_label;
+      const lastLabel = calls[calls.length - 1][0].rider_surface_label;
+      expect(firstLabel).toBe('smooth_asphalt');
+      expect(lastLabel).toBe('pothole');
+      // pothole → very_poor (per SURFACE_LABEL_TO_TRUTH).
+      expect(calls[calls.length - 1][0].rider_quality_label).toBe('very_poor');
+    });
+
+    it('still persists tag events when the rider opts out of road_data_contribution (#279 + #7)', async () => {
+      // Privacy opt-out kills surface_readings, but the rider's own
+      // tags are personal forensic data the spike still needs — same
+      // reasoning as lean stats above. Verify they're not silently
+      // dropped on the privacy gate.
+      privacy.loadPreferences.mockResolvedValueOnce({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        road_data_contribution: false,
+      });
+
+      const t0 = 1_700_000_000_000;
+      const dto = {
+        ride_id: 'ride-private',
+        readings: Array.from({ length: 50 }, (_, i) =>
+          rideReading(t0 + i * 20, i),
+        ),
+        tag_events: [{ t: t0, label: 'gravel' as const }],
+      };
+
+      const result = await service.processUpload('user-1', dto);
+
+      expect(result.segments_updated).toBe(0);
+      expect(readingRepo.save).not.toHaveBeenCalled();
+      expect(savedTagEvents).toHaveLength(1);
+      expect(savedTagEvents[0].label).toBe('gravel');
+    });
+
+    it('is a no-op when the upload omits tag_events', async () => {
+      const t0 = 1_700_000_000_000;
+      const dto = {
+        ride_id: 'ride-untagged',
+        readings: Array.from({ length: 30 }, (_, i) =>
+          rideReading(t0 + i * 20, i),
+        ),
+      };
+
+      await service.processUpload('user-1', dto);
+
+      expect(tagEventRepo.save).not.toHaveBeenCalled();
+      expect(savedTagEvents).toHaveLength(0);
+      const createArg = (readingRepo.create as jest.Mock).mock.calls[0][0];
+      expect(createArg.rider_surface_label).toBeNull();
+      expect(createArg.rider_quality_label).toBeNull();
     });
   });
 

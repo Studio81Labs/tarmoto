@@ -152,3 +152,40 @@ describe("sensorService.classify — heuristic fallback", () => {
     expect(fast.confidence).toBeGreaterThan(slow.confidence);
   });
 });
+
+describe("sensorService.tagSurface (research issue #7)", () => {
+  // The service is a singleton — ensure recording is stopped between
+  // specs so a buffered tag from one test doesn't bleed into the next.
+  afterEach(() => {
+    if (sensorService.recording) {
+      sensorService.stop();
+    }
+  });
+
+  it("returns null when recording isn't active so a stray tap is dropped", () => {
+    expect(sensorService.tagSurface("cobblestone")).toBeNull();
+    expect(sensorService.getTagEvents()).toEqual([]);
+  });
+
+  it("buffers tags during a ride and emits them on stop()", () => {
+    sensorService.start(() => undefined);
+    const a = sensorService.tagSurface("smooth_asphalt");
+    const b = sensorService.tagSurface("pothole");
+
+    expect(a).not.toBeNull();
+    expect(b).not.toBeNull();
+    expect(a!.label).toBe("smooth_asphalt");
+    expect(b!.label).toBe("pothole");
+    expect(sensorService.getTagEvents()).toHaveLength(2);
+
+    const { tagEvents } = sensorService.stop();
+    expect(tagEvents).toHaveLength(2);
+    expect(tagEvents.map((e) => e.label)).toEqual([
+      "smooth_asphalt",
+      "pothole",
+    ]);
+
+    // After stop the buffer is cleared so the next ride starts clean.
+    expect(sensorService.getTagEvents()).toEqual([]);
+  });
+});

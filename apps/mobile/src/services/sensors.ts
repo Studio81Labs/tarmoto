@@ -13,6 +13,7 @@ import {
 import { Subscription } from "rxjs";
 import { map, bufferCount } from "rxjs/operators";
 import type { SensorReading, QualityClass, SurfaceType } from "@/types";
+import type { RideTagEvent, SurfaceLabel } from "@tarmoto/shared";
 import * as mlClassifier from "./mlClassifier";
 import { LeanAngleFilter, type CalibrationStats } from "./leanAngle";
 
@@ -73,6 +74,7 @@ class SensorService {
   private gyroSub: Subscription | null = null;
   private buffer: SensorReading[] = [];
   private rawReadings: SensorReading[] = [];
+  private tagEvents: RideTagEvent[] = [];
   private isRecording = false;
   private callback: SensorCallback | null = null;
   private currentSpeed = 0;
@@ -98,6 +100,7 @@ class SensorService {
     this.callback = onWindow;
     this.buffer = [];
     this.rawReadings = [];
+    this.tagEvents = [];
     // Reset the orientation filter so a previous ride's offset / drift
     // doesn't bleed into this one. `start` also kicks off the auto-
     // calibration window (~1.5 s of upright readings).
@@ -232,9 +235,13 @@ class SensorService {
   }
 
   /**
-   * Stop recording
+   * Stop recording. Returns the buffered raw readings AND the rider
+   * tag events captured during the ride (research issue #7) so the
+   * caller can ship both in a single upload payload — keeps the
+   * offline-queue + retry semantics shared between readings and
+   * tags.
    */
-  stop(): SensorReading[] {
+  stop(): { readings: SensorReading[]; tagEvents: RideTagEvent[] } {
     this.isRecording = false;
     this.accelSub?.unsubscribe();
     this.gyroSub?.unsubscribe();
@@ -243,9 +250,45 @@ class SensorService {
     this.callback = null;
 
     const readings = [...this.rawReadings];
+    const tagEvents = [...this.tagEvents];
     this.rawReadings = [];
     this.buffer = [];
-    return readings;
+    this.tagEvents = [];
+    return { readings, tagEvents };
+  }
+
+  /**
+   * Record a rider-asserted surface label (research issue #7).
+   * Called from the in-ride tagging FAB. The event is buffered in
+   * memory and emitted alongside the raw readings on `stop()` — the
+   * sensor pipeline keeps running with no other side effects, so a
+   * tap mid-ride costs ~one allocation. Returns the persisted event
+   * so the caller can confirm capture (HUD toast, latest-label
+   * indicator).
+   *
+   * Tags fired before `start()` are dropped — the buffer only exists
+   * during an active recording. Callers should hide the FAB when the
+   * ride isn't active.
+   */
+  tagSurface(label: SurfaceLabel): RideTagEvent | null {
+    if (!this.isRecording) return null;
+    const event: RideTagEvent = {
+      t: Date.now(),
+      lat: this.currentLat || undefined,
+      lng: this.currentLng || undefined,
+      label,
+    };
+    this.tagEvents.push(event);
+    return event;
+  }
+
+  /**
+   * Read-only snapshot of the rider tags captured so far in this
+   * ride. The HUD uses this to render the most-recent label as an
+   * indicator that the FAB worked.
+   */
+  getTagEvents(): readonly RideTagEvent[] {
+    return this.tagEvents;
   }
 
   /**

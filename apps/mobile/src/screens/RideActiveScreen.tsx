@@ -49,6 +49,7 @@ import Icon from "@react-native-vector-icons/material-design-icons";
 import ReactNativeHapticFeedback from "react-native-haptic-feedback";
 import DeviceInfo from "react-native-device-info";
 import HazardReportFab from "@/components/HazardReportFab";
+import SurfaceTagFab from "@/components/SurfaceTagFab";
 import {
   borderRadius,
   colors,
@@ -70,6 +71,7 @@ import { ttsService } from "@/services/tts";
 import { usePreferencesStore, useRideStore } from "@/stores";
 import type { RideStackParamList } from "@/navigation/RootNavigator";
 import type { HazardType, RideResponse } from "@/types";
+import type { SurfaceLabel } from "@tarmoto/shared";
 import {
   formatDistanceKm,
   formatSpeedKmh,
@@ -431,14 +433,15 @@ export default function RideActiveScreen() {
     // intentionally do this *after* `/rides/:id/stop` so the backend
     // already has a ride row by the time the segment updates arrive.
     locationService.stop();
-    const readings = sensorService.stop();
-    if (id && readings.length > 0) {
+    const { readings, tagEvents } = sensorService.stop();
+    if (id && (readings.length > 0 || tagEvents.length > 0)) {
       try {
         await api.submitSensorData(
           id,
           readings,
           DeviceInfo.getModel(),
           getActiveModelVersion(),
+          tagEvents,
         );
       } catch {
         // Submission already routes through the offline queue, so any
@@ -478,6 +481,15 @@ export default function RideActiveScreen() {
     },
     [navigation],
   );
+
+  // Research issue #7 — rider taps a surface label on the
+  // SurfaceTagFab. Wire straight through to the sensor service so the
+  // tap is buffered alongside the raw readings and shipped together
+  // on ride stop. The service drops taps that fire while recording is
+  // off, so we don't need to gate this on `isRiding` here.
+  const handleTagSurface = useCallback((label: SurfaceLabel) => {
+    sensorService.tagSurface(label);
+  }, []);
 
   // US-26 — entry into the group ride share screen. Opt-in: nothing
   // is broadcast until the rider explicitly creates or joins a ride
@@ -618,6 +630,8 @@ export default function RideActiveScreen() {
         onOpenReport={handleOpenReport}
         style={styles.hazardFab}
       />
+
+      <SurfaceTagFab onTag={handleTagSurface} style={styles.surfaceTagFab} />
     </View>
   );
 }
@@ -860,5 +874,14 @@ const styles = StyleSheet.create({
     // Sit above the Stop-ride pill so a long-press on the FAB doesn't
     // overlap the destructive Stop-ride hitbox.
     bottom: spacing.section + spacing.lg,
+  },
+  // Research issue #7 — second FAB stacked above the hazard FAB so
+  // both are reachable with a thumb on a handlebar mount. Using a
+  // 60+spacing.md offset matches the FAB diameter (60) plus the gap
+  // we want between the two pills.
+  surfaceTagFab: {
+    position: "absolute",
+    right: spacing.lg,
+    bottom: spacing.section + spacing.lg + 60 + spacing.md,
   },
 });

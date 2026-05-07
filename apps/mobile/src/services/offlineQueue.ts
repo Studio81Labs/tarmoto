@@ -25,6 +25,7 @@
  */
 
 import type { SensorReading } from "@/types";
+import type { RideTagEvent } from "@tarmoto/shared";
 import {
   isNetworkDownError,
   isRetriableError,
@@ -47,6 +48,13 @@ export interface PendingUpload {
    * ML rollout — they're treated as `null` on read.
    */
   modelVersion: string | null;
+  /**
+   * Rider-asserted surface tags captured during the ride (research
+   * issue #7). Optional in the persisted blob: rides queued by an app
+   * build that pre-dates the tagging UI deserialise to `[]` so the
+   * uploader can keep its argument shape stable.
+   */
+  tagEvents: RideTagEvent[];
   enqueuedAt: number;
   attempts: number;
 }
@@ -93,6 +101,7 @@ export type SensorUploader = (
   readings: SensorReading[],
   deviceModel: string,
   modelVersion: string | null,
+  tagEvents: RideTagEvent[],
 ) => Promise<{ accepted: number; segments_updated: number }>;
 
 interface QueueStorage {
@@ -167,6 +176,9 @@ function readQueue(): PendingUpload[] {
       // Pre-US-3 entries are `undefined` here — normalise to `null`
       // so the rest of the pipeline can rely on a strict shape.
       modelVersion: entry.modelVersion ?? null,
+      // Pre-#7 entries lack the field entirely — normalise to `[]`
+      // so downstream uploaders don't need a separate optional path.
+      tagEvents: entry.tagEvents ?? [],
     }));
   } catch {
     return [];
@@ -175,7 +187,10 @@ function readQueue(): PendingUpload[] {
 
 function isPendingUpload(value: unknown): value is PendingUpload {
   if (typeof value !== "object" || value === null) return false;
-  const v = value as Partial<PendingUpload> & { modelVersion?: unknown };
+  const v = value as Partial<PendingUpload> & {
+    modelVersion?: unknown;
+    tagEvents?: unknown;
+  };
   // `modelVersion` is tolerated as `undefined` so entries persisted by
   // an older app build (pre-US-3) still round-trip — they're rewritten
   // with `null` on the next read via `readQueue`.
@@ -183,12 +198,17 @@ function isPendingUpload(value: unknown): value is PendingUpload {
     v.modelVersion === undefined ||
     v.modelVersion === null ||
     typeof v.modelVersion === "string";
+  // `tagEvents` is tolerated as `undefined` for the same backward-compat
+  // reason (pre-#7 entries) — the read path normalises to `[]`.
+  const validTagEvents =
+    v.tagEvents === undefined || Array.isArray(v.tagEvents);
   return (
     typeof v.id === "string" &&
     typeof v.rideId === "string" &&
     typeof v.deviceModel === "string" &&
     Array.isArray(v.readings) &&
     validModelVersion &&
+    validTagEvents &&
     typeof v.enqueuedAt === "number" &&
     typeof v.attempts === "number"
   );
@@ -243,6 +263,7 @@ export async function submitSensorUpload(
   readings: SensorReading[],
   deviceModel: string,
   modelVersion: string | null,
+  tagEvents: RideTagEvent[],
   uploader: SensorUploader,
 ): Promise<SubmitResult> {
   // Flush the backlog first so rides stay chronologically ordered on the
@@ -263,7 +284,7 @@ export async function submitSensorUpload(
     //   - networkFailed → link is down
     //   - transientServerError → backend is struggling, and shipping a
     //     fresh ride past the older queued ones would also break FIFO
-    enqueueUpload(rideId, readings, deviceModel, modelVersion);
+    enqueueUpload(rideId, readings, deviceModel, modelVersion, tagEvents);
     return {
       status: "queued",
       accepted: 0,
@@ -278,6 +299,7 @@ export async function submitSensorUpload(
       readings,
       deviceModel,
       modelVersion,
+      tagEvents,
     );
     return {
       status: "uploaded",
@@ -290,7 +312,7 @@ export async function submitSensorUpload(
       // Both connectivity drops and transient server faults land here —
       // either way the correct move is to preserve the ride data and
       // retry later, not surface a blocking error to the rider.
-      enqueueUpload(rideId, readings, deviceModel, modelVersion);
+      enqueueUpload(rideId, readings, deviceModel, modelVersion, tagEvents);
       return {
         status: "queued",
         accepted: 0,
@@ -346,6 +368,7 @@ export function drainOfflineQueue(
           next.readings,
           next.deviceModel,
           next.modelVersion,
+          next.tagEvents,
         );
         // Matching by id is position-independent — if enqueueUpload ran
         // while we awaited, the freshly-added entry stays intact.
@@ -406,6 +429,7 @@ export function enqueueUpload(
   readings: SensorReading[],
   deviceModel: string,
   modelVersion: string | null,
+  tagEvents: RideTagEvent[] = [],
 ): PendingUpload {
   const entry: PendingUpload = {
     id: nextId(),
@@ -413,6 +437,7 @@ export function enqueueUpload(
     deviceModel,
     readings,
     modelVersion,
+    tagEvents,
     enqueuedAt: Date.now(),
     attempts: 0,
   };
