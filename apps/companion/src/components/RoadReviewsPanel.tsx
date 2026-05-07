@@ -875,9 +875,9 @@ function ReviewCard({
         {photos.length > 0 && (
           <span className="inline-flex items-center gap-1">
             <Images size={12} />
-            {photos.length}
-            {t("photo")}
-            {photos.length === 1 ? "" : "s"}
+            {t(photos.length === 1 ? "{count} photo" : "{count} photos", {
+              count: photos.length,
+            })}
           </span>
         )}
       </div>

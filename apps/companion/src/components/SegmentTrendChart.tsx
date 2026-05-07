@@ -289,17 +289,18 @@ function ChartLegend({
       {repairCount > 0 && (
         <li className="flex items-center gap-1 text-emerald-400">
           <Wrench size={10} />
-          {repairCount}
-          {t("repair")}
-          {repairCount === 1 ? "" : "s"}
+          {t(repairCount === 1 ? "{count} repair" : "{count} repairs", {
+            count: repairCount,
+          })}
         </li>
       )}
       {detCount > 0 && (
         <li className="flex items-center gap-1 text-rose-400">
           <TrendingDown size={10} />
-          {detCount}
-          {t("deterioration")}
-          {detCount === 1 ? "" : "s"}
+          {t(
+            detCount === 1 ? "{count} deterioration" : "{count} deteriorations",
+            { count: detCount },
+          )}
         </li>
       )}
     </ul>

@@ -480,10 +480,12 @@ export default function RoadMapPage() {
                         {bucket.label}
                       </p>
                       <p className="text-xs text-slate-500">
-                        {bucket.segments.length}
-                        {t("segment ")}
-                        {bucket.segments.length === 1 ? "" : "s"}
-                        {t("to discover ")}
+                        {t(
+                          bucket.segments.length === 1
+                            ? "{count} segment to discover"
+                            : "{count} segments to discover",
+                          { count: bucket.segments.length },
+                        )}
                       </p>
                     </div>
                     <span className="text-xs text-slate-400 tabular-nums">

@@ -669,7 +669,7 @@ function CollectionModal({
               htmlFor="collection-description"
               className="block text-xs text-slate-500 mb-1"
             >
-              {t("Description")}
+              {t("Description")}{" "}
               <span className="text-slate-600">{t("(optional)")}</span>
             </label>
             <textarea

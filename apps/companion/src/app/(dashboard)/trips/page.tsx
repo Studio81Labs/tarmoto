@@ -841,24 +841,25 @@ function TripCard({
           <div className="flex items-center gap-2">
             <Calendar size={13} />
             <span>
-              {trip.days?.length ?? 0}
-              {t("day ")}
-              {(trip.days?.length ?? 0) === 1 ? "" : "s"}
+              {t(
+                (trip.days?.length ?? 0) === 1 ? "{count} day" : "{count} days",
+                { count: trip.days?.length ?? 0 },
+              )}
             </span>
           </div>
           <div className="flex items-center gap-2">
             <MapPin size={13} />
             <span>
-              {Math.round(distance)}
-              {t("km total")}
+              {t("{distance} km total", { distance: Math.round(distance) })}
             </span>
           </div>
           {(trip.collaborators?.length ?? 0) > 1 && (
             <div className="flex items-center gap-2">
               <Users size={13} />
               <span>
-                {trip.collaborators?.length ?? 0}
-                {t("riders")}
+                {t("{count} riders", {
+                  count: trip.collaborators?.length ?? 0,
+                })}
               </span>
             </div>
           )}
