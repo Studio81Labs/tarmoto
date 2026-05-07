@@ -261,6 +261,9 @@ describe("TripPlannerPage", () => {
   let storeState: TripStoreSnapshot;
 
   beforeEach(() => {
+    // Each test starts on the bare planner URL so URL hydration can't bleed
+    // between cases.
+    window.history.replaceState({}, "", "/trips/planner");
     mockedTripPlannerMap.mockClear();
     mockedPassesPanel.mockClear();
     mockedClosuresPanel.mockClear();
@@ -1134,6 +1137,118 @@ describe("TripPlannerPage", () => {
       expect(mockPush).toHaveBeenCalledWith("/trips/server-trip-1"),
     );
     expect(screen.getByRole("button", { name: "Saving…" })).toBeDisabled();
+  });
+
+  it("toggles aria-pressed on the parameters button when the panel is shown or hidden", () => {
+    render(<TripPlannerPage />);
+
+    const button = screen.getByRole("button", { name: /Parameters/i });
+    expect(button).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(button);
+    expect(button).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(button);
+    expect(button).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("hydrates planner controls from the URL on mount", () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/trips/planner?days=7&dailyKm=320&road=scenic&surfaces=asphalt,gravel&minQuality=4&avoidHighways=0&avoidTolls=1&avoidUnpaved=0",
+    );
+
+    render(<TripPlannerPage />);
+
+    expect(screen.getByLabelText("Number of days")).toHaveValue(7);
+    expect(screen.getByLabelText("Daily km target")).toHaveValue(320);
+    expect(screen.getByLabelText("Road preference")).toHaveValue("scenic");
+    expect(screen.getByLabelText("Minimum road quality")).toHaveValue("4");
+    expect(screen.getByLabelText("Asphalt")).toBeChecked();
+    expect(screen.getByLabelText("Gravel")).toBeChecked();
+    expect(screen.getByLabelText("Concrete")).not.toBeChecked();
+    expect(screen.getByLabelText("Avoid highways")).not.toBeChecked();
+    expect(screen.getByLabelText("Avoid tolls")).toBeChecked();
+    expect(screen.getByLabelText("Avoid unpaved roads")).not.toBeChecked();
+  });
+
+  it("clamps and ignores invalid URL planner values without crashing", () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/trips/planner?days=99&dailyKm=nope&road=teleport&surfaces=lava,asphalt&minQuality=0",
+    );
+
+    render(<TripPlannerPage />);
+
+    expect(screen.getByLabelText("Number of days")).toHaveValue(14);
+    expect(screen.getByLabelText("Daily km target")).toHaveValue(250);
+    expect(screen.getByLabelText("Road preference")).toHaveValue("mixed");
+    expect(screen.getByLabelText("Minimum road quality")).toHaveValue("1");
+    expect(screen.getByLabelText("Asphalt")).toBeChecked();
+    expect(screen.getByLabelText("Gravel")).not.toBeChecked();
+  });
+
+  it("writes planner control changes to the URL via history.replaceState", () => {
+    render(<TripPlannerPage />);
+
+    fireEvent.change(screen.getByLabelText("Number of days"), {
+      target: { value: "7" },
+    });
+    expect(window.location.search).toContain("days=7");
+
+    fireEvent.change(screen.getByLabelText("Daily km target"), {
+      target: { value: "320" },
+    });
+    expect(window.location.search).toContain("dailyKm=320");
+
+    fireEvent.change(screen.getByLabelText("Road preference"), {
+      target: { value: "scenic" },
+    });
+    expect(window.location.search).toContain("road=scenic");
+
+    fireEvent.click(screen.getByLabelText("Gravel"));
+    expect(window.location.search).toContain("surfaces=asphalt%2Cgravel");
+
+    fireEvent.click(screen.getByLabelText("Avoid highways"));
+    expect(window.location.search).toContain("avoidHighways=0");
+  });
+
+  it("removes planner parameters from the URL when controls return to defaults", () => {
+    window.history.replaceState({}, "", "/trips/planner?days=7&road=scenic");
+
+    render(<TripPlannerPage />);
+
+    fireEvent.change(screen.getByLabelText("Number of days"), {
+      target: { value: "3" },
+    });
+    expect(window.location.search).not.toMatch(/[?&]days=/);
+    expect(window.location.search).toContain("road=scenic");
+
+    fireEvent.change(screen.getByLabelText("Road preference"), {
+      target: { value: "mixed" },
+    });
+    expect(window.location.search).not.toMatch(/[?&]road=/);
+  });
+
+  it("preserves the tripId search param when syncing planner controls", () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/trips/planner?tripId=11111111-2222-4333-8444-555555555555",
+    );
+
+    render(<TripPlannerPage />);
+
+    fireEvent.change(screen.getByLabelText("Number of days"), {
+      target: { value: "5" },
+    });
+
+    expect(window.location.search).toContain(
+      "tripId=11111111-2222-4333-8444-555555555555",
+    );
+    expect(window.location.search).toContain("days=5");
   });
 
   it("updates the promoted server trip instead of creating a duplicate draft", async () => {

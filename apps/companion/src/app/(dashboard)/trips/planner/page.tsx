@@ -77,6 +77,35 @@ const IMPORTABLE_WAYPOINT_TYPES = new Set<Waypoint["type"]>([
   "rest",
   "photo",
 ]);
+const PLANNER_DEFAULTS = {
+  days: 3,
+  dailyKmTarget: 250,
+  roadPreference: "mixed" as TripParameters["roadPreference"],
+  surfacePreference: ["asphalt"] as SurfaceType[],
+  minQuality: 3,
+  avoidHighways: true,
+  avoidTolls: false,
+  avoidUnpaved: true,
+} as const;
+const VALID_ROAD_PREFERENCES: ReadonlyArray<TripParameters["roadPreference"]> =
+  ["curvy", "scenic", "mixed", "direct"];
+const VALID_SURFACES: ReadonlyArray<SurfaceType> = [
+  "asphalt",
+  "concrete",
+  "cobblestone",
+  "gravel",
+  "dirt",
+];
+const URL_PARAM_KEYS = {
+  days: "days",
+  dailyKm: "dailyKm",
+  road: "road",
+  surfaces: "surfaces",
+  minQuality: "minQuality",
+  avoidHighways: "avoidHighways",
+  avoidTolls: "avoidTolls",
+  avoidUnpaved: "avoidUnpaved",
+} as const;
 export default function TripPlannerPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [paramsOpen, setParamsOpen] = useState(true);
@@ -87,19 +116,39 @@ export default function TripPlannerPage() {
   const [travelMonth, setTravelMonth] = useState<number>(() =>
     currentUtcMonth(),
   );
-  const [days, setDays] = useState(3);
+  // Planner controls render with their defaults during SSR/static
+  // prerender (where `window` doesn't exist) and on the client's first
+  // render so the prerendered HTML and the hydrated tree always agree.
+  // The post-mount effect below re-applies any values pulled from
+  // `?days=…&road=…` etc., so a shared URL still lands on the right
+  // panel state — just on the second client render rather than the first.
+  // Explicit type params widen `PLANNER_DEFAULTS`'s `as const` literals
+  // so later `setDays(params.days)` etc. with arbitrary numbers compile.
+  const [days, setDays] = useState<number>(PLANNER_DEFAULTS.days);
   const [saving, setSaving] = useState(false);
   const router = useRouter();
-  const [dailyKmTarget, setDailyKmTarget] = useState(250);
-  const [roadPreference, setRoadPreference] =
-    useState<TripParameters["roadPreference"]>("mixed");
-  const [surfacePreference, setSurfacePreference] = useState<SurfaceType[]>([
-    "asphalt",
-  ]);
-  const [minQuality, setMinQuality] = useState(3);
-  const [avoidHighways, setAvoidHighways] = useState(true);
-  const [avoidTolls, setAvoidTolls] = useState(false);
-  const [avoidUnpaved, setAvoidUnpaved] = useState(true);
+  const [dailyKmTarget, setDailyKmTarget] = useState<number>(
+    PLANNER_DEFAULTS.dailyKmTarget,
+  );
+  const [roadPreference, setRoadPreference] = useState<
+    TripParameters["roadPreference"]
+  >(PLANNER_DEFAULTS.roadPreference);
+  const [surfacePreference, setSurfacePreference] = useState<SurfaceType[]>(
+    () => [...PLANNER_DEFAULTS.surfacePreference],
+  );
+  const [minQuality, setMinQuality] = useState<number>(
+    PLANNER_DEFAULTS.minQuality,
+  );
+  const [avoidHighways, setAvoidHighways] = useState<boolean>(
+    PLANNER_DEFAULTS.avoidHighways,
+  );
+  const [avoidTolls, setAvoidTolls] = useState<boolean>(
+    PLANNER_DEFAULTS.avoidTolls,
+  );
+  const [avoidUnpaved, setAvoidUnpaved] = useState<boolean>(
+    PLANNER_DEFAULTS.avoidUnpaved,
+  );
+  const urlControlsHydratedRef = useRef(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [generatedOptions, setGeneratedOptions] = useState<
     GeneratedTripOption[]
@@ -460,6 +509,63 @@ export default function TripPlannerPage() {
     setAvoidTolls(params.avoidTolls);
     setAvoidUnpaved(params.avoidUnpaved);
   }, [activeTrip]);
+  // Hydrate the planner controls from `?days=…&road=…` etc. **after** mount
+  // so that the SSR/static prerender and the client's first render both
+  // start from the same defaults — reading `window.location` during render
+  // would diverge the two trees and break hydration. The same effect then
+  // mirrors any subsequent control edits back into the URL via
+  // history.replaceState (not the Next router) so the page stays
+  // statically prerenderable and we don't stack a history entry per tweak.
+  // Existing search params (notably `tripId`) are preserved.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!urlControlsHydratedRef.current) {
+      urlControlsHydratedRef.current = true;
+      const fromUrl = readPlannerControlsFromUrl();
+      const dirty =
+        fromUrl.days !== PLANNER_DEFAULTS.days ||
+        fromUrl.dailyKmTarget !== PLANNER_DEFAULTS.dailyKmTarget ||
+        fromUrl.roadPreference !== PLANNER_DEFAULTS.roadPreference ||
+        !surfacesEqualDefault(fromUrl.surfacePreference) ||
+        fromUrl.minQuality !== PLANNER_DEFAULTS.minQuality ||
+        fromUrl.avoidHighways !== PLANNER_DEFAULTS.avoidHighways ||
+        fromUrl.avoidTolls !== PLANNER_DEFAULTS.avoidTolls ||
+        fromUrl.avoidUnpaved !== PLANNER_DEFAULTS.avoidUnpaved;
+      if (dirty) {
+        setDays(fromUrl.days);
+        setDailyKmTarget(fromUrl.dailyKmTarget);
+        setRoadPreference(fromUrl.roadPreference);
+        setSurfacePreference(fromUrl.surfacePreference);
+        setMinQuality(fromUrl.minQuality);
+        setAvoidHighways(fromUrl.avoidHighways);
+        setAvoidTolls(fromUrl.avoidTolls);
+        setAvoidUnpaved(fromUrl.avoidUnpaved);
+        // Skip the URL write on this pass — we'd just be writing back what
+        // we just read. The follow-up render triggered by the setStates
+        // above will sync any sanitized values (e.g. clamped numbers).
+        return;
+      }
+    }
+    syncPlannerControlsToUrl({
+      days,
+      dailyKmTarget,
+      roadPreference,
+      surfacePreference,
+      avoidHighways,
+      avoidTolls,
+      avoidUnpaved,
+      minQuality,
+    });
+  }, [
+    avoidHighways,
+    avoidTolls,
+    avoidUnpaved,
+    dailyKmTarget,
+    days,
+    minQuality,
+    roadPreference,
+    surfacePreference,
+  ]);
   useEffect(() => {
     generatedOptionsRef.current = generatedOptions;
   }, [generatedOptions]);
@@ -683,7 +789,12 @@ export default function TripPlannerPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setParamsOpen(!paramsOpen)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition"
+            aria-pressed={paramsOpen}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition ${
+              paramsOpen
+                ? "bg-tarmoto-cyan/10 text-tarmoto-cyan"
+                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+            }`}
           >
             <Sliders size={14} />
             {t("Parameters ")}
@@ -1181,6 +1292,189 @@ function clampNumberInput(
   const parsed = Number(rawValue);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(max, Math.max(min, Math.round(parsed)));
+}
+type PlannerControls = {
+  days: number;
+  dailyKmTarget: number;
+  roadPreference: TripParameters["roadPreference"];
+  surfacePreference: SurfaceType[];
+  minQuality: number;
+  avoidHighways: boolean;
+  avoidTolls: boolean;
+  avoidUnpaved: boolean;
+};
+function readPlannerControlsFromUrl(): PlannerControls {
+  const search = new URLSearchParams(window.location.search);
+  return {
+    days: parseClampedIntParam(
+      search.get(URL_PARAM_KEYS.days),
+      1,
+      14,
+      PLANNER_DEFAULTS.days,
+    ),
+    dailyKmTarget: parseClampedIntParam(
+      search.get(URL_PARAM_KEYS.dailyKm),
+      100,
+      500,
+      PLANNER_DEFAULTS.dailyKmTarget,
+    ),
+    roadPreference: parseRoadPreferenceParam(
+      search.get(URL_PARAM_KEYS.road),
+      PLANNER_DEFAULTS.roadPreference,
+    ),
+    surfacePreference: parseSurfacesParam(search.get(URL_PARAM_KEYS.surfaces), [
+      ...PLANNER_DEFAULTS.surfacePreference,
+    ]),
+    minQuality: parseClampedIntParam(
+      search.get(URL_PARAM_KEYS.minQuality),
+      1,
+      4,
+      PLANNER_DEFAULTS.minQuality,
+    ),
+    avoidHighways: parseBooleanParam(
+      search.get(URL_PARAM_KEYS.avoidHighways),
+      PLANNER_DEFAULTS.avoidHighways,
+    ),
+    avoidTolls: parseBooleanParam(
+      search.get(URL_PARAM_KEYS.avoidTolls),
+      PLANNER_DEFAULTS.avoidTolls,
+    ),
+    avoidUnpaved: parseBooleanParam(
+      search.get(URL_PARAM_KEYS.avoidUnpaved),
+      PLANNER_DEFAULTS.avoidUnpaved,
+    ),
+  };
+}
+function parseClampedIntParam(
+  raw: string | null,
+  min: number,
+  max: number,
+  fallback: number,
+): number {
+  // Reuse the same clamp the input handlers go through so a hand-edited
+  // URL and an in-app edit can never disagree on what's a valid value.
+  return raw === null ? fallback : clampNumberInput(raw, min, max, fallback);
+}
+function parseBooleanParam(raw: string | null, fallback: boolean): boolean {
+  if (raw === "1") return true;
+  if (raw === "0") return false;
+  return fallback;
+}
+function parseRoadPreferenceParam(
+  raw: string | null,
+  fallback: TripParameters["roadPreference"],
+): TripParameters["roadPreference"] {
+  if (raw === null) return fallback;
+  return VALID_ROAD_PREFERENCES.includes(
+    raw as TripParameters["roadPreference"],
+  )
+    ? (raw as TripParameters["roadPreference"])
+    : fallback;
+}
+function parseSurfacesParam(
+  raw: string | null,
+  fallback: SurfaceType[],
+): SurfaceType[] {
+  if (raw === null) return fallback;
+  const seen = new Set<SurfaceType>();
+  for (const part of raw.split(",")) {
+    const trimmed = part.trim();
+    if (VALID_SURFACES.includes(trimmed as SurfaceType)) {
+      seen.add(trimmed as SurfaceType);
+    }
+  }
+  return seen.size > 0 ? Array.from(seen) : fallback;
+}
+function syncPlannerControlsToUrl(controls: PlannerControls) {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  const search = url.searchParams;
+  setOrDeleteParam(
+    search,
+    URL_PARAM_KEYS.days,
+    controls.days !== PLANNER_DEFAULTS.days ? String(controls.days) : null,
+  );
+  setOrDeleteParam(
+    search,
+    URL_PARAM_KEYS.dailyKm,
+    controls.dailyKmTarget !== PLANNER_DEFAULTS.dailyKmTarget
+      ? String(controls.dailyKmTarget)
+      : null,
+  );
+  setOrDeleteParam(
+    search,
+    URL_PARAM_KEYS.road,
+    controls.roadPreference !== PLANNER_DEFAULTS.roadPreference
+      ? controls.roadPreference
+      : null,
+  );
+  setOrDeleteParam(
+    search,
+    URL_PARAM_KEYS.surfaces,
+    surfacesEqualDefault(controls.surfacePreference)
+      ? null
+      : controls.surfacePreference.join(","),
+  );
+  setOrDeleteParam(
+    search,
+    URL_PARAM_KEYS.minQuality,
+    controls.minQuality !== PLANNER_DEFAULTS.minQuality
+      ? String(controls.minQuality)
+      : null,
+  );
+  setOrDeleteParam(
+    search,
+    URL_PARAM_KEYS.avoidHighways,
+    controls.avoidHighways !== PLANNER_DEFAULTS.avoidHighways
+      ? controls.avoidHighways
+        ? "1"
+        : "0"
+      : null,
+  );
+  setOrDeleteParam(
+    search,
+    URL_PARAM_KEYS.avoidTolls,
+    controls.avoidTolls !== PLANNER_DEFAULTS.avoidTolls
+      ? controls.avoidTolls
+        ? "1"
+        : "0"
+      : null,
+  );
+  setOrDeleteParam(
+    search,
+    URL_PARAM_KEYS.avoidUnpaved,
+    controls.avoidUnpaved !== PLANNER_DEFAULTS.avoidUnpaved
+      ? controls.avoidUnpaved
+        ? "1"
+        : "0"
+      : null,
+  );
+  const nextSearch = search.toString();
+  const currentSearch = window.location.search.replace(/^\?/, "");
+  if (nextSearch === currentSearch) return;
+  const suffix = nextSearch ? `?${nextSearch}` : "";
+  window.history.replaceState({}, "", `${url.pathname}${suffix}${url.hash}`);
+}
+function setOrDeleteParam(
+  search: URLSearchParams,
+  key: string,
+  value: string | null,
+) {
+  if (value === null) {
+    search.delete(key);
+  } else {
+    search.set(key, value);
+  }
+}
+function surfacesEqualDefault(surfaces: SurfaceType[]): boolean {
+  if (surfaces.length !== PLANNER_DEFAULTS.surfacePreference.length) {
+    return false;
+  }
+  const expected = new Set<SurfaceType>(PLANNER_DEFAULTS.surfacePreference);
+  for (const surface of surfaces) {
+    if (!expected.has(surface)) return false;
+  }
+  return true;
 }
 function normalizeBackendDailyKm(value: number) {
   if (!Number.isFinite(value)) return MIN_BACKEND_DAILY_KM;
