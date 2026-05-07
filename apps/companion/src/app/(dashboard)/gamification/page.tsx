@@ -450,8 +450,7 @@ function SeasonalBanner({ seasonal }: { seasonal: SeasonalChallenge }) {
       <div className="relative">
         <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-tarmoto-cyan">
           <Sparkles size={14} />
-          {t("Seasonal \u00B7 ")}
-          {seasonal.season}
+          {t("Seasonal \u00B7 {season}", { season: seasonal.season })}
         </div>
         <h2 className="mt-2 text-2xl font-bold text-white">{seasonal.name}</h2>
         <p className="mt-1 text-sm text-slate-300">{seasonal.tagline}</p>
@@ -593,8 +592,7 @@ function ChallengeCard({
           {challenge.reward && (
             <span className="flex items-center gap-1">
               <Medal size={12} />
-              {t("Reward: ")}
-              {challenge.reward}
+              {t("Reward: {reward}", { reward: challenge.reward })}
             </span>
           )}
           {meta && (
@@ -605,7 +603,7 @@ function ChallengeCard({
         </div>
         {joined ? (
           <span className="text-[11px] uppercase tracking-widest text-tarmoto-cyan">
-            {t("Joined ")}
+            {t("Joined")}
           </span>
         ) : (
           <button
@@ -617,7 +615,7 @@ function ChallengeCard({
             {joining ? (
               <>
                 <Loader2 size={12} className="animate-spin" />
-                {t("Joining\u2026 ")}
+                {t("Joining\u2026")}
               </>
             ) : (
               "Join challenge"
@@ -756,7 +754,7 @@ function RegionalLeaderboardsSection() {
         >
           <AlertTriangle className="mx-auto text-red-300 mb-2" size={24} />
           <p className="text-red-200 font-medium">
-            {t("Could not load leaderboards ")}
+            {t("Could not load leaderboards")}
           </p>
           <p className="text-red-300/80 text-sm mt-1">{load.message}</p>
         </div>
@@ -790,7 +788,7 @@ function RegionToggle({
         onClick={() => onChange("global")}
         ariaLabel="Global ranking"
       >
-        {t("Global ")}
+        {t("Global")}
       </ToggleButton>
       {homeRegion && (
         <ToggleButton
@@ -940,7 +938,7 @@ function RegionalLeaderboardRow({
           {entry.displayName}
           {entry.isMe && (
             <span className="ml-2 text-[10px] uppercase tracking-widest text-tarmoto-cyan">
-              {t("You ")}
+              {t("You")}
             </span>
           )}
           {entry.homeRegion && (
@@ -966,7 +964,7 @@ function RegionalLeaderboardSummary({
   return (
     <div className="border-t border-slate-800 px-4 py-3 flex flex-wrap gap-x-6 gap-y-2 text-xs text-slate-400">
       <span className="text-slate-500 uppercase tracking-widest font-semibold">
-        {t("Your rank ")}
+        {t("Your rank")}
       </span>
       <span className="tabular-nums">
         #{me.rank}{" "}
@@ -1164,7 +1162,7 @@ function ErrorCard({
         onClick={onRetry}
         className="mt-4 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-900/40 text-red-100 text-sm hover:bg-red-900/60 transition"
       >
-        {t("Try again ")}
+        {t("Try again")}
       </button>
     </div>
   );

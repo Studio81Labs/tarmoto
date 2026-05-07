@@ -752,11 +752,13 @@ function ReviewEditor({
             </div>
           )}
           <p className="mt-1 text-[11px] text-slate-500">
-            {t("Up to ")}
-            {MAX_REVIEW_PHOTOS}
-            {t("JPEG, PNG, or WebP photos (max")}{" "}
-            {Math.round(MAX_REVIEW_PHOTO_BYTES / (1024 * 1024))}
-            {t("MB each). ")}
+            {t(
+              "Up to {count} JPEG, PNG, or WebP photos (max {sizeMb} MB each).",
+              {
+                count: MAX_REVIEW_PHOTOS,
+                sizeMb: Math.round(MAX_REVIEW_PHOTO_BYTES / (1024 * 1024)),
+              },
+            )}
           </p>
           {uploadError && (
             <p className="mt-1 text-xs text-rose-300" role="alert">

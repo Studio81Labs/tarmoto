@@ -258,7 +258,7 @@ export default function CollectionDetailPage() {
       <div className="p-6 max-w-4xl mx-auto animate-fade-in">
         <div className="flex items-center gap-2 text-slate-400 text-sm">
           <Loader2 size={16} className="animate-spin" />
-          {t("Loading collection\u2026 ")}
+          {t("Loading collection\u2026")}
         </div>
       </div>
     );
@@ -271,7 +271,7 @@ export default function CollectionDetailPage() {
           className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-4 transition"
         >
           <ArrowLeft size={16} />
-          {t("Collections ")}
+          {t("Collections")}
         </Link>
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-10 text-center">
           <RouteIcon size={40} className="mx-auto text-slate-600 mb-3" />
@@ -295,7 +295,7 @@ export default function CollectionDetailPage() {
           className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-4 transition"
         >
           <ArrowLeft size={16} />
-          {t("Collections ")}
+          {t("Collections")}
         </Link>
         <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-10 text-center">
           <p className="text-amber-200 font-medium mb-1">
@@ -351,7 +351,7 @@ export default function CollectionDetailPage() {
         className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-4 transition"
       >
         <ArrowLeft size={16} />
-        {t("Collections ")}
+        {t("Collections")}
       </Link>
 
       <header className="flex flex-wrap items-start justify-between gap-3 mb-2">
@@ -378,7 +378,7 @@ export default function CollectionDetailPage() {
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light disabled:opacity-50 transition"
           >
             <Plus size={14} />
-            {t("Add routes ")}
+            {t("Add routes")}
           </button>
         </div>
       </header>
@@ -632,17 +632,17 @@ function ShareButton({ collection }: { collection: RouteCollectionView }) {
       {copyState === "copied" ? (
         <>
           <Check size={14} />
-          {t("Copied ")}
+          {t("Copied")}
         </>
       ) : copyState === "error" ? (
         <>
           <Copy size={14} />
-          {t("Copy failed ")}
+          {t("Copy failed")}
         </>
       ) : (
         <>
           <Share2 size={14} />
-          {t("Share ")}
+          {t("Share")}
         </>
       )}
     </button>
@@ -791,7 +791,7 @@ function EmptyRoutes({ onAdd }: { onAdd: () => void }) {
         className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition"
       >
         <Plus size={16} />
-        {t("Add routes ")}
+        {t("Add routes")}
       </button>
     </div>
   );
@@ -891,8 +891,9 @@ function RideRow({ ride, onRemove }: { ride: UserRide; onRemove: () => void }) {
               )}
               {ride.avg_road_quality != null && (
                 <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
-                  {t("Quality ")}
-                  {ride.avg_road_quality.toFixed(1)}
+                  {t("Quality {quality}", {
+                    quality: ride.avg_road_quality.toFixed(1),
+                  })}
                 </span>
               )}
               <span className="text-[11px] text-slate-600 uppercase tracking-widest">
@@ -937,7 +938,7 @@ function MissingItemRow({
         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition"
       >
         <X size={12} />
-        {t("Remove ")}
+        {t("Remove")}
       </button>
     </div>
   );

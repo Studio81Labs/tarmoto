@@ -71,6 +71,7 @@ export const en = {
   "Back to trips": "Back to trips",
   "Back to trips ": "Back to trips ",
   Badges: "Badges",
+  "Badges earned": "Badges earned",
   "Badges earned ": "Badges earned ",
   "Badges, challenges, leaderboards, and milestones for your riding region. ":
     "Badges, challenges, leaderboards, and milestones for your riding region. ",
@@ -131,6 +132,7 @@ export const en = {
   "Collaborate on this trip ": "Collaborate on this trip ",
   "Collaboration tabs": "Collaboration tabs",
   "Collection not found ": "Collection not found ",
+  Collections: "Collections",
   "Collections ": "Collections ",
   "Collections from other riders you've saved. They show up here until you unfollow. ":
     "Collections from other riders you've saved. They show up here until you unfollow. ",
@@ -147,11 +149,13 @@ export const en = {
   "Contribute to road quality data ": "Contribute to road quality data ",
   "Control who can see your profile, how your rides are shared, and what data Tarmoto retains and uses. ":
     "Control who can see your profile, how your rides are shared, and what data Tarmoto retains and uses. ",
+  Copied: "Copied",
   "Copied ": "Copied ",
   "Copy ": "Copy ",
   "Copy an iframe snippet for blogs, ride reports, newsletters, or forums. The widget stays responsive, keeps Tarmoto branding, and links back to the full road-quality page. ":
     "Copy an iframe snippet for blogs, ride reports, newsletters, or forums. The widget stays responsive, keeps Tarmoto branding, and links back to the full road-quality page. ",
   "Copy embed code ": "Copy embed code ",
+  "Copy failed": "Copy failed",
   "Copy failed ": "Copy failed ",
   "Copy share link": "Copy share link",
   "Copy sign-in email ": "Copy sign-in email ",
@@ -160,6 +164,7 @@ export const en = {
   "Could not copy your email. Please copy it manually. ":
     "Could not copy your email. Please copy it manually. ",
   "Could not load achievements": "Could not load achievements",
+  "Could not load leaderboards": "Could not load leaderboards",
   "Could not load leaderboards ": "Could not load leaderboards ",
   "Could not load preferences: ": "Could not load preferences: ",
   "Could not load profile": "Could not load profile",
@@ -229,6 +234,7 @@ export const en = {
   "Drawn ": "Drawn ",
   "Drop to import GPX or KML ": "Drop to import GPX or KML ",
   "Edit ": "Edit ",
+  "Edit profile": "Edit profile",
   "Edit profile ": "Edit profile ",
   "Edit your review": "Edit your review",
   "Edit your review ": "Edit your review ",
@@ -285,6 +291,7 @@ export const en = {
     "Generated with Tarmoto Companion \u00b7 ",
   "Generating your route... ": "Generating your route... ",
   "Generating\u2026 ": "Generating\u2026 ",
+  Global: "Global",
   "Global ": "Global ",
   "Good or better": "Good or better",
   "Hazard type ": "Hazard type ",
@@ -319,7 +326,9 @@ export const en = {
   "Invoice unavailable ": "Invoice unavailable ",
   "JPEG, PNG, or WebP photos (max": "JPEG, PNG, or WebP photos (max",
   "Join the Tarmoto rider community": "Join the Tarmoto rider community",
+  Joined: "Joined",
   "Joined ": "Joined ",
+  "Joining\u2026": "Joining\u2026",
   "Joining\u2026 ": "Joining\u2026 ",
   "Know the road before you ride it.": "Know the road before you ride it.",
   L: "L",
@@ -335,6 +344,7 @@ export const en = {
   "Load the trip into the planner to propose a new suggestion. You can still view and vote on existing suggestions below. ":
     "Load the trip into the planner to propose a new suggestion. You can still view and vote on existing suggestions below. ",
   "Loading closures\u2026": "Loading closures\u2026",
+  "Loading collection\u2026": "Loading collection\u2026",
   "Loading collection\u2026 ": "Loading collection\u2026 ",
   "Loading community rides\u2026 ": "Loading community rides\u2026 ",
   "Loading map\u2026 ": "Loading map\u2026 ",
@@ -410,6 +420,7 @@ export const en = {
   "No activity yet. Member joins, suggestion proposals, votes, and resolutions will show up here. ":
     "No activity yet. Member joins, suggestion proposals, votes, and resolutions will show up here. ",
   "No badges available yet.": "No badges available yet.",
+  "No badges earned yet.": "No badges earned yet.",
   "No badges earned yet. ": "No badges earned yet. ",
   "No badges yet": "No badges yet",
   "No bikes in your garage yet ": "No bikes in your garage yet ",
@@ -540,6 +551,7 @@ export const en = {
   "QR unavailable ": "QR unavailable ",
   Quality: "Quality",
   "Quality ": "Quality ",
+  "Quality {quality}": "Quality {quality}",
   "Quality (min \u2192 max)": "Quality (min \u2192 max)",
   "Quality trend ": "Quality trend ",
   "Ranked by the current quality and curviness model. ":
@@ -562,6 +574,7 @@ export const en = {
   "Regional leaderboards": "Regional leaderboards",
   "Reject ": "Reject ",
   "Remember me ": "Remember me ",
+  Remove: "Remove",
   "Remove ": "Remove ",
   "Renewal ": "Renewal ",
   Reorder: "Reorder",
@@ -570,6 +583,7 @@ export const en = {
   "Reset password": "Reset password",
   "Retry ": "Retry ",
   "Reward: ": "Reward: ",
+  "Reward: {reward}": "Reward: {reward}",
   "Ridden (": "Ridden (",
   Ride: "Ride",
   "Ride ": "Ride ",
@@ -627,6 +641,7 @@ export const en = {
   "Searching\u2026": "Searching\u2026",
   "Seasonal challenge": "Seasonal challenge",
   "Seasonal passes ": "Seasonal passes ",
+  "Seasonal \u00b7 {season}": "Seasonal \u00b7 {season}",
   "Seasonal \u00b7 ": "Seasonal \u00b7 ",
   "Segment quality (": "Segment quality (",
   Segments: "Segments",
@@ -637,6 +652,7 @@ export const en = {
   "Set active ": "Set active ",
   Settings: "Settings",
   "Settings ": "Settings ",
+  Share: "Share",
   "Share ": "Share ",
   "Share a read-only link, gather route suggestions from your group, and track the activity log. ":
     "Share a read-only link, gather route suggestions from your group, and track the activity log. ",
@@ -741,6 +757,7 @@ export const en = {
   "Trip not found": "Trip not found",
   "Trip parameters ": "Trip parameters ",
   "Trip stops & stays ": "Trip stops & stays ",
+  "Try again": "Try again",
   "Try again ": "Try again ",
   "Try broadening the feed or switching back to the most popular rides. ":
     "Try broadening the feed or switching back to the most popular rides. ",
@@ -752,6 +769,8 @@ export const en = {
   "Until route generation lands, the planner previews each day as a direct line between its ordered waypoints. ":
     "Until route generation lands, the planner previews each day as a direct line between its ordered waypoints. ",
   "Up to ": "Up to ",
+  "Up to {count} JPEG, PNG, or WebP photos (max {sizeMb} MB each).":
+    "Up to {count} JPEG, PNG, or WebP photos (max {sizeMb} MB each).",
   "Update payment method ": "Update payment method ",
   "Updated ": "Updated ",
   "Updated weekly": "Updated weekly",
@@ -790,6 +809,7 @@ export const en = {
   Yamaha: "Yamaha",
   Year: "Year",
   "Year-over-year": "Year-over-year",
+  You: "You",
   "You ": "You ",
   "You can opt out of optional processing at any time. Essential data needed to run the app (auth, rides you record) is always processed. ":
     "You can opt out of optional processing at any time. Essential data needed to run the app (auth, rides you record) is always processed. ",
@@ -804,6 +824,7 @@ export const en = {
   "Your invoices will appear here once the first subscription charge is created. ":
     "Your invoices will appear here once the first subscription charge is created. ",
   "Your password ": "Your password ",
+  "Your rank": "Your rank",
   "Your rank ": "Your rank ",
   "Your rides from the mobile app will appear here.":
     "Your rides from the mobile app will appear here.",

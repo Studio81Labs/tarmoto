@@ -158,7 +158,7 @@ export default function RiderProfilePage() {
         className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-6 transition"
       >
         <ArrowLeft size={16} />
-        {t("Community ")}
+        {t("Community")}
       </Link>
 
       {loading ? (
@@ -255,7 +255,7 @@ function Header({
               href="/settings"
               className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm hover:bg-slate-700 transition"
             >
-              {t("Edit profile ")}
+              {t("Edit profile")}
             </Link>
           ) : (
             <button
@@ -329,7 +329,7 @@ function BadgesSection({ badges, totalBadges }: BadgesSectionProps) {
       <header className="flex items-center justify-between mb-4">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
           <Award size={14} />
-          {t("Badges earned ")}
+          {t("Badges earned")}
         </h2>
         <span className="text-xs text-slate-500 tabular-nums">
           {t("{count} of {total}", {
@@ -345,7 +345,7 @@ function BadgesSection({ badges, totalBadges }: BadgesSectionProps) {
       ) : badges.length === 0 ? (
         <p className="text-sm text-slate-500 inline-flex items-center gap-2">
           <Lock size={12} />
-          {t("No badges earned yet. ")}
+          {t("No badges earned yet.")}
         </p>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
