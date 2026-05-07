@@ -122,10 +122,12 @@ export default function TripPlannerPage() {
   // The post-mount effect below re-applies any values pulled from
   // `?days=…&road=…` etc., so a shared URL still lands on the right
   // panel state — just on the second client render rather than the first.
-  const [days, setDays] = useState(PLANNER_DEFAULTS.days);
+  // Explicit type params widen `PLANNER_DEFAULTS`'s `as const` literals
+  // so later `setDays(params.days)` etc. with arbitrary numbers compile.
+  const [days, setDays] = useState<number>(PLANNER_DEFAULTS.days);
   const [saving, setSaving] = useState(false);
   const router = useRouter();
-  const [dailyKmTarget, setDailyKmTarget] = useState(
+  const [dailyKmTarget, setDailyKmTarget] = useState<number>(
     PLANNER_DEFAULTS.dailyKmTarget,
   );
   const [roadPreference, setRoadPreference] = useState<
@@ -134,12 +136,16 @@ export default function TripPlannerPage() {
   const [surfacePreference, setSurfacePreference] = useState<SurfaceType[]>(
     () => [...PLANNER_DEFAULTS.surfacePreference],
   );
-  const [minQuality, setMinQuality] = useState(PLANNER_DEFAULTS.minQuality);
-  const [avoidHighways, setAvoidHighways] = useState(
+  const [minQuality, setMinQuality] = useState<number>(
+    PLANNER_DEFAULTS.minQuality,
+  );
+  const [avoidHighways, setAvoidHighways] = useState<boolean>(
     PLANNER_DEFAULTS.avoidHighways,
   );
-  const [avoidTolls, setAvoidTolls] = useState(PLANNER_DEFAULTS.avoidTolls);
-  const [avoidUnpaved, setAvoidUnpaved] = useState(
+  const [avoidTolls, setAvoidTolls] = useState<boolean>(
+    PLANNER_DEFAULTS.avoidTolls,
+  );
+  const [avoidUnpaved, setAvoidUnpaved] = useState<boolean>(
     PLANNER_DEFAULTS.avoidUnpaved,
   );
   const urlControlsHydratedRef = useRef(false);
