@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
@@ -28,11 +28,11 @@ import {
   type UserBadge,
 } from "@/lib/rider-profile";
 import { SharedRidesSection } from "@/components/community/SharedRidesSection";
-
 export default function RiderProfilePage() {
-  const { riderId } = useParams<{ riderId: string }>();
+  const { riderId } = useParams<{
+    riderId: string;
+  }>();
   const accessToken = useAuthStore((s) => s.accessToken);
-
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [badges, setBadges] = useState<UserBadge[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,7 +44,6 @@ export default function RiderProfilePage() {
   // async follow callbacks so a request that resolves after a navigation
   // can tell whether its riderId is still on screen before touching state.
   const activeRiderIdRef = useRef<string | null>(null);
-
   useEffect(() => {
     if (!riderId) return;
     // `cancelled` guards every setState inside the async chain because
@@ -60,7 +59,6 @@ export default function RiderProfilePage() {
     setError(null);
     setFollowPending(false);
     setFollowError(null);
-
     Promise.all([
       fetchPublicProfile(riderId, { signal: controller.signal }),
       fetchPublicBadges(riderId, { signal: controller.signal }),
@@ -72,7 +70,14 @@ export default function RiderProfilePage() {
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        if ((err as { name?: string })?.name === "AbortError") return;
+        if (
+          (
+            err as {
+              name?: string;
+            }
+          )?.name === "AbortError"
+        )
+          return;
         if (err instanceof RiderProfileNotFoundError) {
           setNotFound(true);
           return;
@@ -90,12 +95,10 @@ export default function RiderProfilePage() {
     // accessToken is captured by the typed client through the auth store; we
     // still depend on it so a sign-in / sign-out re-issues the requests.
   }, [riderId, accessToken]);
-
   const earnedBadges = useMemo(
     () => badges.filter((b) => b.earned_at != null),
     [badges],
   );
-
   async function handleFollowToggle() {
     if (!profile || followPending || profile.is_self) return;
     const targetId = profile.id;
@@ -148,26 +151,26 @@ export default function RiderProfilePage() {
       }
     }
   }
-
   return (
     <div className="p-6 max-w-5xl mx-auto animate-fade-in">
       <Link
         href="/community"
         className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-6 transition"
       >
-        <ArrowLeft size={16} /> Community
+        <ArrowLeft size={16} />
+        {t("Community ")}
       </Link>
 
       {loading ? (
         <ProfileSkeleton />
       ) : notFound ? (
         <EmptyState
-          title="Rider not found"
+          title={t("Rider not found")}
           message="This profile is either private or no longer exists."
         />
       ) : error || !profile ? (
         <EmptyState
-          title="Could not load profile"
+          title={t("Could not load profile")}
           message={error ?? "Please try again in a moment."}
         />
       ) : (
@@ -193,16 +196,13 @@ export default function RiderProfilePage() {
     </div>
   );
 }
-
 // ── Header ──
-
 interface HeaderProps {
   profile: PublicProfile;
   followPending: boolean;
   followError: string | null;
   onToggleFollow: () => void;
 }
-
 function Header({
   profile,
   followPending,
@@ -210,7 +210,6 @@ function Header({
   onToggleFollow,
 }: HeaderProps) {
   const initials = initialsFromName(profile.display_name);
-
   return (
     <section className="rounded-2xl bg-slate-900 border border-slate-800 p-6 mb-6">
       <div className="flex flex-col sm:flex-row sm:items-center gap-5">
@@ -256,7 +255,7 @@ function Header({
               href="/settings"
               className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm hover:bg-slate-700 transition"
             >
-              Edit profile
+              {t("Edit profile ")}
             </Link>
           ) : (
             <button
@@ -290,14 +289,11 @@ function Header({
     </section>
   );
 }
-
 // ── Stats ──
-
 interface StatsRowProps {
   profile: PublicProfile;
   earnedBadgeCount: number;
 }
-
 function StatsRow({ profile, earnedBadgeCount }: StatsRowProps) {
   const tiles = [
     { key: "followers", label: "Followers", value: profile.follower_count },
@@ -322,30 +318,33 @@ function StatsRow({ profile, earnedBadgeCount }: StatsRowProps) {
     </section>
   );
 }
-
 // ── Badges ──
-
 interface BadgesSectionProps {
   badges: UserBadge[];
   totalBadges: number;
 }
-
 function BadgesSection({ badges, totalBadges }: BadgesSectionProps) {
   return (
     <section className="rounded-2xl bg-slate-900 border border-slate-800 p-6 mb-6">
       <header className="flex items-center justify-between mb-4">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-          <Award size={14} /> Badges earned
+          <Award size={14} />
+          {t("Badges earned ")}
         </h2>
         <span className="text-xs text-slate-500 tabular-nums">
-          {badges.length} of {totalBadges}
+          {badges.length}
+          {t("of ")}
+          {totalBadges}
         </span>
       </header>
       {totalBadges === 0 ? (
-        <p className="text-sm text-slate-500">No badges available yet.</p>
+        <p className="text-sm text-slate-500">
+          {t("No badges available yet.")}
+        </p>
       ) : badges.length === 0 ? (
         <p className="text-sm text-slate-500 inline-flex items-center gap-2">
-          <Lock size={12} /> No badges earned yet.
+          <Lock size={12} />
+          {t("No badges earned yet. ")}
         </p>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
@@ -375,9 +374,7 @@ function BadgesSection({ badges, totalBadges }: BadgesSectionProps) {
     </section>
   );
 }
-
 // ── Shared pieces ──
-
 function ProfileSkeleton() {
   return (
     <div className="space-y-6">
@@ -394,7 +391,6 @@ function ProfileSkeleton() {
     </div>
   );
 }
-
 function EmptyState({ title, message }: { title: string; message: string }) {
   return (
     <div className="rounded-2xl bg-slate-900 border border-slate-800 p-12 text-center">

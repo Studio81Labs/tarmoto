@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useEffect, useState } from "react";
 import { BedDouble, Camera, Coffee, Fuel, UtensilsCrossed } from "lucide-react";
 import { useTripStops } from "@/hooks/useTripStops";
@@ -12,39 +12,33 @@ import type { Trip } from "@/lib/types";
 import { formatDistance } from "@/lib/utils";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useTripStore } from "@/stores/trip";
-
 const DEFAULT_POI_KINDS: PoiKind[] = [
   "fuel_station",
   "restaurant",
   "cafe",
   "viewpoint",
 ];
-
 const POI_LABELS: Record<PoiKind, string> = {
   fuel_station: "Fuel stations",
   restaurant: "Restaurants",
   cafe: "Cafes",
   viewpoint: "Viewpoints",
 };
-
 const POI_BADGES: Record<PoiKind, string> = {
   fuel_station: "Fuel",
   restaurant: "Food",
   cafe: "Cafe",
   viewpoint: "Viewpoint",
 };
-
 const POI_ICONS: Record<PoiKind, typeof Fuel> = {
   fuel_station: Fuel,
   restaurant: UtensilsCrossed,
   cafe: Coffee,
   viewpoint: Camera,
 };
-
 interface TripStopsPanelProps {
   trip: Trip | null;
 }
-
 export function TripStopsPanel({ trip }: TripStopsPanelProps) {
   const [poiKinds, setPoiKinds] = useState<PoiKind[]>(DEFAULT_POI_KINDS);
   const [minAccommodationStars, setMinAccommodationStars] = useState<
@@ -61,31 +55,29 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
     poiKinds,
     minAccommodationStars,
   });
-
   useEffect(() => {
     hydratePreferences();
   }, [hydratePreferences]);
-
   if (!trip) {
     return (
       <div className="space-y-3 pt-2 border-t border-slate-800">
         <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-300">
           <BedDouble size={14} className="text-slate-500" />
-          Trip stops & stays
+          {t("Trip stops & stays ")}
         </div>
         <p className="text-xs text-slate-500">
-          Load or import a trip to start finding overnight stays and route-side
-          stops.
+          {t(
+            "Load or import a trip to start finding overnight stays and route-side stops. ",
+          )}
         </p>
       </div>
     );
   }
-
   return (
     <div className="space-y-3 pt-2 border-t border-slate-800">
       <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-300">
         <BedDouble size={14} className="text-slate-500" />
-        Trip stops & stays
+        {t("Trip stops & stays ")}
       </div>
 
       <div className="grid gap-3 rounded-xl border border-slate-800 bg-slate-900/70 p-3">
@@ -94,7 +86,7 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
             htmlFor="trip-stops-rating"
             className="block text-xs text-slate-500 mb-1"
           >
-            Minimum stay rating
+            {t("Minimum stay rating ")}
           </label>
           <select
             id="trip-stops-rating"
@@ -106,15 +98,15 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
             }
             className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white transition focus:border-tarmoto-cyan focus:outline-none"
           >
-            <option value="">Any</option>
-            <option value="3">3 stars or better</option>
-            <option value="4">4 stars or better</option>
-            <option value="5">5 stars only</option>
+            <option value="">{t("Any")}</option>
+            <option value="3">{t("3 stars or better")}</option>
+            <option value="4">{t("4 stars or better")}</option>
+            <option value="5">{t("5 stars only")}</option>
           </select>
         </div>
 
         <div>
-          <p className="mb-2 text-xs text-slate-500">POI types</p>
+          <p className="mb-2 text-xs text-slate-500">{t("POI types")}</p>
           <div className="grid gap-2 sm:grid-cols-2">
             {DEFAULT_POI_KINDS.map((kind) => (
               <label
@@ -143,7 +135,9 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
 
       {error ? <p className="text-xs text-amber-300">{error}</p> : null}
       {loading ? (
-        <p className="text-xs text-slate-500">Loading stop suggestions…</p>
+        <p className="text-xs text-slate-500">
+          {t("Loading stop suggestions\u2026")}
+        </p>
       ) : (
         <div className="space-y-3">
           {days.map((day, dayIndex) => (
@@ -153,11 +147,12 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
             >
               <div className="mb-3">
                 <h4 className="text-sm font-semibold text-slate-100">
-                  Day {day.dayNumber}
+                  {t("Day ")}
+                  {day.dayNumber}
                   {day.title ? ` · ${day.title}` : ""}
                 </h4>
                 <p className="text-xs text-slate-500">
-                  Overnight stays
+                  {t("Overnight stays ")}
                   {day.endLabel ? ` near ${day.endLabel}` : " near the day end"}
                 </p>
               </div>
@@ -165,7 +160,7 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
               <div className="space-y-2">
                 {day.accommodations.length === 0 ? (
                   <p className="text-xs text-slate-500">
-                    No overnight stays matched the current filters.
+                    {t("No overnight stays matched the current filters. ")}
                   </p>
                 ) : (
                   day.accommodations
@@ -174,9 +169,7 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
                       <StopRow
                         key={stay.external_id}
                         label={stay.name ?? "Suggested stay"}
-                        detail={`${formatDistance(stay.distance_km, unitSystem)} from the finish${
-                          stay.stars ? ` · ${stay.stars}★` : ""
-                        }`}
+                        detail={`${formatDistance(stay.distance_km, unitSystem)} from the finish${stay.stars ? ` · ${stay.stars}★` : ""}`}
                         hint={stay.website ?? stay.phone}
                         added={Boolean(
                           activeTrip?.days[dayIndex] &&
@@ -196,14 +189,18 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
               </div>
 
               <div className="mt-4 border-t border-slate-800 pt-3">
-                <p className="text-xs text-slate-500 mb-2">Along the route</p>
+                <p className="text-xs text-slate-500 mb-2">
+                  {t("Along the route")}
+                </p>
                 {!day.routeAvailable ? (
                   <p className="text-xs text-slate-500">
-                    Add at least two waypoints to surface along-route stops.
+                    {t(
+                      "Add at least two waypoints to surface along-route stops. ",
+                    )}
                   </p>
                 ) : day.pois.length === 0 ? (
                   <p className="text-xs text-slate-500">
-                    No route-side stops matched the current POI filters.
+                    {t("No route-side stops matched the current POI filters. ")}
                   </p>
                 ) : (
                   <div className="space-y-2">
@@ -213,13 +210,7 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
                         <StopRow
                           key={poi.external_id}
                           label={poi.name ?? POI_BADGES[poi.kind]}
-                          detail={`${formatDistance(
-                            poi.distance_along_route_km,
-                            unitSystem,
-                          )} into the day · ${formatDistance(
-                            poi.distance_from_route_km,
-                            unitSystem,
-                          )} off route`}
+                          detail={`${formatDistance(poi.distance_along_route_km, unitSystem)} into the day · ${formatDistance(poi.distance_from_route_km, unitSystem)} off route`}
                           hint={poi.hint}
                           badge={
                             <span className="inline-flex items-center gap-1 rounded-full bg-slate-800 px-2 py-0.5 text-[11px] text-slate-300">
@@ -255,7 +246,6 @@ export function TripStopsPanel({ trip }: TripStopsPanelProps) {
     </div>
   );
 }
-
 function StopRow({
   label,
   detail,

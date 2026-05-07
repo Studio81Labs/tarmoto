@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
 import maplibregl, {
   type LngLatBoundsLike,
@@ -11,7 +11,6 @@ import { MAP_STYLE_URL } from "@/lib/config";
 import { useMapColorScheme } from "@/hooks/useMapColorScheme";
 import { applyTarmotoMapTheme, type MapColorScheme } from "@/lib/map-style";
 import type { RideTrack } from "./useRidesQuery";
-
 interface Props {
   tracks: RideTrack[];
   truncated: boolean;
@@ -19,11 +18,9 @@ interface Props {
   selectedId: string | null;
   onSelect: (id: string | null) => void;
 }
-
 const SOURCE_ID = "rides-tracks";
 const LAYER_ID = "rides-tracks-line";
 const DEFAULT_CENTER: [number, number] = [14.4378, 50.0755]; // Prague
-
 export function RidesMap({
   tracks,
   truncated,
@@ -42,11 +39,9 @@ export function RidesMap({
   const colorScheme = useMapColorScheme();
   const colorSchemeRef = useRef(colorScheme);
   const appliedColorSchemeRef = useRef<MapColorScheme | null>(null);
-
   useEffect(() => {
     colorSchemeRef.current = colorScheme;
   }, [colorScheme]);
-
   // Keep the latest onSelect in a ref so the click handler registered in
   // the init-once effect always calls the current callback, even if the
   // parent passes a new closure.
@@ -54,7 +49,6 @@ export function RidesMap({
   useEffect(() => {
     onSelectRef.current = onSelect;
   }, [onSelect]);
-
   // ── init map once ──
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -66,11 +60,9 @@ export function RidesMap({
       attributionControl: { compact: true },
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }));
-
     map.on("load", () => {
       applyTarmotoMapTheme(map, colorSchemeRef.current);
       appliedColorSchemeRef.current = colorSchemeRef.current;
-
       map.addSource(SOURCE_ID, {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
@@ -108,7 +100,6 @@ export function RidesMap({
           ],
         },
       });
-
       map.on("click", LAYER_ID, (e: MapLayerMouseEvent) => {
         const f = e.features?.[0];
         if (!f?.properties?.id) return;
@@ -139,18 +130,14 @@ export function RidesMap({
           hoverRef.current = null;
         }
       });
-
       setReady(true);
     });
-
     mapRef.current = map;
-
     // When the container shows/resizes (mobile tab switch, desktop layout
     // change), MapLibre needs an explicit resize — otherwise it keeps the
     // size it measured at init and renders blank or clipped.
     const ro = new ResizeObserver(() => map.resize());
     ro.observe(containerRef.current);
-
     return () => {
       ro.disconnect();
       map.remove();
@@ -160,7 +147,6 @@ export function RidesMap({
       fittedOnceRef.current = false;
     };
   }, []);
-
   // ── push tracks → source ──
   useEffect(() => {
     const map = mapRef.current;
@@ -169,7 +155,6 @@ export function RidesMap({
       | maplibregl.GeoJSONSource
       | undefined;
     if (!src) return;
-
     const features = tracks
       .filter((t) => t.geometry)
       .map((t) => ({
@@ -179,7 +164,6 @@ export function RidesMap({
         geometry: t.geometry!,
       }));
     src.setData({ type: "FeatureCollection", features });
-
     // Fit to bounds once on first non-empty payload, then preserve the user's
     // view on subsequent filter changes.
     if (!fittedOnceRef.current && features.length > 0) {
@@ -198,7 +182,6 @@ export function RidesMap({
       fittedOnceRef.current = true;
     }
   }, [ready, tracks]);
-
   // ── reflect selection via feature-state + fly-to ──
   const selectedRef = useRef<string | null>(null);
   useEffect(() => {
@@ -230,25 +213,25 @@ export function RidesMap({
     }
     selectedRef.current = selectedId;
   }, [ready, selectedId, tracks]);
-
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready || appliedColorSchemeRef.current === colorScheme) return;
     applyTarmotoMapTheme(map, colorScheme);
     appliedColorSchemeRef.current = colorScheme;
   }, [colorScheme, ready]);
-
   return (
     <div className="relative w-full h-full rounded-xl overflow-hidden border border-slate-800">
       <div ref={containerRef} className="absolute inset-0" />
       {loading && (
         <div className="absolute top-2 right-2 rounded-full bg-slate-900/80 border border-slate-700 px-2.5 py-1 text-xs text-slate-300">
-          Loading…
+          {t("Loading\u2026 ")}
         </div>
       )}
       {truncated && (
         <div className="absolute bottom-2 left-2 rounded-lg bg-slate-900/90 border border-amber-600/50 px-3 py-1.5 text-xs text-amber-200 max-w-[320px]">
-          Showing most recent 500 rides — refine filters to narrow the map.
+          {t(
+            "Showing most recent 500 rides \u2014 refine filters to narrow the map. ",
+          )}
         </div>
       )}
     </div>

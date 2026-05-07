@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Check, Loader2, Mail, Smartphone } from "lucide-react";
@@ -18,18 +18,24 @@ import {
   type PartialNotificationPreferences,
   type VisibleNotificationCategory,
 } from "@/lib/notification-preferences";
-
 type SaveState =
-  | { kind: "idle" }
-  | { kind: "saving" }
-  | { kind: "saved" }
-  | { kind: "error"; message: string };
-
+  | {
+      kind: "idle";
+    }
+  | {
+      kind: "saving";
+    }
+  | {
+      kind: "saved";
+    }
+  | {
+      kind: "error";
+      message: string;
+    };
 type CategoryChannel = Extract<
   keyof NotificationChannelToggles,
   "email" | "push"
 >;
-
 export default function NotificationsPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -40,7 +46,6 @@ export default function NotificationsPage() {
     DEFAULT_NOTIFICATION_PREFERENCES,
   );
   const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
-
   // Wait for the auth store to carry a token before fetching — same
   // hard-navigation race fix as the privacy / subscription / trip
   // detail pages.
@@ -68,21 +73,17 @@ export default function NotificationsPage() {
       cancelled = true;
     };
   }, [authReady]);
-
   const isDirty = !preferencesEqual(prefs, serverPrefs);
-
   // Clear a prior "saved"/"error" badge once the user starts editing, but
   // never overwrite an in-flight "saving" state — doing so would re-enable
   // the save button and allow a second concurrent save to race the first.
   function clearTransientSaveState() {
     setSaveState((s) => (s.kind === "saving" ? s : { kind: "idle" }));
   }
-
   function setDigest(value: EmailDigestFrequency) {
     setPrefs((p) => ({ ...p, email_digest: value }));
     clearTransientSaveState();
   }
-
   function toggleChannel(
     category: VisibleNotificationCategory,
     channel: CategoryChannel,
@@ -99,12 +100,10 @@ export default function NotificationsPage() {
     }));
     clearTransientSaveState();
   }
-
   function toggleMarketing() {
     setPrefs((p) => ({ ...p, marketing_emails: !p.marketing_emails }));
     clearTransientSaveState();
   }
-
   async function save() {
     if (saveState.kind === "saving") return;
     setSaveState({ kind: "saving" });
@@ -126,17 +125,16 @@ export default function NotificationsPage() {
       setSaveState({ kind: "error", message });
     }
   }
-
   if (loading) {
     return (
       <div className="p-6 max-w-3xl mx-auto">
         <div className="flex items-center gap-2 text-slate-400">
-          <Loader2 size={16} className="animate-spin" /> Loading preferences…
+          <Loader2 size={16} className="animate-spin" />
+          {t("Loading preferences\u2026 ")}
         </div>
       </div>
     );
   }
-
   if (loadError) {
     return (
       <div className="p-6 max-w-3xl mx-auto animate-fade-in">
@@ -144,41 +142,46 @@ export default function NotificationsPage() {
           href="/settings"
           className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-4 transition"
         >
-          <ArrowLeft size={16} /> Settings
+          <ArrowLeft size={16} />
+          {t("Settings ")}
         </Link>
-        <h1 className="text-2xl font-bold mb-6">Notifications</h1>
+        <h1 className="text-2xl font-bold mb-6">{t("Notifications")}</h1>
         <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-5 text-sm text-red-300">
-          Could not load preferences: {loadError}
+          {t("Could not load preferences: ")}
+          {loadError}
         </div>
       </div>
     );
   }
-
   return (
     <div className="p-6 max-w-3xl mx-auto animate-fade-in">
       <Link
         href="/settings"
         className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-4 transition"
       >
-        <ArrowLeft size={16} /> Settings
+        <ArrowLeft size={16} />
+        {t("Settings ")}
       </Link>
-      <h1 className="text-2xl font-bold mb-2">Notifications</h1>
+      <h1 className="text-2xl font-bold mb-2">{t("Notifications")}</h1>
       <p className="text-sm text-slate-400 mb-6">
-        Choose which updates you want, and where you want them. Email goes to
-        your account address; push goes to the mobile app.
+        {t(
+          "Choose which updates you want, and where you want them. Email goes to your account address; push goes to the mobile app. ",
+        )}
       </p>
 
       {/* Email digest */}
       <section className="rounded-xl bg-slate-900 border border-slate-800 p-5 mb-6">
         <div className="mb-4">
-          <h2 className="text-sm font-semibold text-white">Email digest</h2>
+          <h2 className="text-sm font-semibold text-white">
+            {t("Email digest")}
+          </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Summary of your riding stats and community activity.
+            {t("Summary of your riding stats and community activity. ")}
           </p>
         </div>
         <div
           role="radiogroup"
-          aria-label="Email digest frequency"
+          aria-label={t("Email digest frequency")}
           className="grid grid-cols-3 gap-2"
         >
           {EMAIL_DIGEST_OPTIONS.map((opt) => {
@@ -210,14 +213,16 @@ export default function NotificationsPage() {
       <section className="rounded-xl bg-slate-900 border border-slate-800 divide-y divide-slate-800 mb-6">
         <div className="px-5 py-3 flex items-center">
           <div className="flex-1 text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Notification
+            {t("Notification ")}
           </div>
           <div className="flex items-center gap-6 text-xs font-semibold uppercase tracking-wider text-slate-500">
             <span className="flex items-center gap-1 w-10 justify-center">
-              <Mail size={12} /> Email
+              <Mail size={12} />
+              {t("Email ")}
             </span>
             <span className="flex items-center gap-1 w-10 justify-center">
-              <Smartphone size={12} /> Push
+              <Smartphone size={12} />
+              {t("Push ")}
             </span>
           </div>
         </div>
@@ -253,10 +258,13 @@ export default function NotificationsPage() {
       <section className="rounded-xl bg-slate-900 border border-slate-800 p-5 mb-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-medium text-white">Marketing emails</p>
+            <p className="text-sm font-medium text-white">
+              {t("Marketing emails")}
+            </p>
             <p className="text-xs text-slate-500 mt-0.5">
-              Product launches, deals with partners, seasonal riding guides.
-              Opt-in only — off by default.
+              {t(
+                "Product launches, deals with partners, seasonal riding guides. Opt-in only \u2014 off by default. ",
+              )}
             </p>
           </div>
           <ChannelToggle
@@ -277,7 +285,8 @@ export default function NotificationsPage() {
         >
           {saveState.kind === "saving" ? (
             <>
-              <Loader2 size={14} className="animate-spin" /> Saving…
+              <Loader2 size={14} className="animate-spin" />
+              {t("Saving\u2026 ")}
             </>
           ) : (
             "Save preferences"
@@ -286,26 +295,25 @@ export default function NotificationsPage() {
 
         {saveState.kind === "saved" && !isDirty && (
           <span className="inline-flex items-center gap-1 text-sm text-tarmoto-cyan">
-            <Check size={14} /> Saved
+            <Check size={14} />
+            {t("Saved ")}
           </span>
         )}
         {saveState.kind === "error" && (
           <span className="text-sm text-red-400">{saveState.message}</span>
         )}
         {isDirty && saveState.kind !== "saving" && (
-          <span className="text-sm text-slate-500">Unsaved changes</span>
+          <span className="text-sm text-slate-500">{t("Unsaved changes")}</span>
         )}
       </div>
     </div>
   );
 }
-
 interface ChannelToggleProps {
   enabled: boolean;
   onToggle: () => void;
   label: string;
 }
-
 function ChannelToggle({ enabled, onToggle, label }: ChannelToggleProps) {
   return (
     <button
@@ -313,14 +321,10 @@ function ChannelToggle({ enabled, onToggle, label }: ChannelToggleProps) {
       onClick={onToggle}
       aria-pressed={enabled}
       aria-label={label}
-      className={`relative w-10 h-6 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-tarmoto-cyan/30 ${
-        enabled ? "bg-tarmoto-cyan" : "bg-slate-700"
-      }`}
+      className={`relative w-10 h-6 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-tarmoto-cyan/30 ${enabled ? "bg-tarmoto-cyan" : "bg-slate-700"}`}
     >
       <span
-        className={`absolute left-0.5 top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transform transition-transform ${
-          enabled ? "translate-x-4" : "translate-x-0"
-        }`}
+        className={`absolute left-0.5 top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transform transition-transform ${enabled ? "translate-x-4" : "translate-x-0"}`}
       />
     </button>
   );

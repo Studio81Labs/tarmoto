@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
 import {
   Check,
@@ -21,7 +21,6 @@ import {
   tripFileName,
   tripToGpx,
 } from "@/lib/trip-export";
-
 interface TripExportMenuProps {
   trip: Trip | null;
   /**
@@ -38,9 +37,10 @@ interface TripExportMenuProps {
    */
   context?: "saved-trip" | "planner";
 }
-
-type Feedback = { kind: "ok" | "err"; message: string } | null;
-
+type Feedback = {
+  kind: "ok" | "err";
+  message: string;
+} | null;
 /**
  * Export menu for a planned trip (US-39): GPX download, shareable link,
  * mobile deep-link handoff with token, printable summary, and a one-click
@@ -58,7 +58,6 @@ export function TripExportMenu({
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [pushPending, setPushPending] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
-
   useEffect(() => {
     if (!open) return;
     function onClickOutside(event: MouseEvent) {
@@ -75,20 +74,16 @@ export function TripExportMenu({
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [open]);
-
   useEffect(() => {
     if (!feedback) return;
     const id = window.setTimeout(() => setFeedback(null), 2500);
     return () => window.clearTimeout(id);
   }, [feedback]);
-
   const disabled = !trip;
-
   function show(kind: "ok" | "err", message: string) {
     setFeedback({ kind, message });
     setOpen(false);
   }
-
   function handleGpx() {
     if (!trip) return;
     try {
@@ -107,7 +102,6 @@ export function TripExportMenu({
       show("err", "Could not generate GPX");
     }
   }
-
   async function handleShareLink() {
     if (!trip) return;
     const url = buildTripShareUrl(trip, window.location.origin);
@@ -118,7 +112,6 @@ export function TripExportMenu({
       show("err", "Copy failed — select the URL manually");
     }
   }
-
   async function handlePushMobile() {
     if (!trip || pushPending) return;
     setPushPending(true);
@@ -151,7 +144,6 @@ export function TripExportMenu({
       setPushPending(false);
     }
   }
-
   /**
    * Open the print page for `trip`, optionally with the `autoprint` flag
    * that lets the page trigger `window.print()` after hydration.
@@ -187,15 +179,12 @@ export function TripExportMenu({
     window.open(url, "_blank", "noopener,noreferrer");
     setOpen(false);
   }
-
   function handlePrint() {
     openPrintPage(false);
   }
-
   function handlePdf() {
     openPrintPage(true);
   }
-
   return (
     <div className="relative" ref={menuRef}>
       <button
@@ -207,7 +196,7 @@ export function TripExportMenu({
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <Download size={14} />
-        Export
+        {t("Export ")}
         <ChevronDown size={12} className="opacity-70" />
       </button>
 
@@ -277,7 +266,6 @@ export function TripExportMenu({
     </div>
   );
 }
-
 function MenuItem({
   icon,
   label,

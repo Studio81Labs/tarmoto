@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import Link from "next/link";
 import type { Country, Region } from "@tarmoto/shared";
 import {
@@ -10,7 +11,6 @@ import {
   formatRoadLength,
   formatRoadQuality,
 } from "@/lib/best-roads-format";
-
 interface Road extends BestRoadsEmbedRoad {
   road_name: string | null;
   road_number: string | null;
@@ -18,7 +18,6 @@ interface Road extends BestRoadsEmbedRoad {
   surface_type: string;
   length_m: number;
 }
-
 interface Props {
   country: Country;
   region: Region;
@@ -27,7 +26,6 @@ interface Props {
   pageUrl: string;
   variant: BestRoadsWidgetVariant;
 }
-
 export function BestRoadsEmbedWidget({
   country,
   region,
@@ -41,12 +39,10 @@ export function BestRoadsEmbedWidget({
     height: variant === "landscape" ? 240 : 180,
     padding: 18,
   });
-
   const contentClassName =
     variant === "landscape"
       ? "grid gap-5 md:grid-cols-[1.15fr_0.85fr]"
       : "space-y-5";
-
   return (
     <main className="bg-slate-950 p-4 text-slate-100">
       <article className="mx-auto max-w-5xl overflow-hidden rounded-[24px] border border-slate-800 bg-slate-950 shadow-2xl shadow-black/40">
@@ -54,15 +50,16 @@ export function BestRoadsEmbedWidget({
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-tarmoto-cyan">
-                Tarmoto widget
+                {t("Tarmoto widget ")}
               </p>
               <h1 className="mt-2 text-xl font-semibold text-white">
-                Best roads in {region.name}
+                {t("Best roads in ")}
+                {region.name}
               </h1>
               <p className="mt-1 text-sm text-slate-300">
                 {country.name}
-                {parent ? ` · ${parent.name}` : ""} · crowdsourced road-quality
-                ranking
+                {parent ? ` · ${parent.name}` : ""}
+                {t("\u00B7 crowdsourced road-quality ranking ")}
               </p>
             </div>
             <Link
@@ -71,7 +68,7 @@ export function BestRoadsEmbedWidget({
               rel="noreferrer"
               className="inline-flex items-center rounded-full border border-tarmoto-cyan/30 bg-tarmoto-cyan/10 px-3 py-1.5 text-sm font-medium text-tarmoto-cyan transition hover:bg-tarmoto-cyan/15"
             >
-              View full map
+              {t("View full map ")}
             </Link>
           </div>
         </header>
@@ -81,22 +78,26 @@ export function BestRoadsEmbedWidget({
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-sm font-semibold text-white">
-                  Road-quality mini-map
+                  {t("Road-quality mini-map ")}
                 </h2>
                 <p className="text-xs text-slate-400">
-                  Top-ranked roads in this region, colour-coded by surface
-                  quality.
+                  {t(
+                    "Top-ranked roads in this region, colour-coded by surface quality. ",
+                  )}
                 </p>
               </div>
               <div className="text-right text-xs text-slate-500">
-                <p>{roads.length} ranked roads</p>
-                <p>Updated weekly</p>
+                <p>
+                  {roads.length}
+                  {t("ranked roads")}
+                </p>
+                <p>{t("Updated weekly")}</p>
               </div>
             </div>
 
             {map.lines.length === 0 ? (
               <div className="flex h-44 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-950/80 text-sm text-slate-500">
-                Not enough road geometry yet for a mini-map preview.
+                {t("Not enough road geometry yet for a mini-map preview. ")}
               </div>
             ) : (
               <svg
@@ -147,13 +148,15 @@ export function BestRoadsEmbedWidget({
           <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-sm font-semibold text-white">Top roads</h2>
+                <h2 className="text-sm font-semibold text-white">
+                  {t("Top roads")}
+                </h2>
                 <p className="text-xs text-slate-400">
-                  Ranked by the current quality and curviness model.
+                  {t("Ranked by the current quality and curviness model. ")}
                 </p>
               </div>
               <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                Live preview
+                {t("Live preview ")}
               </p>
             </div>
 
@@ -174,7 +177,8 @@ export function BestRoadsEmbedWidget({
                       </p>
                       <p className="mt-0.5 text-xs text-slate-400">
                         {formatRoadLength(road.length_m)} · {road.surface_type}{" "}
-                        · quality {formatRoadQuality(road.quality_score)}
+                        {t("\u00B7 quality ")}
+                        {formatRoadQuality(road.quality_score)}
                       </p>
                     </div>
                     <p className="text-xs font-semibold text-slate-300">

@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
@@ -21,7 +21,6 @@ import {
   type RideSummary,
   type SortField,
 } from "./_components/useRidesQuery";
-
 export default function RidesPage() {
   // useSearchParams needs a Suspense boundary for Next.js static optimization.
   return (
@@ -30,12 +29,10 @@ export default function RidesPage() {
     </Suspense>
   );
 }
-
 function RidesPageInner() {
   const { state, list, tracks, update, reset, pageSize } = useRidesQuery();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mobileTab, setMobileTab] = useState<"map" | "list">("list");
-
   // Optimistic updates after rename — merge into the current list snapshot.
   // We let patches persist across refetches; the server ultimately ships the
   // renamed row, so the merge becomes a no-op naturally. Patches scoped to
@@ -57,7 +54,6 @@ function RidesPageInner() {
     0,
     list.total - (list.rides.length - mergedRides.length),
   );
-
   function onSort(sort: SortField) {
     if (state.sort === sort) {
       update({ order: state.order === "asc" ? "desc" : "asc" });
@@ -65,11 +61,10 @@ function RidesPageInner() {
       update({ sort, order: "desc" });
     }
   }
-
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] p-4 md:p-6 max-w-7xl mx-auto w-full animate-fade-in">
       <div className="flex items-center justify-between mb-4 gap-4 flex-wrap">
-        <h1 className="text-2xl font-bold">Ride History</h1>
+        <h1 className="text-2xl font-bold">{t("Ride History")}</h1>
         <div className="flex items-center gap-2">
           {list.rides.length > 0 && <BulkExportMenu />}
           {list.total >= 2 && (
@@ -77,7 +72,8 @@ function RidesPageInner() {
               href="/rides/compare"
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm hover:bg-slate-700 transition"
             >
-              <Scale size={14} /> Compare rides
+              <Scale size={14} />
+              {t("Compare rides ")}
             </Link>
           )}
         </div>
@@ -96,7 +92,8 @@ function RidesPageInner() {
               : "text-slate-400"
           }`}
         >
-          <MapIcon size={14} /> Map
+          <MapIcon size={14} />
+          {t("Map ")}
         </button>
         <button
           type="button"
@@ -107,15 +104,14 @@ function RidesPageInner() {
               : "text-slate-400"
           }`}
         >
-          <ListIcon size={14} /> List
+          <ListIcon size={14} />
+          {t("List ")}
         </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4 flex-1 min-h-0">
         <div
-          className={`md:col-span-3 min-h-[360px] md:min-h-0 ${
-            mobileTab === "map" ? "" : "hidden md:block"
-          }`}
+          className={`md:col-span-3 min-h-[360px] md:min-h-0 ${mobileTab === "map" ? "" : "hidden md:block"}`}
         >
           <RidesMap
             tracks={tracks.tracks}
@@ -126,9 +122,7 @@ function RidesPageInner() {
           />
         </div>
         <div
-          className={`md:col-span-2 min-h-0 flex flex-col ${
-            mobileTab === "list" ? "" : "hidden md:flex"
-          }`}
+          className={`md:col-span-2 min-h-0 flex flex-col ${mobileTab === "list" ? "" : "hidden md:flex"}`}
         >
           <RidesTable
             state={state}
@@ -152,13 +146,11 @@ function RidesPageInner() {
     </div>
   );
 }
-
 function BulkExportMenu() {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<RideExportFormat | null>(null);
   const [error, setError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     if (!open) return;
     function onDown(ev: MouseEvent) {
@@ -167,7 +159,6 @@ function BulkExportMenu() {
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
-
   async function handleExport(format: RideExportFormat) {
     if (busy) return;
     setBusy(format);
@@ -181,7 +172,6 @@ function BulkExportMenu() {
       setBusy(null);
     }
   }
-
   return (
     <div className="relative" ref={containerRef}>
       <button
@@ -197,7 +187,7 @@ function BulkExportMenu() {
         ) : (
           <Download size={14} />
         )}
-        Export all
+        {t("Export all ")}
       </button>
 
       {open && (
@@ -212,7 +202,7 @@ function BulkExportMenu() {
             disabled={busy !== null}
             className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition"
           >
-            CSV (stats)
+            {t("CSV (stats) ")}
           </button>
           <button
             type="button"
@@ -221,7 +211,7 @@ function BulkExportMenu() {
             disabled={busy !== null}
             className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition border-t border-slate-800"
           >
-            GPX (tracks)
+            {t("GPX (tracks) ")}
           </button>
         </div>
       )}
@@ -231,7 +221,8 @@ function BulkExportMenu() {
           role="alert"
           className="absolute right-0 top-full mt-2 text-xs text-red-400 whitespace-nowrap"
         >
-          Export failed: {error}
+          {t("Export failed: ")}
+          {error}
         </p>
       )}
     </div>

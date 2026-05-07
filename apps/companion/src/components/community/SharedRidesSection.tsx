@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 /**
  * SharedRidesSection (#371) — companion mirror of mobile's SharedRidesSection.
  *
@@ -13,25 +13,20 @@
  * private shares so the UI never leaks a private flag that slipped past
  * the server filter.
  */
-
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Calendar, Eye, Lock, Route as RouteIcon, Timer } from "lucide-react";
 import { fetchSharedRides, type UserSharedRide } from "@/lib/shared-rides";
 import { formatDate, formatDistance, formatDuration } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
-
 const PAGE_SIZE = 5;
-
 interface SharedRidesSectionProps {
   userId: string;
   isSelf: boolean;
   /** Display name used in the third-person empty-state copy. */
   displayName: string;
 }
-
 type Phase = "loading" | "ready" | "error";
-
 export function SharedRidesSection({
   userId,
   isSelf,
@@ -41,7 +36,6 @@ export function SharedRidesSection({
   const [items, setItems] = useState<UserSharedRide[]>([]);
   const [phase, setPhase] = useState<Phase>("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
   useEffect(() => {
     // Mirrors the cancellation pattern used by the parent profile page:
     // openapi-fetch swallows AbortError into its result union, so we keep
@@ -49,10 +43,8 @@ export function SharedRidesSection({
     // when a userId or accessToken change races with an in-flight request.
     let cancelled = false;
     const controller = new AbortController();
-
     setPhase("loading");
     setErrorMessage(null);
-
     fetchSharedRides(userId, { limit: PAGE_SIZE, signal: controller.signal })
       .then((response) => {
         if (cancelled) return;
@@ -61,13 +53,19 @@ export function SharedRidesSection({
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        if ((err as { name?: string })?.name === "AbortError") return;
+        if (
+          (
+            err as {
+              name?: string;
+            }
+          )?.name === "AbortError"
+        )
+          return;
         setPhase("error");
         setErrorMessage(
           err instanceof Error ? err.message : "Could not load shared rides.",
         );
       });
-
     return () => {
       cancelled = true;
       controller.abort();
@@ -76,12 +74,12 @@ export function SharedRidesSection({
     // re-running on token change re-issues the request with the new viewer
     // identity so `is_self` and the private-share filter stay in sync.
   }, [userId, accessToken]);
-
   return (
     <section className="rounded-2xl bg-slate-900 border border-slate-800 p-6 mb-6">
       <header className="flex items-center justify-between mb-4">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-          <RouteIcon size={14} /> Shared rides
+          <RouteIcon size={14} />
+          {t("Shared rides ")}
         </h2>
       </header>
 
@@ -114,7 +112,6 @@ export function SharedRidesSection({
     </section>
   );
 }
-
 function SharedRideCard({
   ride,
   isSelf,
@@ -124,7 +121,6 @@ function SharedRideCard({
 }) {
   const showPrivatePill = isSelf && !ride.is_public;
   const href = `/rides/shared/${encodeURIComponent(ride.share_token)}`;
-
   return (
     <Link
       href={href}
@@ -137,7 +133,8 @@ function SharedRideCard({
         </span>
         {showPrivatePill ? (
           <span className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-            <Lock size={10} /> Private
+            <Lock size={10} />
+            {t("Private ")}
           </span>
         ) : null}
       </div>
@@ -163,7 +160,6 @@ function SharedRideCard({
     </Link>
   );
 }
-
 function Metric({
   icon,
   label,

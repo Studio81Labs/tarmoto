@@ -1,18 +1,15 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useEffect, useState } from "react";
 import { RotateCcw, Search } from "lucide-react";
 import type { RidesQueryState } from "./useRidesQuery";
 import { PlaceSearch, type PlaceValue } from "./PlaceSearch";
-
 const RIDE_TYPES = ["free", "commute", "trip", "tracked"] as const;
-
 interface Props {
   state: RidesQueryState;
   update: (patch: Partial<RidesQueryState>) => void;
   reset: () => void;
 }
-
 export function RidesFilters({ state, update, reset }: Props) {
   // Local state for the search box — debounced before writing to URL.
   const [searchLocal, setSearchLocal] = useState(state.q ?? "");
@@ -28,7 +25,6 @@ export function RidesFilters({ state, update, reset }: Props) {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchLocal]);
-
   const hasAny = Boolean(
     state.from ||
     state.to ||
@@ -40,7 +36,6 @@ export function RidesFilters({ state, update, reset }: Props) {
     state.type ||
     state.nearLat != null,
   );
-
   const placeValue: PlaceValue | null =
     state.nearLat != null && state.nearLng != null && state.nearKm != null
       ? {
@@ -50,7 +45,6 @@ export function RidesFilters({ state, update, reset }: Props) {
           km: state.nearKm,
         }
       : null;
-
   const handlePlaceChange = (next: PlaceValue | null) => {
     if (next) {
       update({
@@ -68,12 +62,11 @@ export function RidesFilters({ state, update, reset }: Props) {
       });
     }
   };
-
   return (
     <div className="rounded-xl bg-slate-900 border border-slate-800 p-4 mb-4">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
         <label className="text-xs text-slate-400 flex flex-col gap-1">
-          From
+          {t("From ")}
           <input
             type="date"
             value={state.from ?? ""}
@@ -82,7 +75,7 @@ export function RidesFilters({ state, update, reset }: Props) {
           />
         </label>
         <label className="text-xs text-slate-400 flex flex-col gap-1">
-          To
+          {t("To ")}
           <input
             type="date"
             value={state.to ?? ""}
@@ -91,7 +84,7 @@ export function RidesFilters({ state, update, reset }: Props) {
           />
         </label>
         <label className="text-xs text-slate-400 flex flex-col gap-1">
-          Min km
+          {t("Min km ")}
           <input
             type="number"
             min={0}
@@ -106,7 +99,7 @@ export function RidesFilters({ state, update, reset }: Props) {
           />
         </label>
         <label className="text-xs text-slate-400 flex flex-col gap-1">
-          Max km
+          {t("Max km ")}
           <input
             type="number"
             min={0}
@@ -124,7 +117,9 @@ export function RidesFilters({ state, update, reset }: Props) {
 
       <div className="flex flex-wrap items-end gap-3 mt-3">
         <div className="flex flex-col gap-1">
-          <span className="text-xs text-slate-400">Quality (min → max)</span>
+          <span className="text-xs text-slate-400">
+            {t("Quality (min \u2192 max)")}
+          </span>
           <div className="flex items-center gap-2">
             <select
               value={state.minQuality ?? ""}
@@ -136,7 +131,7 @@ export function RidesFilters({ state, update, reset }: Props) {
               }
               className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-sm text-slate-100"
             >
-              <option value="">Any</option>
+              <option value="">{t("Any")}</option>
               {[1, 2, 3, 4, 5].map((n) => (
                 <option key={n} value={n}>
                   {n}
@@ -154,7 +149,7 @@ export function RidesFilters({ state, update, reset }: Props) {
               }
               className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-sm text-slate-100"
             >
-              <option value="">Any</option>
+              <option value="">{t("Any")}</option>
               {[1, 2, 3, 4, 5].map((n) => (
                 <option key={n} value={n}>
                   {n}
@@ -165,7 +160,7 @@ export function RidesFilters({ state, update, reset }: Props) {
         </div>
 
         <div className="flex flex-col gap-1">
-          <span className="text-xs text-slate-400">Type</span>
+          <span className="text-xs text-slate-400">{t("Type")}</span>
           <div className="flex flex-wrap gap-1">
             <TypeChip
               label="All"
@@ -184,7 +179,7 @@ export function RidesFilters({ state, update, reset }: Props) {
         </div>
 
         <label className="flex flex-col gap-1 flex-1 min-w-[180px]">
-          <span className="text-xs text-slate-400">Search name</span>
+          <span className="text-xs text-slate-400">{t("Search name")}</span>
           <div className="relative">
             <Search
               size={14}
@@ -194,7 +189,7 @@ export function RidesFilters({ state, update, reset }: Props) {
               type="search"
               value={searchLocal}
               onChange={(e) => setSearchLocal(e.target.value)}
-              placeholder="Sunday…"
+              placeholder={t("Sunday\u2026")}
               className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-7 pr-2 py-1.5 text-sm text-slate-100"
             />
           </div>
@@ -208,14 +203,14 @@ export function RidesFilters({ state, update, reset }: Props) {
             onClick={reset}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition"
           >
-            <RotateCcw size={14} /> Reset
+            <RotateCcw size={14} />
+            {t("Reset ")}
           </button>
         )}
       </div>
     </div>
   );
 }
-
 function TypeChip({
   label,
   active,

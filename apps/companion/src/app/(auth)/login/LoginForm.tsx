@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -8,7 +8,6 @@ import { OAuthButtons } from "@/components/OAuthButtons";
 import { safeCallbackUrl } from "@/lib/callback-url";
 import { getLoginErrorMessage } from "@/lib/auth-errors";
 import type { OAuthProvider } from "@/lib/oauth-providers";
-
 export function LoginForm({
   oauthProviders,
 }: {
@@ -21,11 +20,9 @@ export function LoginForm({
   const urlError = getLoginErrorMessage(searchParams.get("error"));
   const [error, setError] = useState(urlError);
   const callbackUrl = safeCallbackUrl(searchParams.get("callbackUrl"));
-
   useEffect(() => {
     setError(urlError);
   }, [urlError]);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -47,11 +44,12 @@ export function LoginForm({
       setLoading(false);
     }
   };
-
   return (
     <div className="animate-fade-in">
-      <h2 className="text-2xl font-bold mb-2">Welcome back</h2>
-      <p className="text-slate-400 mb-8">Sign in to your Tarmoto account</p>
+      <h2 className="text-2xl font-bold mb-2">{t("Welcome back")}</h2>
+      <p className="text-slate-400 mb-8">
+        {t("Sign in to your Tarmoto account")}
+      </p>
 
       {error && (
         <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
@@ -62,21 +60,21 @@ export function LoginForm({
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-1.5">
-            Email
+            {t("Email ")}
           </label>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="w-full px-4 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-white placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan focus:ring-1 focus:ring-tarmoto-cyan transition"
-            placeholder="rider@example.com"
+            placeholder={t("rider@example.com")}
             required
           />
         </div>
 
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-1.5">
-            Password
+            {t("Password ")}
           </label>
           <input
             type="password"
@@ -94,13 +92,13 @@ export function LoginForm({
               type="checkbox"
               className="rounded border-slate-600 bg-slate-800 text-tarmoto-cyan focus:ring-tarmoto-cyan"
             />
-            Remember me
+            {t("Remember me ")}
           </label>
           <Link
             href="/forgot-password"
             className="text-tarmoto-cyan hover:underline"
           >
-            Forgot password?
+            {t("Forgot password? ")}
           </Link>
         </div>
 
@@ -116,9 +114,9 @@ export function LoginForm({
       <OAuthButtons providers={oauthProviders} callbackUrl={callbackUrl} />
 
       <p className="mt-6 text-center text-sm text-slate-400">
-        Don&apos;t have an account?{" "}
+        {t("Don't have an account?")}{" "}
         <Link href="/register" className="text-tarmoto-cyan hover:underline">
-          Create one
+          {t("Create one ")}
         </Link>
       </p>
     </div>

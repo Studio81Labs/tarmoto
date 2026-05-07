@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import {
@@ -48,33 +48,28 @@ import {
 import { duplicateTripPayload } from "@/lib/trip-duplicate";
 import { formatRelativeTime } from "@/lib/utils";
 import type { Trip } from "@/lib/types";
-
 const STATUS_LABEL: Record<TripStatus, string> = {
   draft: "Drafts",
   planned: "Planned",
   active: "Active",
   completed: "Completed",
 };
-
 const STATUS_PILL: Record<TripStatus, string> = {
   draft: "bg-slate-600 text-white",
   planned: "bg-blue-500 text-white",
   active: "bg-tarmoto-cyan text-slate-950",
   completed: "bg-quality-excellent text-slate-950",
 };
-
 const SORT_LABEL: Record<TripSortKey, string> = {
   updated: "Last updated",
   created: "Date created",
   name: "Name (A→Z)",
   distance: "Distance",
 };
-
 export default function TripListPage() {
   const trips = useTripStore((s) => s.trips);
   const setTrips = useTripStore((s) => s.setTrips);
   const userId = useAuthStore((s) => s.user?.id ?? null);
-
   const [loading, setLoading] = useState(true);
   const [folders, setFolders] = useState<TripFolder[]>([]);
   const [filters, setFilters] = useState<TripFilters>(() => ({
@@ -82,13 +77,18 @@ export default function TripListPage() {
     statuses: new Set(DEFAULT_TRIP_FILTERS.statuses),
     folderScope: { ...DEFAULT_TRIP_FILTERS.folderScope },
   }));
-
   const [folderModal, setFolderModal] = useState<
-    { mode: "create" } | { mode: "rename"; folder: TripFolder } | null
+    | {
+        mode: "create";
+      }
+    | {
+        mode: "rename";
+        folder: TripFolder;
+      }
+    | null
   >(null);
   const [busyTripIds, setBusyTripIds] = useState<Set<string>>(() => new Set());
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
-
   const markBusy = (id: string) => {
     setBusyTripIds((prev) => {
       const next = new Set(prev);
@@ -104,7 +104,6 @@ export default function TripListPage() {
       return next;
     });
   };
-
   useEffect(() => {
     // Clear trips every time userId changes (sign-out, sign-in, account
     // switch). Without this the new user would briefly see the previous
@@ -123,7 +122,11 @@ export default function TripListPage() {
       .list()
       .then(({ data }) => {
         if (cancelled) return;
-        const body = data as unknown as { data?: Trip[] } | Trip[];
+        const body = data as unknown as
+          | {
+              data?: Trip[];
+            }
+          | Trip[];
         setTrips(Array.isArray(body) ? body : (body?.data ?? []));
       })
       .catch(() => {
@@ -139,7 +142,6 @@ export default function TripListPage() {
       cancelled = true;
     };
   }, [setTrips, userId]);
-
   useEffect(() => {
     // On any userId change (sign-out, sign-in, or direct account switch)
     // drop the previous user's folder scope so it doesn't point at a folder
@@ -157,13 +159,11 @@ export default function TripListPage() {
     }
     setFolders(sortFoldersByName(loadFolders(userId)));
   }, [userId]);
-
   const persistFolders = (next: TripFolder[]) => {
     const sorted = sortFoldersByName(next);
     setFolders(sorted);
     if (userId) saveFolders(userId, sorted);
   };
-
   const visibleTrips = useMemo(
     () => applyTripFilters(trips, filters),
     [trips, filters],
@@ -181,7 +181,6 @@ export default function TripListPage() {
     }
     return map;
   }, [trips]);
-
   // When a folder is deleted we drop its metadata, clear `folderId` on every
   // affected trip locally, and tell the server to do the same. Without the
   // server update those trips would reload with a stale folderId that no
@@ -219,7 +218,6 @@ export default function TripListPage() {
       );
     }
   };
-
   const moveTripToFolder = async (trip: Trip, folderId: string | null) => {
     const previousFolderId = trip.folderId;
     // Read fresh state so concurrent optimistic updates don't clobber each
@@ -249,14 +247,18 @@ export default function TripListPage() {
       clearBusy(trip.id);
     }
   };
-
   const duplicateTrip = async (trip: Trip) => {
     markBusy(trip.id);
     try {
       const { data } = await tripsApi.create(duplicateTripPayload(trip));
       // Match the list-endpoint handling: the server sometimes wraps
       // responses in `{ data: ... }`, so unwrap if present.
-      const body = data as unknown as { data?: Trip } | Trip | null;
+      const body = data as unknown as
+        | {
+            data?: Trip;
+          }
+        | Trip
+        | null;
       const created =
         body && typeof body === "object" && "data" in body && body.data
           ? (body.data as Trip)
@@ -272,7 +274,6 @@ export default function TripListPage() {
       clearBusy(trip.id);
     }
   };
-
   const deleteTrip = async (trip: Trip) => {
     if (!confirm(`Delete "${trip.name}"? This cannot be undone.`)) return;
     // Read fresh state so concurrent optimistic updates don't clobber each
@@ -296,7 +297,6 @@ export default function TripListPage() {
       clearBusy(trip.id);
     }
   };
-
   const submitFolderModal = (name: string) => {
     if (!folderModal) return;
     if (folderModal.mode === "create") {
@@ -306,7 +306,6 @@ export default function TripListPage() {
     }
     setFolderModal(null);
   };
-
   return (
     <div className="flex h-full">
       <FolderNav
@@ -325,17 +324,21 @@ export default function TripListPage() {
         <div className="p-6 max-w-6xl mx-auto animate-fade-in">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
             <div>
-              <h1 className="text-2xl font-bold">My Trips</h1>
+              <h1 className="text-2xl font-bold">{t("My Trips")}</h1>
               <p className="text-sm text-slate-500 mt-0.5">
-                {trips.length} trip{trips.length === 1 ? "" : "s"} ·{" "}
-                {folders.length} folder{folders.length === 1 ? "" : "s"}
+                {trips.length}
+                {t("trip")}
+                {trips.length === 1 ? "" : "s"} · {folders.length}
+                {t("folder")}
+                {folders.length === 1 ? "" : "s"}
               </p>
             </div>
             <Link
               href="/trips/planner"
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition"
             >
-              <Plus size={16} /> New trip
+              <Plus size={16} />
+              {t("New trip ")}
             </Link>
           </div>
 
@@ -344,7 +347,7 @@ export default function TripListPage() {
               <span>{errorBanner}</span>
               <button
                 type="button"
-                aria-label="Dismiss error"
+                aria-label={t("Dismiss error")}
                 onClick={() => setErrorBanner(null)}
                 className="text-red-200 hover:text-white"
               >
@@ -382,13 +385,13 @@ export default function TripListPage() {
             </div>
           ) : trips.length === 0 ? (
             <EmptyState
-              title="No trips yet"
+              title={t("No trips yet")}
               body="Plan your first ride with the trip planner."
               action={{ label: "Create trip", href: "/trips/planner" }}
             />
           ) : visibleTrips.length === 0 ? (
             <EmptyState
-              title="No trips match your filters"
+              title={t("No trips match your filters")}
               body="Try clearing the search or selecting a different folder."
               action={{
                 label: "Clear filters",
@@ -435,11 +438,9 @@ export default function TripListPage() {
     </div>
   );
 }
-
 // ─────────────────────────────────────────────────────────
 // Folder sidebar
 // ─────────────────────────────────────────────────────────
-
 interface FolderNavProps {
   folders: TripFolder[];
   scope: FolderScope;
@@ -451,7 +452,6 @@ interface FolderNavProps {
   onRename: (folder: TripFolder) => void;
   onDelete: (folder: TripFolder) => void;
 }
-
 function FolderNav({
   folders,
   scope,
@@ -479,7 +479,6 @@ function FolderNav({
     </aside>
   );
 }
-
 function FolderNavContent({
   folders,
   scope,
@@ -495,14 +494,14 @@ function FolderNavContent({
     <>
       <div className="flex items-center justify-between mb-3 px-2">
         <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-          Folders
+          {t("Folders ")}
         </span>
         <button
           type="button"
           onClick={onNew}
           className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition"
-          aria-label="New folder"
-          title="New folder"
+          aria-label={t("New folder")}
+          title={t("New folder")}
         >
           <FolderPlus size={14} />
         </button>
@@ -543,12 +542,10 @@ function FolderNavContent({
     </>
   );
 }
-
 function MobileFolderBar(props: FolderNavProps) {
   const [open, setOpen] = useState(false);
   const { folders, scope, unfiledCount, totalCount, tripsPerFolder, onSelect } =
     props;
-
   const activeLabel =
     scope.kind === "all"
       ? "All trips"
@@ -561,14 +558,12 @@ function MobileFolderBar(props: FolderNavProps) {
       : scope.kind === "unfiled"
         ? unfiledCount
         : (tripsPerFolder.get(scope.id) ?? 0);
-
   // When the user picks a folder, collapse the panel — keeps the mobile flow
   // close to a native picker.
   const handleSelect = (next: FolderScope) => {
     onSelect(next);
     setOpen(false);
   };
-
   return (
     <div className="md:hidden mb-4">
       <button
@@ -597,7 +592,6 @@ function MobileFolderBar(props: FolderNavProps) {
     </div>
   );
 }
-
 function FolderNavItem({
   icon,
   label,
@@ -629,7 +623,6 @@ function FolderNavItem({
     </button>
   );
 }
-
 function FolderRow({
   folder,
   count,
@@ -696,11 +689,9 @@ function FolderRow({
     </div>
   );
 }
-
 // ─────────────────────────────────────────────────────────
 // Toolbar (search / status / sort)
 // ─────────────────────────────────────────────────────────
-
 function TripToolbar({
   filters,
   statusCounts,
@@ -719,7 +710,6 @@ function TripToolbar({
     }
     onChange({ ...filters, statuses: next });
   };
-
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="relative flex-1 max-w-md">
@@ -731,7 +721,7 @@ function TripToolbar({
           type="text"
           value={filters.search}
           onChange={(e) => onChange({ ...filters, search: e.target.value })}
-          placeholder="Search by name, description, or rider…"
+          placeholder={t("Search by name, description, or rider\u2026")}
           className="w-full pl-9 pr-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan transition"
         />
       </div>
@@ -760,7 +750,7 @@ function TripToolbar({
         })}
 
         <label className="flex items-center gap-2 text-xs text-slate-500 ml-2">
-          <span>Sort</span>
+          <span>{t("Sort")}</span>
           <select
             value={filters.sort}
             onChange={(e) =>
@@ -782,11 +772,9 @@ function TripToolbar({
     </div>
   );
 }
-
 // ─────────────────────────────────────────────────────────
 // Trip card + actions
 // ─────────────────────────────────────────────────────────
-
 interface TripCardProps {
   trip: Trip;
   folders: TripFolder[];
@@ -795,7 +783,6 @@ interface TripCardProps {
   onDelete: () => void;
   onMove: (folderId: string | null) => void;
 }
-
 function TripCard({
   trip,
   folders,
@@ -806,18 +793,14 @@ function TripCard({
 }: TripCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
-
   const distance = tripDistanceKm(trip);
   const currentFolder = trip.folderId
     ? folders.find((f) => f.id === trip.folderId)
     : null;
-
   return (
     <div
       data-menu-root
-      className={`relative rounded-2xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition ${
-        busy ? "opacity-60" : ""
-      }`}
+      className={`relative rounded-2xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition ${busy ? "opacity-60" : ""}`}
     >
       <Link href={`/trips/${trip.id}`} className="block p-5 pr-12 group">
         <div className="flex items-start justify-between gap-3 mb-3">
@@ -841,18 +824,25 @@ function TripCard({
           <div className="flex items-center gap-2">
             <Calendar size={13} />
             <span>
-              {trip.days?.length ?? 0} day
+              {trip.days?.length ?? 0}
+              {t("day ")}
               {(trip.days?.length ?? 0) === 1 ? "" : "s"}
             </span>
           </div>
           <div className="flex items-center gap-2">
             <MapPin size={13} />
-            <span>{Math.round(distance)} km total</span>
+            <span>
+              {Math.round(distance)}
+              {t("km total")}
+            </span>
           </div>
           {(trip.collaborators?.length ?? 0) > 1 && (
             <div className="flex items-center gap-2">
               <Users size={13} />
-              <span>{trip.collaborators?.length ?? 0} riders</span>
+              <span>
+                {trip.collaborators?.length ?? 0}
+                {t("riders")}
+              </span>
             </div>
           )}
           {currentFolder && (
@@ -864,7 +854,8 @@ function TripCard({
         </div>
 
         <p className="mt-3 text-[11px] text-slate-600">
-          Updated {formatRelativeTime(trip.updatedAt)}
+          {t("Updated ")}
+          {formatRelativeTime(trip.updatedAt)}
         </p>
       </Link>
 
@@ -935,7 +926,7 @@ function TripCard({
               ))}
               {folders.length === 0 && (
                 <p className="text-[11px] text-slate-500 py-1">
-                  No folders yet. Create one from the sidebar.
+                  {t("No folders yet. Create one from the sidebar. ")}
                 </p>
               )}
             </div>
@@ -954,7 +945,6 @@ function TripCard({
     </div>
   );
 }
-
 function MoveItem({
   label,
   active,
@@ -978,11 +968,9 @@ function MoveItem({
     </button>
   );
 }
-
 // ─────────────────────────────────────────────────────────
 // Folder create/rename modal
 // ─────────────────────────────────────────────────────────
-
 function FolderModal({
   mode,
   initialName,
@@ -1000,7 +988,6 @@ function FolderModal({
 }) {
   const [value, setValue] = useState(initialName);
   const [error, setError] = useState<string | null>(null);
-
   // Keep the latest onClose in a ref so the keydown effect doesn't re-add
   // the listener every render just because the parent passes an inline
   // arrow function for onClose.
@@ -1013,7 +1000,6 @@ function FolderModal({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const validationError = validateFolderName(value, folders, excludeId);
@@ -1023,7 +1009,6 @@ function FolderModal({
     }
     onSubmit(value);
   };
-
   return (
     <div
       className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4"
@@ -1041,7 +1026,7 @@ function FolderModal({
           className="block text-xs text-slate-500 mb-1"
           htmlFor="folder-name"
         >
-          Name
+          {t("Name ")}
         </label>
         <input
           id="folder-name"
@@ -1052,7 +1037,7 @@ function FolderModal({
             setValue(e.target.value);
             setError(null);
           }}
-          placeholder="e.g. Summer 2026 Alps"
+          placeholder={t("e.g. Summer 2026 Alps")}
           className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white text-sm placeholder:text-slate-600 focus:outline-none focus:border-tarmoto-cyan"
         />
         {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
@@ -1062,7 +1047,7 @@ function FolderModal({
             onClick={onClose}
             className="px-3 py-1.5 rounded-lg text-sm text-slate-400 hover:text-white transition"
           >
-            Cancel
+            {t("Cancel ")}
           </button>
           <button
             type="submit"
@@ -1075,11 +1060,9 @@ function FolderModal({
     </div>
   );
 }
-
 // ─────────────────────────────────────────────────────────
 // Shared UI bits
 // ─────────────────────────────────────────────────────────
-
 function EmptyState({
   title,
   body,
@@ -1088,8 +1071,14 @@ function EmptyState({
   title: string;
   body: string;
   action?:
-    | { label: string; onClick: () => void }
-    | { label: string; href: string };
+    | {
+        label: string;
+        onClick: () => void;
+      }
+    | {
+        label: string;
+        href: string;
+      };
 }) {
   return (
     <div className="rounded-2xl bg-slate-900 border border-slate-800 p-16 text-center mt-5">
@@ -1116,7 +1105,6 @@ function EmptyState({
     </div>
   );
 }
-
 function Menu({
   onClose,
   align,
@@ -1149,20 +1137,16 @@ function Menu({
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [onClose]);
-
   return (
     <div
       ref={menuRef}
       data-trip-menu
-      className={`absolute top-10 z-20 w-56 rounded-lg border border-slate-800 bg-slate-950 shadow-xl py-1 ${
-        align === "right" ? "right-2" : "left-2"
-      }`}
+      className={`absolute top-10 z-20 w-56 rounded-lg border border-slate-800 bg-slate-950 shadow-xl py-1 ${align === "right" ? "right-2" : "left-2"}`}
     >
       {children}
     </div>
   );
 }
-
 function MenuItem({
   icon,
   label,

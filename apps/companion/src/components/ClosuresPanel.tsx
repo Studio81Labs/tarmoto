@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useEffect } from "react";
 import type { UnitSystem } from "@tarmoto/shared";
 import { AlertTriangle, Route } from "lucide-react";
@@ -13,19 +13,16 @@ import {
 import { monthLabel } from "@/lib/passes-summary";
 import { formatDistance } from "@/lib/utils";
 import { usePreferencesStore } from "@/stores/preferences";
-
 const SEVERITY_CLASS: Record<PlannerClosure["severity"], string> = {
   full: "text-rose-400",
   partial: "text-amber-300",
   advisory: "text-sky-300",
 };
-
 const SEVERITY_LABEL: Record<PlannerClosure["severity"], string> = {
   full: "Full closure",
   partial: "Partial closure",
   advisory: "Advisory",
 };
-
 const REASON_LABEL: Record<PlannerClosure["reason"], string> = {
   closure: "Closure",
   roadworks: "Roadworks",
@@ -34,30 +31,24 @@ const REASON_LABEL: Record<PlannerClosure["reason"], string> = {
   event: "Event",
   other: "Other",
 };
-
 interface ClosuresPanelProps {
   month: number;
   routes: PlannerClosureRoute[];
   data?: ClosuresQueryResult;
 }
-
 export function ClosuresPanel({ month, routes, data }: ClosuresPanelProps) {
   if (data) {
     return <ClosuresPanelBody month={month} routes={routes} data={data} />;
   }
-
   return <FetchedClosuresPanel month={month} routes={routes} />;
 }
-
 function FetchedClosuresPanel({
   month,
   routes,
 }: Omit<ClosuresPanelProps, "data">) {
   const data = useClosures(month, routes);
-
   return <ClosuresPanelBody month={month} routes={routes} data={data} />;
 }
-
 function ClosuresPanelBody({
   month,
   routes,
@@ -80,11 +71,9 @@ function ClosuresPanelBody({
     routeError,
     previewDate,
   } = data;
-
   useEffect(() => {
     hydratePreferences();
   }, [hydratePreferences]);
-
   const monthText = monthLabel(month);
   const previewDay = new Intl.DateTimeFormat("en-US", {
     month: "short",
@@ -93,35 +82,41 @@ function ClosuresPanelBody({
   }).format(previewDate);
   const hasRouteClosures = routeCounts.total > 0;
   const hasRouteFailure = Boolean(routeError);
-
   return (
     <div className="space-y-3 pt-2 border-t border-slate-800">
       <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-300">
         <AlertTriangle size={14} className="text-slate-500" />
-        Closures & roadworks
+        {t("Closures & roadworks ")}
       </div>
 
       <p className="text-xs text-slate-500">
-        Previewing {monthText || "this month"} conditions on {previewDay}.
+        {t("Previewing ")}
+        {monthText || "this month"}
+        {t("conditions on ")}
+        {previewDay}.
       </p>
 
       <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/70 p-3">
         <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
           <Route size={12} />
-          Route warnings
+          {t("Route warnings ")}
         </div>
 
         {routes.length === 0 ? (
           <p className="text-xs text-slate-500">
-            Import or generate a route to check crossings.
+            {t("Import or generate a route to check crossings. ")}
           </p>
         ) : routeLoading ? (
-          <p className="text-xs text-slate-500">Checking route crossings…</p>
+          <p className="text-xs text-slate-500">
+            {t("Checking route crossings\u2026")}
+          </p>
         ) : hasRouteClosures ? (
           <>
             <p className="text-xs text-slate-300">
-              Current trip crosses {routeCounts.total} active{" "}
-              {routeCounts.total === 1 ? "closure" : "closures"}.
+              {t("Current trip crosses {count} active {closureLabel}.", {
+                count: routeCounts.total,
+                closureLabel: routeCounts.total === 1 ? "closure" : "closures",
+              })}
             </p>
             {hasRouteFailure && (
               <p className="text-xs text-amber-300">{routeError}</p>
@@ -141,7 +136,7 @@ function ClosuresPanelBody({
           <p className="text-xs text-rose-400">{routeError}</p>
         ) : routeCounts.total === 0 ? (
           <p className="text-xs text-emerald-400">
-            No active closures intersect the current trip.
+            {t("No active closures intersect the current trip. ")}
           </p>
         ) : null}
       </div>
@@ -149,19 +144,25 @@ function ClosuresPanelBody({
       {error ? (
         <p className="text-xs text-rose-400">{error}</p>
       ) : loading ? (
-        <p className="text-xs text-slate-500">Loading closures…</p>
+        <p className="text-xs text-slate-500">{t("Loading closures\u2026")}</p>
       ) : counts.total === 0 ? (
         <p className="text-xs text-slate-500">
-          No active closures for this month yet.
+          {t("No active closures for this month yet. ")}
         </p>
       ) : (
         <>
           <p className="text-xs text-slate-400">
-            <span className="text-rose-400">{counts.full} full</span>
+            <span className="text-rose-400">
+              {t("{count} full", { count: counts.full })}
+            </span>
             {" • "}
-            <span className="text-amber-300">{counts.partial} partial</span>
+            <span className="text-amber-300">
+              {t("{count} partial", { count: counts.partial })}
+            </span>
             {" • "}
-            <span className="text-sky-300">{counts.advisory} advisory</span>
+            <span className="text-sky-300">
+              {t("{count} advisory", { count: counts.advisory })}
+            </span>
           </p>
 
           <ul className="space-y-2">
@@ -178,7 +179,6 @@ function ClosuresPanelBody({
     </div>
   );
 }
-
 function ClosureRow({
   closure,
   compact = false,
@@ -190,7 +190,6 @@ function ClosureRow({
 }) {
   const detourKm =
     closure.reason === "roadworks" ? detourLengthKm(closure) : null;
-
   return (
     <li className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
       <div className="flex items-start justify-between gap-3">
@@ -214,7 +213,8 @@ function ClosureRow({
 
       {detourKm != null && (
         <p className="mt-2 text-xs text-cyan-300">
-          Detour available · approx. {formatDistance(detourKm, units)}
+          {t("Detour available \u00B7 approx. ")}
+          {formatDistance(detourKm, units)}
         </p>
       )}
 

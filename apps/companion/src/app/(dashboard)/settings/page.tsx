@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import QRCode from "qrcode";
@@ -19,7 +19,6 @@ import {
   Copy,
   Smartphone,
 } from "lucide-react";
-
 const SETTINGS_SECTIONS = [
   {
     href: "/settings",
@@ -58,11 +57,9 @@ const SETTINGS_SECTIONS = [
     description: "Export your data or delete your account",
   },
 ];
-
 type SaveState = "idle" | "saving" | "saved" | "error";
 type CopyState = "idle" | "copied" | "error";
 type AvatarUploadState = "idle" | "uploading" | "uploaded" | "error";
-
 export default function AccountPage() {
   const user = useAuthStore((s) => s.user);
   const setAuthUser = useAuthStore((s) => s.setUser);
@@ -80,7 +77,6 @@ export default function AccountPage() {
   const [avatarUploadError, setAvatarUploadError] = useState<string | null>(
     null,
   );
-
   // Per-field dirty flags — set on first keystroke so a late GET response
   // can't clobber what the user just typed, and so an unhydrated save
   // doesn't blindly send empty values that would blank the server row.
@@ -89,7 +85,6 @@ export default function AccountPage() {
   const homeRegionDirtyRef = useRef(false);
   const saveResetTimerRef = useRef<number | null>(null);
   const copyResetTimerRef = useRef<number | null>(null);
-
   // `useState(user?.displayName ?? "")` only captures the value at first
   // render. When Auth.js finishes hydrating the session after mount, the
   // local field would otherwise stay blank and a later "Save" could wipe the
@@ -97,7 +92,6 @@ export default function AccountPage() {
   useEffect(() => {
     if (user?.displayName) setDisplayName(user.displayName);
   }, [user?.displayName]);
-
   // Pull bio / home_region from the backend — they don't live on the
   // NextAuth session (which intentionally keeps only ID-shaped fields).
   useEffect(() => {
@@ -122,7 +116,6 @@ export default function AccountPage() {
       cancelled = true;
     };
   }, []);
-
   // Clean up any pending transient status timers on unmount.
   useEffect(() => {
     return () => {
@@ -134,16 +127,13 @@ export default function AccountPage() {
       }
     };
   }, []);
-
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const setUnitSystem = usePreferencesStore((s) => s.setUnitSystem);
   const hydratePreferences = usePreferencesStore((s) => s.hydrate);
   useEffect(() => {
     hydratePreferences();
   }, [hydratePreferences]);
-
   const previewAvatarUrl = normalizeAvatarUrl(avatarUrl);
-
   const handleSave = useCallback(async () => {
     if (saveResetTimerRef.current !== null) {
       window.clearTimeout(saveResetTimerRef.current);
@@ -162,7 +152,6 @@ export default function AccountPage() {
     }
     setSaveState("saving");
     setSaveError(null);
-
     // Build a partial payload — only include fields we either confirmed
     // (hydrated from the server) or the user has touched. This keeps a
     // failed GET from turning into an accidental "save null over the top
@@ -182,7 +171,6 @@ export default function AccountPage() {
     if (didHydrateProfile || homeRegionDirtyRef.current) {
       payload.home_region = homeRegion.trim() || null;
     }
-
     try {
       const { data } = await usersApi.updateMe(payload);
       if (user) {
@@ -216,7 +204,6 @@ export default function AccountPage() {
     setAuthUser,
     didHydrateProfile,
   ]);
-
   const handleCopySignInEmail = useCallback(async () => {
     if (!user?.email) return;
     if (copyResetTimerRef.current !== null) {
@@ -238,16 +225,13 @@ export default function AccountPage() {
       setCopyState("error");
     }
   }, [user?.email]);
-
   const handleAvatarFileChange = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
       event.target.value = "";
       if (!file) return;
-
       setAvatarUploadState("uploading");
       setAvatarUploadError(null);
-
       try {
         const { data } = await usersApi.uploadAvatar(file);
         avatarDirtyRef.current = false;
@@ -263,21 +247,17 @@ export default function AccountPage() {
     },
     [],
   );
-
   const mobileLinkHref = user?.email
     ? buildLinkAccountDeepLink(user.email)
     : null;
-
   useEffect(() => {
     let cancelled = false;
-
     if (!mobileLinkHref) {
       setMobileLinkQrSrc(null);
       return () => {
         cancelled = true;
       };
     }
-
     QRCode.toDataURL(mobileLinkHref, {
       margin: 1,
       width: 176,
@@ -292,15 +272,13 @@ export default function AccountPage() {
       .catch(() => {
         if (!cancelled) setMobileLinkQrSrc(null);
       });
-
     return () => {
       cancelled = true;
     };
   }, [mobileLinkHref]);
-
   return (
     <div className="p-6 max-w-3xl mx-auto animate-fade-in">
-      <h1 className="text-2xl font-bold mb-6">Settings</h1>
+      <h1 className="text-2xl font-bold mb-6">{t("Settings")}</h1>
 
       {/* Settings navigation */}
       <div className="space-y-1 mb-8">
@@ -324,7 +302,7 @@ export default function AccountPage() {
 
       {/* Profile form */}
       <div className="rounded-2xl bg-slate-900 border border-slate-800 p-6 space-y-4">
-        <h2 className="text-lg font-semibold mb-4">Profile</h2>
+        <h2 className="text-lg font-semibold mb-4">{t("Profile")}</h2>
 
         <div className="flex items-center gap-4 mb-6">
           {previewAvatarUrl ? (
@@ -351,8 +329,9 @@ export default function AccountPage() {
           )}
           <div className="flex flex-col">
             <p className="text-xs text-slate-500 mt-1">
-              Upload a photo here, or paste a hosted image URL to keep your web
-              and mobile profile photo in sync today.
+              {t(
+                "Upload a photo here, or paste a hosted image URL to keep your web and mobile profile photo in sync today. ",
+              )}
             </p>
           </div>
         </div>
@@ -362,7 +341,7 @@ export default function AccountPage() {
             htmlFor="settings-avatar-file"
             className="block text-sm text-slate-400 mb-1.5"
           >
-            Upload avatar
+            {t("Upload avatar ")}
           </label>
           <div className="flex flex-wrap items-center gap-3">
             <input
@@ -371,7 +350,7 @@ export default function AccountPage() {
               accept="image/png,image/jpeg,image/webp"
               onChange={handleAvatarFileChange}
               className="block text-sm text-slate-300 file:mr-4 file:rounded-lg file:border-0 file:bg-slate-800 file:px-4 file:py-2.5 file:text-sm file:font-medium file:text-white hover:file:bg-slate-700"
-              aria-label="Upload avatar"
+              aria-label={t("Upload avatar")}
             />
             {avatarUploadState === "uploading" && (
               <span
@@ -379,7 +358,7 @@ export default function AccountPage() {
                 aria-live="polite"
                 className="text-sm text-slate-400"
               >
-                Uploading…
+                {t("Uploading\u2026 ")}
               </span>
             )}
             {avatarUploadState === "uploaded" && (
@@ -388,7 +367,7 @@ export default function AccountPage() {
                 aria-live="polite"
                 className="text-sm text-emerald-400"
               >
-                Photo uploaded.
+                {t("Photo uploaded. ")}
               </span>
             )}
             {avatarUploadState === "error" && avatarUploadError && (
@@ -402,7 +381,7 @@ export default function AccountPage() {
             )}
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            PNG, JPEG, or WebP up to 5 MB.
+            {t("PNG, JPEG, or WebP up to 5 MB. ")}
           </p>
         </div>
 
@@ -411,7 +390,7 @@ export default function AccountPage() {
             htmlFor="settings-avatar-url"
             className="block text-sm text-slate-400 mb-1.5"
           >
-            Avatar URL
+            {t("Avatar URL ")}
           </label>
           <div className="flex gap-2">
             <input
@@ -424,7 +403,7 @@ export default function AccountPage() {
                 setAvatarUploadError(null);
                 setAvatarUrl(e.target.value);
               }}
-              placeholder="https://cdn.example.com/rider.jpg"
+              placeholder={t("https://cdn.example.com/rider.jpg")}
               className="w-full px-4 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan transition"
             />
             <button
@@ -437,12 +416,13 @@ export default function AccountPage() {
               }}
               className="px-3 py-2.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition"
             >
-              Remove
+              {t("Remove ")}
             </button>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Use an <code>https://</code> image URL from your CDN, photo host, or
-            social profile.
+            {t("Use an ")}
+            <code>{t("https://")}</code>
+            {t(" image URL from your CDN, photo host, or social profile. ")}
           </p>
         </div>
 
@@ -451,7 +431,7 @@ export default function AccountPage() {
             htmlFor="settings-display-name"
             className="block text-sm text-slate-400 mb-1.5"
           >
-            Display name
+            {t("Display name ")}
           </label>
           <input
             id="settings-display-name"
@@ -468,7 +448,7 @@ export default function AccountPage() {
             htmlFor="settings-email"
             className="block text-sm text-slate-400 mb-1.5"
           >
-            Email
+            {t("Email ")}
           </label>
           <input
             id="settings-email"
@@ -484,7 +464,7 @@ export default function AccountPage() {
             htmlFor="settings-bio"
             className="block text-sm text-slate-400 mb-1.5"
           >
-            Bio
+            {t("Bio ")}
           </label>
           <textarea
             id="settings-bio"
@@ -495,7 +475,9 @@ export default function AccountPage() {
             }}
             maxLength={500}
             rows={3}
-            placeholder="A short blurb about your riding — shown on your public profile."
+            placeholder={t(
+              "A short blurb about your riding \u2014 shown on your public profile.",
+            )}
             className="w-full px-4 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan transition resize-none"
           />
           <p className="text-xs text-slate-500 mt-1">{bio.length}/500</p>
@@ -506,7 +488,7 @@ export default function AccountPage() {
             htmlFor="settings-home-region"
             className="block text-sm text-slate-400 mb-1.5"
           >
-            Home region
+            {t("Home region ")}
           </label>
           <input
             id="settings-home-region"
@@ -517,7 +499,7 @@ export default function AccountPage() {
               setHomeRegion(e.target.value);
             }}
             maxLength={120}
-            placeholder="e.g., Beskydy, Czech Republic"
+            placeholder={t("e.g., Beskydy, Czech Republic")}
             className="w-full px-4 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan transition"
           />
         </div>
@@ -537,7 +519,7 @@ export default function AccountPage() {
               aria-live="polite"
               className="text-sm text-emerald-400"
             >
-              Saved
+              {t("Saved ")}
             </span>
           )}
           {saveState === "error" && saveError && (
@@ -555,10 +537,13 @@ export default function AccountPage() {
       <div className="rounded-2xl bg-slate-900 border border-slate-800 p-6 mt-4">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-lg font-semibold mb-1">Link mobile app</h2>
+            <h2 className="text-lg font-semibold mb-1">
+              {t("Link mobile app")}
+            </h2>
             <p className="text-sm text-slate-500">
-              Sign in on iPhone or Android with this same Tarmoto account to
-              sync your rides, bikes, and profile details across devices.
+              {t(
+                "Sign in on iPhone or Android with this same Tarmoto account to sync your rides, bikes, and profile details across devices. ",
+              )}
             </p>
           </div>
           <div className="rounded-xl bg-slate-800/80 p-3 text-tarmoto-cyan">
@@ -567,9 +552,9 @@ export default function AccountPage() {
         </div>
         <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4">
           <p className="text-sm text-slate-300">
-            Scan the QR code or open Tarmoto on this phone to jump into mobile
-            account linking, then sign in with the same credentials to keep
-            everything in sync.
+            {t(
+              "Scan the QR code or open Tarmoto on this phone to jump into mobile account linking, then sign in with the same credentials to keep everything in sync. ",
+            )}
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-4">
             <div className="rounded-2xl border border-slate-800 bg-slate-900 p-3">
@@ -577,20 +562,20 @@ export default function AccountPage() {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={mobileLinkQrSrc}
-                  alt="QR code to link the Tarmoto mobile app"
+                  alt={t("QR code to link the Tarmoto mobile app")}
                   className="h-36 w-36 rounded-lg"
                 />
               ) : (
                 <div className="flex h-36 w-36 items-center justify-center rounded-lg bg-slate-950 text-xs text-slate-500">
-                  QR unavailable
+                  {t("QR unavailable ")}
                 </div>
               )}
             </div>
             <div className="max-w-sm space-y-3">
               <p className="text-xs text-slate-500">
-                Best on another device: open your phone camera, scan the code,
-                and Tarmoto will jump straight to account linking with your
-                email prefilled.
+                {t(
+                  "Best on another device: open your phone camera, scan the code, and Tarmoto will jump straight to account linking with your email prefilled. ",
+                )}
               </p>
               {mobileLinkHref ? (
                 <a
@@ -598,14 +583,14 @@ export default function AccountPage() {
                   className="inline-flex items-center gap-2 rounded-lg border border-tarmoto-cyan/30 bg-tarmoto-cyan/10 px-4 py-2 text-sm font-medium text-tarmoto-cyan transition hover:border-tarmoto-cyan/50 hover:bg-tarmoto-cyan/15"
                 >
                   <Smartphone size={14} />
-                  Open in Tarmoto mobile
+                  {t("Open in Tarmoto mobile ")}
                 </a>
               ) : null}
             </div>
           </div>
 
           <p className="text-xs uppercase tracking-widest text-slate-500">
-            Sign-in email
+            {t("Sign-in email ")}
           </p>
           <p className="mt-1 break-all font-mono text-sm text-slate-200">
             {user?.email ?? "No account email available"}
@@ -618,16 +603,16 @@ export default function AccountPage() {
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm font-medium hover:bg-slate-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Copy size={14} />
-              Copy sign-in email
+              {t("Copy sign-in email ")}
             </button>
             {copyState === "copied" && (
               <span role="status" className="text-sm text-emerald-400">
-                Email copied. Use it to sign in on mobile.
+                {t("Email copied. Use it to sign in on mobile. ")}
               </span>
             )}
             {copyState === "error" && (
               <span role="alert" className="text-sm text-rose-400">
-                Could not copy your email. Please copy it manually.
+                {t("Could not copy your email. Please copy it manually. ")}
               </span>
             )}
           </div>
@@ -635,9 +620,11 @@ export default function AccountPage() {
       </div>
 
       <div className="rounded-2xl bg-slate-900 border border-slate-800 p-6 mt-4">
-        <h2 className="text-lg font-semibold mb-1">Display units</h2>
+        <h2 className="text-lg font-semibold mb-1">{t("Display units")}</h2>
         <p className="text-sm text-slate-500 mb-4">
-          Choose how distances and speeds are shown across the dashboard.
+          {t(
+            "Choose how distances and speeds are shown across the dashboard. ",
+          )}
         </p>
         {/*
           Native radio inputs (visually hidden) carry browser-native keyboard
@@ -647,7 +634,7 @@ export default function AccountPage() {
         */}
         <div
           role="radiogroup"
-          aria-label="Display units"
+          aria-label={t("Display units")}
           className="inline-flex rounded-lg bg-slate-800 p-1"
         >
           {(["metric", "imperial"] as UnitSystem[]).map((value) => (
@@ -680,11 +667,9 @@ export default function AccountPage() {
     </div>
   );
 }
-
 function normalizeAvatarUrl(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
-
   try {
     const parsed = new URL(trimmed);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {

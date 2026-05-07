@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Route, Users } from "lucide-react";
 import { RIDE_TYPES } from "@tarmoto/shared";
@@ -11,10 +11,11 @@ import {
 import { CommunityRideCard } from "@/components/community/CommunityRideCard";
 import { PlaceSearch, type PlaceValue } from "../rides/_components/PlaceSearch";
 import { buildCommunityRideQuery } from "@/lib/community-feed";
-
 const PAGE_SIZE = 9;
-
-const SORT_OPTIONS: Array<{ value: CommunityRideSort; label: string }> = [
+const SORT_OPTIONS: Array<{
+  value: CommunityRideSort;
+  label: string;
+}> = [
   { value: "most_popular", label: "Most popular" },
   { value: "newest", label: "Newest" },
   { value: "highest_quality", label: "Highest quality" },
@@ -22,7 +23,6 @@ const SORT_OPTIONS: Array<{ value: CommunityRideSort; label: string }> = [
   { value: "curviest", label: "Curviest" },
   { value: "longest", label: "Longest" },
 ];
-
 export default function CommunityFeedPage() {
   const [sort, setSort] = useState<CommunityRideSort>("most_popular");
   const [rideType, setRideType] = useState("all");
@@ -37,7 +37,6 @@ export default function CommunityFeedPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
   const query = useMemo(
     () =>
       buildCommunityRideQuery({
@@ -64,12 +63,10 @@ export default function CommunityFeedPage() {
       offset,
     ],
   );
-
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
-
     communityApi
       .list(query)
       .then(({ data }) => {
@@ -86,20 +83,17 @@ export default function CommunityFeedPage() {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
-
     return () => {
       cancelled = true;
     };
   }, [query]);
-
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
   const pageCount = Math.max(Math.ceil(total / PAGE_SIZE), 1);
-
   return (
     <div className="mx-auto max-w-7xl animate-fade-in p-6">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Community</h1>
+          <h1 className="text-2xl font-bold">{t("Community")}</h1>
           <p className="mt-1 text-sm text-slate-500">
             {total === 1
               ? "1 ride found"
@@ -108,7 +102,9 @@ export default function CommunityFeedPage() {
         </div>
 
         <p className="text-sm text-slate-500">
-          Explore popular shared rides and discover routes worth repeating.
+          {t(
+            "Explore popular shared rides and discover routes worth repeating. ",
+          )}
         </p>
       </div>
 
@@ -190,7 +186,7 @@ export default function CommunityFeedPage() {
 
         <label className="block">
           <span className="mb-1 block text-xs text-slate-500">
-            Minimum distance
+            {t("Minimum distance ")}
           </span>
           <div className="relative">
             <Route
@@ -198,7 +194,7 @@ export default function CommunityFeedPage() {
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
             />
             <input
-              aria-label="Minimum distance"
+              aria-label={t("Minimum distance")}
               type="number"
               min={0}
               step={10}
@@ -207,7 +203,7 @@ export default function CommunityFeedPage() {
                 setMinDistanceKm(event.target.value);
                 setOffset(0);
               }}
-              placeholder="Any"
+              placeholder={t("Any")}
               className="w-full rounded-lg border border-slate-700 bg-slate-950 py-2 pl-8 pr-3 text-sm text-white transition focus:border-tarmoto-cyan focus:outline-none"
             />
           </div>
@@ -215,7 +211,7 @@ export default function CommunityFeedPage() {
 
         <label className="block">
           <span className="mb-1 block text-xs text-slate-500">
-            Maximum distance
+            {t("Maximum distance ")}
           </span>
           <div className="relative">
             <Route
@@ -223,7 +219,7 @@ export default function CommunityFeedPage() {
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
             />
             <input
-              aria-label="Maximum distance"
+              aria-label={t("Maximum distance")}
               type="number"
               min={0}
               step={10}
@@ -232,7 +228,7 @@ export default function CommunityFeedPage() {
                 setMaxDistanceKm(event.target.value);
                 setOffset(0);
               }}
-              placeholder="Any"
+              placeholder={t("Any")}
               className="w-full rounded-lg border border-slate-700 bg-slate-950 py-2 pl-8 pr-3 text-sm text-white transition focus:border-tarmoto-cyan focus:outline-none"
             />
           </div>
@@ -248,14 +244,15 @@ export default function CommunityFeedPage() {
             setOffset(0);
           }}
           label="Region or place"
-          placeholder="Brno, Tyrol, Tatra Mountains…"
+          placeholder={t("Brno, Tyrol, Tatra Mountains\u2026")}
         />
       </div>
 
       {location && (
         <p className="mb-6 text-sm text-slate-400">
-          Filtering within {location.km} km of{" "}
-          <span className="text-slate-200">{location.label}</span>.
+          {t("Filtering within ")}
+          {location.km}
+          {t("km of")} <span className="text-slate-200">{location.label}</span>.
         </p>
       )}
 
@@ -266,16 +263,18 @@ export default function CommunityFeedPage() {
       ) : loading ? (
         <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900 p-4 text-sm text-slate-400">
           <Loader2 size={16} className="animate-spin" />
-          Loading community rides…
+          {t("Loading community rides\u2026 ")}
         </div>
       ) : items.length === 0 ? (
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-16 text-center">
           <Users size={48} className="mx-auto mb-4 text-slate-600" />
           <p className="mb-2 text-lg text-slate-300">
-            No rides match these filters
+            {t("No rides match these filters ")}
           </p>
           <p className="text-sm text-slate-500">
-            Try broadening the feed or switching back to the most popular rides.
+            {t(
+              "Try broadening the feed or switching back to the most popular rides. ",
+            )}
           </p>
         </div>
       ) : (
@@ -288,7 +287,10 @@ export default function CommunityFeedPage() {
 
           <div className="mt-6 flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
             <p className="text-sm text-slate-400">
-              Page {currentPage} of {pageCount}
+              {t("Page ")}
+              {currentPage}
+              {t("of ")}
+              {pageCount}
             </p>
 
             <div className="flex items-center gap-2">
@@ -300,7 +302,7 @@ export default function CommunityFeedPage() {
                 disabled={offset === 0}
                 className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Previous
+                {t("Previous ")}
               </button>
               <button
                 type="button"
@@ -314,7 +316,7 @@ export default function CommunityFeedPage() {
                 disabled={offset + PAGE_SIZE >= total}
                 className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Next
+                {t("Next ")}
               </button>
             </div>
           </div>
@@ -323,7 +325,6 @@ export default function CommunityFeedPage() {
     </div>
   );
 }
-
 function FilterSelect({
   id,
   label,
@@ -336,7 +337,10 @@ function FilterSelect({
   label: string;
   value: string;
   onChange: (value: string) => void;
-  options: Array<{ value: string; label: string }>;
+  options: Array<{
+    value: string;
+    label: string;
+  }>;
   disabledOptions?: string[];
 }) {
   return (

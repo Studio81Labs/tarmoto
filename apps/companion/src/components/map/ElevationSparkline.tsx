@@ -1,5 +1,5 @@
+import { t } from "@/i18n";
 import { buildSparklinePath, profileExtrema } from "@/lib/segment-preview";
-
 interface Props {
   profile: number[] | null;
   width?: number;
@@ -7,7 +7,6 @@ interface Props {
   stroke?: string;
   className?: string;
 }
-
 /**
  * Renders a minimal elevation sparkline. Returns null when the profile is
  * absent or too short to plot, so callers can use it unconditionally.
@@ -51,7 +50,8 @@ export function ElevationSparkline({
         textAnchor="end"
         className="tabular-nums"
       >
-        {Math.round(ext.max)}m
+        {Math.round(ext.max)}
+        {t("m ")}
       </text>
       <text
         x={labelX}
@@ -61,7 +61,8 @@ export function ElevationSparkline({
         textAnchor="end"
         className="tabular-nums"
       >
-        {Math.round(ext.min)}m
+        {Math.round(ext.min)}
+        {t("m ")}
       </text>
     </svg>
   );

@@ -1,15 +1,13 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useDiscoverStore } from "./useDiscoverStore";
 import type { FunZoneListItem } from "@/lib/discover";
-
 interface Props {
   zones: FunZoneListItem[];
   loading: boolean;
   error: string | null;
   onRetry: () => void;
 }
-
 /**
  * Left sidebar listing Fun Zones in the effective bbox (viewport or drawn
  * region), ranked by composite_score. Hover echoes to the map; click
@@ -17,12 +15,11 @@ interface Props {
  */
 export function ZoneListPanel({ zones, loading, error, onRetry }: Props) {
   const { drawnBbox, selectedZoneId, setSelectedZoneId } = useDiscoverStore();
-
   return (
     <aside className="w-[300px] border-r border-slate-800 bg-slate-950 overflow-y-auto flex flex-col">
       <header className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
         <div>
-          <h2 className="text-sm font-semibold text-white">Fun Zones</h2>
+          <h2 className="text-sm font-semibold text-white">{t("Fun Zones")}</h2>
           <p className="text-xs text-slate-400">
             {loading
               ? "Loading…"
@@ -31,24 +28,24 @@ export function ZoneListPanel({ zones, loading, error, onRetry }: Props) {
         </div>
         {drawnBbox ? (
           <span className="text-[10px] uppercase tracking-wider text-tarmoto-cyan bg-tarmoto-cyan/10 px-2 py-0.5 rounded">
-            Drawn
+            {t("Drawn ")}
           </span>
         ) : (
           <span className="text-[10px] uppercase tracking-wider text-slate-500">
-            Viewport
+            {t("Viewport ")}
           </span>
         )}
       </header>
 
       {error ? (
         <div className="p-4 text-sm text-slate-300">
-          <p className="mb-2">Couldn&apos;t load zones.</p>
+          <p className="mb-2">{t("Couldn't load zones.")}</p>
           <button
             type="button"
             onClick={onRetry}
             className="text-tarmoto-cyan hover:underline"
           >
-            Retry
+            {t("Retry ")}
           </button>
         </div>
       ) : loading && zones.length === 0 ? (
@@ -94,7 +91,8 @@ export function ZoneListPanel({ zones, loading, error, onRetry }: Props) {
                       </span>
                     </div>
                     <p className="text-xs text-slate-400 mt-1">
-                      {zone.road_count} roads
+                      {zone.road_count}
+                      {t("roads ")}
                       {zone.total_curve_km != null
                         ? ` · ${Math.round(zone.total_curve_km)} km curves`
                         : ""}
@@ -117,7 +115,6 @@ export function ZoneListPanel({ zones, loading, error, onRetry }: Props) {
     </aside>
   );
 }
-
 function fallbackName(zone: FunZoneListItem): string {
   // Use the polygon centroid as a rough placeholder name when the zone has
   // no human label yet. The `boundary` is a closed ring; averaging its

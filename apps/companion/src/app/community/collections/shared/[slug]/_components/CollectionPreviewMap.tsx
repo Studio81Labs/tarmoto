@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl, {
   type LngLatBoundsLike,
@@ -14,7 +14,6 @@ import {
   routeCollectionsApi,
   type RouteCollectionPreviewItem,
 } from "@/lib/api";
-
 interface Props {
   slug: string;
   /**
@@ -25,17 +24,22 @@ interface Props {
    */
   itemCount: number;
 }
-
 const SOURCE_ID = "collection-preview";
 const TRIP_LAYER_ID = "collection-preview-trips";
 const RIDE_LAYER_ID = "collection-preview-rides";
 const DEFAULT_CENTER: [number, number] = [14.4378, 50.0755]; // Prague — same fallback as RidesMap.
-
 type LoadState =
-  | { phase: "loading" }
-  | { phase: "ready"; routes: RouteCollectionPreviewItem[] }
-  | { phase: "error"; message: string };
-
+  | {
+      phase: "loading";
+    }
+  | {
+      phase: "ready";
+      routes: RouteCollectionPreviewItem[];
+    }
+  | {
+      phase: "error";
+      message: string;
+    };
 /**
  * Public collection page map preview (#358). Mounts MapLibre client-side
  * (the SSR'd page only needs the metadata) and pulls simplified geometries
@@ -61,13 +65,10 @@ export function CollectionPreviewMap({ slug, itemCount }: Props) {
   const colorScheme = useMapColorScheme();
   const colorSchemeRef = useRef(colorScheme);
   const appliedColorSchemeRef = useRef<MapColorScheme | null>(null);
-
   useEffect(() => {
     colorSchemeRef.current = colorScheme;
   }, [colorScheme]);
-
   const [load, setLoad] = useState<LoadState>({ phase: "loading" });
-
   // ── fetch the preview payload ──
   useEffect(() => {
     if (itemCount === 0) {
@@ -94,12 +95,10 @@ export function CollectionPreviewMap({ slug, itemCount }: Props) {
       cancelled = true;
     };
   }, [slug, itemCount]);
-
   // ── init map once we have non-empty data ──
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     if (load.phase !== "ready" || load.routes.length === 0) return;
-
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: MAP_STYLE_URL,
@@ -111,16 +110,13 @@ export function CollectionPreviewMap({ slug, itemCount }: Props) {
       cooperativeGestures: false,
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }));
-
     map.on("load", () => {
       applyTarmotoMapTheme(map, colorSchemeRef.current);
       appliedColorSchemeRef.current = colorSchemeRef.current;
-
       map.addSource(SOURCE_ID, {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
       });
-
       // Trips render in cyan (the brand color) and rides in emerald — same
       // visual language the dashboard uses to distinguish planner trips
       // from recorded rides, so a viewer who has seen the owner's library
@@ -149,19 +145,15 @@ export function CollectionPreviewMap({ slug, itemCount }: Props) {
           "line-opacity": 0.85,
         },
       });
-
       setReady(true);
     });
-
     mapRef.current = map;
-
     // Resize observer — the parent's responsive layout can change the
     // map container size, and MapLibre needs an explicit `.resize()` to
     // pick up the new viewport. Without this, the map renders blank or
     // clipped on first paint when the page hydrates.
     const ro = new ResizeObserver(() => map.resize());
     ro.observe(containerRef.current);
-
     return () => {
       ro.disconnect();
       map.remove();
@@ -171,7 +163,6 @@ export function CollectionPreviewMap({ slug, itemCount }: Props) {
       fittedOnceRef.current = false;
     };
   }, [load]);
-
   // ── push features → source + auto-fit ──
   useEffect(() => {
     const map = mapRef.current;
@@ -180,7 +171,6 @@ export function CollectionPreviewMap({ slug, itemCount }: Props) {
       | maplibregl.GeoJSONSource
       | undefined;
     if (!src) return;
-
     const features: GeoJSON.Feature[] = [];
     for (const route of load.routes) {
       for (const line of route.lines) {
@@ -193,7 +183,6 @@ export function CollectionPreviewMap({ slug, itemCount }: Props) {
       }
     }
     src.setData({ type: "FeatureCollection", features });
-
     if (!fittedOnceRef.current && features.length > 0) {
       const bounds = new maplibregl.LngLatBounds();
       for (const f of features) {
@@ -212,7 +201,6 @@ export function CollectionPreviewMap({ slug, itemCount }: Props) {
       fittedOnceRef.current = true;
     }
   }, [ready, load]);
-
   // ── re-apply theme on color-scheme changes ──
   useEffect(() => {
     const map = mapRef.current;
@@ -220,16 +208,15 @@ export function CollectionPreviewMap({ slug, itemCount }: Props) {
     applyTarmotoMapTheme(map, colorScheme);
     appliedColorSchemeRef.current = colorScheme;
   }, [colorScheme, ready]);
-
   const drawableCount = useMemo(() => {
     if (load.phase !== "ready") return 0;
     return load.routes.filter((r) => r.lines.some((l) => l.length >= 2)).length;
   }, [load]);
-
   if (load.phase === "loading") {
     return (
       <div className="rounded-2xl border border-slate-800 bg-slate-900/60 h-72 flex items-center justify-center text-sm text-slate-500">
-        <Loader2 size={16} className="animate-spin mr-2" /> Loading map…
+        <Loader2 size={16} className="animate-spin mr-2" />
+        {t("Loading map\u2026 ")}
       </div>
     );
   }
@@ -239,7 +226,7 @@ export function CollectionPreviewMap({ slug, itemCount }: Props) {
         role="alert"
         className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-6 text-center text-sm text-amber-200"
       >
-        Couldn&apos;t load the route preview right now.
+        {t("Couldn't load the route preview right now. ")}
         <p className="mt-1 text-[11px] text-slate-500">{load.message}</p>
       </div>
     );
@@ -254,18 +241,18 @@ export function CollectionPreviewMap({ slug, itemCount }: Props) {
       </div>
     );
   }
-
   return (
     <div className="relative w-full h-72 sm:h-96 rounded-2xl overflow-hidden border border-slate-800">
       <div ref={containerRef} className="absolute inset-0" />
       <div className="pointer-events-none absolute bottom-2 left-2 flex flex-wrap items-center gap-2 rounded-full bg-slate-950/80 border border-slate-800 px-3 py-1 text-[11px] text-slate-300">
-        <LegendDot color="#22d3ee" /> Trip
-        <LegendDot color="#34d399" /> Ride
+        <LegendDot color="#22d3ee" />
+        {t("Trip ")}
+        <LegendDot color="#34d399" />
+        {t("Ride ")}
       </div>
     </div>
   );
 }
-
 function LegendDot({ color }: { color: string }) {
   return (
     <span

@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -8,7 +8,6 @@ import type { Trip } from "@/lib/types";
 import { TRIP_PRINT_STORAGE_KEY } from "@/lib/trip-export";
 import { TripPrintBody } from "@/components/TripPrintBody";
 import { DEMO_TRIP } from "@/lib/demo-trip";
-
 /**
  * Print-friendly trip summary for an unsaved planner trip (US-39 / #283).
  * Opened in a new tab from the planner's Export menu; the Zustand trip
@@ -19,32 +18,30 @@ import { DEMO_TRIP } from "@/lib/demo-trip";
  * therefore use localStorage and clear the key after reading so nothing
  * persists beyond the print handoff.
  */
-
 // Module-level cache keyed by trip id. React StrictMode double-invokes
 // effects in dev (setup → cleanup → setup) and Next.js can re-run them on
 // fast-refresh; after the first run deletes the localStorage entry the
 // subsequent runs would otherwise see `null` and clobber the loaded trip.
 const hydratedTrips = new Map<string, Trip>();
-
 export default function TripPrintPage() {
   return (
     // `useSearchParams` requires a Suspense boundary in Next 15+ or the
     // build errors with "Missing Suspense boundary with useSearchParams".
     <Suspense
-      fallback={<div className="p-10 text-sm text-slate-500">Loading…</div>}
+      fallback={
+        <div className="p-10 text-sm text-slate-500">{t("Loading\u2026")}</div>
+      }
     >
       <TripPrintPageContent />
     </Suspense>
   );
 }
-
 function TripPrintPageContent() {
   const params = useSearchParams();
   const tripId = params?.get("trip") ?? null;
   const autoprint = params?.get("autoprint") === "1";
   const [trip, setTrip] = useState<Trip | null>(null);
   const [ready, setReady] = useState(false);
-
   useEffect(() => {
     const cacheKey = tripId ?? "";
     const cached = hydratedTrips.get(cacheKey);
@@ -53,7 +50,6 @@ function TripPrintPageContent() {
       setReady(true);
       return;
     }
-
     let loaded: Trip | null = null;
     try {
       const raw = localStorage.getItem(TRIP_PRINT_STORAGE_KEY);
@@ -81,7 +77,6 @@ function TripPrintPageContent() {
     setTrip(loaded);
     setReady(true);
   }, [tripId]);
-
   // Auto-trigger the browser's print dialog once hydration finishes —
   // mirrors the saved-trip print page so the "Download PDF" export works
   // for unsaved planner trips too. 200ms delay lets the per-day SVG
@@ -91,27 +86,27 @@ function TripPrintPageContent() {
     const id = window.setTimeout(() => window.print(), 200);
     return () => window.clearTimeout(id);
   }, [autoprint, trip, ready]);
-
   if (!ready) {
-    return <div className="p-10 text-sm text-slate-500">Loading…</div>;
+    return (
+      <div className="p-10 text-sm text-slate-500">{t("Loading\u2026")}</div>
+    );
   }
-
   if (!trip) {
     return (
       <div className="min-h-screen bg-white text-slate-900 p-10 max-w-3xl mx-auto">
         <p className="mb-4 text-sm text-slate-600">
-          No trip to print. Open a trip in the planner first.
+          {t("No trip to print. Open a trip in the planner first. ")}
         </p>
         <Link
           href="/trips/planner"
           className="inline-flex items-center gap-1.5 text-slate-900 underline text-sm"
         >
-          <ArrowLeft size={14} /> Back to planner
+          <ArrowLeft size={14} />
+          {t("Back to planner ")}
         </Link>
       </div>
     );
   }
-
   return (
     <div className="trip-print min-h-screen bg-white text-slate-900">
       <div className="trip-print-toolbar sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white/95 backdrop-blur px-6 py-3">
@@ -119,14 +114,16 @@ function TripPrintPageContent() {
           href="/trips/planner"
           className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900"
         >
-          <ArrowLeft size={14} /> Back to planner
+          <ArrowLeft size={14} />
+          {t("Back to planner ")}
         </Link>
         <button
           type="button"
           onClick={() => window.print()}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-sm hover:bg-slate-800 transition"
         >
-          <Printer size={14} /> Print / Save as PDF
+          <Printer size={14} />
+          {t("Print / Save as PDF ")}
         </button>
       </div>
 
