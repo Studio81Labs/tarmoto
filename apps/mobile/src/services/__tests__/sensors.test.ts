@@ -188,4 +188,27 @@ describe("sensorService.tagSurface (research issue #7)", () => {
     // After stop the buffer is cleared so the next ride starts clean.
     expect(sensorService.getTagEvents()).toEqual([]);
   });
+
+  it("omits lat/lng from tags fired before the first GPS fix", () => {
+    sensorService.start(() => undefined);
+    const event = sensorService.tagSurface("gravel");
+
+    expect(event).not.toBeNull();
+    expect(event!.lat).toBeUndefined();
+    expect(event!.lng).toBeUndefined();
+  });
+
+  it("preserves a real 0° GPS fix instead of dropping it as falsy", () => {
+    // Regression: a previous version used `this.currentLat || undefined`
+    // which silently dropped the equator (lat 0) and the prime meridian
+    // (lng 0). The fix gates on a `hasGpsFix` flag set inside
+    // `updateLocation`, so a real 0° reading is preserved verbatim.
+    sensorService.start(() => undefined);
+    sensorService.updateLocation(0, 0, 25);
+    const event = sensorService.tagSurface("rough_asphalt");
+
+    expect(event).not.toBeNull();
+    expect(event!.lat).toBe(0);
+    expect(event!.lng).toBe(0);
+  });
 });

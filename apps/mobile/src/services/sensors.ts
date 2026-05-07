@@ -80,6 +80,15 @@ class SensorService {
   private currentSpeed = 0;
   private currentLat = 0;
   private currentLng = 0;
+  // Tracks whether `updateLocation` has fired at least once this ride.
+  // Distinguishing the `currentLat/Lng = 0` *initial* state from a real
+  // 0° fix matters for tag events (a rider on the equator / prime
+  // meridian shouldn't have their tag's position silently dropped).
+  // The accelerometer reading still uses `currentLat/Lng` directly
+  // because `SensorReading.lat` is a required number — pre-fix
+  // accelerometer samples just carry 0/0 and the backend filters them
+  // out via `MIN_SPEED_MS`.
+  private hasGpsFix = false;
   private readingListeners = new Set<ReadingListener>();
   // Per-ride orientation filter (US-19). One instance per ride so the
   // calibration offset captured at start doesn't leak from one ride to
@@ -101,6 +110,7 @@ class SensorService {
     this.buffer = [];
     this.rawReadings = [];
     this.tagEvents = [];
+    this.hasGpsFix = false;
     // Reset the orientation filter so a previous ride's offset / drift
     // doesn't bleed into this one. `start` also kicks off the auto-
     // calibration window (~1.5 s of upright readings).
@@ -272,10 +282,15 @@ class SensorService {
    */
   tagSurface(label: SurfaceLabel): RideTagEvent | null {
     if (!this.isRecording) return null;
+    // Gate on `hasGpsFix` rather than the falsy-check `lat || undefined`
+    // pattern: 0° latitude / longitude are valid coordinates (equator /
+    // prime meridian) and a rider tagging there shouldn't have their
+    // position silently dropped to `undefined`. Pre-fix tags still
+    // omit the field entirely so the backend can't mistake the
+    // initial 0/0 sentinel for a real position.
     const event: RideTagEvent = {
       t: Date.now(),
-      lat: this.currentLat || undefined,
-      lng: this.currentLng || undefined,
+      ...(this.hasGpsFix ? { lat: this.currentLat, lng: this.currentLng } : {}),
       label,
     };
     this.tagEvents.push(event);
@@ -298,6 +313,7 @@ class SensorService {
     this.currentLat = lat;
     this.currentLng = lng;
     this.currentSpeed = speedKmh;
+    this.hasGpsFix = true;
   }
 
   /**

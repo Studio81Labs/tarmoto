@@ -67,30 +67,34 @@ export class SensorService {
     userId: string,
     dto: UploadSensorDataDto,
   ): Promise<UploadResponseDto> {
-    // Research issue #7 — persist rider tags FIRST so they survive
-    // every later early-return path below. The privacy opt-out path
-    // and the empty-readings path both happen before surface_readings
-    // are written; we still want the rider's labels recorded as
-    // forensic evidence for the spike, independent of whether this
-    // batch contributed any quality readings.
-    const sortedTagEvents = await this.persistTagEvents(
-      userId,
-      dto.ride_id,
-      dto.tag_events,
-    );
-
     // #279 — honor the rider's road-data contribution opt-out. When
     // disabled we 202 (matching the controller status) without
-    // persisting any surface readings; lean stats still update because
-    // they're personal-history data the rider sees on their own ride
-    // detail screen, never aggregated into the public road-quality map.
-    // Returning 202 (not 403) keeps the mobile uploader's offline retry
-    // loop quiet — the contribution is intentionally silent.
+    // persisting any surface readings or rider tag events (issue #7);
+    // both carry road-quality + location data and are exactly the
+    // contribution the toggle suppresses. Lean stats still update
+    // because they're personal-history data the rider sees on their
+    // own ride detail screen, never aggregated into the public
+    // road-quality map. Returning 202 (not 403) keeps the mobile
+    // uploader's offline retry loop quiet — the contribution is
+    // intentionally silent.
     const prefs = await this.privacy.loadPreferences(userId);
     if (!prefs.road_data_contribution) {
       await this.upsertLeanStats(dto.ride_id, dto.readings);
       return { accepted: 0, segments_updated: 0 };
     }
+
+    // Research issue #7 — persist rider tags BEFORE the readings
+    // pipeline so they survive the empty-readings early return below
+    // (a batch with only a tag tap and no GPS-locked readings should
+    // still leave a `ride_tag_events` row for the spike). The privacy
+    // opt-out path above is intentionally upstream of this — see
+    // `road_data_contribution` comment for why opted-out riders must
+    // not leave tag rows behind.
+    const sortedTagEvents = await this.persistTagEvents(
+      userId,
+      dto.ride_id,
+      dto.tag_events,
+    );
 
     // US-19 — fold this batch's lean samples into the per-ride
     // aggregation FIRST so they survive the GPS / speed filter the

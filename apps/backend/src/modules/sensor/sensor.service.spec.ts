@@ -783,11 +783,14 @@ describe('SensorService', () => {
       expect(calls[calls.length - 1][0].rider_quality_label).toBe('very_poor');
     });
 
-    it('still persists tag events when the rider opts out of road_data_contribution (#279 + #7)', async () => {
-      // Privacy opt-out kills surface_readings, but the rider's own
-      // tags are personal forensic data the spike still needs — same
-      // reasoning as lean stats above. Verify they're not silently
-      // dropped on the privacy gate.
+    it('does NOT persist tag events when the rider opts out of road_data_contribution (#279 + #7)', async () => {
+      // Privacy contract (`packages/shared/src/privacy.ts`): when
+      // `road_data_contribution=false`, `POST /sensor/upload` 202s
+      // without persisting any road-surface contribution data. Tag
+      // events carry surface labels + lat/lng, so they fall under
+      // the same toggle as `surface_readings` and must be skipped.
+      // (Lean stats are personal-history, not public-map data, so
+      // they still update — covered by the lean-aggregation tests.)
       privacy.loadPreferences.mockResolvedValueOnce({
         ...DEFAULT_PRIVACY_PREFERENCES,
         road_data_contribution: false,
@@ -806,8 +809,8 @@ describe('SensorService', () => {
 
       expect(result.segments_updated).toBe(0);
       expect(readingRepo.save).not.toHaveBeenCalled();
-      expect(savedTagEvents).toHaveLength(1);
-      expect(savedTagEvents[0].label).toBe('gravel');
+      expect(tagEventRepo.save).not.toHaveBeenCalled();
+      expect(savedTagEvents).toHaveLength(0);
     });
 
     it('is a no-op when the upload omits tag_events', async () => {
