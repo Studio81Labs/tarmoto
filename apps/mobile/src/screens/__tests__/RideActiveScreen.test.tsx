@@ -69,7 +69,9 @@ jest.mock("@/services/tts", () => ({
 jest.mock("@/services/sensors", () => ({
   sensorService: {
     start: jest.fn(),
-    stop: jest.fn(() => []),
+    stop: jest.fn(() => ({ readings: [], tagEvents: [] })),
+    tagSurface: jest.fn(() => null),
+    getTagEvents: jest.fn(() => []),
   },
 }));
 

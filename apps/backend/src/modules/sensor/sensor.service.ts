@@ -4,13 +4,21 @@ import { Repository } from 'typeorm';
 import { SurfaceReading } from '../../entities/surface-reading.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { RideStats } from '../../entities/ride-stats.entity.js';
+import { RideTagEvent } from '../../entities/ride-tag-event.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import {
   UploadSensorDataDto,
   SensorReadingDto,
+  RideTagEventDto,
 } from './dto/upload-sensor-data.dto.js';
 import { UploadResponseDto } from './dto/upload-response.dto.js';
-import { haversineMeters, tallyLeanSamples } from '@tarmoto/shared';
+import {
+  haversineMeters,
+  tallyLeanSamples,
+  resolveTagForTimestamp,
+  SURFACE_LABEL_TO_TRUTH,
+  type RideTagEvent as RideTagEventPayload,
+} from '@tarmoto/shared';
 
 const SEGMENT_LENGTH_M = 100;
 const MIN_SPEED_MS = 2.78; // ~10 km/h — discard stopped readings
@@ -50,6 +58,8 @@ export class SensorService {
     private readonly segmentRepo: Repository<RoadSegment>,
     @InjectRepository(RideStats)
     private readonly statsRepo: Repository<RideStats>,
+    @InjectRepository(RideTagEvent)
+    private readonly tagEventRepo: Repository<RideTagEvent>,
     private readonly privacy: PrivacyPreferencesService,
   ) {}
 
@@ -59,16 +69,32 @@ export class SensorService {
   ): Promise<UploadResponseDto> {
     // #279 — honor the rider's road-data contribution opt-out. When
     // disabled we 202 (matching the controller status) without
-    // persisting any surface readings; lean stats still update because
-    // they're personal-history data the rider sees on their own ride
-    // detail screen, never aggregated into the public road-quality map.
-    // Returning 202 (not 403) keeps the mobile uploader's offline retry
-    // loop quiet — the contribution is intentionally silent.
+    // persisting any surface readings or rider tag events (issue #7);
+    // both carry road-quality + location data and are exactly the
+    // contribution the toggle suppresses. Lean stats still update
+    // because they're personal-history data the rider sees on their
+    // own ride detail screen, never aggregated into the public
+    // road-quality map. Returning 202 (not 403) keeps the mobile
+    // uploader's offline retry loop quiet — the contribution is
+    // intentionally silent.
     const prefs = await this.privacy.loadPreferences(userId);
     if (!prefs.road_data_contribution) {
       await this.upsertLeanStats(dto.ride_id, dto.readings);
       return { accepted: 0, segments_updated: 0 };
     }
+
+    // Research issue #7 — persist rider tags BEFORE the readings
+    // pipeline so they survive the empty-readings early return below
+    // (a batch with only a tag tap and no GPS-locked readings should
+    // still leave a `ride_tag_events` row for the spike). The privacy
+    // opt-out path above is intentionally upstream of this — see
+    // `road_data_contribution` comment for why opted-out riders must
+    // not leave tag rows behind.
+    const sortedTagEvents = await this.persistTagEvents(
+      userId,
+      dto.ride_id,
+      dto.tag_events,
+    );
 
     // US-19 — fold this batch's lean samples into the per-ride
     // aggregation FIRST so they survive the GPS / speed filter the
@@ -110,6 +136,16 @@ export class SensorService {
         continue;
       }
 
+      // Research issue #7 — resolve the rider tag (if any) covering
+      // this segment's midpoint timestamp. `null` when the rider had
+      // no tag active for the covering window, which is the common
+      // case for any rider not actively running the labelling UI.
+      const tag = resolveTagForTimestamp(
+        sortedTagEvents,
+        segment.timestamp.getTime(),
+      );
+      const truth = tag ? SURFACE_LABEL_TO_TRUTH[tag.label] : null;
+
       const reading = this.readingRepo.create({
         road_segment_id: roadSegmentId,
         ride_id: dto.ride_id,
@@ -128,6 +164,11 @@ export class SensorService {
         // future change that trusts client window-level outputs filter
         // by classifier version. Null means the mobile fallback ran.
         client_model_version: dto.client_model_version ?? null,
+        // Research issue #7 — rider-asserted ground truth, kept
+        // alongside the heuristic-derived columns above so research
+        // queries can compare the two without re-running the join.
+        rider_surface_label: tag?.label ?? null,
+        rider_quality_label: truth?.quality_label ?? null,
         recorded_at: segment.timestamp,
       });
 
@@ -139,6 +180,49 @@ export class SensorService {
       accepted: validReadings.length,
       segments_updated: segmentsUpdated,
     };
+  }
+
+  /**
+   * Persist a batch of rider-asserted surface tags (research issue #7)
+   * and return the same events sorted ascending by `t` for the per-
+   * segment join in `processUpload`. Returns `[]` when the client
+   * sent no tags so the join short-circuits without walking an empty
+   * array.
+   *
+   * Tags are saved verbatim (not deduplicated against any prior batch)
+   * because each tap is a discrete rider intent — the same upload
+   * being retried by the offline queue would re-send the same tags,
+   * but the `(ride_id, user_id, t, label)` quadruple is the natural
+   * forensic key and we accept the duplication rather than silently
+   * dropping a rider tap on a network glitch. The join is idempotent
+   * regardless: it picks the most recent span tag at any timestamp,
+   * so a duplicate `t` row produces the same label.
+   */
+  private async persistTagEvents(
+    userId: string,
+    rideId: string,
+    events: RideTagEventDto[] | undefined,
+  ): Promise<RideTagEventPayload[]> {
+    if (!events || events.length === 0) return [];
+    const rows = events.map((ev) =>
+      this.tagEventRepo.create({
+        ride_id: rideId,
+        user_id: userId,
+        t: String(ev.t),
+        lat: ev.lat ?? null,
+        lng: ev.lng ?? null,
+        label: ev.label,
+      }),
+    );
+    await this.tagEventRepo.save(rows);
+    return [...events]
+      .map<RideTagEventPayload>((ev) => ({
+        t: ev.t,
+        lat: ev.lat,
+        lng: ev.lng,
+        label: ev.label,
+      }))
+      .sort((a, b) => a.t - b.t);
   }
 
   /**

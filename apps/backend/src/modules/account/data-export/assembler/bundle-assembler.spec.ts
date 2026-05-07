@@ -55,6 +55,7 @@ function emptyRepos() {
     commute: { find: jest.fn().mockResolvedValue([]) },
     notificationPreferences: { findOne: jest.fn().mockResolvedValue(null) },
     privacyPreferences: { findOne: jest.fn().mockResolvedValue(null) },
+    rideTagEvents: { find: jest.fn().mockResolvedValue([]) },
   };
 }
 
@@ -80,6 +81,7 @@ describe('BundleAssembler', () => {
       'badges.json',
       'challenges.json',
       'commute_routes.json',
+      'ride_tag_events.json',
     ];
     for (const f of expected) expect(entries.has(f)).toBe(true);
 
@@ -146,6 +148,43 @@ describe('BundleAssembler', () => {
         hazard_alert: { email: false, push: true, in_app: true },
       },
     });
+  });
+
+  it('includes rider tag events in the GDPR bundle (research issue #7)', async () => {
+    // ride_tag_events is per-user data (timestamp + optional location +
+    // surface label), so GDPR Article 15 requires it in the export
+    // bundle alongside reviews / hazards / commute routes.
+    const user = makeUser();
+    const repos = emptyRepos();
+    const tagRows = [
+      {
+        id: 'tag-1',
+        ride_id: 'ride-1',
+        user_id: 'u1',
+        t: '1700000000000',
+        lat: 49.123,
+        lng: 16.789,
+        label: 'cobblestone',
+        created_at: new Date('2026-04-01T08:30:00Z'),
+      },
+    ];
+    repos.rideTagEvents.find.mockResolvedValue(tagRows);
+
+    const assembler = new BundleAssembler(repos);
+    const buf = await streamToBuffer(await assembler.assemble(user));
+    const entries = await listEntries(buf);
+
+    expect(repos.rideTagEvents.find).toHaveBeenCalledWith({
+      where: { user_id: 'u1' },
+    });
+    // `created_at` round-trips through JSON.stringify as an ISO string —
+    // compare against the same JSON projection rather than the in-memory
+    // row to keep the assertion focused on what actually lands in the
+    // bundle.
+    expect(JSON.parse(entries.get('ride_tag_events.json')!)).toEqual(
+      JSON.parse(JSON.stringify(tagRows)),
+    );
+    expect(entries.get('README.txt')).toContain('ride_tag_events.json');
   });
 
   it('includes per-ride GPX files for rides with a route', async () => {

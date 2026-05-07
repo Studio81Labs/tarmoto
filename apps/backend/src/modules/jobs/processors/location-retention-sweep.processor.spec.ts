@@ -139,6 +139,83 @@ describe('LocationRetentionSweepProcessor', () => {
     expect(ageMs).toBeLessThan(91 * 24 * 60 * 60 * 1000);
   });
 
+  it('purges ride_tag_events for retention-bucketed users older than the cutoff (research issue #7)', async () => {
+    // Tag events carry tap timestamp + optional lat/lng — the same
+    // privacy-contract dimension as surface_readings, so they must
+    // be subject to the same retention sweep. Without this purge,
+    // riders who lower their window to 3-24 months would still keep
+    // raw tag locations indefinitely.
+    dataSource.query.mockImplementation((sql: string, params: unknown[]) => {
+      if (sql.includes('FROM privacy_preferences WHERE')) {
+        return (params[0] as string) === '3months'
+          ? Promise.resolve([{ user_id: 'u-3m' }])
+          : Promise.resolve([]);
+      }
+      if (
+        sql.includes('DELETE FROM ride_tag_events') &&
+        !sql.includes('LEFT JOIN privacy_preferences')
+      ) {
+        // Bucket-purge path — user_ids array passed as $1, cutoff in ms as $2.
+        const userIds = params[0] as string[];
+        if (Array.isArray(userIds) && userIds.includes('u-3m')) {
+          // Three tag rows older than the cutoff.
+          return Promise.resolve([
+            { user_id: 'u-3m' },
+            { user_id: 'u-3m' },
+            { user_id: 'u-3m' },
+          ]);
+        }
+        return Promise.resolve([]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const result = await processor.process(
+      fakeJob(JOB_NAMES.LOCATION_RETENTION_SWEEP_RUN, {}) as never,
+    );
+
+    expect(result.ride_tag_events_deleted).toBe(3);
+    expect(result.users_swept).toBe(1);
+
+    // Cutoff is passed as ms (bigint column), not a Date. Assert it.
+    const calls = dataSource.query.mock.calls as Array<[string, unknown[]]>;
+    const tagDelete = calls.find(
+      (c) =>
+        c[0].includes('DELETE FROM ride_tag_events') &&
+        !c[0].includes('LEFT JOIN privacy_preferences'),
+    );
+    expect(tagDelete).toBeDefined();
+    expect(typeof tagDelete![1][1]).toBe('number');
+    const cutoffMs = tagDelete![1][1] as number;
+    const ageMs = Date.now() - cutoffMs;
+    // 3-month bucket → ~90 days. Allow a wide envelope so the test is
+    // not flaky around DST / month-length.
+    expect(ageMs).toBeGreaterThan(89 * 24 * 60 * 60 * 1000);
+    expect(ageMs).toBeLessThan(91 * 24 * 60 * 60 * 1000);
+  });
+
+  it('purges ride_tag_events for users on the default 1-year window', async () => {
+    dataSource.query.mockImplementation((sql: string) => {
+      if (sql.includes('FROM privacy_preferences WHERE')) {
+        return Promise.resolve([]);
+      }
+      if (
+        sql.includes('DELETE FROM ride_tag_events') &&
+        sql.includes('LEFT JOIN privacy_preferences')
+      ) {
+        return Promise.resolve([{ user_id: 'default-tag-1' }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const result = await processor.process(
+      fakeJob(JOB_NAMES.LOCATION_RETENTION_SWEEP_RUN, {}) as never,
+    );
+
+    expect(result.ride_tag_events_deleted).toBe(1);
+    expect(result.users_swept).toBe(1);
+  });
+
   it('falls back to the default 1-year window for users with no privacy_preferences row', async () => {
     dataSource.query.mockImplementation((sql: string) => {
       if (sql.includes('FROM privacy_preferences WHERE')) {

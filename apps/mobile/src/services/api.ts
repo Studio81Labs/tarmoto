@@ -15,7 +15,7 @@
  * appropriate typed-client call.
  */
 
-import type { NotificationPreferences } from "@tarmoto/shared";
+import type { NotificationPreferences, RideTagEvent } from "@tarmoto/shared";
 import type {
   Schemas,
   HazardType,
@@ -488,6 +488,7 @@ class ApiService {
     readings: SensorReading[],
     deviceModel: string,
     modelVersion: string | null,
+    tagEvents: RideTagEvent[],
   ): Promise<{ accepted: number; segments_updated: number }> {
     const result = await client.POST("/api/v1/sensor/upload", {
       body: {
@@ -500,6 +501,17 @@ class ApiService {
         // from raw readings regardless, so this never feeds the labels.
         client_model_version: modelVersion ?? undefined,
         readings: readings as Schemas["UploadSensorDataDto"]["readings"],
+        // Research issue #7 — rider-asserted surface labels captured
+        // during the ride. Omit the field entirely when none fired so
+        // the request stays bytewise-compatible with the older shape
+        // the backend still accepts (`tag_events` is optional in the
+        // DTO).
+        ...(tagEvents.length > 0
+          ? {
+              tag_events:
+                tagEvents as Schemas["UploadSensorDataDto"]["tag_events"],
+            }
+          : {}),
       },
     });
     return unwrap(result, "Sensor upload failed") as {
@@ -513,19 +525,25 @@ class ApiService {
    * This is the ride-stop flow's entry point — the raw POST is kept
    * private so every caller goes through the queue. `modelVersion` is
    * the active on-device classifier (null = v0 RMS heuristic).
+   * `tagEvents` are the rider-asserted surface labels captured during
+   * the ride (research issue #7); pass an empty array when the rider
+   * never tagged a surface.
    */
   async submitSensorData(
     rideId: string,
     readings: SensorReading[],
     deviceModel: string,
     modelVersion: string | null,
+    tagEvents: RideTagEvent[] = [],
   ): Promise<SubmitResult> {
     return submitSensorUpload(
       rideId,
       readings,
       deviceModel,
       modelVersion,
-      (id, r, model, version) => this.uploadSensorData(id, r, model, version),
+      tagEvents,
+      (id, r, model, version, tags) =>
+        this.uploadSensorData(id, r, model, version, tags),
     );
   }
 
@@ -535,8 +553,8 @@ class ApiService {
    * connectivity watcher.
    */
   async flushPendingSensorUploads(): Promise<DrainResult> {
-    return drainOfflineQueue((id, r, model, version) =>
-      this.uploadSensorData(id, r, model, version),
+    return drainOfflineQueue((id, r, model, version, tags) =>
+      this.uploadSensorData(id, r, model, version, tags),
     );
   }
 

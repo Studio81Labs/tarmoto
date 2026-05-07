@@ -152,3 +152,84 @@ describe("sensorService.classify — heuristic fallback", () => {
     expect(fast.confidence).toBeGreaterThan(slow.confidence);
   });
 });
+
+describe("sensorService.tagSurface (research issue #7)", () => {
+  // The service is a singleton — ensure recording is stopped between
+  // specs so a buffered tag from one test doesn't bleed into the next.
+  afterEach(() => {
+    if (sensorService.recording) {
+      sensorService.stop();
+    }
+  });
+
+  it("returns null when recording isn't active so a stray tap is dropped", () => {
+    expect(sensorService.tagSurface("cobblestone")).toBeNull();
+    expect(sensorService.getTagEvents()).toEqual([]);
+  });
+
+  it("buffers tags during a ride and emits them on stop()", () => {
+    sensorService.start(() => undefined);
+    const a = sensorService.tagSurface("smooth_asphalt");
+    const b = sensorService.tagSurface("pothole");
+
+    expect(a).not.toBeNull();
+    expect(b).not.toBeNull();
+    expect(a!.label).toBe("smooth_asphalt");
+    expect(b!.label).toBe("pothole");
+    expect(sensorService.getTagEvents()).toHaveLength(2);
+
+    const { tagEvents } = sensorService.stop();
+    expect(tagEvents).toHaveLength(2);
+    expect(tagEvents.map((e) => e.label)).toEqual([
+      "smooth_asphalt",
+      "pothole",
+    ]);
+
+    // After stop the buffer is cleared so the next ride starts clean.
+    expect(sensorService.getTagEvents()).toEqual([]);
+  });
+
+  it("omits lat/lng from tags fired before the first GPS fix", () => {
+    sensorService.start(() => undefined);
+    const event = sensorService.tagSurface("gravel");
+
+    expect(event).not.toBeNull();
+    expect(event!.lat).toBeUndefined();
+    expect(event!.lng).toBeUndefined();
+  });
+
+  it("caps the tag buffer at MAX_TAG_EVENTS_PER_UPLOAD by trimming oldest taps", () => {
+    // Regression: without the cap, a long labelling ride that exceeds
+    // the backend DTO's @ArrayMaxSize(500) would produce a payload the
+    // backend rejects with HTTP 400, and the offline queue treats 4xx
+    // as non-retriable — so the entire upload (tags AND readings)
+    // gets dropped. The client-side cap keeps the most-recent 500
+    // taps so the upload always validates.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { MAX_TAG_EVENTS_PER_UPLOAD } =
+      require("@tarmoto/shared") as typeof import("@tarmoto/shared");
+
+    sensorService.start(() => undefined);
+    for (let i = 0; i < MAX_TAG_EVENTS_PER_UPLOAD + 5; i++) {
+      sensorService.tagSurface("smooth_asphalt");
+    }
+
+    expect(sensorService.getTagEvents()).toHaveLength(
+      MAX_TAG_EVENTS_PER_UPLOAD,
+    );
+  });
+
+  it("preserves a real 0° GPS fix instead of dropping it as falsy", () => {
+    // Regression: a previous version used `this.currentLat || undefined`
+    // which silently dropped the equator (lat 0) and the prime meridian
+    // (lng 0). The fix gates on a `hasGpsFix` flag set inside
+    // `updateLocation`, so a real 0° reading is preserved verbatim.
+    sensorService.start(() => undefined);
+    sensorService.updateLocation(0, 0, 25);
+    const event = sensorService.tagSurface("rough_asphalt");
+
+    expect(event).not.toBeNull();
+    expect(event!.lat).toBe(0);
+    expect(event!.lng).toBe(0);
+  });
+});

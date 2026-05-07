@@ -13,6 +13,11 @@ import {
 import { Subscription } from "rxjs";
 import { map, bufferCount } from "rxjs/operators";
 import type { SensorReading, QualityClass, SurfaceType } from "@/types";
+import {
+  MAX_TAG_EVENTS_PER_UPLOAD,
+  type RideTagEvent,
+  type SurfaceLabel,
+} from "@tarmoto/shared";
 import * as mlClassifier from "./mlClassifier";
 import { LeanAngleFilter, type CalibrationStats } from "./leanAngle";
 
@@ -73,11 +78,21 @@ class SensorService {
   private gyroSub: Subscription | null = null;
   private buffer: SensorReading[] = [];
   private rawReadings: SensorReading[] = [];
+  private tagEvents: RideTagEvent[] = [];
   private isRecording = false;
   private callback: SensorCallback | null = null;
   private currentSpeed = 0;
   private currentLat = 0;
   private currentLng = 0;
+  // Tracks whether `updateLocation` has fired at least once this ride.
+  // Distinguishing the `currentLat/Lng = 0` *initial* state from a real
+  // 0° fix matters for tag events (a rider on the equator / prime
+  // meridian shouldn't have their tag's position silently dropped).
+  // The accelerometer reading still uses `currentLat/Lng` directly
+  // because `SensorReading.lat` is a required number — pre-fix
+  // accelerometer samples just carry 0/0 and the backend filters them
+  // out via `MIN_SPEED_MS`.
+  private hasGpsFix = false;
   private readingListeners = new Set<ReadingListener>();
   // Per-ride orientation filter (US-19). One instance per ride so the
   // calibration offset captured at start doesn't leak from one ride to
@@ -98,6 +113,8 @@ class SensorService {
     this.callback = onWindow;
     this.buffer = [];
     this.rawReadings = [];
+    this.tagEvents = [];
+    this.hasGpsFix = false;
     // Reset the orientation filter so a previous ride's offset / drift
     // doesn't bleed into this one. `start` also kicks off the auto-
     // calibration window (~1.5 s of upright readings).
@@ -232,9 +249,13 @@ class SensorService {
   }
 
   /**
-   * Stop recording
+   * Stop recording. Returns the buffered raw readings AND the rider
+   * tag events captured during the ride (research issue #7) so the
+   * caller can ship both in a single upload payload — keeps the
+   * offline-queue + retry semantics shared between readings and
+   * tags.
    */
-  stop(): SensorReading[] {
+  stop(): { readings: SensorReading[]; tagEvents: RideTagEvent[] } {
     this.isRecording = false;
     this.accelSub?.unsubscribe();
     this.gyroSub?.unsubscribe();
@@ -243,9 +264,65 @@ class SensorService {
     this.callback = null;
 
     const readings = [...this.rawReadings];
+    const tagEvents = [...this.tagEvents];
     this.rawReadings = [];
     this.buffer = [];
-    return readings;
+    this.tagEvents = [];
+    return { readings, tagEvents };
+  }
+
+  /**
+   * Record a rider-asserted surface label (research issue #7).
+   * Called from the in-ride tagging FAB. The event is buffered in
+   * memory and emitted alongside the raw readings on `stop()` — the
+   * sensor pipeline keeps running with no other side effects, so a
+   * tap mid-ride costs ~one allocation. Returns the persisted event
+   * so the caller can confirm capture (HUD toast, latest-label
+   * indicator).
+   *
+   * Tags fired before `start()` are dropped — the buffer only exists
+   * during an active recording. Callers should hide the FAB when the
+   * ride isn't active.
+   */
+  tagSurface(label: SurfaceLabel): RideTagEvent | null {
+    if (!this.isRecording) return null;
+    // Gate on `hasGpsFix` rather than the falsy-check `lat || undefined`
+    // pattern: 0° latitude / longitude are valid coordinates (equator /
+    // prime meridian) and a rider tagging there shouldn't have their
+    // position silently dropped to `undefined`. Pre-fix tags still
+    // omit the field entirely so the backend can't mistake the
+    // initial 0/0 sentinel for a real position.
+    const event: RideTagEvent = {
+      t: Date.now(),
+      ...(this.hasGpsFix ? { lat: this.currentLat, lng: this.currentLng } : {}),
+      label,
+    };
+    this.tagEvents.push(event);
+    // Cap the buffer to match the backend DTO's @ArrayMaxSize. Without
+    // this, a long labelling ride that exceeds MAX_TAG_EVENTS_PER_UPLOAD
+    // would produce a payload the backend rejects with HTTP 400 — and
+    // the offline queue treats 4xx as non-retriable, so BOTH the tags
+    // AND the readings for that ride get dropped instead of queued.
+    // Trimming the head keeps the most recent taps (the ones the rider
+    // most likely cares about) and silently drops the oldest. This is
+    // a defensive cap — at one tap every ~3 s a 500-cap absorbs a 25-
+    // minute ride, so it should rarely fire in practice.
+    if (this.tagEvents.length > MAX_TAG_EVENTS_PER_UPLOAD) {
+      this.tagEvents.splice(
+        0,
+        this.tagEvents.length - MAX_TAG_EVENTS_PER_UPLOAD,
+      );
+    }
+    return event;
+  }
+
+  /**
+   * Read-only snapshot of the rider tags captured so far in this
+   * ride. The HUD uses this to render the most-recent label as an
+   * indicator that the FAB worked.
+   */
+  getTagEvents(): readonly RideTagEvent[] {
+    return this.tagEvents;
   }
 
   /**
@@ -255,6 +332,7 @@ class SensorService {
     this.currentLat = lat;
     this.currentLng = lng;
     this.currentSpeed = speedKmh;
+    this.hasGpsFix = true;
   }
 
   /**

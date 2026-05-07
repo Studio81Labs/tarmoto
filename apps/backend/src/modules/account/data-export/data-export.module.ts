@@ -19,6 +19,7 @@ import { CommuteRoute } from '../../../entities/commute-route.entity.js';
 import { NotificationPreferencesRow } from '../../../entities/notification-preferences.entity.js';
 import { PrivacyPreferencesRow } from '../../../entities/privacy-preferences.entity.js';
 import { DataExportRequest } from '../../../entities/data-export-request.entity.js';
+import { RideTagEvent } from '../../../entities/ride-tag-event.entity.js';
 import { AuthModule } from '../../auth/index.js';
 import { EmailModule } from '../../email/index.js';
 import { StorageModule } from '../../storage/index.js';
@@ -57,6 +58,7 @@ import { BundleAssembler } from './assembler/bundle-assembler.js';
       CommuteRoute,
       NotificationPreferencesRow,
       PrivacyPreferencesRow,
+      RideTagEvent,
     ]),
   ],
   controllers: [DataExportController],
@@ -79,6 +81,7 @@ import { BundleAssembler } from './assembler/bundle-assembler.js';
         getRepositoryToken(CommuteRoute),
         getRepositoryToken(NotificationPreferencesRow),
         getRepositoryToken(PrivacyPreferencesRow),
+        getRepositoryToken(RideTagEvent),
       ],
       useFactory: (
         contacts: Repository<UserContact>,
@@ -94,6 +97,7 @@ import { BundleAssembler } from './assembler/bundle-assembler.js';
         commute: Repository<CommuteRoute>,
         notificationPreferences: Repository<NotificationPreferencesRow>,
         privacyPreferences: Repository<PrivacyPreferencesRow>,
+        rideTagEvents: Repository<RideTagEvent>,
       ) =>
         new BundleAssembler({
           contacts,
@@ -109,6 +113,7 @@ import { BundleAssembler } from './assembler/bundle-assembler.js';
           commute,
           notificationPreferences,
           privacyPreferences,
+          rideTagEvents,
         }),
     },
   ],

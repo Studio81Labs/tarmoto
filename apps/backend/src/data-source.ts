@@ -38,6 +38,7 @@ import { RouteCollectionItem } from './entities/route-collection-item.entity.js'
 import { RouteCollectionFollow } from './entities/route-collection-follow.entity.js';
 import { WeatherAlertDispatch } from './entities/weather-alert-dispatch.entity.js';
 import { Bike } from './entities/bike.entity.js';
+import { RideTagEvent } from './entities/ride-tag-event.entity.js';
 import { InitSchema1713000000000 } from './migrations/1713000000000-InitSchema.js';
 import { AddPasswordHash1713100000000 } from './migrations/1713100000000-AddPasswordHash.js';
 import { FixIsEmergencyDefault1713200000000 } from './migrations/1713200000000-FixIsEmergencyDefault.js';
@@ -80,6 +81,7 @@ import { AddHomeRegionIndex1716600000000 } from './migrations/1716600000000-AddH
 import { AddWeatherAlertDispatches1716700000000 } from './migrations/1716700000000-AddWeatherAlertDispatches.js';
 import { AddRouteCollectionFollows1716800000000 } from './migrations/1716800000000-AddRouteCollectionFollows.js';
 import { AddBikes1716900000000 } from './migrations/1716900000000-AddBikes.js';
+import { AddRideTagEvents1717000000000 } from './migrations/1717000000000-AddRideTagEvents.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -127,6 +129,7 @@ export const AppDataSource = new DataSource({
     RouteCollectionFollow,
     WeatherAlertDispatch,
     Bike,
+    RideTagEvent,
   ],
   migrations: [
     // Listed in chronological order. Every migration in
@@ -178,6 +181,7 @@ export const AppDataSource = new DataSource({
     AddWeatherAlertDispatches1716700000000,
     AddRouteCollectionFollows1716800000000,
     AddBikes1716900000000,
+    AddRideTagEvents1717000000000,
   ],
   synchronize: false,
 });

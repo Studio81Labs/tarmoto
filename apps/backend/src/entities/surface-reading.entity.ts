@@ -59,6 +59,29 @@ export class SurfaceReading {
   @Column({ type: 'varchar', length: 32, nullable: true })
   client_model_version!: string | null;
 
+  /**
+   * Rider-asserted surface label resolved from the active ride's
+   * `ride_tag_events` at the time this reading's window was captured
+   * (research issue #7). `null` when the rider had no tag active for
+   * the covering window — keeps the column unbiased toward the
+   * server-derived `surface_type` the heuristic / ML pipeline writes
+   * above. Stored as the rider-facing label (e.g. `rough_asphalt`)
+   * rather than the canonical `SurfaceType` so a future re-mapping
+   * doesn't lose information.
+   */
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  rider_surface_label!: string | null;
+
+  /**
+   * Rider-asserted quality class derived from the same tag (research
+   * issue #7). Mirrors the existing `classification` column's value
+   * domain (`excellent` … `very_poor`) so research queries can compare
+   * `classification` (heuristic) against `rider_quality_label` (ground
+   * truth) without translating between vocabularies.
+   */
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  rider_quality_label!: string | null;
+
   @Column({ type: 'timestamptz', default: () => 'NOW()' })
   recorded_at!: Date;
 

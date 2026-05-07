@@ -5,6 +5,7 @@ import {
   IsArray,
   IsNumber,
   IsInt,
+  IsIn,
   ValidateNested,
   ArrayMaxSize,
   MaxLength,
@@ -12,6 +13,11 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import {
+  MAX_TAG_EVENTS_PER_UPLOAD,
+  SURFACE_LABELS,
+  type SurfaceLabel,
+} from '@tarmoto/shared';
 
 export class SensorReadingDto {
   @ApiProperty({ description: 'Unix timestamp milliseconds' })
@@ -62,6 +68,35 @@ export class SensorReadingDto {
   @IsOptional()
   @IsNumber()
   lean_deg?: number;
+}
+
+export class RideTagEventDto {
+  @ApiProperty({
+    description: 'Unix timestamp milliseconds at the moment of the tap',
+  })
+  @IsInt()
+  t!: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  lat?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  lng?: number;
+
+  @ApiProperty({
+    enum: SURFACE_LABELS,
+    description:
+      'Rider-facing surface label. Backend normalises to ' +
+      '(surface_type, quality_class) via SURFACE_LABEL_TO_TRUTH from ' +
+      '@tarmoto/shared.',
+  })
+  @IsString()
+  @IsIn(SURFACE_LABELS)
+  label!: SurfaceLabel;
 }
 
 export class UploadSensorDataDto {
@@ -116,4 +151,24 @@ export class UploadSensorDataDto {
   @ValidateNested({ each: true })
   @Type(() => SensorReadingDto)
   readings!: SensorReadingDto[];
+
+  /**
+   * Rider-asserted surface tags captured during the ride (research
+   * issue #7). Optional — most rides will not run the tagging UI, and
+   * the sensor pipeline must keep working when the array is absent.
+   * The backend stores tags both verbatim (`ride_tag_events`) and as
+   * a per-window join (`surface_readings.rider_*_label`) so future
+   * training queries can read either resolution.
+   */
+  @ApiProperty({
+    type: [RideTagEventDto],
+    required: false,
+    maxItems: MAX_TAG_EVENTS_PER_UPLOAD,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_TAG_EVENTS_PER_UPLOAD)
+  @ValidateNested({ each: true })
+  @Type(() => RideTagEventDto)
+  tag_events?: RideTagEventDto[];
 }
