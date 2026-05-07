@@ -725,8 +725,9 @@ function NearbyRow({ segment, units }: NearbyRowProps) {
         </p>
       </div>
       <span className="text-xs text-slate-400 tabular-nums">
-        {formatDistanceFromMeters(segment.distance_m, units)}
-        {t("away ")}
+        {t("{distance} away", {
+          distance: formatDistanceFromMeters(segment.distance_m, units),
+        })}
       </span>
     </li>
   );

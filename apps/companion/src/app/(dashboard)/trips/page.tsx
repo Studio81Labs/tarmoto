@@ -338,11 +338,16 @@ export default function TripListPage() {
             <div>
               <h1 className="text-2xl font-bold">{t("My Trips")}</h1>
               <p className="text-sm text-slate-500 mt-0.5">
-                {trips.length}
-                {t("trip")}
-                {trips.length === 1 ? "" : "s"} · {folders.length}
-                {t("folder")}
-                {folders.length === 1 ? "" : "s"}
+                {t(trips.length === 1 ? "{count} trip" : "{count} trips", {
+                  count: trips.length,
+                })}{" "}
+                ·{" "}
+                {t(
+                  folders.length === 1 ? "{count} folder" : "{count} folders",
+                  {
+                    count: folders.length,
+                  },
+                )}
               </p>
             </div>
             <Link
@@ -350,7 +355,7 @@ export default function TripListPage() {
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition"
             >
               <Plus size={16} />
-              {t("New trip ")}
+              {t("New trip")}
             </Link>
           </div>
 
