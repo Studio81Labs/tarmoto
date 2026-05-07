@@ -176,12 +176,18 @@ describe('OverpassPoiProvider.findPointsOfInterestAroundPoints', () => {
   // real HTTP round-trip.
   let originalFetch: typeof fetch;
   let capturedBody: string | null;
+  let capturedHeaders: Record<string, string> | null;
 
   beforeEach(() => {
     originalFetch = globalThis.fetch;
     capturedBody = null;
+    capturedHeaders = null;
     globalThis.fetch = ((_url: string, init?: RequestInit) => {
       capturedBody = typeof init?.body === 'string' ? init.body : '';
+      capturedHeaders = (init?.headers ?? null) as Record<
+        string,
+        string
+      > | null;
       return Promise.resolve({
         ok: true,
         json: () => Promise.resolve({ elements: [] }),
@@ -229,5 +235,67 @@ describe('OverpassPoiProvider.findPointsOfInterestAroundPoints', () => {
     expect(noKinds).toEqual([]);
     // Neither case should have hit `fetch`.
     expect(capturedBody).toBeNull();
+  });
+
+  it('sends Accept and User-Agent headers required by Overpass mirrors', async () => {
+    // Regression for issue #476: bare requests were rejected with
+    // HTTP 406 Not Acceptable because the public Overpass mirror
+    // requires both an `Accept` header and an identifying
+    // `User-Agent`. Match the Nominatim provider's contract.
+    const provider = new OverpassPoiProvider(config);
+    await provider.findPointsOfInterestAroundPoints([{ lat: 49, lng: 16 }], 2, [
+      'fuel_station',
+    ]);
+
+    expect(capturedHeaders).not.toBeNull();
+    expect(capturedHeaders!['Accept']).toBe('application/json');
+    expect(capturedHeaders!['User-Agent']).toBe(
+      'Tarmoto/1.0 (https://tarmoto.app)',
+    );
+    // The form encoding stays — Overpass parses POSTed `data=` payloads
+    // as `application/x-www-form-urlencoded`, not JSON.
+    expect(capturedHeaders!['Content-Type']).toBe(
+      'application/x-www-form-urlencoded',
+    );
+  });
+
+  it('honors TARMOTO_OVERPASS_UA override for the User-Agent header', async () => {
+    // Self-hosted deployments and forks can identify themselves
+    // separately so abuse complaints route to the right operator.
+    const customConfig = {
+      get: (key: string, fallback: string) =>
+        key === 'TARMOTO_OVERPASS_UA'
+          ? 'CustomFork/2.0 (mailto:ops@example.com)'
+          : fallback,
+    } as unknown as ConfigService;
+    const provider = new OverpassPoiProvider(customConfig);
+    await provider.findPointsOfInterestAroundPoints([{ lat: 49, lng: 16 }], 2, [
+      'fuel_station',
+    ]);
+
+    expect(capturedHeaders).not.toBeNull();
+    expect(capturedHeaders!['User-Agent']).toBe(
+      'CustomFork/2.0 (mailto:ops@example.com)',
+    );
+  });
+
+  it('surfaces upstream HTTP errors with status and statusText', async () => {
+    // Without `Accept`/`User-Agent` headers some Overpass mirrors
+    // reply 406; preserve the status surface so operators can spot
+    // the regression in logs if it ever returns.
+    globalThis.fetch = () =>
+      Promise.resolve({
+        ok: false,
+        status: 406,
+        statusText: 'Not Acceptable',
+        json: () => Promise.resolve({}),
+      } as unknown as Response);
+
+    const provider = new OverpassPoiProvider(config);
+    await expect(
+      provider.findPointsOfInterestAroundPoints([{ lat: 49, lng: 16 }], 2, [
+        'fuel_station',
+      ]),
+    ).rejects.toThrow('Overpass API error: 406 Not Acceptable');
   });
 });

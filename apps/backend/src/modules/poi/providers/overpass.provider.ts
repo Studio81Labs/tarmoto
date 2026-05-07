@@ -51,16 +51,27 @@ const POI_KIND_TAGS: Record<
  * accommodation kind list. The endpoint is free but rate-limited; the
  * mirror is configurable via `TARMOTO_OVERPASS_URL` for deployments that
  * need a private instance.
+ *
+ * Overpass's usage policy mirrors Nominatim's: requests must carry a
+ * descriptive `User-Agent`, and some mirrors reject calls without an
+ * explicit `Accept` header with HTTP 406 Not Acceptable. Both headers
+ * are set on every request — see `TARMOTO_OVERPASS_UA` to override the
+ * identifier for forks or alternate deployments.
  */
 @Injectable()
 export class OverpassPoiProvider implements PoiProvider {
   private readonly logger = new Logger(OverpassPoiProvider.name);
   private readonly endpoint: string;
+  private readonly userAgent: string;
 
   constructor(config: ConfigService) {
     this.endpoint = config.get<string>(
       'TARMOTO_OVERPASS_URL',
       'https://overpass-api.de/api/interpreter',
+    );
+    this.userAgent = config.get<string>(
+      'TARMOTO_OVERPASS_UA',
+      'Tarmoto/1.0 (https://tarmoto.app)',
     );
   }
 
@@ -181,7 +192,15 @@ export class OverpassPoiProvider implements PoiProvider {
       response = await fetch(this.endpoint, {
         method: 'POST',
         body: `data=${encodeURIComponent(query)}`,
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          // `Accept` is required by some Overpass mirrors — without it
+          // the server replies 406 Not Acceptable instead of falling
+          // back to JSON. `User-Agent` follows the OSM ecosystem norm
+          // so abuse complaints can be routed back to us.
+          Accept: 'application/json',
+          'User-Agent': this.userAgent,
+        },
         signal: controller.signal,
       });
     } finally {
