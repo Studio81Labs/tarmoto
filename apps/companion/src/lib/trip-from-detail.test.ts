@@ -121,6 +121,11 @@ describe("tripFromDetail", () => {
     expect(trip.parameters.roadPreference).toBe("mixed");
   });
 
+  it("maps the backend fast road preference to the planner direct option", () => {
+    const trip = tripFromDetail(makeDetail({ road_preference: "fast" }));
+    expect(trip.parameters.roadPreference).toBe("direct");
+  });
+
   it("sorts waypoints by sequence and translates the backend type vocabulary", () => {
     const trip = tripFromDetail(makeDetail());
     const wps = trip.days[0]!.waypoints;

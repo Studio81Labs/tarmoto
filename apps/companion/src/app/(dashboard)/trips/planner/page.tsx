@@ -1,8 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useTripStore } from "@/stores/trip";
 import {
+  Loader2,
+  Save,
   Clock3,
   GripVertical,
   Layers,
@@ -38,6 +41,7 @@ import { useAuthStore } from "@/stores/auth";
 import { tripsApi } from "@/lib/api";
 import { buildTripClosureRoutes } from "@/lib/closures-summary";
 import { DEMO_TRIP } from "@/lib/demo-trip";
+import { UNPAVED_SURFACES } from "@/lib/surface-preferences";
 import {
   generateTripOptions,
   regenerateTripDay,
@@ -49,7 +53,7 @@ import {
   tripFromDetail,
   type TripDetailResponse,
 } from "@/lib/trip-from-detail";
-import type { SurfaceType, Trip, TripParameters } from "@/lib/types";
+import type { SurfaceType, Trip, TripParameters, Waypoint } from "@/lib/types";
 import { formatDuration } from "@/lib/utils";
 
 /**
@@ -66,6 +70,14 @@ const SURFACE_OPTIONS: { value: SurfaceType; label: string }[] = [
   { value: "dirt", label: "Dirt" },
 ];
 
+const MIN_BACKEND_DAILY_KM = 1;
+const IMPORTABLE_WAYPOINT_TYPES = new Set<Waypoint["type"]>([
+  "via",
+  "fuel",
+  "rest",
+  "photo",
+]);
+
 export default function TripPlannerPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [paramsOpen, setParamsOpen] = useState(true);
@@ -77,6 +89,8 @@ export default function TripPlannerPage() {
     currentUtcMonth(),
   );
   const [days, setDays] = useState(3);
+  const [saving, setSaving] = useState(false);
+  const router = useRouter();
   const [dailyKmTarget, setDailyKmTarget] = useState(250);
   const [roadPreference, setRoadPreference] =
     useState<TripParameters["roadPreference"]>("mixed");
@@ -98,6 +112,7 @@ export default function TripPlannerPage() {
   const activeTripRef = useRef<Trip | null>(null);
   const generatedOptionsRef = useRef<GeneratedTripOption[]>([]);
   const selectedOptionIdRef = useRef<string | null>(null);
+  const syncedControlsTripIdRef = useRef<string | null>(null);
   const activeTrip = useTripStore((s) => s.activeTrip);
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
   const isGenerating = useTripStore((s) => s.isGenerating);
@@ -258,6 +273,135 @@ export default function TripPlannerPage() {
     }
   }, [activeTrip, selectedDayIndex]);
 
+  const handleSave = useCallback(async () => {
+    if (!displayedTrip || saving) return;
+    setSaving(true);
+    try {
+      setGenerationError(null);
+      const p = plannerParams;
+      // Prefer a known serverTripId from collaboration/deep links. Promoted
+      // drafts keep local in-memory ids, but their suggestions and activity
+      // already belong to the promoted backend trip.
+      const existingTripId =
+        serverTripId ??
+        (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          displayedTrip.id,
+        )
+          ? displayedTrip.id
+          : null);
+      const importedRoutePayload = buildImportedRoutePayload(displayedTrip);
+      if (displayedTrip.id.startsWith("imported-") && !importedRoutePayload) {
+        setGenerationError(
+          "Imported routes need at least two route points before saving.",
+        );
+        setSaving(false);
+        return;
+      }
+      if (importedRoutePayload) {
+        const { data: saved } = existingTripId
+          ? await tripsApi.replaceImportedRoute(
+              existingTripId,
+              importedRoutePayload,
+            )
+          : await tripsApi.importRoute(importedRoutePayload);
+        const tripId = existingTripId ?? (saved as { id?: string }).id;
+        if (!tripId) {
+          throw new Error("Imported trip save response did not include an id");
+        }
+        router.push(`/trips/${tripId}`);
+        return;
+      }
+
+      // "direct" is the planner's term; the backend uses "fast".
+      const roadPreference =
+        p.roadPreference === "direct" ? "fast" : p.roadPreference;
+      const dailyKmTarget = normalizeBackendDailyKm(p.dailyKmTarget);
+      const generationSurfaces = p.avoidUnpaved
+        ? p.surfacePreference.filter(
+            (surface) => !UNPAVED_SURFACES.has(surface),
+          )
+        : p.surfacePreference;
+      if (p.surfacePreference.length > 0 && generationSurfaces.length === 0) {
+        setGenerationError(
+          "Select at least one paved surface or turn off Avoid unpaved roads before saving.",
+        );
+        setSaving(false);
+        return;
+      }
+
+      // Generate the route using the first waypoint as start_location.
+      const firstDay = displayedTrip.days[0];
+      const startWp = firstDay?.waypoints[0];
+      if (!startWp) {
+        setGenerationError("Add a start waypoint before saving this trip.");
+        setSaving(false);
+        return;
+      }
+
+      const basePayload = {
+        title: displayedTrip.name,
+        num_days: p.days,
+        min_quality: p.minQuality,
+        road_preference: roadPreference,
+        daily_km_min: dailyKmTarget,
+        daily_km_max: dailyKmTarget,
+      };
+
+      const { data: saved } = existingTripId
+        ? await tripsApi.update(existingTripId, basePayload)
+        : await tripsApi.create(basePayload);
+      const tripId = (saved as { id?: string }).id ?? existingTripId;
+      if (!tripId) {
+        throw new Error("Trip save response did not include an id");
+      }
+      const createdTripId = existingTripId ? null : tripId;
+      const shouldGenerate =
+        selectedOptionId !== null ||
+        !existingTripId ||
+        displayedTrip.id !== existingTripId;
+
+      if (shouldGenerate) {
+        try {
+          await tripsApi.generate(tripId, {
+            start_location: {
+              lat: startWp.location.lat,
+              lng: startWp.location.lng,
+            },
+            option: selectedOptionId || undefined,
+            avoid_highways: p.avoidHighways,
+            avoid_tolls: p.avoidTolls,
+            avoid_unpaved: p.avoidUnpaved,
+            surfaces: generationSurfaces.length
+              ? generationSurfaces
+              : undefined,
+          });
+        } catch (generateError) {
+          if (createdTripId) {
+            try {
+              await tripsApi.delete(createdTripId);
+            } catch (cleanupError) {
+              console.warn("Failed to clean up unsaved trip", cleanupError);
+            }
+          }
+          throw generateError;
+        }
+      }
+
+      router.push(`/trips/${tripId}`);
+    } catch (err) {
+      setGenerationError("Could not save this trip. Please try again.");
+      console.warn("Failed to save trip", err);
+      setSaving(false);
+    }
+  }, [
+    displayedTrip,
+    plannerParams,
+    router,
+    saving,
+    selectedOptionId,
+    serverTripId,
+  ]);
+
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     if (!Array.from(e.dataTransfer.types).includes("Files")) return;
     e.preventDefault();
@@ -305,6 +449,25 @@ export default function TripPlannerPage() {
 
   useEffect(() => {
     activeTripRef.current = activeTrip;
+  }, [activeTrip]);
+
+  useEffect(() => {
+    const tripId = activeTrip?.id ?? null;
+    if (!activeTrip) {
+      syncedControlsTripIdRef.current = null;
+      return;
+    }
+    if (syncedControlsTripIdRef.current === tripId) return;
+    syncedControlsTripIdRef.current = tripId;
+    const params = activeTrip.parameters;
+    setDays(params.days);
+    setDailyKmTarget(params.dailyKmTarget);
+    setRoadPreference(params.roadPreference);
+    setSurfacePreference(params.surfacePreference);
+    setMinQuality(params.minQuality);
+    setAvoidHighways(params.avoidHighways);
+    setAvoidTolls(params.avoidTolls);
+    setAvoidUnpaved(params.avoidUnpaved);
   }, [activeTrip]);
 
   useEffect(() => {
@@ -506,6 +669,19 @@ export default function TripPlannerPage() {
             Import GPX
           </button>
           <TripExportMenu trip={displayedTrip} context="planner" />
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || !displayedTrip}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light transition disabled:opacity-60"
+          >
+            {saving ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Save size={14} />
+            )}
+            {saving ? "Saving…" : "Save"}
+          </button>
           {!displayedTrip && (
             <button
               type="button"
@@ -1017,6 +1193,40 @@ function clampNumberInput(
   const parsed = Number(rawValue);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(max, Math.max(min, Math.round(parsed)));
+}
+
+function normalizeBackendDailyKm(value: number) {
+  if (!Number.isFinite(value)) return MIN_BACKEND_DAILY_KM;
+  return Math.max(MIN_BACKEND_DAILY_KM, Math.round(value));
+}
+
+function buildImportedRoutePayload(trip: Trip) {
+  if (!trip.id.startsWith("imported-")) return null;
+  const firstDay = trip.days[0];
+  const coordinates = firstDay?.routeGeometry?.coordinates ?? [];
+  if (coordinates.length < 2) return null;
+
+  return {
+    title: trip.name,
+    source_format: trip.importSourceFormat ?? "gpx",
+    geometry: coordinates.map(([lng, lat]) => ({ lng, lat })),
+    waypoints: (firstDay?.waypoints ?? []).map((waypoint) => {
+      const payload: {
+        lat: number;
+        lng: number;
+        name?: string;
+        type?: "via" | "fuel" | "rest" | "photo";
+      } = {
+        lat: waypoint.location.lat,
+        lng: waypoint.location.lng,
+      };
+      if (waypoint.name) payload.name = waypoint.name;
+      if (IMPORTABLE_WAYPOINT_TYPES.has(waypoint.type)) {
+        payload.type = waypoint.type as "via" | "fuel" | "rest" | "photo";
+      }
+      return payload;
+    }),
+  };
 }
 
 function delay(ms: number) {

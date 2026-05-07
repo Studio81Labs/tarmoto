@@ -1,5 +1,6 @@
 import { DEMO_TRIP } from "@/lib/demo-trip";
 import { clampScore } from "@/lib/segment-trend";
+import { UNPAVED_SURFACES } from "@/lib/surface-preferences";
 import type {
   POI,
   RoutePreviewSegment,
@@ -64,7 +65,6 @@ const OPTION_PRESETS: readonly OptionPreset[] = [
 ] as const;
 
 const DEFAULT_SURFACES = ["asphalt"] as const;
-const UNPAVED_SURFACES = new Set(["gravel", "dirt"]);
 const CONTRADICTORY_SURFACES_ERROR =
   'Selected surface filters conflict with "Avoid unpaved".';
 

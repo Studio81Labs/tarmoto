@@ -11,6 +11,7 @@ import { haversineKm, latLngToPoint, pointToLatLng } from '@tarmoto/shared';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
+import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
 import { TripWaypoint } from '../../entities/trip-waypoint.entity.js';
 import { EventsGateway } from '../events/events.gateway.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
@@ -270,6 +271,57 @@ export class TripsService {
     return this.getDetail(userId, tripId);
   }
 
+  async replaceWithImportedRoute(
+    userId: string,
+    tripId: string,
+    dto: ImportTripDto,
+  ): Promise<TripDetailDto> {
+    const membership = await this.memberRepo.findOne({
+      where: { trip_id: tripId, user_id: userId },
+    });
+    if (!membership || !PRIVILEGED_ROLES.has(membership.role)) {
+      throw new NotFoundException('Trip not found');
+    }
+
+    const totalKm = totalDistanceKm(dto.geometry);
+    const dailyKm = Math.max(1, Math.round(totalKm));
+
+    await this.tripRepo.manager.transaction(async (manager) => {
+      const locked = await manager.findOne(Trip, {
+        where: { id: tripId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!locked) throw new NotFoundException('Trip not found');
+
+      await manager.update(
+        Trip,
+        { id: tripId },
+        {
+          title: dto.title,
+          region: dto.region ?? null,
+          num_days: 1,
+          daily_km_min: dailyKm,
+          daily_km_max: dailyKm,
+          status: 'planned',
+        },
+      );
+      await manager.update(
+        TripSuggestion,
+        { trip_id: tripId },
+        { trip_day_id: null },
+      );
+      await manager.delete(TripDay, { trip_id: tripId });
+      await this.persistImportedRouteDay(manager, tripId, dto, totalKm);
+    });
+
+    const detail = await this.getDetail(userId, tripId);
+    this.events.emitToTrip(tripId, 'trip:updated', detail);
+    await this.activity.recordSafe(tripId, userId, 'trip_updated', {
+      fields: ['imported_route'],
+    });
+    return detail;
+  }
+
   private async allocateAndPersistImportedTrip(
     userId: string,
     dto: ImportTripDto,
@@ -301,43 +353,57 @@ export class TripsService {
         }),
       );
 
-      const day = manager.create(TripDay, {
-        trip_id: savedTrip.id,
-        day_number: 1,
-        title: dto.title,
-        distance_km: Number(bounds.totalKm.toFixed(2)),
-        // Rough estimate at 55 km/h — same heuristic the companion
-        // uses for imported routes. Floor at 30 minutes so very
-        // short test imports don't render as "0 min".
-        estimated_time: `${Math.max(30, Math.round((bounds.totalKm / 55) * 60))} minutes`,
-        avg_quality: null,
-        curviness_score: null,
-        scenic_score: null,
-        elevation_gain: null,
-        elevation_loss: null,
-        route_geom: {
-          type: 'LineString',
-          coordinates: dto.geometry.map((p) => [p.lng, p.lat]),
-        },
-      });
-      const savedDay = await manager.save(day);
-
-      const waypoints = buildImportedWaypoints(dto);
-      if (waypoints.length > 0) {
-        const rows = waypoints.map((w, idx) =>
-          manager.create(TripWaypoint, {
-            trip_day_id: savedDay.id,
-            sequence: idx,
-            location: latLngToPoint({ lat: w.lat, lng: w.lng }),
-            name: w.name ?? null,
-            waypoint_type: w.waypoint_type,
-          }),
-        );
-        await manager.save(rows);
-      }
+      await this.persistImportedRouteDay(
+        manager,
+        savedTrip.id,
+        dto,
+        bounds.totalKm,
+      );
 
       return savedTrip.id;
     });
+  }
+
+  private async persistImportedRouteDay(
+    manager: EntityManager,
+    tripId: string,
+    dto: ImportTripDto,
+    totalKm: number,
+  ): Promise<void> {
+    const day = manager.create(TripDay, {
+      trip_id: tripId,
+      day_number: 1,
+      title: dto.title,
+      distance_km: Number(totalKm.toFixed(2)),
+      // Rough estimate at 55 km/h — same heuristic the companion
+      // uses for imported routes. Floor at 30 minutes so very
+      // short test imports don't render as "0 min".
+      estimated_time: `${Math.max(30, Math.round((totalKm / 55) * 60))} minutes`,
+      avg_quality: null,
+      curviness_score: null,
+      scenic_score: null,
+      elevation_gain: null,
+      elevation_loss: null,
+      route_geom: {
+        type: 'LineString',
+        coordinates: dto.geometry.map((p) => [p.lng, p.lat]),
+      },
+    });
+    const savedDay = await manager.save(day);
+
+    const waypoints = buildImportedWaypoints(dto);
+    if (waypoints.length > 0) {
+      const rows = waypoints.map((w, idx) =>
+        manager.create(TripWaypoint, {
+          trip_day_id: savedDay.id,
+          sequence: idx,
+          location: latLngToPoint({ lat: w.lat, lng: w.lng }),
+          name: w.name ?? null,
+          waypoint_type: w.waypoint_type,
+        }),
+      );
+      await manager.save(rows);
+    }
   }
 
   /**
