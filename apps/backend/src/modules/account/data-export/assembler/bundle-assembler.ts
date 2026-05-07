@@ -16,6 +16,7 @@ import type { ChallengeEntry } from '../../../../entities/challenge-entry.entity
 import type { CommuteRoute } from '../../../../entities/commute-route.entity.js';
 import type { NotificationPreferencesRow } from '../../../../entities/notification-preferences.entity.js';
 import type { PrivacyPreferencesRow } from '../../../../entities/privacy-preferences.entity.js';
+import type { RideTagEvent } from '../../../../entities/ride-tag-event.entity.js';
 import { sanitizeUserForExport } from './sanitizers.js';
 import { rideToGpx, tripDayToGpx } from './gpx.js';
 
@@ -36,6 +37,10 @@ export interface BundleRepos {
     'findOne'
   >;
   privacyPreferences: Pick<Repository<PrivacyPreferencesRow>, 'findOne'>;
+  // Research issue #7 — rider-asserted surface tags are keyed by
+  // user_id and carry timestamps + optional lat/lng, so they're
+  // personal data the GDPR Article 15 export must include.
+  rideTagEvents: Pick<Repository<RideTagEvent>, 'find'>;
 }
 
 export class BundleAssembler {
@@ -56,6 +61,7 @@ export class BundleAssembler {
       commute,
       notificationRow,
       privacyRow,
+      rideTagEvents,
     ] = await Promise.all([
       this.repos.contacts.find({ where: { user_id: userId } }),
       this.repos.rides.find({
@@ -73,6 +79,7 @@ export class BundleAssembler {
         where: { user_id: userId },
       }),
       this.repos.privacyPreferences.findOne({ where: { user_id: userId } }),
+      this.repos.rideTagEvents.find({ where: { user_id: userId } }),
     ]);
 
     const allTripIds = Array.from(
@@ -120,6 +127,7 @@ export class BundleAssembler {
     archive.append(json(badges), { name: 'badges.json' });
     archive.append(json(challenges), { name: 'challenges.json' });
     archive.append(json(commute), { name: 'commute_routes.json' });
+    archive.append(json(rideTagEvents), { name: 'ride_tag_events.json' });
 
     for (const r of rides) {
       const gpx = rideToGpx({
@@ -189,6 +197,7 @@ function buildReadme(generatedAt: string): string {
     '  badges.json          - badges you earned',
     '  challenges.json      - challenge entries',
     '  commute_routes.json  - your saved commute routes',
+    '  ride_tag_events.json - rider-asserted surface tags captured during rides',
     '',
     'Anonymized road quality contributions are NOT included because they no',
     'longer reference your account after anonymization.',
