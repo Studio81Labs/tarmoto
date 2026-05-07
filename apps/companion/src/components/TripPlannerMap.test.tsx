@@ -938,6 +938,78 @@ describe("TripPlannerMap", () => {
     expect(handleAddWaypoint).toHaveBeenCalledTimes(1);
   });
 
+  it("does not swallow the next legitimate click after a real waypoint drag", () => {
+    const handleAddWaypoint = vi.fn();
+    const handleMoveWaypoint = vi.fn();
+    const layerHandlers = new Map<string, (event: unknown) => void>();
+    const mapHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation(
+      (event: string, layerOrHandler: unknown, maybeHandler?: unknown) => {
+        if (typeof layerOrHandler === "string") {
+          layerHandlers.set(
+            `${event}:${layerOrHandler}`,
+            maybeHandler as (event: unknown) => void,
+          );
+        } else {
+          mapHandlers.set(event, layerOrHandler as (event: unknown) => void);
+        }
+        return mockMap;
+      },
+    );
+    mockMap.off.mockImplementation((event: string, layerOrHandler: unknown) => {
+      if (typeof layerOrHandler === "string") {
+        layerHandlers.delete(`${event}:${layerOrHandler}`);
+      } else {
+        mapHandlers.delete(event);
+      }
+      return mockMap;
+    });
+    mockMap.queryRenderedFeatures.mockReturnValue([]);
+
+    render(
+      <TripPlannerMap
+        trip={trip()}
+        month={7}
+        onAddWaypoint={handleAddWaypoint}
+        onMoveWaypoint={handleMoveWaypoint}
+      />,
+    );
+
+    act(() => {
+      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+        preventDefault: vi.fn(),
+        features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
+        point: { x: 100, y: 100 },
+        lngLat: { lng: 14.41, lat: 50.08 },
+      });
+      // Move well past MapLibre's 3 px clickTolerance — no synthetic
+      // click will be emitted on mouseup, so the swallow flag must clear.
+      mapHandlers.get("mousemove")?.({
+        preventDefault: vi.fn(),
+        point: { x: 220, y: 180 },
+        lngLat: { lng: 14.5, lat: 50.13 },
+      });
+      mapHandlers.get("mouseup")?.({
+        point: { x: 240, y: 200 },
+        lngLat: { lng: 14.55, lat: 50.15 },
+        preventDefault: vi.fn(),
+      });
+    });
+
+    expect(handleMoveWaypoint).toHaveBeenCalledTimes(1);
+    expect(handleAddWaypoint).not.toHaveBeenCalled();
+
+    act(() => {
+      mapHandlers.get("click")?.({
+        point: { x: 320, y: 240 },
+        lngLat: { lng: 14.6, lat: 50.18 },
+      });
+    });
+
+    // The rider's next intentional map click must still create a waypoint.
+    expect(handleAddWaypoint).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the move and touchmove listeners attached after a no-op drop", () => {
     const handleMoveWaypoint = vi.fn();
     const layerHandlers = new Map<string, (event: unknown) => void>();
@@ -999,7 +1071,10 @@ describe("TripPlannerMap", () => {
 
     const preventDefault = vi.fn();
     act(() => {
-      mapHandlers.get("mousemove")?.({ preventDefault });
+      mapHandlers.get("mousemove")?.({
+        preventDefault,
+        point: { x: 100, y: 100 },
+      });
     });
     expect(preventDefault).not.toHaveBeenCalled();
 
@@ -1010,7 +1085,10 @@ describe("TripPlannerMap", () => {
         point: { x: 100, y: 100 },
         lngLat: { lng: 14.41, lat: 50.08 },
       });
-      mapHandlers.get("mousemove")?.({ preventDefault });
+      mapHandlers.get("mousemove")?.({
+        preventDefault,
+        point: { x: 100, y: 100 },
+      });
     });
     expect(preventDefault).toHaveBeenCalled();
   });

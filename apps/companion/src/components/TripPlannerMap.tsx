@@ -488,10 +488,32 @@ function TripPlannerMapContent({
     if (!map || !ready || !onMoveWaypoint || drawMode !== "idle") return;
 
     const canvas = map.getCanvas();
-    let active: { dayNumber: number; waypointId: string } | null = null;
+    // MapLibre's default `clickTolerance` is 3 px — if the pointer moves
+    // farther than that during a press, no synthetic `click` is emitted.
+    // 4 px gives us a one-pixel safety margin so we never clear the
+    // suppression while a click is still possible.
+    const CLICK_TOLERANCE_PX = 4;
+    let active: {
+      dayNumber: number;
+      waypointId: string;
+      startX: number;
+      startY: number;
+    } | null = null;
 
     const setCursor = (cursor: string) => {
       canvas.style.cursor = cursor;
+    };
+
+    const releaseSwallowOnceMoved = (point: { x: number; y: number }) => {
+      if (!active || !swallowNextClickRef.current) return;
+      const dx = point.x - active.startX;
+      const dy = point.y - active.startY;
+      if (dx * dx + dy * dy > CLICK_TOLERANCE_PX * CLICK_TOLERANCE_PX) {
+        // Pointer travelled far enough that MapLibre will not emit a
+        // synthetic `click` for this gesture, so disarm the flag — leaving
+        // it true would swallow the rider's next legitimate map click.
+        swallowNextClickRef.current = false;
+      }
     };
 
     const handleEnter = () => {
@@ -504,10 +526,12 @@ function TripPlannerMapContent({
       if (!active) return;
       event.preventDefault();
       setCursor("grabbing");
+      releaseSwallowOnceMoved(event.point);
     };
     const handleTouchMove = (event: MapTouchEvent) => {
       if (!active) return;
       event.preventDefault();
+      releaseSwallowOnceMoved(event.point);
     };
     const finishDrag = (
       lngLat: { lng: number; lat: number },
@@ -517,6 +541,10 @@ function TripPlannerMapContent({
       },
     ) => {
       if (!active) return;
+      // If the gesture became a real drag, MapLibre will not emit a
+      // post-pointer `click` — make sure we never carry the swallow flag
+      // into a future map click that the rider actually intends.
+      if (point) releaseSwallowOnceMoved(point);
       const snapped = point ? snapPointerToRoad(map, point, lngLat) : null;
       const target = snapped ?? {
         lng: roundCoordinate(lngLat.lng),
@@ -554,11 +582,19 @@ function TripPlannerMapContent({
         return;
       }
       event.preventDefault();
-      active = { dayNumber: props.dayNumber, waypointId: props.waypointId };
+      active = {
+        dayNumber: props.dayNumber,
+        waypointId: props.waypointId,
+        startX: event.point.x,
+        startY: event.point.y,
+      };
       // Even with `preventDefault()` here, MapLibre still fires a `click`
       // when the pointer never moves beyond `clickTolerance` (see its
       // `map_events.test`). Flag the upcoming click so `handleMapClick`
       // ignores it instead of treating the drop as a fresh map click.
+      // The flag is cleared by `releaseSwallowOnceMoved` as soon as the
+      // gesture exceeds clickTolerance, so a real drag does not swallow
+      // the rider's next legitimate map click.
       swallowNextClickRef.current = true;
       setCursor("grabbing");
     };
