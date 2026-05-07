@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -21,9 +22,7 @@ import {
   formatRelativeTime,
   formatRideType,
 } from "@/lib/utils";
-
 export const dynamic = "force-dynamic";
-
 export async function generateMetadata(): Promise<Metadata> {
   return {
     title: "Shared ride — Tarmoto",
@@ -31,59 +30,65 @@ export async function generateMetadata(): Promise<Metadata> {
     robots: { index: false, follow: false },
   };
 }
-
 export default async function SharedRidePage({
   params,
 }: {
-  params: Promise<{ token: string }>;
+  params: Promise<{
+    token: string;
+  }>;
 }) {
   const { token } = await params;
   const ride = await fetchSharedRide(token);
   if (!ride) notFound();
-
   const pageUrl = `${siteUrl()}/rides/shared/${token}`;
   const origin = new URL(pageUrl).origin;
   const preview = buildRoutePreview(ride.route_geometry, 960, 14);
   const rideLabel = `${ride.rider_name} · ${formatRideType(ride.ride_type)} ride`;
-
   return (
     <main className="mx-auto max-w-5xl px-6 py-10 text-slate-100">
       <nav className="mb-4 text-sm text-slate-400">
         <Link href="/" className="hover:text-white">
-          Tarmoto
+          {t("Tarmoto ")}
         </Link>
         <span className="mx-2">/</span>
-        <span>Shared ride</span>
+        <span>{t("Shared ride")}</span>
       </nav>
 
       <header className="mb-8 rounded-3xl border border-slate-800 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.14),_transparent_42%),linear-gradient(135deg,_rgba(15,23,42,0.98),_rgba(2,6,23,0.98))] p-8">
         <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-tarmoto-cyan">
-          Public route share
+          {t("Public route share ")}
         </p>
         <h1 className="mt-3 text-3xl font-bold tracking-tight">
-          {ride.rider_name}&apos;s{" "}
-          {formatRideType(ride.ride_type).toLowerCase()} ride
+          {t("{riderName}'s {rideType} ride", {
+            riderName: ride.rider_name,
+            rideType: formatRideType(ride.ride_type).toLowerCase(),
+          })}
         </h1>
         <p className="mt-3 max-w-3xl text-slate-300">
-          Shared from Tarmoto for blogs, forums, and ride reports. Each page
-          load counts as a view, and widget CTA clicks are tracked separately.
+          {t(
+            "Shared from Tarmoto for blogs, forums, and ride reports. Each page load counts as a view, and widget CTA clicks are tracked separately. ",
+          )}
         </p>
         <div className="mt-4 flex flex-wrap gap-2 text-sm text-slate-300">
           <Pill icon={<CalendarDays size={14} />}>
             {formatRelativeTime(ride.started_at)}
           </Pill>
-          <Pill icon={<Activity size={14} />}>{ride.view_count} views</Pill>
+          <Pill icon={<Activity size={14} />}>
+            {t("{count} views", { count: ride.view_count })}
+          </Pill>
           <Pill icon={<MousePointerClick size={14} />}>
-            {ride.embed_click_count} embed clicks
+            {ride.embed_click_count === 1
+              ? t("1 embed click")
+              : t("{count} embed clicks", { count: ride.embed_click_count })}
           </Pill>
         </div>
       </header>
 
       <section className="mb-8 overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/70 p-5">
         <div className="mb-4">
-          <h2 className="text-lg font-semibold">Route preview</h2>
+          <h2 className="text-lg font-semibold">{t("Route preview")}</h2>
           <p className="mt-1 text-sm text-slate-400">
-            Snapshot of the shared route and its current ride metrics.
+            {t("Snapshot of the shared route and its current ride metrics. ")}
           </p>
         </div>
 
@@ -105,7 +110,7 @@ export default async function SharedRidePage({
           </svg>
         ) : (
           <div className="flex h-60 items-center justify-center rounded-2xl border border-dashed border-slate-800 bg-slate-950/80 text-sm text-slate-500">
-            Route preview unavailable for this shared ride.
+            {t("Route preview unavailable for this shared ride. ")}
           </div>
         )}
       </section>
@@ -151,7 +156,6 @@ export default async function SharedRidePage({
     </main>
   );
 }
-
 function StatCard({
   icon,
   label,
@@ -171,7 +175,6 @@ function StatCard({
     </article>
   );
 }
-
 function Pill({ icon, children }: { icon: ReactNode; children: ReactNode }) {
   return (
     <span className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1.5">

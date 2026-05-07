@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useMemo, useState } from "react";
 import { Mountain, Route } from "lucide-react";
 import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
@@ -14,30 +14,24 @@ import {
   type PassStatus,
 } from "@/lib/passes-summary";
 import type { PlannerClosureRoute } from "@/lib/closures-summary";
-
 interface PassesPanelProps {
   month?: number;
   onMonthChange?: (month: number) => void;
   routes?: PlannerClosureRoute[];
   data?: PassesQueryResult;
 }
-
 const EMPTY_ROUTES: PlannerClosureRoute[] = [];
-
 const STATUS_DOT_CLASS: Record<PassStatus, string> = {
   open: "bg-emerald-400",
   closed: "bg-rose-400",
   unknown: "bg-slate-400",
 };
-
 const STATUS_LABEL: Record<PassStatus, string> = {
   open: "Open",
   closed: "Closed",
   unknown: "Unknown",
 };
-
 const MAX_PASSES_PER_GROUP = 5;
-
 /**
  * Seasonal passes panel for the trip planner sidebar (US-40).
  *
@@ -64,7 +58,6 @@ export function PassesPanel({
     if (isControlled) onMonthChange(nextMonth);
     else setLocalMonth(nextMonth);
   };
-
   if (data) {
     return (
       <PassesPanelBody
@@ -76,7 +69,6 @@ export function PassesPanel({
       />
     );
   }
-
   return (
     <FetchedPassesPanel
       month={month}
@@ -86,7 +78,6 @@ export function PassesPanel({
     />
   );
 }
-
 function FetchedPassesPanel({
   month,
   setMonth,
@@ -99,7 +90,6 @@ function FetchedPassesPanel({
   routes: PlannerClosureRoute[];
 }) {
   const data = usePasses(month, routes);
-
   return (
     <PassesPanelBody
       month={month}
@@ -110,7 +100,6 @@ function FetchedPassesPanel({
     />
   );
 }
-
 function PassesPanelBody({
   month,
   setMonth,
@@ -138,12 +127,11 @@ function PassesPanelBody({
   const groups = useMemo(() => partitionByStatus(passes), [passes]);
   const hasRouteWarnings = routeClosedCount > 0 || routeUnknownCount > 0;
   const routeSummary = buildRouteSummary(routeClosedCount, routeUnknownCount);
-
   return (
     <div className="space-y-3 pt-2 border-t border-slate-800">
       <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-300">
         <Mountain size={14} className="text-slate-500" />
-        Seasonal passes
+        {t("Seasonal passes ")}
       </div>
 
       <div>
@@ -151,7 +139,7 @@ function PassesPanelBody({
           htmlFor="passes-month"
           className="block text-xs text-slate-500 mb-1"
         >
-          Travel month
+          {t("Travel month ")}
         </label>
         <select
           id="passes-month"
@@ -173,15 +161,17 @@ function PassesPanelBody({
       <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/70 p-3">
         <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
           <Route size={12} />
-          Route warnings
+          {t("Route warnings ")}
         </div>
 
         {routes.length === 0 ? (
           <p className="text-xs text-slate-500">
-            Import or generate a route to check mountain pass crossings.
+            {t("Import or generate a route to check mountain pass crossings. ")}
           </p>
         ) : routeLoading ? (
-          <p className="text-xs text-slate-500">Checking route passes…</p>
+          <p className="text-xs text-slate-500">
+            {t("Checking route passes\u2026")}
+          </p>
         ) : hasRouteWarnings ? (
           <>
             <p className="text-xs text-slate-300">{routeSummary}</p>
@@ -201,7 +191,7 @@ function PassesPanelBody({
           <p className="text-xs text-rose-400">{routeError}</p>
         ) : (
           <p className="text-xs text-emerald-400">
-            No closed or unknown passes intersect the current trip.
+            {t("No closed or unknown passes intersect the current trip. ")}
           </p>
         )}
       </div>
@@ -209,18 +199,27 @@ function PassesPanelBody({
       {error ? (
         <p className="text-xs text-rose-400">{error}</p>
       ) : loading ? (
-        <p className="text-xs text-slate-500">Loading passes…</p>
+        <p className="text-xs text-slate-500">{t("Loading passes\u2026")}</p>
       ) : counts.total === 0 ? (
-        <p className="text-xs text-slate-500">No mountain passes seeded yet.</p>
+        <p className="text-xs text-slate-500">
+          {t("No mountain passes seeded yet.")}
+        </p>
       ) : (
         <>
           <p className="text-xs text-slate-400">
-            In {monthLabel(month)}:{" "}
-            <span className="text-rose-400">{counts.closed} closed</span>
+            {t("In ")}
+            {monthLabel(month)}:{" "}
+            <span className="text-rose-400">
+              {t("{count} closed", { count: counts.closed })}
+            </span>
             {" • "}
-            <span className="text-slate-300">{counts.unknown} unknown</span>
+            <span className="text-slate-300">
+              {t("{count} unknown", { count: counts.unknown })}
+            </span>
             {" • "}
-            <span className="text-emerald-400">{counts.open} open</span>
+            <span className="text-emerald-400">
+              {t("{count} open", { count: counts.open })}
+            </span>
           </p>
 
           <ul className="space-y-1.5">
@@ -235,12 +234,11 @@ function PassesPanelBody({
     </div>
   );
 }
-
 function Legend() {
   return (
     <div
       role="list"
-      aria-label="Pass status legend"
+      aria-label={t("Pass status legend")}
       className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400"
     >
       {STATUS_DISPLAY_ORDER.map((status) => (
@@ -259,7 +257,6 @@ function Legend() {
     </div>
   );
 }
-
 function PassRow({ pass }: { pass: MountainPass }) {
   return (
     <li className="flex items-start gap-2 text-xs">
@@ -270,14 +267,14 @@ function PassRow({ pass }: { pass: MountainPass }) {
       <span className="flex-1 min-w-0">
         <span className="text-slate-200 truncate block">{pass.name}</span>
         <span className="text-slate-500">
-          {pass.elevation_m.toLocaleString()} m
+          {pass.elevation_m.toLocaleString()}
+          {t("m ")}
           {pass.region ? ` · ${pass.region}` : ""}
         </span>
       </span>
     </li>
   );
 }
-
 function buildRouteSummary(closedCount: number, unknownCount: number): string {
   const parts: string[] = [];
   if (closedCount > 0) {
@@ -290,7 +287,6 @@ function buildRouteSummary(closedCount: number, unknownCount: number): string {
       `${unknownCount} unknown ${unknownCount === 1 ? "pass" : "passes"}`,
     );
   }
-
   if (parts.length === 0) {
     return "No closed or unknown passes intersect the current trip.";
   }

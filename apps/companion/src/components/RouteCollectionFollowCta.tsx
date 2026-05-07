@@ -1,11 +1,10 @@
 "use client";
-
+import { t } from "@/i18n";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Bookmark, BookmarkCheck, Loader2 } from "lucide-react";
 import { ApiError, routeCollectionsApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
-
 interface Props {
   collectionId: string;
   slug: string;
@@ -15,13 +14,20 @@ interface Props {
    */
   ownerName: string;
 }
-
 type ViewerState =
-  | { kind: "loading" }
-  | { kind: "anonymous" }
-  | { kind: "owner" }
-  | { kind: "viewer"; isFollowing: boolean };
-
+  | {
+      kind: "loading";
+    }
+  | {
+      kind: "anonymous";
+    }
+  | {
+      kind: "owner";
+    }
+  | {
+      kind: "viewer";
+      isFollowing: boolean;
+    };
 /**
  * Follow / unfollow CTA on the public collection page (US-56 follow/save).
  *
@@ -45,7 +51,6 @@ export function RouteCollectionFollowCta({
   const [state, setState] = useState<ViewerState>({ kind: "loading" });
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   useEffect(() => {
     if (!isAuthenticated) {
       setState({ kind: "anonymous" });
@@ -82,7 +87,6 @@ export function RouteCollectionFollowCta({
     // We intentionally re-run when the access token changes (sign-in/out
     // mid-session) so the CTA reflects the current viewer.
   }, [isAuthenticated, accessToken, slug]);
-
   if (state.kind === "loading") {
     return (
       <div
@@ -91,50 +95,51 @@ export function RouteCollectionFollowCta({
       />
     );
   }
-
   if (state.kind === "anonymous") {
     return (
       <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
         <h2 className="text-sm font-semibold text-white mb-1">
-          Want to save this collection?
+          {t("Want to save this collection? ")}
         </h2>
         <p className="text-sm text-slate-400 mb-4">
-          Sign in to Tarmoto to follow{" "}
-          {ownerName ? `${ownerName}'s collection` : "the curator"} and add
-          their routes to your own library.
+          {t(
+            "Sign in to Tarmoto to follow {collectionOwner} and add their routes to your own library.",
+            {
+              collectionOwner: ownerName
+                ? `${ownerName}'s collection`
+                : "the curator",
+            },
+          )}
         </p>
         <Link
           href="/auth/login"
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light transition"
         >
-          Sign in
+          {t("Sign in")}
         </Link>
       </div>
     );
   }
-
   if (state.kind === "owner") {
     return (
       <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
         <h2 className="text-sm font-semibold text-white mb-1">
-          You own this collection
+          {t("You own this collection ")}
         </h2>
         <p className="text-sm text-slate-400">
-          Manage routes, visibility, and sharing from{" "}
+          {t("Manage routes, visibility, and sharing from")}{" "}
           <Link
             href="/community/collections"
             className="text-tarmoto-cyan hover:text-tarmoto-cyan-light underline"
           >
-            your dashboard
+            {t("your dashboard ")}
           </Link>
           .
         </p>
       </div>
     );
   }
-
   const isFollowing = state.isFollowing;
-
   const onClick = async () => {
     if (pending) return;
     setPending(true);
@@ -167,7 +172,6 @@ export function RouteCollectionFollowCta({
       setPending(false);
     }
   };
-
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
       <h2 className="text-sm font-semibold text-white mb-1">

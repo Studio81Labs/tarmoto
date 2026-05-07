@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FileUp, Loader2, MapPin, X } from "lucide-react";
 import {
@@ -11,13 +11,11 @@ import { QUALITY_CONFIG, formatDistance } from "@/lib/utils";
 import { useTripStore } from "@/stores/trip";
 import { flattenSegments } from "@/stores/trip";
 import type { Trip } from "@/lib/types";
-
 interface TripImportDialogProps {
   open: boolean;
   initialFile?: File | null;
   onClose: () => void;
 }
-
 /**
  * Dialog shown after a GPX/KML file is dropped or picked (US-38).
  * Owns the parse → preview → adopt lifecycle and calls `setActiveTrip` so the
@@ -34,14 +32,12 @@ export function TripImportDialog({
   // been superseded (dialog closed, another file picked) and drop its result
   // instead of racing with the cleanup effect and leaving stale preview data.
   const parseTokenRef = useRef(0);
-
   const [status, setStatus] = useState<"idle" | "parsing" | "ready" | "error">(
     "idle",
   );
   const [route, setRoute] = useState<ImportedRoute | null>(null);
   const [trip, setTrip] = useState<Trip | null>(null);
   const [error, setError] = useState<string | null>(null);
-
   useEffect(() => {
     if (!open) {
       parseTokenRef.current++;
@@ -51,12 +47,10 @@ export function TripImportDialog({
       setError(null);
     }
   }, [open]);
-
   useEffect(() => {
     if (open && initialFile) void handleFile(initialFile);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialFile]);
-
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
@@ -65,9 +59,7 @@ export function TripImportDialog({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
-
   const segments = useMemo(() => flattenSegments(trip), [trip]);
-
   async function handleFile(file: File) {
     const token = ++parseTokenRef.current;
     setStatus("parsing");
@@ -95,15 +87,12 @@ export function TripImportDialog({
       setStatus("error");
     }
   }
-
   function handleAdopt() {
     if (!trip) return;
     setActiveTrip(trip);
     onClose();
   }
-
   if (!open) return null;
-
   return (
     <div
       role="dialog"
@@ -121,12 +110,12 @@ export function TripImportDialog({
             className="text-sm font-semibold text-slate-200 flex items-center gap-2"
           >
             <FileUp size={14} className="text-tarmoto-cyan" />
-            Import GPX or KML
+            {t("Import GPX or KML ")}
           </h2>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close import dialog"
+            aria-label={t("Close import dialog")}
             className="text-slate-500 hover:text-slate-200 transition"
           >
             <X size={16} />
@@ -141,7 +130,7 @@ export function TripImportDialog({
           {status === "parsing" && (
             <div className="flex items-center gap-3 text-slate-300 text-sm py-6 justify-center">
               <Loader2 size={16} className="animate-spin" />
-              Parsing route…
+              {t("Parsing route\u2026 ")}
             </div>
           )}
 
@@ -153,7 +142,7 @@ export function TripImportDialog({
                 onClick={() => fileInputRef.current?.click()}
                 className="text-xs font-semibold text-red-200 underline hover:text-white"
               >
-                Pick another file
+                {t("Pick another file ")}
               </button>
             </div>
           )}
@@ -186,7 +175,7 @@ export function TripImportDialog({
             onClick={onClose}
             className="px-3 py-1.5 rounded-lg text-sm text-slate-300 hover:bg-slate-800 transition"
           >
-            Cancel
+            {t("Cancel ")}
           </button>
           {status === "ready" && (
             <button
@@ -194,7 +183,7 @@ export function TripImportDialog({
               onClick={handleAdopt}
               className="px-3 py-1.5 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light transition"
             >
-              Adopt as trip draft
+              {t("Adopt as trip draft ")}
             </button>
           )}
         </footer>
@@ -202,7 +191,6 @@ export function TripImportDialog({
     </div>
   );
 }
-
 function IdlePicker({ onPick }: { onPick: () => void }) {
   return (
     <button
@@ -215,15 +203,14 @@ function IdlePicker({ onPick }: { onPick: () => void }) {
         className="mx-auto text-slate-500 group-hover:text-tarmoto-cyan mb-3"
       />
       <p className="text-sm text-slate-200 font-medium">
-        Choose a GPX or KML file
+        {t("Choose a GPX or KML file ")}
       </p>
       <p className="text-xs text-slate-500 mt-1">
-        Exports from Garmin, Calimoto, Kurviger, Scenic, Google Earth
+        {t("Exports from Garmin, Calimoto, Kurviger, Scenic, Google Earth ")}
       </p>
     </button>
   );
 }
-
 function RoutePreview({
   route,
   trip,
@@ -236,12 +223,11 @@ function RoutePreview({
   const firstDay = trip.days[0];
   const maxSegmentKm =
     firstDay?.segments?.reduce((m, seg) => Math.max(m, seg.distanceKm), 0) || 1;
-
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
         <p className="text-xs uppercase tracking-wider text-slate-500 mb-1">
-          Route
+          {t("Route ")}
         </p>
         <p className="text-base font-semibold text-slate-100 truncate">
           {route.name}
@@ -258,15 +244,16 @@ function RoutePreview({
           />
         </div>
         <p className="text-[11px] text-slate-500 mt-3 leading-relaxed">
-          Road quality shown is a deterministic preview until your route is
-          matched against Tarmoto&apos;s tile data (#6, #79). Each segment bar below
-          uses the same colour scale as the planner overlay.
+          {t(
+            "Road quality shown is a deterministic preview until your route is matched against Tarmoto's tile data (#6, #79). Each segment bar below uses the same colour scale as the planner overlay. ",
+          )}
         </p>
       </div>
 
       <div>
         <p className="text-xs uppercase tracking-wider text-slate-500 mb-2">
-          Segment quality ({segmentCount})
+          {t("Segment quality (")}
+          {segmentCount})
         </p>
         <div className="space-y-1">
           {firstDay?.segments?.map((seg) => {
@@ -301,7 +288,8 @@ function RoutePreview({
       {route.waypoints.length > 0 && (
         <div>
           <p className="text-xs uppercase tracking-wider text-slate-500 mb-2">
-            Waypoints ({route.waypoints.length})
+            {t("Waypoints (")}
+            {route.waypoints.length})
           </p>
           <ul className="space-y-1 text-xs text-slate-400 max-h-28 overflow-y-auto pr-1">
             {route.waypoints.map((wp, i) => (
@@ -321,7 +309,6 @@ function RoutePreview({
     </div>
   );
 }
-
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>

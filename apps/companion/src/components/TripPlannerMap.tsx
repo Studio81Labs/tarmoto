@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import {
@@ -43,7 +43,6 @@ import type { TripSuggestion } from "@/lib/api";
 import type { CollaboratorCursor } from "@/hooks/useTripCollabSession";
 import { formatDistance, roundCoordinate } from "@/lib/utils";
 import { usePreferencesStore } from "@/stores/preferences";
-
 const ROUTE_SOURCE = "trip-planner-route";
 const WAYPOINT_SOURCE = "trip-planner-waypoints";
 const ROUTE_LINE = "trip-planner-route-line";
@@ -60,7 +59,6 @@ const CURSOR_LAYER = "trip-planner-collab-cursors";
 const CURSOR_LABEL_LAYER = "trip-planner-collab-cursor-labels";
 const SUGGESTION_SOURCE = "trip-planner-suggestions";
 const SUGGESTION_LAYER = "trip-planner-suggestion-marker";
-
 interface TripPlannerMapProps {
   trip: Trip | null;
   month: number;
@@ -83,7 +81,6 @@ interface TripPlannerMapProps {
    */
   onCursorMove?: (lat: number, lng: number) => void;
 }
-
 export function TripPlannerMap({
   trip,
   month,
@@ -110,7 +107,6 @@ export function TripPlannerMap({
       />
     );
   }
-
   return (
     <FetchedTripPlannerMap
       trip={trip}
@@ -123,7 +119,6 @@ export function TripPlannerMap({
     />
   );
 }
-
 function FetchedTripPlannerMap({
   trip,
   month,
@@ -144,7 +139,6 @@ function FetchedTripPlannerMap({
   const closureRoutes = useMemo(() => buildTripClosureRoutes(trip), [trip]);
   const closuresData = useClosures(month, closureRoutes);
   const passesData = usePasses(month, closureRoutes);
-
   return (
     <TripPlannerMapContent
       trip={trip}
@@ -159,7 +153,6 @@ function FetchedTripPlannerMap({
     />
   );
 }
-
 function TripPlannerMapContent({
   trip,
   month,
@@ -191,7 +184,6 @@ function TripPlannerMapContent({
   const [drawnRegion, setDrawnRegion] = useState<RegionDrawBbox | null>(null);
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const hydratePreferences = usePreferencesStore((s) => s.hydrate);
-
   const routeCollection = useMemo(
     () => buildTripPlannerRouteCollection(trip),
     [trip],
@@ -267,7 +259,6 @@ function TripPlannerMapContent({
         ))}
       </div>
     ) : null;
-
   if (routeCounts.total > 0) {
     routeWarningParts.push(
       `${routeCounts.total} route ${routeCounts.total === 1 ? "closure" : "closures"}`,
@@ -283,7 +274,6 @@ function TripPlannerMapContent({
       `${routeUnknownCount} unknown ${routeUnknownCount === 1 ? "pass" : "passes"}`,
     );
   }
-
   useEffect(() => {
     if (!tripBoundsKey) {
       fittedBoundsKeyRef.current = null;
@@ -293,15 +283,19 @@ function TripPlannerMapContent({
       fittedBoundsKeyRef.current = null;
     }
   }, [tripBoundsKey]);
-
   useEffect(() => {
     hydratePreferences();
   }, [hydratePreferences]);
-
   const handleMapClick = useCallback(
     (event: {
-      point: { x: number; y: number };
-      lngLat: { lng: number; lat: number };
+      point: {
+        x: number;
+        y: number;
+      };
+      lngLat: {
+        lng: number;
+        lat: number;
+      };
     }) => {
       if (!onAddWaypoint || drawMode !== "idle") return;
       const map = handleRef.current?.map;
@@ -342,7 +336,6 @@ function TripPlannerMapContent({
     },
     [drawMode, onAddWaypoint],
   );
-
   const handleReady = (map: MapLibreMap) => {
     ensurePlannerLayers(map);
     drawRef.current?.destroy();
@@ -352,7 +345,6 @@ function TripPlannerMapContent({
     });
     setReady(true);
   };
-
   useEffect(() => {
     const map = handleRef.current?.map;
     if (!map || !ready) return;
@@ -373,7 +365,6 @@ function TripPlannerMapContent({
     suggestionCollection,
     waypointCollection,
   ]);
-
   useEffect(() => {
     const map = handleRef.current?.map;
     if (!map || !ready || !onCursorMove) return;
@@ -383,7 +374,10 @@ function TripPlannerMapContent({
     // DOM-layer throttle a 120 Hz mouse would trigger React callbacks
     // at the same rate, defeating the point.
     let rafId: number | null = null;
-    let pending: { lat: number; lng: number } | null = null;
+    let pending: {
+      lat: number;
+      lng: number;
+    } | null = null;
     const flush = () => {
       rafId = null;
       if (!pending) return;
@@ -391,7 +385,12 @@ function TripPlannerMapContent({
       pending = null;
       onCursorMove(lat, lng);
     };
-    const handler = (event: { lngLat: { lng: number; lat: number } }) => {
+    const handler = (event: {
+      lngLat: {
+        lng: number;
+        lat: number;
+      };
+    }) => {
       pending = { lat: event.lngLat.lat, lng: event.lngLat.lng };
       if (rafId === null) rafId = window.requestAnimationFrame(flush);
     };
@@ -401,12 +400,10 @@ function TripPlannerMapContent({
       if (rafId !== null) window.cancelAnimationFrame(rafId);
     };
   }, [onCursorMove, ready]);
-
   useEffect(() => {
     if (!ready) return;
     drawRef.current?.setDrawn(drawnRegion);
   }, [drawnRegion, ready]);
-
   useEffect(() => {
     const map = handleRef.current?.map;
     if (!map || !ready || !onAddWaypoint) return;
@@ -415,7 +412,6 @@ function TripPlannerMapContent({
       map.off("click", handleMapClick);
     };
   }, [handleMapClick, onAddWaypoint, ready]);
-
   useEffect(() => {
     const map = handleRef.current?.map;
     if (
@@ -440,14 +436,12 @@ function TripPlannerMapContent({
       },
     );
   }, [ready, tripBounds, tripBoundsKey]);
-
   useEffect(() => {
     return () => {
       drawRef.current?.destroy();
       drawRef.current = null;
     };
   }, []);
-
   return (
     <MapCanvas
       ref={handleRef}
@@ -467,7 +461,7 @@ function TripPlannerMapContent({
             className={toggleClassName(showQuality)}
           >
             <Layers3 size={14} />
-            Road quality
+            {t("Road quality ")}
           </button>
           <button
             type="button"
@@ -477,7 +471,7 @@ function TripPlannerMapContent({
             className={toggleClassName(showSurface)}
           >
             <Layers3 size={14} />
-            Surface
+            {t("Surface ")}
           </button>
         </div>
 
@@ -488,7 +482,7 @@ function TripPlannerMapContent({
             className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/90 px-3 py-2 text-sm text-slate-100 transition hover:bg-slate-800"
           >
             <Square size={14} />
-            Draw region
+            {t("Draw region ")}
           </button>
         ) : (
           <button
@@ -497,7 +491,7 @@ function TripPlannerMapContent({
             className="flex items-center gap-1.5 rounded-lg border border-tarmoto-cyan bg-tarmoto-cyan/20 px-3 py-2 text-sm text-tarmoto-cyan transition hover:bg-tarmoto-cyan/30"
           >
             <X size={14} />
-            Cancel drawing
+            {t("Cancel drawing ")}
           </button>
         )}
 
@@ -511,21 +505,21 @@ function TripPlannerMapContent({
             className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/90 px-3 py-2 text-sm text-slate-300 transition hover:bg-slate-800"
           >
             <X size={12} />
-            Clear region
+            {t("Clear region ")}
           </button>
         ) : null}
 
         <div className="rounded-lg border border-slate-700 bg-slate-950/85 px-3 py-2 text-xs text-slate-300 shadow-sm">
-          Click the map to add waypoints
-          {selectedDayNumber ? ` for Day ${selectedDayNumber}` : ""}. We snap to
-          nearby roads when visible.
+          {t("Click the map to add waypoints ")}
+          {selectedDayNumber ? ` for Day ${selectedDayNumber}` : ""}
+          {t(". We snap to nearby roads when visible. ")}
         </div>
       </div>
 
       <div className="absolute right-3 top-3 z-10 w-72 rounded-2xl border border-slate-800 bg-slate-950/90 p-4 shadow-lg backdrop-blur-sm">
         <div className="flex items-center gap-2 text-sm font-semibold text-white">
           <Route size={16} className="text-tarmoto-cyan" />
-          Planner map
+          {t("Planner map ")}
         </div>
         <p className="mt-2 text-sm text-slate-300">
           {trip
@@ -533,31 +527,34 @@ function TripPlannerMapContent({
             : "Load the demo trip or import GPX/KML to see your route on the map."}
         </p>
         <p className="mt-2 text-xs text-slate-500">
-          Until route generation lands, the planner previews each day as a
-          direct line between its ordered waypoints.
+          {t(
+            "Until route generation lands, the planner previews each day as a direct line between its ordered waypoints. ",
+          )}
         </p>
 
         <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/80 p-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-white">
             <AlertTriangle size={14} className="text-amber-300" />
-            Conditions for {activeMonthLabel}
+            {t("Conditions for ")}
+            {activeMonthLabel}
           </div>
 
           {conditionsLoading ? (
             <p className="mt-2 text-xs text-slate-500">
-              Loading passes and closures…
+              {t("Loading passes and closures\u2026 ")}
             </p>
           ) : (
             <>
               {routeWarningParts.length > 0 ? (
                 <p className="mt-2 text-xs text-amber-200">
-                  Route warnings: {routeWarningParts.join(" · ")}.
+                  {t("Route warnings: ")}
+                  {routeWarningParts.join(" · ")}.
                 </p>
               ) : routeErrors.length > 0 ? (
                 routeErrorsBlock
               ) : (
                 <p className="mt-2 text-xs text-emerald-300">
-                  No route closures or pass warnings for this month.
+                  {t("No route closures or pass warnings for this month. ")}
                 </p>
               )}
 
@@ -567,7 +564,7 @@ function TripPlannerMapContent({
                 <div className="mt-3">
                   <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                     <AlertTriangle size={12} />
-                    Closures
+                    {t("Closures ")}
                   </div>
                   <ul className="mt-2 space-y-2">
                     {highlightedClosures.slice(0, 2).map((closure) => {
@@ -575,7 +572,6 @@ function TripPlannerMapContent({
                         closure.reason === "roadworks"
                           ? detourLengthKm(closure)
                           : null;
-
                       return (
                         <li
                           key={closure.id}
@@ -592,8 +588,9 @@ function TripPlannerMapContent({
                           </p>
                           {detourKm != null ? (
                             <p className="mt-1 text-[11px] text-cyan-300">
-                              Detour approx.{" "}
-                              {formatDistance(detourKm, unitSystem)}
+                              {t("Detour approx. {distance}", {
+                                distance: formatDistance(detourKm, unitSystem),
+                              })}
                             </p>
                           ) : null}
                         </li>
@@ -607,7 +604,7 @@ function TripPlannerMapContent({
                 <div className="mt-3">
                   <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                     <Mountain size={12} />
-                    Passes
+                    {t("Passes ")}
                   </div>
                   <ul className="mt-2 space-y-2">
                     {highlightedPasses.slice(0, 2).map((pass) => (
@@ -619,8 +616,10 @@ function TripPlannerMapContent({
                           {pass.name}
                         </p>
                         <p className="mt-1 text-[11px] text-slate-400">
-                          {statusLabel(pass.status)} ·{" "}
-                          {pass.elevation_m.toLocaleString()} m
+                          {t("{status} · {elevation} m", {
+                            status: statusLabel(pass.status),
+                            elevation: pass.elevation_m.toLocaleString(),
+                          })}
                         </p>
                       </li>
                     ))}
@@ -634,7 +633,6 @@ function TripPlannerMapContent({
     </MapCanvas>
   );
 }
-
 function toggleClassName(active: boolean): string {
   return `flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm transition ${
     active
@@ -642,7 +640,6 @@ function toggleClassName(active: boolean): string {
       : "border-slate-700 bg-slate-900/90 text-slate-300 hover:bg-slate-800"
   }`;
 }
-
 function dedupeMessages(messages: Array<string | null>): string[] {
   return [
     ...new Set(
@@ -650,7 +647,6 @@ function dedupeMessages(messages: Array<string | null>): string[] {
     ),
   ];
 }
-
 function ensurePlannerLayers(map: MapLibreMap): void {
   if (!map.getSource(ROUTE_SOURCE)) {
     map.addSource(ROUTE_SOURCE, {
@@ -670,7 +666,6 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       },
     });
   }
-
   if (!map.getSource(WAYPOINT_SOURCE)) {
     map.addSource(WAYPOINT_SOURCE, {
       type: "geojson",
@@ -724,7 +719,6 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       },
     });
   }
-
   if (!map.getSource(CLOSURE_LINE_SOURCE)) {
     map.addSource(CLOSURE_LINE_SOURCE, {
       type: "geojson",
@@ -751,7 +745,6 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       },
     });
   }
-
   if (!map.getSource(CLOSURE_MARKER_SOURCE)) {
     map.addSource(CLOSURE_MARKER_SOURCE, {
       type: "geojson",
@@ -789,7 +782,6 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       },
     });
   }
-
   if (!map.getSource(PASS_MARKER_SOURCE)) {
     map.addSource(PASS_MARKER_SOURCE, {
       type: "geojson",
@@ -827,7 +819,6 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       },
     });
   }
-
   // ── Collaboration overlays (US-35) ──
   if (!map.getSource(SUGGESTION_SOURCE)) {
     map.addSource(SUGGESTION_SOURCE, {
@@ -848,7 +839,6 @@ function ensurePlannerLayers(map: MapLibreMap): void {
       },
     });
   }
-
   if (!map.getSource(CURSOR_SOURCE)) {
     map.addSource(CURSOR_SOURCE, {
       type: "geojson",
@@ -887,12 +877,23 @@ function ensurePlannerLayers(map: MapLibreMap): void {
     });
   }
 }
-
 function buildCursorCollection(
   cursors: Map<string, CollaboratorCursor> | undefined,
-): GeoJSON.FeatureCollection<GeoJSON.Point, { userId: string; label: string }> {
+): GeoJSON.FeatureCollection<
+  GeoJSON.Point,
+  {
+    userId: string;
+    label: string;
+  }
+> {
   const features: Array<
-    GeoJSON.Feature<GeoJSON.Point, { userId: string; label: string }>
+    GeoJSON.Feature<
+      GeoJSON.Point,
+      {
+        userId: string;
+        label: string;
+      }
+    >
   > = [];
   if (cursors) {
     for (const cursor of cursors.values()) {
@@ -910,15 +911,23 @@ function buildCursorCollection(
   }
   return { type: "FeatureCollection", features };
 }
-
 function buildSuggestionCollection(
   suggestions: TripSuggestion[] | undefined,
 ): GeoJSON.FeatureCollection<
   GeoJSON.Point,
-  { suggestionId: string; title: string }
+  {
+    suggestionId: string;
+    title: string;
+  }
 > {
   const features: Array<
-    GeoJSON.Feature<GeoJSON.Point, { suggestionId: string; title: string }>
+    GeoJSON.Feature<
+      GeoJSON.Point,
+      {
+        suggestionId: string;
+        title: string;
+      }
+    >
   > = [];
   if (suggestions) {
     for (const s of suggestions) {
@@ -933,7 +942,6 @@ function buildSuggestionCollection(
   }
   return { type: "FeatureCollection", features };
 }
-
 function syncGeoJsonSource(
   map: MapLibreMap,
   sourceId: string,
@@ -944,13 +952,11 @@ function syncGeoJsonSource(
     source.setData(data);
     return;
   }
-
   map.addSource(sourceId, {
     type: "geojson",
     data,
   });
 }
-
 function reasonLabel(
   reason: "closure" | "roadworks" | "seasonal" | "weather" | "event" | "other",
 ): string {
@@ -970,7 +976,6 @@ function reasonLabel(
       return "Closure";
   }
 }
-
 function statusLabel(status: "open" | "closed" | "unknown"): string {
   switch (status) {
     case "open":

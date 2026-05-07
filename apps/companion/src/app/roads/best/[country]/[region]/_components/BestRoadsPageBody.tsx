@@ -1,10 +1,10 @@
+import { t } from "@/i18n";
 import Link from "next/link";
 import { findSubRegions, type Country, type Region } from "@tarmoto/shared";
 import { BestRoadsMap } from "./BestRoadsMap";
 import { BestRoadsEmbedPanel } from "./BestRoadsEmbedPanel";
 import { BestRoadsList } from "./BestRoadsList";
 import { BestRoadsSchemaOrg } from "./BestRoadsSchemaOrg";
-
 interface Road {
   id: string;
   road_name: string | null;
@@ -14,9 +14,11 @@ interface Road {
   surface_type: string;
   length_m: number;
   confidence: number;
-  geometry: { lat: number; lng: number }[];
+  geometry: {
+    lat: number;
+    lng: number;
+  }[];
 }
-
 interface Props {
   region: Region;
   country: Country;
@@ -25,7 +27,6 @@ interface Props {
   pageUrl: string;
   roads: Road[];
 }
-
 /**
  * Shared render body for the region and sub-region best-roads pages.
  * The two levels differ only in breadcrumb depth and a couple of Schema.org
@@ -45,12 +46,11 @@ export function BestRoadsPageBody({
   // reachable via the sitemap.
   const subRegions = parent ? [] : findSubRegions(country.code, region.slug);
   const origin = new URL(pageUrl).origin;
-
   return (
     <main className="mx-auto max-w-5xl px-6 py-10 text-slate-100">
       <nav className="mb-4 text-sm text-slate-400">
         <Link href="/roads/best" className="hover:text-white">
-          Best roads
+          {t("Best roads ")}
         </Link>
         <span className="mx-2">/</span>
         <Link href={`/roads/best/${country.code}`} className="hover:text-white">
@@ -73,12 +73,14 @@ export function BestRoadsPageBody({
 
       <header className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight">
-          Best motorcycle roads in {region.name}
+          {t("Best motorcycle roads in ")}
+          {region.name}
         </h1>
         <p className="mt-3 max-w-3xl text-slate-300">{region.description}</p>
         {region.bestSeason && (
           <p className="mt-2 text-sm text-slate-500">
-            Best season: {region.bestSeason}
+            {t("Best season: ")}
+            {region.bestSeason}
           </p>
         )}
       </header>
@@ -93,7 +95,7 @@ export function BestRoadsPageBody({
       </section>
 
       <section className="mb-8">
-        <h2 className="mb-4 text-xl font-semibold">Ranked roads</h2>
+        <h2 className="mb-4 text-xl font-semibold">{t("Ranked roads")}</h2>
         <BestRoadsList roads={roads} />
       </section>
 
@@ -107,7 +109,7 @@ export function BestRoadsPageBody({
 
       {subRegions.length > 0 && (
         <section className="mb-8">
-          <h2 className="mb-4 text-xl font-semibold">Sub-regions</h2>
+          <h2 className="mb-4 text-xl font-semibold">{t("Sub-regions")}</h2>
           <ul className="grid gap-4 sm:grid-cols-2">
             {subRegions.map((sr) => (
               <li key={sr.slug}>
@@ -129,17 +131,18 @@ export function BestRoadsPageBody({
       {roads.length > 0 && (
         <section className="mb-12 rounded-xl border border-slate-800 bg-slate-900/60 p-6">
           <h2 className="text-lg font-semibold">
-            Plan a trip with these roads
+            {t("Plan a trip with these roads ")}
           </h2>
           <p className="mt-2 text-sm text-slate-400">
-            Pre-load this list into your trip planner to build a multi-day ride
-            around them.
+            {t(
+              "Pre-load this list into your trip planner to build a multi-day ride around them. ",
+            )}
           </p>
           <Link
             href={`/trip-planner?segments=${segmentIds}`}
             className="mt-4 inline-flex items-center rounded-lg bg-tarmoto-cyan px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-tarmoto-cyan/90 transition"
           >
-            Plan a trip with these roads
+            {t("Plan a trip with these roads ")}
           </Link>
         </section>
       )}

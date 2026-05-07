@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -54,13 +54,21 @@ import { tripDistanceKm } from "@/lib/trip-filters";
 import { buildRoutePreview, type RoutePoint } from "@/lib/ride-detail";
 import { formatDistance, formatRelativeTime } from "@/lib/utils";
 import type { Trip, TripDay } from "@/lib/types";
-
 type LoadState =
-  | { phase: "loading" }
-  | { phase: "ready"; collection: RouteCollectionView }
-  | { phase: "not-found" }
-  | { phase: "error"; message: string };
-
+  | {
+      phase: "loading";
+    }
+  | {
+      phase: "ready";
+      collection: RouteCollectionView;
+    }
+  | {
+      phase: "not-found";
+    }
+  | {
+      phase: "error";
+      message: string;
+    };
 /**
  * Owner-only detail page. Lives under the `(dashboard)` route group, which
  * gates auth, and pulls from `GET /collections/:id` — the backend deliberately
@@ -69,7 +77,9 @@ type LoadState =
  * `/community/collections/shared/[slug]` route, not this page.
  */
 export default function CollectionDetailPage() {
-  const { collectionId } = useParams<{ collectionId: string }>();
+  const { collectionId } = useParams<{
+    collectionId: string;
+  }>();
   const router = useRouter();
   const {
     trips,
@@ -83,12 +93,10 @@ export default function CollectionDetailPage() {
     loading: loadingRides,
     error: ridesError,
   } = useUserRides();
-
   const [load, setLoad] = useState<LoadState>({ phase: "loading" });
   const [showPicker, setShowPicker] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
   const reload = useCallback(async (id: string) => {
     try {
       const { data } = await routeCollectionsApi.get(id);
@@ -105,15 +113,12 @@ export default function CollectionDetailPage() {
       });
     }
   }, []);
-
   useEffect(() => {
     if (!collectionId) return;
     setLoad({ phase: "loading" });
     void reload(collectionId);
   }, [collectionId, reload]);
-
   const collection = load.phase === "ready" ? load.collection : null;
-
   const handleAddItems = async (input: {
     tripIds: string[];
     rideIds: string[];
@@ -145,7 +150,6 @@ export default function CollectionDetailPage() {
       setBusy(false);
     }
   };
-
   const handleReorder = async (
     section: "trips" | "rides",
     fromIndex: number,
@@ -213,7 +217,6 @@ export default function CollectionDetailPage() {
       setBusy(false);
     }
   };
-
   const handleRemoveItem = async (itemId: string) => {
     if (!collection) return;
     setActionError(null);
@@ -229,7 +232,6 @@ export default function CollectionDetailPage() {
       setBusy(false);
     }
   };
-
   const handleVisibilityChange = async (next: RouteCollectionVisibility) => {
     if (!collection) return;
     // Clicking the already-selected chip would otherwise fire a PATCH that
@@ -251,17 +253,16 @@ export default function CollectionDetailPage() {
       setBusy(false);
     }
   };
-
   if (load.phase === "loading") {
     return (
       <div className="p-6 max-w-4xl mx-auto animate-fade-in">
         <div className="flex items-center gap-2 text-slate-400 text-sm">
-          <Loader2 size={16} className="animate-spin" /> Loading collection…
+          <Loader2 size={16} className="animate-spin" />
+          {t("Loading collection\u2026")}
         </div>
       </div>
     );
   }
-
   if (load.phase === "not-found") {
     return (
       <div className="p-6 max-w-4xl mx-auto animate-fade-in">
@@ -269,22 +270,23 @@ export default function CollectionDetailPage() {
           href="/community/collections"
           className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-4 transition"
         >
-          <ArrowLeft size={16} /> Collections
+          <ArrowLeft size={16} />
+          {t("Collections")}
         </Link>
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-10 text-center">
           <RouteIcon size={40} className="mx-auto text-slate-600 mb-3" />
           <p className="text-slate-200 font-medium mb-1">
-            Collection not found
+            {t("Collection not found")}
           </p>
           <p className="text-sm text-slate-500">
-            This collection may have been deleted, or it&apos;s private and you
-            don&apos;t own it.
+            {t(
+              "This collection may have been deleted, or it's private and you don't own it. ",
+            )}
           </p>
         </div>
       </div>
     );
   }
-
   if (load.phase === "error") {
     return (
       <div className="p-6 max-w-4xl mx-auto animate-fade-in">
@@ -292,11 +294,12 @@ export default function CollectionDetailPage() {
           href="/community/collections"
           className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-4 transition"
         >
-          <ArrowLeft size={16} /> Collections
+          <ArrowLeft size={16} />
+          {t("Collections")}
         </Link>
         <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-10 text-center">
           <p className="text-amber-200 font-medium mb-1">
-            Couldn&apos;t load this collection
+            {t("Couldn't load this collection")}
           </p>
           <p className="text-sm text-slate-500 mb-4">{load.message}</p>
           <button
@@ -304,17 +307,16 @@ export default function CollectionDetailPage() {
             onClick={() => collectionId && void reload(collectionId)}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm hover:bg-slate-700 transition"
           >
-            Retry
+            {t("Retry")}
           </button>
         </div>
       </div>
     );
   }
-
   // ready
   const presentTrips = collection!.tripRefs
     .map((ref) => tripById.get(ref.tripId))
-    .filter((t): t is Trip => t != null);
+    .filter((trip): trip is Trip => trip != null);
   const presentRides = collection!.rideRefs
     .map((ref) => rideById.get(ref.rideId))
     .filter((r): r is UserRide => r != null);
@@ -322,31 +324,34 @@ export default function CollectionDetailPage() {
   // Trip distance is computed from per-day route geometry; ride distance comes
   // straight from the backend `distance_km` field.
   const totalDistance =
-    presentTrips.reduce((sum, t) => sum + tripDistanceKm(t), 0) +
+    presentTrips.reduce((sum, trip) => sum + tripDistanceKm(trip), 0) +
     presentRides.reduce((sum, r) => sum + (r.distance_km ?? 0), 0);
   // Riding days only counts trip days — recorded rides are point-in-time, not
   // multi-day plans. A separate "Rides" stat surfaces recorded-ride count
   // alongside the planner-day count.
-  const totalDays = presentTrips.reduce((sum, t) => sum + t.days.length, 0);
+  const totalDays = presentTrips.reduce(
+    (sum, trip) => sum + trip.days.length,
+    0,
+  );
   const totalMissing =
     collection!.tripRefs.length -
     presentTrips.length +
     (collection!.rideRefs.length - presentRides.length);
   const memberTripIds = new Set(collection!.tripIds);
   const memberRideIds = new Set(collection!.rideIds);
-  const availableTrips = trips.filter((t) => !memberTripIds.has(t.id));
+  const availableTrips = trips.filter((trip) => !memberTripIds.has(trip.id));
   const availableRides = rides.filter((r) => !memberRideIds.has(r.id));
   const totalRefs = collection!.tripRefs.length + collection!.rideRefs.length;
   const loadingMembers = loadingTrips || loadingRides;
   const memberLoadError = tripsError || ridesError;
-
   return (
     <div className="p-6 max-w-4xl mx-auto animate-fade-in">
       <Link
         href="/community/collections"
         className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-4 transition"
       >
-        <ArrowLeft size={16} /> Collections
+        <ArrowLeft size={16} />
+        {t("Collections")}
       </Link>
 
       <header className="flex flex-wrap items-start justify-between gap-3 mb-2">
@@ -360,7 +365,8 @@ export default function CollectionDetailPage() {
             />
           </div>
           <p className="text-xs text-slate-500">
-            Updated {formatRelativeTime(collection!.updatedAt)}
+            {t("Updated")}
+            {formatRelativeTime(collection!.updatedAt)}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -371,7 +377,8 @@ export default function CollectionDetailPage() {
             disabled={busy}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light disabled:opacity-50 transition"
           >
-            <Plus size={14} /> Add routes
+            <Plus size={14} />
+            {t("Add routes")}
           </button>
         </div>
       </header>
@@ -432,7 +439,7 @@ export default function CollectionDetailPage() {
 
       <section className="mt-6">
         <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">
-          Routes
+          {t("Routes")}
         </h2>
         {totalRefs === 0 ? (
           <EmptyRoutes onAdd={() => setShowPicker(true)} />
@@ -443,7 +450,9 @@ export default function CollectionDetailPage() {
                 role="alert"
                 className="mb-3 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm text-amber-200"
               >
-                Couldn&apos;t load your routes right now. Try again in a moment.
+                {t(
+                  "Couldn't load your routes right now. Try again in a moment. ",
+                )}
               </div>
             )}
             <ul className="space-y-3">
@@ -542,11 +551,9 @@ export default function CollectionDetailPage() {
     </div>
   );
 }
-
 // ─────────────────────────────────────────────────────────
 // Sub-components
 // ─────────────────────────────────────────────────────────
-
 function VisibilitySelector({
   value,
   onChange,
@@ -558,7 +565,7 @@ function VisibilitySelector({
 }) {
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-      <span className="text-slate-500">Visibility</span>
+      <span className="text-slate-500">{t("Visibility")}</span>
       {(["private", "unlisted", "public"] as const).map((v) => (
         <button
           key={v}
@@ -581,24 +588,20 @@ function VisibilitySelector({
     </div>
   );
 }
-
 function ShareButton({ collection }: { collection: RouteCollectionView }) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">(
     "idle",
   );
-
   useEffect(() => {
     if (copyState === "idle") return;
-    const t = window.setTimeout(() => setCopyState("idle"), 2000);
-    return () => window.clearTimeout(t);
+    const timeoutId = window.setTimeout(() => setCopyState("idle"), 2000);
+    return () => window.clearTimeout(timeoutId);
   }, [copyState]);
-
   const sharable = collection.visibility !== "private";
   const url =
     typeof window === "undefined"
       ? ""
       : `${window.location.origin}/community/collections/shared/${collection.slug}`;
-
   const handle = async () => {
     if (!sharable) return;
     try {
@@ -608,7 +611,6 @@ function ShareButton({ collection }: { collection: RouteCollectionView }) {
       setCopyState("error");
     }
   };
-
   return (
     <button
       type="button"
@@ -629,21 +631,23 @@ function ShareButton({ collection }: { collection: RouteCollectionView }) {
     >
       {copyState === "copied" ? (
         <>
-          <Check size={14} /> Copied
+          <Check size={14} />
+          {t("Copied")}
         </>
       ) : copyState === "error" ? (
         <>
-          <Copy size={14} /> Copy failed
+          <Copy size={14} />
+          {t("Copy failed")}
         </>
       ) : (
         <>
-          <Share2 size={14} /> Share
+          <Share2 size={14} />
+          {t("Share")}
         </>
       )}
     </button>
   );
 }
-
 function Stat({
   label,
   value,
@@ -663,7 +667,6 @@ function Stat({
     </div>
   );
 }
-
 /**
  * Wraps a list of `SortableRow` children in dnd-kit's `DndContext` +
  * `SortableContext`. The component is intentionally generic — it doesn't
@@ -697,7 +700,6 @@ function SortableItemList({
       coordinateGetter: sortableKeyboardCoordinates,
     }),
   );
-
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -706,7 +708,6 @@ function SortableItemList({
     if (from === -1 || to === -1) return;
     onReorder(from, to);
   };
-
   return (
     <DndContext
       sensors={sensors}
@@ -724,7 +725,6 @@ function SortableItemList({
     </DndContext>
   );
 }
-
 /**
  * One sortable row. Renders a drag handle on the left and the row body to
  * its right. The handle (not the whole row) carries the drag listeners so
@@ -748,7 +748,6 @@ function SortableRow({
     transition,
     isDragging,
   } = useSortable({ id, disabled });
-
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -758,7 +757,6 @@ function SortableRow({
     zIndex: isDragging ? 10 : undefined,
     opacity: isDragging ? 0.85 : undefined,
   };
-
   return (
     <li ref={setNodeRef} style={style} className="flex items-stretch gap-2">
       <button
@@ -767,10 +765,8 @@ function SortableRow({
         {...attributes}
         {...listeners}
         disabled={disabled}
-        aria-label="Reorder"
-        className={`shrink-0 self-stretch flex items-center px-1 rounded-lg text-slate-600 hover:text-slate-300 hover:bg-slate-800/50 disabled:opacity-30 disabled:cursor-not-allowed transition ${
-          disabled ? "" : "cursor-grab active:cursor-grabbing"
-        }`}
+        aria-label={t("Reorder")}
+        className={`shrink-0 self-stretch flex items-center px-1 rounded-lg text-slate-600 hover:text-slate-300 hover:bg-slate-800/50 disabled:opacity-30 disabled:cursor-not-allowed transition ${disabled ? "" : "cursor-grab active:cursor-grabbing"}`}
         style={{ touchAction: "none" }}
       >
         <GripVertical size={16} aria-hidden="true" />
@@ -779,31 +775,31 @@ function SortableRow({
     </li>
   );
 }
-
 function EmptyRoutes({ onAdd }: { onAdd: () => void }) {
   return (
     <div className="rounded-2xl bg-slate-900 border border-dashed border-slate-800 p-10 text-center">
       <RouteIcon size={40} className="mx-auto text-slate-600 mb-3" />
-      <p className="text-slate-400 mb-1">No routes in this collection yet</p>
+      <p className="text-slate-400 mb-1">
+        {t("No routes in this collection yet")}
+      </p>
       <p className="text-sm text-slate-500 mb-5">
-        Add routes from your planned or completed trips.
+        {t("Add routes from your planned or completed trips.")}
       </p>
       <button
         type="button"
         onClick={onAdd}
         className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition"
       >
-        <Plus size={16} /> Add routes
+        <Plus size={16} />
+        {t("Add routes")}
       </button>
     </div>
   );
 }
-
 function TripRow({ trip, onRemove }: { trip: Trip; onRemove: () => void }) {
   const points = useMemo(() => combineTripRoutePoints(trip.days), [trip.days]);
   const preview = useMemo(() => buildRoutePreview(points, 200, 6), [points]);
   const distance = tripDistanceKm(trip);
-
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900 hover:border-slate-700 transition">
       <div className="flex items-stretch gap-0">
@@ -839,7 +835,9 @@ function TripRow({ trip, onRemove }: { trip: Trip; onRemove: () => void }) {
             <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
               <span className="inline-flex items-center gap-1">
                 <Calendar size={12} />
-                {trip.days.length} day{trip.days.length === 1 ? "" : "s"}
+                {trip.days.length === 1
+                  ? t("1 day")
+                  : t("{count} days", { count: trip.days.length })}
               </span>
               <span className="inline-flex items-center gap-1">
                 <MapPin size={12} />
@@ -863,11 +861,9 @@ function TripRow({ trip, onRemove }: { trip: Trip; onRemove: () => void }) {
     </div>
   );
 }
-
 function RideRow({ ride, onRemove }: { ride: UserRide; onRemove: () => void }) {
   const displayName =
     ride.name ?? `Ride on ${new Date(ride.started_at).toLocaleDateString()}`;
-
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900 hover:border-slate-700 transition">
       <div className="flex items-stretch gap-0">
@@ -895,7 +891,9 @@ function RideRow({ ride, onRemove }: { ride: UserRide; onRemove: () => void }) {
               )}
               {ride.avg_road_quality != null && (
                 <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
-                  Quality {ride.avg_road_quality.toFixed(1)}
+                  {t("Quality {quality}", {
+                    quality: ride.avg_road_quality.toFixed(1),
+                  })}
                 </span>
               )}
               <span className="text-[11px] text-slate-600 uppercase tracking-widest">
@@ -916,7 +914,6 @@ function RideRow({ ride, onRemove }: { ride: UserRide; onRemove: () => void }) {
     </div>
   );
 }
-
 function MissingItemRow({
   kind,
   onRemove,
@@ -928,9 +925,11 @@ function MissingItemRow({
   return (
     <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/50 p-4 flex items-center justify-between gap-4">
       <div className="min-w-0">
-        <p className="text-sm text-slate-400">{label} no longer available</p>
+        <p className="text-sm text-slate-400">
+          {t("{label} no longer available", { label })}
+        </p>
         <p className="text-[11px] text-slate-600">
-          The route may have been deleted or belongs to another account.
+          {t("The route may have been deleted or belongs to another account.")}
         </p>
       </div>
       <button
@@ -938,12 +937,12 @@ function MissingItemRow({
         onClick={onRemove}
         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition"
       >
-        <X size={12} /> Remove
+        <X size={12} />
+        {t("Remove")}
       </button>
     </div>
   );
 }
-
 function LoadingTripRow() {
   return (
     <li className="rounded-2xl border border-slate-800 bg-slate-900 p-4 flex items-center gap-4 animate-pulse">
@@ -955,15 +954,12 @@ function LoadingTripRow() {
     </li>
   );
 }
-
 // ─────────────────────────────────────────────────────────
 // Route picker modal — segmented "Trips | Rides" tabs.
 // Each tab maintains its own selection set so switching back and forth
 // doesn't accidentally drop the user's choices on the other side.
 // ─────────────────────────────────────────────────────────
-
 type PickerTab = "trips" | "rides";
-
 function RoutePickerModal({
   trips,
   rides,
@@ -997,7 +993,6 @@ function RoutePickerModal({
     () => new Set(),
   );
   const [search, setSearch] = useState("");
-
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   useEffect(() => {
@@ -1007,7 +1002,6 @@ function RoutePickerModal({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-
   // Reset the search box on tab switch — search state is per-tab in spirit
   // (different placeholder, different fields searched), and carrying it over
   // would surface confusing "no results" messages when the active text
@@ -1015,15 +1009,13 @@ function RoutePickerModal({
   useEffect(() => {
     setSearch("");
   }, [tab]);
-
   const visibleTrips = useMemo(() => {
     const needle = search.trim().toLowerCase();
     if (!needle) return trips;
-    return trips.filter((t) =>
-      `${t.name} ${t.description ?? ""}`.toLowerCase().includes(needle),
+    return trips.filter((trip) =>
+      `${trip.name} ${trip.description ?? ""}`.toLowerCase().includes(needle),
     );
   }, [trips, search]);
-
   const visibleRides = useMemo(() => {
     const needle = search.trim().toLowerCase();
     if (!needle) return rides;
@@ -1033,7 +1025,6 @@ function RoutePickerModal({
       return haystack.includes(needle);
     });
   }, [rides, search]);
-
   const toggle = (kind: PickerTab, id: string) => {
     if (kind === "trips") {
       setSelectedTrips((prev) => {
@@ -1051,9 +1042,7 @@ function RoutePickerModal({
       });
     }
   };
-
   const totalSelected = selectedTrips.size + selectedRides.size;
-
   return (
     <div
       className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4"
@@ -1064,11 +1053,13 @@ function RoutePickerModal({
         className="w-full max-w-lg max-h-[80vh] rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-xl flex flex-col"
       >
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-white">Add routes</h2>
+          <h2 className="text-sm font-semibold text-white">
+            {t("Add routes")}
+          </h2>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t("Close")}
             className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
           >
             <X size={14} />
@@ -1077,7 +1068,7 @@ function RoutePickerModal({
 
         <div
           role="tablist"
-          aria-label="Add routes from"
+          aria-label={t("Add routes from")}
           className="mb-3 flex gap-1 rounded-lg bg-slate-950 border border-slate-800 p-1"
         >
           <PickerTabButton
@@ -1130,14 +1121,16 @@ function RoutePickerModal({
         </div>
 
         <div className="mt-4 flex items-center justify-between gap-2">
-          <p className="text-[11px] text-slate-500">{totalSelected} selected</p>
+          <p className="text-[11px] text-slate-500">
+            {t("{count} selected", { count: totalSelected })}
+          </p>
           <div className="flex gap-2">
             <button
               type="button"
               onClick={onClose}
               className="px-3 py-1.5 rounded-lg text-sm text-slate-400 hover:text-white transition"
             >
-              Cancel
+              {t("Cancel")}
             </button>
             <button
               type="button"
@@ -1150,7 +1143,8 @@ function RoutePickerModal({
               }
               className="px-3 py-1.5 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light disabled:opacity-40 disabled:cursor-not-allowed transition"
             >
-              Add{totalSelected > 0 ? ` (${totalSelected})` : ""}
+              {t("Add")}
+              {totalSelected > 0 ? ` (${totalSelected})` : ""}
             </button>
           </div>
         </div>
@@ -1158,7 +1152,6 @@ function RoutePickerModal({
     </div>
   );
 }
-
 function PickerTabButton({
   active,
   onClick,
@@ -1197,7 +1190,6 @@ function PickerTabButton({
     </button>
   );
 }
-
 function TripPickerList({
   trips,
   visibleTrips,
@@ -1224,7 +1216,7 @@ function TripPickerList({
           size={16}
           className="animate-spin inline-block mr-2 align-[-3px]"
         />
-        Loading your trips…
+        {t("Loading your trips\u2026")}
       </div>
     );
   }
@@ -1234,8 +1226,9 @@ function TripPickerList({
         role="alert"
         className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-6 text-center text-sm text-amber-200"
       >
-        Couldn&apos;t load your trips right now. Close this and try again in a
-        moment.
+        {t(
+          "Couldn't load your trips right now. Close this and try again in a moment. ",
+        )}
       </div>
     );
   }
@@ -1243,26 +1236,27 @@ function TripPickerList({
     return hasAnyTrips ? (
       <div className="py-8 text-center">
         <p className="text-sm text-slate-400 mb-1">
-          All your trips are already in this collection
+          {t("All your trips are already in this collection")}
         </p>
         <p className="text-xs text-slate-500">
-          Plan another trip to add it here.
+          {t("Plan another trip to add it here.")}
         </p>
       </div>
     ) : (
       <div className="py-8 text-center">
         <p className="text-sm text-slate-400 mb-1">
-          You don&apos;t have any trips yet
+          {t("You don't have any trips yet")}
         </p>
         <p className="text-xs text-slate-500 mb-4">
-          Plan a trip first and it will show up here.
+          {t("Plan a trip first and it will show up here.")}
         </p>
         <button
           type="button"
           onClick={onPlanTrip}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-200 text-xs hover:bg-slate-700 transition"
         >
-          <Plus size={14} /> New trip
+          <Plus size={14} />
+          {t("New trip")}
         </button>
       </div>
     );
@@ -1270,7 +1264,7 @@ function TripPickerList({
   if (visibleTrips.length === 0) {
     return (
       <p className="py-8 text-center text-sm text-slate-500">
-        No trips match your search.
+        {t("No trips match your search.")}
       </p>
     );
   }
@@ -1299,9 +1293,10 @@ function TripPickerList({
                   {trip.name}
                 </p>
                 <p className="text-[11px] text-slate-500">
-                  {trip.days.length} day
-                  {trip.days.length === 1 ? "" : "s"} ·{" "}
-                  {formatDistance(distance)} · {trip.status}
+                  {trip.days.length === 1
+                    ? t("1 day")
+                    : t("{count} days", { count: trip.days.length })}{" "}
+                  · {formatDistance(distance)} · {trip.status}
                 </p>
               </div>
             </label>
@@ -1311,7 +1306,6 @@ function TripPickerList({
     </ul>
   );
 }
-
 function RidePickerList({
   rides,
   visibleRides,
@@ -1336,7 +1330,7 @@ function RidePickerList({
           size={16}
           className="animate-spin inline-block mr-2 align-[-3px]"
         />
-        Loading your rides…
+        {t("Loading your rides\u2026")}
       </div>
     );
   }
@@ -1346,8 +1340,9 @@ function RidePickerList({
         role="alert"
         className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-6 text-center text-sm text-amber-200"
       >
-        Couldn&apos;t load your rides right now. Close this and try again in a
-        moment.
+        {t(
+          "Couldn't load your rides right now. Close this and try again in a moment. ",
+        )}
       </div>
     );
   }
@@ -1355,19 +1350,19 @@ function RidePickerList({
     return hasAnyRides ? (
       <div className="py-8 text-center">
         <p className="text-sm text-slate-400 mb-1">
-          All your rides are already in this collection
+          {t("All your rides are already in this collection")}
         </p>
         <p className="text-xs text-slate-500">
-          Record another ride to add it here.
+          {t("Record another ride to add it here.")}
         </p>
       </div>
     ) : (
       <div className="py-8 text-center">
         <p className="text-sm text-slate-400 mb-1">
-          You don&apos;t have any rides yet
+          {t("You don't have any rides yet")}
         </p>
         <p className="text-xs text-slate-500">
-          Record a ride from the mobile app and it will show up here.
+          {t("Record a ride from the mobile app and it will show up here.")}
         </p>
       </div>
     );
@@ -1375,7 +1370,7 @@ function RidePickerList({
   if (visibleRides.length === 0) {
     return (
       <p className="py-8 text-center text-sm text-slate-500">
-        No rides match your search.
+        {t("No rides match your search.")}
       </p>
     );
   }
@@ -1421,11 +1416,9 @@ function RidePickerList({
     </ul>
   );
 }
-
 // ─────────────────────────────────────────────────────────
 // Route geometry helpers
 // ─────────────────────────────────────────────────────────
-
 function combineTripRoutePoints(days: readonly TripDay[]): RoutePoint[] {
   const out: RoutePoint[] = [];
   for (const day of days) {

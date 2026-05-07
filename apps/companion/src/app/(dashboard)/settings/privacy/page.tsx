@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Check, Loader2 } from "lucide-react";
@@ -20,13 +20,20 @@ import {
   settingsEqual,
   type PartialPrivacySettings,
 } from "@/lib/privacy-settings";
-
 type SaveState =
-  | { kind: "idle" }
-  | { kind: "saving" }
-  | { kind: "saved" }
-  | { kind: "error"; message: string };
-
+  | {
+      kind: "idle";
+    }
+  | {
+      kind: "saving";
+    }
+  | {
+      kind: "saved";
+    }
+  | {
+      kind: "error";
+      message: string;
+    };
 export default function PrivacyPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -37,7 +44,6 @@ export default function PrivacyPage() {
     DEFAULT_PRIVACY_SETTINGS,
   );
   const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
-
   // Wait for the auth store to carry a token before fetching, so a hard
   // navigation here doesn't race AuthSync and surface as an
   // "Unauthorized" load error.
@@ -63,31 +69,25 @@ export default function PrivacyPage() {
       cancelled = true;
     };
   }, [authReady]);
-
   const isDirty = !settingsEqual(settings, serverSettings);
-
   // Clear transient save state when the user edits, but never overwrite
   // an in-flight save — doing so would re-enable the save button and
   // allow a concurrent save to race the first.
   function clearTransientSaveState() {
     setSaveState((s) => (s.kind === "saving" ? s : { kind: "idle" }));
   }
-
   function setProfileVisibility(value: ProfileVisibility) {
     setSettings((p) => ({ ...p, profileVisibility: value }));
     clearTransientSaveState();
   }
-
   function setRideSharing(value: RideSharingDefault) {
     setSettings((p) => ({ ...p, defaultRideSharing: value }));
     clearTransientSaveState();
   }
-
   function setLocationRetention(value: LocationRetention) {
     setSettings((p) => ({ ...p, locationRetention: value }));
     clearTransientSaveState();
   }
-
   function toggleRoadData() {
     setSettings((p) => ({
       ...p,
@@ -95,12 +95,10 @@ export default function PrivacyPage() {
     }));
     clearTransientSaveState();
   }
-
   function toggleAnalytics() {
     setSettings((p) => ({ ...p, analyticsConsent: !p.analyticsConsent }));
     clearTransientSaveState();
   }
-
   function togglePersonalized() {
     setSettings((p) => ({
       ...p,
@@ -108,7 +106,6 @@ export default function PrivacyPage() {
     }));
     clearTransientSaveState();
   }
-
   async function save() {
     if (saveState.kind === "saving") return;
     setSaveState({ kind: "saving" });
@@ -122,17 +119,16 @@ export default function PrivacyPage() {
       setSaveState({ kind: "error", message });
     }
   }
-
   if (loading) {
     return (
       <div className="p-6 max-w-3xl mx-auto">
         <div className="flex items-center gap-2 text-slate-400">
-          <Loader2 size={16} className="animate-spin" /> Loading settings…
+          <Loader2 size={16} className="animate-spin" />
+          {t("Loading settings\u2026 ")}
         </div>
       </div>
     );
   }
-
   if (loadError) {
     return (
       <div className="p-6 max-w-3xl mx-auto animate-fade-in">
@@ -140,43 +136,46 @@ export default function PrivacyPage() {
           href="/settings"
           className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-4 transition"
         >
-          <ArrowLeft size={16} /> Settings
+          <ArrowLeft size={16} />
+          {t("Settings ")}
         </Link>
-        <h1 className="text-2xl font-bold mb-6">Privacy &amp; Data</h1>
+        <h1 className="text-2xl font-bold mb-6">{t("Privacy & Data")}</h1>
         <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-5 text-sm text-red-300">
-          Could not load settings: {loadError}
+          {t("Could not load settings: ")}
+          {loadError}
         </div>
       </div>
     );
   }
-
   return (
     <div className="p-6 max-w-3xl mx-auto animate-fade-in">
       <Link
         href="/settings"
         className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-4 transition"
       >
-        <ArrowLeft size={16} /> Settings
+        <ArrowLeft size={16} />
+        {t("Settings ")}
       </Link>
-      <h1 className="text-2xl font-bold mb-2">Privacy &amp; Data</h1>
+      <h1 className="text-2xl font-bold mb-2">{t("Privacy & Data")}</h1>
       <p className="text-sm text-slate-400 mb-6">
-        Control who can see your profile, how your rides are shared, and what
-        data Tarmoto retains and uses.
+        {t(
+          "Control who can see your profile, how your rides are shared, and what data Tarmoto retains and uses. ",
+        )}
       </p>
 
       {/* Profile visibility */}
       <section className="rounded-xl bg-slate-900 border border-slate-800 p-5 mb-6">
         <div className="mb-4">
           <h2 className="text-sm font-semibold text-white">
-            Profile visibility
+            {t("Profile visibility ")}
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Who can see your profile, stats, and shared rides.
+            {t("Who can see your profile, stats, and shared rides. ")}
           </p>
         </div>
         <div
           role="radiogroup"
-          aria-label="Profile visibility"
+          aria-label={t("Profile visibility")}
           className="grid grid-cols-1 sm:grid-cols-3 gap-2"
         >
           {PROFILE_VISIBILITY_OPTIONS.map((opt) => {
@@ -208,16 +207,17 @@ export default function PrivacyPage() {
       <section className="rounded-xl bg-slate-900 border border-slate-800 p-5 mb-6">
         <div className="mb-4">
           <h2 className="text-sm font-semibold text-white">
-            Default ride sharing
+            {t("Default ride sharing ")}
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            How newly recorded rides are shared. You can always change
-            visibility per ride.
+            {t(
+              "How newly recorded rides are shared. You can always change visibility per ride. ",
+            )}
           </p>
         </div>
         <div
           role="radiogroup"
-          aria-label="Default ride sharing"
+          aria-label={t("Default ride sharing")}
           className="grid grid-cols-1 sm:grid-cols-2 gap-2"
         >
           {RIDE_SHARING_OPTIONS.map((opt) => {
@@ -250,12 +250,12 @@ export default function PrivacyPage() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-sm font-medium text-white">
-              Contribute to road quality data
+              {t("Contribute to road quality data ")}
             </p>
             <p className="text-xs text-slate-500 mt-0.5">
-              Share anonymized accelerometer readings from your rides so every
-              Tarmoto rider gets a more accurate road quality map. No personal
-              identifiers are attached.
+              {t(
+                "Share anonymized accelerometer readings from your rides so every Tarmoto rider gets a more accurate road quality map. No personal identifiers are attached. ",
+              )}
             </p>
           </div>
           <Toggle
@@ -270,16 +270,17 @@ export default function PrivacyPage() {
       <section className="rounded-xl bg-slate-900 border border-slate-800 p-5 mb-6">
         <div className="mb-4">
           <h2 className="text-sm font-semibold text-white">
-            Location data retention
+            {t("Location data retention ")}
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            How long your raw GPS traces are kept. Aggregate road-quality
-            contributions (not linked to your account) remain indefinitely.
+            {t(
+              "How long your raw GPS traces are kept. Aggregate road-quality contributions (not linked to your account) remain indefinitely. ",
+            )}
           </p>
         </div>
         <div
           role="radiogroup"
-          aria-label="Location data retention"
+          aria-label={t("Location data retention")}
           className="grid grid-cols-2 sm:grid-cols-5 gap-2"
         >
           {LOCATION_RETENTION_OPTIONS.map((opt) => {
@@ -313,20 +314,24 @@ export default function PrivacyPage() {
       <section className="rounded-xl bg-slate-900 border border-slate-800 divide-y divide-slate-800 mb-6">
         <header className="px-5 py-4">
           <h2 className="text-sm font-semibold text-white">
-            Data processing consent
+            {t("Data processing consent ")}
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            You can opt out of optional processing at any time. Essential data
-            needed to run the app (auth, rides you record) is always processed.
+            {t(
+              "You can opt out of optional processing at any time. Essential data needed to run the app (auth, rides you record) is always processed. ",
+            )}
           </p>
         </header>
 
         <div className="px-5 py-4 flex items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-medium text-white">Product analytics</p>
+            <p className="text-sm font-medium text-white">
+              {t("Product analytics")}
+            </p>
             <p className="text-xs text-slate-500 mt-0.5">
-              Help us improve Tarmoto with anonymized usage analytics (screen
-              views, feature usage).
+              {t(
+                "Help us improve Tarmoto with anonymized usage analytics (screen views, feature usage). ",
+              )}
             </p>
           </div>
           <Toggle
@@ -339,11 +344,12 @@ export default function PrivacyPage() {
         <div className="px-5 py-4 flex items-start justify-between gap-4">
           <div>
             <p className="text-sm font-medium text-white">
-              Personalized recommendations
+              {t("Personalized recommendations ")}
             </p>
             <p className="text-xs text-slate-500 mt-0.5">
-              Use your riding history to suggest routes, roads, and riders you
-              may enjoy.
+              {t(
+                "Use your riding history to suggest routes, roads, and riders you may enjoy. ",
+              )}
             </p>
           </div>
           <Toggle
@@ -364,7 +370,8 @@ export default function PrivacyPage() {
         >
           {saveState.kind === "saving" ? (
             <>
-              <Loader2 size={14} className="animate-spin" /> Saving…
+              <Loader2 size={14} className="animate-spin" />
+              {t("Saving\u2026 ")}
             </>
           ) : (
             "Save preferences"
@@ -373,26 +380,25 @@ export default function PrivacyPage() {
 
         {saveState.kind === "saved" && !isDirty && (
           <span className="inline-flex items-center gap-1 text-sm text-tarmoto-cyan">
-            <Check size={14} /> Saved
+            <Check size={14} />
+            {t("Saved ")}
           </span>
         )}
         {saveState.kind === "error" && (
           <span className="text-sm text-red-400">{saveState.message}</span>
         )}
         {isDirty && saveState.kind !== "saving" && (
-          <span className="text-sm text-slate-500">Unsaved changes</span>
+          <span className="text-sm text-slate-500">{t("Unsaved changes")}</span>
         )}
       </div>
     </div>
   );
 }
-
 interface ToggleProps {
   enabled: boolean;
   onToggle: () => void;
   label: string;
 }
-
 function Toggle({ enabled, onToggle, label }: ToggleProps) {
   return (
     <button
@@ -400,14 +406,10 @@ function Toggle({ enabled, onToggle, label }: ToggleProps) {
       onClick={onToggle}
       aria-pressed={enabled}
       aria-label={label}
-      className={`relative w-10 h-6 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-tarmoto-cyan/30 flex-shrink-0 ${
-        enabled ? "bg-tarmoto-cyan" : "bg-slate-700"
-      }`}
+      className={`relative w-10 h-6 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-tarmoto-cyan/30 flex-shrink-0 ${enabled ? "bg-tarmoto-cyan" : "bg-slate-700"}`}
     >
       <span
-        className={`absolute left-0.5 top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transform transition-transform ${
-          enabled ? "translate-x-4" : "translate-x-0"
-        }`}
+        className={`absolute left-0.5 top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transform transition-transform ${enabled ? "translate-x-4" : "translate-x-0"}`}
       />
     </button>
   );

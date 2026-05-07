@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
@@ -31,14 +31,12 @@ import {
   type RideFilters,
   type RideType,
 } from "@/lib/ride-stats";
-
 const RIDE_TYPE_LABELS: Record<RideType, string> = {
   free: "Free ride",
   commute: "Commute",
   trip: "Trip",
   tracked: "Tracked",
 };
-
 const YOY_COLORS = [
   "#22d3ee",
   "#a78bfa",
@@ -46,19 +44,16 @@ const YOY_COLORS = [
   "#facc15",
   "#34d399",
 ] as const;
-
 function formatDistanceTooltipValue(value: TooltipValueType | undefined) {
   const numeric =
     typeof value === "number" ? value : Number.parseFloat(String(value));
   return Number.isFinite(numeric) ? `${numeric.toFixed(0)} km` : "—";
 }
-
 export default function StatsPage() {
   const [rides, setRides] = useState<RideForStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filters, setFilters] = useState<RideFilters>(DEFAULT_RIDE_FILTERS);
-
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -77,11 +72,9 @@ export default function StatsPage() {
       cancelled = true;
     };
   }, []);
-
   const years = useMemo(() => availableYears(rides), [rides]);
   const filtered = useMemo(() => filterRides(rides, filters), [rides, filters]);
   const totals = useMemo(() => computeAllTimeTotals(filtered), [filtered]);
-
   // The monthly + heatmap charts always need a single concrete year. When the
   // year filter is "all" we anchor on the latest year that has data so the
   // charts stay populated instead of going blank.
@@ -89,7 +82,6 @@ export default function StatsPage() {
     filters.year !== "all"
       ? filters.year
       : (years[0] ?? new Date().getFullYear());
-
   const monthly = useMemo(
     () => computeMonthlyDistance(filtered, focusYear),
     [filtered, focusYear],
@@ -114,49 +106,50 @@ export default function StatsPage() {
     () => computeYearOverYear(ridesAcrossYears, yoyYears),
     [ridesAcrossYears, yoyYears],
   );
-
   if (loading) {
     return (
       <div className="p-6 max-w-6xl mx-auto">
-        <h1 className="text-2xl font-bold mb-6">Statistics</h1>
+        <h1 className="text-2xl font-bold mb-6">{t("Statistics")}</h1>
         <div className="flex items-center gap-2 text-slate-400">
-          <Loader2 size={16} className="animate-spin" /> Loading rides…
+          <Loader2 size={16} className="animate-spin" />
+          {t("Loading rides\u2026 ")}
         </div>
       </div>
     );
   }
-
   if (loadError) {
     return (
       <div className="p-6 max-w-6xl mx-auto animate-fade-in">
-        <h1 className="text-2xl font-bold mb-6">Statistics</h1>
+        <h1 className="text-2xl font-bold mb-6">{t("Statistics")}</h1>
         <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-5 text-sm text-red-300">
           {loadError}
         </div>
       </div>
     );
   }
-
   if (rides.length === 0) {
     return (
       <div className="p-6 max-w-6xl mx-auto animate-fade-in">
-        <h1 className="text-2xl font-bold mb-6">Statistics</h1>
+        <h1 className="text-2xl font-bold mb-6">{t("Statistics")}</h1>
         <div className="rounded-2xl bg-slate-900 border border-slate-800 p-16 text-center">
           <BarChart3 size={48} className="mx-auto text-slate-600 mb-4" />
-          <p className="text-slate-400 text-lg mb-2">No rides recorded yet</p>
+          <p className="text-slate-400 text-lg mb-2">
+            {t("No rides recorded yet")}
+          </p>
           <p className="text-slate-500 text-sm">
-            Start riding with the Tarmoto mobile app to see your stats here.
+            {t(
+              "Start riding with the Tarmoto mobile app to see your stats here. ",
+            )}
           </p>
         </div>
       </div>
     );
   }
-
   return (
     <div className="p-6 max-w-6xl mx-auto animate-fade-in space-y-8">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Statistics</h1>
+          <h1 className="text-2xl font-bold">{t("Statistics")}</h1>
           <p className="text-sm text-slate-400 mt-1">
             {totals.totalRides === 0
               ? "No rides match the current filters."
@@ -227,7 +220,7 @@ export default function StatsPage() {
         <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
           <ChartHeader
             icon={<TrendingUp size={16} />}
-            title="Year-over-year"
+            title={t("Year-over-year")}
             subtitle={`Monthly distance, last ${yoyYears.length} years.`}
           />
           <div className="h-72">
@@ -285,19 +278,23 @@ export default function StatsPage() {
         <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
           <ChartHeader
             icon={<BarChart3 size={16} />}
-            title="All years"
+            title={t("All years")}
             subtitle="Total distance per calendar year."
           />
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wider text-slate-500">
-                  <th className="py-2 pr-4 font-semibold">Year</th>
-                  <th className="py-2 pr-4 font-semibold text-right">Rides</th>
+                  <th className="py-2 pr-4 font-semibold">{t("Year")}</th>
                   <th className="py-2 pr-4 font-semibold text-right">
-                    Distance
+                    {t("Rides")}
                   </th>
-                  <th className="py-2 font-semibold text-right">Avg / ride</th>
+                  <th className="py-2 pr-4 font-semibold text-right">
+                    {t("Distance ")}
+                  </th>
+                  <th className="py-2 font-semibold text-right">
+                    {t("Avg / ride")}
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
@@ -311,7 +308,8 @@ export default function StatsPage() {
                         {row.rides}
                       </td>
                       <td className="py-2 pr-4 text-right tabular-nums">
-                        {row.distanceKm.toFixed(0)} km
+                        {row.distanceKm.toFixed(0)}
+                        {t("km ")}
                       </td>
                       <td className="py-2 text-right tabular-nums text-slate-400">
                         {row.rides > 0
@@ -328,13 +326,11 @@ export default function StatsPage() {
     </div>
   );
 }
-
 interface FilterBarProps {
   filters: RideFilters;
   years: number[];
   onChange: (filters: RideFilters) => void;
 }
-
 function FilterBar({ filters, years, onChange }: FilterBarProps) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -363,20 +359,24 @@ function FilterBar({ filters, years, onChange }: FilterBarProps) {
         }
         options={[
           { value: "all", label: "All types" },
-          ...RIDE_TYPES.map((t) => ({ value: t, label: RIDE_TYPE_LABELS[t] })),
+          ...RIDE_TYPES.map((rideType) => ({
+            value: rideType,
+            label: RIDE_TYPE_LABELS[rideType],
+          })),
         ]}
       />
     </div>
   );
 }
-
 interface FilterSelectProps {
   label: string;
   value: string;
   onChange: (value: string) => void;
-  options: { value: string; label: string }[];
+  options: {
+    value: string;
+    label: string;
+  }[];
 }
-
 function FilterSelect({ label, value, onChange, options }: FilterSelectProps) {
   return (
     <label className="flex items-center gap-2 text-xs text-slate-400">
@@ -395,11 +395,9 @@ function FilterSelect({ label, value, onChange, options }: FilterSelectProps) {
     </label>
   );
 }
-
 interface TotalsGridProps {
   totals: ReturnType<typeof computeAllTimeTotals>;
 }
-
 function TotalsGrid({ totals }: TotalsGridProps) {
   const cards = [
     {
@@ -446,13 +444,11 @@ function TotalsGrid({ totals }: TotalsGridProps) {
     </div>
   );
 }
-
 interface ChartHeaderProps {
   icon: React.ReactNode;
   title: string;
   subtitle?: string;
 }
-
 function ChartHeader({ icon, title, subtitle }: ChartHeaderProps) {
   return (
     <div className="mb-4">
@@ -464,25 +460,29 @@ function ChartHeader({ icon, title, subtitle }: ChartHeaderProps) {
     </div>
   );
 }
-
 interface CalendarHeatmapProps {
-  days: { date: string; distanceKm: number; rides: number }[];
+  days: {
+    date: string;
+    distanceKm: number;
+    rides: number;
+  }[];
   year: number;
 }
-
 function CalendarHeatmap({ days, year }: CalendarHeatmapProps) {
   // Find the max so cell intensity scales relative to this filtered view
   // rather than to a hard-coded ceiling that would wash out short rides.
   const maxDistance = days.reduce((acc, d) => Math.max(acc, d.distanceKm), 0);
-
   // Pad the start so the first column begins on Sunday (column = day of week).
   const firstDay = new Date(year, 0, 1).getDay();
-  type Cell = { date: string; distanceKm: number; rides: number } | null;
+  type Cell = {
+    date: string;
+    distanceKm: number;
+    rides: number;
+  } | null;
   const cells: Cell[] = [
     ...Array.from<Cell>({ length: firstDay }).fill(null),
     ...days,
   ];
-
   return (
     <div className="space-y-3">
       <div
@@ -500,7 +500,7 @@ function CalendarHeatmap({ days, year }: CalendarHeatmapProps) {
         ))}
       </div>
       <div className="flex items-center justify-end gap-2 text-xs text-slate-500">
-        <span>Less</span>
+        <span>{t("Less")}</span>
         {[0.05, 0.25, 0.5, 0.85].map((step) => (
           <span
             key={step}
@@ -508,17 +508,19 @@ function CalendarHeatmap({ days, year }: CalendarHeatmapProps) {
             style={{ backgroundColor: heatColor(step) }}
           />
         ))}
-        <span>More</span>
+        <span>{t("More")}</span>
       </div>
     </div>
   );
 }
-
 interface CalendarCellProps {
-  cell: { date: string; distanceKm: number; rides: number } | null;
+  cell: {
+    date: string;
+    distanceKm: number;
+    rides: number;
+  } | null;
   maxDistance: number;
 }
-
 function CalendarCell({ cell, maxDistance }: CalendarCellProps) {
   if (!cell) return <span aria-hidden className="block" />;
   const intensity =
@@ -535,12 +537,14 @@ function CalendarCell({ cell, maxDistance }: CalendarCellProps) {
     />
   );
 }
-
 function heatColor(intensity: number): string {
   if (intensity <= 0) return "#1e293b";
   // Tarmoto cyan (#22d3ee) ramped from a near-empty grey via alpha-equivalent
   // mixing with the slate-900 backdrop. Done in hex so SSR + CSS match.
-  const stops: { stop: number; color: string }[] = [
+  const stops: {
+    stop: number;
+    color: string;
+  }[] = [
     { stop: 0.15, color: "#0e3b4a" },
     { stop: 0.4, color: "#155e75" },
     { stop: 0.7, color: "#0891b2" },

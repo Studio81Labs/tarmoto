@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import {
@@ -9,13 +9,11 @@ import {
 } from "@/lib/discover";
 import { ElevationSparkline } from "@/components/map/ElevationSparkline";
 import { useDiscoverStore } from "./useDiscoverStore";
-
 interface Props {
   /** Matching list item so the header can render immediately from the list
    *  cache, while the detail fetch resolves the top-roads section. */
   summary: FunZoneListItem | null;
 }
-
 /**
  * Right-side panel: zone header, stat strip, and ranked top-roads list with
  * per-road elevation sparklines. Driven by useDiscoverStore.selectedZoneId.
@@ -25,7 +23,6 @@ export function ZoneDetailPanel({ summary }: Props) {
   const [detail, setDetail] = useState<FunZoneDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   useEffect(() => {
     if (!selectedZoneId) {
       setDetail(null);
@@ -53,7 +50,14 @@ export function ZoneDetailPanel({ summary }: Props) {
         }
         setDetail(d);
       } catch (err) {
-        if ((err as { name?: string }).name === "AbortError") return;
+        if (
+          (
+            err as {
+              name?: string;
+            }
+          ).name === "AbortError"
+        )
+          return;
         setError("Couldn't load zone details.");
       } finally {
         if (!controller.signal.aborted) setLoading(false);
@@ -63,12 +67,9 @@ export function ZoneDetailPanel({ summary }: Props) {
     // setSelectedZoneId is stable from Zustand.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedZoneId]);
-
   if (!selectedZoneId) return null;
-
   const zone = detail?.zone ?? summary;
   const topRoads: FunZoneDetail["top_roads"] = detail?.top_roads ?? [];
-
   return (
     <aside className="w-[360px] border-l border-slate-800 bg-slate-950 flex flex-col animate-slide-in-right">
       <header className="flex items-start justify-between px-4 py-3 border-b border-slate-800 gap-3">
@@ -77,14 +78,15 @@ export function ZoneDetailPanel({ summary }: Props) {
             {zone?.name ?? "Unnamed zone"}
           </h2>
           <p className="text-xs text-slate-400 mt-0.5 tabular-nums">
-            Score {zone?.composite_score?.toFixed(1) ?? "—"}
+            {t("Score ")}
+            {zone?.composite_score?.toFixed(1) ?? "—"}
             {zone?.best_season ? ` · ${zone.best_season}` : ""}
           </p>
         </div>
         <button
           type="button"
           onClick={() => setSelectedZoneId(null)}
-          aria-label="Close zone details"
+          aria-label={t("Close zone details")}
           className="text-slate-400 hover:text-white transition"
         >
           <X size={18} />
@@ -125,7 +127,7 @@ export function ZoneDetailPanel({ summary }: Props) {
           </div>
         ) : topRoads.length === 0 ? (
           <div className="p-4 text-sm text-slate-400">
-            No contributing roads available yet.
+            {t("No contributing roads available yet. ")}
           </div>
         ) : (
           <ul className="divide-y divide-slate-800">
@@ -141,9 +143,10 @@ export function ZoneDetailPanel({ summary }: Props) {
                       {road.quality_score != null
                         ? `★ ${road.quality_score.toFixed(1)} · `
                         : ""}
-                      curviness {road.curviness_score.toFixed(1)} ·{" "}
-                      {(road.length_m / 1000).toFixed(1)} km ·{" "}
-                      {road.surface_type}
+                      {t("curviness ")}
+                      {road.curviness_score.toFixed(1)} ·{" "}
+                      {(road.length_m / 1000).toFixed(1)}
+                      {t("km \u00B7")} {road.surface_type}
                     </p>
                   </div>
                 </div>
@@ -153,7 +156,7 @@ export function ZoneDetailPanel({ summary }: Props) {
                   </div>
                 ) : (
                   <p className="text-[10px] text-slate-500 mt-2">
-                    No elevation data
+                    {t("No elevation data ")}
                   </p>
                 )}
               </li>
@@ -164,7 +167,6 @@ export function ZoneDetailPanel({ summary }: Props) {
     </aside>
   );
 }
-
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>

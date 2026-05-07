@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Eye, Gauge, Route as RouteIcon, Timer, Wind } from "lucide-react";
@@ -13,14 +13,12 @@ import {
   formatRideType,
   scoreToTier,
 } from "@/lib/utils";
-
 export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
   const preview = buildRoutePreview(ride.route_geometry, 220, 10);
   const tier =
     ride.avg_road_quality != null ? scoreToTier(ride.avg_road_quality) : null;
   const qualityMeta = tier ? QUALITY_CONFIG[tier] : null;
   const riderInitial = ride.rider_name.trim().charAt(0).toUpperCase() || "R";
-
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/90">
       <div className="border-b border-slate-800 bg-slate-950/70 p-3">
@@ -42,7 +40,7 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
           </svg>
         ) : (
           <div className="flex h-36 items-center justify-center rounded-xl bg-slate-950 text-sm text-slate-500">
-            Preview unavailable
+            {t("Preview unavailable ")}
           </div>
         )}
       </div>
@@ -71,8 +69,8 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
                 {ride.rider_name}
               </p>
               <p className="text-xs text-slate-500">
-                {formatRideType(ride.ride_type)} ride ·{" "}
-                {formatRelativeTime(ride.started_at)}
+                {formatRideType(ride.ride_type)}
+                {t("ride \u00B7")} {formatRelativeTime(ride.started_at)}
               </p>
             </div>
           </Link>
@@ -80,7 +78,7 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
           <div className="rounded-full bg-slate-800 px-2.5 py-1 text-[11px] font-medium text-slate-300">
             <span className="inline-flex items-center gap-1">
               <Eye size={12} />
-              {ride.view_count.toLocaleString()} views
+              {t("{count} views", { count: ride.view_count.toLocaleString() })}
             </span>
           </div>
         </div>
@@ -120,7 +118,6 @@ export function CommunityRideCard({ ride }: { ride: CommunityRide }) {
     </article>
   );
 }
-
 function StatTile({
   icon,
   label,
@@ -133,7 +130,6 @@ function StatTile({
   accentClassName?: string;
 }) {
   const valueClassName = accentClassName ?? "text-white";
-
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
       <div className="mb-2 flex items-center gap-1.5 text-xs text-slate-500">

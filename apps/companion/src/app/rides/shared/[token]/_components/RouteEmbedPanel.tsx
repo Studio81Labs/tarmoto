@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { Check, Code2, Copy, MousePointerClick, Eye } from "lucide-react";
 import {
@@ -7,7 +7,6 @@ import {
   formatRideEmbedStat,
   type RideWidgetVariant,
 } from "@/lib/ride-embed";
-
 interface Props {
   origin: string;
   token: string;
@@ -15,7 +14,6 @@ interface Props {
   views: number;
   clicks: number;
 }
-
 const VARIANTS: Array<{
   value: RideWidgetVariant;
   label: string;
@@ -32,7 +30,6 @@ const VARIANTS: Array<{
     description: "Best for blog posts, forums, and full-width sections.",
   },
 ];
-
 export function RouteEmbedPanel({
   origin,
   token,
@@ -44,18 +41,15 @@ export function RouteEmbedPanel({
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">(
     "idle",
   );
-
   const snippet = useMemo(
     () => buildRideIframeCode(origin, { token, rideLabel, variant }),
     [origin, token, rideLabel, variant],
   );
-
   useEffect(() => {
     if (copyState !== "copied") return;
     const timeout = window.setTimeout(() => setCopyState("idle"), 2000);
     return () => window.clearTimeout(timeout);
   }, [copyState]);
-
   async function handleCopy() {
     try {
       await navigator.clipboard.writeText(snippet);
@@ -64,21 +58,21 @@ export function RouteEmbedPanel({
       setCopyState("error");
     }
   }
-
   return (
     <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-tarmoto-cyan/20 bg-tarmoto-cyan/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-tarmoto-cyan">
             <Code2 size={14} />
-            Embed route
+            {t("Embed route ")}
           </div>
           <h2 className="mt-3 text-lg font-semibold">
-            Share this ride as a route widget
+            {t("Share this ride as a route widget ")}
           </h2>
           <p className="mt-2 max-w-2xl text-sm text-slate-400">
-            Publish a branded ride preview with route stats, Tarmoto
-            attribution, and a link back to the full shared ride page.
+            {t(
+              "Publish a branded ride preview with route stats, Tarmoto attribution, and a link back to the full shared ride page. ",
+            )}
           </p>
         </div>
         <button
@@ -87,7 +81,7 @@ export function RouteEmbedPanel({
           className="inline-flex items-center gap-2 rounded-lg bg-tarmoto-cyan px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-tarmoto-cyan/90"
         >
           {copyState === "copied" ? <Check size={16} /> : <Copy size={16} />}
-          Copy embed code
+          {t("Copy embed code ")}
         </button>
       </div>
 
@@ -131,11 +125,11 @@ export function RouteEmbedPanel({
           htmlFor="ride-embed-code"
           className="mb-2 block text-sm font-medium text-slate-300"
         >
-          Embed code
+          {t("Embed code ")}
         </label>
         <textarea
           id="ride-embed-code"
-          aria-label="Embed code"
+          aria-label={t("Embed code")}
           readOnly
           value={snippet}
           rows={7}
@@ -144,11 +138,15 @@ export function RouteEmbedPanel({
       </div>
 
       {copyState === "copied" && (
-        <p className="mt-3 text-sm text-emerald-300">Embed code copied</p>
+        <p className="mt-3 text-sm text-emerald-300">
+          {t("Embed code copied")}
+        </p>
       )}
       {copyState === "error" && (
         <p className="mt-3 text-sm text-rose-300">
-          Could not copy automatically. Select the code and copy it manually.
+          {t(
+            "Could not copy automatically. Select the code and copy it manually. ",
+          )}
         </p>
       )}
     </section>

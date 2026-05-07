@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import Link from "next/link";
 import {
   useEffect,
@@ -28,7 +28,6 @@ import {
 } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
-
 const MAX_REVIEW_PHOTOS = 5;
 const MAX_REVIEW_PHOTO_BYTES = 5 * 1024 * 1024;
 const ACCEPTED_PHOTO_MIME_TYPES = [
@@ -37,21 +36,18 @@ const ACCEPTED_PHOTO_MIME_TYPES = [
   "image/webp",
 ] as const;
 const REVIEW_COMMENT_MAX_LENGTH = 1000;
-
 type ReviewDraft = {
   rating: number;
   comment: string;
   bikeModel: string;
   photoUrls: string[];
 };
-
 const EMPTY_REVIEW_DRAFT: ReviewDraft = {
   rating: 0,
   comment: "",
   bikeModel: "",
   photoUrls: [],
 };
-
 export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
   const canLoadReviews = isUuid(segmentId);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -78,14 +74,12 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
   const mutationAttemptRef = useRef(0);
   const localMyReviewRef = useRef<RoadReview | null>(null);
   const deletedMyReviewIdRef = useRef<string | null>(null);
-
   // Mirror editorMode into a ref so async callbacks (uploadReviewPhotos)
   // can compare the value at resolve time without restarting on every
   // editor-state transition.
   useEffect(() => {
     editorModeRef.current = editorMode;
   }, [editorMode]);
-
   useEffect(() => {
     activeSegmentRef.current = segmentId;
     activeViewerKeyRef.current = viewerKey;
@@ -101,19 +95,16 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
     setEditorMode(null);
     setSubmitError(null);
     setSubmitting(false);
-
     if (!canLoadReviews) {
       setReviews([]);
       setError(null);
       setLoading(false);
       return;
     }
-
     let cancelled = false;
     setReviews([]);
     setLoading(true);
     setError(null);
-
     roadsApi
       .getReviews(segmentId)
       .then(({ data }) => {
@@ -139,23 +130,19 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
           setLoading(false);
         }
       });
-
     return () => {
       cancelled = true;
     };
   }, [canLoadReviews, segmentId, viewerKey]);
-
   const averageRating = useMemo(() => {
     if (reviews.length === 0) return null;
     const total = reviews.reduce((sum, review) => sum + review.rating, 0);
     return total / reviews.length;
   }, [reviews]);
-
   const myReview = useMemo(
     () => reviews.find((review) => review.is_mine) ?? null,
     [reviews],
   );
-
   const patchReview = (reviewId: string, next: Partial<RoadReview>) => {
     setReviews((current) =>
       current.map((review) =>
@@ -163,7 +150,6 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
       ),
     );
   };
-
   const openCreate = () => {
     // Each open is a fresh editor session — the upload guard uses this
     // to reject results that resolved after a previous draft was
@@ -174,7 +160,6 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
     setSubmitError(null);
     setEditorMode("create");
   };
-
   const openEdit = () => {
     if (!myReview) return;
     editorSessionRef.current += 1;
@@ -187,7 +172,6 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
     setSubmitError(null);
     setEditorMode("edit");
   };
-
   const closeEditor = () => {
     if (submitting) return;
     // Bump on close too so an upload kicked off in this session is
@@ -198,7 +182,6 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
     setEditorMode(null);
     setSubmitError(null);
   };
-
   /**
    * Owns the upload roundtrip + draft mutation so the same staleness
    * checks the submit handler relies on (segment, viewer, generation)
@@ -210,14 +193,11 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
    */
   const handleUploadPhotos = async (files: File[]): Promise<void> => {
     if (!editorModeRef.current) return;
-
     const requestSegmentId = segmentId;
     const requestViewerKey = viewerKey;
     const requestGeneration = requestGenerationRef.current;
     const requestEditorSession = editorSessionRef.current;
-
     const { data } = await roadsApi.uploadReviewPhotos(segmentId, files);
-
     if (
       requestSegmentId !== activeSegmentRef.current ||
       requestViewerKey !== activeViewerKeyRef.current ||
@@ -235,7 +215,6 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
       // swept by the orphan cleanup tracked separately.
       return;
     }
-
     setDraft((current) => ({
       ...current,
       photoUrls: [...current.photoUrls, ...data.photos].slice(
@@ -245,7 +224,6 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
     }));
     setSubmitError(null);
   };
-
   const handleSubmitReview = async () => {
     if (
       !canLoadReviews ||
@@ -256,13 +234,11 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
     ) {
       return;
     }
-
     const normalized = normalizeDraft(draft);
     if (!normalized.ok) {
       setSubmitError(normalized.error);
       return;
     }
-
     setSubmitting(true);
     setSubmitError(null);
     const requestGeneration = requestGenerationRef.current;
@@ -270,7 +246,6 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
     const requestViewerKey = viewerKey;
     mutationAttemptRef.current += 1;
     const mutationAttempt = mutationAttemptRef.current;
-
     try {
       const payload =
         editorMode === "edit"
@@ -280,7 +255,6 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
         editorMode === "edit"
           ? await roadsApi.updateReview(segmentId, payload)
           : await roadsApi.createReview(segmentId, payload);
-
       if (
         requestSegmentId !== activeSegmentRef.current ||
         requestViewerKey !== activeViewerKeyRef.current ||
@@ -288,16 +262,13 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
       ) {
         return;
       }
-
       const didReturnToSameSegment =
         requestGeneration !== requestGenerationRef.current;
-
       setError(null);
       setSubmitError(null);
       localMyReviewRef.current = data.is_mine ? data : null;
       deletedMyReviewIdRef.current = null;
       setReviews((current) => upsertReview(current, data));
-
       if (!didReturnToSameSegment) {
         setDraft(EMPTY_REVIEW_DRAFT);
         setEditorMode(null);
@@ -325,7 +296,6 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
       }
     }
   };
-
   const handleDeleteReview = async () => {
     if (
       !canLoadReviews ||
@@ -336,7 +306,6 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
     ) {
       return;
     }
-
     setSubmitting(true);
     setSubmitError(null);
     const requestSegmentId = segmentId;
@@ -344,10 +313,8 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
     const reviewId = myReview.id;
     mutationAttemptRef.current += 1;
     const mutationAttempt = mutationAttemptRef.current;
-
     try {
       await roadsApi.deleteReview(segmentId);
-
       if (
         requestSegmentId !== activeSegmentRef.current ||
         requestViewerKey !== activeViewerKeyRef.current ||
@@ -355,7 +322,6 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
       ) {
         return;
       }
-
       setError(null);
       setSubmitError(null);
       localMyReviewRef.current = null;
@@ -386,13 +352,12 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
       }
     }
   };
-
   return (
     <div>
       <div className="mb-2 flex items-center justify-between gap-3">
         <div>
           <p className="text-[11px] uppercase tracking-wider text-slate-500">
-            Road reviews
+            {t("Road reviews ")}
           </p>
           {!loading && canLoadReviews && (
             <p className="text-sm text-slate-300">
@@ -402,7 +367,7 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
         </div>
         {!loading && averageRating != null && (
           <p className="text-sm font-medium text-amber-300">
-            {averageRating.toFixed(1)} ★ average
+            {t("{rating} ★ average", { rating: averageRating.toFixed(1) })}
           </p>
         )}
       </div>
@@ -417,24 +382,24 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
                   onClick={openEdit}
                   disabled={submitting}
                   className="inline-flex items-center gap-1 rounded-full border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
-                  aria-label="Edit your review"
+                  aria-label={t("Edit your review")}
                 >
                   <Pencil size={12} />
-                  Edit your review
+                  {t("Edit your review ")}
                 </button>
                 <button
                   type="button"
                   onClick={handleDeleteReview}
                   disabled={submitting}
                   className="inline-flex items-center gap-1 rounded-full border border-rose-500/30 px-3 py-1.5 text-xs text-rose-300 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
-                  aria-label="Delete your review"
+                  aria-label={t("Delete your review")}
                 >
                   {submitting && editorMode === null ? (
                     <Loader2 size={12} className="animate-spin" />
                   ) : (
                     <Trash2 size={12} />
                   )}
-                  Delete your review
+                  {t("Delete your review ")}
                 </button>
               </>
             ) : (
@@ -443,15 +408,15 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
                 onClick={openCreate}
                 disabled={submitting}
                 className="inline-flex items-center gap-1 rounded-full border border-tarmoto-cyan/40 bg-tarmoto-cyan/10 px-3 py-1.5 text-xs text-tarmoto-cyan transition hover:bg-tarmoto-cyan/15 disabled:cursor-not-allowed disabled:opacity-60"
-                aria-label="Write a review for this road"
+                aria-label={t("Write a review for this road")}
               >
                 <Pencil size={12} />
-                Write a review
+                {t("Write a review ")}
               </button>
             )
           ) : (
             <p className="text-xs text-slate-500">
-              Sign in to rate this road and share your feedback.
+              {t("Sign in to rate this road and share your feedback. ")}
             </p>
           )}
         </div>
@@ -506,13 +471,14 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
 
       {!canLoadReviews ? (
         <div className="rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-4 text-xs text-slate-500">
-          Community reviews become available when this segment maps to a saved
-          Tarmoto road.
+          {t(
+            "Community reviews become available when this segment maps to a saved Tarmoto road. ",
+          )}
         </div>
       ) : loading ? (
         <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs text-slate-400">
           <Loader2 size={14} className="animate-spin" />
-          Loading reviews…
+          {t("Loading reviews\u2026 ")}
         </div>
       ) : error ? (
         <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-xs text-rose-300">
@@ -520,8 +486,9 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
         </div>
       ) : reviews.length === 0 ? (
         <div className="rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-4 text-xs text-slate-500">
-          No reviews yet. Riders will start seeing community feedback here as
-          soon as someone rates this road.
+          {t(
+            "No reviews yet. Riders will start seeing community feedback here as soon as someone rates this road. ",
+          )}
         </div>
       ) : (
         <div className="space-y-3">
@@ -537,7 +504,6 @@ export function RoadReviewsPanel({ segmentId }: { segmentId: string }) {
     </div>
   );
 }
-
 function mergeFetchedReviews(
   fetched: RoadReview[],
   current: RoadReview[],
@@ -547,27 +513,22 @@ function mergeFetchedReviews(
   const nextFetched = deletedMyReviewId
     ? fetched.filter((review) => review.id !== deletedMyReviewId)
     : fetched;
-
   if (current.length === 0 && !localMyReview) {
     return nextFetched;
   }
-
   const fetchedIds = new Set(nextFetched.map((review) => review.id));
   const localOnlyReviews = current.filter(
     (review) => review.id !== deletedMyReviewId && !fetchedIds.has(review.id),
   );
-
   const merged = [...localOnlyReviews, ...nextFetched];
   return localMyReview ? upsertReview(merged, localMyReview) : merged;
 }
-
 function upsertReview(current: RoadReview[], next: RoadReview): RoadReview[] {
   const remaining = current.filter(
     (review) => review.id !== next.id && !(next.is_mine && review.is_mine),
   );
   return [next, ...remaining];
 }
-
 function ReviewEditor({
   mode,
   remainingPhotoSlots,
@@ -600,13 +561,11 @@ function ReviewEditor({
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const photoInputDisabled = disabled || uploading || remainingPhotoSlots === 0;
-
   useEffect(() => {
     return () => {
       mountedRef.current = false;
     };
   }, []);
-
   const handleSelectFiles = async (event: ChangeEvent<HTMLInputElement>) => {
     const input = event.target;
     const selected = Array.from(input.files ?? []);
@@ -615,13 +574,11 @@ function ReviewEditor({
     // retry after a validation failure.
     input.value = "";
     if (selected.length === 0) return;
-
     const validation = validateSelectedPhotos(selected, remainingPhotoSlots);
     if ("error" in validation) {
       setUploadError(validation.error);
       return;
     }
-
     setUploading(true);
     setUploadError(null);
     try {
@@ -648,7 +605,6 @@ function ReviewEditor({
       }
     }
   };
-
   return (
     <section className="mb-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
       <div className="flex items-start justify-between gap-3">
@@ -657,7 +613,7 @@ function ReviewEditor({
             {mode === "create" ? "Write a review" : "Edit your review"}
           </p>
           <p className="text-xs text-slate-500">
-            Rate this road and add quick notes for the next rider.
+            {t("Rate this road and add quick notes for the next rider. ")}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -667,7 +623,7 @@ function ReviewEditor({
             disabled={disabled}
             className="rounded-lg px-3 py-1.5 text-xs text-slate-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Cancel
+            {t("Cancel ")}
           </button>
           <button
             type="button"
@@ -708,7 +664,7 @@ function ReviewEditor({
       <div className="mt-3 space-y-3">
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-slate-400">
-            Comment
+            {t("Comment ")}
           </span>
           <textarea
             value={draft.comment}
@@ -716,8 +672,8 @@ function ReviewEditor({
             disabled={disabled}
             maxLength={REVIEW_COMMENT_MAX_LENGTH}
             rows={4}
-            aria-label="Comment"
-            placeholder="What should other riders know about this road?"
+            aria-label={t("Comment")}
+            placeholder={t("What should other riders know about this road?")}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-tarmoto-cyan focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
           />
           <span className="mt-1 block text-right text-[11px] text-slate-500">
@@ -727,7 +683,7 @@ function ReviewEditor({
 
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-slate-400">
-            Bike model
+            {t("Bike model ")}
           </span>
           <input
             type="text"
@@ -735,28 +691,28 @@ function ReviewEditor({
             onChange={(event) => onBikeModelChange(event.target.value)}
             disabled={disabled}
             maxLength={100}
-            aria-label="Bike model"
-            placeholder="Optional"
+            aria-label={t("Bike model")}
+            placeholder={t("Optional")}
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-tarmoto-cyan focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
           />
         </label>
 
         <div>
           <div className="mb-1 flex items-center justify-between gap-3">
-            <p className="text-xs font-medium text-slate-400">Photos</p>
+            <p className="text-xs font-medium text-slate-400">{t("Photos")}</p>
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={photoInputDisabled}
               className="inline-flex items-center gap-1 text-xs text-slate-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label="Upload review photos"
+              aria-label={t("Upload review photos")}
             >
               {uploading ? (
                 <Loader2 size={12} className="animate-spin" />
               ) : (
                 <Upload size={12} />
               )}
-              Upload photos
+              {t("Upload photos ")}
             </button>
           </div>
           <input
@@ -766,7 +722,7 @@ function ReviewEditor({
             multiple
             disabled={photoInputDisabled}
             onChange={handleSelectFiles}
-            aria-label="Select review photos"
+            aria-label={t("Select review photos")}
             className="sr-only"
           />
           {draft.photoUrls.length > 0 && (
@@ -796,8 +752,13 @@ function ReviewEditor({
             </div>
           )}
           <p className="mt-1 text-[11px] text-slate-500">
-            Up to {MAX_REVIEW_PHOTOS} JPEG, PNG, or WebP photos (max{" "}
-            {Math.round(MAX_REVIEW_PHOTO_BYTES / (1024 * 1024))} MB each).
+            {t(
+              "Up to {count} JPEG, PNG, or WebP photos (max {sizeMb} MB each).",
+              {
+                count: MAX_REVIEW_PHOTOS,
+                sizeMb: Math.round(MAX_REVIEW_PHOTO_BYTES / (1024 * 1024)),
+              },
+            )}
           </p>
           {uploadError && (
             <p className="mt-1 text-xs text-rose-300" role="alert">
@@ -815,11 +776,16 @@ function ReviewEditor({
     </section>
   );
 }
-
 function validateSelectedPhotos(
   files: File[],
   remainingSlots: number,
-): { files: File[] } | { error: string } {
+):
+  | {
+      files: File[];
+    }
+  | {
+      error: string;
+    } {
   if (files.length > remainingSlots) {
     return {
       error: `You can attach up to ${MAX_REVIEW_PHOTOS} photos in total.`,
@@ -833,15 +799,12 @@ function validateSelectedPhotos(
     }
     if (file.size > MAX_REVIEW_PHOTO_BYTES) {
       return {
-        error: `Each photo must be smaller than ${Math.round(
-          MAX_REVIEW_PHOTO_BYTES / (1024 * 1024),
-        )} MB.`,
+        error: `Each photo must be smaller than ${Math.round(MAX_REVIEW_PHOTO_BYTES / (1024 * 1024))} MB.`,
       };
     }
   }
   return { files };
 }
-
 function ReviewCard({
   review,
   onChange,
@@ -852,21 +815,17 @@ function ReviewCard({
   const [pendingVote, setPendingVote] = useState<"up" | "down" | null>(null);
   const [voteError, setVoteError] = useState<string | null>(null);
   const photos = Array.isArray(review.photos) ? review.photos : [];
-
   const submitVote = async (isHelpful: boolean) => {
     if (pendingVote || review.is_mine) return;
-
     const wasSame = review.my_vote === isHelpful;
     const previous = {
       helpful_count: review.helpful_count,
       not_helpful_count: review.not_helpful_count,
       my_vote: review.my_vote,
     };
-
     setPendingVote(isHelpful ? "up" : "down");
     setVoteError(null);
     onChange(applyVoteDelta(review, wasSame ? null : isHelpful));
-
     try {
       const { data } = wasSame
         ? await roadsApi.clearReviewVote(review.id)
@@ -882,7 +841,6 @@ function ReviewCard({
       setPendingVote(null);
     }
   };
-
   return (
     <article className="rounded-xl border border-slate-800 bg-slate-950/50 p-3">
       <div className="flex items-start justify-between gap-3">
@@ -917,7 +875,9 @@ function ReviewCard({
         {photos.length > 0 && (
           <span className="inline-flex items-center gap-1">
             <Images size={12} />
-            {photos.length} photo{photos.length === 1 ? "" : "s"}
+            {t(photos.length === 1 ? "{count} photo" : "{count} photos", {
+              count: photos.length,
+            })}
           </span>
         )}
       </div>
@@ -938,7 +898,7 @@ function ReviewCard({
 
       {review.is_mine ? (
         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-          <span>This is your review.</span>
+          <span>{t("This is your review.")}</span>
         </div>
       ) : (
         <div className="mt-3 flex items-center gap-2">
@@ -977,7 +937,6 @@ function ReviewCard({
     </article>
   );
 }
-
 function VoteButton({
   label,
   count,
@@ -1011,44 +970,42 @@ function VoteButton({
     </button>
   );
 }
-
 function applyVoteDelta(
   review: RoadReview,
   nextVote: boolean | null,
 ): Pick<RoadReview, "helpful_count" | "not_helpful_count" | "my_vote"> {
   let helpful = review.helpful_count;
   let notHelpful = review.not_helpful_count;
-
   if (review.my_vote === true) helpful = Math.max(0, helpful - 1);
   if (review.my_vote === false) notHelpful = Math.max(0, notHelpful - 1);
-
   if (nextVote === true) helpful += 1;
   if (nextVote === false) notHelpful += 1;
-
   return {
     helpful_count: helpful,
     not_helpful_count: notHelpful,
     my_vote: nextVote,
   };
 }
-
-function normalizeDraft(
-  draft: ReviewDraft,
-): { ok: true; data: UpsertRoadReviewInput } | { ok: false; error: string } {
+function normalizeDraft(draft: ReviewDraft):
+  | {
+      ok: true;
+      data: UpsertRoadReviewInput;
+    }
+  | {
+      ok: false;
+      error: string;
+    } {
   if (draft.rating < 1 || draft.rating > 5) {
     return { ok: false, error: "Choose a star rating before you submit." };
   }
-
   if (draft.photoUrls.length > MAX_REVIEW_PHOTOS) {
     return {
       ok: false,
       error: `You can attach up to ${MAX_REVIEW_PHOTOS} photos.`,
     };
   }
-
   const comment = draft.comment.trim();
   const bikeModel = draft.bikeModel.trim();
-
   return {
     ok: true,
     data: {
@@ -1059,7 +1016,6 @@ function normalizeDraft(
     },
   };
 }
-
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value,

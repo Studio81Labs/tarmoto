@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import {
   useEffect,
   useMemo,
@@ -33,13 +33,11 @@ import {
 } from "@/lib/route-collections";
 import type { RouteCollectionVisibility } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/utils";
-
 interface CollectionInputForm {
   title: string;
   description: string;
   visibility: RouteCollectionVisibility;
 }
-
 export default function RouteCollectionsPage() {
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const {
@@ -54,11 +52,15 @@ export default function RouteCollectionsPage() {
     unfollowCollection,
     migration,
   } = useCollections(userId);
-
   const [search, setSearch] = useState("");
   const [modal, setModal] = useState<
-    | { mode: "create" }
-    | { mode: "edit"; collection: RouteCollectionView }
+    | {
+        mode: "create";
+      }
+    | {
+        mode: "edit";
+        collection: RouteCollectionView;
+      }
     | null
   >(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -67,7 +69,6 @@ export default function RouteCollectionsPage() {
   );
   const [unfollowTarget, setUnfollowTarget] =
     useState<RouteCollectionView | null>(null);
-
   const confirmUnfollow = async () => {
     const collection = unfollowTarget;
     if (!collection) return;
@@ -81,7 +82,6 @@ export default function RouteCollectionsPage() {
       );
     }
   };
-
   // Throws on failure so the modal stays open and renders the error inside
   // its own form. The earlier shape (catch + setActionError + leave modal
   // open) hid the error behind the modal's fixed overlay — the user got no
@@ -104,7 +104,6 @@ export default function RouteCollectionsPage() {
     }
     setModal(null);
   };
-
   const confirmDelete = async () => {
     const collection = deleteTarget;
     if (!collection) return;
@@ -118,9 +117,7 @@ export default function RouteCollectionsPage() {
       );
     }
   };
-
   const needle = search.trim().toLowerCase();
-
   const visible = useMemo(() => {
     return collections.filter((c) => {
       if (!needle) return true;
@@ -128,7 +125,6 @@ export default function RouteCollectionsPage() {
       return hay.includes(needle);
     });
   }, [collections, needle]);
-
   // Apply the same search to followed collections so a search that hides the
   // owned grid doesn't leave unfiltered followed cards visible below it (the
   // search box label says "Search collections…" generically). Followed cards
@@ -143,18 +139,17 @@ export default function RouteCollectionsPage() {
       return hay.includes(needle);
     });
   }, [followed, needle]);
-
   const showSkeleton = status === "loading" && collections.length === 0;
   const showLoadError = status === "error" && collections.length === 0;
-
   return (
     <div className="p-6 max-w-6xl mx-auto animate-fade-in">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-2xl font-bold">Route Collections</h1>
+          <h1 className="text-2xl font-bold">{t("Route Collections")}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            {collections.length} collection
-            {collections.length === 1 ? "" : "s"}
+            {collections.length === 1
+              ? t("1 collection")
+              : t("{count} collections", { count: collections.length })}
           </p>
         </div>
         <button
@@ -162,7 +157,8 @@ export default function RouteCollectionsPage() {
           onClick={() => setModal({ mode: "create" })}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition"
         >
-          <Plus size={16} /> New collection
+          <Plus size={16} />
+          {t("New collection")}
         </button>
       </div>
 
@@ -202,7 +198,7 @@ export default function RouteCollectionsPage() {
             aria-hidden="true"
           />
           <p className="text-amber-200 mb-1">
-            Couldn&apos;t load your collections
+            {t("Couldn't load your collections")}
           </p>
           <p className="text-sm text-slate-500 mb-4">
             {errorMessage ?? "Try again in a moment."}
@@ -212,19 +208,19 @@ export default function RouteCollectionsPage() {
             onClick={() => void refresh()}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm hover:bg-slate-700 transition"
           >
-            Retry
+            {t("Retry")}
           </button>
         </div>
       ) : collections.length === 0 ? (
         <EmptyState
-          title="No collections yet"
+          title={t("No collections yet")}
           body="Curate your favourite roads into shareable collections."
           actionLabel="Create collection"
           onAction={() => setModal({ mode: "create" })}
         />
       ) : visible.length === 0 ? (
         <EmptyState
-          title="No collections match your filters"
+          title={t("No collections match your filters")}
           body="Try clearing the search."
           actionLabel="Clear search"
           onAction={() => setSearch("")}
@@ -247,7 +243,7 @@ export default function RouteCollectionsPage() {
           <div className="flex items-center gap-2 mb-3">
             <Bookmark size={14} className="text-tarmoto-cyan" />
             <h2 className="text-sm font-semibold text-white">
-              Followed collections
+              {t("Followed collections")}
             </h2>
             <span className="text-xs text-slate-500">
               · {visibleFollowed.length}
@@ -257,8 +253,9 @@ export default function RouteCollectionsPage() {
             </span>
           </div>
           <p className="text-xs text-slate-500 mb-3">
-            Collections from other riders you&apos;ve saved. They show up here
-            until you unfollow.
+            {t(
+              "Collections from other riders you've saved. They show up here until you unfollow. ",
+            )}
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {visibleFollowed.map((collection) => (
@@ -293,7 +290,7 @@ export default function RouteCollectionsPage() {
 
       {deleteTarget && (
         <ConfirmDialog
-          title="Delete collection"
+          title={t("Delete collection")}
           message={`Delete "${deleteTarget.title}"? The routes inside won't be affected.`}
           confirmLabel="Delete"
           onConfirm={() => void confirmDelete()}
@@ -303,7 +300,7 @@ export default function RouteCollectionsPage() {
 
       {unfollowTarget && (
         <ConfirmDialog
-          title="Stop following"
+          title={t("Stop following")}
           message={`Stop following "${unfollowTarget.title}"?`}
           confirmLabel="Unfollow"
           onConfirm={() => void confirmUnfollow()}
@@ -313,11 +310,9 @@ export default function RouteCollectionsPage() {
     </div>
   );
 }
-
 // ─────────────────────────────────────────────────────────
 // Migration banner
 // ─────────────────────────────────────────────────────────
-
 function MigrationBanner({
   migration,
 }: {
@@ -325,14 +320,17 @@ function MigrationBanner({
 }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const word = migration.count === 1 ? "collection" : "collections";
-
   return (
     <div className="mb-4 rounded-xl border border-tarmoto-cyan/20 bg-tarmoto-cyan/5 p-4">
       <p className="text-sm text-slate-200">
-        Found {migration.count} {word} saved on this device. Move them to your
-        Tarmoto account so they sync across devices and survive clearing browser
-        storage.
+        {migration.count === 1
+          ? t(
+              "Found 1 collection saved on this device. Move it to your Tarmoto account so it syncs across devices and survives clearing browser storage. ",
+            )
+          : t(
+              "Found {count} collections saved on this device. Move them to your Tarmoto account so they sync across devices and survive clearing browser storage. ",
+              { count: migration.count },
+            )}
       </p>
       {error && (
         <p className="mt-2 text-xs text-amber-300" role="alert">
@@ -364,17 +362,15 @@ function MigrationBanner({
           onClick={migration.decline}
           className="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white transition disabled:opacity-50"
         >
-          Not now
+          {t("Not now")}
         </button>
       </div>
     </div>
   );
 }
-
 // ─────────────────────────────────────────────────────────
 // Toolbar
 // ─────────────────────────────────────────────────────────
-
 function Toolbar({
   search,
   onSearch,
@@ -393,18 +389,16 @@ function Toolbar({
           type="text"
           value={search}
           onChange={(e) => onSearch(e.target.value)}
-          placeholder="Search collections…"
+          placeholder={t("Search collections\u2026")}
           className="w-full pl-9 pr-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan transition"
         />
       </div>
     </div>
   );
 }
-
 // ─────────────────────────────────────────────────────────
 // Collection card
 // ─────────────────────────────────────────────────────────
-
 function CollectionCard({
   collection,
   onEdit,
@@ -415,7 +409,6 @@ function CollectionCard({
   onDelete: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
-
   // Distance + missing-count breakdowns deliberately live on the detail page,
   // not here. The list endpoint returns a summary (no per-item ids), so any
   // attempt to join against `useUserTrips` here would always read zero
@@ -449,13 +442,15 @@ function CollectionCard({
         <div className="flex items-center gap-2 text-sm text-slate-400">
           <RouteIcon size={13} />
           <span>
-            {collection.itemCount} route
-            {collection.itemCount === 1 ? "" : "s"}
+            {collection.itemCount === 1
+              ? t("1 route")
+              : t("{count} routes", { count: collection.itemCount })}
           </span>
         </div>
 
         <p className="mt-3 text-[11px] text-slate-600">
-          Updated {formatRelativeTime(collection.updatedAt)}
+          {t("Updated")}
+          {formatRelativeTime(collection.updatedAt)}
         </p>
       </Link>
 
@@ -497,11 +492,9 @@ function CollectionCard({
     </div>
   );
 }
-
 // ─────────────────────────────────────────────────────────
 // Followed collection card
 // ─────────────────────────────────────────────────────────
-
 function FollowedCollectionCard({
   collection,
   onUnfollow,
@@ -535,8 +528,9 @@ function FollowedCollectionCard({
           <span className="inline-flex items-center gap-1">
             <RouteIcon size={13} />
             <span>
-              {collection.itemCount} route
-              {collection.itemCount === 1 ? "" : "s"}
+              {collection.itemCount === 1
+                ? t("1 route")
+                : t("{count} routes", { count: collection.itemCount })}
             </span>
           </span>
           {collection.ownerName && (
@@ -548,7 +542,8 @@ function FollowedCollectionCard({
         </div>
 
         <p className="mt-3 text-[11px] text-slate-600">
-          Updated {formatRelativeTime(collection.updatedAt)}
+          {t("Updated")}
+          {formatRelativeTime(collection.updatedAt)}
         </p>
       </Link>
 
@@ -567,11 +562,9 @@ function FollowedCollectionCard({
     </div>
   );
 }
-
 // ─────────────────────────────────────────────────────────
 // Create / edit modal
 // ─────────────────────────────────────────────────────────
-
 function CollectionModal({
   mode,
   initial,
@@ -594,7 +587,6 @@ function CollectionModal({
   );
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   useEffect(() => {
@@ -604,7 +596,6 @@ function CollectionModal({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const nameError = validateCollectionName(title, collections, excludeId);
@@ -631,7 +622,6 @@ function CollectionModal({
       setSubmitting(false);
     }
   };
-
   return (
     <div
       role="dialog"
@@ -658,7 +648,7 @@ function CollectionModal({
               htmlFor="collection-name"
               className="block text-xs text-slate-500 mb-1"
             >
-              Name
+              {t("Name")}
             </label>
             <input
               id="collection-name"
@@ -670,7 +660,7 @@ function CollectionModal({
                 setError(null);
               }}
               maxLength={MAX_COLLECTION_NAME_LENGTH + 10}
-              placeholder="e.g. My Favourite Beskydy Loops"
+              placeholder={t("e.g. My Favourite Beskydy Loops")}
               className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white text-sm placeholder:text-slate-600 focus:outline-none focus:border-tarmoto-cyan"
             />
           </div>
@@ -679,7 +669,8 @@ function CollectionModal({
               htmlFor="collection-description"
               className="block text-xs text-slate-500 mb-1"
             >
-              Description <span className="text-slate-600">(optional)</span>
+              {t("Description")}{" "}
+              <span className="text-slate-600">{t("(optional)")}</span>
             </label>
             <textarea
               id="collection-description"
@@ -690,7 +681,7 @@ function CollectionModal({
               }}
               rows={3}
               maxLength={MAX_COLLECTION_DESCRIPTION_LENGTH + 10}
-              placeholder="What makes this collection special?"
+              placeholder={t("What makes this collection special?")}
               className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-white text-sm placeholder:text-slate-600 focus:outline-none focus:border-tarmoto-cyan resize-none"
             />
             <p className="mt-1 text-[11px] text-slate-600">
@@ -700,7 +691,7 @@ function CollectionModal({
 
           <fieldset>
             <legend className="block text-xs text-slate-500 mb-2">
-              Visibility
+              {t("Visibility")}
             </legend>
             <div className="space-y-2">
               {(
@@ -757,25 +748,27 @@ function CollectionModal({
             disabled={submitting}
             className="px-3 py-1.5 rounded-lg text-sm text-slate-400 hover:text-white transition disabled:opacity-50"
           >
-            Cancel
+            {t("Cancel")}
           </button>
           <button
             type="submit"
             disabled={submitting}
             className="px-3 py-1.5 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light disabled:opacity-50 transition"
           >
-            {submitting ? "Saving…" : mode === "create" ? "Create" : "Save"}
+            {submitting
+              ? t("Saving…")
+              : mode === "create"
+                ? t("Create")
+                : t("Save")}
           </button>
         </div>
       </form>
     </div>
   );
 }
-
 // ─────────────────────────────────────────────────────────
 // Shared bits
 // ─────────────────────────────────────────────────────────
-
 function EmptyState({
   title,
   body,
@@ -802,7 +795,6 @@ function EmptyState({
     </div>
   );
 }
-
 function CardMenu({
   onClose,
   children,
@@ -834,7 +826,6 @@ function CardMenu({
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
-
   return (
     <div
       ref={menuRef}
@@ -845,7 +836,6 @@ function CardMenu({
     </div>
   );
 }
-
 function CardMenuItem({
   icon,
   label,
@@ -872,7 +862,6 @@ function CardMenuItem({
     </button>
   );
 }
-
 function ConfirmDialog({
   title,
   message,
@@ -888,7 +877,6 @@ function ConfirmDialog({
 }) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
-
   useEffect(() => {
     cancelRef.current?.focus();
     function handleKey(e: KeyboardEvent) {
@@ -912,7 +900,6 @@ function ConfirmDialog({
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
   }, [onCancel]);
-
   return (
     <div
       role="dialog"
@@ -938,7 +925,7 @@ function ConfirmDialog({
             onClick={onCancel}
             className="rounded-lg px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 transition"
           >
-            Cancel
+            {t("Cancel")}
           </button>
           <button
             ref={confirmRef}

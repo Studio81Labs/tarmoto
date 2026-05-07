@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useEffect, useState, type FormEvent } from "react";
 import { Loader2, X } from "lucide-react";
 import {
@@ -13,7 +13,6 @@ import {
   validateBikeForm,
 } from "@/lib/bikes";
 import type { Bike } from "@/lib/types";
-
 interface BikeFormModalProps {
   open: boolean;
   mode: "add" | "edit";
@@ -21,7 +20,6 @@ interface BikeFormModalProps {
   onClose: () => void;
   onSubmit: (payload: BikeFormPayload) => Promise<void>;
 }
-
 export function BikeFormModal({
   open,
   mode,
@@ -33,7 +31,6 @@ export function BikeFormModal({
   const [errors, setErrors] = useState<BikeFormErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-
   // Reset form state whenever the modal opens with a different bike, so the
   // "Edit" form shows the target bike's values rather than stale form state.
   useEffect(() => {
@@ -43,7 +40,6 @@ export function BikeFormModal({
     setSubmitError(null);
     setSubmitting(false);
   }, [open, initialBike]);
-
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
@@ -52,9 +48,7 @@ export function BikeFormModal({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, submitting, onClose]);
-
   if (!open) return null;
-
   function setField<K extends keyof BikeFormValues>(
     key: K,
     value: BikeFormValues[K],
@@ -63,7 +57,6 @@ export function BikeFormModal({
     setErrors((e) => ({ ...e, [key]: undefined }));
     setSubmitError(null);
   }
-
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (submitting) return;
@@ -83,9 +76,7 @@ export function BikeFormModal({
       setSubmitting(false);
     }
   }
-
   const title = mode === "add" ? "Add a bike" : "Edit bike";
-
   return (
     <div
       role="dialog"
@@ -109,7 +100,7 @@ export function BikeFormModal({
             type="button"
             onClick={onClose}
             disabled={submitting}
-            aria-label="Close"
+            aria-label={t("Close")}
             className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition disabled:opacity-50"
           >
             <X size={18} />
@@ -123,7 +114,7 @@ export function BikeFormModal({
             value={values.make}
             onChange={(v) => setField("make", v)}
             error={errors.make}
-            placeholder="Yamaha"
+            placeholder={t("Yamaha")}
             autoFocus
           />
           <Field
@@ -132,7 +123,7 @@ export function BikeFormModal({
             value={values.model}
             onChange={(v) => setField("model", v)}
             error={errors.model}
-            placeholder="MT-09"
+            placeholder={t("MT-09")}
           />
           <Field
             id="bike-year"
@@ -150,7 +141,7 @@ export function BikeFormModal({
             value={values.photoUrl}
             onChange={(v) => setField("photoUrl", v)}
             error={errors.photoUrl}
-            placeholder="https://…"
+            placeholder={t("https://\u2026")}
             helpText="Paste a link to a photo of your bike. File upload is coming soon."
           />
 
@@ -167,7 +158,7 @@ export function BikeFormModal({
               disabled={submitting}
               className="px-4 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-800 transition disabled:opacity-50"
             >
-              Cancel
+              {t("Cancel ")}
             </button>
             <button
               type="submit"
@@ -176,7 +167,8 @@ export function BikeFormModal({
             >
               {submitting ? (
                 <>
-                  <Loader2 size={14} className="animate-spin" /> Saving…
+                  <Loader2 size={14} className="animate-spin" />
+                  {t("Saving\u2026 ")}
                 </>
               ) : mode === "add" ? (
                 "Add bike"
@@ -190,7 +182,6 @@ export function BikeFormModal({
     </div>
   );
 }
-
 interface FieldProps {
   id: string;
   label: string;
@@ -203,7 +194,6 @@ interface FieldProps {
   maxLength?: number;
   autoFocus?: boolean;
 }
-
 function Field({
   id,
   label,

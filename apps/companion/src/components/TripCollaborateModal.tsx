@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Check,
@@ -22,9 +22,7 @@ import {
 } from "@/lib/api";
 import { onTripActivity } from "@/lib/socket";
 import type { Trip } from "@/lib/types";
-
 type Tab = "invite" | "suggestions" | "activity";
-
 interface TripCollaborateModalProps {
   open: boolean;
   trip: Trip | null;
@@ -49,7 +47,6 @@ interface TripCollaborateModalProps {
   onPromoted?: (serverTripId: string) => void;
   onClose: () => void;
 }
-
 /**
  * US-35 — full collaboration surface for trip planning. Sits on top of
  * the suggestions/voting REST surface from `#250` and adds cursor
@@ -82,7 +79,6 @@ export function TripCollaborateModal({
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
-
   useEffect(() => {
     sessionRef.current += 1;
     setShare(null);
@@ -91,7 +87,6 @@ export function TripCollaborateModal({
     setLoading(false);
     setTab("invite");
   }, [open]);
-
   useEffect(() => {
     if (!open) return;
     function handleKey(event: KeyboardEvent) {
@@ -100,13 +95,11 @@ export function TripCollaborateModal({
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
   }, [open]);
-
   useEffect(() => {
     if (!copied) return;
     const id = window.setTimeout(() => setCopied(false), 2500);
     return () => window.clearTimeout(id);
   }, [copied]);
-
   const handleGenerate = useCallback(async () => {
     if (!trip) return;
     const session = sessionRef.current;
@@ -126,7 +119,6 @@ export function TripCollaborateModal({
       if (session === sessionRef.current) setLoading(false);
     }
   }, [trip]);
-
   const handleCopy = useCallback(async () => {
     if (!share) return;
     const url = buildInviteUrl(share.share_token);
@@ -137,14 +129,11 @@ export function TripCollaborateModal({
       setError("Copy failed — select the URL manually.");
     }
   }, [share]);
-
   if (!open) return null;
-
   const inviteUrl = share ? buildInviteUrl(share.share_token) : null;
   const isOwner = Boolean(
     currentUserId && ownerId && currentUserId === ownerId,
   );
-
   return (
     <div
       role="dialog"
@@ -162,17 +151,18 @@ export function TripCollaborateModal({
               id="trip-collaborate-title"
               className="text-lg font-semibold text-white"
             >
-              Collaborate on this trip
+              {t("Collaborate on this trip ")}
             </h2>
             <p className="mt-1 text-sm text-slate-400">
-              Share a read-only link, gather route suggestions from your group,
-              and track the activity log.
+              {t(
+                "Share a read-only link, gather route suggestions from your group, and track the activity log. ",
+              )}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close dialog"
+            aria-label={t("Close dialog")}
             className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition"
           >
             <X size={16} />
@@ -181,7 +171,7 @@ export function TripCollaborateModal({
 
         <nav
           role="tablist"
-          aria-label="Collaboration tabs"
+          aria-label={t("Collaboration tabs")}
           className="flex border-b border-slate-800 bg-slate-950/40"
         >
           {(
@@ -189,7 +179,10 @@ export function TripCollaborateModal({
               { id: "invite", label: "Invite link" },
               { id: "suggestions", label: "Suggestions" },
               { id: "activity", label: "Activity" },
-            ] as { id: Tab; label: string }[]
+            ] as {
+              id: Tab;
+              label: string;
+            }[]
           ).map(({ id, label }) => (
             <button
               key={id}
@@ -262,7 +255,6 @@ export function TripCollaborateModal({
     </div>
   );
 }
-
 function InviteTab({
   trip,
   share,
@@ -283,11 +275,10 @@ function InviteTab({
   if (!trip) {
     return (
       <p className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-400">
-        Generate or load a trip first to create an invite link.
+        {t("Generate or load a trip first to create an invite link. ")}
       </p>
     );
   }
-
   if (!share) {
     return (
       <button
@@ -299,28 +290,27 @@ function InviteTab({
         {loading ? (
           <>
             <Loader2 size={14} className="animate-spin" />
-            Generating…
+            {t("Generating\u2026 ")}
           </>
         ) : (
           <>
             <LinkIcon size={14} />
-            Create invite link
+            {t("Create invite link ")}
           </>
         )}
       </button>
     );
   }
-
   return (
     <div className="space-y-3">
       <label className="block text-xs font-medium uppercase tracking-wide text-slate-500">
-        Invite link
+        {t("Invite link ")}
       </label>
       <div className="flex items-stretch overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60">
         <input
           readOnly
           value={inviteUrl ?? ""}
-          aria-label="Shareable invite URL"
+          aria-label={t("Shareable invite URL")}
           className="flex-1 bg-transparent px-3 py-2 text-sm text-slate-200 outline-none"
           onFocus={(event) => event.currentTarget.select()}
         />
@@ -332,24 +322,24 @@ function InviteTab({
           {copied ? (
             <>
               <Check size={14} className="text-tarmoto-cyan" />
-              Copied
+              {t("Copied ")}
             </>
           ) : (
             <>
               <Copy size={14} />
-              Copy
+              {t("Copy ")}
             </>
           )}
         </button>
       </div>
       <p className="text-xs text-slate-500">
-        Anyone with the link can view the trip, no account required. Switch to
-        the Suggestions tab to invite signed-in members to collaborate.
+        {t(
+          "Anyone with the link can view the trip, no account required. Switch to the Suggestions tab to invite signed-in members to collaborate. ",
+        )}
       </p>
     </div>
   );
 }
-
 function SuggestionsTab({
   trip,
   serverTripId,
@@ -384,7 +374,6 @@ function SuggestionsTab({
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-
   useEffect(() => {
     if (!serverTripId || usingExternal) return;
     let cancelled = false;
@@ -404,7 +393,6 @@ function SuggestionsTab({
       cancelled = true;
     };
   }, [serverTripId, usingExternal]);
-
   if (!serverTripId) {
     return (
       <PromoteTripCTA
@@ -415,7 +403,6 @@ function SuggestionsTab({
       />
     );
   }
-
   const handleCreate = async () => {
     if (!title.trim()) {
       setError("Give your suggestion a short title.");
@@ -452,7 +439,6 @@ function SuggestionsTab({
       setCreating(false);
     }
   };
-
   const handleVote = async (id: string, vote: "up" | "down") => {
     try {
       const { data } = await tripCollabApi.voteSuggestion(
@@ -465,7 +451,6 @@ function SuggestionsTab({
       setError(describeError(err));
     }
   };
-
   const handleUnvote = async (id: string) => {
     try {
       const { data } = await tripCollabApi.unvoteSuggestion(serverTripId, id);
@@ -474,7 +459,6 @@ function SuggestionsTab({
       setError(describeError(err));
     }
   };
-
   const handleResolve = async (id: string, action: "accept" | "reject") => {
     try {
       const { data } =
@@ -486,7 +470,6 @@ function SuggestionsTab({
       setError(describeError(err));
     }
   };
-
   const handleDelete = async (id: string) => {
     try {
       await tripCollabApi.deleteSuggestion(serverTripId, id);
@@ -495,7 +478,6 @@ function SuggestionsTab({
       setError(describeError(err));
     }
   };
-
   return (
     <div className="space-y-5">
       {trip ? (
@@ -508,26 +490,27 @@ function SuggestionsTab({
         <section className="space-y-2 rounded-lg border border-slate-800 bg-slate-950/50 p-4">
           <h3 className="text-sm font-semibold text-white flex items-center gap-2">
             <MessageSquarePlus size={14} className="text-tarmoto-cyan" />
-            Propose an alternative
+            {t("Propose an alternative ")}
           </h3>
           <p className="text-xs text-slate-400">
-            Share a route change idea with your group. Members can vote; the
-            trip owner can accept or reject.
+            {t(
+              "Share a route change idea with your group. Members can vote; the trip owner can accept or reject. ",
+            )}
           </p>
           <input
             type="text"
-            placeholder="Short title (e.g. 'Scenic loop via Passo Giau')"
+            placeholder={t("Short title (e.g. 'Scenic loop via Passo Giau')")}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            aria-label="Suggestion title"
+            aria-label={t("Suggestion title")}
             maxLength={200}
             className="w-full rounded-md bg-slate-900 border border-slate-800 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-tarmoto-cyan"
           />
           <textarea
-            placeholder="Optional context — why this route?"
+            placeholder={t("Optional context \u2014 why this route?")}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            aria-label="Suggestion description"
+            aria-label={t("Suggestion description")}
             rows={2}
             maxLength={2000}
             className="w-full resize-none rounded-md bg-slate-900 border border-slate-800 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-tarmoto-cyan"
@@ -540,7 +523,8 @@ function SuggestionsTab({
           >
             {creating ? (
               <>
-                <Loader2 size={12} className="animate-spin" /> Submitting…
+                <Loader2 size={12} className="animate-spin" />
+                {t("Submitting\u2026 ")}
               </>
             ) : (
               "Submit suggestion"
@@ -549,13 +533,16 @@ function SuggestionsTab({
         </section>
       ) : (
         <p className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-400">
-          Load the trip into the planner to propose a new suggestion. You can
-          still view and vote on existing suggestions below.
+          {t(
+            "Load the trip into the planner to propose a new suggestion. You can still view and vote on existing suggestions below. ",
+          )}
         </p>
       )}
 
       {loading && (
-        <p className="text-sm text-slate-500">Loading suggestions…</p>
+        <p className="text-sm text-slate-500">
+          {t("Loading suggestions\u2026")}
+        </p>
       )}
 
       {externalError && (
@@ -572,7 +559,9 @@ function SuggestionsTab({
 
       {suggestions.length === 0 && !loading && !externalError && (
         <p className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-400">
-          No suggestions yet — be the first to propose a route change.
+          {t(
+            "No suggestions yet \u2014 be the first to propose a route change. ",
+          )}
         </p>
       )}
 
@@ -605,7 +594,6 @@ function SuggestionsTab({
     </div>
   );
 }
-
 function SuggestionCard({
   suggestion,
   isOwner,
@@ -636,7 +624,6 @@ function SuggestionCard({
       {suggestion.status}
     </span>
   );
-
   return (
     <li className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
       <div className="flex items-start justify-between gap-3">
@@ -645,7 +632,8 @@ function SuggestionCard({
             {suggestion.title}
           </h4>
           <p className="text-xs text-slate-500">
-            by {suggestion.suggester_display_name}
+            {t("by ")}
+            {suggestion.suggester_display_name}
           </p>
         </div>
         {statusBadge}
@@ -662,7 +650,7 @@ function SuggestionCard({
             disabled={!isOpen}
             onClick={() => onVote("up")}
             aria-pressed={suggestion.caller_vote === "up"}
-            aria-label="Vote up"
+            aria-label={t("Vote up")}
             className={
               "flex items-center gap-1 rounded-md px-2 py-1 text-xs border transition disabled:opacity-50 disabled:cursor-not-allowed " +
               (suggestion.caller_vote === "up"
@@ -677,7 +665,7 @@ function SuggestionCard({
             disabled={!isOpen}
             onClick={() => onVote("down")}
             aria-pressed={suggestion.caller_vote === "down"}
-            aria-label="Vote down"
+            aria-label={t("Vote down")}
             className={
               "flex items-center gap-1 rounded-md px-2 py-1 text-xs border transition disabled:opacity-50 disabled:cursor-not-allowed " +
               (suggestion.caller_vote === "down"
@@ -696,14 +684,14 @@ function SuggestionCard({
                 onClick={() => onResolve("accept")}
                 className="rounded-md bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20"
               >
-                Accept
+                {t("Accept ")}
               </button>
               <button
                 type="button"
                 onClick={() => onResolve("reject")}
                 className="rounded-md bg-red-500/10 px-2 py-1 text-xs font-medium text-red-300 hover:bg-red-500/20"
               >
-                Reject
+                {t("Reject ")}
               </button>
             </>
           )}
@@ -711,7 +699,7 @@ function SuggestionCard({
             <button
               type="button"
               onClick={onDelete}
-              aria-label="Delete suggestion"
+              aria-label={t("Delete suggestion")}
               className="rounded-md bg-slate-800 px-2 py-1 text-xs text-slate-400 hover:bg-slate-700 hover:text-slate-200"
             >
               <Trash2 size={12} />
@@ -722,7 +710,6 @@ function SuggestionCard({
     </li>
   );
 }
-
 function ActivityTab({
   trip,
   serverTripId,
@@ -735,7 +722,6 @@ function ActivityTab({
   const [entries, setEntries] = useState<TripActivityEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   useEffect(() => {
     if (!serverTripId) return;
     let cancelled = false;
@@ -765,7 +751,6 @@ function ActivityTab({
       cancelled = true;
     };
   }, [serverTripId]);
-
   useEffect(() => {
     if (!serverTripId) return;
     const off = onTripActivity((payload) => {
@@ -787,7 +772,6 @@ function ActivityTab({
     });
     return off;
   }, [serverTripId]);
-
   if (!serverTripId) {
     return (
       <PromoteTripCTA
@@ -798,8 +782,8 @@ function ActivityTab({
       />
     );
   }
-
-  if (loading) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (loading)
+    return <p className="text-sm text-slate-500">{t("Loading\u2026")}</p>;
   // Render the API error BEFORE the empty-state check so a failed fetch
   // surfaces as an actionable alert rather than a misleading "No
   // activity yet" message when auth/network/server issues prevent the
@@ -817,12 +801,12 @@ function ActivityTab({
   if (entries.length === 0) {
     return (
       <p className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-400">
-        No activity yet. Member joins, suggestion proposals, votes, and
-        resolutions will show up here.
+        {t(
+          "No activity yet. Member joins, suggestion proposals, votes, and resolutions will show up here. ",
+        )}
       </p>
     );
   }
-
   return (
     <>
       <ol className="space-y-2">
@@ -851,7 +835,6 @@ function ActivityTab({
     </>
   );
 }
-
 function PromoteTripCTA({
   trip,
   headline,
@@ -865,15 +848,13 @@ function PromoteTripCTA({
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   if (!trip) {
     return (
       <p className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-400">
-        Generate or load a trip first to enable collaboration.
+        {t("Generate or load a trip first to enable collaboration. ")}
       </p>
     );
   }
-
   const handleSave = async () => {
     setLoading(true);
     setError(null);
@@ -883,7 +864,11 @@ function PromoteTripCTA({
         title: trip.name || "Untitled trip",
         num_days: trip.days.length || 1,
       });
-      const serverId = (data as { id?: string }).id;
+      const serverId = (
+        data as {
+          id?: string;
+        }
+      ).id;
       if (serverId && onPromoted) onPromoted(serverId);
     } catch (err) {
       setError(describeError(err));
@@ -891,7 +876,6 @@ function PromoteTripCTA({
       setLoading(false);
     }
   };
-
   return (
     <div className="space-y-3 rounded-lg border border-slate-800 bg-slate-950/60 p-4">
       <div>
@@ -907,7 +891,7 @@ function PromoteTripCTA({
         {loading ? (
           <>
             <Loader2 size={12} className="animate-spin" />
-            Saving…
+            {t("Saving\u2026 ")}
           </>
         ) : (
           "Save trip and enable collaboration"
@@ -924,16 +908,16 @@ function PromoteTripCTA({
     </div>
   );
 }
-
 /**
  * Anchor a new suggestion to the trip's first waypoint so the map
  * overlay has somewhere to render the marker. Returns null for empty
  * trips; callers then fall back to a coordless suggestion (visible in
  * the modal list only).
  */
-function pickSuggestionAnchor(
-  trip: Trip | null,
-): { lat: number; lng: number } | null {
+function pickSuggestionAnchor(trip: Trip | null): {
+  lat: number;
+  lng: number;
+} | null {
   if (!trip) return null;
   for (const day of trip.days) {
     const first = day.waypoints[0];
@@ -943,7 +927,6 @@ function pickSuggestionAnchor(
   }
   return null;
 }
-
 function describeActivity(entry: TripActivityEntry): string {
   const actor = entry.actor_name ?? "Someone";
   switch (entry.action) {
@@ -983,22 +966,19 @@ function describeActivity(entry: TripActivityEntry): string {
       return `${actor} ${String(entry.action).replace(/_/g, " ")}`;
   }
 }
-
 function formatRelativeTime(iso: string): string {
   const d = new Date(iso);
   const diff = Date.now() - d.getTime();
-  if (diff < 60_000) return "just now";
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  if (diff < 60000) return "just now";
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
   return d.toLocaleDateString();
 }
-
 function describeError(err: unknown): string {
   if (err instanceof ApiError) return err.message ?? `Failed (${err.status})`;
   if (err instanceof Error) return err.message;
   return "Unknown error";
 }
-
 function buildInviteUrl(token: string): string {
   if (typeof window === "undefined") return `/trips/shared/${token}`;
   return `${window.location.origin}/trips/shared/${token}`;

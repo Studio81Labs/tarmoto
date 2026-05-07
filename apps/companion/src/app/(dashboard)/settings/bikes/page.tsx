@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
@@ -18,14 +18,21 @@ import { useAuthStore } from "@/stores/auth";
 import type { Bike } from "@/lib/types";
 import { BikeFormModal } from "@/components/BikeFormModal";
 import { formatBikeTitle, type BikeFormPayload } from "@/lib/bikes";
-
 type ModalState =
-  | { kind: "closed" }
-  | { kind: "add" }
-  | { kind: "edit"; bike: Bike };
-
-type ListError = { kind: "load" | "action"; message: string } | null;
-
+  | {
+      kind: "closed";
+    }
+  | {
+      kind: "add";
+    }
+  | {
+      kind: "edit";
+      bike: Bike;
+    };
+type ListError = {
+  kind: "load" | "action";
+  message: string;
+} | null;
 export default function BikesPage() {
   const [bikes, setBikes] = useState<Bike[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,7 +41,6 @@ export default function BikesPage() {
   const [pendingActionBikeId, setPendingActionBikeId] = useState<string | null>(
     null,
   );
-
   const refresh = useCallback(async () => {
     try {
       const { data } = await accountApi.getBikes();
@@ -50,7 +56,6 @@ export default function BikesPage() {
       });
     }
   }, []);
-
   // Wait for the auth store to carry a token before fetching — same
   // hard-navigation race fix as the other settings pages.
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
@@ -73,7 +78,6 @@ export default function BikesPage() {
       cancelled = true;
     };
   }, [authReady]);
-
   const sortedBikes = useMemo(
     () =>
       [...bikes].sort((a, b) => {
@@ -82,7 +86,6 @@ export default function BikesPage() {
       }),
     [bikes],
   );
-
   async function handleSubmit(payload: BikeFormPayload) {
     if (modal.kind === "add") {
       await accountApi.addBike(payload);
@@ -91,7 +94,6 @@ export default function BikesPage() {
     }
     await refresh();
   }
-
   async function handleSetActive(bike: Bike) {
     if (bike.isActive || pendingActionBikeId) return;
     setPendingActionBikeId(bike.id);
@@ -124,7 +126,6 @@ export default function BikesPage() {
       setPendingActionBikeId(null);
     }
   }
-
   async function handleDelete(bike: Bike) {
     if (pendingActionBikeId) return;
     const confirmed = window.confirm(
@@ -144,28 +145,29 @@ export default function BikesPage() {
       setPendingActionBikeId(null);
     }
   }
-
   return (
     <div className="p-6 max-w-3xl mx-auto animate-fade-in">
       <Link
         href="/settings"
         className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-white mb-4 transition"
       >
-        <ArrowLeft size={16} /> Settings
+        <ArrowLeft size={16} />
+        {t("Settings ")}
       </Link>
       <div className="flex items-center justify-between mb-2">
-        <h1 className="text-2xl font-bold">My Bikes</h1>
+        <h1 className="text-2xl font-bold">{t("My Bikes")}</h1>
         <button
           type="button"
           onClick={() => setModal({ kind: "add" })}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition"
         >
-          <Plus size={16} /> Add bike
+          <Plus size={16} />
+          {t("Add bike ")}
         </button>
       </div>
       <p className="text-sm text-slate-400 mb-6 inline-flex items-center gap-1.5">
-        <Smartphone size={14} /> Your garage is synced with the Tarmoto mobile
-        app.
+        <Smartphone size={14} />
+        {t("Your garage is synced with the Tarmoto mobile app. ")}
       </p>
 
       {error?.kind === "action" && (
@@ -214,7 +216,6 @@ export default function BikesPage() {
     </div>
   );
 }
-
 interface BikeCardProps {
   bike: Bike;
   pending: boolean;
@@ -222,7 +223,6 @@ interface BikeCardProps {
   onDelete: () => void;
   onSetActive: () => void;
 }
-
 function BikeCard({
   bike,
   pending,
@@ -232,11 +232,8 @@ function BikeCard({
 }: BikeCardProps) {
   const ridesLabel =
     typeof bike.totalRides === "number"
-      ? `${bike.totalRides.toLocaleString()} ride${
-          bike.totalRides === 1 ? "" : "s"
-        }`
+      ? `${bike.totalRides.toLocaleString()} ride${bike.totalRides === 1 ? "" : "s"}`
       : null;
-
   return (
     <li className="flex flex-col sm:flex-row sm:items-center gap-4 p-4 rounded-xl bg-slate-900 border border-slate-800">
       <div className="w-20 h-20 rounded-lg bg-slate-800 flex items-center justify-center overflow-hidden flex-shrink-0">
@@ -262,12 +259,14 @@ function BikeCard({
           </p>
           {bike.isActive && (
             <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-tarmoto-cyan/10 text-tarmoto-cyan text-xs font-medium">
-              <Check size={12} /> Active
+              <Check size={12} />
+              {t("Active ")}
             </span>
           )}
         </div>
         <p className="text-sm text-slate-400 mt-0.5">
-          {bike.year} • {bike.totalKm.toLocaleString()} km
+          {bike.year} • {bike.totalKm.toLocaleString()}
+          {t("km ")}
           {ridesLabel ? ` • ${ridesLabel}` : ""}
         </p>
       </div>
@@ -286,7 +285,7 @@ function BikeCard({
             ) : (
               <Star size={14} />
             )}
-            Set active
+            {t("Set active ")}
           </button>
         )}
         <button
@@ -311,23 +310,25 @@ function BikeCard({
     </li>
   );
 }
-
 function EmptyState({ onAdd }: { onAdd: () => void }) {
   return (
     <div className="rounded-2xl bg-slate-900 border border-slate-800 p-12 text-center">
       <BikeIcon size={48} className="mx-auto text-slate-600 mb-4" />
       <p className="text-slate-300 mb-2 font-medium">
-        No bikes in your garage yet
+        {t("No bikes in your garage yet ")}
       </p>
       <p className="text-slate-500 text-sm mb-5">
-        Add your motorcycle to get bike-specific stats and recommendations.
+        {t(
+          "Add your motorcycle to get bike-specific stats and recommendations. ",
+        )}
       </p>
       <button
         type="button"
         onClick={onAdd}
         className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition"
       >
-        <Plus size={16} /> Add your first bike
+        <Plus size={16} />
+        {t("Add your first bike ")}
       </button>
     </div>
   );

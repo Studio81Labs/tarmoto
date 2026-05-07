@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
@@ -31,12 +31,18 @@ import {
   type SubscriptionStatus,
   type SubscriptionTier,
 } from "@/lib/subscription";
-
 type LoadState =
-  | { kind: "loading" }
-  | { kind: "loaded"; snapshot: SubscriptionSnapshot }
-  | { kind: "error"; message: string };
-
+  | {
+      kind: "loading";
+    }
+  | {
+      kind: "loaded";
+      snapshot: SubscriptionSnapshot;
+    }
+  | {
+      kind: "error";
+      message: string;
+    };
 type BillingAction =
   | "portal-manage"
   | "portal-payment-method"
@@ -44,21 +50,18 @@ type BillingAction =
   | "portal-update"
   | "checkout-premium"
   | "checkout-pro";
-
 const STATUS_STYLES: Record<SubscriptionStatus, string> = {
   active: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20",
   trialing: "bg-sky-500/10 text-sky-300 border-sky-500/20",
   past_due: "bg-amber-500/10 text-amber-300 border-amber-500/20",
   canceled: "bg-rose-500/10 text-rose-300 border-rose-500/20",
 };
-
 const STATUS_LABELS: Record<SubscriptionStatus, string> = {
   active: "Active",
   trialing: "Trialing",
   past_due: "Payment issue",
   canceled: "Canceled",
 };
-
 export default function SubscriptionPage() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
@@ -66,7 +69,6 @@ export default function SubscriptionPage() {
     kind: BillingAction | null;
     error: string | null;
   }>({ kind: null, error: null });
-
   // Gate the fetch on the auth store having a token. Without this,
   // a hard reload of `/settings/subscription` races AuthSync — the
   // fetch fires before `accessToken` lands in the store and the API
@@ -76,7 +78,6 @@ export default function SubscriptionPage() {
   useEffect(() => {
     if (!authReady) return;
     let cancelled = false;
-
     accountApi
       .getSubscription()
       .then(({ data }) => {
@@ -103,18 +104,15 @@ export default function SubscriptionPage() {
               : "Could not load subscription settings.",
         });
       });
-
     return () => {
       cancelled = true;
     };
   }, [authReady]);
-
   const snapshot = state.kind === "loaded" ? state.snapshot : null;
   const renewalLabel = useMemo(
     () => (snapshot ? describeRenewal(snapshot.currentPlan) : ""),
     [snapshot],
   );
-
   async function openCheckout(tier: "premium" | "pro") {
     setActionState({ kind: `checkout-${tier}`, error: null });
     try {
@@ -130,7 +128,6 @@ export default function SubscriptionPage() {
       });
     }
   }
-
   async function openPortal(
     flow:
       | "manage"
@@ -146,7 +143,6 @@ export default function SubscriptionPage() {
           : flow === "subscription_cancel"
             ? "portal-cancel"
             : "portal-update";
-
     setActionState({ kind, error: null });
     try {
       const { data } = await accountApi.createPortalSession({ flow });
@@ -161,7 +157,6 @@ export default function SubscriptionPage() {
       });
     }
   }
-
   function handlePlanAction(planTier: SubscriptionTier) {
     if (!snapshot) return;
     if (planTier === snapshot.currentPlan.tier) {
@@ -169,39 +164,36 @@ export default function SubscriptionPage() {
       void openPortal("manage");
       return;
     }
-
     if (snapshot.currentPlan.tier === "free") {
       void openCheckout(planTier as "premium" | "pro");
       return;
     }
-
     if (planTier === "free") {
       if (!snapshot.portalAvailable) return;
       void openPortal("subscription_cancel");
       return;
     }
-
     if (!snapshot.portalAvailable) return;
     void openPortal("subscription_update");
   }
-
   const billingBusy = actionState.kind !== null;
-
   return (
     <div className="mx-auto max-w-6xl animate-fade-in p-6">
       <Link
         href="/settings"
         className="mb-4 inline-flex items-center gap-1 text-sm text-slate-400 transition hover:text-white"
       >
-        <ArrowLeft size={16} /> Settings
+        <ArrowLeft size={16} />
+        {t("Settings ")}
       </Link>
 
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Subscription</h1>
+          <h1 className="text-2xl font-bold">{t("Subscription")}</h1>
           <p className="mt-1 text-sm text-slate-400">
-            Manage your plan, payment method, billing history, and renewal
-            choices from one place.
+            {t(
+              "Manage your plan, payment method, billing history, and renewal choices from one place. ",
+            )}
           </p>
         </div>
         {snapshot?.portalAvailable ? (
@@ -214,11 +206,12 @@ export default function SubscriptionPage() {
             {actionState.kind === "portal-manage" ? (
               <>
                 <Loader2 size={14} className="animate-spin" />
-                Opening billing portal…
+                {t("Opening billing portal\u2026 ")}
               </>
             ) : (
               <>
-                Open billing portal <ExternalLink size={14} />
+                {t("Open billing portal ")}
+                <ExternalLink size={14} />
               </>
             )}
           </button>
@@ -241,8 +234,9 @@ export default function SubscriptionPage() {
         <>
           {snapshot.preview ? (
             <div className="mb-6 rounded-2xl border border-sky-500/20 bg-sky-500/5 px-4 py-3 text-sm text-sky-100">
-              Preview data shown while live billing management is still being
-              wired up.
+              {t(
+                "Preview data shown while live billing management is still being wired up. ",
+              )}
             </div>
           ) : null}
 
@@ -262,7 +256,7 @@ export default function SubscriptionPage() {
           <section className="mb-6">
             <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-200">
               <Sparkles size={16} className="text-tarmoto-cyan" />
-              Plan comparison
+              {t("Plan comparison ")}
             </div>
             <div className="grid gap-4 lg:grid-cols-3">
               {snapshot.plans.map((plan) => (
@@ -308,7 +302,6 @@ export default function SubscriptionPage() {
     </div>
   );
 }
-
 function CurrentPlanCard({
   snapshot,
   renewalLabel,
@@ -317,13 +310,12 @@ function CurrentPlanCard({
   renewalLabel: string;
 }) {
   const { currentPlan } = snapshot;
-
   return (
     <section className="rounded-3xl border border-slate-800 bg-slate-900/90 p-6">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.24em] text-slate-500">
-            Current plan
+            {t("Current plan ")}
           </p>
           <div className="mt-2 flex items-center gap-3">
             <h2 className="text-3xl font-bold text-white">
@@ -338,7 +330,7 @@ function CurrentPlanCard({
         </div>
         <div className="rounded-2xl border border-tarmoto-cyan/20 bg-tarmoto-cyan/10 px-4 py-3 text-right">
           <p className="text-xs uppercase tracking-[0.2em] text-tarmoto-cyan/80">
-            Billing
+            {t("Billing ")}
           </p>
           <p className="mt-1 text-2xl font-bold text-tarmoto-cyan">
             {currentPlan.priceLabel}
@@ -350,7 +342,7 @@ function CurrentPlanCard({
         <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
           <div className="mb-2 inline-flex items-center gap-2 text-sm font-medium text-slate-200">
             <CalendarClock size={15} className="text-slate-500" />
-            Renewal
+            {t("Renewal ")}
           </div>
           <p className="text-sm text-slate-300">{renewalLabel}</p>
         </div>
@@ -358,7 +350,7 @@ function CurrentPlanCard({
         <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
           <div className="mb-2 inline-flex items-center gap-2 text-sm font-medium text-slate-200">
             <BadgeCheck size={15} className="text-slate-500" />
-            Included right now
+            {t("Included right now ")}
           </div>
           <ul className="space-y-2 text-sm text-slate-300">
             {snapshot.plans
@@ -379,7 +371,6 @@ function CurrentPlanCard({
     </section>
   );
 }
-
 function PaymentMethodCard({
   snapshot,
   onUpdatePaymentMethod,
@@ -392,12 +383,11 @@ function PaymentMethodCard({
   updateBusy: boolean;
 }) {
   const paymentMethod = snapshot.paymentMethod;
-
   return (
     <section className="rounded-3xl border border-slate-800 bg-slate-900/90 p-6">
       <div className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-slate-200">
         <CreditCard size={16} className="text-slate-500" />
-        Payment method
+        {t("Payment method ")}
       </div>
 
       {paymentMethod ? (
@@ -411,15 +401,17 @@ function PaymentMethodCard({
         </div>
       ) : (
         <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/40 p-4 text-sm text-slate-400">
-          No payment method on file yet. Upgrades and invoices will appear here
-          once billing is connected.
+          {t(
+            "No payment method on file yet. Upgrades and invoices will appear here once billing is connected. ",
+          )}
         </div>
       )}
 
       <div className="mt-4 space-y-2 text-sm text-slate-400">
         <p>
-          Billing changes flow through the same portal used for upgrades,
-          downgrades, and invoices so web and mobile stay in sync.
+          {t(
+            "Billing changes flow through the same portal used for upgrades, downgrades, and invoices so web and mobile stay in sync. ",
+          )}
         </p>
         {snapshot.portalAvailable ? (
           <button
@@ -431,25 +423,26 @@ function PaymentMethodCard({
             {updateBusy ? (
               <>
                 <Loader2 size={14} className="animate-spin" />
-                Opening payment settings…
+                {t("Opening payment settings\u2026 ")}
               </>
             ) : (
               <>
-                Update payment method <ExternalLink size={14} />
+                {t("Update payment method ")}
+                <ExternalLink size={14} />
               </>
             )}
           </button>
         ) : (
           <p className="rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-2 text-slate-300">
-            Payment method editing will light up automatically as soon as the
-            billing backend is available.
+            {t(
+              "Payment method editing will light up automatically as soon as the billing backend is available. ",
+            )}
           </p>
         )}
       </div>
     </section>
   );
 }
-
 function PlanCard({
   plan,
   currentTier,
@@ -471,7 +464,6 @@ function PlanCard({
     busy ||
     (!isCurrent && currentTier !== "free" && !portalAvailable) ||
     (isCurrent && !portalAvailable);
-
   return (
     <article
       className={`rounded-3xl border p-6 ${
@@ -513,7 +505,7 @@ function PlanCard({
         {actionBusy ? (
           <>
             <Loader2 size={14} className="animate-spin" />
-            Opening…
+            {t("Opening\u2026 ")}
           </>
         ) : (
           <>
@@ -525,19 +517,19 @@ function PlanCard({
     </article>
   );
 }
-
 function BillingHistoryCard({ snapshot }: { snapshot: SubscriptionSnapshot }) {
   return (
     <section className="rounded-3xl border border-slate-800 bg-slate-900/90 p-6">
       <div className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-slate-200">
         <Receipt size={16} className="text-slate-500" />
-        Billing history
+        {t("Billing history ")}
       </div>
 
       {snapshot.billingHistory.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/40 p-4 text-sm text-slate-400">
-          Your invoices will appear here once the first subscription charge is
-          created.
+          {t(
+            "Your invoices will appear here once the first subscription charge is created. ",
+          )}
         </div>
       ) : (
         <ul className="space-y-3">
@@ -562,11 +554,12 @@ function BillingHistoryCard({ snapshot }: { snapshot: SubscriptionSnapshot }) {
                   rel="noreferrer"
                   className="inline-flex items-center gap-2 text-sm font-medium text-tarmoto-cyan transition hover:text-tarmoto-cyan-light"
                 >
-                  Download invoice <ExternalLink size={14} />
+                  {t("Download invoice ")}
+                  <ExternalLink size={14} />
                 </Link>
               ) : (
                 <span className="text-sm text-slate-500">
-                  Invoice unavailable
+                  {t("Invoice unavailable ")}
                 </span>
               )}
             </li>
@@ -576,7 +569,6 @@ function BillingHistoryCard({ snapshot }: { snapshot: SubscriptionSnapshot }) {
     </section>
   );
 }
-
 function CancelPlanCard({
   currentTier,
   renewalLabel,
@@ -590,7 +582,7 @@ function CancelPlanCard({
     <section className="rounded-3xl border border-amber-500/20 bg-amber-500/5 p-6">
       <div className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-amber-100">
         <ShieldAlert size={16} className="text-amber-300" />
-        Cancellation options
+        {t("Cancellation options ")}
       </div>
       <p className="text-sm text-amber-50">
         {currentTier === "free"
@@ -603,12 +595,11 @@ function CancelPlanCard({
         disabled={currentTier === "free"}
         className="mt-5 w-full rounded-xl border border-amber-400/30 bg-slate-950/30 px-4 py-2.5 text-sm font-semibold text-amber-50 transition hover:bg-slate-950/50 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        Cancel subscription
+        {t("Cancel subscription ")}
       </button>
     </section>
   );
 }
-
 function RetentionDialog({
   planName,
   renewalLabel,
@@ -629,22 +620,27 @@ function RetentionDialog({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Cancel subscription"
+        aria-label={t("Cancel subscription")}
         className="w-full max-w-lg rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-2xl"
       >
-        <h2 className="text-xl font-bold text-white">Cancel subscription</h2>
+        <h2 className="text-xl font-bold text-white">
+          {t("Cancel subscription")}
+        </h2>
         <p className="mt-2 text-sm text-slate-300">
-          If timing is the issue, downgrading keeps your ride history and
-          billing continuity intact.
+          {t(
+            "If timing is the issue, downgrading keeps your ride history and billing continuity intact. ",
+          )}
         </p>
 
         <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
           <p className="text-sm font-medium text-white">
-            Downgrade to Free at the end of your current billing period.
+            {t("Downgrade to Free at the end of your current billing period. ")}
           </p>
           <p className="mt-1 text-sm text-slate-400">
-            {renewalLabel}. Your shared rides and account settings stay intact,
-            while {planName}-only perks switch off after the current cycle ends.
+            {renewalLabel}
+            {t(". Your shared rides and account settings stay intact, while ")}
+            {planName}
+            {t("-only perks switch off after the current cycle ends. ")}
           </p>
         </div>
 
@@ -667,11 +663,12 @@ function RetentionDialog({
               {busy ? (
                 <>
                   <Loader2 size={14} className="animate-spin" />
-                  Opening billing portal…
+                  {t("Opening billing portal\u2026 ")}
                 </>
               ) : (
                 <>
-                  Open billing portal <ExternalLink size={14} />
+                  {t("Open billing portal ")}
+                  <ExternalLink size={14} />
                 </>
               )}
             </button>
@@ -681,7 +678,7 @@ function RetentionDialog({
               disabled
               className="rounded-xl bg-amber-300/40 px-4 py-2.5 text-sm font-semibold text-slate-950"
             >
-              Billing portal unavailable
+              {t("Billing portal unavailable ")}
             </button>
           )}
         </div>
@@ -689,13 +686,12 @@ function RetentionDialog({
     </div>
   );
 }
-
 function LoadingState() {
   return (
     <div className="rounded-3xl border border-slate-800 bg-slate-900/90 p-8">
       <div className="inline-flex items-center gap-2 text-sm text-slate-300">
         <Loader2 size={16} className="animate-spin" />
-        Loading subscription settings…
+        {t("Loading subscription settings\u2026 ")}
       </div>
     </div>
   );

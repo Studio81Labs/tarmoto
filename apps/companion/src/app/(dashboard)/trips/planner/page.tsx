@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTripStore } from "@/stores/trip";
@@ -55,21 +55,21 @@ import {
 } from "@/lib/trip-from-detail";
 import type { SurfaceType, Trip, TripParameters, Waypoint } from "@/lib/types";
 import { formatDuration } from "@/lib/utils";
-
 /**
  * TripPlannerPage — Full-screen map-based trip planner
  *
  * TODO: WebSocket collaboration (cursor sync, live edits) (US-35)
  */
-
-const SURFACE_OPTIONS: { value: SurfaceType; label: string }[] = [
+const SURFACE_OPTIONS: {
+  value: SurfaceType;
+  label: string;
+}[] = [
   { value: "asphalt", label: "Asphalt" },
   { value: "concrete", label: "Concrete" },
   { value: "cobblestone", label: "Cobbles" },
   { value: "gravel", label: "Gravel" },
   { value: "dirt", label: "Dirt" },
 ];
-
 const MIN_BACKEND_DAILY_KM = 1;
 const IMPORTABLE_WAYPOINT_TYPES = new Set<Waypoint["type"]>([
   "via",
@@ -77,7 +77,6 @@ const IMPORTABLE_WAYPOINT_TYPES = new Set<Waypoint["type"]>([
   "rest",
   "photo",
 ]);
-
 export default function TripPlannerPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [paramsOpen, setParamsOpen] = useState(true);
@@ -130,7 +129,6 @@ export default function TripPlannerPage() {
   const reorderWaypoints = useTripStore((s) => s.reorderWaypoints);
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   const displayedTrip = activeTrip ?? selectedOption?.trip ?? null;
-
   // ── Collab session wiring (US-35) ─────────────────────────────────
   // `?tripId=<uuid>` on the URL activates the collab surface: the
   // socket joins `trip:<id>`, cursors + suggestions + activity start
@@ -142,7 +140,6 @@ export default function TripPlannerPage() {
   const currentUserId = useAuthStore((s) => s.user?.id ?? null);
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
   const collabSession = useTripCollabSession(serverTripId);
-
   useEffect(() => {
     // Read `?tripId=` in a client-only effect to keep the planner page
     // statically prerenderable. `useSearchParams` would pull the whole
@@ -155,7 +152,6 @@ export default function TripPlannerPage() {
     // data hooks (useClosures/usePasses).
     if (fromUrl) setServerTripId(fromUrl);
   }, []);
-
   useEffect(() => {
     if (!serverTripId) {
       setServerTripOwnerId(null);
@@ -207,7 +203,6 @@ export default function TripPlannerPage() {
       cancelled = true;
     };
   }, [serverTripId, authReady, setActiveTrip]);
-
   const handlePromotedToServer = useCallback((newServerTripId: string) => {
     setServerTripId(newServerTripId);
     // Push the id into the URL so a reload preserves the live session.
@@ -257,12 +252,10 @@ export default function TripPlannerPage() {
     { dayNumber: 2 },
     { dayNumber: 3 },
   ];
-
   const openImport = useCallback((file: File | null = null) => {
     setPendingImportFile(file);
     setImportOpen(true);
   }, []);
-
   useEffect(() => {
     if (!activeTrip) {
       setSelectedDayIndex(0);
@@ -272,7 +265,6 @@ export default function TripPlannerPage() {
       setSelectedDayIndex(Math.max(0, activeTrip.days.length - 1));
     }
   }, [activeTrip, selectedDayIndex]);
-
   const handleSave = useCallback(async () => {
     if (!displayedTrip || saving) return;
     setSaving(true);
@@ -304,14 +296,19 @@ export default function TripPlannerPage() {
               importedRoutePayload,
             )
           : await tripsApi.importRoute(importedRoutePayload);
-        const tripId = existingTripId ?? (saved as { id?: string }).id;
+        const tripId =
+          existingTripId ??
+          (
+            saved as {
+              id?: string;
+            }
+          ).id;
         if (!tripId) {
           throw new Error("Imported trip save response did not include an id");
         }
         router.push(`/trips/${tripId}`);
         return;
       }
-
       // "direct" is the planner's term; the backend uses "fast".
       const roadPreference =
         p.roadPreference === "direct" ? "fast" : p.roadPreference;
@@ -328,7 +325,6 @@ export default function TripPlannerPage() {
         setSaving(false);
         return;
       }
-
       // Generate the route using the first waypoint as start_location.
       const firstDay = displayedTrip.days[0];
       const startWp = firstDay?.waypoints[0];
@@ -337,7 +333,6 @@ export default function TripPlannerPage() {
         setSaving(false);
         return;
       }
-
       const basePayload = {
         title: displayedTrip.name,
         num_days: p.days,
@@ -346,11 +341,15 @@ export default function TripPlannerPage() {
         daily_km_min: dailyKmTarget,
         daily_km_max: dailyKmTarget,
       };
-
       const { data: saved } = existingTripId
         ? await tripsApi.update(existingTripId, basePayload)
         : await tripsApi.create(basePayload);
-      const tripId = (saved as { id?: string }).id ?? existingTripId;
+      const tripId =
+        (
+          saved as {
+            id?: string;
+          }
+        ).id ?? existingTripId;
       if (!tripId) {
         throw new Error("Trip save response did not include an id");
       }
@@ -359,7 +358,6 @@ export default function TripPlannerPage() {
         selectedOptionId !== null ||
         !existingTripId ||
         displayedTrip.id !== existingTripId;
-
       if (shouldGenerate) {
         try {
           await tripsApi.generate(tripId, {
@@ -386,7 +384,6 @@ export default function TripPlannerPage() {
           throw generateError;
         }
       }
-
       router.push(`/trips/${tripId}`);
     } catch (err) {
       setGenerationError("Could not save this trip. Please try again.");
@@ -401,18 +398,15 @@ export default function TripPlannerPage() {
     selectedOptionId,
     serverTripId,
   ]);
-
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     if (!Array.from(e.dataTransfer.types).includes("Files")) return;
     e.preventDefault();
     setIsDragOver(true);
   }, []);
-
   const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     // Only clear if leaving the drop target, not bubbling from children.
     if (e.currentTarget === e.target) setIsDragOver(false);
   }, []);
-
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault();
@@ -424,7 +418,6 @@ export default function TripPlannerPage() {
     },
     [openImport],
   );
-
   const handleSurfaceToggle = useCallback((surface: SurfaceType) => {
     setGenerationError(null);
     setSurfacePreference((current) => {
@@ -436,7 +429,6 @@ export default function TripPlannerPage() {
       return [...current, surface];
     });
   }, []);
-
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
@@ -446,11 +438,9 @@ export default function TripPlannerPage() {
       setGenerating(false);
     };
   }, [setGenerating]);
-
   useEffect(() => {
     activeTripRef.current = activeTrip;
   }, [activeTrip]);
-
   useEffect(() => {
     const tripId = activeTrip?.id ?? null;
     if (!activeTrip) {
@@ -469,15 +459,12 @@ export default function TripPlannerPage() {
     setAvoidTolls(params.avoidTolls);
     setAvoidUnpaved(params.avoidUnpaved);
   }, [activeTrip]);
-
   useEffect(() => {
     generatedOptionsRef.current = generatedOptions;
   }, [generatedOptions]);
-
   useEffect(() => {
     selectedOptionIdRef.current = selectedOptionId;
   }, [selectedOptionId]);
-
   useEffect(() => {
     if (!activeTrip) {
       if (selectedOptionId !== null) setSelectedOptionId(null);
@@ -503,7 +490,6 @@ export default function TripPlannerPage() {
       setSelectedOptionId(matchingOption.id);
     }
   }, [activeTrip, selectedOptionId]);
-
   const handleGenerate = useCallback(async () => {
     if (surfacePreference.length === 0) {
       setGenerationError(
@@ -515,7 +501,6 @@ export default function TripPlannerPage() {
     const activeTripAtStart = activeTripRef.current;
     const requestToken = requestTokenRef.current + 1;
     requestTokenRef.current = requestToken;
-
     setGenerationError(null);
     generationLockRef.current = true;
     setGenerating(true);
@@ -553,7 +538,6 @@ export default function TripPlannerPage() {
       }
     }
   }, [plannerParams, setActiveTrip, setGenerating, surfacePreference.length]);
-
   const handleSelectOption = useCallback(
     (option: GeneratedTripOption) => {
       if (generationLockRef.current) return;
@@ -563,7 +547,6 @@ export default function TripPlannerPage() {
     },
     [setActiveTrip],
   );
-
   const handleRegenerateDay = useCallback(
     async (dayNumber: number) => {
       if (!canRegenerate || !displayedTrip || !selectedOptionId) return;
@@ -623,7 +606,6 @@ export default function TripPlannerPage() {
       setGenerating,
     ],
   );
-
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
@@ -637,7 +619,7 @@ export default function TripPlannerPage() {
             onClick={handleGenerate}
             disabled={isGenerating}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light transition disabled:opacity-60 disabled:cursor-wait"
-            aria-label="Generate itinerary"
+            aria-label={t("Generate itinerary")}
           >
             <Sparkles size={14} />
             {isGenerating ? "Generating…" : "Generate"}
@@ -649,7 +631,7 @@ export default function TripPlannerPage() {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <RotateCcw size={14} />
-            Undo
+            {t("Undo ")}
           </button>
           <button
             type="button"
@@ -658,7 +640,7 @@ export default function TripPlannerPage() {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <RotateCw size={14} />
-            Redo
+            {t("Redo ")}
           </button>
           <button
             type="button"
@@ -666,7 +648,7 @@ export default function TripPlannerPage() {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition"
           >
             <Upload size={14} />
-            Import GPX
+            {t("Import GPX ")}
           </button>
           <TripExportMenu trip={displayedTrip} context="planner" />
           <button
@@ -692,7 +674,7 @@ export default function TripPlannerPage() {
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-slate-700 text-slate-400 text-sm hover:text-white hover:border-slate-500 transition"
             >
-              Load demo trip
+              {t("Load demo trip ")}
             </button>
           )}
         </div>
@@ -703,7 +685,7 @@ export default function TripPlannerPage() {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition"
           >
             <Sliders size={14} />
-            Parameters
+            {t("Parameters ")}
           </button>
           <button
             type="button"
@@ -711,7 +693,7 @@ export default function TripPlannerPage() {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition"
           >
             <Users size={14} />
-            Collaborate
+            {t("Collaborate ")}
           </button>
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -723,7 +705,7 @@ export default function TripPlannerPage() {
             }`}
           >
             <Layers size={14} />
-            Segments
+            {t("Segments ")}
           </button>
         </div>
       </div>
@@ -741,9 +723,7 @@ export default function TripPlannerPage() {
 
           {generatedOptions.length > 0 && (
             <div
-              className={`grid gap-3 lg:grid-cols-3 ${
-                generationError ? "mt-3" : ""
-              }`}
+              className={`grid gap-3 lg:grid-cols-3 ${generationError ? "mt-3" : ""}`}
             >
               {generatedOptions.map((option) => {
                 const totalDistance = option.trip.days.reduce(
@@ -761,7 +741,6 @@ export default function TripPlannerPage() {
                         0,
                       ) / option.trip.days.length
                     : 0;
-
                 return (
                   <button
                     key={option.id}
@@ -785,26 +764,27 @@ export default function TripPlannerPage() {
                       </div>
                       {option.id === selectedOptionId && (
                         <span className="rounded-full bg-tarmoto-cyan/20 px-2 py-0.5 text-[11px] font-medium text-tarmoto-cyan">
-                          Active
+                          {t("Active")}
                         </span>
                       )}
                     </div>
 
                     <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-300">
                       <div className="rounded-lg bg-slate-950/70 px-2 py-2">
-                        <p className="text-slate-500">Distance</p>
+                        <p className="text-slate-500">{t("Distance")}</p>
                         <p className="mt-1 font-medium text-white">
-                          {Math.round(totalDistance)} km
+                          {Math.round(totalDistance)}
+                          {t("km ")}
                         </p>
                       </div>
                       <div className="rounded-lg bg-slate-950/70 px-2 py-2">
-                        <p className="text-slate-500">Ride time</p>
+                        <p className="text-slate-500">{t("Ride time")}</p>
                         <p className="mt-1 font-medium text-white">
                           {formatDuration(totalDuration)}
                         </p>
                       </div>
                       <div className="rounded-lg bg-slate-950/70 px-2 py-2">
-                        <p className="text-slate-500">Avg quality</p>
+                        <p className="text-slate-500">{t("Avg quality")}</p>
                         <p className="mt-1 font-medium text-white">
                           {averageQuality.toFixed(1)}/5
                         </p>
@@ -824,7 +804,7 @@ export default function TripPlannerPage() {
         {paramsOpen && (
           <div className="w-72 border-r border-slate-800 bg-slate-950 overflow-y-auto p-4 space-y-4 animate-slide-in-right">
             <h3 className="text-sm font-semibold text-slate-300">
-              Trip parameters
+              {t("Trip parameters ")}
             </h3>
 
             <div>
@@ -832,7 +812,7 @@ export default function TripPlannerPage() {
                 htmlFor="trip-planner-days"
                 className="block text-xs text-slate-500 mb-1"
               >
-                Number of days
+                {t("Number of days ")}
               </label>
               <input
                 id="trip-planner-days"
@@ -852,7 +832,7 @@ export default function TripPlannerPage() {
                 htmlFor="trip-planner-daily-km"
                 className="block text-xs text-slate-500 mb-1"
               >
-                Daily km target
+                {t("Daily km target ")}
               </label>
               <input
                 id="trip-planner-daily-km"
@@ -875,7 +855,7 @@ export default function TripPlannerPage() {
                 htmlFor="trip-planner-road-preference"
                 className="block text-xs text-slate-500 mb-1"
               >
-                Road preference
+                {t("Road preference ")}
               </label>
               <select
                 id="trip-planner-road-preference"
@@ -887,16 +867,16 @@ export default function TripPlannerPage() {
                 }
                 className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:border-tarmoto-cyan transition"
               >
-                <option value="curvy">Maximum curviness</option>
-                <option value="scenic">Scenic roads</option>
-                <option value="mixed">Mixed (balanced)</option>
-                <option value="direct">Direct / efficient</option>
+                <option value="curvy">{t("Maximum curviness")}</option>
+                <option value="scenic">{t("Scenic roads")}</option>
+                <option value="mixed">{t("Mixed (balanced)")}</option>
+                <option value="direct">{t("Direct / efficient")}</option>
               </select>
             </div>
 
             <div>
               <p className="block text-xs text-slate-500 mb-2">
-                Surface preference
+                {t("Surface preference ")}
               </p>
               <div className="grid gap-2 sm:grid-cols-2">
                 {SURFACE_OPTIONS.map((surface) => (
@@ -922,7 +902,7 @@ export default function TripPlannerPage() {
                 htmlFor="trip-planner-min-quality"
                 className="block text-xs text-slate-500 mb-1"
               >
-                Minimum road quality
+                {t("Minimum road quality ")}
               </label>
               <select
                 id="trip-planner-min-quality"
@@ -930,10 +910,10 @@ export default function TripPlannerPage() {
                 onChange={(event) => setMinQuality(Number(event.target.value))}
                 className="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:border-tarmoto-cyan transition"
               >
-                <option value="1">Any condition</option>
-                <option value="2">Fair or better</option>
-                <option value="3">Good or better</option>
-                <option value="4">Excellent only</option>
+                <option value="1">{t("Any condition")}</option>
+                <option value="2">{t("Fair or better")}</option>
+                <option value="3">{t("Good or better")}</option>
+                <option value="4">{t("Excellent only")}</option>
               </select>
             </div>
 
@@ -945,7 +925,7 @@ export default function TripPlannerPage() {
                   onChange={(event) => setAvoidHighways(event.target.checked)}
                   className="rounded border-slate-600 bg-slate-800 text-tarmoto-cyan focus:ring-tarmoto-cyan"
                 />
-                Avoid highways
+                {t("Avoid highways ")}
               </label>
               <label className="flex items-center gap-2 text-sm text-slate-400">
                 <input
@@ -954,7 +934,7 @@ export default function TripPlannerPage() {
                   onChange={(event) => setAvoidTolls(event.target.checked)}
                   className="rounded border-slate-600 bg-slate-800 text-tarmoto-cyan focus:ring-tarmoto-cyan"
                 />
-                Avoid tolls
+                {t("Avoid tolls ")}
               </label>
               <label className="flex items-center gap-2 text-sm text-slate-400">
                 <input
@@ -963,13 +943,13 @@ export default function TripPlannerPage() {
                   onChange={(event) => setAvoidUnpaved(event.target.checked)}
                   className="rounded border-slate-600 bg-slate-800 text-tarmoto-cyan focus:ring-tarmoto-cyan"
                 />
-                Avoid unpaved roads
+                {t("Avoid unpaved roads ")}
               </label>
             </div>
             <div className="space-y-3 pt-2 border-t border-slate-800">
               <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-300">
                 <MapPin size={14} className="text-slate-500" />
-                Route builder
+                {t("Route builder ")}
               </div>
               {selectedDay ? (
                 <>
@@ -1004,9 +984,9 @@ export default function TripPlannerPage() {
                 </>
               ) : (
                 <p className="text-xs text-slate-500">
-                  Click the map to place a start point for Day 1. The planner
-                  will add the finish on the second click, then insert extra via
-                  points before the end.
+                  {t(
+                    "Click the map to place a start point for Day 1. The planner will add the finish on the second click, then insert extra via points before the end. ",
+                  )}
                 </p>
               )}
             </div>
@@ -1055,7 +1035,7 @@ export default function TripPlannerPage() {
               <div className="text-center">
                 <FileUp size={40} className="mx-auto text-tarmoto-cyan mb-2" />
                 <p className="text-tarmoto-cyan font-semibold">
-                  Drop to import GPX or KML
+                  {t("Drop to import GPX or KML ")}
                 </p>
               </div>
             </div>
@@ -1067,10 +1047,10 @@ export default function TripPlannerPage() {
               <div className="text-center">
                 <div className="w-12 h-12 mx-auto mb-4 border-2 border-tarmoto-cyan/30 border-t-tarmoto-cyan rounded-full animate-spin" />
                 <p className="text-white font-medium">
-                  Generating your route...
+                  {t("Generating your route... ")}
                 </p>
                 <p className="text-slate-400 text-sm mt-1">
-                  Finding the best roads for you
+                  {t("Finding the best roads for you ")}
                 </p>
               </div>
             </div>
@@ -1089,7 +1069,9 @@ export default function TripPlannerPage() {
             distanceKm?: number;
             durationMinutes?: number;
             elevationGain?: number;
-            overnightStop?: { name: string };
+            overnightStop?: {
+              name: string;
+            };
             title?: string;
           }) => (
             <div
@@ -1108,14 +1090,16 @@ export default function TripPlannerPage() {
               >
                 <span>
                   <span className="block font-medium text-white">
-                    Day {day.dayNumber}
+                    {t("Day ")}
+                    {day.dayNumber}
                     {day.title ? ` · ${day.title}` : ""}
                   </span>
                   <span className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-500">
                     {day.distanceKm ? (
                       <span className="inline-flex items-center gap-1">
                         <Route size={12} />
-                        {day.distanceKm} km
+                        {day.distanceKm}
+                        {t("km ")}
                       </span>
                     ) : null}
                     {day.durationMinutes ? (
@@ -1127,7 +1111,8 @@ export default function TripPlannerPage() {
                     {day.elevationGain ? (
                       <span className="inline-flex items-center gap-1">
                         <Mountain size={12} />
-                        {Math.round(day.elevationGain)} m
+                        {Math.round(day.elevationGain)}
+                        {t("m ")}
                       </span>
                     ) : null}
                     {day.overnightStop?.name ? (
@@ -1155,7 +1140,7 @@ export default function TripPlannerPage() {
           ),
         )}
         <button className="px-3 py-2 rounded-lg border border-dashed border-slate-700 text-sm text-slate-500 hover:text-slate-300 hover:border-slate-600 transition">
-          + Add day
+          {t("+ Add day ")}
         </button>
       </div>
 
@@ -1183,7 +1168,6 @@ export default function TripPlannerPage() {
     </div>
   );
 }
-
 function clampNumberInput(
   rawValue: string,
   min: number,
@@ -1194,18 +1178,15 @@ function clampNumberInput(
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(max, Math.max(min, Math.round(parsed)));
 }
-
 function normalizeBackendDailyKm(value: number) {
   if (!Number.isFinite(value)) return MIN_BACKEND_DAILY_KM;
   return Math.max(MIN_BACKEND_DAILY_KM, Math.round(value));
 }
-
 function buildImportedRoutePayload(trip: Trip) {
   if (!trip.id.startsWith("imported-")) return null;
   const firstDay = trip.days[0];
   const coordinates = firstDay?.routeGeometry?.coordinates ?? [];
   if (coordinates.length < 2) return null;
-
   return {
     title: trip.name,
     source_format: trip.importSourceFormat ?? "gpx",
@@ -1228,7 +1209,6 @@ function buildImportedRoutePayload(trip: Trip) {
     }),
   };
 }
-
 function delay(ms: number) {
   return new Promise<void>((resolve) => {
     window.setTimeout(resolve, ms);
@@ -1255,30 +1235,33 @@ function PlannerStat({
     </div>
   );
 }
-
 function WaypointEditor({
   dayNumber,
   waypoints,
   onReorder,
 }: {
   dayNumber: number;
-  waypoints: Array<{ id: string; name?: string; type: string }>;
+  waypoints: Array<{
+    id: string;
+    name?: string;
+    type: string;
+  }>;
   onReorder: (fromIndex: number, toIndex: number) => void;
 }) {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
-
   if (waypoints.length === 0) {
     return (
       <p className="text-xs text-slate-500">
-        No waypoints yet for Day {dayNumber}. Click the map to begin the route.
+        {t("No waypoints yet for Day ")}
+        {dayNumber}
+        {t(". Click the map to begin the route. ")}
       </p>
     );
   }
-
   return (
     <div className="space-y-2">
       <p className="text-xs text-slate-500">
-        Drag via points to reorder them. Start and finish stay pinned.
+        {t("Drag via points to reorder them. Start and finish stay pinned. ")}
       </p>
       {waypoints.map((waypoint, index) => {
         const draggable = waypoint.type !== "start" && waypoint.type !== "end";

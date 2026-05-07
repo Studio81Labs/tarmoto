@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
 import type { Map as MapLibreMap, MapLayerMouseEvent } from "maplibre-gl";
 import { MapCanvas, type MapCanvasHandle } from "@/components/map/MapCanvas";
@@ -17,9 +17,7 @@ import {
 } from "@/components/map/RegionDrawControl";
 import { useDiscoverStore } from "./useDiscoverStore";
 import { Square, X } from "lucide-react";
-
 const FETCH_DEBOUNCE_MS = 300;
-
 interface Props {
   onZonesLoaded?: (zones: FunZoneListItem[]) => void;
   onZonesError?: (message: string) => void;
@@ -27,7 +25,6 @@ interface Props {
   /** Bumping this integer re-runs the zones fetch without remounting the map. */
   retryNonce?: number;
 }
-
 export function DiscoverMap({
   onZonesLoaded,
   onZonesError,
@@ -43,7 +40,6 @@ export function DiscoverMap({
   // effect can retry after a deep-linked `?zone=<id>` when the data
   // wasn't loaded yet on the first pass.
   const [sourceVersion, setSourceVersion] = useState(0);
-
   // Callback refs so the fetch effect can depend only on stable values.
   // Otherwise parent re-renders pass fresh inline callbacks and re-fire
   // the effect on every render.
@@ -59,7 +55,6 @@ export function DiscoverMap({
   useEffect(() => {
     onZonesLoadingRef.current = onZonesLoading;
   }, [onZonesLoading]);
-
   const {
     center,
     zoom,
@@ -73,9 +68,7 @@ export function DiscoverMap({
     clearDrawnBbox,
     setSelectedZoneId,
   } = useDiscoverStore();
-
   const effectiveBbox = drawnBbox ?? viewportBbox;
-
   // ── on map ready, install zone layer + draw control + click handlers ──
   const handleReady = (map: MapLibreMap) => {
     installFunZoneLayer(map);
@@ -83,7 +76,6 @@ export function DiscoverMap({
       onRegionDrawn: (bbox) => setDrawnBbox(bbox),
       onModeChange: setDrawMode,
     });
-
     const pointerOn = () => {
       map.getCanvas().style.cursor = "pointer";
     };
@@ -93,14 +85,12 @@ export function DiscoverMap({
     };
     map.on("mouseenter", FUN_ZONES_FILL, pointerOn);
     map.on("mouseleave", FUN_ZONES_FILL, pointerOff);
-
     map.on("click", FUN_ZONES_FILL, (e: MapLayerMouseEvent) => {
       const feature = e.features?.[0];
       const id = feature?.properties?.id as string | undefined;
       if (!id) return;
       setSelectedZoneId(id);
     });
-
     // Click on bare map (no zone) → clear selection, unless user is drawing.
     map.on("click", (e) => {
       if (drawRef.current?.getMode() === "drawing") return;
@@ -109,10 +99,8 @@ export function DiscoverMap({
       });
       if (features.length === 0) setSelectedZoneId(null);
     });
-
     setReady(true);
   };
-
   const handleViewChange = (view: {
     lng: number;
     lat: number;
@@ -123,7 +111,6 @@ export function DiscoverMap({
     setZoom(view.zoom);
     setViewportBbox(view.bbox);
   };
-
   // Debounced fetch of zones whenever the effective bbox changes (or the
   // caller bumps retryNonce). The dedupe key combines bbox + nonce so
   // identical requests (unchanged bbox, same nonce) are skipped while a
@@ -135,7 +122,6 @@ export function DiscoverMap({
     const requestKey = `${bboxKey}:${retryNonce}`;
     if (requestKey === prevRequestKeyRef.current) return;
     prevRequestKeyRef.current = requestKey;
-
     const controller = new AbortController();
     let cancelled = false;
     onZonesLoadingRef.current?.(true);
@@ -150,27 +136,31 @@ export function DiscoverMap({
         setSourceVersion((v) => v + 1);
         onZonesLoadedRef.current?.(zones);
       } catch (err) {
-        if ((err as { name?: string }).name === "AbortError") return;
+        if (
+          (
+            err as {
+              name?: string;
+            }
+          ).name === "AbortError"
+        )
+          return;
         console.warn("[discover] zones fetch failed", err);
         onZonesErrorRef.current?.("Couldn't load zones.");
       } finally {
         if (!cancelled) onZonesLoadingRef.current?.(false);
       }
     }, FETCH_DEBOUNCE_MS);
-
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
       controller.abort();
     };
   }, [ready, effectiveBbox, retryNonce]);
-
   // Keep the drawn-rectangle overlay in sync with URL-hydrated state.
   useEffect(() => {
     if (!ready) return;
     drawRef.current?.setDrawn(drawnBbox);
   }, [ready, drawnBbox]);
-
   // Keep the selection outline in sync with state and pan/zoom to the zone.
   // `sourceVersion` is a dep so deep-linked `?zone=<id>` URLs get fitted
   // once the zones source is populated, not just on selection changes.
@@ -179,7 +169,6 @@ export function DiscoverMap({
     if (!map || !ready) return;
     setFunZoneSelection(map, selectedZoneId);
     if (!selectedZoneId) return;
-
     // Look up the selected zone's boundary by querying the source. This avoids
     // plumbing the zones list down into DiscoverMap. `querySourceFeatures`
     // returns rendered + unrendered features from the source.
@@ -213,7 +202,6 @@ export function DiscoverMap({
       console.warn("[discover] fitBounds failed", err);
     }
   }, [ready, selectedZoneId, sourceVersion]);
-
   // Esc clears the selection so the user can dismiss the detail panel
   // without reaching for the mouse.
   useEffect(() => {
@@ -223,7 +211,6 @@ export function DiscoverMap({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [setSelectedZoneId]);
-
   // Cleanup: the draw control installs its own sources/layers, remove them
   // on unmount. MapCanvas will remove the map itself.
   useEffect(() => {
@@ -232,7 +219,6 @@ export function DiscoverMap({
       drawRef.current = null;
     };
   }, []);
-
   return (
     <MapCanvas
       ref={handleRef}
@@ -251,7 +237,8 @@ export function DiscoverMap({
             onClick={() => drawRef.current?.start()}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900/90 border border-slate-700 text-slate-100 text-sm hover:bg-slate-800 transition"
           >
-            <Square size={14} /> Draw region
+            <Square size={14} />
+            {t("Draw region ")}
           </button>
         ) : (
           <button
@@ -259,7 +246,8 @@ export function DiscoverMap({
             onClick={() => drawRef.current?.cancel()}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-tarmoto-cyan/20 border border-tarmoto-cyan text-tarmoto-cyan text-sm hover:bg-tarmoto-cyan/30 transition"
           >
-            <X size={14} /> Cancel drawing
+            <X size={14} />
+            {t("Cancel drawing ")}
           </button>
         )}
         {drawnBbox && drawMode === "idle" ? (
@@ -271,7 +259,8 @@ export function DiscoverMap({
             }}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900/90 border border-slate-700 text-slate-300 text-sm hover:bg-slate-800 transition"
           >
-            <X size={12} /> Clear region
+            <X size={12} />
+            {t("Clear region ")}
           </button>
         ) : null}
       </div>
