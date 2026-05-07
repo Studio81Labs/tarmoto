@@ -1,40 +1,37 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
 import { MapPin, X } from "lucide-react";
 import { api } from "@/lib/api";
-
 export interface PlaceValue {
   label: string;
   lat: number;
   lng: number;
   km: number;
 }
-
 interface Props {
   value: PlaceValue | null;
   onChange: (next: PlaceValue | null) => void;
   label?: string;
   placeholder?: string;
 }
-
 interface Match {
   label: string;
   lat: number;
   lng: number;
 }
-
-const RADIUS_CHOICES: Array<{ km: number; label: string }> = [
+const RADIUS_CHOICES: Array<{
+  km: number;
+  label: string;
+}> = [
   { km: 10, label: "10 km" },
   { km: 25, label: "25 km" },
   { km: 50, label: "50 km" },
   { km: 100, label: "100 km" },
 ];
-
 const DEFAULT_RADIUS_KM = 25;
 const GEOCODE_DEBOUNCE_MS = 350;
 const GEOCODE_MIN_CHARS = 2;
-
 export function PlaceSearch({
   value,
   onChange,
@@ -47,11 +44,9 @@ export function PlaceSearch({
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
-
   useEffect(() => {
     setDraft(value?.label ?? "");
   }, [value?.label]);
-
   // Close the dropdown on outside click.
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -61,7 +56,6 @@ export function PlaceSearch({
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
-
   // Debounced geocode.
   //
   // Depend on primitives (draft + current place label) rather than the
@@ -106,7 +100,9 @@ export function PlaceSearch({
             setMatches([]);
             return;
           }
-          const d = data as unknown as { results: Match[] };
+          const d = data as unknown as {
+            results: Match[];
+          };
           setMatches(d.results ?? []);
         })
         .catch((err: Error) => {
@@ -122,7 +118,6 @@ export function PlaceSearch({
       abortRef.current?.abort();
     };
   }, [draft, selectedLabel]);
-
   function pick(match: Match) {
     onChange({
       label: match.label,
@@ -133,13 +128,11 @@ export function PlaceSearch({
     setDraft(match.label);
     setOpen(false);
   }
-
   function clear() {
     onChange(null);
     setDraft("");
     setMatches([]);
   }
-
   return (
     <div className="flex flex-col gap-1 flex-1 min-w-[220px]">
       <span className="text-xs text-slate-400">{label}</span>
@@ -162,7 +155,7 @@ export function PlaceSearch({
         {(draft || value) && (
           <button
             type="button"
-            aria-label="Clear place filter"
+            aria-label={t("Clear place filter")}
             onClick={clear}
             className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 text-slate-500 hover:text-slate-300"
           >
@@ -172,10 +165,14 @@ export function PlaceSearch({
         {open && draft.trim().length >= GEOCODE_MIN_CHARS && (
           <div className="absolute z-10 mt-1 w-full rounded-lg bg-slate-800 border border-slate-700 shadow-lg overflow-hidden">
             {loading && (
-              <div className="px-3 py-2 text-xs text-slate-400">Searching…</div>
+              <div className="px-3 py-2 text-xs text-slate-400">
+                {t("Searching\u2026")}
+              </div>
             )}
             {!loading && matches.length === 0 && (
-              <div className="px-3 py-2 text-xs text-slate-500">No matches</div>
+              <div className="px-3 py-2 text-xs text-slate-500">
+                {t("No matches")}
+              </div>
             )}
             {!loading &&
               matches.map((m, i) => (

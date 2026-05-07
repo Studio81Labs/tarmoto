@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -51,7 +51,6 @@ import {
   fetchRegionalLeaderboards,
   joinChallenge,
 } from "@/lib/gamification-fetch";
-
 const BADGE_ICONS: Record<string, LucideIcon> = {
   compass: Compass,
   mountain: Mountain,
@@ -63,10 +62,13 @@ const BADGE_ICONS: Record<string, LucideIcon> = {
   flame: Flame,
   medal: Medal,
 };
-
 const CATEGORY_STYLE: Record<
   ChallengeCategory,
-  { label: string; icon: LucideIcon; accent: string }
+  {
+    label: string;
+    icon: LucideIcon;
+    accent: string;
+  }
 > = {
   distance: { label: "Distance", icon: Flag, accent: "text-tarmoto-cyan" },
   discovery: { label: "Discovery", icon: Compass, accent: "text-violet-300" },
@@ -78,17 +80,28 @@ const CATEGORY_STYLE: Record<
   social: { label: "Social", icon: Users, accent: "text-pink-300" },
   seasonal: { label: "Seasonal", icon: Sparkles, accent: "text-emerald-300" },
 };
-
 // Every loaded state is tagged with the userId it represents so the render
 // can refuse to show snapshot data for a user that is no longer signed in.
 // Without this, switching accounts could briefly leak the previous user's
 // badges/challenges between the prop change and the refetch completing.
 type LoadState =
-  | { status: "idle" }
-  | { status: "loading"; userId: string }
-  | { status: "ready"; userId: string; snapshot: GamificationSnapshot }
-  | { status: "error"; userId: string; message: string };
-
+  | {
+      status: "idle";
+    }
+  | {
+      status: "loading";
+      userId: string;
+    }
+  | {
+      status: "ready";
+      userId: string;
+      snapshot: GamificationSnapshot;
+    }
+  | {
+      status: "error";
+      userId: string;
+      message: string;
+    };
 export default function GamificationPage() {
   const userId = useAuthStore((s) => s.user?.id);
   const [state, setState] = useState<LoadState>({ status: "idle" });
@@ -103,7 +116,6 @@ export default function GamificationPage() {
   // post-join silent refetches, and a userId change can all abort whatever
   // is in flight without prop-drilling a signal through every caller.
   const controllerRef = useRef<AbortController | null>(null);
-
   // `silent` keeps the current `ready` snapshot mounted while a refetch runs
   // in the background — used after a successful "Join challenge" so the
   // dashboard doesn't flash to the page-level skeleton; the button keeps
@@ -121,7 +133,12 @@ export default function GamificationPage() {
   // closure at useCallback-time and `useAuthStore.getState()` always
   // reflects the live signed-in user.
   const load = useCallback(
-    async (uid: string, opts: { silent?: boolean } = {}) => {
+    async (
+      uid: string,
+      opts: {
+        silent?: boolean;
+      } = {},
+    ) => {
       const currentUid = useAuthStore.getState().user?.id;
       if (currentUid !== uid) return;
       controllerRef.current?.abort();
@@ -150,7 +167,6 @@ export default function GamificationPage() {
     },
     [],
   );
-
   useEffect(() => {
     // The user changed (sign-in, sign-out, or account switch). Clear any
     // join-related state from the previous session so a stale error or
@@ -170,7 +186,6 @@ export default function GamificationPage() {
       controllerRef.current?.abort();
     };
   }, [userId, load]);
-
   const handleJoin = useCallback(
     async (challengeId: string) => {
       if (!userId) return;
@@ -232,20 +247,18 @@ export default function GamificationPage() {
     },
     [userId, load],
   );
-
   if (!userId) {
     return (
       <div className="p-6 max-w-6xl mx-auto animate-fade-in">
         <PageHeader />
         <EmptyCard
           icon={<Lock size={32} className="text-slate-600" />}
-          title="Sign in to see your achievements"
+          title={t("Sign in to see your achievements")}
           body="Badges, challenges, and leaderboards appear once you're signed in."
         />
       </div>
     );
   }
-
   // Render-time guard: a snapshot tagged for a different user (because
   // the userId prop changed before the new fetch resolved) must NOT be
   // shown — fall through to the skeleton until the userId-effect kicks
@@ -256,7 +269,6 @@ export default function GamificationPage() {
       : state.status === "error" && state.userId === userId
         ? state
         : null;
-
   if (!stateForUser) {
     return (
       <div className="p-6 max-w-6xl mx-auto animate-fade-in space-y-8">
@@ -265,7 +277,6 @@ export default function GamificationPage() {
       </div>
     );
   }
-
   if (stateForUser.status === "error") {
     return (
       <div className="p-6 max-w-6xl mx-auto animate-fade-in">
@@ -277,7 +288,6 @@ export default function GamificationPage() {
       </div>
     );
   }
-
   return (
     <Dashboard
       snapshot={stateForUser.snapshot}
@@ -287,7 +297,6 @@ export default function GamificationPage() {
     />
   );
 }
-
 /**
  * Returns a snapshot with the named challenge optimistically flipped to
  * "joined" — used between a successful `POST /challenges/{id}/join` and
@@ -313,7 +322,6 @@ function markChallengeJoined(
     },
   };
 }
-
 function Dashboard({
   snapshot,
   joiningIds,
@@ -334,7 +342,6 @@ function Dashboard({
     [snapshot.milestones, snapshot.stats],
   );
   const earnedBadgeCount = snapshot.badges.filter((b) => b.earnedAt).length;
-
   return (
     <div className="p-6 max-w-6xl mx-auto animate-fade-in space-y-8">
       <PageHeader />
@@ -345,13 +352,13 @@ function Dashboard({
         <SectionHeader
           id="badges-heading"
           icon={<Award size={16} />}
-          title="Badges"
+          title={t("Badges")}
           subtitle={`${earnedBadgeCount} of ${snapshot.badges.length} earned`}
         />
         {snapshot.badges.length === 0 ? (
           <EmptyCard
             icon={<Award size={32} className="text-slate-600" />}
-            title="No badges yet"
+            title={t("No badges yet")}
             body="Ride, discover roads, or report hazards to start earning badges."
           />
         ) : (
@@ -363,7 +370,7 @@ function Dashboard({
         <SectionHeader
           id="challenges-heading"
           icon={<Target size={16} />}
-          title="Active challenges"
+          title={t("Active challenges")}
           subtitle={
             visibleChallenges.length === 0
               ? "No active challenges right now."
@@ -378,7 +385,7 @@ function Dashboard({
         {visibleChallenges.length === 0 ? (
           <EmptyCard
             icon={<Target size={32} className="text-slate-600" />}
-            title="No challenges to join yet"
+            title={t("No challenges to join yet")}
             body="Check back on Monday — new weekly challenges drop every week."
           />
         ) : (
@@ -403,7 +410,7 @@ function Dashboard({
           <SectionHeader
             id="milestone-heading"
             icon={<Heart size={16} />}
-            title="Next milestone"
+            title={t("Next milestone")}
             subtitle="What you're working toward right now."
           />
           <MilestoneCard progress={nextMilestone} />
@@ -412,27 +419,26 @@ function Dashboard({
     </div>
   );
 }
-
 function PageHeader() {
   return (
     <header>
-      <h1 className="text-2xl font-bold">Achievements</h1>
+      <h1 className="text-2xl font-bold">{t("Achievements")}</h1>
       <p className="text-sm text-slate-400 mt-1">
-        Badges, challenges, leaderboards, and milestones for your riding region.
+        {t(
+          "Badges, challenges, leaderboards, and milestones for your riding region. ",
+        )}
       </p>
     </header>
   );
 }
-
 // ── Seasonal banner ──
-
 function SeasonalBanner({ seasonal }: { seasonal: SeasonalChallenge }) {
   const fraction = seasonalProgress(seasonal);
   const percent = Math.round(fraction * 100);
   const daysLeft = formatDaysRemaining(seasonal.endsAt);
   return (
     <section
-      aria-label="Seasonal challenge"
+      aria-label={t("Seasonal challenge")}
       className="relative overflow-hidden rounded-2xl border border-tarmoto-cyan/30 bg-gradient-to-r from-tarmoto-cyan/10 via-slate-900 to-violet-500/10 p-6"
     >
       <div
@@ -444,7 +450,8 @@ function SeasonalBanner({ seasonal }: { seasonal: SeasonalChallenge }) {
       <div className="relative">
         <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-tarmoto-cyan">
           <Sparkles size={14} />
-          Seasonal · {seasonal.season}
+          {t("Seasonal \u00B7 ")}
+          {seasonal.season}
         </div>
         <h2 className="mt-2 text-2xl font-bold text-white">{seasonal.name}</h2>
         <p className="mt-1 text-sm text-slate-300">{seasonal.tagline}</p>
@@ -466,9 +473,7 @@ function SeasonalBanner({ seasonal }: { seasonal: SeasonalChallenge }) {
     </section>
   );
 }
-
 // ── Badges ──
-
 function BadgeGrid({ badges }: { badges: BadgeType[] }) {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
@@ -478,7 +483,6 @@ function BadgeGrid({ badges }: { badges: BadgeType[] }) {
     </div>
   );
 }
-
 function BadgeCard({ badge }: { badge: BadgeType }) {
   const Icon = BADGE_ICONS[badge.icon] ?? Medal;
   const earned = Boolean(badge.earnedAt);
@@ -520,9 +524,7 @@ function BadgeCard({ badge }: { badge: BadgeType }) {
     </div>
   );
 }
-
 // ── Challenges ──
-
 function ChallengeCard({
   challenge,
   meta,
@@ -590,7 +592,9 @@ function ChallengeCard({
         <div className="text-[11px] text-slate-500 flex items-center gap-3">
           {challenge.reward && (
             <span className="flex items-center gap-1">
-              <Medal size={12} /> Reward: {challenge.reward}
+              <Medal size={12} />
+              {t("Reward: ")}
+              {challenge.reward}
             </span>
           )}
           {meta && (
@@ -601,7 +605,7 @@ function ChallengeCard({
         </div>
         {joined ? (
           <span className="text-[11px] uppercase tracking-widest text-tarmoto-cyan">
-            Joined
+            {t("Joined ")}
           </span>
         ) : (
           <button
@@ -612,7 +616,8 @@ function ChallengeCard({
           >
             {joining ? (
               <>
-                <Loader2 size={12} className="animate-spin" /> Joining…
+                <Loader2 size={12} className="animate-spin" />
+                {t("Joining\u2026 ")}
               </>
             ) : (
               "Join challenge"
@@ -623,16 +628,20 @@ function ChallengeCard({
     </div>
   );
 }
-
 // ── Regional leaderboards ──
-
 type RegionScope = "region" | "global";
-
 type LeaderboardLoad =
-  | { status: "loading" }
-  | { status: "ready"; data: RegionalLeaderboards }
-  | { status: "error"; message: string };
-
+  | {
+      status: "loading";
+    }
+  | {
+      status: "ready";
+      data: RegionalLeaderboards;
+    }
+  | {
+      status: "error";
+      message: string;
+    };
 /**
  * Multi-dimensional regional leaderboard widget. Manages its own region /
  * dimension state and refetches independently of the page's snapshot load —
@@ -654,7 +663,6 @@ function RegionalLeaderboardsSection() {
   // newer state when they resolve late.
   const controllerRef = useRef<AbortController | null>(null);
   const userId = useAuthStore((s) => s.user?.id ?? null);
-
   // Resolve home_region once per user. We don't error out if the request
   // fails — the global ranking still renders, the toggle just stays on
   // global. `scope` is realigned to whatever the new user's region permits
@@ -681,13 +689,11 @@ function RegionalLeaderboardsSection() {
       cancelled = true;
     };
   }, [userId]);
-
   // Belt-and-suspenders: if `scope` is "region" but no home_region is
   // available, the visible ranking is global — derive the effective region
   // accordingly so we never send a `region=null` request with a stale
   // "region" toggle visible.
   const region = scope === "region" && homeRegion !== null ? homeRegion : null;
-
   const load_ = useCallback(
     async (signal: AbortSignal) => {
       try {
@@ -709,7 +715,6 @@ function RegionalLeaderboardsSection() {
     },
     [region, userId],
   );
-
   useEffect(() => {
     controllerRef.current?.abort();
     const controller = new AbortController();
@@ -718,18 +723,16 @@ function RegionalLeaderboardsSection() {
     void load_(controller.signal);
     return () => controller.abort();
   }, [load_]);
-
   const dim: RegionalDimensionLeaderboard | null = useMemo(() => {
     if (load.status !== "ready") return null;
     return load.data[dimension];
   }, [load, dimension]);
-
   return (
     <section aria-labelledby="leaderboard-heading">
       <SectionHeader
         id="leaderboard-heading"
         icon={<Trophy size={16} />}
-        title="Regional leaderboards"
+        title={t("Regional leaderboards")}
         subtitle={
           scope === "region" && homeRegion
             ? `Top riders in ${homeRegion}, ranked by ${labelForDimension(dimension).toLowerCase()}.`
@@ -753,7 +756,7 @@ function RegionalLeaderboardsSection() {
         >
           <AlertTriangle className="mx-auto text-red-300 mb-2" size={24} />
           <p className="text-red-200 font-medium">
-            Could not load leaderboards
+            {t("Could not load leaderboards ")}
           </p>
           <p className="text-red-300/80 text-sm mt-1">{load.message}</p>
         </div>
@@ -765,7 +768,6 @@ function RegionalLeaderboardsSection() {
     </section>
   );
 }
-
 function RegionToggle({
   scope,
   homeRegion,
@@ -780,7 +782,7 @@ function RegionToggle({
   return (
     <div
       role="radiogroup"
-      aria-label="Region scope"
+      aria-label={t("Region scope")}
       className="inline-flex rounded-lg border border-slate-800 bg-slate-900 p-0.5 text-xs"
     >
       <ToggleButton
@@ -788,7 +790,7 @@ function RegionToggle({
         onClick={() => onChange("global")}
         ariaLabel="Global ranking"
       >
-        Global
+        {t("Global ")}
       </ToggleButton>
       {homeRegion && (
         <ToggleButton
@@ -803,7 +805,6 @@ function RegionToggle({
     </div>
   );
 }
-
 function DimensionTabs({
   current,
   onChange,
@@ -814,7 +815,7 @@ function DimensionTabs({
   return (
     <div
       role="tablist"
-      aria-label="Leaderboard dimension"
+      aria-label={t("Leaderboard dimension")}
       className="inline-flex rounded-lg border border-slate-800 bg-slate-900 p-0.5 text-xs"
     >
       {LEADERBOARD_DIMENSION_KEYS.map((dim) => (
@@ -830,7 +831,6 @@ function DimensionTabs({
     </div>
   );
 }
-
 function ToggleButton({
   active,
   onClick,
@@ -860,7 +860,6 @@ function ToggleButton({
     </button>
   );
 }
-
 function RegionalLeaderboardTable({
   dim,
 }: {
@@ -872,7 +871,6 @@ function RegionalLeaderboardTable({
   // matches one of the entries.
   const showOutsideTop =
     dim.me !== null && !dim.entries.some((e) => e.userId === dim.me?.userId);
-
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900 overflow-hidden">
       <div className="overflow-x-auto">
@@ -880,7 +878,7 @@ function RegionalLeaderboardTable({
           <thead>
             <tr className="text-left text-xs uppercase tracking-wider text-slate-500 bg-slate-900/80">
               <th className="py-3 px-4 font-semibold w-12">#</th>
-              <th className="py-3 px-4 font-semibold">Rider</th>
+              <th className="py-3 px-4 font-semibold">{t("Rider")}</th>
               <th className="py-3 px-4 font-semibold text-right">{dim.unit}</th>
             </tr>
           </thead>
@@ -891,7 +889,7 @@ function RegionalLeaderboardTable({
                   colSpan={3}
                   className="py-8 px-4 text-center text-sm text-slate-500"
                 >
-                  No riders ranked in this region yet.
+                  {t("No riders ranked in this region yet. ")}
                 </td>
               </tr>
             ) : (
@@ -917,7 +915,6 @@ function RegionalLeaderboardTable({
     </div>
   );
 }
-
 function RegionalLeaderboardRow({
   entry,
   unit,
@@ -943,7 +940,7 @@ function RegionalLeaderboardRow({
           {entry.displayName}
           {entry.isMe && (
             <span className="ml-2 text-[10px] uppercase tracking-widest text-tarmoto-cyan">
-              You
+              {t("You ")}
             </span>
           )}
           {entry.homeRegion && (
@@ -959,7 +956,6 @@ function RegionalLeaderboardRow({
     </tr>
   );
 }
-
 function RegionalLeaderboardSummary({
   me,
   unit,
@@ -970,7 +966,7 @@ function RegionalLeaderboardSummary({
   return (
     <div className="border-t border-slate-800 px-4 py-3 flex flex-wrap gap-x-6 gap-y-2 text-xs text-slate-400">
       <span className="text-slate-500 uppercase tracking-widest font-semibold">
-        Your rank
+        {t("Your rank ")}
       </span>
       <span className="tabular-nums">
         #{me.rank}{" "}
@@ -981,7 +977,6 @@ function RegionalLeaderboardSummary({
     </div>
   );
 }
-
 function RankBadge({ rank }: { rank: number }) {
   if (rank === 1) {
     return (
@@ -1010,9 +1005,7 @@ function RankBadge({ rank }: { rank: number }) {
     </span>
   );
 }
-
 // ── Milestone ──
-
 function MilestoneCard({ progress }: { progress: MilestoneProgress }) {
   const percent = Math.round(progress.fraction * 100);
   const label = formatMilestoneLabel(progress);
@@ -1037,7 +1030,8 @@ function MilestoneCard({ progress }: { progress: MilestoneProgress }) {
           <span>{label}</span>
           {progress.nextThreshold !== null && (
             <span className="text-slate-500">
-              {Math.round(progress.remaining).toLocaleString()} to go
+              {Math.round(progress.remaining).toLocaleString()}
+              {t("to go ")}
             </span>
           )}
         </div>
@@ -1051,7 +1045,6 @@ function MilestoneCard({ progress }: { progress: MilestoneProgress }) {
     </div>
   );
 }
-
 function TierTrack({
   thresholds,
   current,
@@ -1081,9 +1074,7 @@ function TierTrack({
     </ol>
   );
 }
-
 // ── Shared atoms ──
-
 function ProgressBar({
   fraction,
   ariaLabel,
@@ -1108,7 +1099,6 @@ function ProgressBar({
     </div>
   );
 }
-
 function SectionHeader({
   id,
   icon,
@@ -1132,7 +1122,6 @@ function SectionHeader({
     </div>
   );
 }
-
 function EmptyCard({
   icon,
   title,
@@ -1152,7 +1141,6 @@ function EmptyCard({
     </div>
   );
 }
-
 function ErrorCard({
   message,
   onRetry,
@@ -1166,19 +1154,20 @@ function ErrorCard({
       className="rounded-2xl border border-red-900/60 bg-red-950/30 p-6 text-center"
     >
       <AlertTriangle className="mx-auto text-red-300 mb-2" size={28} />
-      <p className="text-red-200 font-medium">Could not load achievements</p>
+      <p className="text-red-200 font-medium">
+        {t("Could not load achievements")}
+      </p>
       <p className="text-red-300/80 text-sm mt-1">{message}</p>
       <button
         type="button"
         onClick={onRetry}
         className="mt-4 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-900/40 text-red-100 text-sm hover:bg-red-900/60 transition"
       >
-        Try again
+        {t("Try again ")}
       </button>
     </div>
   );
 }
-
 function SkeletonGrid() {
   return (
     <div className="space-y-8" aria-busy="true" aria-live="polite">

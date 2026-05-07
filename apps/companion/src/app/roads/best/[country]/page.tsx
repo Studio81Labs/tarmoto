@@ -1,18 +1,18 @@
+import { t } from "@/i18n";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { COUNTRIES, findCountry, findCountryRegions } from "@tarmoto/shared";
-
 export const revalidate = 604800;
-
 export function generateStaticParams() {
   return COUNTRIES.map((c) => ({ country: c.code }));
 }
-
 export async function generateMetadata({
   params,
 }: {
-  params: Promise<{ country: string }>;
+  params: Promise<{
+    country: string;
+  }>;
 }): Promise<Metadata> {
   const { country } = await params;
   const c = findCountry(country);
@@ -31,22 +31,22 @@ export async function generateMetadata({
     },
   };
 }
-
 export default async function BestRoadsCountryPage({
   params,
 }: {
-  params: Promise<{ country: string }>;
+  params: Promise<{
+    country: string;
+  }>;
 }) {
   const { country } = await params;
   const c = findCountry(country);
   if (!c) notFound();
   const regions = findCountryRegions(c.code);
-
   return (
     <main className="mx-auto max-w-5xl px-6 py-10 text-slate-100">
       <nav className="mb-4 text-sm text-slate-400">
         <Link href="/roads/best" className="hover:text-white">
-          Best roads
+          {t("Best roads ")}
         </Link>
         <span className="mx-2">/</span>
         <span>{c.name}</span>
@@ -54,11 +54,16 @@ export default async function BestRoadsCountryPage({
 
       <header className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight">
-          Best motorcycle roads in {c.name}
+          {t("Best motorcycle roads in ")}
+          {c.name}
         </h1>
         <p className="mt-2 text-slate-400">
-          {regions.length} curated region{regions.length === 1 ? "" : "s"} — tap
-          through for ranked roads, quality scores and a map preview.
+          {regions.length}
+          {t("curated region")}
+          {regions.length === 1 ? "" : "s"}
+          {t(
+            "\u2014 tap through for ranked roads, quality scores and a map preview. ",
+          )}
         </p>
       </header>
 
@@ -75,7 +80,8 @@ export default async function BestRoadsCountryPage({
               </p>
               {r.bestSeason && (
                 <p className="mt-2 text-xs text-slate-500">
-                  Best season: {r.bestSeason}
+                  {t("Best season: ")}
+                  {r.bestSeason}
                 </p>
               )}
             </Link>

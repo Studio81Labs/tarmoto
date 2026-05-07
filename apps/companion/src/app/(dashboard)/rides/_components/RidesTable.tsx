@@ -1,9 +1,8 @@
 "use client";
-
+import { t } from "@/i18n";
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight } from "lucide-react";
 import { RideRow } from "./RideRow";
 import type { RideSummary, RidesQueryState, SortField } from "./useRidesQuery";
-
 interface Props {
   state: RidesQueryState;
   rides: RideSummary[];
@@ -16,8 +15,10 @@ interface Props {
   onPage: (page: number) => void;
   onRenamed: (next: RideSummary) => void;
 }
-
-const COLUMNS: Array<{ key: SortField | null; label: string }> = [
+const COLUMNS: Array<{
+  key: SortField | null;
+  label: string;
+}> = [
   { key: null, label: "Name" },
   { key: "started_at", label: "Date" },
   { key: "distance_km", label: "Distance" },
@@ -25,7 +26,6 @@ const COLUMNS: Array<{ key: SortField | null; label: string }> = [
   { key: "avg_road_quality", label: "Avg quality" },
   { key: null, label: "" }, // open-detail column
 ];
-
 export function RidesTable({
   state,
   rides,
@@ -39,7 +39,6 @@ export function RidesTable({
   onRenamed,
 }: Props) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-
   return (
     <div className="rounded-xl bg-slate-900 border border-slate-800 overflow-hidden flex flex-col min-h-0">
       <div className="overflow-auto flex-1">
@@ -90,7 +89,7 @@ export function RidesTable({
                   colSpan={6}
                   className="px-3 py-10 text-center text-slate-500"
                 >
-                  No rides match these filters.
+                  {t("No rides match these filters. ")}
                 </td>
               </tr>
             ) : (
@@ -117,19 +116,22 @@ export function RidesTable({
             type="button"
             onClick={() => onPage(state.page - 1)}
             disabled={state.page <= 1}
-            aria-label="Previous page"
+            aria-label={t("Previous page")}
             className="p-1 rounded hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <ChevronLeft size={16} />
           </button>
           <span>
-            Page {state.page} of {totalPages}
+            {t("Page ")}
+            {state.page}
+            {t("of ")}
+            {totalPages}
           </span>
           <button
             type="button"
             onClick={() => onPage(state.page + 1)}
             disabled={state.page >= totalPages}
-            aria-label="Next page"
+            aria-label={t("Next page")}
             className="p-1 rounded hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <ChevronRight size={16} />

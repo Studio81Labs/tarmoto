@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import { Fragment } from "react";
 import {
   AlertTriangle,
@@ -20,13 +21,11 @@ import { buildRoutePreview } from "@/lib/ride-detail";
 import { QUALITY_CONFIG, formatDistance, formatDuration } from "@/lib/utils";
 import type { TripDetailMember } from "@/lib/trip-from-detail";
 import type { RoutePreviewSegment, Trip, TripDay } from "@/lib/types";
-
 interface TripPrintBodyProps {
   trip: Trip;
   region?: string;
   members?: TripDetailMember[];
 }
-
 /**
  * Print-only body shared by `/trips/[tripId]/print` and the planner's
  * `/trips/planner/print` page (US-39). Renders a cover page, one section
@@ -44,18 +43,16 @@ export function TripPrintBody({ trip, region, members }: TripPrintBodyProps) {
     }),
     { distanceKm: 0, durationMinutes: 0, elevationGain: 0 },
   );
-
   const appendixSegments = pickAppendixSegments(trip);
-
   return (
     <article className="trip-print-body mx-auto max-w-3xl px-6 py-8 text-[14px] leading-relaxed">
       {/*
-        Print CSS lives with the body (not the host page) so the rules
-        stay in lockstep with the class names this component renders.
-        The `.trip-print-toolbar` rule is the public contract for hosts:
-        any wrapper that puts a toolbar over this body should tag it
-        with that class so it's hidden on paper.
-      */}
+          Print CSS lives with the body (not the host page) so the rules
+          stay in lockstep with the class names this component renders.
+          The `.trip-print-toolbar` rule is the public contract for hosts:
+          any wrapper that puts a toolbar over this body should tag it
+          with that class so it's hidden on paper.
+        */}
       <style>{`
         @media print {
           .trip-print-toolbar { display: none !important; }
@@ -88,7 +85,8 @@ export function TripPrintBody({ trip, region, members }: TripPrintBodyProps) {
       {appendixSegments.length > 0 && (
         <section className="trip-print-appendix border-t border-slate-200 pt-6 mt-6">
           <h2 className="text-lg font-semibold mb-4">
-            Road preview cards · top {appendixSegments.length}
+            {t("Road preview cards \u00B7 top ")}
+            {appendixSegments.length}
           </h2>
           <div className="grid grid-cols-2 gap-4">
             {appendixSegments.map((segment) => (
@@ -100,13 +98,13 @@ export function TripPrintBody({ trip, region, members }: TripPrintBodyProps) {
 
       <footer className="border-t border-slate-200 pt-4 mt-6 text-xs text-slate-500">
         <p>
-          Generated with Tarmoto Companion · {new Date().toLocaleDateString()}
+          {t("Generated with Tarmoto Companion \u00B7 ")}
+          {new Date().toLocaleDateString()}
         </p>
       </footer>
     </article>
   );
 }
-
 function CoverSection({
   trip,
   region,
@@ -125,14 +123,17 @@ function CoverSection({
   return (
     <header className="trip-print-cover">
       <p className="text-xs uppercase tracking-widest text-slate-500">
-        Tarmoto trip plan
+        {t("Tarmoto trip plan ")}
       </p>
       <h1 className="text-3xl font-bold mt-1">{trip.name}</h1>
       {trip.description && (
         <p className="mt-2 text-slate-600">{trip.description}</p>
       )}
       {region && (
-        <p className="mt-1 text-sm text-slate-600">Region: {region}</p>
+        <p className="mt-1 text-sm text-slate-600">
+          {t("Region: ")}
+          {region}
+        </p>
       )}
 
       <dl className="mt-4 grid grid-cols-4 gap-4 text-sm">
@@ -168,7 +169,9 @@ function CoverSection({
 
       {members.length > 0 && (
         <section className="mt-5">
-          <h2 className="text-sm font-semibold text-slate-700">Members</h2>
+          <h2 className="text-sm font-semibold text-slate-700">
+            {t("Members")}
+          </h2>
           <ul className="mt-1.5 space-y-0.5 text-sm text-slate-700">
             {members.map((m) => (
               <li key={m.user_id}>
@@ -184,7 +187,6 @@ function CoverSection({
     </header>
   );
 }
-
 function CoverStat({
   label,
   value,
@@ -204,7 +206,6 @@ function CoverStat({
     </div>
   );
 }
-
 function DaySection({ day }: { day: TripDay }) {
   const groups = groupDayWaypoints(day);
   const elevationProfile = buildDayElevationProfile(day);
@@ -218,12 +219,12 @@ function DaySection({ day }: { day: TripDay }) {
         lng: w.location.lng,
       }));
   const preview = buildRoutePreview(previewGeometry, 480, 6);
-
   return (
     <article>
       <header className="flex items-baseline justify-between gap-3 mb-3">
         <h2 className="text-base font-semibold">
-          Day {day.dayNumber}
+          {t("Day ")}
+          {day.dayNumber}
           {day.title && (
             <span className="text-slate-500 font-normal"> — {day.title}</span>
           )}
@@ -233,7 +234,13 @@ function DaySection({ day }: { day: TripDay }) {
           {day.durationMinutes > 0 && (
             <> · {formatDuration(day.durationMinutes)}</>
           )}
-          {day.elevationGain > 0 && <> · {Math.round(day.elevationGain)} m ↑</>}
+          {day.elevationGain > 0 && (
+            <>
+              {" "}
+              · {Math.round(day.elevationGain)}
+              {t("m \u2191")}
+            </>
+          )}
         </span>
       </header>
 
@@ -260,7 +267,9 @@ function DaySection({ day }: { day: TripDay }) {
       {elevationProfile && <ElevationSparkline points={elevationProfile} />}
 
       {groups.length === 0 ? (
-        <p className="text-xs text-slate-500">No waypoints for this day.</p>
+        <p className="text-xs text-slate-500">
+          {t("No waypoints for this day.")}
+        </p>
       ) : (
         <div className="space-y-3">
           {groups.map((group) => (
@@ -272,16 +281,14 @@ function DaySection({ day }: { day: TripDay }) {
       <p className="trip-print-caveat mt-4 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
         <CloudSun size={14} className="mt-0.5 shrink-0" />
         <span>
-          Check the local weather forecast on the morning of the ride — Alpine
-          and coastal sections can swing from sun to thunderstorms in a few
-          hours. If high winds, ice, or heavy rain are forecast, reconsider the
-          route.
+          {t(
+            "Check the local weather forecast on the morning of the ride \u2014 Alpine and coastal sections can swing from sun to thunderstorms in a few hours. If high winds, ice, or heavy rain are forecast, reconsider the route. ",
+          )}
         </span>
       </p>
     </article>
   );
 }
-
 function ElevationSparkline({ points }: { points: number[] }) {
   const min = Math.min(...points);
   const max = Math.max(...points);
@@ -299,12 +306,14 @@ function ElevationSparkline({ points }: { points: number[] }) {
   return (
     <figure className="trip-print-elev mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
       <figcaption className="mb-1 text-[10px] uppercase tracking-wider text-slate-500">
-        Elevation · {Math.round(min)}–{Math.round(max)} m
+        {t("Elevation \u00B7 ")}
+        {Math.round(min)}–{Math.round(max)}
+        {t("m ")}
       </figcaption>
       <svg
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label="Elevation profile"
+        aria-label={t("Elevation profile")}
         preserveAspectRatio="none"
         className="block h-12 w-full"
       >
@@ -320,7 +329,6 @@ function ElevationSparkline({ points }: { points: number[] }) {
     </figure>
   );
 }
-
 function WaypointGroupBlock({ group }: { group: WaypointGroup }) {
   const Icon = groupIcon(group.label);
   return (
@@ -348,13 +356,11 @@ function WaypointGroupBlock({ group }: { group: WaypointGroup }) {
     </section>
   );
 }
-
 function groupIcon(label: string) {
   if (label === "Fuel") return Fuel;
   if (label === "Accommodation") return BedDouble;
   return MapPin;
 }
-
 function SegmentCard({ segment }: { segment: RoutePreviewSegment }) {
   const tierMeta = QUALITY_CONFIG[segment.qualityTier];
   return (
@@ -364,13 +370,14 @@ function SegmentCard({ segment }: { segment: RoutePreviewSegment }) {
           {segment.name ?? `Segment ${segment.id.slice(0, 6)}`}
         </h3>
         <span className="text-[10px] uppercase tracking-wider text-slate-500">
-          Day {segment.dayNumber}
+          {t("Day ")}
+          {segment.dayNumber}
         </span>
       </header>
       <dl className="grid grid-cols-3 gap-1.5 text-[11px] text-slate-600">
         <Fragment>
           <div>
-            <dt className="text-slate-500">Quality</dt>
+            <dt className="text-slate-500">{t("Quality")}</dt>
             <dd
               className="font-semibold tabular-nums"
               style={{ color: tierMeta?.hex ?? undefined }}
@@ -384,13 +391,13 @@ function SegmentCard({ segment }: { segment: RoutePreviewSegment }) {
             </dd>
           </div>
           <div>
-            <dt className="text-slate-500">Distance</dt>
+            <dt className="text-slate-500">{t("Distance")}</dt>
             <dd className="font-semibold tabular-nums">
               {formatDistance(segment.distanceKm)}
             </dd>
           </div>
           <div>
-            <dt className="text-slate-500">Curves</dt>
+            <dt className="text-slate-500">{t("Curves")}</dt>
             <dd className="font-semibold tabular-nums">
               {Math.round(segment.curvinessScore)}/100
             </dd>
@@ -400,7 +407,8 @@ function SegmentCard({ segment }: { segment: RoutePreviewSegment }) {
       {segment.activeHazards.length > 0 && (
         <p className="mt-2 flex items-center gap-1 text-[11px] text-amber-700">
           <AlertTriangle size={11} />
-          {segment.activeHazards.length} active hazard
+          {segment.activeHazards.length}
+          {t("active hazard ")}
           {segment.activeHazards.length === 1 ? "" : "s"}
         </p>
       )}

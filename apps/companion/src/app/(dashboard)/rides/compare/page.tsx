@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -26,7 +26,6 @@ import {
   type DeltaDirection,
   type StatRow,
 } from "@/lib/ride-compare";
-
 /** Subset of `RideSummaryDto` fields we use in the picker. */
 interface RideOption {
   id: string;
@@ -34,23 +33,18 @@ interface RideOption {
   distance_km: number | null;
   duration_min: number | null;
 }
-
 interface FetchedRide extends ComparableRide {
   ride_type: string;
 }
-
 function CompareRidesPageInner() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-
   const selectedA = searchParams.get("a");
   const selectedB = searchParams.get("b");
-
   const [options, setOptions] = useState<RideOption[]>([]);
   const [optionsLoading, setOptionsLoading] = useState(true);
   const [optionsError, setOptionsError] = useState<string | null>(null);
-
   useEffect(() => {
     let cancelled = false;
     setOptionsLoading(true);
@@ -75,7 +69,6 @@ function CompareRidesPageInner() {
       cancelled = true;
     };
   }, []);
-
   // Auto-pick sensible defaults (two most recent rides) once options are
   // loaded and no selection is present in the URL. Users can still change
   // either slot via the dropdowns.
@@ -91,11 +84,14 @@ function CompareRidesPageInner() {
     // We only want to run this after load; deps are intentionally narrow.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [optionsLoading, options.length]);
-
   function updateParams(
     a: string | null,
     b: string | null,
-    { replace = false }: { replace?: boolean } = {},
+    {
+      replace = false,
+    }: {
+      replace?: boolean;
+    } = {},
   ) {
     const params = new URLSearchParams(searchParams.toString());
     if (a) params.set("a", a);
@@ -106,23 +102,25 @@ function CompareRidesPageInner() {
     if (replace) router.replace(url, { scroll: false });
     else router.push(url, { scroll: false });
   }
-
   return (
     <div className="p-6 max-w-6xl mx-auto animate-fade-in">
       <div className="flex items-center gap-4 mb-6">
         <Link
           href="/rides"
           className="p-2 rounded-lg hover:bg-slate-800 transition"
-          aria-label="Back to rides"
+          aria-label={t("Back to rides")}
         >
           <ArrowLeft size={20} className="text-slate-400" />
         </Link>
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Scale size={22} className="text-tarmoto-cyan" /> Compare rides
+            <Scale size={22} className="text-tarmoto-cyan" />
+            {t("Compare rides ")}
           </h1>
           <p className="text-sm text-slate-400 mt-0.5">
-            Pick two rides to see stats, route, and road quality side-by-side.
+            {t(
+              "Pick two rides to see stats, route, and road quality side-by-side. ",
+            )}
           </p>
         </div>
       </div>
@@ -155,8 +153,9 @@ function CompareRidesPageInner() {
 
       {options.length < 2 && !optionsLoading && !optionsError && (
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-10 text-center text-sm text-slate-400">
-          You need at least two rides to run a comparison. Keep riding with the
-          Tarmoto mobile app!
+          {t(
+            "You need at least two rides to run a comparison. Keep riding with the Tarmoto mobile app! ",
+          )}
         </div>
       )}
 
@@ -166,13 +165,12 @@ function CompareRidesPageInner() {
 
       {selectedA && selectedB && selectedA === selectedB && (
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm text-amber-200">
-          Pick two different rides to compare.
+          {t("Pick two different rides to compare. ")}
         </div>
       )}
     </div>
   );
 }
-
 function RidePicker({
   label,
   value,
@@ -209,7 +207,6 @@ function RidePicker({
     </label>
   );
 }
-
 function formatRideMeta(ride: {
   started_at: string;
   distance_km: number | null;
@@ -219,7 +216,6 @@ function formatRideMeta(ride: {
     ride.distance_km != null ? ` · ${ride.distance_km.toFixed(1)} km` : "";
   return `${date}${distance}`;
 }
-
 function ComparisonView({
   rideAId,
   rideBId,
@@ -231,7 +227,6 @@ function ComparisonView({
   const [rideB, setRideB] = useState<FetchedRide | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -258,7 +253,6 @@ function ComparisonView({
       cancelled = true;
     };
   }, [rideAId, rideBId]);
-
   const unified = useMemo(() => {
     if (!rideA || !rideB) return null;
     return buildUnifiedRoutePreview(rideA, rideB, 600, 16);
@@ -271,15 +265,14 @@ function ComparisonView({
     if (!rideA || !rideB) return [];
     return diffQualityBreakdown(rideA, rideB);
   }, [rideA, rideB]);
-
   if (loading) {
     return (
       <div className="flex items-center gap-2 text-slate-400 mt-4">
-        <Loader2 size={16} className="animate-spin" /> Loading rides…
+        <Loader2 size={16} className="animate-spin" />
+        {t("Loading rides\u2026 ")}
       </div>
     );
   }
-
   if (error || !rideA || !rideB) {
     return (
       <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-300">
@@ -287,7 +280,6 @@ function ComparisonView({
       </div>
     );
   }
-
   return (
     <div className="space-y-6 animate-slide-up">
       <RouteCompareSection rideA={rideA} rideB={rideB} unified={unified} />
@@ -297,7 +289,6 @@ function ComparisonView({
     </div>
   );
 }
-
 async function fetchRide(rideId: string): Promise<FetchedRide | null> {
   const { data, error } = await api.GET("/api/v1/rides/{rideId}", {
     params: { path: { rideId } },
@@ -305,7 +296,6 @@ async function fetchRide(rideId: string): Promise<FetchedRide | null> {
   if (error || !data) return null;
   return data as unknown as FetchedRide;
 }
-
 function RouteCompareSection({
   rideA,
   rideB,
@@ -318,12 +308,12 @@ function RouteCompareSection({
   return (
     <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
       <h2 className="text-sm font-semibold text-white mb-1">
-        Routes (same scale)
+        {t("Routes (same scale) ")}
       </h2>
       <p className="text-xs text-slate-500 mb-4">
-        Both tracks projected into a shared coordinate frame so the visual
-        comparison is meaningful. Zoom/pan is synced because the viewBox is
-        shared.
+        {t(
+          "Both tracks projected into a shared coordinate frame so the visual comparison is meaningful. Zoom/pan is synced because the viewBox is shared. ",
+        )}
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <RouteBox
@@ -344,7 +334,6 @@ function RouteCompareSection({
     </section>
   );
 }
-
 function RouteBox({
   label,
   meta,
@@ -387,29 +376,37 @@ function RouteBox({
         </svg>
       ) : (
         <div className="rounded-lg border border-dashed border-slate-800 p-8 text-center text-xs text-slate-500">
-          No GPS track recorded
+          {t("No GPS track recorded ")}
         </div>
       )}
     </div>
   );
 }
-
 function StatsTable({ rows }: { rows: StatRow[] }) {
   return (
     <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
-      <h2 className="text-sm font-semibold text-white mb-1">Stats overlay</h2>
+      <h2 className="text-sm font-semibold text-white mb-1">
+        {t("Stats overlay")}
+      </h2>
       <p className="text-xs text-slate-500 mb-4">
-        Delta column is B − A. Arrow color reflects whether higher values are
-        better for that metric.
+        {t(
+          "Delta column is B \u2212 A. Arrow color reflects whether higher values are better for that metric. ",
+        )}
       </p>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wider text-slate-500">
-              <th className="py-2 pr-4 font-semibold">Metric</th>
-              <th className="py-2 pr-4 font-semibold text-right">Ride A</th>
-              <th className="py-2 pr-4 font-semibold text-right">Ride B</th>
-              <th className="py-2 pr-0 font-semibold text-right">Δ (B − A)</th>
+              <th className="py-2 pr-4 font-semibold">{t("Metric")}</th>
+              <th className="py-2 pr-4 font-semibold text-right">
+                {t("Ride A")}
+              </th>
+              <th className="py-2 pr-4 font-semibold text-right">
+                {t("Ride B")}
+              </th>
+              <th className="py-2 pr-0 font-semibold text-right">
+                {t("\u0394 (B \u2212 A)")}
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800">
@@ -451,7 +448,6 @@ function StatsTable({ rows }: { rows: StatRow[] }) {
     </section>
   );
 }
-
 function DeltaChip({
   delta,
   digits,
@@ -489,7 +485,6 @@ function DeltaChip({
     </span>
   );
 }
-
 function ElevationCompareSection({
   rideA,
   rideB,
@@ -506,10 +501,13 @@ function ElevationCompareSection({
   );
   return (
     <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
-      <h2 className="text-sm font-semibold text-white mb-1">Elevation</h2>
+      <h2 className="text-sm font-semibold text-white mb-1">
+        {t("Elevation")}
+      </h2>
       <p className="text-xs text-slate-500 mb-4">
-        Bars share a scale so gain/loss are visually comparable across both
-        rides.
+        {t(
+          "Bars share a scale so gain/loss are visually comparable across both rides. ",
+        )}
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <ElevationBars
@@ -530,7 +528,6 @@ function ElevationCompareSection({
     </section>
   );
 }
-
 function ElevationBars({
   label,
   color,
@@ -559,7 +556,6 @@ function ElevationBars({
     </div>
   );
 }
-
 function ElevationBar({
   value,
   max,
@@ -600,7 +596,6 @@ function ElevationBar({
     </div>
   );
 }
-
 function QualityDiffSection({
   rows,
 }: {
@@ -609,15 +604,17 @@ function QualityDiffSection({
   const total = rows.reduce((acc, row) => acc + row.percent + row.bPercent, 0);
   return (
     <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
-      <h2 className="text-sm font-semibold text-white mb-1">Road quality</h2>
+      <h2 className="text-sm font-semibold text-white mb-1">
+        {t("Road quality")}
+      </h2>
       <p className="text-xs text-slate-500 mb-4">
-        Share of segments by quality tier. Arrows indicate change on Ride B
-        relative to Ride A — improved tiers (more excellent/good, less
-        poor/very-poor) are shown in green.
+        {t(
+          "Share of segments by quality tier. Arrows indicate change on Ride B relative to Ride A \u2014 improved tiers (more excellent/good, less poor/very-poor) are shown in green. ",
+        )}
       </p>
       {total === 0 ? (
         <div className="rounded-lg border border-dashed border-slate-800 p-6 text-center text-xs text-slate-500">
-          Neither ride recorded per-segment quality readings.
+          {t("Neither ride recorded per-segment quality readings. ")}
         </div>
       ) : (
         <ul className="space-y-2">
@@ -680,7 +677,6 @@ function QualityDiffSection({
     </section>
   );
 }
-
 // More segments in the top tiers is better; more in the bottom tiers is worse.
 // Fair is neutral so it doesn't get flagged either way.
 function isBetterTier(tier: QualityTier): boolean | null {
@@ -695,7 +691,6 @@ function isBetterTier(tier: QualityTier): boolean | null {
       return null;
   }
 }
-
 export default function CompareRidesPage() {
   return (
     <Suspense fallback={null}>

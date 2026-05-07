@@ -1,20 +1,17 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
 import { Settings, LogOut } from "lucide-react";
 import { useDropdown } from "@/hooks";
-
 export function UserMenu() {
   const { data: session } = useSession();
   const user = session?.user;
   const { open, close, toggle, ref } = useDropdown();
-
   const handleLogout = () => {
     close();
     signOut({ callbackUrl: "/login" });
   };
-
   return (
     <div ref={ref} className="relative">
       <button
@@ -37,14 +34,14 @@ export function UserMenu() {
             className="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-800 transition"
           >
             <Settings size={16} />
-            Settings
+            {t("Settings ")}
           </Link>
           <button
             onClick={handleLogout}
             className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-slate-300 hover:text-red-400 hover:bg-red-400/5 transition"
           >
             <LogOut size={16} />
-            Log out
+            {t("Log out ")}
           </button>
         </div>
       )}

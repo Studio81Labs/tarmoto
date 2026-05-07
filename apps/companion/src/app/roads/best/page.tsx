@@ -1,18 +1,18 @@
+import { t } from "@/i18n";
 import Link from "next/link";
 import { COUNTRIES, findCountryRegions } from "@tarmoto/shared";
-
 export const revalidate = 604800;
-
 export default function BestRoadsHubPage() {
   return (
     <main className="mx-auto max-w-5xl px-6 py-10 text-slate-100">
       <header className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight">
-          Best motorcycle roads
+          {t("Best motorcycle roads ")}
         </h1>
         <p className="mt-2 text-slate-400">
-          Browse curated lists of top-ranked roads — scored from live road
-          quality and curviness data. Pick a country to get started.
+          {t(
+            "Browse curated lists of top-ranked roads \u2014 scored from live road quality and curviness data. Pick a country to get started. ",
+          )}
         </p>
       </header>
 
@@ -27,7 +27,9 @@ export default function BestRoadsHubPage() {
               >
                 <h2 className="text-xl font-semibold">{country.name}</h2>
                 <p className="mt-1 text-sm text-slate-400">
-                  {regionCount} region{regionCount === 1 ? "" : "s"}
+                  {regionCount}
+                  {t("region")}
+                  {regionCount === 1 ? "" : "s"}
                 </p>
               </Link>
             </li>

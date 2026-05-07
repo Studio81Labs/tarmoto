@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
@@ -43,7 +43,6 @@ import {
   PersonalRoadMap,
   type PersonalRoadMapHandle,
 } from "./_components/PersonalRoadMap";
-
 /**
  * Personal road map (US-50).
  *
@@ -53,47 +52,51 @@ import {
  * over the in-memory ridden list — no extra round-trip when the user
  * flips between "this year" and "all time".
  */
-
 const NEARBY_DEFAULT_RADIUS_KM = 15;
 const NEARBY_LIMIT = 25;
-
 // Fallback coordinate used when the browser blocks or doesn't have geolocation.
 // Prague is a sensible neutral default for a motorcycle app whose spec targets
 // Central Europe; the user can override via the "Use my location" button or by
 // letting the coordinate inputs accept any lat/lng.
 const FALLBACK_CENTER = { lat: 50.0755, lng: 14.4378, label: "Prague" };
 const INITIAL_MAP_ZOOM = 8;
-
 type ShareState =
-  | { kind: "idle" }
-  | { kind: "creating" }
-  | { kind: "copied"; url: string }
-  | { kind: "shared"; url: string }
-  | { kind: "error"; message: string };
-
+  | {
+      kind: "idle";
+    }
+  | {
+      kind: "creating";
+    }
+  | {
+      kind: "copied";
+      url: string;
+    }
+  | {
+      kind: "shared";
+      url: string;
+    }
+  | {
+      kind: "error";
+      message: string;
+    };
 export default function RoadMapPage() {
   const [stats, setStats] = useState<ExplorationStats | null>(null);
   const [riddenSegments, setRiddenSegments] = useState<RiddenSegmentMeta[]>([]);
   const [rides, setRides] = useState<RideForStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-
   const [period, setPeriod] = useState<TimePeriod>("all");
-
   const [center, setCenter] = useState(FALLBACK_CENTER);
   const [nearby, setNearby] = useState<UnriddenSegment[]>([]);
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyError, setNearbyError] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
-
   const [shareState, setShareState] = useState<ShareState>({ kind: "idle" });
   // Track the auto-reset timer so back-to-back share clicks don't let a
   // stale timer stomp over the next call's `{ kind: "creating" }` state
   // (which would re-enable the button mid-flight).
   const shareResetTimerRef = useRef<number | null>(null);
-
   const mapRef = useRef<PersonalRoadMapHandle>(null);
-
   // Preferences are hydrated from localStorage on the client; during SSR the
   // store still returns the metric default so the server-rendered markup
   // matches the first client paint.
@@ -102,11 +105,9 @@ export default function RoadMapPage() {
   useEffect(() => {
     hydratePreferences();
   }, [hydratePreferences]);
-
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-
     Promise.all([
       explorationApi.getStats(),
       explorationApi.getRiddenSegments(),
@@ -124,12 +125,10 @@ export default function RoadMapPage() {
         setLoadError(err.message || "Could not load exploration data");
         setLoading(false);
       });
-
     return () => {
       cancelled = true;
     };
   }, []);
-
   // `cancelled` guards against stale responses when the centre changes faster
   // than the network round-trip (e.g. pasting coordinates, then immediately
   // clicking "Use my location"). Without it, a late-resolving request would
@@ -160,19 +159,15 @@ export default function RoadMapPage() {
       cancelled = true;
     };
   }, [center.lat, center.lng]);
-
   const periodStats = useMemo(
     () => computePeriodStats(rides, period),
     [rides, period],
   );
-
   const filteredRidden = useMemo<RiddenSegment[]>(
     () => filterRiddenByPeriod(riddenSegments, period),
     [riddenSegments, period],
   );
-
   const regionBuckets = useMemo(() => groupUnriddenByRegion(nearby), [nearby]);
-
   // The backend returns nearby-unridden sorted by distance today, but the UI
   // explicitly advertises "Sorted by distance" — sorting client-side makes
   // that claim resilient if the service ordering ever changes.
@@ -180,7 +175,6 @@ export default function RoadMapPage() {
     () => [...nearby].sort((a, b) => a.distance_m - b.distance_m),
     [nearby],
   );
-
   // Shared between the sidebar's "Use my location" and the map's
   // "Center on me" so denial messaging, coordinate rounding, and the
   // 10s timeout stay in lockstep across the two entry points.
@@ -206,12 +200,11 @@ export default function RoadMapPage() {
               : "Could not read your location. Enter coordinates below.",
           );
         },
-        { timeout: 10_000 },
+        { timeout: 10000 },
       );
     },
     [],
   );
-
   const handleUseMyLocation = useCallback(() => {
     requestUserLocation((lat, lng) => {
       setCenter({ lat, lng, label: "My location" });
@@ -221,13 +214,11 @@ export default function RoadMapPage() {
       mapRef.current?.flyTo({ lat, lng });
     });
   }, [requestUserLocation]);
-
   const handleCenterOnMe = useCallback(() => {
     requestUserLocation((lat, lng) => {
       mapRef.current?.flyTo({ lat, lng });
     });
   }, [requestUserLocation]);
-
   // Schedule a single auto-reset back to "idle". Always cancels any
   // pending timer first so back-to-back share attempts don't have a
   // stale timer fire mid-flight and stomp over `{ kind: "creating" }`.
@@ -240,7 +231,6 @@ export default function RoadMapPage() {
       setShareState({ kind: "idle" });
     }, delayMs);
   }, []);
-
   // Cancel any in-flight reset on unmount so we don't `setState` after
   // the page has been torn down.
   useEffect(() => {
@@ -251,7 +241,6 @@ export default function RoadMapPage() {
       }
     };
   }, []);
-
   const handleShare = useCallback(async () => {
     if (!stats) return;
     // Cancel any pending reset BEFORE we touch shareState so a leftover
@@ -280,7 +269,6 @@ export default function RoadMapPage() {
       scheduleShareReset(3500);
       return;
     }
-
     setShareState({ kind: "creating" });
     let createdShareId: string | null = null;
     try {
@@ -307,13 +295,11 @@ export default function RoadMapPage() {
         typeof window !== "undefined"
           ? new URL(data.share_url, window.location.origin).toString()
           : data.share_url;
-
       const shareData: ShareData = {
         title,
         text: `Check out the roads I've ridden on Tarmoto — ${stats.percent_explored}% explored.`,
         url: fullUrl,
       };
-
       if (
         canWebShare &&
         (!navigator.canShare || navigator.canShare(shareData))
@@ -365,18 +351,17 @@ export default function RoadMapPage() {
     center.lng,
     scheduleShareReset,
   ]);
-
   if (loading) {
     return (
       <div className="flex flex-col h-full">
         <PageHeader percentExplored={null} />
         <div className="flex-1 flex items-center justify-center text-slate-400 gap-2 text-sm">
-          <Loader2 size={16} className="animate-spin" /> Loading road map…
+          <Loader2 size={16} className="animate-spin" />
+          {t("Loading road map\u2026 ")}
         </div>
       </div>
     );
   }
-
   if (loadError || !stats) {
     return (
       <div className="flex flex-col h-full">
@@ -389,7 +374,6 @@ export default function RoadMapPage() {
       </div>
     );
   }
-
   return (
     <div className="flex flex-col h-full">
       <PageHeader percentExplored={stats.percent_explored} />
@@ -398,7 +382,7 @@ export default function RoadMapPage() {
         <div
           className="flex items-center gap-1.5 mr-2"
           role="group"
-          aria-label="Filter by period"
+          aria-label={t("Filter by period")}
         >
           {TIME_PERIODS.map((p) => (
             <button
@@ -438,9 +422,10 @@ export default function RoadMapPage() {
             type="button"
             onClick={handleCenterOnMe}
             className="absolute bottom-4 right-4 z-10 flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-950/85 border border-slate-800 backdrop-blur text-xs text-slate-200 hover:bg-slate-900 transition"
-            title="Center on me"
+            title={t("Center on me")}
           >
-            <Crosshair size={12} /> Center on me
+            <Crosshair size={12} />
+            {t("Center on me ")}
           </button>
         </div>
 
@@ -457,7 +442,7 @@ export default function RoadMapPage() {
           <section className="p-5 border-b border-slate-800">
             <SectionHeader
               icon={<Crosshair size={14} />}
-              title="Explore near"
+              title={t("Explore near")}
               subtitle={center.label}
             />
             <NearbyCenterControls
@@ -474,7 +459,7 @@ export default function RoadMapPage() {
           <section className="p-5 border-b border-slate-800">
             <SectionHeader
               icon={<Sparkles size={14} />}
-              title="Regional breakdown"
+              title={t("Regional breakdown")}
               subtitle={`${nearby.length} unridden roads within ${formatDistance(NEARBY_DEFAULT_RADIUS_KM, unitSystem)}`}
             />
             {nearbyLoading ? (
@@ -495,8 +480,10 @@ export default function RoadMapPage() {
                         {bucket.label}
                       </p>
                       <p className="text-xs text-slate-500">
-                        {bucket.segments.length} segment
-                        {bucket.segments.length === 1 ? "" : "s"} to discover
+                        {bucket.segments.length}
+                        {t("segment ")}
+                        {bucket.segments.length === 1 ? "" : "s"}
+                        {t("to discover ")}
                       </p>
                     </div>
                     <span className="text-xs text-slate-400 tabular-nums">
@@ -511,7 +498,7 @@ export default function RoadMapPage() {
           <section className="p-5">
             <SectionHeader
               icon={<Navigation size={14} />}
-              title="Nearby unridden suggestions"
+              title={t("Nearby unridden suggestions")}
               subtitle="Sorted by distance"
             />
             {nearbyLoading ? (
@@ -533,20 +520,17 @@ export default function RoadMapPage() {
     </div>
   );
 }
-
 // ── Sub-components ──
-
 interface PageHeaderProps {
   percentExplored: number | null;
 }
-
 function PageHeader({ percentExplored }: PageHeaderProps) {
   return (
     <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
       <div>
-        <h1 className="text-xl font-bold">My Road Map</h1>
+        <h1 className="text-xl font-bold">{t("My Road Map")}</h1>
         <p className="text-sm text-slate-400 mt-0.5">
-          Every road you&apos;ve ridden
+          {t("Every road you've ridden ")}
         </p>
       </div>
       <div className="px-4 py-2 rounded-xl bg-tarmoto-cyan/10 text-tarmoto-cyan font-semibold text-sm tabular-nums">
@@ -555,14 +539,12 @@ function PageHeader({ percentExplored }: PageHeaderProps) {
     </div>
   );
 }
-
 interface SummaryCardsProps {
   stats: ExplorationStats;
   periodStats: ReturnType<typeof computePeriodStats>;
   units: UnitSystem;
   riddenInPeriod: number;
 }
-
 function SummaryCards({
   stats,
   periodStats,
@@ -614,13 +596,11 @@ function SummaryCards({
     </div>
   );
 }
-
 interface SectionHeaderProps {
   icon: React.ReactNode;
   title: string;
   subtitle?: string;
 }
-
 function SectionHeader({ icon, title, subtitle }: SectionHeaderProps) {
   return (
     <div className="mb-3">
@@ -632,14 +612,16 @@ function SectionHeader({ icon, title, subtitle }: SectionHeaderProps) {
     </div>
   );
 }
-
 interface NearbyCenterControlsProps {
-  center: { lat: number; lng: number; label: string };
+  center: {
+    lat: number;
+    lng: number;
+    label: string;
+  };
   locating: boolean;
   onUseMyLocation: () => void;
   onCoordinatesChanged: (lat: number, lng: number, label: string) => void;
 }
-
 function NearbyCenterControls({
   center,
   locating,
@@ -648,12 +630,10 @@ function NearbyCenterControls({
 }: NearbyCenterControlsProps) {
   const [latInput, setLatInput] = useState(String(center.lat));
   const [lngInput, setLngInput] = useState(String(center.lng));
-
   useEffect(() => {
     setLatInput(String(center.lat));
     setLngInput(String(center.lng));
   }, [center.lat, center.lng]);
-
   const apply = () => {
     // `Number("")` is 0, which would quietly snap the map to Null Island.
     // Reject blank inputs before coercing so an empty field is an error, not
@@ -673,7 +653,6 @@ function NearbyCenterControls({
     }
     onCoordinatesChanged(lat, lng, "Custom point");
   };
-
   return (
     <div className="space-y-2">
       <button
@@ -691,7 +670,7 @@ function NearbyCenterControls({
       </button>
       <div className="grid grid-cols-2 gap-2">
         <label className="text-xs text-slate-400">
-          <span className="block mb-1">Latitude</span>
+          <span className="block mb-1">{t("Latitude")}</span>
           <input
             type="number"
             step="0.0001"
@@ -701,7 +680,7 @@ function NearbyCenterControls({
           />
         </label>
         <label className="text-xs text-slate-400">
-          <span className="block mb-1">Longitude</span>
+          <span className="block mb-1">{t("Longitude")}</span>
           <input
             type="number"
             step="0.0001"
@@ -716,17 +695,15 @@ function NearbyCenterControls({
         onClick={apply}
         className="w-full px-3 py-1.5 rounded-lg bg-tarmoto-cyan/10 text-tarmoto-cyan text-sm hover:bg-tarmoto-cyan/20 transition"
       >
-        Apply coordinates
+        {t("Apply coordinates ")}
       </button>
     </div>
   );
 }
-
 interface NearbyRowProps {
   segment: UnriddenSegment;
   units: UnitSystem;
 }
-
 function NearbyRow({ segment, units }: NearbyRowProps) {
   const tier =
     segment.quality_score != null ? scoreToTier(segment.quality_score) : null;
@@ -748,17 +725,16 @@ function NearbyRow({ segment, units }: NearbyRowProps) {
         </p>
       </div>
       <span className="text-xs text-slate-400 tabular-nums">
-        {formatDistanceFromMeters(segment.distance_m, units)} away
+        {formatDistanceFromMeters(segment.distance_m, units)}
+        {t("away ")}
       </span>
     </li>
   );
 }
-
 interface ShareButtonProps {
   state: ShareState;
   onClick: () => void;
 }
-
 function ShareButton({ state, onClick }: ShareButtonProps) {
   const label =
     state.kind === "creating"
@@ -796,11 +772,9 @@ function ShareButton({ state, onClick }: ShareButtonProps) {
     </button>
   );
 }
-
 interface LoaderRowProps {
   label: string;
 }
-
 function LoaderRow({ label }: LoaderRowProps) {
   return (
     <div className="flex items-center gap-2 text-sm text-slate-400">
@@ -808,32 +782,31 @@ function LoaderRow({ label }: LoaderRowProps) {
     </div>
   );
 }
-
 interface EmptyStateProps {
   label: string;
 }
-
 function EmptyState({ label }: EmptyStateProps) {
   return <p className="text-sm text-slate-500">{label}</p>;
 }
-
 interface MapLegendProps {
   riddenCount: number;
 }
-
 function MapLegend({ riddenCount }: MapLegendProps) {
   return (
     <div className="absolute top-4 left-4 z-10 rounded-xl bg-slate-950/80 border border-slate-800 backdrop-blur px-4 py-3 text-xs text-slate-300 space-y-2 pointer-events-none">
       <div className="flex items-center gap-2">
         <span className="h-1 w-6 rounded-full bg-tarmoto-cyan" />
-        Ridden ({riddenCount.toLocaleString()} segments)
+        {t("Ridden (")}
+        {riddenCount.toLocaleString()}
+        {t("segments) ")}
       </div>
       <div className="flex items-center gap-2">
         <span className="h-1 w-6 rounded-full bg-slate-600" />
-        Unridden
+        {t("Unridden ")}
       </div>
       <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-        <MapPin size={10} /> Hover a highlighted road for ride details
+        <MapPin size={10} />
+        {t("Hover a highlighted road for ride details ")}
       </div>
     </div>
   );

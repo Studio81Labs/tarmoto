@@ -1,18 +1,16 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, Check, Loader2, Pencil, X } from "lucide-react";
 import { api } from "@/lib/api";
 import type { RideSummary } from "./useRidesQuery";
-
 interface Props {
   ride: RideSummary;
   selected: boolean;
   onSelect: () => void;
   onRenamed: (next: RideSummary) => void;
 }
-
 const QUALITY_COLOR: Record<number, string> = {
   5: "bg-emerald-500/20 text-emerald-300",
   4: "bg-lime-500/20 text-lime-300",
@@ -20,29 +18,24 @@ const QUALITY_COLOR: Record<number, string> = {
   2: "bg-orange-500/20 text-orange-300",
   1: "bg-red-500/20 text-red-300",
 };
-
 function qualityBand(q: number | null): number | null {
   if (q == null) return null;
   return Math.min(5, Math.max(1, Math.round(q)));
 }
-
 export function RideRow({ ride, selected, onSelect, onRenamed }: Props) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(ride.name ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const rowRef = useRef<HTMLTableRowElement>(null);
-
   useEffect(() => {
     setDraft(ride.name ?? "");
   }, [ride.name]);
-
   useEffect(() => {
     if (selected) {
       rowRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
   }, [selected]);
-
   async function save() {
     if (busy) return;
     setBusy(true);
@@ -63,11 +56,9 @@ export function RideRow({ ride, selected, onSelect, onRenamed }: Props) {
       setBusy(false);
     }
   }
-
   const q = qualityBand(ride.avg_road_quality);
   const displayName =
     ride.name ?? `Ride on ${new Date(ride.started_at).toLocaleDateString()}`;
-
   return (
     <tr
       ref={rowRef}
@@ -102,7 +93,7 @@ export function RideRow({ ride, selected, onSelect, onRenamed }: Props) {
               type="button"
               onClick={() => void save()}
               disabled={busy}
-              aria-label="Save"
+              aria-label={t("Save")}
               className="p-1 text-emerald-400 hover:bg-slate-700 rounded"
             >
               {busy ? (
@@ -117,7 +108,7 @@ export function RideRow({ ride, selected, onSelect, onRenamed }: Props) {
                 setDraft(ride.name ?? "");
                 setEditing(false);
               }}
-              aria-label="Cancel"
+              aria-label={t("Cancel")}
               className="p-1 text-slate-400 hover:bg-slate-700 rounded"
             >
               <X size={14} />
@@ -165,7 +156,7 @@ export function RideRow({ ride, selected, onSelect, onRenamed }: Props) {
         <Link
           href={`/rides/${ride.id}`}
           onClick={(e) => e.stopPropagation()}
-          aria-label="Open ride"
+          aria-label={t("Open ride")}
           className="inline-flex items-center justify-center w-7 h-7 rounded-md text-slate-400 hover:text-tarmoto-cyan hover:bg-slate-800 transition"
         >
           <ArrowUpRight size={14} />

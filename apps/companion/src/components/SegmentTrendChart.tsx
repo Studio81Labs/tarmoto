@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useMemo, useState } from "react";
 import {
   CartesianGrid,
@@ -24,26 +24,21 @@ import {
   filterByRange,
   summariseTrend,
 } from "@/lib/segment-trend";
-
 /**
  * Road quality trend graph (US-45). Rendered inside the expanded
  * RoadPreviewCard in the trip planner sidebar. All derivation lives in
  * `lib/segment-trend.ts`; this component is pure presentation + interaction.
  */
-
 interface SegmentTrendChartProps {
   segmentId: string;
   history: readonly QualityPoint[];
   regionalHistory?: readonly QualityPoint[];
   now?: Date;
 }
-
 const DEFAULT_RANGE: TrendRange = "1y";
-
 function formatTrendTooltipLabel(value: React.ReactNode) {
   return typeof value === "string" || typeof value === "number" ? value : "";
 }
-
 function formatTrendTooltipValue(
   value: TooltipValueType | undefined,
   name: React.ReactNode,
@@ -55,7 +50,6 @@ function formatTrendTooltipValue(
   if (!Number.isFinite(numeric)) return ["—", label] as const;
   return [numeric.toFixed(2), label] as const;
 }
-
 export function SegmentTrendChart({
   segmentId,
   history,
@@ -63,7 +57,6 @@ export function SegmentTrendChart({
   now,
 }: SegmentTrendChartProps) {
   const [range, setRange] = useState<TrendRange>(DEFAULT_RANGE);
-
   const filteredHistory = useMemo(
     () => filterByRange(history, range, now),
     [history, range, now],
@@ -80,7 +73,6 @@ export function SegmentTrendChart({
     () => buildChartPoints(filteredHistory, filteredRegional, events),
     [filteredHistory, filteredRegional, events],
   );
-
   // `buildChartPoints` collapses same-date readings to a single x-point, so
   // we gate on the count of distinct dates rather than raw reading count —
   // otherwise two readings on the same day would flip the trend UI on
@@ -94,7 +86,6 @@ export function SegmentTrendChart({
     () => (hasTrend ? summariseTrend(filteredHistory) : null),
     [filteredHistory, hasTrend],
   );
-
   return (
     <div>
       <div className="flex items-center justify-between gap-2 mb-3">
@@ -108,7 +99,7 @@ export function SegmentTrendChart({
 
       {!hasTrend ? (
         <p className="text-slate-500">
-          Not enough readings in this range to plot a trend yet.
+          {t("Not enough readings in this range to plot a trend yet. ")}
         </p>
       ) : (
         <>
@@ -196,7 +187,6 @@ export function SegmentTrendChart({
     </div>
   );
 }
-
 function RangeSelector({
   segmentId,
   range,
@@ -209,7 +199,7 @@ function RangeSelector({
   return (
     <div
       role="radiogroup"
-      aria-label="Trend date range"
+      aria-label={t("Trend date range")}
       className="flex rounded-lg border border-slate-800 overflow-hidden text-[11px]"
     >
       {TREND_RANGES.map((option) => {
@@ -236,7 +226,6 @@ function RangeSelector({
     </div>
   );
 }
-
 function TrendSummaryBadge({
   summary,
 }: {
@@ -276,7 +265,6 @@ function TrendSummaryBadge({
     </span>
   );
 }
-
 function ChartLegend({
   hasRegional,
   events,
@@ -290,30 +278,33 @@ function ChartLegend({
     <ul className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-500">
       <li className="flex items-center gap-1">
         <span className="w-2 h-2 rounded-full bg-tarmoto-cyan" />
-        This segment
+        {t("This segment ")}
       </li>
       {hasRegional && (
         <li className="flex items-center gap-1">
           <span className="inline-block w-3 border-t border-dashed border-slate-400" />
-          Regional avg
+          {t("Regional avg ")}
         </li>
       )}
       {repairCount > 0 && (
         <li className="flex items-center gap-1 text-emerald-400">
           <Wrench size={10} />
-          {repairCount} repair{repairCount === 1 ? "" : "s"}
+          {repairCount}
+          {t("repair")}
+          {repairCount === 1 ? "" : "s"}
         </li>
       )}
       {detCount > 0 && (
         <li className="flex items-center gap-1 text-rose-400">
           <TrendingDown size={10} />
-          {detCount} deterioration{detCount === 1 ? "" : "s"}
+          {detCount}
+          {t("deterioration")}
+          {detCount === 1 ? "" : "s"}
         </li>
       )}
     </ul>
   );
 }
-
 function formatDateTick(value: string): string {
   // Compact MMM YY labels keep the axis readable at sidebar widths.
   const [year, month] = value.split("-");

@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { Suspense, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -12,7 +12,6 @@ import {
 } from "@/lib/trip-from-detail";
 import type { Trip } from "@/lib/types";
 import { TripPrintBody } from "@/components/TripPrintBody";
-
 /**
  * Print-friendly view of a saved trip (US-39 / issue #283). Fetches the
  * trip directly from the backend so opening the page from a deep link,
@@ -28,7 +27,7 @@ export default function TripPrintPage() {
     <Suspense
       fallback={
         <div className="min-h-screen bg-white p-10 text-sm text-slate-500">
-          Loading…
+          {t("Loading\u2026 ")}
         </div>
       }
     >
@@ -36,9 +35,10 @@ export default function TripPrintPage() {
     </Suspense>
   );
 }
-
 function TripPrintPageContent() {
-  const { tripId } = useParams<{ tripId: string }>();
+  const { tripId } = useParams<{
+    tripId: string;
+  }>();
   const searchParams = useSearchParams();
   const autoprint = searchParams?.get("autoprint") === "1";
   const [trip, setTrip] = useState<Trip | null>(null);
@@ -46,7 +46,6 @@ function TripPrintPageContent() {
   const [region, setRegion] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
   useEffect(() => {
     if (!tripId) return;
     let cancelled = false;
@@ -79,7 +78,6 @@ function TripPrintPageContent() {
       cancelled = true;
     };
   }, [tripId]);
-
   // Auto-trigger the browser's print dialog once the trip has rendered.
   // The 200ms delay gives layout + SVG previews time to settle so the
   // first PDF page isn't blank — without it Chrome occasionally captures
@@ -89,15 +87,14 @@ function TripPrintPageContent() {
     const id = window.setTimeout(() => window.print(), 200);
     return () => window.clearTimeout(id);
   }, [autoprint, trip, loading]);
-
   if (loading) {
     return (
       <div className="min-h-screen bg-white text-slate-900 p-10 flex items-center justify-center">
-        <Loader2 size={20} className="mr-2 animate-spin" /> Loading…
+        <Loader2 size={20} className="mr-2 animate-spin" />
+        {t("Loading\u2026 ")}
       </div>
     );
   }
-
   if (errorMessage || !trip) {
     return (
       <div className="min-h-screen bg-white text-slate-900 p-10 max-w-3xl mx-auto">
@@ -108,12 +105,12 @@ function TripPrintPageContent() {
           href="/trips"
           className="inline-flex items-center gap-1.5 text-slate-900 underline text-sm"
         >
-          <ArrowLeft size={14} /> Back to trips
+          <ArrowLeft size={14} />
+          {t("Back to trips ")}
         </Link>
       </div>
     );
   }
-
   return (
     <div className="trip-print min-h-screen bg-white text-slate-900">
       <div className="trip-print-toolbar sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white/95 backdrop-blur px-6 py-3">
@@ -121,14 +118,16 @@ function TripPrintPageContent() {
           href={`/trips/${trip.id}`}
           className="inline-flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900"
         >
-          <ArrowLeft size={14} /> Back to trip
+          <ArrowLeft size={14} />
+          {t("Back to trip ")}
         </Link>
         <button
           type="button"
           onClick={() => window.print()}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-sm hover:bg-slate-800 transition"
         >
-          <Printer size={14} /> Print / Save as PDF
+          <Printer size={14} />
+          {t("Print / Save as PDF ")}
         </button>
       </div>
 

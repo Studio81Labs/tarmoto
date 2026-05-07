@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
@@ -25,7 +25,6 @@ import {
   type RideSegmentLike,
 } from "@/lib/ride-detail";
 import { downloadRideExport, type RideExportFormat } from "@/lib/ride-export";
-
 interface RideDetail {
   id: string;
   status: string;
@@ -42,12 +41,16 @@ interface RideDetail {
   curve_count: number | null;
   max_lean_angle: number | null;
   fuel_estimate_l: number | null;
-  route_geometry: Array<{ lat: number; lng: number }> | null;
+  route_geometry: Array<{
+    lat: number;
+    lng: number;
+  }> | null;
   segments: RideSegmentLike[];
 }
-
 export default function RideDetailPage() {
-  const { rideId } = useParams<{ rideId: string }>();
+  const { rideId } = useParams<{
+    rideId: string;
+  }>();
   const [ride, setRide] = useState<RideDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -55,7 +58,6 @@ export default function RideDetailPage() {
   const [exporting, setExporting] = useState<RideExportFormat | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [shareCopied, setShareCopied] = useState(false);
-
   useEffect(() => {
     if (!rideId) return;
     let cancelled = false;
@@ -86,7 +88,6 @@ export default function RideDetailPage() {
       cancelled = true;
     };
   }, [rideId]);
-
   const breakdown = useMemo(
     () => computeQualityBreakdown(ride?.segments ?? []),
     [ride?.segments],
@@ -102,7 +103,6 @@ export default function RideDetailPage() {
       0,
     );
   }, [ride]);
-
   async function handleExport(format: RideExportFormat) {
     if (!ride || exporting) return;
     setExporting(format);
@@ -117,7 +117,6 @@ export default function RideDetailPage() {
       setExporting(null);
     }
   }
-
   async function handleShare() {
     if (typeof window === "undefined") return;
     try {
@@ -128,32 +127,33 @@ export default function RideDetailPage() {
       // Clipboard API can reject on insecure origins; fall back silently.
     }
   }
-
   if (loading) {
     return (
       <PageShell>
         <div className="flex items-center gap-2 text-slate-400">
-          <Loader2 size={16} className="animate-spin" /> Loading ride…
+          <Loader2 size={16} className="animate-spin" />
+          {t("Loading ride\u2026 ")}
         </div>
       </PageShell>
     );
   }
-
   if (notFound) {
     return (
       <PageShell>
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-10 text-center">
           <Route size={40} className="mx-auto text-slate-600 mb-3" />
-          <p className="text-slate-200 font-medium mb-1">Ride not found</p>
+          <p className="text-slate-200 font-medium mb-1">
+            {t("Ride not found")}
+          </p>
           <p className="text-sm text-slate-500">
-            This ride may have been deleted or doesn&apos;t belong to your
-            account.
+            {t(
+              "This ride may have been deleted or doesn't belong to your account. ",
+            )}
           </p>
         </div>
       </PageShell>
     );
   }
-
   if (error || !ride) {
     return (
       <PageShell>
@@ -163,7 +163,6 @@ export default function RideDetailPage() {
       </PageShell>
     );
   }
-
   const rideName = `Ride on ${new Date(ride.started_at).toLocaleDateString()}`;
   const avgTier = readingToTier(ride.avg_road_quality);
   // Guard against empty strings from the API; the `as unknown as RideDetail`
@@ -171,7 +170,6 @@ export default function RideDetailPage() {
   const rideTypeLabel = ride.ride_type
     ? ride.ride_type[0]!.toUpperCase() + ride.ride_type.slice(1)
     : "Unknown";
-
   return (
     <PageShell
       header={
@@ -179,7 +177,7 @@ export default function RideDetailPage() {
           <Link
             href="/rides"
             className="p-2 rounded-lg hover:bg-slate-800 transition"
-            aria-label="Back to rides"
+            aria-label={t("Back to rides")}
           >
             <ArrowLeft size={20} className="text-slate-400" />
           </Link>
@@ -187,14 +185,14 @@ export default function RideDetailPage() {
             <h1 className="text-2xl font-bold truncate">{rideName}</h1>
             <p className="text-sm text-slate-400 mt-0.5">
               {new Date(ride.started_at).toLocaleString()} · {rideTypeLabel}{" "}
-              ride
+              {t("ride ")}
             </p>
           </div>
           <button
             type="button"
             onClick={handleShare}
             className="p-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition"
-            aria-label="Copy share link"
+            aria-label={t("Copy share link")}
             title={shareCopied ? "Link copied" : "Copy share link"}
           >
             <Share2 size={16} />
@@ -210,7 +208,7 @@ export default function RideDetailPage() {
             ) : (
               <Download size={14} />
             )}
-            Export GPX
+            {t("Export GPX ")}
           </button>
           <button
             type="button"
@@ -223,7 +221,7 @@ export default function RideDetailPage() {
             ) : (
               <Download size={14} />
             )}
-            Export CSV
+            {t("Export CSV ")}
           </button>
         </div>
       }
@@ -233,13 +231,16 @@ export default function RideDetailPage() {
           role="alert"
           className="mb-6 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-300 flex items-center justify-between gap-3"
         >
-          <span>Export failed: {exportError}</span>
+          <span>
+            {t("Export failed: ")}
+            {exportError}
+          </span>
           <button
             type="button"
             onClick={() => setExportError(null)}
             className="text-xs text-red-300/70 hover:text-red-200 transition"
           >
-            Dismiss
+            {t("Dismiss ")}
           </button>
         </div>
       )}
@@ -248,7 +249,7 @@ export default function RideDetailPage() {
       <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5 mb-6">
         <SectionHeader
           icon={<Route size={16} />}
-          title="Route"
+          title={t("Route")}
           subtitle="Polyline preview of your ride. Full map coming with the explorer."
         />
         {preview ? (
@@ -257,7 +258,7 @@ export default function RideDetailPage() {
               viewBox={preview.viewBox}
               className="max-h-80 w-full"
               role="img"
-              aria-label="Ride route preview"
+              aria-label={t("Ride route preview")}
             >
               <path
                 d={preview.path}
@@ -271,7 +272,7 @@ export default function RideDetailPage() {
           </div>
         ) : (
           <div className="mt-4 rounded-xl border border-dashed border-slate-800 p-10 text-center text-sm text-slate-500">
-            No GPS track was recorded for this ride.
+            {t("No GPS track was recorded for this ride. ")}
           </div>
         )}
       </section>
@@ -333,7 +334,7 @@ export default function RideDetailPage() {
         <div className="md:col-span-2 rounded-2xl bg-slate-900 border border-slate-800 p-5">
           <SectionHeader
             icon={<Gauge size={16} />}
-            title="Road quality breakdown"
+            title={t("Road quality breakdown")}
             subtitle={
               ride.segments.length === 0
                 ? "No segment data recorded for this ride."
@@ -361,7 +362,9 @@ export default function RideDetailPage() {
         </div>
         <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5 flex flex-col gap-5">
           <div>
-            <p className="text-xs text-slate-500 mb-1">Avg road quality</p>
+            <p className="text-xs text-slate-500 mb-1">
+              {t("Avg road quality")}
+            </p>
             {avgTier ? (
               <span
                 className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold quality-${avgTier}`}
@@ -376,10 +379,12 @@ export default function RideDetailPage() {
             )}
           </div>
           <div>
-            <p className="text-xs text-slate-500 mb-1">Fuel estimate</p>
+            <p className="text-xs text-slate-500 mb-1">{t("Fuel estimate")}</p>
             <p className="text-xl font-bold text-white tabular-nums">
               {formatNumber(ride.fuel_estimate_l, 2)}
-              <span className="text-sm font-normal text-slate-400 ml-1">L</span>
+              <span className="text-sm font-normal text-slate-400 ml-1">
+                {t("L")}
+              </span>
             </p>
           </div>
         </div>
@@ -390,22 +395,22 @@ export default function RideDetailPage() {
         <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
           <SectionHeader
             icon={<Route size={16} />}
-            title="Segments"
+            title={t("Segments")}
             subtitle="Per-segment road quality, speed, and lean angle."
           />
           <div className="mt-4 overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wider text-slate-500">
-                  <th className="py-2 pr-4 font-semibold">Road</th>
-                  <th className="py-2 pr-4 font-semibold">Quality</th>
+                  <th className="py-2 pr-4 font-semibold">{t("Road")}</th>
+                  <th className="py-2 pr-4 font-semibold">{t("Quality")}</th>
                   <th className="py-2 pr-4 font-semibold text-right">
-                    Avg speed
+                    {t("Avg speed ")}
                   </th>
                   <th className="py-2 pr-4 font-semibold text-right">
-                    Max lean
+                    {t("Max lean ")}
                   </th>
-                  <th className="py-2 pr-0 font-semibold">Speed</th>
+                  <th className="py-2 pr-0 font-semibold">{t("Speed")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
@@ -422,7 +427,7 @@ export default function RideDetailPage() {
                     <tr key={index} className="text-slate-200">
                       <td className="py-2 pr-4">
                         {seg.road_name ?? (
-                          <span className="text-slate-500">Unnamed</span>
+                          <span className="text-slate-500">{t("Unnamed")}</span>
                         )}
                       </td>
                       <td className="py-2 pr-4">
@@ -438,7 +443,7 @@ export default function RideDetailPage() {
                       </td>
                       <td className="py-2 pr-4 text-right tabular-nums">
                         {formatNumber(seg.speed_avg, 0)}
-                        <span className="text-slate-500 ml-1">km/h</span>
+                        <span className="text-slate-500 ml-1">{t("km/h")}</span>
                       </td>
                       <td className="py-2 pr-4 text-right tabular-nums">
                         {seg.lean_angle_max == null
@@ -467,7 +472,6 @@ export default function RideDetailPage() {
     </PageShell>
   );
 }
-
 function PageShell({
   children,
   header,
@@ -482,18 +486,17 @@ function PageShell({
           <Link
             href="/rides"
             className="p-2 rounded-lg hover:bg-slate-800 transition"
-            aria-label="Back to rides"
+            aria-label={t("Back to rides")}
           >
             <ArrowLeft size={20} className="text-slate-400" />
           </Link>
-          <h1 className="text-2xl font-bold flex-1">Ride</h1>
+          <h1 className="text-2xl font-bold flex-1">{t("Ride")}</h1>
         </div>
       )}
       {children}
     </div>
   );
 }
-
 function StatCard({
   icon,
   label,
@@ -522,7 +525,6 @@ function StatCard({
     </div>
   );
 }
-
 function SectionHeader({
   icon,
   title,
@@ -542,11 +544,14 @@ function SectionHeader({
     </div>
   );
 }
-
 function QualityBar({
   breakdown,
 }: {
-  breakdown: { tier: QualityTier; color: string; percent: number }[];
+  breakdown: {
+    tier: QualityTier;
+    color: string;
+    percent: number;
+  }[];
 }) {
   const total = breakdown.reduce((acc, row) => acc + row.percent, 0);
   if (total === 0) {
@@ -556,7 +561,7 @@ function QualityBar({
     <div
       className="mt-4 flex h-3 rounded-full overflow-hidden bg-slate-800"
       role="img"
-      aria-label="Road quality distribution"
+      aria-label={t("Road quality distribution")}
     >
       {breakdown
         .filter((row) => row.percent > 0)

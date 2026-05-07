@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { Suspense, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMapStore } from "@/stores/map";
@@ -15,7 +15,6 @@ import {
 import { HAZARD_CONFIG, HAZARD_TYPES_UI } from "@/lib/utils";
 import type { HazardType } from "@tarmoto/shared";
 import { QualityMap } from "./_components/QualityMap";
-
 /**
  * ExplorerPage — Full-screen road quality map explorer
  *
@@ -23,15 +22,17 @@ import { QualityMap } from "./_components/QualityMap";
  * shareable. QualityMap consumes the store's `filters` and dims non-matching
  * segments via MapLibre paint expressions rather than hiding them outright.
  */
-
-const QUALITY_OPTIONS: { key: QualityTier; label: string; color: string }[] = [
+const QUALITY_OPTIONS: {
+  key: QualityTier;
+  label: string;
+  color: string;
+}[] = [
   { key: "excellent", label: "Excellent", color: "bg-quality-excellent" },
   { key: "good", label: "Good", color: "bg-quality-good" },
   { key: "fair", label: "Fair", color: "bg-quality-fair" },
   { key: "poor", label: "Poor", color: "bg-quality-poor" },
   { key: "very-poor", label: "Very Poor", color: "bg-quality-very-poor" },
 ];
-
 const SURFACE_OPTIONS: {
   key: FilterableSurface;
   label: string;
@@ -43,7 +44,6 @@ const SURFACE_OPTIONS: {
   { key: "gravel", label: "Gravel", color: "bg-surface-gravel" },
   { key: "dirt", label: "Dirt", color: "bg-surface-dirt" },
 ];
-
 const HAZARD_OPTIONS: {
   key: HazardType;
   label: string;
@@ -55,14 +55,12 @@ const HAZARD_OPTIONS: {
   emoji: HAZARD_CONFIG[key].emoji,
   hex: HAZARD_CONFIG[key].hex,
 }));
-
 function ExplorerPageInner() {
   const [filterOpen, setFilterOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-
   const {
     center,
     zoom,
@@ -82,7 +80,6 @@ function ExplorerPageInner() {
     setZoom,
     resetFilters,
   } = useMapStore();
-
   // Hydrate the store from URL params on mount and on back/forward navigation.
   // `hydrated` is state (not a ref) so the URL-sync effect waits for the render
   // that follows the store update — otherwise it would see stale `filters` from
@@ -92,7 +89,6 @@ function ExplorerPageInner() {
     setFilters(filtersFromSearchParams(searchParams));
     setHydrated(true);
   }, [searchParams, setFilters]);
-
   // Reflect store changes back into the URL without scrolling or pushing history.
   useEffect(() => {
     if (!hydrated) return;
@@ -104,9 +100,7 @@ function ExplorerPageInner() {
       scroll: false,
     });
   }, [filters, hydrated, pathname, router, searchParams]);
-
   const isDefault = filtersEqual(filters, DEFAULT_MAP_FILTERS);
-
   return (
     <div className="flex flex-col h-full">
       {/* Search bar */}
@@ -120,7 +114,7 @@ function ExplorerPageInner() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search roads, regions..."
+            placeholder={t("Search roads, regions...")}
             className="w-full pl-9 pr-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan transition"
           />
         </div>
@@ -134,7 +128,8 @@ function ExplorerPageInner() {
                 : "bg-slate-800 text-slate-300 hover:bg-slate-700"
             }`}
           >
-            <Filter size={14} /> Filters
+            <Filter size={14} />
+            {t("Filters ")}
           </button>
 
           <button
@@ -145,7 +140,7 @@ function ExplorerPageInner() {
                 : "bg-slate-800 text-slate-400"
             }`}
           >
-            Quality
+            {t("Quality ")}
           </button>
 
           <button
@@ -156,7 +151,7 @@ function ExplorerPageInner() {
                 : "bg-slate-800 text-slate-400"
             }`}
           >
-            Hazards
+            {t("Hazards ")}
           </button>
 
           <button
@@ -167,7 +162,7 @@ function ExplorerPageInner() {
                 : "bg-slate-800 text-slate-400"
             }`}
           >
-            Surface
+            {t("Surface ")}
           </button>
         </div>
       </div>
@@ -177,20 +172,23 @@ function ExplorerPageInner() {
         {filterOpen && (
           <div className="w-64 border-r border-slate-800 bg-slate-950 overflow-y-auto p-4 space-y-6 animate-slide-in-right">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-white">Filters</h2>
+              <h2 className="text-sm font-semibold text-white">
+                {t("Filters")}
+              </h2>
               <button
                 type="button"
                 onClick={resetFilters}
                 disabled={isDefault}
                 className="flex items-center gap-1 text-xs text-slate-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition"
               >
-                <RotateCcw size={12} /> Reset
+                <RotateCcw size={12} />
+                {t("Reset ")}
               </button>
             </div>
 
             <div>
               <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">
-                Road quality
+                {t("Road quality ")}
               </h3>
               <div className="space-y-2">
                 {QUALITY_OPTIONS.map((opt) => (
@@ -213,7 +211,7 @@ function ExplorerPageInner() {
 
             <div>
               <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">
-                Surface type
+                {t("Surface type ")}
               </h3>
               <div className="space-y-2">
                 {SURFACE_OPTIONS.map((opt) => (
@@ -236,7 +234,7 @@ function ExplorerPageInner() {
 
             <div>
               <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">
-                Hazard type
+                {t("Hazard type ")}
               </h3>
               <div className="space-y-2">
                 {HAZARD_OPTIONS.map((opt) => (
@@ -266,7 +264,7 @@ function ExplorerPageInner() {
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                  Curviness
+                  {t("Curviness ")}
                 </h3>
                 <span className="text-xs text-slate-400 tabular-nums">
                   {filters.minCurviness === 0
@@ -280,12 +278,12 @@ function ExplorerPageInner() {
                 max={100}
                 value={filters.minCurviness}
                 onChange={(e) => setMinCurviness(Number(e.target.value))}
-                aria-label="Minimum curviness"
+                aria-label={t("Minimum curviness")}
                 className="w-full accent-tarmoto-cyan"
               />
               <div className="flex justify-between text-xs text-slate-500 mt-1">
-                <span>Straight</span>
-                <span>Very twisty</span>
+                <span>{t("Straight")}</span>
+                <span>{t("Very twisty")}</span>
               </div>
             </div>
           </div>
@@ -315,13 +313,11 @@ function ExplorerPageInner() {
     </div>
   );
 }
-
 interface MapLegendProps {
   showQuality: boolean;
   showSurface: boolean;
   showHazards: boolean;
 }
-
 function MapLegend({ showQuality, showSurface, showHazards }: MapLegendProps) {
   if (!showQuality && !showSurface && !showHazards) return null;
   return (
@@ -329,7 +325,7 @@ function MapLegend({ showQuality, showSurface, showHazards }: MapLegendProps) {
       {showQuality && (
         <div>
           <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">
-            Road quality
+            {t("Road quality ")}
           </p>
           <div className="flex items-center gap-2">
             {QUALITY_OPTIONS.map((opt) => (
@@ -344,7 +340,7 @@ function MapLegend({ showQuality, showSurface, showHazards }: MapLegendProps) {
       {showSurface && (
         <div>
           <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">
-            Surface
+            {t("Surface ")}
           </p>
           <div className="flex items-center gap-2">
             {SURFACE_OPTIONS.map((opt) => (
@@ -359,7 +355,7 @@ function MapLegend({ showQuality, showSurface, showHazards }: MapLegendProps) {
       {showHazards && (
         <div>
           <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">
-            Hazards
+            {t("Hazards ")}
           </p>
           <div className="flex items-center gap-x-2 gap-y-1 flex-wrap max-w-[260px]">
             {HAZARD_OPTIONS.map((opt) => (
@@ -376,14 +372,13 @@ function MapLegend({ showQuality, showSurface, showHazards }: MapLegendProps) {
             ))}
           </div>
           <p className="text-[9px] text-slate-500 mt-1">
-            Opacity fades as reports age
+            {t("Opacity fades as reports age ")}
           </p>
         </div>
       )}
     </div>
   );
 }
-
 export default function ExplorerPage() {
   return (
     <Suspense fallback={null}>

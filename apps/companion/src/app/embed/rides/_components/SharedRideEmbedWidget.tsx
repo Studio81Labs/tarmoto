@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import {
@@ -20,7 +20,6 @@ import {
   formatRelativeTime,
   formatRideType,
 } from "@/lib/utils";
-
 type SharedRideWidgetData = Pick<
   SharedRideDetail,
   | "rider_name"
@@ -34,14 +33,12 @@ type SharedRideWidgetData = Pick<
   | "view_count"
   | "embed_click_count"
 >;
-
 interface Props {
   token: string;
   ride: SharedRideWidgetData;
   pageUrl: string;
   variant: RideWidgetVariant;
 }
-
 export function SharedRideEmbedWidget({
   token,
   ride,
@@ -53,14 +50,12 @@ export function SharedRideEmbedWidget({
     variant === "landscape" ? 720 : 640,
     14,
   );
-
   function handleOutboundClick() {
     void fetch(`${API_BASE}/rides/shared/${token}/embed-click`, {
       method: "POST",
       keepalive: true,
     });
   }
-
   return (
     <main className="bg-slate-950 p-4 text-slate-100">
       <article className="mx-auto max-w-5xl overflow-hidden rounded-[24px] border border-slate-800 bg-slate-950 shadow-2xl shadow-black/40">
@@ -68,14 +63,14 @@ export function SharedRideEmbedWidget({
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-tarmoto-cyan">
-                Tarmoto widget
+                {t("Tarmoto widget ")}
               </p>
               <h1 className="mt-2 text-xl font-semibold text-white">
                 {ride.rider_name}
               </h1>
               <p className="mt-1 text-sm text-slate-300">
-                {formatRideType(ride.ride_type)} ride ·{" "}
-                {formatRelativeTime(ride.started_at)}
+                {formatRideType(ride.ride_type)}
+                {t("ride \u00B7")} {formatRelativeTime(ride.started_at)}
               </p>
             </div>
             <Link
@@ -85,7 +80,7 @@ export function SharedRideEmbedWidget({
               onClick={handleOutboundClick}
               className="inline-flex items-center rounded-full border border-tarmoto-cyan/30 bg-tarmoto-cyan/10 px-3 py-1.5 text-sm font-medium text-tarmoto-cyan transition hover:bg-tarmoto-cyan/15"
             >
-              View full ride
+              {t("View full ride ")}
             </Link>
           </div>
         </header>
@@ -101,10 +96,10 @@ export function SharedRideEmbedWidget({
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-sm font-semibold text-white">
-                  Route preview
+                  {t("Route preview ")}
                 </h2>
                 <p className="text-xs text-slate-400">
-                  Shared ride route with Tarmoto ride stats.
+                  {t("Shared ride route with Tarmoto ride stats. ")}
                 </p>
               </div>
               <div className="text-right text-xs text-slate-500">
@@ -131,16 +126,18 @@ export function SharedRideEmbedWidget({
               </svg>
             ) : (
               <div className="flex h-44 items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-950/80 text-sm text-slate-500">
-                Route preview unavailable.
+                {t("Route preview unavailable. ")}
               </div>
             )}
           </section>
 
           <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
             <div className="mb-3">
-              <h2 className="text-sm font-semibold text-white">Ride stats</h2>
+              <h2 className="text-sm font-semibold text-white">
+                {t("Ride stats")}
+              </h2>
               <p className="text-xs text-slate-400">
-                Snapshot from the shared Tarmoto ride.
+                {t("Snapshot from the shared Tarmoto ride. ")}
               </p>
             </div>
 
@@ -194,7 +191,6 @@ export function SharedRideEmbedWidget({
     </main>
   );
 }
-
 function StatTile({
   icon,
   label,

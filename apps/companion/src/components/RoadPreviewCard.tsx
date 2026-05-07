@@ -1,5 +1,5 @@
 "use client";
-
+import { t } from "@/i18n";
 import { useId, useMemo } from "react";
 import { AlertTriangle, ChevronDown, Images } from "lucide-react";
 import type { RoutePreviewSegment } from "@/lib/types";
@@ -17,14 +17,12 @@ import {
 import { HAZARD_CONFIG } from "@/lib/utils";
 import { SegmentTrendChart } from "@/components/SegmentTrendChart";
 import { RoadReviewsPanel } from "@/components/RoadReviewsPanel";
-
 const SEVERITY_COLOR: Record<"none" | "low" | "medium" | "high", string> = {
   none: "text-slate-500",
   low: "text-yellow-400",
   medium: "text-orange-400",
   high: "text-red-400",
 };
-
 interface RoadPreviewCardProps {
   segment: RoutePreviewSegment;
   isFocused: boolean;
@@ -35,7 +33,6 @@ interface RoadPreviewCardProps {
   onHoverEnd: () => void;
   onToggleExpand: () => void;
 }
-
 export function RoadPreviewCard({
   segment,
   isFocused,
@@ -52,10 +49,8 @@ export function RoadPreviewCard({
     () => buildSparklinePath(segment.elevationProfile, 240, 40),
     [segment.elevationProfile],
   );
-
   const detailId = useId();
   const severityLabel = severity === "none" ? "No hazards" : `${severity} risk`;
-
   return (
     <div
       data-testid={`road-preview-card-${segment.id}`}
@@ -92,7 +87,8 @@ export function RoadPreviewCard({
                   {segment.name ?? `Segment ${segment.orderInDay + 1}`}
                 </p>
                 <p className="text-xs text-slate-500">
-                  Day {segment.dayNumber} · {formatDistance(segment.distanceKm)}
+                  {t("Day ")}
+                  {segment.dayNumber} · {formatDistance(segment.distanceKm)}
                 </p>
               </div>
             </div>
@@ -200,7 +196,7 @@ export function RoadPreviewCard({
           {segment.qualityHistory && segment.qualityHistory.length > 1 && (
             <div>
               <p className="text-[11px] uppercase tracking-wider text-slate-500 mb-2">
-                Quality trend
+                {t("Quality trend ")}
               </p>
               <SegmentTrendChart
                 segmentId={segment.id}
@@ -212,11 +208,11 @@ export function RoadPreviewCard({
 
           <div>
             <p className="text-[11px] uppercase tracking-wider text-slate-500 mb-1">
-              Active hazards
+              {t("Active hazards ")}
             </p>
             {segment.activeHazards.length === 0 ? (
               <p className="text-slate-500">
-                No active hazards on this segment.
+                {t("No active hazards on this segment. ")}
               </p>
             ) : (
               <ul className="space-y-1.5">
@@ -240,7 +236,8 @@ export function RoadPreviewCard({
                         <p className="text-slate-500 text-[10px] mt-0.5">
                           {hazard.reporterName} ·{" "}
                           {formatRelativeTime(hazard.createdAt)} ·{" "}
-                          {hazard.confirmations} confirmations
+                          {hazard.confirmations}
+                          {t("confirmations ")}
                         </p>
                       </div>
                     </li>
@@ -255,7 +252,7 @@ export function RoadPreviewCard({
           {segment.photos.length > 0 && (
             <div>
               <p className="text-[11px] uppercase tracking-wider text-slate-500 mb-1">
-                Rider photos
+                {t("Rider photos ")}
               </p>
               <div className="grid grid-cols-3 gap-1.5">
                 {segment.photos.map((photo) => (
@@ -275,7 +272,6 @@ export function RoadPreviewCard({
     </div>
   );
 }
-
 function Stat({
   label,
   value,

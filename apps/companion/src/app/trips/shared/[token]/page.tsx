@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -18,9 +19,7 @@ import {
 } from "@/lib/trip-share";
 import { formatDuration, formatDistance } from "@/lib/utils";
 import type { Waypoint } from "@/lib/types";
-
 export const dynamic = "force-dynamic";
-
 export async function generateMetadata(): Promise<Metadata> {
   return {
     title: "Shared trip — Tarmoto",
@@ -28,47 +27,51 @@ export async function generateMetadata(): Promise<Metadata> {
     robots: { index: false, follow: false },
   };
 }
-
 export default async function SharedTripPage({
   params,
 }: {
-  params: Promise<{ token: string }>;
+  params: Promise<{
+    token: string;
+  }>;
 }) {
   const { token } = await params;
   const share = await fetchSharedTrip(token);
   if (!share) notFound();
-
   const trip = parseTripSnapshot(share.snapshot);
   const summary = trip ? tripSummary(trip) : null;
   const preview = trip
     ? buildRoutePreview(flattenTripRoute(trip), 960, 14)
     : null;
-
   return (
     <main className="mx-auto max-w-5xl px-6 py-10 text-slate-100">
       <nav className="mb-4 text-sm text-slate-400">
         <Link href="/" className="hover:text-white">
-          Tarmoto
+          {t("Tarmoto ")}
         </Link>
         <span className="mx-2">/</span>
-        <span>Shared trip</span>
+        <span>{t("Shared trip")}</span>
       </nav>
 
       <header className="mb-8 rounded-3xl border border-slate-800 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.14),_transparent_42%),linear-gradient(135deg,_rgba(15,23,42,0.98),_rgba(2,6,23,0.98))] p-8">
         <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-tarmoto-cyan">
-          Trip invite
+          {t("Trip invite ")}
         </p>
         <h1 className="mt-3 text-3xl font-bold tracking-tight">
           {share.title}
         </h1>
         <p className="mt-3 max-w-3xl text-slate-300">
-          Read-only view shared by {share.owner_name}. Sign in to the planner to
-          create your own trip — the collaborative editing surface is coming
-          soon.
+          {t("Read-only view shared by ")}
+          {share.owner_name}
+          {t(
+            ". Sign in to the planner to create your own trip \u2014 the collaborative editing surface is coming soon. ",
+          )}
         </p>
         <div className="mt-4 flex flex-wrap gap-2 text-sm text-slate-300">
           <Pill icon={<User size={14} />}>{share.owner_name}</Pill>
-          <Pill icon={<Eye size={14} />}>{share.view_count} views</Pill>
+          <Pill icon={<Eye size={14} />}>
+            {share.view_count}
+            {t("views")}
+          </Pill>
           {summary && (
             <>
               <Pill icon={<CalendarDays size={14} />}>
@@ -88,9 +91,9 @@ export default async function SharedTripPage({
       {preview ? (
         <section className="mb-8 overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/70 p-5">
           <div className="mb-4">
-            <h2 className="text-lg font-semibold">Route preview</h2>
+            <h2 className="text-lg font-semibold">{t("Route preview")}</h2>
             <p className="mt-1 text-sm text-slate-400">
-              Simplified overview of the planned route across all days.
+              {t("Simplified overview of the planned route across all days. ")}
             </p>
           </div>
           <svg
@@ -121,7 +124,8 @@ export default async function SharedTripPage({
               <header className="mb-4 flex flex-wrap items-baseline justify-between gap-3">
                 <div>
                   <h3 className="text-lg font-semibold">
-                    Day {day.dayNumber}
+                    {t("Day ")}
+                    {day.dayNumber}
                     {day.title ? ` — ${day.title}` : ""}
                   </h3>
                   <p className="mt-1 text-sm text-slate-400">
@@ -157,32 +161,31 @@ export default async function SharedTripPage({
         </section>
       ) : (
         <section className="mb-8 rounded-2xl border border-slate-800 bg-slate-900/70 p-5 text-sm text-slate-400">
-          This shared trip's snapshot is in an unexpected format — the owner may
-          have saved it with a newer version of the planner. Ask them to
-          regenerate the share link.
+          {t(
+            "This shared trip's snapshot is in an unexpected format \u2014 the owner may have saved it with a newer version of the planner. Ask them to regenerate the share link. ",
+          )}
         </section>
       )}
 
       <footer className="text-center text-xs text-slate-500">
-        Shared via Tarmoto ·{" "}
+        {t("Shared via Tarmoto \u00B7")}{" "}
         <Link href="/trips/planner" className="hover:text-slate-300">
-          Plan your own trip
+          {t("Plan your own trip ")}
         </Link>
       </footer>
     </main>
   );
 }
-
 function waypointLabel(wp: Waypoint, index: number): string {
   if (wp.name) return wp.name;
   // `parseTripSnapshot` validates `type` is one of the known strings, but
   // belt-and-suspenders: if a future caller skips that validator we still
   // want a readable label instead of a TypeError on `type[0]`.
-  const rawType = typeof wp.type === "string" && wp.type.length > 0 ? wp.type : "stop";
+  const rawType =
+    typeof wp.type === "string" && wp.type.length > 0 ? wp.type : "stop";
   const typeLabel = rawType[0].toUpperCase() + rawType.slice(1);
   return `${typeLabel} ${index + 1}`;
 }
-
 function Pill({
   icon,
   children,

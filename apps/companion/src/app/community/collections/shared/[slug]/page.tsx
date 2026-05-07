@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -13,13 +14,13 @@ import { RouteCollectionVisibilityPill } from "@/components/RouteCollectionVisib
 import { RouteCollectionFollowCta } from "@/components/RouteCollectionFollowCta";
 import { formatRelativeTime } from "@/lib/utils";
 import { CollectionPreviewMap } from "./_components/CollectionPreviewMap";
-
 export const dynamic = "force-dynamic";
-
 export async function generateMetadata({
   params,
 }: {
-  params: Promise<{ slug: string }>;
+  params: Promise<{
+    slug: string;
+  }>;
 }): Promise<Metadata> {
   const { slug } = await params;
   const detail = await fetchSharedCollection(slug);
@@ -44,30 +45,30 @@ export async function generateMetadata({
         : { index: false, follow: false },
   };
 }
-
 export default async function SharedCollectionPage({
   params,
 }: {
-  params: Promise<{ slug: string }>;
+  params: Promise<{
+    slug: string;
+  }>;
 }) {
   const { slug } = await params;
   const detail = await fetchSharedCollection(slug);
   if (!detail) notFound();
-
   return (
     <main className="mx-auto max-w-4xl px-6 py-10 text-slate-100">
       <nav className="mb-4 text-sm text-slate-400">
         <Link href="/" className="hover:text-white">
-          Tarmoto
+          {t("Tarmoto ")}
         </Link>
         <span className="mx-2">/</span>
-        <span>Shared collection</span>
+        <span>{t("Shared collection")}</span>
       </nav>
 
       <header className="mb-8 rounded-3xl border border-slate-800 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.14),_transparent_42%),linear-gradient(135deg,_rgba(15,23,42,0.98),_rgba(2,6,23,0.98))] p-8">
         <div className="flex items-center gap-2 mb-3">
           <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-tarmoto-cyan">
-            Route collection
+            {t("Route collection ")}
           </p>
           <RouteCollectionVisibilityPill visibility={detail.visibility} />
         </div>
@@ -82,17 +83,20 @@ export default async function SharedCollectionPage({
             {detail.owner_name || "Tarmoto rider"}
           </Pill>
           <Pill icon={<RouteIcon size={14} />}>
-            {detail.item_count} route{detail.item_count === 1 ? "" : "s"}
+            {detail.item_count}
+            {t("route")}
+            {detail.item_count === 1 ? "" : "s"}
           </Pill>
           <Pill icon={<Calendar size={14} />}>
-            Updated {formatRelativeTime(detail.updated_at)}
+            {t("Updated ")}
+            {formatRelativeTime(detail.updated_at)}
           </Pill>
         </div>
       </header>
 
       <section className="mb-8">
         <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">
-          Map preview
+          {t("Map preview ")}
         </h2>
         <CollectionPreviewMap
           slug={detail.slug}
@@ -102,7 +106,7 @@ export default async function SharedCollectionPage({
 
       <section>
         <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">
-          Routes
+          {t("Routes ")}
         </h2>
         {detail.items.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/50 p-10 text-center text-sm text-slate-500">
@@ -111,7 +115,7 @@ export default async function SharedCollectionPage({
               className="mx-auto text-slate-600 mb-2"
               aria-hidden="true"
             />
-            The owner hasn&apos;t added any routes to this collection yet.
+            {t("The owner hasn't added any routes to this collection yet. ")}
           </div>
         ) : (
           <ul className="space-y-3">
@@ -144,7 +148,8 @@ export default async function SharedCollectionPage({
                   </div>
                   <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
                     <MapPin size={12} aria-hidden="true" />
-                    Position {item.position + 1}
+                    {t("Position ")}
+                    {item.position + 1}
                   </span>
                 </li>
               );
@@ -163,7 +168,6 @@ export default async function SharedCollectionPage({
     </main>
   );
 }
-
 function Pill({
   icon,
   children,
