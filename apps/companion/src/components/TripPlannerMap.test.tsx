@@ -14,7 +14,20 @@ import { usePasses } from "@/hooks/usePasses";
 import { buildTripClosureRoutes } from "@/lib/closures-summary";
 import { useTripStore } from "@/stores/trip";
 
-const mockCanvas = { style: { cursor: "" } };
+const mockCanvas = {
+  style: { cursor: "" },
+  getBoundingClientRect: () => ({
+    left: 0,
+    top: 0,
+    right: 800,
+    bottom: 600,
+    width: 800,
+    height: 600,
+    x: 0,
+    y: 0,
+    toJSON: () => ({}),
+  }),
+};
 const mockMap = {
   addSource: vi.fn(),
   getSource: vi.fn(),
@@ -26,6 +39,10 @@ const mockMap = {
   setPaintProperty: vi.fn(),
   fitBounds: vi.fn(),
   getCanvas: vi.fn(() => mockCanvas),
+  unproject: vi.fn((point: [number, number]) => ({
+    lng: point[0] / 100,
+    lat: point[1] / 100,
+  })),
 } as const;
 
 const drawControl = {
@@ -183,6 +200,11 @@ describe("TripPlannerMap", () => {
     mockMap.queryRenderedFeatures.mockReset();
     mockMap.setPaintProperty.mockReset();
     mockMap.fitBounds.mockReset();
+    mockMap.unproject.mockReset();
+    mockMap.unproject.mockImplementation((point: [number, number]) => ({
+      lng: point[0] / 100,
+      lat: point[1] / 100,
+    }));
     mockCanvas.style.cursor = "";
     buildTripClosureRoutesMock.mockClear();
     useClosuresMock.mockReset();
@@ -1246,6 +1268,88 @@ describe("TripPlannerMap", () => {
       });
     });
     expect(preventDefault).toHaveBeenCalled();
+  });
+
+  it("finishes a drag on a window-level mouseup that lands outside the canvas", () => {
+    const handleMoveWaypoint = vi.fn();
+    const layerHandlers = new Map<string, (event: unknown) => void>();
+    const mapHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation(
+      (event: string, layerOrHandler: unknown, maybeHandler?: unknown) => {
+        if (typeof layerOrHandler === "string") {
+          layerHandlers.set(
+            `${event}:${layerOrHandler}`,
+            maybeHandler as (event: unknown) => void,
+          );
+        } else {
+          mapHandlers.set(event, layerOrHandler as (event: unknown) => void);
+        }
+        return mockMap;
+      },
+    );
+    mockMap.off.mockImplementation((event: string, layerOrHandler: unknown) => {
+      if (typeof layerOrHandler === "string") {
+        layerHandlers.delete(`${event}:${layerOrHandler}`);
+      } else {
+        mapHandlers.delete(event);
+      }
+      return mockMap;
+    });
+    mockMap.queryRenderedFeatures.mockReturnValue([]);
+
+    render(
+      <TripPlannerMap
+        trip={trip()}
+        month={7}
+        onMoveWaypoint={handleMoveWaypoint}
+      />,
+    );
+
+    act(() => {
+      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+        preventDefault: vi.fn(),
+        features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
+        point: { x: 100, y: 100 },
+        lngLat: { lng: 14.41, lat: 50.08 },
+      });
+      mapHandlers.get("mousemove")?.({
+        preventDefault: vi.fn(),
+        point: { x: 200, y: 160 },
+        lngLat: { lng: 14.5, lat: 50.12 },
+      });
+    });
+
+    // Release outside the map canvas — only the window listener fires.
+    // clientX 1200 is past the mocked 800 px-wide canvas (x=0..800).
+    act(() => {
+      window.dispatchEvent(
+        new MouseEvent("mouseup", {
+          clientX: 1200,
+          clientY: 400,
+          bubbles: true,
+        }),
+      );
+    });
+
+    // The drop must commit so the waypoint follows the rider's pointer
+    // and the cursor / drag state is cleared. With only the map-scoped
+    // listeners, releasing past the canvas edge would leave the gesture
+    // stuck mid-drag forever.
+    expect(handleMoveWaypoint).toHaveBeenCalledTimes(1);
+    expect(mockCanvas.style.cursor).toBe("");
+
+    // Subsequent unrelated window mouseup must not fire again — there
+    // is no `active` drag, so finishDrag bails out via its guard.
+    act(() => {
+      window.dispatchEvent(
+        new MouseEvent("mouseup", {
+          clientX: 100,
+          clientY: 100,
+          bubbles: true,
+        }),
+      );
+    });
+    expect(handleMoveWaypoint).toHaveBeenCalledTimes(1);
   });
 
   it("treats a tap on a waypoint without movement as a no-op", () => {

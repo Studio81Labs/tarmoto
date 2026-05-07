@@ -556,6 +556,15 @@ function TripPlannerMapContent({
       event.preventDefault();
       noteIfPastTolerance(event.point);
     };
+    const cancelDrag = () => {
+      // Used when the gesture ends without a usable pointer position
+      // (e.g. `touchcancel`, or a `touchend` with no `changedTouches`):
+      // clear in-flight state so the cursor and listeners reset, but
+      // do not commit a move to a fallback location.
+      if (!active) return;
+      active = null;
+      setCursor("");
+    };
     const finishDrag = (
       lngLat: { lng: number; lat: number },
       point?: {
@@ -638,6 +647,40 @@ function TripPlannerMapContent({
     map.on("mouseup", handleMouseUp);
     map.on("touchend", handleTouchEnd);
 
+    // ── Window-level fallbacks ──
+    // `map.on("mouseup", …)` only fires when the release lands on the
+    // canvas. If the rider drags out past the map edge and lets go in
+    // the surrounding chrome, the map handler never runs — so `active`
+    // would stay set, the cursor would stick on "grabbing", and the
+    // drop would be lost. Mirror the up handlers at the window level
+    // so a release anywhere still finishes the gesture; both `active`
+    // and `swallowNextClickRef` already guard against double-firing
+    // when the release is over the canvas.
+    const finishFromClient = (clientX: number, clientY: number) => {
+      if (!active) return;
+      const rect = canvas.getBoundingClientRect();
+      const point = { x: clientX - rect.left, y: clientY - rect.top };
+      const lngLat = map.unproject([point.x, point.y]);
+      finishDrag({ lng: lngLat.lng, lat: lngLat.lat }, point);
+    };
+    const onWindowMouseUp = (event: MouseEvent) => {
+      finishFromClient(event.clientX, event.clientY);
+    };
+    const onWindowTouchEnd = (event: TouchEvent) => {
+      const touch = event.changedTouches[0];
+      if (!touch) {
+        cancelDrag();
+        return;
+      }
+      finishFromClient(touch.clientX, touch.clientY);
+    };
+    const onWindowTouchCancel = () => {
+      cancelDrag();
+    };
+    window.addEventListener("mouseup", onWindowMouseUp);
+    window.addEventListener("touchend", onWindowTouchEnd);
+    window.addEventListener("touchcancel", onWindowTouchCancel);
+
     return () => {
       map.off("mouseenter", WAYPOINT_CIRCLE, handleEnter);
       map.off("mouseleave", WAYPOINT_CIRCLE, handleLeave);
@@ -647,6 +690,9 @@ function TripPlannerMapContent({
       map.off("touchmove", handleTouchMove);
       map.off("mouseup", handleMouseUp);
       map.off("touchend", handleTouchEnd);
+      window.removeEventListener("mouseup", onWindowMouseUp);
+      window.removeEventListener("touchend", onWindowTouchEnd);
+      window.removeEventListener("touchcancel", onWindowTouchCancel);
       setCursor("");
     };
   }, [drawMode, dragEnabled, ready]);
