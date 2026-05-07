@@ -816,6 +816,74 @@ describe("TripPlannerMap", () => {
     expect(mockCanvas.style.cursor).toBe("");
   });
 
+  it("survives a parent re-render mid-drag and still routes the drop to the latest callback", () => {
+    const layerHandlers = new Map<string, (event: unknown) => void>();
+    const mapHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation(
+      (event: string, layerOrHandler: unknown, maybeHandler?: unknown) => {
+        if (typeof layerOrHandler === "string") {
+          layerHandlers.set(
+            `${event}:${layerOrHandler}`,
+            maybeHandler as (event: unknown) => void,
+          );
+        } else {
+          mapHandlers.set(event, layerOrHandler as (event: unknown) => void);
+        }
+        return mockMap;
+      },
+    );
+    mockMap.off.mockImplementation((event: string, layerOrHandler: unknown) => {
+      if (typeof layerOrHandler === "string") {
+        layerHandlers.delete(`${event}:${layerOrHandler}`);
+      } else {
+        mapHandlers.delete(event);
+      }
+      return mockMap;
+    });
+    mockMap.queryRenderedFeatures.mockReturnValue([]);
+
+    const firstMove = vi.fn();
+    const secondMove = vi.fn();
+    const { rerender } = render(
+      <TripPlannerMap trip={trip()} month={7} onMoveWaypoint={firstMove} />,
+    );
+
+    // Begin a drag with the first callback installed.
+    act(() => {
+      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+        preventDefault: vi.fn(),
+        features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
+        point: { x: 100, y: 100 },
+        lngLat: { lng: 14.41, lat: 50.08 },
+      });
+    });
+
+    // Parent re-renders mid-drag with a brand-new callback identity
+    // (e.g. the planner page rerendered because a collab cursor or
+    // suggestion update flowed through the trip session hook).
+    rerender(
+      <TripPlannerMap trip={trip()} month={7} onMoveWaypoint={secondMove} />,
+    );
+
+    act(() => {
+      mapHandlers.get("mouseup")?.({
+        point: { x: 220, y: 180 },
+        lngLat: { lng: 14.5, lat: 50.13 },
+        preventDefault: vi.fn(),
+      });
+    });
+
+    // The drag must complete and route to the latest callback —
+    // before the ref-bounce, `onMoveWaypoint` was a dep so this rerender
+    // discarded the in-flight `active` state and the drop did nothing.
+    expect(firstMove).not.toHaveBeenCalled();
+    expect(secondMove).toHaveBeenCalledTimes(1);
+    expect(secondMove).toHaveBeenCalledWith(1, "start-1", {
+      lng: 14.5,
+      lat: 50.13,
+    });
+  });
+
   it("does not start a waypoint drag when the pointer is not over a waypoint", () => {
     const handleMoveWaypoint = vi.fn();
     const layerHandlers = new Map<string, (event: unknown) => void>();

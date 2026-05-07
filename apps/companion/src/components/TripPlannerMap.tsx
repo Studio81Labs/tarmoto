@@ -219,6 +219,16 @@ function TripPlannerMapContent({
   // beyond `clickTolerance`) is swallowed by `handleMapClick` instead of
   // appending a duplicate waypoint at the same spot.
   const swallowNextClickRef = useRef(false);
+  // Bounce `onMoveWaypoint` through a ref so a fresh callback identity
+  // on every parent render (the planner page passes an inline arrow,
+  // and live collab cursor/suggestion updates re-render mid-drag) does
+  // not retrigger the drag effect and discard the in-flight `active`
+  // state — that bug would silently drop the rider's drop.
+  const onMoveWaypointRef = useRef(onMoveWaypoint);
+  useEffect(() => {
+    onMoveWaypointRef.current = onMoveWaypoint;
+  }, [onMoveWaypoint]);
+  const dragEnabled = onMoveWaypoint != null;
   const [ready, setReady] = useState(false);
   const [showQuality, setShowQuality] = useState(true);
   const [showSurface, setShowSurface] = useState(false);
@@ -485,7 +495,7 @@ function TripPlannerMapContent({
   // landed as a map pan and the marker stayed put.
   useEffect(() => {
     const map = handleRef.current?.map;
-    if (!map || !ready || !onMoveWaypoint || drawMode !== "idle") return;
+    if (!map || !ready || !dragEnabled || drawMode !== "idle") return;
 
     const canvas = map.getCanvas();
     // MapLibre's default `clickTolerance` is 3 px — if the pointer moves
@@ -550,7 +560,7 @@ function TripPlannerMapContent({
         lng: roundCoordinate(lngLat.lng),
         lat: roundCoordinate(lngLat.lat),
       };
-      onMoveWaypoint(active.dayNumber, active.waypointId, target);
+      onMoveWaypointRef.current?.(active.dayNumber, active.waypointId, target);
       active = null;
       setCursor("");
       // The `move`/`touchmove` listeners are kept registered: their
@@ -619,7 +629,7 @@ function TripPlannerMapContent({
       map.off("touchend", handleTouchEnd);
       setCursor("");
     };
-  }, [drawMode, onMoveWaypoint, ready]);
+  }, [drawMode, dragEnabled, ready]);
   useEffect(() => {
     const map = handleRef.current?.map;
     if (
