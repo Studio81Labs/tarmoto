@@ -498,11 +498,15 @@ function TripPlannerMapContent({
     if (!map || !ready || !dragEnabled || drawMode !== "idle") return;
 
     const canvas = map.getCanvas();
-    // MapLibre's default `clickTolerance` is 3 px — if the pointer moves
-    // farther than that during a press, no synthetic `click` is emitted.
-    // 4 px gives us a one-pixel safety margin so we never clear the
-    // suppression while a click is still possible.
-    const CLICK_TOLERANCE_PX = 4;
+    // Match MapLibre's `clickTolerance` exactly: it suppresses the
+    // synthetic post-pointer `click` once total movement is `> 3 px`,
+    // so we must clear the swallow flag (and mark the drag committed)
+    // at the same boundary. A higher value left a gap where MapLibre
+    // suppressed the click but we still treated the gesture as a tap,
+    // swallowing the rider's next legitimate map click. MapCanvas
+    // constructs the map without overriding `clickTolerance`, so the
+    // default of 3 is in effect — keep this in sync if that changes.
+    const CLICK_TOLERANCE_PX = 3;
     let active: {
       dayNumber: number;
       waypointId: string;
