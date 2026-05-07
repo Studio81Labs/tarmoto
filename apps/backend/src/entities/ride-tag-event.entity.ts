@@ -19,6 +19,7 @@ import { User } from './user.entity.js';
  */
 @Entity('ride_tag_events')
 @Index('idx_ride_tag_events_ride_t', ['ride_id', 't'])
+@Index('idx_ride_tag_events_user_t', ['user_id', 't'])
 export class RideTagEvent {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

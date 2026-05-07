@@ -29,6 +29,16 @@ export class AddRideTagEvents1717000000000 implements MigrationInterface {
     await queryRunner.query(`
       CREATE INDEX idx_ride_tag_events_ride_t ON ride_tag_events(ride_id, t)
     `);
+    // Powers two user-scoped paths that would otherwise full-scan once
+    // the table grows:
+    //   - daily retention sweep (`user_id = ANY($1) AND t < $2`)
+    //   - GDPR data export (`user_id = $1`)
+    // Composite `(user_id, t)` covers both — the export ignores `t` and
+    // PG'll just use the leading `user_id` prefix, while the sweep uses
+    // the full key.
+    await queryRunner.query(`
+      CREATE INDEX idx_ride_tag_events_user_t ON ride_tag_events(user_id, t)
+    `);
     await queryRunner.query(`
       ALTER TABLE surface_readings
         ADD COLUMN rider_surface_label VARCHAR(32),
