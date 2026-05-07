@@ -161,6 +161,11 @@ describe("TripPlannerMap", () => {
     drawControl.start.mockReset();
     drawControl.cancel.mockReset();
     drawControl.clearDrawn.mockReset();
+    // Mirror production: clearDrawn() fires the onRegionCleared
+    // callback so consumers don't need to reset their own state.
+    drawControl.clearDrawn.mockImplementation(() => {
+      lastDrawOptions?.onRegionCleared?.();
+    });
     drawControl.setDrawn.mockReset();
     drawControl.destroy.mockReset();
     drawControl.hitTest.mockReset();

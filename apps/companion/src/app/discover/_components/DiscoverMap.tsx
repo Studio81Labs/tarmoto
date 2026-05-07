@@ -78,16 +78,22 @@ export function DiscoverMap({
       onRegionCleared: () => clearDrawnBbox(),
       onModeChange: setDrawMode,
     });
+    // Skip fun-zone hover styling and selection during draw/edit so
+    // the region tool's resize/move cursors and click semantics are
+    // not clobbered by an underlying zone the rectangle overlaps.
     const pointerOn = () => {
+      if (drawRef.current?.getMode() !== "idle") return;
       map.getCanvas().style.cursor = "pointer";
     };
     const pointerOff = () => {
-      if (drawRef.current?.getMode() === "drawing") return;
+      if (drawRef.current?.getMode() !== "idle") return;
       map.getCanvas().style.cursor = "";
     };
     map.on("mouseenter", FUN_ZONES_FILL, pointerOn);
     map.on("mouseleave", FUN_ZONES_FILL, pointerOff);
     map.on("click", FUN_ZONES_FILL, (e: MapLayerMouseEvent) => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      if (drawRef.current?.hitTest(e.point)) return;
       const feature = e.features?.[0];
       const id = feature?.properties?.id as string | undefined;
       if (!id) return;
@@ -257,10 +263,7 @@ export function DiscoverMap({
         {drawnBbox && drawMode !== "drawing" ? (
           <button
             type="button"
-            onClick={() => {
-              drawRef.current?.clearDrawn();
-              clearDrawnBbox();
-            }}
+            onClick={() => drawRef.current?.clearDrawn()}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900/90 border border-slate-700 text-slate-300 text-sm hover:bg-slate-800 transition"
           >
             <X size={12} />

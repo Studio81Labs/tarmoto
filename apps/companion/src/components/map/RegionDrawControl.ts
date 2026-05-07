@@ -252,7 +252,11 @@ export function createRegionDrawControl(
 
   return {
     start() {
-      if (mode === "drawing") return;
+      // Only enter draw mode from idle. Re-entering from `editing`
+      // would clobber `wasDragPanEnabled` (already false from the
+      // active edit drag), so the drag's mouseup would never restore
+      // dragPan and the map would become un-pannable.
+      if (mode !== "idle") return;
       enterDrawMode();
     },
     cancel() {

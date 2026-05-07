@@ -429,7 +429,6 @@ function TripPlannerMapContent({
       }
       event.preventDefault();
       drawRef.current?.clearDrawn();
-      setDrawnRegion(null);
     };
     window.addEventListener("keydown", handleKey);
     return () => {
@@ -530,10 +529,7 @@ function TripPlannerMapContent({
         {drawnRegion && drawMode !== "drawing" ? (
           <button
             type="button"
-            onClick={() => {
-              drawRef.current?.clearDrawn();
-              setDrawnRegion(null);
-            }}
+            onClick={() => drawRef.current?.clearDrawn()}
             className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/90 px-3 py-2 text-sm text-slate-300 transition hover:bg-slate-800"
           >
             <X size={12} />

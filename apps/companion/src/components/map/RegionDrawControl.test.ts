@@ -289,6 +289,30 @@ describe("createRegionDrawControl", () => {
     expect(control.hitTest({ x: 0, y: 0 })).toBe(false);
   });
 
+  it("start() is a no-op while editing so dragPan stays consistent", () => {
+    const fake = buildFakeMap();
+    const onModeChange = vi.fn<(mode: RegionDrawMode) => void>();
+    const control = createRegionDrawControl(fake.map, {
+      onRegionDrawn: vi.fn(),
+      onModeChange,
+    });
+    control.setDrawn([0, 0, 100, 100]);
+
+    fake.emit("mousedown", makeMouseEvent(50, 50));
+    expect(control.getMode()).toBe("editing");
+    expect(fake.dragPanEnabled()).toBe(false);
+
+    // Simulate a touch device tap on "Redraw region" mid-drag.
+    control.start();
+    expect(control.getMode()).toBe("editing");
+
+    fake.emit("mouseup", makeMouseEvent(60, 70));
+    // After the drag ends, dragPan must be restored — the previous
+    // bug clobbered `wasDragPanEnabled` and left it false forever.
+    expect(fake.dragPanEnabled()).toBe(true);
+    expect(control.getMode()).toBe("idle");
+  });
+
   it("cancel during editing restores the idle mode", () => {
     const fake = buildFakeMap();
     const onModeChange = vi.fn<(mode: RegionDrawMode) => void>();
