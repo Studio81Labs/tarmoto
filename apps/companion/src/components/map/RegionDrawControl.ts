@@ -261,6 +261,13 @@ export function createRegionDrawControl(
     },
     cancel() {
       previewSrc?.setData(EMPTY_POLY);
+      // If we're cancelling an edit drag, revert any partial move
+      // or resize applied by intermediate mousemoves so the painted
+      // bbox matches the consumer's React state again.
+      if (mode === "editing" && bboxAtDragStart) {
+        drawnBbox = [...bboxAtDragStart] as RegionDrawBbox;
+        paintBbox(drawnBbox);
+      }
       dragStartLngLat = null;
       bboxAtDragStart = null;
       dragKind = null;

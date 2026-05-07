@@ -343,21 +343,39 @@ describe("createRegionDrawControl", () => {
     expect(control.getMode()).toBe("idle");
   });
 
-  it("cancel during editing restores the idle mode", () => {
+  it("cancel during editing restores the idle mode and the original bbox", () => {
     const fake = buildFakeMap();
     const onModeChange = vi.fn<(mode: RegionDrawMode) => void>();
+    const onRegionDrawn = vi.fn<(bbox: RegionDrawBbox) => void>();
     const control = createRegionDrawControl(fake.map, {
-      onRegionDrawn: vi.fn(),
+      onRegionDrawn,
       onModeChange,
     });
     control.setDrawn([0, 0, 100, 100]);
 
+    // Begin a move drag and partially apply it before cancelling.
     fake.emit("mousedown", makeMouseEvent(50, 50));
+    fake.emit("mousemove", makeMouseEvent(60, 70));
     expect(control.getMode()).toBe("editing");
 
     control.cancel();
     expect(control.getMode()).toBe("idle");
     expect(fake.dragPanEnabled()).toBe(true);
+    // No partial move should have been emitted.
+    expect(onRegionDrawn).not.toHaveBeenCalled();
+
+    // The painted bbox + handles must snap back to the pre-drag
+    // coordinates so they don't diverge from the consumer's state.
+    const drawnFeatures = fake.sources.get("region-drawn-src")?.data
+      .features as Array<{ geometry: { coordinates: number[][][] } }>;
+    expect(drawnFeatures).toHaveLength(1);
+    const ring = drawnFeatures[0]!.geometry.coordinates[0]!;
+    const xs = ring.map((p) => p[0]!);
+    const ys = ring.map((p) => p[1]!);
+    expect(Math.min(...xs)).toBeCloseTo(0);
+    expect(Math.max(...xs)).toBeCloseTo(100);
+    expect(Math.min(...ys)).toBeCloseTo(0);
+    expect(Math.max(...ys)).toBeCloseTo(100);
   });
 
   it("destroy removes all sources, layers, and listeners", () => {
