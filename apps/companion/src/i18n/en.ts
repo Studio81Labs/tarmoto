@@ -36,6 +36,8 @@ export const en = {
   "Add routes": "Add routes",
   "Add routes ": "Add routes ",
   "Add routes from": "Add routes from",
+  "Add routes from your planned or completed trips.":
+    "Add routes from your planned or completed trips.",
   "Add routes from your planned or completed trips. ":
     "Add routes from your planned or completed trips. ",
   "Add waypoints on the map or generate a route to see segment previews. ":
@@ -45,8 +47,12 @@ export const en = {
     "Add your motorcycle to get bike-specific stats and recommendations. ",
   "Adopt as trip draft ": "Adopt as trip draft ",
   "All years": "All years",
+  "All your rides are already in this collection":
+    "All your rides are already in this collection",
   "All your rides are already in this collection ":
     "All your rides are already in this collection ",
+  "All your trips are already in this collection":
+    "All your trips are already in this collection",
   "All your trips are already in this collection ":
     "All your trips are already in this collection ",
   "Along the route": "Along the route",
@@ -66,6 +72,7 @@ export const en = {
   "Avoid unpaved roads ": "Avoid unpaved roads ",
   "Back to planner ": "Back to planner ",
   "Back to rides": "Back to rides",
+  "Back to sign in": "Back to sign in",
   "Back to sign in ": "Back to sign in ",
   "Back to trip ": "Back to trip ",
   "Back to trips": "Back to trips",
@@ -131,6 +138,7 @@ export const en = {
   "Collaborate ": "Collaborate ",
   "Collaborate on this trip ": "Collaborate on this trip ",
   "Collaboration tabs": "Collaboration tabs",
+  "Collection not found": "Collection not found",
   "Collection not found ": "Collection not found ",
   Collections: "Collections",
   "Collections ": "Collections ",
@@ -171,7 +179,9 @@ export const en = {
   "Could not load settings: ": "Could not load settings: ",
   "Couldn't load the route preview right now. ":
     "Couldn't load the route preview right now. ",
+  "Couldn't load this collection": "Couldn't load this collection",
   "Couldn't load this collection ": "Couldn't load this collection ",
+  "Couldn't load your collections": "Couldn't load your collections",
   "Couldn't load your collections ": "Couldn't load your collections ",
   "Couldn't load your rides right now. Close this and try again in a moment. ":
     "Couldn't load your rides right now. Close this and try again in a moment. ",
@@ -182,6 +192,7 @@ export const en = {
   "Couldn't load zones.": "Couldn't load zones.",
   "Create account": "Create account",
   "Create account ": "Create account ",
+  Create: "Create",
   "Create invite link ": "Create invite link ",
   "Create one": "Create one",
   "Create one ": "Create one ",
@@ -213,6 +224,7 @@ export const en = {
   "Deleting\u2026 ": "Deleting\u2026 ",
   "Delta column is B \u2212 A. Arrow color reflects whether higher values are better for that metric. ":
     "Delta column is B \u2212 A. Arrow color reflects whether higher values are better for that metric. ",
+  Description: "Description",
   "Description ": "Description ",
   "Detour approx. {distance}": "Detour approx. {distance}",
   "Detour available \u00b7 approx. ": "Detour available \u00b7 approx. ",
@@ -278,6 +290,7 @@ export const en = {
   "Filters ": "Filters ",
   "Finding the best roads for you ": "Finding the best roads for you ",
   "Folders ": "Folders ",
+  "Followed collections": "Followed collections",
   "Followed collections ": "Followed collections ",
   "Forgot password?": "Forgot password?",
   "Forgot password? ": "Forgot password? ",
@@ -365,7 +378,9 @@ export const en = {
     "Loading subscription settings\u2026 ",
   "Loading suggestions\u2026": "Loading suggestions\u2026",
   "Loading trip\u2026 ": "Loading trip\u2026 ",
+  "Loading your rides\u2026": "Loading your rides\u2026",
   "Loading your rides\u2026 ": "Loading your rides\u2026 ",
+  "Loading your trips\u2026": "Loading your trips\u2026",
   "Loading your trips\u2026 ": "Loading your trips\u2026 ",
   "Loading\u2026": "Loading\u2026",
   "Loading\u2026 ": "Loading\u2026 ",
@@ -403,12 +418,15 @@ export const en = {
   "My Bikes": "My Bikes",
   "My Road Map": "My Road Map",
   "My Trips": "My Trips",
+  Name: "Name",
   "Name ": "Name ",
   "Nearby unridden suggestions": "Nearby unridden suggestions",
   "Neither ride recorded per-segment quality readings. ":
     "Neither ride recorded per-segment quality readings. ",
+  "New collection": "New collection",
   "New collection ": "New collection ",
   "New folder": "New folder",
+  "New trip": "New trip",
   "New trip ": "New trip ",
   "Next ": "Next ",
   "Next milestone": "Next milestone",
@@ -452,6 +470,7 @@ export const en = {
     "No riders ranked in this region yet. ",
   "No rides match these filters ": "No rides match these filters ",
   "No rides match these filters. ": "No rides match these filters. ",
+  "No rides match your search.": "No rides match your search.",
   "No rides match your search. ": "No rides match your search. ",
   "No rides recorded yet": "No rides recorded yet",
   "No rides recorded yet.": "No rides recorded yet.",
@@ -465,6 +484,7 @@ export const en = {
   "No trip to print. Open a trip in the planner first. ":
     "No trip to print. Open a trip in the planner first. ",
   "No trips match your filters": "No trips match your filters",
+  "No trips match your search.": "No trips match your search.",
   "No trips match your search. ": "No trips match your search. ",
   "No trips planned yet.": "No trips planned yet.",
   "No trips yet": "No trips yet",
@@ -475,6 +495,7 @@ export const en = {
     "Not enough readings in this range to plot a trend yet. ",
   "Not enough road geometry yet for a mini-map preview. ":
     "Not enough road geometry yet for a mini-map preview. ",
+  "Not now": "Not now",
   "Not now ": "Not now ",
   "Notification ": "Notification ",
   "Notification settings": "Notification settings",
@@ -519,9 +540,12 @@ export const en = {
     "Pick two different rides to compare. ",
   "Pick two rides to see stats, route, and road quality side-by-side. ":
     "Pick two rides to see stats, route, and road quality side-by-side. ",
+  "Plan a trip first and it will show up here.":
+    "Plan a trip first and it will show up here.",
   "Plan a trip first and it will show up here. ":
     "Plan a trip first and it will show up here. ",
   "Plan a trip with these roads ": "Plan a trip with these roads ",
+  "Plan another trip to add it here.": "Plan another trip to add it here.",
   "Plan another trip to add it here. ": "Plan another trip to add it here. ",
   "Plan comparison ": "Plan comparison ",
   "Plan new trip ": "Plan new trip ",
@@ -569,8 +593,11 @@ export const en = {
   "Read-only view shared by ": "Read-only view shared by ",
   "Real-time updates are paused": "Real-time updates are paused",
   "Recent rides": "Recent rides",
+  "Record a ride from the mobile app and it will show up here.":
+    "Record a ride from the mobile app and it will show up here.",
   "Record a ride from the mobile app and it will show up here. ":
     "Record a ride from the mobile app and it will show up here. ",
+  "Record another ride to add it here.": "Record another ride to add it here.",
   "Record another ride to add it here. ":
     "Record another ride to add it here. ",
   "Redo ": "Redo ",
@@ -589,6 +616,7 @@ export const en = {
   "Request export ": "Request export ",
   "Reset ": "Reset ",
   "Reset password": "Reset password",
+  Retry: "Retry",
   "Retry ": "Retry ",
   "Reward: ": "Reward: ",
   "Reward: {reward}": "Reward: {reward}",
@@ -632,10 +660,12 @@ export const en = {
   "Route preview unavailable. ": "Route preview unavailable. ",
   "Route warnings ": "Route warnings ",
   "Route warnings: ": "Route warnings: ",
+  Routes: "Routes",
   "Routes ": "Routes ",
   "Routes (same scale) ": "Routes (same scale) ",
   Save: "Save",
   "Saved ": "Saved ",
+  "Saving\u2026": "Saving\u2026",
   "Saving\u2026 ": "Saving\u2026 ",
   "Scan the QR code or open Tarmoto on this phone to jump into mobile account linking, then sign in with the same credentials to keep everything in sync. ":
     "Scan the QR code or open Tarmoto on this phone to jump into mobile account linking, then sign in with the same credentials to keep everything in sync. ",
@@ -734,6 +764,8 @@ export const en = {
   "Tarmoto widget ": "Tarmoto widget ",
   "The owner hasn't added any routes to this collection yet. ":
     "The owner hasn't added any routes to this collection yet. ",
+  "The route may have been deleted or belongs to another account.":
+    "The route may have been deleted or belongs to another account.",
   "The route may have been deleted or belongs to another account. ":
     "The route may have been deleted or belongs to another account. ",
   "The trip may have been deleted, or the link may be wrong. ":
@@ -784,6 +816,7 @@ export const en = {
   "Up to {count} JPEG, PNG, or WebP photos (max {sizeMb} MB each).":
     "Up to {count} JPEG, PNG, or WebP photos (max {sizeMb} MB each).",
   "Update payment method ": "Update payment method ",
+  Updated: "Updated",
   "Updated ": "Updated ",
   "Updated weekly": "Updated weekly",
   "Upload a photo here, or paste a hosted image URL to keep your web and mobile profile photo in sync today. ":
@@ -825,7 +858,9 @@ export const en = {
   "You ": "You ",
   "You can opt out of optional processing at any time. Essential data needed to run the app (auth, rides you record) is always processed. ":
     "You can opt out of optional processing at any time. Essential data needed to run the app (auth, rides you record) is always processed. ",
+  "You don't have any rides yet": "You don't have any rides yet",
   "You don't have any rides yet ": "You don't have any rides yet ",
+  "You don't have any trips yet": "You don't have any trips yet",
   "You don't have any trips yet ": "You don't have any trips yet ",
   "You need at least two rides to run a comparison. Keep riding with the Tarmoto mobile app! ":
     "You need at least two rides to run a comparison. Keep riding with the Tarmoto mobile app! ",

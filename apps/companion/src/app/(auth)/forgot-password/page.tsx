@@ -37,7 +37,7 @@ export default function ForgotPasswordPage() {
           href="/login"
           className="text-tarmoto-cyan hover:underline text-sm"
         >
-          {t("Back to sign in ")}
+          {t("Back to sign in")}
         </Link>
       </div>
     );
@@ -75,7 +75,7 @@ export default function ForgotPasswordPage() {
 
       <p className="mt-6 text-center text-sm text-slate-400">
         <Link href="/login" className="text-tarmoto-cyan hover:underline">
-          {t("Back to sign in ")}
+          {t("Back to sign in")}
         </Link>
       </p>
     </div>

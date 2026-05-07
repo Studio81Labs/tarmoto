@@ -158,7 +158,7 @@ export default function RouteCollectionsPage() {
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold text-sm hover:bg-tarmoto-cyan-light transition"
         >
           <Plus size={16} />
-          {t("New collection ")}
+          {t("New collection")}
         </button>
       </div>
 
@@ -198,7 +198,7 @@ export default function RouteCollectionsPage() {
             aria-hidden="true"
           />
           <p className="text-amber-200 mb-1">
-            {t("Couldn't load your collections ")}
+            {t("Couldn't load your collections")}
           </p>
           <p className="text-sm text-slate-500 mb-4">
             {errorMessage ?? "Try again in a moment."}
@@ -208,7 +208,7 @@ export default function RouteCollectionsPage() {
             onClick={() => void refresh()}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm hover:bg-slate-700 transition"
           >
-            {t("Retry ")}
+            {t("Retry")}
           </button>
         </div>
       ) : collections.length === 0 ? (
@@ -243,7 +243,7 @@ export default function RouteCollectionsPage() {
           <div className="flex items-center gap-2 mb-3">
             <Bookmark size={14} className="text-tarmoto-cyan" />
             <h2 className="text-sm font-semibold text-white">
-              {t("Followed collections ")}
+              {t("Followed collections")}
             </h2>
             <span className="text-xs text-slate-500">
               · {visibleFollowed.length}
@@ -362,7 +362,7 @@ function MigrationBanner({
           onClick={migration.decline}
           className="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white transition disabled:opacity-50"
         >
-          {t("Not now ")}
+          {t("Not now")}
         </button>
       </div>
     </div>
@@ -449,7 +449,7 @@ function CollectionCard({
         </div>
 
         <p className="mt-3 text-[11px] text-slate-600">
-          {t("Updated ")}
+          {t("Updated")}
           {formatRelativeTime(collection.updatedAt)}
         </p>
       </Link>
@@ -542,7 +542,7 @@ function FollowedCollectionCard({
         </div>
 
         <p className="mt-3 text-[11px] text-slate-600">
-          {t("Updated ")}
+          {t("Updated")}
           {formatRelativeTime(collection.updatedAt)}
         </p>
       </Link>
@@ -648,7 +648,7 @@ function CollectionModal({
               htmlFor="collection-name"
               className="block text-xs text-slate-500 mb-1"
             >
-              {t("Name ")}
+              {t("Name")}
             </label>
             <input
               id="collection-name"
@@ -669,7 +669,7 @@ function CollectionModal({
               htmlFor="collection-description"
               className="block text-xs text-slate-500 mb-1"
             >
-              {t("Description ")}
+              {t("Description")}
               <span className="text-slate-600">{t("(optional)")}</span>
             </label>
             <textarea
@@ -691,7 +691,7 @@ function CollectionModal({
 
           <fieldset>
             <legend className="block text-xs text-slate-500 mb-2">
-              {t("Visibility ")}
+              {t("Visibility")}
             </legend>
             <div className="space-y-2">
               {(
@@ -748,14 +748,18 @@ function CollectionModal({
             disabled={submitting}
             className="px-3 py-1.5 rounded-lg text-sm text-slate-400 hover:text-white transition disabled:opacity-50"
           >
-            {t("Cancel ")}
+            {t("Cancel")}
           </button>
           <button
             type="submit"
             disabled={submitting}
             className="px-3 py-1.5 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light disabled:opacity-50 transition"
           >
-            {submitting ? "Saving…" : mode === "create" ? "Create" : "Save"}
+            {submitting
+              ? t("Saving…")
+              : mode === "create"
+                ? t("Create")
+                : t("Save")}
           </button>
         </div>
       </form>
@@ -921,7 +925,7 @@ function ConfirmDialog({
             onClick={onCancel}
             className="rounded-lg px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800 transition"
           >
-            {t("Cancel ")}
+            {t("Cancel")}
           </button>
           <button
             ref={confirmRef}

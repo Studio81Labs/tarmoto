@@ -276,7 +276,7 @@ export default function CollectionDetailPage() {
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-10 text-center">
           <RouteIcon size={40} className="mx-auto text-slate-600 mb-3" />
           <p className="text-slate-200 font-medium mb-1">
-            {t("Collection not found ")}
+            {t("Collection not found")}
           </p>
           <p className="text-sm text-slate-500">
             {t(
@@ -299,7 +299,7 @@ export default function CollectionDetailPage() {
         </Link>
         <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-10 text-center">
           <p className="text-amber-200 font-medium mb-1">
-            {t("Couldn't load this collection ")}
+            {t("Couldn't load this collection")}
           </p>
           <p className="text-sm text-slate-500 mb-4">{load.message}</p>
           <button
@@ -307,7 +307,7 @@ export default function CollectionDetailPage() {
             onClick={() => collectionId && void reload(collectionId)}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 text-slate-200 text-sm hover:bg-slate-700 transition"
           >
-            {t("Retry ")}
+            {t("Retry")}
           </button>
         </div>
       </div>
@@ -365,7 +365,7 @@ export default function CollectionDetailPage() {
             />
           </div>
           <p className="text-xs text-slate-500">
-            {t("Updated ")}
+            {t("Updated")}
             {formatRelativeTime(collection!.updatedAt)}
           </p>
         </div>
@@ -439,7 +439,7 @@ export default function CollectionDetailPage() {
 
       <section className="mt-6">
         <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">
-          {t("Routes ")}
+          {t("Routes")}
         </h2>
         {totalRefs === 0 ? (
           <EmptyRoutes onAdd={() => setShowPicker(true)} />
@@ -783,7 +783,7 @@ function EmptyRoutes({ onAdd }: { onAdd: () => void }) {
         {t("No routes in this collection yet")}
       </p>
       <p className="text-sm text-slate-500 mb-5">
-        {t("Add routes from your planned or completed trips. ")}
+        {t("Add routes from your planned or completed trips.")}
       </p>
       <button
         type="button"
@@ -929,7 +929,7 @@ function MissingItemRow({
           {t("{label} no longer available", { label })}
         </p>
         <p className="text-[11px] text-slate-600">
-          {t("The route may have been deleted or belongs to another account. ")}
+          {t("The route may have been deleted or belongs to another account.")}
         </p>
       </div>
       <button
@@ -1130,7 +1130,7 @@ function RoutePickerModal({
               onClick={onClose}
               className="px-3 py-1.5 rounded-lg text-sm text-slate-400 hover:text-white transition"
             >
-              {t("Cancel ")}
+              {t("Cancel")}
             </button>
             <button
               type="button"
@@ -1216,7 +1216,7 @@ function TripPickerList({
           size={16}
           className="animate-spin inline-block mr-2 align-[-3px]"
         />
-        {t("Loading your trips\u2026 ")}
+        {t("Loading your trips\u2026")}
       </div>
     );
   }
@@ -1236,19 +1236,19 @@ function TripPickerList({
     return hasAnyTrips ? (
       <div className="py-8 text-center">
         <p className="text-sm text-slate-400 mb-1">
-          {t("All your trips are already in this collection ")}
+          {t("All your trips are already in this collection")}
         </p>
         <p className="text-xs text-slate-500">
-          {t("Plan another trip to add it here. ")}
+          {t("Plan another trip to add it here.")}
         </p>
       </div>
     ) : (
       <div className="py-8 text-center">
         <p className="text-sm text-slate-400 mb-1">
-          {t("You don't have any trips yet ")}
+          {t("You don't have any trips yet")}
         </p>
         <p className="text-xs text-slate-500 mb-4">
-          {t("Plan a trip first and it will show up here. ")}
+          {t("Plan a trip first and it will show up here.")}
         </p>
         <button
           type="button"
@@ -1256,7 +1256,7 @@ function TripPickerList({
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-200 text-xs hover:bg-slate-700 transition"
         >
           <Plus size={14} />
-          {t("New trip ")}
+          {t("New trip")}
         </button>
       </div>
     );
@@ -1264,7 +1264,7 @@ function TripPickerList({
   if (visibleTrips.length === 0) {
     return (
       <p className="py-8 text-center text-sm text-slate-500">
-        {t("No trips match your search. ")}
+        {t("No trips match your search.")}
       </p>
     );
   }
@@ -1330,7 +1330,7 @@ function RidePickerList({
           size={16}
           className="animate-spin inline-block mr-2 align-[-3px]"
         />
-        {t("Loading your rides\u2026 ")}
+        {t("Loading your rides\u2026")}
       </div>
     );
   }
@@ -1350,19 +1350,19 @@ function RidePickerList({
     return hasAnyRides ? (
       <div className="py-8 text-center">
         <p className="text-sm text-slate-400 mb-1">
-          {t("All your rides are already in this collection ")}
+          {t("All your rides are already in this collection")}
         </p>
         <p className="text-xs text-slate-500">
-          {t("Record another ride to add it here. ")}
+          {t("Record another ride to add it here.")}
         </p>
       </div>
     ) : (
       <div className="py-8 text-center">
         <p className="text-sm text-slate-400 mb-1">
-          {t("You don't have any rides yet ")}
+          {t("You don't have any rides yet")}
         </p>
         <p className="text-xs text-slate-500">
-          {t("Record a ride from the mobile app and it will show up here. ")}
+          {t("Record a ride from the mobile app and it will show up here.")}
         </p>
       </div>
     );
@@ -1370,7 +1370,7 @@ function RidePickerList({
   if (visibleRides.length === 0) {
     return (
       <p className="py-8 text-center text-sm text-slate-500">
-        {t("No rides match your search. ")}
+        {t("No rides match your search.")}
       </p>
     );
   }
