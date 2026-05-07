@@ -871,6 +871,150 @@ describe("TripPlannerMap", () => {
     expect(handleMoveWaypoint).not.toHaveBeenCalled();
   });
 
+  it("swallows the synthetic click that follows a tap-without-drag on a waypoint", () => {
+    const handleAddWaypoint = vi.fn();
+    const handleMoveWaypoint = vi.fn();
+    const layerHandlers = new Map<string, (event: unknown) => void>();
+    const mapHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation(
+      (event: string, layerOrHandler: unknown, maybeHandler?: unknown) => {
+        if (typeof layerOrHandler === "string") {
+          layerHandlers.set(
+            `${event}:${layerOrHandler}`,
+            maybeHandler as (event: unknown) => void,
+          );
+        } else {
+          mapHandlers.set(event, layerOrHandler as (event: unknown) => void);
+        }
+        return mockMap;
+      },
+    );
+    mockMap.off.mockImplementation((event: string, layerOrHandler: unknown) => {
+      if (typeof layerOrHandler === "string") {
+        layerHandlers.delete(`${event}:${layerOrHandler}`);
+      } else {
+        mapHandlers.delete(event);
+      }
+      return mockMap;
+    });
+    mockMap.queryRenderedFeatures.mockReturnValue([]);
+
+    render(
+      <TripPlannerMap
+        trip={trip()}
+        month={7}
+        onAddWaypoint={handleAddWaypoint}
+        onMoveWaypoint={handleMoveWaypoint}
+      />,
+    );
+
+    act(() => {
+      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+        preventDefault: vi.fn(),
+        features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
+        point: { x: 100, y: 100 },
+        lngLat: { lng: 14.41, lat: 50.08 },
+      });
+      mapHandlers.get("mouseup")?.({
+        point: { x: 100, y: 100 },
+        lngLat: { lng: 14.41, lat: 50.08 },
+        preventDefault: vi.fn(),
+      });
+      mapHandlers.get("click")?.({
+        point: { x: 100, y: 100 },
+        lngLat: { lng: 14.41, lat: 50.08 },
+      });
+    });
+
+    expect(handleAddWaypoint).not.toHaveBeenCalled();
+
+    // A subsequent unrelated map click still creates a waypoint.
+    act(() => {
+      mapHandlers.get("click")?.({
+        point: { x: 320, y: 220 },
+        lngLat: { lng: 14.55, lat: 50.15 },
+      });
+    });
+    expect(handleAddWaypoint).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the move and touchmove listeners attached after a no-op drop", () => {
+    const handleMoveWaypoint = vi.fn();
+    const layerHandlers = new Map<string, (event: unknown) => void>();
+    const mapHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation(
+      (event: string, layerOrHandler: unknown, maybeHandler?: unknown) => {
+        if (typeof layerOrHandler === "string") {
+          layerHandlers.set(
+            `${event}:${layerOrHandler}`,
+            maybeHandler as (event: unknown) => void,
+          );
+        } else {
+          mapHandlers.set(event, layerOrHandler as (event: unknown) => void);
+        }
+        return mockMap;
+      },
+    );
+    mockMap.off.mockImplementation((event: string, layerOrHandler: unknown) => {
+      if (typeof layerOrHandler === "string") {
+        layerHandlers.delete(`${event}:${layerOrHandler}`);
+      } else {
+        mapHandlers.delete(event);
+      }
+      return mockMap;
+    });
+    mockMap.queryRenderedFeatures.mockReturnValue([]);
+
+    render(
+      <TripPlannerMap
+        trip={trip()}
+        month={7}
+        onMoveWaypoint={handleMoveWaypoint}
+      />,
+    );
+
+    expect(mapHandlers.has("mousemove")).toBe(true);
+    expect(mapHandlers.has("touchmove")).toBe(true);
+
+    act(() => {
+      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+        preventDefault: vi.fn(),
+        features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
+        point: { x: 100, y: 100 },
+        lngLat: { lng: 14.41, lat: 50.08 },
+      });
+      mapHandlers.get("mouseup")?.({
+        point: { x: 100, y: 100 },
+        lngLat: { lng: 14.41, lat: 50.08 },
+        preventDefault: vi.fn(),
+      });
+    });
+
+    expect(handleMoveWaypoint).toHaveBeenCalledTimes(1);
+    // The crucial regression guard for #482 review: if these listeners
+    // were detached on drop, the next drag would lose preventDefault and
+    // MapLibre would pan the canvas instead of moving the waypoint.
+    expect(mapHandlers.has("mousemove")).toBe(true);
+    expect(mapHandlers.has("touchmove")).toBe(true);
+
+    const preventDefault = vi.fn();
+    act(() => {
+      mapHandlers.get("mousemove")?.({ preventDefault });
+    });
+    expect(preventDefault).not.toHaveBeenCalled();
+
+    act(() => {
+      layerHandlers.get("mousedown:trip-planner-waypoint-circle")?.({
+        preventDefault: vi.fn(),
+        features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
+        point: { x: 100, y: 100 },
+        lngLat: { lng: 14.41, lat: 50.08 },
+      });
+      mapHandlers.get("mousemove")?.({ preventDefault });
+    });
+    expect(preventDefault).toHaveBeenCalled();
+  });
+
   it("snaps a dropped waypoint to a nearby road when one is visible", () => {
     const handleMoveWaypoint = vi.fn();
     const layerHandlers = new Map<string, (event: unknown) => void>();

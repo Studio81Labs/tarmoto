@@ -214,6 +214,11 @@ function TripPlannerMapContent({
   const handleRef = useRef<MapCanvasHandle>(null);
   const drawRef = useRef<RegionDrawControl | null>(null);
   const fittedBoundsKeyRef = useRef<string | null>(null);
+  // Set true on `mousedown`/`touchstart` over a waypoint so the synthetic
+  // `click` MapLibre fires for tap-without-drag (the pointer never moved
+  // beyond `clickTolerance`) is swallowed by `handleMapClick` instead of
+  // appending a duplicate waypoint at the same spot.
+  const swallowNextClickRef = useRef(false);
   const [ready, setReady] = useState(false);
   const [showQuality, setShowQuality] = useState(true);
   const [showSurface, setShowSurface] = useState(false);
@@ -342,6 +347,14 @@ function TripPlannerMapContent({
       };
     }) => {
       if (!onAddWaypoint || drawMode !== "idle") return;
+      // A tap-without-drag on a waypoint still fires a synthetic `click`
+      // even after we `preventDefault()` on `mousedown`; without this
+      // gate the planner would append a brand-new waypoint at the
+      // existing one's position on every short tap.
+      if (swallowNextClickRef.current) {
+        swallowNextClickRef.current = false;
+        return;
+      }
       const map = handleRef.current?.map;
       if (!map) return;
       // Skip waypoint adds when the click landed on the drawn region or
@@ -512,8 +525,11 @@ function TripPlannerMapContent({
       onMoveWaypoint(active.dayNumber, active.waypointId, target);
       active = null;
       setCursor("");
-      map.off("mousemove", handleMouseMove);
-      map.off("touchmove", handleTouchMove);
+      // The `move`/`touchmove` listeners are kept registered: their
+      // `if (!active) return` guard makes them no-ops between drags,
+      // and a no-op drop (same coords) does not re-render so this
+      // effect does not re-run — detaching them here would silently
+      // strip preventDefault from every subsequent drag.
     };
     const handleMouseUp = (event: MapMouseEvent) => {
       finishDrag(event.lngLat, event.point);
@@ -539,6 +555,11 @@ function TripPlannerMapContent({
       }
       event.preventDefault();
       active = { dayNumber: props.dayNumber, waypointId: props.waypointId };
+      // Even with `preventDefault()` here, MapLibre still fires a `click`
+      // when the pointer never moves beyond `clickTolerance` (see its
+      // `map_events.test`). Flag the upcoming click so `handleMapClick`
+      // ignores it instead of treating the drop as a fresh map click.
+      swallowNextClickRef.current = true;
       setCursor("grabbing");
     };
 
