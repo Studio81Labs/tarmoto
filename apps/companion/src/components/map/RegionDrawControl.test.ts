@@ -289,6 +289,36 @@ describe("createRegionDrawControl", () => {
     expect(control.hitTest({ x: 0, y: 0 })).toBe(false);
   });
 
+  it("clearDrawn during an active edit drag does not resurrect the bbox", () => {
+    const fake = buildFakeMap();
+    const onRegionDrawn = vi.fn<(bbox: RegionDrawBbox) => void>();
+    const onRegionCleared = vi.fn();
+    const control = createRegionDrawControl(fake.map, {
+      onRegionDrawn,
+      onRegionCleared,
+    });
+    control.setDrawn([0, 0, 100, 100]);
+
+    // Begin dragging the region.
+    fake.emit("mousedown", makeMouseEvent(50, 50));
+    expect(control.getMode()).toBe("editing");
+
+    // Simulate the keyboard handler firing Delete mid-drag.
+    control.clearDrawn();
+    expect(onRegionCleared).toHaveBeenCalledTimes(1);
+    expect(control.getMode()).toBe("idle");
+    expect(fake.dragPanEnabled()).toBe(true);
+
+    // The remaining mouse events from the original drag must not
+    // recompute or emit a bbox.
+    fake.emit("mousemove", makeMouseEvent(60, 70));
+    fake.emit("mouseup", makeMouseEvent(60, 70));
+    expect(onRegionDrawn).not.toHaveBeenCalled();
+    expect(fake.sources.get("region-handles-src")?.data.features).toHaveLength(
+      0,
+    );
+  });
+
   it("start() is a no-op while editing so dragPan stays consistent", () => {
     const fake = buildFakeMap();
     const onModeChange = vi.fn<(mode: RegionDrawMode) => void>();

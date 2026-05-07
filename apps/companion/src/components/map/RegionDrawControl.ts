@@ -269,6 +269,16 @@ export function createRegionDrawControl(
       else if (mode === "editing") exitEditMode();
     },
     clearDrawn() {
+      // Cancel any in-flight drag before nulling the bbox: otherwise
+      // the next mousemove would resurrect the region from the stale
+      // `bboxAtDragStart` and emit a stale `onRegionDrawn` on mouseup.
+      dragStartLngLat = null;
+      bboxAtDragStart = null;
+      dragKind = null;
+      bboxChangedDuringDrag = false;
+      previewSrc?.setData(EMPTY_POLY);
+      if (mode === "drawing") exitDrawMode();
+      else if (mode === "editing") exitEditMode();
       drawnBbox = null;
       paintBbox(null);
       opts.onRegionCleared?.();
