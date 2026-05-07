@@ -147,9 +147,9 @@ export default function RouteCollectionsPage() {
         <div>
           <h1 className="text-2xl font-bold">{t("Route Collections")}</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            {collections.length}
-            {t("collection ")}
-            {collections.length === 1 ? "" : "s"}
+            {collections.length === 1
+              ? t("1 collection")
+              : t("{count} collections", { count: collections.length })}
           </p>
         </div>
         <button
@@ -440,9 +440,9 @@ function CollectionCard({
         <div className="flex items-center gap-2 text-sm text-slate-400">
           <RouteIcon size={13} />
           <span>
-            {collection.itemCount}
-            {t("route ")}
-            {collection.itemCount === 1 ? "" : "s"}
+            {collection.itemCount === 1
+              ? t("1 route")
+              : t("{count} routes", { count: collection.itemCount })}
           </span>
         </div>
 
@@ -526,9 +526,9 @@ function FollowedCollectionCard({
           <span className="inline-flex items-center gap-1">
             <RouteIcon size={13} />
             <span>
-              {collection.itemCount}
-              {t("route ")}
-              {collection.itemCount === 1 ? "" : "s"}
+              {collection.itemCount === 1
+                ? t("1 route")
+                : t("{count} routes", { count: collection.itemCount })}
             </span>
           </span>
           {collection.ownerName && (

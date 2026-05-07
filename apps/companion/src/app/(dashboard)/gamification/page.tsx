@@ -1030,8 +1030,9 @@ function MilestoneCard({ progress }: { progress: MilestoneProgress }) {
           <span>{label}</span>
           {progress.nextThreshold !== null && (
             <span className="text-slate-500">
-              {Math.round(progress.remaining).toLocaleString()}
-              {t("to go ")}
+              {t("{count} to go", {
+                count: Math.round(progress.remaining).toLocaleString(),
+              })}
             </span>
           )}
         </div>

@@ -764,7 +764,7 @@ export default function TripPlannerPage() {
                       </div>
                       {option.id === selectedOptionId && (
                         <span className="rounded-full bg-tarmoto-cyan/20 px-2 py-0.5 text-[11px] font-medium text-tarmoto-cyan">
-                          {t("Active ")}
+                          {t("Active")}
                         </span>
                       )}
                     </div>

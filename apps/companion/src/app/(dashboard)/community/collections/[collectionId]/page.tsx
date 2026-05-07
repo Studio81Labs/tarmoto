@@ -922,8 +922,7 @@ function MissingItemRow({
     <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/50 p-4 flex items-center justify-between gap-4">
       <div className="min-w-0">
         <p className="text-sm text-slate-400">
-          {label}
-          {t("no longer available")}
+          {t("{label} no longer available", { label })}
         </p>
         <p className="text-[11px] text-slate-600">
           {t("The route may have been deleted or belongs to another account. ")}
@@ -1119,8 +1118,7 @@ function RoutePickerModal({
 
         <div className="mt-4 flex items-center justify-between gap-2">
           <p className="text-[11px] text-slate-500">
-            {totalSelected}
-            {t("selected")}
+            {t("{count} selected", { count: totalSelected })}
           </p>
           <div className="flex gap-2">
             <button
@@ -1291,10 +1289,10 @@ function TripPickerList({
                   {trip.name}
                 </p>
                 <p className="text-[11px] text-slate-500">
-                  {trip.days.length}
-                  {t("day ")}
-                  {trip.days.length === 1 ? "" : "s"} ·{" "}
-                  {formatDistance(distance)} · {trip.status}
+                  {trip.days.length === 1
+                    ? t("1 day")
+                    : t("{count} days", { count: trip.days.length })}{" "}
+                  · {formatDistance(distance)} · {trip.status}
                 </p>
               </div>
             </label>

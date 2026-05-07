@@ -122,10 +122,10 @@ export function RidesTable({
             <ChevronLeft size={16} />
           </button>
           <span>
-            {t("Page ")}
-            {state.page}
-            {t("of ")}
-            {totalPages}
+            {t("Page {currentPage} of {pageCount}", {
+              currentPage: state.page,
+              pageCount: totalPages,
+            })}
           </span>
           <button
             type="button"

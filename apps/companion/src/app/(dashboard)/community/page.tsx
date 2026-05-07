@@ -250,9 +250,10 @@ export default function CommunityFeedPage() {
 
       {location && (
         <p className="mb-6 text-sm text-slate-400">
-          {t("Filtering within ")}
-          {location.km}
-          {t("km of")} <span className="text-slate-200">{location.label}</span>.
+          {t("Filtering within {distance} km of", {
+            distance: location.km,
+          })}{" "}
+          <span className="text-slate-200">{location.label}</span>.
         </p>
       )}
 
@@ -287,10 +288,10 @@ export default function CommunityFeedPage() {
 
           <div className="mt-6 flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
             <p className="text-sm text-slate-400">
-              {t("Page ")}
-              {currentPage}
-              {t("of ")}
-              {pageCount}
+              {t("Page {currentPage} of {pageCount}", {
+                currentPage,
+                pageCount,
+              })}
             </p>
 
             <div className="flex items-center gap-2">
