@@ -198,6 +198,11 @@ type TripStoreSnapshot = {
   ) => void;
   insertWaypointBeforeEnd: (dayIndex: number, waypoint: unknown) => void;
   removeWaypoint: (dayIndex: number, waypointId: string) => void;
+  moveWaypoint: (
+    dayIndex: number,
+    waypointId: string,
+    location: { lng: number; lat: number },
+  ) => void;
   reorderWaypoints: (
     dayIndex: number,
     fromIndex: number,
@@ -313,6 +318,7 @@ describe("TripPlannerPage", () => {
       appendPlannerWaypoint: vi.fn(),
       insertWaypointBeforeEnd: vi.fn(),
       removeWaypoint: vi.fn(),
+      moveWaypoint: vi.fn(),
       reorderWaypoints: vi.fn(),
       undo: vi.fn(),
       redo: vi.fn(),
@@ -434,6 +440,30 @@ describe("TripPlannerPage", () => {
         minQuality: 3,
       },
     );
+  });
+
+  it("dispatches moveWaypoint with the matching day index when a marker is dropped on the map", () => {
+    render(<TripPlannerPage />);
+
+    const latestMapProps = mockedTripPlannerMap.mock.calls.at(-1)?.[0] as
+      | {
+          onMoveWaypoint?: (
+            dayNumber: number,
+            waypointId: string,
+            location: { lng: number; lat: number },
+          ) => void;
+        }
+      | undefined;
+    const onMoveWaypoint = latestMapProps?.onMoveWaypoint;
+
+    expect(onMoveWaypoint).toBeDefined();
+
+    onMoveWaypoint?.(2, "wp-via-1", { lng: 14.55, lat: 50.12 });
+
+    expect(storeState.moveWaypoint).toHaveBeenCalledWith(1, "wp-via-1", {
+      lng: 14.55,
+      lat: 50.12,
+    });
   });
 
   it("generates itinerary options from the planner parameters and selects the best-fit trip", async () => {

@@ -175,6 +175,64 @@ describe("useTripStore planner editing", () => {
     expect(useTripStore.getState().hoveredSegmentId).toBeNull();
   });
 
+  it("moves an existing routing waypoint and rebuilds the day route geometry", () => {
+    const store = useTripStore.getState();
+
+    store.appendPlannerWaypoint(0, { lng: 14.41, lat: 50.08 });
+    store.appendPlannerWaypoint(0, { lng: 14.61, lat: 50.19 });
+
+    const beforeMove = useTripStore.getState().activeTrip?.days[0];
+    const startWaypoint = beforeMove?.waypoints[0];
+    expect(startWaypoint?.type).toBe("start");
+    expect(startWaypoint?.id).toBeDefined();
+    const beforeGeometry = beforeMove?.routeGeometry?.coordinates ?? [];
+    expect(beforeGeometry.length).toBeGreaterThan(0);
+
+    useTripStore
+      .getState()
+      .moveWaypoint(0, startWaypoint!.id, { lng: 14.5, lat: 50.12 });
+
+    const afterMove = useTripStore.getState().activeTrip?.days[0];
+    expect(afterMove?.waypoints[0]?.location).toEqual({
+      lng: 14.5,
+      lat: 50.12,
+    });
+    expect(afterMove?.waypoints[0]?.id).toBe(startWaypoint!.id);
+    expect(afterMove?.routeGeometry?.coordinates).not.toEqual(beforeGeometry);
+    expect(afterMove?.routeGeometry?.coordinates[0]).toEqual([14.5, 50.12]);
+    expect(useTripStore.getState().canUndo).toBe(true);
+
+    useTripStore.getState().undo();
+    const restored = useTripStore.getState().activeTrip?.days[0];
+    expect(restored?.waypoints[0]?.location).toEqual({
+      lng: 14.41,
+      lat: 50.08,
+    });
+  });
+
+  it("ignores moveWaypoint calls that do not match an existing waypoint or change location", () => {
+    const store = useTripStore.getState();
+
+    store.appendPlannerWaypoint(0, { lng: 14.41, lat: 50.08 });
+    store.appendPlannerWaypoint(0, { lng: 14.61, lat: 50.19 });
+
+    const tripBefore = useTripStore.getState().activeTrip;
+    const undoBefore = useTripStore.getState().undoStack.length;
+
+    useTripStore
+      .getState()
+      .moveWaypoint(0, "missing-id", { lng: 14.5, lat: 50.12 });
+    expect(useTripStore.getState().activeTrip).toBe(tripBefore);
+    expect(useTripStore.getState().undoStack).toHaveLength(undoBefore);
+
+    const startWaypoint = tripBefore?.days[0]?.waypoints[0];
+    useTripStore
+      .getState()
+      .moveWaypoint(0, startWaypoint!.id, startWaypoint!.location);
+    expect(useTripStore.getState().activeTrip).toBe(tripBefore);
+    expect(useTripStore.getState().undoStack).toHaveLength(undoBefore);
+  });
+
   it("preserves existing route geometry when adding stop suggestions", () => {
     useTripStore.setState({
       activeTrip: {

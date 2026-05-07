@@ -36,6 +36,11 @@ interface TripState {
   ) => void;
   insertWaypointBeforeEnd: (dayIndex: number, waypoint: Waypoint) => void;
   removeWaypoint: (dayIndex: number, waypointId: string) => void;
+  moveWaypoint: (
+    dayIndex: number,
+    waypointId: string,
+    location: { lng: number; lat: number },
+  ) => void;
   reorderWaypoints: (
     dayIndex: number,
     fromIndex: number,
@@ -171,6 +176,42 @@ export const useTripStore = create<TripState & TripStoreHistory>((set) => ({
       }),
     ),
 
+  moveWaypoint: (dayIndex, waypointId, location) =>
+    set((state) =>
+      commitTripChange(state, (activeTrip) => {
+        if (!activeTrip) return activeTrip;
+        const day = activeTrip.days[dayIndex];
+        if (!day) return activeTrip;
+        const waypointIndex = day.waypoints.findIndex(
+          (waypoint) => waypoint.id === waypointId,
+        );
+        if (waypointIndex < 0) return activeTrip;
+        const previous = day.waypoints[waypointIndex]!;
+        if (
+          previous.location.lng === location.lng &&
+          previous.location.lat === location.lat
+        ) {
+          return activeTrip;
+        }
+        const days = [...activeTrip.days];
+        const waypoints = [...day.waypoints];
+        waypoints[waypointIndex] = {
+          ...previous,
+          location: { lng: location.lng, lat: location.lat },
+        };
+        days[dayIndex] = updatePlannerDayRoute(
+          day,
+          waypoints,
+          activeTrip.parameters,
+        );
+        return {
+          ...activeTrip,
+          days,
+          updatedAt: new Date().toISOString(),
+        };
+      }),
+    ),
+
   reorderWaypoints: (dayIndex, fromIndex, toIndex) =>
     set((state) =>
       commitTripChange(state, (activeTrip) => {
@@ -286,8 +327,14 @@ function shouldPreserveExistingRoute(
 }
 
 function routingWaypointSignature(waypoints: Waypoint[]) {
+  // Include coordinates so dragging an existing waypoint (same id, new
+  // location) invalidates the cached route — without this, moveWaypoint
+  // would leave the displayed route geometry stuck on the old anchor.
   return filterRoutingWaypoints(waypoints)
-    .map((waypoint) => waypoint.id)
+    .map(
+      (waypoint) =>
+        `${waypoint.id}:${waypoint.location.lng},${waypoint.location.lat}`,
+    )
     .join("|");
 }
 

@@ -1,7 +1,12 @@
 "use client";
 import { t } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
+import type {
+  GeoJSONSource,
+  Map as MapLibreMap,
+  MapMouseEvent,
+  MapTouchEvent,
+} from "maplibre-gl";
 import {
   AlertTriangle,
   Layers3,
@@ -71,6 +76,16 @@ interface TripPlannerMapProps {
   closuresData?: ClosuresQueryResult;
   passesData?: PassesQueryResult;
   onAddWaypoint?: (location: { lng: number; lat: number }) => void;
+  /**
+   * Called when a rider finishes dragging an existing waypoint marker.
+   * `dayNumber` identifies which trip day owns the waypoint (1-indexed).
+   * Pass undefined to keep waypoints non-draggable.
+   */
+  onMoveWaypoint?: (
+    dayNumber: number,
+    waypointId: string,
+    location: { lng: number; lat: number },
+  ) => void;
   selectedDayNumber?: number;
   /** Live cursors from other collaborators keyed by user id. */
   collaboratorCursors?: Map<string, CollaboratorCursor>;
@@ -93,6 +108,7 @@ export function TripPlannerMap({
   closuresData,
   passesData,
   onAddWaypoint,
+  onMoveWaypoint,
   selectedDayNumber,
   collaboratorCursors,
   suggestions,
@@ -106,6 +122,7 @@ export function TripPlannerMap({
         closuresData={closuresData}
         passesData={passesData}
         onAddWaypoint={onAddWaypoint}
+        onMoveWaypoint={onMoveWaypoint}
         selectedDayNumber={selectedDayNumber}
         collaboratorCursors={collaboratorCursors}
         suggestions={suggestions}
@@ -118,6 +135,7 @@ export function TripPlannerMap({
       trip={trip}
       month={month}
       onAddWaypoint={onAddWaypoint}
+      onMoveWaypoint={onMoveWaypoint}
       selectedDayNumber={selectedDayNumber}
       collaboratorCursors={collaboratorCursors}
       suggestions={suggestions}
@@ -129,6 +147,7 @@ function FetchedTripPlannerMap({
   trip,
   month,
   onAddWaypoint,
+  onMoveWaypoint,
   selectedDayNumber,
   collaboratorCursors,
   suggestions,
@@ -137,6 +156,11 @@ function FetchedTripPlannerMap({
   trip: Trip | null;
   month: number;
   onAddWaypoint?: (location: { lng: number; lat: number }) => void;
+  onMoveWaypoint?: (
+    dayNumber: number,
+    waypointId: string,
+    location: { lng: number; lat: number },
+  ) => void;
   selectedDayNumber?: number;
   collaboratorCursors?: Map<string, CollaboratorCursor>;
   suggestions?: TripSuggestion[];
@@ -152,6 +176,7 @@ function FetchedTripPlannerMap({
       closuresData={closuresData}
       passesData={passesData}
       onAddWaypoint={onAddWaypoint}
+      onMoveWaypoint={onMoveWaypoint}
       selectedDayNumber={selectedDayNumber}
       collaboratorCursors={collaboratorCursors}
       suggestions={suggestions}
@@ -165,6 +190,7 @@ function TripPlannerMapContent({
   closuresData,
   passesData,
   onAddWaypoint,
+  onMoveWaypoint,
   selectedDayNumber,
   collaboratorCursors,
   suggestions,
@@ -175,6 +201,11 @@ function TripPlannerMapContent({
   closuresData: ClosuresQueryResult;
   passesData: PassesQueryResult;
   onAddWaypoint?: (location: { lng: number; lat: number }) => void;
+  onMoveWaypoint?: (
+    dayNumber: number,
+    waypointId: string,
+    location: { lng: number; lat: number },
+  ) => void;
   selectedDayNumber?: number;
   collaboratorCursors?: Map<string, CollaboratorCursor>;
   suggestions?: TripSuggestion[];
@@ -316,35 +347,8 @@ function TripPlannerMapContent({
       // Skip waypoint adds when the click landed on the drawn region or
       // its edit handles — those clicks belong to the region tool.
       if (drawRef.current?.hitTest(event.point)) return;
-      const features: RoadSnapFeature[] = map
-        .queryRenderedFeatures(
-          [
-            [event.point.x - 12, event.point.y - 12],
-            [event.point.x + 12, event.point.y + 12],
-          ],
-          {
-            layers: ["tarmoto-quality", "tarmoto-surface"],
-          },
-        )
-        .map((feature) => ({
-          geometry:
-            feature.geometry.type === "LineString" ||
-            feature.geometry.type === "MultiLineString"
-              ? feature.geometry
-              : null,
-          properties: {
-            quality_score: feature.properties?.quality_score,
-          },
-        }));
-      const snapped = snapWaypointToRoadFeatures(
-        {
-          lng: event.lngLat.lng,
-          lat: event.lngLat.lat,
-        },
-        features,
-      );
       onAddWaypoint(
-        snapped ?? {
+        snapPointerToRoad(map, event.point, event.lngLat) ?? {
           lng: roundCoordinate(event.lngLat.lng),
           lat: roundCoordinate(event.lngLat.lat),
         },
@@ -461,6 +465,104 @@ function TripPlannerMapContent({
       map.off("click", handleMapClick);
     };
   }, [handleMapClick, onAddWaypoint, ready]);
+  // ── Waypoint dragging (#471) ──
+  // MapLibre treats every gesture on the canvas as a pan unless we
+  // intercept the pointer-down on the waypoint layer with
+  // `e.preventDefault()`. Without that intercept, "drag a waypoint"
+  // landed as a map pan and the marker stayed put.
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready || !onMoveWaypoint || drawMode !== "idle") return;
+
+    const canvas = map.getCanvas();
+    let active: { dayNumber: number; waypointId: string } | null = null;
+
+    const setCursor = (cursor: string) => {
+      canvas.style.cursor = cursor;
+    };
+
+    const handleEnter = () => {
+      if (!active) setCursor("move");
+    };
+    const handleLeave = () => {
+      if (!active) setCursor("");
+    };
+    const handleMouseMove = (event: MapMouseEvent) => {
+      if (!active) return;
+      event.preventDefault();
+      setCursor("grabbing");
+    };
+    const handleTouchMove = (event: MapTouchEvent) => {
+      if (!active) return;
+      event.preventDefault();
+    };
+    const finishDrag = (
+      lngLat: { lng: number; lat: number },
+      point?: {
+        x: number;
+        y: number;
+      },
+    ) => {
+      if (!active) return;
+      const snapped = point ? snapPointerToRoad(map, point, lngLat) : null;
+      const target = snapped ?? {
+        lng: roundCoordinate(lngLat.lng),
+        lat: roundCoordinate(lngLat.lat),
+      };
+      onMoveWaypoint(active.dayNumber, active.waypointId, target);
+      active = null;
+      setCursor("");
+      map.off("mousemove", handleMouseMove);
+      map.off("touchmove", handleTouchMove);
+    };
+    const handleMouseUp = (event: MapMouseEvent) => {
+      finishDrag(event.lngLat, event.point);
+    };
+    const handleTouchEnd = (event: MapTouchEvent) => {
+      finishDrag(event.lngLat, event.point);
+    };
+    const beginDrag = (event: MapMouseEvent | MapTouchEvent) => {
+      const features = (event as MapMouseEvent & { features?: unknown[] })
+        .features as
+        | Array<{
+            properties?: { dayNumber?: number; waypointId?: string };
+          }>
+        | undefined;
+      const feature = features?.[0];
+      const props = feature?.properties;
+      if (
+        !props ||
+        typeof props.waypointId !== "string" ||
+        typeof props.dayNumber !== "number"
+      ) {
+        return;
+      }
+      event.preventDefault();
+      active = { dayNumber: props.dayNumber, waypointId: props.waypointId };
+      setCursor("grabbing");
+    };
+
+    map.on("mouseenter", WAYPOINT_CIRCLE, handleEnter);
+    map.on("mouseleave", WAYPOINT_CIRCLE, handleLeave);
+    map.on("mousedown", WAYPOINT_CIRCLE, beginDrag);
+    map.on("touchstart", WAYPOINT_CIRCLE, beginDrag);
+    map.on("mousemove", handleMouseMove);
+    map.on("touchmove", handleTouchMove);
+    map.on("mouseup", handleMouseUp);
+    map.on("touchend", handleTouchEnd);
+
+    return () => {
+      map.off("mouseenter", WAYPOINT_CIRCLE, handleEnter);
+      map.off("mouseleave", WAYPOINT_CIRCLE, handleLeave);
+      map.off("mousedown", WAYPOINT_CIRCLE, beginDrag);
+      map.off("touchstart", WAYPOINT_CIRCLE, beginDrag);
+      map.off("mousemove", handleMouseMove);
+      map.off("touchmove", handleTouchMove);
+      map.off("mouseup", handleMouseUp);
+      map.off("touchend", handleTouchEnd);
+      setCursor("");
+    };
+  }, [drawMode, onMoveWaypoint, ready]);
   useEffect(() => {
     const map = handleRef.current?.map;
     if (
@@ -708,6 +810,37 @@ function dedupeMessages(messages: Array<string | null>): string[] {
       messages.filter((message): message is string => message !== null),
     ),
   ];
+}
+
+function snapPointerToRoad(
+  map: MapLibreMap,
+  point: { x: number; y: number },
+  lngLat: { lng: number; lat: number },
+): { lng: number; lat: number } | null {
+  const features: RoadSnapFeature[] = map
+    .queryRenderedFeatures(
+      [
+        [point.x - 12, point.y - 12],
+        [point.x + 12, point.y + 12],
+      ],
+      {
+        layers: ["tarmoto-quality", "tarmoto-surface"],
+      },
+    )
+    .map((feature) => ({
+      geometry:
+        feature.geometry.type === "LineString" ||
+        feature.geometry.type === "MultiLineString"
+          ? feature.geometry
+          : null,
+      properties: {
+        quality_score: feature.properties?.quality_score,
+      },
+    }));
+  return snapWaypointToRoadFeatures(
+    { lng: lngLat.lng, lat: lngLat.lat },
+    features,
+  );
 }
 function ensurePlannerLayers(map: MapLibreMap): void {
   if (!map.getSource(ROUTE_SOURCE)) {

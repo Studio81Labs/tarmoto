@@ -207,6 +207,7 @@ describe("buildTripPlannerWaypointCollection", () => {
     expect(collection.features[0]).toMatchObject({
       properties: {
         dayNumber: 1,
+        waypointId: "start-1",
         waypointType: "start",
         label: "Start",
       },
@@ -218,6 +219,7 @@ describe("buildTripPlannerWaypointCollection", () => {
     expect(collection.features[4]).toMatchObject({
       properties: {
         dayNumber: 2,
+        waypointId: "end-2",
         waypointType: "end",
         label: "Decin",
       },
