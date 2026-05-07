@@ -1,6 +1,9 @@
 /* eslint-disable @typescript-eslint/unbound-method */
+import 'reflect-metadata';
 import { Test, TestingModule } from '@nestjs/testing';
 import { authGuardTestProviders } from '../auth/auth-test-providers.js';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard.js';
+import { AuthGuard } from '../auth/auth.guard.js';
 import { PassesController } from './passes.controller.js';
 import { PassesService } from './passes.service.js';
 import { MountainPassDto } from './dto/passes.dto.js';
@@ -94,5 +97,22 @@ describe('PassesController', () => {
     expect(service.checkRoute).toHaveBeenCalledWith(
       expect.objectContaining({ for_month: 2 }),
     );
+  });
+
+  // Issue #475: previously the controller was protected by `AuthGuard`, so
+  // unauthenticated callers (the trip planner page on first paint, before
+  // the user signs in) got a 401 from `GET /passes`. Pass status is public
+  // reference data, so the controller now uses `OptionalAuthGuard` —
+  // authenticated callers still get `req.user` attached, but anonymous
+  // callers are no longer rejected.
+  it('uses OptionalAuthGuard so unauthenticated callers can still read pass data', () => {
+    // Nest stores `@UseGuards(...)` references under the `__guards__` key.
+    const guards = Reflect.getMetadata(
+      '__guards__',
+      PassesController,
+    ) as unknown[];
+    expect(guards).toBeDefined();
+    expect(guards).toContain(OptionalAuthGuard);
+    expect(guards).not.toContain(AuthGuard);
   });
 });

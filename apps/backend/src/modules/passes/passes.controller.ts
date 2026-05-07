@@ -1,11 +1,6 @@
 import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
-import { AuthGuard } from '../auth/auth.guard.js';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard.js';
 import { PassesService } from './passes.service.js';
 import {
   CheckRouteDto,
@@ -14,10 +9,14 @@ import {
   MountainPassDto,
 } from './dto/passes.dto.js';
 
+// Mountain pass status is public reference data — anyone planning a trip
+// (including unauthenticated visitors landing on /trips/planner) needs to
+// see open/closed status. We use OptionalAuthGuard so the endpoint stays
+// reachable without a Bearer token while still attaching `req.user` if a
+// valid one is supplied for future personalization.
 @ApiTags('passes')
 @Controller('passes')
-@UseGuards(AuthGuard)
-@ApiBearerAuth()
+@UseGuards(OptionalAuthGuard)
 export class PassesController {
   constructor(private readonly passesService: PassesService) {}
 
