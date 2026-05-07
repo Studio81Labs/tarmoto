@@ -32,9 +32,11 @@ import {
 } from "@/lib/trip-planner-overlays";
 import {
   buildTripPlannerRouteCollection,
+  buildTripPlannerSegmentHighlightCollection,
   buildTripPlannerWaypointCollection,
   getTripPlannerBounds,
 } from "@/lib/trip-planner-map";
+import { useTripStore } from "@/stores/trip";
 import {
   snapWaypointToRoadFeatures,
   type RoadSnapFeature,
@@ -60,6 +62,9 @@ const CURSOR_LAYER = "trip-planner-collab-cursors";
 const CURSOR_LABEL_LAYER = "trip-planner-collab-cursor-labels";
 const SUGGESTION_SOURCE = "trip-planner-suggestions";
 const SUGGESTION_LAYER = "trip-planner-suggestion-marker";
+const SEGMENT_HIGHLIGHT_SOURCE = "trip-planner-segment-highlight";
+const SEGMENT_HIGHLIGHT_GLOW_LAYER = "trip-planner-segment-highlight-glow";
+const SEGMENT_HIGHLIGHT_LINE_LAYER = "trip-planner-segment-highlight-line";
 interface TripPlannerMapProps {
   trip: Trip | null;
   month: number;
@@ -185,6 +190,9 @@ function TripPlannerMapContent({
   const [drawnRegion, setDrawnRegion] = useState<RegionDrawBbox | null>(null);
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const hydratePreferences = usePreferencesStore((s) => s.hydrate);
+  // Sidebar publishes the focused segment id so the map can paint the
+  // matching slice of the route in a contrasting color (issue #473).
+  const focusedSegmentId = useTripStore((s) => s.focusedSegmentId);
   const routeCollection = useMemo(
     () => buildTripPlannerRouteCollection(trip),
     [trip],
@@ -235,6 +243,10 @@ function TripPlannerMapContent({
   const suggestionCollection = useMemo(
     () => buildSuggestionCollection(suggestions),
     [suggestions],
+  );
+  const segmentHighlightCollection = useMemo(
+    () => buildTripPlannerSegmentHighlightCollection(trip, focusedSegmentId),
+    [trip, focusedSegmentId],
   );
   const highlightedClosures =
     routeClosures.length > 0 ? routeClosures : closures;
@@ -360,6 +372,11 @@ function TripPlannerMapContent({
     syncGeoJsonSource(map, PASS_MARKER_SOURCE, passMarkerCollection);
     syncGeoJsonSource(map, CURSOR_SOURCE, cursorCollection);
     syncGeoJsonSource(map, SUGGESTION_SOURCE, suggestionCollection);
+    syncGeoJsonSource(
+      map,
+      SEGMENT_HIGHLIGHT_SOURCE,
+      segmentHighlightCollection,
+    );
   }, [
     closureLineCollection,
     closureMarkerCollection,
@@ -367,6 +384,7 @@ function TripPlannerMapContent({
     passMarkerCollection,
     ready,
     routeCollection,
+    segmentHighlightCollection,
     suggestionCollection,
     waypointCollection,
   ]);
@@ -707,6 +725,50 @@ function ensurePlannerLayers(map: MapLibreMap): void {
         "line-color": "#F8FAFC",
         "line-width": ["interpolate", ["linear"], ["zoom"], 6, 2, 10, 4, 14, 6],
         "line-opacity": 0.9,
+      },
+    });
+  }
+  // Highlight for the segment the rider clicked in the sidebar (issue #473).
+  // Sources/layers are added before the waypoint markers so the markers stay
+  // visible and tappable on top of the highlighted line.
+  if (!map.getSource(SEGMENT_HIGHLIGHT_SOURCE)) {
+    map.addSource(SEGMENT_HIGHLIGHT_SOURCE, {
+      type: "geojson",
+      data: buildTripPlannerSegmentHighlightCollection(null, null),
+    });
+  }
+  if (!map.getLayer(SEGMENT_HIGHLIGHT_GLOW_LAYER)) {
+    map.addLayer({
+      id: SEGMENT_HIGHLIGHT_GLOW_LAYER,
+      type: "line",
+      source: SEGMENT_HIGHLIGHT_SOURCE,
+      paint: {
+        "line-color": "#0ED3CF",
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          6,
+          8,
+          10,
+          14,
+          14,
+          22,
+        ],
+        "line-opacity": 0.35,
+        "line-blur": 3,
+      },
+    });
+  }
+  if (!map.getLayer(SEGMENT_HIGHLIGHT_LINE_LAYER)) {
+    map.addLayer({
+      id: SEGMENT_HIGHLIGHT_LINE_LAYER,
+      type: "line",
+      source: SEGMENT_HIGHLIGHT_SOURCE,
+      paint: {
+        "line-color": "#0ED3CF",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 6, 3, 10, 5, 14, 7],
+        "line-opacity": 1,
       },
     });
   }

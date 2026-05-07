@@ -1,5 +1,5 @@
 import type { Feature, FeatureCollection, LineString, Point } from "geojson";
-import type { Trip } from "@/lib/types";
+import type { RoutePreviewSegment, Trip, TripDay } from "@/lib/types";
 
 export type PlannerBbox = [number, number, number, number];
 
@@ -14,6 +14,12 @@ type WaypointProperties = {
   dayNumber: number;
   waypointType: string;
   label: string;
+};
+
+type SegmentHighlightProperties = {
+  segmentId: string;
+  dayNumber: number;
+  orderInDay: number;
 };
 
 export function buildTripPlannerRouteCollection(
@@ -79,6 +85,82 @@ export function buildTripPlannerWaypointCollection(
   };
 }
 
+/**
+ * Build a single-feature collection containing the geometry of the focused
+ * segment so the map can render a highlight layer (issue #473). Returns an
+ * empty collection when no segment is focused, the segment can't be located,
+ * or the day has no geometry to slice.
+ *
+ * Segments don't carry their own line geometry; they're built as
+ * equal-distance chunks of the day's `routeGeometry` (see
+ * `trip-planner-builder` and `gpx-kml-import`). We mirror that contract here
+ * by slicing the day's polyline by `orderInDay` / segment count, which keeps
+ * the highlight visually aligned with what the rider sees in the sidebar.
+ */
+export function buildTripPlannerSegmentHighlightCollection(
+  trip: Trip | null,
+  segmentId: string | null,
+): FeatureCollection<LineString, SegmentHighlightProperties> {
+  if (!trip || !segmentId) return emptySegmentHighlightCollection();
+
+  for (const day of trip.days) {
+    const segments = day.segments;
+    if (!segments || segments.length === 0) continue;
+    const segment = segments.find((entry) => entry.id === segmentId);
+    if (!segment) continue;
+
+    const coordinates = sliceDayCoordinatesForSegment(day, segment, segments);
+    if (coordinates.length < 2) continue;
+
+    return {
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          properties: {
+            segmentId: segment.id,
+            dayNumber: segment.dayNumber,
+            orderInDay: segment.orderInDay,
+          },
+          geometry: { type: "LineString", coordinates },
+        },
+      ],
+    };
+  }
+
+  return emptySegmentHighlightCollection();
+}
+
+function sliceDayCoordinatesForSegment(
+  day: TripDay,
+  segment: RoutePreviewSegment,
+  segments: RoutePreviewSegment[],
+): [number, number][] {
+  const dayCoordinates = getDayRouteCoordinates(day);
+  if (dayCoordinates.length < 2) return [];
+
+  // Sort segments deterministically by `orderInDay` so the highlight slice
+  // matches the rider's visual ordering in the sidebar even if the array
+  // arrived out of order.
+  const orderedSegments = [...segments].sort(
+    (a, b) => a.orderInDay - b.orderInDay,
+  );
+  const segmentIndex = orderedSegments.findIndex(
+    (entry) => entry.id === segment.id,
+  );
+  if (segmentIndex < 0) return [];
+
+  const segmentCount = orderedSegments.length;
+  const lastIndex = dayCoordinates.length - 1;
+  const startFraction = segmentIndex / segmentCount;
+  const endFraction = (segmentIndex + 1) / segmentCount;
+  const startIdx = Math.max(0, Math.floor(startFraction * lastIndex));
+  const endIdx = Math.min(lastIndex, Math.ceil(endFraction * lastIndex));
+  if (endIdx <= startIdx) return [];
+
+  return dayCoordinates.slice(startIdx, endIdx + 1);
+}
+
 export function getTripPlannerBounds(trip: Trip | null): PlannerBbox | null {
   if (!trip) return null;
 
@@ -104,6 +186,16 @@ export function getTripPlannerBounds(trip: Trip | null): PlannerBbox | null {
   }
 
   return [west, south, east, north];
+}
+
+function emptySegmentHighlightCollection(): FeatureCollection<
+  LineString,
+  SegmentHighlightProperties
+> {
+  return {
+    type: "FeatureCollection",
+    features: [],
+  };
 }
 
 function getDayRouteCoordinates(day: Trip["days"][number]): [number, number][] {

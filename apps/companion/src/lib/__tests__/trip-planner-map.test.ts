@@ -1,6 +1,7 @@
-import type { Trip } from "@/lib/types";
+import type { RoutePreviewSegment, Trip } from "@/lib/types";
 import {
   buildTripPlannerRouteCollection,
+  buildTripPlannerSegmentHighlightCollection,
   buildTripPlannerWaypointCollection,
   getTripPlannerBounds,
 } from "../trip-planner-map";
@@ -247,6 +248,167 @@ describe("buildTripPlannerWaypointCollection", () => {
     );
 
     expect(collection.features[0]?.properties.label).toBe("Waypoint");
+  });
+});
+
+describe("buildTripPlannerSegmentHighlightCollection", () => {
+  function segment(
+    overrides: Partial<RoutePreviewSegment>,
+  ): RoutePreviewSegment {
+    return {
+      id: "seg-default",
+      name: "Segment",
+      dayNumber: 2,
+      orderInDay: 0,
+      distanceKm: 10,
+      qualityScore: 4,
+      qualityTier: "good",
+      surfaceType: "asphalt",
+      curvinessScore: 50,
+      elevationProfile: [],
+      photos: [],
+      activeHazards: [],
+      ...overrides,
+    };
+  }
+
+  function tripWithSegments(): Trip {
+    return trip({
+      days: [
+        {
+          dayNumber: 1,
+          title: "Empty day",
+          distanceKm: 0,
+          durationMinutes: 0,
+          elevationGain: 0,
+          avgQuality: 0,
+          waypoints: [],
+          segments: [],
+        },
+        {
+          dayNumber: 2,
+          title: "Day two",
+          distanceKm: 12,
+          durationMinutes: 30,
+          elevationGain: 90,
+          avgQuality: 4,
+          routeGeometry: {
+            type: "LineString",
+            coordinates: [
+              [14.7, 50.25],
+              [14.75, 50.27],
+              [14.82, 50.3],
+              [14.88, 50.33],
+              [14.95, 50.36],
+            ],
+          },
+          waypoints: [
+            {
+              id: "start-2",
+              name: "Start",
+              location: { lng: 14.7, lat: 50.25 },
+              type: "start",
+            },
+            {
+              id: "end-2",
+              name: "End",
+              location: { lng: 14.95, lat: 50.36 },
+              type: "end",
+            },
+          ],
+          segments: [
+            segment({ id: "seg-2-1", orderInDay: 0 }),
+            segment({ id: "seg-2-2", orderInDay: 1 }),
+          ],
+        },
+      ],
+    });
+  }
+
+  it("returns an empty collection when no segment is focused", () => {
+    expect(
+      buildTripPlannerSegmentHighlightCollection(tripWithSegments(), null)
+        .features,
+    ).toEqual([]);
+  });
+
+  it("returns an empty collection when the trip is null", () => {
+    expect(
+      buildTripPlannerSegmentHighlightCollection(null, "seg-2-1").features,
+    ).toEqual([]);
+  });
+
+  it("returns an empty collection for an unknown segment id", () => {
+    expect(
+      buildTripPlannerSegmentHighlightCollection(
+        tripWithSegments(),
+        "seg-missing",
+      ).features,
+    ).toEqual([]);
+  });
+
+  it("slices the day route into the chunk for the first segment", () => {
+    const collection = buildTripPlannerSegmentHighlightCollection(
+      tripWithSegments(),
+      "seg-2-1",
+    );
+
+    expect(collection.features).toHaveLength(1);
+    expect(collection.features[0]).toMatchObject({
+      properties: {
+        segmentId: "seg-2-1",
+        dayNumber: 2,
+        orderInDay: 0,
+      },
+      geometry: {
+        type: "LineString",
+        coordinates: [
+          [14.7, 50.25],
+          [14.75, 50.27],
+          [14.82, 50.3],
+        ],
+      },
+    });
+  });
+
+  it("slices the day route into the chunk for the last segment", () => {
+    const collection = buildTripPlannerSegmentHighlightCollection(
+      tripWithSegments(),
+      "seg-2-2",
+    );
+
+    expect(collection.features[0]?.geometry.coordinates).toEqual([
+      [14.82, 50.3],
+      [14.88, 50.33],
+      [14.95, 50.36],
+    ]);
+  });
+
+  it("falls back to the day waypoints line when route geometry is missing", () => {
+    const trip = tripWithSegments();
+    const day = trip.days[1]!;
+    delete (day as { routeGeometry?: unknown }).routeGeometry;
+
+    const collection = buildTripPlannerSegmentHighlightCollection(
+      trip,
+      "seg-2-1",
+    );
+
+    expect(collection.features).toHaveLength(1);
+    // With only two waypoints (start and end), the highlight degrades to the
+    // straight line between them — better than no feedback at all.
+    expect(collection.features[0]?.geometry.coordinates).toEqual([
+      [14.7, 50.25],
+      [14.95, 50.36],
+    ]);
+  });
+
+  it("ignores days that have no segments", () => {
+    const collection = buildTripPlannerSegmentHighlightCollection(
+      tripWithSegments(),
+      "seg-1-anything",
+    );
+    expect(collection.features).toEqual([]);
   });
 });
 
