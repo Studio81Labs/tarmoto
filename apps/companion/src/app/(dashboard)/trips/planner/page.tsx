@@ -1023,7 +1023,7 @@ export default function TripPlannerPage() {
               appendPlannerWaypoint(selectedDayIndex, location, plannerParams)
             }
             onMoveWaypoint={(dayNumber, waypointId, location) =>
-              moveWaypoint(dayNumber - 1, waypointId, location)
+              moveWaypoint(dayNumber - 1, waypointId, location, plannerParams)
             }
             collaboratorCursors={collabSession.cursors}
             suggestions={collabSession.suggestions}

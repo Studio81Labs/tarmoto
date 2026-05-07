@@ -202,6 +202,7 @@ type TripStoreSnapshot = {
     dayIndex: number,
     waypointId: string,
     location: { lng: number; lat: number },
+    parameters?: Trip["parameters"],
   ) => void;
   reorderWaypoints: (
     dayIndex: number,
@@ -442,8 +443,22 @@ describe("TripPlannerPage", () => {
     );
   });
 
-  it("dispatches moveWaypoint with the matching day index when a marker is dropped on the map", () => {
+  it("dispatches moveWaypoint with the matching day index and live planner params when a marker is dropped on the map", () => {
     render(<TripPlannerPage />);
+
+    // Change controls so the test can assert the *live* sidebar values
+    // are forwarded — not the trip's persisted parameters. Without
+    // threading these through, drag-rebuilds would silently use the
+    // last saved parameters and ignore the rider's current settings.
+    fireEvent.change(screen.getByLabelText("Number of days"), {
+      target: { value: "5" },
+    });
+    fireEvent.change(screen.getByLabelText("Road preference"), {
+      target: { value: "scenic" },
+    });
+    fireEvent.change(screen.getByLabelText("Minimum road quality"), {
+      target: { value: "4" },
+    });
 
     const latestMapProps = mockedTripPlannerMap.mock.calls.at(-1)?.[0] as
       | {
@@ -460,10 +475,21 @@ describe("TripPlannerPage", () => {
 
     onMoveWaypoint?.(2, "wp-via-1", { lng: 14.55, lat: 50.12 });
 
-    expect(storeState.moveWaypoint).toHaveBeenCalledWith(1, "wp-via-1", {
-      lng: 14.55,
-      lat: 50.12,
-    });
+    expect(storeState.moveWaypoint).toHaveBeenCalledWith(
+      1,
+      "wp-via-1",
+      { lng: 14.55, lat: 50.12 },
+      {
+        days: 5,
+        dailyKmTarget: 250,
+        roadPreference: "scenic",
+        surfacePreference: ["asphalt"],
+        avoidHighways: true,
+        avoidTolls: false,
+        avoidUnpaved: true,
+        minQuality: 4,
+      },
+    );
   });
 
   it("generates itinerary options from the planner parameters and selects the best-fit trip", async () => {

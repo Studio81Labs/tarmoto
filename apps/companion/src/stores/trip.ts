@@ -40,6 +40,7 @@ interface TripState {
     dayIndex: number,
     waypointId: string,
     location: { lng: number; lat: number },
+    parameters?: Trip["parameters"],
   ) => void;
   reorderWaypoints: (
     dayIndex: number,
@@ -176,7 +177,7 @@ export const useTripStore = create<TripState & TripStoreHistory>((set) => ({
       }),
     ),
 
-  moveWaypoint: (dayIndex, waypointId, location) =>
+  moveWaypoint: (dayIndex, waypointId, location, parameters) =>
     set((state) =>
       commitTripChange(state, (activeTrip) => {
         if (!activeTrip) return activeTrip;
@@ -199,14 +200,22 @@ export const useTripStore = create<TripState & TripStoreHistory>((set) => ({
           ...previous,
           location: { lng: location.lng, lat: location.lat },
         };
-        days[dayIndex] = updatePlannerDayRoute(
-          day,
-          waypoints,
-          activeTrip.parameters,
-        );
+        // Mirror `appendPlannerWaypoint`: when the page passes the live
+        // sidebar `plannerParams`, fold them into the trip so the route
+        // is rebuilt with the rider's current Road preference / Minimum
+        // quality etc. instead of the previously persisted parameters.
+        const nextParameters = parameters
+          ? mergePlannerParameters(
+              activeTrip.parameters,
+              parameters,
+              activeTrip.days.length,
+            )
+          : activeTrip.parameters;
+        days[dayIndex] = updatePlannerDayRoute(day, waypoints, nextParameters);
         return {
           ...activeTrip,
           days,
+          parameters: nextParameters,
           updatedAt: new Date().toISOString(),
         };
       }),

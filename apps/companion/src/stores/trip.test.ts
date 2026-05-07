@@ -233,6 +233,61 @@ describe("useTripStore planner editing", () => {
     expect(useTripStore.getState().undoStack).toHaveLength(undoBefore);
   });
 
+  it("rebuilds the moved waypoint's day with the supplied planner parameters", () => {
+    const store = useTripStore.getState();
+
+    // Seed the trip with one set of parameters so we can prove the
+    // rebuild uses the *fresh* params passed alongside the move, not
+    // the trip's persisted ones.
+    const initialParameters: TripParameters = {
+      days: 1,
+      dailyKmTarget: 200,
+      roadPreference: "direct",
+      surfacePreference: ["asphalt"],
+      avoidHighways: true,
+      avoidTolls: false,
+      avoidUnpaved: true,
+      minQuality: 3,
+    };
+    store.appendPlannerWaypoint(
+      0,
+      { lng: 14.41, lat: 50.08 },
+      initialParameters,
+    );
+    store.appendPlannerWaypoint(
+      0,
+      { lng: 14.61, lat: 50.19 },
+      initialParameters,
+    );
+
+    const startWaypoint =
+      useTripStore.getState().activeTrip?.days[0]?.waypoints[0];
+    expect(startWaypoint).toBeDefined();
+
+    const updatedParameters: TripParameters = {
+      ...initialParameters,
+      roadPreference: "curvy",
+      minQuality: 4,
+      dailyKmTarget: 320,
+    };
+
+    useTripStore
+      .getState()
+      .moveWaypoint(
+        0,
+        startWaypoint!.id,
+        { lng: 14.5, lat: 50.12 },
+        updatedParameters,
+      );
+
+    const after = useTripStore.getState().activeTrip;
+    expect(after?.parameters).toEqual({ ...updatedParameters, days: 1 });
+    expect(after?.days[0]?.waypoints[0]?.location).toEqual({
+      lng: 14.5,
+      lat: 50.12,
+    });
+  });
+
   it("preserves existing route geometry when adding stop suggestions", () => {
     useTripStore.setState({
       activeTrip: {
