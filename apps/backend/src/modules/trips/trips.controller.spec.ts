@@ -41,6 +41,7 @@ describe('TripsController', () => {
       join: jest.fn().mockResolvedValue(mockDetail),
       update: jest.fn().mockResolvedValue(mockDetail),
       remove: jest.fn().mockResolvedValue(undefined),
+      invite: jest.fn().mockResolvedValue(undefined),
       importFromRoute: jest.fn().mockResolvedValue(mockDetail),
       importFromShare: jest.fn().mockResolvedValue(mockDetail),
     };
@@ -124,6 +125,13 @@ describe('TripsController', () => {
     const result = await controller.importFromShare(mockReq, dto);
     expect(service.importFromShare).toHaveBeenCalledWith('user-1', dto);
     expect(result.id).toBe('trip-1');
+  });
+
+  it('POST /trips/:tripId/invite delegates to service.invite and returns queued status', async () => {
+    const dto = { email: 'rider@example.com', message: 'Come ride with us!' };
+    const result = await controller.invite(mockReq, 'trip-1', dto);
+    expect(service.invite).toHaveBeenCalledWith('user-1', 'trip-1', dto);
+    expect(result).toEqual({ status: 'queued' });
   });
 
   it('POST /trips/:tripId/generate forwards the DTO to the generator', async () => {

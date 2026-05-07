@@ -21,7 +21,8 @@ export type EmailTag =
   | 'subscription-cancelled'
   | 'data-export-ready'
   | 'account-deletion-scheduled'
-  | 'account-deletion-completed';
+  | 'account-deletion-completed'
+  | 'trip-invite';
 
 export interface RenderedTemplate {
   subject: string;
@@ -301,6 +302,57 @@ After the scheduled date, your personal data will be permanently erased. Anonymi
   });
 
   return { subject, html, text, tag: 'account-deletion-scheduled' };
+};
+
+export interface TripInviteContext extends BaseContext {
+  inviterDisplayName: string;
+  tripTitle: string;
+  joinUrl: string;
+  inviteCode: string;
+  message: string | null;
+}
+
+export const tripInviteTemplate = (
+  ctx: TripInviteContext,
+): RenderedTemplate => {
+  const subject = `${ctx.inviterDisplayName} invited you to plan "${ctx.tripTitle}" on Tarmoto`;
+  const intro = `${ctx.inviterDisplayName} invited you to collaborate on a Tarmoto trip: ${ctx.tripTitle}.`;
+  const messageBlock = ctx.message
+    ? `\n\nMessage from ${ctx.inviterDisplayName}:\n${ctx.message}\n`
+    : '';
+  const text = `Hi there,
+
+${intro}${messageBlock}
+
+Open the trip planner to accept the invite:
+
+${ctx.joinUrl}
+
+If the link doesn't open automatically, sign in to Tarmoto and enter this invite code on the join screen: ${ctx.inviteCode}
+
+If you don't have a Tarmoto account yet, you can create one with this email and the invite will be waiting for you.${renderTextFooter(ctx.preferencesUrl)}`;
+
+  const html = renderLayout({
+    preheader: `${ctx.inviterDisplayName} invited you to "${ctx.tripTitle}".`,
+    preferencesUrl: ctx.preferencesUrl,
+    bodyHtml: `
+      <p>Hi there,</p>
+      <p>${escapeHtml(intro)}</p>
+      ${
+        ctx.message
+          ? `<blockquote style="margin:24px 0;padding:12px 16px;border-left:3px solid #06b6d4;color:#cbd5e1;background:#0f172a;border-radius:4px;">${escapeHtml(ctx.message)}</blockquote>`
+          : ''
+      }
+      <p style="margin:32px 0;">
+        <a href="${escapeHtml(ctx.joinUrl)}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:600;border-radius:8px;">Open trip in Tarmoto</a>
+      </p>
+      <p style="color:#94a3b8;font-size:13px;">Or paste this link in your browser:<br/><a href="${escapeHtml(ctx.joinUrl)}" style="color:#06b6d4;word-break:break-all;">${escapeHtml(ctx.joinUrl)}</a></p>
+      <p style="color:#94a3b8;font-size:13px;">Invite code (in case the link doesn't open): <strong style="color:#f8fafc;">${escapeHtml(ctx.inviteCode)}</strong></p>
+      <p style="color:#94a3b8;font-size:13px;">Don't have a Tarmoto account? Sign up with this email and the invite will be waiting for you.</p>
+    `,
+  });
+
+  return { subject, html, text, tag: 'trip-invite' };
 };
 
 export interface AccountDeletionCompletedContext extends BaseContext {

@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/unbound-method */
 
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import {
   BadRequestException,
@@ -15,6 +16,8 @@ import { TripDay } from '../../entities/trip-day.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
 import { TripShare } from '../../entities/trip-share.entity.js';
+import { User } from '../../entities/user.entity.js';
+import { EmailService } from '../email/email.service.js';
 import { EventsGateway } from '../events/events.gateway.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 import { TripSharesService } from '../trip-shares/trip-shares.service.js';
@@ -124,9 +127,12 @@ describe('TripsService', () => {
   // / `mockRejectedValue` on a properly-typed `jest.Mock` without lint
   // tripping on the deeply-nested mock cast on `tripRepo.manager.*`.
   let transactionMock: jest.Mock;
+  let userRepo: jest.Mocked<Repository<User>>;
   let events: jest.Mocked<Pick<EventsGateway, 'emitToTrip'>>;
   let activity: jest.Mocked<Pick<TripActivityService, 'recordSafe'>>;
   let tripShares: jest.Mocked<Pick<TripSharesService, 'findActiveByToken'>>;
+  let email: jest.Mocked<Pick<EmailService, 'sendTripInvite'>>;
+  let config: jest.Mocked<Pick<ConfigService, 'get'>>;
 
   beforeEach(async () => {
     // The transactional `create` flow calls `tripRepo.manager.transaction`
@@ -189,18 +195,33 @@ describe('TripsService', () => {
       findOne: jest.fn().mockResolvedValue(null),
     } as unknown as jest.Mocked<Repository<TripMember>>;
 
+    userRepo = {
+      findOne: jest.fn().mockResolvedValue(null),
+    } as unknown as jest.Mocked<Repository<User>>;
+
     events = { emitToTrip: jest.fn() };
     activity = { recordSafe: jest.fn().mockResolvedValue(undefined) };
     tripShares = { findActiveByToken: jest.fn() };
+    email = { sendTripInvite: jest.fn().mockResolvedValue(null) };
+    config = {
+      get: jest.fn((key: string) =>
+        key === 'TARMOTO_COMPANION_URL'
+          ? 'https://app.tarmoto.test'
+          : undefined,
+      ),
+    } as unknown as jest.Mocked<Pick<ConfigService, 'get'>>;
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TripsService,
         { provide: getRepositoryToken(Trip), useValue: tripRepo },
         { provide: getRepositoryToken(TripMember), useValue: memberRepo },
+        { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: EventsGateway, useValue: events },
         { provide: TripActivityService, useValue: activity },
         { provide: TripSharesService, useValue: tripShares },
+        { provide: EmailService, useValue: email },
+        { provide: ConfigService, useValue: config },
       ],
     }).compile();
 
@@ -1543,6 +1564,174 @@ describe('TripsService', () => {
 
       expect(tripRepo.delete).not.toHaveBeenCalled();
       expect(events.emitToTrip).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('invite', () => {
+    const RECIPIENT = 'rider@example.com';
+
+    beforeEach(() => {
+      tripRepo.findOne = jest.fn().mockResolvedValue(makeOwnedTrip());
+    });
+
+    it('owner sends a trip-invite email and records audit activity', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      // First userRepo.findOne resolves the inviter; second checks for a
+      // pre-existing recipient account.
+      userRepo.findOne
+        .mockResolvedValueOnce({
+          id: OWNER_ID,
+          display_name: 'Adam',
+          email: 'adam@example.com',
+        } as User)
+        .mockResolvedValueOnce(null);
+
+      await expect(
+        service.invite(OWNER_ID, TRIP_ID, {
+          email: RECIPIENT,
+          message: 'Come ride with us!',
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(email.sendTripInvite).toHaveBeenCalledTimes(1);
+      const [to, ctx] = email.sendTripInvite.mock.calls[0];
+      expect(to).toBe(RECIPIENT);
+      expect(ctx).toMatchObject({
+        inviterDisplayName: 'Adam',
+        tripTitle: 'Big Italian Loop',
+        inviteCode: 'ABCDEFGH',
+        message: 'Come ride with us!',
+      });
+      expect(ctx.joinUrl).toBe(
+        `https://app.tarmoto.test/trips/join?trip_id=${TRIP_ID}&code=ABCDEFGH`,
+      );
+
+      expect(activity.recordSafe).toHaveBeenCalledWith(
+        TRIP_ID,
+        OWNER_ID,
+        'member_invited',
+        { recipient_email_domain: 'example.com', message_provided: true },
+      );
+    });
+
+    it('admin can also send invites (only owner+admin are privileged)', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'admin',
+      } as TripMember);
+      userRepo.findOne
+        .mockResolvedValueOnce({
+          id: OTHER_ID,
+          display_name: 'Eve',
+          email: 'eve@example.com',
+        } as User)
+        .mockResolvedValueOnce(null);
+
+      await expect(
+        service.invite(OTHER_ID, TRIP_ID, { email: RECIPIENT }),
+      ).resolves.toBeUndefined();
+      expect(email.sendTripInvite).toHaveBeenCalledTimes(1);
+      expect(activity.recordSafe).toHaveBeenCalledWith(
+        TRIP_ID,
+        OTHER_ID,
+        'member_invited',
+        { recipient_email_domain: 'example.com', message_provided: false },
+      );
+    });
+
+    it('404s plain members and non-members without sending mail', async () => {
+      // Plain member — non-privileged role.
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'member',
+      } as TripMember);
+      await expect(
+        service.invite(OTHER_ID, TRIP_ID, { email: RECIPIENT }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      // Non-member.
+      memberRepo.findOne.mockResolvedValueOnce(null);
+      await expect(
+        service.invite(OTHER_ID, TRIP_ID, { email: RECIPIENT }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(email.sendTripInvite).not.toHaveBeenCalled();
+      expect(activity.recordSafe).not.toHaveBeenCalled();
+    });
+
+    it('rejects self-invite with a 400 (caller is already a member)', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      userRepo.findOne.mockResolvedValueOnce({
+        id: OWNER_ID,
+        display_name: 'Adam',
+        email: RECIPIENT,
+      } as User);
+
+      await expect(
+        service.invite(OWNER_ID, TRIP_ID, { email: RECIPIENT }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(email.sendTripInvite).not.toHaveBeenCalled();
+      expect(activity.recordSafe).not.toHaveBeenCalled();
+    });
+
+    it('skips the email but still records activity when the recipient is already a teammate', async () => {
+      memberRepo.findOne
+        .mockResolvedValueOnce({ role: 'owner' } as TripMember) // caller
+        .mockResolvedValueOnce({
+          // recipient already a member
+          trip_id: TRIP_ID,
+          user_id: OTHER_ID,
+          role: 'member',
+        } as TripMember);
+      userRepo.findOne
+        .mockResolvedValueOnce({
+          id: OWNER_ID,
+          display_name: 'Adam',
+          email: 'adam@example.com',
+        } as User)
+        .mockResolvedValueOnce({ id: OTHER_ID, email: RECIPIENT } as User);
+
+      await expect(
+        service.invite(OWNER_ID, TRIP_ID, { email: RECIPIENT }),
+      ).resolves.toBeUndefined();
+
+      expect(email.sendTripInvite).not.toHaveBeenCalled();
+      expect(activity.recordSafe).toHaveBeenCalledWith(
+        TRIP_ID,
+        OWNER_ID,
+        'member_invited',
+        { recipient_email_domain: 'example.com', already_member: true },
+      );
+    });
+
+    it('payload only carries the email domain — local-part is dropped to limit PII in the audit log', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      userRepo.findOne
+        .mockResolvedValueOnce({
+          id: OWNER_ID,
+          display_name: 'Adam',
+          email: 'adam@example.com',
+        } as User)
+        .mockResolvedValueOnce(null);
+
+      await service.invite(OWNER_ID, TRIP_ID, {
+        email: 'private.address+plus@gmail.com',
+      });
+
+      const payload = activity.recordSafe.mock.calls[0][3] as Record<
+        string,
+        unknown
+      >;
+      expect(payload.recipient_email_domain).toBe('gmail.com');
+      // Local-part must NOT survive into the activity row — it would
+      // outlive the trip and persist someone else's email forever.
+      expect(JSON.stringify(payload)).not.toContain('private.address');
+      expect(JSON.stringify(payload)).not.toContain('plus');
     });
   });
 

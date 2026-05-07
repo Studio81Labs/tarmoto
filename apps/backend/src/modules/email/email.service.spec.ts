@@ -165,6 +165,17 @@ describe('EmailService', () => {
         },
         'account-deletion-completed',
       ],
+      [
+        'sendTripInvite',
+        {
+          inviterDisplayName: 'Adam',
+          tripTitle: 'Italian Loop',
+          joinUrl: 'https://app.tarmoto.app/trips/join?trip_id=t1&code=ABC',
+          inviteCode: 'ABCDEFGH',
+          message: 'Come ride!',
+        },
+        'trip-invite',
+      ],
     ])(
       '%s renders with the right tag and reaches the provider',
       async (method, ctx, expectedTag) => {

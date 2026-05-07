@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "a259fa98-3a7f-468b-b95c-a6c79917b792",
+    "_postman_id": "f69149e1-79cc-4fcc-af28-bb4ef73b733b",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -509,66 +509,17 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"make\": \"Honda\",\n  \"model\": \"Africa Twin\",\n  \"year\": 2024,\n  \"is_active\": false,\n  \"photo_url\": \"\",\n  \"icon\": \"\",\n  \"notes\": \"\"\n}",
+              "raw": "{\n  \"make\": \"Honda\",\n  \"model\": \"Africa Twin\",\n  \"year\": 2024,\n  \"is_active\": false,\n  \"photo_url\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
-            }
-          }
-        },
-        {
-          "name": "Get your active bike (or null)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/account/bikes/active",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "account", "bikes", "active"]
             }
           }
         },
         {
           "name": "Update a bike",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/account/bikes/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "account", "bikes", ":id"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": ""
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"make\": \"Honda\",\n  \"model\": \"Africa Twin\",\n  \"year\": 2024,\n  \"is_active\": true,\n  \"photo_url\": \"\",\n  \"icon\": \"\",\n  \"notes\": \"\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Update a bike (partial)",
           "request": {
             "method": "PATCH",
             "header": [
@@ -590,7 +541,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"make\": \"Honda\",\n  \"model\": \"Africa Twin\",\n  \"year\": 2024,\n  \"is_active\": true,\n  \"photo_url\": \"\",\n  \"icon\": \"\",\n  \"notes\": \"\"\n}",
+              "raw": "{\n  \"make\": \"Honda\",\n  \"model\": \"Africa Twin\",\n  \"year\": 2024,\n  \"is_active\": true,\n  \"photo_url\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2337,7 +2288,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"ride_type\": \"free\",\n  \"bike_id\": \"\"\n}",
+              "raw": "{\n  \"ride_type\": \"free\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2933,6 +2884,38 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"invite_code\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Email a trip invite link to a recipient",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/invite",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", ":tripId", "invite"],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"rider@example.com\",\n  \"message\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"

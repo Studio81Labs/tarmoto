@@ -19,6 +19,7 @@ import { User } from './user.entity.js';
 export type TripActivityAction =
   | 'member_joined'
   | 'member_left'
+  | 'member_invited'
   | 'trip_updated'
   | 'trip_generated'
   | 'suggestion_created'

@@ -3,8 +3,10 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 import { haversineKm, latLngToPoint, pointToLatLng } from '@tarmoto/shared';
@@ -13,12 +15,16 @@ import { TripDay } from '../../entities/trip-day.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
 import { TripWaypoint } from '../../entities/trip-waypoint.entity.js';
+import { User } from '../../entities/user.entity.js';
+import { getCompanionUrl } from '../../common/companion-url.js';
+import { EmailService } from '../email/email.service.js';
 import { EventsGateway } from '../events/events.gateway.js';
 import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 import { TripSharesService } from '../trip-shares/trip-shares.service.js';
 import { CreateTripDto } from './dto/create-trip.dto.js';
 import { FromShareTripDto } from './dto/from-share-trip.dto.js';
 import { ImportTripDto } from './dto/import-trip.dto.js';
+import { InviteTripDto } from './dto/invite-trip.dto.js';
 import { ListTripsDto } from './dto/list-trips.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
 import {
@@ -55,14 +61,20 @@ const PRIVILEGED_ROLES = new Set(['owner', 'admin']);
 
 @Injectable()
 export class TripsService {
+  private readonly logger = new Logger(TripsService.name);
+
   constructor(
     @InjectRepository(Trip)
     private readonly tripRepo: Repository<Trip>,
     @InjectRepository(TripMember)
     private readonly memberRepo: Repository<TripMember>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
     private readonly events: EventsGateway,
     private readonly activity: TripActivityService,
     private readonly tripShares: TripSharesService,
+    private readonly email: EmailService,
+    private readonly config: ConfigService,
   ) {}
 
   async create(userId: string, dto: CreateTripDto): Promise<TripDetailDto> {
@@ -672,6 +684,111 @@ export class TripsService {
     this.events.emitToTrip(tripId, 'trip:deleted', { trip_id: tripId });
   }
 
+  /**
+   * Send an email invite to a Tarmoto trip. Owner/admin only — plain
+   * members can't send invites because the invite code is the same code
+   * the owner shares verbally, and we don't want any teammate spamming
+   * recipients in the trip's name. The recipient does NOT need a
+   * Tarmoto account yet; the email explains how to sign up and join.
+   *
+   * Mail dispatch is best-effort: a delivery failure is logged inside
+   * `EmailService.sendTripInvite` (which never throws), so this method
+   * always returns once the activity row is recorded.
+   *
+   * The activity payload stores only the recipient's email DOMAIN (not
+   * the local-part) so a soft-deleted invitee's PII isn't preserved
+   * indefinitely in `trip_activity` after they ask Tarmoto to forget
+   * them. The inviter's mailbox already has the full address; that
+   * trail is sufficient for trip-level questions ("did Adam invite
+   * X?") without leaking the recipient's full address to every other
+   * trip member.
+   */
+  async invite(
+    userId: string,
+    tripId: string,
+    dto: InviteTripDto,
+  ): Promise<void> {
+    // Membership + role check first — collapse "no such trip" and "not
+    // privileged" into a 404 so the endpoint can't be used to enumerate
+    // trip ids or to probe roles.
+    const membership = await this.memberRepo.findOne({
+      where: { trip_id: tripId, user_id: userId },
+    });
+    if (!membership || !PRIVILEGED_ROLES.has(membership.role)) {
+      throw new NotFoundException('Trip not found');
+    }
+
+    const trip = await this.tripRepo.findOne({ where: { id: tripId } });
+    if (!trip) {
+      throw new NotFoundException('Trip not found');
+    }
+
+    const inviter = await this.userRepo.findOne({ where: { id: userId } });
+    const inviterName = inviter?.display_name ?? 'A Tarmoto rider';
+
+    // Self-invite is a no-op (the rider is already a member); rejecting
+    // here keeps the activity log honest and avoids paying the email
+    // send cost. Distinct from the membership-row "already a teammate"
+    // case below — that one we still log a soft warning for, since the
+    // inviter may have lost track of who's already on the trip.
+    if (
+      inviter?.email &&
+      inviter.email.toLowerCase() === dto.email.toLowerCase()
+    ) {
+      throw new BadRequestException('You are already a member of this trip');
+    }
+
+    // If the recipient has a Tarmoto account and is already a member,
+    // log a warning but DON'T send the email — the invite would land in
+    // their inbox with a code that they don't need.
+    const existingUser = await this.userRepo.findOne({
+      where: { email: dto.email },
+    });
+    if (existingUser) {
+      const alreadyMember = await this.memberRepo.findOne({
+        where: { trip_id: tripId, user_id: existingUser.id },
+      });
+      if (alreadyMember) {
+        this.logger.log(
+          `Skipped trip-invite email — recipient is already a member ` +
+            `(trip=${tripId}, user=${existingUser.id})`,
+        );
+        // Still record activity so the inviter sees their own action in
+        // the timeline; payload flags the no-op so the UI can render
+        // "already a member" instead of "invite sent".
+        await this.activity.recordSafe(tripId, userId, 'member_invited', {
+          recipient_email_domain: emailDomain(dto.email),
+          already_member: true,
+        });
+        return;
+      }
+    }
+
+    const joinUrl = this.buildInviteUrl(tripId, trip.invite_code);
+
+    await this.email.sendTripInvite(dto.email, {
+      inviterDisplayName: inviterName,
+      tripTitle: trip.title,
+      joinUrl,
+      inviteCode: trip.invite_code,
+      message: dto.message?.trim() ? dto.message.trim() : null,
+    });
+
+    await this.activity.recordSafe(tripId, userId, 'member_invited', {
+      recipient_email_domain: emailDomain(dto.email),
+      message_provided: Boolean(dto.message?.trim()),
+    });
+  }
+
+  private buildInviteUrl(tripId: string, inviteCode: string): string {
+    const base = getCompanionUrl(this.config);
+    const params = new URLSearchParams({
+      trip_id: tripId,
+      code: inviteCode,
+    });
+    return `${base}/trips/join?${params.toString()}`;
+  }
+
   async list(userId: string, query: ListTripsDto): Promise<TripSummaryDto[]> {
     // Trips visible to the caller = trips where they appear in
     // `trip_members` (the `create` flow inserts the owner as a member,
@@ -932,6 +1049,12 @@ function isInviteCodeViolation(err: unknown): boolean {
   if (!isUniqueViolation(err)) return false;
   const constraint = (err as { constraint?: unknown }).constraint;
   return constraint === INVITE_CODE_INDEX;
+}
+
+function emailDomain(email: string): string {
+  const at = email.lastIndexOf('@');
+  if (at === -1 || at === email.length - 1) return 'unknown';
+  return email.slice(at + 1).toLowerCase();
 }
 
 function totalDistanceKm(points: Array<{ lat: number; lng: number }>): number {

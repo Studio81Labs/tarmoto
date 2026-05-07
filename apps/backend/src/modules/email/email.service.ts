@@ -17,6 +17,7 @@ import {
   type RenderedTemplate,
   type SubscriptionCancelledContext,
   type SubscriptionConfirmedContext,
+  type TripInviteContext,
   type VerificationContext,
   accountDeletionCompletedTemplate,
   accountDeletionScheduledTemplate,
@@ -25,6 +26,7 @@ import {
   passwordResetTemplate,
   subscriptionCancelledTemplate,
   subscriptionConfirmedTemplate,
+  tripInviteTemplate,
   verificationTemplate,
 } from './templates/index.js';
 
@@ -114,6 +116,13 @@ export class EmailService {
     ctx: ContextWithoutBase<DataExportReadyContext>,
   ): Promise<EmailSendResult | null> {
     return this.dispatch(to, dataExportReadyTemplate(this.withBase(ctx)));
+  }
+
+  async sendTripInvite(
+    to: string,
+    ctx: ContextWithoutBase<TripInviteContext>,
+  ): Promise<EmailSendResult | null> {
+    return this.dispatch(to, tripInviteTemplate(this.withBase(ctx)));
   }
 
   async sendAccountDeletionScheduled(
