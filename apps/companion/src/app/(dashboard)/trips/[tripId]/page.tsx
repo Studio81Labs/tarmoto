@@ -233,9 +233,10 @@ export default function TripDetailPage() {
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
               <span className="inline-flex items-center gap-1">
-                <Calendar size={11} /> {trip.days.length}
-                {t("day ")}
-                {trip.days.length === 1 ? "" : "s"}
+                <Calendar size={11} />{" "}
+                {t(trip.days.length === 1 ? "{count} day" : "{count} days", {
+                  count: trip.days.length,
+                })}
               </span>
               <span className="inline-flex items-center gap-1">
                 <Route size={11} /> {formatDistance(totalDistance)}
@@ -247,14 +248,22 @@ export default function TripDetailPage() {
               )}
               {totalElevation > 0 && (
                 <span className="inline-flex items-center gap-1">
-                  <Mountain size={11} /> {Math.round(totalElevation)}
-                  {t("m gain ")}
+                  <Mountain size={11} />{" "}
+                  {t("{elevation} m gain", {
+                    elevation: Math.round(totalElevation),
+                  })}
                 </span>
               )}
               <span className="inline-flex items-center gap-1">
-                <User size={11} /> {loaded.members.length}
-                {t("member ")}
-                {loaded.members.length === 1 ? "" : "s"}
+                <User size={11} />{" "}
+                {t(
+                  loaded.members.length === 1
+                    ? "{count} member"
+                    : "{count} members",
+                  {
+                    count: loaded.members.length,
+                  },
+                )}
               </span>
             </div>
           </div>
