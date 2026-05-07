@@ -1,9 +1,10 @@
 "use client";
-import { t } from "@/i18n";
 import { useState } from "react";
 import Link from "next/link";
+import { useI18n } from "@/i18n/I18nProvider";
 import { forgotPassword } from "@/lib/api";
 export default function ForgotPasswordPage() {
+  const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
