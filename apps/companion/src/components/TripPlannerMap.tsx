@@ -564,6 +564,11 @@ function TripPlannerMapContent({
       if (!active) return;
       active = null;
       setCursor("");
+      // A cancelled touch never produces the synthetic post-pointer
+      // `click` that would normally clear this flag — without this,
+      // the rider's next legitimate map click would be silently
+      // swallowed by `handleMapClick`.
+      swallowNextClickRef.current = false;
     };
     const finishDrag = (
       lngLat: { lng: number; lat: number },

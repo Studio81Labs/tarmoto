@@ -1270,6 +1270,71 @@ describe("TripPlannerMap", () => {
     expect(preventDefault).toHaveBeenCalled();
   });
 
+  it("clears click suppression when a touch gesture on a waypoint is cancelled", () => {
+    const handleAddWaypoint = vi.fn();
+    const handleMoveWaypoint = vi.fn();
+    const layerHandlers = new Map<string, (event: unknown) => void>();
+    const mapHandlers = new Map<string, (event: unknown) => void>();
+    mockMap.on.mockImplementation(
+      (event: string, layerOrHandler: unknown, maybeHandler?: unknown) => {
+        if (typeof layerOrHandler === "string") {
+          layerHandlers.set(
+            `${event}:${layerOrHandler}`,
+            maybeHandler as (event: unknown) => void,
+          );
+        } else {
+          mapHandlers.set(event, layerOrHandler as (event: unknown) => void);
+        }
+        return mockMap;
+      },
+    );
+    mockMap.off.mockImplementation((event: string, layerOrHandler: unknown) => {
+      if (typeof layerOrHandler === "string") {
+        layerHandlers.delete(`${event}:${layerOrHandler}`);
+      } else {
+        mapHandlers.delete(event);
+      }
+      return mockMap;
+    });
+    mockMap.queryRenderedFeatures.mockReturnValue([]);
+
+    render(
+      <TripPlannerMap
+        trip={trip()}
+        month={7}
+        onAddWaypoint={handleAddWaypoint}
+        onMoveWaypoint={handleMoveWaypoint}
+      />,
+    );
+
+    // Touch a waypoint, never move past tolerance, then cancel —
+    // common when an OS gesture (e.g. system back swipe) interrupts.
+    act(() => {
+      layerHandlers.get("touchstart:trip-planner-waypoint-circle")?.({
+        preventDefault: vi.fn(),
+        features: [{ properties: { dayNumber: 1, waypointId: "start-1" } }],
+        point: { x: 100, y: 100 },
+        lngLat: { lng: 14.41, lat: 50.08 },
+      });
+      window.dispatchEvent(new Event("touchcancel"));
+    });
+
+    expect(handleMoveWaypoint).not.toHaveBeenCalled();
+
+    // The rider's next legitimate map click must still create a
+    // waypoint — the cancelled touch never produces the synthetic
+    // click that would normally clear `swallowNextClickRef`, so
+    // `cancelDrag` must clear it itself.
+    act(() => {
+      mapHandlers.get("click")?.({
+        point: { x: 320, y: 240 },
+        lngLat: { lng: 14.6, lat: 50.18 },
+      });
+    });
+
+    expect(handleAddWaypoint).toHaveBeenCalledTimes(1);
+  });
+
   it("finishes a drag on a window-level mouseup that lands outside the canvas", () => {
     const handleMoveWaypoint = vi.fn();
     const layerHandlers = new Map<string, (event: unknown) => void>();
