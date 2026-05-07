@@ -12,7 +12,9 @@ import { Ride } from '../../entities/ride.entity.js';
 import { RideStats } from '../../entities/ride-stats.entity.js';
 import { RideSegment } from '../../entities/ride-segment.entity.js';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
+import { Bike } from '../../entities/bike.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
+import { BikesService } from '../bikes/bikes.service.js';
 import { StartRideDto } from './dto/start-ride.dto.js';
 import { ListRidesDto } from './dto/list-rides.dto.js';
 import {
@@ -39,16 +41,22 @@ export class RidesService {
     private readonly segmentRepo: Repository<RideSegment>,
     @InjectRepository(SharedRide)
     private readonly sharedRideRepo: Repository<SharedRide>,
+    @InjectRepository(Bike)
+    private readonly bikeRepo: Repository<Bike>,
     private readonly csvService: CsvService,
     private readonly privacy: PrivacyPreferencesService,
+    private readonly bikesService: BikesService,
   ) {}
 
   async start(userId: string, dto: StartRideDto): Promise<RideResponseDto> {
+    const bikeId = await this.resolveBikeId(userId, dto.bike_id);
+
     const ride = this.rideRepo.create({
       user_id: userId,
       ride_type: dto.ride_type ?? 'free',
       started_at: new Date(),
       status: 'active',
+      bike_id: bikeId,
     });
 
     let saved: Ride;
@@ -279,6 +287,7 @@ export class RidesService {
       max_speed: ride.max_speed,
       avg_road_quality: ride.avg_road_quality,
       avg_curviness: ride.avg_curviness ?? null,
+      bike_id: ride.bike_id ?? null,
       name: ride.name ?? null,
       duration_min: durationMin,
       route_geometry: routeGeometry,
@@ -460,7 +469,35 @@ ${tracks.join('\n')}
       avg_speed: ride.avg_speed,
       avg_road_quality: ride.avg_road_quality,
       avg_curviness: ride.avg_curviness ?? null,
+      bike_id: ride.bike_id ?? null,
     };
+  }
+
+  /**
+   * Resolve which bike a `/rides/start` request should be tagged with.
+   *
+   *   - Explicit `bike_id` in the payload: validate ownership and use
+   *     it. Cross-user IDs are rejected as 400 so a stray client never
+   *     attaches one rider's ride to another rider's bike.
+   *   - Omitted: fall back to the rider's currently active bike (or
+   *     null if they haven't added any yet — legacy rides also keep
+   *     `bike_id = null`).
+   */
+  private async resolveBikeId(
+    userId: string,
+    requestedBikeId: string | undefined,
+  ): Promise<string | null> {
+    if (requestedBikeId) {
+      const owned = await this.bikeRepo.findOne({
+        where: { id: requestedBikeId, user_id: userId },
+      });
+      if (!owned) {
+        throw new BadRequestException('Bike not found in your garage');
+      }
+      return owned.id;
+    }
+    const active = await this.bikesService.findActive(userId);
+    return active?.id ?? null;
   }
 
   toSummary(ride: Ride): RideSummaryDto {

@@ -64,6 +64,9 @@ import type {
   RiddenSegmentsList,
   UnriddenSegment,
   TripSharePublic,
+  Bike,
+  CreateBikeInput,
+  UpdateBikeInput,
 } from "@/types";
 import {
   client,
@@ -378,16 +381,59 @@ class ApiService {
     unwrapVoid(result);
   }
 
+  // ── Bikes (US-64) ──
+  //
+  // The rider's garage powers the active-bike chip on `RideActiveScreen`
+  // and (server-side) tags every `/rides/start` with the rider's
+  // currently-active bike for future bike-aware stats.
+
+  async listBikes(): Promise<Bike[]> {
+    const result = await client.GET("/api/v1/account/bikes");
+    return unwrap(result, "Failed to load bikes").map(bikeFromSchema);
+  }
+
+  async getActiveBike(): Promise<Bike | null> {
+    const bikes = await this.listBikes();
+    return bikes.find((b) => b.isActive) ?? null;
+  }
+
+  async addBike(input: CreateBikeInput): Promise<Bike> {
+    const result = await client.POST("/api/v1/account/bikes", {
+      body: bikeInputToBody(input) as Schemas["CreateBikeDto"],
+    });
+    return bikeFromSchema(unwrap(result, "Failed to add bike"));
+  }
+
+  async updateBike(id: string, input: UpdateBikeInput): Promise<Bike> {
+    const result = await client.PUT("/api/v1/account/bikes/{id}", {
+      params: { path: { id } },
+      body: bikeInputToBody(input) as Schemas["UpdateBikeDto"],
+    });
+    return bikeFromSchema(unwrap(result, "Failed to update bike"));
+  }
+
+  async deleteBike(id: string): Promise<void> {
+    const result = await client.DELETE("/api/v1/account/bikes/{id}", {
+      params: { path: { id } },
+    });
+    unwrapVoid(result);
+  }
+
   // ── Rides ──
 
   async startRide(
     type: string = "free",
     tripDayId?: string,
+    bikeId?: string,
   ): Promise<RideResponse> {
     const result = await client.POST("/api/v1/rides/start", {
       body: {
         ride_type: type as Schemas["StartRideDto"]["ride_type"],
         trip_day_id: tripDayId,
+        // Omitted ⇒ backend pins to the rider's active bike. Passed
+        // explicitly when the rider chose a non-default bike from the
+        // garage picker before tapping Start.
+        bike_id: bikeId,
       },
     });
     // /start returns the slim `RideResponseDto`. Detail-only fields
@@ -1295,6 +1341,50 @@ export interface CrashAlertResponse {
    * `contacts_notified` may not yet reflect the final outcome.
    */
   dispatch_in_progress: boolean;
+}
+
+// ── Bike helpers ──
+//
+// The backend persists snake_case columns and emits camelCase keys
+// in `BikeDto`; class-transformer's `@Expose({ name: "isActive" })`
+// handles the inbound camelCase / outbound snake_case translation
+// already, so the wire shape is `BikeDto` (camelCase) on the way out
+// and `CreateBikeDto` / `UpdateBikeDto` (camelCase aliases) on the
+// way in. These helpers narrow the generated `Schemas` types into
+// the local `Bike` interface so call sites don't have to deal with
+// the optional / nullable bookkeeping at every read site.
+
+function bikeFromSchema(b: Schemas["BikeDto"]): Bike {
+  return {
+    id: b.id,
+    make: b.make,
+    model: b.model,
+    year: b.year ?? null,
+    isActive: b.isActive,
+    photoUrl: b.photoUrl ?? null,
+    icon: b.icon ?? null,
+    notes: b.notes ?? null,
+    totalKm: b.totalKm,
+    totalRides: b.totalRides,
+    createdAt: b.createdAt,
+    updatedAt: b.updatedAt,
+  };
+}
+
+// Drop undefined values so `class-validator` `@IsOptional()` skips
+// them entirely instead of triggering validators on `undefined`.
+function bikeInputToBody(
+  input: CreateBikeInput | UpdateBikeInput,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+  if (input.make !== undefined) body.make = input.make;
+  if (input.model !== undefined) body.model = input.model;
+  if (input.year !== undefined) body.year = input.year;
+  if (input.isActive !== undefined) body.isActive = input.isActive;
+  if (input.photoUrl !== undefined) body.photoUrl = input.photoUrl;
+  if (input.icon !== undefined) body.icon = input.icon;
+  if (input.notes !== undefined) body.notes = input.notes;
+  return body;
 }
 
 export const api = new ApiService();

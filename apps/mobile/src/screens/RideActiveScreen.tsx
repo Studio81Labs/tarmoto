@@ -70,7 +70,7 @@ import { sensorService } from "@/services/sensors";
 import { ttsService } from "@/services/tts";
 import { usePreferencesStore, useRideStore } from "@/stores";
 import type { RideStackParamList } from "@/navigation/RootNavigator";
-import type { HazardType, RideResponse } from "@/types";
+import type { Bike, HazardType, RideResponse } from "@/types";
 import type { SurfaceLabel } from "@tarmoto/shared";
 import {
   formatDistanceKm,
@@ -173,7 +173,33 @@ export default function RideActiveScreen() {
   // the backend ride hang in `active`.
   const [startError, setStartError] = useState<string | null>(null);
   const [isStopping, setIsStopping] = useState(false);
+  const [activeBike, setActiveBike] = useState<Bike | null>(null);
   const startedRef = useRef(false);
+
+  // ── Active bike chip (US-64). ──
+  //
+  // Surfaces "Honda · Africa Twin" so the rider can sanity-check which
+  // bike the ride is being attributed to before they commit. The actual
+  // attribution happens server-side in `/rides/start` (omitting bike_id
+  // pins to the active bike), so a fetch failure here is non-fatal —
+  // we just hide the chip and the ride proceeds.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getActiveBike()
+      .then((bike) => {
+        if (!cancelled) setActiveBike(bike);
+      })
+      .catch(() => {
+        // Hide the chip on transient network issues; the backend still
+        // tags the ride with whichever bike is active in the rider's
+        // garage.
+        if (!cancelled) setActiveBike(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   useEffect(() => {
     if (startedRef.current) return;
     startedRef.current = true;
@@ -534,6 +560,18 @@ export default function RideActiveScreen() {
         </View>
       ) : null}
 
+      {activeBike ? (
+        <View
+          style={styles.bikeChip}
+          accessibilityLabel={`Active bike ${activeBike.make} ${activeBike.model}`}
+        >
+          <Icon name="motorbike" size={16} color={colors.primary} />
+          <Text style={styles.bikeChipText} numberOfLines={1}>
+            {`${activeBike.make} ${activeBike.model}`.trim()}
+          </Text>
+        </View>
+      ) : null}
+
       <View
         style={styles.speedBlock}
         accessibilityLabel={`Speed ${speedLabel}`}
@@ -725,6 +763,24 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: fontSize.sm,
     flex: 1,
+  },
+  bikeChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.bgCard,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  bikeChipText: {
+    color: colors.textPrimary,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
+    maxWidth: 240,
   },
   speedBlock: {
     alignItems: "center",

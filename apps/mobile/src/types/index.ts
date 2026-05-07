@@ -256,6 +256,12 @@ export interface RideResponse {
   avg_speed: number | null;
   avg_road_quality: number | null;
   avg_curviness: number | null;
+  /**
+   * The bike attributed to this ride. Pinned to the rider's active
+   * bike at start time, or null for legacy rides recorded before
+   * bike management shipped.
+   */
+  bike_id: string | null;
 }
 
 export interface RideSummary {
@@ -952,3 +958,37 @@ export interface RiddenSegment {
 export interface RiddenSegmentsList {
   segments: RiddenSegment[];
 }
+
+// ── Bikes (US-64) ──
+
+/**
+ * A bike registered in the rider's garage. The mobile HUD surfaces
+ * the active bike on `RideActiveScreen` and pins each new ride to it
+ * server-side. Camel-cased keys mirror the backend's `BikeDto`.
+ */
+export interface Bike {
+  id: string;
+  make: string;
+  model: string;
+  year: number | null;
+  isActive: boolean;
+  photoUrl: string | null;
+  icon: string | null;
+  notes: string | null;
+  totalKm: number;
+  totalRides: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateBikeInput {
+  make: string;
+  model: string;
+  year?: number;
+  isActive?: boolean;
+  photoUrl?: string;
+  icon?: string;
+  notes?: string;
+}
+
+export type UpdateBikeInput = Partial<CreateBikeInput>;

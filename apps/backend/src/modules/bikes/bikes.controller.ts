@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Put,
   Delete,
   Body,
   HttpCode,
@@ -44,11 +45,28 @@ export class BikesController {
     return this.bikesService.create(req.user!.userId, dto);
   }
 
-  @Patch(':id')
+  // The contract calls for PUT semantics (full upsert from the rider's
+  // perspective — every field in the form gets written), but we accept
+  // PATCH at the same path so the in-flight companion build that ships
+  // partial bodies isn't broken during the rollout. Both verbs route to
+  // the same partial-update service call.
+  @Put(':id')
   @ApiOperation({ summary: 'Update a bike' })
   @ApiResponse({ status: 200, type: BikeDto })
   @ApiResponse({ status: 404 })
-  update(
+  put(
+    @Req() req: Request,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateBikeDto,
+  ): Promise<BikeDto> {
+    return this.bikesService.update(req.user!.userId, id, dto);
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Update a bike (partial)' })
+  @ApiResponse({ status: 200, type: BikeDto })
+  @ApiResponse({ status: 404 })
+  patch(
     @Req() req: Request,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateBikeDto,

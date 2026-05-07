@@ -13,6 +13,7 @@ import * as GeoJSON from 'geojson';
 import { User } from './user.entity.js';
 import { RideSegment } from './ride-segment.entity.js';
 import { RideStats } from './ride-stats.entity.js';
+import { Bike } from './bike.entity.js';
 
 @Entity('rides')
 @Index('idx_rides_user', ['user_id'])
@@ -63,12 +64,19 @@ export class Ride {
   @Column({ type: 'varchar', length: 20, default: 'active' })
   status!: string;
 
+  @Column({ type: 'uuid', nullable: true })
+  bike_id!: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
 
   @ManyToOne(() => User, (u) => u.rides)
   @JoinColumn({ name: 'user_id' })
   user!: User;
+
+  @ManyToOne(() => Bike, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'bike_id' })
+  bike!: Bike | null;
 
   @OneToMany(() => RideSegment, (rs) => rs.ride)
   segments!: RideSegment[];

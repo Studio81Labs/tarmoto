@@ -78,6 +78,13 @@ export class RideResponseDto {
       'Length-weighted average `curviness_score` of the road segments this ride crossed. `null` when no segments are snapped yet.',
   })
   avg_curviness!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Bike attributed to this ride. Pinned to the rider’s active bike at start time, or null for legacy rides without a bike.',
+  })
+  bike_id!: string | null;
 }
 
 export class RideSummaryDto extends RideResponseDto {

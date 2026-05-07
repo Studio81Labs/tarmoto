@@ -82,6 +82,7 @@ import { AddWeatherAlertDispatches1716700000000 } from './migrations/17167000000
 import { AddRouteCollectionFollows1716800000000 } from './migrations/1716800000000-AddRouteCollectionFollows.js';
 import { AddBikes1716900000000 } from './migrations/1716900000000-AddBikes.js';
 import { AddRideTagEvents1717000000000 } from './migrations/1717000000000-AddRideTagEvents.js';
+import { AddBikeNotesIconAndRideBikeId1717100000000 } from './migrations/1717100000000-AddBikeNotesIconAndRideBikeId.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -182,6 +183,7 @@ export const AppDataSource = new DataSource({
     AddRouteCollectionFollows1716800000000,
     AddBikes1716900000000,
     AddRideTagEvents1717000000000,
+    AddBikeNotesIconAndRideBikeId1717100000000,
   ],
   synchronize: false,
 });

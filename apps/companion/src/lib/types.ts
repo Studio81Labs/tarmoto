@@ -230,6 +230,8 @@ export interface Bike {
   model: string;
   year: number;
   photoUrl?: string;
+  icon?: string | null;
+  notes?: string | null;
   isActive: boolean;
   totalKm: number;
   totalRides?: number;
