@@ -90,10 +90,10 @@ function ClosuresPanelBody({
       </div>
 
       <p className="text-xs text-slate-500">
-        {t("Previewing ")}
-        {monthText || "this month"}
-        {t("conditions on ")}
-        {previewDay}.
+        {t("Previewing {month} conditions on {previewDay}.", {
+          month: monthText || "this month",
+          previewDay,
+        })}
       </p>
 
       <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/70 p-3">

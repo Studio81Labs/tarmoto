@@ -210,18 +210,15 @@ function PassesPanelBody({
             {t("In ")}
             {monthLabel(month)}:{" "}
             <span className="text-rose-400">
-              {counts.closed}
-              {t("closed")}
+              {t("{count} closed", { count: counts.closed })}
             </span>
             {" • "}
             <span className="text-slate-300">
-              {counts.unknown}
-              {t("unknown")}
+              {t("{count} unknown", { count: counts.unknown })}
             </span>
             {" • "}
             <span className="text-emerald-400">
-              {counts.open}
-              {t("open")}
+              {t("{count} open", { count: counts.open })}
             </span>
           </p>
 

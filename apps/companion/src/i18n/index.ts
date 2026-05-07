@@ -11,6 +11,8 @@ export type TranslationCatalog = Record<string, string>;
 
 export const englishMessages: TranslationCatalog = en;
 
+let activeLocale: SupportedLocale = DEFAULT_LOCALE;
+
 export function isSupportedLocale(locale: string): locale is SupportedLocale {
   return (SUPPORTED_LOCALES as readonly string[]).includes(locale);
 }
@@ -24,10 +26,14 @@ export function resolveLocale(locale?: string | null): SupportedLocale {
   return isSupportedLocale(normalized) ? normalized : DEFAULT_LOCALE;
 }
 
+export function setActiveLocale(locale: SupportedLocale) {
+  activeLocale = locale;
+}
+
 export function translate(
   key: string,
   values?: TranslationValues,
-  locale: SupportedLocale = DEFAULT_LOCALE,
+  locale: SupportedLocale = activeLocale,
 ): string {
   const catalog = locale === DEFAULT_LOCALE ? englishMessages : englishMessages;
   const template = catalog[key] ?? key;

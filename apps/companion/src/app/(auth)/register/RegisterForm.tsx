@@ -1,9 +1,9 @@
 "use client";
-import { t } from "@/i18n";
 import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
+import { useI18n } from "@/i18n/I18nProvider";
 import { OAuthButtons } from "@/components/OAuthButtons";
 import { registerUser } from "@/lib/api";
 import { safeCallbackUrl } from "@/lib/callback-url";
@@ -13,6 +13,7 @@ export function RegisterForm({
 }: {
   oauthProviders: OAuthProvider[];
 }) {
+  const { t } = useI18n();
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -58,7 +59,7 @@ export function RegisterForm({
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-1.5">
-            {t("Display name ")}
+            {t("Display name")}
           </label>
           <input
             type="text"
@@ -72,7 +73,7 @@ export function RegisterForm({
 
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-1.5">
-            {t("Email ")}
+            {t("Email")}
           </label>
           <input
             type="email"
@@ -86,7 +87,7 @@ export function RegisterForm({
 
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-1.5">
-            {t("Password ")}
+            {t("Password")}
           </label>
           <input
             type="password"
@@ -104,7 +105,7 @@ export function RegisterForm({
           disabled={loading}
           className="w-full py-2.5 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold hover:bg-tarmoto-cyan-light disabled:opacity-50 transition"
         >
-          {loading ? "Creating account..." : "Create account"}
+          {loading ? t("Creating account...") : t("Create account")}
         </button>
       </form>
 
@@ -113,7 +114,7 @@ export function RegisterForm({
       <p className="mt-6 text-center text-sm text-slate-400">
         {t("Already have an account?")}{" "}
         <Link href="/login" className="text-tarmoto-cyan hover:underline">
-          {t("Sign in ")}
+          {t("Sign in")}
         </Link>
       </p>
     </div>

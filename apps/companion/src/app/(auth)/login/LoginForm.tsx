@@ -1,9 +1,9 @@
 "use client";
-import { t } from "@/i18n";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
+import { useI18n } from "@/i18n/I18nProvider";
 import { OAuthButtons } from "@/components/OAuthButtons";
 import { safeCallbackUrl } from "@/lib/callback-url";
 import { getLoginErrorMessage } from "@/lib/auth-errors";
@@ -13,6 +13,7 @@ export function LoginForm({
 }: {
   oauthProviders: OAuthProvider[];
 }) {
+  const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -60,7 +61,7 @@ export function LoginForm({
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-1.5">
-            {t("Email ")}
+            {t("Email")}
           </label>
           <input
             type="email"
@@ -74,7 +75,7 @@ export function LoginForm({
 
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-1.5">
-            {t("Password ")}
+            {t("Password")}
           </label>
           <input
             type="password"
@@ -92,13 +93,13 @@ export function LoginForm({
               type="checkbox"
               className="rounded border-slate-600 bg-slate-800 text-tarmoto-cyan focus:ring-tarmoto-cyan"
             />
-            {t("Remember me ")}
+            {t("Remember me")}
           </label>
           <Link
             href="/forgot-password"
             className="text-tarmoto-cyan hover:underline"
           >
-            {t("Forgot password? ")}
+            {t("Forgot password?")}
           </Link>
         </div>
 
@@ -107,7 +108,7 @@ export function LoginForm({
           disabled={loading}
           className="w-full py-2.5 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold hover:bg-tarmoto-cyan-light disabled:opacity-50 transition"
         >
-          {loading ? "Signing in..." : "Sign in"}
+          {loading ? t("Signing in...") : t("Sign in")}
         </button>
       </form>
 
@@ -116,7 +117,7 @@ export function LoginForm({
       <p className="mt-6 text-center text-sm text-slate-400">
         {t("Don't have an account?")}{" "}
         <Link href="/register" className="text-tarmoto-cyan hover:underline">
-          {t("Create one ")}
+          {t("Create one")}
         </Link>
       </p>
     </div>

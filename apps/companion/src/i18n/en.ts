@@ -180,8 +180,10 @@ export const en = {
   "Couldn't load your trips right now. Close this and try again in a moment. ":
     "Couldn't load your trips right now. Close this and try again in a moment. ",
   "Couldn't load zones.": "Couldn't load zones.",
+  "Create account": "Create account",
   "Create account ": "Create account ",
   "Create invite link ": "Create invite link ",
+  "Create one": "Create one",
   "Create one ": "Create one ",
   "Create your account": "Create your account",
   "Create your first trip to discover the best roads.":
@@ -217,6 +219,7 @@ export const en = {
   "Direct / efficient": "Direct / efficient",
   "Dismiss ": "Dismiss ",
   "Dismiss error": "Dismiss error",
+  "Display name": "Display name",
   "Display name ": "Display name ",
   "Display units": "Display units",
   Distance: "Distance",
@@ -276,6 +279,7 @@ export const en = {
   "Finding the best roads for you ": "Finding the best roads for you ",
   "Folders ": "Folders ",
   "Followed collections ": "Followed collections ",
+  "Forgot password?": "Forgot password?",
   "Forgot password? ": "Forgot password? ",
   "Found ": "Found ",
   "From ": "From ",
@@ -499,6 +503,7 @@ export const en = {
   "Parsing route\u2026 ": "Parsing route\u2026 ",
   "Pass status legend": "Pass status legend",
   "Passes ": "Passes ",
+  Password: "Password",
   "Password ": "Password ",
   "Payment method ": "Payment method ",
   "Payment method editing will light up automatically as soon as the billing backend is available. ":
@@ -529,6 +534,8 @@ export const en = {
     "Preview data shown while live billing management is still being wired up. ",
   "Preview unavailable ": "Preview unavailable ",
   "Previewing ": "Previewing ",
+  "Previewing {month} conditions on {previewDay}.":
+    "Previewing {month} conditions on {previewDay}.",
   "Previous ": "Previous ",
   "Previous page": "Previous page",
   "Print ": "Print ",
@@ -573,6 +580,7 @@ export const en = {
   "Regional breakdown": "Regional breakdown",
   "Regional leaderboards": "Regional leaderboards",
   "Reject ": "Reject ",
+  "Remember me": "Remember me",
   "Remember me ": "Remember me ",
   Remove: "Remove",
   "Remove ": "Remove ",
@@ -681,15 +689,19 @@ export const en = {
     "Short title (e.g. 'Scenic loop via Passo Giau')",
   "Showing most recent 500 rides \u2014 refine filters to narrow the map. ":
     "Showing most recent 500 rides \u2014 refine filters to narrow the map. ",
+  "Sign in": "Sign in",
   "Sign in ": "Sign in ",
   "Sign in on iPhone or Android with this same Tarmoto account to sync your rides, bikes, and profile details across devices. ":
     "Sign in on iPhone or Android with this same Tarmoto account to sync your rides, bikes, and profile details across devices. ",
   "Sign in to Tarmoto to follow": "Sign in to Tarmoto to follow",
+  "Sign in to Tarmoto to follow {collectionOwner} and add their routes to your own library.":
+    "Sign in to Tarmoto to follow {collectionOwner} and add their routes to your own library.",
   "Sign in to rate this road and share your feedback. ":
     "Sign in to rate this road and share your feedback. ",
   "Sign in to see your achievements": "Sign in to see your achievements",
   "Sign in to your Tarmoto account": "Sign in to your Tarmoto account",
   "Sign-in email ": "Sign-in email ",
+  "Signing in...": "Signing in...",
   "Simplified overview of the planned route across all days. ":
     "Simplified overview of the planned route across all days. ",
   "Snapshot from the shared Tarmoto ride. ":
@@ -837,6 +849,7 @@ export const en = {
   "below. ": "below. ",
   "by ": "by ",
   closed: "closed",
+  "Creating account...": "Creating account...",
   "collection ": "collection ",
   "conditions on ": "conditions on ",
   "confirmations ": "confirmations ",
@@ -896,11 +909,14 @@ export const en = {
   "{count} embed clicks": "{count} embed clicks",
   "{count} full": "{count} full",
   "{count} of {total}": "{count} of {total}",
+  "{count} closed": "{count} closed",
+  "{count} open": "{count} open",
   "{count} partial": "{count} partial",
   "{count} routes": "{count} routes",
   "{count} selected": "{count} selected",
   "{count} segments highlighted": "{count} segments highlighted",
   "{count} to go": "{count} to go",
+  "{count} unknown": "{count} unknown",
   "{count} views": "{count} views",
   "{count} {waypointLabel}": "{count} {waypointLabel}",
   "{distance} ridden": "{distance} ridden",

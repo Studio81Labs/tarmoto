@@ -6,6 +6,7 @@ import {
   type SupportedLocale,
   type TranslationValues,
   resolveLocale,
+  setActiveLocale,
   translate,
 } from ".";
 
@@ -27,6 +28,7 @@ export function I18nProvider({
   locale?: string | null;
 }) {
   const resolvedLocale = resolveLocale(locale);
+  setActiveLocale(resolvedLocale);
   const value = useMemo<I18nContextValue>(
     () => ({
       locale: resolvedLocale,

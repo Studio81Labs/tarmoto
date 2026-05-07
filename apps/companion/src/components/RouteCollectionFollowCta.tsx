@@ -102,15 +102,20 @@ export function RouteCollectionFollowCta({
           {t("Want to save this collection? ")}
         </h2>
         <p className="text-sm text-slate-400 mb-4">
-          {t("Sign in to Tarmoto to follow")}{" "}
-          {ownerName ? `${ownerName}'s collection` : "the curator"}
-          {t("and add their routes to your own library. ")}
+          {t(
+            "Sign in to Tarmoto to follow {collectionOwner} and add their routes to your own library.",
+            {
+              collectionOwner: ownerName
+                ? `${ownerName}'s collection`
+                : "the curator",
+            },
+          )}
         </p>
         <Link
           href="/auth/login"
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light transition"
         >
-          {t("Sign in ")}
+          {t("Sign in")}
         </Link>
       </div>
     );
