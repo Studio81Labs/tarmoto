@@ -1052,8 +1052,24 @@ export function mountRideStatusBoard(board: RideStatusBoard): boolean {
  * Tear down the template at the end of a ride. Idempotent so a stop
  * dispatched while the template was never mounted (offline, no head
  * unit connected) is safe.
+ *
+ * Also clears the dismissed/confirmed hazard tracking sets — those
+ * are scoped to a single ride. A commuter who waved off a pothole
+ * alert this morning should still be alerted about the same pothole
+ * on the evening commute (within the same app session); without this
+ * reset the module-level sets would persist until the process is
+ * killed and the rider would silently miss a known hazard.
  */
 export function unmountRideStatusBoard(): void {
+  // Always reset the per-ride hazard guards, even if the bike-display
+  // template never mounted (rider rode without a head unit). The sets
+  // are populated only by user interaction with the alert template,
+  // so clearing them when no template ever mounted is a cheap no-op
+  // — but skipping the clear after a paired ride would leak last
+  // ride's state into the next one.
+  dismissedHazardIds.clear();
+  confirmedHazardIds.clear();
+
   if (!templateMounted) return;
   const bridge = getBridge();
   // Even if the head unit disconnected mid-ride we still drop our local

@@ -644,6 +644,40 @@ describe("hazard alert lifecycle", () => {
     expect(bridge.presentAlert).toHaveBeenCalledTimes(1);
   });
 
+  it("clears the dismissed and confirmed hazard sets when a ride ends", () => {
+    // Simulate a morning commute: rider dismisses hazard A and
+    // confirms hazard B. Both ids end up in their respective tracking
+    // sets at module scope.
+    presentHazardAlertOnVehicleDisplay(makeSnapshot({ id: "hz-A" }));
+    bridge.lastAlertCallbacks?.onDismiss();
+    presentHazardAlertOnVehicleDisplay(makeSnapshot({ id: "hz-B" }));
+    bridge.lastAlertCallbacks?.onConfirm();
+    expect(bridge.presentAlert).toHaveBeenCalledTimes(2);
+
+    // Mid-ride: the same hazards are sticky-suppressed.
+    expect(
+      presentHazardAlertOnVehicleDisplay(makeSnapshot({ id: "hz-A" })),
+    ).toBe(false);
+    expect(
+      presentHazardAlertOnVehicleDisplay(makeSnapshot({ id: "hz-B" })),
+    ).toBe(false);
+
+    // End of the ride. Hazard tracking is per-ride: the evening
+    // commute should not silently inherit this morning's dismissals.
+    unmountRideStatusBoard();
+
+    // Same hazards on a fresh ride — both should be alert-eligible
+    // again so the rider doesn't miss known hazards just because they
+    // already saw them on a prior ride within the same app session.
+    expect(
+      presentHazardAlertOnVehicleDisplay(makeSnapshot({ id: "hz-A" })),
+    ).toBe(true);
+    expect(
+      presentHazardAlertOnVehicleDisplay(makeSnapshot({ id: "hz-B" })),
+    ).toBe(true);
+    expect(bridge.presentAlert).toHaveBeenCalledTimes(4);
+  });
+
   it("dismissHazardAlertOnVehicleDisplay is idempotent and clears active id", () => {
     dismissHazardAlertOnVehicleDisplay();
     expect(bridge.dismissAlert).not.toHaveBeenCalled();
