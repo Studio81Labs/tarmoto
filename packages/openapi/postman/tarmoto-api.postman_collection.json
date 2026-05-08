@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "f69149e1-79cc-4fcc-af28-bb4ef73b733b",
+    "_postman_id": "9ebd6b3f-16ec-4497-a654-040583f03c8a",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -509,7 +509,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"make\": \"Honda\",\n  \"model\": \"Africa Twin\",\n  \"year\": 2024,\n  \"is_active\": false,\n  \"photo_url\": \"\"\n}",
+              "raw": "{\n  \"make\": \"Honda\",\n  \"model\": \"Africa Twin\",\n  \"year\": 2024,\n  \"is_active\": false,\n  \"photo_url\": \"\",\n  \"icon\": \"\",\n  \"notes\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -519,7 +519,56 @@
           }
         },
         {
+          "name": "Get your active bike (or null)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/account/bikes/active",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "account", "bikes", "active"]
+            }
+          }
+        },
+        {
           "name": "Update a bike",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/account/bikes/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "account", "bikes", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"make\": \"Honda\",\n  \"model\": \"Africa Twin\",\n  \"year\": 2024,\n  \"is_active\": true,\n  \"photo_url\": \"\",\n  \"icon\": \"\",\n  \"notes\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Update a bike (partial)",
           "request": {
             "method": "PATCH",
             "header": [
@@ -541,7 +590,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"make\": \"Honda\",\n  \"model\": \"Africa Twin\",\n  \"year\": 2024,\n  \"is_active\": true,\n  \"photo_url\": \"\"\n}",
+              "raw": "{\n  \"make\": \"Honda\",\n  \"model\": \"Africa Twin\",\n  \"year\": 2024,\n  \"is_active\": true,\n  \"photo_url\": \"\",\n  \"icon\": \"\",\n  \"notes\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2288,7 +2337,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"ride_type\": \"free\"\n}",
+              "raw": "{\n  \"ride_type\": \"free\",\n  \"bike_id\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
