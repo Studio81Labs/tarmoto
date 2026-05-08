@@ -1067,6 +1067,30 @@ describe('SensorService', () => {
       expect(storedRideCalibration?.values.calibration_quality).toBe('poor');
     });
 
+    it('rejects physically impossible calibration means as poor', async () => {
+      // Regression: a buggy or malicious client could otherwise ship
+      // a fabricated finite mean (e.g. `axis_mean_x: 1e6`) with low
+      // std and enough samples and have it persist as `'good'`. A
+      // stationary accelerometer reads gravity, so ‖mean‖ ≈ 9.81 by
+      // physics — anything wildly outside that window is either a
+      // non-stationary capture or a fabricated payload.
+      const calibration = makeCalibration({
+        axis_mean_x: 1e6,
+        axis_std_x: 0.01,
+      });
+      const dto = {
+        ride_id: 'ride-cal-impossible',
+        readings: Array.from({ length: 50 }, (_, i) =>
+          rideReading(Date.now() + i * 20, i),
+        ),
+        calibration,
+      };
+
+      await service.processUpload('user-1', dto);
+
+      expect(storedRideCalibration?.values.calibration_quality).toBe('poor');
+    });
+
     it('still accepts the readings when the upload omits calibration entirely', async () => {
       const dto = {
         ride_id: 'ride-no-cal',

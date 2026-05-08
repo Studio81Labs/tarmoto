@@ -53,6 +53,36 @@ export const CALIBRATION_TARGET_SECONDS = 30;
  */
 export const CALIBRATION_STATIONARY_STD_LIMIT = 0.5;
 
+/**
+ * Reference gravity magnitude (m/s²). Real-world variation across
+ * Earth's surface sits in roughly 9.78–9.83 m/s²; we use the standard
+ * value as the centre of the plausibility window in
+ * {@link classifyCalibrationQuality}.
+ */
+export const CALIBRATION_GRAVITY_MS2 = 9.81;
+
+/**
+ * Maximum tolerated deviation between a calibration's mean-vector
+ * magnitude and {@link CALIBRATION_GRAVITY_MS2} for a "good" tag
+ * (m/s²). For a stationary phone, ‖mean‖ has to land near gravity by
+ * physics — anything else means either:
+ *
+ *   - the capture was non-stationary (the IMU never reaches the
+ *     gravity-only steady state),
+ *   - the device is fundamentally miscalibrated (sensor scale-factor
+ *     error well beyond typical 1–2% MEMS bounds), or
+ *   - a buggy / malicious client fabricated values to nudge
+ *     downstream training in a controlled direction.
+ *
+ * 2.0 m/s² is generous enough to absorb realistic scale-factor error
+ * (~5 %) plus mount / engine-vibration noise, yet tight enough to
+ * reject obvious garbage like `axis_mean_x: 1e6`. Trusting only the
+ * std + sample-count gates would let physically impossible means slip
+ * through as `'good'`, and downstream pipelines that filter out only
+ * `'poor'` rows would happily subtract an attacker-controlled bias.
+ */
+export const CALIBRATION_GRAVITY_TOLERANCE_MS2 = 2.0;
+
 /** Sample rate we assume for translating duration ↔ sample-count. */
 export const CALIBRATION_SAMPLE_RATE_HZ = 50;
 
@@ -104,7 +134,15 @@ export type CalibrationQuality = "good" | "poor";
  *     started moving before the floor of ~5 s of stationary samples
  *     was reached — anything shorter is too noisy to use as a bias),
  *   - any axis-mean is non-finite (a malicious or buggy client could
- *     ship a `NaN` to defeat the std check).
+ *     ship a `NaN` to defeat the std check), OR
+ *   - the mean-vector magnitude is more than
+ *     {@link CALIBRATION_GRAVITY_TOLERANCE_MS2} away from
+ *     {@link CALIBRATION_GRAVITY_MS2} — for a stationary phone the
+ *     mean has to land near gravity by physics, so values far outside
+ *     that window are either non-stationary captures or fabricated
+ *     payloads. Trusting the std gate alone would let a buggy /
+ *     malicious client ship `axis_mean_x: 1e6` with 0 std and have
+ *     it persist as a "trusted" calibration.
  *
  * Otherwise `"good"`.
  *
@@ -130,6 +168,24 @@ export function classifyCalibrationQuality(
     payload.axis_std_x > CALIBRATION_STATIONARY_STD_LIMIT ||
     payload.axis_std_y > CALIBRATION_STATIONARY_STD_LIMIT ||
     payload.axis_std_z > CALIBRATION_STATIONARY_STD_LIMIT
+  ) {
+    return "poor";
+  }
+  // Plausibility check on the mean vector magnitude. A stationary
+  // accelerometer reads gravity, so ‖mean‖ ≈ g by physics. Reject
+  // captures whose mean lands wildly outside the plausible window —
+  // catches both non-stationary windows (the IMU never settles to
+  // pure gravity) and fabricated payloads (a malicious client
+  // shipping `axis_mean_x: 1e6` with 0 std would otherwise pass the
+  // std + sample-count gates above).
+  const meanMagnitude = Math.sqrt(
+    payload.axis_mean_x * payload.axis_mean_x +
+      payload.axis_mean_y * payload.axis_mean_y +
+      payload.axis_mean_z * payload.axis_mean_z,
+  );
+  if (
+    Math.abs(meanMagnitude - CALIBRATION_GRAVITY_MS2) >
+    CALIBRATION_GRAVITY_TOLERANCE_MS2
   ) {
     return "poor";
   }

@@ -204,6 +204,26 @@ describe("IdleBaselineCalibrator", () => {
     expect(cal.snapshot()?.quality).toBe("good");
   });
 
+  it("tags a physically impossible mean as poor", () => {
+    // Regression: even with low std and enough samples, a calibration
+    // whose mean-vector magnitude is far from gravity has to be
+    // rejected. Without this gate a buggy client (or fabricated
+    // payload) could pin attacker-controlled bias as 'good'.
+    const cal = new IdleBaselineCalibrator();
+    const targetSamples = CALIBRATION_TARGET_SECONDS * 50;
+    for (let i = 0; i <= targetSamples; i += 1) {
+      cal.push({
+        t: i * SAMPLE_INTERVAL_MS,
+        // ‖(50, 0, 0)‖ = 50 m/s², way beyond plausible gravity.
+        ax: 50,
+        ay: 0,
+        az: 0,
+        speedMs: 0,
+      });
+    }
+    expect(cal.snapshot()?.quality).toBe("poor");
+  });
+
   it("tags a noisy calibration window as poor (regression for pre-fix moving start)", () => {
     // Pre-#494-followup: when the rider starts moving before the
     // first GPS fix, `speedMs` arrives as `undefined` and the
