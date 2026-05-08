@@ -607,10 +607,10 @@ describe('EventsGateway', () => {
       expect(mockTo).not.toHaveBeenCalled();
     });
 
-    it('drops the second cursor inside the ~12 Hz throttle window (US-35)', () => {
+    it('drops the second cursor inside the 10 Hz throttle window (US-35)', () => {
       // Acceptance criterion: "Throttled at 10 Hz max per sender (drop,
-      // don't queue)". The gateway enforces ≤ ~12 Hz (83 ms) so a
-      // misbehaving client can't flood every other collaborator.
+      // don't queue)". The gateway enforces ≤ 10 Hz (100 ms floor) so
+      // a misbehaving client can't flood every other collaborator.
       const emit = jest.fn();
       const mockTo = jest.fn().mockReturnValue({ emit });
       const client = {

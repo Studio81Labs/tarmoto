@@ -95,10 +95,11 @@ const GROUP_POSITION_THROTTLE_MS = 1000;
 
 // US-35 — server-side throttle floor for `trip:cursor`. Companions
 // already throttle to ~7 Hz client-side, but the gateway must enforce
-// its own ~12 Hz cap (≈83 ms) so a misbehaving or hostile client can't
-// flood every other collaborator with unbounded mouse-move fanout.
-// Drop, don't queue — collaborators only need the latest position.
-const TRIP_CURSOR_THROTTLE_MS = 83;
+// its own ≤ 10 Hz cap (100 ms) per the US-35 acceptance criterion so a
+// misbehaving or hostile client can't flood every other collaborator
+// with unbounded mouse-move fanout. Drop, don't queue — collaborators
+// only need the latest position.
+const TRIP_CURSOR_THROTTLE_MS = 100;
 
 @SkipThrottle()
 @WebSocketGateway({
@@ -427,12 +428,13 @@ export class EventsGateway
    * the client hasn't been granted membership to, to prevent cross-trip
    * leakage if a misbehaving client emits to a room it was never in.
    *
-   * Server-side throttling caps fanout at ~12 Hz per (trip, user). The
-   * companion already throttles client-side, but the gateway must
-   * enforce its own floor so a misbehaving or hostile client can't
-   * chew through every other collaborator's bandwidth. Drops are
-   * silent — cursors only carry the latest position, so queueing
-   * stale ticks would just lag the rendered dot.
+   * Server-side throttling caps fanout at ≤ 10 Hz per (trip, user) per
+   * the US-35 acceptance criterion. The companion already throttles
+   * client-side, but the gateway must enforce its own floor so a
+   * misbehaving or hostile client can't chew through every other
+   * collaborator's bandwidth. Drops are silent — cursors only carry
+   * the latest position, so queueing stale ticks would just lag the
+   * rendered dot.
    */
   @SubscribeMessage('trip:cursor')
   handleTripCursor(

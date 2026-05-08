@@ -211,6 +211,23 @@ export default function TripPlannerPage() {
       const hydrated = tripFromDetail(detail);
       setActiveTrip(hydrated);
       setServerTripOwnerId(findOwnerId(detail));
+      // Mirror the REST hydration path below: the planner's control
+      // strip (days / dailyKmTarget / road preference / surfaces /
+      // minQuality / avoid* toggles) is local React state, NOT
+      // derived from `activeTrip`, so a remote regenerate that
+      // changed `num_days` would otherwise leave the controls stuck
+      // at their old values — and the next local Save would
+      // re-serialize the stale controls back to the server, undoing
+      // the collaborator's just-committed change.
+      const params = hydrated.parameters;
+      setDays(params.days);
+      setDailyKmTarget(params.dailyKmTarget);
+      setRoadPreference(params.roadPreference);
+      setSurfacePreference(params.surfacePreference);
+      setMinQuality(params.minQuality);
+      setAvoidHighways(params.avoidHighways);
+      setAvoidTolls(params.avoidTolls);
+      setAvoidUnpaved(params.avoidUnpaved);
     },
     [serverTripId, setActiveTrip],
   );
