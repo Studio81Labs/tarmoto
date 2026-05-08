@@ -45,6 +45,19 @@ export class RoadSegment {
   @Column({ type: 'int', default: 0 })
   confidence!: number;
 
+  /**
+   * Issue #495 — number of readings the most recent aggregation run
+   * dropped as >2σ outliers before computing `quality_score` and
+   * `confidence`. 0 when fewer than 3 readings exist (filter is
+   * skipped) or when no reading exceeded the 2σ threshold.
+   * Persisted so dispute investigations and data-quality dashboards
+   * can see whether a low rider count on a segment is the raw count
+   * or an artifact of aggressive filtering, without replaying
+   * `surface_readings`.
+   */
+  @Column({ type: 'int', default: 0 })
+  last_filtered_count!: number;
+
   @Column({ type: 'float', nullable: true })
   elevation_min!: number | null;
 

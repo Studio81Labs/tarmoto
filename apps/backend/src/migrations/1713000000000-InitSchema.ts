@@ -24,6 +24,7 @@ export class InitSchema1713000000000 implements MigrationInterface {
     await queryRunner.query(`
       DROP TRIGGER IF EXISTS trg_update_road_quality ON surface_readings;
       DROP FUNCTION IF EXISTS update_road_quality();
+      DROP FUNCTION IF EXISTS update_road_quality_for_segment(UUID);
       DROP FUNCTION IF EXISTS expire_hazards();
       DROP FUNCTION IF EXISTS find_nearby_segments(FLOAT, FLOAT, INT);
       DROP VIEW IF EXISTS v_active_hazards;
