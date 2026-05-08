@@ -73,30 +73,23 @@ class EvalReport:
     confusion_matrix: dict[str, dict[str, int]] = field(default_factory=dict)
 
     def to_json(self) -> dict:
+        # Keep full-precision floats in the machine-readable JSON
+        # (codex review): rounding to 4 decimals here can mask a
+        # real failure that lands just over a launch threshold —
+        # e.g. dangerous_misclass_rate=0.01004 rounded to 0.0100
+        # would silently pass the `> 0.01` gate. `ci_gate.py` reads
+        # these values; rounding is reserved for the human-facing
+        # CLI output in `main()`.
         return {
             "sample_count": self.sample_count,
-            "weighted_f1": round(self.weighted_f1, 4),
-            "adjacent_accuracy": round(self.adjacent_accuracy, 4),
-            "confusion_between_extremes": round(
-                self.confusion_between_extremes, 4
-            ),
-            "mae": round(self.mae, 4),
-            "surface_type_accuracy": (
-                None
-                if self.surface_type_accuracy is None
-                else round(self.surface_type_accuracy, 4)
-            ),
-            "cross_device_agreement": (
-                None
-                if self.cross_device_agreement is None
-                else round(self.cross_device_agreement, 4)
-            ),
-            "cross_bike_agreement": (
-                None
-                if self.cross_bike_agreement is None
-                else round(self.cross_bike_agreement, 4)
-            ),
-            "dangerous_misclass_rate": round(self.dangerous_misclass_rate, 4),
+            "weighted_f1": self.weighted_f1,
+            "adjacent_accuracy": self.adjacent_accuracy,
+            "confusion_between_extremes": self.confusion_between_extremes,
+            "mae": self.mae,
+            "surface_type_accuracy": self.surface_type_accuracy,
+            "cross_device_agreement": self.cross_device_agreement,
+            "cross_bike_agreement": self.cross_bike_agreement,
+            "dangerous_misclass_rate": self.dangerous_misclass_rate,
             "confusion_matrix": self.confusion_matrix,
         }
 

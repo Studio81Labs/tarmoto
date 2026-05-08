@@ -293,6 +293,49 @@ class LoadSamplesTests(unittest.TestCase):
             self.assertIsNone(samples[0].truth_surface)
 
 
+class ReportSerializationTests(unittest.TestCase):
+    def test_json_keeps_full_precision_metric_values(self) -> None:
+        """Codex review: JSON serialization must preserve unrounded
+        metrics so a borderline failure (e.g. 0.01004 dangerous
+        misclass rate, just over the 0.01 launch target) doesn't
+        round to 0.0100 and silently pass the `>` gate in
+        ci_gate.py."""
+        # 4 dangerous out of 399 ≈ 0.010025 — rounds to 0.0100 at
+        # 4 decimal places, but must remain unrounded in the report.
+        samples: list[Sample] = []
+        for _ in range(4):
+            samples.append(
+                Sample(
+                    road_segment_id="s_dangerous",
+                    predicted_quality=4,
+                    truth_quality=2,
+                )
+            )
+        for i in range(395):
+            samples.append(
+                Sample(
+                    road_segment_id=f"s_safe_{i}",
+                    predicted_quality=3,
+                    truth_quality=3,
+                )
+            )
+        report = evaluate(samples).to_json()
+        self.assertGreater(report["dangerous_misclass_rate"], 0.01)
+        # Strict assertion: the value persisted is NOT pre-rounded
+        # to 4 decimal places. round-trip should preserve precision
+        # beyond the 4th decimal.
+        self.assertNotEqual(
+            report["dangerous_misclass_rate"],
+            round(report["dangerous_misclass_rate"], 4),
+        )
+        # And the launch gate must catch it.
+        failures = check(report, strict=False)
+        self.assertTrue(
+            any("dangerous_misclass_rate" in f for f in failures),
+            f"expected dangerous_misclass_rate failure, got {failures}",
+        )
+
+
 class EvaluateAndGateTests(unittest.TestCase):
     def test_perfect_run_passes_ci_gate(self) -> None:
         report = evaluate(perfect_samples()).to_json()
