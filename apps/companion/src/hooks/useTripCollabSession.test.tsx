@@ -14,6 +14,8 @@ const hoisted = vi.hoisted(() => ({
   onTripSuggestionDeleted: vi.fn(),
   onTripSuggestionVoted: vi.fn(),
   onTripSuggestionResolved: vi.fn(),
+  onTripUpdated: vi.fn(),
+  onTripDeleted: vi.fn(),
   emitTripCursor: vi.fn(),
 }));
 
@@ -40,6 +42,8 @@ vi.mock("@/lib/socket", async (importActual) => {
     onTripSuggestionDeleted: hoisted.onTripSuggestionDeleted,
     onTripSuggestionVoted: hoisted.onTripSuggestionVoted,
     onTripSuggestionResolved: hoisted.onTripSuggestionResolved,
+    onTripUpdated: hoisted.onTripUpdated,
+    onTripDeleted: hoisted.onTripDeleted,
     emitTripCursor: hoisted.emitTripCursor,
   };
 });
@@ -74,6 +78,8 @@ describe("useTripCollabSession", () => {
   let cursorCb: ((evt: TripCursorEvent) => void) | undefined;
   let presenceCb: ((evt: TripPresenceEvent) => void) | undefined;
   let createdCb: ((payload: unknown) => void) | undefined;
+  let updatedCb: ((payload: unknown) => void) | undefined;
+  let deletedCb: ((evt: { trip_id: string }) => void) | undefined;
 
   beforeEach(() => {
     hoisted.listSuggestions.mockReset();
@@ -104,6 +110,20 @@ describe("useTripCollabSession", () => {
     hoisted.onTripSuggestionDeleted.mockReturnValue(() => {});
     hoisted.onTripSuggestionVoted.mockReturnValue(() => {});
     hoisted.onTripSuggestionResolved.mockReturnValue(() => {});
+    updatedCb = undefined;
+    deletedCb = undefined;
+    hoisted.onTripUpdated.mockImplementation(
+      (cb: (payload: unknown) => void) => {
+        updatedCb = cb;
+        return () => {};
+      },
+    );
+    hoisted.onTripDeleted.mockImplementation(
+      (cb: (evt: { trip_id: string }) => void) => {
+        deletedCb = cb;
+        return () => {};
+      },
+    );
   });
 
   afterEach(() => {
@@ -241,5 +261,97 @@ describe("useTripCollabSession", () => {
     });
     expect(result.current.presence.get("u-1")?.sockets).toBe(0);
     expect(result.current.presence.get("u-1")?.online).toBe(false);
+  });
+
+  it("forwards trip:updated for the active trip to the onTripUpdated callback (US-35)", async () => {
+    // Live-edit propagation: another collaborator regenerates / imports
+    // the trip and the planner page must re-hydrate without a manual
+    // reload.
+    hoisted.listSuggestions.mockResolvedValue({ data: [] });
+    const onTripUpdated = vi.fn();
+
+    renderHook(() =>
+      useTripCollabSession("trip-a", { onTripUpdated, onTripDeleted: vi.fn() }),
+    );
+    await waitFor(() => expect(hoisted.subscribeTrip).toHaveBeenCalled());
+
+    const detail = { id: "trip-a", days: [] };
+    act(() => {
+      updatedCb?.(detail);
+    });
+
+    expect(onTripUpdated).toHaveBeenCalledTimes(1);
+    expect(onTripUpdated).toHaveBeenCalledWith(detail);
+  });
+
+  it("ignores trip:updated for a different trip id (cross-trip leak guard)", async () => {
+    // The shared socket may carry events for several trips at once
+    // (e.g. another tab joined a different room). The hook must
+    // filter so a stale or wrong-room broadcast doesn't fire the
+    // active trip's callback.
+    hoisted.listSuggestions.mockResolvedValue({ data: [] });
+    const onTripUpdated = vi.fn();
+
+    renderHook(() =>
+      useTripCollabSession("trip-a", { onTripUpdated, onTripDeleted: vi.fn() }),
+    );
+    await waitFor(() => expect(hoisted.subscribeTrip).toHaveBeenCalled());
+
+    act(() => {
+      updatedCb?.({ id: "trip-b", days: [] });
+    });
+
+    expect(onTripUpdated).not.toHaveBeenCalled();
+  });
+
+  it("forwards trip:deleted for the active trip and ignores other trips", async () => {
+    hoisted.listSuggestions.mockResolvedValue({ data: [] });
+    const onTripDeleted = vi.fn();
+
+    renderHook(() =>
+      useTripCollabSession("trip-a", { onTripUpdated: vi.fn(), onTripDeleted }),
+    );
+    await waitFor(() => expect(hoisted.subscribeTrip).toHaveBeenCalled());
+
+    act(() => {
+      deletedCb?.({ trip_id: "trip-b" });
+    });
+    expect(onTripDeleted).not.toHaveBeenCalled();
+
+    act(() => {
+      deletedCb?.({ trip_id: "trip-a" });
+    });
+    expect(onTripDeleted).toHaveBeenCalledWith({ trip_id: "trip-a" });
+  });
+
+  it("uses the latest callback identity without re-subscribing the socket listener", async () => {
+    // Callbacks are captured by ref so a parent re-render that passes a
+    // new function identity (typical with inline arrows) does NOT tear
+    // down and re-attach the underlying socket listener — that would
+    // briefly drop events between unsubscribe and re-subscribe.
+    hoisted.listSuggestions.mockResolvedValue({ data: [] });
+
+    const firstCallback = vi.fn();
+    const secondCallback = vi.fn();
+    const { rerender } = renderHook(
+      ({ cb }: { cb: (payload: unknown) => void }) =>
+        useTripCollabSession("trip-a", { onTripUpdated: cb }),
+      { initialProps: { cb: firstCallback } },
+    );
+    await waitFor(() => expect(hoisted.subscribeTrip).toHaveBeenCalled());
+    const initialUpdatedSubscriptions = hoisted.onTripUpdated.mock.calls.length;
+
+    rerender({ cb: secondCallback });
+
+    // No re-subscription on callback-only changes.
+    expect(hoisted.onTripUpdated.mock.calls.length).toBe(
+      initialUpdatedSubscriptions,
+    );
+
+    act(() => {
+      updatedCb?.({ id: "trip-a" });
+    });
+    expect(firstCallback).not.toHaveBeenCalled();
+    expect(secondCallback).toHaveBeenCalledTimes(1);
   });
 });

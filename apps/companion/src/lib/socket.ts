@@ -309,6 +309,32 @@ export function onTripActivity(cb: (payload: unknown) => void): () => void {
   return registerPersistent<unknown>("trip:activity", cb);
 }
 
+/**
+ * Listen for `trip:updated` broadcasts emitted whenever a collaborator
+ * regenerates, imports, replaces, or otherwise mutates the trip via
+ * the REST API. The payload mirrors `TripDetailDto` so consumers can
+ * re-hydrate the local planner state without a follow-up REST fetch.
+ *
+ * Typed as `unknown` because socket.ts intentionally avoids reaching
+ * into the OpenAPI-generated types — consumers cast to whatever shape
+ * they expect (the planner page uses `TripDetailResponse`).
+ */
+export function onTripUpdated(cb: (payload: unknown) => void): () => void {
+  return registerPersistent<unknown>("trip:updated", cb);
+}
+
+/**
+ * Listen for `trip:deleted` broadcasts emitted when the owner deletes
+ * the trip. Consumers should drop their local trip state and navigate
+ * away — the room is about to be torn down.
+ */
+export interface TripDeletedEvent {
+  trip_id: string;
+}
+export function onTripDeleted(cb: (evt: TripDeletedEvent) => void): () => void {
+  return registerPersistent<TripDeletedEvent>("trip:deleted", cb);
+}
+
 // ── Testing hook — reset module state between tests ──
 
 /** @internal Test-only: clear the cached socket/token without touching the store. */
