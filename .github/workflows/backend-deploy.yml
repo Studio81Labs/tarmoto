@@ -1,23 +1,23 @@
 name: Backend Deploy
 
-# Deploy model (ADR-0006 + staging extension):
-#   push to main  → staging  (Coolify auto-deploys)
-#   push tag v*   → production (CI triggers Coolify webhook)
+# Deploy model:
+#   push to main  → staging  (PaaS auto-deploys)
+#   push tag v*   → production (CI triggers PaaS deploy webhook)
 #   workflow_dispatch → choose staging or production
 #
-# Deploy target: Hetzner CX33 + Coolify.
 # Day-2 ops: docs/process/runbook.md
 #
 # Required repo secrets:
-#   COOLIFY_API_TOKEN                Coolify API token (Keys & Tokens)
-#   COOLIFY_PROD_DEPLOY_WEBHOOK_URL   Production Coolify app deploy webhook
-#   COOLIFY_STAGING_DEPLOY_WEBHOOK_URL  Staging Coolify app deploy webhook
+#   COOLIFY_API_TOKEN                   PaaS API token (issued from PaaS dashboard)
+#   COOLIFY_PROD_DEPLOY_WEBHOOK_URL     Production deploy webhook
+#   COOLIFY_STAGING_DEPLOY_WEBHOOK_URL  Staging deploy webhook
 #
 # Required repo variables:
-#   BACKEND_URL_PROD                 e.g. https://api.tarmoto.app
-#   BACKEND_URL_STAGING              e.g. https://api.staging.tarmoto.app
-#   COOLIFY_PROD_APPLICATION_UUID     Production Coolify app UUID
-#   COOLIFY_STAGING_APPLICATION_UUID Staging Coolify app UUID
+#   BACKEND_URL_PROD                    e.g. https://api.tarmoto.app
+#   BACKEND_URL_STAGING                 e.g. https://api.staging.tarmoto.app
+#   COOLIFY_API_BASE_URL                Base URL of the PaaS API (no trailing slash)
+#   COOLIFY_PROD_APPLICATION_UUID       Production app UUID
+#   COOLIFY_STAGING_APPLICATION_UUID    Staging app UUID
 
 on:
   push:
@@ -71,21 +71,21 @@ jobs:
           fi
           echo "name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
 
-      - name: Trigger Coolify deploy (production only)
+      - name: Trigger production deploy (production only)
         if: steps.env.outputs.name == 'production'
         env:
           WEBHOOK_URL: ${{ secrets.COOLIFY_PROD_DEPLOY_WEBHOOK_URL }}
         run: |
           echo "Triggering production deploy..."
           curl --fail --silent --show-error -X POST "$WEBHOOK_URL"
-          echo "Webhook accepted — Coolify is building."
+          echo "Webhook accepted — PaaS is building."
 
       - name: Wait for deploy to go live
         env:
           BASE_URL: ${{ steps.env.outputs.name == 'production' && vars.BACKEND_URL_PROD || vars.BACKEND_URL_STAGING }}
         run: |
           set -euo pipefail
-          # Coolify's rolling update builds the image, starts a new
+          # The PaaS rolling update builds the image, starts a new
           # container, and waits for the Docker HEALTHCHECK to pass
           # before switching traffic. We poll the app healthcheck
           # endpoint until it returns 200 — the new container is live.
@@ -113,17 +113,17 @@ jobs:
         env:
           COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
           APPLICATION_UUID: ${{ steps.env.outputs.name == 'production' && vars.COOLIFY_PROD_APPLICATION_UUID || vars.COOLIFY_STAGING_APPLICATION_UUID }}
-          COOLIFY_URL: https://coolify.studio81.cz
+          COOLIFY_URL: ${{ vars.COOLIFY_API_BASE_URL }}
         run: |
           set -euo pipefail
-          echo "::warning::Smoke test failed — rolling back via Coolify API."
+          echo "::warning::Smoke test failed — rolling back via PaaS API."
 
           DEPLOYS=$(curl --fail --silent --show-error \
             -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
             -H "Accept: application/json" \
             "${COOLIFY_URL}/api/v1/applications/${APPLICATION_UUID}")
 
-          # Coolify returns the application object with .deployments array,
+          # The PaaS returns the application object with a .deployments array,
           # but if the API returns a plain array, normalize it.
           if echo "$DEPLOYS" | jq -e 'type == "array"' > /dev/null 2>&1; then
             CURRENT=$(echo "$DEPLOYS" | jq -r '.[0].id // empty')
@@ -135,7 +135,7 @@ jobs:
 
           if [ -z "$PREV" ]; then
             echo "::error::No previous deployment to roll back to."
-            echo "::error::Open Coolify → Deployments → Redeploy a previous successful deploy."
+            echo "::error::Open the PaaS UI → Deployments → Redeploy a previous successful deploy."
             exit 1
           fi
 

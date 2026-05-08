@@ -203,7 +203,7 @@ The system analyzes road geometry (curviness from OSM), elevation data, surface 
 | Database    | PostgreSQL + PostGIS                                             | Geospatial queries, road segment indexing, proven at scale                            |
 | Real-time   | WebSockets (Socket.io) + Redis Pub/Sub                           | Live hazard alerts, group ride tracking                                               |
 | ML Pipeline | TensorFlow Lite (on-device)                                      | On-device road classification, server-side aggregation via NestJS ingest pipeline     |
-| Cloud       | Hetzner CX33 + Coolify (backend) + Cloudflare (R2, Workers, DNS) | Self-hosted PaaS, no egress fees on R2, global CDN for tiles + companion              |
+| Cloud       | Self-hosted PaaS (backend container) + Cloudflare (R2, Workers, DNS) | Self-hosted PaaS, no egress fees on R2, global CDN for tiles + companion              |
 | Analytics   | PostHog (self-hosted) or Mixpanel                                | Privacy-first analytics, funnel tracking                                              |
 
 ### 5.2 Road Quality Data Pipeline
@@ -277,12 +277,10 @@ Prices are EUR-denominated; see ADR-0003 and `SUBSCRIPTION_PRICING` in `@tarmoto
 
 | Item                                                                | Status |
 | ------------------------------------------------------------------- | ------ |
-| Hetzner CX33 VPS provisioned (Helsinki, €8.46/mo)                   | ✅     |
-| Coolify self-hosted PaaS (`coolify.studio81.cz`)                    | ✅     |
+| Backend host (self-hosted PaaS) provisioned                         | ✅     |
 | PostGIS 17 + Redis 8 (prod + staging)                               | ✅     |
 | Cloudflare R2 object storage (avatars, exports, tiles)              | ✅     |
 | CI/CD: GitHub Actions (backend-deploy, companion-deploy, mobile CI) | ✅     |
-| ADR-0006: Hetzner + Coolify stack (Accepted)                        | ✅     |
 | Staging environment (`api-staging.tarmoto.app`)                     | ✅     |
 | Auto-migration on deploy (TypeORM)                                  | ✅     |
 | Smoke tests + auto-rollback on deploy failure                       | ✅     |

@@ -43,7 +43,7 @@ describe('buildJobsConfig', () => {
     });
   });
 
-  it('treats empty-string Redis auth env vars as unset (Coolify-style)', () => {
+  it('treats empty-string Redis auth env vars as unset', () => {
     const cfg = buildJobsConfig(
       fakeConfig({ TARMOTO_REDIS_USERNAME: '', TARMOTO_REDIS_PASSWORD: '' }),
     );

@@ -6,7 +6,7 @@
 # compiled `dist/`. The build stage uses pnpm with the workspace
 # enabled because the backend depends on `@tarmoto/shared`.
 #
-# Built by Coolify off `main` (Dockerfile build pack, repo root context).
+# Built by the PaaS off `main` (Dockerfile build pack, repo root context).
 # Also runnable locally (`docker build -f apps/backend/Dockerfile .`).
 
 ARG NODE_VERSION=24-alpine

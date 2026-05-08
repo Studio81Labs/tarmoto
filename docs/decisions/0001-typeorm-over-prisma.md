@@ -12,7 +12,7 @@ Tarmoto's backend is geospatial at its core — ride segments, road surface qual
 - Allow raw SQL or typed expressions for PostGIS functions like `ST_DWithin`, `ST_Intersects`, `ST_MakeLine`, without dropping to a second query layer.
 - Let us run spatial `CHECK` constraints and triggers from migrations.
 
-When we started, the team's default ORM choice was Prisma (used in the sibling Nexcue project). Evaluating it against the above:
+When we started, the team's default ORM choice was Prisma. Evaluating it against the above:
 
 - Prisma does not ship first-class PostGIS support. The workaround is using `Unsupported("geometry")` and accessing those fields via raw SQL — which loses type safety at exactly the columns we care about most.
 - Spatial indexes are not expressible in the Prisma schema; they must be added via side-car `migration.sql` fragments that Prisma can't help review.
@@ -36,7 +36,6 @@ Entities live in `apps/backend/src/entities/`. Spatial columns use `@Column({ ty
 - `synchronize: true` is **never** enabled — auto-sync silently diverges from our migration history, including the PostGIS bits Prisma would also have missed.
 - TypeORM is less strict than Prisma about query builder type inference. Reviewers should verify that service-level contracts (DTOs) are enforced at the NestJS layer, not just by inferring from TypeORM calls.
 - If PostGIS features are not used by a given module, that module still benefits from the overall TypeORM decision (one ORM per backend).
-- We accept that sharing an ORM with Nexcue is not possible — Nexcue picked Prisma before this constraint was understood.
 
 ## Alternatives considered
 

@@ -5,8 +5,8 @@ services:
     container_name: tarmoto-db
     image: postgis/postgis:17-3.4-alpine
     restart: unless-stopped
-    # Default host port is 5433 (not 5432) so tarmoto and nexcue can run
-    # side by side on the same Docker host. Override with
+    # Default host port is 5433 (not 5432) to avoid clashing with any
+    # system-local PostgreSQL on the same Docker host. Override with
     # TARMOTO_DATABASE_PORT if 5433 is also taken.
     ports:
       - "${TARMOTO_DATABASE_PORT:-5433}:5432"
