@@ -49,10 +49,19 @@ export class AddModelEvalReconcileAttemptedAt1717600000000 implements MigrationI
       `DROP INDEX IF EXISTS idx_model_eval_samples_pending`,
     );
 
+    // Partial index predicate also excludes anonymized rows
+    // (`user_id IS NULL`). After `AccountDeletionService.purgeUser`
+    // flips a sample's `user_id` to NULL via ON DELETE SET NULL,
+    // the reconcile query's `mes.user_id IS NOT NULL` predicate
+    // permanently drops it from the candidate set. Without this
+    // tightened index predicate, those rows would keep
+    // `last_reconcile_attempt_at = NULL` and sort first in the
+    // index forever, so every hourly tick would re-walk the same
+    // never-claimable rows before finding eligible work (codex P2).
     await queryRunner.query(`
       CREATE INDEX IF NOT EXISTS idx_model_eval_samples_pending
         ON model_eval_samples(last_reconcile_attempt_at NULLS FIRST, road_segment_id)
-        WHERE reconciled_at IS NULL;
+        WHERE reconciled_at IS NULL AND user_id IS NOT NULL;
     `);
   }
 
