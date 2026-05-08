@@ -81,12 +81,19 @@ export class AddModelEvalSamples1717300000000 implements MigrationInterface {
         WHERE reconciled_at IS NULL;
     `);
 
-    // Metric queries always group by model_version + reconciled
-    // time. The composite index covers the dangerous-misclass
-    // 24h-rolling aggregation.
+    // Metric queries filter on `reconciled_at >= NOW() - 24h` (and
+    // 7d for the agreement window) and only group by `model_version`
+    // afterward. Postgres can't seek to the time window if
+    // `model_version` is the leading column, so we order the
+    // composite as `(reconciled_at, model_version)` — that lets the
+    // 24h/7d filter do an index range scan and the trailing
+    // `model_version` is a free bonus for the GROUP BY in
+    // `computeVersionMetrics`. Partial because unreconciled rows
+    // (~majority while a sample is pending) shouldn't bloat the
+    // btree.
     await queryRunner.query(`
-      CREATE INDEX IF NOT EXISTS idx_model_eval_samples_version_recon
-        ON model_eval_samples(model_version, reconciled_at)
+      CREATE INDEX IF NOT EXISTS idx_model_eval_samples_recon_version
+        ON model_eval_samples(reconciled_at, model_version)
         WHERE reconciled_at IS NOT NULL;
     `);
 
@@ -132,7 +139,7 @@ export class AddModelEvalSamples1717300000000 implements MigrationInterface {
       `DROP INDEX IF EXISTS idx_model_eval_samples_segment`,
     );
     await queryRunner.query(
-      `DROP INDEX IF EXISTS idx_model_eval_samples_version_recon`,
+      `DROP INDEX IF EXISTS idx_model_eval_samples_recon_version`,
     );
     await queryRunner.query(
       `DROP INDEX IF EXISTS idx_model_eval_samples_pending`,

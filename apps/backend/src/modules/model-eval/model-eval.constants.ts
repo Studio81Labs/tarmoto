@@ -102,6 +102,19 @@ export const CROSS_AGREEMENT_MIN_DISTINCT = 3;
 export const AGREEMENT_SNAPSHOT_TTL_MS = 60 * 60 * 1000;
 
 /**
+ * Stable rendering for an agreement / metric value in human-facing
+ * logs and the markdown report. `null` becomes the literal `n/a`
+ * (no value computed for this window), otherwise three decimal
+ * places. Centralised here so the reconcile processor's log line,
+ * the agreement processor's log line, and the markdown report all
+ * agree on the format.
+ */
+export function formatScore(value: number | null): string {
+  if (value === null) return 'n/a';
+  return value.toFixed(3);
+}
+
+/**
  * Bucket a `device_model` like "iPhone 15 Pro" or "Samsung Galaxy
  * S23" into a coarse vendor family for cross-device agreement. Falls
  * back to the lowercased full string when the model string is short

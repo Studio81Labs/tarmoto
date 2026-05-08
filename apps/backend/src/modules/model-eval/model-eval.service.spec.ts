@@ -249,6 +249,21 @@ describe('ModelEvalService.reconcilePending', () => {
     expect(samples.update).not.toHaveBeenCalled();
   });
 
+  it('skips the alert query on no-op runs (cursor review — half the per-tick cost when nothing reconciled)', async () => {
+    const { service, samples } = await buildService({});
+    samples.query.mockResolvedValue([]);
+    await service.reconcilePending();
+    // Only the candidate-selection query should run; the alert
+    // computeVersionMetrics aggregate (`GROUP BY model_version`)
+    // must NOT have been issued.
+    const alertCalls = samples.query.mock.calls.filter(
+      (call: unknown[]) =>
+        typeof call[0] === 'string' &&
+        call[0].includes('GROUP BY model_version'),
+    );
+    expect(alertCalls).toHaveLength(0);
+  });
+
   it('issue #496 — reconcile SQL excludes the sample row + same-rider readings (leave-one-out)', async () => {
     const { service, samples } = await buildService({});
     samples.query.mockResolvedValue([]);

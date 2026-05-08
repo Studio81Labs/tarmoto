@@ -15,6 +15,7 @@ import {
   SPEC_TARGETS,
   classificationToScore,
   deviceFamily,
+  formatScore,
 } from './model-eval.constants.js';
 import {
   ModelEvalAgreementSnapshotDto,
@@ -156,24 +157,23 @@ export class ModelEvalService {
            mes.road_segment_id,
            mes.predicted_score,
            mes.model_version,
+           mes.created_at    AS sample_created_at,
            sr_self.user_id   AS sample_user_id
          FROM model_eval_samples mes
          JOIN surface_readings sr_self ON sr_self.id = mes.surface_reading_id
          JOIN road_segments rs ON rs.id = mes.road_segment_id
          WHERE mes.reconciled_at IS NULL
-           -- Cheap gross-threshold pre-filter applied BEFORE LIMIT.
-           -- The gross aggregate on road_segments is a strict
-           -- over-approximation of the leave-one-out aggregate
-           -- (LOO drops readings; reading_count_LOO ≤ reading_count_gross),
-           -- so if gross can't reach the spec §8.3 thresholds, LOO
-           -- can't either. Without this gate, low-traffic segments
-           -- whose samples never reach the threshold would
-           -- permanently fill the oldest-1000 window and starve
-           -- newer reconcilable samples.
+           -- Cheap gross-threshold pre-filter. The gross aggregate
+           -- on road_segments is a strict over-approximation of the
+           -- leave-one-out aggregate (LOO drops readings; LOO count
+           -- is at most gross count), so failing this gate
+           -- guarantees failing LOO and we can skip the expensive
+           -- subquery for those rows. NOTE: NO LIMIT here on
+           -- purpose -- the LIMIT is applied after the LOO
+           -- predicate below so a backlog of same-rider-repeat
+           -- candidates cant starve newer reconcilable samples.
            AND rs.reading_count >= $2
            AND rs.confidence    >= $1
-         ORDER BY mes.created_at ASC
-         LIMIT $3
        ),
        loo AS (
          SELECT
@@ -244,7 +244,15 @@ export class ModelEvalService {
                WHEN loo.loo_reading_count >= 3  THEN 50
                WHEN loo.loo_reading_count >= 1  THEN 20
                ELSE 0
-             END >= $1`,
+             END >= $1
+       -- LIMIT is applied AFTER the LOO eligibility predicate so a
+       -- backlog of same-rider-repeat candidates (gross-threshold
+       -- met but LOO drops every other reading) can't starve newer
+       -- independently-reconcilable samples. We pick the oldest
+       -- LOO-eligible rows so reconciliation is FIFO across the
+       -- actually-reconcilable set.
+       ORDER BY c.sample_created_at ASC
+       LIMIT $3`,
       [RECONCILE_MIN_CONFIDENCE, RECONCILE_MIN_READINGS, limit],
     );
     const rows = rawRows as Array<{
@@ -281,9 +289,15 @@ export class ModelEvalService {
       this.logger.log(
         `reconciled ${rows.length} model-eval samples (${dangerous} dangerous)`,
       );
+      // Only re-evaluate the 24h dangerous-misclass rate when we
+      // actually reconciled something — the rate can't change
+      // otherwise, and the alert query is the same aggregate the
+      // metrics endpoint runs on every poll. Skipping it on no-op
+      // hourly runs halves the per-tick query cost without
+      // affecting alert latency: the alert can only newly fire
+      // when a fresh batch of dangerous reconciliations lands.
+      await this.maybeRaiseAlert();
     }
-
-    await this.maybeRaiseAlert();
 
     return { reconciled: rows.length, dangerous };
   }
@@ -586,11 +600,6 @@ function pairwiseFraction(scores: number[]): number | null {
 function roundTo(value: number, digits: number): number {
   const m = 10 ** digits;
   return Math.round(value * m) / m;
-}
-
-function formatScore(value: number | null): string {
-  if (value === null) return 'n/a';
-  return value.toFixed(3);
 }
 
 function renderMarkdown(snapshot: ModelEvalMetricsResponseDto): string {

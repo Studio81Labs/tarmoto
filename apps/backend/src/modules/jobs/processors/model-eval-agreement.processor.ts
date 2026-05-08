@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
 import { ModelEvalService } from '../../model-eval/model-eval.service.js';
+import { formatScore } from '../../model-eval/model-eval.constants.js';
 import { QUEUE_NAMES } from '../jobs.constants.js';
 
 export interface ModelEvalAgreementResult {
@@ -45,9 +46,4 @@ export class ModelEvalAgreementProcessor extends WorkerHost {
       cross_bike_segments: result.cross_bike.segments_evaluated,
     };
   }
-}
-
-function formatScore(value: number | null): string {
-  if (value === null) return 'n/a';
-  return value.toFixed(3);
 }
