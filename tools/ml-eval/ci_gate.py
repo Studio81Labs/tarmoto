@@ -94,40 +94,48 @@ def check(report: dict, *, strict: bool) -> list[str]:
             return True
         return False
 
-    def ge(metric: str, threshold: float) -> None:
+    def gt(metric: str, threshold: float) -> None:
+        # Spec section 7 uses strict "> threshold" for min targets,
+        # so a value landing exactly on the bar must fail (codex
+        # review). Example: spec says "Weighted F1 > 0.80"; a
+        # report at 0.80 has not cleared the launch gate, so the
+        # CI gate refuses it.
         if fail_on_invalid(metric):
             return
         value = report[metric]
-        if value < threshold:
-            failures.append(f"{metric}={value:.4f} < target {threshold:.4f}")
+        if value <= threshold:
+            failures.append(f"{metric}={value:.4f} <= target {threshold:.4f}")
 
-    def le(metric: str, threshold: float) -> None:
+    def lt(metric: str, threshold: float) -> None:
+        # Spec section 7 uses strict "< threshold" for max targets;
+        # a report exactly on the bar (e.g. dangerous_misclass_rate
+        # = 0.01 against the < 0.01 spec target) must fail.
         if fail_on_invalid(metric):
             return
         value = report[metric]
-        if value > threshold:
-            failures.append(f"{metric}={value:.4f} > target {threshold:.4f}")
+        if value >= threshold:
+            failures.append(f"{metric}={value:.4f} >= target {threshold:.4f}")
 
-    ge("weighted_f1", SPEC_TARGETS["weighted_f1_min"])
-    ge("adjacent_accuracy", SPEC_TARGETS["adjacent_accuracy_min"])
-    le(
+    gt("weighted_f1", SPEC_TARGETS["weighted_f1_min"])
+    gt("adjacent_accuracy", SPEC_TARGETS["adjacent_accuracy_min"])
+    lt(
         "confusion_between_extremes",
         SPEC_TARGETS["confusion_between_extremes_max"],
     )
-    le("mae", SPEC_TARGETS["mae_max"])
-    ge(
+    lt("mae", SPEC_TARGETS["mae_max"])
+    gt(
         "surface_type_accuracy",
         SPEC_TARGETS["surface_type_accuracy_min"],
     )
-    ge(
+    gt(
         "cross_device_agreement",
         SPEC_TARGETS["cross_device_agreement_min"],
     )
-    ge(
+    gt(
         "cross_bike_agreement",
         SPEC_TARGETS["cross_bike_agreement_min"],
     )
-    le(
+    lt(
         "dangerous_misclass_rate",
         SPEC_TARGETS["dangerous_misclass_rate_max"],
     )

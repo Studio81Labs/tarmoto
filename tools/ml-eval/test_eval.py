@@ -397,6 +397,45 @@ class EvaluateAndGateTests(unittest.TestCase):
         }
         self.assertEqual(check(report, strict=False), [])
 
+    def test_value_exactly_on_strict_max_boundary_fails(self) -> None:
+        """Codex review: spec section 7.3 uses `< 0.01` for the
+        dangerous-misclass target, so a report at exactly 0.01 has
+        not cleared the gate and must fail."""
+        report = {
+            "weighted_f1": 0.90,
+            "adjacent_accuracy": 0.96,
+            "confusion_between_extremes": 0.01,
+            "mae": 0.30,
+            "surface_type_accuracy": 0.90,
+            "cross_device_agreement": None,
+            "cross_bike_agreement": None,
+            "dangerous_misclass_rate": 0.01,
+        }
+        failures = check(report, strict=False)
+        self.assertTrue(
+            any("dangerous_misclass_rate" in f for f in failures),
+            f"expected dangerous_misclass_rate failure, got {failures}",
+        )
+
+    def test_value_exactly_on_strict_min_boundary_fails(self) -> None:
+        """Spec section 7.1 uses `> 0.80` for weighted_f1; a report
+        at exactly 0.80 has not cleared the launch gate."""
+        report = {
+            "weighted_f1": 0.80,
+            "adjacent_accuracy": 0.96,
+            "confusion_between_extremes": 0.01,
+            "mae": 0.30,
+            "surface_type_accuracy": 0.90,
+            "cross_device_agreement": None,
+            "cross_bike_agreement": None,
+            "dangerous_misclass_rate": 0.005,
+        }
+        failures = check(report, strict=False)
+        self.assertTrue(
+            any("weighted_f1" in f for f in failures),
+            f"expected weighted_f1 failure, got {failures}",
+        )
+
     def test_strict_mode_rejects_any_null(self) -> None:
         report = {
             "weighted_f1": 0.90,
