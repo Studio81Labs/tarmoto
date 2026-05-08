@@ -247,6 +247,32 @@ class LoadSamplesTests(unittest.TestCase):
             self.assertEqual(samples[0].predicted_quality, 4)
             self.assertEqual(samples[1].truth_surface, "gravel")
 
+    def test_blank_road_segment_id_rejected(self) -> None:
+        """Codex review: an upstream export that writes blank
+        `road_segment_id` would collapse unrelated roads into one
+        synthetic segment for cross-bucket agreement, producing a
+        plausible score from rows that do not share a road at all."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "predictions.csv")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write("road_segment_id,predicted_quality,truth_quality\n")
+                fh.write("s1,4,5\n")
+                fh.write(",2,2\n")  # blank id on line 3
+            with self.assertRaises(SystemExit) as cm:
+                load_samples(path)
+            self.assertIn("line 3", str(cm.exception))
+            self.assertIn("road_segment_id", str(cm.exception))
+
+    def test_whitespace_road_segment_id_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "predictions.csv")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write("road_segment_id,predicted_quality,truth_quality\n")
+                fh.write("   ,4,5\n")
+            with self.assertRaises(SystemExit) as cm:
+                load_samples(path)
+            self.assertIn("road_segment_id", str(cm.exception))
+
 
 class EvaluateAndGateTests(unittest.TestCase):
     def test_perfect_run_passes_ci_gate(self) -> None:

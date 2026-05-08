@@ -249,19 +249,22 @@ describe('ModelEvalService.reconcilePending', () => {
     expect(samples.update).not.toHaveBeenCalled();
   });
 
-  it('skips the alert query on no-op runs (cursor review — half the per-tick cost when nothing reconciled)', async () => {
+  it('codex review — runs the alert aggregate even on no-op ticks (24h rate can change as samples age out)', async () => {
     const { service, samples } = await buildService({});
     samples.query.mockResolvedValue([]);
     await service.reconcilePending();
-    // Only the candidate-selection query should run; the alert
-    // computeVersionMetrics aggregate (`GROUP BY model_version`)
-    // must NOT have been issued.
+    // Even when zero rows reconciled, the 24h rolling window can
+    // shift: safe samples ageing out before dangerous ones pushes
+    // the dangerous rate UP without anyone touching the table.
+    // Skipping the alert query on a no-op tick would let the
+    // scheduled alert stay silent through a regression the metrics
+    // endpoint simultaneously reports as alert_active=true.
     const alertCalls = samples.query.mock.calls.filter(
       (call: unknown[]) =>
         typeof call[0] === 'string' &&
         call[0].includes('GROUP BY model_version'),
     );
-    expect(alertCalls).toHaveLength(0);
+    expect(alertCalls.length).toBeGreaterThanOrEqual(1);
   });
 
   it('issue #496 — reconcile SQL excludes the sample row + same-rider readings (leave-one-out)', async () => {
@@ -288,6 +291,11 @@ describe('ModelEvalService.reconcilePending', () => {
     // occupied by samples whose segments never reach the threshold.
     expect(sql).toContain('rs.reading_count >= $2');
     expect(sql).toContain('rs.confidence    >= $1');
+    // Codex review — the LOO aggregate must mirror the production
+    // 2σ outlier filter from migration #1717300000000 so the eval
+    // truth doesn't diverge from `road_segments.quality_score`.
+    expect(sql).toContain('stddev_samp(quality_score)');
+    expect(sql).toContain('2 * st.std_q');
   });
 });
 

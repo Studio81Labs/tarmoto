@@ -125,10 +125,24 @@ def load_samples(path: str) -> list[Sample]:
             raise SystemExit(
                 f"predictions.csv missing required columns: {sorted(missing)}"
             )
-        for row in reader:
+        for line_no, row in enumerate(reader, start=2):
+            # Reject blank `road_segment_id` (codex review). An
+            # upstream export that writes blank ids would otherwise
+            # collapse unrelated roads into one synthetic segment for
+            # cross-bucket agreement, defeating the spec section 5.4
+            # same-road requirement and producing a plausible
+            # agreement score from rows that don't share a road at
+            # all.
+            segment_id = (row.get("road_segment_id") or "").strip()
+            if not segment_id:
+                raise SystemExit(
+                    f"predictions.csv line {line_no}: road_segment_id is "
+                    f"empty or whitespace; cannot group cross-device / "
+                    f"cross-bike agreement reliably"
+                )
             samples.append(
                 Sample(
-                    road_segment_id=row["road_segment_id"],
+                    road_segment_id=segment_id,
                     predicted_quality=parse_int(
                         row["predicted_quality"], field_name="predicted_quality"
                     ),

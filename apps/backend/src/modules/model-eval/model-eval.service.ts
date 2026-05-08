@@ -175,35 +175,23 @@ export class ModelEvalService {
            AND rs.reading_count >= $2
            AND rs.confidence    >= $1
        ),
-       loo AS (
+       loo_scored AS (
+         -- Per-candidate, leave-one-out: every other reading on the
+         -- segment that is NOT the sample row and NOT from the same
+         -- user, scored to a 1-5 quality value.
          SELECT
            c.sample_id,
-           SUM(
-             (CASE other.classification
-                WHEN 'excellent' THEN 5.0
-                WHEN 'good'      THEN 4.0
-                WHEN 'fair'      THEN 3.0
-                WHEN 'poor'      THEN 2.0
-                WHEN 'very_poor' THEN 1.0
-                ELSE NULL
-              END)
-             *
-             (CASE
-                WHEN other.recorded_at >= NOW() - INTERVAL '30 days'  THEN 1.0
-                WHEN other.recorded_at >= NOW() - INTERVAL '90 days'  THEN 0.7
-                WHEN other.recorded_at >= NOW() - INTERVAL '180 days' THEN 0.4
-                ELSE 0.2
-              END)
-           ) / NULLIF(SUM(
-             CASE
-               WHEN other.recorded_at >= NOW() - INTERVAL '30 days'  THEN 1.0
-               WHEN other.recorded_at >= NOW() - INTERVAL '90 days'  THEN 0.7
-               WHEN other.recorded_at >= NOW() - INTERVAL '180 days' THEN 0.4
-               ELSE 0.2
-             END
-           ), 0)                                       AS loo_quality_score,
-           COUNT(*)::int                               AS loo_reading_count,
-           COUNT(DISTINCT other.user_id)::int          AS loo_unique_rider_count
+           c.road_segment_id,
+           other.user_id,
+           other.recorded_at,
+           CASE other.classification
+             WHEN 'excellent' THEN 5.0
+             WHEN 'good'      THEN 4.0
+             WHEN 'fair'      THEN 3.0
+             WHEN 'poor'      THEN 2.0
+             WHEN 'very_poor' THEN 1.0
+             ELSE NULL
+           END AS quality_score
          FROM candidates c
          JOIN surface_readings other
            ON  other.road_segment_id = c.road_segment_id
@@ -215,7 +203,67 @@ export class ModelEvalService {
            )
            AND other.classification IN
              ('excellent','good','fair','poor','very_poor')
-         GROUP BY c.sample_id
+       ),
+       loo_stats AS (
+         -- Mirror the production outlier filter from migration
+         -- #1717300000000 (OutlierFilteredRoadQualityAggregation):
+         -- compute mean + sample stddev per candidate over the LOO
+         -- set so we can drop >2σ readings before averaging.
+         -- Without this the model-eval LOO truth would diverge from
+         -- the road_segments.quality_score the map and spec aggregate
+         -- show, and a few spike readings could create false
+         -- dangerous misses or hide real ones.
+         SELECT
+           sample_id,
+           COUNT(*)::int            AS total_count,
+           AVG(quality_score)       AS mean_q,
+           stddev_samp(quality_score) AS std_q
+         FROM loo_scored
+         GROUP BY sample_id
+       ),
+       loo_kept AS (
+         -- Keep readings the production filter would keep:
+         --   - <3 readings: no meaningful stddev, keep all (mirrors
+         --     spec §8.3 step 1 "skip filter when undefined");
+         --   - all readings identical (std_q = 0 or NULL): no spread,
+         --     nothing is an outlier;
+         --   - otherwise drop |score - mean| > 2 * std_q.
+         SELECT
+           ls.sample_id,
+           ls.user_id,
+           ls.recorded_at,
+           ls.quality_score
+         FROM loo_scored ls
+         JOIN loo_stats st ON st.sample_id = ls.sample_id
+         WHERE
+           st.total_count < 3
+           OR st.std_q IS NULL
+           OR st.std_q = 0
+           OR ABS(ls.quality_score - st.mean_q) <= 2 * st.std_q
+       ),
+       loo AS (
+         SELECT
+           sample_id,
+           SUM(
+             quality_score *
+             CASE
+               WHEN recorded_at >= NOW() - INTERVAL '30 days'  THEN 1.0
+               WHEN recorded_at >= NOW() - INTERVAL '90 days'  THEN 0.7
+               WHEN recorded_at >= NOW() - INTERVAL '180 days' THEN 0.4
+               ELSE 0.2
+             END
+           ) / NULLIF(SUM(
+             CASE
+               WHEN recorded_at >= NOW() - INTERVAL '30 days'  THEN 1.0
+               WHEN recorded_at >= NOW() - INTERVAL '90 days'  THEN 0.7
+               WHEN recorded_at >= NOW() - INTERVAL '180 days' THEN 0.4
+               ELSE 0.2
+             END
+           ), 0)                       AS loo_quality_score,
+           COUNT(*)::int               AS loo_reading_count,
+           COUNT(DISTINCT user_id)::int AS loo_unique_rider_count
+         FROM loo_kept
+         GROUP BY sample_id
        )
        SELECT
          c.sample_id        AS id,
@@ -289,15 +337,17 @@ export class ModelEvalService {
       this.logger.log(
         `reconciled ${rows.length} model-eval samples (${dangerous} dangerous)`,
       );
-      // Only re-evaluate the 24h dangerous-misclass rate when we
-      // actually reconciled something — the rate can't change
-      // otherwise, and the alert query is the same aggregate the
-      // metrics endpoint runs on every poll. Skipping it on no-op
-      // hourly runs halves the per-tick query cost without
-      // affecting alert latency: the alert can only newly fire
-      // when a fresh batch of dangerous reconciliations lands.
-      await this.maybeRaiseAlert();
     }
+
+    // Always re-evaluate the 24h dangerous-misclass rate, even on
+    // no-op ticks. The rolling rate can change WITHOUT new
+    // reconciliations: if safe samples age out of the 24h window
+    // before dangerous ones, the rate goes UP without anyone
+    // touching the table. Skipping the alert query on
+    // `rows.length === 0` would let the scheduled alert stay silent
+    // through a regression that the `/model-eval/metrics` endpoint
+    // simultaneously reports as `alert_active=true`.
+    await this.maybeRaiseAlert();
 
     return { reconciled: rows.length, dangerous };
   }
