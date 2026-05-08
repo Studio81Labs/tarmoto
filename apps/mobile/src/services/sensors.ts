@@ -777,7 +777,6 @@ class SensorService {
   }
 
   /**
-  /**
    * Classify road quality from features.
    *
    * Tries the on-device TF Lite model first (US-3); when the model
