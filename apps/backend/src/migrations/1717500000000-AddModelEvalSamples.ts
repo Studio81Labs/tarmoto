@@ -128,9 +128,25 @@ export class AddModelEvalSamples1717500000000 implements MigrationInterface {
         ON model_eval_samples(user_id)
         WHERE user_id IS NOT NULL;
     `);
+
+    // Partial index on the SET NULL bike FK. Same shape as the
+    // user index above: when a rider deletes a bike via
+    // `BikesService.delete`, Postgres has to enforce the
+    // ON DELETE SET NULL on every referencing model_eval_samples
+    // row. Without this index every garage delete is a full
+    // sequential scan + per-row update on the eval table, turning
+    // a normal user request into table-scan / lock-heavy work as
+    // samples accumulate. Partial so post-delete NULLs don't
+    // bloat the btree.
+    await queryRunner.query(`
+      CREATE INDEX IF NOT EXISTS idx_model_eval_samples_bike
+        ON model_eval_samples(bike_id)
+        WHERE bike_id IS NOT NULL;
+    `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`DROP INDEX IF EXISTS idx_model_eval_samples_bike`);
     await queryRunner.query(`DROP INDEX IF EXISTS idx_model_eval_samples_user`);
     await queryRunner.query(
       `DROP INDEX IF EXISTS idx_model_eval_samples_surface_reading_id`,
