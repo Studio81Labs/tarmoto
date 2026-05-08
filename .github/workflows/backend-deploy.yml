@@ -118,6 +118,20 @@ jobs:
           set -euo pipefail
           echo "::warning::Smoke test failed — rolling back via PaaS API."
 
+          if [ -z "$COOLIFY_URL" ]; then
+            echo "::error::Repo variable COOLIFY_API_BASE_URL is unset; cannot reach the PaaS API for rollback."
+            echo "::error::Set it under Repo → Settings → Secrets and variables → Actions → Variables, or roll back manually from the PaaS UI."
+            exit 1
+          fi
+          if [ -z "$APPLICATION_UUID" ]; then
+            echo "::error::COOLIFY_${{ steps.env.outputs.name == 'production' && 'PROD' || 'STAGING' }}_APPLICATION_UUID is unset; cannot identify the app for rollback."
+            exit 1
+          fi
+          if [ -z "$COOLIFY_API_TOKEN" ]; then
+            echo "::error::COOLIFY_API_TOKEN secret is unset; cannot authenticate to the PaaS API for rollback."
+            exit 1
+          fi
+
           DEPLOYS=$(curl --fail --silent --show-error \
             -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
             -H "Accept: application/json" \

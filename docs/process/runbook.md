@@ -68,4 +68,5 @@ Per `.github/workflows/backend-deploy.yml`:
 **Variables:**
 
 - `BACKEND_URL_PROD`, `BACKEND_URL_STAGING`
+- `COOLIFY_API_BASE_URL` — base URL of the PaaS API (no trailing slash); required for the rollback step
 - `COOLIFY_PROD_APPLICATION_UUID`, `COOLIFY_STAGING_APPLICATION_UUID`
