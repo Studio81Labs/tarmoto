@@ -180,6 +180,19 @@ export class ModelEvalService {
          JOIN surface_readings sr_self ON sr_self.id = mes.surface_reading_id
          JOIN road_segments rs ON rs.id = mes.road_segment_id
          WHERE mes.reconciled_at IS NULL
+           -- Drop anonymized samples from the candidate set BEFORE
+           -- the expensive LOO join. AccountDeletionService.purgeUser
+           -- nulls both surface_readings.user_id and
+           -- model_eval_samples.user_id for purged riders, so
+           -- those rows can never satisfy the downstream LOO
+           -- independence predicate (sample_user_id IS NOT NULL).
+           -- Without this filter every hourly tick would re-walk
+           -- the same permanently-ineligible rows as deleted-user
+           -- telemetry accumulates, wasting CPU on the LOO
+           -- subquery for samples that will always be dropped.
+           -- Codex review.
+           AND sr_self.user_id IS NOT NULL
+           AND mes.user_id     IS NOT NULL
            -- Cheap gross-threshold pre-filter. The gross aggregate
            -- on road_segments is a strict over-approximation of the
            -- leave-one-out aggregate (LOO drops readings; LOO count

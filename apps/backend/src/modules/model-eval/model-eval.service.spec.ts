@@ -308,6 +308,12 @@ describe('ModelEvalService.reconcilePending', () => {
     // prediction. Spec section 8.3 step 3 frames the aggregate as
     // "readings from different riders".
     expect(sql).toContain('loo.loo_unique_rider_count >= $4');
+    // Codex review — anonymized samples must be filtered at the
+    // candidate-selection step so the hourly job stops re-walking
+    // permanently-ineligible rows as deleted-user telemetry
+    // accumulates.
+    expect(sql).toContain('sr_self.user_id IS NOT NULL');
+    expect(sql).toContain('mes.user_id     IS NOT NULL');
   });
 });
 
