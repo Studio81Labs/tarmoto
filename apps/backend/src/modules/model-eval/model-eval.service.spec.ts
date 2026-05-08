@@ -181,7 +181,7 @@ describe('ModelEvalService.reconcilePending', () => {
     });
 
     samples.query.mockImplementation((sql: string) => {
-      if (sql.includes('FROM model_eval_samples mes')) {
+      if (sql.includes('WITH candidates AS')) {
         return Promise.resolve([
           {
             id: 'sample-1',
@@ -216,7 +216,7 @@ describe('ModelEvalService.reconcilePending', () => {
       sampleRate: '0',
     });
     samples.query.mockImplementation((sql: string) => {
-      if (sql.includes('FROM model_eval_samples mes')) {
+      if (sql.includes('WITH candidates AS')) {
         return Promise.resolve([
           {
             id: 'sample-2',
@@ -247,6 +247,26 @@ describe('ModelEvalService.reconcilePending', () => {
     const result = await service.reconcilePending();
     expect(result).toEqual({ reconciled: 0, dangerous: 0 });
     expect(samples.update).not.toHaveBeenCalled();
+  });
+
+  it('issue #496 — reconcile SQL excludes the sample row + same-rider readings (leave-one-out)', async () => {
+    const { service, samples } = await buildService({});
+    samples.query.mockResolvedValue([]);
+    await service.reconcilePending();
+    // The first call carries the candidate-selection SQL — assert
+    // the LOO conditions are present so a refactor that drops them
+    // breaks this test instead of silently letting the prediction
+    // vote for its own truth.
+    const candidateCall = samples.query.mock.calls.find(
+      (call: unknown[]) =>
+        typeof call[0] === 'string' && call[0].includes('WITH candidates AS'),
+    ) as [string] | undefined;
+    expect(candidateCall).toBeDefined();
+    const sql = candidateCall![0];
+    // Excludes the sample's own surface_reading row.
+    expect(sql).toContain('other.id != c.surface_reading_id');
+    // Excludes other readings from the same user.
+    expect(sql).toContain('IS DISTINCT FROM c.sample_user_id');
   });
 });
 

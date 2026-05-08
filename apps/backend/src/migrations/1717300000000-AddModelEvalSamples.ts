@@ -94,9 +94,25 @@ export class AddModelEvalSamples1717300000000 implements MigrationInterface {
       CREATE INDEX IF NOT EXISTS idx_model_eval_samples_segment
         ON model_eval_samples(road_segment_id);
     `);
+
+    // Index the cascading FK target. Postgres does NOT auto-index
+    // referencing columns, and the daily location-retention sweep
+    // bulk-deletes old `surface_readings` rows. Without this index
+    // each cascade would table-scan `model_eval_samples` and turn a
+    // privacy sweep into lock-heavy work as the eval table grows.
+    // Unique because `maybeSample` creates exactly one sample per
+    // surface reading — the constraint also catches a double-write
+    // bug at the DB level instead of letting it skew the metrics.
+    await queryRunner.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_model_eval_samples_surface_reading_id
+        ON model_eval_samples(surface_reading_id);
+    `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS idx_model_eval_samples_surface_reading_id`,
+    );
     await queryRunner.query(
       `DROP INDEX IF EXISTS idx_model_eval_samples_segment`,
     );

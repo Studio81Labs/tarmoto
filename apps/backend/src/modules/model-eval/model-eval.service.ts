@@ -124,11 +124,22 @@ export class ModelEvalService {
   }
 
   /**
-   * Walk the unreconciled samples whose road segment now has the
-   * spec-§8.3 confirmation level (`confidence ≥ 70`, `reading_count
-   * ≥ 5`) and fold the aggregate truth into each sample row. Returns
-   * the count of rows reconciled and the count flagged dangerous so
-   * the caller can log a single-line summary.
+   * Walk the unreconciled samples whose road segment has accumulated
+   * enough INDEPENDENT confirmations (per spec §8.3 step 3) and fold
+   * the aggregate truth into each sample row. Returns the count of
+   * rows reconciled and the count flagged dangerous so the caller
+   * can log a single-line summary.
+   *
+   * The aggregate is computed **leave-one-out**: it excludes the
+   * sample's own `surface_reading` row AND every other reading from
+   * the same `user_id`. Without that exclusion the prediction being
+   * graded would vote for its own truth label — a segment dominated
+   * by the same rider's optimistic classifications could reconcile
+   * as Good and avoid the dangerous-misclass counter instead of
+   * being compared with independent confirmations. The recency
+   * weights and confidence ladder are the same ones the
+   * `update_road_quality()` trigger applies (migration #1714700000000),
+   * so the LOO truth is still spec-aligned.
    *
    * The dangerous-misclass alert fires here rather than in the
    * metrics endpoint because the endpoint is read-only and a polling
@@ -138,21 +149,90 @@ export class ModelEvalService {
    */
   async reconcilePending(limit = 1000): Promise<ReconcileResult> {
     const rawRows: unknown = await this.samples.query(
-      `SELECT
-         mes.id,
-         mes.predicted_score,
-         mes.model_version,
-         rs.quality_score,
-         rs.reading_count,
-         rs.confidence
-       FROM model_eval_samples mes
-       JOIN road_segments rs ON rs.id = mes.road_segment_id
-       WHERE mes.reconciled_at IS NULL
-         AND rs.confidence >= $1
-         AND rs.reading_count >= $2
-         AND rs.quality_score IS NOT NULL
-       ORDER BY mes.created_at ASC
-       LIMIT $3`,
+      `WITH candidates AS (
+         SELECT
+           mes.id            AS sample_id,
+           mes.surface_reading_id,
+           mes.road_segment_id,
+           mes.predicted_score,
+           mes.model_version,
+           sr_self.user_id   AS sample_user_id
+         FROM model_eval_samples mes
+         JOIN surface_readings sr_self ON sr_self.id = mes.surface_reading_id
+         WHERE mes.reconciled_at IS NULL
+         ORDER BY mes.created_at ASC
+         LIMIT $3
+       ),
+       loo AS (
+         SELECT
+           c.sample_id,
+           SUM(
+             (CASE other.classification
+                WHEN 'excellent' THEN 5.0
+                WHEN 'good'      THEN 4.0
+                WHEN 'fair'      THEN 3.0
+                WHEN 'poor'      THEN 2.0
+                WHEN 'very_poor' THEN 1.0
+                ELSE NULL
+              END)
+             *
+             (CASE
+                WHEN other.recorded_at >= NOW() - INTERVAL '30 days'  THEN 1.0
+                WHEN other.recorded_at >= NOW() - INTERVAL '90 days'  THEN 0.7
+                WHEN other.recorded_at >= NOW() - INTERVAL '180 days' THEN 0.4
+                ELSE 0.2
+              END)
+           ) / NULLIF(SUM(
+             CASE
+               WHEN other.recorded_at >= NOW() - INTERVAL '30 days'  THEN 1.0
+               WHEN other.recorded_at >= NOW() - INTERVAL '90 days'  THEN 0.7
+               WHEN other.recorded_at >= NOW() - INTERVAL '180 days' THEN 0.4
+               ELSE 0.2
+             END
+           ), 0)                                       AS loo_quality_score,
+           COUNT(*)::int                               AS loo_reading_count,
+           COUNT(DISTINCT other.user_id)::int          AS loo_unique_rider_count
+         FROM candidates c
+         JOIN surface_readings other
+           ON  other.road_segment_id = c.road_segment_id
+           AND other.id != c.surface_reading_id
+           AND (
+             c.sample_user_id IS NULL
+             OR other.user_id IS NULL
+             OR other.user_id IS DISTINCT FROM c.sample_user_id
+           )
+           AND other.classification IN
+             ('excellent','good','fair','poor','very_poor')
+         GROUP BY c.sample_id
+       )
+       SELECT
+         c.sample_id        AS id,
+         c.predicted_score,
+         c.model_version,
+         loo.loo_quality_score AS quality_score,
+         loo.loo_reading_count AS reading_count,
+         CASE
+           WHEN loo.loo_reading_count >= 20
+                AND loo.loo_unique_rider_count >= 5 THEN 100
+           WHEN loo.loo_reading_count >= 10 THEN 90
+           WHEN loo.loo_reading_count >= 5  THEN 70
+           WHEN loo.loo_reading_count >= 3  THEN 50
+           WHEN loo.loo_reading_count >= 1  THEN 20
+           ELSE 0
+         END                AS confidence
+       FROM candidates c
+       JOIN loo ON loo.sample_id = c.sample_id
+       WHERE loo.loo_reading_count >= $2
+         AND loo.loo_quality_score IS NOT NULL
+         AND CASE
+               WHEN loo.loo_reading_count >= 20
+                    AND loo.loo_unique_rider_count >= 5 THEN 100
+               WHEN loo.loo_reading_count >= 10 THEN 90
+               WHEN loo.loo_reading_count >= 5  THEN 70
+               WHEN loo.loo_reading_count >= 3  THEN 50
+               WHEN loo.loo_reading_count >= 1  THEN 20
+               ELSE 0
+             END >= $1`,
       [RECONCILE_MIN_CONFIDENCE, RECONCILE_MIN_READINGS, limit],
     );
     const rows = rawRows as Array<{
