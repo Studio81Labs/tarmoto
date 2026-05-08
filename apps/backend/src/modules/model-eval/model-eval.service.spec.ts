@@ -283,8 +283,15 @@ describe('ModelEvalService.reconcilePending', () => {
     const sql = candidateCall![0];
     // Excludes the sample's own surface_reading row.
     expect(sql).toContain('other.id != c.surface_reading_id');
-    // Excludes other readings from the same user.
-    expect(sql).toContain('IS DISTINCT FROM c.sample_user_id');
+    // Codex review: BOTH sides must have a known user_id and they
+    // must differ. Anonymized rows (user_id IS NULL after the
+    // AccountDeletionService SET NULL path) must not count as
+    // independent confirmations — a deleted rider's anonymized
+    // readings would otherwise satisfy the >=5 LOO threshold from
+    // their own history.
+    expect(sql).toContain('c.sample_user_id IS NOT NULL');
+    expect(sql).toContain('other.user_id IS NOT NULL');
+    expect(sql).toContain('other.user_id != c.sample_user_id');
     // Issue #496 — gross pre-filter on road_segments runs BEFORE
     // the LIMIT so low-traffic segments don't starve the queue.
     // Without this gate the oldest-1000 window could be permanently

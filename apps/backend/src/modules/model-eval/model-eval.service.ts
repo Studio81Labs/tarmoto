@@ -196,11 +196,19 @@ export class ModelEvalService {
          JOIN surface_readings other
            ON  other.road_segment_id = c.road_segment_id
            AND other.id != c.surface_reading_id
-           AND (
-             c.sample_user_id IS NULL
-             OR other.user_id IS NULL
-             OR other.user_id IS DISTINCT FROM c.sample_user_id
-           )
+           -- Require BOTH sides to have a known user_id and require
+           -- they differ. Anonymized rows (user_id IS NULL after
+           -- AccountDeletionService.purgeUser flips the FK to NULL
+           -- via ON DELETE SET NULL) must NOT count as independent
+           -- confirmations: a deleted rider's many anonymized
+           -- readings would otherwise satisfy the >=5 LOO threshold
+           -- and grade the sample against that rider's own history.
+           -- Spec section 8.3 step 3 requires independent
+           -- confirmations and we can't assert that without a
+           -- non-null user_id on both sides.
+           AND c.sample_user_id IS NOT NULL
+           AND other.user_id IS NOT NULL
+           AND other.user_id != c.sample_user_id
            AND other.classification IN
              ('excellent','good','fair','poor','very_poor')
        ),
