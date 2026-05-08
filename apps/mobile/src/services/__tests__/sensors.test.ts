@@ -356,12 +356,12 @@ describe("sensorService.extractFeatures — spectral + gyro + longitudinal (issu
     expect(features.spectral_entropy).toBe(0);
   });
 
-  it("places a 5 Hz vertical vibration in the mid spectral band", () => {
-    // The feature extractor takes `|mag - g|` (a half-wave rectifier
-    // on the sine), which doubles the dominant frequency: a 5 Hz input
-    // shows up as a ~10 Hz bump in the deviation signal — squarely in
-    // the spec's mid band (5–15 Hz, road texture).
-    const features = callExtract(makeVibratingWindow(5, 1.5));
+  it("places a 10 Hz vertical vibration in the mid spectral band", () => {
+    // The FFT pass receives the SIGNED deviation `mag − g`, so an
+    // input at 10 Hz is preserved at ~10 Hz (it's not rectified —
+    // that would alias high-band content off the 25 Hz Nyquist).
+    // 10 Hz lands squarely in the mid band (5–15 Hz, road texture).
+    const features = callExtract(makeVibratingWindow(10, 1.5));
     expect(features.dominant_frequency).toBeGreaterThan(8);
     expect(features.dominant_frequency).toBeLessThan(12);
     expect(features.spectral_energy_mid).toBeGreaterThan(
@@ -369,6 +369,24 @@ describe("sensorService.extractFeatures — spectral + gyro + longitudinal (issu
     );
     expect(features.spectral_energy_mid).toBeGreaterThan(
       features.spectral_energy_high,
+    );
+  });
+
+  it("places a 20 Hz vertical vibration in the high spectral band (no aliasing)", () => {
+    // Regression for the rectification bug flagged on PR #502: with
+    // |mag − g| as the FFT input, a 20 Hz vibration would have shown
+    // up at ~10 Hz (frequency doubling pushed past Nyquist and
+    // reflected back). The signed-deviation fix preserves it in the
+    // high band — exactly where the model needs it for gravel/fine-
+    // texture discrimination.
+    const features = callExtract(makeVibratingWindow(20, 1.5));
+    expect(features.dominant_frequency).toBeGreaterThanOrEqual(15);
+    expect(features.dominant_frequency).toBeLessThan(25);
+    expect(features.spectral_energy_high).toBeGreaterThan(
+      features.spectral_energy_low,
+    );
+    expect(features.spectral_energy_high).toBeGreaterThan(
+      features.spectral_energy_mid,
     );
   });
 

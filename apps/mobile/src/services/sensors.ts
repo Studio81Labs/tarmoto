@@ -394,11 +394,26 @@ class SensorService {
    * Extract features from a 2-second window of accelerometer data
    */
   private extractFeatures(window: SensorReading[]): WindowFeatures {
-    // Calculate acceleration magnitude minus gravity
-    const deviations = window.map((r) => {
+    // Magnitude minus gravity. We keep two views of this signal:
+    //
+    //   - `signedDeviations` (mag − g) — preserves the oscillation
+    //     polarity around gravity. Used for the FFT pass; if we fed
+    //     the rectified version, full-wave rectification would
+    //     double every input frequency and alias high-band content
+    //     (e.g. a 20 Hz gravel signal would land at ~10 Hz once
+    //     reflected off the 25 Hz Nyquist), scrambling the very
+    //     distinction this PR exists to capture.
+    //   - `deviations` (|mag − g|) — the v0 contract for the time-
+    //     domain features (RMS, kurtosis, skewness, percentile,
+    //     zero-crossing rate, ...). RMS is invariant under |·|, but
+    //     the higher-moment / ordering-based features were defined
+    //     on the absolute signal — keep them on `deviations` so we
+    //     don't silently shift their numerical contract.
+    const signedDeviations = window.map((r) => {
       const mag = Math.sqrt(r.ax ** 2 + r.ay ** 2 + r.az ** 2);
-      return Math.abs(mag - 9.81);
+      return mag - 9.81;
     });
+    const deviations = signedDeviations.map((v) => Math.abs(v));
 
     const n = deviations.length;
     const mean = deviations.reduce((s, v) => s + v, 0) / n;
@@ -429,13 +444,13 @@ class SensorService {
     const m3 = deviations.reduce((s, v) => s + (v - mean) ** 3, 0) / n;
     const skewness = std > 0 ? m3 / std ** 3 : 0;
 
-    // Frequency-domain features (issue #492). The deviation signal is
-    // already DC-removed conceptually (we take |mag - g|), but the
-    // FFT helper subtracts its own mean and applies a Hann window
+    // Frequency-domain features (issue #492). The signed deviation is
+    // approximately zero-mean for vibration around gravity; the FFT
+    // helper still subtracts its own mean and applies a Hann window
     // before transforming. Sample rate is fixed at 50 Hz upstream;
     // shorter windows (e.g. an early-stop) just yield reduced
     // frequency resolution.
-    const spectral = computeSpectralFeatures(deviations, SAMPLE_RATE_HZ);
+    const spectral = computeSpectralFeatures(signedDeviations, SAMPLE_RATE_HZ);
 
     // Gyroscope features. Variance of pitch / roll rate complement
     // the magnitude RMS — the model uses them to tell apart side-to-
