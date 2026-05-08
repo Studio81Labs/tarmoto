@@ -27,9 +27,9 @@ export function buildJobsConfig(config: ConfigService): JobsConfig {
     config.get<string>('TARMOTO_REDIS_PORT') ?? '6379',
     10,
   );
-  // Auth is optional. Local dev runs without — Coolify-managed and
-  // other production Redis instances supply both. `default` is the
-  // standard Redis ACL username.
+  // Auth is optional. Local dev runs without — production Redis
+  // instances typically supply both. `default` is the standard
+  // Redis ACL username.
   const username = config.get<string>('TARMOTO_REDIS_USERNAME') || undefined;
   const password = config.get<string>('TARMOTO_REDIS_PASSWORD') || undefined;
 
