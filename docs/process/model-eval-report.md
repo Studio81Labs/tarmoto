@@ -1,9 +1,9 @@
 # Tarmoto — Model Evaluation Snapshot
 
 This file is a placeholder rendering. The live snapshot is served by
-the backend at `GET /model-eval/report.md` (issue #496) — point a
-cron task at it to keep this file fresh, or paste the response into
-this document at each release boundary.
+the backend at `GET /api/v1/model-eval/report.md` (issue #496) —
+point a cron task at it to keep this file fresh, or paste the
+response into this document at each release boundary.
 
 The metrics defined here (24h dangerous-misclass rate, adjacent
 accuracy, MAE, cross-device/bike agreement) are described in
@@ -16,7 +16,7 @@ The offline counterpart is in
 
 ```bash
 curl -H "Authorization: Bearer $ADMIN_TOKEN" \
-     https://api.tarmoto.example/model-eval/report.md \
+     https://api.tarmoto.example/api/v1/model-eval/report.md \
      > docs/process/model-eval-report.md
 ```
 
