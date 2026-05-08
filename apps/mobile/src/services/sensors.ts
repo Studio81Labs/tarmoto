@@ -563,84 +563,76 @@ class SensorService {
   /**
    * Extract features from a 2-second window of accelerometer data.
    *
-   * When the idle-baseline calibrator has produced a snapshot (issue
-   * #494), the time-domain `deviations` are computed against a per-
-   * axis-bias-subtracted residual vector — the residual is (0,0,0)
-   * for a stationary phone regardless of mounting orientation, so
-   * RMS / std land near zero on a quiet road instead of being
-   * polluted by the device's static gravity decomposition.
+   * The idle-baseline calibration (issue #494) is uploaded to the
+   * backend on every batch — that's how the training pipeline gets
+   * per-rider bias data for the next model contract — but the v1.1
+   * classifier currently bundled in the app was trained on the
+   * historical scalar deviation `abs(|a| − 9.81)`. Switching the
+   * on-device feature pipeline to the per-axis residual magnitude
+   * `||a − bias||` would push the model out of distribution: for
+   * vibrations perpendicular to gravity, `||a − bias||` is large
+   * (full vibration amplitude lands on a perpendicular axis) while
+   * `abs(|a| − g)` stays small (gravity magnitude is invariant under
+   * a perpendicular rotation), so a smooth ride would suddenly score
+   * rougher once calibration completes.
    *
-   * The FFT, however, needs a SIGNED scalar that oscillates around
-   * zero — feeding it the always-≥0 magnitude `||a − bias||` would
-   * full-wave-rectify the input and double every input frequency
-   * (a 20 Hz vibration aliases to ~10 Hz off the 25 Hz Nyquist),
-   * which is the exact bug PR #502's signed-deviation fix exists
-   * to prevent. We therefore keep the FFT input on the original
-   * scalar contract `|a| − rest`, just substituting the calibrated
-   * rest magnitude `||bias||` for the canonical 9.81. Mathematically
-   * `||bias||` ≈ 9.81 for a sane stationary capture (gravity is
-   * gravity regardless of device orientation), so the FFT contract
-   * stays numerically stable across the calibration boundary.
+   * The compromise this revision lands on:
    *
-   * The pre-calibration / no-calibration fallback uses the literal
-   * 9.81 so windows captured during the calibration window itself
-   * (or for rides where the calibrator was abandoned) keep the
-   * historical pre-#494 contract exactly.
+   *   - keep the v1.1 inference contract intact: time-domain features
+   *     and FFT both consume the SCALAR deviation `|a| − rest`
+   *     (signed for FFT, absolute for time-domain), exactly the shape
+   *     the bundled model expects;
+   *   - use the calibrated rest magnitude `||bias||` instead of the
+   *     literal 9.81 when a good calibration is available — that
+   *     absorbs per-rider MEMS scale-factor error without changing
+   *     the contract;
+   *   - keep uploading the per-axis calibration so the v1.2 retrained
+   *     model can consume the orientation-invariant residual once
+   *     it's bundled.
+   *
+   * The previous revision applied per-axis bias subtraction to the
+   * time-domain features directly. This was reverted because the
+   * v1.1 model artifact hasn't been retrained yet — see Codex P1 in
+   * the PR review for the out-of-distribution discussion.
    */
   private extractFeatures(window: SensorReading[]): WindowFeatures {
     const calibrationSnap = this.calibrator?.snapshot();
-    // Only apply bias subtraction when the captured window cleared
-    // the same quality bar the backend uses to tag a reading 'good'.
-    // A `'poor'` snapshot means the rider was moving / cornering
-    // during the capture window (per-axis std above the stationary
-    // threshold, or sub-floor sample count) and applying its bias
-    // would skew the residual in the wrong direction for the rest of
-    // the ride. We still keep the snapshot so the upload ships its
-    // payload — the backend persists the `'poor'` tag for analytics
-    // — but the on-device feature pipeline falls back to the
-    // historical (mag − 9.81) contract until a good calibration is
-    // captured.
+    // Only use the calibrated rest magnitude when the captured
+    // window cleared the same quality bar the backend uses to tag a
+    // reading 'good'. A `'poor'` snapshot means the capture was
+    // contaminated by motion / cornering, and `||bias||` could land
+    // far from gravity — we'd silently shift the v1.1 model's
+    // baseline. We still keep the snapshot so the upload ships its
+    // payload (the backend persists the `'poor'` tag for analytics);
+    // the on-device pipeline just stays on the literal 9.81 baseline.
     const useCalibration =
       calibrationSnap !== null &&
       calibrationSnap !== undefined &&
       calibrationSnap.quality === "good";
-    let signedDeviations: number[];
-    let deviations: number[];
-    if (useCalibration && calibrationSnap) {
-      const { meanX, meanY, meanZ } = calibrationSnap;
-      const restMag = Math.sqrt(meanX * meanX + meanY * meanY + meanZ * meanZ);
-      // Signed FFT input — `|a| − rest` oscillates around 0 for
-      // vibration and stays near 0 for a stationary phone. Using the
-      // calibrated rest magnitude rather than the literal 9.81
-      // absorbs any per-rider gravity-magnitude drift (sensor scale-
-      // factor error) without breaking the signed-signal contract
-      // the FFT depends on.
-      signedDeviations = window.map((r) => {
-        const mag = Math.sqrt(r.ax * r.ax + r.ay * r.ay + r.az * r.az);
-        return mag - restMag;
-      });
-      // Time-domain features run on the per-axis-bias-subtracted
-      // residual magnitude `||a − bias||`. This is always ≥ 0 (a
-      // Euclidean norm) but RMS / std / kurtosis / skewness / etc.
-      // are invariant under |·|, so we don't lose anything compared
-      // to the historical `|mag − 9.81|` contract — and we gain the
-      // orientation-invariance the calibration was designed for.
-      deviations = window.map((r) => {
-        const dx = r.ax - meanX;
-        const dy = r.ay - meanY;
-        const dz = r.az - meanZ;
-        return Math.sqrt(dx * dx + dy * dy + dz * dz);
-      });
-    } else {
-      // Pre-calibration / no-calibration path — keeps the historical
-      // (mag − 9.81) contract so the heuristic thresholds and the v1.1
-      // model contract continue to match.
-      signedDeviations = window.map((r) => {
-        const mag = Math.sqrt(r.ax ** 2 + r.ay ** 2 + r.az ** 2);
-        return mag - 9.81;
-      });
-      deviations = signedDeviations.map((v) => Math.abs(v));
-    }
+    const restMag =
+      useCalibration && calibrationSnap
+        ? Math.sqrt(
+            calibrationSnap.meanX * calibrationSnap.meanX +
+              calibrationSnap.meanY * calibrationSnap.meanY +
+              calibrationSnap.meanZ * calibrationSnap.meanZ,
+          )
+        : 9.81;
+    // Signed FFT input — `|a| − rest` oscillates around 0 for
+    // vibration and stays near 0 for a stationary phone. The two
+    // views the downstream code keeps:
+    //   - `signedDeviations` (signed): preserves oscillation polarity
+    //     for the FFT pass. Rectifying would double every input
+    //     frequency and alias high-band content (PR #502).
+    //   - `deviations` (|signedDeviations|): the v1.1 contract for
+    //     RMS, kurtosis, skewness, percentile, zero-crossing rate.
+    //     RMS is invariant under |·|; the higher-moment / ordering-
+    //     based features were trained on the absolute signal, so we
+    //     keep them on `deviations` rather than the signed view.
+    const signedDeviations = window.map((r) => {
+      const mag = Math.sqrt(r.ax * r.ax + r.ay * r.ay + r.az * r.az);
+      return mag - restMag;
+    });
+    const deviations = signedDeviations.map((v) => Math.abs(v));
 
     const n = deviations.length;
     const mean = deviations.reduce((s, v) => s + v, 0) / n;

@@ -1067,6 +1067,29 @@ describe('SensorService', () => {
       expect(storedRideCalibration?.values.calibration_quality).toBe('poor');
     });
 
+    it('rejects a non-finite sample_count as poor', async () => {
+      // Regression: without `sample_count` in the finiteness check,
+      // a `NaN` count would fall through `NaN < CALIBRATION_MIN_SAMPLES`
+      // (always false) and pass the gate. The DTO's `@IsInt()` stops
+      // most of these at the HTTP boundary, but the shared classifier
+      // is the canonical validator and runs on both ends of the wire,
+      // so the gate has to defend itself.
+      const calibration = makeCalibration({
+        sample_count: Number.NaN as unknown as number,
+      });
+      const dto = {
+        ride_id: 'ride-cal-nan-count',
+        readings: Array.from({ length: 50 }, (_, i) =>
+          rideReading(Date.now() + i * 20, i),
+        ),
+        calibration,
+      };
+
+      await service.processUpload('user-1', dto);
+
+      expect(storedRideCalibration?.values.calibration_quality).toBe('poor');
+    });
+
     it('rejects physically impossible calibration means as poor', async () => {
       // Regression: a buggy or malicious client could otherwise ship
       // a fabricated finite mean (e.g. `axis_mean_x: 1e6`) with low

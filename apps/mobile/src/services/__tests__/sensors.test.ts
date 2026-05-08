@@ -759,12 +759,67 @@ describe("sensorService idle-baseline calibration (issue #494)", () => {
     if (sensorService.recording) sensorService.stop();
   });
 
-  it("subtracts the per-axis baseline before computing magnitude", () => {
-    // Drive the calibrator with a stationary phone whose mounting
-    // produces a non-canonical gravity decomposition: az = 9.0 instead
-    // of 9.81 with non-zero ax / ay (typical for a mounted phone). A
-    // window of identical samples taken AFTER the calibration window
-    // should produce ~0 deviation magnitude.
+  it("uses the calibrated rest magnitude in place of 9.81 for scalar deviations", () => {
+    // The v1.1 model contract is `|a| − rest` (signed) for the FFT
+    // and `abs(|a| − rest)` for the time-domain features. With a
+    // good calibration we substitute the captured `||bias||` for the
+    // literal 9.81 — that absorbs per-rider MEMS scale-factor error
+    // without changing the model's input distribution.
+    //
+    // Drive the calibrator with a stationary phone whose total accel
+    // magnitude is 9.4 (not the canonical 9.81 — typical for a
+    // device with ~4 % scale-factor error). A window of identical
+    // samples taken AFTER the calibration window should land at
+    // ~0 deviation: the rest magnitude is also 9.4 and `|a| − rest = 0`.
+    // Without calibration the same window would land at
+    // |9.4 − 9.81| = 0.41, so the test would fail in a regression
+    // that restored the literal 9.81 baseline.
+    const ax = 0;
+    const ay = 1.0;
+    const az = Math.sqrt(9.4 * 9.4 - ay * ay); // gives ‖(0, 1, az)‖ = 9.4
+    const stationarySamples: {
+      ax: number;
+      ay: number;
+      az: number;
+      t: number;
+      speedMs: number;
+    }[] = [];
+    for (let i = 0; i <= 1500; i += 1) {
+      stationarySamples.push({ ax, ay, az, t: i * 20, speedMs: 0 });
+    }
+    pokeCalibrator(stationarySamples);
+
+    expect(sensorService.getCalibration()).not.toBeNull();
+
+    const window: Reading[] = Array.from({ length: 100 }, (_, i) => ({
+      t: 30_000 + i * 20,
+      ax,
+      ay,
+      az,
+      gx: 0,
+      gy: 0,
+      gz: 0,
+    }));
+    const features = callExtract(window);
+    expect(features.rms).toBeCloseTo(0, 3);
+    expect(features.std).toBeCloseTo(0, 3);
+  });
+
+  it("keeps the v1.1 inference contract intact for orthogonal vibrations", () => {
+    // Regression: an earlier revision applied per-axis bias
+    // subtraction to the time-domain features (`||a − bias||`),
+    // which inflated RMS for vibrations perpendicular to gravity
+    // because the orthogonal vibration lands fully in the residual
+    // vector while the SCALAR deviation `|a| − ||bias||` stays
+    // small (gravity magnitude is invariant under a perpendicular
+    // rotation). That shift would push the v1.1 model out of
+    // distribution. This test pins the scalar contract: calibrate
+    // on a stationary 9.81 capture, then feed a window where
+    // gravity stays on Z but a 1 m/s² wobble lands on Y. RMS must
+    // approach the SCALAR amplitude (≈ 0.05 m/s²: `√(9.81² + 1²) ≈
+    // 9.86`, deviation ≈ 0.05) — not the orthogonal vibration's
+    // 0.71 raw amplitude that a residual-vector contract would
+    // produce.
     const stationarySamples: {
       ax: number;
       ay: number;
@@ -774,32 +829,34 @@ describe("sensorService idle-baseline calibration (issue #494)", () => {
     }[] = [];
     for (let i = 0; i <= 1500; i += 1) {
       stationarySamples.push({
-        ax: 1.5,
-        ay: 1.0,
-        az: 9.0,
+        ax: 0,
+        ay: 0,
+        az: 9.81,
         t: i * 20,
         speedMs: 0,
       });
     }
     pokeCalibrator(stationarySamples);
-
-    // Verify the calibrator did finish.
     expect(sensorService.getCalibration()).not.toBeNull();
 
-    // Now extract features from a window of the SAME stationary samples
-    // — with the per-axis bias subtracted, RMS should land near 0.
+    // Lateral wobble: 1 m/s² oscillation on Y, gravity still on Z.
     const window: Reading[] = Array.from({ length: 100 }, (_, i) => ({
       t: 30_000 + i * 20,
-      ax: 1.5,
-      ay: 1.0,
-      az: 9.0,
+      ax: 0,
+      ay: i % 2 === 0 ? 1.0 : -1.0,
+      az: 9.81,
       gx: 0,
       gy: 0,
       gz: 0,
     }));
     const features = callExtract(window);
-    expect(features.rms).toBeCloseTo(0, 3);
-    expect(features.std).toBeCloseTo(0, 3);
+    // Scalar contract: |√(0² + 1² + 9.81²) − 9.81| ≈ |9.861 − 9.81|
+    //                 = 0.051
+    expect(features.rms).toBeLessThan(0.1);
+    // The residual-vector contract would have produced rms ≈ 1.0.
+    // Pin a tight upper bound that the residual-vector regression
+    // would fail decisively.
+    expect(features.rms).toBeGreaterThan(0);
   });
 
   it("falls back to the (mag − 9.81) contract before calibration completes", () => {

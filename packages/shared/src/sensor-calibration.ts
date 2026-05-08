@@ -133,8 +133,13 @@ export type CalibrationQuality = "good" | "poor";
  *   - the sample count is below {@link CALIBRATION_MIN_SAMPLES} (rider
  *     started moving before the floor of ~5 s of stationary samples
  *     was reached — anything shorter is too noisy to use as a bias),
- *   - any axis-mean is non-finite (a malicious or buggy client could
- *     ship a `NaN` to defeat the std check), OR
+ *   - any numeric field (mean, std, OR `sample_count`) is non-finite
+ *     — a malicious or buggy client could otherwise ship a `NaN`
+ *     `sample_count` (the DTO's `@IsInt()` decorator stops most of
+ *     these at the HTTP boundary, but the shared classifier is the
+ *     canonical validator and runs on both ends of the wire, so
+ *     defence-in-depth here means a compromised pre-DTO path can't
+ *     bypass the count gate via `NaN < N === false`),
  *   - the mean-vector magnitude is more than
  *     {@link CALIBRATION_GRAVITY_TOLERANCE_MS2} away from
  *     {@link CALIBRATION_GRAVITY_MS2} — for a stationary phone the
@@ -161,6 +166,7 @@ export function classifyCalibrationQuality(
     payload.axis_std_x,
     payload.axis_std_y,
     payload.axis_std_z,
+    payload.sample_count,
   ].every(Number.isFinite);
   if (!finite) return "poor";
   if (payload.sample_count < CALIBRATION_MIN_SAMPLES) return "poor";
