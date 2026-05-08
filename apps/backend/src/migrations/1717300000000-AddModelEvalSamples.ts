@@ -107,9 +107,24 @@ export class AddModelEvalSamples1717300000000 implements MigrationInterface {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_model_eval_samples_surface_reading_id
         ON model_eval_samples(surface_reading_id);
     `);
+
+    // Partial index on the SET NULL anonymization FK, mirroring
+    // `idx_surface_readings_user` from migration #1715500000000.
+    // When `AccountDeletionService` purges a user, Postgres has to
+    // scan every referencing table for matching `user_id` rows to
+    // anonymize them; without this index the eval table is a
+    // sequential scan + per-row update on each purge. Partial so
+    // already-anonymized rows (NULL `user_id`) don't bloat the
+    // btree — the dataset trends toward mostly-NULL over time.
+    await queryRunner.query(`
+      CREATE INDEX IF NOT EXISTS idx_model_eval_samples_user
+        ON model_eval_samples(user_id)
+        WHERE user_id IS NOT NULL;
+    `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`DROP INDEX IF EXISTS idx_model_eval_samples_user`);
     await queryRunner.query(
       `DROP INDEX IF EXISTS idx_model_eval_samples_surface_reading_id`,
     );
