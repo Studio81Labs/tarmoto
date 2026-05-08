@@ -38,6 +38,18 @@ export const RECONCILE_MIN_CONFIDENCE = 70;
 export const RECONCILE_MIN_READINGS = 5;
 
 /**
+ * Minimum number of distinct OTHER riders required before a sample
+ * can be reconciled. Spec section 8.3 step 3 frames the aggregate
+ * as "readings from different riders"; without this gate one
+ * rider's five repeated passes through the same segment would
+ * qualify as the >=5 reading_count threshold and grade another
+ * rider's prediction against a single rider's history. Three is
+ * the lowest bar that rules out "one rider voting five times" and
+ * mirrors the cross-bucket agreement minimum from section 7.2.
+ */
+export const RECONCILE_MIN_UNIQUE_RIDERS = 3;
+
+/**
  * 24h rolling alert threshold. Above this rate the reconciliation
  * processor logs at error level and the metric record is annotated
  * so the on-call dashboard surfaces it. The launch target is 1% — we

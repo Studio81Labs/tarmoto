@@ -11,6 +11,7 @@ import {
   DEFAULT_SAMPLE_RATE,
   RECONCILE_MIN_CONFIDENCE,
   RECONCILE_MIN_READINGS,
+  RECONCILE_MIN_UNIQUE_RIDERS,
   ROLLING_WINDOW_HOURS,
   SPEC_TARGETS,
   classificationToScore,
@@ -292,6 +293,11 @@ export class ModelEvalService {
        JOIN loo ON loo.sample_id = c.sample_id
        WHERE loo.loo_reading_count >= $2
          AND loo.loo_quality_score IS NOT NULL
+         -- Spec section 8.3 step 3 frames the aggregate as
+         -- "readings from different riders". Require at least N
+         -- distinct OTHER riders so one rider's repeated passes
+         -- cannot grade another rider's prediction (codex review).
+         AND loo.loo_unique_rider_count >= $4
          AND CASE
                WHEN loo.loo_reading_count >= 20
                     AND loo.loo_unique_rider_count >= 5 THEN 100
@@ -309,7 +315,12 @@ export class ModelEvalService {
        -- actually-reconcilable set.
        ORDER BY c.sample_created_at ASC
        LIMIT $3`,
-      [RECONCILE_MIN_CONFIDENCE, RECONCILE_MIN_READINGS, limit],
+      [
+        RECONCILE_MIN_CONFIDENCE,
+        RECONCILE_MIN_READINGS,
+        limit,
+        RECONCILE_MIN_UNIQUE_RIDERS,
+      ],
     );
     const rows = rawRows as Array<{
       id: string;

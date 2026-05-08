@@ -45,11 +45,9 @@ import { AddBikes1716900000000 } from '../../migrations/1716900000000-AddBikes.j
 import { AddRideTagEvents1717000000000 } from '../../migrations/1717000000000-AddRideTagEvents.js';
 import { AddBikeNotesIconAndRideBikeId1717100000000 } from '../../migrations/1717100000000-AddBikeNotesIconAndRideBikeId.js';
 import { AddSurfaceReadingClientPreprocessingVersion1717200000000 } from '../../migrations/1717200000000-AddSurfaceReadingClientPreprocessingVersion.js';
-<<<<<<< HEAD
+import { OutlierFilteredRoadQualityAggregation1717300000000 } from '../../migrations/1717300000000-OutlierFilteredRoadQualityAggregation.js';
 import { AddDeviceCalibration1717400000000 } from '../../migrations/1717400000000-AddDeviceCalibration.js';
-=======
-import { AddModelEvalSamples1717400000000 } from '../../migrations/1717400000000-AddModelEvalSamples.js';
->>>>>>> 9e5b245 (fix(backend): register model_eval_samples with runtime database module)
+import { AddModelEvalSamples1717500000000 } from '../../migrations/1717500000000-AddModelEvalSamples.js';
 import {
   User,
   UserContact,
@@ -213,11 +211,9 @@ const entities = [
             AddRideTagEvents1717000000000,
             AddBikeNotesIconAndRideBikeId1717100000000,
             AddSurfaceReadingClientPreprocessingVersion1717200000000,
-<<<<<<< HEAD
+            OutlierFilteredRoadQualityAggregation1717300000000,
             AddDeviceCalibration1717400000000,
-=======
-            AddModelEvalSamples1717400000000,
->>>>>>> 9e5b245 (fix(backend): register model_eval_samples with runtime database module)
+            AddModelEvalSamples1717500000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.

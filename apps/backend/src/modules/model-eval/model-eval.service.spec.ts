@@ -303,6 +303,11 @@ describe('ModelEvalService.reconcilePending', () => {
     // truth doesn't diverge from `road_segments.quality_score`.
     expect(sql).toContain('stddev_samp(quality_score)');
     expect(sql).toContain('2 * st.std_q');
+    // Codex review — require N distinct OTHER riders so one
+    // rider's repeated passes can't grade another rider's
+    // prediction. Spec section 8.3 step 3 frames the aggregate as
+    // "readings from different riders".
+    expect(sql).toContain('loo.loo_unique_rider_count >= $4');
   });
 });
 
