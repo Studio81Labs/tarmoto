@@ -77,6 +77,22 @@ export class ModelEvalService {
     agreement_score: null,
     segments_evaluated: 0,
   };
+  /**
+   * Per-version cache of cross-device / cross-bike agreement.
+   * Codex review: partitioning by `model_version` prevents an
+   * overlapping rollout (v1.0 still shipping while v1.1 is rolling
+   * out) from scoring inter-version differences as cross-device
+   * disagreement. The top-level `lastDeviceAgreement` /
+   * `lastBikeAgreement` retain the most-sampled version's snapshot
+   * for backward compatibility with existing dashboards.
+   */
+  private lastAgreementByVersion = new Map<
+    string | null,
+    {
+      device: ModelEvalAgreementSnapshotDto;
+      bike: ModelEvalAgreementSnapshotDto;
+    }
+  >();
 
   constructor(
     @InjectRepository(ModelEvalSample)
@@ -388,11 +404,17 @@ export class ModelEvalService {
    * and updates only the worker's in-memory cache.
    */
   async getMetrics(): Promise<ModelEvalMetricsResponseDto> {
-    const versions = await this.computeVersionMetrics();
-
+    // Refresh the per-version agreement cache BEFORE computing the
+    // version-metrics rows so that the per-version
+    // cross_*_agreement fields can pick up the freshly-cached
+    // snapshots in the same call. Without this ordering the first
+    // poll after boot would return null agreement on every version
+    // until the second poll.
     if (this.snapshotIsStale(this.lastDeviceAgreement)) {
       await this.recomputeAgreements();
     }
+
+    const versions = await this.computeVersionMetrics();
 
     return {
       window_hours: ROLLING_WINDOW_HOURS,
@@ -416,6 +438,16 @@ export class ModelEvalService {
    * also called inline by `getMetrics()` on first request after boot
    * so the snapshot is never `null`.
    *
+   * Codex review: rows are partitioned by `model_version` BEFORE
+   * computing agreement so that during an overlapping rollout
+   * (v1.0 still shipping while v1.1 is rolling out) inter-version
+   * differences are not counted as cross-device / cross-bike
+   * disagreement. The top-level `lastDeviceAgreement` /
+   * `lastBikeAgreement` reflect the most-sampled version's
+   * snapshot for backward compatibility with existing dashboards;
+   * per-version snapshots are surfaced through
+   * `ModelEvalVersionMetricsDto.cross_*_agreement`.
+   *
    * Agreement is computed per qualifying segment as the fraction of
    * pairwise predictions that fall within ±1 quality class, then
    * averaged across segments. We use pairwise rather than std-dev
@@ -428,7 +460,7 @@ export class ModelEvalService {
   }> {
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const rawRows: unknown = await this.samples.query(
-      `SELECT road_segment_id, predicted_score, device_model, bike_id
+      `SELECT road_segment_id, predicted_score, device_model, bike_id, model_version
        FROM model_eval_samples
        WHERE reconciled_at IS NOT NULL
          AND reconciled_at >= $1`,
@@ -439,31 +471,66 @@ export class ModelEvalService {
       predicted_score: number;
       device_model: string | null;
       bike_id: string | null;
+      model_version: string | null;
     }>;
 
-    this.lastDeviceAgreement = computeAgreement(
-      rows.map((r) => ({
-        segmentId: r.road_segment_id,
-        score: r.predicted_score,
-        bucket: deviceFamily(r.device_model),
-      })),
-    );
-    this.lastBikeAgreement = computeAgreement(
-      rows.map((r) => ({
-        segmentId: r.road_segment_id,
-        score: r.predicted_score,
-        bucket: r.bike_id ?? null,
-      })),
-    );
+    // Group by model_version, then compute agreement only within
+    // each version's sample set.
+    const rowsByVersion = new Map<string | null, typeof rows>();
+    for (const r of rows) {
+      const key = r.model_version;
+      const list = rowsByVersion.get(key);
+      if (list) list.push(r);
+      else rowsByVersion.set(key, [r]);
+    }
 
-    this.logger.log(
-      `cross-device agreement = ${formatScore(this.lastDeviceAgreement.agreement_score)} ` +
-        `over ${this.lastDeviceAgreement.segments_evaluated} segments`,
-    );
-    this.logger.log(
-      `cross-bike agreement = ${formatScore(this.lastBikeAgreement.agreement_score)} ` +
-        `over ${this.lastBikeAgreement.segments_evaluated} segments`,
-    );
+    this.lastAgreementByVersion = new Map();
+    let topVersionRows = -1;
+    for (const [version, versionRows] of rowsByVersion) {
+      const device = computeAgreement(
+        versionRows.map((r) => ({
+          segmentId: r.road_segment_id,
+          score: r.predicted_score,
+          bucket: deviceFamily(r.device_model),
+        })),
+      );
+      const bike = computeAgreement(
+        versionRows.map((r) => ({
+          segmentId: r.road_segment_id,
+          score: r.predicted_score,
+          bucket: r.bike_id ?? null,
+        })),
+      );
+      this.lastAgreementByVersion.set(version, { device, bike });
+      // Top-level snapshot: pick the most-sampled version so the
+      // legacy `cross_*_agreement` fields keep showing the dominant
+      // rollout's number rather than a confounded mix.
+      if (versionRows.length > topVersionRows) {
+        topVersionRows = versionRows.length;
+        this.lastDeviceAgreement = device;
+        this.lastBikeAgreement = bike;
+      }
+    }
+
+    // No samples at all in the 7d window — keep the cached
+    // snapshots fresh-stamped so getMetrics doesn't loop trying to
+    // recompute, but show null scores.
+    if (rowsByVersion.size === 0) {
+      const empty: ModelEvalAgreementSnapshotDto = {
+        computed_at: new Date().toISOString(),
+        agreement_score: null,
+        segments_evaluated: 0,
+      };
+      this.lastDeviceAgreement = empty;
+      this.lastBikeAgreement = empty;
+    }
+
+    for (const [version, snap] of this.lastAgreementByVersion) {
+      this.logger.log(
+        `agreement[${version ?? 'null'}]: device=${formatScore(snap.device.agreement_score)} (${snap.device.segments_evaluated}) ` +
+          `bike=${formatScore(snap.bike.agreement_score)} (${snap.bike.segments_evaluated})`,
+      );
+    }
 
     return {
       cross_device: this.lastDeviceAgreement,
@@ -531,6 +598,10 @@ export class ModelEvalService {
         r.sample_count > 0 ? r.dangerous_count / r.sample_count : 0;
       const adjacentAccuracy =
         r.sample_count > 0 ? r.adjacent_count / r.sample_count : 0;
+      // Per-version agreement so a rollout (v1.0 + v1.1 active
+      // simultaneously) doesn't conflate inter-version differences
+      // with cross-device / cross-bike disagreement (codex review).
+      const versionAgreement = this.lastAgreementByVersion.get(r.model_version);
       return {
         model_version: r.model_version,
         sample_count: r.sample_count,
@@ -538,6 +609,10 @@ export class ModelEvalService {
         adjacent_accuracy: roundTo(adjacentAccuracy, 4),
         mae: roundTo(r.mae ?? 0, 4),
         alert_active: dangerousRate > DANGEROUS_MISCLASS_ALERT_RATE,
+        cross_device_agreement:
+          versionAgreement?.device ?? emptyAgreementSnapshot(),
+        cross_bike_agreement:
+          versionAgreement?.bike ?? emptyAgreementSnapshot(),
       };
     });
   }
@@ -566,6 +641,14 @@ export class ModelEvalService {
     }
     return parsed;
   }
+}
+
+function emptyAgreementSnapshot(): ModelEvalAgreementSnapshotDto {
+  return {
+    computed_at: null,
+    agreement_score: null,
+    segments_evaluated: 0,
+  };
 }
 
 function scoreToClassification(score: number): string {

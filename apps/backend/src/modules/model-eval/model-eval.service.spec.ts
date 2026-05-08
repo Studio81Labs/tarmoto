@@ -354,6 +354,89 @@ describe('ModelEvalService.getMetrics', () => {
     });
   });
 
+  it('codex review — partitions cross-device/bike agreement by model_version', async () => {
+    const { service, samples } = await buildService({});
+    samples.query.mockImplementation((sql: string) => {
+      if (sql.includes('GROUP BY model_version')) {
+        return Promise.resolve([
+          {
+            model_version: 'rsc-v1.1.0',
+            sample_count: 6,
+            dangerous_count: 0,
+            adjacent_count: 6,
+            mae: 0.0,
+          },
+          {
+            model_version: 'rsc-v1.0.0',
+            sample_count: 3,
+            dangerous_count: 0,
+            adjacent_count: 3,
+            mae: 0.0,
+          },
+        ]);
+      }
+      // recomputeAgreements: a single segment, hit by 3 device
+      // families. v1.1.0 riders all agree (score=4); v1.0.0 disagrees
+      // (score=2). If versions were mixed, agreement would drop;
+      // partitioning per version preserves each version's true score.
+      if (sql.includes('SELECT road_segment_id, predicted_score')) {
+        return Promise.resolve([
+          {
+            road_segment_id: 's1',
+            predicted_score: 4,
+            device_model: 'iPhone 15',
+            bike_id: null,
+            model_version: 'rsc-v1.1.0',
+          },
+          {
+            road_segment_id: 's1',
+            predicted_score: 4,
+            device_model: 'Samsung Galaxy S24',
+            bike_id: null,
+            model_version: 'rsc-v1.1.0',
+          },
+          {
+            road_segment_id: 's1',
+            predicted_score: 4,
+            device_model: 'Pixel 8',
+            bike_id: null,
+            model_version: 'rsc-v1.1.0',
+          },
+          {
+            road_segment_id: 's1',
+            predicted_score: 2,
+            device_model: 'iPhone 15',
+            bike_id: null,
+            model_version: 'rsc-v1.0.0',
+          },
+          {
+            road_segment_id: 's1',
+            predicted_score: 2,
+            device_model: 'Samsung Galaxy S24',
+            bike_id: null,
+            model_version: 'rsc-v1.0.0',
+          },
+          {
+            road_segment_id: 's1',
+            predicted_score: 2,
+            device_model: 'Pixel 8',
+            bike_id: null,
+            model_version: 'rsc-v1.0.0',
+          },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const metrics = await service.getMetrics();
+    // Each version computed independently — both score 1.0 because
+    // their internal predictions are consistent (within ±1 class).
+    const v11 = metrics.versions.find((v) => v.model_version === 'rsc-v1.1.0');
+    const v10 = metrics.versions.find((v) => v.model_version === 'rsc-v1.0.0');
+    expect(v11!.cross_device_agreement.agreement_score).toBe(1);
+    expect(v10!.cross_device_agreement.agreement_score).toBe(1);
+  });
+
   it('returns an empty versions array when nothing reconciled', async () => {
     const { service, samples } = await buildService({});
     samples.query.mockResolvedValue([]);

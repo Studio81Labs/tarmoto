@@ -1,5 +1,22 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+/** Last cross-device or cross-bike weekly agreement score. */
+export class ModelEvalAgreementSnapshotDto {
+  @ApiProperty({ description: 'ISO timestamp the agreement was last computed' })
+  computed_at!: string | null;
+
+  @ApiProperty({
+    description:
+      'Mean fraction of segments with ≥3 distinct devices/bikes ' +
+      'whose paired predictions stay within ±1 quality class.',
+    nullable: true,
+  })
+  agreement_score!: number | null;
+
+  @ApiProperty({ description: 'Number of segments included in the score' })
+  segments_evaluated!: number;
+}
+
 /**
  * 24h rolling window snapshot for one model version. Mirrors the
  * spec §7 metrics that gate the model for launch, plus the §7.3
@@ -45,23 +62,24 @@ export class ModelEvalVersionMetricsDto {
       'threshold for this version in the window.',
   })
   alert_active!: boolean;
-}
-
-/** Last cross-device or cross-bike weekly agreement score. */
-export class ModelEvalAgreementSnapshotDto {
-  @ApiProperty({ description: 'ISO timestamp the agreement was last computed' })
-  computed_at!: string | null;
 
   @ApiProperty({
     description:
-      'Mean fraction of segments with ≥3 distinct devices/bikes ' +
-      'whose paired predictions stay within ±1 quality class.',
-    nullable: true,
+      'Cross-device agreement (spec §7.2) computed from this ' +
+      "version's samples only. Partitioning by version prevents an " +
+      'overlapping rollout (v1.0 + v1.1 active simultaneously) from ' +
+      'showing inter-version differences as cross-device disagreement.',
+    type: ModelEvalAgreementSnapshotDto,
   })
-  agreement_score!: number | null;
+  cross_device_agreement!: ModelEvalAgreementSnapshotDto;
 
-  @ApiProperty({ description: 'Number of segments included in the score' })
-  segments_evaluated!: number;
+  @ApiProperty({
+    description:
+      'Cross-bike agreement (spec §7.2), partitioned by version for ' +
+      'the same reason as `cross_device_agreement`.',
+    type: ModelEvalAgreementSnapshotDto,
+  })
+  cross_bike_agreement!: ModelEvalAgreementSnapshotDto;
 }
 
 export class ModelEvalMetricsResponseDto {
