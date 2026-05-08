@@ -44,7 +44,7 @@ RUN pnpm --filter @tarmoto/shared build \
 # ---------- runtime ----------
 FROM node:24-alpine AS runtime
 ENV NODE_ENV=production \
-    TARMOTO_NODE_ENV=production \
+    NODE_ENV=production \
     PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH
 RUN corepack enable && corepack prepare pnpm@10 --activate

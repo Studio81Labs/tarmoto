@@ -184,8 +184,8 @@ describe('ReviewsController', () => {
     // emits via `req.protocol://req.get('host')` would be classified as
     // third-party at submission time, silently bypassing the ownership
     // guard and leaving managed files orphaned. Fail fast.
-    const previous = process.env.TARMOTO_NODE_ENV;
-    process.env.TARMOTO_NODE_ENV = 'production';
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
     configGet.mockReturnValue(undefined);
     try {
       const file = {
@@ -204,9 +204,9 @@ describe('ReviewsController', () => {
       expect(service.uploadPhotos).not.toHaveBeenCalled();
     } finally {
       if (previous === undefined) {
-        delete process.env.TARMOTO_NODE_ENV;
+        delete process.env.NODE_ENV;
       } else {
-        process.env.TARMOTO_NODE_ENV = previous;
+        process.env.NODE_ENV = previous;
       }
     }
   });
@@ -215,8 +215,8 @@ describe('ReviewsController', () => {
     // Bad config (e.g. operator typo) where the env var resolves to an
     // http URL in prod — same outcome as missing config: the service
     // would never trust the resulting origin. Fail fast with a 500.
-    const previous = process.env.TARMOTO_NODE_ENV;
-    process.env.TARMOTO_NODE_ENV = 'production';
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
     configGet.mockImplementation((key: string) =>
       key === 'TARMOTO_PUBLIC_BASE_URL' ? 'http://api.example.com' : undefined,
     );
@@ -237,9 +237,9 @@ describe('ReviewsController', () => {
       expect(service.uploadPhotos).not.toHaveBeenCalled();
     } finally {
       if (previous === undefined) {
-        delete process.env.TARMOTO_NODE_ENV;
+        delete process.env.NODE_ENV;
       } else {
-        process.env.TARMOTO_NODE_ENV = previous;
+        process.env.NODE_ENV = previous;
       }
     }
   });
@@ -249,8 +249,8 @@ describe('ReviewsController', () => {
     // TARMOTO_PUBLIC_BASE_URL set, production uploads go through and
     // the service is called with the configured origin (which the
     // service will then recognize as managed in `resolveManagedReviewPhoto`).
-    const previous = process.env.TARMOTO_NODE_ENV;
-    process.env.TARMOTO_NODE_ENV = 'production';
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
     configGet.mockImplementation((key: string) =>
       key === 'TARMOTO_PUBLIC_BASE_URL' ? 'https://api.tarmoto.app' : undefined,
     );
@@ -275,9 +275,9 @@ describe('ReviewsController', () => {
       );
     } finally {
       if (previous === undefined) {
-        delete process.env.TARMOTO_NODE_ENV;
+        delete process.env.NODE_ENV;
       } else {
-        process.env.TARMOTO_NODE_ENV = previous;
+        process.env.NODE_ENV = previous;
       }
     }
   });

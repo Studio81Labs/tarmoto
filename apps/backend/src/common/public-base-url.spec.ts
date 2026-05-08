@@ -15,15 +15,15 @@ const fakeReq = (host: string, protocol = 'https'): express.Request =>
   }) as unknown as express.Request;
 
 describe('resolvePublicBaseUrl', () => {
-  const originalNodeEnv = process.env.TARMOTO_NODE_ENV;
+  const originalNodeEnv = process.env.NODE_ENV;
 
   afterEach(() => {
-    if (originalNodeEnv === undefined) delete process.env.TARMOTO_NODE_ENV;
-    else process.env.TARMOTO_NODE_ENV = originalNodeEnv;
+    if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnv;
   });
 
   it('falls back to the request-derived origin when TARMOTO_PUBLIC_BASE_URL is unset (dev)', () => {
-    delete process.env.TARMOTO_NODE_ENV;
+    delete process.env.NODE_ENV;
     const url = resolvePublicBaseUrl(
       fakeReq('api.tarmoto.test'),
       fakeConfig({}),
@@ -64,7 +64,7 @@ describe('resolvePublicBaseUrl', () => {
   });
 
   it('throws in production when the env var is unset', () => {
-    process.env.TARMOTO_NODE_ENV = 'production';
+    process.env.NODE_ENV = 'production';
     expect(() =>
       resolvePublicBaseUrl(fakeReq('api.tarmoto.test'), fakeConfig({}), {
         feature: 'Avatar uploads',
@@ -73,7 +73,7 @@ describe('resolvePublicBaseUrl', () => {
   });
 
   it('embeds the feature name in the production-error message', () => {
-    process.env.TARMOTO_NODE_ENV = 'production';
+    process.env.NODE_ENV = 'production';
     expect(() =>
       resolvePublicBaseUrl(fakeReq('api.tarmoto.test'), fakeConfig({}), {
         feature: 'Review photo uploads',
@@ -82,7 +82,7 @@ describe('resolvePublicBaseUrl', () => {
   });
 
   it('lets requests through in production when the env var is set', () => {
-    process.env.TARMOTO_NODE_ENV = 'production';
+    process.env.NODE_ENV = 'production';
     const url = resolvePublicBaseUrl(
       fakeReq('internal-pod.local'),
       fakeConfig({ TARMOTO_PUBLIC_BASE_URL: 'https://api.tarmoto.app' }),

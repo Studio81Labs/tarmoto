@@ -91,7 +91,7 @@ describe('UsersController', () => {
   };
 
   // Per-test config override for `TARMOTO_PUBLIC_BASE_URL` and
-  // `TARMOTO_NODE_ENV`. Tests reach into this and call `set()` to
+  // `NODE_ENV`. Tests reach into this and call `set()` to
   // simulate prod / configured-base-url scenarios.
   const env: Record<string, string | undefined> = {};
   const setEnv = (next: Record<string, string | undefined>) => {
@@ -104,7 +104,7 @@ describe('UsersController', () => {
 
   beforeEach(async () => {
     setEnv({});
-    delete process.env.TARMOTO_NODE_ENV;
+    delete process.env.NODE_ENV;
     const mockService = {
       getProfile: jest.fn().mockResolvedValue(mockUser),
       getMeProfile: jest.fn().mockResolvedValue(mockMeProfile),
@@ -265,7 +265,7 @@ describe('UsersController', () => {
       // Production behind a load balancer must NOT silently store
       // the request-derived host — the URL would point at the
       // internal pod hostname and 404 on every client. Fail loud.
-      process.env.TARMOTO_NODE_ENV = 'production';
+      process.env.NODE_ENV = 'production';
 
       await expect(controller.uploadAvatar(mockReq, file)).rejects.toThrow(
         InternalServerErrorException,
@@ -274,7 +274,7 @@ describe('UsersController', () => {
     });
 
     it('lets uploads through in production when TARMOTO_PUBLIC_BASE_URL is set', async () => {
-      process.env.TARMOTO_NODE_ENV = 'production';
+      process.env.NODE_ENV = 'production';
       setEnv({ TARMOTO_PUBLIC_BASE_URL: 'https://api.tarmoto.app' });
 
       await controller.uploadAvatar(mockReq, file);

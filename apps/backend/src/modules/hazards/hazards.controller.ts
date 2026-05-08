@@ -53,7 +53,7 @@ export class HazardsController {
    * Resolve the public origin to embed in the URL we hand back from
    * `POST /hazards/photos`. The returned URL round-trips through
    * `CreateHazardDto.photo_url`, so it MUST pass
-   * `isAllowedHazardPhotoUrl` under the current `TARMOTO_NODE_ENV`,
+   * `isAllowedHazardPhotoUrl` under the current `NODE_ENV`,
    * AND match the trusted-origin set the service uses to classify a
    * URL as "managed", otherwise the cleanup-on-dismiss guards
    * silently no-op even though uploads look successful.

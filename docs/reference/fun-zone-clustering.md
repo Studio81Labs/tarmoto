@@ -144,7 +144,7 @@ The TypeScript service stays the source of truth for scoring; the SQL function e
 
 ### Demo seed (dev / test)
 
-The migration `AddFunZoneClusteringSeed1715300000000` inserts a small set of synthetic curvy `road_segments` (tagged `road_name LIKE 'seed:%'`) across the curated regions and runs one full clustering pass, so a fresh dev or test DB has non-empty `fun_zones`. **It only runs when `TARMOTO_NODE_ENV` is `development` or `test`**; production picks up real fun zones from rider-driven clustering only.
+The migration `AddFunZoneClusteringSeed1715300000000` inserts a small set of synthetic curvy `road_segments` (tagged `road_name LIKE 'seed:%'`) across the curated regions and runs one full clustering pass, so a fresh dev or test DB has non-empty `fun_zones`. **It only runs when `NODE_ENV` is `development` or `test`**; production picks up real fun zones from rider-driven clustering only.
 
 ## Performance
 

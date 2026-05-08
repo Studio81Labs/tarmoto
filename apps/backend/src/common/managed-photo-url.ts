@@ -14,7 +14,7 @@ import { LOOPBACK_HOSTS } from './loopback-hosts.js';
  * full CSP is on, etc.
  */
 function isProductionEnv(): boolean {
-  return process.env.TARMOTO_NODE_ENV === 'production';
+  return process.env.NODE_ENV === 'production';
 }
 
 /**

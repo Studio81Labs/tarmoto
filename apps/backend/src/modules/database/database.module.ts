@@ -223,7 +223,7 @@ const entities = [
           synchronize: false,
           retryAttempts: isOpenApiExport ? 0 : 10,
           logging:
-            config.get('TARMOTO_NODE_ENV') === 'development'
+            config.get('NODE_ENV') === 'development'
               ? ['error', 'warn', 'migration']
               : ['error'],
         };
