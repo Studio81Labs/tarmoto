@@ -8,17 +8,20 @@
 #
 # Built by the PaaS off `main` (Dockerfile build pack, repo root context).
 # Also runnable locally (`docker build -f apps/backend/Dockerfile .`).
+#
+# Base image is hardcoded (not parameterised via ARG) because the PaaS
+# auto-injects every application env var as a build ARG. A `NODE_VERSION`
+# env var anywhere in the application's Coolify config — or one of its
+# own internal build args — would otherwise override the default and
+# the build would end up on the Debian variant of node:24, where `apk`
+# doesn't exist and the runtime stage fails. Same reason for `pnpm@10`
+# below. (Verified during Nexcue's Coolify migration; this defensive
+# pin is mirrored here proactively.)
 
-ARG NODE_VERSION=24-alpine
-ARG PNPM_VERSION=10
-
-FROM node:${NODE_VERSION} AS base
-# Re-declare ARGs after FROM so they're visible to RUN below.
-# Globally-declared ARGs only flow into FROM/AS lines.
-ARG PNPM_VERSION
+FROM node:24-alpine AS base
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
-RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
+RUN corepack enable && corepack prepare pnpm@10 --activate
 WORKDIR /workspace
 
 # ---------- deps ----------
@@ -39,15 +42,12 @@ RUN pnpm --filter @tarmoto/shared build \
  && pnpm --filter @tarmoto/backend build
 
 # ---------- runtime ----------
-FROM node:${NODE_VERSION} AS runtime
-# Same reason as the base stage — ARGs from before the first FROM
-# don't reach RUN unless redeclared in each stage.
-ARG PNPM_VERSION
+FROM node:24-alpine AS runtime
 ENV NODE_ENV=production \
     TARMOTO_NODE_ENV=production \
     PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH
-RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
+RUN corepack enable && corepack prepare pnpm@10 --activate
 RUN apk add --no-cache curl tini \
  && addgroup -S tarmoto && adduser -S tarmoto -G tarmoto
 WORKDIR /app
