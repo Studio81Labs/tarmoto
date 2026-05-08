@@ -15,14 +15,19 @@ import * as mlClassifier from "../mlClassifier";
 import {
   __resetForTest,
   __setLoaderForTest,
+  activeInputFeatures,
   classify,
   featuresToInputVector,
   getActiveModelVersion,
   isReady,
   INPUT_FEATURES,
+  isUsingLegacyFeatureVector,
+  LEGACY_INPUT_FEATURES,
+  LEGACY_MODEL_VERSION,
   MODEL_VERSION,
   parseModelOutput,
   QUALITY_LABELS,
+  setUseLegacyFeatureVector,
   SURFACE_LABELS,
   warmup,
 } from "../mlClassifier";
@@ -38,9 +43,19 @@ function makeFeatures(overrides: Partial<WindowFeatures> = {}): WindowFeatures {
     percentile_95: 1.5,
     kurtosis: 0.0,
     skewness: 0.0,
+    spectral_centroid: 0,
+    spectral_energy_low: 0,
+    spectral_energy_mid: 0,
+    spectral_energy_high: 0,
+    dominant_frequency: 0,
+    spectral_entropy: 0,
+    band_ratio_high_low: 0,
     gyro_rms: 0.2,
+    gyro_pitch_var: 0,
+    gyro_roll_var: 0,
     speed_kmh: 30,
     speed_normalized_rms: 1.0,
+    acceleration_longitudinal: 0,
     max_abs_lean_deg: 0,
     timestamp: 1_700_000_000_000,
     ...overrides,
@@ -109,24 +124,114 @@ describe("mlClassifier — label tables", () => {
     ]);
   });
 
-  it("declares an 11-D input vector matching WindowFeatures keys", () => {
-    expect(INPUT_FEATURES).toHaveLength(11);
+  it("declares the 21-D v1.1 input vector matching WindowFeatures keys", () => {
+    // v1.1 contract (issue #492) — 8 time-domain + 7 spectral + 3
+    // gyro + 3 GPS-context features. Keep this assertion strict so a
+    // contract change can't slip in without a model-version bump.
+    expect(INPUT_FEATURES).toHaveLength(21);
     const features = makeFeatures();
     for (const key of INPUT_FEATURES) {
       expect(features).toHaveProperty(key);
     }
   });
+
+  it("includes the seven spec-mandated FFT features", () => {
+    // ML_MODEL_SPEC.md §3.3 — the safety-relevant frequency-domain
+    // features. A regression that drops one of these would silently
+    // disable surface-type discrimination (cobblestone vs gravel).
+    expect(INPUT_FEATURES).toEqual(
+      expect.arrayContaining([
+        "spectral_centroid",
+        "spectral_energy_low",
+        "spectral_energy_mid",
+        "spectral_energy_high",
+        "dominant_frequency",
+        "spectral_entropy",
+        "band_ratio_high_low",
+      ]),
+    );
+  });
+
+  it("keeps the legacy 11-D vector available for v1.0 fallback", () => {
+    expect(LEGACY_INPUT_FEATURES).toHaveLength(11);
+    expect(LEGACY_INPUT_FEATURES).toEqual([
+      "rms",
+      "std",
+      "peak_to_peak",
+      "crest_factor",
+      "zero_crossing_rate",
+      "percentile_95",
+      "kurtosis",
+      "skewness",
+      "gyro_rms",
+      "speed_kmh",
+      "speed_normalized_rms",
+    ]);
+  });
+
+  it("bumps MODEL_VERSION to rsc-v1.1.x and keeps a v1.0 alias", () => {
+    expect(MODEL_VERSION).toMatch(/^rsc-v1\.1\./);
+    expect(LEGACY_MODEL_VERSION).toBe("rsc-v1.0.0");
+  });
 });
 
 describe("featuresToInputVector", () => {
   it("packs features into a Float32Array in the declared order", () => {
-    const features = makeFeatures({ rms: 1.1, gyro_rms: 0.7, speed_kmh: 42 });
+    const features = makeFeatures({
+      rms: 1.1,
+      gyro_rms: 0.7,
+      speed_kmh: 42,
+      spectral_centroid: 7.5,
+      acceleration_longitudinal: -1.25,
+    });
     const vec = featuresToInputVector(features);
     expect(vec).toBeInstanceOf(Float32Array);
     expect(vec).toHaveLength(INPUT_FEATURES.length);
     expect(vec[INPUT_FEATURES.indexOf("rms")]).toBeCloseTo(1.1, 5);
     expect(vec[INPUT_FEATURES.indexOf("gyro_rms")]).toBeCloseTo(0.7, 5);
     expect(vec[INPUT_FEATURES.indexOf("speed_kmh")]).toBeCloseTo(42, 5);
+    expect(vec[INPUT_FEATURES.indexOf("spectral_centroid")]).toBeCloseTo(
+      7.5,
+      5,
+    );
+    expect(
+      vec[INPUT_FEATURES.indexOf("acceleration_longitudinal")],
+    ).toBeCloseTo(-1.25, 5);
+  });
+});
+
+describe("setUseLegacyFeatureVector (v1.0 fallback)", () => {
+  it("defaults to the v1.1 vector / version", () => {
+    expect(isUsingLegacyFeatureVector()).toBe(false);
+    expect(activeInputFeatures()).toBe(INPUT_FEATURES);
+  });
+
+  it("packs the 11-D legacy vector when the flag is on", () => {
+    setUseLegacyFeatureVector(true);
+    expect(isUsingLegacyFeatureVector()).toBe(true);
+    expect(activeInputFeatures()).toBe(LEGACY_INPUT_FEATURES);
+
+    const vec = featuresToInputVector(makeFeatures({ rms: 2.5 }));
+    expect(vec).toHaveLength(LEGACY_INPUT_FEATURES.length);
+    expect(vec[LEGACY_INPUT_FEATURES.indexOf("rms")]).toBeCloseTo(2.5, 5);
+  });
+
+  it("tags inference output with LEGACY_MODEL_VERSION when the flag is on", async () => {
+    const quality = new Float32Array([0.0, 0.7, 0.3, 0.0, 0.0]);
+    const surface = new Float32Array([0.05, 0.05, 0.8, 0.05, 0.05]);
+    const model = makeMockModel([quality, surface]);
+    __setLoaderForTest(async () => model);
+    await warmup();
+
+    setUseLegacyFeatureVector(true);
+    const result = classify(makeFeatures());
+    expect(result).not.toBeNull();
+    expect(result!.model_version).toBe(LEGACY_MODEL_VERSION);
+    expect(getActiveModelVersion()).toBe(LEGACY_MODEL_VERSION);
+
+    // runSync received the 11-feature buffer, not the 21-feature one.
+    const inputs = model.runSync.mock.calls[0][0];
+    expect(inputs[0].byteLength).toBe(LEGACY_INPUT_FEATURES.length * 4);
   });
 });
 

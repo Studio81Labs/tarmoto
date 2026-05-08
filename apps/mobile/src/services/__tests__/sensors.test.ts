@@ -36,9 +36,19 @@ function makeFeatures(overrides: Partial<WindowFeatures> = {}): WindowFeatures {
     percentile_95: 1.5,
     kurtosis: 0.0,
     skewness: 0.0,
+    spectral_centroid: 0,
+    spectral_energy_low: 0,
+    spectral_energy_mid: 0,
+    spectral_energy_high: 0,
+    dominant_frequency: 0,
+    spectral_entropy: 0,
+    band_ratio_high_low: 0,
     gyro_rms: 0.2,
+    gyro_pitch_var: 0,
+    gyro_roll_var: 0,
     speed_kmh: 30,
     speed_normalized_rms: 1.0,
+    acceleration_longitudinal: 0,
     max_abs_lean_deg: 0,
     timestamp: 0,
     ...overrides,
@@ -61,6 +71,61 @@ function callClassify(features: WindowFeatures) {
       };
     }
   ).classify(features);
+}
+
+/**
+ * Drive the private `extractFeatures` directly with a synthetic 100-
+ * sample window. Lets us pin behaviour of the new spectral / gyro /
+ * longitudinal-accel features without spinning up the rxjs sensor
+ * stream.
+ */
+type Reading = {
+  t: number;
+  ax: number;
+  ay: number;
+  az: number;
+  gx?: number;
+  gy?: number;
+  gz?: number;
+};
+
+function callExtract(window: Reading[]): WindowFeatures {
+  return (
+    sensorService as unknown as {
+      extractFeatures(w: Reading[]): WindowFeatures;
+    }
+  ).extractFeatures(window);
+}
+
+const SAMPLE_RATE_HZ = 50;
+
+function makeStaticWindow(): Reading[] {
+  // 100 samples at exactly 1 g — feature extraction subtracts gravity
+  // so the deviation signal is zero.
+  return Array.from({ length: 100 }, (_, i) => ({
+    t: i * 20,
+    ax: 0,
+    ay: 0,
+    az: 9.81,
+    gx: 0,
+    gy: 0,
+    gz: 0,
+  }));
+}
+
+function makeVibratingWindow(freqHz: number, amplitude: number): Reading[] {
+  // 100 samples of a sine on the Z axis on top of gravity. The
+  // deviation = |mag - 9.81| modulates at the input frequency.
+  return Array.from({ length: 100 }, (_, i) => ({
+    t: i * 20,
+    ax: 0,
+    ay: 0,
+    az:
+      9.81 + amplitude * Math.sin((2 * Math.PI * freqHz * i) / SAMPLE_RATE_HZ),
+    gx: 0.1 * Math.sin((2 * Math.PI * freqHz * i) / SAMPLE_RATE_HZ),
+    gy: 0.05 * Math.cos((2 * Math.PI * freqHz * i) / SAMPLE_RATE_HZ),
+    gz: 0,
+  }));
 }
 
 afterEach(() => {
@@ -231,5 +296,126 @@ describe("sensorService.tagSurface (research issue #7)", () => {
     expect(event).not.toBeNull();
     expect(event!.lat).toBe(0);
     expect(event!.lng).toBe(0);
+  });
+});
+
+describe("sensorService.extractFeatures — spectral + gyro + longitudinal (issue #492)", () => {
+  // The service is a singleton; ensure recording state and the
+  // previous-speed cache are reset between specs so the
+  // `acceleration_longitudinal` feature has a clean baseline.
+  beforeEach(() => {
+    if (sensorService.recording) sensorService.stop();
+    // start/stop primes the previousSpeedMs reset path.
+    sensorService.start(() => undefined);
+  });
+  afterEach(() => {
+    if (sensorService.recording) sensorService.stop();
+  });
+
+  it("populates every WindowFeatures field", () => {
+    const features = callExtract(makeStaticWindow());
+    // Every key the v1.1 contract expects must be present so the
+    // feature vector packer doesn't end up packing `undefined → 0`.
+    const expectedKeys: (keyof WindowFeatures)[] = [
+      "rms",
+      "std",
+      "peak_to_peak",
+      "crest_factor",
+      "zero_crossing_rate",
+      "percentile_95",
+      "kurtosis",
+      "skewness",
+      "spectral_centroid",
+      "spectral_energy_low",
+      "spectral_energy_mid",
+      "spectral_energy_high",
+      "dominant_frequency",
+      "spectral_entropy",
+      "band_ratio_high_low",
+      "gyro_rms",
+      "gyro_pitch_var",
+      "gyro_roll_var",
+      "speed_kmh",
+      "speed_normalized_rms",
+      "acceleration_longitudinal",
+      "max_abs_lean_deg",
+      "timestamp",
+    ];
+    for (const key of expectedKeys) {
+      expect(features).toHaveProperty(key);
+      expect(typeof features[key]).toBe("number");
+    }
+  });
+
+  it("emits zeros for spectral features on a quiet (1 g) window", () => {
+    const features = callExtract(makeStaticWindow());
+    expect(features.spectral_energy_low).toBe(0);
+    expect(features.spectral_energy_mid).toBe(0);
+    expect(features.spectral_energy_high).toBe(0);
+    expect(features.dominant_frequency).toBe(0);
+    expect(features.spectral_entropy).toBe(0);
+  });
+
+  it("places a 10 Hz vertical vibration in the mid spectral band", () => {
+    // The FFT pass receives the SIGNED deviation `mag − g`, so an
+    // input at 10 Hz is preserved at ~10 Hz (it's not rectified —
+    // that would alias high-band content off the 25 Hz Nyquist).
+    // 10 Hz lands squarely in the mid band (5–15 Hz, road texture).
+    const features = callExtract(makeVibratingWindow(10, 1.5));
+    expect(features.dominant_frequency).toBeGreaterThan(8);
+    expect(features.dominant_frequency).toBeLessThan(12);
+    expect(features.spectral_energy_mid).toBeGreaterThan(
+      features.spectral_energy_low,
+    );
+    expect(features.spectral_energy_mid).toBeGreaterThan(
+      features.spectral_energy_high,
+    );
+  });
+
+  it("places a 20 Hz vertical vibration in the high spectral band (no aliasing)", () => {
+    // Regression for the rectification bug flagged on PR #502: with
+    // |mag − g| as the FFT input, a 20 Hz vibration would have shown
+    // up at ~10 Hz (frequency doubling pushed past Nyquist and
+    // reflected back). The signed-deviation fix preserves it in the
+    // high band — exactly where the model needs it for gravel/fine-
+    // texture discrimination.
+    const features = callExtract(makeVibratingWindow(20, 1.5));
+    expect(features.dominant_frequency).toBeGreaterThanOrEqual(15);
+    expect(features.dominant_frequency).toBeLessThan(25);
+    expect(features.spectral_energy_high).toBeGreaterThan(
+      features.spectral_energy_low,
+    );
+    expect(features.spectral_energy_high).toBeGreaterThan(
+      features.spectral_energy_mid,
+    );
+  });
+
+  it("computes gyro_pitch_var / gyro_roll_var from gy / gx samples", () => {
+    const features = callExtract(makeVibratingWindow(10, 1.0));
+    // Roll signal in the synthetic window has 2× the amplitude of
+    // pitch so its variance must be larger.
+    expect(features.gyro_roll_var).toBeGreaterThan(features.gyro_pitch_var);
+    expect(features.gyro_pitch_var).toBeGreaterThan(0);
+  });
+
+  it("computes acceleration_longitudinal from the GPS speed delta", () => {
+    // First window: previousSpeed is null so the feature is forced to
+    // 0 — the runtime can't fabricate a delta against an undefined
+    // baseline.
+    sensorService.updateLocation(0, 0, 36); // 36 km/h = 10 m/s
+    const first = callExtract(makeStaticWindow());
+    expect(first.acceleration_longitudinal).toBe(0);
+
+    // Second window after a step from 10 → 13 m/s in 1 s of window
+    // step → +3 m/s² (modest acceleration). The window step is
+    // WINDOW_STEP / SAMPLE_RATE_HZ = 50 / 50 = 1 s.
+    sensorService.updateLocation(0, 0, 46.8); // 13 m/s
+    const second = callExtract(makeStaticWindow());
+    expect(second.acceleration_longitudinal).toBeCloseTo(3, 5);
+
+    // Braking → negative longitudinal acceleration.
+    sensorService.updateLocation(0, 0, 36);
+    const third = callExtract(makeStaticWindow());
+    expect(third.acceleration_longitudinal).toBeCloseTo(-3, 5);
   });
 });
