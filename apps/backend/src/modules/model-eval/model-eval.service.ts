@@ -159,7 +159,19 @@ export class ModelEvalService {
            sr_self.user_id   AS sample_user_id
          FROM model_eval_samples mes
          JOIN surface_readings sr_self ON sr_self.id = mes.surface_reading_id
+         JOIN road_segments rs ON rs.id = mes.road_segment_id
          WHERE mes.reconciled_at IS NULL
+           -- Cheap gross-threshold pre-filter applied BEFORE LIMIT.
+           -- The gross aggregate on road_segments is a strict
+           -- over-approximation of the leave-one-out aggregate
+           -- (LOO drops readings; reading_count_LOO ≤ reading_count_gross),
+           -- so if gross can't reach the spec §8.3 thresholds, LOO
+           -- can't either. Without this gate, low-traffic segments
+           -- whose samples never reach the threshold would
+           -- permanently fill the oldest-1000 window and starve
+           -- newer reconcilable samples.
+           AND rs.reading_count >= $2
+           AND rs.confidence    >= $1
          ORDER BY mes.created_at ASC
          LIMIT $3
        ),

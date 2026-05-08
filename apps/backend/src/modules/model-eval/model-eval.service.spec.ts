@@ -267,6 +267,12 @@ describe('ModelEvalService.reconcilePending', () => {
     expect(sql).toContain('other.id != c.surface_reading_id');
     // Excludes other readings from the same user.
     expect(sql).toContain('IS DISTINCT FROM c.sample_user_id');
+    // Issue #496 — gross pre-filter on road_segments runs BEFORE
+    // the LIMIT so low-traffic segments don't starve the queue.
+    // Without this gate the oldest-1000 window could be permanently
+    // occupied by samples whose segments never reach the threshold.
+    expect(sql).toContain('rs.reading_count >= $2');
+    expect(sql).toContain('rs.confidence    >= $1');
   });
 });
 
