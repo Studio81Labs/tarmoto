@@ -87,6 +87,21 @@ export const SERVER_HEURISTIC_MODEL_VERSION = 'server-heuristic-v1';
 export const CROSS_AGREEMENT_MIN_DISTINCT = 3;
 
 /**
+ * Maximum age of an in-memory agreement snapshot before
+ * `getMetrics()` recomputes it inline. The weekly BullMQ job is the
+ * primary refresh path, but in a split deployment the API
+ * container runs with `TARMOTO_QUEUE_WORKER_ENABLED=false` and
+ * never sees the worker's snapshot — without this TTL the API
+ * would return whatever it computed on its first poll forever.
+ *
+ * One hour is short enough that a regression shows up on the next
+ * dashboard poll after the worker job has run, and long enough
+ * that a tight-cadence scrape doesn't grind the 7-day SELECT on
+ * every request.
+ */
+export const AGREEMENT_SNAPSHOT_TTL_MS = 60 * 60 * 1000;
+
+/**
  * Bucket a `device_model` like "iPhone 15 Pro" or "Samsung Galaxy
  * S23" into a coarse vendor family for cross-device agreement. Falls
  * back to the lowercased full string when the model string is short

@@ -133,6 +133,56 @@ class SurfaceAccuracyTests(unittest.TestCase):
         ]
         self.assertAlmostEqual(surface_type_accuracy(samples), 0.5, places=4)
 
+    def test_blank_prediction_against_populated_truth_counts_as_miss(
+        self,
+    ) -> None:
+        """Codex review: previously the function filtered rows with a
+        blank `predicted_surface` out of the denominator, so a model
+        could leave hard predictions blank and still pass the >0.85
+        target on the easy subset. Now those rows count as MISSES."""
+        samples = [
+            Sample(
+                road_segment_id="s1",
+                predicted_quality=4,
+                truth_quality=4,
+                predicted_surface="asphalt",
+                truth_surface="asphalt",
+            ),
+            Sample(
+                road_segment_id="s2",
+                predicted_quality=3,
+                truth_quality=3,
+                predicted_surface=None,
+                truth_surface="cobblestone",
+            ),
+        ]
+        # Without the fix this would be 1.0 (one gradeable row, all
+        # correct). With the fix the blank prediction counts as a
+        # miss → 1/2.
+        self.assertAlmostEqual(surface_type_accuracy(samples), 0.5, places=4)
+
+    def test_truth_missing_is_excluded_not_failed(self) -> None:
+        """Rows without `truth_surface` are still excluded — there is
+        no ground truth to grade against, so they're "not measurable"
+        rather than "wrong"."""
+        samples = [
+            Sample(
+                road_segment_id="s1",
+                predicted_quality=4,
+                truth_quality=4,
+                predicted_surface="asphalt",
+                truth_surface="asphalt",
+            ),
+            Sample(
+                road_segment_id="s2",
+                predicted_quality=3,
+                truth_quality=3,
+                predicted_surface="asphalt",
+                truth_surface=None,
+            ),
+        ]
+        self.assertAlmostEqual(surface_type_accuracy(samples), 1.0, places=4)
+
 
 class CrossBucketAgreementTests(unittest.TestCase):
     def test_skips_segments_with_fewer_than_three_buckets(self) -> None:

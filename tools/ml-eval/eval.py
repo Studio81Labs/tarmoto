@@ -218,12 +218,26 @@ def mean_absolute_error(samples: Iterable[Sample]) -> float:
 
 
 def surface_type_accuracy(samples: Iterable[Sample]) -> float | None:
-    rows = [s for s in samples if s.predicted_surface and s.truth_surface]
-    if not rows:
+    """Spec section 7.2 surface-type accuracy.
+
+    A row is "gradeable" iff `truth_surface` is populated. A blank
+    `predicted_surface` against a populated truth counts as a MISS,
+    not as a row excluded from the denominator — otherwise the
+    pipeline could leave hard predictions blank and inflate the
+    metric on the easy subset (codex review feedback). Returns
+    `None` only when no row in the test set has surface ground
+    truth at all, which honestly means the metric is not measurable
+    on this set rather than passing it.
+    """
+    gradeable = [s for s in samples if s.truth_surface]
+    if not gradeable:
         return None
-    return sum(1 for s in rows if s.predicted_surface == s.truth_surface) / len(
-        rows
+    correct = sum(
+        1
+        for s in gradeable
+        if s.predicted_surface and s.predicted_surface == s.truth_surface
     )
+    return correct / len(gradeable)
 
 
 def dangerous_misclass_rate(samples: Iterable[Sample]) -> float:

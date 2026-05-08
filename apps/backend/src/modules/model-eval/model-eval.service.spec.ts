@@ -300,6 +300,47 @@ describe('ModelEvalService.getMetrics', () => {
     expect(metrics.cross_device_agreement.segments_evaluated).toBe(0);
     expect(metrics.cross_bike_agreement.segments_evaluated).toBe(0);
   });
+
+  it('issue #496 — refreshes the agreement snapshot when older than the TTL (split-deployment fix)', async () => {
+    // First call: snapshot is null, so recomputeAgreements runs.
+    // Second call within TTL: snapshot is fresh, no recompute.
+    // Third call after the TTL has elapsed: stale, recomputed.
+    const { service, samples } = await buildService({});
+    samples.query.mockResolvedValue([]);
+
+    // Match only the recomputeAgreements query — its SELECT lists
+    // `road_segment_id, predicted_score`, which the version-
+    // metrics aggregate does NOT.
+    const isRecomputeQuery = ([sql]: [string]): boolean =>
+      sql.includes('SELECT road_segment_id, predicted_score');
+
+    await service.getMetrics();
+    const recomputeCallsAfterFirst =
+      samples.query.mock.calls.filter(isRecomputeQuery).length;
+    expect(recomputeCallsAfterFirst).toBe(1);
+
+    await service.getMetrics();
+    const recomputeCallsAfterSecond =
+      samples.query.mock.calls.filter(isRecomputeQuery).length;
+    expect(recomputeCallsAfterSecond).toBe(1);
+
+    // Force the cached snapshot timestamp to be older than the
+    // 1-hour TTL so the next getMetrics() refreshes it.
+    const stale = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    type SnapshotMutable = {
+      lastDeviceAgreement: { computed_at: string };
+      lastBikeAgreement: { computed_at: string };
+    };
+    (service as unknown as SnapshotMutable).lastDeviceAgreement.computed_at =
+      stale;
+    (service as unknown as SnapshotMutable).lastBikeAgreement.computed_at =
+      stale;
+
+    await service.getMetrics();
+    const recomputeCallsAfterStale =
+      samples.query.mock.calls.filter(isRecomputeQuery).length;
+    expect(recomputeCallsAfterStale).toBe(2);
+  });
 });
 
 describe('ModelEvalService.renderMarkdownReport', () => {

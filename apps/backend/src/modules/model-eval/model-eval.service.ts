@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { ModelEvalSample } from '../../entities/model-eval-sample.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
 import {
+  AGREEMENT_SNAPSHOT_TTL_MS,
   CROSS_AGREEMENT_MIN_DISTINCT,
   DANGEROUS_MISCLASS_ALERT_RATE,
   DEFAULT_SAMPLE_RATE,
@@ -200,12 +201,21 @@ export class ModelEvalService {
    * markdown report. The cross-device/bike agreement values are
    * read from the in-memory snapshot the weekly job populates;
    * `recomputeAgreements()` falls back to running the calculation
-   * inline so a freshly booted backend isn't blank for a week.
+   * inline whenever the snapshot is missing OR older than
+   * `AGREEMENT_SNAPSHOT_TTL_MS`.
+   *
+   * The TTL refresh exists for split deployments
+   * (`TARMOTO_QUEUE_WORKER_ENABLED=false` on the API container):
+   * without it the API process would compute the snapshot once on
+   * the first poll and then return that stale value indefinitely
+   * — agreement regressions wouldn't surface until the API
+   * restarted because the weekly job runs in a different process
+   * and updates only the worker's in-memory cache.
    */
   async getMetrics(): Promise<ModelEvalMetricsResponseDto> {
     const versions = await this.computeVersionMetrics();
 
-    if (this.lastDeviceAgreement.computed_at === null) {
+    if (this.snapshotIsStale(this.lastDeviceAgreement)) {
       await this.recomputeAgreements();
     }
 
@@ -216,6 +226,13 @@ export class ModelEvalService {
       cross_device_agreement: this.lastDeviceAgreement,
       cross_bike_agreement: this.lastBikeAgreement,
     };
+  }
+
+  private snapshotIsStale(snapshot: ModelEvalAgreementSnapshotDto): boolean {
+    if (snapshot.computed_at === null) return true;
+    const computedMs = Date.parse(snapshot.computed_at);
+    if (!Number.isFinite(computedMs)) return true;
+    return Date.now() - computedMs > AGREEMENT_SNAPSHOT_TTL_MS;
   }
 
   /**
