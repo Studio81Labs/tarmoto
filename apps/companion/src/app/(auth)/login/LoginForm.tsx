@@ -116,7 +116,22 @@ export function LoginForm({
 
       <p className="mt-6 text-center text-sm text-slate-400">
         {t("Don't have an account?")}{" "}
-        <Link href="/register" className="text-tarmoto-cyan hover:underline">
+        <Link
+          href={
+            // Forward the post-auth destination to /register so an
+            // unauthenticated invitee following a /trips/join/...
+            // email link doesn't lose the invite when they realise
+            // they need to sign up first. `callbackUrl` is already
+            // origin-validated by `safeCallbackUrl` upstream, but we
+            // pass the raw search-param value (not the resolved one)
+            // so the same value flows through both auth pages
+            // unchanged.
+            searchParams.get("callbackUrl")
+              ? `/register?callbackUrl=${encodeURIComponent(searchParams.get("callbackUrl") ?? "")}`
+              : "/register"
+          }
+          className="text-tarmoto-cyan hover:underline"
+        >
           {t("Create one")}
         </Link>
       </p>

@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 
 const mockReplace = vi.fn();
@@ -77,5 +78,32 @@ describe("TripInviteJoinPage", () => {
 
     await screen.findByText(/Missing trip id or invite code/i);
     expect(tripsApi.join).not.toHaveBeenCalled();
+  });
+
+  it("redirects to the trip detail under React StrictMode without sticking on the spinner (Bugbot #38db6ed2)", async () => {
+    // Regression for the high-severity Bugbot finding on PR #489: the
+    // earlier `joinedOnce` + `cancelled` pair deadlocked under
+    // StrictMode (which next.config.ts has on by default) — the
+    // second pass's early-exit left the first pass's resolved POST
+    // gated behind `cancelled = true`, so setState never fired and
+    // the page sat on the spinner forever. Wrapping the component in
+    // `<StrictMode>` here forces the dev double-invoke that the bug
+    // depended on, so a regression of the deadlock would time out the
+    // `waitFor` instead of redirecting.
+    vi.mocked(tripsApi.join).mockResolvedValue({ data: { id: "trip-1" } });
+
+    render(
+      <StrictMode>
+        <TripInviteJoinPage />
+      </StrictMode>,
+    );
+
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/trips/trip-1");
+    });
+    // The dedupe ref must still gate StrictMode's double-invoke down
+    // to a single backend POST — two `member_joined` activity rows
+    // would litter the trip's collaboration timeline.
+    expect(tripsApi.join).toHaveBeenCalledTimes(1);
   });
 });

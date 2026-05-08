@@ -54,15 +54,22 @@ export default function TripInviteJoinPage() {
     if (joinedOnce.current) return;
     joinedOnce.current = true;
 
-    let cancelled = false;
+    // No `cancelled` flag + cleanup pair here: under React StrictMode
+    // the dev double-invoke runs the cleanup of the first effect
+    // before the second pass, then the second pass exits early
+    // because `joinedOnce.current` is already `true`. With a
+    // `cancelled` gate, the first POST's resolution would hit the
+    // gate and skip the setState, leaving the page stuck on the
+    // "Accepting…" spinner forever (Bugbot #38db6ed2). React 18+
+    // silently ignores setState on unmounted components, so it's
+    // safe to drop the gate entirely — the worst case is one extra
+    // setState that React no-ops.
     void (async () => {
       try {
         await tripsApi.join(tripId, code);
-        if (cancelled) return;
         setState({ kind: "success" });
         routerRef.current.replace(`/trips/${tripId}`);
       } catch (err) {
-        if (cancelled) return;
         if (err instanceof ApiError) {
           setState({
             kind: "error",
@@ -87,10 +94,6 @@ export default function TripInviteJoinPage() {
         }
       }
     })();
-
-    return () => {
-      cancelled = true;
-    };
   }, [tripId, code]);
 
   return (
