@@ -127,6 +127,30 @@ function resolveExample(schema, seed = 0) {
     return resolveExample(def, seed);
   }
 
+  // `@ApiProperty({ type: SomeDto, description: '...' })` generates a
+  // schema with `allOf: [{ $ref: ... }]` plus a sibling `description`,
+  // because OpenAPI 3.0 doesn't allow `description` on a `$ref`
+  // directly. Without unwrapping `allOf` we'd produce `{}` for every
+  // such field — the postman example would then fail validation as
+  // soon as the referenced DTO has required properties (issue #494
+  // calibration block was the first place we hit this in the wild).
+  if (Array.isArray(schema.allOf) && schema.allOf.length > 0) {
+    return Object.assign(
+      {},
+      ...schema.allOf.map((branch) => resolveExample(branch, seed)),
+    );
+  }
+  // `oneOf` / `anyOf` — pick the first branch as the canonical
+  // example. Same rationale as `allOf`: producing `{}` for a
+  // discriminated-union DTO would ship a postman example that 400s
+  // before the request reaches the service.
+  if (Array.isArray(schema.oneOf) && schema.oneOf.length > 0) {
+    return resolveExample(schema.oneOf[0], seed);
+  }
+  if (Array.isArray(schema.anyOf) && schema.anyOf.length > 0) {
+    return resolveExample(schema.anyOf[0], seed);
+  }
+
   if (schema.type === "object") {
     const result = {};
     for (const [key, prop] of Object.entries(schema.properties || {})) {

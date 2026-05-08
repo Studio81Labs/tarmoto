@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "878991cc-cee0-447f-be50-36241e352533",
+    "_postman_id": "cc68f05f-6ff5-466c-9fb6-701929909828",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -1676,7 +1676,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"ride_id\": \"\",\n  \"device_model\": \"iPhone 15 Pro\",\n  \"calibration\": {},\n  \"client_model_version\": \"rsc-v1.0.0\",\n  \"client_preprocessing_version\": \"lp22-v1\",\n  \"readings\": [\n    {\n      \"t\": 0,\n      \"ax\": 0,\n      \"ay\": 0,\n      \"az\": 0,\n      \"lat\": 0,\n      \"lng\": 0,\n      \"speed\": 0,\n      \"lean_deg\": 0\n    }\n  ],\n  \"tag_events\": [\n    {\n      \"t\": 0,\n      \"lat\": 0,\n      \"lng\": 0,\n      \"label\": \"smooth_asphalt\"\n    }\n  ]\n}",
+              "raw": "{\n  \"ride_id\": \"\",\n  \"device_model\": \"iPhone 15 Pro\",\n  \"calibration\": {\n    \"axis_mean_x\": 0,\n    \"axis_mean_y\": 0,\n    \"axis_mean_z\": 0,\n    \"axis_std_x\": 0,\n    \"axis_std_y\": 0,\n    \"axis_std_z\": 0,\n    \"sample_count\": 0,\n    \"truncated\": false\n  },\n  \"client_model_version\": \"rsc-v1.0.0\",\n  \"client_preprocessing_version\": \"lp22-v1\",\n  \"readings\": [\n    {\n      \"t\": 0,\n      \"ax\": 0,\n      \"ay\": 0,\n      \"az\": 0,\n      \"lat\": 0,\n      \"lng\": 0,\n      \"speed\": 0,\n      \"lean_deg\": 0\n    }\n  ],\n  \"tag_events\": [\n    {\n      \"t\": 0,\n      \"lat\": 0,\n      \"lng\": 0,\n      \"label\": \"smooth_asphalt\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"

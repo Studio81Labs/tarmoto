@@ -63,41 +63,100 @@ CREATE INDEX idx_road_segments_curviness ON road_segments(curviness_score);
 -- ============================================================
 
 CREATE TABLE surface_readings (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    road_segment_id UUID NOT NULL REFERENCES road_segments(id),
-    ride_id         UUID,  -- FK added after rides table
+    id                       UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    road_segment_id          UUID NOT NULL REFERENCES road_segments(id),
+    ride_id                  UUID,  -- FK added after rides table
     -- US-62: anonymized road-quality data is retained on account deletion;
     -- the user_id FK is SET NULL so contributions stay in the community dataset.
-    user_id         UUID REFERENCES users(id) ON DELETE SET NULL,
-    iri_value       FLOAT NOT NULL,          -- International Roughness Index
-    classification  VARCHAR(20) NOT NULL,    -- excellent, good, fair, poor, very_poor
-    surface_type    VARCHAR(30),
-    vibration_rms   FLOAT,                   -- root mean square of accelerometer
-    speed_at_reading FLOAT,                  -- km/h, for calibration
-    device_model    VARCHAR(100),            -- phone model for ML calibration
-    recorded_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    user_id                  UUID REFERENCES users(id) ON DELETE SET NULL,
+    iri_value                FLOAT NOT NULL,          -- International Roughness Index
+    classification           VARCHAR(20) NOT NULL,    -- excellent, good, fair, poor, very_poor
+    surface_type             VARCHAR(30),
+    vibration_rms            FLOAT,                   -- root mean square of accelerometer
+    speed_at_reading         FLOAT,                   -- km/h, for calibration
+    device_model             VARCHAR(100),            -- phone model for ML calibration
+    -- Issue #494: coarse five-bucket family encoding of `device_model`
+    -- (`iphone_pro` / `iphone_standard` / `pixel` / `samsung_galaxy_s` /
+    -- `other`). Stored alongside the raw model string so training queries
+    -- group by family without re-running the encoder over historical data.
+    device_family            VARCHAR(32),
+    -- Issue #494: 'good' / 'poor' classification of the upload's
+    -- idle-baseline calibration block (or NULL when the upload omitted
+    -- one). Aggregations can down-weight or drop rows tagged 'poor'.
+    calibration_quality      VARCHAR(8),
+    -- Issue #3 (US-3): on-device classifier identifier (telemetry only).
+    client_model_version     VARCHAR(32),
+    -- Issue #493: on-device sensor-preprocessing identifier (telemetry only).
+    client_preprocessing_version VARCHAR(32),
+    -- Research issue #7: rider-asserted surface label resolved from the
+    -- active ride's tag events at this reading's window timestamp.
+    rider_surface_label      VARCHAR(32),
+    rider_quality_label      VARCHAR(20),
+    recorded_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_surface_readings_segment ON surface_readings(road_segment_id);
 CREATE INDEX idx_surface_readings_time ON surface_readings(recorded_at DESC);
+-- Partial indexes — most rows are NULL on these telemetry columns;
+-- keep the btree small and only index populated rows so training
+-- queries that filter by family / classifier / preprocessing /
+-- calibration quality don't pay for a full scan.
+CREATE INDEX idx_surface_readings_device_family
+    ON surface_readings(device_family)
+    WHERE device_family IS NOT NULL;
+CREATE INDEX idx_surface_readings_calibration_quality
+    ON surface_readings(calibration_quality)
+    WHERE calibration_quality IS NOT NULL;
+CREATE INDEX idx_surface_readings_client_model_version
+    ON surface_readings(client_model_version)
+    WHERE client_model_version IS NOT NULL;
+CREATE INDEX idx_surface_readings_client_preprocessing_version
+    ON surface_readings(client_preprocessing_version)
+    WHERE client_preprocessing_version IS NOT NULL;
+CREATE INDEX idx_surface_readings_rider_label
+    ON surface_readings(rider_surface_label)
+    WHERE rider_surface_label IS NOT NULL;
 
 -- ============================================================
 -- RIDES & TRACKING
 -- ============================================================
 
 CREATE TABLE rides (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    started_at      TIMESTAMPTZ NOT NULL,
-    ended_at        TIMESTAMPTZ,
-    distance_km     FLOAT,
-    avg_speed       FLOAT,
-    max_speed       FLOAT,
-    route_geom      GEOMETRY(LineString, 4326),
-    avg_road_quality FLOAT,
-    ride_type       VARCHAR(20) DEFAULT 'free', -- free, commute, trip, tracked
-    status          VARCHAR(20) DEFAULT 'active', -- active, completed, cancelled
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id                          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id                     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    started_at                  TIMESTAMPTZ NOT NULL,
+    ended_at                    TIMESTAMPTZ,
+    distance_km                 FLOAT,
+    avg_speed                   FLOAT,
+    max_speed                   FLOAT,
+    route_geom                  GEOMETRY(LineString, 4326),
+    avg_road_quality            FLOAT,
+    avg_curviness               FLOAT,
+    ride_type                   VARCHAR(20) DEFAULT 'free', -- free, commute, trip, tracked
+    name                        VARCHAR(120),
+    status                      VARCHAR(20) DEFAULT 'active', -- active, completed, cancelled
+    bike_id                     UUID,
+    -- Issue #494: idle-baseline calibration captured at ride start
+    -- (~30 s of stationary samples). Per-axis mean / std are persisted
+    -- once per ride (first-write-wins; concurrent batches don't clobber)
+    -- so the training pipeline can subtract per-rider bias from raw
+    -- samples. NULL when the rider's calibration window was abandoned
+    -- (sub-floor sample count or non-stationary capture).
+    calibration_axis_mean_x     DOUBLE PRECISION,
+    calibration_axis_mean_y     DOUBLE PRECISION,
+    calibration_axis_mean_z     DOUBLE PRECISION,
+    calibration_axis_std_x      DOUBLE PRECISION,
+    calibration_axis_std_y      DOUBLE PRECISION,
+    calibration_axis_std_z      DOUBLE PRECISION,
+    calibration_sample_count    INT,
+    -- TRUE when the rider started moving before the full target window
+    -- elapsed and the capture was truncated to whatever was banked.
+    calibration_truncated       BOOLEAN,
+    -- 'good' / 'poor' tag from `classifyCalibrationQuality` in
+    -- @tarmoto/shared (gates on per-axis std, sample-count floor,
+    -- finite-value check, and ‖mean‖ ≈ gravity plausibility).
+    calibration_quality         VARCHAR(8),
+    created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE surface_readings

@@ -659,6 +659,62 @@ describe("sensorService — sensor pre-processing filter (issue #493)", () => {
 
     expect(listenerSamples[200]).toEqual({ ax: 0, ay: 0, az: 50 });
   });
+
+  it("feeds the same low-pass-filtered axes to the idle-baseline calibrator (issue #494)", () => {
+    // Regression: the calibrator and `extractFeatures` have to operate
+    // in the SAME signal domain so the per-axis bias subtraction lines
+    // up. Feeding raw axes to the calibrator while subtracting the
+    // resulting mean from filtered axes inflates the captured std
+    // (raw noise > filtered noise) and would unnecessarily flip valid
+    // stationary captures to `'poor'` via the std gate.
+    //
+    // Pin the wiring filter-coefficient-agnostic: drive a step input
+    // (0 → 9.81) so the filter's transient is non-zero in the early
+    // samples (`reading.az < 9.81` until the IIR settles). The
+    // calibrator's per-axis mean MUST match the mean of the
+    // post-filter readings exactly — that proves both consumers
+    // pulled from the same filter output. If the calibrator were
+    // still reading raw, its mean would equal 9.81 verbatim
+    // (no transient) while the readings mean would land below 9.81.
+    let capturedAccel: AccelCallback | null = null;
+    accelMock.subscribe.mockImplementation((cb) => {
+      capturedAccel = cb;
+      return { unsubscribe: () => undefined };
+    });
+    gyroMock.subscribe.mockImplementation(() => ({
+      unsubscribe: () => undefined,
+    }));
+
+    sensorService.start(() => undefined);
+    expect(capturedAccel).not.toBeNull();
+
+    const targetSamples = 30 * 50; // 30 s @ 50 Hz — full calibration window
+    for (let i = 0; i <= targetSamples; i += 1) {
+      // Step from rest at i=0; constant 9.81 thereafter so the filter
+      // transient sits entirely within the calibration window.
+      capturedAccel!({
+        x: 0,
+        y: 0,
+        z: 9.81,
+        timestamp: i * 20,
+      });
+    }
+
+    const { readings, calibration } = sensorService.stop();
+    expect(calibration).not.toBeNull();
+
+    // The first few readings are below 9.81 because the 4th-order
+    // Butterworth has non-zero settling time — that asymmetry is what
+    // distinguishes filtered from raw.
+    expect(readings[0].az).toBeLessThan(9.81);
+
+    // The calibrator's per-axis mean must equal the mean of the
+    // post-filter readings to numerical precision. Anything else
+    // means the two paths sourced different signals.
+    const expectedMean =
+      readings.reduce((s, r) => s + r.az, 0) / readings.length;
+    expect(calibration!.axis_mean_z).toBeCloseTo(expectedMean, 6);
+  });
 });
 
 describe("sensorService idle-baseline calibration (issue #494)", () => {

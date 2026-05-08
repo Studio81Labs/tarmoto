@@ -352,11 +352,21 @@ class SensorService {
       // accelerometer sample arriving before the first GPS fix would
       // otherwise carry the previous ride's last speed and abandon
       // the calibration on a phantom-moving signal.
+      //
+      // We feed the LOW-PASS-FILTERED axes (`ax/ay/az`), not the raw
+      // ones, so the bias is captured in the same domain it'll be
+      // subtracted from in `extractFeatures`. Using the raw values
+      // here would inflate the per-axis std (raw noise > filtered
+      // noise) and unnecessarily flip valid stationary captures to
+      // `'poor'` via the `CALIBRATION_STATIONARY_STD_LIMIT` gate.
+      // The DC component the bias subtraction relies on is preserved
+      // by the 22 Hz Butterworth filter, so the means converge
+      // regardless — but the std deserves the cleaned signal.
       if (this.calibrator) {
         this.calibrator.push({
-          ax: x,
-          ay: y,
-          az: z,
+          ax,
+          ay,
+          az,
           t,
           speedMs: this.hasGpsFix ? this.currentSpeed / 3.6 : undefined,
         });
