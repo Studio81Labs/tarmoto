@@ -30,6 +30,35 @@
  * close to fs/2; we use 22 Hz which gives a -3 dB point at 22 Hz, ~20
  * dB attenuation by 30 Hz on a higher-rate test, and < 1 dB loss at
  * 5 Hz (a typical road-bump frequency).
+ *
+ * # Limitations: this is *not* a pre-sample anti-alias filter
+ *
+ * At fs = 50 Hz, anything above the 25 Hz Nyquist has already aliased
+ * by the time the sample reaches this filter — a 30 Hz vibration on
+ * the bike folds to 20 Hz and lands *inside* the 22 Hz passband. True
+ * anti-aliasing has to happen before sampling, in hardware (the
+ * accelerometer's internal low-pass) or in the OS sensor framework.
+ * iOS Core Motion and Android SensorManager typically apply a
+ * hardware low-pass at the requested output rate, but that's not part
+ * of the React Native bridge contract and varies by device.
+ *
+ * What this filter *does* deliver:
+ *
+ *   - Cleans up in-band noise between 22 Hz and the 25 Hz Nyquist.
+ *     The bilinear-transform-warped digital response is much steeper
+ *     near fs/2 than the analog reference, so resonance components
+ *     that land in that strip are sharply attenuated.
+ *   - Spectral cleanup ML_MODEL_SPEC §6.1 calls for before feature
+ *     extraction (#492 spectral features especially benefit from a
+ *     clean upper band).
+ *   - Stops the per-window-edge transient that would otherwise show
+ *     up if features were extracted directly from raw samples.
+ *
+ * If a future device proves to deliver heavily-aliased signal (e.g.
+ * because the OS framework's hardware low-pass is bypassed at 50 Hz),
+ * the mitigation is to request a higher sample rate from the bridge
+ * (e.g. 200 Hz) and decimate to 50 Hz *after* this filter — but
+ * that's a sensor-stack change well beyond the scope of #493.
  */
 
 export interface BiquadCoefficients {
