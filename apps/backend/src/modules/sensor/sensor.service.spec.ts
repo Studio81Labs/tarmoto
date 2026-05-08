@@ -1144,7 +1144,7 @@ describe('SensorService', () => {
       // is the canonical validator and runs on both ends of the wire,
       // so the gate has to defend itself.
       const calibration = makeCalibration({
-        sample_count: Number.NaN as unknown as number,
+        sample_count: Number.NaN,
       });
       const dto = {
         ride_id: 'ride-cal-nan-count',
