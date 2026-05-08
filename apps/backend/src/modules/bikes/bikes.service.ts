@@ -41,14 +41,16 @@ export class BikesService {
 
   /**
    * DTO-shaped active-bike lookup for the mobile chip. Skips the
-   * per-bike stats aggregation that `list` runs — the chip only
-   * needs `make` / `model`, so the active record is returned with
-   * `totalKm` / `totalRides` zeroed out and a single `findOne`
-   * round trip instead of a grouped aggregate over `rides`.
+   * `list` endpoint's per-bike stats aggregation (which groups
+   * across every bike in the garage) by running a stats query
+   * scoped to the single active row — same `BikeDto` shape, but
+   * one cheap aggregate instead of a GROUP BY.
    */
   async getActive(userId: string): Promise<BikeDto | null> {
     const bike = await this.findActive(userId);
-    return bike ? this.toDto(bike, undefined) : null;
+    if (!bike) return null;
+    const stats = await this.statsByBikeId([bike.id]);
+    return this.toDto(bike, stats.get(bike.id));
   }
 
   /**

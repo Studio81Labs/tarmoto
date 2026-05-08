@@ -17,6 +17,7 @@ import type { CommuteRoute } from '../../../../entities/commute-route.entity.js'
 import type { NotificationPreferencesRow } from '../../../../entities/notification-preferences.entity.js';
 import type { PrivacyPreferencesRow } from '../../../../entities/privacy-preferences.entity.js';
 import type { RideTagEvent } from '../../../../entities/ride-tag-event.entity.js';
+import type { Bike } from '../../../../entities/bike.entity.js';
 import { sanitizeUserForExport } from './sanitizers.js';
 import { rideToGpx, tripDayToGpx } from './gpx.js';
 
@@ -41,6 +42,9 @@ export interface BundleRepos {
   // user_id and carry timestamps + optional lat/lng, so they're
   // personal data the GDPR Article 15 export must include.
   rideTagEvents: Pick<Repository<RideTagEvent>, 'find'>;
+  // US-64 — bikes carry rider-entered free-form `notes` plus
+  // make/model/year, so a complete GDPR export must include them.
+  bikes: Pick<Repository<Bike>, 'find'>;
 }
 
 export class BundleAssembler {
@@ -62,6 +66,7 @@ export class BundleAssembler {
       notificationRow,
       privacyRow,
       rideTagEvents,
+      bikes,
     ] = await Promise.all([
       this.repos.contacts.find({ where: { user_id: userId } }),
       this.repos.rides.find({
@@ -80,6 +85,10 @@ export class BundleAssembler {
       }),
       this.repos.privacyPreferences.findOne({ where: { user_id: userId } }),
       this.repos.rideTagEvents.find({ where: { user_id: userId } }),
+      this.repos.bikes.find({
+        where: { user_id: userId },
+        order: { created_at: 'ASC' },
+      }),
     ]);
 
     const allTripIds = Array.from(
@@ -106,7 +115,7 @@ export class BundleAssembler {
 
     archive.append(buildReadme(generatedAt), { name: 'README.txt' });
     archive.append(json(sanitizedProfile), { name: 'profile.json' });
-    archive.append(json([]), { name: 'bikes.json' });
+    archive.append(json(bikes), { name: 'bikes.json' });
     archive.append(json(contacts), { name: 'contacts.json' });
     archive.append(json(user.preferences ?? {}), {
       name: 'preferences.json',
@@ -183,7 +192,7 @@ function buildReadme(generatedAt: string): string {
     '',
     'Files included:',
     '  profile.json         - account profile (password hash and Stripe IDs removed)',
-    '  bikes.json           - garage entries (empty until bike entity ships)',
+    '  bikes.json           - garage entries (make/model/year, notes, icon, active flag)',
     '  contacts.json        - emergency contacts',
     '  preferences.json     - user preferences blob',
     '  privacy.json         - privacy preferences (typed table; empty when never edited)',

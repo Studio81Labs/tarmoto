@@ -56,6 +56,7 @@ function emptyRepos() {
     notificationPreferences: { findOne: jest.fn().mockResolvedValue(null) },
     privacyPreferences: { findOne: jest.fn().mockResolvedValue(null) },
     rideTagEvents: { find: jest.fn().mockResolvedValue([]) },
+    bikes: { find: jest.fn().mockResolvedValue([]) },
   };
 }
 
@@ -185,6 +186,44 @@ describe('BundleAssembler', () => {
       JSON.parse(JSON.stringify(tagRows)),
     );
     expect(entries.get('README.txt')).toContain('ride_tag_events.json');
+  });
+
+  it('writes bike rows (with rider-entered notes) to bikes.json — US-64', async () => {
+    // Bikes carry rider-entered free-form `notes`, so they're personal
+    // data the GDPR Article 15 export must include. Regression for the
+    // bug-bot finding that bikes.json was hardcoded to `[]`.
+    const user = makeUser();
+    const repos = emptyRepos();
+    const bikeRows = [
+      {
+        id: 'bike-1',
+        user_id: 'u1',
+        make: 'Honda',
+        model: 'Africa Twin',
+        year: 2024,
+        is_active: true,
+        photo_url: null,
+        icon: 'adventure',
+        notes: 'Crash bars + skid plate',
+        created_at: new Date('2026-04-01T08:30:00Z'),
+        updated_at: new Date('2026-04-01T08:30:00Z'),
+      },
+    ];
+    repos.bikes.find.mockResolvedValue(bikeRows);
+
+    const assembler = new BundleAssembler(repos);
+    const buf = await streamToBuffer(await assembler.assemble(user));
+    const entries = await listEntries(buf);
+
+    expect(repos.bikes.find).toHaveBeenCalledWith({
+      where: { user_id: 'u1' },
+      order: { created_at: 'ASC' },
+    });
+    expect(JSON.parse(entries.get('bikes.json')!)).toEqual(
+      JSON.parse(JSON.stringify(bikeRows)),
+    );
+    expect(entries.get('README.txt')).toContain('garage entries');
+    expect(entries.get('README.txt')).not.toContain('empty until bike entity');
   });
 
   it('includes per-ride GPX files for rides with a route', async () => {

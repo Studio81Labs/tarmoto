@@ -65,8 +65,6 @@ import type {
   UnriddenSegment,
   TripSharePublic,
   Bike,
-  CreateBikeInput,
-  UpdateBikeInput,
 } from "@/types";
 import {
   client,
@@ -383,14 +381,10 @@ class ApiService {
 
   // ── Bikes (US-64) ──
   //
-  // The rider's garage powers the active-bike chip on `RideActiveScreen`
-  // and (server-side) tags every `/rides/start` with the rider's
-  // currently-active bike for future bike-aware stats.
-
-  async listBikes(): Promise<Bike[]> {
-    const result = await client.GET("/api/v1/account/bikes");
-    return unwrap(result, "Failed to load bikes").map(bikeFromSchema);
-  }
+  // The rider's garage powers the active-bike chip on `RideActiveScreen`.
+  // The full CRUD lives on the companion (which has its own typed
+  // client); mobile only needs the active-bike lookup today, so we
+  // ship just `getActiveBike` until a mobile garage screen is built.
 
   async getActiveBike(): Promise<Bike | null> {
     // Dedicated `/account/bikes/active` route — skips the full-list
@@ -400,28 +394,6 @@ class ApiService {
     const result = await client.GET("/api/v1/account/bikes/active");
     const dto = unwrap(result, "Failed to load active bike");
     return dto ? bikeFromSchema(dto) : null;
-  }
-
-  async addBike(input: CreateBikeInput): Promise<Bike> {
-    const result = await client.POST("/api/v1/account/bikes", {
-      body: bikeInputToBody(input) as Schemas["CreateBikeDto"],
-    });
-    return bikeFromSchema(unwrap(result, "Failed to add bike"));
-  }
-
-  async updateBike(id: string, input: UpdateBikeInput): Promise<Bike> {
-    const result = await client.PUT("/api/v1/account/bikes/{id}", {
-      params: { path: { id } },
-      body: bikeInputToBody(input) as Schemas["UpdateBikeDto"],
-    });
-    return bikeFromSchema(unwrap(result, "Failed to update bike"));
-  }
-
-  async deleteBike(id: string): Promise<void> {
-    const result = await client.DELETE("/api/v1/account/bikes/{id}", {
-      params: { path: { id } },
-    });
-    unwrapVoid(result);
   }
 
   // ── Rides ──
@@ -1348,17 +1320,10 @@ export interface CrashAlertResponse {
   dispatch_in_progress: boolean;
 }
 
-// ── Bike helpers ──
-//
-// The backend persists snake_case columns and emits camelCase keys
-// in `BikeDto`; class-transformer's `@Expose({ name: "isActive" })`
-// handles the inbound camelCase / outbound snake_case translation
-// already, so the wire shape is `BikeDto` (camelCase) on the way out
-// and `CreateBikeDto` / `UpdateBikeDto` (camelCase aliases) on the
-// way in. These helpers narrow the generated `Schemas` types into
-// the local `Bike` interface so call sites don't have to deal with
-// the optional / nullable bookkeeping at every read site.
-
+// Narrows the generated `BikeDto` schema (camelCase keys, optional
+// nullables) into the local `Bike` interface so the chip caller
+// doesn't have to deal with the optional / nullable bookkeeping at
+// the read site.
 function bikeFromSchema(b: Schemas["BikeDto"]): Bike {
   return {
     id: b.id,
@@ -1374,22 +1339,6 @@ function bikeFromSchema(b: Schemas["BikeDto"]): Bike {
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
   };
-}
-
-// Drop undefined values so `class-validator` `@IsOptional()` skips
-// them entirely instead of triggering validators on `undefined`.
-function bikeInputToBody(
-  input: CreateBikeInput | UpdateBikeInput,
-): Record<string, unknown> {
-  const body: Record<string, unknown> = {};
-  if (input.make !== undefined) body.make = input.make;
-  if (input.model !== undefined) body.model = input.model;
-  if (input.year !== undefined) body.year = input.year;
-  if (input.isActive !== undefined) body.isActive = input.isActive;
-  if (input.photoUrl !== undefined) body.photoUrl = input.photoUrl;
-  if (input.icon !== undefined) body.icon = input.icon;
-  if (input.notes !== undefined) body.notes = input.notes;
-  return body;
 }
 
 export const api = new ApiService();

@@ -965,6 +965,10 @@ export interface RiddenSegmentsList {
  * A bike registered in the rider's garage. The mobile HUD surfaces
  * the active bike on `RideActiveScreen` and pins each new ride to it
  * server-side. Camel-cased keys mirror the backend's `BikeDto`.
+ *
+ * Mobile only consumes the active-bike lookup today; the full CRUD
+ * lives on the companion. CRUD-input shapes will land here when a
+ * mobile garage screen ships.
  */
 export interface Bike {
   id: string;
@@ -980,15 +984,3 @@ export interface Bike {
   createdAt: string;
   updatedAt: string;
 }
-
-export interface CreateBikeInput {
-  make: string;
-  model: string;
-  year?: number;
-  isActive?: boolean;
-  photoUrl?: string;
-  icon?: string;
-  notes?: string;
-}
-
-export type UpdateBikeInput = Partial<CreateBikeInput>;

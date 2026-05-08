@@ -201,10 +201,16 @@ describe('BikesService', () => {
   let store: FakeBikeStore;
   let repo: ReturnType<typeof buildRepo>;
   let dataSource: jest.Mocked<DataSource>;
+  let ridesQbRows: Array<{
+    bike_id: string;
+    total_rides: string;
+    total_km: string;
+  }>;
 
   beforeEach(async () => {
     store = new FakeBikeStore();
     repo = buildRepo(store);
+    ridesQbRows = [];
 
     // The transactional code path uses `dataSource.transaction(cb)` and
     // `tx.getRepository(Bike)` / `tx.createQueryBuilder(Ride, 'r')`.
@@ -232,7 +238,9 @@ describe('BikesService', () => {
       where: jest.fn().mockReturnThis() as never,
       andWhere: jest.fn().mockReturnThis() as never,
       groupBy: jest.fn().mockReturnThis() as never,
-      getRawMany: jest.fn().mockResolvedValue([]) as never,
+      // Reads from the closure variable so tests can stub aggregate
+      // rows by mutating `ridesQbRows` before calling the service.
+      getRawMany: jest.fn(async () => ridesQbRows) as never,
     };
 
     const tx = {
@@ -482,6 +490,30 @@ describe('BikesService', () => {
     it('does not leak other riders’ active bike', async () => {
       await service.create(USER_A, { make: 'Honda', model: 'Africa Twin' });
       expect(await service.findActive(USER_B)).toBeNull();
+    });
+  });
+
+  describe('getActive', () => {
+    it('returns null when the rider has no garage', async () => {
+      expect(await service.getActive(USER_A)).toBeNull();
+    });
+
+    it('returns the active bike with stats populated (not zeroed out)', async () => {
+      // Regression for the bug-bot finding: getActive used to pass
+      // `undefined` stats, so the DTO claimed `totalKm: 0` /
+      // `totalRides: 0` even when the bike had completed rides. The
+      // ridesQb mock resolves with a representative aggregate row so
+      // the assertion proves stats are actually carried through.
+      const a = await service.create(USER_A, {
+        make: 'Honda',
+        model: 'Africa Twin',
+      });
+      ridesQbRows = [{ bike_id: a.id, total_rides: '5', total_km: '123.4' }];
+
+      const dto = await service.getActive(USER_A);
+      expect(dto?.id).toBe(a.id);
+      expect(dto?.totalRides).toBe(5);
+      expect(dto?.totalKm).toBe(123.4);
     });
   });
 
