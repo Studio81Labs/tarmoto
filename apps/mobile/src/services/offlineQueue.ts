@@ -25,7 +25,7 @@
  */
 
 import type { SensorReading } from "@/types";
-import type { RideTagEvent } from "@tarmoto/shared";
+import type { CalibrationPayload, RideTagEvent } from "@tarmoto/shared";
 import {
   isNetworkDownError,
   isRetriableError,
@@ -68,6 +68,14 @@ export interface PendingUpload {
    * uploader can keep its argument shape stable.
    */
   tagEvents: RideTagEvent[];
+  /**
+   * Idle-baseline calibration captured at ride start (issue #494).
+   * `null` when the rider's calibration window was abandoned (sub-
+   * minimum sample count). Optional in the persisted blob — rides
+   * queued by an older app build deserialise to `null` so the
+   * uploader can keep its argument shape stable.
+   */
+  calibration: CalibrationPayload | null;
   enqueuedAt: number;
   attempts: number;
 }
@@ -116,6 +124,7 @@ export type SensorUploader = (
   modelVersion: string | null,
   tagEvents: RideTagEvent[],
   preprocessingVersion: string | null,
+  calibration: CalibrationPayload | null,
 ) => Promise<{ accepted: number; segments_updated: number }>;
 
 interface QueueStorage {
@@ -198,6 +207,9 @@ function readQueue(): PendingUpload[] {
       // stay absent when they're eventually drained, matching the
       // backend's "null = raw axes" contract.
       preprocessingVersion: entry.preprocessingVersion ?? null,
+      // Pre-#494 entries lack the field entirely — normalise to
+      // `null` so the uploader can keep its argument shape stable.
+      calibration: entry.calibration ?? null,
     }));
   } catch {
     return [];
@@ -210,6 +222,7 @@ function isPendingUpload(value: unknown): value is PendingUpload {
     modelVersion?: unknown;
     tagEvents?: unknown;
     preprocessingVersion?: unknown;
+    calibration?: unknown;
   };
   // `modelVersion` is tolerated as `undefined` so entries persisted by
   // an older app build (pre-US-3) still round-trip — they're rewritten
@@ -228,6 +241,13 @@ function isPendingUpload(value: unknown): value is PendingUpload {
     v.preprocessingVersion === undefined ||
     v.preprocessingVersion === null ||
     typeof v.preprocessingVersion === "string";
+  // `calibration` is tolerated as `undefined` so entries persisted by
+  // an older app build (pre-#494) still round-trip — they're rewritten
+  // with `null` on the next read via `readQueue`.
+  const validCalibration =
+    v.calibration === undefined ||
+    v.calibration === null ||
+    (typeof v.calibration === "object" && v.calibration !== null);
   return (
     typeof v.id === "string" &&
     typeof v.rideId === "string" &&
@@ -236,6 +256,7 @@ function isPendingUpload(value: unknown): value is PendingUpload {
     validModelVersion &&
     validTagEvents &&
     validPreprocessingVersion &&
+    validCalibration &&
     typeof v.enqueuedAt === "number" &&
     typeof v.attempts === "number"
   );
@@ -292,6 +313,7 @@ export async function submitSensorUpload(
   modelVersion: string | null,
   tagEvents: RideTagEvent[],
   preprocessingVersion: string | null,
+  calibration: CalibrationPayload | null,
   uploader: SensorUploader,
 ): Promise<SubmitResult> {
   // Flush the backlog first so rides stay chronologically ordered on the
@@ -319,6 +341,7 @@ export async function submitSensorUpload(
       modelVersion,
       tagEvents,
       preprocessingVersion,
+      calibration,
     );
     return {
       status: "queued",
@@ -336,6 +359,7 @@ export async function submitSensorUpload(
       modelVersion,
       tagEvents,
       preprocessingVersion,
+      calibration,
     );
     return {
       status: "uploaded",
@@ -355,6 +379,7 @@ export async function submitSensorUpload(
         modelVersion,
         tagEvents,
         preprocessingVersion,
+        calibration,
       );
       return {
         status: "queued",
@@ -413,6 +438,7 @@ export function drainOfflineQueue(
           next.modelVersion,
           next.tagEvents,
           next.preprocessingVersion,
+          next.calibration,
         );
         // Matching by id is position-independent — if enqueueUpload ran
         // while we awaited, the freshly-added entry stays intact.
@@ -475,6 +501,7 @@ export function enqueueUpload(
   modelVersion: string | null,
   tagEvents: RideTagEvent[] = [],
   preprocessingVersion: string | null = null,
+  calibration: CalibrationPayload | null = null,
 ): PendingUpload {
   const entry: PendingUpload = {
     id: nextId(),
@@ -484,6 +511,7 @@ export function enqueueUpload(
     modelVersion,
     tagEvents,
     preprocessingVersion,
+    calibration,
     enqueuedAt: Date.now(),
     attempts: 0,
   };

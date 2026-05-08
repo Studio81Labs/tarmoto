@@ -94,6 +94,31 @@ export class SurfaceReading {
   @Column({ type: 'varchar', length: 20, nullable: true })
   rider_quality_label!: string | null;
 
+  /**
+   * Device family bucket (issue #494) — coarse five-bucket encoding of
+   * `device_model` produced by `encodeDeviceFamily` from
+   * `@tarmoto/shared`. Stored alongside the raw `device_model` so
+   * training queries can group by family without re-running the
+   * encoder over historical rows. `null` on legacy rows uploaded
+   * before this column shipped.
+   */
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  device_family!: string | null;
+
+  /**
+   * Idle-baseline calibration quality classification (issue #494).
+   * `'good'` means the per-axis std came in under the stationary
+   * threshold and the sample count cleared the floor; `'poor'` means
+   * the rider didn't sit still long enough for the bias to be
+   * reliable. `null` when the upload didn't carry a calibration block
+   * at all (legacy rows, or a rider whose calibration window dropped
+   * before the minimum sample count was reached). Aggregations can
+   * down-weight or drop rows tagged `'poor'` rather than letting a
+   * noisy device pollute the training set.
+   */
+  @Column({ type: 'varchar', length: 8, nullable: true })
+  calibration_quality!: string | null;
+
   @Column({ type: 'timestamptz', default: () => 'NOW()' })
   recorded_at!: Date;
 

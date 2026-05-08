@@ -4,6 +4,7 @@
  */
 
 export * from "./constants";
+export * from "./device-family";
 export * from "./geo";
 export * from "./gpx-kml-import";
 export * from "./lean-angle";
@@ -13,6 +14,7 @@ export * from "./privacy";
 export * from "./public-profile";
 export * from "./ride-tag-events";
 export * from "./rider-format";
+export * from "./sensor-calibration";
 export * from "./trip-gpx";
 export * from "./units";
 export * from "./regions";

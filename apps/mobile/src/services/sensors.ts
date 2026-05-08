@@ -15,6 +15,10 @@ import { map, bufferCount } from "rxjs/operators";
 import type { SensorReading, QualityClass, SurfaceType } from "@/types";
 import {
   MAX_TAG_EVENTS_PER_UPLOAD,
+  encodeDeviceFamily,
+  oneHotDeviceFamily,
+  type CalibrationPayload,
+  type DeviceFamily,
   type RideTagEvent,
   type SurfaceLabel,
 } from "@tarmoto/shared";
@@ -22,6 +26,7 @@ import * as mlClassifier from "./mlClassifier";
 import { LeanAngleFilter, type CalibrationStats } from "./leanAngle";
 import { computeSpectralFeatures } from "./fft";
 import { LowPassFilter } from "./sensorsFilter";
+import { IdleBaselineCalibrator } from "./idleBaselineCalibrator";
 
 const SAMPLE_RATE_MS = 20; // 50Hz
 const SAMPLE_RATE_HZ = 50;
@@ -45,6 +50,18 @@ export interface WindowFeatures {
   percentile_95: number;
   kurtosis: number;
   skewness: number;
+  // ── Device family one-hot (issue #494) ──
+  // Five-bucket encoding produced from the rider's `device_model` via
+  // `encodeDeviceFamily` in `@tarmoto/shared`. The on-device classifier
+  // contract still uses the v1.1 21-feature vector by default — the
+  // device-family fields are exposed in WindowFeatures so a future
+  // training cycle that opts into the v1.2 contract can pack them
+  // into the input tensor without re-plumbing the producer.
+  device_family_iphone_pro: number;
+  device_family_iphone_standard: number;
+  device_family_pixel: number;
+  device_family_samsung_galaxy_s: number;
+  device_family_other: number;
   // ── Frequency-domain (FFT of accelerometer magnitude) ──
   // Issue #492: distinguishes surface types (cobblestone vs gravel vs
   // rough asphalt) and impulse-vs-continuous vibration. Per
@@ -119,6 +136,26 @@ class SensorService {
   private currentSpeed = 0;
   private currentLat = 0;
   private currentLng = 0;
+  /**
+   * Idle-baseline calibrator (issue #494). Captures the first ~30 s of
+   * stationary samples; once `done`, the snapshot's per-axis mean is
+   * subtracted from raw samples in {@link extractFeatures} before
+   * magnitude computation. `null` outside an active recording, and
+   * also `null` for the rest of the ride if the rider started moving
+   * before the minimum sample-count floor was reached (uploader
+   * treats that case as "no calibration block in this batch").
+   */
+  private calibrator: IdleBaselineCalibrator | null = null;
+  /**
+   * The active rider's device family (issue #494). Resolved once on
+   * `start()` from the supplied device model string and packed into
+   * every WindowFeatures emitted by this ride. Defaults to `"other"`
+   * until the first {@link start} call; the unknown-bucket assignment
+   * means a forgotten model identifier doesn't crash the feature
+   * packer.
+   */
+  private deviceFamily: DeviceFamily = "other";
+  private deviceFamilyOneHot: number[] = oneHotDeviceFamily("other");
   // Tracks whether `updateLocation` has fired at least once this ride.
   // Distinguishing the `currentLat/Lng = 0` *initial* state from a real
   // 0° fix matters for tag events (a rider on the equator / prime
@@ -159,9 +196,18 @@ class SensorService {
   private gyroFilterZ = new LowPassFilter();
 
   /**
-   * Start recording sensor data
+   * Start recording sensor data.
+   *
+   * `deviceModel` is the rider's device model string (typically
+   * `DeviceInfo.getModel()`). It's optional so the `sensorService.start(()=>{})`
+   * call sites in tests don't need to plumb it through; production
+   * callers should always pass one. The model string is resolved to a
+   * five-bucket {@link DeviceFamily} once at start and packed into
+   * every emitted WindowFeatures so a future v1.2 model contract can
+   * consume the device family as a per-window feature without further
+   * plumbing.
    */
-  start(onWindow: SensorCallback): void {
+  start(onWindow: SensorCallback, deviceModel?: string): void {
     if (this.isRecording) return;
     this.isRecording = true;
     this.callback = onWindow;
@@ -169,6 +215,18 @@ class SensorService {
     this.rawReadings = [];
     this.tagEvents = [];
     this.hasGpsFix = false;
+    // Resolve and cache the rider's device family for the duration of
+    // this ride. `encodeDeviceFamily` falls back to `"other"` on null /
+    // empty / unknown inputs so a missing model identifier doesn't
+    // disable the feature.
+    this.deviceFamily = encodeDeviceFamily(deviceModel);
+    this.deviceFamilyOneHot = oneHotDeviceFamily(this.deviceFamily);
+    // Issue #494 — fresh calibrator per ride so a previous ride's bias
+    // doesn't leak. The calibrator captures stationary samples and
+    // produces a snapshot once the window closes; until then the
+    // feature pipeline runs without bias subtraction (the historical
+    // behaviour, equivalent to mean = 0).
+    this.calibrator = new IdleBaselineCalibrator();
     // Reset the orientation filter so a previous ride's offset / drift
     // doesn't bleed into this one. `start` also kicks off the auto-
     // calibration window (~1.5 s of upright readings).
@@ -285,6 +343,34 @@ class SensorService {
       this.buffer.push(reading);
       this.rawReadings.push(reading);
 
+      // Issue #494 — feed every sample to the idle-baseline
+      // calibrator. The calibrator self-terminates after ~30 s, after
+      // an early-truncation when the rider starts moving, or after
+      // declaring the calibration unusable when the rider never
+      // settled. `speedMs` is gated on `hasGpsFix` because
+      // `currentSpeed` is reset only via `updateLocation`, so an
+      // accelerometer sample arriving before the first GPS fix would
+      // otherwise carry the previous ride's last speed and abandon
+      // the calibration on a phantom-moving signal.
+      //
+      // We feed the LOW-PASS-FILTERED axes (`ax/ay/az`), not the raw
+      // ones, so the bias is captured in the same domain it'll be
+      // subtracted from in `extractFeatures`. Using the raw values
+      // here would inflate the per-axis std (raw noise > filtered
+      // noise) and unnecessarily flip valid stationary captures to
+      // `'poor'` via the `CALIBRATION_STATIONARY_STD_LIMIT` gate.
+      // The DC component the bias subtraction relies on is preserved
+      // by the 22 Hz Butterworth filter, so the means converge
+      // regardless — but the std deserves the cleaned signal.
+      if (this.calibrator) {
+        this.calibrator.push({
+          ax,
+          ay,
+          az,
+          t,
+          speedMs: this.hasGpsFix ? this.currentSpeed / 3.6 : undefined,
+        });
+      }
       // Process window when we have enough samples
       if (this.buffer.length >= WINDOW_SIZE) {
         const window = this.buffer.slice(0, WINDOW_SIZE);
@@ -348,13 +434,24 @@ class SensorService {
   }
 
   /**
-   * Stop recording. Returns the buffered raw readings AND the rider
-   * tag events captured during the ride (research issue #7) so the
-   * caller can ship both in a single upload payload — keeps the
-   * offline-queue + retry semantics shared between readings and
-   * tags.
+   * Stop recording. Returns the buffered raw readings, the rider tag
+   * events captured during the ride (research issue #7), AND the
+   * idle-baseline calibration payload (issue #494) so the caller can
+   * ship them in a single upload payload — keeps the offline-queue +
+   * retry semantics shared between readings, tags, and calibration.
+   *
+   * `calibration` is `null` when the rider stopped before the
+   * minimum calibration window's worth of stationary samples was
+   * captured (a sub-{@link CALIBRATION_MIN_SECONDS} ride or one with
+   * the bike rolled the whole time). The uploader treats that as
+   * "ship the readings without a calibration block" and the backend
+   * persists `calibration_quality: null` on the resulting rows.
    */
-  stop(): { readings: SensorReading[]; tagEvents: RideTagEvent[] } {
+  stop(): {
+    readings: SensorReading[];
+    tagEvents: RideTagEvent[];
+    calibration: CalibrationPayload | null;
+  } {
     this.isRecording = false;
     this.accelSub?.unsubscribe();
     this.gyroSub?.unsubscribe();
@@ -364,10 +461,18 @@ class SensorService {
 
     const readings = [...this.rawReadings];
     const tagEvents = [...this.tagEvents];
+    // Force-finalise the calibrator so a ride that was stopped before
+    // the natural close of the window still surfaces whatever was
+    // captured (subject to the minimum-samples floor inside the
+    // calibrator). `finalize()` is a no-op when the calibrator
+    // already closed naturally during the ride.
+    const snapshot = this.calibrator?.finalize() ?? null;
+    const calibration = snapshot?.payload ?? null;
+    this.calibrator = null;
     this.rawReadings = [];
     this.buffer = [];
     this.tagEvents = [];
-    return { readings, tagEvents };
+    return { readings, tagEvents, calibration };
   }
 
   /**
@@ -456,27 +561,76 @@ class SensorService {
   }
 
   /**
-   * Extract features from a 2-second window of accelerometer data
+   * Extract features from a 2-second window of accelerometer data.
+   *
+   * The idle-baseline calibration (issue #494) is uploaded to the
+   * backend on every batch — that's how the training pipeline gets
+   * per-rider bias data for the next model contract — but the v1.1
+   * classifier currently bundled in the app was trained on the
+   * historical scalar deviation `abs(|a| − 9.81)`. Switching the
+   * on-device feature pipeline to the per-axis residual magnitude
+   * `||a − bias||` would push the model out of distribution: for
+   * vibrations perpendicular to gravity, `||a − bias||` is large
+   * (full vibration amplitude lands on a perpendicular axis) while
+   * `abs(|a| − g)` stays small (gravity magnitude is invariant under
+   * a perpendicular rotation), so a smooth ride would suddenly score
+   * rougher once calibration completes.
+   *
+   * The compromise this revision lands on:
+   *
+   *   - keep the v1.1 inference contract intact: time-domain features
+   *     and FFT both consume the SCALAR deviation `|a| − rest`
+   *     (signed for FFT, absolute for time-domain), exactly the shape
+   *     the bundled model expects;
+   *   - use the calibrated rest magnitude `||bias||` instead of the
+   *     literal 9.81 when a good calibration is available — that
+   *     absorbs per-rider MEMS scale-factor error without changing
+   *     the contract;
+   *   - keep uploading the per-axis calibration so the v1.2 retrained
+   *     model can consume the orientation-invariant residual once
+   *     it's bundled.
+   *
+   * The previous revision applied per-axis bias subtraction to the
+   * time-domain features directly. This was reverted because the
+   * v1.1 model artifact hasn't been retrained yet — see Codex P1 in
+   * the PR review for the out-of-distribution discussion.
    */
   private extractFeatures(window: SensorReading[]): WindowFeatures {
-    // Magnitude minus gravity. We keep two views of this signal:
-    //
-    //   - `signedDeviations` (mag − g) — preserves the oscillation
-    //     polarity around gravity. Used for the FFT pass; if we fed
-    //     the rectified version, full-wave rectification would
-    //     double every input frequency and alias high-band content
-    //     (e.g. a 20 Hz gravel signal would land at ~10 Hz once
-    //     reflected off the 25 Hz Nyquist), scrambling the very
-    //     distinction this PR exists to capture.
-    //   - `deviations` (|mag − g|) — the v0 contract for the time-
-    //     domain features (RMS, kurtosis, skewness, percentile,
-    //     zero-crossing rate, ...). RMS is invariant under |·|, but
-    //     the higher-moment / ordering-based features were defined
-    //     on the absolute signal — keep them on `deviations` so we
-    //     don't silently shift their numerical contract.
+    const calibrationSnap = this.calibrator?.snapshot();
+    // Only use the calibrated rest magnitude when the captured
+    // window cleared the same quality bar the backend uses to tag a
+    // reading 'good'. A `'poor'` snapshot means the capture was
+    // contaminated by motion / cornering, and `||bias||` could land
+    // far from gravity — we'd silently shift the v1.1 model's
+    // baseline. We still keep the snapshot so the upload ships its
+    // payload (the backend persists the `'poor'` tag for analytics);
+    // the on-device pipeline just stays on the literal 9.81 baseline.
+    const useCalibration =
+      calibrationSnap !== null &&
+      calibrationSnap !== undefined &&
+      calibrationSnap.quality === "good";
+    const restMag =
+      useCalibration && calibrationSnap
+        ? Math.sqrt(
+            calibrationSnap.meanX * calibrationSnap.meanX +
+              calibrationSnap.meanY * calibrationSnap.meanY +
+              calibrationSnap.meanZ * calibrationSnap.meanZ,
+          )
+        : 9.81;
+    // Signed FFT input — `|a| − rest` oscillates around 0 for
+    // vibration and stays near 0 for a stationary phone. The two
+    // views the downstream code keeps:
+    //   - `signedDeviations` (signed): preserves oscillation polarity
+    //     for the FFT pass. Rectifying would double every input
+    //     frequency and alias high-band content (PR #502).
+    //   - `deviations` (|signedDeviations|): the v1.1 contract for
+    //     RMS, kurtosis, skewness, percentile, zero-crossing rate.
+    //     RMS is invariant under |·|; the higher-moment / ordering-
+    //     based features were trained on the absolute signal, so we
+    //     keep them on `deviations` rather than the signed view.
     const signedDeviations = window.map((r) => {
-      const mag = Math.sqrt(r.ax ** 2 + r.ay ** 2 + r.az ** 2);
-      return mag - 9.81;
+      const mag = Math.sqrt(r.ax * r.ax + r.ay * r.ay + r.az * r.az);
+      return mag - restMag;
     });
     const deviations = signedDeviations.map((v) => Math.abs(v));
 
@@ -577,6 +731,19 @@ class SensorService {
       if (abs > max_abs_lean_deg) max_abs_lean_deg = abs;
     }
 
+    // Device family one-hot — packed verbatim from the resolved
+    // family captured at `start()` time so every window in the ride
+    // carries the same encoding. Unpack-by-index keeps the struct
+    // initialisation explicit and immune to future re-orderings of
+    // `DEVICE_FAMILIES`.
+    const [
+      device_family_iphone_pro,
+      device_family_iphone_standard,
+      device_family_pixel,
+      device_family_samsung_galaxy_s,
+      device_family_other,
+    ] = this.deviceFamilyOneHot;
+
     return {
       rms,
       std,
@@ -586,6 +753,11 @@ class SensorService {
       percentile_95,
       kurtosis,
       skewness,
+      device_family_iphone_pro,
+      device_family_iphone_standard,
+      device_family_pixel,
+      device_family_samsung_galaxy_s,
+      device_family_other,
       spectral_centroid: spectral.spectral_centroid,
       spectral_energy_low: spectral.spectral_energy_low,
       spectral_energy_mid: spectral.spectral_energy_mid,

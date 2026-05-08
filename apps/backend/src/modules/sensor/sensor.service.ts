@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SurfaceReading } from '../../entities/surface-reading.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
+import { Ride } from '../../entities/ride.entity.js';
 import { RideStats } from '../../entities/ride-stats.entity.js';
 import { RideTagEvent } from '../../entities/ride-tag-event.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
@@ -10,6 +11,7 @@ import {
   UploadSensorDataDto,
   SensorReadingDto,
   RideTagEventDto,
+  CalibrationDto,
 } from './dto/upload-sensor-data.dto.js';
 import { UploadResponseDto } from './dto/upload-response.dto.js';
 import {
@@ -17,6 +19,9 @@ import {
   tallyLeanSamples,
   resolveTagForTimestamp,
   SURFACE_LABEL_TO_TRUTH,
+  classifyCalibrationQuality,
+  encodeDeviceFamily,
+  type CalibrationQuality,
   type RideTagEvent as RideTagEventPayload,
 } from '@tarmoto/shared';
 
@@ -56,6 +61,8 @@ export class SensorService {
     private readonly readingRepo: Repository<SurfaceReading>,
     @InjectRepository(RoadSegment)
     private readonly segmentRepo: Repository<RoadSegment>,
+    @InjectRepository(Ride)
+    private readonly rideRepo: Repository<Ride>,
     @InjectRepository(RideStats)
     private readonly statsRepo: Repository<RideStats>,
     @InjectRepository(RideTagEvent)
@@ -82,6 +89,41 @@ export class SensorService {
       await this.upsertLeanStats(dto.ride_id, dto.readings);
       return { accepted: 0, segments_updated: 0 };
     }
+
+    // Issue #494 — classify and persist the idle-baseline calibration
+    // BEFORE the readings pipeline so the per-row tag is available for
+    // every persisted `surface_readings` row in this batch. The
+    // calibration write is a first-write-wins UPDATE on the ride row:
+    // a ride that uploads across multiple batches (offline-queue
+    // replay) ships the same calibration on every batch, and the
+    // first one to land sets the value.
+    let calibrationQuality: CalibrationQuality | null = null;
+    if (dto.calibration) {
+      calibrationQuality = classifyCalibrationQuality(dto.calibration);
+      if (calibrationQuality === 'poor') {
+        // Surface in logs so an ops dashboard can correlate spikes in
+        // poor-calibration uploads against device-model rollouts.
+        // Don't reject the row — even a poor calibration is signal,
+        // just lower-weight downstream.
+        this.logger.warn(
+          `Calibration flagged poor for ride ${dto.ride_id}: ` +
+            `std=(${dto.calibration.axis_std_x.toFixed(3)}, ` +
+            `${dto.calibration.axis_std_y.toFixed(3)}, ` +
+            `${dto.calibration.axis_std_z.toFixed(3)}) ` +
+            `samples=${dto.calibration.sample_count} ` +
+            `truncated=${dto.calibration.truncated}`,
+        );
+      }
+      await this.persistRideCalibration(
+        dto.ride_id,
+        userId,
+        dto.calibration,
+        calibrationQuality,
+      );
+    }
+    const deviceFamily = dto.device_model
+      ? encodeDeviceFamily(dto.device_model)
+      : null;
 
     // Research issue #7 — persist rider tags BEFORE the readings
     // pipeline so they survive the empty-readings early return below
@@ -118,8 +160,28 @@ export class SensorService {
       return { accepted: 0, segments_updated: 0 };
     }
 
+    // Issue #494 — when the upload includes a `'good'` calibration,
+    // use the rider's calibrated rest magnitude in place of the
+    // canonical 9.81 for the per-segment RMS computation. That
+    // keeps the persisted `vibration_rms` and `classification` in
+    // the same scalar-deviation domain as the row's
+    // `calibration_quality: 'good'` tag advertises — without this,
+    // calibrated rides would still persist uncalibrated RMS values
+    // even though `surface_readings.calibration_quality` says
+    // they're trustworthy. Poor calibrations stay on the 9.81
+    // baseline so a contaminated bias can't shift the persisted
+    // values; absent calibrations also stay on 9.81.
+    const calibrationRestMag =
+      dto.calibration && calibrationQuality === 'good'
+        ? Math.sqrt(
+            dto.calibration.axis_mean_x * dto.calibration.axis_mean_x +
+              dto.calibration.axis_mean_y * dto.calibration.axis_mean_y +
+              dto.calibration.axis_mean_z * dto.calibration.axis_mean_z,
+          )
+        : undefined;
+
     // Group readings into ~100m segments
-    const segments = this.groupIntoSegments(validReadings);
+    const segments = this.groupIntoSegments(validReadings, calibrationRestMag);
 
     // Process each segment: calculate RMS, classify, match to road
     let segmentsUpdated = 0;
@@ -157,6 +219,14 @@ export class SensorService {
         speed_at_reading:
           segment.speedAvg !== null ? segment.speedAvg * 3.6 : null,
         device_model: dto.device_model ?? null,
+        // Issue #494 — coarse device family bucket alongside the raw
+        // model string. Stored on every row so training queries can
+        // group without re-running the encoder over historical data.
+        device_family: deviceFamily,
+        // Issue #494 — `'good'` / `'poor'` validation tag for the
+        // upload's calibration block, or null when the upload didn't
+        // ship one.
+        calibration_quality: calibrationQuality,
         // Telemetry: which client-side classifier was active at upload
         // time (US-3). The labels above were derived server-side from
         // the raw readings, so this column does NOT describe how
@@ -312,8 +382,20 @@ export class SensorService {
 
   /**
    * Group raw accelerometer readings into ~100m segments based on GPS distance.
+   *
+   * `restMag` is the rider's calibrated rest accelerometer magnitude
+   * (issue #494 — `‖calibration.axis_mean‖` from a `'good'` upload).
+   * When passed, it replaces the literal 9.81 in the per-segment RMS
+   * computation so the persisted `vibration_rms` / `classification`
+   * land in the same scalar-deviation domain as the row's
+   * `calibration_quality: 'good'` tag advertises. Omit / pass
+   * `undefined` to keep the historical 9.81 baseline (no calibration
+   * uploaded, or quality flagged poor).
    */
-  groupIntoSegments(readings: SensorReadingDto[]): ProcessedSegment[] {
+  groupIntoSegments(
+    readings: SensorReadingDto[],
+    restMag?: number,
+  ): ProcessedSegment[] {
     const segments: ProcessedSegment[] = [];
     let segmentReadings: SensorReadingDto[] = [];
     let segmentDistance = 0;
@@ -336,7 +418,7 @@ export class SensorService {
       segmentReadings.push(reading);
 
       if (segmentDistance >= SEGMENT_LENGTH_M && segmentReadings.length > 0) {
-        const processed = this.processSegment(segmentReadings);
+        const processed = this.processSegment(segmentReadings, restMag);
         if (processed) {
           segments.push(processed);
         }
@@ -347,7 +429,7 @@ export class SensorService {
 
     // Process remaining readings as a partial segment
     if (segmentReadings.length >= 10) {
-      const processed = this.processSegment(segmentReadings);
+      const processed = this.processSegment(segmentReadings, restMag);
       if (processed) {
         segments.push(processed);
       }
@@ -358,14 +440,26 @@ export class SensorService {
 
   /**
    * Process a segment of readings: calculate RMS, classify quality.
+   *
+   * `restMag` (issue #494) substitutes the calibrated rider rest
+   * magnitude `‖calibration.axis_mean‖` for the canonical 9.81 when
+   * the upload's calibration was tagged `'good'`. This keeps the
+   * persisted `vibration_rms` / `classification` consistent with the
+   * row's `calibration_quality` tag — without it, a calibrated ride
+   * would still produce uncalibrated RMS values, and downstream
+   * queries that trust `'good'` rows would consume biased data.
    */
-  processSegment(readings: SensorReadingDto[]): ProcessedSegment | null {
+  processSegment(
+    readings: SensorReadingDto[],
+    restMag: number = 9.81,
+  ): ProcessedSegment | null {
     if (readings.length === 0) return null;
 
-    // Calculate acceleration magnitude deviation from gravity
+    // Calculate acceleration magnitude deviation from the rider's
+    // calibrated rest baseline (or the canonical 9.81 fallback).
     const deviations = readings.map((r) => {
       const mag = Math.sqrt(r.ax ** 2 + r.ay ** 2 + r.az ** 2);
-      return Math.abs(mag - 9.81);
+      return Math.abs(mag - restMag);
     });
 
     const rms = Math.sqrt(
@@ -400,6 +494,55 @@ export class SensorService {
       sampleCount: readings.length,
       timestamp: new Date(readings[Math.floor(readings.length / 2)].t),
     };
+  }
+
+  /**
+   * Persist the upload's idle-baseline calibration block onto the
+   * ride row (issue #494). First-write-wins semantics: a ride that
+   * uploads across multiple batches (offline-queue replay racing a
+   * fresh upload, or a long ride split into chunks) ships the same
+   * calibration on every batch, so once the first batch has written
+   * the values the subsequent batches must NOT clobber them.
+   *
+   * The conditional UPDATE keys on a single nullable column
+   * (`calibration_axis_mean_x`) — all calibration columns are written
+   * as a unit, so seeing one populated guarantees the rest are too.
+   * Doing this in SQL means the check is atomic against concurrent
+   * uploads (no read-modify-write race) and we don't need a separate
+   * lock or version column.
+   *
+   * `userId` scopes the UPDATE to rides owned by the caller. Without
+   * the ownership predicate, a malicious client that learns or
+   * guesses another rider's ride UUID could submit a fabricated
+   * calibration on that ride's first-write-wins window and pin
+   * arbitrary attacker-controlled values in the DB. The
+   * `(id, user_id)` pair is the smallest authorization gate that
+   * also keeps the UPDATE atomic against concurrent uploads.
+   */
+  private async persistRideCalibration(
+    rideId: string,
+    userId: string,
+    calibration: CalibrationDto,
+    quality: CalibrationQuality,
+  ): Promise<void> {
+    await this.rideRepo
+      .createQueryBuilder()
+      .update(Ride)
+      .set({
+        calibration_axis_mean_x: calibration.axis_mean_x,
+        calibration_axis_mean_y: calibration.axis_mean_y,
+        calibration_axis_mean_z: calibration.axis_mean_z,
+        calibration_axis_std_x: calibration.axis_std_x,
+        calibration_axis_std_y: calibration.axis_std_y,
+        calibration_axis_std_z: calibration.axis_std_z,
+        calibration_sample_count: calibration.sample_count,
+        calibration_truncated: calibration.truncated,
+        calibration_quality: quality,
+      })
+      .where('id = :rideId', { rideId })
+      .andWhere('user_id = :userId', { userId })
+      .andWhere('calibration_axis_mean_x IS NULL')
+      .execute();
   }
 
   /**

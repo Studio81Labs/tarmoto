@@ -5,19 +5,38 @@ import {
   IsArray,
   IsNumber,
   IsInt,
+  IsBoolean,
   IsIn,
   ValidateNested,
   ArrayMaxSize,
   MaxLength,
   Matches,
+  Max,
+  Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import {
+  CALIBRATION_SAMPLE_RATE_HZ,
+  CALIBRATION_TARGET_SECONDS,
   MAX_TAG_EVENTS_PER_UPLOAD,
   SURFACE_LABELS,
   type SurfaceLabel,
 } from '@tarmoto/shared';
+
+/**
+ * Upper bound on the calibration `sample_count` accepted by the DTO.
+ * The on-device calibrator collects at most
+ * `CALIBRATION_TARGET_SECONDS × CALIBRATION_SAMPLE_RATE_HZ` samples
+ * (1500 today). 10× headroom on top of that catches future
+ * sample-rate / window-duration tweaks while still bouncing buggy or
+ * malicious clients shipping values that would overflow Postgres'
+ * 4-byte `INT` column on insert (the validation 400 is the right
+ * outcome — without this, a value like `3e9` would land in the
+ * service and trigger a 500 from the DB driver).
+ */
+const MAX_CALIBRATION_SAMPLE_COUNT =
+  CALIBRATION_TARGET_SECONDS * CALIBRATION_SAMPLE_RATE_HZ * 10;
 
 export class SensorReadingDto {
   @ApiProperty({ description: 'Unix timestamp milliseconds' })
@@ -113,6 +132,75 @@ export class RideTagEventDto {
   label!: SurfaceLabel;
 }
 
+/**
+ * Idle-baseline calibration block (issue #494).
+ *
+ * Captured at ride start: ~30 s of stationary samples whose per-axis
+ * mean is subtracted from raw accelerometer readings before the feature
+ * pipeline runs. The same values land on every batch in a ride (a
+ * single ride may upload across multiple batches via the offline
+ * queue) so a first-write-wins UPDATE on the ride row keeps the bias
+ * stable even across replays.
+ */
+export class CalibrationDto {
+  @ApiProperty({
+    description: 'Mean accelerometer X (m/s²) over calibration window',
+  })
+  @IsNumber()
+  axis_mean_x!: number;
+
+  @ApiProperty({
+    description: 'Mean accelerometer Y (m/s²) over calibration window',
+  })
+  @IsNumber()
+  axis_mean_y!: number;
+
+  @ApiProperty({
+    description: 'Mean accelerometer Z (m/s²) over calibration window',
+  })
+  @IsNumber()
+  axis_mean_z!: number;
+
+  @ApiProperty({
+    description: 'Std accelerometer X (m/s²) over calibration window',
+  })
+  @IsNumber()
+  @Min(0)
+  axis_std_x!: number;
+
+  @ApiProperty({
+    description: 'Std accelerometer Y (m/s²) over calibration window',
+  })
+  @IsNumber()
+  @Min(0)
+  axis_std_y!: number;
+
+  @ApiProperty({
+    description: 'Std accelerometer Z (m/s²) over calibration window',
+  })
+  @IsNumber()
+  @Min(0)
+  axis_std_z!: number;
+
+  @ApiProperty({
+    description: 'Number of samples that contributed to the mean / std',
+    maximum: MAX_CALIBRATION_SAMPLE_COUNT,
+  })
+  @IsInt()
+  @Min(0)
+  @Max(MAX_CALIBRATION_SAMPLE_COUNT)
+  sample_count!: number;
+
+  @ApiProperty({
+    description:
+      'true when the rider started moving before the full target window ' +
+      'elapsed and the capture was truncated. A truncated window may still ' +
+      'be usable if the sample count is above the floor.',
+  })
+  @IsBoolean()
+  truncated!: boolean;
+}
+
 export class UploadSensorDataDto {
   @ApiProperty({ format: 'uuid' })
   @IsUUID()
@@ -122,6 +210,20 @@ export class UploadSensorDataDto {
   @IsOptional()
   @IsString()
   device_model?: string;
+
+  /**
+   * Idle-baseline calibration values captured at ride start (issue
+   * #494). Optional — older client builds and rides whose calibration
+   * window never reached the minimum sample count upload without this
+   * block. Backend treats absent calibration as `calibration_quality:
+   * null` on every row in the batch (training pipeline can choose to
+   * drop such rows).
+   */
+  @ApiProperty({ required: false, type: CalibrationDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CalibrationDto)
+  calibration?: CalibrationDto;
 
   /**
    * Identifier of the on-device TF Lite classifier active when this

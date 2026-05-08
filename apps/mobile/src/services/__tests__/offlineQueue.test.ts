@@ -76,6 +76,7 @@ describe("offlineQueue", () => {
         "rsc-v1.0.0",
         [],
         null,
+        null,
         uploader,
       );
 
@@ -91,6 +92,7 @@ describe("offlineQueue", () => {
         "rsc-v1.0.0",
         [],
         null,
+        null,
       );
     });
 
@@ -105,6 +107,7 @@ describe("offlineQueue", () => {
         "iPhone",
         null,
         [],
+        null,
         null,
         uploader,
       );
@@ -131,6 +134,7 @@ describe("offlineQueue", () => {
           null,
           [],
           null,
+          null,
           uploader,
         ),
       ).rejects.toThrow("HTTP 400");
@@ -151,6 +155,7 @@ describe("offlineQueue", () => {
         "iPhone",
         null,
         [],
+        null,
         null,
         uploader,
       );
@@ -174,6 +179,7 @@ describe("offlineQueue", () => {
         "iPhone",
         null,
         [],
+        null,
         null,
         uploader,
       );
@@ -205,6 +211,7 @@ describe("offlineQueue", () => {
         null,
         [],
         null,
+        null,
         uploader,
       );
 
@@ -234,6 +241,7 @@ describe("offlineQueue", () => {
         null,
         [],
         null,
+        null,
         uploader,
       );
 
@@ -262,6 +270,7 @@ describe("offlineQueue", () => {
         null,
         [],
         null,
+        null,
         uploader,
       );
 
@@ -289,6 +298,7 @@ describe("offlineQueue", () => {
         null,
         [],
         "lp22-v1",
+        null,
         uploader,
       );
 
@@ -299,6 +309,7 @@ describe("offlineQueue", () => {
         null,
         [],
         "lp22-v1",
+        null,
       );
     });
 
@@ -327,6 +338,7 @@ describe("offlineQueue", () => {
         null,
         [],
         "lp22-v1",
+        null,
         uploader,
       );
 
@@ -662,6 +674,71 @@ describe("offlineQueue", () => {
       const restored = getPendingUploads();
       expect(restored).toHaveLength(1);
       expect(restored[0].tagEvents).toEqual([]);
+    });
+
+    it("normalises pre-#494 entries lacking calibration to null", () => {
+      // A persisted blob from an older app build is missing the
+      // calibration field. The drain path needs a stable shape to
+      // pass into the uploader, so the read path normalises to null.
+      const legacyEntry = {
+        id: "legacy-1",
+        rideId: "ride-1",
+        deviceModel: "iPhone",
+        readings: [makeReading(1)],
+        modelVersion: null,
+        tagEvents: [],
+        enqueuedAt: 1,
+        attempts: 0,
+        // calibration intentionally omitted
+      };
+      storage.raw.set("pending", JSON.stringify([legacyEntry]));
+
+      const restored = getPendingUploads();
+      expect(restored).toHaveLength(1);
+      expect(restored[0].calibration).toBeNull();
+    });
+
+    it("forwards calibration through enqueue → drain → uploader (issue #494)", async () => {
+      // Idle-baseline calibration must travel with the readings
+      // through the offline queue. Losing it on the round-trip would
+      // strip the per-rider bias the backend uses to flag suspicious
+      // uploads.
+      const calibration = {
+        axis_mean_x: 0.05,
+        axis_mean_y: -0.02,
+        axis_mean_z: 9.79,
+        axis_std_x: 0.08,
+        axis_std_y: 0.07,
+        axis_std_z: 0.09,
+        sample_count: 1500,
+        truncated: false,
+      };
+      enqueueUpload(
+        "ride-cal",
+        [makeReading(1)],
+        "iPhone",
+        null,
+        [],
+        null,
+        calibration,
+      );
+
+      const seen: Array<unknown> = [];
+      const uploader: SensorUploader = async (
+        _id,
+        _r,
+        _model,
+        _version,
+        _tags,
+        _preprocessing,
+        cal,
+      ) => {
+        seen.push(cal);
+        return { accepted: 1, segments_updated: 1 };
+      };
+      await drainOfflineQueue(uploader);
+
+      expect(seen).toEqual([calibration]);
     });
 
     it("normalises pre-US-3 entries lacking modelVersion to null", () => {
