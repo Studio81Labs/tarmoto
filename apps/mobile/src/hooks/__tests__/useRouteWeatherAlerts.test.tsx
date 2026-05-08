@@ -78,7 +78,6 @@ describe("useRouteWeatherAlerts", () => {
         polyline,
         progressM: null,
         enabled: false,
-        voiceEnabled: true,
         intervalMs: HUGE_INTERVAL_MS,
       }),
     );
@@ -93,7 +92,6 @@ describe("useRouteWeatherAlerts", () => {
         polyline: [{ lat: 1, lng: 1 }],
         progressM: null,
         enabled: true,
-        voiceEnabled: true,
         intervalMs: HUGE_INTERVAL_MS,
       }),
     );
@@ -110,7 +108,6 @@ describe("useRouteWeatherAlerts", () => {
         polyline,
         progressM: null,
         enabled: true,
-        voiceEnabled: true,
         intervalMs: HUGE_INTERVAL_MS,
       }),
     );
@@ -139,7 +136,6 @@ describe("useRouteWeatherAlerts", () => {
         polyline,
         progressM: 10_000,
         enabled: true,
-        voiceEnabled: true,
         intervalMs: HUGE_INTERVAL_MS,
       }),
     );
@@ -158,7 +154,6 @@ describe("useRouteWeatherAlerts", () => {
         polyline,
         progressM: null,
         enabled: true,
-        voiceEnabled: true,
         intervalMs: HUGE_INTERVAL_MS,
       }),
     );
@@ -166,6 +161,10 @@ describe("useRouteWeatherAlerts", () => {
     await waitFor(() => expect(speakMock).toHaveBeenCalledTimes(1));
     expect(speakMock).toHaveBeenCalledWith(
       expect.stringContaining("Storm warning"),
+      // Critical weather alerts ride on the high-priority lane so they
+      // preempt nav prompts (US-16 AC #3). The dedupe key keeps a
+      // re-fired identical alert from stacking inside that lane.
+      expect.objectContaining({ priority: "high" }),
     );
     unmount();
   });
@@ -195,7 +194,6 @@ describe("useRouteWeatherAlerts", () => {
         polyline,
         progressM: 10_000,
         enabled: true,
-        voiceEnabled: true,
         intervalMs: HUGE_INTERVAL_MS,
       }),
     );
@@ -209,7 +207,14 @@ describe("useRouteWeatherAlerts", () => {
     unmount();
   });
 
-  it("skips TTS when voice is disabled, even for critical alerts", async () => {
+  it("speaks critical alerts on the high-priority lane regardless of nav-voice mute", async () => {
+    // The NavigationScreen voice FAB silences guidance, not safety
+    // notices — gating critical weather alerts behind it would leave
+    // a rider who muted nav prompts without storm/ice warnings.
+    // (PR #509 review: codex P1.) The hook now ignores the nav-voice
+    // toggle entirely and routes critical alerts through the
+    // ttsService high-priority lane that bypasses the FAB mute,
+    // volume<=0, and the external-audio guard.
     const critical = buildAlert({ id: "ice-0", kind: "ice" });
     getRouteWeatherMock.mockResolvedValue(buildResponse([critical]));
 
@@ -218,12 +223,37 @@ describe("useRouteWeatherAlerts", () => {
         polyline,
         progressM: null,
         enabled: true,
-        voiceEnabled: false,
         intervalMs: HUGE_INTERVAL_MS,
       }),
     );
 
     await waitFor(() => expect(result.current.alerts).toHaveLength(1));
+    await waitFor(() => expect(speakMock).toHaveBeenCalledTimes(1));
+    expect(speakMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ priority: "high" }),
+    );
+    unmount();
+  });
+
+  it("skips TTS entirely when the weather-alerts preference is off", async () => {
+    // Riders who opt out of weather alerts via Settings flip the
+    // master `enabled` flag — that path stops polling and never
+    // reaches the speak() call, regardless of severity.
+    const critical = buildAlert({ id: "ice-1", kind: "ice" });
+    getRouteWeatherMock.mockResolvedValue(buildResponse([critical]));
+
+    const { result, unmount } = renderHook(() =>
+      useRouteWeatherAlerts({
+        polyline,
+        progressM: null,
+        enabled: false,
+        intervalMs: HUGE_INTERVAL_MS,
+      }),
+    );
+
+    expect(result.current.alerts).toEqual([]);
+    expect(getRouteWeatherMock).not.toHaveBeenCalled();
     expect(speakMock).not.toHaveBeenCalled();
     unmount();
   });
@@ -246,7 +276,6 @@ describe("useRouteWeatherAlerts", () => {
         polyline,
         progressM: null,
         enabled: true,
-        voiceEnabled: true,
         intervalMs: HUGE_INTERVAL_MS,
       }),
     );
@@ -264,7 +293,6 @@ describe("useRouteWeatherAlerts", () => {
         polyline,
         progressM: null,
         enabled: true,
-        voiceEnabled: true,
         intervalMs: HUGE_INTERVAL_MS,
       }),
     );

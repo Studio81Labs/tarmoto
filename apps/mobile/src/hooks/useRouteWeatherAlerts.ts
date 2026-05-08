@@ -40,13 +40,14 @@ export interface UseRouteWeatherAlertsOptions {
    * alert visible since we can't know what's behind us yet.
    */
   progressM: number | null;
-  /** Master kill-switch — when false, the hook clears state and polls nothing. */
-  enabled: boolean;
   /**
-   * Whether voice prompts are live. Mirrors NavigationScreen's voice FAB
-   * so a muted rider doesn't get a TTS read-out while the toggle is off.
+   * Master kill-switch — when false, the hook clears state and polls
+   * nothing. Mirrors the rider's `weatherAlertsEnabled` preference; the
+   * NavigationScreen voice FAB is intentionally NOT consulted here
+   * because critical alerts are safety notices and ride on the
+   * high-priority TTS lane that bypasses the FAB mute.
    */
-  voiceEnabled: boolean;
+  enabled: boolean;
   /** Override the poll cadence — test seam. */
   intervalMs?: number;
 }
@@ -63,7 +64,6 @@ export function useRouteWeatherAlerts(
     polyline,
     progressM,
     enabled,
-    voiceEnabled,
     intervalMs = DEFAULT_POLL_INTERVAL_MS,
   } = options;
 
@@ -74,12 +74,6 @@ export function useRouteWeatherAlerts(
   // sample-index based, so a new polyline produces a fresh space).
   const spokenIdsRef = useRef<Set<string>>(new Set());
   const lastSpokenAtRef = useRef<number>(0);
-
-  // The latest voice flag the polling effect should consult. Keeping it
-  // in a ref means we don't tear down the interval just to flip a TTS
-  // gate that the next poll naturally picks up.
-  const voiceEnabledRef = useRef(voiceEnabled);
-  voiceEnabledRef.current = voiceEnabled;
 
   // Mirror progress in a ref so the polling effect — which closes over
   // its initial `progressM` — can still apply the ahead-only filter to
@@ -114,11 +108,20 @@ export function useRouteWeatherAlerts(
         const next = response.typed_alerts ?? [];
         setAllAlerts(next);
 
-        // TTS announce: only critical alerts the rider hasn't heard yet,
-        // ahead of their current progress, and only when voice is on.
-        // Throttle prevents two criticals landing in the same poll from
-        // reading back-to-back.
-        if (!voiceEnabledRef.current) return;
+        // TTS announce critical alerts the rider hasn't heard yet that
+        // are still ahead of their current progress. Throttle prevents
+        // two criticals in the same poll from reading back-to-back.
+        //
+        // We deliberately do NOT gate critical alerts on the
+        // NavigationScreen voice FAB (`voiceEnabledRef`). The FAB
+        // mutes turn-by-turn guidance, not safety alerts — a rider
+        // who silenced nav prompts still needs to hear about a storm
+        // ahead. The `enabled` flag (which mirrors the
+        // weather-alerts-enabled preference) is the right place to
+        // opt out of weather TTS entirely. Gating ALL alerts on the
+        // voice FAB is fine; we just route critical ones through the
+        // high-priority `ttsService.speak()` lane that bypasses the
+        // FAB mute, the volume slider, and the external-audio guard.
         const progressMNow = progressMRef.current;
         for (const alert of next) {
           if (alert.severity !== "critical") continue;
@@ -132,7 +135,17 @@ export function useRouteWeatherAlerts(
           }
           const now = Date.now();
           if (now - lastSpokenAtRef.current < TTS_THROTTLE_MS) continue;
-          ttsService.speak(`${alert.title}. ${alert.message}`);
+          // Critical weather alerts preempt nav prompts so a rider
+          // doesn't get "in 300 meters, turn left" played over a storm
+          // warning. The dedupe key keeps a re-fired identical alert
+          // from stacking inside the high-priority queue. The
+          // `priority: "high"` tag also bypasses the voice-FAB mute,
+          // the volume<=0 mute, and the external-audio guard inside
+          // `ttsService` so the alert always reaches the rider.
+          ttsService.speak(`${alert.title}. ${alert.message}`, {
+            priority: "high",
+            key: `weather:${alert.id}`,
+          });
           spokenIdsRef.current.add(alert.id);
           lastSpokenAtRef.current = now;
         }

@@ -129,7 +129,7 @@ The system analyzes road geometry (curviness from OSM), elevation data, surface 
 
 **User Stories:**
 
-- 🚧 **US-16:** As a rider, I want turn-by-turn voice navigation with motorcycle-specific instructions so that I don't miss turns.
+- ✅ **US-16:** As a rider, I want turn-by-turn voice navigation with motorcycle-specific instructions so that I don't miss turns.
 - 🚧 **US-17:** As a rider, I want full CarPlay and Android Auto support from day one so that I can use my bike's display.
 - ✅ **US-18:** As a rider, I want offline maps and navigation so that I can ride in areas without cell coverage.
 - ✅ **US-19:** As a rider, I want automatic ride tracking with stats (distance, duration, elevation, lean angles, top speed) so that I can review my rides.
@@ -194,17 +194,17 @@ The system analyzes road geometry (curviness from OSM), elevation data, surface 
 
 ### 5.1 Tech Stack
 
-| Layer       | Technology                                                       | Rationale                                                                             |
-| ----------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Mobile App  | React Native (bare)                                              | Cross-platform, CarPlay/AA support, background sensor access                          |
-| **Web App** | **Next.js (TypeScript)**                                         | **Shared TS ecosystem with mobile + backend, SSR for landing/SEO, SPA for app views** |
-| Maps        | MapLibre GL + custom vector tiles                                | Open-source, customizable styling, offline support, no Google licensing costs         |
-| Backend API | Node.js (NestJS) or Python (FastAPI)                             | High-performance, well-suited for real-time data processing                           |
-| Database    | PostgreSQL + PostGIS                                             | Geospatial queries, road segment indexing, proven at scale                            |
-| Real-time   | WebSockets (Socket.io) + Redis Pub/Sub                           | Live hazard alerts, group ride tracking                                               |
-| ML Pipeline | TensorFlow Lite (on-device)                                      | On-device road classification, server-side aggregation via NestJS ingest pipeline     |
+| Layer       | Technology                                                           | Rationale                                                                             |
+| ----------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Mobile App  | React Native (bare)                                                  | Cross-platform, CarPlay/AA support, background sensor access                          |
+| **Web App** | **Next.js (TypeScript)**                                             | **Shared TS ecosystem with mobile + backend, SSR for landing/SEO, SPA for app views** |
+| Maps        | MapLibre GL + custom vector tiles                                    | Open-source, customizable styling, offline support, no Google licensing costs         |
+| Backend API | Node.js (NestJS) or Python (FastAPI)                                 | High-performance, well-suited for real-time data processing                           |
+| Database    | PostgreSQL + PostGIS                                                 | Geospatial queries, road segment indexing, proven at scale                            |
+| Real-time   | WebSockets (Socket.io) + Redis Pub/Sub                               | Live hazard alerts, group ride tracking                                               |
+| ML Pipeline | TensorFlow Lite (on-device)                                          | On-device road classification, server-side aggregation via NestJS ingest pipeline     |
 | Cloud       | Self-hosted PaaS (backend container) + Cloudflare (R2, Workers, DNS) | Self-hosted PaaS, no egress fees on R2, global CDN for tiles + companion              |
-| Analytics   | PostHog (self-hosted) or Mixpanel                                | Privacy-first analytics, funnel tracking                                              |
+| Analytics   | PostHog (self-hosted) or Mixpanel                                    | Privacy-first analytics, funnel tracking                                              |
 
 ### 5.2 Road Quality Data Pipeline
 

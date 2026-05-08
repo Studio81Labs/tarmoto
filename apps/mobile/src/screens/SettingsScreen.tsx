@@ -25,7 +25,13 @@ import {
 } from "@/theme";
 import QualityThresholdSlider from "@/components/QualityThresholdSlider";
 import FuelRangePicker from "@/components/FuelRangePicker";
-import { useAuthStore, useOfflineStore, usePreferencesStore } from "@/stores";
+import {
+  type DistanceUnitPref,
+  type VoiceNavLanguage,
+  useAuthStore,
+  useOfflineStore,
+  usePreferencesStore,
+} from "@/stores";
 import { usePendingHazardReports, usePendingUploads } from "@/hooks";
 import { api } from "@/services/api";
 import type { ProfileStackParamList } from "@/navigation/RootNavigator";
@@ -94,6 +100,8 @@ export default function SettingsScreen() {
           />
         </View>
       </View>
+
+      <VoiceNavigationCard />
 
       <SafetyCard />
 
@@ -211,6 +219,201 @@ function BulkExportCard() {
           )}
         </TouchableOpacity>
       </View>
+    </View>
+  );
+}
+
+// US-16 AC #4: surface the voice-navigation preferences. The toggle
+// is the master switch, language picks the spoken voice (auto follows
+// the device locale), volume is a coarse 4-step picker (0/33/66/100%
+// — a slider would need an extra native dep), and the verbose toggle
+// flips the rider-friendly "in 300 m, turn left onto Hlavní" against
+// the concise "turn left now" phrasing for riders who prefer minimal
+// chatter. The distance unit pref is a sibling because it shapes the
+// spoken phrasing too (meters vs yards).
+function VoiceNavigationCard() {
+  const enabled = usePreferencesStore((s) => s.voiceNavEnabled);
+  const setEnabled = usePreferencesStore((s) => s.setVoiceNavEnabled);
+  const volume = usePreferencesStore((s) => s.voiceNavVolume);
+  const setVolume = usePreferencesStore((s) => s.setVoiceNavVolume);
+  const language = usePreferencesStore((s) => s.voiceNavLanguage);
+  const setLanguage = usePreferencesStore((s) => s.setVoiceNavLanguage);
+  const verbose = usePreferencesStore((s) => s.voiceNavVerbose);
+  const setVerbose = usePreferencesStore((s) => s.setVoiceNavVerbose);
+  const distanceUnit = usePreferencesStore((s) => s.distanceUnit);
+  const setDistanceUnit = usePreferencesStore((s) => s.setDistanceUnit);
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.uploadsHeader}>
+        <Icon
+          name="volume-high"
+          size={22}
+          color={enabled ? colors.primary : colors.textPrimary}
+        />
+        <Text style={styles.sectionTitle}>Voice navigation</Text>
+      </View>
+
+      <View style={styles.toggleRow}>
+        <View style={styles.toggleBody}>
+          <Text style={styles.toggleLabel}>Speak turn-by-turn cues</Text>
+          <Text style={styles.sectionBody}>
+            Read maneuvers aloud through the helmet headset, with motorcycle-
+            friendly early warnings ~300 m before each turn.
+          </Text>
+        </View>
+        <Switch
+          value={enabled}
+          onValueChange={setEnabled}
+          accessibilityLabel="Enable voice navigation"
+        />
+      </View>
+
+      {enabled ? (
+        <>
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleBody}>
+              <Text style={styles.toggleLabel}>Verbose phrasing</Text>
+              <Text style={styles.sectionBody}>
+                Off speaks just the imperative ("Turn left now"); on adds the
+                upcoming road name and stay-left/right hints on sharp turns.
+              </Text>
+            </View>
+            <Switch
+              value={verbose}
+              onValueChange={setVerbose}
+              accessibilityLabel="Toggle verbose voice navigation phrasing"
+            />
+          </View>
+
+          <View style={styles.toggleBody}>
+            <Text style={styles.toggleLabel}>Volume</Text>
+            <SegmentedRow
+              options={VOICE_VOLUME_OPTIONS}
+              value={volumeBucket(volume)}
+              onChange={(bucket) => setVolume(VOLUME_BY_BUCKET[bucket])}
+              ariaLabel="Voice navigation volume"
+            />
+          </View>
+
+          <View style={styles.toggleBody}>
+            <Text style={styles.toggleLabel}>Spoken language</Text>
+            <SegmentedRow
+              options={VOICE_LANGUAGE_OPTIONS}
+              value={language}
+              onChange={(v) => setLanguage(v as VoiceNavLanguage)}
+              ariaLabel="Voice navigation language"
+            />
+          </View>
+
+          <View style={styles.toggleBody}>
+            <Text style={styles.toggleLabel}>Distance units</Text>
+            <SegmentedRow
+              options={DISTANCE_UNIT_OPTIONS}
+              value={distanceUnit}
+              onChange={(v) => setDistanceUnit(v as DistanceUnitPref)}
+              ariaLabel="Spoken distance units"
+            />
+          </View>
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+type VolumeBucket = "off" | "low" | "med" | "high";
+
+const VOLUME_BY_BUCKET: Record<VolumeBucket, number> = {
+  off: 0,
+  low: 0.33,
+  med: 0.66,
+  high: 1,
+};
+
+const VOICE_VOLUME_OPTIONS: ReadonlyArray<{
+  value: VolumeBucket;
+  label: string;
+}> = [
+  { value: "off", label: "Mute" },
+  { value: "low", label: "Low" },
+  { value: "med", label: "Med" },
+  { value: "high", label: "Full" },
+];
+
+const VOICE_LANGUAGE_OPTIONS: ReadonlyArray<{
+  value: VoiceNavLanguage;
+  label: string;
+}> = [
+  { value: "auto", label: "Auto" },
+  { value: "en", label: "EN" },
+  { value: "cs", label: "CS" },
+  { value: "sk", label: "SK" },
+  { value: "de", label: "DE" },
+];
+
+const DISTANCE_UNIT_OPTIONS: ReadonlyArray<{
+  value: DistanceUnitPref;
+  label: string;
+}> = [
+  { value: "metric", label: "Metric" },
+  { value: "imperial", label: "Imperial" },
+];
+
+/**
+ * Map a stored voice volume (0..1) to the closest discrete bucket.
+ * The persisted value is the source of truth; this only affects which
+ * pill renders highlighted.
+ */
+function volumeBucket(volume: number): VolumeBucket {
+  if (volume <= 0.05) return "off";
+  if (volume <= 0.5) return "low";
+  if (volume <= 0.85) return "med";
+  return "high";
+}
+
+/**
+ * Single-row pill segmented control. Generic over the value type so the
+ * volume / language / distance-unit pickers all share styling and
+ * a11y treatment without each rolling its own JSX.
+ */
+function SegmentedRow<T extends string>({
+  options,
+  value,
+  onChange,
+  ariaLabel,
+}: {
+  options: ReadonlyArray<{ value: T; label: string }>;
+  value: T;
+  onChange: (next: T) => void;
+  ariaLabel: string;
+}) {
+  return (
+    <View style={styles.segmentRow} accessibilityLabel={ariaLabel}>
+      {options.map((opt) => {
+        const selected = opt.value === value;
+        return (
+          <TouchableOpacity
+            key={opt.value}
+            style={[
+              styles.segmentPill,
+              selected ? styles.segmentPillSelected : null,
+            ]}
+            onPress={() => onChange(opt.value)}
+            accessibilityRole="button"
+            accessibilityState={{ selected }}
+            accessibilityLabel={opt.label}
+          >
+            <Text
+              style={[
+                styles.segmentLabel,
+                selected ? styles.segmentLabelSelected : null,
+              ]}
+            >
+              {opt.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
@@ -608,5 +811,31 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: fontSize.md,
     fontWeight: fontWeight.bold,
+  },
+  segmentRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  segmentPill: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bgCard,
+  },
+  segmentPillSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  segmentLabel: {
+    color: colors.textPrimary,
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
+  },
+  segmentLabelSelected: {
+    color: colors.textInverse,
   },
 });
