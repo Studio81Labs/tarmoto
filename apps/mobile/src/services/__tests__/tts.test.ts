@@ -432,6 +432,56 @@ describe("ttsService", () => {
     );
   });
 
+  it("preempt during cold-start init does not orphan a pendingDiscard", async () => {
+    // Repro for the cold-start race: drain() flips `speaking=true`
+    // before awaiting `getInitStatus()`. If a preempt lands in that
+    // window, no native utterance has been submitted yet — `mod.stop()`
+    // has nothing to cancel, so no `tts-cancel` event will fire.
+    // Without the `speakingNative` gate, the preempt would still
+    // increment `pendingDiscards`, and the orphaned count would
+    // swallow the NEXT real `tts-finish`, freezing the queue with
+    // `speaking=true`. (PR #509 review: codex P2.)
+    let resolveInit!: () => void;
+    const initPromise = new Promise<void>((resolve) => {
+      resolveInit = resolve;
+    });
+    const nativeModule = createNativeMock();
+    nativeModule.getInitStatus.mockImplementation(() => initPromise);
+
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    ttsService.speak("In 300 meters, turn left.");
+    await flushMicrotasks();
+    // Still gated on getInitStatus — nothing has been submitted yet.
+    expect(nativeModule.speak).not.toHaveBeenCalled();
+
+    // Preempt before submission. With the fix this records no discard.
+    ttsService.speak("Crash detected.", { priority: "high" });
+    await flushMicrotasks();
+
+    // Release the init gate so both drains can proceed.
+    resolveInit();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    // Only the high-priority phrase reaches native — the original turn
+    // cue was preempted before submission.
+    expect(nativeModule.speak).toHaveBeenCalledTimes(1);
+    expect(nativeModule.speak.mock.calls[0][0]).toBe("Crash detected.");
+
+    // The high-priority utterance finishes naturally. Without the fix,
+    // an orphaned pendingDiscard would swallow this finish and keep
+    // `speaking=true`, blocking every later prompt.
+    nativeModule.__fireFinish();
+    await flushMicrotasks();
+
+    // Follow-up normal-priority phrase should drain cleanly.
+    ttsService.speak("Continue.");
+    await flushMicrotasks();
+    expect(nativeModule.speak).toHaveBeenCalledTimes(2);
+    expect(nativeModule.speak.mock.calls[1][0]).toBe("Continue.");
+  });
+
   it("setMuted(true) preserves queued high-priority alerts", async () => {
     // Muting voice guidance shouldn't drop a queued crash/weather
     // alert — the FAB silences turn cues, not safety notices.

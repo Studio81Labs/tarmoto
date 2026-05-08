@@ -152,6 +152,17 @@ class TtsService {
   private speakingEpoch = 0;
   private speakingPriority: SpeakPriority = "normal";
   /**
+   * True between `mod.speak()` returning success (utterance is in the
+   * native queue) and the listener firing for that utterance. Gates
+   * `pendingDiscards` increments so a preempt during the cold-start
+   * init window — where `speaking=true` but no native utterance has
+   * been submitted yet — doesn't record a discard for a `tts-cancel`
+   * that will never arrive. Without this, the orphaned discard would
+   * swallow the next real `tts-finish` and freeze the queue with
+   * `speaking=true` blocking all later prompts.
+   */
+  private speakingNative = false;
+  /**
    * Counter of pending `tts-cancel` events we triggered ourselves via
    * `mod.stop()` and want the listener to swallow. The epoch comparison
    * alone isn't enough on the preempt path: between issuing `stop()`
@@ -214,6 +225,7 @@ class TtsService {
     // epoch check (no new drain has reset speakingEpoch yet).
     if (this.speakingEpoch !== this.epoch) return;
     this.speaking = false;
+    this.speakingNative = false;
     this.speakingPriority = "normal";
     void this.drain();
   };
@@ -240,7 +252,18 @@ class TtsService {
    */
   private preemptInFlight(): void {
     if (!this.speaking) return;
-    this.pendingDiscards += 1;
+    // Only record a discard when we know a `tts-cancel` will actually
+    // arrive — i.e. when an utterance was already submitted to native.
+    // During the cold-start init window, `speaking=true` but
+    // `speakingNative=false` because `drain()` is still awaiting
+    // `getInitStatus()`; the `mod.stop()` call below has nothing to
+    // cancel at that point. Incrementing `pendingDiscards` anyway
+    // would orphan a count that swallows the NEXT real `tts-finish`,
+    // freezing the queue with `speaking=true`.
+    if (this.speakingNative) {
+      this.pendingDiscards += 1;
+    }
+    this.speakingNative = false;
     this.epoch += 1;
     this.speaking = false;
     this.speakingPriority = "normal";
@@ -297,29 +320,43 @@ class TtsService {
     if (!mod) {
       this.queue = [];
       this.speaking = false;
+      this.speakingNative = false;
       return;
     }
     if (this.speaking || this.paused) return;
     const next = this.queue.shift();
     if (next === undefined) return;
     this.speaking = true;
+    // Stays false until the utterance is actually queued in native —
+    // see `preemptInFlight` for why this matters during cold start.
+    this.speakingNative = false;
     this.speakingPriority = next.priority;
     const epochAtStart = this.epoch;
     this.speakingEpoch = epochAtStart;
     try {
       await this.waitForReady(mod);
       if (this.epoch !== epochAtStart) return; // stopped while we waited
+      // Mark native as having the utterance BEFORE issuing the call.
+      // `mod.speak()` dispatches synchronously to the native bridge —
+      // the `await` is only on its resolution. Setting the flag after
+      // the await would leave a microtask gap where a preempt would
+      // see `speakingNative=false`, skip the discard, and then the
+      // (legitimate) cancel from `mod.stop()` would land on the new
+      // drain's `speakingEpoch` and end the wrong utterance.
+      this.speakingNative = true;
       // Don't await for playback — `speak()` resolves with an utterance
       // id immediately on every published version of the library. The
       // `tts-finish` / `tts-cancel` listener above is what drives the
       // next drain.
       await mod.speak(next.phrase, this.buildSpeakOptions(next.priority));
     } catch {
-      // If the native side throws synchronously (audio session denied,
-      // invalid voice id, etc.) we'll never get a finish event for this
-      // utterance, so unblock the queue ourselves.
+      // The native side rejected the utterance (audio session denied,
+      // invalid voice id, etc.) — no finish/cancel event will fire for
+      // it, so unblock the queue ourselves and clear the flag.
       if (this.epoch === epochAtStart) {
         this.speaking = false;
+        this.speakingNative = false;
+        this.speakingPriority = "normal";
         if (this.queue.length > 0) void this.drain();
       }
     }
@@ -561,6 +598,7 @@ class TtsService {
     this.epoch += 1;
     this.queue = [];
     this.speaking = false;
+    this.speakingNative = false;
     this.speakingPriority = "normal";
     this.pendingDiscards = 0;
     this.muted = false;
