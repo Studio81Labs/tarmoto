@@ -69,12 +69,22 @@ Cloudflare DNS as before. Backend custom domains (`api.tarmoto.app`, eventually 
 
 ### Deploys
 
-- GitHub push to `main` → Coolify GitHub App webhook → Coolify pulls, builds the Dockerfile, deploys → ~2 min
-- `.github/workflows/backend-deploy.yml` waits for Coolify deploy to report success via API, runs `scripts/smoke/smoke.sh`, and rolls back via the Coolify "redeploy previous" API on smoke failure.
-- Required GitHub Secrets:
-  - `COOLIFY_API_TOKEN` — for poll + rollback
-  - `COOLIFY_DEPLOY_WEBHOOK_URL` — for triggering deploys when we want to bypass auto-deploy
-  - `COOLIFY_APPLICATION_UUID` — identifies the Application in Coolify's API
+Two Coolify applications per service (Tarmoto backend + companion + future Nexcue): one for **staging**, one for **production**, sharing a Dockerfile but pointing at different envs and domains.
+
+- **Staging** — Coolify's GitHub App watches `main`. **Auto Deploy = ON** in the application's "Advanced Settings → Deployment". Every push to `main` triggers a build + redeploy, ~2 min.
+- **Production** — same source repo, but **Auto Deploy = OFF**. Production only deploys when the CI fires the application's deploy webhook explicitly. The CI does that **only on a `v*` tag push** — see `.github/workflows/backend-deploy.yml` (`Trigger Coolify deploy (production only)` step gated on `env == 'production'`, which is itself gated on `startsWith(github.ref, 'refs/tags/v')`).
+
+After either deploy fires, `backend-deploy.yml` polls the relevant healthcheck endpoint until 200, runs `scripts/smoke/smoke.sh` against the matching base URL, and rolls back via the Coolify "redeploy previous" API on smoke failure.
+
+Required GitHub Secrets / Variables:
+
+- `COOLIFY_API_TOKEN` — poll + rollback (shared)
+- `COOLIFY_PROD_DEPLOY_WEBHOOK_URL` — production app's deploy webhook (CI fires on tag)
+- `COOLIFY_STAGING_DEPLOY_WEBHOOK_URL` — staging app's deploy webhook (kept for `workflow_dispatch` re-deploys; main pushes go through Auto Deploy)
+- `COOLIFY_PROD_APPLICATION_UUID`, `COOLIFY_STAGING_APPLICATION_UUID` — identify the two apps for the rollback API
+- `BACKEND_URL_PROD`, `BACKEND_URL_STAGING` — healthcheck + smoke base URLs
+
+**Why the split matters:** if production's Auto Deploy is left ON, every `main` merge ships to prod alongside staging — bypassing the tag-based release gate this ADR's release model relies on. Day-2 ops verify this toggle stays OFF on production after any Coolify upgrade or app re-creation. See [`docs/process/runbook.md` § "Deploys"](../process/runbook.md#deploys) for the operational checklist.
 
 ### Backups & restore
 
