@@ -93,3 +93,4 @@ apps/mobile/fastlane/test_output
 # build-output, not source. The changelog body is derived from the
 # git tag / dispatch input, so committing it would just be noise.
 apps/mobile/android/fastlane/metadata/android/*/changelogs/
+_tmp/

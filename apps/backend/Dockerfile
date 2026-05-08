@@ -44,7 +44,7 @@ RUN pnpm --filter @tarmoto/shared build \
 # ---------- runtime ----------
 FROM node:24-alpine AS runtime
 ENV NODE_ENV=production \
-    NODE_ENV=production \
+    PORT=3000 \
     PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH
 RUN corepack enable && corepack prepare pnpm@10 --activate
@@ -67,7 +67,7 @@ USER tarmoto
 EXPOSE 3000
 
 HEALTHCHECK --interval=15s --timeout=5s --retries=3 --start-period=30s \
-  CMD curl --fail --silent http://127.0.0.1:3000/api/v1/healthz || exit 1
+  CMD curl --fail --silent "http://127.0.0.1:${PORT:-3000}/api/v1/healthz" || exit 1
 
 ENTRYPOINT ["/sbin/tini", "--"]
 # Run pending TypeORM migrations before starting the server so schema
