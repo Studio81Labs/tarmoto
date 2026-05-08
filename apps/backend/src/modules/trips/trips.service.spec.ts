@@ -1604,8 +1604,11 @@ describe('TripsService', () => {
         inviteCode: 'ABCDEFGH',
         message: 'Come ride with us!',
       });
+      // Invite URL puts BOTH segments in the path so the companion
+      // auth middleware's pathname-only callbackUrl can round-trip an
+      // unauthenticated invitee through /login without losing the code.
       expect(ctx.joinUrl).toBe(
-        `https://app.tarmoto.test/trips/join?trip_id=${TRIP_ID}&code=ABCDEFGH`,
+        `https://app.tarmoto.test/trips/join/${TRIP_ID}/ABCDEFGH`,
       );
 
       expect(activity.recordSafe).toHaveBeenCalledWith(

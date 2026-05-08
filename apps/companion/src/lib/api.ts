@@ -118,6 +118,15 @@ export const tripsApi = {
       method: "POST",
       body: JSON.stringify(params),
     }),
+  // POST /trips/:tripId/join — accept an invite by submitting the
+  // trip id + invite code. Returns the trip detail on success and
+  // 403s on a wrong code (folded with "no such trip" so the endpoint
+  // can't be used to enumerate ids).
+  join: (tripId: string, inviteCode: string) =>
+    apiFetch(`/trips/${tripId}/join`, {
+      method: "POST",
+      body: JSON.stringify({ invite_code: inviteCode }),
+    }),
   // POST /trips/:tripId/invite — owner/admin only. Mail dispatch is
   // best-effort: the backend returns 202 + `{ status: "queued" }` once
   // the audit row lands, regardless of whether the email provider

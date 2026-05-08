@@ -782,11 +782,15 @@ export class TripsService {
 
   private buildInviteUrl(tripId: string, inviteCode: string): string {
     const base = getCompanionUrl(this.config);
-    const params = new URLSearchParams({
-      trip_id: tripId,
-      code: inviteCode,
-    });
-    return `${base}/trips/join?${params.toString()}`;
+    // tripId + invite code BOTH live in the path (rather than as
+    // `?trip_id=&code=`) so the companion auth middleware's callback —
+    // which only preserves `nextUrl.pathname`, not search params —
+    // round-trips an unauthenticated invitee through /login and lands
+    // them back on the same join URL with the full invite intact. Both
+    // segments are URL-safe today (UUID + Crockford-base32 invite
+    // alphabet), but `encodeURIComponent` is cheap defence against any
+    // future format change.
+    return `${base}/trips/join/${encodeURIComponent(tripId)}/${encodeURIComponent(inviteCode)}`;
   }
 
   async list(userId: string, query: ListTripsDto): Promise<TripSummaryDto[]> {
