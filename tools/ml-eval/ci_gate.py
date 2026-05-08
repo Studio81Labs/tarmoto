@@ -37,24 +37,45 @@ SPEC_TARGETS = {
 }
 
 
+# Metrics whose `null` is tolerated in non-strict mode. The two
+# diversity gauges depend on data the founder-rides phase doesn't
+# have yet (spec section 5.1 phase 1) — null is "not measurable in
+# this set", not "model failed". Every other launch-gating metric
+# is REQUIRED to be present: a `null` for `weighted_f1`,
+# `adjacent_accuracy`, `surface_type_accuracy`, etc., means the
+# eval pipeline is broken or the predictions.csv is missing
+# columns, and either way the gate must fail so a bad report can't
+# slip through.
+_NULL_TOLERATED_NON_STRICT = frozenset(
+    {"cross_device_agreement", "cross_bike_agreement"}
+)
+
+
 def check(report: dict, *, strict: bool) -> list[str]:
     failures: list[str] = []
 
+    def fail_on_null(metric: str) -> bool:
+        # Returns True when the caller has already recorded a failure
+        # (or the value was tolerated and there's nothing to compare).
+        if metric not in report or report.get(metric) is None:
+            if strict or metric not in _NULL_TOLERATED_NON_STRICT:
+                failures.append(
+                    f"{metric}=null (required metric missing from report)"
+                )
+            return True
+        return False
+
     def ge(metric: str, threshold: float) -> None:
-        value = report.get(metric)
-        if value is None:
-            if strict:
-                failures.append(f"{metric}=null (strict mode requires a value)")
+        if fail_on_null(metric):
             return
+        value = report[metric]
         if value < threshold:
             failures.append(f"{metric}={value:.4f} < target {threshold:.4f}")
 
     def le(metric: str, threshold: float) -> None:
-        value = report.get(metric)
-        if value is None:
-            if strict:
-                failures.append(f"{metric}=null (strict mode requires a value)")
+        if fail_on_null(metric):
             return
+        value = report[metric]
         if value > threshold:
             failures.append(f"{metric}={value:.4f} > target {threshold:.4f}")
 

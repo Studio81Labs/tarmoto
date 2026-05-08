@@ -654,7 +654,12 @@ describe('SensorService', () => {
         road_segment_id: 'segment-1',
         ride_id: 'ride-1',
         user_id: 'user-1',
-        model_version: 'rsc-v1.1.0',
+        // Tagged with the server-heuristic marker, NOT
+        // `client_model_version`. The server heuristic produced the
+        // `predicted_classification` we just persisted; tagging with
+        // the client version would mis-attribute heuristic
+        // regressions to a phantom on-device model.
+        model_version: 'server-heuristic-v1',
         device_model: 'iPhone 15',
         predicted_classification: 'excellent',
       });

@@ -60,6 +60,27 @@ export const ROLLING_WINDOW_HOURS = 24;
  * `model_eval_samples` table. */
 export const DEFAULT_SAMPLE_RATE = 0.01;
 
+/**
+ * Synthetic `model_version` label used when the per-segment
+ * prediction stored on `model_eval_samples.predicted_classification`
+ * was produced by the **server-side RMS heuristic** (the v1
+ * fallback model from spec §8.2) rather than by the on-device
+ * TF Lite classifier.
+ *
+ * Reviewer-visible distinction: the upload contract today carries
+ * raw accelerometer readings, not per-segment client predictions —
+ * so any classification we attach to a sample today is server-
+ * derived, even when `client_model_version` is non-null on the
+ * upload (the client ran TF Lite on-device, but its per-window
+ * outputs were not transmitted). Tagging those samples with
+ * `client_model_version` would mis-attribute heuristic regressions
+ * to the on-device model. Until the upload contract grows a
+ * `client_predicted_classification` field per segment, every sample
+ * is tagged with this marker so the metrics endpoint and alerting
+ * grade the heuristic, not a phantom client model.
+ */
+export const SERVER_HEURISTIC_MODEL_VERSION = 'server-heuristic-v1';
+
 /** Cross-device / cross-bike agreement weekly job thresholds (spec
  * §7.2): only count segments hit by at least three distinct device
  * families / bikes. */

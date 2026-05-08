@@ -8,6 +8,7 @@ import { RideStats } from '../../entities/ride-stats.entity.js';
 import { RideTagEvent } from '../../entities/ride-tag-event.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import { ModelEvalService } from '../model-eval/model-eval.service.js';
+import { SERVER_HEURISTIC_MODEL_VERSION } from '../model-eval/model-eval.constants.js';
 import {
   UploadSensorDataDto,
   SensorReadingDto,
@@ -260,13 +261,24 @@ export class SensorService {
       // though AGENTS.md discourages broad swallows: the path is
       // strictly best-effort and the underlying writes are still
       // observable through the regular logger.
+      //
+      // `model_version` is intentionally NOT `dto.client_model_version`
+      // — see `SERVER_HEURISTIC_MODEL_VERSION` for why. The upload
+      // contract today carries raw accelerometer readings; the
+      // `segment.classification` we just persisted was produced by
+      // the **server-side RMS heuristic**, not by the client's TF
+      // Lite model. Tagging samples with the client's version would
+      // mis-attribute heuristic regressions to a phantom client
+      // model, so we tag with the heuristic marker instead. When the
+      // upload contract grows a per-segment client prediction, swap
+      // this to `dto.client_model_version` for samples that carry it.
       try {
         await this.modelEval.maybeSample({
           surface_reading_id: saved.id,
           road_segment_id: roadSegmentId,
           ride_id: dto.ride_id,
           user_id: userId,
-          model_version: dto.client_model_version ?? null,
+          model_version: SERVER_HEURISTIC_MODEL_VERSION,
           device_model: dto.device_model ?? null,
           predicted_classification: segment.classification,
         });

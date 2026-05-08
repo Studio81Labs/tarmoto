@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ModelEvalSample } from '../../entities/model-eval-sample.entity.js';
-import { SurfaceReading } from '../../entities/surface-reading.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
 import {
   CROSS_AGREEMENT_MIN_DISTINCT,
@@ -32,6 +31,22 @@ export interface SamplePayload {
   road_segment_id: string;
   ride_id: string | null;
   user_id: string | null;
+  /**
+   * Identifier of the **producer** of `predicted_classification`.
+   * Callers MUST pass the version of whatever actually produced the
+   * label being graded:
+   *
+   *   - `SERVER_HEURISTIC_MODEL_VERSION` when the label came from
+   *     the server-side RMS heuristic (spec §8.2 v1 fallback);
+   *   - the client's `MODEL_VERSION` when (and only when) the
+   *     upload contract carries a per-segment client prediction.
+   *
+   * The upload's `client_model_version` is a separate signal — it
+   * tells us which classifier the client *had loaded*, not which
+   * one produced the per-segment prediction we store. Conflating
+   * the two would let a bad client model appear healthy because
+   * the heuristic's metrics get tagged with the client version.
+   */
   model_version: string | null;
   device_model: string | null;
   predicted_classification: string;
@@ -63,8 +78,6 @@ export class ModelEvalService {
   constructor(
     @InjectRepository(ModelEvalSample)
     private readonly samples: Repository<ModelEvalSample>,
-    @InjectRepository(SurfaceReading)
-    private readonly readings: Repository<SurfaceReading>,
     @InjectRepository(Ride)
     private readonly rides: Repository<Ride>,
     private readonly config: ConfigService,

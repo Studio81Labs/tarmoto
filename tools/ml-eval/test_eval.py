@@ -225,6 +225,54 @@ class EvaluateAndGateTests(unittest.TestCase):
         failures = check(bad, strict=True)
         self.assertEqual(len(failures), 8)
 
+    def test_null_required_metric_fails_default_mode(self) -> None:
+        """Codex review: in non-strict mode, only the cross-device /
+        cross-bike diversity metrics may be null. A null
+        `surface_type_accuracy` (or any other launch-gating metric)
+        must still fail the gate — otherwise a predictions.csv
+        missing the surface columns would silently bypass the 0.85
+        target."""
+        report = {
+            "weighted_f1": 0.90,
+            "adjacent_accuracy": 0.96,
+            "confusion_between_extremes": 0.01,
+            "mae": 0.30,
+            "surface_type_accuracy": None,
+            "cross_device_agreement": None,
+            "cross_bike_agreement": None,
+            "dangerous_misclass_rate": 0.005,
+        }
+        failures = check(report, strict=False)
+        self.assertEqual(len(failures), 1)
+        self.assertIn("surface_type_accuracy=null", failures[0])
+
+    def test_null_diversity_metrics_tolerated_in_default_mode(self) -> None:
+        report = {
+            "weighted_f1": 0.90,
+            "adjacent_accuracy": 0.96,
+            "confusion_between_extremes": 0.01,
+            "mae": 0.30,
+            "surface_type_accuracy": 0.90,
+            "cross_device_agreement": None,
+            "cross_bike_agreement": None,
+            "dangerous_misclass_rate": 0.005,
+        }
+        self.assertEqual(check(report, strict=False), [])
+
+    def test_strict_mode_rejects_any_null(self) -> None:
+        report = {
+            "weighted_f1": 0.90,
+            "adjacent_accuracy": 0.96,
+            "confusion_between_extremes": 0.01,
+            "mae": 0.30,
+            "surface_type_accuracy": 0.90,
+            "cross_device_agreement": None,
+            "cross_bike_agreement": None,
+            "dangerous_misclass_rate": 0.005,
+        }
+        failures = check(report, strict=True)
+        self.assertEqual(len(failures), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -7,7 +7,6 @@ import {
   computeAgreement,
 } from './model-eval.service.js';
 import { ModelEvalSample } from '../../entities/model-eval-sample.entity.js';
-import { SurfaceReading } from '../../entities/surface-reading.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
 
 interface FakeRepo<T> {
@@ -48,7 +47,6 @@ async function buildService(opts: {
 }> {
   const samples = opts.samples ?? fakeRepo<ModelEvalSample>();
   const rides = opts.rides ?? fakeRepo<Ride>();
-  const readings = fakeRepo<SurfaceReading>();
   const config = {
     get: jest.fn((key: string) => {
       if (key === 'TARMOTO_MODEL_EVAL_SAMPLE_RATE') return opts.sampleRate;
@@ -59,7 +57,6 @@ async function buildService(opts: {
     providers: [
       ModelEvalService,
       { provide: getRepositoryToken(ModelEvalSample), useValue: samples },
-      { provide: getRepositoryToken(SurfaceReading), useValue: readings },
       { provide: getRepositoryToken(Ride), useValue: rides },
       { provide: ConfigService, useValue: config },
       {
