@@ -28,7 +28,7 @@ describe('CreateBikeDto', () => {
       model: 'Africa Twin',
       year: 1899,
     });
-    expect(errors).toContain('min');
+    expect(errors).toContain('isBikeYear');
   });
 
   it('rejects a year more than one year past the current calendar year', async () => {
@@ -37,7 +37,7 @@ describe('CreateBikeDto', () => {
       model: 'Africa Twin',
       year: maxBikeYear() + 1,
     });
-    expect(errors).toContain('max');
+    expect(errors).toContain('isBikeYear');
   });
 
   it('accepts the next-model-year value (currentYear + 1)', async () => {
@@ -47,6 +47,31 @@ describe('CreateBikeDto', () => {
       year: maxBikeYear(),
     });
     expect(errors).toEqual([]);
+  });
+
+  it('recomputes the year ceiling per request (does not freeze at module load)', async () => {
+    // Regression for the bug-bot finding: with `@Max(maxBikeYear())`
+    // the ceiling was captured once at module load — a process that
+    // booted in 2026 would keep rejecting 2028 bikes throughout 2027.
+    // The custom validator reads `Date.now()` per call, so freezing
+    // the wall-clock to next year must let the previously-rejected
+    // "current + 2" value validate cleanly.
+    const yearAhead = new Date().getUTCFullYear() + 1;
+    jest
+      .useFakeTimers()
+      .setSystemTime(new Date(`${yearAhead}-06-15T00:00:00Z`));
+    try {
+      const errors = await validateBody({
+        make: 'Honda',
+        model: 'Africa Twin',
+        // Was "currentYear + 2" (out of range) before the clock
+        // advanced; now "currentYear + 1" relative to the fake clock.
+        year: yearAhead + 1,
+      });
+      expect(errors).toEqual([]);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('rejects an icon longer than 32 chars', async () => {

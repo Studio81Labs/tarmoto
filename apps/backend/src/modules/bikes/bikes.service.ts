@@ -50,6 +50,7 @@ export class BikesService {
    */
   async create(userId: string, dto: CreateBikeDto): Promise<BikeDto> {
     return this.dataSource.transaction(async (tx) => {
+      await this.lockGarage(tx, userId);
       const repo = tx.getRepository(Bike);
       const count = await repo.count({ where: { user_id: userId } });
       const isFirst = count === 0;
@@ -83,22 +84,23 @@ export class BikesService {
     dto: UpdateBikeDto,
   ): Promise<BikeDto> {
     return this.dataSource.transaction(async (tx) => {
+      await this.lockGarage(tx, userId);
       const repo = tx.getRepository(Bike);
       const bike = await repo.findOne({
         where: { id: bikeId, user_id: userId },
       });
       if (!bike) throw new NotFoundException('Bike not found');
 
-      // Disallow self-deactivation when this is the rider's only bike,
-      // so they always have an active bike to tag rides against.
+      // Deactivating the currently-active bike via `is_active: false`
+      // is a silent no-op regardless of how many bikes the rider owns:
+      // the contract is "rider always has an active bike" so the only
+      // way to change the active flag is by activating a different
+      // bike (which transactionally swaps via `deactivateAll`). Without
+      // this guard a multi-bike rider could end up with zero active
+      // bikes and `/rides/start` would tag rides with `null`.
       if (dto.is_active === false && bike.is_active) {
-        const total = await repo.count({ where: { user_id: userId } });
-        if (total === 1) {
-          // Silently keep it active — the rider had one bike and
-          // tried to deactivate it. Treat as a no-op for this field.
-          dto = { ...dto };
-          delete dto.is_active;
-        }
+        dto = { ...dto };
+        delete dto.is_active;
       }
 
       if (dto.is_active === true && !bike.is_active) {
@@ -121,6 +123,7 @@ export class BikesService {
 
   async delete(userId: string, bikeId: string): Promise<void> {
     await this.dataSource.transaction(async (tx) => {
+      await this.lockGarage(tx, userId);
       const repo = tx.getRepository(Bike);
       const bike = await repo.findOne({
         where: { id: bikeId, user_id: userId },
@@ -146,6 +149,28 @@ export class BikesService {
   }
 
   // ── helpers ──
+
+  /**
+   * Per-rider advisory lock taken at the start of every garage write.
+   *
+   * Without this, two concurrent activations (e.g. a double-tap on
+   * "set as active" or two PATCH requests in flight from different
+   * tabs) can both clear the partial unique index inside their own
+   * transaction and the second `INSERT`/`UPDATE` raises 23505 — the
+   * client sees a 500. The advisory lock serializes all bike writes
+   * per `user_id` to a single transaction at a time, so the swap is
+   * effectively atomic from the rider's point of view. Lock is held
+   * for the duration of the enclosing tx (`pg_advisory_xact_lock`)
+   * and released automatically on commit or rollback.
+   *
+   * `hashtextextended` returns a stable bigint from a UUID string so
+   * the lock key fits in pg_advisory_xact_lock's bigint argument.
+   */
+  private async lockGarage(tx: EntityManager, userId: string): Promise<void> {
+    await tx.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
+      `bikes:${userId}`,
+    ]);
+  }
 
   private async deactivateAll(
     tx: EntityManager,

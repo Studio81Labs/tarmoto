@@ -237,6 +237,9 @@ describe('BikesService', () => {
 
     const tx = {
       getRepository: jest.fn(() => repo),
+      // `lockGarage` issues a raw `pg_advisory_xact_lock` query — the
+      // mock returns void so the call surface is exercised in tests.
+      query: jest.fn(async () => []),
       createQueryBuilder: jest.fn((entity?: unknown) => {
         // `update(Bike)` and `createQueryBuilder(Ride, alias)` share
         // the same mock entry point in TypeORM — disambiguate by
@@ -368,6 +371,31 @@ describe('BikesService', () => {
 
       expect(updated.isActive).toBe(true); // silently kept active
       expect(updated.notes).toBe('service due'); // other fields still applied
+    });
+
+    it('treats deactivating the active bike as a no-op even with multiple bikes (preserves invariant)', async () => {
+      // Regression for the bug-bot finding: a multi-bike rider could
+      // POST `is_active: false` against their active bike and end up
+      // with zero active bikes — `/rides/start` would then tag rides
+      // with `null`. The contract is "always one active", so the
+      // service silently keeps the active flag and asks the rider to
+      // activate a different bike instead.
+      const first = await service.create(USER_A, {
+        make: 'Honda',
+        model: 'Africa Twin',
+      });
+      await service.create(USER_A, { make: 'Yamaha', model: 'MT-09' });
+
+      const updated = await service.update(USER_A, first.id, {
+        is_active: false,
+        notes: 'oil change due',
+      });
+
+      expect(updated.isActive).toBe(true); // silently kept active
+      expect(updated.notes).toBe('oil change due');
+
+      const rows = store.list().filter((r) => r.user_id === USER_A);
+      expect(rows.filter((r) => r.is_active)).toHaveLength(1);
     });
 
     it('updates notes and icon without flipping active state', async () => {
