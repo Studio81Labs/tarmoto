@@ -347,4 +347,121 @@ describe("ttsService", () => {
     ttsService.setVolume(Number.NaN);
     expect(ttsService.getVolume()).toBe(1);
   });
+
+  it("treats volume 0 as a hard mute for normal-priority speech (iOS parity)", async () => {
+    // iOS has no per-utterance volume on react-native-tts, so the
+    // Android-only `KEY_PARAM_VOLUME` path would otherwise leave the
+    // Settings "Mute" bucket inaudible only on Android. Suppressing at
+    // the service level keeps the contract identical across platforms.
+    // (PR #509 review: codex P2.)
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "ios", nativeModule });
+
+    ttsService.setVolume(0);
+    ttsService.speak("In 300 meters, turn left.");
+    await flushMicrotasks();
+    expect(nativeModule.speak).not.toHaveBeenCalled();
+
+    ttsService.setVolume(0.5);
+    ttsService.speak("Continue.");
+    await flushMicrotasks();
+    expect(nativeModule.speak).toHaveBeenCalledTimes(1);
+  });
+
+  it("high-priority safety alerts bypass the voice-FAB mute", async () => {
+    // The voice FAB on NavigationScreen labels itself as muting voice
+    // GUIDANCE; safety-critical alerts must still reach the rider.
+    // (PR #509 review: codex P1.)
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    ttsService.setMuted(true);
+    ttsService.speak("Crash detected.", { priority: "high" });
+    await flushMicrotasks();
+
+    expect(nativeModule.speak).toHaveBeenCalledTimes(1);
+    expect(nativeModule.speak.mock.calls[0][0]).toBe("Crash detected.");
+  });
+
+  it("high-priority safety alerts bypass volume=0 mute", async () => {
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "ios", nativeModule });
+
+    ttsService.setVolume(0);
+    ttsService.speak("Severe storm ahead.", { priority: "high" });
+    await flushMicrotasks();
+
+    expect(nativeModule.speak).toHaveBeenCalledTimes(1);
+  });
+
+  it("setMuted(true) preserves queued high-priority alerts", async () => {
+    // Muting voice guidance shouldn't drop a queued crash/weather
+    // alert — the FAB silences turn cues, not safety notices.
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    ttsService.speak("Continue.");
+    await flushMicrotasks();
+    nativeModule.speak.mockClear();
+
+    ttsService.speak("In 300 meters, turn left.");
+    ttsService.speak("Severe storm ahead.", { priority: "high" });
+
+    ttsService.setMuted(true);
+    // The setMuted itself preempted the in-flight normal-priority
+    // utterance; consume that cancel before the next assertions.
+    nativeModule.__fireFinish();
+    await flushMicrotasks();
+
+    // The high-priority alert should still drain even though we're
+    // muted.
+    expect(nativeModule.speak).toHaveBeenCalledTimes(1);
+    expect(nativeModule.speak.mock.calls[0][0]).toBe("Severe storm ahead.");
+  });
+
+  it("preempt cancel doesn't end the new high-priority utterance", async () => {
+    // Regression for the stale-cancel race: bumping epoch + draining a
+    // new utterance synchronously left `speakingEpoch === epoch`, so a
+    // late cancel from the stopped utterance was treated as the new
+    // one finishing. Result: a queued second high-priority alert
+    // overlapped with the in-flight one. The pendingDiscards counter
+    // closes that window. (PR #509 review: bugbot medium.)
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    ttsService.speak("In 300 meters, turn left.");
+    await flushMicrotasks();
+    expect(nativeModule.speak).toHaveBeenCalledTimes(1);
+
+    ttsService.speak("Crash detected.", {
+      priority: "high",
+      key: "crash:1",
+    });
+    await flushMicrotasks();
+    // The crash alert should now be in flight — speak called twice
+    // total (the original turn cue, then the crash alert).
+    expect(nativeModule.speak).toHaveBeenCalledTimes(2);
+
+    // A second high-priority alert queues behind the first.
+    ttsService.speak("Severe storm ahead.", {
+      priority: "high",
+      key: "weather:1",
+    });
+
+    // The native side now fires the cancel for the ORIGINAL turn cue
+    // we preempted. Without pendingDiscards, this would flip
+    // `speaking` off and immediately drain the queued storm alert,
+    // overlapping it with the in-flight crash countdown.
+    nativeModule.__fireFinish();
+    await flushMicrotasks();
+    // Crash alert is still considered "in flight" — we didn't drain
+    // the storm alert yet.
+    expect(nativeModule.speak).toHaveBeenCalledTimes(2);
+
+    // Crash alert finishes naturally; storm alert drains.
+    nativeModule.__fireFinish();
+    await flushMicrotasks();
+    expect(nativeModule.speak).toHaveBeenCalledTimes(3);
+    expect(nativeModule.speak.mock.calls[2][0]).toBe("Severe storm ahead.");
+  });
 });

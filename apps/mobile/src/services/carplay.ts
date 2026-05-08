@@ -569,39 +569,6 @@ export function resumeRideStatusBoard(): void {
   mountedTitle = null;
 }
 
-// ── Vehicle audio presence ──
-
-/**
- * Subscribe to head-unit connection state for downstream consumers
- * (e.g. the TTS adapter) that need to know when an external surface is
- * presenting nav prompts. Fires immediately with the current state so
- * the caller doesn't have to poll on mount, and again on every connect
- * / disconnect event from the underlying bridge.
- *
- * Returns an unsubscribe function. Safe to call before the bridge has
- * been resolved — the lazy require runs as a side effect of the first
- * `getBridge()` call.
- *
- * Used by `useNavigationSession` (US-16) to pause local TTS while
- * CarPlay or Android Auto is the active prompt surface, so the rider
- * doesn't hear every cue twice (#498).
- */
-export function subscribeVehicleAudioPresence(
-  callback: (active: boolean) => void,
-): () => void {
-  const bridge = getBridge();
-  // Fire once with the current state so a caller that mounts after a
-  // connect event has already happened still sees the truth without
-  // needing its own poll.
-  callback(bridge.isAvailable());
-  const offConnect = bridge.subscribeConnect(() => callback(true));
-  const offDisconnect = bridge.subscribeDisconnect(() => callback(false));
-  return () => {
-    offConnect();
-    offDisconnect();
-  };
-}
-
 // ── Backwards-compatible aliases ──
 
 /**

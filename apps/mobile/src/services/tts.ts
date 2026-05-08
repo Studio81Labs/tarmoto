@@ -151,6 +151,19 @@ class TtsService {
   private epoch = 0;
   private speakingEpoch = 0;
   private speakingPriority: SpeakPriority = "normal";
+  /**
+   * Counter of pending `tts-cancel` events we triggered ourselves via
+   * `mod.stop()` and want the listener to swallow. The epoch comparison
+   * alone isn't enough on the preempt path: between issuing `stop()`
+   * and the native side firing the cancel, the new high-priority
+   * utterance starts and tags `speakingEpoch` with the bumped epoch.
+   * The cancel from the preempted utterance then arrives with
+   * `speakingEpoch === epoch` and would spuriously flip `speaking` off
+   * mid-new-utterance. The counter lets the listener identify "this
+   * cancel belongs to a stopped utterance, drop it" without needing
+   * native utterance ids on the bridge.
+   */
+  private pendingDiscards = 0;
 
   private ensureNative(): TtsModule | null {
     if (this.native) return this.native;
@@ -182,12 +195,26 @@ class TtsService {
   }
 
   private handleUtteranceEnded = (): void => {
-    // Ignore listeners left over from a stopped run — `stop()` bumps the
-    // epoch, so any cancel event that fires after the queue has been
-    // cleared belongs to a prior utterance and mustn't touch `speaking`
-    // while a fresh one is already in flight.
+    // First-stage filter: any cancel we triggered ourselves (preempt /
+    // stop / pause / external-audio handoff) is recorded as a pending
+    // discard before the native side fires the event. Consuming one
+    // here lets the listener tell "the OLD utterance just got cancelled
+    // by us" apart from "the CURRENT utterance finished naturally" —
+    // the two become distinguishable even when they share epoch (the
+    // preempt path bumps epoch and immediately drains a new phrase
+    // that tags speakingEpoch with the bumped value, so a pure
+    // epoch-equality check would treat the stale cancel as belonging
+    // to the new one).
+    if (this.pendingDiscards > 0) {
+      this.pendingDiscards -= 1;
+      return;
+    }
+    // Belt-and-suspenders: a cancel that arrived AFTER we cleared the
+    // queue but before any new utterance started will already fail the
+    // epoch check (no new drain has reset speakingEpoch yet).
     if (this.speakingEpoch !== this.epoch) return;
     this.speaking = false;
+    this.speakingPriority = "normal";
     void this.drain();
   };
 
@@ -266,42 +293,55 @@ class TtsService {
   }
 
   /**
-   * Enqueue a phrase. If the service is muted, paused, or the native
-   * module is unavailable, the call is a silent no-op. When CarPlay
-   * (or Android Auto) is the active output for navigation prompts, a
-   * normal-priority call becomes a no-op — the head unit speaks the
-   * same cue. **High-priority phrases (crash, critical weather) are
-   * never suppressed** by the external-audio guard: the head unit
-   * doesn't surface those alerts, so dropping them on a connected
-   * bike would silently silence the safety-critical channel exactly
-   * when the rider can't reach the phone.
+   * Enqueue a phrase. If the native module is unavailable the call is
+   * a silent no-op.
    *
-   * Dedupe rules:
-   *   - With a `key`, any pending entry sharing that key is replaced
-   *     with the new phrase (collapses a stale "in 300 m" against a
-   *     fresh "in 50 m" for the same maneuver, or a re-fired weather
-   *     alert against itself).
-   *   - Without a `key`, we still suppress an immediate exact repeat of
-   *     the most-recent queued phrase to avoid back-to-back GPS-tick
-   *     duplicates.
+   * **Suppression rules — normal priority:**
+   *   - `muted` (the NavigationScreen voice FAB or
+   *     `usePreferencesStore.voiceNavEnabled = false`).
+   *   - `paused` (AppState background, or an explicit ride-pause).
+   *   - `volume <= 0` (the Settings "Mute" volume bucket — iOS has no
+   *     per-utterance volume parameter, so a 0 bucket would otherwise
+   *     play at system volume on iPhone).
+   *   - `externalAudioActive` (CarPlay / Android Auto is the active
+   *     prompt surface).
    *
-   * High-priority phrases bypass the queue: the in-flight utterance
-   * (if any normal-priority) is stopped and the new phrase plays
-   * immediately. A high-priority phrase already speaking is never
-   * preempted by another high-priority phrase — they queue behind it
-   * so a hazard alert isn't cut off by a second hazard alert. Stable
-   * `key`s still dedupe high-priority entries against each other so a
-   * re-fired identical alert doesn't stack.
+   * **High-priority phrases (`{ priority: "high" }`) bypass ALL of the
+   * above.** Crash countdown and critical weather alerts are
+   * safety-critical and must reach the rider regardless of:
+   *   - the voice-guidance mute toggle (the FAB silences guidance, not
+   *     safety alerts),
+   *   - the volume slider (a rider who chose "Mute" still needs to
+   *     hear a crash countdown),
+   *   - external audio (the head unit doesn't surface crash/weather).
+   * They are still gated by `paused`, since `paused` represents the
+   * rider explicitly stopping the audio path (e.g. a ride break) and
+   * is short-lived enough that an alert will re-fire on resume.
+   *
+   * **Dedupe rules:** with a `key`, any pending entry sharing the key
+   * is replaced (collapses a stale "in 300 m" against a fresh "in 50
+   * m" for the same maneuver, or a re-fired weather alert). Without a
+   * `key`, an exact repeat of the most-recent queued phrase is
+   * suppressed to avoid back-to-back GPS-tick duplicates.
+   *
+   * **Preempt:** a high-priority phrase stops any in-flight
+   * normal-priority utterance and plays immediately. A high-priority
+   * phrase already speaking runs to completion — a second
+   * high-priority phrase queues behind it. Stable `key`s still dedupe
+   * high-priority entries against each other.
    */
   speak(phrase: string, options?: SpeakOptions): void {
-    if (this.muted) return;
     const priority: SpeakPriority = options?.priority ?? "normal";
     const key = options?.key;
-    // External audio (CarPlay/AA presenting nav prompts) suppresses
-    // normal-priority phrases only. Crash/weather alerts must still
-    // reach the rider's phone speaker because the head unit doesn't
-    // surface those.
-    if (this.externalAudioActive && priority !== "high") return;
+
+    // Normal-priority gates — high-priority phrases bypass these so a
+    // crash countdown still fires when the rider has the FAB muted,
+    // the volume slider on Mute, or CarPlay connected.
+    if (priority !== "high") {
+      if (this.muted) return;
+      if (this.volume <= 0) return;
+      if (this.externalAudioActive) return;
+    }
     const mod = this.ensureNative();
     if (!mod) return;
 
@@ -329,8 +369,15 @@ class TtsService {
       // high-priority phrase already speaking should run to completion
       // — a second high-priority phrase queues behind it.
       if (this.speaking && this.speakingPriority !== "high") {
+        // Mark the in-flight utterance's pending cancel as ours so the
+        // listener swallows it instead of treating it as the new
+        // high-priority utterance ending. Without this the cancel
+        // arrives after `drain()` has retagged speakingEpoch and would
+        // spuriously flip `speaking` off mid-alert.
+        this.pendingDiscards += 1;
         this.epoch += 1;
         this.speaking = false;
+        this.speakingPriority = "normal";
         void Promise.resolve(mod.stop()).catch(() => {
           /* ignore */
         });
@@ -365,6 +412,10 @@ class TtsService {
    * fresh phrase had already taken its place.
    */
   stop(): void {
+    // If something is speaking, the native side will fire one cancel
+    // event for it — record the discard so the listener swallows it
+    // instead of triggering a spurious drain.
+    if (this.speaking) this.pendingDiscards += 1;
     this.epoch += 1;
     this.queue = [];
     this.speaking = false;
@@ -377,9 +428,33 @@ class TtsService {
     }
   }
 
+  /**
+   * Toggle the voice-guidance mute. Affects normal-priority phrases
+   * only — high-priority safety alerts (crash countdown, critical
+   * weather) bypass the mute flag at speak() time so the rider can't
+   * accidentally silence the safety channel by tapping the voice FAB.
+   * Muting drops any pending NORMAL-priority phrases so a rider who
+   * mutes mid-route doesn't hear stale prompts on un-mute, but
+   * preserves any queued high-priority alerts.
+   */
   setMuted(muted: boolean): void {
     this.muted = muted;
-    if (muted) this.stop();
+    if (!muted) return;
+    // Drop only normal-priority queue entries; keep high-priority
+    // alerts so a queued crash/weather notice still fires.
+    this.queue = this.queue.filter((q) => q.priority === "high");
+    if (this.speaking && this.speakingPriority !== "high") {
+      this.pendingDiscards += 1;
+      this.epoch += 1;
+      this.speaking = false;
+      this.speakingPriority = "normal";
+      const mod = this.ensureNative();
+      if (mod) {
+        void Promise.resolve(mod.stop()).catch(() => {
+          /* ignore */
+        });
+      }
+    }
   }
 
   isMuted(): boolean {
@@ -400,7 +475,9 @@ class TtsService {
     if (this.speaking) {
       // Drop the in-flight utterance so we don't hear the tail of a
       // half-spoken prompt when audio resumes — a fresh prompt will
-      // fire on the next maneuver instead.
+      // fire on the next maneuver instead. The pending discard prevents
+      // the cancel event from triggering a spurious drain on resume.
+      this.pendingDiscards += 1;
       this.epoch += 1;
       this.speaking = false;
       this.speakingPriority = "normal";
@@ -437,8 +514,10 @@ class TtsService {
       // for maneuvers they've already passed.
       this.queue = this.queue.filter((q) => q.priority === "high");
       if (this.speaking && this.speakingPriority !== "high") {
+        this.pendingDiscards += 1;
         this.epoch += 1;
         this.speaking = false;
+        this.speakingPriority = "normal";
         const mod = this.ensureNative();
         if (mod) {
           void Promise.resolve(mod.stop()).catch(() => {
@@ -494,6 +573,7 @@ class TtsService {
     this.queue = [];
     this.speaking = false;
     this.speakingPriority = "normal";
+    this.pendingDiscards = 0;
     this.muted = false;
     this.paused = false;
     this.externalAudioActive = false;
