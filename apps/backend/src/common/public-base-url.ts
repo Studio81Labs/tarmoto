@@ -22,7 +22,7 @@ export function resolvePublicBaseUrl(
   options: { feature: string },
 ): string {
   const configured = config.get<string>('TARMOTO_PUBLIC_BASE_URL')?.trim();
-  const isProd = process.env.TARMOTO_NODE_ENV === 'production';
+  const isProd = process.env.NODE_ENV === 'production';
 
   if (isProd && (!configured || configured.length === 0)) {
     throw new InternalServerErrorException(

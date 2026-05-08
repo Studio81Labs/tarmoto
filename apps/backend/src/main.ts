@@ -27,7 +27,7 @@ import { IMPORT_TRIP_BODY_LIMIT_BYTES } from './modules/trips/dto/import-trip.dt
 const DEFAULT_JSON_BODY_LIMIT = '100kb';
 
 async function bootstrap() {
-  const isProd = process.env.TARMOTO_NODE_ENV === 'production';
+  const isProd = process.env.NODE_ENV === 'production';
   // Disable Nest's auto-registered body parser so we can scope the larger
   // JSON limit needed by trip-share snapshots to just that route prefix.
   // `rawBody` is reimplemented below via the `verify` callback — keeping
@@ -175,7 +175,7 @@ async function bootstrap() {
     SwaggerModule.setup('api/docs', app, document);
   }
 
-  await app.listen(process.env.TARMOTO_PORT ?? 3000);
+  await app.listen(process.env.PORT ?? 3000);
 
   // Gracefully disconnect Redis on shutdown.
   const shutdown = () => {

@@ -211,8 +211,8 @@ describe('HazardsController', () => {
     });
 
     it('should 500 in production when TARMOTO_PUBLIC_BASE_URL is unset', async () => {
-      const previous = process.env.TARMOTO_NODE_ENV;
-      process.env.TARMOTO_NODE_ENV = 'production';
+      const previous = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
       configGet.mockReturnValue(undefined);
       try {
         const file = {
@@ -231,9 +231,9 @@ describe('HazardsController', () => {
         expect(service.uploadPhoto).not.toHaveBeenCalled();
       } finally {
         if (previous === undefined) {
-          delete process.env.TARMOTO_NODE_ENV;
+          delete process.env.NODE_ENV;
         } else {
-          process.env.TARMOTO_NODE_ENV = previous;
+          process.env.NODE_ENV = previous;
         }
       }
     });

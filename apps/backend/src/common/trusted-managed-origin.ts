@@ -41,7 +41,7 @@ export function buildTrustedManagedOriginCheck(
     // the per-domain `isAllowed*PhotoUrl` enforces, so a stored prod
     // row that somehow points at localhost can't be silently deleted.
     if (
-      process.env.TARMOTO_NODE_ENV !== 'production' &&
+      process.env.NODE_ENV !== 'production' &&
       LOOPBACK_HOSTS.has(parsed.hostname)
     ) {
       return true;

@@ -1003,10 +1003,10 @@ describe('ReviewsService', () => {
       // In production every photo must be served over https — a stored
       // http://localhost/... URL would render in every viewer's browser
       // as an image hitting each viewer's local services. The validator
-      // / sanitizer reads TARMOTO_NODE_ENV at call time so the prod
+      // / sanitizer reads NODE_ENV at call time so the prod
       // posture stays the same regardless of how the row landed there.
-      const previous = process.env.TARMOTO_NODE_ENV;
-      process.env.TARMOTO_NODE_ENV = 'production';
+      const previous = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
       try {
         const freshReview = {
           ...mockReview,
@@ -1025,9 +1025,9 @@ describe('ReviewsService', () => {
         ]);
       } finally {
         if (previous === undefined) {
-          delete process.env.TARMOTO_NODE_ENV;
+          delete process.env.NODE_ENV;
         } else {
-          process.env.TARMOTO_NODE_ENV = previous;
+          process.env.NODE_ENV = previous;
         }
       }
     });

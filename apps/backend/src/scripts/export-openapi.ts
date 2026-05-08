@@ -23,7 +23,7 @@ process.env['OPENAPI_EXPORT'] = 'true';
 // Provide placeholder values so NestJS/TypeORM can construct without a real DB.
 // The database.config.ts already has sane defaults, but explicit stubs are
 // clearer and make the intent obvious.
-process.env['TARMOTO_NODE_ENV'] ??= 'development';
+process.env['NODE_ENV'] ??= 'development';
 process.env['TARMOTO_DATABASE_HOST'] ??= 'localhost';
 process.env['TARMOTO_DATABASE_PORT'] ??= '5432';
 process.env['TARMOTO_DATABASE_NAME'] ??= 'tarmoto_openapi_export';

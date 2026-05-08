@@ -182,13 +182,13 @@ export class AddFunZoneClusteringSeed1715300000000 implements MigrationInterface
 
     // ── 2. Demo seed for dev / test only. Default-safe: skip
     // unless the operator has explicitly declared a non-production
-    // environment. A missing `TARMOTO_NODE_ENV` (common on a
+    // environment. A missing `NODE_ENV` (common on a
     // production restore that only sets DB credentials) MUST NOT
     // be treated as "development" — that would let synthetic
     // road_segments + a recluster mutate real production data. Only
     // these explicit values turn the seed on. ──
     const SEED_ENVS = new Set(['development', 'test']);
-    const env = process.env['TARMOTO_NODE_ENV'];
+    const env = process.env['NODE_ENV'];
     if (!env || !SEED_ENVS.has(env)) {
       return;
     }

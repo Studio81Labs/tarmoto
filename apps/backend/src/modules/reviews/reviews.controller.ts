@@ -55,7 +55,7 @@ export class ReviewsController {
    * Resolve the public origin to embed in the URLs we hand back from
    * `POST :segmentId/reviews/photos`. The returned URLs round-trip
    * through `CreateReviewDto.photos`, so they MUST pass
-   * `isAllowedReviewPhotoUrl` under the current `TARMOTO_NODE_ENV` —
+   * `isAllowedReviewPhotoUrl` under the current `NODE_ENV` —
    * AND match the trusted-origin set the service uses to classify a
    * URL as "managed", otherwise the cascade-delete and ownership
    * guards silently no-op even though uploads look successful.

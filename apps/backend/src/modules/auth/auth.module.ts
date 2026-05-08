@@ -26,7 +26,7 @@ import { PasswordResetService } from './password-reset.service.js';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
         const secret = config.get<string>('TARMOTO_JWT_SECRET');
-        if (!secret && config.get('TARMOTO_NODE_ENV') === 'production') {
+        if (!secret && config.get('NODE_ENV') === 'production') {
           throw new Error('TARMOTO_JWT_SECRET must be set in production');
         }
         return {

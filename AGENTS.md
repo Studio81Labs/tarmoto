@@ -137,7 +137,7 @@ pnpm lint                 # Run linting
 - TypeScript strict mode is expected everywhere.
 - Shared types and constants belong in `packages/shared`.
 - Domain enums such as hazard types, surface types, and ride types belong in `@tarmoto/shared`.
-- Environment variables use the `TARMOTO_` prefix.
+- Application-owned environment variables use the `TARMOTO_` prefix. Carve-outs: Node ecosystem standards (`PORT`, `NODE_ENV`) are not renamed because countless third-party libraries branch on `NODE_ENV` at import time and every Node framework defaults to `PORT`.
 - Use TypeORM with native PostGIS geometry columns, not Prisma.
 - Backend entities live in `apps/backend/src/entities/` and feature modules in `apps/backend/src/modules/`.
 - Docker services live in `infra/docker/docker-compose.yml`.
