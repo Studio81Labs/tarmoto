@@ -670,15 +670,24 @@ function createAndroidBridge(): VehicleStatusBridge {
      * which is the same channel template-toolbar buttons use. We
      * filter on the action ids we registered so taps from other
      * surfaces don't bleed into the alert callbacks.
+     *
+     * Payload key differs by platform: the iOS `RNCarPlay.m` emits
+     * `{ id, templateId }` while the Android `EventEmitter.kt`
+     * (`fun buttonPressed(buttonId: String)`) puts the action id
+     * under the key `buttonId`. Reading both is defensive — Android
+     * is the platform that actually drives this bridge today, but a
+     * future package version that normalises the shape will keep
+     * working.
      */
     const attachAlertButtonListener = () => {
       detachAlertButtonListener();
       alertButtonSubscription = CarPlay.emitter.addListener(
         "buttonPressed",
-        (e: { id: string }) => {
+        (e: { id?: string; buttonId?: string }) => {
           if (!activeAlertCallbacks) return;
-          if (e.id === "confirm") activeAlertCallbacks.onConfirm();
-          else if (e.id === "dismiss") activeAlertCallbacks.onDismiss();
+          const actionId = e.buttonId ?? e.id;
+          if (actionId === "confirm") activeAlertCallbacks.onConfirm();
+          else if (actionId === "dismiss") activeAlertCallbacks.onDismiss();
         },
       );
     };

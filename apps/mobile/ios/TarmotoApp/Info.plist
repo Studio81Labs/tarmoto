@@ -64,10 +64,15 @@
 		  US-17 — CarPlay scene-based architecture.
 		  CarPlay templates run in a dedicated UIScene whose role is
 		  `CPTemplateApplicationSceneSessionRoleApplication`. The scene
-		  delegate class `RNCarPlaySceneDelegate` is contributed by the
-		  `react-native-carplay` package — this manifest points iOS at it
-		  so the bike display is served the right scene when the rider
-		  plugs in, without us writing a Swift delegate ourselves.
+		  delegate class is `CarSceneDelegate`, the Swift class shipped
+		  alongside this Info.plist. It implements
+		  `CPTemplateApplicationSceneDelegate` and forwards
+		  `didConnect`/`didDisconnect` into
+		  `RNCarPlay.connectWithInterfaceController:window:` /
+		  `RNCarPlay.disconnect` (the only iOS entry points the
+		  `react-native-carplay` package exposes). Without our own scene
+		  delegate, `CarPlay.connected` would never flip true — the
+		  package does not ship a ready-made scene delegate.
 
 		  The main phone window deliberately is NOT declared here.
 		  Tarmoto's `AppDelegate.swift` creates and manages its own
@@ -91,7 +96,7 @@
 					<key>UISceneConfigurationName</key>
 					<string>Tarmoto CarPlay</string>
 					<key>UISceneDelegateClassName</key>
-					<string>RNCarPlaySceneDelegate</string>
+					<string>$(PRODUCT_MODULE_NAME).CarSceneDelegate</string>
 				</dict>
 			</array>
 		</dict>

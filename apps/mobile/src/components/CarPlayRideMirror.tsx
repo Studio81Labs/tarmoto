@@ -23,49 +23,45 @@
  *     itself shows a "set up your commute" CTA when no primary route
  *     exists, which is the right UX for a rider who taps the row
  *     without prior setup.
- *   - `stop-ride` calls the ride store's `stopRide` directly so the
- *     rider can end a ride from the bike display in one tap.
- *   - `report-hazard` deep-links to the hazard report modal with the
- *     map tab as the host (same path the Google Assistant App Action
- *     uses today on Android Auto, see `res/xml/shortcuts.xml`).
+ *
+ * `stop-ride` and `report-hazard` are part of the bridge's quick-action
+ * id union for future use, but the controller only ever produces a
+ * `start-commute` row today (mid-ride the live status board owns the
+ * head-unit root, see `buildQuickActionItems` in `services/carplay.ts`).
+ * Wiring those branches here would be dead code — we narrow the case
+ * to the single id the controller actually emits, and let the type
+ * checker catch a future regression where a new id sneaks in without
+ * a handler.
  */
 
 import { useCallback } from "react";
 import { Linking } from "react-native";
 import { useCarPlayRideMirror } from "@/hooks";
-import { useRideStore } from "@/stores";
+import type { QuickActionItem } from "@/services/carplay";
 
 export default function CarPlayRideMirror(): null {
-  const stopRide = useRideStore((s) => s.stopRide);
-
-  const onQuickAction = useCallback(
-    (id: "start-commute" | "stop-ride" | "report-hazard") => {
-      switch (id) {
-        case "start-commute":
-          // Linking.openURL is what the React Navigation linking config
-          // listens on for in-app deep links — this fires the same
-          // path the head unit's voice trigger would use on Android
-          // Auto so both surfaces converge on one routing layer.
-          void Linking.openURL("tarmoto://commute/start").catch(() => {
-            // Linking.openURL rejects when the URL has no handler. The
-            // rider can still tap Start Commute on the phone — we
-            // don't want to crash the bike display over a routing
-            // miss, so this is a silent fallback.
-          });
-          return;
-        case "stop-ride":
-          stopRide();
-          return;
-        case "report-hazard":
-          void Linking.openURL("tarmoto://hazard/report").catch(() => {
-            // Same defensive swallow — the in-app FAB is still usable
-            // from the phone if the deep link doesn't resolve.
-          });
-          return;
-      }
-    },
-    [stopRide],
-  );
+  const onQuickAction = useCallback((id: QuickActionItem["id"]) => {
+    // The controller only emits a `start-commute` row today (mid-ride
+    // the live status board owns the head-unit root — see
+    // `buildQuickActionItems` in `services/carplay.ts`), so the
+    // `stop-ride` / `report-hazard` ids never reach this handler.
+    // We still type the parameter as the full union: when a future
+    // surface starts emitting one of the other ids, the type checker
+    // will force us to add a handler here rather than silently
+    // dropping the tap.
+    if (id === "start-commute") {
+      // Linking.openURL is what the React Navigation linking config
+      // listens on for in-app deep links — this fires the same path
+      // the head unit's voice trigger would use on Android Auto so
+      // both surfaces converge on one routing layer.
+      void Linking.openURL("tarmoto://commute/start").catch(() => {
+        // Linking.openURL rejects when the URL has no handler. The
+        // rider can still tap Start Commute on the phone — we don't
+        // want to crash the bike display over a routing miss, so
+        // this is a silent fallback.
+      });
+    }
+  }, []);
 
   useCarPlayRideMirror({ onQuickAction, hasCommuteRoute: true });
   return null;
