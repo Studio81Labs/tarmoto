@@ -293,6 +293,26 @@ describe('ReviewsService', () => {
       expect(result[0].user_display_name).toBe('John Rider');
       expect(result[0].user_id).toBe('user-1');
     });
+
+    it('fails closed when the privacy lookup throws (#501 review)', async () => {
+      // Cursor Bugbot review on PR #513: a transient DB failure on
+      // the privacy lookup must NOT bubble up as a 500 from
+      // `listForSegment`. Mirror `loadPrivateOwnerIds` and mask the
+      // whole feed instead — better one over-mask than one identity
+      // leak on a hiccup.
+      (privacyRepo.find as jest.Mock).mockRejectedValueOnce(
+        new Error('db down'),
+      );
+
+      const result = await service.listForSegment('seg-1');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].user_display_name).toBe('Hidden rider');
+      expect(result[0].user_id).toBeNull();
+      // The review row itself still surfaces — masking identity, not
+      // hiding content.
+      expect(result[0].rating).toBe(4);
+    });
   });
 
   describe('create', () => {

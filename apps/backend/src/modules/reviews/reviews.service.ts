@@ -674,16 +674,27 @@ export class ReviewsService {
    * preference lookup across a long review list. Riders without an
    * explicit privacy_preferences row inherit the default
    * (`riders-only`) and are NOT in the returned set.
+   *
+   * Fail-closed posture mirrors `RouteCollectionsService.loadPrivateOwnerIds`
+   * (Cursor Bugbot review on PR #513): a transient DB error returns
+   * every supplied author id so the caller masks the whole feed
+   * rather than risking a leak — better to render every reviewer as
+   * "Hidden rider" once than surface a private rider's name on a
+   * lookup hiccup.
    */
   private async loadPrivateAuthorIds(
     authorIds: readonly string[],
   ): Promise<Set<string>> {
     const unique = Array.from(new Set(authorIds.filter((id) => Boolean(id))));
     if (unique.length === 0) return new Set();
-    const rows = await this.privacyRepo.find({
-      where: { user_id: In(unique), profile_visibility: 'private' },
-      select: { user_id: true },
-    });
-    return new Set(rows.map((r) => r.user_id));
+    try {
+      const rows = await this.privacyRepo.find({
+        where: { user_id: In(unique), profile_visibility: 'private' },
+        select: { user_id: true },
+      });
+      return new Set(rows.map((r) => r.user_id));
+    } catch {
+      return new Set(unique);
+    }
   }
 }

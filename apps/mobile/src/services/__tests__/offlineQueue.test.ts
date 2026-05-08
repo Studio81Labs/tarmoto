@@ -457,6 +457,46 @@ describe("offlineQueue", () => {
         expect(result.accepted).toBe(7);
         expect(uploader).toHaveBeenCalledTimes(1);
       });
+
+      it("drops a pre-opt-out backlog so it cannot replay later (#501 review)", async () => {
+        // Codex review on PR #513: queued payloads were captured while
+        // consent was ON, but the rider's CURRENT preference is "don't
+        // send" — letting the backlog replay later would silently leak
+        // road data against the rider's current consent. The opt-out
+        // branch must clear the queue, not just suppress the new send.
+        enqueueUpload(
+          "queued-while-consenting",
+          [makeReading(1)],
+          "iPhone",
+          null,
+        );
+        enqueueUpload("queued-too", [makeReading(2)], "iPhone", null);
+        expect(getPendingCount()).toBe(2);
+
+        setCachedPreferences({
+          ...DEFAULT_PRIVACY_PREFERENCES,
+          road_data_contribution: false,
+        });
+        const uploader = jest.fn<
+          ReturnType<SensorUploader>,
+          Parameters<SensorUploader>
+        >(async () => ({ accepted: 1, segments_updated: 1 }));
+
+        const result = await submitSensorUpload(
+          "fresh-payload",
+          [makeReading(3)],
+          "iPhone",
+          null,
+          [],
+          null,
+          null,
+          uploader,
+        );
+
+        expect(uploader).not.toHaveBeenCalled();
+        expect(result.pending).toBe(0);
+        expect(getPendingCount()).toBe(0);
+      });
     });
   });
 
@@ -474,6 +514,36 @@ describe("offlineQueue", () => {
         transientServerError: false,
       });
       expect(uploader).not.toHaveBeenCalled();
+    });
+
+    it("clears any pre-opt-out backlog without uploading when consent is off (#501 review)", async () => {
+      // Mirrors the submit path's guard — the Settings "Retry now"
+      // button reaches us via this entry point and must not ship
+      // pre-opt-out queued payloads against the rider's current
+      // consent.
+      enqueueUpload("a", [makeReading(1)], "iPhone", null);
+      enqueueUpload("b", [makeReading(2)], "iPhone", null);
+      expect(getPendingCount()).toBe(2);
+
+      setCachedPreferences({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        road_data_contribution: false,
+      });
+      const uploader = jest.fn<
+        ReturnType<SensorUploader>,
+        Parameters<SensorUploader>
+      >();
+
+      const result = await drainOfflineQueue(uploader);
+
+      expect(uploader).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        flushed: 0,
+        remaining: 0,
+        networkFailed: false,
+        transientServerError: false,
+      });
+      expect(getPendingCount()).toBe(0);
     });
 
     it("flushes items oldest-first and empties the queue", async () => {

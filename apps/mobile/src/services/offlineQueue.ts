@@ -324,11 +324,18 @@ export async function submitSensorUpload(
   // / bandwidth shipping data the server will discard. Silent success
   // (`status: "uploaded"`, zeros) so the caller's stop-flow keeps
   // moving — surfacing an error here for an intentional opt-out
-  // would confuse the rider. We do NOT enqueue: a payload queued
-  // while the toggle is off should not later replay if the rider
-  // toggles it back on (their per-ride consent at the time of
-  // capture was "no").
+  // would confuse the rider.
+  //
+  // We also DROP any pre-opt-out backlog (Codex review on PR #513): a
+  // queue entry was captured while consent was still ON, but the
+  // rider's current preference is "don't send" — letting the
+  // backlog replay later (after another submit / drainOfflineQueue
+  // tick) would silently leak the rider's road data against their
+  // current consent. Clearing the queue makes the opt-out take
+  // effect for every payload that hasn't yet reached the server,
+  // matching the intent of the toggle.
   if (!canContributeRoadData()) {
+    clearOfflineQueue();
     return {
       status: "uploaded",
       accepted: 0,
@@ -429,6 +436,22 @@ export function drainOfflineQueue(
   // Concurrent callers get the exact same promise so they see the real
   // outcome instead of a stub reply that would race the in-flight flush.
   if (drainInFlight) return drainInFlight;
+
+  // #279 / #501 — same opt-out gate as `submitSensorUpload`. The
+  // Settings "Retry now" button reaches us via this entry point, and
+  // a drain that ships pre-opt-out queued payloads to the server
+  // would defeat the rider's current consent setting. Clear the
+  // queue and report a no-op drain. Listeners get the "pending = 0"
+  // event from `clearOfflineQueue` so badge counters update.
+  if (!canContributeRoadData()) {
+    clearOfflineQueue();
+    return Promise.resolve({
+      flushed: 0,
+      remaining: 0,
+      networkFailed: false,
+      transientServerError: false,
+    });
+  }
 
   const run = async (): Promise<DrainResult> => {
     let flushed = 0;
