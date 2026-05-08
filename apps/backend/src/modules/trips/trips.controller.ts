@@ -27,6 +27,7 @@ import { TripGeneratorService } from './trip-generator.service.js';
 import { CreateTripDto } from './dto/create-trip.dto.js';
 import { FromShareTripDto } from './dto/from-share-trip.dto.js';
 import { ImportTripDto } from './dto/import-trip.dto.js';
+import { InviteTripDto, InviteTripResponseDto } from './dto/invite-trip.dto.js';
 import { JoinTripDto } from './dto/join-trip.dto.js';
 import { ListTripsDto } from './dto/list-trips.dto.js';
 import { UpdateTripDto } from './dto/update-trip.dto.js';
@@ -235,5 +236,37 @@ export class TripsController {
     @Body() dto: JoinTripDto,
   ): Promise<TripDetailDto> {
     return this.tripsService.join(req.user!.userId, tripId, dto.invite_code);
+  }
+
+  @Post(':tripId/invite')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Email a trip invite link to a recipient',
+    description:
+      'Owner/admin only. Sends a transactional email containing the ' +
+      'trip title, an optional personal message, the join URL, and the ' +
+      'trip invite code. The recipient does NOT need a Tarmoto account ' +
+      'yet — the email explains how to sign up and join. Mail dispatch ' +
+      'is best-effort: a delivery failure is logged on the backend but ' +
+      'does NOT fail the API call (so 202 here means "queued", not ' +
+      '"delivered"). 404s on a non-owner/admin caller, fold into the ' +
+      'same response as "no such trip" so the endpoint cannot enumerate ' +
+      'trip ids or roles.',
+  })
+  @ApiResponse({ status: 202, type: InviteTripResponseDto })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Recipient is the caller themselves (already a member), or body ' +
+      'failed validation (bad email, message > 500 chars).',
+  })
+  @ApiResponse({ status: 404, description: 'Trip not found or not owned' })
+  async invite(
+    @Req() req: express.Request,
+    @Param('tripId', ParseUUIDPipe) tripId: string,
+    @Body() dto: InviteTripDto,
+  ): Promise<InviteTripResponseDto> {
+    await this.tripsService.invite(req.user!.userId, tripId, dto);
+    return { status: 'queued' };
   }
 }

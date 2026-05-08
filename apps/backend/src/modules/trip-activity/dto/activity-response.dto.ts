@@ -3,6 +3,7 @@ import { ApiProperty } from '@nestjs/swagger';
 export const TRIP_ACTIVITY_ACTIONS = [
   'member_joined',
   'member_left',
+  'member_invited',
   'trip_updated',
   'trip_generated',
   'suggestion_created',

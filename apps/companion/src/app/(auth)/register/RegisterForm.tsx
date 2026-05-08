@@ -113,7 +113,17 @@ export function RegisterForm({
 
       <p className="mt-6 text-center text-sm text-slate-400">
         {t("Already have an account?")}{" "}
-        <Link href="/login" className="text-tarmoto-cyan hover:underline">
+        <Link
+          href={
+            // Mirror of LoginForm — preserves the post-auth
+            // destination (e.g. an invite link's /trips/join/...)
+            // when the rider hops back to /login.
+            searchParams.get("callbackUrl")
+              ? `/login?callbackUrl=${encodeURIComponent(searchParams.get("callbackUrl") ?? "")}`
+              : "/login"
+          }
+          className="text-tarmoto-cyan hover:underline"
+        >
           {t("Sign in")}
         </Link>
       </p>

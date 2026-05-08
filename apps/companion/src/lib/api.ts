@@ -118,10 +118,24 @@ export const tripsApi = {
       method: "POST",
       body: JSON.stringify(params),
     }),
-  invite: (tripId: string, email: string) =>
-    apiFetch(`/trips/${tripId}/invite`, {
+  // POST /trips/:tripId/join — accept an invite by submitting the
+  // trip id + invite code. Returns the trip detail on success and
+  // 403s on a wrong code (folded with "no such trip" so the endpoint
+  // can't be used to enumerate ids).
+  join: (tripId: string, inviteCode: string) =>
+    apiFetch(`/trips/${tripId}/join`, {
       method: "POST",
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ invite_code: inviteCode }),
+    }),
+  // POST /trips/:tripId/invite — owner/admin only. Mail dispatch is
+  // best-effort: the backend returns 202 + `{ status: "queued" }` once
+  // the audit row lands, regardless of whether the email provider
+  // accepted the message. The recipient does NOT need a Tarmoto
+  // account; the email explains how to sign up and join.
+  invite: (tripId: string, email: string, message?: string) =>
+    apiFetch<{ status: "queued" }>(`/trips/${tripId}/invite`, {
+      method: "POST",
+      body: JSON.stringify(message ? { email, message } : { email }),
     }),
 };
 
@@ -193,6 +207,7 @@ export interface TripSuggestion {
 export type TripActivityAction =
   | "member_joined"
   | "member_left"
+  | "member_invited"
   | "trip_updated"
   | "trip_generated"
   | "suggestion_created"
@@ -983,11 +998,10 @@ export interface DataExportRequestView {
 }
 
 export const accountApi = {
-  updateProfile: (data: unknown) =>
-    apiFetch("/account/profile", {
-      method: "PATCH",
-      body: JSON.stringify(data),
-    }),
+  // Profile updates use `usersApi.updateMe` (PATCH /users/me) — the
+  // canonical path agreed across mobile + web. The previous
+  // `accountApi.updateProfile` shim hit `/account/profile` which the
+  // backend never exposed; it was a dead caller and has been removed.
   getSubscription: () => apiFetch("/account/subscription"),
   createCheckoutSession: (data: { tier: "premium" | "pro" }) =>
     apiFetch<{ url: string }>("/account/subscription/checkout", {

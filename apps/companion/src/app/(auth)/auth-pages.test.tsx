@@ -80,6 +80,52 @@ describe("auth pages social sign-in", () => {
     ).toBeInTheDocument();
   });
 
+  it("forwards the callbackUrl from /login to /register so an invitee doesn't lose their invite when they sign up", async () => {
+    // Regression for the Codex P2 finding on PR #489: an unauthenticated
+    // /trips/join/... visitor lands on /login?callbackUrl=/trips/join/...
+    // and the "Create one" link must carry the same callbackUrl so the
+    // post-signup redirect lands on the invite acceptance page rather
+    // than the home page.
+    searchParamValues = new URLSearchParams({
+      callbackUrl: "/trips/join/abc-123/XYZTOKEN",
+    });
+
+    render(<LoginPage />);
+
+    const createLink = await screen.findByRole("link", {
+      name: "Create one",
+    });
+    expect(createLink).toHaveAttribute(
+      "href",
+      "/register?callbackUrl=%2Ftrips%2Fjoin%2Fabc-123%2FXYZTOKEN",
+    );
+  });
+
+  it("falls back to a plain /register link when there's no callbackUrl on /login", async () => {
+    searchParamValues = new URLSearchParams();
+
+    render(<LoginPage />);
+
+    const createLink = await screen.findByRole("link", {
+      name: "Create one",
+    });
+    expect(createLink).toHaveAttribute("href", "/register");
+  });
+
+  it("forwards the callbackUrl from /register back to /login so the rider's invite survives the round trip", async () => {
+    searchParamValues = new URLSearchParams({
+      callbackUrl: "/trips/join/abc-123/XYZTOKEN",
+    });
+
+    render(<RegisterPage />);
+
+    const signInLink = await screen.findByRole("link", { name: "Sign in" });
+    expect(signInLink).toHaveAttribute(
+      "href",
+      "/login?callbackUrl=%2Ftrips%2Fjoin%2Fabc-123%2FXYZTOKEN",
+    );
+  });
+
   it("clears the URL-driven login error when the error param is removed", async () => {
     searchParamValues = new URLSearchParams({
       callbackUrl: "/trips/planner",
