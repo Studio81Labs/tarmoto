@@ -35,12 +35,24 @@ vi.mock("@/lib/api", () => {
   };
 });
 
+// Mutable auth-store stub so individual tests can flip between
+// "AuthSync hasn't hydrated yet" (`accessToken: null`) and "hydrated"
+// (`accessToken: "..."`). The selector form mirrors the real zustand
+// store so the page's `useAuthStore((s) => Boolean(s.accessToken))`
+// hook works unchanged.
+let authState: { accessToken: string | null } = { accessToken: "token" };
+vi.mock("@/stores/auth", () => ({
+  useAuthStore: <T,>(selector: (s: { accessToken: string | null }) => T): T =>
+    selector(authState),
+}));
+
 import TripInviteJoinPage from "./page";
 import { ApiError, tripsApi } from "@/lib/api";
 
 beforeEach(() => {
   vi.clearAllMocks();
   routeParams = { tripId: "trip-1", code: "ABCDEFGH" };
+  authState = { accessToken: "token" };
 });
 
 describe("TripInviteJoinPage", () => {
@@ -104,6 +116,36 @@ describe("TripInviteJoinPage", () => {
     // The dedupe ref must still gate StrictMode's double-invoke down
     // to a single backend POST — two `member_joined` activity rows
     // would litter the trip's collaboration timeline.
+    expect(tripsApi.join).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for AuthSync to hydrate the bearer token before posting (Codex #r3207058516)", async () => {
+    // Regression for the AuthSync race Codex flagged: on a hard
+    // navigation right after login/register the NextAuth session is
+    // mid-flight while the page already mounts. If the join effect
+    // fired now, `apiFetch` would read `accessToken === null`, send
+    // an unauthenticated POST, hit the global 401 handler, and
+    // `clearSession` — wiping the just-issued credentials. The
+    // `authReady` gate must hold the spinner until the token lands.
+    authState = { accessToken: null };
+    vi.mocked(tripsApi.join).mockResolvedValue({ data: { id: "trip-1" } });
+
+    const { rerender } = render(<TripInviteJoinPage />);
+    // Spinner is up but no POST has gone out yet.
+    expect(screen.getByText(/Accepting your trip invite/i)).toBeInTheDocument();
+    expect(tripsApi.join).not.toHaveBeenCalled();
+
+    // AuthSync finishes — token lands in the store, page re-renders,
+    // effect picks the change up via its `authReady` dep and posts.
+    authState = { accessToken: "token" };
+    rerender(<TripInviteJoinPage />);
+
+    await waitFor(() => {
+      expect(tripsApi.join).toHaveBeenCalledWith("trip-1", "ABCDEFGH");
+    });
+    await waitFor(() => {
+      expect(mockReplace).toHaveBeenCalledWith("/trips/trip-1");
+    });
     expect(tripsApi.join).toHaveBeenCalledTimes(1);
   });
 });

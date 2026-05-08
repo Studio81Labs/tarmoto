@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { AlertTriangle, Check, Loader2 } from "lucide-react";
 import { ApiError, tripsApi } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth";
 
 type JoinState =
   | { kind: "joining" }
@@ -27,6 +28,16 @@ export default function TripInviteJoinPage() {
   const { tripId, code } = useParams<{ tripId: string; code: string }>();
   const router = useRouter();
   const [state, setState] = useState<JoinState>({ kind: "joining" });
+  // Wait for `AuthSync` to hydrate the bearer token into
+  // `useAuthStore` before posting. On a hard navigation right after
+  // login/register the NextAuth session is mid-flight while the
+  // landing component already mounts; if the join effect ran now
+  // `apiFetch` would read `accessToken === null`, send an
+  // unauthenticated POST, hit the global 401 handler, and
+  // `clearSession` — wiping the just-issued credentials. Mirrors the
+  // `authReady` gate the trip detail page already uses for the same
+  // race.
+  const authReady = useAuthStore((s) => Boolean(s.accessToken));
   // Stash the router on a ref so the join effect doesn't list it in
   // its dep array. Each `useRouter()` call returns a fresh object
   // identity in jsdom-mocked tests (and at the framework level,
@@ -51,6 +62,10 @@ export default function TripInviteJoinPage() {
       });
       return;
     }
+    // Hold the spinner until AuthSync writes the bearer into the auth
+    // store. The effect re-fires when `authReady` flips to true, and
+    // `joinedOnce` keeps the actual POST single-shot afterwards.
+    if (!authReady) return;
     if (joinedOnce.current) return;
     joinedOnce.current = true;
 
@@ -94,7 +109,7 @@ export default function TripInviteJoinPage() {
         }
       }
     })();
-  }, [tripId, code]);
+  }, [tripId, code, authReady]);
 
   return (
     <div className="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center px-4 py-12 text-center">
