@@ -206,15 +206,28 @@ export class ModelEvalService {
          -- samples whose segments pass the gross threshold but still
          -- fail the LOO unique-rider predicate doesn't make every
          -- tick join the entire pending set against surface_readings
-         -- (codex review). The cap is sized at 5x the typical
-         -- reconcile batch so the LOO step still has plenty of
-         -- candidates to filter down to LIMIT $3. FIFO ordering by
-         -- created_at means oldest pending samples are inspected
-         -- first; permanently un-reconcilable rows at the head sit
-         -- in the candidate window until enough independent
-         -- confirmations arrive on their segment, which is the
-         -- spec-aligned outcome.
-         ORDER BY mes.created_at ASC
+         -- (codex review).
+         --
+         -- We use RANDOM() ordering here intentionally rather than
+         -- FIFO. A FIFO cap (ORDER BY created_at ASC LIMIT N) would
+         -- starve newer LOO-eligible samples whenever the oldest N
+         -- pending samples were dominated by LOO-ineligible rows
+         -- (e.g. low-traffic or same-rider-repeat segments that pass
+         -- the gross threshold but never accumulate three independent
+         -- riders). Random sampling means each tick inspects a
+         -- different slice of the pending pool, so an LOO-eligible
+         -- row anywhere in the pool gets reconciled in expected
+         -- O(pending_size / cap) ticks instead of being permanently
+         -- queued behind ineligible rows.
+         --
+         -- Performance: the partial index
+         -- idx_model_eval_samples_pending bounds the candidate set
+         -- to unreconciled rows only, and the gross-threshold
+         -- pre-filter further trims most of the rest. RANDOM() over
+         -- the surviving N rows requires an O(N log N) sort, which
+         -- is acceptable for N ≤ a few hundred thousand on a
+         -- partial-indexed scan.
+         ORDER BY RANDOM()
          LIMIT $5
        ),
        loo_scored AS (
