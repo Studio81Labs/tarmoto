@@ -17,7 +17,13 @@ import {
   subscribePending,
   type SensorUploader,
 } from "../offlineQueue";
+import {
+  __setStorageForTest as __setPrivacyStorageForTest,
+  clearCachedPreferences,
+  setCachedPreferences,
+} from "../privacyCache";
 import type { SensorReading } from "@/types";
+import { DEFAULT_PRIVACY_PREFERENCES } from "@tarmoto/shared";
 
 function createMemoryStorage() {
   const store = new Map<string, string>();
@@ -60,6 +66,12 @@ describe("offlineQueue", () => {
   beforeEach(() => {
     storage = createMemoryStorage();
     __setStorageForTest(storage);
+    // Default privacy storage = canonical defaults (opt-in to road-
+    // data contribution) so existing assertions about uploads /
+    // queueing pass through. The privacy-gate suite below overrides
+    // this per-case.
+    __setPrivacyStorageForTest(createMemoryStorage());
+    clearCachedPreferences();
   });
 
   describe("submitSensorUpload", () => {
@@ -384,6 +396,67 @@ describe("offlineQueue", () => {
       const result = await drainOfflineQueue(uploader);
       expect(result.flushed).toBe(1);
       expect(calls).toEqual([null]);
+    });
+
+    describe("road_data_contribution gate (#279 / #501)", () => {
+      it("suppresses uploads when the rider opted out", async () => {
+        setCachedPreferences({
+          ...DEFAULT_PRIVACY_PREFERENCES,
+          road_data_contribution: false,
+        });
+        const uploader = jest.fn<
+          ReturnType<SensorUploader>,
+          Parameters<SensorUploader>
+        >(async () => ({ accepted: 1, segments_updated: 1 }));
+
+        const result = await submitSensorUpload(
+          "ride-opt-out",
+          [makeReading(1)],
+          "iPhone",
+          null,
+          [],
+          null,
+          null,
+          uploader,
+        );
+
+        // Silent success so the stop flow keeps moving — and we MUST
+        // NOT have shipped any bytes.
+        expect(result.status).toBe("uploaded");
+        expect(result.accepted).toBe(0);
+        expect(result.segmentsUpdated).toBe(0);
+        expect(uploader).not.toHaveBeenCalled();
+        // Skipped uploads must not enqueue either — a payload captured
+        // under "no consent" should NEVER replay if the rider toggles
+        // the consent back on later.
+        expect(getPendingCount()).toBe(0);
+      });
+
+      it("uploads normally when the rider opted in", async () => {
+        setCachedPreferences({
+          ...DEFAULT_PRIVACY_PREFERENCES,
+          road_data_contribution: true,
+        });
+        const uploader = jest.fn<
+          ReturnType<SensorUploader>,
+          Parameters<SensorUploader>
+        >(async () => ({ accepted: 7, segments_updated: 2 }));
+
+        const result = await submitSensorUpload(
+          "ride-opt-in",
+          [makeReading(1)],
+          "iPhone",
+          null,
+          [],
+          null,
+          null,
+          uploader,
+        );
+
+        expect(result.status).toBe("uploaded");
+        expect(result.accepted).toBe(7);
+        expect(uploader).toHaveBeenCalledTimes(1);
+      });
     });
   });
 

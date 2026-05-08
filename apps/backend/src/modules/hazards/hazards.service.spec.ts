@@ -19,11 +19,14 @@ import { CommuteRoute } from '../../entities/commute-route.entity.js';
 import { EXPIRY_HOURS } from './dto/create-hazard.dto.js';
 import { EventsGateway } from '../events/events.gateway.js';
 import { PushService } from '../push/index.js';
+import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
+import { DEFAULT_PRIVACY_PREFERENCES } from '@tarmoto/shared';
 
 describe('HazardsService', () => {
   let service: HazardsService;
   let repo: Partial<jest.Mocked<Repository<HazardReport>>>;
   let eventsGateway: { emitHazardAlert: jest.Mock };
+  let privacy: { loadPreferences: jest.Mock };
 
   const mockHazard: Partial<HazardReport> = {
     id: '123e4567-e89b-12d3-a456-426614174000',
@@ -78,6 +81,15 @@ describe('HazardsService', () => {
 
     eventsGateway = { emitHazardAlert: jest.fn() };
 
+    privacy = {
+      // Default — non-private profile so existing assertions about the
+      // reporter showing through keep passing. Per-test overrides set
+      // `profile_visibility: 'private'` to exercise the mask.
+      loadPreferences: jest.fn().mockResolvedValue({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+      }),
+    };
+
     const commuteRepo = {
       query: jest.fn().mockResolvedValue([]),
     };
@@ -97,6 +109,7 @@ describe('HazardsService', () => {
               .mockResolvedValue({ delivered: 0, pruned: 0, users: 0 }),
           },
         },
+        { provide: PrivacyPreferencesService, useValue: privacy },
         {
           provide: ConfigService,
           useValue: {
@@ -527,6 +540,52 @@ describe('HazardsService', () => {
       await expect(service.findAlongRoute(dto)).rejects.toThrow(
         BadRequestException,
       );
+    });
+  });
+
+  describe('privacy: profile_visibility (#279 / #501)', () => {
+    it('masks the reporter on broadcast when the rider profile is private', async () => {
+      privacy.loadPreferences.mockResolvedValueOnce({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        profile_visibility: 'private',
+      });
+
+      const dto = { lat: 49.1, lng: 16.75, hazard_type: 'pothole' as const };
+      const result = await service.create('user-1', dto);
+
+      expect(result.reporter).toBeNull();
+      // The WebSocket broadcast must also receive the masked DTO so
+      // other clients can't see the rider's name even before the
+      // next REST refresh.
+      expect(eventsGateway.emitHazardAlert).toHaveBeenCalledWith(
+        49.1,
+        16.75,
+        expect.objectContaining({ reporter: null }),
+      );
+    });
+
+    it('keeps the reporter visible for a `riders-only` profile', async () => {
+      privacy.loadPreferences.mockResolvedValueOnce({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        profile_visibility: 'riders-only',
+      });
+
+      const dto = { lat: 49.1, lng: 16.75, hazard_type: 'pothole' as const };
+      const result = await service.create('user-1', dto);
+
+      expect(result.reporter).toBe('TestRider');
+    });
+
+    it('fails closed when the privacy lookup throws (mask the name)', async () => {
+      privacy.loadPreferences.mockRejectedValueOnce(new Error('db down'));
+
+      const dto = { lat: 49.1, lng: 16.75, hazard_type: 'pothole' as const };
+      const result = await service.create('user-1', dto);
+
+      // A transient privacy lookup failure must not surface the name —
+      // we'd rather mask a non-private rider once than risk leaking a
+      // private one's identity.
+      expect(result.reporter).toBeNull();
     });
   });
 

@@ -98,3 +98,46 @@ export function isRideSharingDefault(v: unknown): v is RideSharingDefault {
 export function isLocationRetention(v: unknown): v is LocationRetention {
   return (LOCATION_RETENTION_VALUES as readonly string[]).includes(v as string);
 }
+
+/**
+ * Single point of truth for "may we emit a product-analytics event for
+ * this rider?" (#279 / #501). Wraps the toggle so every analytics call
+ * site — companion, mobile, and any future web surface — gates on the
+ * same predicate. Defaulting to `true` when the field is unexpectedly
+ * absent would silently re-enable tracking for an opt-out rider whose
+ * row failed to load; treat anything other than an explicit `true` as
+ * a "no". Expressed as a literal-equality check (not `!== false`) so a
+ * future tri-state (e.g. unknown / pending) has to opt in explicitly.
+ */
+export function canTrackAnalytics(prefs: PrivacyPreferences): boolean {
+  return prefs.analytics_consent === true;
+}
+
+/**
+ * Predicate guarding personalised-recommendation surfaces (#279 /
+ * #501) — "for you" route suggestions, nearby-unridden segments, and
+ * any future feed that ranks based on the caller's history. Sites that
+ * also have a non-personalised fallback should fall back when this
+ * returns `false`; sites that are inherently personal (no useful
+ * fallback exists) should return an empty list. Same fail-closed
+ * posture as `canTrackAnalytics`.
+ */
+export function canShowPersonalizedRecommendations(
+  prefs: PrivacyPreferences,
+): boolean {
+  return prefs.personalized_recommendations_consent === true;
+}
+
+/**
+ * Mobile-side gate (#279 / #501) for the road-quality contribution
+ * pipeline. Called from the sensor uploader before any batch leaves
+ * the device — when the rider has `road_data_contribution` off, we
+ * suppress the upload entirely. The backend also drops the same
+ * payload at `POST /sensor/upload` (belt-and-suspenders, see
+ * `SensorService.processUpload`); the mobile gate is the bandwidth /
+ * battery saver that keeps an opt-out rider from streaming readings
+ * the server is going to discard anyway.
+ */
+export function shouldContributeRoadData(prefs: PrivacyPreferences): boolean {
+  return prefs.road_data_contribution === true;
+}

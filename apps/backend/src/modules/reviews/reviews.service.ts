@@ -11,6 +11,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import { buildTrustedManagedOriginCheck } from '../../common/trusted-managed-origin.js';
+import { PrivacyPreferencesRow } from '../../entities/privacy-preferences.entity.js';
 import { RoadReview } from '../../entities/road-review.entity.js';
 import { RoadReviewVote } from '../../entities/road-review-vote.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
@@ -132,6 +133,8 @@ export class ReviewsService {
     private readonly segmentRepo: Repository<RoadSegment>,
     @InjectRepository(RoadReviewVote)
     private readonly voteRepo: Repository<RoadReviewVote>,
+    @InjectRepository(PrivacyPreferencesRow)
+    private readonly privacyRepo: Repository<PrivacyPreferencesRow>,
     @Inject(OBJECT_STORAGE)
     private readonly storage: ObjectStorage,
     config: ConfigService,
@@ -165,8 +168,13 @@ export class ReviewsService {
       reviews.map((r) => r.id),
       viewerUserId,
     );
+    const privateAuthorIds = await this.loadPrivateAuthorIds(
+      reviews.map((r) => r.user_id),
+    );
     return reviews.map((r) =>
-      this.toResponse(r, voteMap.get(r.id), viewerUserId),
+      this.toResponse(r, voteMap.get(r.id), viewerUserId, {
+        authorIsPrivate: privateAuthorIds.has(r.user_id),
+      }),
     );
   }
 
@@ -232,7 +240,9 @@ export class ReviewsService {
       relations: ['user'],
     });
 
-    // Freshly created reviews have no votes yet.
+    // Freshly created reviews have no votes yet. The viewer is the
+    // author themselves, so the privacy mask doesn't apply on this
+    // path (`authorIsPrivate: false`).
     return this.toResponse(
       full!,
       {
@@ -241,6 +251,7 @@ export class ReviewsService {
         my_vote: null,
       },
       userId,
+      { authorIsPrivate: false },
     );
   }
 
@@ -291,7 +302,13 @@ export class ReviewsService {
     await this.deleteOwnedReviewPhotos(removed, segmentId, userId);
 
     const voteMap = await this.aggregateVotes([saved.id], userId);
-    return this.toResponse(saved, voteMap.get(saved.id), userId);
+    // The viewer is the author here. Even if their profile is `private`,
+    // surface their own name back to themselves — the masking gate is
+    // about hiding identity from *other* riders, not from the rider
+    // editing their own review.
+    return this.toResponse(saved, voteMap.get(saved.id), userId, {
+      authorIsPrivate: false,
+    });
   }
 
   async delete(userId: string, segmentId: string): Promise<void> {
@@ -611,18 +628,29 @@ export class ReviewsService {
     review: RoadReview,
     votes?: VoteAggregate,
     viewerUserId: string | null = null,
+    opts: { authorIsPrivate?: boolean } = {},
   ): ReviewResponseDto {
     // Soft-deleted authors are masked in feeds/profiles per GDPR
     // requirements (US-62) — the review row stays so historical
     // road-quality context is preserved, but the personal name is
     // hidden until the hard-delete sweep finishes the cascade.
     const authorVisible = review.user != null && review.user.deleted_at == null;
+    // #279 / #501 — riders with `profile_visibility = 'private'` should
+    // not have their display name leak onto the public reviews feed.
+    // Mirrors the deleted-user mask above, but emits "Hidden rider" so
+    // the UI can distinguish "rider opted out" from "rider purged" if
+    // it wants to (currently both render the same string).
+    const isAuthorPrivate = opts.authorIsPrivate === true;
+    const isAuthorMasked = !authorVisible || isAuthorPrivate;
+    const displayName = !authorVisible
+      ? 'Deleted user'
+      : isAuthorPrivate
+        ? 'Hidden rider'
+        : review.user.display_name;
     return {
       id: review.id,
-      user_id: authorVisible ? review.user_id : null,
-      user_display_name: authorVisible
-        ? review.user.display_name
-        : 'Deleted user',
+      user_id: isAuthorMasked ? null : review.user_id,
+      user_display_name: displayName,
       rating: review.rating,
       comment: review.comment,
       bike_model: review.bike_model,
@@ -636,5 +664,26 @@ export class ReviewsService {
           ? false
           : review.user_id === viewerUserId,
     };
+  }
+
+  /**
+   * Resolve which of the supplied author ids belong to riders with
+   * `profile_visibility = 'private'` (#279 / #501). Returns the set of
+   * "private" ids so the caller can mask their names in the feed
+   * response. Implemented as a single batched SELECT to avoid an N+1
+   * preference lookup across a long review list. Riders without an
+   * explicit privacy_preferences row inherit the default
+   * (`riders-only`) and are NOT in the returned set.
+   */
+  private async loadPrivateAuthorIds(
+    authorIds: readonly string[],
+  ): Promise<Set<string>> {
+    const unique = Array.from(new Set(authorIds.filter((id) => Boolean(id))));
+    if (unique.length === 0) return new Set();
+    const rows = await this.privacyRepo.find({
+      where: { user_id: In(unique), profile_visibility: 'private' },
+      select: { user_id: true },
+    });
+    return new Set(rows.map((r) => r.user_id));
   }
 }

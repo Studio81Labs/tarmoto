@@ -1,16 +1,19 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { DEFAULT_PRIVACY_PREFERENCES } from '@tarmoto/shared';
 import { ExplorationService } from './exploration.service.js';
 import { RideSegment } from '../../entities/ride-segment.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
+import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 
 describe('ExplorationService', () => {
   let service: ExplorationService;
   let rideSegmentRepo: Partial<jest.Mocked<Repository<RideSegment>>>;
   let roadSegmentRepo: Partial<jest.Mocked<Repository<RoadSegment>>>;
   let rideRepo: Partial<jest.Mocked<Repository<Ride>>>;
+  let privacy: { loadPreferences: jest.Mock };
 
   const mockRideSegmentQb = {
     select: jest.fn().mockReturnThis(),
@@ -73,12 +76,22 @@ describe('ExplorationService', () => {
       createQueryBuilder: jest.fn().mockReturnValue(mockRideQb),
     };
 
+    privacy = {
+      // Default: consent on so existing assertions about
+      // `getNearbyUnridden` returning rows keep passing. Specific tests
+      // override with `personalized_recommendations_consent: false`.
+      loadPreferences: jest.fn().mockResolvedValue({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ExplorationService,
         { provide: getRepositoryToken(RideSegment), useValue: rideSegmentRepo },
         { provide: getRepositoryToken(RoadSegment), useValue: roadSegmentRepo },
         { provide: getRepositoryToken(Ride), useValue: rideRepo },
+        { provide: PrivacyPreferencesService, useValue: privacy },
       ],
     }).compile();
 
@@ -181,6 +194,47 @@ describe('ExplorationService', () => {
       );
 
       expect(result).toHaveLength(0);
+    });
+
+    it('returns empty without querying when personalized recommendations consent is off (#279 / #501)', async () => {
+      privacy.loadPreferences.mockResolvedValueOnce({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        personalized_recommendations_consent: false,
+      });
+      // Sanity baseline — the segment fixture WOULD have produced a row
+      // if the gate let the query through.
+      mockRoadSegmentQb.getRawMany.mockClear();
+
+      const result = await service.getNearbyUnridden(
+        'user-1',
+        49.2,
+        16.6,
+        10,
+        20,
+      );
+
+      expect(result).toEqual([]);
+      // We must NOT have run the personalised SQL — bailing before the
+      // query is the whole point of the consent gate.
+      expect(mockRoadSegmentQb.getRawMany).not.toHaveBeenCalled();
+    });
+
+    it('runs the personalised query when consent is on (#279 / #501)', async () => {
+      privacy.loadPreferences.mockResolvedValueOnce({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        personalized_recommendations_consent: true,
+      });
+
+      const result = await service.getNearbyUnridden(
+        'user-1',
+        49.2,
+        16.6,
+        10,
+        20,
+      );
+
+      expect(result).toHaveLength(1);
+      expect(mockRoadSegmentQb.getRawMany).toHaveBeenCalled();
     });
   });
 

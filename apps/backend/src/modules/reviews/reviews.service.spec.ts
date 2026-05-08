@@ -11,6 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 import { Readable } from 'node:stream';
 import { ReviewsService } from './reviews.service.js';
+import { PrivacyPreferencesRow } from '../../entities/privacy-preferences.entity.js';
 import { RoadReview } from '../../entities/road-review.entity.js';
 import { RoadReviewVote } from '../../entities/road-review-vote.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
@@ -33,6 +34,11 @@ describe('ReviewsService', () => {
   let viewerVotes: Array<{ road_review_id: string; is_helpful: boolean }>;
   let storage: jest.Mocked<ObjectStorage>;
   let configGet: jest.Mock;
+  let privacyRepo: Partial<jest.Mocked<Repository<PrivacyPreferencesRow>>>;
+  // Default = no rows returned → no author is private. Per-test overrides
+  // mock specific rows (`profile_visibility: 'private'`) to exercise the
+  // mask in `loadPrivateAuthorIds`.
+  let privacyRows: PrivacyPreferencesRow[];
 
   const mockUser = { display_name: 'John Rider' };
 
@@ -82,6 +88,10 @@ describe('ReviewsService', () => {
         { provide: getRepositoryToken(RoadReview), useValue: reviewRepo },
         { provide: getRepositoryToken(RoadSegment), useValue: segmentRepo },
         { provide: getRepositoryToken(RoadReviewVote), useValue: voteRepo },
+        {
+          provide: getRepositoryToken(PrivacyPreferencesRow),
+          useValue: privacyRepo,
+        },
         { provide: OBJECT_STORAGE, useValue: storage },
         { provide: ConfigService, useValue: { get: configGet } },
       ],
@@ -138,6 +148,11 @@ describe('ReviewsService', () => {
       }),
       find: jest.fn().mockImplementation(() => viewerVotes),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
+    };
+
+    privacyRows = [];
+    privacyRepo = {
+      find: jest.fn().mockImplementation(() => Promise.resolve(privacyRows)),
     };
 
     // Test fixtures use `https://app.tarmoto.test/...` everywhere —
@@ -246,6 +261,37 @@ describe('ReviewsService', () => {
 
       expect(result[0].user_display_name).toBe('Deleted user');
       expect(result[0].user_id).toBeNull();
+    });
+
+    it('masks user_display_name + user_id when the author is private (#279 / #501)', async () => {
+      // The author exists and is not soft-deleted, but their privacy
+      // preference says `profile_visibility: 'private'`. The review row
+      // stays so the road quality context is preserved, but the
+      // identity gets a "Hidden rider" tombstone instead of the name.
+      privacyRows = [
+        {
+          user_id: 'user-1',
+          profile_visibility: 'private',
+        } as PrivacyPreferencesRow,
+      ];
+
+      const result = await service.listForSegment('seg-1');
+
+      expect(result[0].user_display_name).toBe('Hidden rider');
+      expect(result[0].user_id).toBeNull();
+      // Other fields still surface so the segment retains its quality
+      // context — privacy hides identity, not the review.
+      expect(result[0].rating).toBe(4);
+      expect(result[0].comment).toBe('Smooth asphalt, great ride!');
+    });
+
+    it('keeps the author visible for a non-private profile (#279 / #501)', async () => {
+      privacyRows = [];
+
+      const result = await service.listForSegment('seg-1');
+
+      expect(result[0].user_display_name).toBe('John Rider');
+      expect(result[0].user_id).toBe('user-1');
     });
   });
 

@@ -100,6 +100,7 @@ import {
   type SubmitReviewResult,
 } from "./reviewQueue";
 import { registerForPush, unregisterPush } from "./pushRegistration";
+import { clearCachedPreferences, setCachedPreferences } from "./privacyCache";
 import { SENSOR_PREPROCESSING_VERSION } from "./sensorsFilter";
 
 /** Top-level error thrown by every facade method on a non-2xx response.
@@ -165,6 +166,11 @@ class ApiService {
     const data = unwrap(result, "Registration failed");
     storeTokens(data);
     void registerForPush(this.pushApi());
+    // Fire-and-forget so a transient privacy fetch failure can't
+    // block sign-up; the cache stays on canonical defaults until
+    // the first successful refresh, which is the same posture as
+    // a brand-new install (see `privacyCache` doc).
+    void this.refreshPrivacyPreferences().catch(() => undefined);
     return data;
   }
 
@@ -175,6 +181,10 @@ class ApiService {
     const data = unwrap(result, "Login failed");
     storeTokens(data);
     void registerForPush(this.pushApi());
+    // See `register` — same fire-and-forget pull so the sensor
+    // uploader's `road_data_contribution` gate has fresh data
+    // before the rider starts a ride.
+    void this.refreshPrivacyPreferences().catch(() => undefined);
     return data;
   }
 
@@ -187,6 +197,32 @@ class ApiService {
     const bearer = getAccessToken() ?? undefined;
     clearTokens();
     void unregisterPush(this.pushApi(bearer));
+    // #279 / #501 — clear the cached privacy preferences so a
+    // subsequent rider on the same device doesn't inherit the
+    // previous one's toggles before the next refresh lands.
+    clearCachedPreferences();
+  }
+
+  /**
+   * Pull the rider's privacy preferences from the backend and
+   * persist them in the local cache (#279 / #501). The sensor
+   * uploader reads `road_data_contribution` synchronously from the
+   * cache before each upload — call this on app foreground / login
+   * and after every PUT from the privacy settings screen so the
+   * mobile gate stays in sync with the server.
+   */
+  async refreshPrivacyPreferences(): Promise<void> {
+    const result = await client.GET("/api/v1/account/privacy");
+    const dto = unwrap(result, "Failed to load privacy preferences");
+    setCachedPreferences({
+      profile_visibility: dto.profile_visibility,
+      default_ride_sharing: dto.default_ride_sharing,
+      road_data_contribution: dto.road_data_contribution,
+      location_retention: dto.location_retention,
+      analytics_consent: dto.analytics_consent,
+      personalized_recommendations_consent:
+        dto.personalized_recommendations_consent,
+    });
   }
 
   isAuthenticated(): boolean {

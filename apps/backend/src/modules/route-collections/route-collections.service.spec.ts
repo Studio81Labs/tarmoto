@@ -7,6 +7,7 @@ import {
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
+import { PrivacyPreferencesRow } from '../../entities/privacy-preferences.entity.js';
 import { RouteCollection } from '../../entities/route-collection.entity.js';
 import { RouteCollectionItem } from '../../entities/route-collection-item.entity.js';
 import { RouteCollectionFollow } from '../../entities/route-collection-follow.entity.js';
@@ -17,6 +18,8 @@ describe('RouteCollectionsService', () => {
   let collectionRepo: Partial<jest.Mocked<Repository<RouteCollection>>>;
   let itemRepo: Partial<jest.Mocked<Repository<RouteCollectionItem>>>;
   let followRepo: Partial<jest.Mocked<Repository<RouteCollectionFollow>>>;
+  let privacyRepo: Partial<jest.Mocked<Repository<PrivacyPreferencesRow>>>;
+  let privacyRows: PrivacyPreferencesRow[];
   let queryMock: jest.Mock;
 
   const ownerId = 'user-1';
@@ -90,6 +93,12 @@ describe('RouteCollectionsService', () => {
       delete: jest.fn().mockResolvedValue({ affected: 0 }),
     };
 
+    privacyRows = [];
+    privacyRepo = {
+      find: jest.fn().mockImplementation(() => Promise.resolve(privacyRows)),
+      findOne: jest.fn().mockResolvedValue(null),
+    };
+
     // The service's `addItem` opens a transaction; mock it to invoke the
     // callback with a manager that returns the same mocks. Avoids needing a
     // real DataSource for unit tests. `query` is mocked to return [] by
@@ -121,6 +130,10 @@ describe('RouteCollectionsService', () => {
         {
           provide: getRepositoryToken(RouteCollectionFollow),
           useValue: followRepo,
+        },
+        {
+          provide: getRepositoryToken(PrivacyPreferencesRow),
+          useValue: privacyRepo,
         },
         { provide: DataSource, useValue: dataSource },
       ],
@@ -239,6 +252,111 @@ describe('RouteCollectionsService', () => {
       expect(result.followed).toHaveLength(1);
       expect(result.followed[0]?.id).toBe(followedCol.id);
       expect(result.followed[0]?.item_count).toBe(4);
+    });
+
+    it('masks owner_name on followed cards when the curator is private (#279 / #501)', async () => {
+      const followedCol = {
+        ...baseCollection,
+        id: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+        owner_id: otherId,
+        visibility: 'public',
+        title: 'Followed by me',
+      };
+      (collectionRepo.createQueryBuilder as jest.Mock)
+        .mockReturnValueOnce({
+          leftJoin: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          select: jest.fn().mockReturnThis(),
+          addSelect: jest.fn().mockReturnThis(),
+          groupBy: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          getRawAndEntities: jest
+            .fn()
+            .mockResolvedValue({ entities: [], raw: [] }),
+        })
+        .mockReturnValueOnce({
+          innerJoin: jest.fn().mockReturnThis(),
+          leftJoin: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          select: jest.fn().mockReturnThis(),
+          addSelect: jest.fn().mockReturnThis(),
+          groupBy: jest.fn().mockReturnThis(),
+          addGroupBy: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          getRawAndEntities: jest.fn().mockResolvedValue({
+            entities: [followedCol],
+            raw: [
+              {
+                c_id: followedCol.id,
+                item_count: '4',
+                owner_name: 'Jane Rider',
+              },
+            ],
+          }),
+        });
+
+      privacyRows = [
+        {
+          user_id: otherId,
+          profile_visibility: 'private',
+        } as PrivacyPreferencesRow,
+      ];
+
+      const result = await service.listLibrary(ownerId);
+
+      expect(result.followed).toHaveLength(1);
+      expect(result.followed[0]?.owner_name).toBeNull();
+    });
+
+    it('keeps owner_name on followed cards when the curator is not private (#279 / #501)', async () => {
+      const followedCol = {
+        ...baseCollection,
+        id: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+        owner_id: otherId,
+        visibility: 'public',
+        title: 'Followed by me',
+      };
+      (collectionRepo.createQueryBuilder as jest.Mock)
+        .mockReturnValueOnce({
+          leftJoin: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          select: jest.fn().mockReturnThis(),
+          addSelect: jest.fn().mockReturnThis(),
+          groupBy: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          getRawAndEntities: jest
+            .fn()
+            .mockResolvedValue({ entities: [], raw: [] }),
+        })
+        .mockReturnValueOnce({
+          innerJoin: jest.fn().mockReturnThis(),
+          leftJoin: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          select: jest.fn().mockReturnThis(),
+          addSelect: jest.fn().mockReturnThis(),
+          groupBy: jest.fn().mockReturnThis(),
+          addGroupBy: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          getRawAndEntities: jest.fn().mockResolvedValue({
+            entities: [followedCol],
+            raw: [
+              {
+                c_id: followedCol.id,
+                item_count: '4',
+                owner_name: 'Jane Rider',
+              },
+            ],
+          }),
+        });
+
+      privacyRows = [];
+
+      const result = await service.listLibrary(ownerId);
+
+      expect(result.followed).toHaveLength(1);
+      expect(result.followed[0]?.owner_name).toBe('Jane Rider');
     });
 
     it('returns owned list with empty followed when follow table is missing (42P01)', async () => {
@@ -480,6 +598,54 @@ describe('RouteCollectionsService', () => {
       expect(followRepo.exists).toHaveBeenCalledWith({
         where: { user_id: otherId, collection_id: collectionId },
       });
+    });
+
+    it('masks owner_name for non-owner viewers when owner is private (#279 / #501)', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        visibility: 'public',
+      });
+      (privacyRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        user_id: ownerId,
+        profile_visibility: 'private',
+      });
+
+      const result = await service.getBySlug('abcDEF12345', otherId);
+
+      // Empty string mirrors the historical "no owner loaded" sentinel
+      // so existing string-rendering clients keep working.
+      expect(result.owner_name).toBe('');
+    });
+
+    it('keeps owner_name for the owner viewing their own private profile slug (#279 / #501)', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        visibility: 'public',
+      });
+      // privacyRepo.findOne would return private, but the self-view
+      // branch must skip the lookup entirely — the owner sees their
+      // own name on their own collection.
+      (privacyRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        user_id: ownerId,
+        profile_visibility: 'private',
+      });
+
+      const result = await service.getBySlug('abcDEF12345', ownerId);
+
+      expect(result.owner_name).toBe('Jane Rider');
+      expect(privacyRepo.findOne).not.toHaveBeenCalled();
+    });
+
+    it('keeps owner_name for non-owner viewers when owner is not private (#279 / #501)', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        visibility: 'public',
+      });
+      (privacyRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
+
+      const result = await service.getBySlug('abcDEF12345', otherId);
+
+      expect(result.owner_name).toBe('Jane Rider');
     });
   });
 

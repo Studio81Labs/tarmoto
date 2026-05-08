@@ -31,6 +31,7 @@ import {
   isRetriableError,
   isTransientServerError,
 } from "./networkErrors";
+import { canContributeRoadData } from "./privacyCache";
 
 // ── Types ──
 
@@ -316,6 +317,26 @@ export async function submitSensorUpload(
   calibration: CalibrationPayload | null,
   uploader: SensorUploader,
 ): Promise<SubmitResult> {
+  // #279 / #501 — honour the rider's `road_data_contribution` opt-out
+  // BEFORE touching the queue or the network. The backend also drops
+  // an opted-out payload server-side (`SensorService.processUpload`),
+  // but we suppress here too so an opt-out rider doesn't burn battery
+  // / bandwidth shipping data the server will discard. Silent success
+  // (`status: "uploaded"`, zeros) so the caller's stop-flow keeps
+  // moving — surfacing an error here for an intentional opt-out
+  // would confuse the rider. We do NOT enqueue: a payload queued
+  // while the toggle is off should not later replay if the rider
+  // toggles it back on (their per-ride consent at the time of
+  // capture was "no").
+  if (!canContributeRoadData()) {
+    return {
+      status: "uploaded",
+      accepted: 0,
+      segmentsUpdated: 0,
+      pending: getPendingCount(),
+    };
+  }
+
   // Flush the backlog first so rides stay chronologically ordered on the
   // server — otherwise a fresh ride would land before older queued ones
   // and the backend's "newest data wins" aggregation would re-rank older
