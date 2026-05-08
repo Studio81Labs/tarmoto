@@ -660,6 +660,19 @@ function createAndroidBridge(): VehicleStatusBridge {
     } | null = null;
     /** Subscription to the `buttonPressed` emitter — alive while an alert is mounted. */
     let alertButtonSubscription: { remove: () => void } | null = null;
+    /**
+     * Active quick-action rows keyed by row id, plus the host callback.
+     * Held in a closure so the direct `didSelectListItem` listener can
+     * dispatch without re-reading from the package's
+     * `ListTemplate.onItemSelect` (which Android drops — see
+     * `attachQuickActionsListener` below).
+     */
+    let activeQuickActions: {
+      handler: (id: QuickActionItem["id"]) => void;
+      ids: Set<string>;
+    } | null = null;
+    /** Subscription to the `didSelectListItem` emitter — alive while quick actions are mounted. */
+    let quickActionsSubscription: { remove: () => void } | null = null;
 
     /**
      * Wire the Android-side alert action callbacks. The AA package
@@ -694,6 +707,43 @@ function createAndroidBridge(): VehicleStatusBridge {
     const detachAlertButtonListener = () => {
       alertButtonSubscription?.remove();
       alertButtonSubscription = null;
+    };
+
+    /**
+     * Subscribe to `didSelectListItem` directly on Android because the
+     * package's `ListTemplate` JS wrapper filters with
+     * `e.templateId === this.id`, but the AA native side
+     * (`EventEmitter.kt`'s `fun didSelectListItem(id, index)`) only
+     * puts `{ id, index }` on the wire — `templateId` is undefined,
+     * so the wrapper drops every Android tap and `onItemSelect` is
+     * never called. The direct listener bypasses that filter and
+     * dispatches by row id, which `parseRowItem` *does* set to the
+     * `id` field we passed when constructing the `ListTemplate`.
+     */
+    const attachQuickActionsListener = () => {
+      detachQuickActionsListener();
+      quickActionsSubscription = CarPlay.emitter.addListener(
+        "didSelectListItem",
+        (e: { id?: string; index?: number; templateId?: string }) => {
+          if (!activeQuickActions) return;
+          // Some package builds *do* set templateId for AA; if so, scope
+          // to ours so a different list template's selection can't
+          // bleed in.
+          if (
+            e.templateId !== undefined &&
+            e.templateId !== QUICK_ACTIONS_TEMPLATE_ID
+          ) {
+            return;
+          }
+          if (e.id && activeQuickActions.ids.has(e.id)) {
+            activeQuickActions.handler(e.id as QuickActionItem["id"]);
+          }
+        },
+      );
+    };
+    const detachQuickActionsListener = () => {
+      quickActionsSubscription?.remove();
+      quickActionsSubscription = null;
     };
 
     const buildPane = (items: StatusBoardItem[]) => ({
@@ -749,6 +799,8 @@ function createAndroidBridge(): VehicleStatusBridge {
           activeAndroidAlertId = null;
           activeAlertCallbacks = null;
           detachAlertButtonListener();
+          activeQuickActions = null;
+          detachQuickActionsListener();
           mountedTitle = null;
           callback();
         };
@@ -761,6 +813,8 @@ function createAndroidBridge(): VehicleStatusBridge {
           activeAndroidAlertId = null;
           activeAlertCallbacks = null;
           detachAlertButtonListener();
+          activeQuickActions = null;
+          detachQuickActionsListener();
           mountedTitle = null;
           callback();
         };
@@ -845,19 +899,33 @@ function createAndroidBridge(): VehicleStatusBridge {
             detailText: item.detailText,
             browsable: true,
           })),
+          // The package's `ListTemplate` wrapper installs an
+          // `onItemSelect` listener that filters by `templateId`,
+          // which Android never sets. We attach our own direct
+          // listener below; this callback survives as a no-op on the
+          // off chance a future package version starts filling
+          // `templateId` so both paths can fire.
           onItemSelect: async ({ index }) => {
             const picked = items[index];
             if (picked) onActionPressed(picked.id);
           },
         });
+        activeQuickActions = {
+          handler: onActionPressed,
+          ids: new Set(items.map((item) => item.id)),
+        };
+        attachQuickActionsListener();
         try {
           CarPlay.setRootTemplate(fresh, false);
         } catch {
           // Host already disposed — controller will re-attempt next tick.
+          activeQuickActions = null;
+          detachQuickActionsListener();
         }
       },
       unmountQuickActions: () => {
-        // No bridge state to clear — controller handles the swap.
+        activeQuickActions = null;
+        detachQuickActionsListener();
       },
     };
   } catch {
@@ -1002,6 +1070,19 @@ export function unmountRideStatusBoard(): void {
 let activeHazardAlertId: string | null = null;
 /** Hazards the rider explicitly dismissed — we won't re-present these. */
 const dismissedHazardIds = new Set<string>();
+/**
+ * Hazards the rider just *confirmed* on the head unit. Distinct from
+ * `dismissedHazardIds` because confirm is meant to be reversible: the
+ * rider has acknowledged the hazard and we should stop nagging them
+ * for *this* approach, but if they later exit the alert radius and
+ * come back (e.g. a u-turn, or the same pothole appears on the
+ * outbound and inbound legs of a commute), the alert is allowed to
+ * re-fire. The orchestrator clears each entry from this set the moment
+ * the hazard drops out of `radiusMeters`, so it never grows unbounded
+ * and a rider's confirmation is effectively "snooze until I leave the
+ * radius" rather than "permanently silence this one".
+ */
+const confirmedHazardIds = new Set<string>();
 
 /**
  * Mount the hazard alert template for the given snapshot. Idempotent
@@ -1010,30 +1091,41 @@ const dismissedHazardIds = new Set<string>();
  * store ticks (currently ~1 Hz).
  *
  * Returns `true` when the bridge accepted the request (head-unit
- * connected and the hazard isn't on the dismissed list), `false`
- * otherwise. The cross-cutting hook uses the return value to skip
- * subsequent state updates while the bridge is unreachable.
+ * connected and the hazard isn't on the dismissed/confirmed list),
+ * `false` otherwise. The cross-cutting hook uses the return value to
+ * skip subsequent state updates while the bridge is unreachable.
  */
 export function presentHazardAlertOnVehicleDisplay(
   snapshot: HazardAlertSnapshot,
   callbacks: { onConfirm?: () => void; onDismiss?: () => void } = {},
 ): boolean {
-  if (dismissedHazardIds.has(snapshot.id)) return false;
+  if (
+    dismissedHazardIds.has(snapshot.id) ||
+    confirmedHazardIds.has(snapshot.id)
+  ) {
+    return false;
+  }
   const bridge = getBridge();
   if (!bridge.isAvailable()) return false;
   if (activeHazardAlertId === snapshot.id) return true;
   bridge.presentHazardAlert(snapshot, {
     onConfirm: () => {
+      // Park the hazard in the confirmed set so the next ride-tick
+      // (which calls `mirrorClosestHazardAlert` ~1 Hz with the same
+      // hazard still in range) doesn't immediately re-present what
+      // the rider just acknowledged. The orchestrator removes the
+      // entry once the hazard exits the radius, leaving the alert
+      // free to fire again on a future re-entry.
+      confirmedHazardIds.add(snapshot.id);
       callbacks.onConfirm?.();
       activeHazardAlertId = null;
     },
     onDismiss: () => {
       // Remember the rider's explicit dismissal so the same hazard
-      // can't bounce back on the next tick — a rider who taps Dismiss
-      // is telling us "I see it, stop nagging me about this one".
-      // Confirmed alerts deliberately don't get added: if the rider
-      // tapped Confirm (e.g. to upvote / acknowledge) and the same
-      // hazard re-enters their proximity later, that's a fresh alert.
+      // can't bounce back on the next tick or the next time the rider
+      // re-enters its radius — a rider who taps Dismiss is telling us
+      // "I see it, stop nagging me about this one for the rest of
+      // the ride".
       dismissedHazardIds.add(snapshot.id);
       callbacks.onDismiss?.();
       activeHazardAlertId = null;
@@ -1053,29 +1145,61 @@ export function dismissHazardAlertOnVehicleDisplay(): void {
 
 /**
  * One-shot orchestrator the cross-cutting hook calls on every
- * ride/hazard-store tick. Picks the closest *non-dismissed* hazard
- * within `radiusMeters` of the rider and presents it; if none qualifies
- * (no fix, all out of range, or every nearby hazard already dismissed)
- * folds any standing alert. Returning `"presented" | "dismissed" |
- * "noop"` lets tests assert which branch ran without poking module
- * state.
+ * ride/hazard-store tick. Picks the closest *non-dismissed,
+ * non-confirmed* hazard within `radiusMeters` of the rider and
+ * presents it; if none qualifies (no fix, all out of range, every
+ * nearby hazard already dismissed/confirmed) folds any standing alert.
+ * Returning `"presented" | "dismissed" | "noop"` lets tests assert
+ * which branch ran without poking module state.
  *
- * Filtering dismissed ids inside the selection step is the fix for
- * the regression where a still-in-range dismissed hazard would mask a
- * brand-new one: previously `selectClosestHazard` returned the
- * dismissed-but-closer hazard, the alert call returned `false`, and
- * the next-closest fresh hazard never got considered. Now the
- * dismissed hazard is invisible to the selector, so the next eligible
- * one wins — and if every eligible hazard has been dismissed, we fall
- * through to the "nothing to alert about" branch and clear any
- * standing alert from a *different* hazard that has since left range.
+ * Filtering dismissed and confirmed ids inside the selection step is
+ * the fix for two regressions:
+ *
+ *   1. A still-in-range dismissed hazard masking a brand-new one —
+ *      previously `selectClosestHazard` returned the dismissed-but-
+ *      closer hazard, the alert call returned `false`, and the
+ *      next-closest fresh hazard never got considered.
+ *   2. A confirmed hazard immediately re-firing on the next ride-tick
+ *      — `onConfirm` clears `activeHazardAlertId`, so the same-id
+ *      dedupe guard wouldn't catch the re-call. The
+ *      `confirmedHazardIds` set keeps the orchestrator from re-
+ *      presenting until the rider has actually moved out of range.
+ *
+ * As a side effect this method also clears confirmed-id entries for
+ * hazards that have left the alert radius, so a future re-entry (the
+ * rider doubles back over the same road) gets a fresh alert. Dismissed
+ * ids deliberately stay sticky for the rest of the ride.
  */
 export function mirrorClosestHazardAlert(
   hazards: Hazard[],
   riderLocation: LatLng | null,
   radiusMeters: number,
 ): "presented" | "dismissed" | "noop" {
-  const eligible = hazards.filter((h) => !dismissedHazardIds.has(h.id));
+  // Compute distances once so we can both pick the closest eligible
+  // hazard and clear confirmed ids that have left the alert radius in
+  // the same pass.
+  if (riderLocation && confirmedHazardIds.size > 0) {
+    for (const hazard of hazards) {
+      if (!confirmedHazardIds.has(hazard.id)) continue;
+      const distance = distanceMetersBetween(riderLocation, {
+        lat: hazard.lat,
+        lng: hazard.lng,
+      });
+      if (distance > radiusMeters) confirmedHazardIds.delete(hazard.id);
+    }
+    // Hazards that vanished from the nearby list entirely (server
+    // expired them) also lose their confirmed status — same logic as
+    // "out of range" since they can't re-fire from a list they're not
+    // in.
+    const stillNearby = new Set(hazards.map((h) => h.id));
+    for (const id of confirmedHazardIds) {
+      if (!stillNearby.has(id)) confirmedHazardIds.delete(id);
+    }
+  }
+
+  const eligible = hazards.filter(
+    (h) => !dismissedHazardIds.has(h.id) && !confirmedHazardIds.has(h.id),
+  );
   const closest = selectClosestHazard(eligible, riderLocation);
   if (!closest || closest.distanceMeters > radiusMeters) {
     if (activeHazardAlertId) {
@@ -1162,6 +1286,7 @@ export function __setCarPlayBridgeForTest(
   mountedTitle = null;
   activeHazardAlertId = null;
   dismissedHazardIds.clear();
+  confirmedHazardIds.clear();
   quickActionsMounted = false;
   lastQuickActionsSignature = null;
   // Re-arm the lifecycle handlers against the new fake so tests can
@@ -1181,6 +1306,7 @@ export function __resetCarPlayStateForTest(): void {
   rideStatusSuspended = false;
   activeHazardAlertId = null;
   dismissedHazardIds.clear();
+  confirmedHazardIds.clear();
   quickActionsMounted = false;
   lastQuickActionsSignature = null;
 }

@@ -629,18 +629,19 @@ describe("hazard alert lifecycle", () => {
     expect(bridge.presentAlert).toHaveBeenCalledTimes(1);
   });
 
-  it("allows re-presenting a confirmed hazard if it returns to proximity", () => {
+  it("snoozes a confirmed hazard so it does not bounce back on the next tick", () => {
     presentHazardAlertOnVehicleDisplay(makeSnapshot({ id: "hz-1" }));
     bridge.lastAlertCallbacks?.onConfirm();
 
-    // Confirm clears the active id but does NOT add to the dismissed
-    // set — a rider who confirmed an alert (e.g. acknowledged the
-    // pothole) and then doubled back over the same road should still
-    // get the heads-up.
+    // After confirm, the same hazard is in the confirmed set.
+    // `presentHazardAlertOnVehicleDisplay` returns `false` for it on
+    // every subsequent tick — without this guard, the next ride-tick
+    // (~1 Hz) would re-call into the bridge and the rider would see
+    // the alert flash again 1 second after they confirmed.
     expect(
       presentHazardAlertOnVehicleDisplay(makeSnapshot({ id: "hz-1" })),
-    ).toBe(true);
-    expect(bridge.presentAlert).toHaveBeenCalledTimes(2);
+    ).toBe(false);
+    expect(bridge.presentAlert).toHaveBeenCalledTimes(1);
   });
 
   it("dismissHazardAlertOnVehicleDisplay is idempotent and clears active id", () => {
@@ -834,6 +835,57 @@ describe("mirrorClosestHazardAlert", () => {
     ).toBe("presented");
     expect(bridge.presentAlert).toHaveBeenCalledTimes(2);
     expect(bridge.presentAlert.mock.calls[1]?.[0].id).toBe("fresh");
+  });
+
+  it("a confirmed hazard does not re-fire on the next orchestrator tick while still in range", () => {
+    mirrorClosestHazardAlert([nearby()], riderLocation, 750);
+    bridge.lastAlertCallbacks?.onConfirm();
+    expect(bridge.presentAlert).toHaveBeenCalledTimes(1);
+
+    // Same hazard, still within radius, next ~1 Hz tick. Without the
+    // confirmed-set guard the orchestrator would walk back into
+    // `presentHazardAlertOnVehicleDisplay` (its same-id dedupe is
+    // off because confirm cleared `activeHazardAlertId`) and the
+    // rider would see the alert flash again ~1 sec after tapping
+    // Confirm.
+    expect(mirrorClosestHazardAlert([nearby()], riderLocation, 750)).toBe(
+      "noop",
+    );
+    expect(bridge.presentAlert).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-fires the alert when a confirmed hazard exits and re-enters proximity", () => {
+    mirrorClosestHazardAlert([nearby()], riderLocation, 750);
+    bridge.lastAlertCallbacks?.onConfirm();
+    expect(bridge.presentAlert).toHaveBeenCalledTimes(1);
+
+    // Rider rides away — hazard leaves the radius. The orchestrator
+    // clears the confirmed entry as a side effect of the radius pass.
+    expect(mirrorClosestHazardAlert([farAway()], riderLocation, 750)).toBe(
+      "noop",
+    );
+
+    // Rider doubles back, hazard is in range again. Should re-alert.
+    expect(mirrorClosestHazardAlert([nearby()], riderLocation, 750)).toBe(
+      "presented",
+    );
+    expect(bridge.presentAlert).toHaveBeenCalledTimes(2);
+  });
+
+  it("clears confirmed entries when a hazard disappears from the nearby list entirely", () => {
+    mirrorClosestHazardAlert([nearby()], riderLocation, 750);
+    bridge.lastAlertCallbacks?.onConfirm();
+
+    // Server expires the hazard mid-ride — it drops out of nearby.
+    // The orchestrator should clear its confirmed entry so a fresh
+    // hazard reusing that id later (very unlikely but defensive)
+    // would not be silently snoozed.
+    mirrorClosestHazardAlert([], riderLocation, 750);
+
+    expect(mirrorClosestHazardAlert([nearby()], riderLocation, 750)).toBe(
+      "presented",
+    );
+    expect(bridge.presentAlert).toHaveBeenCalledTimes(2);
   });
 
   it("clears a stale standing alert when the closest in-range hazard is now dismissed-only", () => {
