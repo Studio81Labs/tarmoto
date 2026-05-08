@@ -107,11 +107,22 @@ export const AGREEMENT_SNAPSHOT_TTL_MS = 60 * 60 * 1000;
  * back to the lowercased full string when the model string is short
  * or unrecognised so two distinct devices never collapse into one
  * bucket on a vendor we haven't taught the bucketer about.
+ *
+ * Returns `null` when the model string is missing or blank — the
+ * cross-device agreement metric MUST skip these rows rather than
+ * collapse them into a synthetic `'unknown'` bucket. Otherwise a
+ * segment with two real device families plus any number of
+ * unidentified-device samples would qualify as a 3-bucket segment
+ * (spec §7.2 minimum) and inflate or deflate the launch metric.
+ * `computeAgreement` already drops null buckets, mirroring how
+ * missing `bike_id` is handled for the cross-bike metric.
  */
-export function deviceFamily(deviceModel: string | null | undefined): string {
-  if (!deviceModel) return 'unknown';
+export function deviceFamily(
+  deviceModel: string | null | undefined,
+): string | null {
+  if (!deviceModel) return null;
   const trimmed = deviceModel.trim().toLowerCase();
-  if (trimmed.length === 0) return 'unknown';
+  if (trimmed.length === 0) return null;
   if (trimmed.startsWith('iphone')) return 'iphone';
   if (trimmed.startsWith('ipad')) return 'ipad';
   if (trimmed.startsWith('samsung')) return 'samsung';

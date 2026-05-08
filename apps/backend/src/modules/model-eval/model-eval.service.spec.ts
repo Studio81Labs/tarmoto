@@ -6,6 +6,7 @@ import {
   ModelEvalService,
   computeAgreement,
 } from './model-eval.service.js';
+import { deviceFamily } from './model-eval.constants.js';
 import { ModelEvalSample } from '../../entities/model-eval-sample.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
 
@@ -405,5 +406,38 @@ describe('computeAgreement', () => {
       { segmentId: 's1', score: 5, bucket: null },
     ]);
     expect(out.segments_evaluated).toBe(0);
+  });
+});
+
+describe('deviceFamily', () => {
+  it('issue #496 — returns null for missing device_model so the agreement metric skips the bucket', () => {
+    expect(deviceFamily(null)).toBeNull();
+    expect(deviceFamily(undefined)).toBeNull();
+    expect(deviceFamily('')).toBeNull();
+    expect(deviceFamily('   ')).toBeNull();
+  });
+
+  it('buckets known vendors by their lowercase prefix', () => {
+    expect(deviceFamily('iPhone 15 Pro')).toBe('iphone');
+    expect(deviceFamily('Samsung Galaxy S24')).toBe('samsung');
+    expect(deviceFamily('Galaxy Note 20')).toBe('samsung');
+    expect(deviceFamily('Pixel 8')).toBe('pixel');
+  });
+
+  it('issue #496 — does not collapse two real device families plus a missing model into a 3-bucket segment', () => {
+    // Pre-fix: a segment hit by an iPhone, a Samsung, and an upload
+    // that omitted device_model would qualify as 3 distinct buckets
+    // (iphone / samsung / 'unknown') and inflate the cross-device
+    // launch metric. Post-fix: the missing-model row produces null,
+    // computeAgreement skips it, and the segment is correctly below
+    // the 3-distinct minimum.
+    const rows = [
+      { segmentId: 's1', score: 4, bucket: deviceFamily('iPhone 15') },
+      { segmentId: 's1', score: 4, bucket: deviceFamily('Samsung Galaxy S24') },
+      { segmentId: 's1', score: 5, bucket: deviceFamily(null) },
+    ];
+    const out = computeAgreement(rows);
+    expect(out.segments_evaluated).toBe(0);
+    expect(out.agreement_score).toBeNull();
   });
 });
