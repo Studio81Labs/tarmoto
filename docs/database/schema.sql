@@ -46,8 +46,9 @@ CREATE TABLE road_segments (
     curviness_score FLOAT DEFAULT 0,         -- 0-5, computed from geometry
     quality_score   FLOAT,                   -- 1-5, aggregated from readings
     surface_type    VARCHAR(30) DEFAULT 'unknown',  -- asphalt, concrete, cobblestone, gravel, dirt
-    reading_count   INT DEFAULT 0,           -- number of rider passes
+    reading_count   INT DEFAULT 0,           -- number of rider passes (post-filter)
     confidence      INT DEFAULT 0,           -- 0-100, increases with more readings
+    last_filtered_count INT NOT NULL DEFAULT 0, -- #495: rows dropped as >2σ outliers on the latest aggregation run
     elevation_min   FLOAT,
     elevation_max   FLOAT,
     last_updated    TIMESTAMPTZ DEFAULT NOW()
@@ -322,63 +323,133 @@ WHERE hr.is_active = TRUE AND hr.expires_at > NOW();
 -- FUNCTIONS
 -- ============================================================
 
--- Auto-update quality_score when new readings arrive
-CREATE OR REPLACE FUNCTION update_road_quality()
-RETURNS TRIGGER AS $$
+-- #495: re-aggregate a single segment, dropping readings whose
+-- quality_score deviates >2σ from the segment mean before applying
+-- recency weighting and confidence scoring (ML_MODEL_SPEC §8.3 step 1).
+-- Filtering is skipped when fewer than 3 valid readings exist
+-- (stddev_samp is undefined / trivial) or when all readings produced
+-- the same quality score (no spread).
+-- Returns the count of readings dropped on this run.
+CREATE OR REPLACE FUNCTION update_road_quality_for_segment(p_segment_id UUID)
+RETURNS INT
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_filtered_count INT := 0;
 BEGIN
-    UPDATE road_segments rs
-    SET
-        quality_score = stats.quality_score,
-        reading_count = stats.reading_count,
-        confidence = CASE
-            WHEN stats.reading_count >= 20 AND stats.unique_rider_count >= 5 THEN 100
-            WHEN stats.reading_count >= 10 THEN 90
-            WHEN stats.reading_count >= 5 THEN 70
-            WHEN stats.reading_count >= 3 THEN 50
-            WHEN stats.reading_count >= 1 THEN 20
-            ELSE 0
-        END,
-        surface_type = COALESCE(surface_mode.surface_type, rs.surface_type),
-        last_updated = NOW()
-    FROM (
+    WITH scored AS (
+        SELECT
+            sr.id,
+            sr.user_id,
+            sr.recorded_at,
+            CASE sr.classification
+                WHEN 'excellent' THEN 5.0
+                WHEN 'good'      THEN 4.0
+                WHEN 'fair'      THEN 3.0
+                WHEN 'poor'      THEN 2.0
+                WHEN 'very_poor' THEN 1.0
+            END AS quality_score
+        FROM surface_readings sr
+        WHERE sr.road_segment_id = p_segment_id
+    ),
+    valid AS (
+        SELECT * FROM scored WHERE quality_score IS NOT NULL
+    ),
+    stats AS (
+        SELECT
+            COUNT(*)::int        AS total_count,
+            AVG(quality_score)   AS mean_q,
+            stddev_samp(quality_score) AS std_q
+        FROM valid
+    ),
+    flagged AS (
+        SELECT
+            v.id,
+            v.user_id,
+            v.recorded_at,
+            v.quality_score,
+            CASE
+                WHEN s.total_count < 3 THEN false
+                WHEN s.std_q IS NULL OR s.std_q = 0 THEN false
+                WHEN ABS(v.quality_score - s.mean_q) > 2 * s.std_q THEN true
+                ELSE false
+            END AS is_outlier
+        FROM valid v
+        CROSS JOIN stats s
+    ),
+    kept AS (
+        SELECT
+            quality_score,
+            user_id,
+            CASE
+                WHEN recorded_at >= NOW() - INTERVAL '30 days'  THEN 1.0
+                WHEN recorded_at >= NOW() - INTERVAL '90 days'  THEN 0.7
+                WHEN recorded_at >= NOW() - INTERVAL '180 days' THEN 0.4
+                ELSE 0.2
+            END AS recency_weight
+        FROM flagged
+        WHERE NOT is_outlier
+    ),
+    agg AS (
         SELECT
             SUM(quality_score * recency_weight) / NULLIF(SUM(recency_weight), 0) AS quality_score,
-            COUNT(*)::int AS reading_count,
+            COUNT(*)::int                AS reading_count,
             COUNT(DISTINCT user_id)::int AS unique_rider_count
-        FROM (
-            SELECT
-                CASE classification
-                    WHEN 'excellent' THEN 5.0
-                    WHEN 'good' THEN 4.0
-                    WHEN 'fair' THEN 3.0
-                    WHEN 'poor' THEN 2.0
-                    WHEN 'very_poor' THEN 1.0
-                END AS quality_score,
-                CASE
-                    WHEN recorded_at >= NOW() - INTERVAL '30 days' THEN 1.0
-                    WHEN recorded_at >= NOW() - INTERVAL '90 days' THEN 0.7
-                    WHEN recorded_at >= NOW() - INTERVAL '180 days' THEN 0.4
-                    ELSE 0.2
-                END AS recency_weight,
-                user_id
-            FROM surface_readings
-            WHERE road_segment_id = NEW.road_segment_id
-        ) weighted_readings
-        WHERE quality_score IS NOT NULL
-    ) stats
-    LEFT JOIN LATERAL (
+        FROM kept
+    ),
+    fc AS (
+        SELECT COUNT(*)::int AS filtered_count FROM flagged WHERE is_outlier
+    ),
+    surface_mode AS (
         SELECT surface_type
         FROM surface_readings
-        WHERE road_segment_id = NEW.road_segment_id
-        AND surface_type IS NOT NULL
+        WHERE road_segment_id = p_segment_id
+          AND surface_type IS NOT NULL
         GROUP BY surface_type
         ORDER BY COUNT(*) DESC, MAX(recorded_at) DESC, surface_type ASC
         LIMIT 1
-    ) surface_mode ON TRUE
-    WHERE rs.id = NEW.road_segment_id;
+    )
+    UPDATE road_segments rs
+    SET
+        quality_score = agg.quality_score,
+        reading_count = agg.reading_count,
+        confidence = CASE
+            WHEN agg.reading_count >= 20 AND agg.unique_rider_count >= 5 THEN 100
+            WHEN agg.reading_count >= 10 THEN 90
+            WHEN agg.reading_count >= 5  THEN 70
+            WHEN agg.reading_count >= 3  THEN 50
+            WHEN agg.reading_count >= 1  THEN 20
+            ELSE 0
+        END,
+        surface_type = COALESCE((SELECT surface_type FROM surface_mode), rs.surface_type),
+        last_filtered_count = fc.filtered_count,
+        last_updated = NOW()
+    FROM agg, fc
+    WHERE rs.id = p_segment_id
+    RETURNING rs.last_filtered_count INTO v_filtered_count;
+
+    RETURN COALESCE(v_filtered_count, 0);
+END;
+$$;
+
+-- Auto-update quality_score when new readings arrive. The actual
+-- aggregation rule lives in update_road_quality_for_segment(uuid)
+-- so the trigger and the migration backfill share one definition.
+CREATE OR REPLACE FUNCTION update_road_quality()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_filtered INT;
+BEGIN
+    v_filtered := update_road_quality_for_segment(NEW.road_segment_id);
+    IF v_filtered > 0 THEN
+        RAISE LOG 'road_quality_aggregation_filtered segment=% filtered_count=%',
+            NEW.road_segment_id, v_filtered;
+    END IF;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 CREATE TRIGGER trg_update_road_quality
 AFTER INSERT ON surface_readings
