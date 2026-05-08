@@ -805,6 +805,22 @@ function maneuverPhrase(m: Maneuver, strings: PhraseStrings): string {
   return strings.maneuvers[m.type] ?? strings.maneuvers.continue;
 }
 
+/**
+ * Lowercase only the FIRST character of a maneuver phrase before
+ * splicing it mid-sentence. A blanket `.toLowerCase()` would corrupt
+ * mid-word capitalisation that carries meaning in some locales — most
+ * notably the German formal pronoun "Sie" inside phrases like
+ * "Halten Sie sich leicht links". Lowercasing the whole string would
+ * collapse that into "sie" (= "she/they"), changing the sentence's
+ * meaning. Touching only the leading character keeps the imperative
+ * verb mid-sentence ("In 300 meters, turn left") while preserving any
+ * grammatically-significant capitalisation deeper in the phrase.
+ */
+function lowercaseFirstChar(s: string): string {
+  if (s.length === 0) return s;
+  return s[0].toLowerCase() + s.slice(1);
+}
+
 function ontoPhrase(
   target: string | undefined,
   current: string | undefined,
@@ -899,7 +915,7 @@ export function phraseForAnnouncement(
       const stay = verbose ? stayHint(a.maneuver, strings) : "";
       return `${strings.warningFar
         .replace("{distance}", distance)
-        .replace("{turn}", base.toLowerCase())}${onto}${stay}.`;
+        .replace("{turn}", lowercaseFirstChar(base))}${onto}${stay}.`;
     }
     case "warning-near": {
       if (!a.maneuver) return null;

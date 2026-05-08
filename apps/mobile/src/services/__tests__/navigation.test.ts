@@ -428,6 +428,32 @@ describe("phraseForAnnouncement", () => {
     ).toBe("Za 300 metrů odbočte vlevo na Hlavní.");
   });
 
+  it("preserves the German formal pronoun 'Sie' when splicing a turn mid-sentence", () => {
+    // A blanket `.toLowerCase()` on the maneuver phrase would corrupt
+    // "Halten Sie sich leicht links" into "halten sie sich leicht
+    // links" — flipping the formal pronoun ("you") into "she/they"
+    // and producing grammatically wrong German. The phrase builder
+    // only lowercases the first character so mid-phrase
+    // capitalisation that carries meaning is preserved.
+    // (PR #509 review: bugbot low.)
+    const slightLeft = {
+      type: "turn-slight-left" as const,
+      vertexIndex: 5,
+      distanceFromStartM: 400,
+      headingChangeDeg: -30,
+    };
+    expect(
+      phraseForAnnouncement(
+        {
+          type: "warning-far",
+          maneuver: slightLeft,
+          distanceM: 287,
+        },
+        { locale: "de" },
+      ),
+    ).toBe("In 300 Metern halten Sie sich leicht links.");
+  });
+
   it("appends a 'stay left' hint on a sharp left turn in verbose mode", () => {
     const sharp = {
       ...sampleManeuver,
