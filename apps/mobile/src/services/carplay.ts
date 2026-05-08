@@ -52,6 +52,7 @@
 
 import { Platform } from "react-native";
 import { formatDurationSeconds, qualityLabel } from "@/theme";
+import type { Hazard, HazardType, LatLng } from "@/types";
 
 // ── Public types ──
 
@@ -73,6 +74,31 @@ export interface RideStatusBoard {
   qualityConfidence: number | null;
   /** Active ride type — used for the template title. */
   rideType: "free" | "commute" | "trip";
+}
+
+/**
+ * Snapshot of a single hazard projected onto the head-unit alert surface.
+ * Pure data so tests can lock in the wording without instantiating a
+ * native template.
+ */
+export interface HazardAlertSnapshot {
+  /** Stable hazard id from the backend; drives dedupe across alerts. */
+  id: string;
+  hazard_type: HazardType;
+  /** Distance from the rider's current location to the hazard, in metres. */
+  distanceMeters: number;
+  /** Optional user-supplied note from the original report. */
+  note: string | null;
+  /** Road name from the geocoded reverse lookup, when known. */
+  roadName: string | null;
+}
+
+/** One quick-action row on the CarPlay/AA list template. */
+export interface QuickActionItem {
+  /** Stable id so the head-unit can dispatch the right callback when tapped. */
+  id: "start-commute" | "stop-ride" | "report-hazard";
+  text: string;
+  detailText: string;
 }
 
 /**
@@ -131,6 +157,47 @@ export interface VehicleStatusBridge {
    * orphaned template id.
    */
   subscribeConnect(callback: () => void): () => void;
+  /**
+   * Mount a CPAlertTemplate (iOS) / AlertTemplate (Android Auto) for a
+   * route hazard. The bridge owns the lifecycle: a fresh
+   * `presentHazardAlert` call replaces the previously-presented alert
+   * (if any) so the rider sees the closest hazard, never a stack of
+   * stale ones queued behind each other on the bike display.
+   *
+   * Both platforms ship native alert templates via the package — iOS as
+   * `AlertTemplate` (CPAlertTemplate), Android via the Jetpack
+   * `AlertTemplate`. We wire confirm/dismiss callbacks so the rider can
+   * acknowledge or hide the alert with one tap on the head unit.
+   */
+  presentHazardAlert(
+    snapshot: HazardAlertSnapshot,
+    callbacks: {
+      onConfirm: () => void;
+      onDismiss: () => void;
+    },
+  ): void;
+  /** Hide whatever hazard alert is currently mounted; idempotent. */
+  dismissHazardAlert(): void;
+  /**
+   * Mount a CarPlay list / Android Auto pane template that gives the
+   * rider one-tap reach for the most common pre-ride / mid-ride
+   * actions:
+   *
+   *   - Start Commute (US-21) — pre-ride, no active ride
+   *   - Stop ride — mid-ride, idempotent if no ride is active
+   *   - Report hazard — mid-ride, jumps into the SearchTemplate
+   *
+   * The bridge dispatches `onActionPressed(id)` when the rider taps a
+   * row. The controller routes the id back into the right Zustand
+   * action / deep link. Idempotent — re-mounting with the same items
+   * just refreshes the template instead of re-issuing setRootTemplate.
+   */
+  mountQuickActions(
+    items: QuickActionItem[],
+    onActionPressed: (id: QuickActionItem["id"]) => void,
+  ): void;
+  /** Tear down the quick-actions template, if mounted. Idempotent. */
+  unmountQuickActions(): void;
 }
 
 // ── Pure formatters ──
@@ -200,6 +267,153 @@ export function formatQualityDetail(
 }
 
 /**
+ * Compute the great-circle distance between two `LatLng` points in
+ * metres using the haversine formula. Used by `selectClosestHazard`
+ * and `formatHazardDistance` so the hazard-alert surface can rank
+ * "what to show next" purely on geography without consulting the
+ * routing engine. Pure / no allocations beyond Math primitives —
+ * safe to call on every ride-store tick.
+ */
+export function distanceMetersBetween(a: LatLng, b: LatLng): number {
+  const earthRadiusMeters = 6_371_000;
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const sinDLat = Math.sin(dLat / 2);
+  const sinDLng = Math.sin(dLng / 2);
+  const h =
+    sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLng * sinDLng;
+  return 2 * earthRadiusMeters * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+/** Human-readable label for the hazard alert title row. */
+export function hazardTypeLabel(type: HazardType): string {
+  switch (type) {
+    case "pothole":
+      return "Pothole";
+    case "gravel":
+      return "Loose gravel";
+    case "oil_spill":
+      return "Oil spill";
+    case "roadworks":
+      return "Roadworks";
+    case "animals":
+      return "Animals";
+    case "police":
+      return "Police";
+    case "flooding":
+      return "Flooding";
+    case "ice":
+      return "Ice";
+    default:
+      return "Hazard";
+  }
+}
+
+/**
+ * Distance line for the hazard-alert subtitle. Below 1 km we round to
+ * 50 m granularity (matches the haptic-grain the rider experiences
+ * approaching the hazard); above we switch to single-decimal km. Off-
+ * range / non-finite collapse to "Nearby" so the rider always gets a
+ * complete sentence on the bike display.
+ */
+export function formatHazardDistance(meters: number): string {
+  if (!Number.isFinite(meters) || meters < 0) return "Nearby";
+  if (meters < 1000) {
+    const rounded = Math.max(0, Math.round(meters / 50) * 50);
+    return rounded === 0 ? "Right here" : `${rounded} m ahead`;
+  }
+  return `${(meters / 1000).toFixed(1)} km ahead`;
+}
+
+/**
+ * Pick the next hazard to alert the rider about — the one closest to
+ * the rider's current location. Returns `null` when there are no
+ * candidates or the rider has no fix yet.
+ *
+ * We deliberately don't filter by route polyline here — the hazard
+ * store's `nearbyHazards` slice is already pruned to a sane radius,
+ * and over-filtering at this layer would silently drop legitimate
+ * cross-traffic alerts (e.g. a hazard 80 m off the route on a tight
+ * urban street). The rider can dismiss anything irrelevant on the
+ * head unit with one tap.
+ */
+export function selectClosestHazard(
+  hazards: Hazard[],
+  riderLocation: LatLng | null,
+): { hazard: Hazard; distanceMeters: number } | null {
+  if (!riderLocation || hazards.length === 0) return null;
+  let best: { hazard: Hazard; distanceMeters: number } | null = null;
+  for (const hazard of hazards) {
+    const distance = distanceMetersBetween(riderLocation, {
+      lat: hazard.lat,
+      lng: hazard.lng,
+    });
+    if (!best || distance < best.distanceMeters) {
+      best = { hazard, distanceMeters: distance };
+    }
+  }
+  return best;
+}
+
+/**
+ * Project the closest hazard into the head-unit alert snapshot. Pure
+ * on the inputs so tests can lock in the projection without touching
+ * the bridge.
+ */
+export function buildHazardAlertSnapshot(
+  hazard: Hazard,
+  distanceMeters: number,
+): HazardAlertSnapshot {
+  return {
+    id: hazard.id,
+    hazard_type: hazard.hazard_type,
+    distanceMeters,
+    note: hazard.note,
+    roadName: hazard.road_name,
+  };
+}
+
+/**
+ * Build the quick-actions list shown on the head-unit pre-ride / mid-
+ * ride. Pre-ride exposes Start Commute so the rider can launch their
+ * daily route without reaching for the phone (US-17 AC #4 / US-21);
+ * mid-ride pivots to Stop ride + Report hazard so the rider always
+ * has a reachable safety affordance from the bike display.
+ */
+export function buildQuickActionItems(state: {
+  isRiding: boolean;
+  hasCommuteRoute: boolean;
+}): QuickActionItem[] {
+  if (state.isRiding) {
+    return [
+      {
+        id: "report-hazard",
+        text: "Report hazard",
+        detailText: "Open the hazard search",
+      },
+      {
+        id: "stop-ride",
+        text: "Stop ride",
+        detailText: "End the active ride",
+      },
+    ];
+  }
+  if (!state.hasCommuteRoute) {
+    return [];
+  }
+  return [
+    {
+      id: "start-commute",
+      text: "Start commute",
+      detailText: "Begin your saved route",
+    },
+  ];
+}
+
+/**
  * Build the four-row item list for the head-unit status board. Pure on
  * the inputs so tests can lock in the shape without touching the bridge.
  */
@@ -221,6 +435,29 @@ export function buildRideStatusItems(
 
 /** Stable id so iOS / Android can find the same template across updates. */
 const STATUS_TEMPLATE_ID = "tarmoto-vehicle-status-board";
+const HAZARD_ALERT_TEMPLATE_ID = "tarmoto-vehicle-hazard-alert";
+const QUICK_ACTIONS_TEMPLATE_ID = "tarmoto-vehicle-quick-actions";
+
+/**
+ * Compose the title + subtitle the alert template renders. Pure on the
+ * snapshot so the iOS / Android / test paths share a single source of
+ * truth and the bike display can never disagree with what the test
+ * suite asserts.
+ */
+export function formatHazardAlertText(snapshot: HazardAlertSnapshot): {
+  title: string;
+  subtitle: string;
+} {
+  const label = hazardTypeLabel(snapshot.hazard_type);
+  const distance = formatHazardDistance(snapshot.distanceMeters);
+  const subtitleSegments = [distance];
+  if (snapshot.roadName) subtitleSegments.push(`on ${snapshot.roadName}`);
+  if (snapshot.note) subtitleSegments.push(snapshot.note);
+  return {
+    title: label,
+    subtitle: subtitleSegments.join(" · "),
+  };
+}
 
 type CarPlayLib = typeof import("react-native-carplay");
 
@@ -252,9 +489,13 @@ function createIosBridge(): VehicleStatusBridge {
     /* eslint-disable @typescript-eslint/no-require-imports */
     const lib = require("react-native-carplay") as CarPlayLib;
     /* eslint-enable @typescript-eslint/no-require-imports */
-    const { CarPlay, InformationTemplate } = lib;
+    const { CarPlay, InformationTemplate, AlertTemplate, ListTemplate } = lib;
 
     let template: InstanceType<typeof InformationTemplate> | null = null;
+    let hazardAlertTemplate: InstanceType<typeof AlertTemplate> | null = null;
+    // Quick-actions tracking lives in the module-level controller above
+    // the bridge — the bridge just constructs the template and hands it
+    // to the host. No need to hold a reference here.
 
     return {
       isAvailable: () => CarPlay.connected,
@@ -297,6 +538,7 @@ function createIosBridge(): VehicleStatusBridge {
       subscribeDisconnect: (callback) => {
         const handler = () => {
           template = null;
+          hazardAlertTemplate = null;
           callback();
         };
         CarPlay.registerOnDisconnect(handler);
@@ -308,10 +550,93 @@ function createIosBridge(): VehicleStatusBridge {
           // previous native template is gone. Reset local state so the
           // controller re-mounts on the next ride-tick.
           template = null;
+          hazardAlertTemplate = null;
           callback();
         };
         CarPlay.registerOnConnect(handler);
         return () => CarPlay.unregisterOnConnect(handler);
+      },
+      presentHazardAlert: (snapshot, callbacks) => {
+        if (!CarPlay.connected) return;
+        // Pop any prior alert before pushing the new one — CarPlay's
+        // alert templates stack rather than replace, and a stale
+        // pothole alert behind a fresher gravel alert would hide the
+        // closer hazard from the rider once they dismissed the new
+        // one.
+        if (hazardAlertTemplate) {
+          try {
+            CarPlay.dismissTemplate(true);
+          } catch {
+            // Ignore — the host may have torn the prior alert down on
+            // its own (auto-dismiss timer, scene rebuild). Falling
+            // through to construct the fresh one is the safer default.
+          }
+        }
+        const { title, subtitle } = formatHazardAlertText(snapshot);
+        const fresh = new AlertTemplate({
+          id: HAZARD_ALERT_TEMPLATE_ID,
+          // CPAlertTemplate accepts an array of title variants ordered
+          // from richest to fallback. Surfacing the full subtitle as
+          // the first variant lets the host pick it when the bike
+          // display has the screen real estate; smaller cluster
+          // displays fall back to the hazard label alone.
+          titleVariants: [`${title} — ${subtitle}`, title],
+          actions: [
+            { id: "confirm", title: "Confirm", style: "default" },
+            { id: "dismiss", title: "Dismiss", style: "cancel" },
+          ],
+          onActionButtonPressed: ({ id }) => {
+            if (id === "confirm") callbacks.onConfirm();
+            else if (id === "dismiss") callbacks.onDismiss();
+          },
+        });
+        hazardAlertTemplate = fresh;
+        try {
+          CarPlay.presentTemplate(fresh, true);
+        } catch {
+          hazardAlertTemplate = null;
+        }
+      },
+      dismissHazardAlert: () => {
+        if (!hazardAlertTemplate) return;
+        try {
+          CarPlay.dismissTemplate(true);
+        } catch {
+          // Already gone on the native side.
+        }
+        hazardAlertTemplate = null;
+      },
+      mountQuickActions: (items, onActionPressed) => {
+        if (!CarPlay.connected) return;
+        const sections = [
+          {
+            items: items.map((item) => ({
+              id: item.id,
+              text: item.text,
+              detailText: item.detailText,
+            })),
+          },
+        ];
+        const fresh = new ListTemplate({
+          id: QUICK_ACTIONS_TEMPLATE_ID,
+          title: "Tarmoto",
+          sections,
+          onItemSelect: async ({ index }) => {
+            const picked = items[index];
+            if (picked) onActionPressed(picked.id);
+          },
+        });
+        try {
+          CarPlay.setRootTemplate(fresh, false);
+        } catch {
+          // Host already disposed — controller will re-attempt on the
+          // next tick when isAvailable() flips back true.
+        }
+      },
+      unmountQuickActions: () => {
+        // The list template doesn't have a "pop self" affordance — the
+        // controller handles the swap by calling `mountStatusBoard` /
+        // `clearStatusBoard` next. No bridge state to clear here.
       },
     };
   } catch {
@@ -324,9 +649,12 @@ function createAndroidBridge(): VehicleStatusBridge {
     /* eslint-disable @typescript-eslint/no-require-imports */
     const lib = require("react-native-carplay") as CarPlayLib;
     /* eslint-enable @typescript-eslint/no-require-imports */
-    const { CarPlay, PaneTemplate } = lib;
+    const { CarPlay, PaneTemplate, AlertTemplate, ListTemplate } = lib;
 
     let template: InstanceType<typeof PaneTemplate> | null = null;
+    let hazardAlertTemplate: InstanceType<typeof AlertTemplate> | null = null;
+    // Quick-actions tracking lives in the module-level controller above
+    // the bridge — see iOS bridge for the rationale.
     let mountedTitle: string | null = null;
 
     const buildPane = (items: StatusBoardItem[]) => ({
@@ -379,6 +707,7 @@ function createAndroidBridge(): VehicleStatusBridge {
       subscribeDisconnect: (callback) => {
         const handler = () => {
           template = null;
+          hazardAlertTemplate = null;
           mountedTitle = null;
           callback();
         };
@@ -388,11 +717,83 @@ function createAndroidBridge(): VehicleStatusBridge {
       subscribeConnect: (callback) => {
         const handler = () => {
           template = null;
+          hazardAlertTemplate = null;
           mountedTitle = null;
           callback();
         };
         CarPlay.registerOnConnect(handler);
         return () => CarPlay.unregisterOnConnect(handler);
+      },
+      presentHazardAlert: (snapshot, callbacks) => {
+        if (!CarPlay.connected) return;
+        if (hazardAlertTemplate) {
+          try {
+            CarPlay.dismissTemplate(true);
+          } catch {
+            // Host may have torn down a prior alert on its own.
+          }
+        }
+        const { title, subtitle } = formatHazardAlertText(snapshot);
+        const fresh = new AlertTemplate({
+          id: HAZARD_ALERT_TEMPLATE_ID,
+          // The Jetpack AlertTemplate parser on Android reads the same
+          // `titleVariants` field the iOS surface emits — the package
+          // bridges it to the host's `Alert.Builder.setTitle`. Treat
+          // the rich title (label + distance) as the preferred variant
+          // and fall back to the bare label for narrow displays.
+          titleVariants: [`${title} — ${subtitle}`, title],
+          actions: [
+            { id: "confirm", title: "Confirm", style: "default" },
+            { id: "dismiss", title: "Dismiss", style: "cancel" },
+          ],
+          onActionButtonPressed: ({ id }) => {
+            if (id === "confirm") callbacks.onConfirm();
+            else if (id === "dismiss") callbacks.onDismiss();
+          },
+        });
+        hazardAlertTemplate = fresh;
+        try {
+          CarPlay.presentTemplate(fresh, true);
+        } catch {
+          hazardAlertTemplate = null;
+        }
+      },
+      dismissHazardAlert: () => {
+        if (!hazardAlertTemplate) return;
+        try {
+          CarPlay.dismissTemplate(true);
+        } catch {
+          // Already gone on the native side.
+        }
+        hazardAlertTemplate = null;
+      },
+      mountQuickActions: (items, onActionPressed) => {
+        if (!CarPlay.connected) return;
+        // Android Auto's `ListTemplate` parses a flat `items` array,
+        // not the iOS `sections` shape. Building both in parallel
+        // keeps the JS bridge surface symmetric while the package's
+        // platform-specific parsers still see the field they expect.
+        const fresh = new ListTemplate({
+          id: QUICK_ACTIONS_TEMPLATE_ID,
+          title: "Tarmoto",
+          items: items.map((item) => ({
+            id: item.id,
+            text: item.text,
+            detailText: item.detailText,
+          })),
+          onItemSelect: async ({ index }) => {
+            const picked = items[index];
+            if (picked) onActionPressed(picked.id);
+          },
+        });
+        try {
+          CarPlay.setRootTemplate(fresh, false);
+        } catch {
+          // Host already disposed — controller will re-attempt next tick.
+        }
+      },
+      unmountQuickActions: () => {
+        // No bridge state to clear — controller handles the swap.
       },
     };
   } catch {
@@ -408,6 +809,10 @@ function createNoopBridge(): VehicleStatusBridge {
     clearStatusBoard: () => undefined,
     subscribeDisconnect: () => () => undefined,
     subscribeConnect: () => () => undefined,
+    presentHazardAlert: () => undefined,
+    dismissHazardAlert: () => undefined,
+    mountQuickActions: () => undefined,
+    unmountQuickActions: () => undefined,
   };
 }
 
@@ -456,6 +861,16 @@ function attachLifecycleHandlers(bridge: VehicleStatusBridge): void {
   const reset = () => {
     templateMounted = false;
     mountedTitle = null;
+    // The hazard alert / quick-actions templates also live in the same
+    // CarPlay scene that just disconnected, so their handles are stale.
+    // Drop them so the next ride-tick re-presents the alert and remounts
+    // the quick-actions list cleanly. Dismissed-hazard ids deliberately
+    // persist across reconnects: if the rider already explicitly told us
+    // to stop nagging about hazard X, a head-unit reboot shouldn't undo
+    // that decision.
+    activeHazardAlertId = null;
+    quickActionsMounted = false;
+    lastQuickActionsSignature = null;
   };
   bridge.subscribeDisconnect(reset);
   bridge.subscribeConnect(reset);
@@ -517,6 +932,108 @@ export function unmountRideStatusBoard(): void {
   mountedTitle = null;
 }
 
+// ── Hazard alert controller ──
+
+/** Last hazard id we presented, so we don't re-fire on every ride-tick. */
+let activeHazardAlertId: string | null = null;
+/** Hazards the rider explicitly dismissed — we won't re-present these. */
+const dismissedHazardIds = new Set<string>();
+
+/**
+ * Mount the hazard alert template for the given snapshot. Idempotent
+ * across ride-store ticks: re-calling with the same hazard id is a
+ * no-op so the rider doesn't see the alert flash every time the ride
+ * store ticks (currently ~1 Hz).
+ *
+ * Returns `true` when the bridge accepted the request (head-unit
+ * connected and the hazard isn't on the dismissed list), `false`
+ * otherwise. The cross-cutting hook uses the return value to skip
+ * subsequent state updates while the bridge is unreachable.
+ */
+export function presentHazardAlertOnVehicleDisplay(
+  snapshot: HazardAlertSnapshot,
+  callbacks: { onConfirm?: () => void; onDismiss?: () => void } = {},
+): boolean {
+  if (dismissedHazardIds.has(snapshot.id)) return false;
+  const bridge = getBridge();
+  if (!bridge.isAvailable()) return false;
+  if (activeHazardAlertId === snapshot.id) return true;
+  bridge.presentHazardAlert(snapshot, {
+    onConfirm: () => {
+      callbacks.onConfirm?.();
+      activeHazardAlertId = null;
+    },
+    onDismiss: () => {
+      // Remember the rider's explicit dismissal so the same hazard
+      // can't bounce back on the next tick — a rider who taps Dismiss
+      // is telling us "I see it, stop nagging me about this one".
+      // Confirmed alerts deliberately don't get added: if the rider
+      // tapped Confirm (e.g. to upvote / acknowledge) and the same
+      // hazard re-enters their proximity later, that's a fresh alert.
+      dismissedHazardIds.add(snapshot.id);
+      callbacks.onDismiss?.();
+      activeHazardAlertId = null;
+    },
+  });
+  activeHazardAlertId = snapshot.id;
+  return true;
+}
+
+/** Hide the active hazard alert template if any. Idempotent. */
+export function dismissHazardAlertOnVehicleDisplay(): void {
+  if (!activeHazardAlertId) return;
+  const bridge = getBridge();
+  if (bridge.isAvailable()) bridge.dismissHazardAlert();
+  activeHazardAlertId = null;
+}
+
+// ── Quick-actions controller ──
+
+let quickActionsMounted = false;
+let lastQuickActionsSignature: string | null = null;
+
+/**
+ * Mount the quick-actions list template on the head unit. Diff-skipped
+ * across ride-store ticks: re-calling with the same items is a no-op
+ * so we don't burn the AA host's update quota (1 update / 5 s during
+ * navigation) on identical refreshes.
+ *
+ * Returns `true` when the bridge accepted the call.
+ */
+export function mountQuickActions(
+  items: QuickActionItem[],
+  onActionPressed: (id: QuickActionItem["id"]) => void,
+): boolean {
+  const bridge = getBridge();
+  if (!bridge.isAvailable()) return false;
+  if (items.length === 0) {
+    if (quickActionsMounted) {
+      bridge.unmountQuickActions();
+      quickActionsMounted = false;
+      lastQuickActionsSignature = null;
+    }
+    return false;
+  }
+  const signature = items
+    .map((i) => `${i.id}|${i.text}|${i.detailText}`)
+    .join("\n");
+  if (quickActionsMounted && signature === lastQuickActionsSignature)
+    return true;
+  bridge.mountQuickActions(items, onActionPressed);
+  quickActionsMounted = true;
+  lastQuickActionsSignature = signature;
+  return true;
+}
+
+/** Tear down the quick-actions template. Idempotent. */
+export function unmountQuickActions(): void {
+  if (!quickActionsMounted) return;
+  const bridge = getBridge();
+  if (bridge.isAvailable()) bridge.unmountQuickActions();
+  quickActionsMounted = false;
+  lastQuickActionsSignature = null;
+}
+
 // ── Test seam ──
 
 /**
@@ -530,6 +1047,10 @@ export function __setCarPlayBridgeForTest(
   activeBridge = bridge;
   templateMounted = false;
   mountedTitle = null;
+  activeHazardAlertId = null;
+  dismissedHazardIds.clear();
+  quickActionsMounted = false;
+  lastQuickActionsSignature = null;
   // Re-arm the lifecycle handlers against the new fake so tests can
   // exercise the reconnect-after-disconnect path through the same
   // contract the production bridge uses.
@@ -545,6 +1066,10 @@ export function __resetCarPlayStateForTest(): void {
   templateMounted = false;
   mountedTitle = null;
   rideStatusSuspended = false;
+  activeHazardAlertId = null;
+  dismissedHazardIds.clear();
+  quickActionsMounted = false;
+  lastQuickActionsSignature = null;
 }
 
 /**

@@ -19,27 +19,49 @@
  *     when the host restarts) both keep the next ride-tick honest.
  */
 
+import type { Hazard, HazardType } from "@/types";
 import {
   __resetCarPlayStateForTest,
   __setCarPlayBridgeForTest,
+  buildHazardAlertSnapshot,
+  buildQuickActionItems,
   buildRideStatusItems,
-  type VehicleStatusBridge,
+  dismissHazardAlertOnVehicleDisplay,
+  distanceMetersBetween,
   formatDistanceKm,
   formatDuration,
+  formatHazardAlertText,
+  formatHazardDistance,
   formatQualityDetail,
   formatRideTypeTitle,
   formatSpeedKmh,
+  hazardTypeLabel,
+  mountQuickActions,
   mountRideStatusBoard,
+  presentHazardAlertOnVehicleDisplay,
   resumeRideStatusBoard,
-  type RideStatusBoard,
+  selectClosestHazard,
   suspendRideStatusBoard,
+  unmountQuickActions,
   unmountRideStatusBoard,
+  type HazardAlertSnapshot,
+  type QuickActionItem,
+  type RideStatusBoard,
+  type StatusBoardItem,
+  type VehicleStatusBridge,
 } from "../carplay";
 
 interface FakeBridge extends VehicleStatusBridge {
   mount: jest.Mock;
   update: jest.Mock;
   clear: jest.Mock;
+  presentAlert: jest.Mock;
+  dismissAlert: jest.Mock;
+  mountActions: jest.Mock;
+  unmountActions: jest.Mock;
+  /** Capture the latest callbacks the controller registered. */
+  lastAlertCallbacks: { onConfirm: () => void; onDismiss: () => void } | null;
+  lastActionsHandler: ((id: QuickActionItem["id"]) => void) | null;
   /** Fire any disconnect callbacks the controller has registered. */
   fireDisconnect: () => void;
   /** Fire any connect callbacks the controller has registered. */
@@ -47,15 +69,31 @@ interface FakeBridge extends VehicleStatusBridge {
 }
 
 function createFakeBridge(): FakeBridge {
-  const mount = jest.fn();
-  const update = jest.fn();
+  const mount = jest.fn<void, [{ title: string; items: StatusBoardItem[] }]>();
+  const update = jest.fn<void, [StatusBoardItem[]]>();
   const clear = jest.fn();
+  const presentAlert = jest.fn<
+    void,
+    [HazardAlertSnapshot, { onConfirm: () => void; onDismiss: () => void }]
+  >();
+  const dismissAlert = jest.fn();
+  const mountActions = jest.fn<
+    void,
+    [QuickActionItem[], (id: QuickActionItem["id"]) => void]
+  >();
+  const unmountActions = jest.fn();
   const disconnectListeners = new Set<() => void>();
   const connectListeners = new Set<() => void>();
-  return {
+  const fake: FakeBridge = {
     mount,
     update,
     clear,
+    presentAlert,
+    dismissAlert,
+    mountActions,
+    unmountActions,
+    lastAlertCallbacks: null,
+    lastActionsHandler: null,
     isAvailable: () => true,
     mountStatusBoard: mount,
     updateStatusBoard: update,
@@ -68,12 +106,45 @@ function createFakeBridge(): FakeBridge {
       connectListeners.add(cb);
       return () => connectListeners.delete(cb);
     },
+    presentHazardAlert: (snapshot, callbacks) => {
+      presentAlert(snapshot, callbacks);
+      fake.lastAlertCallbacks = callbacks;
+    },
+    dismissHazardAlert: () => {
+      dismissAlert();
+    },
+    mountQuickActions: (items, handler) => {
+      mountActions(items, handler);
+      fake.lastActionsHandler = handler;
+    },
+    unmountQuickActions: () => {
+      unmountActions();
+    },
     fireDisconnect: () => {
       for (const cb of disconnectListeners) cb();
     },
     fireConnect: () => {
       for (const cb of connectListeners) cb();
     },
+  };
+  return fake;
+}
+
+function makeHazard(overrides: Partial<Hazard> = {}): Hazard {
+  return {
+    id: "hz-1",
+    lat: 49.5,
+    lng: 18.1,
+    hazard_type: "pothole",
+    severity: "medium",
+    note: null,
+    photo_url: null,
+    confirmations: 1,
+    reporter: null,
+    road_name: null,
+    created_at: "2026-01-01T00:00:00Z",
+    expires_at: "2026-12-31T00:00:00Z",
+    ...overrides,
   };
 }
 
@@ -354,5 +425,332 @@ describe("ride status board lifecycle", () => {
     resumeRideStatusBoard();
     expect(mountRideStatusBoard(makeBoard())).toBe(true);
     expect(bridge.mount).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── Hazard alert formatters ──
+
+describe("distanceMetersBetween", () => {
+  it("returns 0 for identical points", () => {
+    expect(
+      distanceMetersBetween({ lat: 49.5, lng: 18.1 }, { lat: 49.5, lng: 18.1 }),
+    ).toBe(0);
+  });
+
+  it("matches a known great-circle distance to within 1%", () => {
+    // Ostrava (49.82, 18.26) → Prague (50.08, 14.43). Real-world ~280 km.
+    const meters = distanceMetersBetween(
+      { lat: 49.82, lng: 18.26 },
+      { lat: 50.08, lng: 14.43 },
+    );
+    expect(meters).toBeGreaterThan(275_000);
+    expect(meters).toBeLessThan(285_000);
+  });
+});
+
+describe("hazardTypeLabel", () => {
+  it.each<[HazardType, string]>([
+    ["pothole", "Pothole"],
+    ["gravel", "Loose gravel"],
+    ["oil_spill", "Oil spill"],
+    ["roadworks", "Roadworks"],
+    ["animals", "Animals"],
+    ["police", "Police"],
+    ["flooding", "Flooding"],
+    ["ice", "Ice"],
+    ["other", "Hazard"],
+  ])("maps %s to %s", (type, label) => {
+    expect(hazardTypeLabel(type)).toBe(label);
+  });
+});
+
+describe("formatHazardDistance", () => {
+  it("rounds to 50 m granularity below 1 km", () => {
+    expect(formatHazardDistance(123)).toBe("100 m ahead");
+    expect(formatHazardDistance(180)).toBe("200 m ahead");
+    expect(formatHazardDistance(950)).toBe("950 m ahead");
+  });
+
+  it("renders one-decimal kilometres at and above 1 km", () => {
+    expect(formatHazardDistance(1000)).toBe("1.0 km ahead");
+    expect(formatHazardDistance(1500)).toBe("1.5 km ahead");
+  });
+
+  it("collapses very close hazards to a single readable word", () => {
+    // Sub-25 m rounds to 0 at 50 m granularity — render "Right here"
+    // so the rider doesn't see a confusing "0 m ahead" on the bike
+    // display when the hazard is essentially under the front wheel.
+    expect(formatHazardDistance(15)).toBe("Right here");
+    expect(formatHazardDistance(0)).toBe("Right here");
+  });
+
+  it("falls back to 'Nearby' for non-finite / negative inputs", () => {
+    expect(formatHazardDistance(NaN)).toBe("Nearby");
+    expect(formatHazardDistance(-5)).toBe("Nearby");
+    expect(formatHazardDistance(Infinity)).toBe("Nearby");
+  });
+});
+
+describe("selectClosestHazard", () => {
+  const riderLocation = { lat: 49.5, lng: 18.1 };
+
+  it("returns the closest hazard from a list", () => {
+    const hazards = [
+      makeHazard({ id: "far", lat: 49.8, lng: 18.5 }),
+      makeHazard({ id: "near", lat: 49.501, lng: 18.101 }),
+      makeHazard({ id: "mid", lat: 49.6, lng: 18.2 }),
+    ];
+    const result = selectClosestHazard(hazards, riderLocation);
+    expect(result?.hazard.id).toBe("near");
+    // Rough sanity check on the distance — ~140 m for a 0.001/0.001
+    // delta near 50° latitude.
+    expect(result?.distanceMeters).toBeGreaterThan(0);
+    expect(result?.distanceMeters).toBeLessThan(200);
+  });
+
+  it("returns null when there's no fix or no hazards", () => {
+    expect(selectClosestHazard([], riderLocation)).toBeNull();
+    expect(selectClosestHazard([makeHazard()], null)).toBeNull();
+  });
+});
+
+describe("buildHazardAlertSnapshot", () => {
+  it("projects the hazard fields the bridge cares about", () => {
+    const hazard = makeHazard({
+      id: "hz-7",
+      hazard_type: "ice",
+      note: "Black ice patch",
+      road_name: "B500",
+    });
+    expect(buildHazardAlertSnapshot(hazard, 320)).toEqual({
+      id: "hz-7",
+      hazard_type: "ice",
+      distanceMeters: 320,
+      note: "Black ice patch",
+      roadName: "B500",
+    });
+  });
+});
+
+describe("formatHazardAlertText", () => {
+  it("composes title + subtitle from label, distance, road, and note", () => {
+    const snapshot = buildHazardAlertSnapshot(
+      makeHazard({
+        hazard_type: "gravel",
+        note: "Lots of loose stones",
+        road_name: "B500",
+      }),
+      450,
+    );
+    expect(formatHazardAlertText(snapshot)).toEqual({
+      title: "Loose gravel",
+      subtitle: "450 m ahead · on B500 · Lots of loose stones",
+    });
+  });
+
+  it("omits missing road / note segments", () => {
+    const snapshot = buildHazardAlertSnapshot(
+      makeHazard({ hazard_type: "pothole", note: null, road_name: null }),
+      120,
+    );
+    expect(formatHazardAlertText(snapshot)).toEqual({
+      title: "Pothole",
+      subtitle: "100 m ahead",
+    });
+  });
+});
+
+// ── Hazard alert lifecycle ──
+
+describe("hazard alert lifecycle", () => {
+  let bridge: FakeBridge;
+
+  beforeEach(() => {
+    bridge = createFakeBridge();
+    __setCarPlayBridgeForTest(bridge);
+  });
+
+  function makeSnapshot(
+    overrides: Partial<HazardAlertSnapshot> = {},
+  ): HazardAlertSnapshot {
+    return {
+      id: "hz-1",
+      hazard_type: "pothole",
+      distanceMeters: 320,
+      note: null,
+      roadName: null,
+      ...overrides,
+    };
+  }
+
+  it("presents the alert once per hazard id and dedupes subsequent ticks", () => {
+    expect(presentHazardAlertOnVehicleDisplay(makeSnapshot())).toBe(true);
+    expect(bridge.presentAlert).toHaveBeenCalledTimes(1);
+
+    // Same hazard, different distance (closer) — dedupe by id, no
+    // re-present so the rider doesn't see the alert flash on every
+    // ride-tick approaching the pothole.
+    expect(
+      presentHazardAlertOnVehicleDisplay(makeSnapshot({ distanceMeters: 200 })),
+    ).toBe(true);
+    expect(bridge.presentAlert).toHaveBeenCalledTimes(1);
+
+    // Different hazard id — fresh present.
+    expect(
+      presentHazardAlertOnVehicleDisplay(
+        makeSnapshot({ id: "hz-2", hazard_type: "gravel" }),
+      ),
+    ).toBe(true);
+    expect(bridge.presentAlert).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns false when the head unit is not connected", () => {
+    const offlineBridge = createFakeBridge();
+    offlineBridge.isAvailable = () => false;
+    __setCarPlayBridgeForTest(offlineBridge);
+
+    expect(presentHazardAlertOnVehicleDisplay(makeSnapshot())).toBe(false);
+    expect(offlineBridge.presentAlert).not.toHaveBeenCalled();
+  });
+
+  it("remembers a rider's explicit dismiss and refuses to re-present that hazard", () => {
+    presentHazardAlertOnVehicleDisplay(makeSnapshot({ id: "hz-1" }));
+    bridge.lastAlertCallbacks?.onDismiss();
+
+    // Same hazard cycles back through the nearby list — the controller
+    // must NOT re-present it on the bike display, otherwise the rider
+    // who dismissed it would see the same alert resurface every time
+    // they pass within range. Confirm-then-rebound is the right behavior
+    // (handled by the next test) but explicit-dismiss is sticky.
+    expect(
+      presentHazardAlertOnVehicleDisplay(makeSnapshot({ id: "hz-1" })),
+    ).toBe(false);
+    expect(bridge.presentAlert).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows re-presenting a confirmed hazard if it returns to proximity", () => {
+    presentHazardAlertOnVehicleDisplay(makeSnapshot({ id: "hz-1" }));
+    bridge.lastAlertCallbacks?.onConfirm();
+
+    // Confirm clears the active id but does NOT add to the dismissed
+    // set — a rider who confirmed an alert (e.g. acknowledged the
+    // pothole) and then doubled back over the same road should still
+    // get the heads-up.
+    expect(
+      presentHazardAlertOnVehicleDisplay(makeSnapshot({ id: "hz-1" })),
+    ).toBe(true);
+    expect(bridge.presentAlert).toHaveBeenCalledTimes(2);
+  });
+
+  it("dismissHazardAlertOnVehicleDisplay is idempotent and clears active id", () => {
+    dismissHazardAlertOnVehicleDisplay();
+    expect(bridge.dismissAlert).not.toHaveBeenCalled();
+
+    presentHazardAlertOnVehicleDisplay(makeSnapshot());
+    dismissHazardAlertOnVehicleDisplay();
+    expect(bridge.dismissAlert).toHaveBeenCalledTimes(1);
+
+    dismissHazardAlertOnVehicleDisplay();
+    expect(bridge.dismissAlert).toHaveBeenCalledTimes(1);
+  });
+
+  it("resets the active hazard id on a head-unit reconnect", () => {
+    presentHazardAlertOnVehicleDisplay(makeSnapshot({ id: "hz-1" }));
+    expect(bridge.presentAlert).toHaveBeenCalledTimes(1);
+
+    bridge.fireDisconnect();
+
+    // After reconnect, the previous template is gone — re-presenting
+    // the same hazard id must succeed since the bike display has no
+    // standing alert for it any more.
+    presentHazardAlertOnVehicleDisplay(makeSnapshot({ id: "hz-1" }));
+    expect(bridge.presentAlert).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ── Quick actions ──
+
+describe("buildQuickActionItems", () => {
+  it("emits Start Commute pre-ride when the rider has a saved route", () => {
+    const items = buildQuickActionItems({
+      isRiding: false,
+      hasCommuteRoute: true,
+    });
+    expect(items.map((i) => i.id)).toEqual(["start-commute"]);
+  });
+
+  it("emits an empty list pre-ride when there's no commute route", () => {
+    expect(
+      buildQuickActionItems({ isRiding: false, hasCommuteRoute: false }),
+    ).toEqual([]);
+  });
+
+  it("pivots to Stop ride + Report hazard mid-ride", () => {
+    const items = buildQuickActionItems({
+      isRiding: true,
+      hasCommuteRoute: true,
+    });
+    expect(items.map((i) => i.id)).toEqual(["report-hazard", "stop-ride"]);
+  });
+});
+
+describe("quick-actions lifecycle", () => {
+  let bridge: FakeBridge;
+  let onActionPressed: jest.Mock;
+
+  beforeEach(() => {
+    bridge = createFakeBridge();
+    __setCarPlayBridgeForTest(bridge);
+    onActionPressed = jest.fn();
+  });
+
+  function items(ids: QuickActionItem["id"][]): QuickActionItem[] {
+    return ids.map((id) => ({ id, text: id, detailText: id }));
+  }
+
+  it("mounts on first call and diff-skips identical re-mounts", () => {
+    expect(mountQuickActions(items(["start-commute"]), onActionPressed)).toBe(
+      true,
+    );
+    expect(bridge.mountActions).toHaveBeenCalledTimes(1);
+
+    // Same items — should diff-skip to respect AA's host rate-limit on
+    // template updates.
+    expect(mountQuickActions(items(["start-commute"]), onActionPressed)).toBe(
+      true,
+    );
+    expect(bridge.mountActions).toHaveBeenCalledTimes(1);
+
+    // Different items — re-mount.
+    expect(
+      mountQuickActions(items(["report-hazard", "stop-ride"]), onActionPressed),
+    ).toBe(true);
+    expect(bridge.mountActions).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns false and unmounts when given an empty list", () => {
+    mountQuickActions(items(["start-commute"]), onActionPressed);
+    expect(mountQuickActions([], onActionPressed)).toBe(false);
+    expect(bridge.unmountActions).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards the rider's action selection to the host callback", () => {
+    mountQuickActions(items(["start-commute"]), onActionPressed);
+    bridge.lastActionsHandler?.("start-commute");
+    expect(onActionPressed).toHaveBeenCalledWith("start-commute");
+  });
+
+  it("unmount is idempotent and short-circuits when the head unit is offline", () => {
+    unmountQuickActions();
+    expect(bridge.unmountActions).not.toHaveBeenCalled();
+
+    mountQuickActions(items(["start-commute"]), onActionPressed);
+    unmountQuickActions();
+    expect(bridge.unmountActions).toHaveBeenCalledTimes(1);
+
+    // Second unmount is a no-op so a stop dispatched twice doesn't
+    // double-pop the head unit's screen stack.
+    unmountQuickActions();
+    expect(bridge.unmountActions).toHaveBeenCalledTimes(1);
   });
 });

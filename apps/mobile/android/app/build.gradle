@@ -121,4 +121,22 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
+    // US-17 — Android Auto (Jetpack Car App library).
+    //
+    // `react-native-carplay` autolinks `androidx.car.app:app` transitively,
+    // but declaring it explicitly here makes the AA dependency visible to
+    // gradle's `dependencies` task and to a security/SBOM scan that diffs
+    // the app module in isolation. The CarAppService subclass that lights
+    // up the head-unit Screen/NavigationTemplate path is contributed by
+    // the package's android module — see `node_modules/react-native-carplay/
+    // android/src/main/java/.../RNCarPlayService.kt` — and merged into the
+    // app's manifest at build time, so we don't subclass it here.
+    //
+    // Pinned to 1.4.0 (the floor that exposes `androidx.car.app.notification`
+    // for hazard markers + the navigation template surface — older 1.2.x
+    // releases lack the `NavigationTemplate` API the package targets).
+    // The value is intentionally a hard pin rather than a `+` so a silent
+    // bump can't break the head-unit template parse path between releases.
+    implementation("androidx.car.app:app:1.4.0")
 }
