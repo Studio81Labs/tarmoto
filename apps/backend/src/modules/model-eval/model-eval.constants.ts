@@ -50,6 +50,28 @@ export const RECONCILE_MIN_READINGS = 5;
 export const RECONCILE_MIN_UNIQUE_RIDERS = 3;
 
 /**
+ * Hard cap on the candidate set the reconciliation query inspects
+ * per tick BEFORE the leave-one-out join (codex review). The cheap
+ * gross-threshold pre-filter alone is unbounded: when the backlog
+ * accumulates many pending samples whose segments pass the gross
+ * threshold but still fail the LOO unique-rider predicate (e.g.
+ * segments dominated by the sample's own rider), every hourly tick
+ * would otherwise join the entire pending set against
+ * `surface_readings` even though only `RECONCILE_BATCH_LIMIT` rows
+ * can be written.
+ *
+ * Sized at 5x the typical 1000-row reconcile batch so the LOO
+ * predicate has room to drop a majority of candidates without
+ * starving the post-LOO LIMIT. Candidates are ordered FIFO by
+ * `created_at` so newer rows aren't preferred over older ones; the
+ * downstream LOO filter handles the "permanently un-reconcilable
+ * head of queue" case by dropping those rows here too — they sit
+ * in the candidate window until enough independent confirmations
+ * arrive on their segment, which is the spec-aligned outcome.
+ */
+export const RECONCILE_CANDIDATE_CAP = 5000;
+
+/**
  * 24h rolling alert threshold. Above this rate the reconciliation
  * processor logs at error level and the metric record is annotated
  * so the on-call dashboard surfaces it. The launch target is 1% — we

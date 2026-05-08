@@ -2,7 +2,10 @@ import { ApiProperty } from '@nestjs/swagger';
 
 /** Last cross-device or cross-bike weekly agreement score. */
 export class ModelEvalAgreementSnapshotDto {
-  @ApiProperty({ description: 'ISO timestamp the agreement was last computed' })
+  @ApiProperty({
+    description: 'ISO timestamp the agreement was last computed',
+    nullable: true,
+  })
   computed_at!: string | null;
 
   @ApiProperty({

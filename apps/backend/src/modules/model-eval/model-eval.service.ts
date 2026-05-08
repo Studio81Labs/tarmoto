@@ -9,6 +9,7 @@ import {
   CROSS_AGREEMENT_MIN_DISTINCT,
   DANGEROUS_MISCLASS_ALERT_RATE,
   DEFAULT_SAMPLE_RATE,
+  RECONCILE_CANDIDATE_CAP,
   RECONCILE_MIN_CONFIDENCE,
   RECONCILE_MIN_READINGS,
   RECONCILE_MIN_UNIQUE_RIDERS,
@@ -198,12 +199,23 @@ export class ModelEvalService {
            -- leave-one-out aggregate (LOO drops readings; LOO count
            -- is at most gross count), so failing this gate
            -- guarantees failing LOO and we can skip the expensive
-           -- subquery for those rows. NOTE: NO LIMIT here on
-           -- purpose -- the LIMIT is applied after the LOO
-           -- predicate below so a backlog of same-rider-repeat
-           -- candidates cant starve newer reconcilable samples.
+           -- subquery for those rows.
            AND rs.reading_count >= $2
            AND rs.confidence    >= $1
+         -- Hard cap on the candidate set so a backlog of pending
+         -- samples whose segments pass the gross threshold but still
+         -- fail the LOO unique-rider predicate doesn't make every
+         -- tick join the entire pending set against surface_readings
+         -- (codex review). The cap is sized at 5x the typical
+         -- reconcile batch so the LOO step still has plenty of
+         -- candidates to filter down to LIMIT $3. FIFO ordering by
+         -- created_at means oldest pending samples are inspected
+         -- first; permanently un-reconcilable rows at the head sit
+         -- in the candidate window until enough independent
+         -- confirmations arrive on their segment, which is the
+         -- spec-aligned outcome.
+         ORDER BY mes.created_at ASC
+         LIMIT $5
        ),
        loo_scored AS (
          -- Per-candidate, leave-one-out: every other reading on the
@@ -349,6 +361,7 @@ export class ModelEvalService {
         RECONCILE_MIN_READINGS,
         limit,
         RECONCILE_MIN_UNIQUE_RIDERS,
+        RECONCILE_CANDIDATE_CAP,
       ],
     );
     const rows = rawRows as Array<{

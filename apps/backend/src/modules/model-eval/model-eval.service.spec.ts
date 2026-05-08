@@ -19,7 +19,7 @@ interface FakeRepo<T> {
   __saved: T[];
 }
 
-function fakeRepo<T extends Record<string, unknown>>(): FakeRepo<T> {
+function fakeRepo<T extends object>(): FakeRepo<T> {
   const saved: T[] = [];
   const repo: FakeRepo<T> = {
     __saved: saved,
