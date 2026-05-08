@@ -49,6 +49,19 @@ export interface PendingUpload {
    */
   modelVersion: string | null;
   /**
+   * On-device preprocessing pipeline marker (issue #493) at the time
+   * the ride was captured. `null` means "no marker" — the readings
+   * were not low-pass-filtered on the client, which is the correct
+   * label for any ride queued by a pre-#493 app build that's drained
+   * after the user upgrades. Without this field the drain would tag
+   * legacy raw-axis payloads as `lp22-v1` and defeat the marker for
+   * exactly the mixed-client case it's designed to separate.
+   *
+   * Optional in the persisted blob so older queue entries deserialise
+   * to `null` rather than failing validation.
+   */
+  preprocessingVersion: string | null;
+  /**
    * Rider-asserted surface tags captured during the ride (research
    * issue #7). Optional in the persisted blob: rides queued by an app
    * build that pre-dates the tagging UI deserialise to `[]` so the
@@ -102,6 +115,7 @@ export type SensorUploader = (
   deviceModel: string,
   modelVersion: string | null,
   tagEvents: RideTagEvent[],
+  preprocessingVersion: string | null,
 ) => Promise<{ accepted: number; segments_updated: number }>;
 
 interface QueueStorage {
@@ -179,6 +193,11 @@ function readQueue(): PendingUpload[] {
       // Pre-#7 entries lack the field entirely — normalise to `[]`
       // so downstream uploaders don't need a separate optional path.
       tagEvents: entry.tagEvents ?? [],
+      // Pre-#493 entries lack this field. Normalise to `null` —
+      // those rides captured raw axes, so the on-wire marker must
+      // stay absent when they're eventually drained, matching the
+      // backend's "null = raw axes" contract.
+      preprocessingVersion: entry.preprocessingVersion ?? null,
     }));
   } catch {
     return [];
@@ -190,6 +209,7 @@ function isPendingUpload(value: unknown): value is PendingUpload {
   const v = value as Partial<PendingUpload> & {
     modelVersion?: unknown;
     tagEvents?: unknown;
+    preprocessingVersion?: unknown;
   };
   // `modelVersion` is tolerated as `undefined` so entries persisted by
   // an older app build (pre-US-3) still round-trip — they're rewritten
@@ -202,6 +222,12 @@ function isPendingUpload(value: unknown): value is PendingUpload {
   // reason (pre-#7 entries) — the read path normalises to `[]`.
   const validTagEvents =
     v.tagEvents === undefined || Array.isArray(v.tagEvents);
+  // Same backward-compat for #493: pre-#493 entries lack the field
+  // entirely and the read path normalises them to `null` (raw axes).
+  const validPreprocessingVersion =
+    v.preprocessingVersion === undefined ||
+    v.preprocessingVersion === null ||
+    typeof v.preprocessingVersion === "string";
   return (
     typeof v.id === "string" &&
     typeof v.rideId === "string" &&
@@ -209,6 +235,7 @@ function isPendingUpload(value: unknown): value is PendingUpload {
     Array.isArray(v.readings) &&
     validModelVersion &&
     validTagEvents &&
+    validPreprocessingVersion &&
     typeof v.enqueuedAt === "number" &&
     typeof v.attempts === "number"
   );
@@ -264,6 +291,7 @@ export async function submitSensorUpload(
   deviceModel: string,
   modelVersion: string | null,
   tagEvents: RideTagEvent[],
+  preprocessingVersion: string | null,
   uploader: SensorUploader,
 ): Promise<SubmitResult> {
   // Flush the backlog first so rides stay chronologically ordered on the
@@ -284,7 +312,14 @@ export async function submitSensorUpload(
     //   - networkFailed → link is down
     //   - transientServerError → backend is struggling, and shipping a
     //     fresh ride past the older queued ones would also break FIFO
-    enqueueUpload(rideId, readings, deviceModel, modelVersion, tagEvents);
+    enqueueUpload(
+      rideId,
+      readings,
+      deviceModel,
+      modelVersion,
+      tagEvents,
+      preprocessingVersion,
+    );
     return {
       status: "queued",
       accepted: 0,
@@ -300,6 +335,7 @@ export async function submitSensorUpload(
       deviceModel,
       modelVersion,
       tagEvents,
+      preprocessingVersion,
     );
     return {
       status: "uploaded",
@@ -312,7 +348,14 @@ export async function submitSensorUpload(
       // Both connectivity drops and transient server faults land here —
       // either way the correct move is to preserve the ride data and
       // retry later, not surface a blocking error to the rider.
-      enqueueUpload(rideId, readings, deviceModel, modelVersion, tagEvents);
+      enqueueUpload(
+        rideId,
+        readings,
+        deviceModel,
+        modelVersion,
+        tagEvents,
+        preprocessingVersion,
+      );
       return {
         status: "queued",
         accepted: 0,
@@ -369,6 +412,7 @@ export function drainOfflineQueue(
           next.deviceModel,
           next.modelVersion,
           next.tagEvents,
+          next.preprocessingVersion,
         );
         // Matching by id is position-independent — if enqueueUpload ran
         // while we awaited, the freshly-added entry stays intact.
@@ -430,6 +474,7 @@ export function enqueueUpload(
   deviceModel: string,
   modelVersion: string | null,
   tagEvents: RideTagEvent[] = [],
+  preprocessingVersion: string | null = null,
 ): PendingUpload {
   const entry: PendingUpload = {
     id: nextId(),
@@ -438,6 +483,7 @@ export function enqueueUpload(
     readings,
     modelVersion,
     tagEvents,
+    preprocessingVersion,
     enqueuedAt: Date.now(),
     attempts: 0,
   };

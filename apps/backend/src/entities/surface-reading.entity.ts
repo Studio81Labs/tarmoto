@@ -60,6 +60,18 @@ export class SurfaceReading {
   client_model_version!: string | null;
 
   /**
+   * Identifier of the on-device preprocessing pipeline that produced
+   * this row's `ax/ay/az` (issue #493). `null` for rows uploaded by
+   * pre-#493 clients (raw axes); `lp22-v1` for the 4th-order
+   * Butterworth low-pass at 22 Hz cutoff applied at sample ingest.
+   * Lets training exports and ML re-derivation filter or weight by
+   * preprocessing regime — without it the same field would silently
+   * carry two meanings across the rolling client release.
+   */
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  client_preprocessing_version!: string | null;
+
+  /**
    * Rider-asserted surface label resolved from the active ride's
    * `ride_tag_events` at the time this reading's window was captured
    * (research issue #7). `null` when the rider had no tag active for

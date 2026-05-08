@@ -75,6 +75,7 @@ describe("offlineQueue", () => {
         "iPhone",
         "rsc-v1.0.0",
         [],
+        null,
         uploader,
       );
 
@@ -89,6 +90,7 @@ describe("offlineQueue", () => {
         "iPhone",
         "rsc-v1.0.0",
         [],
+        null,
       );
     });
 
@@ -103,6 +105,7 @@ describe("offlineQueue", () => {
         "iPhone",
         null,
         [],
+        null,
         uploader,
       );
 
@@ -127,6 +130,7 @@ describe("offlineQueue", () => {
           "iPhone",
           null,
           [],
+          null,
           uploader,
         ),
       ).rejects.toThrow("HTTP 400");
@@ -147,6 +151,7 @@ describe("offlineQueue", () => {
         "iPhone",
         null,
         [],
+        null,
         uploader,
       );
 
@@ -169,6 +174,7 @@ describe("offlineQueue", () => {
         "iPhone",
         null,
         [],
+        null,
         uploader,
       );
 
@@ -198,6 +204,7 @@ describe("offlineQueue", () => {
         "iPhone",
         null,
         [],
+        null,
         uploader,
       );
 
@@ -226,6 +233,7 @@ describe("offlineQueue", () => {
         "iPhone",
         null,
         [],
+        null,
         uploader,
       );
 
@@ -253,6 +261,7 @@ describe("offlineQueue", () => {
         "iPhone",
         null,
         [],
+        null,
         uploader,
       );
 
@@ -261,6 +270,108 @@ describe("offlineQueue", () => {
       // Poison still waiting its next attempt; fresh was NOT queued.
       const pending = getPendingUploads();
       expect(pending.map((e) => e.rideId)).toEqual(["poison"]);
+    });
+
+    it("threads the live submit's preprocessing marker into the upload", async () => {
+      // Issue #493 — fresh rides go up with the current build's
+      // preprocessing version. Pinning here so a future change that
+      // inadvertently strips the field can't silently revert the
+      // backend back to "raw axes" for new uploads.
+      const uploader = jest.fn<
+        ReturnType<SensorUploader>,
+        Parameters<SensorUploader>
+      >(async () => ({ accepted: 1, segments_updated: 1 }));
+
+      await submitSensorUpload(
+        "ride-1",
+        [makeReading(1)],
+        "iPhone",
+        null,
+        [],
+        "lp22-v1",
+        uploader,
+      );
+
+      expect(uploader).toHaveBeenCalledWith(
+        "ride-1",
+        [makeReading(1)],
+        "iPhone",
+        null,
+        [],
+        "lp22-v1",
+      );
+    });
+
+    it("replays a queued legacy entry without overwriting its raw-axis marker", async () => {
+      // Regression: the live submit path must not replace a queued
+      // entry's `preprocessingVersion` with the current build's value
+      // when the drain replays it. A ride captured by a pre-#493
+      // build sits in the queue with `preprocessingVersion = null`
+      // (raw axes); after the user upgrades to a #493 build, the
+      // first ride-stop triggers a drain that ships the old payload
+      // — and the backend must still see "no marker / raw axes" for
+      // that one row, otherwise it gets mislabelled as filtered.
+      enqueueUpload("legacy-ride", [makeReading(1)], "iPhone", null, [], null);
+      const calls: { rideId: string; preprocessing: string | null }[] = [];
+      const uploader: SensorUploader = jest.fn(
+        async (rideId, _r, _d, _m, _t, preprocessing) => {
+          calls.push({ rideId, preprocessing });
+          return { accepted: 1, segments_updated: 0 };
+        },
+      );
+
+      await submitSensorUpload(
+        "fresh-ride",
+        [makeReading(2)],
+        "iPhone",
+        null,
+        [],
+        "lp22-v1",
+        uploader,
+      );
+
+      // Drain replays the legacy entry as raw, then the fresh ride
+      // goes live with the current build's marker.
+      expect(calls).toEqual([
+        { rideId: "legacy-ride", preprocessing: null },
+        { rideId: "fresh-ride", preprocessing: "lp22-v1" },
+      ]);
+    });
+
+    it("normalises a pre-#493 persisted entry (no preprocessingVersion field) to null on read", async () => {
+      // A blob persisted by an older app build won't include the
+      // `preprocessingVersion` field at all. The read path must
+      // tolerate the absence and surface `null` to downstream
+      // consumers — without this, the validator would reject the
+      // entry and the rider would silently lose the queued ride.
+      storage.raw.set(
+        "pending",
+        JSON.stringify([
+          {
+            id: "abc",
+            rideId: "legacy-ride",
+            deviceModel: "iPhone",
+            readings: [makeReading(1)],
+            modelVersion: null,
+            tagEvents: [],
+            // preprocessingVersion intentionally absent
+            enqueuedAt: Date.now(),
+            attempts: 0,
+          },
+        ]),
+      );
+
+      const calls: (string | null)[] = [];
+      const uploader: SensorUploader = jest.fn(
+        async (_id, _r, _d, _m, _t, preprocessing) => {
+          calls.push(preprocessing);
+          return { accepted: 1, segments_updated: 0 };
+        },
+      );
+
+      const result = await drainOfflineQueue(uploader);
+      expect(result.flushed).toBe(1);
+      expect(calls).toEqual([null]);
     });
   });
 

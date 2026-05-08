@@ -358,6 +358,57 @@ describe('SensorService', () => {
       expect(createArg.client_model_version).toBeNull();
     });
 
+    it('persists client_preprocessing_version on every row when the client sends one', async () => {
+      // Issue #493 — the mobile client always sends `lp22-v1` once the
+      // 22 Hz on-device low-pass is wired. Persisting per-row lets
+      // training queries cleanly separate raw-axis uploads (older
+      // clients, marker absent) from filtered-axis uploads.
+      const dto = {
+        ride_id: 'ride-1',
+        device_model: 'iPhone 15',
+        client_preprocessing_version: 'lp22-v1',
+        readings: Array.from({ length: 50 }, (_, i) => ({
+          t: Date.now() + i * 20,
+          ax: 0.1,
+          ay: 0.2,
+          az: 9.8,
+          lat: 49.1 + i * 0.00001,
+          lng: 16.75,
+          speed: 15,
+        })),
+      };
+
+      await service.processUpload('user-1', dto);
+
+      const createArg = (readingRepo.create as jest.Mock).mock.calls[0][0];
+      expect(createArg.client_preprocessing_version).toBe('lp22-v1');
+    });
+
+    it('persists client_preprocessing_version=null for pre-#493 (raw-axis) uploads', async () => {
+      // The marker is absent from older clients. Backend must persist
+      // null rather than fabricating a value so training queries can
+      // tell the two regimes apart.
+      const dto = {
+        ride_id: 'ride-1',
+        device_model: 'iPhone 15',
+        // client_preprocessing_version intentionally omitted.
+        readings: Array.from({ length: 50 }, (_, i) => ({
+          t: Date.now() + i * 20,
+          ax: 0.1,
+          ay: 0.2,
+          az: 9.8,
+          lat: 49.1 + i * 0.00001,
+          lng: 16.75,
+          speed: 15,
+        })),
+      };
+
+      await service.processUpload('user-1', dto);
+
+      const createArg = (readingRepo.create as jest.Mock).mock.calls[0][0];
+      expect(createArg.client_preprocessing_version).toBeNull();
+    });
+
     it('should return zero when all readings lack GPS', async () => {
       const dto = {
         ride_id: 'ride-1',

@@ -164,6 +164,12 @@ export class SensorService {
         // future change that trusts client window-level outputs filter
         // by classifier version. Null means the mobile fallback ran.
         client_model_version: dto.client_model_version ?? null,
+        // Telemetry: which on-device preprocessing pipeline produced
+        // this batch's `ax/ay/az` (issue #493). `lp22-v1` for
+        // post-filter clients, null for raw-axis clients. Persisting
+        // per-row lets training queries cleanly separate the two
+        // regimes without forcing a column-level split.
+        client_preprocessing_version: dto.client_preprocessing_version ?? null,
         // Research issue #7 — rider-asserted ground truth, kept
         // alongside the heuristic-derived columns above so research
         // queries can compare the two without re-running the join.

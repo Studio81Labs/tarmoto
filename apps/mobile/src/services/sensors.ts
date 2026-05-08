@@ -21,6 +21,7 @@ import {
 import * as mlClassifier from "./mlClassifier";
 import { LeanAngleFilter, type CalibrationStats } from "./leanAngle";
 import { computeSpectralFeatures } from "./fft";
+import { LowPassFilter } from "./sensorsFilter";
 
 const SAMPLE_RATE_MS = 20; // 50Hz
 const SAMPLE_RATE_HZ = 50;
@@ -144,6 +145,18 @@ class SensorService {
    * the first window emits — first window yields 0 m/s².
    */
   private previousSpeedMs: number | null = null;
+  // Per-axis low-pass filters (issue #493). 4th-order Butterworth at
+  // 22 Hz cutoff strips phone-vibration artefacts (case rattle, mount
+  // resonance, GPS antenna noise) from the raw 50 Hz stream before
+  // gravity-subtract, magnitude, and feature extraction. State taps
+  // are owned by the filter instance, so the 1 s window slide doesn't
+  // re-introduce a fresh edge transient on every window.
+  private accelFilterX = new LowPassFilter();
+  private accelFilterY = new LowPassFilter();
+  private accelFilterZ = new LowPassFilter();
+  private gyroFilterX = new LowPassFilter();
+  private gyroFilterY = new LowPassFilter();
+  private gyroFilterZ = new LowPassFilter();
 
   /**
    * Start recording sensor data
@@ -164,6 +177,16 @@ class SensorService {
     this.latestGyroY = null;
     this.latestGyroZ = null;
     this.previousSpeedMs = null;
+    // Reset the per-axis low-pass state so a previous ride's settling
+    // tail can't bleed into the first samples of this ride. The
+    // coefficients are static (computed once at module load) and
+    // shared across instances; only the state taps are reset here.
+    this.accelFilterX.reset();
+    this.accelFilterY.reset();
+    this.accelFilterZ.reset();
+    this.gyroFilterX.reset();
+    this.gyroFilterY.reset();
+    this.gyroFilterZ.reset();
 
     // Kick off the model load in the background. The first windows
     // arrive ~2s later, so the classifier is typically ready by then;
@@ -179,6 +202,46 @@ class SensorService {
       if (!this.isRecording) return;
 
       const t = timestamp || Date.now();
+      // Forward the **unfiltered** reading to listeners *before* the
+      // low-pass runs (US-12 crash detector). The detector's 4 g /
+      // 100 ms thresholds are tuned for the raw 50 Hz stream — the
+      // IIR edge response of the 22 Hz Butterworth attenuates the
+      // first samples of a sharp impact enough that a near-threshold
+      // crash can fail the sustained-spike check. `subscribeReadings`
+      // is documented as the raw stream and we keep that promise here.
+      // Errors in a listener must not break the sensor pipeline —
+      // swallow per-listener so a bug in the detector can't stop a
+      // ride from collecting road-quality data.
+      if (this.readingListeners.size > 0) {
+        const rawReading: SensorReading = {
+          t,
+          ax: x,
+          ay: y,
+          az: z,
+          lat: this.currentLat,
+          lng: this.currentLng,
+          speed: this.currentSpeed / 3.6,
+        };
+        for (const listener of this.readingListeners) {
+          try {
+            listener(rawReading);
+          } catch {
+            // ignore — listener is responsible for its own error handling
+          }
+        }
+      }
+
+      // Apply the 22 Hz low-pass on every axis before any downstream
+      // use (issue #493). Filtering at ingest means the lean filter,
+      // the per-window features, AND the upload payload all see the
+      // same anti-vibration signal. ML_MODEL_SPEC §6.1 explicitly
+      // orders this step before gravity subtraction and magnitude.
+      // The crash detector is the one consumer that needs the raw
+      // axes — it gets them via the listener path above.
+      const ax = this.accelFilterX.process(x);
+      const ay = this.accelFilterY.process(y);
+      const az = this.accelFilterZ.process(z);
+
       // Update the orientation filter on every accelerometer tick. The
       // gyro stream is faster than the accel stream on some devices,
       // so we use the most recent gyro reading (or 0 if no gyro tick
@@ -193,9 +256,9 @@ class SensorService {
       const gy = this.latestGyroY ?? 0;
       const gz = this.latestGyroZ ?? 0;
       const leanDeg = this.leanFilter.update({
-        ax: x,
-        ay: y,
-        az: z,
+        ax,
+        ay,
+        az,
         gx,
         gy,
         gz,
@@ -204,9 +267,9 @@ class SensorService {
 
       const reading: SensorReading = {
         t,
-        ax: x,
-        ay: y,
-        az: z,
+        ax,
+        ay,
+        az,
         lat: this.currentLat,
         lng: this.currentLng,
         speed: this.currentSpeed / 3.6, // store as m/s
@@ -222,20 +285,6 @@ class SensorService {
       this.buffer.push(reading);
       this.rawReadings.push(reading);
 
-      // Forward the raw reading to subscribed listeners (US-12 crash
-      // detector). Errors in a listener must not break the sensor
-      // pipeline — swallow per-listener so a bug in the detector can't
-      // stop a ride from collecting road-quality data.
-      if (this.readingListeners.size > 0) {
-        for (const listener of this.readingListeners) {
-          try {
-            listener(reading);
-          } catch {
-            // ignore — listener is responsible for its own error handling
-          }
-        }
-      }
-
       // Process window when we have enough samples
       if (this.buffer.length >= WINDOW_SIZE) {
         const window = this.buffer.slice(0, WINDOW_SIZE);
@@ -249,12 +298,20 @@ class SensorService {
 
     // Gyroscope stream (merge into readings)
     this.gyroSub = gyroscope.subscribe(({ x, y, z }) => {
+      // Same 22 Hz low-pass as the accelerometer (issue #493). Mount
+      // resonance and case rattle land on both sensor frames, so the
+      // gyroscope handlebar-vibration metric needs the cleanup just as
+      // much as the accel features (and #492's spectral features).
+      const gx = this.gyroFilterX.process(x);
+      const gy = this.gyroFilterY.process(y);
+      const gz = this.gyroFilterZ.process(z);
+
       // Attach to most recent reading
       if (this.rawReadings.length > 0) {
         const last = this.rawReadings[this.rawReadings.length - 1];
-        last.gx = x;
-        last.gy = y;
-        last.gz = z;
+        last.gx = gx;
+        last.gy = gy;
+        last.gz = gz;
       }
       // Cache the full gyro vector (rad/s) for the next accelerometer
       // tick to feed into the orientation filter. We don't update the
@@ -263,9 +320,9 @@ class SensorService {
       // `gy` / `gz` aren't used by the roll integration; they gate the
       // calibration rest-check (US-19) so yaw/pitch transients don't
       // lock in a biased offset.
-      this.latestGyroX = x;
-      this.latestGyroY = y;
-      this.latestGyroZ = z;
+      this.latestGyroX = gx;
+      this.latestGyroY = gy;
+      this.latestGyroZ = gz;
     });
   }
 
@@ -382,6 +439,14 @@ class SensorService {
    * function. The crash detector uses this to evaluate the peak-g spike
    * and immobility windows on the per-sample cadence — too fine-grained
    * for the 1-second classifier window callback.
+   *
+   * Listeners receive **unfiltered** `ax/ay/az` values verbatim from
+   * the native sensor bridge. The 22 Hz Butterworth low-pass (issue
+   * #493) only applies to the buffered/upload path; the crash
+   * detector is calibrated against the raw 50 Hz stream and the IIR
+   * edge response would otherwise mask near-threshold impacts. Gyro
+   * fields are not populated on the listener payload — the crash
+   * detector only consumes `ax/ay/az`.
    */
   subscribeReadings(listener: ReadingListener): () => void {
     this.readingListeners.add(listener);

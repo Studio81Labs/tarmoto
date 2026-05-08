@@ -23,6 +23,7 @@ jest.mock("react-native-sensors", () => ({
   SensorTypes: { accelerometer: "accelerometer", gyroscope: "gyroscope" },
 }));
 
+import { accelerometer, gyroscope } from "react-native-sensors";
 import { sensorService, type WindowFeatures } from "../sensors";
 import * as mlClassifier from "../mlClassifier";
 
@@ -417,5 +418,214 @@ describe("sensorService.extractFeatures — spectral + gyro + longitudinal (issu
     sensorService.updateLocation(0, 0, 36);
     const third = callExtract(makeStaticWindow());
     expect(third.acceleration_longitudinal).toBeCloseTo(-3, 5);
+  });
+});
+
+/**
+ * Wires the 22 Hz Butterworth low-pass into the live ingest path
+ * (issue #493). The filter has to actually run on every accel/gyro
+ * tick before the sample lands in the upload buffer — the unit-level
+ * `sensorsFilter.test.ts` covers the math; this spec covers the
+ * plumbing.
+ */
+describe("sensorService — sensor pre-processing filter (issue #493)", () => {
+  type AccelTick = { x: number; y: number; z: number; timestamp: number };
+  type AccelCallback = (tick: AccelTick) => void;
+  type GyroTick = { x: number; y: number; z: number };
+  type GyroCallback = (tick: GyroTick) => void;
+
+  const accelMock = accelerometer as unknown as {
+    subscribe: jest.Mock<{ unsubscribe: () => void }, [AccelCallback]>;
+  };
+  const gyroMock = gyroscope as unknown as {
+    subscribe: jest.Mock<{ unsubscribe: () => void }, [GyroCallback]>;
+  };
+
+  afterEach(() => {
+    if (sensorService.recording) sensorService.stop();
+    accelMock.subscribe.mockReset();
+    gyroMock.subscribe.mockReset();
+  });
+
+  it("low-pass filters ax/ay/az before the sample lands in rawReadings", () => {
+    // Drive the mocked accelerometer with a step input from rest. A
+    // 4th-order Butterworth low-pass has a non-zero settling time, so
+    // the very first sample of a step from 0 → 9.81 must come out
+    // *below* 9.81 — that's the filter doing its job. Without the
+    // filter the first reading would land at 9.81 immediately.
+    let capturedAccel: AccelCallback | null = null;
+    accelMock.subscribe.mockImplementation((cb) => {
+      capturedAccel = cb;
+      return { unsubscribe: () => undefined };
+    });
+    gyroMock.subscribe.mockImplementation(() => ({
+      unsubscribe: () => undefined,
+    }));
+    sensorService.start(() => undefined);
+    expect(capturedAccel).not.toBeNull();
+
+    capturedAccel!({ x: 0, y: 0, z: 9.81, timestamp: 1 });
+    const { readings } = sensorService.stop();
+    expect(readings).toHaveLength(1);
+    // First sample of a step on Z must be attenuated — the filter's
+    // initial response to a unit step is well below the steady value.
+    expect(readings[0].az).toBeLessThan(9.81);
+    expect(readings[0].az).toBeGreaterThan(0);
+    // X and Y were zero on input AND the filter started from zero
+    // state, so the output stays at zero.
+    expect(readings[0].ax).toBe(0);
+    expect(readings[0].ay).toBe(0);
+  });
+
+  it("filter state persists across windows so DC settles to its input", () => {
+    // Feed a constant input long enough for the filter to settle.
+    // Once settled, the output equals the input (DC gain = 1) — that
+    // also verifies coefficients aren't being recomputed per call,
+    // since recomputation would re-zero state taps every sample.
+    let capturedAccel: AccelCallback | null = null;
+    accelMock.subscribe.mockImplementation((cb) => {
+      capturedAccel = cb;
+      return { unsubscribe: () => undefined };
+    });
+    gyroMock.subscribe.mockImplementation(() => ({
+      unsubscribe: () => undefined,
+    }));
+    sensorService.start(() => undefined);
+
+    // 200 samples (4 s at 50 Hz) is well past the filter's ~50-sample
+    // settling time.
+    for (let i = 0; i < 200; i++) {
+      capturedAccel!({ x: 0, y: 0, z: 9.81, timestamp: i });
+    }
+    const { readings } = sensorService.stop();
+    const last = readings[readings.length - 1];
+    expect(last.az).toBeCloseTo(9.81, 6);
+  });
+
+  it("filters gx/gy/gz on the gyro stream", () => {
+    let capturedAccel: AccelCallback | null = null;
+    let capturedGyro: GyroCallback | null = null;
+    accelMock.subscribe.mockImplementation((cb) => {
+      capturedAccel = cb;
+      return { unsubscribe: () => undefined };
+    });
+    gyroMock.subscribe.mockImplementation((cb) => {
+      capturedGyro = cb;
+      return { unsubscribe: () => undefined };
+    });
+    sensorService.start(() => undefined);
+
+    // Push one accel sample so there's a "last reading" for the gyro
+    // tick to attach to, then a single gyro step.
+    capturedAccel!({ x: 0, y: 0, z: 9.81, timestamp: 1 });
+    capturedGyro!({ x: 1, y: 0, z: 0 });
+
+    const { readings } = sensorService.stop();
+    expect(readings).toHaveLength(1);
+    // Gyro x of 1 rad/s through a freshly-reset filter — its first-
+    // sample output is well below 1 (filter is settling).
+    expect(readings[0].gx).toBeDefined();
+    expect(readings[0].gx).toBeLessThan(1);
+    expect(readings[0].gx).toBeGreaterThanOrEqual(0);
+  });
+
+  it("resets filter state on each start() so a previous ride doesn't leak", () => {
+    // Run a ride, drive the filter to a steady non-zero state, stop,
+    // start again, feed zeros — the very first output sample must be
+    // exactly zero. If state leaked across rides it would bleed into
+    // the new ride's first windows.
+    let capturedAccel: AccelCallback | null = null;
+    accelMock.subscribe.mockImplementation((cb) => {
+      capturedAccel = cb;
+      return { unsubscribe: () => undefined };
+    });
+    gyroMock.subscribe.mockImplementation(() => ({
+      unsubscribe: () => undefined,
+    }));
+
+    sensorService.start(() => undefined);
+    for (let i = 0; i < 200; i++) {
+      capturedAccel!({ x: 1.5, y: -0.3, z: 9.81, timestamp: i });
+    }
+    sensorService.stop();
+
+    sensorService.start(() => undefined);
+    capturedAccel!({ x: 0, y: 0, z: 0, timestamp: 0 });
+    const { readings } = sensorService.stop();
+    expect(readings[0].ax).toBe(0);
+    expect(readings[0].ay).toBe(0);
+    expect(readings[0].az).toBe(0);
+  });
+
+  it("delivers unfiltered axes to subscribeReadings listeners (US-12)", () => {
+    // Regression: the 22 Hz low-pass must not reach the crash
+    // detector path. CrashDetector's 4 g / 100 ms thresholds are
+    // tuned against the raw 50 Hz stream; the IIR edge response
+    // attenuates the first samples of a step from rest, so a near-
+    // threshold impact run through the filter could fail the
+    // sustained-spike check and miss the alert. The listener payload
+    // must carry the bridge's literal ax/ay/az values.
+    let capturedAccel: AccelCallback | null = null;
+    accelMock.subscribe.mockImplementation((cb) => {
+      capturedAccel = cb;
+      return { unsubscribe: () => undefined };
+    });
+    gyroMock.subscribe.mockImplementation(() => ({
+      unsubscribe: () => undefined,
+    }));
+
+    const listenerSamples: { ax: number; ay: number; az: number }[] = [];
+    const unsubscribe = sensorService.subscribeReadings((r) => {
+      listenerSamples.push({ ax: r.ax, ay: r.ay, az: r.az });
+    });
+
+    sensorService.start(() => undefined);
+    // Step from rest — filter is settling, so buffered az is below
+    // 9.81. Listener must still see the raw 9.81 verbatim.
+    capturedAccel!({ x: 0, y: 0, z: 9.81, timestamp: 1 });
+    capturedAccel!({ x: 1.0, y: -2.0, z: 9.81, timestamp: 2 });
+
+    const { readings } = sensorService.stop();
+    unsubscribe();
+
+    expect(listenerSamples).toHaveLength(2);
+    expect(listenerSamples[0]).toEqual({ ax: 0, ay: 0, az: 9.81 });
+    expect(listenerSamples[1]).toEqual({ ax: 1.0, ay: -2.0, az: 9.81 });
+    // Buffered (filtered) reading is still attenuated for the same
+    // tick — proves the listener received raw, not filtered.
+    expect(readings[0].az).toBeLessThan(9.81);
+  });
+
+  it("delivers raw axes to listeners even after the filter has settled", () => {
+    // The unfiltered/listener split shouldn't depend on filter state.
+    // After 200 samples of constant input the filter has converged,
+    // but the listener must still see the bridge's literal value on
+    // the next tick (regression against accidentally feeding the
+    // filtered reading to listeners once the difference is small).
+    let capturedAccel: AccelCallback | null = null;
+    accelMock.subscribe.mockImplementation((cb) => {
+      capturedAccel = cb;
+      return { unsubscribe: () => undefined };
+    });
+    gyroMock.subscribe.mockImplementation(() => ({
+      unsubscribe: () => undefined,
+    }));
+
+    const listenerSamples: { ax: number; ay: number; az: number }[] = [];
+    const unsubscribe = sensorService.subscribeReadings((r) => {
+      listenerSamples.push({ ax: r.ax, ay: r.ay, az: r.az });
+    });
+
+    sensorService.start(() => undefined);
+    for (let i = 0; i < 200; i++) {
+      capturedAccel!({ x: 0, y: 0, z: 9.81, timestamp: i });
+    }
+    // Sharp impulse on the next tick — listener must report 50 verbatim.
+    capturedAccel!({ x: 0, y: 0, z: 50, timestamp: 200 });
+
+    sensorService.stop();
+    unsubscribe();
+
+    expect(listenerSamples[200]).toEqual({ ax: 0, ay: 0, az: 50 });
   });
 });

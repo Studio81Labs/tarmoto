@@ -95,6 +95,7 @@ import {
   type SubmitReviewResult,
 } from "./reviewQueue";
 import { registerForPush, unregisterPush } from "./pushRegistration";
+import { SENSOR_PREPROCESSING_VERSION } from "./sensorsFilter";
 
 /** Top-level error thrown by every facade method on a non-2xx response.
  *  Carries the HTTP status + raw body so callers can branch on auth
@@ -512,6 +513,7 @@ class ApiService {
     deviceModel: string,
     modelVersion: string | null,
     tagEvents: RideTagEvent[],
+    preprocessingVersion: string | null,
   ): Promise<{ accepted: number; segments_updated: number }> {
     const result = await client.POST("/api/v1/sensor/upload", {
       body: {
@@ -523,6 +525,15 @@ class ApiService {
         // The backend re-derives `classification` / `surface_type`
         // from raw readings regardless, so this never feeds the labels.
         client_model_version: modelVersion ?? undefined,
+        // Issue #493 — marker telling the backend whether `ax/ay/az`
+        // in every reading were low-pass-filtered on-device. Sourced
+        // from the queued payload, NOT a module constant: rides
+        // captured by a pre-#493 build and drained after the user
+        // upgrades carry raw axes and must keep their `null` /
+        // omitted marker so the backend doesn't mislabel them as
+        // filtered. `null` → omit the field (backend treats missing
+        // as "raw axes").
+        client_preprocessing_version: preprocessingVersion ?? undefined,
         readings: readings as Schemas["UploadSensorDataDto"]["readings"],
         // Research issue #7 — rider-asserted surface labels captured
         // during the ride. Omit the field entirely when none fired so
@@ -565,8 +576,14 @@ class ApiService {
       deviceModel,
       modelVersion,
       tagEvents,
-      (id, r, model, version, tags) =>
-        this.uploadSensorData(id, r, model, version, tags),
+      // Live submissions always carry the current build's preprocessing
+      // marker — the filter is always-on in the production pipeline.
+      // Replays of pre-#493 queued entries override this with the value
+      // they were captured under (or `null` for raw axes); see
+      // offlineQueue.PendingUpload.preprocessingVersion.
+      SENSOR_PREPROCESSING_VERSION,
+      (id, r, model, version, tags, preprocessing) =>
+        this.uploadSensorData(id, r, model, version, tags, preprocessing),
     );
   }
 
@@ -576,8 +593,8 @@ class ApiService {
    * connectivity watcher.
    */
   async flushPendingSensorUploads(): Promise<DrainResult> {
-    return drainOfflineQueue((id, r, model, version, tags) =>
-      this.uploadSensorData(id, r, model, version, tags),
+    return drainOfflineQueue((id, r, model, version, tags, preprocessing) =>
+      this.uploadSensorData(id, r, model, version, tags, preprocessing),
     );
   }
 

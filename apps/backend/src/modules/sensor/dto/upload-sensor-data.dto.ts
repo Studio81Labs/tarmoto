@@ -24,15 +24,29 @@ export class SensorReadingDto {
   @IsInt()
   t!: number;
 
-  @ApiProperty({ description: 'Accelerometer X (m/s²)' })
+  @ApiProperty({
+    description:
+      'Accelerometer X (m/s²). Pre-#493 clients send raw axes; ' +
+      '#493+ clients send axes filtered by an on-device 22 Hz ' +
+      'low-pass — see UploadSensorDataDto.client_preprocessing_version ' +
+      'for the marker.',
+  })
   @IsNumber()
   ax!: number;
 
-  @ApiProperty({ description: 'Accelerometer Y (m/s²)' })
+  @ApiProperty({
+    description:
+      'Accelerometer Y (m/s²). Pre-#493 clients send raw axes; ' +
+      '#493+ clients send axes filtered by an on-device 22 Hz low-pass.',
+  })
   @IsNumber()
   ay!: number;
 
-  @ApiProperty({ description: 'Accelerometer Z (m/s²)' })
+  @ApiProperty({
+    description:
+      'Accelerometer Z (m/s²). Pre-#493 clients send raw axes; ' +
+      '#493+ clients send axes filtered by an on-device 22 Hz low-pass.',
+  })
   @IsNumber()
   az!: number;
 
@@ -144,6 +158,38 @@ export class UploadSensorDataDto {
       'client_model_version must be alphanumeric with optional ._- separators',
   })
   client_model_version?: string;
+
+  /**
+   * Identifier of the on-device preprocessing pipeline that produced
+   * this batch's `ax/ay/az` (issue #493). The 22 Hz Butterworth
+   * low-pass introduced by #493 changes the on-wire meaning of the
+   * acceleration fields — pre-#493 clients send raw axes, #493+
+   * clients send filtered axes. Carrying the marker on the upload
+   * (and persisting it on each `surface_readings` row) lets training
+   * exports and ML re-derivation filter or weight by preprocessing
+   * regime without backfilling. Optional / absent means raw axes.
+   *
+   * Constrained to `^[A-Za-z0-9._-]{1,32}$` so a malicious or buggy
+   * client can't inject control characters into log lines or DB
+   * indexes that key on the column.
+   */
+  @ApiProperty({
+    required: false,
+    example: 'lp22-v1',
+    description:
+      'On-device preprocessing pipeline marker (issue #493). ' +
+      '`lp22-v1` = 4th-order Butterworth low-pass at 22 Hz cutoff ' +
+      'applied to ax/ay/az at sample ingest. Null/absent means raw ' +
+      'axes (pre-#493 clients or a profile that disabled the filter).',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  @Matches(/^[A-Za-z0-9._-]+$/, {
+    message:
+      'client_preprocessing_version must be alphanumeric with optional ._- separators',
+  })
+  client_preprocessing_version?: string;
 
   @ApiProperty({ type: [SensorReadingDto], maxItems: 5000 })
   @IsArray()
