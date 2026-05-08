@@ -365,7 +365,7 @@ export class ModelEvalService {
       const aggregateScore = Number(row.quality_score);
       const aggregateClass = scoreToClassification(aggregateScore);
       const isDangerous =
-        row.predicted_score >= 4 && Math.round(aggregateScore) <= 2;
+        row.predicted_score >= 4 && roundHalfUp(aggregateScore) <= 2;
       if (isDangerous) dangerous += 1;
 
       await this.samples.update(
@@ -587,7 +587,17 @@ export class ModelEvalService {
            CASE WHEN dangerous_misclassification = TRUE THEN 1 ELSE 0 END
          )::int AS dangerous_count,
          SUM(
-           CASE WHEN ABS(predicted_score - ROUND(aggregate_score::numeric)::int) <= 1
+           -- Use FLOOR(x + 0.5) to round half-up unambiguously,
+           -- matching JS Math.round(x) for the same domain
+           -- (cursor review). Postgres ROUND on numeric is
+           -- round-half-away-from-zero and on double precision can
+           -- be banker's rounding depending on PG version, neither
+           -- of which always agrees with Math.round; aligning both
+           -- to FLOOR(x + 0.5) prevents the persisted
+           -- aggregate_classification (rounded JS-side) from
+           -- diverging from the adjacent_count predicate over the
+           -- same row at half-integer aggregate_score values.
+           CASE WHEN ABS(predicted_score - FLOOR(aggregate_score + 0.5)::int) <= 1
                 THEN 1 ELSE 0 END
          )::int AS adjacent_count,
          AVG(ABS(predicted_score - aggregate_score))::float AS mae
@@ -664,8 +674,21 @@ function emptyAgreementSnapshot(): ModelEvalAgreementSnapshotDto {
   };
 }
 
+/**
+ * Round half-up. Aligned with the SQL `FLOOR(x + 0.5)::int`
+ * pattern used in `computeVersionMetrics`'s adjacent-accuracy
+ * predicate (cursor review): keeping the rounding rule symmetric
+ * across language boundaries prevents the persisted
+ * `aggregate_classification` from diverging from the SQL-computed
+ * `adjacent_count` over the same row at half-integer
+ * `aggregate_score` values.
+ */
+function roundHalfUp(score: number): number {
+  return Math.floor(score + 0.5);
+}
+
 function scoreToClassification(score: number): string {
-  const rounded = Math.max(1, Math.min(5, Math.round(score)));
+  const rounded = Math.max(1, Math.min(5, roundHalfUp(score)));
   switch (rounded) {
     case 5:
       return 'excellent';
