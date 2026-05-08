@@ -101,6 +101,17 @@ class EvalReport:
         }
 
 
+def _optional_str(raw: str | None) -> str | None:
+    """Normalise an optional CSV cell to `None` when the value is
+    missing, empty, or whitespace-only. Used for bucket and surface
+    columns where a whitespace string would otherwise pass as a real
+    bucket / prediction (codex review)."""
+    if raw is None:
+        return None
+    stripped = raw.strip()
+    return stripped if stripped else None
+
+
 def parse_int(raw: str, *, field_name: str) -> int:
     try:
         value = int(raw)
@@ -149,10 +160,19 @@ def load_samples(path: str) -> list[Sample]:
                     truth_quality=parse_int(
                         row["truth_quality"], field_name="truth_quality"
                     ),
-                    device_family=row.get("device_family") or None,
-                    bike_type=row.get("bike_type") or None,
-                    predicted_surface=row.get("predicted_surface") or None,
-                    truth_surface=row.get("truth_surface") or None,
+                    # Strip + coerce to None for the optional bucket
+                    # and surface columns (codex review). A
+                    # whitespace-only `device_family` or `bike_type`
+                    # would otherwise be treated as a real bucket and
+                    # could let a segment with only two known
+                    # devices/bikes qualify for the >=3-bucket launch
+                    # metric. Same normalisation for surface columns
+                    # so `surface_type_accuracy` doesn't grade
+                    # whitespace as a "populated" prediction.
+                    device_family=_optional_str(row.get("device_family")),
+                    bike_type=_optional_str(row.get("bike_type")),
+                    predicted_surface=_optional_str(row.get("predicted_surface")),
+                    truth_surface=_optional_str(row.get("truth_surface")),
                 )
             )
     if not samples:

@@ -273,6 +273,25 @@ class LoadSamplesTests(unittest.TestCase):
                 load_samples(path)
             self.assertIn("road_segment_id", str(cm.exception))
 
+    def test_whitespace_optional_bucket_columns_become_none(self) -> None:
+        """Codex review: whitespace `device_family` / `bike_type` /
+        surface columns must coerce to None so they don't get treated
+        as real buckets / predictions in the launch metrics."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "predictions.csv")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(
+                    "road_segment_id,predicted_quality,truth_quality,"
+                    "device_family,bike_type,predicted_surface,truth_surface\n"
+                )
+                fh.write("s1,4,5, ,  ,   , \n")
+            samples = load_samples(path)
+            self.assertEqual(len(samples), 1)
+            self.assertIsNone(samples[0].device_family)
+            self.assertIsNone(samples[0].bike_type)
+            self.assertIsNone(samples[0].predicted_surface)
+            self.assertIsNone(samples[0].truth_surface)
+
 
 class EvaluateAndGateTests(unittest.TestCase):
     def test_perfect_run_passes_ci_gate(self) -> None:
