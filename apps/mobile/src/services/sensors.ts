@@ -777,27 +777,6 @@ class SensorService {
   }
 
   /**
-   * Active device family for this ride (issue #494). Resolved on
-   * `start()` from the supplied device model and unchanged for the
-   * duration of the recording. Surfaced for the upload pipeline so
-   * the same encoding that goes into the model feature vector also
-   * feeds the backend's `surface_readings.device_family` column.
-   */
-  getDeviceFamily(): DeviceFamily {
-    return this.deviceFamily;
-  }
-
-  /**
-   * Read-only snapshot of the idle-baseline calibration for the
-   * current ride (issue #494). Returns `null` while the calibration
-   * window is still open, when no recording is active, or when the
-   * window was abandoned because the rider started moving before the
-   * minimum sample-count floor.
-   */
-  getCalibration(): CalibrationPayload | null {
-    return this.calibrator?.snapshot()?.payload ?? null;
-  }
-
   /**
    * Classify road quality from features.
    *

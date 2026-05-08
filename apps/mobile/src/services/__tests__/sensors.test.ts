@@ -418,7 +418,6 @@ describe("sensorService.extractFeatures — spectral + gyro + longitudinal (issu
     expect(features.device_family_pixel).toBe(0);
     expect(features.device_family_samsung_galaxy_s).toBe(0);
     expect(features.device_family_other).toBe(0);
-    expect(sensorService.getDeviceFamily()).toBe("iphone_pro");
   });
 
   it("falls back to the 'other' bucket when no device model is supplied", () => {
@@ -427,7 +426,6 @@ describe("sensorService.extractFeatures — spectral + gyro + longitudinal (issu
     const features = callExtract(makeStaticWindow());
     expect(features.device_family_other).toBe(1);
     expect(features.device_family_iphone_pro).toBe(0);
-    expect(sensorService.getDeviceFamily()).toBe("other");
   });
 
   it("computes acceleration_longitudinal from the GPS speed delta", () => {
@@ -743,6 +741,24 @@ describe("sensorService idle-baseline calibration (issue #494)", () => {
     for (const s of samples) cal.push(s);
   }
 
+  /**
+   * Read the current calibrator's snapshot. Used to assert "did the
+   * window close and produce a usable bias?" without going through
+   * `stop()` (which would tear the recording down). Returns `null`
+   * when the calibrator hasn't finished (`{} | null` guard) or when
+   * it abandoned the window. Mirrors the private-state poke pattern
+   * used by `pokeCalibrator` rather than exposing a test-only
+   * accessor on the production class.
+   */
+  function peekCalibrationSnapshot(): { payload: unknown } | null {
+    const cal = (
+      sensorService as unknown as {
+        calibrator: { snapshot(): { payload: unknown } | null } | null;
+      }
+    ).calibrator;
+    return cal?.snapshot() ?? null;
+  }
+
   function callExtract(window: Reading[]): WindowFeatures {
     return (
       sensorService as unknown as {
@@ -789,7 +805,7 @@ describe("sensorService idle-baseline calibration (issue #494)", () => {
     }
     pokeCalibrator(stationarySamples);
 
-    expect(sensorService.getCalibration()).not.toBeNull();
+    expect(peekCalibrationSnapshot()).not.toBeNull();
 
     const window: Reading[] = Array.from({ length: 100 }, (_, i) => ({
       t: 30_000 + i * 20,
@@ -837,7 +853,7 @@ describe("sensorService idle-baseline calibration (issue #494)", () => {
       });
     }
     pokeCalibrator(stationarySamples);
-    expect(sensorService.getCalibration()).not.toBeNull();
+    expect(peekCalibrationSnapshot()).not.toBeNull();
 
     // Lateral wobble: 1 m/s² oscillation on Y, gravity still on Z.
     const window: Reading[] = Array.from({ length: 100 }, (_, i) => ({
@@ -866,7 +882,7 @@ describe("sensorService idle-baseline calibration (issue #494)", () => {
     // produces ~0 deviation under either contract — but a window
     // containing a 9.0 g reading (no calibration yet) should produce
     // an obvious non-zero deviation.
-    expect(sensorService.getCalibration()).toBeNull();
+    expect(peekCalibrationSnapshot()).toBeNull();
 
     const window: Reading[] = Array.from({ length: 100 }, (_, i) => ({
       t: i * 20,
@@ -949,7 +965,7 @@ describe("sensorService idle-baseline calibration (issue #494)", () => {
 
     // The captured calibration is uploaded so the backend can persist
     // the 'poor' tag for analytics — that part stays the same.
-    expect(sensorService.getCalibration()).not.toBeNull();
+    expect(peekCalibrationSnapshot()).not.toBeNull();
 
     // Feature extraction on a static 1g window must use the
     // pre-calibration fallback (mag − 9.81 ≈ 0), NOT the contaminated
