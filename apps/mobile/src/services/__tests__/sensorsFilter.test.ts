@@ -41,6 +41,7 @@ import {
   LowPassFilter,
   SENSOR_LOWPASS_COEFFICIENTS,
   SENSOR_LOWPASS_CUTOFF_HZ,
+  SENSOR_PREPROCESSING_VERSION,
   SENSOR_SAMPLE_RATE_HZ,
 } from "../sensorsFilter";
 
@@ -147,6 +148,16 @@ describe("LowPassFilter — frequency response", () => {
     // constructor must match the module-level production constants so
     // every per-axis filter shares the same shape.
     expect(SENSOR_LOWPASS_COEFFICIENTS).toHaveLength(2);
+  });
+
+  it("ships a wire-compatible preprocessing version marker", () => {
+    // The backend DTO validates `client_preprocessing_version` against
+    // `^[A-Za-z0-9._-]{1,32}$` — a stray space, slash, or 33-char
+    // identifier would 400 every upload from this build. Pin the
+    // constraint here so the mobile constant can never drift away
+    // from what the DTO accepts.
+    expect(SENSOR_PREPROCESSING_VERSION).toMatch(/^[A-Za-z0-9._-]{1,32}$/);
+    expect(SENSOR_PREPROCESSING_VERSION).toBe("lp22-v1");
   });
 });
 

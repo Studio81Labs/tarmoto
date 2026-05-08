@@ -75,6 +75,18 @@ export interface BiquadCoefficients {
 export const SENSOR_SAMPLE_RATE_HZ = 50;
 
 /**
+ * Identifier of the on-device preprocessing pipeline applied by this
+ * module — sent as `UploadSensorDataDto.client_preprocessing_version`
+ * on every batch so the backend can tell raw-axis uploads (older
+ * clients) apart from filtered-axis uploads. Bump this when the filter
+ * shape changes (new cutoff, new order, or anything else that would
+ * make the on-wire `ax/ay/az` quantitatively incomparable to a prior
+ * release). Constrained to `^[A-Za-z0-9._-]{1,32}$` per the DTO
+ * validator.
+ */
+export const SENSOR_PREPROCESSING_VERSION = "lp22-v1";
+
+/**
  * Production low-pass cutoff (Hz). 22 Hz keeps the passband well below
  * the 25 Hz Nyquist so the bilinear-transform response distortion near
  * fs/2 doesn't reshape the road signal (≤ 20 Hz on chassis).

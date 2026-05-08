@@ -95,6 +95,7 @@ import {
   type SubmitReviewResult,
 } from "./reviewQueue";
 import { registerForPush, unregisterPush } from "./pushRegistration";
+import { SENSOR_PREPROCESSING_VERSION } from "./sensorsFilter";
 
 /** Top-level error thrown by every facade method on a non-2xx response.
  *  Carries the HTTP status + raw body so callers can branch on auth
@@ -523,6 +524,13 @@ class ApiService {
         // The backend re-derives `classification` / `surface_type`
         // from raw readings regardless, so this never feeds the labels.
         client_model_version: modelVersion ?? undefined,
+        // Issue #493 — marker telling the backend that `ax/ay/az` in
+        // every reading have been low-pass-filtered on-device. Pre-#493
+        // clients omit this field and the backend treats a missing
+        // value as "raw axes". Sent every time because the filter is
+        // always-on in the production pipeline; if a future profile
+        // disables it, drop this field for those uploads.
+        client_preprocessing_version: SENSOR_PREPROCESSING_VERSION,
         readings: readings as Schemas["UploadSensorDataDto"]["readings"],
         // Research issue #7 — rider-asserted surface labels captured
         // during the ride. Omit the field entirely when none fired so
