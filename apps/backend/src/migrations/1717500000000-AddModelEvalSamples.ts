@@ -36,8 +36,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *     swept by the privacy retention job, and the eval samples are
  *     telemetry that must not pin those rows alive.
  */
-export class AddModelEvalSamples1717300000000 implements MigrationInterface {
-  name = 'AddModelEvalSamples1717300000000';
+export class AddModelEvalSamples1717500000000 implements MigrationInterface {
+  name = 'AddModelEvalSamples1717500000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

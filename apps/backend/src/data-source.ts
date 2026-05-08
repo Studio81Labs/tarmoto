@@ -87,7 +87,7 @@ import { AddBikeNotesIconAndRideBikeId1717100000000 } from './migrations/1717100
 import { AddSurfaceReadingClientPreprocessingVersion1717200000000 } from './migrations/1717200000000-AddSurfaceReadingClientPreprocessingVersion.js';
 import { OutlierFilteredRoadQualityAggregation1717300000000 } from './migrations/1717300000000-OutlierFilteredRoadQualityAggregation.js';
 import { AddDeviceCalibration1717400000000 } from './migrations/1717400000000-AddDeviceCalibration.js';
-import { AddModelEvalSamples1717300000000 } from './migrations/1717300000000-AddModelEvalSamples.js';
+import { AddModelEvalSamples1717500000000 } from './migrations/1717500000000-AddModelEvalSamples.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -193,7 +193,7 @@ export const AppDataSource = new DataSource({
     AddSurfaceReadingClientPreprocessingVersion1717200000000,
     OutlierFilteredRoadQualityAggregation1717300000000,
     AddDeviceCalibration1717400000000,
-    AddModelEvalSamples1717300000000,
+    AddModelEvalSamples1717500000000,
   ],
   synchronize: false,
 });
