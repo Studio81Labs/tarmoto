@@ -88,6 +88,26 @@ export const QUEUE_NAMES = {
    * cell. Push-pref + quiet-hours gating happens inside `PushService`.
    */
   WEATHER_ALERT_SWEEP: 'weather-alert-sweep',
+
+  /**
+   * Recurring (hourly). Walks unreconciled `model_eval_samples`
+   * whose road segment now has the spec-§8.3 confirmation level
+   * (≥70 confidence, ≥5 readings) and folds the recency-weighted
+   * aggregate quality score into each row. Issue #496 — gives the
+   * dangerous-misclass / adjacent-accuracy / MAE gauges a rolling
+   * 24h denominator without forcing the metrics endpoint to do the
+   * join itself.
+   */
+  MODEL_EVAL_RECONCILE: 'model-eval-reconcile',
+
+  /**
+   * Recurring (weekly). Recomputes the cross-device and cross-bike
+   * agreement scores from the last 7 days of reconciled samples and
+   * caches them on the `ModelEvalService` snapshot for the metrics
+   * endpoint. Spec §7.2 thresholds (>0.80 cross-device, >0.75
+   * cross-bike).
+   */
+  MODEL_EVAL_AGREEMENT: 'model-eval-agreement',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -112,6 +132,8 @@ export const JOB_NAMES = {
   PUSH_NOTIFICATION_SEND: 'send',
   LOCATION_RETENTION_SWEEP_RUN: 'run',
   WEATHER_ALERT_SWEEP_RUN: 'run',
+  MODEL_EVAL_RECONCILE_RUN: 'run',
+  MODEL_EVAL_AGREEMENT_RUN: 'run',
 } as const;
 
 /**
@@ -131,4 +153,6 @@ export const RECURRING_PATTERNS = {
   DAILY_0230: '30 2 * * *',
   /** Weekly Monday at 04:00 — fun-zone recompute. */
   WEEKLY_MON_0400: '0 4 * * 1',
+  /** Weekly Monday at 05:00 — model-eval cross-device/bike agreement. */
+  WEEKLY_MON_0500: '0 5 * * 1',
 } as const;

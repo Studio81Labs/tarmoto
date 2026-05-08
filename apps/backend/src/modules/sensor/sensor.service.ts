@@ -7,6 +7,7 @@ import { Ride } from '../../entities/ride.entity.js';
 import { RideStats } from '../../entities/ride-stats.entity.js';
 import { RideTagEvent } from '../../entities/ride-tag-event.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
+import { ModelEvalService } from '../model-eval/model-eval.service.js';
 import {
   UploadSensorDataDto,
   SensorReadingDto,
@@ -68,6 +69,7 @@ export class SensorService {
     @InjectRepository(RideTagEvent)
     private readonly tagEventRepo: Repository<RideTagEvent>,
     private readonly privacy: PrivacyPreferencesService,
+    private readonly modelEval: ModelEvalService,
   ) {}
 
   async processUpload(
@@ -248,8 +250,32 @@ export class SensorService {
         recorded_at: segment.timestamp,
       });
 
-      await this.readingRepo.save(reading);
+      const saved = await this.readingRepo.save(reading);
       segmentsUpdated++;
+
+      // Issue #496 — feed the online ML evaluation pipeline. Sampling
+      // is rate-limited inside `maybeSample` (default 1%), and a
+      // failure here must NEVER fail the upload — it's pure
+      // telemetry. Wrapping in try/catch is appropriate here even
+      // though AGENTS.md discourages broad swallows: the path is
+      // strictly best-effort and the underlying writes are still
+      // observable through the regular logger.
+      try {
+        await this.modelEval.maybeSample({
+          surface_reading_id: saved.id,
+          road_segment_id: roadSegmentId,
+          ride_id: dto.ride_id,
+          user_id: userId,
+          model_version: dto.client_model_version ?? null,
+          device_model: dto.device_model ?? null,
+          predicted_classification: segment.classification,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          `model-eval sampling failed for reading ${saved.id}: ${msg}`,
+        );
+      }
     }
 
     return {

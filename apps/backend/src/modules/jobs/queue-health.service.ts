@@ -69,6 +69,10 @@ export class QueueHealthService {
     private readonly locationRetentionSweep: Queue,
     @InjectQueue(QUEUE_NAMES.WEATHER_ALERT_SWEEP)
     private readonly weatherAlertSweep: Queue,
+    @InjectQueue(QUEUE_NAMES.MODEL_EVAL_RECONCILE)
+    private readonly modelEvalReconcile: Queue,
+    @InjectQueue(QUEUE_NAMES.MODEL_EVAL_AGREEMENT)
+    private readonly modelEvalAgreement: Queue,
   ) {}
 
   private byName(): Record<QueueName, Queue> {
@@ -83,6 +87,8 @@ export class QueueHealthService {
       [QUEUE_NAMES.PUSH_NOTIFICATION]: this.pushNotification,
       [QUEUE_NAMES.LOCATION_RETENTION_SWEEP]: this.locationRetentionSweep,
       [QUEUE_NAMES.WEATHER_ALERT_SWEEP]: this.weatherAlertSweep,
+      [QUEUE_NAMES.MODEL_EVAL_RECONCILE]: this.modelEvalReconcile,
+      [QUEUE_NAMES.MODEL_EVAL_AGREEMENT]: this.modelEvalAgreement,
     };
   }
 

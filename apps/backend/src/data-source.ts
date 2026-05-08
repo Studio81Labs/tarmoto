@@ -39,6 +39,7 @@ import { RouteCollectionFollow } from './entities/route-collection-follow.entity
 import { WeatherAlertDispatch } from './entities/weather-alert-dispatch.entity.js';
 import { Bike } from './entities/bike.entity.js';
 import { RideTagEvent } from './entities/ride-tag-event.entity.js';
+import { ModelEvalSample } from './entities/model-eval-sample.entity.js';
 import { InitSchema1713000000000 } from './migrations/1713000000000-InitSchema.js';
 import { AddPasswordHash1713100000000 } from './migrations/1713100000000-AddPasswordHash.js';
 import { FixIsEmergencyDefault1713200000000 } from './migrations/1713200000000-FixIsEmergencyDefault.js';
@@ -86,6 +87,7 @@ import { AddBikeNotesIconAndRideBikeId1717100000000 } from './migrations/1717100
 import { AddSurfaceReadingClientPreprocessingVersion1717200000000 } from './migrations/1717200000000-AddSurfaceReadingClientPreprocessingVersion.js';
 import { OutlierFilteredRoadQualityAggregation1717300000000 } from './migrations/1717300000000-OutlierFilteredRoadQualityAggregation.js';
 import { AddDeviceCalibration1717400000000 } from './migrations/1717400000000-AddDeviceCalibration.js';
+import { AddModelEvalSamples1717300000000 } from './migrations/1717300000000-AddModelEvalSamples.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -134,6 +136,7 @@ export const AppDataSource = new DataSource({
     WeatherAlertDispatch,
     Bike,
     RideTagEvent,
+    ModelEvalSample,
   ],
   migrations: [
     // Listed in chronological order. Every migration in
@@ -190,6 +193,7 @@ export const AppDataSource = new DataSource({
     AddSurfaceReadingClientPreprocessingVersion1717200000000,
     OutlierFilteredRoadQualityAggregation1717300000000,
     AddDeviceCalibration1717400000000,
+    AddModelEvalSamples1717300000000,
   ],
   synchronize: false,
 });

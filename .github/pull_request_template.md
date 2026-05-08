@@ -49,6 +49,7 @@
 - [ ] Migration included
 - [ ] No product / process docs change
 - [ ] Docs updated
+- [ ] Model retraining: PR includes a `report.json` from `tools/ml-eval/eval.py` that passes `tools/ml-eval/ci_gate.py` (spec §7)
 
 ## Optional Codex Review Prompt
 

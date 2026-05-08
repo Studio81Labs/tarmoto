@@ -11,6 +11,7 @@ import { RideStats } from '../../entities/ride-stats.entity.js';
 import { RideTagEvent } from '../../entities/ride-tag-event.entity.js';
 import { SensorReadingDto } from './dto/upload-sensor-data.dto.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
+import { ModelEvalService } from '../model-eval/model-eval.service.js';
 
 describe('SensorService', () => {
   let service: SensorService;
@@ -27,6 +28,7 @@ describe('SensorService', () => {
     values: Partial<Ride>;
   } | null;
   let privacy: { loadPreferences: jest.Mock };
+  let modelEval: { maybeSample: jest.Mock };
 
   beforeEach(async () => {
     readingRepo = {
@@ -157,6 +159,10 @@ describe('SensorService', () => {
       }),
     };
 
+    modelEval = {
+      maybeSample: jest.fn().mockResolvedValue(null),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SensorService,
@@ -166,6 +172,7 @@ describe('SensorService', () => {
         { provide: getRepositoryToken(RideStats), useValue: statsRepo },
         { provide: getRepositoryToken(RideTagEvent), useValue: tagEventRepo },
         { provide: PrivacyPreferencesService, useValue: privacy },
+        { provide: ModelEvalService, useValue: modelEval },
       ],
     }).compile();
 
@@ -618,6 +625,63 @@ describe('SensorService', () => {
 
       const createArg = (readingRepo.create as jest.Mock).mock.calls[0][0];
       expect(createArg.surface_type).toBeNull();
+    });
+
+    it('issue #496 — invokes ModelEvalService.maybeSample with the per-segment payload after each persisted reading', async () => {
+      const dto = {
+        ride_id: 'ride-1',
+        device_model: 'iPhone 15',
+        client_model_version: 'rsc-v1.1.0',
+        readings: Array.from({ length: 50 }, (_, i) => ({
+          t: Date.now() + i * 20,
+          ax: 0.1,
+          ay: 0.2,
+          az: 9.8,
+          lat: 49.1 + i * 0.00001,
+          lng: 16.75,
+          speed: 15,
+        })),
+      };
+
+      await service.processUpload('user-1', dto);
+
+      expect(modelEval.maybeSample).toHaveBeenCalled();
+      const call = modelEval.maybeSample.mock.calls[0][0] as Record<
+        string,
+        unknown
+      >;
+      expect(call).toMatchObject({
+        road_segment_id: 'segment-1',
+        ride_id: 'ride-1',
+        user_id: 'user-1',
+        model_version: 'rsc-v1.1.0',
+        device_model: 'iPhone 15',
+        predicted_classification: 'excellent',
+      });
+    });
+
+    it('issue #496 — model-eval sampling failure does NOT fail the upload (telemetry is best-effort)', async () => {
+      modelEval.maybeSample.mockRejectedValue(
+        new Error('database unreachable'),
+      );
+      const dto = {
+        ride_id: 'ride-1',
+        device_model: 'iPhone 15',
+        client_model_version: 'rsc-v1.1.0',
+        readings: Array.from({ length: 50 }, (_, i) => ({
+          t: Date.now() + i * 20,
+          ax: 0.1,
+          ay: 0.2,
+          az: 9.8,
+          lat: 49.1 + i * 0.00001,
+          lng: 16.75,
+          speed: 15,
+        })),
+      };
+
+      const result = await service.processUpload('user-1', dto);
+      expect(result.accepted).toBe(50);
+      expect(result.segments_updated).toBeGreaterThanOrEqual(1);
     });
   });
 

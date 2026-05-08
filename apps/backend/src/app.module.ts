@@ -41,6 +41,7 @@ import { GroupRidesModule } from './modules/group-rides/index.js';
 import { JobsModule } from './modules/jobs/index.js';
 import { PushModule } from './modules/push/index.js';
 import { StorageModule } from './modules/storage/index.js';
+import { ModelEvalModule } from './modules/model-eval/index.js';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { StorageModule } from './modules/storage/index.js';
     JobsModule.forRoot(),
     UsersModule,
     HazardsModule,
+    ModelEvalModule,
     SensorModule,
     RoadsModule,
     SharingModule,

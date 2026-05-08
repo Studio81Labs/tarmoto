@@ -6,6 +6,7 @@ import { Ride } from '../../entities/ride.entity.js';
 import { RideStats } from '../../entities/ride-stats.entity.js';
 import { RideTagEvent } from '../../entities/ride-tag-event.entity.js';
 import { AccountModule } from '../account/index.js';
+import { ModelEvalModule } from '../model-eval/index.js';
 import { SensorController } from './sensor.controller.js';
 import { SensorService } from './sensor.service.js';
 
@@ -19,6 +20,7 @@ import { SensorService } from './sensor.service.js';
       RideTagEvent,
     ]),
     AccountModule,
+    ModelEvalModule,
   ],
   controllers: [SensorController],
   providers: [SensorService],
