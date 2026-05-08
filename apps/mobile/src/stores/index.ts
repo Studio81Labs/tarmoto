@@ -441,10 +441,44 @@ const DEFAULT_MIN_QUALITY = 3; // "Fair or better" — matches UserPreferences d
 const FUEL_RANGE_KEY = "fuelRangeKm";
 const WEATHER_ALERTS_ENABLED_KEY = "weatherAlertsEnabled";
 const DEFAULT_WEATHER_ALERTS_ENABLED = true;
+const VOICE_NAV_ENABLED_KEY = "voiceNavEnabled";
+const DEFAULT_VOICE_NAV_ENABLED = true;
+const VOICE_NAV_VOLUME_KEY = "voiceNavVolume";
+const DEFAULT_VOICE_NAV_VOLUME = 1; // 0..1, applied per-utterance on Android
+const VOICE_NAV_VERBOSE_KEY = "voiceNavVerbose";
+const DEFAULT_VOICE_NAV_VERBOSE = true;
+const VOICE_NAV_LANGUAGE_KEY = "voiceNavLanguage";
+const DISTANCE_UNIT_KEY = "distanceUnit";
+
+/**
+ * Voice-navigation locale preference. `auto` resolves at announcement
+ * time from the device locale (with English fallback) so a CZ rider gets
+ * Czech without reaching for Settings, while letting riders pin a
+ * specific voice — e.g. an English-speaking visitor in CZ — by picking
+ * a fixed locale.
+ */
+export type VoiceNavLanguage = "auto" | "en" | "cs" | "sk" | "de";
+const VOICE_NAV_LANGUAGES: readonly VoiceNavLanguage[] = [
+  "auto",
+  "en",
+  "cs",
+  "sk",
+  "de",
+] as const;
+const DEFAULT_VOICE_NAV_LANGUAGE: VoiceNavLanguage = "auto";
+
+export type DistanceUnitPref = "metric" | "imperial";
+const DISTANCE_UNITS: readonly DistanceUnitPref[] = [
+  "metric",
+  "imperial",
+] as const;
+const DEFAULT_DISTANCE_UNIT: DistanceUnitPref = "metric";
 
 interface PrefsStorage {
   getNumber(key: string): number | undefined;
   set(key: string, value: number): void;
+  getString(key: string): string | undefined;
+  setString(key: string, value: string): void;
 }
 
 function createPrefsStorage(): PrefsStorage {
@@ -458,13 +492,20 @@ function createPrefsStorage(): PrefsStorage {
     return {
       getNumber: (key) => mmkv.getNumber(key),
       set: (key, value) => mmkv.set(key, value),
+      getString: (key) => mmkv.getString(key),
+      setString: (key, value) => mmkv.set(key, value),
     };
   } catch {
-    const memory = new Map<string, number>();
+    const numbers = new Map<string, number>();
+    const strings = new Map<string, string>();
     return {
-      getNumber: (key) => memory.get(key),
+      getNumber: (key) => numbers.get(key),
       set: (key, value) => {
-        memory.set(key, value);
+        numbers.set(key, value);
+      },
+      getString: (key) => strings.get(key),
+      setString: (key, value) => {
+        strings.set(key, value);
       },
     };
   }
@@ -506,6 +547,39 @@ function loadPersistedFuelRange(): number {
   return clampFuelRangeKm(raw);
 }
 
+function clampVoiceVolume(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_VOICE_NAV_VOLUME;
+  return Math.max(0, Math.min(1, value));
+}
+
+function loadPersistedVoiceVolume(): number {
+  const raw = prefsStorage.getNumber(VOICE_NAV_VOLUME_KEY);
+  if (raw === undefined) return DEFAULT_VOICE_NAV_VOLUME;
+  return clampVoiceVolume(raw);
+}
+
+function loadPersistedVoiceLanguage(): VoiceNavLanguage {
+  const raw = prefsStorage.getString(VOICE_NAV_LANGUAGE_KEY);
+  if (
+    raw !== undefined &&
+    (VOICE_NAV_LANGUAGES as readonly string[]).includes(raw)
+  ) {
+    return raw as VoiceNavLanguage;
+  }
+  return DEFAULT_VOICE_NAV_LANGUAGE;
+}
+
+function loadPersistedDistanceUnit(): DistanceUnitPref {
+  const raw = prefsStorage.getString(DISTANCE_UNIT_KEY);
+  if (
+    raw !== undefined &&
+    (DISTANCE_UNITS as readonly string[]).includes(raw)
+  ) {
+    return raw as DistanceUnitPref;
+  }
+  return DEFAULT_DISTANCE_UNIT;
+}
+
 interface PreferencesState {
   /** Minimum road quality (1..5) the rider wants to see in planning. */
   minQuality: number;
@@ -519,6 +593,27 @@ interface PreferencesState {
    */
   weatherAlertsEnabled: boolean;
   setWeatherAlertsEnabled: (value: boolean) => void;
+  /**
+   * US-16: turn-by-turn voice navigation. The four prefs map 1:1 to the
+   * Settings card (toggle, volume slider, language picker, verbose
+   * toggle). The voice FAB on NavigationScreen is a session-scoped
+   * override of `voiceNavEnabled` — it doesn't persist back here.
+   */
+  voiceNavEnabled: boolean;
+  setVoiceNavEnabled: (value: boolean) => void;
+  voiceNavVolume: number;
+  setVoiceNavVolume: (value: number) => void;
+  voiceNavLanguage: VoiceNavLanguage;
+  setVoiceNavLanguage: (value: VoiceNavLanguage) => void;
+  voiceNavVerbose: boolean;
+  setVoiceNavVerbose: (value: boolean) => void;
+  /**
+   * Distance / speed unit preference shared across nav prompts and the
+   * UI helpers in `@tarmoto/shared`. Backend persists in metric — this
+   * is presentation-only.
+   */
+  distanceUnit: DistanceUnitPref;
+  setDistanceUnit: (value: DistanceUnitPref) => void;
   resetPreferences: () => void;
 }
 
@@ -543,14 +638,56 @@ export const usePreferencesStore = create<PreferencesState>((set) => ({
     persistBool(WEATHER_ALERTS_ENABLED_KEY, value);
     set({ weatherAlertsEnabled: value });
   },
+  voiceNavEnabled: loadPersistedBool(
+    VOICE_NAV_ENABLED_KEY,
+    DEFAULT_VOICE_NAV_ENABLED,
+  ),
+  setVoiceNavEnabled: (value) => {
+    persistBool(VOICE_NAV_ENABLED_KEY, value);
+    set({ voiceNavEnabled: value });
+  },
+  voiceNavVolume: loadPersistedVoiceVolume(),
+  setVoiceNavVolume: (value) => {
+    const clamped = clampVoiceVolume(value);
+    prefsStorage.set(VOICE_NAV_VOLUME_KEY, clamped);
+    set({ voiceNavVolume: clamped });
+  },
+  voiceNavLanguage: loadPersistedVoiceLanguage(),
+  setVoiceNavLanguage: (value) => {
+    prefsStorage.setString(VOICE_NAV_LANGUAGE_KEY, value);
+    set({ voiceNavLanguage: value });
+  },
+  voiceNavVerbose: loadPersistedBool(
+    VOICE_NAV_VERBOSE_KEY,
+    DEFAULT_VOICE_NAV_VERBOSE,
+  ),
+  setVoiceNavVerbose: (value) => {
+    persistBool(VOICE_NAV_VERBOSE_KEY, value);
+    set({ voiceNavVerbose: value });
+  },
+  distanceUnit: loadPersistedDistanceUnit(),
+  setDistanceUnit: (value) => {
+    prefsStorage.setString(DISTANCE_UNIT_KEY, value);
+    set({ distanceUnit: value });
+  },
   resetPreferences: () => {
     prefsStorage.set(MIN_QUALITY_KEY, DEFAULT_MIN_QUALITY);
     prefsStorage.set(FUEL_RANGE_KEY, DEFAULT_FUEL_RANGE_KM);
     persistBool(WEATHER_ALERTS_ENABLED_KEY, DEFAULT_WEATHER_ALERTS_ENABLED);
+    persistBool(VOICE_NAV_ENABLED_KEY, DEFAULT_VOICE_NAV_ENABLED);
+    prefsStorage.set(VOICE_NAV_VOLUME_KEY, DEFAULT_VOICE_NAV_VOLUME);
+    prefsStorage.setString(VOICE_NAV_LANGUAGE_KEY, DEFAULT_VOICE_NAV_LANGUAGE);
+    persistBool(VOICE_NAV_VERBOSE_KEY, DEFAULT_VOICE_NAV_VERBOSE);
+    prefsStorage.setString(DISTANCE_UNIT_KEY, DEFAULT_DISTANCE_UNIT);
     set({
       minQuality: DEFAULT_MIN_QUALITY,
       fuelRangeKm: DEFAULT_FUEL_RANGE_KM,
       weatherAlertsEnabled: DEFAULT_WEATHER_ALERTS_ENABLED,
+      voiceNavEnabled: DEFAULT_VOICE_NAV_ENABLED,
+      voiceNavVolume: DEFAULT_VOICE_NAV_VOLUME,
+      voiceNavLanguage: DEFAULT_VOICE_NAV_LANGUAGE,
+      voiceNavVerbose: DEFAULT_VOICE_NAV_VERBOSE,
+      distanceUnit: DEFAULT_DISTANCE_UNIT,
     });
   },
 }));
@@ -559,6 +696,11 @@ export const PREFERENCES_DEFAULTS = {
   minQuality: DEFAULT_MIN_QUALITY,
   fuelRangeKm: DEFAULT_FUEL_RANGE_KM,
   weatherAlertsEnabled: DEFAULT_WEATHER_ALERTS_ENABLED,
+  voiceNavEnabled: DEFAULT_VOICE_NAV_ENABLED,
+  voiceNavVolume: DEFAULT_VOICE_NAV_VOLUME,
+  voiceNavLanguage: DEFAULT_VOICE_NAV_LANGUAGE,
+  voiceNavVerbose: DEFAULT_VOICE_NAV_VERBOSE,
+  distanceUnit: DEFAULT_DISTANCE_UNIT,
 } as const;
 
 // ── Commute Store ──

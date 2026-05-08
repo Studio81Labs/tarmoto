@@ -611,21 +611,254 @@ export class NavSession {
 
 // ── Phrase building for TTS ───────────────────────────────────────────────
 
-const MANEUVER_PHRASE: Record<ManeuverType, string> = {
-  depart: "Starting navigation",
-  arrive: "You have arrived",
-  continue: "Continue",
-  "turn-slight-left": "Bear left",
-  "turn-slight-right": "Bear right",
-  "turn-left": "Turn left",
-  "turn-right": "Turn right",
-  "turn-sharp-left": "Sharp left",
-  "turn-sharp-right": "Sharp right",
-  uturn: "Make a U-turn",
+/**
+ * Locales we ship voice prompts in. Beta-target riders are CZ/SK/AT, so
+ * en/cs/sk are first-class; de is nice-to-have for AT. Falling back to
+ * English keeps an unrecognised locale audible — silence is worse than
+ * a non-native phrase for a rider mid-turn.
+ */
+export type VoiceLocale = "en" | "cs" | "sk" | "de";
+
+export type DistanceUnit = "metric" | "imperial";
+
+export interface PhraseOptions {
+  /** Spoken language for the phrase. Defaults to English. */
+  locale?: VoiceLocale;
+  /**
+   * `metric` (default) speaks meters; `imperial` speaks yards rounded to
+   * the same 50-step the metric branch uses. We deliberately don't
+   * convert the actual threshold distances — the rider preferring
+   * imperial still gets the cue at 300 m, just phrased as ~330 yards.
+   */
+  unit?: DistanceUnit;
+  /**
+   * `false` strips the "onto {roadName}" suffix and any wind-down hints
+   * so the rider hears just the imperative ("Turn left now"). The
+   * default verbose mode is the full PRD phrasing.
+   */
+  verbose?: boolean;
+}
+
+interface PhraseStrings {
+  starting: string;
+  arrived: string;
+  offRoute: string;
+  onRoute: string;
+  /** Pattern with {distance} (formatted) and {turn} (lowercase phrase). */
+  warningFar: string;
+  /** Pattern with {turn}. */
+  warningNear: string;
+  /** Pattern with {target} road name. */
+  onto: string;
+  /** Pattern with {distance} (formatted). */
+  meters: string;
+  /** Pattern with {distance} (formatted). */
+  yards: string;
+  /** Phrases per maneuver type. */
+  maneuvers: Record<ManeuverType, string>;
+  /** Trailing hint for sharp turns: "stay left" / "stay right". */
+  stayLeft: string;
+  stayRight: string;
+}
+
+const STRINGS_EN: PhraseStrings = {
+  starting: "Starting navigation.",
+  arrived: "You have arrived.",
+  offRoute: "You are off route.",
+  onRoute: "Back on route.",
+  warningFar: "In {distance}, {turn}",
+  warningNear: "{turn} now",
+  onto: " onto {target}",
+  meters: "{distance} meters",
+  yards: "{distance} yards",
+  maneuvers: {
+    depart: "Starting navigation",
+    arrive: "You have arrived",
+    continue: "Continue",
+    "turn-slight-left": "Bear left",
+    "turn-slight-right": "Bear right",
+    "turn-left": "Turn left",
+    "turn-right": "Turn right",
+    "turn-sharp-left": "Sharp left",
+    "turn-sharp-right": "Sharp right",
+    uturn: "Make a U-turn",
+  },
+  stayLeft: ", stay left",
+  stayRight: ", stay right",
 };
 
-function maneuverPhrase(m: Maneuver): string {
-  return MANEUVER_PHRASE[m.type] ?? "Continue";
+const STRINGS_CS: PhraseStrings = {
+  starting: "Spouštím navigaci.",
+  arrived: "Dorazili jste do cíle.",
+  offRoute: "Sjeli jste z trasy.",
+  onRoute: "Zpět na trase.",
+  warningFar: "Za {distance} {turn}",
+  warningNear: "{turn} nyní",
+  onto: " na {target}",
+  meters: "{distance} metrů",
+  yards: "{distance} yardů",
+  maneuvers: {
+    depart: "Spouštím navigaci",
+    arrive: "Dorazili jste do cíle",
+    continue: "Pokračujte",
+    "turn-slight-left": "Mírně vlevo",
+    "turn-slight-right": "Mírně vpravo",
+    "turn-left": "Odbočte vlevo",
+    "turn-right": "Odbočte vpravo",
+    "turn-sharp-left": "Ostře vlevo",
+    "turn-sharp-right": "Ostře vpravo",
+    uturn: "Otočte se",
+  },
+  stayLeft: ", držte se vlevo",
+  stayRight: ", držte se vpravo",
+};
+
+const STRINGS_SK: PhraseStrings = {
+  starting: "Spúšťam navigáciu.",
+  arrived: "Dorazili ste do cieľa.",
+  offRoute: "Zišli ste z trasy.",
+  onRoute: "Späť na trase.",
+  warningFar: "O {distance} {turn}",
+  warningNear: "{turn} teraz",
+  onto: " na {target}",
+  meters: "{distance} metrov",
+  yards: "{distance} yardov",
+  maneuvers: {
+    depart: "Spúšťam navigáciu",
+    arrive: "Dorazili ste do cieľa",
+    continue: "Pokračujte",
+    "turn-slight-left": "Mierne vľavo",
+    "turn-slight-right": "Mierne vpravo",
+    "turn-left": "Odbočte vľavo",
+    "turn-right": "Odbočte vpravo",
+    "turn-sharp-left": "Ostro vľavo",
+    "turn-sharp-right": "Ostro vpravo",
+    uturn: "Otočte sa",
+  },
+  stayLeft: ", držte sa vľavo",
+  stayRight: ", držte sa vpravo",
+};
+
+const STRINGS_DE: PhraseStrings = {
+  starting: "Navigation gestartet.",
+  arrived: "Sie haben Ihr Ziel erreicht.",
+  offRoute: "Sie sind von der Route abgekommen.",
+  onRoute: "Zurück auf der Route.",
+  warningFar: "In {distance} {turn}",
+  warningNear: "{turn} jetzt",
+  onto: " auf {target}",
+  meters: "{distance} Metern",
+  yards: "{distance} Yards",
+  maneuvers: {
+    depart: "Navigation gestartet",
+    arrive: "Sie haben Ihr Ziel erreicht",
+    continue: "Geradeaus weiter",
+    "turn-slight-left": "Halten Sie sich leicht links",
+    "turn-slight-right": "Halten Sie sich leicht rechts",
+    "turn-left": "Links abbiegen",
+    "turn-right": "Rechts abbiegen",
+    "turn-sharp-left": "Scharf links abbiegen",
+    "turn-sharp-right": "Scharf rechts abbiegen",
+    uturn: "Wenden",
+  },
+  stayLeft: ", links halten",
+  stayRight: ", rechts halten",
+};
+
+const STRINGS_BY_LOCALE: Record<VoiceLocale, PhraseStrings> = {
+  en: STRINGS_EN,
+  cs: STRINGS_CS,
+  sk: STRINGS_SK,
+  de: STRINGS_DE,
+};
+
+/**
+ * BCP-47 locale tag for the native TTS engine. The platform engines
+ * resolve a region voice from the language tag, so US English / British
+ * English / Czech / Slovak / German all map cleanly. Used by the screen
+ * to call `ttsService.setLanguage()`.
+ */
+export const TTS_BCP47_BY_LOCALE: Record<VoiceLocale, string> = {
+  en: "en-US",
+  cs: "cs-CZ",
+  sk: "sk-SK",
+  de: "de-DE",
+};
+
+/**
+ * Resolve a `VoiceLocale` from a free-form locale identifier (e.g.
+ * "cs_CZ", "sk-SK", "de-AT", "en"). Anything we don't ship a voice
+ * pack for falls back to English so the rider always hears something.
+ * Lives in this module so jest tests can lock in the mapping rules
+ * without standing up React Native's NativeModules surface.
+ */
+export function resolveVoiceLocale(raw: string | undefined): VoiceLocale {
+  if (!raw) return "en";
+  const lang = raw.replace(/_/g, "-").toLowerCase().split("-")[0];
+  if (lang === "cs") return "cs";
+  if (lang === "sk") return "sk";
+  if (lang === "de") return "de";
+  return "en";
+}
+
+function maneuverPhrase(m: Maneuver, strings: PhraseStrings): string {
+  return strings.maneuvers[m.type] ?? strings.maneuvers.continue;
+}
+
+function ontoPhrase(
+  target: string | undefined,
+  current: string | undefined,
+  strings: PhraseStrings,
+): string {
+  if (!target) return "";
+  if (current && target.trim().toLowerCase() === current.trim().toLowerCase()) {
+    return "";
+  }
+  return strings.onto.replace("{target}", target);
+}
+
+/**
+ * Format a warning distance using the rider's preferred unit. Imperial
+ * speaks the same threshold (300 m) as ~330 yd rounded to the nearest
+ * 50 yd step the metric branch uses. We round AFTER converting so a 287 m
+ * rider hears "300 yards"-equivalent ~"300 yards" rather than the raw
+ * 314.
+ */
+function formatWarningDistance(
+  distanceM: number,
+  unit: DistanceUnit,
+  strings: PhraseStrings,
+): string {
+  if (unit === "imperial") {
+    const yd = Math.round((distanceM * 1.0936133) / 50) * 50;
+    return strings.yards.replace("{distance}", String(yd));
+  }
+  const m = Math.round(distanceM / 50) * 50;
+  return strings.meters.replace("{distance}", String(m));
+}
+
+/**
+ * "Stay left/right" hint for sharp turns and U-turns. Without lane
+ * data from a routing engine we infer the safer-lane bias from the
+ * heading change: a sharp left or U-turn leftward asks the rider to
+ * "stay left" so they're already in the correct lane when the turn
+ * arrives. Slight bears get no hint — riders don't need a lane
+ * reminder for a 25° drift.
+ */
+function stayHint(m: Maneuver, strings: PhraseStrings): string {
+  if (
+    m.type === "turn-sharp-left" ||
+    (m.type === "uturn" && m.headingChangeDeg < 0)
+  ) {
+    return strings.stayLeft;
+  }
+  if (
+    m.type === "turn-sharp-right" ||
+    (m.type === "uturn" && m.headingChangeDeg >= 0)
+  ) {
+    return strings.stayRight;
+  }
+  return "";
 }
 
 /**
@@ -633,29 +866,48 @@ function maneuverPhrase(m: Maneuver): string {
  * when available ("Turn left onto Hlavní") — we skip it when the maneuver's
  * roadName matches the rider's current road (case/whitespace insensitive)
  * to avoid "onto Hlavní" when the turn stays on the same street.
+ *
+ * `options` controls locale, unit system, and verbose vs concise mode.
+ * The defaults preserve the original PRD phrasing in English with metric
+ * distances so the existing call sites keep producing identical output.
  */
-export function phraseForAnnouncement(a: NavAnnouncement): string | null {
+export function phraseForAnnouncement(
+  a: NavAnnouncement,
+  options?: PhraseOptions,
+): string | null {
+  const locale = options?.locale ?? "en";
+  const unit = options?.unit ?? "metric";
+  const verbose = options?.verbose ?? true;
+  const strings = STRINGS_BY_LOCALE[locale] ?? STRINGS_EN;
+
   switch (a.type) {
     case "depart":
-      return "Starting navigation.";
+      return strings.starting;
     case "arrived":
-      return "You have arrived.";
+      return strings.arrived;
     case "off-route":
-      return "You are off route.";
+      return strings.offRoute;
     case "on-route":
-      return "Back on route.";
+      return strings.onRoute;
     case "warning-far": {
       if (!a.maneuver) return null;
-      const base = maneuverPhrase(a.maneuver);
-      const dist = Math.round((a.distanceM ?? 0) / 50) * 50;
-      const onto = ontoPhrase(a.maneuver.roadName, a.currentRoadName);
-      return `In ${dist} meters, ${base.toLowerCase()}${onto}.`;
+      const base = maneuverPhrase(a.maneuver, strings);
+      const distance = formatWarningDistance(a.distanceM ?? 0, unit, strings);
+      const onto = verbose
+        ? ontoPhrase(a.maneuver.roadName, a.currentRoadName, strings)
+        : "";
+      const stay = verbose ? stayHint(a.maneuver, strings) : "";
+      return `${strings.warningFar
+        .replace("{distance}", distance)
+        .replace("{turn}", base.toLowerCase())}${onto}${stay}.`;
     }
     case "warning-near": {
       if (!a.maneuver) return null;
-      const base = maneuverPhrase(a.maneuver);
-      const onto = ontoPhrase(a.maneuver.roadName, a.currentRoadName);
-      return `${base} now${onto}.`;
+      const base = maneuverPhrase(a.maneuver, strings);
+      const onto = verbose
+        ? ontoPhrase(a.maneuver.roadName, a.currentRoadName, strings)
+        : "";
+      return `${strings.warningNear.replace("{turn}", base)}${onto}.`;
     }
     case "execute":
       // The near-warning already covered the imperative; executing at zero
@@ -666,13 +918,18 @@ export function phraseForAnnouncement(a: NavAnnouncement): string | null {
   }
 }
 
-function ontoPhrase(
-  target: string | undefined,
-  current: string | undefined,
-): string {
-  if (!target) return "";
-  if (current && target.trim().toLowerCase() === current.trim().toLowerCase()) {
-    return "";
+/**
+ * Stable dedupe key for `ttsService.speak({ key })` — collapses stale
+ * "in 300 m" enqueues against a fresher "in 50 m" for the same maneuver
+ * so the queue never replays a warning the rider has already moved past.
+ */
+export function announcementKey(a: NavAnnouncement): string | undefined {
+  if (!a.maneuver) {
+    if (a.type === "off-route" || a.type === "on-route") return `nav:${a.type}`;
+    return undefined;
   }
-  return ` onto ${target}`;
+  if (a.type === "warning-far" || a.type === "warning-near") {
+    return `nav:warning:${a.maneuver.vertexIndex}`;
+  }
+  return undefined;
 }

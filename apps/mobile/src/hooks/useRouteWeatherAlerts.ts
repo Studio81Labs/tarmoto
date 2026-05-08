@@ -132,7 +132,14 @@ export function useRouteWeatherAlerts(
           }
           const now = Date.now();
           if (now - lastSpokenAtRef.current < TTS_THROTTLE_MS) continue;
-          ttsService.speak(`${alert.title}. ${alert.message}`);
+          // Critical weather alerts preempt nav prompts so a rider
+          // doesn't get "in 300 meters, turn left" played over a storm
+          // warning. The dedupe key keeps a re-fired identical alert
+          // from stacking inside the high-priority queue.
+          ttsService.speak(`${alert.title}. ${alert.message}`, {
+            priority: "high",
+            key: `weather:${alert.id}`,
+          });
           spokenIdsRef.current.add(alert.id);
           lastSpokenAtRef.current = now;
         }

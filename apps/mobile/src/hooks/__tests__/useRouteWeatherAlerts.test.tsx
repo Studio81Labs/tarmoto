@@ -166,6 +166,10 @@ describe("useRouteWeatherAlerts", () => {
     await waitFor(() => expect(speakMock).toHaveBeenCalledTimes(1));
     expect(speakMock).toHaveBeenCalledWith(
       expect.stringContaining("Storm warning"),
+      // Critical weather alerts ride on the high-priority lane so they
+      // preempt nav prompts (US-16 AC #3). The dedupe key keeps a
+      // re-fired identical alert from stacking inside that lane.
+      expect.objectContaining({ priority: "high" }),
     );
     unmount();
   });

@@ -99,7 +99,16 @@ const MANEUVER_ICONS: Record<ManeuverType, IconName> = {
 export default function NavigationScreen() {
   const { params } = useRoute<NavRoute>();
   const nav = useNavigation<Nav>();
-  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  // The voice FAB defaults from the rider's persisted Voice Navigation
+  // preference (Settings → Voice navigation). Toggling the FAB is a
+  // session-scoped override — it doesn't write back to Settings, so a
+  // rider who silences a single trip still sees voice on next time.
+  const voiceNavEnabled = usePreferencesStore((s) => s.voiceNavEnabled);
+  const voiceNavVolume = usePreferencesStore((s) => s.voiceNavVolume);
+  const voiceNavLanguage = usePreferencesStore((s) => s.voiceNavLanguage);
+  const voiceNavVerbose = usePreferencesStore((s) => s.voiceNavVerbose);
+  const distanceUnit = usePreferencesStore((s) => s.distanceUnit);
+  const [voiceEnabled, setVoiceEnabled] = useState(voiceNavEnabled);
   const [weatherDetailOpen, setWeatherDetailOpen] = useState(false);
   const weatherAlertsEnabled = usePreferencesStore(
     (s) => s.weatherAlertsEnabled,
@@ -143,6 +152,10 @@ export default function NavigationScreen() {
     // screen renders the empty-state below and the rider isn't navigating
     // anything, so there's nothing to project live location onto.
     trackLocation: polyline.length >= 2,
+    language: voiceNavLanguage,
+    unit: distanceUnit,
+    verbose: voiceNavVerbose,
+    volume: voiceNavVolume,
   });
 
   // US-13: surface real-time weather alerts ahead. The hook handles

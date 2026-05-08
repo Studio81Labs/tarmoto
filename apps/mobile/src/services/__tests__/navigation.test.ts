@@ -7,12 +7,14 @@
  */
 import {
   NavSession,
+  announcementKey,
   bearingDeg,
   extractManeuvers,
   haversineM,
   headingDelta,
   phraseForAnnouncement,
   projectOnPolyline,
+  resolveVoiceLocale,
   WARNING_FAR_M,
   WARNING_NEAR_M,
 } from "../navigation";
@@ -386,6 +388,129 @@ describe("phraseForAnnouncement", () => {
     expect(phraseForAnnouncement({ type: "arrived" })).toBe(
       "You have arrived.",
     );
+  });
+
+  it("speaks imperial distances as yards rounded to the same 50 step", () => {
+    expect(
+      phraseForAnnouncement(
+        {
+          type: "warning-far",
+          maneuver: sampleManeuver,
+          distanceM: 287,
+        },
+        { unit: "imperial" },
+      ),
+    ).toBe("In 300 yards, turn left onto Hlavní.");
+  });
+
+  it("translates depart / arrive / off-route into Czech", () => {
+    expect(phraseForAnnouncement({ type: "depart" }, { locale: "cs" })).toBe(
+      "Spouštím navigaci.",
+    );
+    expect(phraseForAnnouncement({ type: "arrived" }, { locale: "cs" })).toBe(
+      "Dorazili jste do cíle.",
+    );
+    expect(phraseForAnnouncement({ type: "off-route" }, { locale: "cs" })).toBe(
+      "Sjeli jste z trasy.",
+    );
+  });
+
+  it("translates a warning-far phrase with the maneuver and road name in Czech", () => {
+    expect(
+      phraseForAnnouncement(
+        {
+          type: "warning-far",
+          maneuver: sampleManeuver,
+          distanceM: 287,
+        },
+        { locale: "cs" },
+      ),
+    ).toBe("Za 300 metrů odbočte vlevo na Hlavní.");
+  });
+
+  it("appends a 'stay left' hint on a sharp left turn in verbose mode", () => {
+    const sharp = {
+      ...sampleManeuver,
+      type: "turn-sharp-left" as const,
+      headingChangeDeg: -130,
+    };
+    expect(
+      phraseForAnnouncement({
+        type: "warning-far",
+        maneuver: sharp,
+        distanceM: 280,
+      }),
+    ).toContain(", stay left");
+  });
+
+  it("concise mode strips 'onto X' filler and stay hints", () => {
+    const sharp = {
+      ...sampleManeuver,
+      type: "turn-sharp-right" as const,
+      headingChangeDeg: 130,
+    };
+    expect(
+      phraseForAnnouncement(
+        {
+          type: "warning-far",
+          maneuver: sharp,
+          distanceM: 280,
+        },
+        { verbose: false },
+      ),
+    ).toBe("In 300 meters, sharp right.");
+  });
+
+  it("falls back to English when the locale has no translation table", () => {
+    expect(
+      phraseForAnnouncement(
+        { type: "depart" },
+        // @ts-expect-error — exercise the graceful fallback path
+        { locale: "ja" },
+      ),
+    ).toBe("Starting navigation.");
+  });
+});
+
+describe("announcementKey", () => {
+  it("collapses warning-far and warning-near for the same maneuver", () => {
+    const maneuver = {
+      type: "turn-left" as const,
+      vertexIndex: 12,
+      distanceFromStartM: 800,
+      headingChangeDeg: -60,
+    };
+    expect(
+      announcementKey({ type: "warning-far", maneuver, distanceM: 280 }),
+    ).toBe(
+      announcementKey({
+        type: "warning-near",
+        maneuver,
+        distanceM: 40,
+      }),
+    );
+  });
+
+  it("returns a category-scoped key for off-route / on-route transitions", () => {
+    expect(announcementKey({ type: "off-route", distanceM: 80 })).toBe(
+      "nav:off-route",
+    );
+    expect(announcementKey({ type: "on-route" })).toBe("nav:on-route");
+  });
+});
+
+describe("resolveVoiceLocale", () => {
+  it.each([
+    ["cs_CZ", "cs"],
+    ["sk-SK", "sk"],
+    ["de-AT", "de"],
+    ["en-US", "en"],
+    ["en", "en"],
+    ["fr-FR", "en"],
+    ["", "en"],
+    [undefined, "en"],
+  ])("maps %s to %s", (input, expected) => {
+    expect(resolveVoiceLocale(input as string | undefined)).toBe(expected);
   });
 });
 

@@ -143,6 +143,10 @@ export default function CrashAlertOverlay({
     haptics.trigger();
     ttsService.speak(
       "Crash detected. Tap I'm OK to cancel, or help will be alerted.",
+      // Crash followup must preempt any in-flight nav prompt — a rider
+      // mid-turn can't afford to hear "in 300 meters, turn left" over
+      // the top of their crash countdown.
+      { priority: "high", key: "crash:countdown" },
     );
     const pulse = setInterval(() => haptics.trigger(), HAPTIC_PULSE_MS);
     return () => clearInterval(pulse);

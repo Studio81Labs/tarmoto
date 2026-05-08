@@ -3,6 +3,8 @@
  * audio-session policy for helmet/headset playback.
  */
 
+type EventListenerMap = Partial<Record<string, () => void>>;
+
 type MockTtsModule = {
   speak: jest.Mock;
   stop: jest.Mock;
@@ -11,22 +13,34 @@ type MockTtsModule = {
   removeAllListeners: jest.Mock;
   setDefaultRate: jest.Mock;
   setDefaultPitch: jest.Mock;
+  setDefaultLanguage: jest.Mock;
   setDucking: jest.Mock;
   setIgnoreSilentSwitch: jest.Mock;
+  __listeners: EventListenerMap;
+  __fireFinish: () => void;
 };
 
 function createNativeMock(): MockTtsModule {
-  return {
+  const listeners: EventListenerMap = {};
+  const mock: MockTtsModule = {
     speak: jest.fn(async () => "utterance-1"),
     stop: jest.fn(async () => undefined),
     getInitStatus: jest.fn(async () => undefined),
-    addEventListener: jest.fn(),
+    addEventListener: jest.fn((event: string, listener: () => void) => {
+      listeners[event] = listener;
+    }),
     removeAllListeners: jest.fn(),
     setDefaultRate: jest.fn(async () => undefined),
     setDefaultPitch: jest.fn(async () => undefined),
+    setDefaultLanguage: jest.fn(async () => undefined),
     setDucking: jest.fn(async () => undefined),
     setIgnoreSilentSwitch: jest.fn(async () => undefined),
+    __listeners: listeners,
+    __fireFinish: () => {
+      listeners["tts-finish"]?.();
+    },
   };
+  return mock;
 }
 
 async function flushMicrotasks() {
@@ -126,5 +140,168 @@ describe("ttsService", () => {
     expect(() => ttsService.speak("silenced")).not.toThrow();
     ttsService.setMuted(false);
     expect(ttsService.isMuted()).toBe(false);
+  });
+
+  it("collapses a stale 'in 300m' against a fresh 'in 50m' for the same maneuver", async () => {
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    // First phrase starts speaking immediately and isn't queue-replaceable —
+    // it's already in flight. The follow-up far + near for the SAME
+    // maneuver enqueue with the same key, and the second one replaces
+    // the first in the queue rather than appending.
+    ttsService.speak("Starting navigation.");
+    await flushMicrotasks();
+    expect(nativeModule.speak).toHaveBeenCalledTimes(1);
+
+    ttsService.speak("In 300 meters, turn left.", { key: "nav:warning:5" });
+    ttsService.speak("Turn left now.", { key: "nav:warning:5" });
+
+    // Drain the in-flight starting prompt — only the collapsed
+    // "Turn left now" survives in the queue.
+    nativeModule.__fireFinish();
+    await flushMicrotasks();
+
+    expect(nativeModule.speak).toHaveBeenCalledTimes(2);
+    expect(nativeModule.speak.mock.calls[1][0]).toBe("Turn left now.");
+  });
+
+  it("high-priority phrases preempt an in-flight normal-priority utterance", async () => {
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    ttsService.speak("In 300 meters, turn left.");
+    await flushMicrotasks();
+    expect(nativeModule.speak).toHaveBeenCalledTimes(1);
+
+    ttsService.speak("Crash detected. Tap I'm OK to cancel.", {
+      priority: "high",
+    });
+    await flushMicrotasks();
+
+    // The high-priority phrase should have called stop() on the
+    // in-flight utterance and pushed itself to the front of the queue.
+    expect(nativeModule.stop).toHaveBeenCalled();
+    expect(nativeModule.speak).toHaveBeenCalledTimes(2);
+    expect(nativeModule.speak.mock.calls[1][0]).toContain("Crash detected");
+  });
+
+  it("drops queued normal-priority phrases when a high-priority alert fires", async () => {
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    ttsService.speak("Starting navigation.");
+    ttsService.speak("Continue.");
+    ttsService.speak("In 300 meters, turn left.");
+    await flushMicrotasks();
+    expect(nativeModule.speak).toHaveBeenCalledTimes(1);
+
+    ttsService.speak("Severe storm ahead.", { priority: "high" });
+    await flushMicrotasks();
+
+    nativeModule.__fireFinish();
+    await flushMicrotasks();
+
+    // After the high-priority alert finishes, no stale nav prompt
+    // should resurrect — the queue was purged.
+    expect(nativeModule.speak.mock.calls.map((c) => c[0])).toEqual([
+      "Starting navigation.",
+      "Severe storm ahead.",
+    ]);
+  });
+
+  it("a high-priority phrase already speaking is not preempted by another", async () => {
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    ttsService.speak("Crash detected.", { priority: "high" });
+    await flushMicrotasks();
+    nativeModule.stop.mockClear();
+
+    ttsService.speak("Severe storm ahead.", { priority: "high" });
+    await flushMicrotasks();
+
+    // The second high-priority phrase queues behind the first instead
+    // of cutting it off.
+    expect(nativeModule.stop).not.toHaveBeenCalled();
+    nativeModule.__fireFinish();
+    await flushMicrotasks();
+
+    expect(nativeModule.speak.mock.calls.map((c) => c[0])).toEqual([
+      "Crash detected.",
+      "Severe storm ahead.",
+    ]);
+  });
+
+  it("pause() suppresses queued phrases until resume()", async () => {
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    ttsService.pause();
+    expect(ttsService.isPaused()).toBe(true);
+
+    ttsService.speak("In 300 meters, turn left.");
+    await flushMicrotasks();
+    // Nothing speaks while paused — the phrase is queued but the drain
+    // is gated behind the paused flag.
+    expect(nativeModule.speak).not.toHaveBeenCalled();
+
+    ttsService.resume();
+    await flushMicrotasks();
+    expect(ttsService.isPaused()).toBe(false);
+    expect(nativeModule.speak).toHaveBeenCalledTimes(1);
+  });
+
+  it("setExternalAudioActive(true) suppresses local TTS while CarPlay owns audio", async () => {
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    ttsService.setExternalAudioActive(true);
+    ttsService.speak("In 300 meters, turn left.");
+    await flushMicrotasks();
+    expect(nativeModule.speak).not.toHaveBeenCalled();
+
+    ttsService.setExternalAudioActive(false);
+    ttsService.speak("Continue.");
+    await flushMicrotasks();
+    expect(nativeModule.speak).toHaveBeenCalledTimes(1);
+    expect(nativeModule.speak.mock.calls[0][0]).toBe("Continue.");
+  });
+
+  it("setLanguage() forwards a BCP-47 tag to the engine", () => {
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    ttsService.setLanguage("cs-CZ");
+    expect(nativeModule.setDefaultLanguage).toHaveBeenCalledWith("cs-CZ");
+  });
+
+  it("setVolume() drives the Android per-utterance volume parameter", async () => {
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    ttsService.setVolume(0.42);
+    ttsService.speak("hello");
+    await flushMicrotasks();
+
+    expect(nativeModule.speak).toHaveBeenCalledWith(
+      "hello",
+      expect.objectContaining({
+        androidParams: expect.objectContaining({
+          KEY_PARAM_VOLUME: 0.42,
+        }),
+      }),
+    );
+  });
+
+  it("setVolume() clamps out-of-range values to [0, 1]", () => {
+    const { ttsService } = loadService();
+
+    ttsService.setVolume(-1);
+    expect(ttsService.getVolume()).toBe(0);
+    ttsService.setVolume(7);
+    expect(ttsService.getVolume()).toBe(1);
+    ttsService.setVolume(Number.NaN);
+    expect(ttsService.getVolume()).toBe(1);
   });
 });
