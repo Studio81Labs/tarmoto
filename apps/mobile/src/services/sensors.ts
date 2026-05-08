@@ -20,12 +20,22 @@ import {
 } from "@tarmoto/shared";
 import * as mlClassifier from "./mlClassifier";
 import { LeanAngleFilter, type CalibrationStats } from "./leanAngle";
+import { computeSpectralFeatures } from "./fft";
 
 const SAMPLE_RATE_MS = 20; // 50Hz
+const SAMPLE_RATE_HZ = 50;
 const WINDOW_SIZE = 100; // 2 seconds at 50Hz
 const WINDOW_STEP = 50; // 50% overlap = 1 second step
+/**
+ * Time between consecutive feature extractions. Used by the GPS-derived
+ * `acceleration_longitudinal` feature to convert a per-window speed
+ * delta into a (m/s²) acceleration. Equal to `WINDOW_STEP / SAMPLE_RATE`
+ * — every window slides by `WINDOW_STEP` samples.
+ */
+const WINDOW_STEP_SECONDS = WINDOW_STEP / SAMPLE_RATE_HZ;
 
 export interface WindowFeatures {
+  // ── Time-domain (accelerometer magnitude) ──
   rms: number;
   std: number;
   peak_to_peak: number;
@@ -34,9 +44,33 @@ export interface WindowFeatures {
   percentile_95: number;
   kurtosis: number;
   skewness: number;
+  // ── Frequency-domain (FFT of accelerometer magnitude) ──
+  // Issue #492: distinguishes surface types (cobblestone vs gravel vs
+  // rough asphalt) and impulse-vs-continuous vibration. Per
+  // `docs/ML_MODEL_SPEC.md` §3.3.
+  spectral_centroid: number;
+  spectral_energy_low: number;
+  spectral_energy_mid: number;
+  spectral_energy_high: number;
+  dominant_frequency: number;
+  spectral_entropy: number;
+  band_ratio_high_low: number;
+  // ── Gyroscope ──
   gyro_rms: number;
+  /** Variance of pitch rate (gy, rad/s) across the window. */
+  gyro_pitch_var: number;
+  /** Variance of roll rate (gx, rad/s) across the window. */
+  gyro_roll_var: number;
+  // ── GPS context ──
   speed_kmh: number;
   speed_normalized_rms: number;
+  /**
+   * Forward/backward acceleration (m/s²) derived from the GPS speed
+   * delta between consecutive windows. Frame-independent, so it works
+   * regardless of phone mounting orientation. `0` for the very first
+   * window of a ride (no previous speed yet).
+   */
+  acceleration_longitudinal: number;
   /**
    * Maximum absolute lean angle (degrees) observed across this 2 s
    * window. `0` while the orientation filter is still calibrating —
@@ -103,6 +137,13 @@ class SensorService {
   private latestGyroX: number | null = null;
   private latestGyroY: number | null = null;
   private latestGyroZ: number | null = null;
+  /**
+   * Speed (m/s) sampled at the previous window's emission. The
+   * `acceleration_longitudinal` feature is the delta between this and
+   * the current GPS speed, divided by the window step. `null` until
+   * the first window emits — first window yields 0 m/s².
+   */
+  private previousSpeedMs: number | null = null;
 
   /**
    * Start recording sensor data
@@ -122,6 +163,7 @@ class SensorService {
     this.latestGyroX = null;
     this.latestGyroY = null;
     this.latestGyroZ = null;
+    this.previousSpeedMs = null;
 
     // Kick off the model load in the background. The first windows
     // arrive ~2s later, so the classifier is typically ready by then;
@@ -387,20 +429,61 @@ class SensorService {
     const m3 = deviations.reduce((s, v) => s + (v - mean) ** 3, 0) / n;
     const skewness = std > 0 ? m3 / std ** 3 : 0;
 
-    // Gyroscope RMS
-    const gyroMags = window
-      .filter((r) => r.gx !== undefined)
-      .map((r) =>
-        Math.sqrt((r.gx || 0) ** 2 + (r.gy || 0) ** 2 + (r.gz || 0) ** 2),
-      );
+    // Frequency-domain features (issue #492). The deviation signal is
+    // already DC-removed conceptually (we take |mag - g|), but the
+    // FFT helper subtracts its own mean and applies a Hann window
+    // before transforming. Sample rate is fixed at 50 Hz upstream;
+    // shorter windows (e.g. an early-stop) just yield reduced
+    // frequency resolution.
+    const spectral = computeSpectralFeatures(deviations, SAMPLE_RATE_HZ);
+
+    // Gyroscope features. Variance of pitch / roll rate complement
+    // the magnitude RMS — the model uses them to tell apart side-to-
+    // side wobble from forward/back pogoing. Phone convention in this
+    // codebase: gx = roll rate, gy = pitch rate (see leanAngle.ts).
+    let gyroSampleCount = 0;
+    let gyroMagSquaredSum = 0;
+    let pitchSum = 0;
+    let pitchSqSum = 0;
+    let rollSum = 0;
+    let rollSqSum = 0;
+    for (const r of window) {
+      if (r.gx === undefined) continue;
+      const gx = r.gx;
+      const gy = r.gy ?? 0;
+      const gz = r.gz ?? 0;
+      gyroSampleCount++;
+      gyroMagSquaredSum += gx * gx + gy * gy + gz * gz;
+      rollSum += gx;
+      rollSqSum += gx * gx;
+      pitchSum += gy;
+      pitchSqSum += gy * gy;
+    }
     const gyro_rms =
-      gyroMags.length > 0
-        ? Math.sqrt(gyroMags.reduce((s, v) => s + v * v, 0) / gyroMags.length)
+      gyroSampleCount > 0 ? Math.sqrt(gyroMagSquaredSum / gyroSampleCount) : 0;
+    const gyro_roll_var =
+      gyroSampleCount > 0
+        ? rollSqSum / gyroSampleCount - (rollSum / gyroSampleCount) ** 2
+        : 0;
+    const gyro_pitch_var =
+      gyroSampleCount > 0
+        ? pitchSqSum / gyroSampleCount - (pitchSum / gyroSampleCount) ** 2
         : 0;
 
-    // Speed
+    // Speed + GPS-derived longitudinal acceleration. Using the GPS
+    // speed delta keeps the feature frame-independent — a phone in a
+    // tank-bag, handlebar mount or pocket all produce the same
+    // braking/accelerating signal. `previousSpeedMs` is `null` on the
+    // first window of a ride, in which case we report 0 m/s² rather
+    // than fabricating a delta from an undefined baseline.
     const speed_kmh = this.currentSpeed;
     const speed_normalized_rms = speed_kmh > 10 ? rms / (speed_kmh / 50) : rms;
+    const currentSpeedMs = this.currentSpeed / 3.6;
+    const acceleration_longitudinal =
+      this.previousSpeedMs === null
+        ? 0
+        : (currentSpeedMs - this.previousSpeedMs) / WINDOW_STEP_SECONDS;
+    this.previousSpeedMs = currentSpeedMs;
 
     // Maximum absolute lean angle observed across this window (US-19).
     // Pre-calibration samples carry no `lean_deg` (undefined) so the
@@ -423,9 +506,19 @@ class SensorService {
       percentile_95,
       kurtosis,
       skewness,
+      spectral_centroid: spectral.spectral_centroid,
+      spectral_energy_low: spectral.spectral_energy_low,
+      spectral_energy_mid: spectral.spectral_energy_mid,
+      spectral_energy_high: spectral.spectral_energy_high,
+      dominant_frequency: spectral.dominant_frequency,
+      spectral_entropy: spectral.spectral_entropy,
+      band_ratio_high_low: spectral.band_ratio_high_low,
       gyro_rms,
+      gyro_pitch_var,
+      gyro_roll_var,
       speed_kmh,
       speed_normalized_rms,
+      acceleration_longitudinal,
       max_abs_lean_deg,
       timestamp: Date.now(),
     };

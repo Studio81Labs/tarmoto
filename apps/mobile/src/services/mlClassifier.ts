@@ -30,8 +30,25 @@ import type { WindowFeatures } from "./sensors";
  * features, new label order). Backend stores this on each surface
  * reading so a future deprecation step can ignore rows produced by an
  * older classifier.
+ *
+ * `rsc-v1.1.0` (issue #492) introduces the expanded 21-feature vector:
+ * the seven FFT spectral features from `ML_MODEL_SPEC.md` §3.3, the
+ * gyro pitch/roll variances, and the GPS-derived longitudinal
+ * acceleration. The runtime ALSO ships with a legacy-feature-vector
+ * fallback toggle (`setUseLegacyFeatureVector`) so a build that still
+ * carries the v1.0 11-feature `.tflite` artifact can continue running
+ * the old contract until the retrained model is bundled — without
+ * forcing the entire app to fall back to the heuristic.
  */
-export const MODEL_VERSION = "rsc-v1.0.0";
+export const MODEL_VERSION = "rsc-v1.1.0";
+
+/**
+ * Legacy classifier identifier — emitted on each window when
+ * `setUseLegacyFeatureVector(true)` is in effect. Kept distinct from
+ * `MODEL_VERSION` so the backend can tell which feature contract a
+ * row was produced under without parsing semver.
+ */
+export const LEGACY_MODEL_VERSION = "rsc-v1.0.0";
 
 /**
  * Output label order — must match the trained model's softmax heads.
@@ -57,10 +74,13 @@ export const SURFACE_LABELS: readonly Exclude<SurfaceType, "unknown">[] = [
 ];
 
 /**
- * Feature vector ordering fed to the model. Adding a feature is a
- * model-version-bumping change.
+ * v1.0 (legacy) feature vector — 11 entries, time-domain + gyro RMS +
+ * GPS speed. Kept exported so a build that still ships the v1.0
+ * `.tflite` artifact can opt into the legacy contract via
+ * `setUseLegacyFeatureVector(true)` without re-introducing the old
+ * vector inline.
  */
-export const INPUT_FEATURES = [
+export const LEGACY_INPUT_FEATURES = [
   "rms",
   "std",
   "peak_to_peak",
@@ -72,6 +92,42 @@ export const INPUT_FEATURES = [
   "gyro_rms",
   "speed_kmh",
   "speed_normalized_rms",
+] as const;
+
+/**
+ * v1.1 feature vector ordering fed to the model (issue #492). Order
+ * MUST match the trained model's input tensor — adding, removing or
+ * reordering a feature is a `MODEL_VERSION`-bumping change. The
+ * canonical implementation that produces these values lives in
+ * `SensorService.extractFeatures` (see `sensors.ts`); the layout is
+ * also documented in `apps/mobile/assets/ml/MODEL_CONTRACT.md`.
+ */
+export const INPUT_FEATURES = [
+  // Time-domain (8)
+  "rms",
+  "std",
+  "peak_to_peak",
+  "crest_factor",
+  "zero_crossing_rate",
+  "percentile_95",
+  "kurtosis",
+  "skewness",
+  // Frequency-domain (7) — `docs/ML_MODEL_SPEC.md` §3.3
+  "spectral_centroid",
+  "spectral_energy_low",
+  "spectral_energy_mid",
+  "spectral_energy_high",
+  "dominant_frequency",
+  "spectral_entropy",
+  "band_ratio_high_low",
+  // Gyroscope (3)
+  "gyro_rms",
+  "gyro_pitch_var",
+  "gyro_roll_var",
+  // GPS context (3)
+  "speed_kmh",
+  "speed_normalized_rms",
+  "acceleration_longitudinal",
 ] as const;
 
 export interface MlClassification {
@@ -102,6 +158,44 @@ let loader: ModelLoader = defaultLoader;
 let model: TFLiteModelLike | null = null;
 let loadPromise: Promise<TFLiteModelLike | null> | null = null;
 let loadFailed = false;
+/**
+ * Feature-flag toggle for the legacy 11-feature vector. Defaults to
+ * `false` (current v1.1 contract). When the bundled `.tflite` artifact
+ * is still on the v1.0 contract — typically because retraining hasn't
+ * shipped yet — flip this to `true` BEFORE `warmup()` so inference
+ * doesn't latch off on an output-shape mismatch. The runtime tags
+ * each window with `LEGACY_MODEL_VERSION` while the toggle is on.
+ */
+let useLegacyFeatureVector = false;
+
+/**
+ * Toggle the legacy 11-feature vector path. Intended for build-time /
+ * remote-config wiring: call once before `warmup()` runs. Calling
+ * mid-session is supported (the next `classify()` will use the new
+ * setting) but will likely cause an inference failure on the current
+ * model — the `.tflite` artifact is loaded for one specific contract.
+ */
+export function setUseLegacyFeatureVector(enabled: boolean): void {
+  useLegacyFeatureVector = enabled;
+}
+
+export function isUsingLegacyFeatureVector(): boolean {
+  return useLegacyFeatureVector;
+}
+
+/**
+ * Active feature-vector ordering — either the v1.1 default or the
+ * legacy v1.0 list when the feature flag is on. Exposed as a function
+ * (rather than a re-exported const) so callers always observe the
+ * current toggle state without restarting the module.
+ */
+export function activeInputFeatures(): readonly (keyof WindowFeatures)[] {
+  return useLegacyFeatureVector ? LEGACY_INPUT_FEATURES : INPUT_FEATURES;
+}
+
+function activeModelVersion(): string {
+  return useLegacyFeatureVector ? LEGACY_MODEL_VERSION : MODEL_VERSION;
+}
 
 async function defaultLoader(): Promise<TFLiteModelLike> {
   // Lazy require so jest (no native binding, no asset resolver) can swap
@@ -220,11 +314,17 @@ export function classify(features: WindowFeatures): MlClassification | null {
   return parsed;
 }
 
-/** Build the 11-D float input vector in the order declared by `INPUT_FEATURES`. */
+/**
+ * Build the float input vector in the order declared by the active
+ * feature contract (`INPUT_FEATURES` by default, or
+ * `LEGACY_INPUT_FEATURES` when `setUseLegacyFeatureVector(true)` is in
+ * effect). Width is 21 on the v1.1 contract, 11 on the legacy one.
+ */
 export function featuresToInputVector(features: WindowFeatures): Float32Array {
-  const out = new Float32Array(INPUT_FEATURES.length);
-  for (let i = 0; i < INPUT_FEATURES.length; i++) {
-    out[i] = features[INPUT_FEATURES[i]] ?? 0;
+  const order = activeInputFeatures();
+  const out = new Float32Array(order.length);
+  for (let i = 0; i < order.length; i++) {
+    out[i] = features[order[i]] ?? 0;
   }
   return out;
 }
@@ -281,7 +381,7 @@ export function parseModelOutput(
     quality_score: Math.round(clamp(qualityScore, 0.5, 5.0) * 10) / 10,
     surface_type: SURFACE_LABELS[surfaceIdx],
     confidence: Math.round(clamp(confidence, 0, 100)),
-    model_version: MODEL_VERSION,
+    model_version: activeModelVersion(),
   };
 }
 
@@ -323,7 +423,7 @@ export function isReady(): boolean {
  * toggle) will route through this helper.
  */
 export function getActiveModelVersion(): string | null {
-  return isReady() ? MODEL_VERSION : null;
+  return isReady() ? activeModelVersion() : null;
 }
 
 // ── Test hooks ────────────────────────────────────────────────────────
@@ -335,6 +435,7 @@ export function __setLoaderForTest(next: ModelLoader | null): void {
   model = null;
   loadPromise = null;
   loadFailed = false;
+  useLegacyFeatureVector = false;
 }
 
 export function __resetForTest(): void {
@@ -342,4 +443,5 @@ export function __resetForTest(): void {
   loadPromise = null;
   loadFailed = false;
   loader = defaultLoader;
+  useLegacyFeatureVector = false;
 }
