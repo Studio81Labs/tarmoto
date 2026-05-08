@@ -175,6 +175,19 @@ const linking: LinkingOptions<RootTabParamList> = {
           TripImport: "trips/import",
         },
       },
+      // US-17 AC #4 — Quick-launch Commute reachable from the head unit
+      // list template. `CarPlayRideMirror` fires `tarmoto://commute/start`
+      // when the rider taps Start Commute on the bike display; we route
+      // the URL into the existing Commute screen on the Home tab so the
+      // post-launch nav state is the same as if the rider tapped Commute
+      // on Home. CommuteScreen handles the "no primary route saved" case
+      // with its own setup CTA, so the row is always reachable without
+      // us gating it from the head unit.
+      HomeTab: {
+        screens: {
+          Commute: "commute/start",
+        },
+      },
       // US-17 follow-up (#343): the Google Assistant App Action declared in
       // `android/app/src/main/res/xml/shortcuts.xml` fires this URL when the
       // rider says "Hey Google, ask Tarmoto to report a pothole" on Android

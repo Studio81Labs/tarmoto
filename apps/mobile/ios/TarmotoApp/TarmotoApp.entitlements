@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  US-17 — CarPlay navigation entitlement.
+	  Tarmoto is a turn-by-turn motorcycle navigation app, so we request
+	  `com.apple.developer.carplay-maps`. This entitlement requires Apple
+	  approval before TestFlight distribution and is the gate Calimoto
+	  cleared (their CarPlay-only support was the differentiator US-17 is
+	  closing). Audio-only (`carplay-audio`) is insufficient — without the
+	  maps entitlement the rider cannot see the active route on the bike
+	  display, which is the core of AC #2.
+	-->
+	<key>com.apple.developer.carplay-maps</key>
+	<true/>
+</dict>
+</plist>

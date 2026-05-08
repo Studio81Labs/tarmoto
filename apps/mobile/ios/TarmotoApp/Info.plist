@@ -58,6 +58,51 @@
 	<string>Tarmoto reads photos you select from your library to attach to road reviews and hazard reports.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<!--
+		  US-17 — CarPlay scene-based architecture.
+		  CarPlay templates run in a dedicated UIScene whose role is
+		  `CPTemplateApplicationSceneSessionRoleApplication`. The scene
+		  delegate class is `CarSceneDelegate`, the Swift class shipped
+		  alongside this Info.plist. It implements
+		  `CPTemplateApplicationSceneDelegate` and forwards
+		  `didConnect`/`didDisconnect` into
+		  `RNCarPlay.connectWithInterfaceController:window:` /
+		  `RNCarPlay.disconnect` (the only iOS entry points the
+		  `react-native-carplay` package exposes). Without our own scene
+		  delegate, `CarPlay.connected` would never flip true — the
+		  package does not ship a ready-made scene delegate.
+
+		  The main phone window deliberately is NOT declared here.
+		  Tarmoto's `AppDelegate.swift` creates and manages its own
+		  `UIWindow` directly, so adding a UIWindowScene config would
+		  collide (iOS would create a second empty window). Apps may
+		  declare only the CarPlay scene config — iOS falls back to
+		  AppDelegate-managed window creation for the regular role, which
+		  matches the React Native 0.85 template's expectation.
+
+		  `UIApplicationSupportsMultipleScenes` is `false` for the same
+		  reason: the rider has one phone window + at most one CarPlay
+		  scene; we don't want iOS spawning extra phone windows.
+		-->
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>CPTemplateApplicationSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneConfigurationName</key>
+					<string>Tarmoto CarPlay</string>
+					<key>UISceneClassName</key>
+					<string>CPTemplateApplicationScene</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).CarSceneDelegate</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>

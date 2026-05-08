@@ -51,7 +51,9 @@
  */
 
 import { Platform } from "react-native";
+import { haversineMeters } from "@tarmoto/shared";
 import { formatDurationSeconds, qualityLabel } from "@/theme";
+import type { Hazard, HazardType, LatLng } from "@/types";
 
 // ── Public types ──
 
@@ -73,6 +75,31 @@ export interface RideStatusBoard {
   qualityConfidence: number | null;
   /** Active ride type — used for the template title. */
   rideType: "free" | "commute" | "trip";
+}
+
+/**
+ * Snapshot of a single hazard projected onto the head-unit alert surface.
+ * Pure data so tests can lock in the wording without instantiating a
+ * native template.
+ */
+export interface HazardAlertSnapshot {
+  /** Stable hazard id from the backend; drives dedupe across alerts. */
+  id: string;
+  hazard_type: HazardType;
+  /** Distance from the rider's current location to the hazard, in metres. */
+  distanceMeters: number;
+  /** Optional user-supplied note from the original report. */
+  note: string | null;
+  /** Road name from the geocoded reverse lookup, when known. */
+  roadName: string | null;
+}
+
+/** One quick-action row on the CarPlay/AA list template. */
+export interface QuickActionItem {
+  /** Stable id so the head-unit can dispatch the right callback when tapped. */
+  id: "start-commute" | "stop-ride" | "report-hazard";
+  text: string;
+  detailText: string;
 }
 
 /**
@@ -131,6 +158,47 @@ export interface VehicleStatusBridge {
    * orphaned template id.
    */
   subscribeConnect(callback: () => void): () => void;
+  /**
+   * Mount a CPAlertTemplate (iOS) / AlertTemplate (Android Auto) for a
+   * route hazard. The bridge owns the lifecycle: a fresh
+   * `presentHazardAlert` call replaces the previously-presented alert
+   * (if any) so the rider sees the closest hazard, never a stack of
+   * stale ones queued behind each other on the bike display.
+   *
+   * Both platforms ship native alert templates via the package — iOS as
+   * `AlertTemplate` (CPAlertTemplate), Android via the Jetpack
+   * `AlertTemplate`. We wire confirm/dismiss callbacks so the rider can
+   * acknowledge or hide the alert with one tap on the head unit.
+   */
+  presentHazardAlert(
+    snapshot: HazardAlertSnapshot,
+    callbacks: {
+      onConfirm: () => void;
+      onDismiss: () => void;
+    },
+  ): void;
+  /** Hide whatever hazard alert is currently mounted; idempotent. */
+  dismissHazardAlert(): void;
+  /**
+   * Mount a CarPlay list / Android Auto pane template that gives the
+   * rider one-tap reach for the most common pre-ride / mid-ride
+   * actions:
+   *
+   *   - Start Commute (US-21) — pre-ride, no active ride
+   *   - Stop ride — mid-ride, idempotent if no ride is active
+   *   - Report hazard — mid-ride, jumps into the SearchTemplate
+   *
+   * The bridge dispatches `onActionPressed(id)` when the rider taps a
+   * row. The controller routes the id back into the right Zustand
+   * action / deep link. Idempotent — re-mounting with the same items
+   * just refreshes the template instead of re-issuing setRootTemplate.
+   */
+  mountQuickActions(
+    items: QuickActionItem[],
+    onActionPressed: (id: QuickActionItem["id"]) => void,
+  ): void;
+  /** Tear down the quick-actions template, if mounted. Idempotent. */
+  unmountQuickActions(): void;
 }
 
 // ── Pure formatters ──
@@ -200,6 +268,135 @@ export function formatQualityDetail(
 }
 
 /**
+ * Great-circle distance between two `LatLng` points in metres. Thin
+ * wrapper over `haversineMeters` from `@tarmoto/shared` so the hazard
+ * surface and the rest of the app share one implementation — the
+ * shared package's signature is `(lat1, lon1, lat2, lon2)`, this
+ * collapses the call sites into the local `LatLng` shape we already
+ * thread everywhere else in the mobile app.
+ */
+export function distanceMetersBetween(a: LatLng, b: LatLng): number {
+  return haversineMeters(a.lat, a.lng, b.lat, b.lng);
+}
+
+/** Human-readable label for the hazard alert title row. */
+export function hazardTypeLabel(type: HazardType): string {
+  switch (type) {
+    case "pothole":
+      return "Pothole";
+    case "gravel":
+      return "Loose gravel";
+    case "oil_spill":
+      return "Oil spill";
+    case "roadworks":
+      return "Roadworks";
+    case "animals":
+      return "Animals";
+    case "police":
+      return "Police";
+    case "flooding":
+      return "Flooding";
+    case "ice":
+      return "Ice";
+    default:
+      return "Hazard";
+  }
+}
+
+/**
+ * Distance line for the hazard-alert subtitle. Below 1 km we round to
+ * 50 m granularity (matches the haptic-grain the rider experiences
+ * approaching the hazard); above we switch to single-decimal km. Off-
+ * range / non-finite collapse to "Nearby" so the rider always gets a
+ * complete sentence on the bike display.
+ */
+export function formatHazardDistance(meters: number): string {
+  if (!Number.isFinite(meters) || meters < 0) return "Nearby";
+  if (meters < 1000) {
+    const rounded = Math.max(0, Math.round(meters / 50) * 50);
+    return rounded === 0 ? "Right here" : `${rounded} m ahead`;
+  }
+  return `${(meters / 1000).toFixed(1)} km ahead`;
+}
+
+/**
+ * Pick the next hazard to alert the rider about — the one closest to
+ * the rider's current location. Returns `null` when there are no
+ * candidates or the rider has no fix yet.
+ *
+ * We deliberately don't filter by route polyline here — the hazard
+ * store's `nearbyHazards` slice is already pruned to a sane radius,
+ * and over-filtering at this layer would silently drop legitimate
+ * cross-traffic alerts (e.g. a hazard 80 m off the route on a tight
+ * urban street). The rider can dismiss anything irrelevant on the
+ * head unit with one tap.
+ */
+export function selectClosestHazard(
+  hazards: Hazard[],
+  riderLocation: LatLng | null,
+): { hazard: Hazard; distanceMeters: number } | null {
+  if (!riderLocation || hazards.length === 0) return null;
+  let best: { hazard: Hazard; distanceMeters: number } | null = null;
+  for (const hazard of hazards) {
+    const distance = distanceMetersBetween(riderLocation, {
+      lat: hazard.lat,
+      lng: hazard.lng,
+    });
+    if (!best || distance < best.distanceMeters) {
+      best = { hazard, distanceMeters: distance };
+    }
+  }
+  return best;
+}
+
+/**
+ * Project the closest hazard into the head-unit alert snapshot. Pure
+ * on the inputs so tests can lock in the projection without touching
+ * the bridge.
+ */
+export function buildHazardAlertSnapshot(
+  hazard: Hazard,
+  distanceMeters: number,
+): HazardAlertSnapshot {
+  return {
+    id: hazard.id,
+    hazard_type: hazard.hazard_type,
+    distanceMeters,
+    note: hazard.note,
+    roadName: hazard.road_name,
+  };
+}
+
+/**
+ * Build the quick-actions list shown on the head-unit pre-ride.
+ *
+ * Quick actions are deliberately pre-ride only — mid-ride the rider's
+ * primary head-unit surface is the live ride status board (or the
+ * navigation map template), and a quick-actions list-template would
+ * call `setRootTemplate` and replace whichever ride surface is
+ * currently mounted, leaving the rider stuck on a static menu while
+ * the bike display can no longer show speed / next maneuver. The
+ * mid-ride affordances (report hazard, stop ride) are reachable from
+ * the navigation map template's leading bar buttons / from the phone
+ * HUD directly, so this surface focuses on its unique pre-ride job:
+ * one-tap launch into the rider's commute (US-17 AC #4 / US-21).
+ */
+export function buildQuickActionItems(state: {
+  isRiding: boolean;
+  hasCommuteRoute: boolean;
+}): QuickActionItem[] {
+  if (state.isRiding) return [];
+  if (!state.hasCommuteRoute) return [];
+  return [
+    {
+      id: "start-commute",
+      text: "Start commute",
+      detailText: "Begin your saved route",
+    },
+  ];
+}
+
+/**
  * Build the four-row item list for the head-unit status board. Pure on
  * the inputs so tests can lock in the shape without touching the bridge.
  */
@@ -221,6 +418,29 @@ export function buildRideStatusItems(
 
 /** Stable id so iOS / Android can find the same template across updates. */
 const STATUS_TEMPLATE_ID = "tarmoto-vehicle-status-board";
+const HAZARD_ALERT_TEMPLATE_ID = "tarmoto-vehicle-hazard-alert";
+const QUICK_ACTIONS_TEMPLATE_ID = "tarmoto-vehicle-quick-actions";
+
+/**
+ * Compose the title + subtitle the alert template renders. Pure on the
+ * snapshot so the iOS / Android / test paths share a single source of
+ * truth and the bike display can never disagree with what the test
+ * suite asserts.
+ */
+export function formatHazardAlertText(snapshot: HazardAlertSnapshot): {
+  title: string;
+  subtitle: string;
+} {
+  const label = hazardTypeLabel(snapshot.hazard_type);
+  const distance = formatHazardDistance(snapshot.distanceMeters);
+  const subtitleSegments = [distance];
+  if (snapshot.roadName) subtitleSegments.push(`on ${snapshot.roadName}`);
+  if (snapshot.note) subtitleSegments.push(snapshot.note);
+  return {
+    title: label,
+    subtitle: subtitleSegments.join(" · "),
+  };
+}
 
 type CarPlayLib = typeof import("react-native-carplay");
 
@@ -252,9 +472,13 @@ function createIosBridge(): VehicleStatusBridge {
     /* eslint-disable @typescript-eslint/no-require-imports */
     const lib = require("react-native-carplay") as CarPlayLib;
     /* eslint-enable @typescript-eslint/no-require-imports */
-    const { CarPlay, InformationTemplate } = lib;
+    const { CarPlay, InformationTemplate, AlertTemplate, ListTemplate } = lib;
 
     let template: InstanceType<typeof InformationTemplate> | null = null;
+    let hazardAlertTemplate: InstanceType<typeof AlertTemplate> | null = null;
+    // Quick-actions tracking lives in the module-level controller above
+    // the bridge — the bridge just constructs the template and hands it
+    // to the host. No need to hold a reference here.
 
     return {
       isAvailable: () => CarPlay.connected,
@@ -297,6 +521,7 @@ function createIosBridge(): VehicleStatusBridge {
       subscribeDisconnect: (callback) => {
         const handler = () => {
           template = null;
+          hazardAlertTemplate = null;
           callback();
         };
         CarPlay.registerOnDisconnect(handler);
@@ -308,10 +533,93 @@ function createIosBridge(): VehicleStatusBridge {
           // previous native template is gone. Reset local state so the
           // controller re-mounts on the next ride-tick.
           template = null;
+          hazardAlertTemplate = null;
           callback();
         };
         CarPlay.registerOnConnect(handler);
         return () => CarPlay.unregisterOnConnect(handler);
+      },
+      presentHazardAlert: (snapshot, callbacks) => {
+        if (!CarPlay.connected) return;
+        // Pop any prior alert before pushing the new one — CarPlay's
+        // alert templates stack rather than replace, and a stale
+        // pothole alert behind a fresher gravel alert would hide the
+        // closer hazard from the rider once they dismissed the new
+        // one.
+        if (hazardAlertTemplate) {
+          try {
+            CarPlay.dismissTemplate(true);
+          } catch {
+            // Ignore — the host may have torn the prior alert down on
+            // its own (auto-dismiss timer, scene rebuild). Falling
+            // through to construct the fresh one is the safer default.
+          }
+        }
+        const { title, subtitle } = formatHazardAlertText(snapshot);
+        const fresh = new AlertTemplate({
+          id: HAZARD_ALERT_TEMPLATE_ID,
+          // CPAlertTemplate accepts an array of title variants ordered
+          // from richest to fallback. Surfacing the full subtitle as
+          // the first variant lets the host pick it when the bike
+          // display has the screen real estate; smaller cluster
+          // displays fall back to the hazard label alone.
+          titleVariants: [`${title} — ${subtitle}`, title],
+          actions: [
+            { id: "confirm", title: "Confirm", style: "default" },
+            { id: "dismiss", title: "Dismiss", style: "cancel" },
+          ],
+          onActionButtonPressed: ({ id }) => {
+            if (id === "confirm") callbacks.onConfirm();
+            else if (id === "dismiss") callbacks.onDismiss();
+          },
+        });
+        hazardAlertTemplate = fresh;
+        try {
+          CarPlay.presentTemplate(fresh, true);
+        } catch {
+          hazardAlertTemplate = null;
+        }
+      },
+      dismissHazardAlert: () => {
+        if (!hazardAlertTemplate) return;
+        try {
+          CarPlay.dismissTemplate(true);
+        } catch {
+          // Already gone on the native side.
+        }
+        hazardAlertTemplate = null;
+      },
+      mountQuickActions: (items, onActionPressed) => {
+        if (!CarPlay.connected) return;
+        const sections = [
+          {
+            items: items.map((item) => ({
+              id: item.id,
+              text: item.text,
+              detailText: item.detailText,
+            })),
+          },
+        ];
+        const fresh = new ListTemplate({
+          id: QUICK_ACTIONS_TEMPLATE_ID,
+          title: "Tarmoto",
+          sections,
+          onItemSelect: async ({ index }) => {
+            const picked = items[index];
+            if (picked) onActionPressed(picked.id);
+          },
+        });
+        try {
+          CarPlay.setRootTemplate(fresh, false);
+        } catch {
+          // Host already disposed — controller will re-attempt on the
+          // next tick when isAvailable() flips back true.
+        }
+      },
+      unmountQuickActions: () => {
+        // The list template doesn't have a "pop self" affordance — the
+        // controller handles the swap by calling `mountStatusBoard` /
+        // `clearStatusBoard` next. No bridge state to clear here.
       },
     };
   } catch {
@@ -324,10 +632,119 @@ function createAndroidBridge(): VehicleStatusBridge {
     /* eslint-disable @typescript-eslint/no-require-imports */
     const lib = require("react-native-carplay") as CarPlayLib;
     /* eslint-enable @typescript-eslint/no-require-imports */
-    const { CarPlay, PaneTemplate } = lib;
+    const { CarPlay, PaneTemplate, ListTemplate } = lib;
+    // The package's `InternalCarPlay` type definition (in
+    // `node_modules/react-native-carplay/src/CarPlay.ts`) declares
+    // `alert` but not `dismissAlert`, even though the native Android
+    // module (`CarPlayModule.kt:227`) exports it. Until the package's
+    // typings catch up, route the dismiss call through this typed
+    // shim so we don't sprinkle ad-hoc `as never` casts.
+    const androidBridge = CarPlay.bridge as typeof CarPlay.bridge & {
+      dismissAlert(alertId: number): void;
+    };
 
     let template: InstanceType<typeof PaneTemplate> | null = null;
     let mountedTitle: string | null = null;
+    /**
+     * Monotonically-incremented integer id we hand to the AA host's
+     * `Alert.Builder` (the host requires a numeric id, not a string).
+     * Tracked so `dismissHazardAlert` can target the most recent alert
+     * via `CarPlay.bridge.dismissAlert(id)`.
+     */
+    let activeAndroidAlertId: number | null = null;
+    let nextAlertId = 1;
+    /** Active alert callbacks routed via `buttonPressed` events. */
+    let activeAlertCallbacks: {
+      onConfirm: () => void;
+      onDismiss: () => void;
+    } | null = null;
+    /** Subscription to the `buttonPressed` emitter — alive while an alert is mounted. */
+    let alertButtonSubscription: { remove: () => void } | null = null;
+    /**
+     * Active quick-action rows keyed by row id, plus the host callback.
+     * Held in a closure so the direct `didSelectListItem` listener can
+     * dispatch without re-reading from the package's
+     * `ListTemplate.onItemSelect` (which Android drops — see
+     * `attachQuickActionsListener` below).
+     */
+    let activeQuickActions: {
+      handler: (id: QuickActionItem["id"]) => void;
+      ids: Set<string>;
+    } | null = null;
+    /** Subscription to the `didSelectListItem` emitter — alive while quick actions are mounted. */
+    let quickActionsSubscription: { remove: () => void } | null = null;
+
+    /**
+     * Wire the Android-side alert action callbacks. The AA package
+     * routes alert-action taps through the global `buttonPressed`
+     * event (see `parseAction.setOnClickListener` →
+     * `eventEmitter.buttonPressed(id)` in
+     * `node_modules/react-native-carplay/android/.../RCTTemplate.kt`),
+     * which is the same channel template-toolbar buttons use. We
+     * filter on the action ids we registered so taps from other
+     * surfaces don't bleed into the alert callbacks.
+     *
+     * Payload key differs by platform: the iOS `RNCarPlay.m` emits
+     * `{ id, templateId }` while the Android `EventEmitter.kt`
+     * (`fun buttonPressed(buttonId: String)`) puts the action id
+     * under the key `buttonId`. Reading both is defensive — Android
+     * is the platform that actually drives this bridge today, but a
+     * future package version that normalises the shape will keep
+     * working.
+     */
+    const attachAlertButtonListener = () => {
+      detachAlertButtonListener();
+      alertButtonSubscription = CarPlay.emitter.addListener(
+        "buttonPressed",
+        (e: { id?: string; buttonId?: string }) => {
+          if (!activeAlertCallbacks) return;
+          const actionId = e.buttonId ?? e.id;
+          if (actionId === "confirm") activeAlertCallbacks.onConfirm();
+          else if (actionId === "dismiss") activeAlertCallbacks.onDismiss();
+        },
+      );
+    };
+    const detachAlertButtonListener = () => {
+      alertButtonSubscription?.remove();
+      alertButtonSubscription = null;
+    };
+
+    /**
+     * Subscribe to `didSelectListItem` directly on Android because the
+     * package's `ListTemplate` JS wrapper filters with
+     * `e.templateId === this.id`, but the AA native side
+     * (`EventEmitter.kt`'s `fun didSelectListItem(id, index)`) only
+     * puts `{ id, index }` on the wire — `templateId` is undefined,
+     * so the wrapper drops every Android tap and `onItemSelect` is
+     * never called. The direct listener bypasses that filter and
+     * dispatches by row id, which `parseRowItem` *does* set to the
+     * `id` field we passed when constructing the `ListTemplate`.
+     */
+    const attachQuickActionsListener = () => {
+      detachQuickActionsListener();
+      quickActionsSubscription = CarPlay.emitter.addListener(
+        "didSelectListItem",
+        (e: { id?: string; index?: number; templateId?: string }) => {
+          if (!activeQuickActions) return;
+          // Some package builds *do* set templateId for AA; if so, scope
+          // to ours so a different list template's selection can't
+          // bleed in.
+          if (
+            e.templateId !== undefined &&
+            e.templateId !== QUICK_ACTIONS_TEMPLATE_ID
+          ) {
+            return;
+          }
+          if (e.id && activeQuickActions.ids.has(e.id)) {
+            activeQuickActions.handler(e.id as QuickActionItem["id"]);
+          }
+        },
+      );
+    };
+    const detachQuickActionsListener = () => {
+      quickActionsSubscription?.remove();
+      quickActionsSubscription = null;
+    };
 
     const buildPane = (items: StatusBoardItem[]) => ({
       // The Android `parseRowItem` reads `text` (title) + `detailText`
@@ -379,6 +796,11 @@ function createAndroidBridge(): VehicleStatusBridge {
       subscribeDisconnect: (callback) => {
         const handler = () => {
           template = null;
+          activeAndroidAlertId = null;
+          activeAlertCallbacks = null;
+          detachAlertButtonListener();
+          activeQuickActions = null;
+          detachQuickActionsListener();
           mountedTitle = null;
           callback();
         };
@@ -388,11 +810,122 @@ function createAndroidBridge(): VehicleStatusBridge {
       subscribeConnect: (callback) => {
         const handler = () => {
           template = null;
+          activeAndroidAlertId = null;
+          activeAlertCallbacks = null;
+          detachAlertButtonListener();
+          activeQuickActions = null;
+          detachQuickActionsListener();
           mountedTitle = null;
           callback();
         };
         CarPlay.registerOnConnect(handler);
         return () => CarPlay.unregisterOnConnect(handler);
+      },
+      presentHazardAlert: (snapshot, callbacks) => {
+        if (!CarPlay.connected) return;
+        // Android Auto's `presentTemplate` is a `// void` no-op in the
+        // package's `CarPlayModule` (verified against
+        // node_modules/react-native-carplay@2.4.1-beta.0/android/...).
+        // The supported AA path is the imperative
+        // `CarPlay.bridge.alert({ id, title, duration, actions })`
+        // call, which forwards to `AppManager.showAlert` natively.
+        // Tap callbacks come back via the global `buttonPressed`
+        // event (one channel, all action ids), so we filter the ids
+        // we registered.
+        if (activeAndroidAlertId !== null) {
+          try {
+            androidBridge.dismissAlert(activeAndroidAlertId);
+          } catch {
+            // Host may have already auto-dismissed via timeout.
+          }
+        }
+        const id = nextAlertId++;
+        const { title, subtitle } = formatHazardAlertText(snapshot);
+        activeAlertCallbacks = callbacks;
+        attachAlertButtonListener();
+        try {
+          CarPlay.bridge.alert({
+            id,
+            title,
+            subtitle,
+            // Android requires a positive duration; pick a long
+            // window so the rider has time to react without being
+            // forced to dismiss instantly. The action callbacks
+            // (Confirm / Dismiss) end the alert before the timeout
+            // ever fires in practice.
+            duration: 30_000,
+            actions: [
+              { id: "confirm", title: "Confirm" },
+              { id: "dismiss", title: "Dismiss" },
+            ],
+          });
+          activeAndroidAlertId = id;
+        } catch {
+          activeAndroidAlertId = null;
+          activeAlertCallbacks = null;
+          detachAlertButtonListener();
+        }
+      },
+      dismissHazardAlert: () => {
+        if (activeAndroidAlertId === null) return;
+        try {
+          androidBridge.dismissAlert(activeAndroidAlertId);
+        } catch {
+          // Already gone on the native side.
+        }
+        activeAndroidAlertId = null;
+        activeAlertCallbacks = null;
+        detachAlertButtonListener();
+      },
+      mountQuickActions: (items, onActionPressed) => {
+        if (!CarPlay.connected) return;
+        // Android Auto's `ListTemplate` parses a flat `items` array,
+        // not the iOS `sections` shape. Both shapes are built so the
+        // package's platform-specific parsers each see the field they
+        // expect.
+        //
+        // `browsable: true` is required on every Android row — the
+        // package's `parseRowItem` only attaches `setOnClickListener`
+        // (which fires `didSelectListItem`) when this flag is set, so
+        // omitting it would render the rows but swallow taps silently
+        // (verified against node_modules/react-native-carplay@2.4.1-
+        // beta.0/android/.../RCTTemplate.kt:170).
+        const fresh = new ListTemplate({
+          id: QUICK_ACTIONS_TEMPLATE_ID,
+          title: "Tarmoto",
+          items: items.map((item) => ({
+            id: item.id,
+            text: item.text,
+            detailText: item.detailText,
+            browsable: true,
+          })),
+          // The package's `ListTemplate` wrapper installs an
+          // `onItemSelect` listener that filters by `templateId`,
+          // which Android never sets. We attach our own direct
+          // listener below; this callback survives as a no-op on the
+          // off chance a future package version starts filling
+          // `templateId` so both paths can fire.
+          onItemSelect: async ({ index }) => {
+            const picked = items[index];
+            if (picked) onActionPressed(picked.id);
+          },
+        });
+        activeQuickActions = {
+          handler: onActionPressed,
+          ids: new Set(items.map((item) => item.id)),
+        };
+        attachQuickActionsListener();
+        try {
+          CarPlay.setRootTemplate(fresh, false);
+        } catch {
+          // Host already disposed — controller will re-attempt next tick.
+          activeQuickActions = null;
+          detachQuickActionsListener();
+        }
+      },
+      unmountQuickActions: () => {
+        activeQuickActions = null;
+        detachQuickActionsListener();
       },
     };
   } catch {
@@ -408,6 +941,10 @@ function createNoopBridge(): VehicleStatusBridge {
     clearStatusBoard: () => undefined,
     subscribeDisconnect: () => () => undefined,
     subscribeConnect: () => () => undefined,
+    presentHazardAlert: () => undefined,
+    dismissHazardAlert: () => undefined,
+    mountQuickActions: () => undefined,
+    unmountQuickActions: () => undefined,
   };
 }
 
@@ -456,6 +993,16 @@ function attachLifecycleHandlers(bridge: VehicleStatusBridge): void {
   const reset = () => {
     templateMounted = false;
     mountedTitle = null;
+    // The hazard alert / quick-actions templates also live in the same
+    // CarPlay scene that just disconnected, so their handles are stale.
+    // Drop them so the next ride-tick re-presents the alert and remounts
+    // the quick-actions list cleanly. Dismissed-hazard ids deliberately
+    // persist across reconnects: if the rider already explicitly told us
+    // to stop nagging about hazard X, a head-unit reboot shouldn't undo
+    // that decision.
+    activeHazardAlertId = null;
+    quickActionsMounted = false;
+    lastQuickActionsSignature = null;
   };
   bridge.subscribeDisconnect(reset);
   bridge.subscribeConnect(reset);
@@ -505,8 +1052,24 @@ export function mountRideStatusBoard(board: RideStatusBoard): boolean {
  * Tear down the template at the end of a ride. Idempotent so a stop
  * dispatched while the template was never mounted (offline, no head
  * unit connected) is safe.
+ *
+ * Also clears the dismissed/confirmed hazard tracking sets — those
+ * are scoped to a single ride. A commuter who waved off a pothole
+ * alert this morning should still be alerted about the same pothole
+ * on the evening commute (within the same app session); without this
+ * reset the module-level sets would persist until the process is
+ * killed and the rider would silently miss a known hazard.
  */
 export function unmountRideStatusBoard(): void {
+  // Always reset the per-ride hazard guards, even if the bike-display
+  // template never mounted (rider rode without a head unit). The sets
+  // are populated only by user interaction with the alert template,
+  // so clearing them when no template ever mounted is a cheap no-op
+  // — but skipping the clear after a paired ride would leak last
+  // ride's state into the next one.
+  dismissedHazardIds.clear();
+  confirmedHazardIds.clear();
+
   if (!templateMounted) return;
   const bridge = getBridge();
   // Even if the head unit disconnected mid-ride we still drop our local
@@ -515,6 +1078,213 @@ export function unmountRideStatusBoard(): void {
   if (bridge.isAvailable()) bridge.clearStatusBoard();
   templateMounted = false;
   mountedTitle = null;
+}
+
+// ── Hazard alert controller ──
+
+/** Last hazard id we presented, so we don't re-fire on every ride-tick. */
+let activeHazardAlertId: string | null = null;
+/** Hazards the rider explicitly dismissed — we won't re-present these. */
+const dismissedHazardIds = new Set<string>();
+/**
+ * Hazards the rider just *confirmed* on the head unit. Distinct from
+ * `dismissedHazardIds` because confirm is meant to be reversible: the
+ * rider has acknowledged the hazard and we should stop nagging them
+ * for *this* approach, but if they later exit the alert radius and
+ * come back (e.g. a u-turn, or the same pothole appears on the
+ * outbound and inbound legs of a commute), the alert is allowed to
+ * re-fire. The orchestrator clears each entry from this set the moment
+ * the hazard drops out of `radiusMeters`, so it never grows unbounded
+ * and a rider's confirmation is effectively "snooze until I leave the
+ * radius" rather than "permanently silence this one".
+ */
+const confirmedHazardIds = new Set<string>();
+
+/**
+ * Mount the hazard alert template for the given snapshot. Idempotent
+ * across ride-store ticks: re-calling with the same hazard id is a
+ * no-op so the rider doesn't see the alert flash every time the ride
+ * store ticks (currently ~1 Hz).
+ *
+ * Returns `true` when the bridge accepted the request (head-unit
+ * connected and the hazard isn't on the dismissed/confirmed list),
+ * `false` otherwise. The cross-cutting hook uses the return value to
+ * skip subsequent state updates while the bridge is unreachable.
+ */
+export function presentHazardAlertOnVehicleDisplay(
+  snapshot: HazardAlertSnapshot,
+  callbacks: { onConfirm?: () => void; onDismiss?: () => void } = {},
+): boolean {
+  if (
+    dismissedHazardIds.has(snapshot.id) ||
+    confirmedHazardIds.has(snapshot.id)
+  ) {
+    return false;
+  }
+  const bridge = getBridge();
+  if (!bridge.isAvailable()) return false;
+  if (activeHazardAlertId === snapshot.id) return true;
+  bridge.presentHazardAlert(snapshot, {
+    onConfirm: () => {
+      // Park the hazard in the confirmed set so the next ride-tick
+      // (which calls `mirrorClosestHazardAlert` ~1 Hz with the same
+      // hazard still in range) doesn't immediately re-present what
+      // the rider just acknowledged. The orchestrator removes the
+      // entry once the hazard exits the radius, leaving the alert
+      // free to fire again on a future re-entry.
+      confirmedHazardIds.add(snapshot.id);
+      callbacks.onConfirm?.();
+      activeHazardAlertId = null;
+    },
+    onDismiss: () => {
+      // Remember the rider's explicit dismissal so the same hazard
+      // can't bounce back on the next tick or the next time the rider
+      // re-enters its radius — a rider who taps Dismiss is telling us
+      // "I see it, stop nagging me about this one for the rest of
+      // the ride".
+      dismissedHazardIds.add(snapshot.id);
+      callbacks.onDismiss?.();
+      activeHazardAlertId = null;
+    },
+  });
+  activeHazardAlertId = snapshot.id;
+  return true;
+}
+
+/** Hide the active hazard alert template if any. Idempotent. */
+export function dismissHazardAlertOnVehicleDisplay(): void {
+  if (!activeHazardAlertId) return;
+  const bridge = getBridge();
+  if (bridge.isAvailable()) bridge.dismissHazardAlert();
+  activeHazardAlertId = null;
+}
+
+/**
+ * One-shot orchestrator the cross-cutting hook calls on every
+ * ride/hazard-store tick. Picks the closest *non-dismissed,
+ * non-confirmed* hazard within `radiusMeters` of the rider and
+ * presents it; if none qualifies (no fix, all out of range, every
+ * nearby hazard already dismissed/confirmed) folds any standing alert.
+ * Returning `"presented" | "dismissed" | "noop"` lets tests assert
+ * which branch ran without poking module state.
+ *
+ * Filtering dismissed and confirmed ids inside the selection step is
+ * the fix for two regressions:
+ *
+ *   1. A still-in-range dismissed hazard masking a brand-new one —
+ *      previously `selectClosestHazard` returned the dismissed-but-
+ *      closer hazard, the alert call returned `false`, and the
+ *      next-closest fresh hazard never got considered.
+ *   2. A confirmed hazard immediately re-firing on the next ride-tick
+ *      — `onConfirm` clears `activeHazardAlertId`, so the same-id
+ *      dedupe guard wouldn't catch the re-call. The
+ *      `confirmedHazardIds` set keeps the orchestrator from re-
+ *      presenting until the rider has actually moved out of range.
+ *
+ * As a side effect this method also clears confirmed-id entries for
+ * hazards that have left the alert radius, so a future re-entry (the
+ * rider doubles back over the same road) gets a fresh alert. Dismissed
+ * ids deliberately stay sticky for the rest of the ride.
+ */
+export function mirrorClosestHazardAlert(
+  hazards: Hazard[],
+  riderLocation: LatLng | null,
+  radiusMeters: number,
+): "presented" | "dismissed" | "noop" {
+  // Compute distances once so we can both pick the closest eligible
+  // hazard and clear confirmed ids that have left the alert radius in
+  // the same pass.
+  if (riderLocation && confirmedHazardIds.size > 0) {
+    for (const hazard of hazards) {
+      if (!confirmedHazardIds.has(hazard.id)) continue;
+      const distance = distanceMetersBetween(riderLocation, {
+        lat: hazard.lat,
+        lng: hazard.lng,
+      });
+      if (distance > radiusMeters) confirmedHazardIds.delete(hazard.id);
+    }
+    // Hazards that vanished from the nearby list entirely (server
+    // expired them) also lose their confirmed status — same logic as
+    // "out of range" since they can't re-fire from a list they're not
+    // in.
+    const stillNearby = new Set(hazards.map((h) => h.id));
+    for (const id of confirmedHazardIds) {
+      if (!stillNearby.has(id)) confirmedHazardIds.delete(id);
+    }
+  }
+
+  const eligible = hazards.filter(
+    (h) => !dismissedHazardIds.has(h.id) && !confirmedHazardIds.has(h.id),
+  );
+  const closest = selectClosestHazard(eligible, riderLocation);
+  if (!closest || closest.distanceMeters > radiusMeters) {
+    if (activeHazardAlertId) {
+      dismissHazardAlertOnVehicleDisplay();
+      return "dismissed";
+    }
+    return "noop";
+  }
+  const snapshot = buildHazardAlertSnapshot(
+    closest.hazard,
+    closest.distanceMeters,
+  );
+  // If the active alert is for a *different* hazard than the new
+  // closest one, dismiss the standing alert before presenting the new
+  // one — otherwise on iOS the alert stack would queue both, and on
+  // Android the host's single-alert slot would silently swap without
+  // the rider ever seeing the original.
+  if (activeHazardAlertId && activeHazardAlertId !== snapshot.id) {
+    dismissHazardAlertOnVehicleDisplay();
+  }
+  const accepted = presentHazardAlertOnVehicleDisplay(snapshot);
+  return accepted ? "presented" : "noop";
+}
+
+// ── Quick-actions controller ──
+
+let quickActionsMounted = false;
+let lastQuickActionsSignature: string | null = null;
+
+/**
+ * Mount the quick-actions list template on the head unit. Diff-skipped
+ * across ride-store ticks: re-calling with the same items is a no-op
+ * so we don't burn the AA host's update quota (1 update / 5 s during
+ * navigation) on identical refreshes.
+ *
+ * Returns `true` when the bridge accepted the call.
+ */
+export function mountQuickActions(
+  items: QuickActionItem[],
+  onActionPressed: (id: QuickActionItem["id"]) => void,
+): boolean {
+  const bridge = getBridge();
+  if (!bridge.isAvailable()) return false;
+  if (items.length === 0) {
+    if (quickActionsMounted) {
+      bridge.unmountQuickActions();
+      quickActionsMounted = false;
+      lastQuickActionsSignature = null;
+    }
+    return false;
+  }
+  const signature = items
+    .map((i) => `${i.id}|${i.text}|${i.detailText}`)
+    .join("\n");
+  if (quickActionsMounted && signature === lastQuickActionsSignature)
+    return true;
+  bridge.mountQuickActions(items, onActionPressed);
+  quickActionsMounted = true;
+  lastQuickActionsSignature = signature;
+  return true;
+}
+
+/** Tear down the quick-actions template. Idempotent. */
+export function unmountQuickActions(): void {
+  if (!quickActionsMounted) return;
+  const bridge = getBridge();
+  if (bridge.isAvailable()) bridge.unmountQuickActions();
+  quickActionsMounted = false;
+  lastQuickActionsSignature = null;
 }
 
 // ── Test seam ──
@@ -530,6 +1300,11 @@ export function __setCarPlayBridgeForTest(
   activeBridge = bridge;
   templateMounted = false;
   mountedTitle = null;
+  activeHazardAlertId = null;
+  dismissedHazardIds.clear();
+  confirmedHazardIds.clear();
+  quickActionsMounted = false;
+  lastQuickActionsSignature = null;
   // Re-arm the lifecycle handlers against the new fake so tests can
   // exercise the reconnect-after-disconnect path through the same
   // contract the production bridge uses.
@@ -545,6 +1320,11 @@ export function __resetCarPlayStateForTest(): void {
   templateMounted = false;
   mountedTitle = null;
   rideStatusSuspended = false;
+  activeHazardAlertId = null;
+  dismissedHazardIds.clear();
+  confirmedHazardIds.clear();
+  quickActionsMounted = false;
+  lastQuickActionsSignature = null;
 }
 
 /**

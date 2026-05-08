@@ -130,7 +130,7 @@ The system analyzes road geometry (curviness from OSM), elevation data, surface 
 **User Stories:**
 
 - ✅ **US-16:** As a rider, I want turn-by-turn voice navigation with motorcycle-specific instructions so that I don't miss turns.
-- 🚧 **US-17:** As a rider, I want full CarPlay and Android Auto support from day one so that I can use my bike's display.
+- 🚧 **US-17:** As a rider, I want full CarPlay and Android Auto support from day one so that I can use my bike's display. _(JS bridge + iOS entitlements + AA Gradle dep + ride-status board / hazard alerts / quick-launch Commute landed in #498. Awaiting Apple CarPlay entitlement approval and a hardware-on-bike test pass before status flips to ✅ — see `docs/process/carplay-android-auto.md`.)_
 - ✅ **US-18:** As a rider, I want offline maps and navigation so that I can ride in areas without cell coverage.
 - ✅ **US-19:** As a rider, I want automatic ride tracking with stats (distance, duration, elevation, lean angles, top speed) so that I can review my rides.
 - ✅ **US-20:** As a rider, I want GPX import/export so that I can use routes from other platforms.
