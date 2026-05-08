@@ -29,6 +29,7 @@ describe('BikesController', () => {
   beforeEach(async () => {
     const mockService: Partial<jest.Mocked<BikesService>> = {
       list: jest.fn().mockResolvedValue([sampleBike]),
+      getActive: jest.fn().mockResolvedValue(sampleBike),
       create: jest.fn().mockResolvedValue(sampleBike),
       update: jest.fn().mockResolvedValue(sampleBike),
       delete: jest.fn().mockResolvedValue(undefined),
@@ -52,6 +53,25 @@ describe('BikesController', () => {
     expect(service.list).toHaveBeenCalledWith('user-1');
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe('bike-1');
+  });
+
+  it('GET /account/bikes/active routes to the lightweight lookup', async () => {
+    const result = await controller.active(mockReq);
+
+    // Critical that the controller does NOT call the heavy `list`
+    // path (which runs a stats aggregate over `rides`) — the chip
+    // only needs make/model.
+    expect(service.getActive).toHaveBeenCalledWith('user-1');
+    expect(service.list).not.toHaveBeenCalled();
+    expect(result?.id).toBe('bike-1');
+  });
+
+  it('GET /account/bikes/active returns null when the rider has no garage', async () => {
+    (service.getActive as jest.Mock).mockResolvedValueOnce(null);
+
+    const result = await controller.active(mockReq);
+
+    expect(result).toBeNull();
   });
 
   it('POST /account/bikes forwards the rider id and DTO', async () => {

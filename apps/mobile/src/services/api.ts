@@ -393,8 +393,13 @@ class ApiService {
   }
 
   async getActiveBike(): Promise<Bike | null> {
-    const bikes = await this.listBikes();
-    return bikes.find((b) => b.isActive) ?? null;
+    // Dedicated `/account/bikes/active` route — skips the full-list
+    // stats aggregation (`COUNT/SUM` over the rides table grouped by
+    // bike) that the chip doesn't need, so a `RideActiveScreen` mount
+    // is one cheap `findOne` round trip instead.
+    const result = await client.GET("/api/v1/account/bikes/active");
+    const dto = unwrap(result, "Failed to load active bike");
+    return dto ? bikeFromSchema(dto) : null;
   }
 
   async addBike(input: CreateBikeInput): Promise<Bike> {

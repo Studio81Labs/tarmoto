@@ -18,6 +18,8 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiExtraModels,
+  getSchemaPath,
 } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { BikesService } from './bikes.service.js';
@@ -27,6 +29,7 @@ import type { Request } from 'express';
 @ApiTags('account')
 @ApiBearerAuth()
 @UseGuards(AuthGuard)
+@ApiExtraModels(BikeDto)
 @Controller('account/bikes')
 export class BikesController {
   constructor(private readonly bikesService: BikesService) {}
@@ -36,6 +39,25 @@ export class BikesController {
   @ApiResponse({ status: 200, type: [BikeDto] })
   list(@Req() req: Request): Promise<BikeDto[]> {
     return this.bikesService.list(req.user!.userId);
+  }
+
+  // Dedicated lookup the mobile HUD calls on every `RideActiveScreen`
+  // mount. Returning just the active bike skips the per-bike stats
+  // aggregation that `list` runs (`COUNT(*) + SUM(distance_km)` over
+  // the rides table grouped by bike), which is wasteful when all the
+  // chip needs is `make` / `model`. Returns 200 with `null` when the
+  // rider has no garage yet so the mobile branch logic stays simple.
+  @Get('active')
+  @ApiOperation({ summary: 'Get your active bike (or null)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Active bike, or `null` when the rider has no garage yet.',
+    schema: {
+      oneOf: [{ $ref: getSchemaPath(BikeDto) }, { type: 'null' }],
+    },
+  })
+  active(@Req() req: Request): Promise<BikeDto | null> {
+    return this.bikesService.getActive(req.user!.userId);
   }
 
   @Post()
