@@ -194,4 +194,43 @@ describe("IdleBaselineCalibrator", () => {
     }
     expect(cal.snapshot()).toEqual(before);
   });
+
+  it("tags a quiet calibration window as good", () => {
+    // Stationary phone with the canonical bias produces zero per-axis
+    // std. The calibrator's quality field has to land on `'good'` so
+    // feature extraction applies the bias subtraction.
+    const cal = new IdleBaselineCalibrator();
+    feedSamples(cal, CALIBRATION_TARGET_SECONDS * 50 + 1);
+    expect(cal.snapshot()?.quality).toBe("good");
+  });
+
+  it("tags a noisy calibration window as poor (regression for pre-fix moving start)", () => {
+    // Pre-#494-followup: when the rider starts moving before the
+    // first GPS fix, `speedMs` arrives as `undefined` and the
+    // calibrator can complete from contaminated samples — the
+    // backend rejects the upload as 'poor', but the mobile pipeline
+    // would otherwise apply the bad bias for the rest of the ride.
+    // Caching the quality on the snapshot lets `extractFeatures`
+    // bypass it.
+    //
+    // Drive a wildly oscillating accelerometer with no speed signal;
+    // the std on every axis will exceed the stationary threshold
+    // (0.5 m/s²), so the snapshot must come out tagged 'poor'.
+    const cal = new IdleBaselineCalibrator();
+    const targetSamples = CALIBRATION_TARGET_SECONDS * 50;
+    for (let i = 0; i <= targetSamples; i += 1) {
+      const sign = i % 2 === 0 ? 1 : -1;
+      cal.push({
+        t: i * SAMPLE_INTERVAL_MS,
+        ax: 1.5 * sign,
+        ay: 1.5 * sign,
+        az: 9.81 + 1.5 * sign,
+        // speedMs intentionally absent (pre-fix) — the calibrator
+        // can't gate on movement so the window completes anyway.
+      });
+    }
+    const snap = cal.snapshot();
+    expect(snap).not.toBeNull();
+    expect(snap!.quality).toBe("poor");
+  });
 });

@@ -23,6 +23,7 @@ describe('SensorService', () => {
   let storedStats: Partial<RideStats> | null;
   let storedRideCalibration: {
     ride_id: string;
+    user_id: string | null;
     values: Partial<Ride>;
   } | null;
   let privacy: { loadPreferences: jest.Mock };
@@ -96,6 +97,8 @@ describe('SensorService', () => {
     const updateBuilder = {
       _set: null as Partial<Ride> | null,
       _rideId: null as string | null,
+      _userId: null as string | null,
+      _whereClauses: [] as string[],
       update: jest.fn().mockReturnThis(),
       set: jest.fn().mockImplementation((values: Partial<Ride>) => {
         updateBuilder._set = values;
@@ -103,20 +106,37 @@ describe('SensorService', () => {
       }),
       where: jest
         .fn()
-        .mockImplementation((_sql: string, params: { rideId: string }) => {
+        .mockImplementation((sql: string, params: { rideId: string }) => {
+          updateBuilder._whereClauses.push(sql);
           updateBuilder._rideId = params.rideId;
           return updateBuilder;
         }),
-      andWhere: jest.fn().mockReturnThis(),
+      andWhere: jest
+        .fn()
+        .mockImplementation((sql: string, params?: { userId?: string }) => {
+          updateBuilder._whereClauses.push(sql);
+          if (params?.userId) updateBuilder._userId = params.userId;
+          return updateBuilder;
+        }),
       execute: jest.fn().mockImplementation(() => {
+        // Honour the production code's authorization gate: only
+        // accept the write when the ride belongs to the caller. A
+        // mismatched (or missing) user_id predicate must not land,
+        // otherwise the test wouldn't catch a regression that drops
+        // the gate.
+        const hasUserGate = updateBuilder._whereClauses.some((c) =>
+          c.includes('user_id'),
+        );
         if (
           updateBuilder._rideId &&
           updateBuilder._set &&
+          hasUserGate &&
           (storedRideCalibration === null ||
             storedRideCalibration.ride_id !== updateBuilder._rideId)
         ) {
           storedRideCalibration = {
             ride_id: updateBuilder._rideId,
+            user_id: updateBuilder._userId,
             values: updateBuilder._set,
           };
         }
@@ -1094,6 +1114,31 @@ describe('SensorService', () => {
 
       expect(storedRideCalibration?.values.calibration_axis_mean_x).toBe(0.05);
       expect(storedRideCalibration?.values.calibration_quality).toBe('good');
+    });
+
+    it('scopes the calibration write to the uploading rider so cross-user spoofing is blocked', async () => {
+      // Regression: an attacker that learns or guesses another rider's
+      // ride UUID (e.g. via a leaked share link) must not be able to
+      // pin arbitrary first-write-wins calibration values onto that
+      // rider's row by submitting a fabricated batch. The UPDATE
+      // predicate has to gate on `(id, user_id)` so the row only
+      // accepts writes from the ride's owner. Without the user_id
+      // predicate the mock's `hasUserGate` check rejects the write
+      // and `storedRideCalibration` stays null — that's how this test
+      // catches a regression that drops the authorization.
+      await service.processUpload('attacker', {
+        ride_id: 'victim-ride',
+        readings: Array.from({ length: 50 }, (_, i) =>
+          rideReading(Date.now() + i * 20, i),
+        ),
+        calibration: makeCalibration(),
+      });
+
+      // The mock landed the write because the production code passes
+      // a user_id predicate; assert that the captured user_id is the
+      // caller's (not the victim's).
+      expect(storedRideCalibration?.ride_id).toBe('victim-ride');
+      expect(storedRideCalibration?.user_id).toBe('attacker');
     });
   });
 

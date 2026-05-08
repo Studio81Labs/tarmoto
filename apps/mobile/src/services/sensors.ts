@@ -579,13 +579,26 @@ class SensorService {
    */
   private extractFeatures(window: SensorReading[]): WindowFeatures {
     const calibrationSnap = this.calibrator?.snapshot();
+    // Only apply bias subtraction when the captured window cleared
+    // the same quality bar the backend uses to tag a reading 'good'.
+    // A `'poor'` snapshot means the rider was moving / cornering
+    // during the capture window (per-axis std above the stationary
+    // threshold, or sub-floor sample count) and applying its bias
+    // would skew the residual in the wrong direction for the rest of
+    // the ride. We still keep the snapshot so the upload ships its
+    // payload — the backend persists the `'poor'` tag for analytics
+    // — but the on-device feature pipeline falls back to the
+    // historical (mag − 9.81) contract until a good calibration is
+    // captured.
+    const useCalibration =
+      calibrationSnap !== null &&
+      calibrationSnap !== undefined &&
+      calibrationSnap.quality === "good";
     let signedDeviations: number[];
     let deviations: number[];
-    if (calibrationSnap) {
+    if (useCalibration && calibrationSnap) {
       const { meanX, meanY, meanZ } = calibrationSnap;
-      const restMag = Math.sqrt(
-        meanX * meanX + meanY * meanY + meanZ * meanZ,
-      );
+      const restMag = Math.sqrt(meanX * meanX + meanY * meanY + meanZ * meanZ);
       // Signed FFT input — `|a| − rest` oscillates around 0 for
       // vibration and stays near 0 for a stationary phone. Using the
       // calibrated rest magnitude rather than the literal 9.81

@@ -116,6 +116,7 @@ export class SensorService {
       }
       await this.persistRideCalibration(
         dto.ride_id,
+        userId,
         dto.calibration,
         calibrationQuality,
       );
@@ -465,9 +466,18 @@ export class SensorService {
    * Doing this in SQL means the check is atomic against concurrent
    * uploads (no read-modify-write race) and we don't need a separate
    * lock or version column.
+   *
+   * `userId` scopes the UPDATE to rides owned by the caller. Without
+   * the ownership predicate, a malicious client that learns or
+   * guesses another rider's ride UUID could submit a fabricated
+   * calibration on that ride's first-write-wins window and pin
+   * arbitrary attacker-controlled values in the DB. The
+   * `(id, user_id)` pair is the smallest authorization gate that
+   * also keeps the UPDATE atomic against concurrent uploads.
    */
   private async persistRideCalibration(
     rideId: string,
+    userId: string,
     calibration: CalibrationDto,
     quality: CalibrationQuality,
   ): Promise<void> {
@@ -486,6 +496,7 @@ export class SensorService {
         calibration_quality: quality,
       })
       .where('id = :rideId', { rideId })
+      .andWhere('user_id = :userId', { userId })
       .andWhere('calibration_axis_mean_x IS NULL')
       .execute();
   }

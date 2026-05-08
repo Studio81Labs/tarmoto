@@ -805,4 +805,52 @@ describe("sensorService idle-baseline calibration (issue #494)", () => {
     const { calibration } = sensorService.stop();
     expect(calibration).toBeNull();
   });
+
+  it("falls back to the (mag − 9.81) contract when the captured calibration is poor", () => {
+    // Regression: a rider who starts moving before the first GPS fix
+    // can produce a calibration window from contaminated samples
+    // (`speedMs: undefined` lets the calibrator complete on motion).
+    // The backend tags such uploads `'poor'`, but the on-device
+    // feature pipeline would otherwise pin the bad bias for the
+    // whole ride. Gate on the cached snapshot quality so a poor
+    // window falls back to the historical (mag − 9.81) contract
+    // until a good calibration is captured.
+    const noisySamples: {
+      ax: number;
+      ay: number;
+      az: number;
+      t: number;
+    }[] = [];
+    for (let i = 0; i <= 1500; i += 1) {
+      const sign = i % 2 === 0 ? 1 : -1;
+      noisySamples.push({
+        ax: 1.5 * sign,
+        ay: 1.5 * sign,
+        az: 9.81 + 1.5 * sign,
+        t: i * 20,
+        // speedMs intentionally absent so the calibrator doesn't
+        // self-truncate on movement.
+      });
+    }
+    pokeCalibrator(noisySamples);
+
+    // The captured calibration is uploaded so the backend can persist
+    // the 'poor' tag for analytics — that part stays the same.
+    expect(sensorService.getCalibration()).not.toBeNull();
+
+    // Feature extraction on a static 1g window must use the
+    // pre-calibration fallback (mag − 9.81 ≈ 0), NOT the contaminated
+    // bias (which would skew the residual into a non-zero rms).
+    const window: Reading[] = Array.from({ length: 100 }, (_, i) => ({
+      t: 30_000 + i * 20,
+      ax: 0,
+      ay: 0,
+      az: 9.81,
+      gx: 0,
+      gy: 0,
+      gz: 0,
+    }));
+    const features = callExtract(window);
+    expect(features.rms).toBeCloseTo(0, 3);
+  });
 });

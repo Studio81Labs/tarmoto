@@ -37,7 +37,9 @@ import {
   CALIBRATION_MIN_SAMPLES,
   CALIBRATION_MIN_SECONDS,
   CALIBRATION_TARGET_SECONDS,
+  classifyCalibrationQuality,
   type CalibrationPayload,
+  type CalibrationQuality,
 } from "@tarmoto/shared";
 
 /**
@@ -95,6 +97,23 @@ export interface CalibrationSnapshot {
   meanX: number;
   meanY: number;
   meanZ: number;
+  /**
+   * Server-equivalent quality classification of the captured window
+   * (issue #494). Cached at finalise time so the feature pipeline
+   * doesn't re-classify on every window.
+   *
+   * Feature extraction MUST gate on `'good'` — a `'poor'` snapshot
+   * (axis std above the stationary threshold, or sub-floor sample
+   * count) reflects motion contamination and applying its bias would
+   * skew the bias-subtraction in the wrong direction for the entire
+   * ride. The snapshot is still uploaded so the backend can persist
+   * the `'poor'` tag for analytics; the mobile pipeline simply falls
+   * back to the (mag − 9.81) contract until a good calibration is
+   * captured (which never happens on the same ride — calibration is
+   * one-shot per ride — but a future re-calibrate trigger could
+   * produce one).
+   */
+  quality: CalibrationQuality;
 }
 
 /**
@@ -223,20 +242,26 @@ export class IdleBaselineCalibrator {
     const varY = Math.max(0, this.stats.sumSqY / n - meanY * meanY);
     const varZ = Math.max(0, this.stats.sumSqZ / n - meanZ * meanZ);
 
+    const payload: CalibrationPayload = {
+      axis_mean_x: meanX,
+      axis_mean_y: meanY,
+      axis_mean_z: meanZ,
+      axis_std_x: Math.sqrt(varX),
+      axis_std_y: Math.sqrt(varY),
+      axis_std_z: Math.sqrt(varZ),
+      sample_count: n,
+      truncated,
+    };
+    // Cache the same `'good'` / `'poor'` decision the backend will
+    // make so feature extraction can bypass a contaminated bias.
+    // Reuses the shared classifier so the gate stays in lockstep
+    // with the server-side validation thresholds.
     this.snap = {
       meanX,
       meanY,
       meanZ,
-      payload: {
-        axis_mean_x: meanX,
-        axis_mean_y: meanY,
-        axis_mean_z: meanZ,
-        axis_std_x: Math.sqrt(varX),
-        axis_std_y: Math.sqrt(varY),
-        axis_std_z: Math.sqrt(varZ),
-        sample_count: n,
-        truncated,
-      },
+      payload,
+      quality: classifyCalibrationQuality(payload),
     };
   }
 }
