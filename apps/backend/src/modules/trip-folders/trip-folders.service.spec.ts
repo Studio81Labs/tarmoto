@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
@@ -45,13 +45,18 @@ describe('TripFoldersService', () => {
     folderRepo = {
       find: jest.fn().mockResolvedValue([]),
       findOne: jest.fn(),
-      create: jest.fn().mockImplementation((data) => ({
-        id: folderId,
-        created_at: new Date('2026-04-20T10:00:00Z'),
-        updated_at: new Date('2026-04-20T10:00:00Z'),
-        ...data,
-      })),
-      save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
+      create: jest.fn().mockImplementation(
+        (data: Partial<TripFolder>): TripFolder =>
+          ({
+            id: folderId,
+            created_at: new Date('2026-04-20T10:00:00Z'),
+            updated_at: new Date('2026-04-20T10:00:00Z'),
+            ...data,
+          }) as TripFolder,
+      ),
+      save: jest
+        .fn()
+        .mockImplementation((entity: TripFolder) => Promise.resolve(entity)),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
       createQueryBuilder: jest.fn().mockImplementation(() => ({
         ...updateBuilder,
@@ -256,6 +261,7 @@ describe('TripFoldersService', () => {
 
   describe('remove', () => {
     it('deletes the folder for its owner and relies on FK SET NULL for trips', async () => {
+      (folderRepo.findOne as jest.Mock).mockResolvedValueOnce(baseFolder());
       (folderRepo.delete as jest.Mock).mockResolvedValueOnce({ affected: 1 });
 
       await expect(service.remove(userId, folderId)).resolves.toBeUndefined();
@@ -271,11 +277,35 @@ describe('TripFoldersService', () => {
     });
 
     it('404s when the folder is not owned by the caller', async () => {
-      (folderRepo.delete as jest.Mock).mockResolvedValueOnce({ affected: 0 });
+      (folderRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
 
       await expect(
         service.remove(otherUserId, folderId),
       ).rejects.toBeInstanceOf(NotFoundException);
+      expect(folderRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('shifts every folder above the deleted one down by 1 to keep positions dense', async () => {
+      // Bugbot finding: deleting position 1 from [0,1,2,3] used to
+      // leave [0,2,3] and the gap accumulated across deletes, which
+      // poisoned the math in `shiftPositions` for subsequent reorders.
+      // The new contract: delete + shift run in the same transaction.
+      (folderRepo.findOne as jest.Mock).mockResolvedValueOnce(
+        baseFolder({ position: 1 }),
+      );
+      (folderRepo.delete as jest.Mock).mockResolvedValueOnce({ affected: 1 });
+
+      await service.remove(userId, folderId);
+
+      // The bulk shift only touches rows STRICTLY above the deleted
+      // position — rows at 0 stay put. Asserting via `andWhere` (shared
+      // across calls through the spread) plus the `execute` side-effect
+      // — the per-call `where` mock is recreated by the
+      // createQueryBuilder factory so we can't track it from here.
+      expect(updateBuilder.andWhere).toHaveBeenCalledWith('position > :from', {
+        from: 1,
+      });
+      expect(updateBuilder.execute).toHaveBeenCalled();
     });
   });
 });

@@ -1500,7 +1500,7 @@ describe('TripsService', () => {
         user_id: OWNER_ID,
       } as TripFolder);
       manager.findOne.mockResolvedValueOnce(makeOwnedTrip());
-      mockGetDetailReturns(makeOwnedTrip({ folder_id: 'fld-1' } as never));
+      mockGetDetailReturns(makeOwnedTrip({ folder_id: 'fld-1' }));
 
       await service.update(OWNER_ID, TRIP_ID, {
         folder_id: 'fld-1',
@@ -1543,7 +1543,7 @@ describe('TripsService', () => {
         role: 'owner',
       } as TripMember);
       manager.findOne.mockResolvedValueOnce(makeOwnedTrip());
-      mockGetDetailReturns(makeOwnedTrip({ folder_id: null } as never));
+      mockGetDetailReturns(makeOwnedTrip({ folder_id: null }));
 
       await service.update(OWNER_ID, TRIP_ID, { folder_id: null });
 

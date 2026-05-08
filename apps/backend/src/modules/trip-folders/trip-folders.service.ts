@@ -107,15 +107,42 @@ export class TripFoldersService {
   }
 
   async remove(userId: string, folderId: string): Promise<void> {
-    // No explicit Trip.folder_id reset — the FK on `trips.folder_id` is
-    // `ON DELETE SET NULL`, so the database does the cleanup atomically
-    // with the folder delete and we don't need a per-trip UPDATE pass
-    // here. Cross-user delete: 404 instead of 403, mirroring `update`.
-    const result = await this.folderRepo.delete({
-      id: folderId,
-      user_id: userId,
+    // Two things have to happen atomically:
+    //  1. Delete the row. The FK on `trips.folder_id` is `ON DELETE SET
+    //     NULL`, so child trips become unfiled in the same statement.
+    //  2. Decrement the position of every folder that sat AFTER the
+    //     deleted one. Skipping this leaves a gap (e.g. delete pos 1
+    //     from [0,1,2,3] → [0,2,3]) that accumulates over repeated
+    //     deletes; the reorder UPDATE math in `shiftPositions` assumes
+    //     dense 0..N-1 positions and produces drift in the gappy state.
+    //
+    // We need the DELETE pre-image to know which `position` to shift
+    // around, so the read + delete + shift must run in a single txn.
+    // Cross-user delete: 404 instead of 403, mirroring `update`.
+    const deleted = await this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(TripFolder);
+      const folder = await repo.findOne({
+        where: { id: folderId, user_id: userId },
+      });
+      if (!folder) return false;
+      await repo.delete({ id: folderId, user_id: userId });
+      // Pull every folder above the deleted one down by one so the
+      // column stays dense within this user. Ordering doesn't matter —
+      // the rows being shifted have unique positions to start with and
+      // each lands at a unique pre-existing position vacated by its
+      // predecessor's shift, so there's no transient unique-index
+      // collision (and we don't have a unique index on (user_id,
+      // position) anyway).
+      await repo
+        .createQueryBuilder()
+        .update()
+        .set({ position: () => 'position - 1' })
+        .where('user_id = :userId', { userId })
+        .andWhere('position > :from', { from: folder.position })
+        .execute();
+      return true;
     });
-    if (result.affected === 0) {
+    if (!deleted) {
       throw new NotFoundException('Folder not found');
     }
   }
