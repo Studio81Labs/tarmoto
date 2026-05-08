@@ -225,6 +225,33 @@ class TtsService {
    * `getInitStatus()` closes that window. Subsequent calls reuse the
    * cached promise so we don't re-probe on every phrase.
    */
+  /**
+   * Cancel the in-flight utterance: bump the epoch so any drain that
+   * resumed before the native cancel arrived stops with a stale-epoch
+   * check, record a pending discard so `handleUtteranceEnded` swallows
+   * the cancel that the native side will fire, and ask the engine to
+   * stop. Caller decides WHEN to call (always vs only-if-not-high)
+   * and is responsible for any queue clearing — the helper only
+   * touches the in-flight utterance, not the queue.
+   *
+   * No-op when nothing is speaking. Centralised so a future change to
+   * the preempt protocol (priority semantics, discard counter shape,
+   * native stop signature) only has one site to update.
+   */
+  private preemptInFlight(): void {
+    if (!this.speaking) return;
+    this.pendingDiscards += 1;
+    this.epoch += 1;
+    this.speaking = false;
+    this.speakingPriority = "normal";
+    const mod = this.ensureNative();
+    if (mod) {
+      void Promise.resolve(mod.stop()).catch(() => {
+        /* ignore */
+      });
+    }
+  }
+
   private async waitForReady(mod: TtsModule): Promise<void> {
     if (!this.ready) {
       if (typeof mod.getInitStatus === "function") {
@@ -244,15 +271,21 @@ class TtsService {
     return this.ready;
   }
 
-  private buildSpeakOptions(): unknown {
+  private buildSpeakOptions(priority: SpeakPriority): unknown {
     // Android per-utterance options — stream + volume. iOS doesn't
     // expose a per-utterance volume on `react-native-tts`; volume is
     // governed by the system audio session and the `setDucking` flag.
     if (Platform.OS === "android") {
+      // High-priority safety alerts always play at full volume,
+      // overriding the rider's volume slider — `KEY_PARAM_VOLUME: 0`
+      // (the Settings "Mute" bucket) would otherwise silence a crash
+      // countdown or storm warning at the native engine level even
+      // though `speak()` correctly bypassed the volume<=0 suppression.
+      const vol = priority === "high" ? 1 : this.volume;
       return {
         androidParams: {
           ...ANDROID_TTS_OPTIONS.androidParams,
-          KEY_PARAM_VOLUME: this.volume,
+          KEY_PARAM_VOLUME: vol,
         },
       };
     }
@@ -280,7 +313,7 @@ class TtsService {
       // id immediately on every published version of the library. The
       // `tts-finish` / `tts-cancel` listener above is what drives the
       // next drain.
-      await mod.speak(next.phrase, this.buildSpeakOptions());
+      await mod.speak(next.phrase, this.buildSpeakOptions(next.priority));
     } catch {
       // If the native side throws synchronously (audio session denied,
       // invalid voice id, etc.) we'll never get a finish event for this
@@ -368,19 +401,8 @@ class TtsService {
       // Preempt the in-flight utterance only if it's lower priority. A
       // high-priority phrase already speaking should run to completion
       // — a second high-priority phrase queues behind it.
-      if (this.speaking && this.speakingPriority !== "high") {
-        // Mark the in-flight utterance's pending cancel as ours so the
-        // listener swallows it instead of treating it as the new
-        // high-priority utterance ending. Without this the cancel
-        // arrives after `drain()` has retagged speakingEpoch and would
-        // spuriously flip `speaking` off mid-alert.
-        this.pendingDiscards += 1;
-        this.epoch += 1;
-        this.speaking = false;
-        this.speakingPriority = "normal";
-        void Promise.resolve(mod.stop()).catch(() => {
-          /* ignore */
-        });
+      if (this.speakingPriority !== "high") {
+        this.preemptInFlight();
       }
       void this.drain();
       return;
@@ -412,19 +434,14 @@ class TtsService {
    * fresh phrase had already taken its place.
    */
   stop(): void {
-    // If something is speaking, the native side will fire one cancel
-    // event for it — record the discard so the listener swallows it
-    // instead of triggering a spurious drain.
-    if (this.speaking) this.pendingDiscards += 1;
-    this.epoch += 1;
     this.queue = [];
-    this.speaking = false;
-    this.speakingPriority = "normal";
-    const mod = this.ensureNative();
-    if (mod) {
-      void Promise.resolve(mod.stop()).catch(() => {
-        /* ignore */
-      });
+    if (this.speaking) {
+      this.preemptInFlight();
+    } else {
+      // No in-flight utterance, but bump the epoch anyway so any
+      // currently-awaiting drain (e.g. waiting on getInitStatus) bails
+      // with a stale-epoch check before it issues mod.speak().
+      this.epoch += 1;
     }
   }
 
@@ -443,17 +460,8 @@ class TtsService {
     // Drop only normal-priority queue entries; keep high-priority
     // alerts so a queued crash/weather notice still fires.
     this.queue = this.queue.filter((q) => q.priority === "high");
-    if (this.speaking && this.speakingPriority !== "high") {
-      this.pendingDiscards += 1;
-      this.epoch += 1;
-      this.speaking = false;
-      this.speakingPriority = "normal";
-      const mod = this.ensureNative();
-      if (mod) {
-        void Promise.resolve(mod.stop()).catch(() => {
-          /* ignore */
-        });
-      }
+    if (this.speakingPriority !== "high") {
+      this.preemptInFlight();
     }
   }
 
@@ -472,22 +480,12 @@ class TtsService {
   pause(): void {
     if (this.paused) return;
     this.paused = true;
-    if (this.speaking) {
-      // Drop the in-flight utterance so we don't hear the tail of a
-      // half-spoken prompt when audio resumes — a fresh prompt will
-      // fire on the next maneuver instead. The pending discard prevents
-      // the cancel event from triggering a spurious drain on resume.
-      this.pendingDiscards += 1;
-      this.epoch += 1;
-      this.speaking = false;
-      this.speakingPriority = "normal";
-      const mod = this.ensureNative();
-      if (mod) {
-        void Promise.resolve(mod.stop()).catch(() => {
-          /* ignore */
-        });
-      }
-    }
+    // Drop the in-flight utterance so we don't hear the tail of a
+    // half-spoken prompt when audio resumes — a fresh prompt will
+    // fire on the next maneuver instead. The preempt helper records
+    // the cancel as ours so it doesn't trigger a spurious drain on
+    // resume.
+    this.preemptInFlight();
   }
 
   resume(): void {
@@ -513,17 +511,8 @@ class TtsService {
       // — by the time the rider unplugs we'd be replaying stale cues
       // for maneuvers they've already passed.
       this.queue = this.queue.filter((q) => q.priority === "high");
-      if (this.speaking && this.speakingPriority !== "high") {
-        this.pendingDiscards += 1;
-        this.epoch += 1;
-        this.speaking = false;
-        this.speakingPriority = "normal";
-        const mod = this.ensureNative();
-        if (mod) {
-          void Promise.resolve(mod.stop()).catch(() => {
-            /* ignore */
-          });
-        }
+      if (this.speakingPriority !== "high") {
+        this.preemptInFlight();
       }
     }
   }

@@ -383,7 +383,7 @@ describe("ttsService", () => {
     expect(nativeModule.speak.mock.calls[0][0]).toBe("Crash detected.");
   });
 
-  it("high-priority safety alerts bypass volume=0 mute", async () => {
+  it("high-priority safety alerts bypass volume=0 mute on iOS", async () => {
     const nativeModule = createNativeMock();
     const { ttsService } = loadService({ platform: "ios", nativeModule });
 
@@ -392,6 +392,44 @@ describe("ttsService", () => {
     await flushMicrotasks();
 
     expect(nativeModule.speak).toHaveBeenCalledTimes(1);
+  });
+
+  it("high-priority alerts override KEY_PARAM_VOLUME=0 to full volume on Android", async () => {
+    // Without the override, a high-priority alert hits the engine
+    // with KEY_PARAM_VOLUME: 0 and is silent at the native side even
+    // though speak() correctly bypassed the volume<=0 suppression.
+    // (PR #509 review: bugbot high.)
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    ttsService.setVolume(0);
+    ttsService.speak("Crash detected.", { priority: "high" });
+    await flushMicrotasks();
+
+    expect(nativeModule.speak).toHaveBeenCalledTimes(1);
+    expect(nativeModule.speak).toHaveBeenCalledWith(
+      "Crash detected.",
+      expect.objectContaining({
+        androidParams: expect.objectContaining({ KEY_PARAM_VOLUME: 1 }),
+      }),
+    );
+
+    // Drain the high-priority alert so the next normal phrase can
+    // run, then assert normal-priority speech still honours the
+    // rider's volume slider (only the high-priority bucket forces
+    // full volume).
+    nativeModule.__fireFinish();
+    await flushMicrotasks();
+    nativeModule.speak.mockClear();
+    ttsService.setVolume(0.42);
+    ttsService.speak("Continue.");
+    await flushMicrotasks();
+    expect(nativeModule.speak).toHaveBeenCalledWith(
+      "Continue.",
+      expect.objectContaining({
+        androidParams: expect.objectContaining({ KEY_PARAM_VOLUME: 0.42 }),
+      }),
+    );
   });
 
   it("setMuted(true) preserves queued high-priority alerts", async () => {

@@ -165,7 +165,6 @@ export default function NavigationScreen() {
     polyline,
     progressM: tick?.progressM ?? null,
     enabled: weatherAlertsEnabled && polyline.length >= 2,
-    voiceEnabled,
   });
 
   const routeShape = useMemo<GeoJSON.FeatureCollection>(
