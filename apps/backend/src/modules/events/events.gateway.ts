@@ -93,6 +93,14 @@ const GROUP_RIDE_PATH_LIMIT = 60;
 // process — multi-instance deploys still bound the per-process fanout.
 const GROUP_POSITION_THROTTLE_MS = 1000;
 
+// US-35 — server-side throttle floor for `trip:cursor`. Companions
+// already throttle to ~7 Hz client-side, but the gateway must enforce
+// its own ≤ 10 Hz cap (100 ms) per the US-35 acceptance criterion so a
+// misbehaving or hostile client can't flood every other collaborator
+// with unbounded mouse-move fanout. Drop, don't queue — collaborators
+// only need the latest position.
+const TRIP_CURSOR_THROTTLE_MS = 100;
+
 @SkipThrottle()
 @WebSocketGateway({
   cors: { origin: '*' },
@@ -109,6 +117,10 @@ export class EventsGateway
   // enforce the 1 Hz floor on `group:position` events. See
   // `GROUP_POSITION_THROTTLE_MS`.
   private readonly groupPositionThrottle = new Map<string, number>();
+  // Per `(trip_id, user_id)` last-broadcast timestamp used to enforce
+  // the ~12 Hz floor on `trip:cursor` fanout. See
+  // `TRIP_CURSOR_THROTTLE_MS`.
+  private readonly tripCursorThrottle = new Map<string, number>();
 
   constructor(
     private readonly jwt: JwtService,
@@ -180,6 +192,11 @@ export class EventsGateway
           at,
         };
         this.server.to(`trip:${tripId}`).emit('trip:presence', payload);
+        // Drop the cursor-throttle slot so a future reconnect from the
+        // same user starts fresh — without this, an in-window
+        // disconnect would force the next reconnect's first cursor to
+        // be dropped because the stale timestamp is still ≤ 83 ms old.
+        this.tripCursorThrottle.delete(`${tripId}:${userId}`);
       }
     }
 
@@ -396,6 +413,10 @@ export class EventsGateway
         at: new Date().toISOString(),
       };
       this.server.to(room).emit('trip:presence', presence);
+      // Same rationale as in `handleDisconnect` — stale cursor-throttle
+      // entries from a prior session would otherwise eat the first
+      // tick after a re-subscribe.
+      this.tripCursorThrottle.delete(`${data.trip_id}:${userId}`);
     }
   }
 
@@ -406,6 +427,14 @@ export class EventsGateway
    * clients cannot spoof `user_id`. Silently ignores cursors for rooms
    * the client hasn't been granted membership to, to prevent cross-trip
    * leakage if a misbehaving client emits to a room it was never in.
+   *
+   * Server-side throttling caps fanout at ≤ 10 Hz per (trip, user) per
+   * the US-35 acceptance criterion. The companion already throttles
+   * client-side, but the gateway must enforce its own floor so a
+   * misbehaving or hostile client can't chew through every other
+   * collaborator's bandwidth. Drops are silent — cursors only carry
+   * the latest position, so queueing stale ticks would just lag the
+   * rendered dot.
    */
   @SubscribeMessage('trip:cursor')
   handleTripCursor(
@@ -423,12 +452,18 @@ export class EventsGateway
     const room = `trip:${data.trip_id}`;
     if (!client.rooms.has(room)) return;
 
+    const throttleKey = `${data.trip_id}:${userId}`;
+    const nowMs = Date.now();
+    const last = this.tripCursorThrottle.get(throttleKey) ?? 0;
+    if (nowMs - last < TRIP_CURSOR_THROTTLE_MS) return;
+    this.tripCursorThrottle.set(throttleKey, nowMs);
+
     const payload: TripCursorPayload = {
       user_id: userId,
       trip_id: data.trip_id,
       lat: data.lat,
       lng: data.lng,
-      at: new Date().toISOString(),
+      at: new Date(nowMs).toISOString(),
     };
     client.to(room).emit('trip:cursor', payload);
   }

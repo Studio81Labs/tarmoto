@@ -56,9 +56,12 @@ import {
 import type { SurfaceType, Trip, TripParameters, Waypoint } from "@/lib/types";
 import { formatDuration } from "@/lib/utils";
 /**
- * TripPlannerPage — Full-screen map-based trip planner
+ * TripPlannerPage — Full-screen map-based trip planner.
  *
- * TODO: WebSocket collaboration (cursor sync, live edits) (US-35)
+ * Live trip collaboration (US-35) is wired through `useTripCollabSession`:
+ * cursors, presence, suggestions, and remote `trip:updated`/`trip:deleted`
+ * broadcasts are merged into local state so collaborators see each
+ * other's edits without reloading.
  */
 const SURFACE_OPTIONS: {
   value: SurfaceType;
@@ -189,7 +192,57 @@ export default function TripPlannerPage() {
   );
   const currentUserId = useAuthStore((s) => s.user?.id ?? null);
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
-  const collabSession = useTripCollabSession(serverTripId);
+  // Live-edit reaction (US-35): another collaborator's import /
+  // regenerate / mutation comes in over the socket as `trip:updated`,
+  // and we re-hydrate the local planner state from the broadcast
+  // payload (it's a full `TripDetailDto`). Skipped when the local
+  // `activeTrip` already has the same id and identical contents to
+  // avoid clobbering in-flight optimistic edits the local user is
+  // making — the canonical state is whatever the backend just
+  // committed, but we still want to debounce trivial echoes.
+  const handleRemoteTripUpdated = useCallback(
+    (payload: unknown) => {
+      const detail = payload as TripDetailResponse;
+      if (!detail || typeof detail.id !== "string") return;
+      // Only react if the planner is currently focused on the trip the
+      // event is for. The hook already filters but a defensive check
+      // here covers a future change in subscription scope.
+      if (detail.id !== serverTripId) return;
+      const hydrated = tripFromDetail(detail);
+      setActiveTrip(hydrated);
+      setServerTripOwnerId(findOwnerId(detail));
+      // Mirror the REST hydration path below: the planner's control
+      // strip (days / dailyKmTarget / road preference / surfaces /
+      // minQuality / avoid* toggles) is local React state, NOT
+      // derived from `activeTrip`, so a remote regenerate that
+      // changed `num_days` would otherwise leave the controls stuck
+      // at their old values — and the next local Save would
+      // re-serialize the stale controls back to the server, undoing
+      // the collaborator's just-committed change.
+      const params = hydrated.parameters;
+      setDays(params.days);
+      setDailyKmTarget(params.dailyKmTarget);
+      setRoadPreference(params.roadPreference);
+      setSurfacePreference(params.surfacePreference);
+      setMinQuality(params.minQuality);
+      setAvoidHighways(params.avoidHighways);
+      setAvoidTolls(params.avoidTolls);
+      setAvoidUnpaved(params.avoidUnpaved);
+    },
+    [serverTripId, setActiveTrip],
+  );
+  const handleRemoteTripDeleted = useCallback(() => {
+    // Owner deleted the trip out from under everyone. Drop local trip
+    // state and the collab session so the planner falls back to a
+    // blank canvas — any further interaction would 404 anyway.
+    setActiveTrip(null);
+    setServerTripId(null);
+    setServerTripOwnerId(null);
+  }, [setActiveTrip]);
+  const collabSession = useTripCollabSession(serverTripId, {
+    onTripUpdated: handleRemoteTripUpdated,
+    onTripDeleted: handleRemoteTripDeleted,
+  });
   useEffect(() => {
     // Read `?tripId=` in a client-only effect to keep the planner page
     // statically prerenderable. `useSearchParams` would pull the whole

@@ -3,14 +3,17 @@ import { tripCollabApi, type TripSuggestion } from "@/lib/api";
 import {
   emitTripCursor as emitTripCursorSocket,
   onTripCursor,
+  onTripDeleted,
   onTripPresence,
   onTripSuggestionCreated,
   onTripSuggestionDeleted,
   onTripSuggestionResolved,
   onTripSuggestionVoted,
+  onTripUpdated,
   subscribeTrip,
   unsubscribeTrip,
   type TripCursorEvent,
+  type TripDeletedEvent,
   type TripPresenceEvent,
   type TripSuggestionResolvedEvent,
   type TripSuggestionVotedEvent,
@@ -47,6 +50,28 @@ const CURSOR_EMIT_THROTTLE_MS = 150;
 const CURSOR_SWEEP_MS = 2_000;
 
 /**
+ * Optional callbacks consumers can wire up to react to live-edit
+ * broadcasts (US-35). The planner page uses these to re-hydrate local
+ * trip state when another collaborator regenerates / imports / mutates
+ * the trip via the REST API, without a manual reload.
+ *
+ * Kept as plain callbacks rather than re-exposing a "latest update"
+ * piece of state because the planner page already owns trip hydration
+ * via `setActiveTrip` — pushing it back through React state would
+ * double-render and risk clobbering local optimistic edits between the
+ * event arriving and the consumer's `useEffect` reacting.
+ */
+export interface UseTripCollabSessionCallbacks {
+  /**
+   * Fires when another collaborator commits a trip mutation (import,
+   * replace, regenerate). Payload mirrors `TripDetailDto`.
+   */
+  onTripUpdated?: (detail: unknown) => void;
+  /** Fires when the owner deletes the trip. */
+  onTripDeleted?: (evt: TripDeletedEvent) => void;
+}
+
+/**
  * Hook that wires the planner page to the live trip-collaboration surface.
  *
  * Once `serverTripId` is non-null, it:
@@ -55,6 +80,9 @@ const CURSOR_SWEEP_MS = 2_000;
  *   • owns the shared `suggestions` list (map overlay + modal read from
  *     the same state, avoiding a double-fetch / double-listener pair)
  *   • exposes a throttled `emitCursor(lat, lng)` callback
+ *   • forwards `trip:updated` / `trip:deleted` broadcasts to the
+ *     caller-supplied callbacks so the planner page can re-hydrate
+ *     local trip state on remote edits without a manual reload (US-35)
  *
  * Broadcast payloads carry `caller_vote: null` (the backend can't know
  * each recipient's vote); the merge logic preserves the locally-known
@@ -64,7 +92,10 @@ const CURSOR_SWEEP_MS = 2_000;
  * Switching trips resets cursors/presence/suggestions so cross-trip data
  * never leaks into the new session.
  */
-export function useTripCollabSession(serverTripId: string | null) {
+export function useTripCollabSession(
+  serverTripId: string | null,
+  callbacks: UseTripCollabSessionCallbacks = {},
+) {
   const [cursors, setCursors] = useState<Map<string, CollaboratorCursor>>(
     () => new Map(),
   );
@@ -79,6 +110,12 @@ export function useTripCollabSession(serverTripId: string | null) {
   // Expose the failure so consumers can surface it as an alert.
   const [suggestionsError, setSuggestionsError] = useState<string | null>(null);
   const lastEmitRef = useRef(0);
+
+  // Capture callbacks in a ref so re-renders that pass a fresh
+  // function identity don't tear down and re-establish socket
+  // subscriptions on every keystroke in the planner.
+  const callbacksRef = useRef(callbacks);
+  callbacksRef.current = callbacks;
 
   const previousTripIdRef = useRef<string | null>(serverTripId);
   useEffect(() => {
@@ -174,6 +211,20 @@ export function useTripCollabSession(serverTripId: string | null) {
         );
       },
     );
+    // US-35 — fan out remote trip mutations to the planner page so
+    // another rider regenerating or importing routes gets reflected
+    // without a manual reload. Filter by `serverTripId` so a stale
+    // event from a previously-joined room (e.g. after a fast trip
+    // switch) doesn't clobber the new trip's state.
+    const offUpdated = onTripUpdated((payload) => {
+      const detail = payload as { id?: unknown };
+      if (typeof detail?.id !== "string" || detail.id !== serverTripId) return;
+      callbacksRef.current.onTripUpdated?.(payload);
+    });
+    const offTripDeleted = onTripDeleted((evt) => {
+      if (evt.trip_id !== serverTripId) return;
+      callbacksRef.current.onTripDeleted?.(evt);
+    });
     return () => {
       offCursor();
       offPresence();
@@ -181,6 +232,8 @@ export function useTripCollabSession(serverTripId: string | null) {
       offDeleted();
       offVoted();
       offResolved();
+      offUpdated();
+      offTripDeleted();
     };
   }, [serverTripId]);
 

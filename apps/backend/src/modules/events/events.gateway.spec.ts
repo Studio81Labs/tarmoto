@@ -606,6 +606,53 @@ describe('EventsGateway', () => {
 
       expect(mockTo).not.toHaveBeenCalled();
     });
+
+    it('drops the second cursor inside the 10 Hz throttle window (US-35)', () => {
+      // Acceptance criterion: "Throttled at 10 Hz max per sender (drop,
+      // don't queue)". The gateway enforces ≤ 10 Hz (100 ms floor) so
+      // a misbehaving client can't flood every other collaborator.
+      const emit = jest.fn();
+      const mockTo = jest.fn().mockReturnValue({ emit });
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        rooms: new Set(['c-1', 'trip:trip-1']),
+        to: mockTo,
+      } as unknown as Socket;
+
+      const payload = { trip_id: 'trip-1', lat: 49.1, lng: 16.75 };
+      gateway.handleTripCursor(client, payload);
+      gateway.handleTripCursor(client, payload);
+
+      expect(emit).toHaveBeenCalledTimes(1);
+    });
+
+    it('throttles per (trip, user) so different rooms do NOT block each other', () => {
+      // Same socket emits cursors into two different trips it has
+      // joined — both should land. A naive global throttle would only
+      // accept the first.
+      const emit = jest.fn();
+      const mockTo = jest.fn().mockReturnValue({ emit });
+      const client = {
+        id: 'c-1',
+        data: { userId: 'user-1' },
+        rooms: new Set(['c-1', 'trip:trip-1', 'trip:trip-2']),
+        to: mockTo,
+      } as unknown as Socket;
+
+      gateway.handleTripCursor(client, {
+        trip_id: 'trip-1',
+        lat: 49.1,
+        lng: 16.75,
+      });
+      gateway.handleTripCursor(client, {
+        trip_id: 'trip-2',
+        lat: 49.2,
+        lng: 16.85,
+      });
+
+      expect(emit).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('handleUnsubscribeTrip', () => {
