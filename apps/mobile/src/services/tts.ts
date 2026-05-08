@@ -268,13 +268,19 @@ class TtsService {
   /**
    * Enqueue a phrase. If the service is muted, paused, or the native
    * module is unavailable, the call is a silent no-op. When CarPlay
-   * (or Android Auto) is the active output for navigation prompts, the
-   * call is also a no-op — the head unit speaks the same cue.
+   * (or Android Auto) is the active output for navigation prompts, a
+   * normal-priority call becomes a no-op — the head unit speaks the
+   * same cue. **High-priority phrases (crash, critical weather) are
+   * never suppressed** by the external-audio guard: the head unit
+   * doesn't surface those alerts, so dropping them on a connected
+   * bike would silently silence the safety-critical channel exactly
+   * when the rider can't reach the phone.
    *
    * Dedupe rules:
    *   - With a `key`, any pending entry sharing that key is replaced
    *     with the new phrase (collapses a stale "in 300 m" against a
-   *     fresh "in 50 m" for the same maneuver).
+   *     fresh "in 50 m" for the same maneuver, or a re-fired weather
+   *     alert against itself).
    *   - Without a `key`, we still suppress an immediate exact repeat of
    *     the most-recent queued phrase to avoid back-to-back GPS-tick
    *     duplicates.
@@ -283,16 +289,21 @@ class TtsService {
    * (if any normal-priority) is stopped and the new phrase plays
    * immediately. A high-priority phrase already speaking is never
    * preempted by another high-priority phrase — they queue behind it
-   * so a hazard alert isn't cut off by a second hazard alert.
+   * so a hazard alert isn't cut off by a second hazard alert. Stable
+   * `key`s still dedupe high-priority entries against each other so a
+   * re-fired identical alert doesn't stack.
    */
   speak(phrase: string, options?: SpeakOptions): void {
     if (this.muted) return;
-    if (this.externalAudioActive) return;
-    const mod = this.ensureNative();
-    if (!mod) return;
-
     const priority: SpeakPriority = options?.priority ?? "normal";
     const key = options?.key;
+    // External audio (CarPlay/AA presenting nav prompts) suppresses
+    // normal-priority phrases only. Crash/weather alerts must still
+    // reach the rider's phone speaker because the head unit doesn't
+    // surface those.
+    if (this.externalAudioActive && priority !== "high") return;
+    const mod = this.ensureNative();
+    if (!mod) return;
 
     if (priority === "high") {
       // Drop any normal-priority phrases queued behind us — by the time
@@ -301,7 +312,19 @@ class TtsService {
       // high-priority phrases stay so a queued crash followup doesn't
       // get silently swallowed by a hazard alert.
       this.queue = this.queue.filter((q) => q.priority === "high");
-      this.queue.push({ phrase, priority, key });
+      // Honour the dedupe key for high-priority phrases too — a weather
+      // poll that re-emits the same critical alert (or a re-rendered
+      // crash overlay) shouldn't stack identical entries.
+      if (key !== undefined) {
+        const existing = this.queue.findIndex((q) => q.key === key);
+        if (existing >= 0) {
+          this.queue[existing] = { phrase, priority, key };
+        } else {
+          this.queue.push({ phrase, priority, key });
+        }
+      } else {
+        this.queue.push({ phrase, priority, key });
+      }
       // Preempt the in-flight utterance only if it's lower priority. A
       // high-priority phrase already speaking should run to completion
       // — a second high-priority phrase queues behind it.

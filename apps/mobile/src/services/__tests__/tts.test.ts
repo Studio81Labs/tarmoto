@@ -252,7 +252,7 @@ describe("ttsService", () => {
     expect(nativeModule.speak).toHaveBeenCalledTimes(1);
   });
 
-  it("setExternalAudioActive(true) suppresses local TTS while CarPlay owns audio", async () => {
+  it("setExternalAudioActive(true) suppresses normal-priority TTS while CarPlay owns audio", async () => {
     const nativeModule = createNativeMock();
     const { ttsService } = loadService({ platform: "android", nativeModule });
 
@@ -266,6 +266,49 @@ describe("ttsService", () => {
     await flushMicrotasks();
     expect(nativeModule.speak).toHaveBeenCalledTimes(1);
     expect(nativeModule.speak.mock.calls[0][0]).toBe("Continue.");
+  });
+
+  it("never suppresses high-priority safety alerts even while CarPlay owns audio", async () => {
+    // The head unit doesn't surface crash / critical weather alerts —
+    // dropping them on a connected bike would silently silence the
+    // safety-critical channel exactly when the rider can't reach the
+    // phone. (PR #509 review: bugbot, codex P1.)
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    ttsService.setExternalAudioActive(true);
+    ttsService.speak("Crash detected.", { priority: "high" });
+    await flushMicrotasks();
+
+    expect(nativeModule.speak).toHaveBeenCalledTimes(1);
+    expect(nativeModule.speak.mock.calls[0][0]).toBe("Crash detected.");
+  });
+
+  it("dedupes a re-fired high-priority alert against its key", async () => {
+    // A weather poll that re-emits the same critical alert (same key)
+    // shouldn't stack two identical entries behind the in-flight one.
+    // (PR #509 review: codex P2.)
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "android", nativeModule });
+
+    ttsService.speak("Crash detected.", { priority: "high" });
+    await flushMicrotasks();
+    nativeModule.speak.mockClear();
+
+    ttsService.speak("Severe storm ahead.", {
+      priority: "high",
+      key: "weather:storm-1",
+    });
+    ttsService.speak("Severe storm ahead.", {
+      priority: "high",
+      key: "weather:storm-1",
+    });
+
+    nativeModule.__fireFinish();
+    await flushMicrotasks();
+
+    expect(nativeModule.speak).toHaveBeenCalledTimes(1);
+    expect(nativeModule.speak.mock.calls[0][0]).toBe("Severe storm ahead.");
   });
 
   it("setLanguage() forwards a BCP-47 tag to the engine", () => {

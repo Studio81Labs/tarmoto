@@ -36,7 +36,6 @@ import {
   Platform,
 } from "react-native";
 import ReactNativeHapticFeedback from "react-native-haptic-feedback";
-import { subscribeVehicleAudioPresence } from "@/services/carplay";
 import { locationService, type LocationUpdate } from "@/services/location";
 import {
   NavSession,
@@ -230,11 +229,18 @@ export function useNavigationSession(
   // the in-flight phrase is dropped so we don't hear its tail when
   // audio resumes, but pending prompts are preserved so a maneuver
   // missed during the pause still fires when the rider returns.
+  //
+  // We deliberately do NOT pause on iOS `"inactive"`: that state fires
+  // for transient overlays the rider doesn't initiate (notification
+  // shade, Control Center, an incoming-call banner). Pausing there
+  // would drop the in-flight turn cue mid-utterance — and because
+  // `NavSession` has already marked that maneuver's threshold as fired,
+  // the announcement never replays.
   useEffect(() => {
     const handleAppStateChange = (status: AppStateStatus) => {
       if (status === "active") {
         ttsService.resume();
-      } else if (status === "background" || status === "inactive") {
+      } else if (status === "background") {
         ttsService.pause();
       }
     };
@@ -245,22 +251,18 @@ export function useNavigationSession(
     return () => subscription.remove();
   }, []);
 
-  // Subscribe to head-unit connect / disconnect events so the local TTS
-  // suppresses while CarPlay / Android Auto is the active prompt
-  // surface. The bridge fires synchronously with the current state on
-  // mount so this is correct on first render too.
-  useEffect(() => {
-    const unsubscribe = subscribeVehicleAudioPresence((active) => {
-      ttsService.setExternalAudioActive(active);
-    });
-    return () => {
-      unsubscribe();
-      // Always release the suppression on unmount so a future nav
-      // session starts with the correct state — the next mount will
-      // re-resolve via the lifecycle handler.
-      ttsService.setExternalAudioActive(false);
-    };
-  }, []);
+  // CarPlay / Android Auto handoff: we deliberately do NOT auto-suppress
+  // local TTS just because the head unit is connected. The current
+  // CarPlay surface (`useCarPlayRideMirror`) renders only the ride
+  // status board — it does NOT speak navigation prompts. Suppressing
+  // here on mere connection would silence every turn cue on bikes
+  // running Tarmoto + CarPlay status board, with nothing to replace it.
+  //
+  // The suppression hook lives in `ttsService.setExternalAudioActive()`
+  // so the eventual CarPlay nav-prompt forwarding (#498) can call it
+  // when it actually owns the audio path. High-priority phrases (crash
+  // / critical weather) bypass the suppression unconditionally — those
+  // never travel through the head unit.
 
   useEffect(() => {
     if (!trackLocation) return undefined;
