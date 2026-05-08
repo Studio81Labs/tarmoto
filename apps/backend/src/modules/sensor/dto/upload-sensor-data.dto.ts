@@ -11,15 +11,32 @@ import {
   ArrayMaxSize,
   MaxLength,
   Matches,
+  Max,
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import {
+  CALIBRATION_SAMPLE_RATE_HZ,
+  CALIBRATION_TARGET_SECONDS,
   MAX_TAG_EVENTS_PER_UPLOAD,
   SURFACE_LABELS,
   type SurfaceLabel,
 } from '@tarmoto/shared';
+
+/**
+ * Upper bound on the calibration `sample_count` accepted by the DTO.
+ * The on-device calibrator collects at most
+ * `CALIBRATION_TARGET_SECONDS × CALIBRATION_SAMPLE_RATE_HZ` samples
+ * (1500 today). 10× headroom on top of that catches future
+ * sample-rate / window-duration tweaks while still bouncing buggy or
+ * malicious clients shipping values that would overflow Postgres'
+ * 4-byte `INT` column on insert (the validation 400 is the right
+ * outcome — without this, a value like `3e9` would land in the
+ * service and trigger a 500 from the DB driver).
+ */
+const MAX_CALIBRATION_SAMPLE_COUNT =
+  CALIBRATION_TARGET_SECONDS * CALIBRATION_SAMPLE_RATE_HZ * 10;
 
 export class SensorReadingDto {
   @ApiProperty({ description: 'Unix timestamp milliseconds' })
@@ -167,9 +184,11 @@ export class CalibrationDto {
 
   @ApiProperty({
     description: 'Number of samples that contributed to the mean / std',
+    maximum: MAX_CALIBRATION_SAMPLE_COUNT,
   })
   @IsInt()
   @Min(0)
+  @Max(MAX_CALIBRATION_SAMPLE_COUNT)
   sample_count!: number;
 
   @ApiProperty({
