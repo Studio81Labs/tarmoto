@@ -348,6 +348,44 @@ describe("ttsService", () => {
     expect(ttsService.getVolume()).toBe(1);
   });
 
+  it("setVolume(0) purges queued normal-priority phrases on iOS", async () => {
+    // Without the purge, queued phrases would still drain after the
+    // rider picked Settings "Mute" — silently on Android via
+    // KEY_PARAM_VOLUME=0 but audibly on iOS (no per-utterance volume).
+    // (PR #509 review: bugbot low.) High-priority alerts must stay on
+    // the queue.
+    const nativeModule = createNativeMock();
+    const { ttsService } = loadService({ platform: "ios", nativeModule });
+
+    ttsService.speak("Continue.");
+    await flushMicrotasks();
+    expect(nativeModule.speak).toHaveBeenCalledTimes(1);
+
+    ttsService.speak("In 300 meters, turn left.");
+    ttsService.speak("Severe storm ahead.", {
+      priority: "high",
+      key: "weather:1",
+    });
+
+    ttsService.setVolume(0);
+    // The setVolume itself preempted the in-flight normal-priority
+    // utterance. Consume that cancel.
+    nativeModule.__fireFinish();
+    await flushMicrotasks();
+
+    // Only the high-priority alert should drain; the queued normal
+    // phrase should have been purged.
+    expect(nativeModule.speak).toHaveBeenCalledTimes(2);
+    expect(nativeModule.speak.mock.calls[1][0]).toBe("Severe storm ahead.");
+
+    // Subsequent normal-priority phrases keep being suppressed while
+    // volume stays 0.
+    ttsService.speak("Turn left now.");
+    nativeModule.__fireFinish();
+    await flushMicrotasks();
+    expect(nativeModule.speak).toHaveBeenCalledTimes(2);
+  });
+
   it("treats volume 0 as a hard mute for normal-priority speech (iOS parity)", async () => {
     // iOS has no per-utterance volume on react-native-tts, so the
     // Android-only `KEY_PARAM_VOLUME` path would otherwise leave the

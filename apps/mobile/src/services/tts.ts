@@ -231,13 +231,6 @@ class TtsService {
   };
 
   /**
-   * Resolve once the native TTS engine reports ready. Some platforms (and
-   * some Android OEM engines in particular) drop the very first
-   * `speak()` call if they're still initializing — gating behind
-   * `getInitStatus()` closes that window. Subsequent calls reuse the
-   * cached promise so we don't re-probe on every phrase.
-   */
-  /**
    * Cancel the in-flight utterance: bump the epoch so any drain that
    * resumed before the native cancel arrived stops with a stale-epoch
    * check, record a pending discard so `handleUtteranceEnded` swallows
@@ -275,6 +268,13 @@ class TtsService {
     }
   }
 
+  /**
+   * Resolve once the native TTS engine reports ready. Some platforms (and
+   * some Android OEM engines in particular) drop the very first
+   * `speak()` call if they're still initializing — gating behind
+   * `getInitStatus()` closes that window. Subsequent calls reuse the
+   * cached promise so we don't re-probe on every phrase.
+   */
   private async waitForReady(mod: TtsModule): Promise<void> {
     if (!this.ready) {
       if (typeof mod.getInitStatus === "function") {
@@ -579,9 +579,25 @@ class TtsService {
    * `KEY_PARAM_VOLUME`; iOS uses the system audio session volume so
    * this is stored but no-ops on iOS playback. Out-of-range values are
    * clamped silently — the setting screen handles its own validation.
+   *
+   * Setting volume to 0 (the Settings "Mute" bucket) acts like
+   * `setMuted(true)` for the queue: any pending normal-priority
+   * phrases are dropped and the in-flight utterance (if normal
+   * priority) is preempted. Without this, queued phrases would still
+   * drain — silently on Android via `KEY_PARAM_VOLUME: 0` but
+   * **audibly** on iOS, which has no per-utterance volume in
+   * `react-native-tts`. High-priority safety alerts are preserved on
+   * the queue and bypass the volume<=0 gate at speak() time.
    */
   setVolume(volume: number): void {
-    this.volume = clampVolume(volume);
+    const next = clampVolume(volume);
+    const wasAudible = this.volume > 0;
+    this.volume = next;
+    if (next > 0 || !wasAudible) return;
+    this.queue = this.queue.filter((q) => q.priority === "high");
+    if (this.speakingPriority !== "high") {
+      this.preemptInFlight();
+    }
   }
 
   getVolume(): number {

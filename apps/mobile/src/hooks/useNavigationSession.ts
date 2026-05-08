@@ -21,20 +21,11 @@
  *     suppression is re-evaluated on every connect / disconnect event
  *     from the head-unit bridge.
  *
- *   - Pause TTS on AppState background (the rider's screen is off,
- *     they probably stopped) and resume on foreground so the audio
- *     path doesn't stay warm during a coffee break.
- *
  *   - Fire haptic feedback at `warning-near` and `execute` so the rider
  *     gets a tactile cue even with the helmet audio muted.
  */
 import { useEffect, useRef, useState } from "react";
-import {
-  AppState,
-  type AppStateStatus,
-  NativeModules,
-  Platform,
-} from "react-native";
+import { NativeModules, Platform } from "react-native";
 import ReactNativeHapticFeedback from "react-native-haptic-feedback";
 import { locationService, type LocationUpdate } from "@/services/location";
 import {
@@ -217,39 +208,28 @@ export function useNavigationSession(
   useEffect(() => {
     return () => {
       ttsService.setMuted(false);
-      // Resume a paused-on-background session so a navigation flow
-      // teardown doesn't leak the paused state into other TTS
-      // consumers (weather alerts, hazard alerts) on re-foreground.
+      // Belt-and-suspenders: clear any paused state set by an explicit
+      // ride-pause flow (none ships today, but `ttsService.pause()` is
+      // exposed for that future consumer) so the next mount of any TTS
+      // surface starts in the resumed state.
       ttsService.resume();
     };
   }, []);
 
-  // Pause TTS while the app is backgrounded (rider stopped, screen
-  // locked) and resume on foreground. Pause keeps the queue intact —
-  // the in-flight phrase is dropped so we don't hear its tail when
-  // audio resumes, but pending prompts are preserved so a maneuver
-  // missed during the pause still fires when the rider returns.
+  // We deliberately do NOT pause TTS on AppState transitions. The app
+  // declares background-audio + background-location modes (iOS) and
+  // foreground-service location (Android), so a rider who locks the
+  // phone or app-switches while a route is running is a SUPPORTED
+  // riding context — they're still navigating, just not looking at
+  // the screen. Pausing the helmet feed on `background` would silence
+  // every turn cue and crash/weather alert until the rider unlocked,
+  // which is the exact opposite of the safety guarantee voice nav
+  // provides. The native audio session keeps the engine warm across
+  // these transitions on its own.
   //
-  // We deliberately do NOT pause on iOS `"inactive"`: that state fires
-  // for transient overlays the rider doesn't initiate (notification
-  // shade, Control Center, an incoming-call banner). Pausing there
-  // would drop the in-flight turn cue mid-utterance — and because
-  // `NavSession` has already marked that maneuver's threshold as fired,
-  // the announcement never replays.
-  useEffect(() => {
-    const handleAppStateChange = (status: AppStateStatus) => {
-      if (status === "active") {
-        ttsService.resume();
-      } else if (status === "background") {
-        ttsService.pause();
-      }
-    };
-    const subscription = AppState.addEventListener(
-      "change",
-      handleAppStateChange,
-    );
-    return () => subscription.remove();
-  }, []);
+  // The `pause()` / `resume()` API on `ttsService` stays exposed for
+  // an explicit ride-pause flow if/when one ships; we just don't wire
+  // it to AppState.
 
   // CarPlay / Android Auto handoff: we deliberately do NOT auto-suppress
   // local TTS just because the head unit is connected. The current
