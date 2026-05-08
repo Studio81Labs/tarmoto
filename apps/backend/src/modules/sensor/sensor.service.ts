@@ -160,8 +160,28 @@ export class SensorService {
       return { accepted: 0, segments_updated: 0 };
     }
 
+    // Issue #494 — when the upload includes a `'good'` calibration,
+    // use the rider's calibrated rest magnitude in place of the
+    // canonical 9.81 for the per-segment RMS computation. That
+    // keeps the persisted `vibration_rms` and `classification` in
+    // the same scalar-deviation domain as the row's
+    // `calibration_quality: 'good'` tag advertises — without this,
+    // calibrated rides would still persist uncalibrated RMS values
+    // even though `surface_readings.calibration_quality` says
+    // they're trustworthy. Poor calibrations stay on the 9.81
+    // baseline so a contaminated bias can't shift the persisted
+    // values; absent calibrations also stay on 9.81.
+    const calibrationRestMag =
+      dto.calibration && calibrationQuality === 'good'
+        ? Math.sqrt(
+            dto.calibration.axis_mean_x * dto.calibration.axis_mean_x +
+              dto.calibration.axis_mean_y * dto.calibration.axis_mean_y +
+              dto.calibration.axis_mean_z * dto.calibration.axis_mean_z,
+          )
+        : undefined;
+
     // Group readings into ~100m segments
-    const segments = this.groupIntoSegments(validReadings);
+    const segments = this.groupIntoSegments(validReadings, calibrationRestMag);
 
     // Process each segment: calculate RMS, classify, match to road
     let segmentsUpdated = 0;
@@ -362,8 +382,20 @@ export class SensorService {
 
   /**
    * Group raw accelerometer readings into ~100m segments based on GPS distance.
+   *
+   * `restMag` is the rider's calibrated rest accelerometer magnitude
+   * (issue #494 — `‖calibration.axis_mean‖` from a `'good'` upload).
+   * When passed, it replaces the literal 9.81 in the per-segment RMS
+   * computation so the persisted `vibration_rms` / `classification`
+   * land in the same scalar-deviation domain as the row's
+   * `calibration_quality: 'good'` tag advertises. Omit / pass
+   * `undefined` to keep the historical 9.81 baseline (no calibration
+   * uploaded, or quality flagged poor).
    */
-  groupIntoSegments(readings: SensorReadingDto[]): ProcessedSegment[] {
+  groupIntoSegments(
+    readings: SensorReadingDto[],
+    restMag?: number,
+  ): ProcessedSegment[] {
     const segments: ProcessedSegment[] = [];
     let segmentReadings: SensorReadingDto[] = [];
     let segmentDistance = 0;
@@ -386,7 +418,7 @@ export class SensorService {
       segmentReadings.push(reading);
 
       if (segmentDistance >= SEGMENT_LENGTH_M && segmentReadings.length > 0) {
-        const processed = this.processSegment(segmentReadings);
+        const processed = this.processSegment(segmentReadings, restMag);
         if (processed) {
           segments.push(processed);
         }
@@ -397,7 +429,7 @@ export class SensorService {
 
     // Process remaining readings as a partial segment
     if (segmentReadings.length >= 10) {
-      const processed = this.processSegment(segmentReadings);
+      const processed = this.processSegment(segmentReadings, restMag);
       if (processed) {
         segments.push(processed);
       }
@@ -408,14 +440,26 @@ export class SensorService {
 
   /**
    * Process a segment of readings: calculate RMS, classify quality.
+   *
+   * `restMag` (issue #494) substitutes the calibrated rider rest
+   * magnitude `‖calibration.axis_mean‖` for the canonical 9.81 when
+   * the upload's calibration was tagged `'good'`. This keeps the
+   * persisted `vibration_rms` / `classification` consistent with the
+   * row's `calibration_quality` tag — without it, a calibrated ride
+   * would still produce uncalibrated RMS values, and downstream
+   * queries that trust `'good'` rows would consume biased data.
    */
-  processSegment(readings: SensorReadingDto[]): ProcessedSegment | null {
+  processSegment(
+    readings: SensorReadingDto[],
+    restMag: number = 9.81,
+  ): ProcessedSegment | null {
     if (readings.length === 0) return null;
 
-    // Calculate acceleration magnitude deviation from gravity
+    // Calculate acceleration magnitude deviation from the rider's
+    // calibrated rest baseline (or the canonical 9.81 fallback).
     const deviations = readings.map((r) => {
       const mag = Math.sqrt(r.ax ** 2 + r.ay ** 2 + r.az ** 2);
-      return Math.abs(mag - 9.81);
+      return Math.abs(mag - restMag);
     });
 
     const rms = Math.sqrt(

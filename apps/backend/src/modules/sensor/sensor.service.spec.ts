@@ -1187,6 +1187,89 @@ describe('SensorService', () => {
       expect(storedRideCalibration?.ride_id).toBe('victim-ride');
       expect(storedRideCalibration?.user_id).toBe('attacker');
     });
+
+    it("uses the rider's calibrated rest magnitude when computing persisted RMS for a good-tagged ride", async () => {
+      // Regression: an earlier revision tagged the row
+      // `calibration_quality: 'good'` but kept `processSegment` on
+      // the hardcoded 9.81 baseline, so the persisted
+      // `vibration_rms` / `classification` were uncalibrated even
+      // though the row claimed otherwise. Downstream training /
+      // recalibration pipelines that filter on `'good'` rows would
+      // consume biased data.
+      //
+      // Drive a ride with `axis_mean_z: 9.4` (typical for a phone
+      // with ~4 % MEMS scale-factor error) and stationary samples
+      // whose magnitude lands on 9.4. A calibrated processSegment
+      // produces RMS ≈ 0; without the rest-magnitude propagation
+      // the same readings yield RMS ≈ 0.41 (|9.4 − 9.81|), i.e.
+      // 'fair' classification on a stationary phone.
+      const ay = 0;
+      const az = 9.4;
+      const dto = {
+        ride_id: 'ride-rest-mag',
+        readings: Array.from({ length: 50 }, (_, i) => ({
+          t: Date.now() + i * 20,
+          ax: 0,
+          ay,
+          az,
+          lat: 49.1 + i * 0.00001,
+          lng: 16.75,
+          speed: 15,
+        })),
+        calibration: makeCalibration({
+          axis_mean_x: 0,
+          axis_mean_y: ay,
+          axis_mean_z: az,
+        }),
+      };
+
+      await service.processUpload('user-1', dto);
+
+      const createArg = (readingRepo.create as jest.Mock).mock.calls[0][0];
+      // Tagged 'good' AND persisted RMS reflects the calibrated
+      // baseline. With ‖mean‖ = 9.4, |mag − 9.4| ≈ 0 → 'excellent'.
+      expect(createArg.calibration_quality).toBe('good');
+      expect(createArg.vibration_rms).toBeCloseTo(0, 3);
+      expect(createArg.classification).toBe('excellent');
+    });
+
+    it('keeps the 9.81 baseline when calibration is poor or absent', async () => {
+      // Sanity-check the inverse: a poor calibration must NOT shift
+      // the persisted RMS away from the canonical 9.81 baseline,
+      // because the bias values aren't trustworthy. Same input as
+      // above (stationary on 9.4) but with a high std on X — the
+      // calibration tag flips to 'poor' and the rest-magnitude
+      // override is bypassed, so RMS lands at ~0.41.
+      const az = 9.4;
+      const dto = {
+        ride_id: 'ride-poor-rest-mag',
+        readings: Array.from({ length: 50 }, (_, i) => ({
+          t: Date.now() + i * 20,
+          ax: 0,
+          ay: 0,
+          az,
+          lat: 49.1 + i * 0.00001,
+          lng: 16.75,
+          speed: 15,
+        })),
+        calibration: makeCalibration({
+          axis_mean_x: 0,
+          axis_mean_y: 0,
+          axis_mean_z: az,
+          axis_std_x: 1.0, // > stationary threshold → 'poor'
+        }),
+      };
+
+      await service.processUpload('user-1', dto);
+
+      const createArg = (readingRepo.create as jest.Mock).mock.calls[0][0];
+      expect(createArg.calibration_quality).toBe('poor');
+      // |9.4 − 9.81| = 0.41 → 'excellent' is still the right
+      // classification at this RMS, but the value itself reflects
+      // the uncalibrated 9.81 baseline (~0.41), not the calibrated
+      // ~0 the 'good' path would produce.
+      expect(createArg.vibration_rms).toBeCloseTo(0.41, 2);
+    });
   });
 
   describe('processSegment speed handling', () => {
