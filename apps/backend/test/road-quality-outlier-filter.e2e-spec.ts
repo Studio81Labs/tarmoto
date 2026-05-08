@@ -189,23 +189,26 @@ describe('road-quality aggregation — outlier filtering (#495)', () => {
   }, 30_000);
 
   it('confidence scoring uses the post-filter reading count', async () => {
-    // 10×5.0 + 1×1.0: pre-filter 11 readings, post-filter 10.
-    // Confidence must come from 10 (= 90), not from 11. Same
-    // confidence band by accident here, but the assertion locks
-    // in the rule explicitly so a future change that scored
-    // confidence on the raw count is caught.
+    // Threshold-crossing case: 9×5.0 + 1×1.0. Pre-filter count =
+    // 10 → confidence 90, post-filter count = 9 → confidence 70.
+    // Picking these specific cardinalities is what makes the
+    // assertion meaningful: a regression that scored confidence
+    // on the raw count would award 90 here and fail this test.
+    //
+    // mean = (9·5+1)/10 = 4.6; stddev_samp = sqrt(((9·0.16) +
+    // 12.96)/9) ≈ 1.265; 2σ ≈ 2.53; |1−4.6| = 3.6 → drop.
     const segmentId = await createSegment();
 
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 9; i++) {
       await insertReading(segmentId, 5);
     }
     await insertReading(segmentId, 1);
 
     const row = await readSegment(segmentId);
     expect(row.last_filtered_count).toBe(1);
-    expect(row.reading_count).toBe(10);
+    expect(row.reading_count).toBe(9);
     expect(row.quality_score).toBeCloseTo(5.0, 5);
-    expect(row.confidence).toBe(90);
+    expect(row.confidence).toBe(70);
   }, 30_000);
 
   it('persists last_filtered_count = 0 when no outliers are present', async () => {
