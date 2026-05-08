@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Put,
   Delete,
   Body,
   HttpCode,
@@ -17,6 +18,8 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiExtraModels,
+  getSchemaPath,
 } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { BikesService } from './bikes.service.js';
@@ -26,6 +29,7 @@ import type { Request } from 'express';
 @ApiTags('account')
 @ApiBearerAuth()
 @UseGuards(AuthGuard)
+@ApiExtraModels(BikeDto)
 @Controller('account/bikes')
 export class BikesController {
   constructor(private readonly bikesService: BikesService) {}
@@ -37,6 +41,25 @@ export class BikesController {
     return this.bikesService.list(req.user!.userId);
   }
 
+  // Dedicated lookup the mobile HUD calls on every `RideActiveScreen`
+  // mount. Returning just the active bike skips the per-bike stats
+  // aggregation that `list` runs (`COUNT(*) + SUM(distance_km)` over
+  // the rides table grouped by bike), which is wasteful when all the
+  // chip needs is `make` / `model`. Returns 200 with `null` when the
+  // rider has no garage yet so the mobile branch logic stays simple.
+  @Get('active')
+  @ApiOperation({ summary: 'Get your active bike (or null)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Active bike, or `null` when the rider has no garage yet.',
+    schema: {
+      oneOf: [{ $ref: getSchemaPath(BikeDto) }, { type: 'null' }],
+    },
+  })
+  active(@Req() req: Request): Promise<BikeDto | null> {
+    return this.bikesService.getActive(req.user!.userId);
+  }
+
   @Post()
   @ApiOperation({ summary: 'Add a bike' })
   @ApiResponse({ status: 201, type: BikeDto })
@@ -44,11 +67,28 @@ export class BikesController {
     return this.bikesService.create(req.user!.userId, dto);
   }
 
-  @Patch(':id')
+  // The contract calls for PUT semantics (full upsert from the rider's
+  // perspective — every field in the form gets written), but we accept
+  // PATCH at the same path so the in-flight companion build that ships
+  // partial bodies isn't broken during the rollout. Both verbs route to
+  // the same partial-update service call.
+  @Put(':id')
   @ApiOperation({ summary: 'Update a bike' })
   @ApiResponse({ status: 200, type: BikeDto })
   @ApiResponse({ status: 404 })
-  update(
+  put(
+    @Req() req: Request,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateBikeDto,
+  ): Promise<BikeDto> {
+    return this.bikesService.update(req.user!.userId, id, dto);
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Update a bike (partial)' })
+  @ApiResponse({ status: 200, type: BikeDto })
+  @ApiResponse({ status: 404 })
+  patch(
     @Req() req: Request,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateBikeDto,

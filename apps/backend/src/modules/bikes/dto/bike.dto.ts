@@ -5,16 +5,51 @@ import {
   IsOptional,
   IsString,
   IsUrl,
-  Max,
   MaxLength,
-  Min,
   MinLength,
+  Validate,
+  ValidatorConstraint,
+  ValidatorConstraintInterface,
 } from 'class-validator';
 import { Expose, Transform } from 'class-transformer';
 
 const trim = Transform(({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value,
 );
+
+export const MIN_BIKE_YEAR = 1900;
+
+// `currentYear + 1` because manufacturers ship next-model-year bikes
+// mid-season. Computed at request time so the ceiling rolls forward
+// without redeploying.
+export function maxBikeYear(now: Date = new Date()): number {
+  return now.getUTCFullYear() + 1;
+}
+
+/**
+ * Validates a bike year against `[MIN_BIKE_YEAR, currentYear + 1]`.
+ *
+ * Reaches for a custom constraint instead of `@Min(...) @Max(...)`
+ * because decorator arguments are evaluated once at module load — so
+ * a `@Max(maxBikeYear())` ceiling captured when the process started
+ * in 2026 would keep rejecting `2028` model-year bikes throughout
+ * 2027 until the next deploy. `validate()` runs per request, so the
+ * ceiling rolls forward at midnight UTC on Jan 1.
+ */
+@ValidatorConstraint({ name: 'isBikeYear', async: false })
+export class IsBikeYearConstraint implements ValidatorConstraintInterface {
+  validate(value: unknown): boolean {
+    return (
+      typeof value === 'number' &&
+      Number.isInteger(value) &&
+      value >= MIN_BIKE_YEAR &&
+      value <= maxBikeYear()
+    );
+  }
+  defaultMessage(): string {
+    return `year must be an integer between ${MIN_BIKE_YEAR} and ${maxBikeYear()}`;
+  }
+}
 
 export class CreateBikeDto {
   @ApiProperty({ example: 'Honda', minLength: 1 })
@@ -34,8 +69,7 @@ export class CreateBikeDto {
   @ApiProperty({ required: false, example: 2024 })
   @IsOptional()
   @IsInt()
-  @Min(1900)
-  @Max(2100)
+  @Validate(IsBikeYearConstraint)
   year?: number;
 
   @ApiProperty({ required: false, default: false })
@@ -51,6 +85,23 @@ export class CreateBikeDto {
   @MaxLength(2048)
   @Expose({ name: 'photoUrl' })
   photo_url?: string;
+
+  @ApiProperty({
+    required: false,
+    description: 'Short slug for the rider-picked bike icon.',
+  })
+  @IsOptional()
+  @trim
+  @IsString()
+  @MaxLength(32)
+  icon?: string;
+
+  @ApiProperty({ required: false, description: 'Free-form rider notes.' })
+  @IsOptional()
+  @trim
+  @IsString()
+  @MaxLength(1000)
+  notes?: string;
 }
 
 export class UpdateBikeDto {
@@ -73,8 +124,7 @@ export class UpdateBikeDto {
   @ApiProperty({ required: false, example: 2024 })
   @IsOptional()
   @IsInt()
-  @Min(1900)
-  @Max(2100)
+  @Validate(IsBikeYearConstraint)
   year?: number;
 
   @ApiProperty({ required: false, example: true })
@@ -90,6 +140,20 @@ export class UpdateBikeDto {
   @MaxLength(2048)
   @Expose({ name: 'photoUrl' })
   photo_url?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @trim
+  @IsString()
+  @MaxLength(32)
+  icon?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @trim
+  @IsString()
+  @MaxLength(1000)
+  notes?: string;
 }
 
 export class BikeDto {
@@ -110,6 +174,12 @@ export class BikeDto {
 
   @ApiProperty({ nullable: true })
   photoUrl!: string | null;
+
+  @ApiProperty({ nullable: true })
+  icon!: string | null;
+
+  @ApiProperty({ nullable: true })
+  notes!: string | null;
 
   @ApiProperty({
     example: 0,

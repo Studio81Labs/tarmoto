@@ -10,7 +10,9 @@ import { Ride } from '../../entities/ride.entity.js';
 import { RideStats } from '../../entities/ride-stats.entity.js';
 import { RideSegment } from '../../entities/ride-segment.entity.js';
 import { SharedRide } from '../../entities/shared-ride.entity.js';
+import { Bike } from '../../entities/bike.entity.js';
 import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
+import { BikesService } from '../bikes/bikes.service.js';
 
 function makeQbSpy() {
   const andWhere = jest.fn().mockReturnThis();
@@ -32,7 +34,9 @@ describe('RidesService', () => {
   let statsRepo: Partial<jest.Mocked<Repository<RideStats>>>;
   let segmentRepo: Partial<jest.Mocked<Repository<RideSegment>>>;
   let sharedRideRepo: Partial<jest.Mocked<Repository<SharedRide>>>;
+  let bikeRepo: Partial<jest.Mocked<Repository<Bike>>>;
   let privacy: { loadPreferences: jest.Mock };
+  let bikesService: { findActive: jest.Mock };
 
   const mockRide = {
     id: 'ride-1',
@@ -81,10 +85,16 @@ describe('RidesService', () => {
       create: jest.fn().mockImplementation((data) => data),
       save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
     };
+    bikeRepo = {
+      findOne: jest.fn().mockResolvedValue(null),
+    };
     privacy = {
       loadPreferences: jest
         .fn()
         .mockResolvedValue({ ...DEFAULT_PRIVACY_PREFERENCES }),
+    };
+    bikesService = {
+      findActive: jest.fn().mockResolvedValue(null),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -95,7 +105,9 @@ describe('RidesService', () => {
         { provide: getRepositoryToken(RideStats), useValue: statsRepo },
         { provide: getRepositoryToken(RideSegment), useValue: segmentRepo },
         { provide: getRepositoryToken(SharedRide), useValue: sharedRideRepo },
+        { provide: getRepositoryToken(Bike), useValue: bikeRepo },
         { provide: PrivacyPreferencesService, useValue: privacy },
+        { provide: BikesService, useValue: bikesService },
       ],
     }).compile();
 
@@ -131,6 +143,58 @@ describe('RidesService', () => {
       await expect(service.start('user-1', {})).rejects.toThrow(
         BadRequestException,
       );
+    });
+
+    // ── US-64: bike_id resolution on /rides/start ──
+
+    it('attributes the ride to the rider’s active bike when bike_id is omitted', async () => {
+      bikesService.findActive.mockResolvedValueOnce({ id: 'bike-active' });
+
+      await service.start('user-1', {});
+
+      expect(rideRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ bike_id: 'bike-active' }),
+      );
+      expect(bikesService.findActive).toHaveBeenCalledWith('user-1');
+      // Active-bike fallback path doesn't validate ownership against
+      // `bikes` (already done by `findActive`'s where clause).
+      expect(bikeRepo.findOne).not.toHaveBeenCalled();
+    });
+
+    it('falls back to bike_id=null when the rider has no garage', async () => {
+      await service.start('user-1', {});
+
+      expect(rideRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ bike_id: null }),
+      );
+    });
+
+    it('uses an explicitly passed bike_id once ownership is verified', async () => {
+      bikeRepo.findOne!.mockResolvedValueOnce({
+        id: 'bike-2',
+        user_id: 'user-1',
+      } as never);
+
+      await service.start('user-1', { bike_id: 'bike-2' });
+
+      expect(bikeRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'bike-2', user_id: 'user-1' },
+      });
+      expect(rideRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ bike_id: 'bike-2' }),
+      );
+      // Explicit bike_id wins; we don't fall back to active.
+      expect(bikesService.findActive).not.toHaveBeenCalled();
+    });
+
+    it('rejects an explicit bike_id that does not belong to the rider', async () => {
+      bikeRepo.findOne!.mockResolvedValueOnce(null);
+
+      await expect(
+        service.start('user-1', { bike_id: 'someone-elses-bike' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(rideRepo.save).not.toHaveBeenCalled();
     });
   });
 

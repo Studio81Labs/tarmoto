@@ -64,6 +64,7 @@ import type {
   RiddenSegmentsList,
   UnriddenSegment,
   TripSharePublic,
+  Bike,
 } from "@/types";
 import {
   client,
@@ -378,16 +379,38 @@ class ApiService {
     unwrapVoid(result);
   }
 
+  // ── Bikes (US-64) ──
+  //
+  // The rider's garage powers the active-bike chip on `RideActiveScreen`.
+  // The full CRUD lives on the companion (which has its own typed
+  // client); mobile only needs the active-bike lookup today, so we
+  // ship just `getActiveBike` until a mobile garage screen is built.
+
+  async getActiveBike(): Promise<Bike | null> {
+    // Dedicated `/account/bikes/active` route — skips the full-list
+    // stats aggregation (`COUNT/SUM` over the rides table grouped by
+    // bike) that the chip doesn't need, so a `RideActiveScreen` mount
+    // is one cheap `findOne` round trip instead.
+    const result = await client.GET("/api/v1/account/bikes/active");
+    const dto = unwrap(result, "Failed to load active bike");
+    return dto ? bikeFromSchema(dto) : null;
+  }
+
   // ── Rides ──
 
   async startRide(
     type: string = "free",
     tripDayId?: string,
+    bikeId?: string,
   ): Promise<RideResponse> {
     const result = await client.POST("/api/v1/rides/start", {
       body: {
         ride_type: type as Schemas["StartRideDto"]["ride_type"],
         trip_day_id: tripDayId,
+        // Omitted ⇒ backend pins to the rider's active bike. Passed
+        // explicitly when the rider chose a non-default bike from the
+        // garage picker before tapping Start.
+        bike_id: bikeId,
       },
     });
     // /start returns the slim `RideResponseDto`. Detail-only fields
@@ -1295,6 +1318,27 @@ export interface CrashAlertResponse {
    * `contacts_notified` may not yet reflect the final outcome.
    */
   dispatch_in_progress: boolean;
+}
+
+// Narrows the generated `BikeDto` schema (camelCase keys, optional
+// nullables) into the local `Bike` interface so the chip caller
+// doesn't have to deal with the optional / nullable bookkeeping at
+// the read site.
+function bikeFromSchema(b: Schemas["BikeDto"]): Bike {
+  return {
+    id: b.id,
+    make: b.make,
+    model: b.model,
+    year: b.year ?? null,
+    isActive: b.isActive,
+    photoUrl: b.photoUrl ?? null,
+    icon: b.icon ?? null,
+    notes: b.notes ?? null,
+    totalKm: b.totalKm,
+    totalRides: b.totalRides,
+    createdAt: b.createdAt,
+    updatedAt: b.updatedAt,
+  };
 }
 
 export const api = new ApiService();

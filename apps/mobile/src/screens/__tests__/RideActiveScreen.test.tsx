@@ -56,6 +56,7 @@ jest.mock("@/services/api", () => ({
     startRide: jest.fn(),
     stopRide: jest.fn(),
     submitSensorData: jest.fn(),
+    getActiveBike: jest.fn().mockResolvedValue(null),
   },
 }));
 
@@ -152,6 +153,7 @@ describe("RideActiveScreen", () => {
       avg_speed: 0,
       avg_road_quality: 0,
       avg_curviness: null,
+      bike_id: null,
     });
     mockState = {
       isRiding: true,
@@ -196,6 +198,42 @@ describe("RideActiveScreen", () => {
     // would register a duplicate ride every time the rider toggled tabs.
     await waitFor(() => expect(screen.getByText("12.5 km")).toBeTruthy());
     expect(startRideMock).not.toHaveBeenCalled();
+  });
+
+  it("renders the active-bike chip when the rider has one in their garage", async () => {
+    (api.getActiveBike as jest.Mock).mockResolvedValueOnce({
+      id: "bike-1",
+      make: "Honda",
+      model: "Africa Twin",
+      year: 2024,
+      isActive: true,
+      photoUrl: null,
+      icon: null,
+      notes: null,
+      totalKm: 0,
+      totalRides: 0,
+      createdAt: "2026-04-01T00:00:00.000Z",
+      updatedAt: "2026-04-01T00:00:00.000Z",
+    });
+
+    render(<RideActiveScreen />);
+
+    // The chip carries an `accessibilityLabel` so screen readers can
+    // announce the active bike before the rider tries to start.
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText("Active bike Honda Africa Twin"),
+      ).toBeTruthy(),
+    );
+  });
+
+  it("hides the active-bike chip when the rider has no garage yet", async () => {
+    (api.getActiveBike as jest.Mock).mockResolvedValueOnce(null);
+
+    render(<RideActiveScreen />);
+
+    await waitFor(() => expect(api.getActiveBike).toHaveBeenCalled());
+    expect(screen.queryByLabelText(/Active bike/)).toBeNull();
   });
 
   it("posts a new ride and stores the resulting id when nothing is active", async () => {
@@ -317,6 +355,7 @@ describe("RideActiveScreen", () => {
       avg_speed: 0,
       avg_road_quality: 0,
       avg_curviness: null,
+      bike_id: null,
     });
 
     render(<RideActiveScreen />);
@@ -377,6 +416,7 @@ describe("RideActiveScreen", () => {
       avg_speed: 0,
       avg_road_quality: 0,
       avg_curviness: null,
+      bike_id: null,
     });
 
     await waitFor(() => expect(stopRideMock).toHaveBeenCalledWith("ride-99"));

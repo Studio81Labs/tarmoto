@@ -8,5 +8,8 @@ import { BikesService } from './bikes.service.js';
   imports: [TypeOrmModule.forFeature([Bike])],
   controllers: [BikesController],
   providers: [BikesService],
+  // Exported so RidesModule can resolve the rider's active bike when
+  // a `/rides/start` request arrives without a `bike_id` payload.
+  exports: [BikesService],
 })
 export class BikesModule {}

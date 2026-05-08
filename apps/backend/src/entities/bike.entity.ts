@@ -32,6 +32,12 @@ export class Bike {
   @Column({ type: 'varchar', length: 2048, nullable: true })
   photo_url!: string | null;
 
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  icon!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  notes!: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
 
