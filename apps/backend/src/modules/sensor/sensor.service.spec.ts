@@ -6,6 +6,7 @@ import { DEFAULT_PRIVACY_PREFERENCES } from '@tarmoto/shared';
 import { SensorService } from './sensor.service.js';
 import { SurfaceReading } from '../../entities/surface-reading.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
+import { Ride } from '../../entities/ride.entity.js';
 import { RideStats } from '../../entities/ride-stats.entity.js';
 import { RideTagEvent } from '../../entities/ride-tag-event.entity.js';
 import { SensorReadingDto } from './dto/upload-sensor-data.dto.js';
@@ -15,10 +16,15 @@ describe('SensorService', () => {
   let service: SensorService;
   let readingRepo: Partial<jest.Mocked<Repository<SurfaceReading>>>;
   let segmentRepo: Partial<jest.Mocked<Repository<RoadSegment>>>;
+  let rideRepo: Partial<jest.Mocked<Repository<Ride>>>;
   let statsRepo: Partial<jest.Mocked<Repository<RideStats>>>;
   let tagEventRepo: Partial<jest.Mocked<Repository<RideTagEvent>>>;
   let savedTagEvents: Array<Partial<RideTagEvent>>;
   let storedStats: Partial<RideStats> | null;
+  let storedRideCalibration: {
+    ride_id: string;
+    values: Partial<Ride>;
+  } | null;
   let privacy: { loadPreferences: jest.Mock };
 
   beforeEach(async () => {
@@ -79,6 +85,48 @@ describe('SensorService', () => {
         .mockResolvedValue({ ...DEFAULT_PRIVACY_PREFERENCES }),
     };
 
+    // Calibration writes go through a query builder chained as
+    // `.update(Ride).set(values).where(...).andWhere(...).execute()` — we
+    // only care which values land for a given ride id, so the mock
+    // captures the most recent set() arg keyed on the supplied rideId.
+    // First-write-wins semantics are baked into the production SQL
+    // (`.andWhere('calibration_axis_mean_x IS NULL')`); the tests model
+    // that here by skipping subsequent writes for the same ride.
+    storedRideCalibration = null;
+    const updateBuilder = {
+      _set: null as Partial<Ride> | null,
+      _rideId: null as string | null,
+      update: jest.fn().mockReturnThis(),
+      set: jest.fn().mockImplementation((values: Partial<Ride>) => {
+        updateBuilder._set = values;
+        return updateBuilder;
+      }),
+      where: jest
+        .fn()
+        .mockImplementation((_sql: string, params: { rideId: string }) => {
+          updateBuilder._rideId = params.rideId;
+          return updateBuilder;
+        }),
+      andWhere: jest.fn().mockReturnThis(),
+      execute: jest.fn().mockImplementation(() => {
+        if (
+          updateBuilder._rideId &&
+          updateBuilder._set &&
+          (storedRideCalibration === null ||
+            storedRideCalibration.ride_id !== updateBuilder._rideId)
+        ) {
+          storedRideCalibration = {
+            ride_id: updateBuilder._rideId,
+            values: updateBuilder._set,
+          };
+        }
+        return Promise.resolve({ affected: 1 });
+      }),
+    };
+    rideRepo = {
+      createQueryBuilder: jest.fn().mockReturnValue(updateBuilder) as never,
+    };
+
     savedTagEvents = [];
     tagEventRepo = {
       create: jest.fn().mockImplementation((data) => data),
@@ -94,6 +142,7 @@ describe('SensorService', () => {
         SensorService,
         { provide: getRepositoryToken(SurfaceReading), useValue: readingRepo },
         { provide: getRepositoryToken(RoadSegment), useValue: segmentRepo },
+        { provide: getRepositoryToken(Ride), useValue: rideRepo },
         { provide: getRepositoryToken(RideStats), useValue: statsRepo },
         { provide: getRepositoryToken(RideTagEvent), useValue: tagEventRepo },
         { provide: PrivacyPreferencesService, useValue: privacy },
@@ -880,6 +929,171 @@ describe('SensorService', () => {
       const createArg = (readingRepo.create as jest.Mock).mock.calls[0][0];
       expect(createArg.rider_surface_label).toBeNull();
       expect(createArg.rider_quality_label).toBeNull();
+    });
+  });
+
+  describe('idle-baseline calibration (issue #494)', () => {
+    function rideReading(t: number, i: number): SensorReadingDto {
+      return {
+        t,
+        ax: 0.1,
+        ay: 0.2,
+        az: 9.8,
+        lat: 49.1 + i * 0.00001,
+        lng: 16.75,
+        speed: 15,
+      };
+    }
+
+    function makeCalibration(
+      overrides: Partial<{
+        axis_mean_x: number;
+        axis_mean_y: number;
+        axis_mean_z: number;
+        axis_std_x: number;
+        axis_std_y: number;
+        axis_std_z: number;
+        sample_count: number;
+        truncated: boolean;
+      }> = {},
+    ) {
+      return {
+        axis_mean_x: 0.05,
+        axis_mean_y: -0.02,
+        axis_mean_z: 9.79,
+        axis_std_x: 0.08,
+        axis_std_y: 0.07,
+        axis_std_z: 0.09,
+        sample_count: 1500,
+        truncated: false,
+        ...overrides,
+      };
+    }
+
+    it('persists a good calibration on the ride row and tags every reading good', async () => {
+      const calibration = makeCalibration();
+      const dto = {
+        ride_id: 'ride-cal-good',
+        device_model: 'iPhone 15 Pro',
+        readings: Array.from({ length: 50 }, (_, i) =>
+          rideReading(Date.now() + i * 20, i),
+        ),
+        calibration,
+      };
+
+      await service.processUpload('user-1', dto);
+
+      // Ride row got the bias values + good quality tag.
+      expect(storedRideCalibration?.ride_id).toBe('ride-cal-good');
+      expect(storedRideCalibration?.values.calibration_quality).toBe('good');
+      expect(storedRideCalibration?.values.calibration_axis_mean_x).toBe(0.05);
+      expect(storedRideCalibration?.values.calibration_truncated).toBe(false);
+
+      // Every persisted surface_readings row carries the per-batch tag
+      // and the device_family bucket derived from `device_model`.
+      const createArg = (readingRepo.create as jest.Mock).mock.calls[0][0];
+      expect(createArg.calibration_quality).toBe('good');
+      expect(createArg.device_family).toBe('iphone_pro');
+    });
+
+    it('flags an upload as poor when any per-axis std exceeds the stationary threshold', async () => {
+      const calibration = makeCalibration({ axis_std_x: 0.9 });
+      const dto = {
+        ride_id: 'ride-cal-bad-std',
+        device_model: 'Pixel 9',
+        readings: Array.from({ length: 50 }, (_, i) =>
+          rideReading(Date.now() + i * 20, i),
+        ),
+        calibration,
+      };
+
+      await service.processUpload('user-1', dto);
+
+      expect(storedRideCalibration?.values.calibration_quality).toBe('poor');
+      const createArg = (readingRepo.create as jest.Mock).mock.calls[0][0];
+      expect(createArg.calibration_quality).toBe('poor');
+      expect(createArg.device_family).toBe('pixel');
+    });
+
+    it('flags an upload as poor when sample_count is below the floor', async () => {
+      const calibration = makeCalibration({ sample_count: 100 });
+      const dto = {
+        ride_id: 'ride-cal-short',
+        readings: Array.from({ length: 50 }, (_, i) =>
+          rideReading(Date.now() + i * 20, i),
+        ),
+        calibration,
+      };
+
+      await service.processUpload('user-1', dto);
+
+      expect(storedRideCalibration?.values.calibration_quality).toBe('poor');
+    });
+
+    it('rejects non-finite calibration values as poor (defends against malicious / buggy clients)', async () => {
+      const calibration = makeCalibration({
+        axis_mean_x: Number.NaN,
+      });
+      const dto = {
+        ride_id: 'ride-cal-nan',
+        readings: Array.from({ length: 50 }, (_, i) =>
+          rideReading(Date.now() + i * 20, i),
+        ),
+        calibration,
+      };
+
+      await service.processUpload('user-1', dto);
+
+      expect(storedRideCalibration?.values.calibration_quality).toBe('poor');
+    });
+
+    it('still accepts the readings when the upload omits calibration entirely', async () => {
+      const dto = {
+        ride_id: 'ride-no-cal',
+        readings: Array.from({ length: 50 }, (_, i) =>
+          rideReading(Date.now() + i * 20, i),
+        ),
+      };
+
+      const result = await service.processUpload('user-1', dto);
+
+      expect(result.segments_updated).toBeGreaterThanOrEqual(1);
+      expect(storedRideCalibration).toBeNull();
+      const createArg = (readingRepo.create as jest.Mock).mock.calls[0][0];
+      // Backend treats absent calibration as `calibration_quality:
+      // null` — analytics can choose to drop or include null rows.
+      expect(createArg.calibration_quality).toBeNull();
+    });
+
+    it('first-write-wins: a second batch for the same ride does not clobber an existing calibration', async () => {
+      const goodCalibration = makeCalibration();
+      await service.processUpload('user-1', {
+        ride_id: 'ride-fwwins',
+        readings: Array.from({ length: 50 }, (_, i) =>
+          rideReading(Date.now() + i * 20, i),
+        ),
+        calibration: goodCalibration,
+      });
+
+      // Second batch arrives later (e.g. offline-queue replay) with
+      // wildly different values. The mock SQL builder honours the
+      // first-write-wins guard the production code expresses via
+      // `.andWhere('calibration_axis_mean_x IS NULL')`, so the stored
+      // values stay on the first batch's payload.
+      const altCalibration = makeCalibration({
+        axis_mean_x: 9.99,
+        axis_std_x: 9.0,
+      });
+      await service.processUpload('user-1', {
+        ride_id: 'ride-fwwins',
+        readings: Array.from({ length: 50 }, (_, i) =>
+          rideReading(Date.now() + i * 20, i),
+        ),
+        calibration: altCalibration,
+      });
+
+      expect(storedRideCalibration?.values.calibration_axis_mean_x).toBe(0.05);
+      expect(storedRideCalibration?.values.calibration_quality).toBe('good');
     });
   });
 

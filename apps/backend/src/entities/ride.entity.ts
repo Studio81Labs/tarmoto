@@ -67,6 +67,51 @@ export class Ride {
   @Column({ type: 'uuid', nullable: true })
   bike_id!: string | null;
 
+  // ── Idle-baseline calibration (issue #494) ──
+  // Captured at ride start: ~30 s of stationary samples whose per-axis
+  // mean is subtracted from raw accelerometer readings before the feature
+  // pipeline runs (see `apps/mobile/src/services/idleBaselineCalibrator.ts`).
+  // Values are uploaded with each `POST /sensor/upload` batch and the
+  // backend persists them on the ride exactly once — the mobile client
+  // sends the same payload across every batch in a ride, so a
+  // first-write-wins UPDATE in `SensorService.processUpload` keeps the
+  // bias stable even when an offline-queue replay races a fresh upload.
+  // All six values are nullable so legacy rides keep working.
+
+  @Column({ type: 'float', nullable: true })
+  calibration_axis_mean_x!: number | null;
+
+  @Column({ type: 'float', nullable: true })
+  calibration_axis_mean_y!: number | null;
+
+  @Column({ type: 'float', nullable: true })
+  calibration_axis_mean_z!: number | null;
+
+  @Column({ type: 'float', nullable: true })
+  calibration_axis_std_x!: number | null;
+
+  @Column({ type: 'float', nullable: true })
+  calibration_axis_std_y!: number | null;
+
+  @Column({ type: 'float', nullable: true })
+  calibration_axis_std_z!: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  calibration_sample_count!: number | null;
+
+  @Column({ type: 'boolean', nullable: true })
+  calibration_truncated!: boolean | null;
+
+  /**
+   * Server-side classification of the calibration's trustworthiness —
+   * `'good'` when every axis std came in under the stationary
+   * threshold AND the sample count cleared the floor, `'poor'` when
+   * the rider didn't sit still long enough. See
+   * `classifyCalibrationQuality` in `@tarmoto/shared`.
+   */
+  @Column({ type: 'varchar', length: 8, nullable: true })
+  calibration_quality!: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at!: Date;
 

@@ -336,7 +336,7 @@ export default function RideActiveScreen() {
           maxAbsLeanDeg: features.max_abs_lean_deg,
           calibrating: sensorService.isLeanCalibrating(),
         });
-      });
+      }, DeviceInfo.getModel());
       locationService.start((update) => {
         const s = useRideStore.getState();
         s.updateLocation(update);
@@ -459,7 +459,7 @@ export default function RideActiveScreen() {
     // intentionally do this *after* `/rides/:id/stop` so the backend
     // already has a ride row by the time the segment updates arrive.
     locationService.stop();
-    const { readings, tagEvents } = sensorService.stop();
+    const { readings, tagEvents, calibration } = sensorService.stop();
     if (id && (readings.length > 0 || tagEvents.length > 0)) {
       try {
         await api.submitSensorData(
@@ -468,6 +468,7 @@ export default function RideActiveScreen() {
           DeviceInfo.getModel(),
           getActiveModelVersion(),
           tagEvents,
+          calibration,
         );
       } catch {
         // Submission already routes through the offline queue, so any

@@ -15,7 +15,11 @@
  * appropriate typed-client call.
  */
 
-import type { NotificationPreferences, RideTagEvent } from "@tarmoto/shared";
+import type {
+  CalibrationPayload,
+  NotificationPreferences,
+  RideTagEvent,
+} from "@tarmoto/shared";
 import type {
   Schemas,
   HazardType,
@@ -514,6 +518,7 @@ class ApiService {
     modelVersion: string | null,
     tagEvents: RideTagEvent[],
     preprocessingVersion: string | null,
+    calibration: CalibrationPayload | null,
   ): Promise<{ accepted: number; segments_updated: number }> {
     const result = await client.POST("/api/v1/sensor/upload", {
       body: {
@@ -546,6 +551,17 @@ class ApiService {
                 tagEvents as Schemas["UploadSensorDataDto"]["tag_events"],
             }
           : {}),
+        // Issue #494 — idle-baseline calibration for this ride.
+        // Omitted when the rider's calibration window was abandoned
+        // (sub-floor sample count or no stationary capture at all);
+        // the backend treats absent calibration as
+        // `calibration_quality: null`.
+        ...(calibration
+          ? {
+              calibration:
+                calibration as Schemas["UploadSensorDataDto"]["calibration"],
+            }
+          : {}),
       },
     });
     return unwrap(result, "Sensor upload failed") as {
@@ -561,7 +577,9 @@ class ApiService {
    * the active on-device classifier (null = v0 RMS heuristic).
    * `tagEvents` are the rider-asserted surface labels captured during
    * the ride (research issue #7); pass an empty array when the rider
-   * never tagged a surface.
+   * never tagged a surface. `calibration` is the idle-baseline
+   * snapshot (issue #494); pass `null` when the calibration window
+   * was abandoned mid-ride.
    */
   async submitSensorData(
     rideId: string,
@@ -569,6 +587,7 @@ class ApiService {
     deviceModel: string,
     modelVersion: string | null,
     tagEvents: RideTagEvent[] = [],
+    calibration: CalibrationPayload | null = null,
   ): Promise<SubmitResult> {
     return submitSensorUpload(
       rideId,
@@ -582,8 +601,17 @@ class ApiService {
       // they were captured under (or `null` for raw axes); see
       // offlineQueue.PendingUpload.preprocessingVersion.
       SENSOR_PREPROCESSING_VERSION,
-      (id, r, model, version, tags, preprocessing) =>
-        this.uploadSensorData(id, r, model, version, tags, preprocessing),
+      calibration,
+      (id, r, model, version, tags, preprocessing, cal) =>
+        this.uploadSensorData(
+          id,
+          r,
+          model,
+          version,
+          tags,
+          preprocessing,
+          cal,
+        ),
     );
   }
 
@@ -593,8 +621,17 @@ class ApiService {
    * connectivity watcher.
    */
   async flushPendingSensorUploads(): Promise<DrainResult> {
-    return drainOfflineQueue((id, r, model, version, tags, preprocessing) =>
-      this.uploadSensorData(id, r, model, version, tags, preprocessing),
+    return drainOfflineQueue(
+      (id, r, model, version, tags, preprocessing, cal) =>
+        this.uploadSensorData(
+          id,
+          r,
+          model,
+          version,
+          tags,
+          preprocessing,
+          cal,
+        ),
     );
   }
 

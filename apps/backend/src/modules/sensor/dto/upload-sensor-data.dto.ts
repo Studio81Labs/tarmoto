@@ -5,11 +5,13 @@ import {
   IsArray,
   IsNumber,
   IsInt,
+  IsBoolean,
   IsIn,
   ValidateNested,
   ArrayMaxSize,
   MaxLength,
   Matches,
+  Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
@@ -113,6 +115,73 @@ export class RideTagEventDto {
   label!: SurfaceLabel;
 }
 
+/**
+ * Idle-baseline calibration block (issue #494).
+ *
+ * Captured at ride start: ~30 s of stationary samples whose per-axis
+ * mean is subtracted from raw accelerometer readings before the feature
+ * pipeline runs. The same values land on every batch in a ride (a
+ * single ride may upload across multiple batches via the offline
+ * queue) so a first-write-wins UPDATE on the ride row keeps the bias
+ * stable even across replays.
+ */
+export class CalibrationDto {
+  @ApiProperty({
+    description: 'Mean accelerometer X (m/s²) over calibration window',
+  })
+  @IsNumber()
+  axis_mean_x!: number;
+
+  @ApiProperty({
+    description: 'Mean accelerometer Y (m/s²) over calibration window',
+  })
+  @IsNumber()
+  axis_mean_y!: number;
+
+  @ApiProperty({
+    description: 'Mean accelerometer Z (m/s²) over calibration window',
+  })
+  @IsNumber()
+  axis_mean_z!: number;
+
+  @ApiProperty({
+    description: 'Std accelerometer X (m/s²) over calibration window',
+  })
+  @IsNumber()
+  @Min(0)
+  axis_std_x!: number;
+
+  @ApiProperty({
+    description: 'Std accelerometer Y (m/s²) over calibration window',
+  })
+  @IsNumber()
+  @Min(0)
+  axis_std_y!: number;
+
+  @ApiProperty({
+    description: 'Std accelerometer Z (m/s²) over calibration window',
+  })
+  @IsNumber()
+  @Min(0)
+  axis_std_z!: number;
+
+  @ApiProperty({
+    description: 'Number of samples that contributed to the mean / std',
+  })
+  @IsInt()
+  @Min(0)
+  sample_count!: number;
+
+  @ApiProperty({
+    description:
+      'true when the rider started moving before the full target window ' +
+      'elapsed and the capture was truncated. A truncated window may still ' +
+      'be usable if the sample count is above the floor.',
+  })
+  @IsBoolean()
+  truncated!: boolean;
+}
+
 export class UploadSensorDataDto {
   @ApiProperty({ format: 'uuid' })
   @IsUUID()
@@ -122,6 +191,20 @@ export class UploadSensorDataDto {
   @IsOptional()
   @IsString()
   device_model?: string;
+
+  /**
+   * Idle-baseline calibration values captured at ride start (issue
+   * #494). Optional — older client builds and rides whose calibration
+   * window never reached the minimum sample count upload without this
+   * block. Backend treats absent calibration as `calibration_quality:
+   * null` on every row in the batch (training pipeline can choose to
+   * drop such rows).
+   */
+  @ApiProperty({ required: false, type: CalibrationDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CalibrationDto)
+  calibration?: CalibrationDto;
 
   /**
    * Identifier of the on-device TF Lite classifier active when this

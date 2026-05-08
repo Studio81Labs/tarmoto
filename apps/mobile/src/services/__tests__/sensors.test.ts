@@ -37,6 +37,11 @@ function makeFeatures(overrides: Partial<WindowFeatures> = {}): WindowFeatures {
     percentile_95: 1.5,
     kurtosis: 0.0,
     skewness: 0.0,
+    device_family_iphone_pro: 0,
+    device_family_iphone_standard: 0,
+    device_family_pixel: 0,
+    device_family_samsung_galaxy_s: 0,
+    device_family_other: 1,
     spectral_centroid: 0,
     spectral_energy_low: 0,
     spectral_energy_mid: 0,
@@ -326,6 +331,11 @@ describe("sensorService.extractFeatures — spectral + gyro + longitudinal (issu
       "percentile_95",
       "kurtosis",
       "skewness",
+      "device_family_iphone_pro",
+      "device_family_iphone_standard",
+      "device_family_pixel",
+      "device_family_samsung_galaxy_s",
+      "device_family_other",
       "spectral_centroid",
       "spectral_energy_low",
       "spectral_energy_mid",
@@ -397,6 +407,27 @@ describe("sensorService.extractFeatures — spectral + gyro + longitudinal (issu
     // pitch so its variance must be larger.
     expect(features.gyro_roll_var).toBeGreaterThan(features.gyro_pitch_var);
     expect(features.gyro_pitch_var).toBeGreaterThan(0);
+  });
+
+  it("packs the device family one-hot from the model passed to start() (issue #494)", () => {
+    if (sensorService.recording) sensorService.stop();
+    sensorService.start(() => undefined, "iPhone 15 Pro");
+    const features = callExtract(makeStaticWindow());
+    expect(features.device_family_iphone_pro).toBe(1);
+    expect(features.device_family_iphone_standard).toBe(0);
+    expect(features.device_family_pixel).toBe(0);
+    expect(features.device_family_samsung_galaxy_s).toBe(0);
+    expect(features.device_family_other).toBe(0);
+    expect(sensorService.getDeviceFamily()).toBe("iphone_pro");
+  });
+
+  it("falls back to the 'other' bucket when no device model is supplied", () => {
+    if (sensorService.recording) sensorService.stop();
+    sensorService.start(() => undefined);
+    const features = callExtract(makeStaticWindow());
+    expect(features.device_family_other).toBe(1);
+    expect(features.device_family_iphone_pro).toBe(0);
+    expect(sensorService.getDeviceFamily()).toBe("other");
   });
 
   it("computes acceleration_longitudinal from the GPS speed delta", () => {
@@ -627,5 +658,151 @@ describe("sensorService — sensor pre-processing filter (issue #493)", () => {
     unsubscribe();
 
     expect(listenerSamples[200]).toEqual({ ax: 0, ay: 0, az: 50 });
+  });
+});
+
+describe("sensorService idle-baseline calibration (issue #494)", () => {
+  /**
+   * Helper that drives the sensor service's accelerometer pipeline by
+   * directly poking the `calibrator` private member. This sidesteps
+   * the rxjs subscription machinery (mocked above) while still
+   * exercising the feature pipeline's calibration-aware code path —
+   * the same calibrator instance is consulted from `extractFeatures`.
+   */
+  function pokeCalibrator(
+    samples: {
+      ax: number;
+      ay: number;
+      az: number;
+      t: number;
+      speedMs?: number;
+    }[],
+  ) {
+    const cal = (
+      sensorService as unknown as {
+        calibrator: { push(s: unknown): boolean } | null;
+      }
+    ).calibrator;
+    if (!cal) throw new Error("calibrator missing — start() not called?");
+    for (const s of samples) cal.push(s);
+  }
+
+  function callExtract(window: Reading[]): WindowFeatures {
+    return (
+      sensorService as unknown as {
+        extractFeatures(w: Reading[]): WindowFeatures;
+      }
+    ).extractFeatures(window);
+  }
+
+  beforeEach(() => {
+    if (sensorService.recording) sensorService.stop();
+    sensorService.start(() => undefined, "iPhone 15");
+  });
+  afterEach(() => {
+    if (sensorService.recording) sensorService.stop();
+  });
+
+  it("subtracts the per-axis baseline before computing magnitude", () => {
+    // Drive the calibrator with a stationary phone whose mounting
+    // produces a non-canonical gravity decomposition: az = 9.0 instead
+    // of 9.81 with non-zero ax / ay (typical for a mounted phone). A
+    // window of identical samples taken AFTER the calibration window
+    // should produce ~0 deviation magnitude.
+    const stationarySamples: {
+      ax: number;
+      ay: number;
+      az: number;
+      t: number;
+      speedMs: number;
+    }[] = [];
+    for (let i = 0; i <= 1500; i += 1) {
+      stationarySamples.push({
+        ax: 1.5,
+        ay: 1.0,
+        az: 9.0,
+        t: i * 20,
+        speedMs: 0,
+      });
+    }
+    pokeCalibrator(stationarySamples);
+
+    // Verify the calibrator did finish.
+    expect(sensorService.getCalibration()).not.toBeNull();
+
+    // Now extract features from a window of the SAME stationary samples
+    // — with the per-axis bias subtracted, RMS should land near 0.
+    const window: Reading[] = Array.from({ length: 100 }, (_, i) => ({
+      t: 30_000 + i * 20,
+      ax: 1.5,
+      ay: 1.0,
+      az: 9.0,
+      gx: 0,
+      gy: 0,
+      gz: 0,
+    }));
+    const features = callExtract(window);
+    expect(features.rms).toBeCloseTo(0, 3);
+    expect(features.std).toBeCloseTo(0, 3);
+  });
+
+  it("falls back to the (mag − 9.81) contract before calibration completes", () => {
+    // Without a calibration snapshot the feature pipeline must keep
+    // its historical contract so the v1.1 model and heuristic
+    // thresholds stay aligned. A static window at exactly 1g still
+    // produces ~0 deviation under either contract — but a window
+    // containing a 9.0 g reading (no calibration yet) should produce
+    // an obvious non-zero deviation.
+    expect(sensorService.getCalibration()).toBeNull();
+
+    const window: Reading[] = Array.from({ length: 100 }, (_, i) => ({
+      t: i * 20,
+      ax: 0,
+      ay: 0,
+      az: 9.0, // 0.81 m/s² below gravity
+      gx: 0,
+      gy: 0,
+      gz: 0,
+    }));
+    const features = callExtract(window);
+    // |9.0 - 9.81| = 0.81; rms of a constant signal == |signal|.
+    expect(features.rms).toBeCloseTo(0.81, 2);
+  });
+
+  it("stop() returns the calibration payload alongside readings and tags", () => {
+    const stationarySamples: {
+      ax: number;
+      ay: number;
+      az: number;
+      t: number;
+      speedMs: number;
+    }[] = [];
+    for (let i = 0; i <= 1500; i += 1) {
+      stationarySamples.push({
+        ax: 0.05,
+        ay: -0.02,
+        az: 9.79,
+        t: i * 20,
+        speedMs: 0,
+      });
+    }
+    pokeCalibrator(stationarySamples);
+
+    const { calibration } = sensorService.stop();
+    expect(calibration).not.toBeNull();
+    expect(calibration!.axis_mean_x).toBeCloseTo(0.05, 4);
+    expect(calibration!.axis_mean_y).toBeCloseTo(-0.02, 4);
+    expect(calibration!.axis_mean_z).toBeCloseTo(9.79, 4);
+    expect(calibration!.truncated).toBe(false);
+    // Sample count includes the boundary sample (i = 1500).
+    expect(calibration!.sample_count).toBeGreaterThanOrEqual(1500);
+  });
+
+  it("stop() returns null calibration when the rider never sat still long enough", () => {
+    // Push exactly one sample with non-zero speed → the calibrator
+    // abandons the window without producing a snapshot.
+    pokeCalibrator([{ ax: 0, ay: 0, az: 9.81, t: 0, speedMs: 5 }]);
+    const { calibration } = sensorService.stop();
+    expect(calibration).toBeNull();
   });
 });
