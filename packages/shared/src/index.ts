@@ -15,6 +15,7 @@ export * from "./public-profile";
 export * from "./ride-tag-events";
 export * from "./rider-format";
 export * from "./sensor-calibration";
+export * from "./trip-folders";
 export * from "./trip-gpx";
 export * from "./units";
 export * from "./regions";

@@ -3,10 +3,12 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
   IsIn,
+  ValidateIf,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -69,4 +71,20 @@ export class UpdateTripDto {
   @IsOptional()
   @IsIn(TRIP_STATUSES)
   status?: (typeof TRIP_STATUSES)[number];
+
+  /**
+   * US-37 — assign or unassign the trip's folder. Pass a folder UUID to
+   * move the trip into a folder, or `null` to mark it unfiled. Omit the
+   * field to leave the assignment untouched.
+   */
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description:
+      'Folder uuid to move the trip into, or `null` to unfile it. Omit to leave unchanged.',
+  })
+  @IsOptional()
+  @ValidateIf((_o, v) => v !== null)
+  @IsUUID()
+  folder_id?: string | null;
 }

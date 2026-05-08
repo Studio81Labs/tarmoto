@@ -12,7 +12,7 @@ export interface TripDuplicatePayload {
   description?: string;
   days: Trip["days"];
   parameters: Trip["parameters"];
-  folderId?: string;
+  folder_id?: string | null;
 }
 
 export function duplicateTripPayload(trip: Trip): TripDuplicatePayload {
@@ -42,7 +42,7 @@ export function duplicateTripPayload(trip: Trip): TripDuplicatePayload {
   // Use `!== undefined` rather than truthiness so an intentionally empty
   // description ("") survives duplication instead of being silently dropped.
   if (trip.description !== undefined) payload.description = trip.description;
-  if (trip.folderId !== undefined) payload.folderId = trip.folderId;
+  if (trip.folder_id !== undefined) payload.folder_id = trip.folder_id;
   return payload;
 }
 

@@ -96,7 +96,12 @@ export interface Trip {
   days: TripDay[];
   parameters: TripParameters;
   collaborators: TripCollaborator[];
-  folderId?: string;
+  /**
+   * US-37 — backend-persisted folder uuid. Null/undefined for unfiled
+   * trips. Snake_case to mirror the wire format so consumers can read
+   * the API response without an adapter pass.
+   */
+  folder_id?: string | null;
   createdAt: string;
   updatedAt: string;
 }

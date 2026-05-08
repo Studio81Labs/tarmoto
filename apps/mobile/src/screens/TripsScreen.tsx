@@ -7,7 +7,13 @@
  * create → generate → detail flow.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -23,9 +29,10 @@ import Icon from "@react-native-vector-icons/material-design-icons";
 import { borderRadius, colors, fontSize, fontWeight, spacing } from "@/theme";
 import { api } from "@/services/api";
 import { useTripStore } from "@/stores";
-import type { TripSummary } from "@/types";
+import type { TripFolder, TripSummary } from "@/types";
 import type { TripsStackParamList } from "@/navigation/RootNavigator";
 import { formatStatus } from "./TripScreens.helpers";
+import { groupTripsByFolder, type TripsListRow } from "./TripsScreen.helpers";
 
 type TripsNav = NativeStackNavigationProp<TripsStackParamList, "TripsList">;
 
@@ -41,6 +48,10 @@ export default function TripsScreen() {
   );
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // US-37 — folders are read-only on mobile for v1. We tolerate a
+  // failed folders fetch (e.g. older backend without the endpoint) by
+  // keeping the list flat instead of blocking trip rendering on it.
+  const [folders, setFolders] = useState<TripFolder[]>([]);
 
   // `load`'s two callers want different UX: the initial mount with no
   // cache shows the full-screen spinner, while a re-focus after we
@@ -64,8 +75,17 @@ export default function TripsScreen() {
         setIsRefreshing(true);
       }
       try {
-        const next = await api.listTrips();
-        setTrips(next);
+        // Issue both fetches in parallel — the folders endpoint is the
+        // smaller request; the trips fetch dominates wall-clock time so
+        // serialising would just inflate latency on every reload. A
+        // folders failure must NOT 4xx the trip list — fall back to the
+        // flat list (existing behaviour) and surface the trips anyway.
+        const [nextTrips, nextFolders] = await Promise.all([
+          api.listTrips(),
+          api.listTripFolders().catch(() => [] as TripFolder[]),
+        ]);
+        setTrips(nextTrips);
+        setFolders(nextFolders);
         setPhase("ready");
       } catch (err) {
         // Refresh failures: keep showing cached trips. Initial failures
@@ -139,11 +159,16 @@ export default function TripsScreen() {
     );
   }
 
+  const rows = useMemo(
+    () => groupTripsByFolder(trips, folders),
+    [trips, folders],
+  );
+
   return (
     <View style={styles.container}>
-      <FlatList
-        data={trips}
-        keyExtractor={(t) => t.id}
+      <FlatList<TripsListRow>
+        data={rows}
+        keyExtractor={(row) => row.key}
         contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl
@@ -158,10 +183,31 @@ export default function TripsScreen() {
         ListHeaderComponent={
           trips.length > 0 ? <ListHeader onJoin={openJoin} /> : null
         }
-        renderItem={({ item }) => (
-          <TripCard trip={item} onPress={() => openDetail(item.id)} />
-        )}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        renderItem={({ item }) =>
+          item.kind === "folder-header" ? (
+            <FolderHeader label={item.label} count={item.count} />
+          ) : (
+            <TripCard
+              trip={item.trip}
+              onPress={() => openDetail(item.trip.id)}
+            />
+          )
+        }
+        ItemSeparatorComponent={({ leadingItem, trailingItem }) => {
+          // Skip the separator immediately above a folder header so
+          // the header sits flush with the next group instead of
+          // floating in space, and tighten the gap between header and
+          // its first trip.
+          const lead = leadingItem as TripsListRow | undefined;
+          const trail = trailingItem as TripsListRow | undefined;
+          if (
+            lead?.kind === "folder-header" ||
+            trail?.kind === "folder-header"
+          ) {
+            return <View style={styles.headerSeparator} />;
+          }
+          return <View style={styles.separator} />;
+        }}
       />
       {trips.length > 0 ? (
         <TouchableOpacity
@@ -174,6 +220,22 @@ export default function TripsScreen() {
           <Text style={styles.fabLabel}>Plan a trip</Text>
         </TouchableOpacity>
       ) : null}
+    </View>
+  );
+}
+
+function FolderHeader({ label, count }: { label: string; count: number }) {
+  return (
+    <View
+      style={styles.folderHeader}
+      accessibilityRole="header"
+      accessibilityLabel={`${label}, ${count} ${count === 1 ? "trip" : "trips"}`}
+    >
+      <Icon name="folder-outline" size={14} color={colors.textTertiary} />
+      <Text style={styles.folderHeaderLabel} numberOfLines={1}>
+        {label}
+      </Text>
+      <Text style={styles.folderHeaderCount}>{count}</Text>
     </View>
   );
 }
@@ -291,6 +353,30 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: spacing.md,
+  },
+  headerSeparator: {
+    height: spacing.sm,
+  },
+  folderHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xs,
+  },
+  folderHeaderLabel: {
+    flex: 1,
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.semibold,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  folderHeaderCount: {
+    color: colors.textTertiary,
+    fontSize: fontSize.xs,
+    fontVariant: ["tabular-nums"],
   },
   centered: {
     flex: 1,

@@ -12,6 +12,7 @@ import { EntityManager, Repository } from 'typeorm';
 import { haversineKm, latLngToPoint, pointToLatLng } from '@tarmoto/shared';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
+import { TripFolder } from '../../entities/trip-folder.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
 import { TripWaypoint } from '../../entities/trip-waypoint.entity.js';
@@ -68,6 +69,8 @@ export class TripsService {
     private readonly tripRepo: Repository<Trip>,
     @InjectRepository(TripMember)
     private readonly memberRepo: Repository<TripMember>,
+    @InjectRepository(TripFolder)
+    private readonly folderRepo: Repository<TripFolder>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     private readonly events: EventsGateway,
@@ -597,6 +600,33 @@ export class TripsService {
       delta.road_preference = dto.road_preference;
     }
     if (dto.status !== undefined) delta.status = dto.status;
+    if (dto.folder_id !== undefined) {
+      // Folder visibility is per-user (US-37). The trip owner is the
+      // only user who can file it under one of their folders, so we
+      // verify ownership against the trip's owner_id rather than the
+      // caller — co-collaborators (admins) PATCHing other fields
+      // shouldn't accidentally re-file the trip into one of THEIR own
+      // folders. Cross-user references collapse into a 404 so the
+      // endpoint can't be used to enumerate other riders' folder ids.
+      if (dto.folder_id !== null) {
+        // Read the trip's owner_id directly (lightweight query) instead
+        // of waiting for the locked read inside the txn. The owner_id
+        // is immutable, so doing the lookup outside the lock keeps the
+        // critical section small.
+        const ownerRow = await this.tripRepo.findOne({
+          where: { id: tripId },
+          select: { owner_id: true },
+        });
+        if (!ownerRow) {
+          throw new NotFoundException('Trip not found');
+        }
+        const folder = await this.folderRepo.findOne({
+          where: { id: dto.folder_id, user_id: ownerRow.owner_id },
+        });
+        if (!folder) throw new NotFoundException('Folder not found');
+      }
+      delta.folder_id = dto.folder_id;
+    }
 
     const hasChanges = Object.keys(delta).length > 0;
 
@@ -919,6 +949,7 @@ export class TripsService {
       // `toSummary` is reached via `toDetail` (where we have the full
       // members[] from the QueryBuilder hydration in `getDetail`).
       member_count: trip.member_count ?? trip.members?.length ?? 0,
+      folder_id: trip.folder_id ?? null,
       created_at: trip.created_at.toISOString(),
     };
   }

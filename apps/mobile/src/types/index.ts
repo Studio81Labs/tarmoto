@@ -394,7 +394,28 @@ export interface TripSummary {
   num_days: number;
   status: TripStatus;
   member_count: number;
+  /**
+   * US-37 — uuid of the rider-owned folder this trip is filed under.
+   * `null` (or absent on older API responses) for unfiled trips.
+   * Read-only on mobile for v1; folder CRUD lives in the companion.
+   */
+  folder_id?: string | null;
   created_at: string;
+}
+
+/**
+ * US-37 — rider-owned folder that groups trips. Mobile renders these
+ * as section headers in the trips list; folder CRUD ships companion-
+ * only for v1.
+ */
+export interface TripFolder {
+  id: string;
+  user_id: string;
+  name: string;
+  color: string | null;
+  position: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Trip extends TripSummary {

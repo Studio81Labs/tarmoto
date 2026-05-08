@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Trip } from '../../entities/trip.entity.js';
+import { TripFolder } from '../../entities/trip-folder.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
 import { TripWaypoint } from '../../entities/trip-waypoint.entity.js';
@@ -25,6 +26,7 @@ import { TripCollabService } from './trip-collab.service.js';
   imports: [
     TypeOrmModule.forFeature([
       Trip,
+      TripFolder,
       TripMember,
       TripDay,
       TripWaypoint,

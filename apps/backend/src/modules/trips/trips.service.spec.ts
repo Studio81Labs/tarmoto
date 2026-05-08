@@ -13,6 +13,7 @@ import { Repository } from 'typeorm';
 import { TripsService } from './trips.service.js';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
+import { TripFolder } from '../../entities/trip-folder.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
 import { TripShare } from '../../entities/trip-share.entity.js';
@@ -128,6 +129,7 @@ describe('TripsService', () => {
   // tripping on the deeply-nested mock cast on `tripRepo.manager.*`.
   let transactionMock: jest.Mock;
   let userRepo: jest.Mocked<Repository<User>>;
+  let folderRepo: jest.Mocked<Repository<TripFolder>>;
   let events: jest.Mocked<Pick<EventsGateway, 'emitToTrip'>>;
   let activity: jest.Mocked<Pick<TripActivityService, 'recordSafe'>>;
   let tripShares: jest.Mocked<Pick<TripSharesService, 'findActiveByToken'>>;
@@ -199,6 +201,10 @@ describe('TripsService', () => {
       findOne: jest.fn().mockResolvedValue(null),
     } as unknown as jest.Mocked<Repository<User>>;
 
+    folderRepo = {
+      findOne: jest.fn().mockResolvedValue(null),
+    } as unknown as jest.Mocked<Repository<TripFolder>>;
+
     events = { emitToTrip: jest.fn() };
     activity = { recordSafe: jest.fn().mockResolvedValue(undefined) };
     tripShares = { findActiveByToken: jest.fn() };
@@ -216,6 +222,7 @@ describe('TripsService', () => {
         TripsService,
         { provide: getRepositoryToken(Trip), useValue: tripRepo },
         { provide: getRepositoryToken(TripMember), useValue: memberRepo },
+        { provide: getRepositoryToken(TripFolder), useValue: folderRepo },
         { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: EventsGateway, useValue: events },
         { provide: TripActivityService, useValue: activity },
@@ -1479,6 +1486,73 @@ describe('TripsService', () => {
         service.update(OWNER_ID, TRIP_ID, { daily_km_min: 500 }),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(manager.update).not.toHaveBeenCalled();
+    });
+
+    it('US-37: assigns folder_id when the folder belongs to the trip owner', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      tripRepo.findOne.mockResolvedValueOnce({
+        owner_id: OWNER_ID,
+      } as Trip);
+      folderRepo.findOne.mockResolvedValueOnce({
+        id: 'fld-1',
+        user_id: OWNER_ID,
+      } as TripFolder);
+      manager.findOne.mockResolvedValueOnce(makeOwnedTrip());
+      mockGetDetailReturns(makeOwnedTrip({ folder_id: 'fld-1' } as never));
+
+      await service.update(OWNER_ID, TRIP_ID, {
+        folder_id: 'fld-1',
+      });
+
+      expect(folderRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'fld-1', user_id: OWNER_ID },
+      });
+      expect(manager.update).toHaveBeenCalledWith(
+        Trip,
+        { id: TRIP_ID },
+        { folder_id: 'fld-1' },
+      );
+    });
+
+    it('US-37: 404s a folder owned by a different rider (no info leak)', async () => {
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      tripRepo.findOne.mockResolvedValueOnce({
+        owner_id: OWNER_ID,
+      } as Trip);
+      // Service queries folderRepo with `user_id = trip.owner_id`, so a
+      // foreign-user folder returns null and we expect the canonical
+      // 404 — never 403 — to keep the endpoint a non-channel for
+      // enumerating other riders' folder ids.
+      folderRepo.findOne.mockResolvedValueOnce(null);
+
+      await expect(
+        service.update(OWNER_ID, TRIP_ID, { folder_id: 'fld-other' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(manager.update).not.toHaveBeenCalled();
+    });
+
+    it('US-37: clears folder_id (unfile) without checking folder ownership', async () => {
+      // Passing `folder_id: null` is the "Move to Unfiled" path. We
+      // shouldn't run the folder-ownership probe for null — there's
+      // nothing to verify.
+      memberRepo.findOne.mockResolvedValueOnce({
+        role: 'owner',
+      } as TripMember);
+      manager.findOne.mockResolvedValueOnce(makeOwnedTrip());
+      mockGetDetailReturns(makeOwnedTrip({ folder_id: null } as never));
+
+      await service.update(OWNER_ID, TRIP_ID, { folder_id: null });
+
+      expect(folderRepo.findOne).not.toHaveBeenCalled();
+      expect(manager.update).toHaveBeenCalledWith(
+        Trip,
+        { id: TRIP_ID },
+        { folder_id: null },
+      );
     });
   });
 

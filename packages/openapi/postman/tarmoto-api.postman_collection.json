@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "f30ce953-6cc2-4b4f-8217-cde7e6a80ec9",
+    "_postman_id": "7ea3983d-e5c2-4d23-9c75-828121afebf0",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -2861,7 +2861,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"\",\n  \"region\": \"\",\n  \"num_days\": 0,\n  \"min_quality\": 0,\n  \"road_preference\": \"curvy\",\n  \"daily_km_min\": 0,\n  \"daily_km_max\": 0,\n  \"status\": \"draft\"\n}",
+              "raw": "{\n  \"title\": \"\",\n  \"region\": \"\",\n  \"num_days\": 0,\n  \"min_quality\": 0,\n  \"road_preference\": \"curvy\",\n  \"daily_km_min\": 0,\n  \"daily_km_max\": 0,\n  \"status\": \"draft\",\n  \"folder_id\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3504,6 +3504,109 @@
                   "value": "",
                   "description": "",
                   "disabled": true
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "trip-folders",
+      "item": [
+        {
+          "name": "List the caller's trip folders ordered by manual position.",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trip-folders",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trip-folders"]
+            }
+          }
+        },
+        {
+          "name": "Create a new trip folder. The folder is appended to the end of the caller’s list.",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trip-folders",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trip-folders"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"\",\n  \"color\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Rename, recolour, or reorder a folder. Cross-user updates 404 (not 403).",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trip-folders/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trip-folders", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"\",\n  \"color\": \"\",\n  \"position\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Delete a folder. Trips inside become unfiled (`folder_id` is set to NULL via the FK).",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trip-folders/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trip-folders", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
                 }
               ]
             }

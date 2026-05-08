@@ -39,7 +39,7 @@ function makeTrip(overrides: Partial<Trip> = {}): Trip {
       { userId: "u1", displayName: "Owner", role: "owner" },
       { userId: "u2", displayName: "Friend", role: "editor" },
     ],
-    folderId: "fld_alps",
+    folder_id: "fld_alps",
     createdAt: "2026-04-01T00:00:00Z",
     updatedAt: "2026-04-14T00:00:00Z",
     ...overrides,
@@ -84,18 +84,18 @@ describe("duplicateTripPayload", () => {
     expect(payload.parameters.surfacePreference).toEqual(["asphalt"]);
   });
 
-  it("preserves description and folderId when present", () => {
+  it("preserves description and folder_id when present", () => {
     const payload = duplicateTripPayload(makeTrip());
     expect(payload.description).toBe("Five days through the Alps");
-    expect(payload.folderId).toBe("fld_alps");
+    expect(payload.folder_id).toBe("fld_alps");
   });
 
-  it("omits description and folderId when absent", () => {
+  it("omits description and folder_id when absent", () => {
     const payload = duplicateTripPayload(
-      makeTrip({ description: undefined, folderId: undefined }),
+      makeTrip({ description: undefined, folder_id: undefined }),
     );
     expect(payload).not.toHaveProperty("description");
-    expect(payload).not.toHaveProperty("folderId");
+    expect(payload).not.toHaveProperty("folder_id");
   });
 
   it("preserves an explicitly empty description", () => {

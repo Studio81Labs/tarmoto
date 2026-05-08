@@ -1,0 +1,181 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { DataSource, Repository } from 'typeorm';
+import { TripFolder } from '../../entities/trip-folder.entity.js';
+import {
+  CreateTripFolderDto,
+  TripFolderListResponseDto,
+  TripFolderResponseDto,
+  UpdateTripFolderDto,
+} from './dto/trip-folder.dto.js';
+
+/**
+ * US-37 — backend persistence for the rider's trip folders.
+ *
+ * Folders are flat (no nesting), per-user, manually ordered. Cross-user
+ * access yields a 404 (not 403) so the endpoint can't be used to
+ * enumerate folder ids belonging to other riders.
+ *
+ * The companion previously stored these rows in `localStorage`; this
+ * service replaces that with a real table so folders sync between
+ * browsers and surface read-only on mobile.
+ */
+@Injectable()
+export class TripFoldersService {
+  constructor(
+    @InjectRepository(TripFolder)
+    private readonly folderRepo: Repository<TripFolder>,
+    private readonly dataSource: DataSource,
+  ) {}
+
+  async list(userId: string): Promise<TripFolderListResponseDto> {
+    const rows = await this.folderRepo.find({
+      where: { user_id: userId },
+      order: { position: 'ASC', created_at: 'ASC' },
+    });
+    return { items: rows.map(toResponse), total: rows.length };
+  }
+
+  async create(
+    userId: string,
+    dto: CreateTripFolderDto,
+  ): Promise<TripFolderResponseDto> {
+    // New folders land at the end of the user's list. We compute
+    // MAX(position)+1 inside a transaction with a row-level advisory
+    // lock so concurrent creates don't both pick the same position
+    // (PG's default READ COMMITTED would otherwise let two parallel
+    // requests read the same MAX before either INSERT lands).
+    const saved = await this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(TripFolder);
+      // Per-user advisory lock; uses the user's UUID hashed to a 32-bit
+      // int so the lock space is bounded. Releases at txn end.
+      await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        `trip_folders:${userId}`,
+      ]);
+      const maxRow = await repo
+        .createQueryBuilder('f')
+        .select('COALESCE(MAX(f.position), -1)', 'max')
+        .where('f.user_id = :userId', { userId })
+        .getRawOne<{ max: number | string }>();
+      const nextPosition = Number(maxRow?.max ?? -1) + 1;
+      const folder = repo.create({
+        user_id: userId,
+        name: dto.name.trim(),
+        color: normaliseColor(dto.color),
+        position: nextPosition,
+      });
+      return repo.save(folder);
+    });
+    return toResponse(saved);
+  }
+
+  async update(
+    userId: string,
+    folderId: string,
+    dto: UpdateTripFolderDto,
+  ): Promise<TripFolderResponseDto> {
+    // Reorder lives in the same transaction as the field update so a
+    // user toggling name AND position in one PATCH (the planner UI does
+    // this on drop-and-rename combos) commits atomically. If the row
+    // isn't visible to the caller we 404 — never 403 — so the endpoint
+    // stays a non-channel for cross-user folder enumeration.
+    const updated = await this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(TripFolder);
+      const folder = await repo.findOne({
+        where: { id: folderId, user_id: userId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!folder) throw new NotFoundException('Folder not found');
+
+      if (dto.name !== undefined) folder.name = dto.name.trim();
+      if (dto.color !== undefined) folder.color = normaliseColor(dto.color);
+
+      if (dto.position !== undefined && dto.position !== folder.position) {
+        await this.shiftPositions(
+          manager.getRepository(TripFolder),
+          userId,
+          folder.id,
+          folder.position,
+          dto.position,
+        );
+        folder.position = dto.position;
+      }
+
+      return repo.save(folder);
+    });
+    return toResponse(updated);
+  }
+
+  async remove(userId: string, folderId: string): Promise<void> {
+    // No explicit Trip.folder_id reset — the FK on `trips.folder_id` is
+    // `ON DELETE SET NULL`, so the database does the cleanup atomically
+    // with the folder delete and we don't need a per-trip UPDATE pass
+    // here. Cross-user delete: 404 instead of 403, mirroring `update`.
+    const result = await this.folderRepo.delete({
+      id: folderId,
+      user_id: userId,
+    });
+    if (result.affected === 0) {
+      throw new NotFoundException('Folder not found');
+    }
+  }
+
+  /**
+   * Renumber neighbours so positions stay dense (0..N-1) within the
+   * caller's folder list when an existing folder moves between
+   * `from` and `to`.
+   *
+   * Two SQL UPDATE shapes cover the two move directions:
+   *  - Move up (smaller index): rows in [to, from-1] shift +1.
+   *  - Move down (larger index): rows in [from+1, to] shift -1.
+   *
+   * The SET expression skips the moved folder by id so we don't double-
+   * shift it (the caller persists its new `position` separately).
+   */
+  private async shiftPositions(
+    repo: Repository<TripFolder>,
+    userId: string,
+    movingId: string,
+    from: number,
+    to: number,
+  ): Promise<void> {
+    if (from === to) return;
+    if (to < from) {
+      await repo
+        .createQueryBuilder()
+        .update()
+        .set({ position: () => 'position + 1' })
+        .where('user_id = :userId', { userId })
+        .andWhere('id <> :movingId', { movingId })
+        .andWhere('position >= :to AND position < :from', { to, from })
+        .execute();
+    } else {
+      await repo
+        .createQueryBuilder()
+        .update()
+        .set({ position: () => 'position - 1' })
+        .where('user_id = :userId', { userId })
+        .andWhere('id <> :movingId', { movingId })
+        .andWhere('position > :from AND position <= :to', { from, to })
+        .execute();
+    }
+  }
+}
+
+function toResponse(folder: TripFolder): TripFolderResponseDto {
+  return {
+    id: folder.id,
+    user_id: folder.user_id,
+    name: folder.name,
+    color: folder.color,
+    position: folder.position,
+    created_at: folder.created_at.toISOString(),
+    updated_at: folder.updated_at.toISOString(),
+  };
+}
+
+function normaliseColor(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed.toLowerCase();
+}

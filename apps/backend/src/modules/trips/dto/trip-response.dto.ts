@@ -51,6 +51,13 @@ export class TripSummaryDto {
   @ApiProperty()
   member_count!: number;
 
+  @ApiProperty({
+    nullable: true,
+    description:
+      'US-37 — uuid of the rider-owned folder this trip is filed under. `null` for unfiled trips.',
+  })
+  folder_id!: string | null;
+
   @ApiProperty()
   created_at!: string;
 }
