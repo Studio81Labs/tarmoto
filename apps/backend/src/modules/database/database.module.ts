@@ -48,6 +48,7 @@ import { AddSurfaceReadingClientPreprocessingVersion1717200000000 } from '../../
 import { OutlierFilteredRoadQualityAggregation1717300000000 } from '../../migrations/1717300000000-OutlierFilteredRoadQualityAggregation.js';
 import { AddDeviceCalibration1717400000000 } from '../../migrations/1717400000000-AddDeviceCalibration.js';
 import { AddModelEvalSamples1717500000000 } from '../../migrations/1717500000000-AddModelEvalSamples.js';
+import { AddModelEvalReconcileAttemptedAt1717600000000 } from '../../migrations/1717600000000-AddModelEvalReconcileAttemptedAt.js';
 import {
   User,
   UserContact,
@@ -214,6 +215,7 @@ const entities = [
             OutlierFilteredRoadQualityAggregation1717300000000,
             AddDeviceCalibration1717400000000,
             AddModelEvalSamples1717500000000,
+            AddModelEvalReconcileAttemptedAt1717600000000,
           ],
           // During OpenAPI spec export we don't need a real DB connection.
           // Disable retries and migrations so bootstrap completes without a DB.

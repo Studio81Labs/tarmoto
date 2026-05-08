@@ -208,27 +208,44 @@ export class ModelEvalService {
          -- tick join the entire pending set against surface_readings
          -- (codex review).
          --
-         -- We use RANDOM() ordering here intentionally rather than
-         -- FIFO. A FIFO cap (ORDER BY created_at ASC LIMIT N) would
-         -- starve newer LOO-eligible samples whenever the oldest N
-         -- pending samples were dominated by LOO-ineligible rows
-         -- (e.g. low-traffic or same-rider-repeat segments that pass
-         -- the gross threshold but never accumulate three independent
-         -- riders). Random sampling means each tick inspects a
-         -- different slice of the pending pool, so an LOO-eligible
-         -- row anywhere in the pool gets reconciled in expected
-         -- O(pending_size / cap) ticks instead of being permanently
-         -- queued behind ineligible rows.
+         -- Ordering by mes.last_reconcile_attempt_at ASC NULLS FIRST
+         -- gives us an index-range scan on the partial index
+         -- idx_model_eval_samples_pending (migration
+         -- #1717600000000). The job inspects the N least-recently-
+         -- attempted pending rows: never-attempted (NULL) rows come
+         -- first, so newer LOO-eligible samples are always reconciled
+         -- before permanently un-reconcilable rows that have been
+         -- cycled to the back of the queue.
          --
-         -- Performance: the partial index
-         -- idx_model_eval_samples_pending bounds the candidate set
-         -- to unreconciled rows only, and the gross-threshold
-         -- pre-filter further trims most of the rest. RANDOM() over
-         -- the surviving N rows requires an O(N log N) sort, which
-         -- is acceptable for N ≤ a few hundred thousand on a
-         -- partial-indexed scan.
-         ORDER BY RANDOM()
+         -- This is bounded O(log n + N) — O(log n) to locate the
+         -- start of the index range, then read exactly N entries.
+         -- Same-rider-repeat candidates that fail the LOO predicate
+         -- have their last_reconcile_attempt_at bumped on every
+         -- inspection, so they age out of the head of the queue
+         -- and don't make every tick re-scan them.
+         ORDER BY mes.last_reconcile_attempt_at ASC NULLS FIRST
          LIMIT $5
+       ),
+       attempted AS (
+         -- Side-effect: bump last_reconcile_attempt_at on every
+         -- candidate this tick inspects, regardless of whether the
+         -- LOO predicate downstream lets it actually reconcile. This
+         -- is the "claim" half of the indexed claim strategy: a
+         -- permanently un-reconcilable row gets its timestamp moved
+         -- to NOW() on every visit, so it cycles to the back of the
+         -- partial-index ordering and stops appearing in the next
+         -- tick's candidate window. New rows (NULL) come first;
+         -- never-attempted rows are always reconciled before
+         -- aged-out perma-fails.
+         --
+         -- PostgreSQL evaluates data-modifying CTEs once per
+         -- statement; the reference in the final SELECT's WHERE
+         -- clause forces execution even on ticks where no row
+         -- survives the LOO predicate.
+         UPDATE model_eval_samples
+            SET last_reconcile_attempt_at = NOW()
+          WHERE id IN (SELECT sample_id FROM candidates)
+          RETURNING id
        ),
        loo_scored AS (
          -- Per-candidate, leave-one-out: every other reading on the
@@ -347,6 +364,15 @@ export class ModelEvalService {
        JOIN loo ON loo.sample_id = c.sample_id
        WHERE loo.loo_reading_count >= $2
          AND loo.loo_quality_score IS NOT NULL
+         -- Force the data-modifying attempted CTE to execute
+         -- every tick. Without a reference here, PostgreSQL may
+         -- skip the CTE on ticks where the main SELECT finds no
+         -- LOO-eligible rows, and the claim timestamps would
+         -- never advance. (SELECT COUNT(*) FROM attempted) >= 0
+         -- is always true (count is non-negative) so it doesn't
+         -- filter rows out -- its only job is to guarantee
+         -- attempted is part of the executed plan.
+         AND (SELECT COUNT(*) FROM attempted) >= 0
          -- Spec section 8.3 step 3 frames the aggregate as
          -- "readings from different riders". Require at least N
          -- distinct OTHER riders so one rider's repeated passes

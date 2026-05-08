@@ -95,6 +95,18 @@ export class ModelEvalSample {
   @Column({ type: 'timestamptz', nullable: true })
   reconciled_at!: Date | null;
 
+  /**
+   * Timestamp of the most recent reconcile-job tick that inspected
+   * this row, regardless of whether the LOO predicate let it
+   * actually reconcile. The reconcile candidates CTE orders by
+   * `last_reconcile_attempt_at NULLS FIRST` and uses the partial
+   * index `idx_model_eval_samples_pending`, so the job does
+   * bounded O(log n) work even on a large pending backlog
+   * (codex P2 review).
+   */
+  @Column({ type: 'timestamptz', nullable: true })
+  last_reconcile_attempt_at!: Date | null;
+
   @ManyToOne(() => SurfaceReading, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'surface_reading_id' })
   surface_reading!: SurfaceReading;

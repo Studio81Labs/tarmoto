@@ -88,6 +88,7 @@ import { AddSurfaceReadingClientPreprocessingVersion1717200000000 } from './migr
 import { OutlierFilteredRoadQualityAggregation1717300000000 } from './migrations/1717300000000-OutlierFilteredRoadQualityAggregation.js';
 import { AddDeviceCalibration1717400000000 } from './migrations/1717400000000-AddDeviceCalibration.js';
 import { AddModelEvalSamples1717500000000 } from './migrations/1717500000000-AddModelEvalSamples.js';
+import { AddModelEvalReconcileAttemptedAt1717600000000 } from './migrations/1717600000000-AddModelEvalReconcileAttemptedAt.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -194,6 +195,7 @@ export const AppDataSource = new DataSource({
     OutlierFilteredRoadQualityAggregation1717300000000,
     AddDeviceCalibration1717400000000,
     AddModelEvalSamples1717500000000,
+    AddModelEvalReconcileAttemptedAt1717600000000,
   ],
   synchronize: false,
 });
