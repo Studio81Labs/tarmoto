@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 
 
@@ -54,26 +55,54 @@ _NULL_TOLERATED_NON_STRICT = frozenset(
 def check(report: dict, *, strict: bool) -> list[str]:
     failures: list[str] = []
 
-    def fail_on_null(metric: str) -> bool:
+    def fail_on_invalid(metric: str) -> bool:
         # Returns True when the caller has already recorded a failure
-        # (or the value was tolerated and there's nothing to compare).
-        if metric not in report or report.get(metric) is None:
+        # (or the value was tolerated and there's nothing to compare
+        # against). Catches three classes of broken inputs:
+        #
+        #   - missing key                — eval pipeline didn't write it;
+        #   - explicit null              — measurable-but-not-measured
+        #                                  (tolerated for the two
+        #                                  diversity metrics in non-
+        #                                  strict mode, see allowlist);
+        #   - NaN / +Inf / -Inf / non-num —
+        #     these MUST fail regardless of strictness. Python's
+        #     `json.load` accepts NaN by default, and `NaN < t` and
+        #     `NaN > t` both evaluate to False — without this guard
+        #     a broken report containing NaN for a required metric
+        #     would silently pass the launch gate.
+        if metric not in report:
+            if strict or metric not in _NULL_TOLERATED_NON_STRICT:
+                failures.append(
+                    f"{metric}=missing (required metric missing from report)"
+                )
+            return True
+        value = report[metric]
+        if value is None:
             if strict or metric not in _NULL_TOLERATED_NON_STRICT:
                 failures.append(
                     f"{metric}=null (required metric missing from report)"
                 )
             return True
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            # `bool` is a subclass of `int`; reject it explicitly so a
+            # `true`/`false` in the JSON doesn't sneak past as 0 or 1.
+            failures.append(f"{metric}={value!r} (must be a finite number)")
+            return True
+        if isinstance(value, float) and not math.isfinite(value):
+            failures.append(f"{metric}={value!r} (must be a finite number)")
+            return True
         return False
 
     def ge(metric: str, threshold: float) -> None:
-        if fail_on_null(metric):
+        if fail_on_invalid(metric):
             return
         value = report[metric]
         if value < threshold:
             failures.append(f"{metric}={value:.4f} < target {threshold:.4f}")
 
     def le(metric: str, threshold: float) -> None:
-        if fail_on_null(metric):
+        if fail_on_invalid(metric):
             return
         value = report[metric]
         if value > threshold:

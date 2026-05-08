@@ -323,6 +323,76 @@ class EvaluateAndGateTests(unittest.TestCase):
         failures = check(report, strict=True)
         self.assertEqual(len(failures), 2)
 
+    def test_nan_required_metric_fails_default_mode(self) -> None:
+        """Codex review: Python's `json.load` accepts NaN by default,
+        and `NaN < threshold` / `NaN > threshold` are both False, so
+        a broken report containing NaN for a required metric would
+        silently pass without an explicit non-finite guard."""
+        report = {
+            "weighted_f1": float("nan"),
+            "adjacent_accuracy": 0.96,
+            "confusion_between_extremes": 0.01,
+            "mae": 0.30,
+            "surface_type_accuracy": 0.90,
+            "cross_device_agreement": None,
+            "cross_bike_agreement": None,
+            "dangerous_misclass_rate": 0.005,
+        }
+        failures = check(report, strict=False)
+        self.assertEqual(len(failures), 1)
+        self.assertIn("weighted_f1", failures[0])
+        self.assertIn("finite number", failures[0])
+
+    def test_inf_required_metric_fails(self) -> None:
+        report = {
+            "weighted_f1": 0.90,
+            "adjacent_accuracy": 0.96,
+            "confusion_between_extremes": 0.01,
+            "mae": float("inf"),
+            "surface_type_accuracy": 0.90,
+            "cross_device_agreement": None,
+            "cross_bike_agreement": None,
+            "dangerous_misclass_rate": 0.005,
+        }
+        failures = check(report, strict=False)
+        self.assertEqual(len(failures), 1)
+        self.assertIn("mae", failures[0])
+
+    def test_non_numeric_required_metric_fails(self) -> None:
+        report = {
+            "weighted_f1": "not-a-number",
+            "adjacent_accuracy": 0.96,
+            "confusion_between_extremes": 0.01,
+            "mae": 0.30,
+            "surface_type_accuracy": 0.90,
+            "cross_device_agreement": None,
+            "cross_bike_agreement": None,
+            "dangerous_misclass_rate": 0.005,
+        }
+        failures = check(report, strict=False)
+        self.assertEqual(len(failures), 1)
+        self.assertIn("weighted_f1", failures[0])
+        self.assertIn("finite number", failures[0])
+
+    def test_nan_diversity_metric_fails_even_in_default_mode(self) -> None:
+        """Even though `cross_device_agreement` may legitimately be
+        null in non-strict mode, NaN is a different signal — it
+        means the eval pipeline produced something nonsensical and
+        the gate must fail even for tolerated metrics."""
+        report = {
+            "weighted_f1": 0.90,
+            "adjacent_accuracy": 0.96,
+            "confusion_between_extremes": 0.01,
+            "mae": 0.30,
+            "surface_type_accuracy": 0.90,
+            "cross_device_agreement": float("nan"),
+            "cross_bike_agreement": None,
+            "dangerous_misclass_rate": 0.005,
+        }
+        failures = check(report, strict=False)
+        self.assertEqual(len(failures), 1)
+        self.assertIn("cross_device_agreement", failures[0])
+
 
 if __name__ == "__main__":
     unittest.main()
