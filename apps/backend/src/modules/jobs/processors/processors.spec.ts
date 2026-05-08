@@ -9,6 +9,9 @@ import { AccountDeletionSweepProcessor } from './account-deletion-sweep.processo
 import { AccountDeletionFinalizeProcessor } from './account-deletion-finalize.processor.js';
 import { FunzoneRecomputeProcessor } from './funzone-recompute.processor.js';
 import { PushNotificationProcessor } from './push-notification.processor.js';
+import { ModelEvalReconcileProcessor } from './model-eval-reconcile.processor.js';
+import { ModelEvalAgreementProcessor } from './model-eval-agreement.processor.js';
+import { ModelEvalService } from '../../model-eval/model-eval.service.js';
 import { HazardsService } from '../../hazards/hazards.service.js';
 import { BadgesService } from '../../badges/badges.service.js';
 import { JobsProducer } from '../jobs.producer.js';
@@ -401,6 +404,65 @@ describe('FunzoneRecomputeProcessor', () => {
       zones_pruned: 1,
       members_written: 38,
       duration_ms: 1234,
+    });
+  });
+});
+
+describe('ModelEvalReconcileProcessor', () => {
+  it('happy path: invokes ModelEvalService.reconcilePending and returns the summary', async () => {
+    const evalService = {
+      reconcilePending: jest.fn().mockResolvedValue({
+        reconciled: 7,
+        dangerous: 1,
+      }),
+    };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        ModelEvalReconcileProcessor,
+        { provide: ModelEvalService, useValue: evalService },
+      ],
+    }).compile();
+    const processor = moduleRef.get(ModelEvalReconcileProcessor);
+    const result = await processor.process(
+      fakeJob(JOB_NAMES.MODEL_EVAL_RECONCILE_RUN, {}) as never,
+    );
+    expect(evalService.reconcilePending).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ reconciled: 7, dangerous: 1 });
+  });
+});
+
+describe('ModelEvalAgreementProcessor', () => {
+  it('happy path: invokes ModelEvalService.recomputeAgreements and returns flat summary', async () => {
+    const evalService = {
+      recomputeAgreements: jest.fn().mockResolvedValue({
+        cross_device: {
+          agreement_score: 0.83,
+          segments_evaluated: 12,
+          computed_at: '2026-05-08T00:00:00.000Z',
+        },
+        cross_bike: {
+          agreement_score: 0.77,
+          segments_evaluated: 8,
+          computed_at: '2026-05-08T00:00:00.000Z',
+        },
+      }),
+    };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        ModelEvalAgreementProcessor,
+        { provide: ModelEvalService, useValue: evalService },
+      ],
+    }).compile();
+    const processor = moduleRef.get(ModelEvalAgreementProcessor);
+    const result = await processor.process(
+      fakeJob(JOB_NAMES.MODEL_EVAL_AGREEMENT_RUN, {}) as never,
+    );
+    expect(evalService.recomputeAgreements).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({
+      cross_device_score: 0.83,
+      cross_device_segments: 12,
+      cross_bike_score: 0.77,
+      cross_bike_segments: 8,
     });
   });
 });

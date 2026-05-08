@@ -27,6 +27,9 @@ import { FunzoneRecomputeProcessor } from './processors/funzone-recompute.proces
 import { PushNotificationProcessor } from './processors/push-notification.processor.js';
 import { LocationRetentionSweepProcessor } from './processors/location-retention-sweep.processor.js';
 import { WeatherAlertSweepProcessor } from './processors/weather-alert-sweep.processor.js';
+import { ModelEvalReconcileProcessor } from './processors/model-eval-reconcile.processor.js';
+import { ModelEvalAgreementProcessor } from './processors/model-eval-agreement.processor.js';
+import { ModelEvalModule } from '../model-eval/index.js';
 
 const JOBS_CONFIG_PROVIDER: Provider = {
   provide: JOBS_CONFIG_TOKEN,
@@ -45,6 +48,8 @@ const PROCESSOR_PROVIDERS: Provider[] = [
   PushNotificationProcessor,
   LocationRetentionSweepProcessor,
   WeatherAlertSweepProcessor,
+  ModelEvalReconcileProcessor,
+  ModelEvalAgreementProcessor,
 ];
 
 /**
@@ -97,6 +102,7 @@ export class JobsModule {
         RoadsModule,
         PushModule,
         WeatherModule,
+        ModelEvalModule,
         BullModule.forRootAsync({
           imports: [ConfigModule],
           inject: [ConfigService],

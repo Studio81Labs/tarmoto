@@ -83,6 +83,20 @@ describe('JobsScheduler', () => {
       { pattern: RECURRING_PATTERNS.WEEKLY_MON_0400 },
       expect.any(Object),
     );
+    expect(
+      queues[QUEUE_NAMES.MODEL_EVAL_RECONCILE].upsertJobScheduler,
+    ).toHaveBeenCalledWith(
+      'model-eval-reconcile.run',
+      { pattern: RECURRING_PATTERNS.HOURLY },
+      expect.any(Object),
+    );
+    expect(
+      queues[QUEUE_NAMES.MODEL_EVAL_AGREEMENT].upsertJobScheduler,
+    ).toHaveBeenCalledWith(
+      'model-eval-agreement.run',
+      { pattern: RECURRING_PATTERNS.WEEKLY_MON_0500 },
+      expect.any(Object),
+    );
   });
 
   it('skips schedule registration entirely when workers are disabled (split deployment API container)', async () => {

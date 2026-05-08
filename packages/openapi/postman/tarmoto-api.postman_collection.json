@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "e67307dd-b8d9-4837-8390-2ab8699be86e",
+    "_postman_id": "f30ce953-6cc2-4b4f-8217-cde7e6a80ec9",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -1202,6 +1202,45 @@
                   "language": "json"
                 }
               }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "model-eval",
+      "item": [
+        {
+          "name": "24h rolling ML evaluation snapshot",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/model-eval/metrics",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "model-eval", "metrics"]
+            }
+          }
+        },
+        {
+          "name": "Markdown rendering of the model-eval snapshot",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/model-eval/report.md",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "model-eval", "report.md"]
             }
           }
         }

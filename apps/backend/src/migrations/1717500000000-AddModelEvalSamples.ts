@@ -1,0 +1,183 @@
+import { MigrationInterface, QueryRunner } from 'typeorm';
+
+/**
+ * Issue #496 — online ML evaluation pipeline.
+ *
+ * `model_eval_samples` holds a fraction of incoming
+ * `surface_readings` rows so we can compare the per-rider on-device
+ * prediction (`predicted_*`) against the recency-weighted aggregate
+ * road-quality (`aggregate_*`) once the segment has accumulated
+ * enough confirmations from other riders. The reconciliation
+ * processor fills in the aggregate columns when the segment's
+ * confidence reaches the spec §8.3 threshold (≥70 with ≥5 readings),
+ * and the metrics endpoint reads from this table to expose the
+ * dangerous-misclass / adjacent-accuracy / MAE gauges that gate the
+ * model for launch (spec §7).
+ *
+ * Design notes:
+ *
+ *   - `model_version` is the client classifier version that
+ *     produced this batch's per-window predictions
+ *     (`surface_readings.client_model_version`). Null when the
+ *     mobile fallback heuristic ran. Indexed because every metric
+ *     query is segmented by version.
+ *
+ *   - `bike_id` is captured at sample-creation time (joined through
+ *     `rides`) so the weekly cross-bike agreement job can compare
+ *     predictions for the same segment across different bikes
+ *     without re-walking the join.
+ *
+ *   - `dangerous_misclassification` is precomputed at reconciliation
+ *     so the alert gauge is a count over a partial index instead of
+ *     a CASE-on-classification scan over a 24h window.
+ *
+ *   - Foreign keys cascade-delete with the source rows: surface
+ *     readings, road segments, rides, users, and bikes can all be
+ *     swept by the privacy retention job, and the eval samples are
+ *     telemetry that must not pin those rows alive.
+ */
+export class AddModelEvalSamples1717500000000 implements MigrationInterface {
+  name = 'AddModelEvalSamples1717500000000';
+
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`
+      CREATE TABLE IF NOT EXISTS model_eval_samples (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        surface_reading_id UUID NOT NULL
+          REFERENCES surface_readings(id) ON DELETE CASCADE,
+        road_segment_id UUID NOT NULL
+          REFERENCES road_segments(id) ON DELETE CASCADE,
+        ride_id UUID NULL
+          REFERENCES rides(id) ON DELETE SET NULL,
+        user_id UUID NULL
+          REFERENCES users(id) ON DELETE SET NULL,
+        bike_id UUID NULL
+          REFERENCES bikes(id) ON DELETE SET NULL,
+        model_version VARCHAR(32) NULL,
+        device_model VARCHAR(100) NULL,
+        predicted_classification VARCHAR(20) NOT NULL,
+        predicted_score SMALLINT NOT NULL,
+        aggregate_classification VARCHAR(20) NULL,
+        aggregate_score REAL NULL,
+        aggregate_confidence SMALLINT NULL,
+        aggregate_reading_count INT NULL,
+        dangerous_misclassification BOOLEAN NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        reconciled_at TIMESTAMPTZ NULL
+      );
+    `);
+
+    await queryRunner.query(`
+      CREATE INDEX IF NOT EXISTS idx_model_eval_samples_created_at
+        ON model_eval_samples(created_at);
+    `);
+
+    // Pending-reconciliation lookup — partial so the index stays
+    // small as samples accumulate (most rows eventually have a
+    // non-null reconciled_at).
+    await queryRunner.query(`
+      CREATE INDEX IF NOT EXISTS idx_model_eval_samples_pending
+        ON model_eval_samples(road_segment_id)
+        WHERE reconciled_at IS NULL;
+    `);
+
+    // Metric queries filter on `reconciled_at >= NOW() - 24h` (and
+    // 7d for the agreement window) and only group by `model_version`
+    // afterward. Postgres can't seek to the time window if
+    // `model_version` is the leading column, so we order the
+    // composite as `(reconciled_at, model_version)` — that lets the
+    // 24h/7d filter do an index range scan and the trailing
+    // `model_version` is a free bonus for the GROUP BY in
+    // `computeVersionMetrics`. Partial because unreconciled rows
+    // (~majority while a sample is pending) shouldn't bloat the
+    // btree.
+    await queryRunner.query(`
+      CREATE INDEX IF NOT EXISTS idx_model_eval_samples_recon_version
+        ON model_eval_samples(reconciled_at, model_version)
+        WHERE reconciled_at IS NOT NULL;
+    `);
+
+    await queryRunner.query(`
+      CREATE INDEX IF NOT EXISTS idx_model_eval_samples_segment
+        ON model_eval_samples(road_segment_id);
+    `);
+
+    // Index the cascading FK target. Postgres does NOT auto-index
+    // referencing columns, and the daily location-retention sweep
+    // bulk-deletes old `surface_readings` rows. Without this index
+    // each cascade would table-scan `model_eval_samples` and turn a
+    // privacy sweep into lock-heavy work as the eval table grows.
+    // Unique because `maybeSample` creates exactly one sample per
+    // surface reading — the constraint also catches a double-write
+    // bug at the DB level instead of letting it skew the metrics.
+    await queryRunner.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_model_eval_samples_surface_reading_id
+        ON model_eval_samples(surface_reading_id);
+    `);
+
+    // Partial index on the SET NULL anonymization FK, mirroring
+    // `idx_surface_readings_user` from migration #1715500000000.
+    // When `AccountDeletionService` purges a user, Postgres has to
+    // scan every referencing table for matching `user_id` rows to
+    // anonymize them; without this index the eval table is a
+    // sequential scan + per-row update on each purge. Partial so
+    // already-anonymized rows (NULL `user_id`) don't bloat the
+    // btree — the dataset trends toward mostly-NULL over time.
+    await queryRunner.query(`
+      CREATE INDEX IF NOT EXISTS idx_model_eval_samples_user
+        ON model_eval_samples(user_id)
+        WHERE user_id IS NOT NULL;
+    `);
+
+    // Partial index on the SET NULL bike FK. Same shape as the
+    // user index above: when a rider deletes a bike via
+    // `BikesService.delete`, Postgres has to enforce the
+    // ON DELETE SET NULL on every referencing model_eval_samples
+    // row. Without this index every garage delete is a full
+    // sequential scan + per-row update on the eval table, turning
+    // a normal user request into table-scan / lock-heavy work as
+    // samples accumulate. Partial so post-delete NULLs don't
+    // bloat the btree.
+    await queryRunner.query(`
+      CREATE INDEX IF NOT EXISTS idx_model_eval_samples_bike
+        ON model_eval_samples(bike_id)
+        WHERE bike_id IS NOT NULL;
+    `);
+
+    // Partial index on the SET NULL ride FK, mirroring the user
+    // and bike indexes above. When `AccountDeletionService.purgeUser`
+    // hard-deletes a user, every `rides` row owned by that user
+    // cascades, and Postgres has to enforce the SET NULL on every
+    // matching `model_eval_samples.ride_id` per ride. A historical
+    // account with hundreds of sampled rides would otherwise scan
+    // the growing eval table once per deleted ride. Partial so
+    // post-delete NULLs don't bloat the btree.
+    await queryRunner.query(`
+      CREATE INDEX IF NOT EXISTS idx_model_eval_samples_ride
+        ON model_eval_samples(ride_id)
+        WHERE ride_id IS NOT NULL;
+    `);
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`DROP INDEX IF EXISTS idx_model_eval_samples_ride`);
+    await queryRunner.query(`DROP INDEX IF EXISTS idx_model_eval_samples_bike`);
+    await queryRunner.query(`DROP INDEX IF EXISTS idx_model_eval_samples_user`);
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS idx_model_eval_samples_surface_reading_id`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS idx_model_eval_samples_segment`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS idx_model_eval_samples_recon_version`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS idx_model_eval_samples_pending`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS idx_model_eval_samples_created_at`,
+    );
+    await queryRunner.query(`DROP TABLE IF EXISTS model_eval_samples`);
+  }
+}

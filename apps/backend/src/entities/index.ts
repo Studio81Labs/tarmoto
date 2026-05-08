@@ -53,3 +53,4 @@ export { RouteCollectionFollow } from './route-collection-follow.entity.js';
 export { WeatherAlertDispatch } from './weather-alert-dispatch.entity.js';
 export { Bike } from './bike.entity.js';
 export { RideTagEvent } from './ride-tag-event.entity.js';
+export { ModelEvalSample } from './model-eval-sample.entity.js';

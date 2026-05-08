@@ -60,6 +60,10 @@ export class JobsScheduler implements OnApplicationBootstrap {
     private readonly locationRetentionSweep: Queue,
     @InjectQueue(QUEUE_NAMES.WEATHER_ALERT_SWEEP)
     private readonly weatherAlertSweep: Queue,
+    @InjectQueue(QUEUE_NAMES.MODEL_EVAL_RECONCILE)
+    private readonly modelEvalReconcile: Queue,
+    @InjectQueue(QUEUE_NAMES.MODEL_EVAL_AGREEMENT)
+    private readonly modelEvalAgreement: Queue,
     @Inject(JOBS_CONFIG_TOKEN)
     private readonly config: JobsConfig,
   ) {}
@@ -133,6 +137,18 @@ export class JobsScheduler implements OnApplicationBootstrap {
         name: JOB_NAMES.WEATHER_ALERT_SWEEP_RUN,
         pattern: RECURRING_PATTERNS.EVERY_15_MINUTES,
         description: 'severe-weather push sweep for active riders (#333)',
+      },
+      {
+        queue: this.modelEvalReconcile,
+        name: JOB_NAMES.MODEL_EVAL_RECONCILE_RUN,
+        pattern: RECURRING_PATTERNS.HOURLY,
+        description: 'hourly model-eval reconciliation (#496)',
+      },
+      {
+        queue: this.modelEvalAgreement,
+        name: JOB_NAMES.MODEL_EVAL_AGREEMENT_RUN,
+        pattern: RECURRING_PATTERNS.WEEKLY_MON_0500,
+        description: 'weekly model-eval cross-device/bike agreement (#496)',
       },
     ];
   }

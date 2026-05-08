@@ -25,9 +25,12 @@ describe('jobs.constants', () => {
     expect(ALL_QUEUE_NAMES).toContain('account-deletion-finalize');
   });
 
-  it('has ten uniquely-named queues — duplicate names would silently merge in BullMQ', () => {
+  it('has uniquely-named queues — duplicate names would silently merge in BullMQ', () => {
     expect(new Set(ALL_QUEUE_NAMES).size).toBe(ALL_QUEUE_NAMES.length);
-    expect(ALL_QUEUE_NAMES).toHaveLength(10);
+    // Issue #276 shipped ten queues; #496 added two model-eval queues.
+    // Drift here means a producer or processor will try to enqueue
+    // into a queue that the rest of the system never registered.
+    expect(ALL_QUEUE_NAMES).toHaveLength(12);
   });
 
   it('uses the same string for every QUEUE_NAMES key as the value in ALL_QUEUE_NAMES (no drift)', () => {
