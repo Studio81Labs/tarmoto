@@ -36,6 +36,7 @@ import {
   formatRideTypeTitle,
   formatSpeedKmh,
   hazardTypeLabel,
+  mirrorClosestHazardAlert,
   mountQuickActions,
   mountRideStatusBoard,
   presentHazardAlertOnVehicleDisplay,
@@ -685,12 +686,20 @@ describe("buildQuickActionItems", () => {
     ).toEqual([]);
   });
 
-  it("pivots to Stop ride + Report hazard mid-ride", () => {
-    const items = buildQuickActionItems({
-      isRiding: true,
-      hasCommuteRoute: true,
-    });
-    expect(items.map((i) => i.id)).toEqual(["report-hazard", "stop-ride"]);
+  it("emits an empty list mid-ride so the live ride board is never replaced", () => {
+    // Mid-ride the rider's primary head-unit surface is the live ride
+    // status board (or the navigation map template). A quick-actions
+    // list-template would call setRootTemplate and replace it,
+    // leaving the bike display stuck on a static menu — which is
+    // exactly the regression a P1 review caught. Mid-ride affordances
+    // (report hazard, stop ride) are reachable from the navigation
+    // map template's existing surface, so this list is pre-ride only.
+    expect(
+      buildQuickActionItems({ isRiding: true, hasCommuteRoute: true }),
+    ).toEqual([]);
+    expect(
+      buildQuickActionItems({ isRiding: true, hasCommuteRoute: false }),
+    ).toEqual([]);
   });
 });
 
@@ -752,5 +761,113 @@ describe("quick-actions lifecycle", () => {
     // double-pop the head unit's screen stack.
     unmountQuickActions();
     expect(bridge.unmountActions).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── mirrorClosestHazardAlert orchestrator ──
+
+describe("mirrorClosestHazardAlert", () => {
+  let bridge: FakeBridge;
+  const riderLocation = { lat: 49.5, lng: 18.1 };
+
+  beforeEach(() => {
+    bridge = createFakeBridge();
+    __setCarPlayBridgeForTest(bridge);
+  });
+
+  function nearby(): Hazard {
+    // Roughly ~140 m from the rider.
+    return makeHazard({ id: "near", lat: 49.501, lng: 18.101 });
+  }
+
+  function farAway(): Hazard {
+    // Roughly ~14 km from the rider — outside any reasonable alert radius.
+    return makeHazard({ id: "far", lat: 49.6, lng: 18.2 });
+  }
+
+  it("presents the closest non-dismissed hazard within radius", () => {
+    expect(
+      mirrorClosestHazardAlert([nearby(), farAway()], riderLocation, 750),
+    ).toBe("presented");
+    expect(bridge.presentAlert).toHaveBeenCalledTimes(1);
+    expect(bridge.presentAlert.mock.calls[0]?.[0].id).toBe("near");
+  });
+
+  it("does nothing on a no-fix tick (returns 'noop')", () => {
+    expect(mirrorClosestHazardAlert([nearby()], null, 750)).toBe("noop");
+    expect(bridge.presentAlert).not.toHaveBeenCalled();
+  });
+
+  it("dismisses any standing alert when nothing is in range", () => {
+    mirrorClosestHazardAlert([nearby()], riderLocation, 750);
+    expect(bridge.presentAlert).toHaveBeenCalledTimes(1);
+
+    // Rider moves on — the only hazard left in the nearby list is far
+    // away, so the standing alert must be dismissed.
+    expect(mirrorClosestHazardAlert([farAway()], riderLocation, 750)).toBe(
+      "dismissed",
+    );
+    expect(bridge.dismissAlert).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips a dismissed-but-still-closest hazard so a fresh one in range still alerts", () => {
+    // Step 1: rider sees the nearby hazard, taps Dismiss on the head
+    // unit. The dismissed-id is now sticky.
+    mirrorClosestHazardAlert([nearby()], riderLocation, 750);
+    bridge.lastAlertCallbacks?.onDismiss();
+    expect(bridge.presentAlert).toHaveBeenCalledTimes(1);
+
+    // Step 2: a *new* hazard enters the nearby list within range.
+    // Without the dismissed-id filter, `selectClosestHazard` would
+    // still return the dismissed `near` (closest by geometry), the
+    // present call would no-op, and the new hazard would never get
+    // surfaced. With the filter, the new hazard wins and gets
+    // alerted.
+    const fresh = makeHazard({
+      id: "fresh",
+      lat: 49.502,
+      lng: 18.102,
+      hazard_type: "gravel",
+    });
+    expect(
+      mirrorClosestHazardAlert([nearby(), fresh], riderLocation, 750),
+    ).toBe("presented");
+    expect(bridge.presentAlert).toHaveBeenCalledTimes(2);
+    expect(bridge.presentAlert.mock.calls[1]?.[0].id).toBe("fresh");
+  });
+
+  it("clears a stale standing alert when the closest in-range hazard is now dismissed-only", () => {
+    // Step 1: alert about hazard A.
+    const hazardA = makeHazard({
+      id: "A",
+      lat: 49.501,
+      lng: 18.101,
+    });
+    const hazardB = makeHazard({
+      id: "B",
+      lat: 49.502,
+      lng: 18.102,
+    });
+
+    mirrorClosestHazardAlert([hazardB], riderLocation, 750);
+    expect(bridge.presentAlert).toHaveBeenCalledTimes(1);
+
+    // Step 2: the rider dismisses B, then moves so B drops out and A
+    // (which the rider also dismissed earlier in some scenario) stays
+    // in range. The orchestrator must clear the standing alert from
+    // step 1 even though A is still within radius — because A is
+    // dismissed and B is gone, there's nothing eligible to keep the
+    // alert open for.
+    bridge.lastAlertCallbacks?.onDismiss();
+    // Simulate A also being dismissed: present then dismiss to mark it.
+    mirrorClosestHazardAlert([hazardA], riderLocation, 750);
+    bridge.lastAlertCallbacks?.onDismiss();
+    bridge.dismissAlert.mockClear();
+
+    expect(mirrorClosestHazardAlert([hazardA], riderLocation, 750)).toBe(
+      "noop",
+    );
+    expect(bridge.presentAlert).toHaveBeenCalledTimes(2);
+    expect(bridge.dismissAlert).not.toHaveBeenCalled();
   });
 });

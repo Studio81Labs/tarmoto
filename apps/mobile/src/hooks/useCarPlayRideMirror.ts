@@ -38,13 +38,11 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useHazardStore, useRideStore } from "@/stores";
 import {
-  buildHazardAlertSnapshot,
   buildQuickActionItems,
   dismissHazardAlertOnVehicleDisplay,
+  mirrorClosestHazardAlert,
   mountQuickActions,
   mountRideStatusBoard,
-  presentHazardAlertOnVehicleDisplay,
-  selectClosestHazard,
   unmountQuickActions,
   unmountRideStatusBoard,
   type RideStatusBoard,
@@ -150,26 +148,18 @@ export function useCarPlayRideMirror(
       }
       return;
     }
-    const closest = selectClosestHazard(
+    // The service's `mirrorClosestHazardAlert` does the dismissed-id
+    // filtering, radius check, and "swap if a closer fresh hazard
+    // appears" logic in one call so we can't accidentally leave a
+    // stale alert mounted by branching wrong from the hook side. The
+    // returned outcome lets us keep `hazardActiveRef` honest.
+    const outcome = mirrorClosestHazardAlert(
       nearbyHazards,
       location ? { lat: location.lat, lng: location.lng } : null,
+      HAZARD_ALERT_RADIUS_METERS,
     );
-    if (!closest || closest.distanceMeters > HAZARD_ALERT_RADIUS_METERS) {
-      // Nothing close — fold any standing alert. The dismissedHazardIds
-      // set inside the service prevents re-presenting a previously
-      // dismissed hazard if it stays in the nearby list.
-      if (hazardActiveRef.current) {
-        dismissHazardAlertOnVehicleDisplay();
-        hazardActiveRef.current = false;
-      }
-      return;
-    }
-    const snapshot = buildHazardAlertSnapshot(
-      closest.hazard,
-      closest.distanceMeters,
-    );
-    const accepted = presentHazardAlertOnVehicleDisplay(snapshot);
-    if (accepted) hazardActiveRef.current = true;
+    if (outcome === "presented") hazardActiveRef.current = true;
+    if (outcome === "dismissed") hazardActiveRef.current = false;
   }, [isRiding, nearbyHazards, location]);
 
   // ── Band 3: quick actions ──

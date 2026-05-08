@@ -51,6 +51,7 @@
  */
 
 import { Platform } from "react-native";
+import { haversineMeters } from "@tarmoto/shared";
 import { formatDurationSeconds, qualityLabel } from "@/theme";
 import type { Hazard, HazardType, LatLng } from "@/types";
 
@@ -267,25 +268,15 @@ export function formatQualityDetail(
 }
 
 /**
- * Compute the great-circle distance between two `LatLng` points in
- * metres using the haversine formula. Used by `selectClosestHazard`
- * and `formatHazardDistance` so the hazard-alert surface can rank
- * "what to show next" purely on geography without consulting the
- * routing engine. Pure / no allocations beyond Math primitives —
- * safe to call on every ride-store tick.
+ * Great-circle distance between two `LatLng` points in metres. Thin
+ * wrapper over `haversineMeters` from `@tarmoto/shared` so the hazard
+ * surface and the rest of the app share one implementation — the
+ * shared package's signature is `(lat1, lon1, lat2, lon2)`, this
+ * collapses the call sites into the local `LatLng` shape we already
+ * thread everywhere else in the mobile app.
  */
 export function distanceMetersBetween(a: LatLng, b: LatLng): number {
-  const earthRadiusMeters = 6_371_000;
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
-  const sinDLat = Math.sin(dLat / 2);
-  const sinDLng = Math.sin(dLng / 2);
-  const h =
-    sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLng * sinDLng;
-  return 2 * earthRadiusMeters * Math.asin(Math.min(1, Math.sqrt(h)));
+  return haversineMeters(a.lat, a.lng, b.lat, b.lng);
 }
 
 /** Human-readable label for the hazard alert title row. */
@@ -377,33 +368,25 @@ export function buildHazardAlertSnapshot(
 }
 
 /**
- * Build the quick-actions list shown on the head-unit pre-ride / mid-
- * ride. Pre-ride exposes Start Commute so the rider can launch their
- * daily route without reaching for the phone (US-17 AC #4 / US-21);
- * mid-ride pivots to Stop ride + Report hazard so the rider always
- * has a reachable safety affordance from the bike display.
+ * Build the quick-actions list shown on the head-unit pre-ride.
+ *
+ * Quick actions are deliberately pre-ride only — mid-ride the rider's
+ * primary head-unit surface is the live ride status board (or the
+ * navigation map template), and a quick-actions list-template would
+ * call `setRootTemplate` and replace whichever ride surface is
+ * currently mounted, leaving the rider stuck on a static menu while
+ * the bike display can no longer show speed / next maneuver. The
+ * mid-ride affordances (report hazard, stop ride) are reachable from
+ * the navigation map template's leading bar buttons / from the phone
+ * HUD directly, so this surface focuses on its unique pre-ride job:
+ * one-tap launch into the rider's commute (US-17 AC #4 / US-21).
  */
 export function buildQuickActionItems(state: {
   isRiding: boolean;
   hasCommuteRoute: boolean;
 }): QuickActionItem[] {
-  if (state.isRiding) {
-    return [
-      {
-        id: "report-hazard",
-        text: "Report hazard",
-        detailText: "Open the hazard search",
-      },
-      {
-        id: "stop-ride",
-        text: "Stop ride",
-        detailText: "End the active ride",
-      },
-    ];
-  }
-  if (!state.hasCommuteRoute) {
-    return [];
-  }
+  if (state.isRiding) return [];
+  if (!state.hasCommuteRoute) return [];
   return [
     {
       id: "start-commute",
@@ -649,13 +632,60 @@ function createAndroidBridge(): VehicleStatusBridge {
     /* eslint-disable @typescript-eslint/no-require-imports */
     const lib = require("react-native-carplay") as CarPlayLib;
     /* eslint-enable @typescript-eslint/no-require-imports */
-    const { CarPlay, PaneTemplate, AlertTemplate, ListTemplate } = lib;
+    const { CarPlay, PaneTemplate, ListTemplate } = lib;
+    // The package's `InternalCarPlay` type definition (in
+    // `node_modules/react-native-carplay/src/CarPlay.ts`) declares
+    // `alert` but not `dismissAlert`, even though the native Android
+    // module (`CarPlayModule.kt:227`) exports it. Until the package's
+    // typings catch up, route the dismiss call through this typed
+    // shim so we don't sprinkle ad-hoc `as never` casts.
+    const androidBridge = CarPlay.bridge as typeof CarPlay.bridge & {
+      dismissAlert(alertId: number): void;
+    };
 
     let template: InstanceType<typeof PaneTemplate> | null = null;
-    let hazardAlertTemplate: InstanceType<typeof AlertTemplate> | null = null;
-    // Quick-actions tracking lives in the module-level controller above
-    // the bridge — see iOS bridge for the rationale.
     let mountedTitle: string | null = null;
+    /**
+     * Monotonically-incremented integer id we hand to the AA host's
+     * `Alert.Builder` (the host requires a numeric id, not a string).
+     * Tracked so `dismissHazardAlert` can target the most recent alert
+     * via `CarPlay.bridge.dismissAlert(id)`.
+     */
+    let activeAndroidAlertId: number | null = null;
+    let nextAlertId = 1;
+    /** Active alert callbacks routed via `buttonPressed` events. */
+    let activeAlertCallbacks: {
+      onConfirm: () => void;
+      onDismiss: () => void;
+    } | null = null;
+    /** Subscription to the `buttonPressed` emitter — alive while an alert is mounted. */
+    let alertButtonSubscription: { remove: () => void } | null = null;
+
+    /**
+     * Wire the Android-side alert action callbacks. The AA package
+     * routes alert-action taps through the global `buttonPressed`
+     * event (see `parseAction.setOnClickListener` →
+     * `eventEmitter.buttonPressed(id)` in
+     * `node_modules/react-native-carplay/android/.../RCTTemplate.kt`),
+     * which is the same channel template-toolbar buttons use. We
+     * filter on the action ids we registered so taps from other
+     * surfaces don't bleed into the alert callbacks.
+     */
+    const attachAlertButtonListener = () => {
+      detachAlertButtonListener();
+      alertButtonSubscription = CarPlay.emitter.addListener(
+        "buttonPressed",
+        (e: { id: string }) => {
+          if (!activeAlertCallbacks) return;
+          if (e.id === "confirm") activeAlertCallbacks.onConfirm();
+          else if (e.id === "dismiss") activeAlertCallbacks.onDismiss();
+        },
+      );
+    };
+    const detachAlertButtonListener = () => {
+      alertButtonSubscription?.remove();
+      alertButtonSubscription = null;
+    };
 
     const buildPane = (items: StatusBoardItem[]) => ({
       // The Android `parseRowItem` reads `text` (title) + `detailText`
@@ -707,7 +737,9 @@ function createAndroidBridge(): VehicleStatusBridge {
       subscribeDisconnect: (callback) => {
         const handler = () => {
           template = null;
-          hazardAlertTemplate = null;
+          activeAndroidAlertId = null;
+          activeAlertCallbacks = null;
+          detachAlertButtonListener();
           mountedTitle = null;
           callback();
         };
@@ -717,7 +749,9 @@ function createAndroidBridge(): VehicleStatusBridge {
       subscribeConnect: (callback) => {
         const handler = () => {
           template = null;
-          hazardAlertTemplate = null;
+          activeAndroidAlertId = null;
+          activeAlertCallbacks = null;
+          detachAlertButtonListener();
           mountedTitle = null;
           callback();
         };
@@ -726,53 +760,73 @@ function createAndroidBridge(): VehicleStatusBridge {
       },
       presentHazardAlert: (snapshot, callbacks) => {
         if (!CarPlay.connected) return;
-        if (hazardAlertTemplate) {
+        // Android Auto's `presentTemplate` is a `// void` no-op in the
+        // package's `CarPlayModule` (verified against
+        // node_modules/react-native-carplay@2.4.1-beta.0/android/...).
+        // The supported AA path is the imperative
+        // `CarPlay.bridge.alert({ id, title, duration, actions })`
+        // call, which forwards to `AppManager.showAlert` natively.
+        // Tap callbacks come back via the global `buttonPressed`
+        // event (one channel, all action ids), so we filter the ids
+        // we registered.
+        if (activeAndroidAlertId !== null) {
           try {
-            CarPlay.dismissTemplate(true);
+            androidBridge.dismissAlert(activeAndroidAlertId);
           } catch {
-            // Host may have torn down a prior alert on its own.
+            // Host may have already auto-dismissed via timeout.
           }
         }
+        const id = nextAlertId++;
         const { title, subtitle } = formatHazardAlertText(snapshot);
-        const fresh = new AlertTemplate({
-          id: HAZARD_ALERT_TEMPLATE_ID,
-          // The Jetpack AlertTemplate parser on Android reads the same
-          // `titleVariants` field the iOS surface emits — the package
-          // bridges it to the host's `Alert.Builder.setTitle`. Treat
-          // the rich title (label + distance) as the preferred variant
-          // and fall back to the bare label for narrow displays.
-          titleVariants: [`${title} — ${subtitle}`, title],
-          actions: [
-            { id: "confirm", title: "Confirm", style: "default" },
-            { id: "dismiss", title: "Dismiss", style: "cancel" },
-          ],
-          onActionButtonPressed: ({ id }) => {
-            if (id === "confirm") callbacks.onConfirm();
-            else if (id === "dismiss") callbacks.onDismiss();
-          },
-        });
-        hazardAlertTemplate = fresh;
+        activeAlertCallbacks = callbacks;
+        attachAlertButtonListener();
         try {
-          CarPlay.presentTemplate(fresh, true);
+          CarPlay.bridge.alert({
+            id,
+            title,
+            subtitle,
+            // Android requires a positive duration; pick a long
+            // window so the rider has time to react without being
+            // forced to dismiss instantly. The action callbacks
+            // (Confirm / Dismiss) end the alert before the timeout
+            // ever fires in practice.
+            duration: 30_000,
+            actions: [
+              { id: "confirm", title: "Confirm" },
+              { id: "dismiss", title: "Dismiss" },
+            ],
+          });
+          activeAndroidAlertId = id;
         } catch {
-          hazardAlertTemplate = null;
+          activeAndroidAlertId = null;
+          activeAlertCallbacks = null;
+          detachAlertButtonListener();
         }
       },
       dismissHazardAlert: () => {
-        if (!hazardAlertTemplate) return;
+        if (activeAndroidAlertId === null) return;
         try {
-          CarPlay.dismissTemplate(true);
+          androidBridge.dismissAlert(activeAndroidAlertId);
         } catch {
           // Already gone on the native side.
         }
-        hazardAlertTemplate = null;
+        activeAndroidAlertId = null;
+        activeAlertCallbacks = null;
+        detachAlertButtonListener();
       },
       mountQuickActions: (items, onActionPressed) => {
         if (!CarPlay.connected) return;
         // Android Auto's `ListTemplate` parses a flat `items` array,
-        // not the iOS `sections` shape. Building both in parallel
-        // keeps the JS bridge surface symmetric while the package's
-        // platform-specific parsers still see the field they expect.
+        // not the iOS `sections` shape. Both shapes are built so the
+        // package's platform-specific parsers each see the field they
+        // expect.
+        //
+        // `browsable: true` is required on every Android row — the
+        // package's `parseRowItem` only attaches `setOnClickListener`
+        // (which fires `didSelectListItem`) when this flag is set, so
+        // omitting it would render the rows but swallow taps silently
+        // (verified against node_modules/react-native-carplay@2.4.1-
+        // beta.0/android/.../RCTTemplate.kt:170).
         const fresh = new ListTemplate({
           id: QUICK_ACTIONS_TEMPLATE_ID,
           title: "Tarmoto",
@@ -780,6 +834,7 @@ function createAndroidBridge(): VehicleStatusBridge {
             id: item.id,
             text: item.text,
             detailText: item.detailText,
+            browsable: true,
           })),
           onItemSelect: async ({ index }) => {
             const picked = items[index];
@@ -985,6 +1040,55 @@ export function dismissHazardAlertOnVehicleDisplay(): void {
   const bridge = getBridge();
   if (bridge.isAvailable()) bridge.dismissHazardAlert();
   activeHazardAlertId = null;
+}
+
+/**
+ * One-shot orchestrator the cross-cutting hook calls on every
+ * ride/hazard-store tick. Picks the closest *non-dismissed* hazard
+ * within `radiusMeters` of the rider and presents it; if none qualifies
+ * (no fix, all out of range, or every nearby hazard already dismissed)
+ * folds any standing alert. Returning `"presented" | "dismissed" |
+ * "noop"` lets tests assert which branch ran without poking module
+ * state.
+ *
+ * Filtering dismissed ids inside the selection step is the fix for
+ * the regression where a still-in-range dismissed hazard would mask a
+ * brand-new one: previously `selectClosestHazard` returned the
+ * dismissed-but-closer hazard, the alert call returned `false`, and
+ * the next-closest fresh hazard never got considered. Now the
+ * dismissed hazard is invisible to the selector, so the next eligible
+ * one wins — and if every eligible hazard has been dismissed, we fall
+ * through to the "nothing to alert about" branch and clear any
+ * standing alert from a *different* hazard that has since left range.
+ */
+export function mirrorClosestHazardAlert(
+  hazards: Hazard[],
+  riderLocation: LatLng | null,
+  radiusMeters: number,
+): "presented" | "dismissed" | "noop" {
+  const eligible = hazards.filter((h) => !dismissedHazardIds.has(h.id));
+  const closest = selectClosestHazard(eligible, riderLocation);
+  if (!closest || closest.distanceMeters > radiusMeters) {
+    if (activeHazardAlertId) {
+      dismissHazardAlertOnVehicleDisplay();
+      return "dismissed";
+    }
+    return "noop";
+  }
+  const snapshot = buildHazardAlertSnapshot(
+    closest.hazard,
+    closest.distanceMeters,
+  );
+  // If the active alert is for a *different* hazard than the new
+  // closest one, dismiss the standing alert before presenting the new
+  // one — otherwise on iOS the alert stack would queue both, and on
+  // Android the host's single-alert slot would silently swap without
+  // the rider ever seeing the original.
+  if (activeHazardAlertId && activeHazardAlertId !== snapshot.id) {
+    dismissHazardAlertOnVehicleDisplay();
+  }
+  const accepted = presentHazardAlertOnVehicleDisplay(snapshot);
+  return accepted ? "presented" : "noop";
 }
 
 // ── Quick-actions controller ──

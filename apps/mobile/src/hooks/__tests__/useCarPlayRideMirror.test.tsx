@@ -254,7 +254,7 @@ describe("useCarPlayRideMirror — unified bridge", () => {
     expect(bridge.dismissHazardAlert).toHaveBeenCalledTimes(1);
   });
 
-  it("mounts the Start Commute quick action pre-ride and pivots to Stop/Report mid-ride", () => {
+  it("mounts Start Commute pre-ride and unmounts (does not pivot) mid-ride", () => {
     const onQuickAction = jest.fn();
     renderHook(() =>
       useCarPlayRideMirror({ onQuickAction, hasCommuteRoute: true }),
@@ -267,12 +267,12 @@ describe("useCarPlayRideMirror — unified bridge", () => {
     act(() => {
       useRideStore.setState({ isRiding: true, rideType: "commute" });
     });
-    expect(bridge.mountQuickActions).toHaveBeenCalledTimes(2);
-    const midRideItems = bridge.mountQuickActions.mock.calls[1]?.[0];
-    expect(midRideItems?.map((i) => i.id)).toEqual([
-      "report-hazard",
-      "stop-ride",
-    ]);
+    // Mid-ride the quick-actions list goes empty so the live ride
+    // status board (which owns setRootTemplate while riding) isn't
+    // clobbered. The hook unmounts the quick-actions surface — it
+    // does NOT call mountQuickActions a second time.
+    expect(bridge.mountQuickActions).toHaveBeenCalledTimes(1);
+    expect(bridge.unmountQuickActions).toHaveBeenCalledTimes(1);
   });
 
   it("does not mount quick actions when the host hasn't supplied a callback", () => {
