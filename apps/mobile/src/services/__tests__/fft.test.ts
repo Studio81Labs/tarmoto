@@ -205,6 +205,23 @@ describe("computeSpectralFeatures — pure tone", () => {
     expect(f.spectral_entropy).toBeLessThan(0.5);
   });
 
+  it("normalises entropy by the full analysis band, not by used bins only", () => {
+    // Regression for the entropy denominator flagged on PR #502: a
+    // signal whose energy concentrates in a handful of bins must
+    // read as low entropy, not maximum. Three Hann-leaked sine
+    // peaks within the mid band put us well above the pure-tone
+    // case but still far below white noise — the assertion would
+    // fail if we normalised by `log(usedBins)` (≈3) instead of
+    // `log(topBin)` (≈64 at fs=50, fftN=128).
+    const a = makeSine(7, 1, WINDOW_SAMPLES, SAMPLE_RATE_HZ);
+    const b = makeSine(9, 1, WINDOW_SAMPLES, SAMPLE_RATE_HZ);
+    const c = makeSine(11, 1, WINDOW_SAMPLES, SAMPLE_RATE_HZ);
+    const mix = new Float64Array(WINDOW_SAMPLES);
+    for (let i = 0; i < WINDOW_SAMPLES; i++) mix[i] = a[i] + b[i] + c[i];
+    const f = computeSpectralFeatures(mix, SAMPLE_RATE_HZ);
+    expect(f.spectral_entropy).toBeLessThan(0.6);
+  });
+
   it("computes the band ratio as high/low energy", () => {
     // A 20 Hz tone has all its mass in the high band → ratio ≫ 1. A
     // 2 Hz tone has it in the low band → ratio ≪ 1. The model uses

@@ -185,18 +185,24 @@ export function computeSpectralFeatures(
   if (totalPower === 0) return zeroFeatures();
 
   // Pass 2: Shannon entropy of the in-band probability distribution,
-  // normalised to [0, 1] by `ln(usedBins)` so silence and a tone both
-  // yield 0 and white noise yields ≈1 regardless of FFT size.
+  // normalised by `ln(analysisBins)` — the count of *all* analysis
+  // bins (1..topBin), not just the bins that ended up with non-zero
+  // power. Normalising by the used-bin count would conflate a
+  // 3-bin-concentrated spectrum with broadband white noise (both
+  // would sit at 1.0); using the full denominator keeps the value
+  // tied to "how spread out is this signal across the analysis band"
+  // — silence and pure tones → 0, white noise → ≈1, anything in
+  // between scales linearly with bin coverage. The training pipeline
+  // must mirror this exact denominator (issue #492 model contract).
   let entropySum = 0;
-  let usedBins = 0;
   for (let k = 1; k <= topBin; k++) {
     const power = re[k] * re[k] + im[k] * im[k];
     if (power === 0) continue;
     const p = power / totalPower;
     entropySum -= p * Math.log(p);
-    usedBins++;
   }
-  const entropy = usedBins > 1 ? entropySum / Math.log(usedBins) : 0;
+  const analysisBins = topBin; // bins k = 1..topBin inclusive
+  const entropy = analysisBins > 1 ? entropySum / Math.log(analysisBins) : 0;
 
   return {
     spectral_centroid: centroidNum / totalPower,
