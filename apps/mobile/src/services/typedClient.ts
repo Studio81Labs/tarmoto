@@ -183,6 +183,22 @@ export function getAuthenticatedUserId(): string | null {
 }
 
 /**
+ * Backfill helper for installs upgraded from a build that didn't
+ * persist `user_id`. The `register` / `login` paths normally store
+ * the id via `storeTokens(auth)`, but a rider already-signed-in at
+ * upgrade time has access/refresh tokens in MMKV without the
+ * companion id. The privacy refresh hook in `apiService` calls
+ * this with the result of `/users/me` to populate the slot on the
+ * first foreground after upgrade. Only writes — never clears — so
+ * existing values are preserved.
+ */
+export function setAuthenticatedUserId(userId: string): void {
+  if (userId) {
+    storage.set(USER_ID_KEY, userId);
+  }
+}
+
+/**
  * Imperative refresh — POSTs the stored refresh token to /auth/refresh
  * via raw fetch (bypassing the typed-client middleware so the call
  * itself can't loop). Persists new tokens on success, clears them on

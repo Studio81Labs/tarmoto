@@ -77,6 +77,7 @@ import {
   getAccessToken,
   getAuthenticatedUserId,
   isAuthenticated as hasAccessToken,
+  setAuthenticatedUserId,
   storeTokens,
   rawFetch,
 } from "./typedClient";
@@ -223,10 +224,22 @@ class ApiService {
    * it. The earlier access-token-equality version of this guard
    * regressed the normal token-rotation case — see PR #513
    * discussion `r3212738433`.
+   *
+   * Backfills the persisted user id for installs upgraded from a
+   * build that didn't store one (`/users/me` round-trip on the
+   * first refresh) — without this, an already-signed-in rider
+   * upgrading to this build would never refresh until they signed
+   * out and back in. See PR #513 discussion `r3212807027`.
    */
   async refreshPrivacyPreferences(): Promise<void> {
-    const userIdAtStart = getAuthenticatedUserId();
-    if (!userIdAtStart) return;
+    if (!hasAccessToken()) return;
+    let userIdAtStart = getAuthenticatedUserId();
+    if (!userIdAtStart) {
+      const meResult = await client.GET("/api/v1/users/me");
+      const me = unwrap(meResult, "Failed to load profile");
+      setAuthenticatedUserId(me.id);
+      userIdAtStart = me.id;
+    }
     const result = await client.GET("/api/v1/account/privacy");
     const dto = unwrap(result, "Failed to load privacy preferences");
     if (getAuthenticatedUserId() !== userIdAtStart) return;
