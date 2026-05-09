@@ -237,6 +237,18 @@ class ApiService {
     if (!userIdAtStart) {
       const meResult = await client.GET("/api/v1/users/me");
       const me = unwrap(meResult, "Failed to load profile");
+      // #279 / #501 — re-check the session before writing the
+      // backfilled id (Codex review on PR #513 r3212865489). A
+      // logout that fires while `/users/me` is in flight clears
+      // the access token; a fast logout-then-login as a different
+      // rider populates `USER_ID_KEY` with the NEW user before our
+      // response lands. Either case must NOT clobber the slot with
+      // the in-flight call's stale id — the later
+      // `getAuthenticatedUserId() !== userIdAtStart` guard below
+      // counts on the slot reflecting the current session.
+      if (!hasAccessToken()) return;
+      const persistedUserId = getAuthenticatedUserId();
+      if (persistedUserId && persistedUserId !== me.id) return;
       setAuthenticatedUserId(me.id);
       userIdAtStart = me.id;
     }
