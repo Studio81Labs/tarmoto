@@ -970,6 +970,7 @@ export class TripsService {
   private toSummary(trip: Trip): TripSummaryDto {
     return {
       id: trip.id,
+      owner_id: trip.owner_id,
       title: trip.title,
       region: trip.region,
       num_days: trip.num_days,

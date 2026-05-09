@@ -321,12 +321,17 @@ export default function TripListPage() {
       // server-side `POST /trips` ownership check resolves `folder_id`
       // against the CALLING user's folders; blindly forwarding the
       // source's `folder_id` would 404 every collaborator's duplicate
-      // of a filed trip. We mirror the same guard the backend's
-      // `POST /trips/:tripId/duplicate` path applies internally.
-      const ownerCollaborator = trip.collaborators.find(
-        (c) => c.role === "owner",
-      );
-      const isOwner = ownerCollaborator?.userId === userId;
+      // of a filed trip. We resolve ownership from the summary's
+      // `owner_id` field (cheap and always present) rather than
+      // probing `trip.collaborators`, which is `undefined` on items
+      // sourced from the trips list endpoint (`TripSummaryDto` carries
+      // `member_count` but not the full members[] array, so optional-
+      // chain `.find(...)` would throw before we even hit the API).
+      // When `owner_id` is missing (planner-detail-shaped trips that
+      // didn't go through the list endpoint, or older API responses),
+      // we fall back to "not the owner" so the duplicate lands
+      // unfiled rather than risking a 404.
+      const isOwner = trip.owner_id != null && trip.owner_id === userId;
       const { data } = await tripsApi.create(
         duplicateTripPayload(trip, { isOwner }),
       );

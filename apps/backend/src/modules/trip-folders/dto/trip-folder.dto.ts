@@ -9,8 +9,13 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+// Single source of truth for the folder-name length cap. Sharing the
+// constant keeps the backend DTO, the companion validator, and any
+// future mobile-side validation in lockstep — three independent 120s
+// would silently drift the moment one side bumps the cap.
+import { MAX_TRIP_FOLDER_NAME_LENGTH } from '@tarmoto/shared';
 
-export const MAX_TRIP_FOLDER_NAME_LENGTH = 120;
+export { MAX_TRIP_FOLDER_NAME_LENGTH };
 
 /**
  * US-37 — payload for `POST /trip-folders`. The new folder is appended

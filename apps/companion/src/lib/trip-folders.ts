@@ -8,14 +8,26 @@
  * their folder names when they sign back in.
  */
 
-import { tripFoldersApi, type TripFolderResponse } from "@/lib/api";
+import {
+  MAX_TRIP_FOLDER_NAME_LENGTH,
+  type TripFolder as SharedTripFolder,
+} from "@tarmoto/shared";
+import { tripFoldersApi } from "@/lib/api";
 
-export type TripFolder = TripFolderResponse;
+// Re-export the shared wire shape so components import a single
+// definition. The backend (`TripFolderResponseDto`) and the companion
+// API client both produce this shape; pulling the type from
+// `@tarmoto/shared` keeps the three layers in lockstep.
+export type TripFolder = SharedTripFolder;
 
 const LEGACY_STORAGE_PREFIX = "tarmoto:trip-folders:";
 const MIGRATED_STORAGE_PREFIX = "tarmoto:trip-folders-migrated:";
 
-export const MAX_FOLDER_NAME_LENGTH = 120;
+// Re-exported under the existing public name so call sites that still
+// reference `MAX_FOLDER_NAME_LENGTH` (the modal validator does) keep
+// working without a churn-y rename, while the shared constant remains
+// the single source of truth.
+export const MAX_FOLDER_NAME_LENGTH = MAX_TRIP_FOLDER_NAME_LENGTH;
 
 export function legacyStorageKey(userId: string): string {
   return `${LEGACY_STORAGE_PREFIX}${userId}`;

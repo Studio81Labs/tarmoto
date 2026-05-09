@@ -389,6 +389,13 @@ export type WaypointType =
 
 export interface TripSummary {
   id: string;
+  /**
+   * US-37 — owner uuid surfaced on the wire so callers can decide
+   * whether to carry folder assignments forward when duplicating
+   * (folders are private per-user; only the owner of the source can
+   * preserve filing without 404-ing the create).
+   */
+  owner_id?: string;
   title: string;
   region: string | null;
   num_days: number;
@@ -403,20 +410,12 @@ export interface TripSummary {
   created_at: string;
 }
 
-/**
- * US-37 — rider-owned folder that groups trips. Mobile renders these
- * as section headers in the trips list; folder CRUD ships companion-
- * only for v1.
- */
-export interface TripFolder {
-  id: string;
-  user_id: string;
-  name: string;
-  color: string | null;
-  position: number;
-  created_at: string;
-  updated_at: string;
-}
+// US-37 — rider-owned folder that groups trips. Re-exported from
+// `@tarmoto/shared` so backend, mobile, and companion all consume the
+// same definition; a field added there propagates here automatically
+// and the backend DTO `implements TripFolder`-shape via the wire
+// guarantees the three layers stay in lock-step.
+export type { TripFolder } from "@tarmoto/shared";
 
 export interface Trip extends TripSummary {
   daily_km_min: number;
