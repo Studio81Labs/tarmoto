@@ -75,7 +75,9 @@ import {
   client,
   clearTokens,
   getAccessToken,
+  getAuthenticatedUserId,
   isAuthenticated as hasAccessToken,
+  setAuthenticatedUserId,
   storeTokens,
   rawFetch,
 } from "./typedClient";
@@ -100,6 +102,7 @@ import {
   type SubmitReviewResult,
 } from "./reviewQueue";
 import { registerForPush, unregisterPush } from "./pushRegistration";
+import { setCachedPreferences } from "./privacyCache";
 import { SENSOR_PREPROCESSING_VERSION } from "./sensorsFilter";
 
 /** Top-level error thrown by every facade method on a non-2xx response.
@@ -165,6 +168,11 @@ class ApiService {
     const data = unwrap(result, "Registration failed");
     storeTokens(data);
     void registerForPush(this.pushApi());
+    // Fire-and-forget so a transient privacy fetch failure can't
+    // block sign-up; the cache stays on canonical defaults until
+    // the first successful refresh, which is the same posture as
+    // a brand-new install (see `privacyCache` doc).
+    void this.refreshPrivacyPreferences().catch(() => undefined);
     return data;
   }
 
@@ -175,6 +183,10 @@ class ApiService {
     const data = unwrap(result, "Login failed");
     storeTokens(data);
     void registerForPush(this.pushApi());
+    // See `register` — same fire-and-forget pull so the sensor
+    // uploader's `road_data_contribution` gate has fresh data
+    // before the rider starts a ride.
+    void this.refreshPrivacyPreferences().catch(() => undefined);
     return data;
   }
 
@@ -184,9 +196,76 @@ class ApiService {
     // wiped and even if a concurrent relogin populates a different
     // user's tokens. See `pushRegistration.unregisterPush` for the
     // race-condition history this guards against.
+    //
+    // #279 / #501 — `clearTokens` itself wipes the privacy cache
+    // (alongside the access / refresh / user-id slots) so every
+    // token-invalidation path — explicit logout AND silent refresh
+    // failure — drops the previous rider's preferences in lockstep.
+    // No separate `clearCachedPreferences()` call needed here.
     const bearer = getAccessToken() ?? undefined;
     clearTokens();
     void unregisterPush(this.pushApi(bearer));
+  }
+
+  /**
+   * Pull the rider's privacy preferences from the backend and
+   * persist them in the local cache (#279 / #501). The sensor
+   * uploader reads `road_data_contribution` synchronously from the
+   * cache before each upload — call this on app foreground / login
+   * and after every PUT from the privacy settings screen so the
+   * mobile gate stays in sync with the server.
+   *
+   * Snapshots the AUTHENTICATED USER ID at start and re-checks it
+   * before writing the cache (Codex review on PR #513). User id is
+   * stable across access-token rotation — only login / register /
+   * logout move it — so the 401 refresh middleware silently issuing
+   * a new access token mid-flight does NOT cause a stale-snapshot
+   * false positive. Snapshot mismatch (logged out, or a different
+   * rider signed in) drops the response so we can't repopulate
+   * MMKV with the previous rider's toggles after logout cleared
+   * it. The earlier access-token-equality version of this guard
+   * regressed the normal token-rotation case — see PR #513
+   * discussion `r3212738433`.
+   *
+   * Backfills the persisted user id for installs upgraded from a
+   * build that didn't store one (`/users/me` round-trip on the
+   * first refresh) — without this, an already-signed-in rider
+   * upgrading to this build would never refresh until they signed
+   * out and back in. See PR #513 discussion `r3212807027`.
+   */
+  async refreshPrivacyPreferences(): Promise<void> {
+    if (!hasAccessToken()) return;
+    let userIdAtStart = getAuthenticatedUserId();
+    if (!userIdAtStart) {
+      const meResult = await client.GET("/api/v1/users/me");
+      const me = unwrap(meResult, "Failed to load profile");
+      // #279 / #501 — re-check the session before writing the
+      // backfilled id (Codex review on PR #513 r3212865489). A
+      // logout that fires while `/users/me` is in flight clears
+      // the access token; a fast logout-then-login as a different
+      // rider populates `USER_ID_KEY` with the NEW user before our
+      // response lands. Either case must NOT clobber the slot with
+      // the in-flight call's stale id — the later
+      // `getAuthenticatedUserId() !== userIdAtStart` guard below
+      // counts on the slot reflecting the current session.
+      if (!hasAccessToken()) return;
+      const persistedUserId = getAuthenticatedUserId();
+      if (persistedUserId && persistedUserId !== me.id) return;
+      setAuthenticatedUserId(me.id);
+      userIdAtStart = me.id;
+    }
+    const result = await client.GET("/api/v1/account/privacy");
+    const dto = unwrap(result, "Failed to load privacy preferences");
+    if (getAuthenticatedUserId() !== userIdAtStart) return;
+    setCachedPreferences({
+      profile_visibility: dto.profile_visibility,
+      default_ride_sharing: dto.default_ride_sharing,
+      road_data_contribution: dto.road_data_contribution,
+      location_retention: dto.location_retention,
+      analytics_consent: dto.analytics_consent,
+      personalized_recommendations_consent:
+        dto.personalized_recommendations_consent,
+    });
   }
 
   isAuthenticated(): boolean {

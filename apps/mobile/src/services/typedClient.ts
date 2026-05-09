@@ -19,6 +19,7 @@ import { createMMKV } from "react-native-mmkv";
 import { createApiClient } from "@tarmoto/openapi/client";
 import type { Schemas } from "@/types";
 import { API_BASE_URL } from "@/config";
+import { clearCachedPreferences } from "./privacyCache";
 
 type AuthResponse = Schemas["AuthResponseDto"];
 
@@ -26,6 +27,12 @@ const storage = createMMKV({ id: "tarmoto-auth" });
 
 const ACCESS_TOKEN_KEY = "access_token";
 const REFRESH_TOKEN_KEY = "refresh_token";
+// #279 / #501 — stable identifier for the authenticated rider,
+// rotated only on login / register / logout (NOT on access-token
+// refresh). Privacy-cache writes use this to detect "logged out"
+// or "different user signed in" mid-flight while still allowing
+// the normal access-token rotation by the 401 refresh middleware.
+const USER_ID_KEY = "user_id";
 
 /**
  * Per-request timeout. Matches the previous axios default (`timeout:
@@ -142,17 +149,89 @@ function getRefreshToken(): string | null {
 }
 
 export function storeTokens(auth: AuthResponse): void {
+  // #279 / #501 — when the rider switching paths land here without
+  // a prior `clearTokens()` (e.g. `LinkAccountScreen` going
+  // straight from one bearer to another), wipe the cached privacy
+  // preferences first so the new rider's `road_data_contribution`
+  // gate doesn't read the previous rider's value during the brief
+  // window before the fire-and-forget refresh lands.
+  //
+  // Clears on ANY non-matching persisted id, including the legacy
+  // case where `USER_ID_KEY` is empty on an upgraded install but
+  // the privacy cache survived from a pre-upgrade refresh — also
+  // a stale-cache leak (Codex follow-up review on PR #513
+  // r3212954097). Compared by user id so the normal access-token-
+  // rotation path (same user, refresh middleware issuing a new
+  // pair without `auth.user`) does NOT churn the cache:
+  // `incomingUserId` is null on that path, so the outer `if`
+  // never fires.
+  const incomingUserId = auth.user?.id ?? null;
+  if (incomingUserId) {
+    const persistedUserId = storage.getString(USER_ID_KEY) ?? null;
+    if (persistedUserId !== incomingUserId) {
+      clearCachedPreferences();
+    }
+  }
+
   storage.set(ACCESS_TOKEN_KEY, auth.access_token);
   storage.set(REFRESH_TOKEN_KEY, auth.refresh_token);
+  // The /auth/refresh response is typed as AuthResponse but the
+  // access-token-rotation path may not include `user`. Only update
+  // the persisted user id when the response actually carries one,
+  // so a refresh-without-user doesn't clobber the stable session
+  // identifier the privacy-cache snapshot relies on.
+  if (incomingUserId) {
+    storage.set(USER_ID_KEY, incomingUserId);
+  }
 }
 
 export function clearTokens(): void {
   storage.remove(ACCESS_TOKEN_KEY);
   storage.remove(REFRESH_TOKEN_KEY);
+  storage.remove(USER_ID_KEY);
+  // #279 / #501 — every token-invalidation path (logout, refresh
+  // 4xx, refresh fetch failure / timeout) must also wipe the
+  // cached privacy preferences. Otherwise a different rider
+  // signing in on the same device after a silent session
+  // invalidation would keep reading the previous rider's
+  // `road_data_contribution` until the fire-and-forget refresh
+  // succeeds — exactly the cross-account leak the cache is meant
+  // to avoid (Codex review on PR #513 r3212924104). Centralising
+  // the clear here means we can't add a new clearTokens caller
+  // without picking up the privacy clear too.
+  clearCachedPreferences();
 }
 
 export function isAuthenticated(): boolean {
   return !!getAccessToken();
+}
+
+/**
+ * Stable identifier for the currently-authenticated rider (#279 /
+ * #501). Rotated only on login / register / logout — NOT on
+ * access-token refresh — so callers that need to detect "the
+ * session changed mid-flight" can compare snapshots without false
+ * positives from the refresh middleware silently issuing a new
+ * access token.
+ */
+export function getAuthenticatedUserId(): string | null {
+  return storage.getString(USER_ID_KEY) ?? null;
+}
+
+/**
+ * Backfill helper for installs upgraded from a build that didn't
+ * persist `user_id`. The `register` / `login` paths normally store
+ * the id via `storeTokens(auth)`, but a rider already-signed-in at
+ * upgrade time has access/refresh tokens in MMKV without the
+ * companion id. The privacy refresh hook in `apiService` calls
+ * this with the result of `/users/me` to populate the slot on the
+ * first foreground after upgrade. Only writes — never clears — so
+ * existing values are preserved.
+ */
+export function setAuthenticatedUserId(userId: string): void {
+  if (userId) {
+    storage.set(USER_ID_KEY, userId);
+  }
 }
 
 /**

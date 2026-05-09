@@ -14,6 +14,7 @@ import { buildTrustedManagedOriginCheck } from '../../common/trusted-managed-ori
 import { RoadReview } from '../../entities/road-review.entity.js';
 import { RoadReviewVote } from '../../entities/road-review-vote.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
+import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import { OBJECT_STORAGE } from '../storage/storage.tokens.js';
 import type { ObjectStorage } from '../storage/object-storage.interface.js';
 import {
@@ -132,6 +133,7 @@ export class ReviewsService {
     private readonly segmentRepo: Repository<RoadSegment>,
     @InjectRepository(RoadReviewVote)
     private readonly voteRepo: Repository<RoadReviewVote>,
+    private readonly privacy: PrivacyPreferencesService,
     @Inject(OBJECT_STORAGE)
     private readonly storage: ObjectStorage,
     config: ConfigService,
@@ -165,8 +167,21 @@ export class ReviewsService {
       reviews.map((r) => r.id),
       viewerUserId,
     );
+    const privateAuthorIds = await this.privacy.loadPrivateUserIds(
+      reviews.map((r) => r.user_id),
+    );
     return reviews.map((r) =>
-      this.toResponse(r, voteMap.get(r.id), viewerUserId),
+      this.toResponse(r, voteMap.get(r.id), viewerUserId, {
+        // #279 / #501 — self-view exemption: a private rider must
+        // still see their OWN review with their real name in the
+        // listing (matches the `create` / `update` paths which pass
+        // `authorIsPrivate: false` for the same reason — Codex /
+        // Cursor Bugbot review on PR #513). The mask is about
+        // hiding identity from OTHER riders, never from the rider
+        // themselves.
+        authorIsPrivate:
+          privateAuthorIds.has(r.user_id) && r.user_id !== viewerUserId,
+      }),
     );
   }
 
@@ -232,7 +247,9 @@ export class ReviewsService {
       relations: ['user'],
     });
 
-    // Freshly created reviews have no votes yet.
+    // Freshly created reviews have no votes yet. The viewer is the
+    // author themselves, so the privacy mask doesn't apply on this
+    // path (`authorIsPrivate: false`).
     return this.toResponse(
       full!,
       {
@@ -241,6 +258,7 @@ export class ReviewsService {
         my_vote: null,
       },
       userId,
+      { authorIsPrivate: false },
     );
   }
 
@@ -291,7 +309,13 @@ export class ReviewsService {
     await this.deleteOwnedReviewPhotos(removed, segmentId, userId);
 
     const voteMap = await this.aggregateVotes([saved.id], userId);
-    return this.toResponse(saved, voteMap.get(saved.id), userId);
+    // The viewer is the author here. Even if their profile is `private`,
+    // surface their own name back to themselves — the masking gate is
+    // about hiding identity from *other* riders, not from the rider
+    // editing their own review.
+    return this.toResponse(saved, voteMap.get(saved.id), userId, {
+      authorIsPrivate: false,
+    });
   }
 
   async delete(userId: string, segmentId: string): Promise<void> {
@@ -611,22 +635,42 @@ export class ReviewsService {
     review: RoadReview,
     votes?: VoteAggregate,
     viewerUserId: string | null = null,
+    opts: { authorIsPrivate?: boolean } = {},
   ): ReviewResponseDto {
     // Soft-deleted authors are masked in feeds/profiles per GDPR
     // requirements (US-62) — the review row stays so historical
     // road-quality context is preserved, but the personal name is
     // hidden until the hard-delete sweep finishes the cascade.
     const authorVisible = review.user != null && review.user.deleted_at == null;
+    // #279 / #501 — riders with `profile_visibility = 'private'` should
+    // not have their display name leak onto the public reviews feed.
+    // Mirrors the deleted-user mask above, but emits "Hidden rider" so
+    // the UI can distinguish "rider opted out" from "rider purged" if
+    // it wants to (currently both render the same string).
+    const isAuthorPrivate = opts.authorIsPrivate === true;
+    const isAuthorMasked = !authorVisible || isAuthorPrivate;
+    const displayName = !authorVisible
+      ? 'Deleted user'
+      : isAuthorPrivate
+        ? 'Hidden rider'
+        : review.user.display_name;
     return {
       id: review.id,
-      user_id: authorVisible ? review.user_id : null,
-      user_display_name: authorVisible
-        ? review.user.display_name
-        : 'Deleted user',
+      user_id: isAuthorMasked ? null : review.user_id,
+      user_display_name: displayName,
       rating: review.rating,
       comment: review.comment,
       bike_model: review.bike_model,
-      photos: sanitizeReviewPhotos(review.photos),
+      // #279 / #501 — managed review photos are stored under
+      // `/road-review-photos/<segmentId>-<userId>-<ts>-...`, so
+      // emitting the URLs while masking `user_id`/name would leak
+      // the rider's UUID through the filename (Codex review on PR
+      // #513 r3212896111). Suppress the photo list entirely on the
+      // masked path. Self-views aren't masked (`isAuthorPrivate`
+      // is false for `r.user_id === viewerUserId` in
+      // `listForSegment`), so a private rider editing their own
+      // review still sees their own attachments.
+      photos: isAuthorMasked ? null : sanitizeReviewPhotos(review.photos),
       created_at: review.created_at.toISOString(),
       helpful_count: votes?.helpful_count ?? 0,
       not_helpful_count: votes?.not_helpful_count ?? 0,

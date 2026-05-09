@@ -17,7 +17,13 @@ import {
   subscribePending,
   type SensorUploader,
 } from "../offlineQueue";
+import {
+  __setStorageForTest as __setPrivacyStorageForTest,
+  clearCachedPreferences,
+  setCachedPreferences,
+} from "../privacyCache";
 import type { SensorReading } from "@/types";
+import { DEFAULT_PRIVACY_PREFERENCES } from "@tarmoto/shared";
 
 function createMemoryStorage() {
   const store = new Map<string, string>();
@@ -60,6 +66,12 @@ describe("offlineQueue", () => {
   beforeEach(() => {
     storage = createMemoryStorage();
     __setStorageForTest(storage);
+    // Default privacy storage = canonical defaults (opt-in to road-
+    // data contribution) so existing assertions about uploads /
+    // queueing pass through. The privacy-gate suite below overrides
+    // this per-case.
+    __setPrivacyStorageForTest(createMemoryStorage());
+    clearCachedPreferences();
   });
 
   describe("submitSensorUpload", () => {
@@ -385,6 +397,149 @@ describe("offlineQueue", () => {
       expect(result.flushed).toBe(1);
       expect(calls).toEqual([null]);
     });
+
+    describe("road_data_contribution gate (#279 / #501)", () => {
+      it("suppresses uploads when the rider opted out", async () => {
+        setCachedPreferences({
+          ...DEFAULT_PRIVACY_PREFERENCES,
+          road_data_contribution: false,
+        });
+        const uploader = jest.fn<
+          ReturnType<SensorUploader>,
+          Parameters<SensorUploader>
+        >(async () => ({ accepted: 1, segments_updated: 1 }));
+
+        const result = await submitSensorUpload(
+          "ride-opt-out",
+          [makeReading(1)],
+          "iPhone",
+          null,
+          [],
+          null,
+          null,
+          uploader,
+        );
+
+        // Silent success so the stop flow keeps moving — and we MUST
+        // NOT have shipped any bytes.
+        expect(result.status).toBe("uploaded");
+        expect(result.accepted).toBe(0);
+        expect(result.segmentsUpdated).toBe(0);
+        expect(uploader).not.toHaveBeenCalled();
+        // Skipped uploads must not enqueue either — a payload captured
+        // under "no consent" should NEVER replay if the rider toggles
+        // the consent back on later.
+        expect(getPendingCount()).toBe(0);
+      });
+
+      it("uploads normally when the rider opted in", async () => {
+        setCachedPreferences({
+          ...DEFAULT_PRIVACY_PREFERENCES,
+          road_data_contribution: true,
+        });
+        const uploader = jest.fn<
+          ReturnType<SensorUploader>,
+          Parameters<SensorUploader>
+        >(async () => ({ accepted: 7, segments_updated: 2 }));
+
+        const result = await submitSensorUpload(
+          "ride-opt-in",
+          [makeReading(1)],
+          "iPhone",
+          null,
+          [],
+          null,
+          null,
+          uploader,
+        );
+
+        expect(result.status).toBe("uploaded");
+        expect(result.accepted).toBe(7);
+        expect(uploader).toHaveBeenCalledTimes(1);
+      });
+
+      it("drops a pre-opt-out backlog so it cannot replay later (#501 review)", async () => {
+        // Codex review on PR #513: queued payloads were captured while
+        // consent was ON, but the rider's CURRENT preference is "don't
+        // send" — letting the backlog replay later would silently leak
+        // road data against the rider's current consent. The opt-out
+        // branch must clear the queue, not just suppress the new send.
+        enqueueUpload(
+          "queued-while-consenting",
+          [makeReading(1)],
+          "iPhone",
+          null,
+        );
+        enqueueUpload("queued-too", [makeReading(2)], "iPhone", null);
+        expect(getPendingCount()).toBe(2);
+
+        setCachedPreferences({
+          ...DEFAULT_PRIVACY_PREFERENCES,
+          road_data_contribution: false,
+        });
+        const uploader = jest.fn<
+          ReturnType<SensorUploader>,
+          Parameters<SensorUploader>
+        >(async () => ({ accepted: 1, segments_updated: 1 }));
+
+        const result = await submitSensorUpload(
+          "fresh-payload",
+          [makeReading(3)],
+          "iPhone",
+          null,
+          [],
+          null,
+          null,
+          uploader,
+        );
+
+        expect(uploader).not.toHaveBeenCalled();
+        expect(result.pending).toBe(0);
+        expect(getPendingCount()).toBe(0);
+      });
+
+      it("does not enqueue the live payload when consent flips off mid-request (#501 review)", async () => {
+        // Codex review on PR #513 r3213030169: the retriable-error
+        // catch in `submitSensorUpload` previously enqueued the
+        // failed live payload unconditionally. If the rider
+        // toggled off WHILE the live request was in flight, the
+        // fresh ride payload (captured against the now-off
+        // preference) used to land in MMKV, ready to be sent
+        // later if the rider opted back in.
+        setCachedPreferences({
+          ...DEFAULT_PRIVACY_PREFERENCES,
+          road_data_contribution: true,
+        });
+
+        const uploader: SensorUploader = jest.fn(async () => {
+          // Toggle off mid-request, then fail retriable.
+          setCachedPreferences({
+            ...DEFAULT_PRIVACY_PREFERENCES,
+            road_data_contribution: false,
+          });
+          throw makeNetworkError();
+        });
+
+        const result = await submitSensorUpload(
+          "ride-mid-toggle",
+          [makeReading(1)],
+          "iPhone",
+          null,
+          [],
+          null,
+          null,
+          uploader,
+        );
+
+        // Silent success (status: "uploaded", zeros) and NO
+        // entry in the queue — the rider's current preference
+        // is "don't send" and that overrides the
+        // catch-and-retry behaviour.
+        expect(result.status).toBe("uploaded");
+        expect(result.pending).toBe(0);
+        expect(getPendingCount()).toBe(0);
+      });
+    });
   });
 
   describe("drainOfflineQueue", () => {
@@ -401,6 +556,170 @@ describe("offlineQueue", () => {
         transientServerError: false,
       });
       expect(uploader).not.toHaveBeenCalled();
+    });
+
+    it("clears any pre-opt-out backlog without uploading when consent is off (#501 review)", async () => {
+      // Mirrors the submit path's guard — the Settings "Retry now"
+      // button reaches us via this entry point and must not ship
+      // pre-opt-out queued payloads against the rider's current
+      // consent.
+      enqueueUpload("a", [makeReading(1)], "iPhone", null);
+      enqueueUpload("b", [makeReading(2)], "iPhone", null);
+      expect(getPendingCount()).toBe(2);
+
+      setCachedPreferences({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        road_data_contribution: false,
+      });
+      const uploader = jest.fn<
+        ReturnType<SensorUploader>,
+        Parameters<SensorUploader>
+      >();
+
+      const result = await drainOfflineQueue(uploader);
+
+      expect(uploader).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        flushed: 0,
+        remaining: 0,
+        networkFailed: false,
+        transientServerError: false,
+      });
+      expect(getPendingCount()).toBe(0);
+    });
+
+    it("clears the queue when the failing upload coincides with an off-toggle (#501 review)", async () => {
+      // Codex review on PR #513 r3213030165: the drain catch
+      // block previously broke out with `networkFailed` /
+      // `transientServerError` set without rechecking consent.
+      // If the rider toggled off WHILE a queued upload was
+      // failing, the remaining backlog stayed persisted and
+      // could replay if consent flipped back on later.
+      enqueueUpload("a", [makeReading(1)], "iPhone", null);
+      enqueueUpload("b", [makeReading(2)], "iPhone", null);
+      setCachedPreferences({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        road_data_contribution: true,
+      });
+
+      const uploader: SensorUploader = jest.fn(async () => {
+        // Toggle off mid-request, then fail with a network error.
+        setCachedPreferences({
+          ...DEFAULT_PRIVACY_PREFERENCES,
+          road_data_contribution: false,
+        });
+        throw makeNetworkError();
+      });
+
+      const result = await drainOfflineQueue(uploader);
+
+      // The catch block sees consent off, wipes the queue, and
+      // breaks WITHOUT setting `networkFailed: true` (the rider's
+      // current preference takes precedence over the link state).
+      expect(result.networkFailed).toBe(false);
+      expect(getPendingCount()).toBe(0);
+    });
+
+    it("clears the queue even when a drain is already in flight (#501 review)", async () => {
+      // Codex review on PR #513 r3212984407: a drain started under
+      // consent + then the rider toggling off + then a second
+      // caller (e.g. Settings "Retry now") arriving WHILE the
+      // first drain is still running used to skip the clear
+      // entirely — the second caller would just reuse
+      // `drainInFlight`, and if the active loop broke on a
+      // network error before its next per-iteration consent
+      // check, the queue would persist. The fix moves the
+      // consent gate ahead of the in-flight reuse so even a
+      // concurrent caller wipes the queue immediately.
+      enqueueUpload("a", [makeReading(1)], "iPhone", null);
+      enqueueUpload("b", [makeReading(2)], "iPhone", null);
+      setCachedPreferences({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        road_data_contribution: true,
+      });
+
+      // First drain: stalls forever so we can simulate the
+      // "drain already running" state. We don't await it.
+      let resolveStall: () => void = () => undefined;
+      const stall = new Promise<{ accepted: number; segments_updated: number }>(
+        (resolve) => {
+          resolveStall = () => resolve({ accepted: 1, segments_updated: 0 });
+        },
+      );
+      const stallingUploader: SensorUploader = jest.fn(async () => stall);
+      const inFlight = drainOfflineQueue(stallingUploader);
+
+      // Toggle off mid-drain.
+      setCachedPreferences({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        road_data_contribution: false,
+      });
+
+      // Second caller arrives — must observe the off-toggle and
+      // wipe the queue immediately, NOT just inherit
+      // `drainInFlight`.
+      const secondUploader = jest.fn<
+        ReturnType<SensorUploader>,
+        Parameters<SensorUploader>
+      >();
+      const secondResult = await drainOfflineQueue(secondUploader);
+
+      expect(secondResult).toEqual({
+        flushed: 0,
+        remaining: 0,
+        networkFailed: false,
+        transientServerError: false,
+      });
+      expect(secondUploader).not.toHaveBeenCalled();
+      expect(getPendingCount()).toBe(0);
+
+      // Let the stalled first uploader complete so the test
+      // teardown doesn't leak a pending promise. Its loop will
+      // see the now-empty queue on next iteration and exit.
+      resolveStall();
+      await inFlight;
+    });
+
+    it("bails mid-drain when consent toggles off (#501 review)", async () => {
+      // Codex review on PR #513 r3212972527: a drain that started
+      // under consent must self-cancel if the rider toggles
+      // `road_data_contribution` off mid-flight (e.g. via a
+      // concurrent privacy refresh after the companion flipped the
+      // preference). The in-loop check clears the remaining backlog
+      // and returns whatever `flushed` count it reached; subsequent
+      // drains see an empty queue.
+      enqueueUpload("a", [makeReading(1)], "iPhone", null);
+      enqueueUpload("b", [makeReading(2)], "iPhone", null);
+      enqueueUpload("c", [makeReading(3)], "iPhone", null);
+      // Start with consent on so the entry-point gate doesn't fire.
+      setCachedPreferences({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        road_data_contribution: true,
+      });
+
+      let calls = 0;
+      const uploader: SensorUploader = jest.fn(async () => {
+        calls += 1;
+        // Simulate the companion flipping the toggle off after the
+        // FIRST queued ride uploads. The drain loop should bail
+        // before touching `b` or `c`.
+        if (calls === 1) {
+          setCachedPreferences({
+            ...DEFAULT_PRIVACY_PREFERENCES,
+            road_data_contribution: false,
+          });
+        }
+        return { accepted: 1, segments_updated: 0 };
+      });
+
+      const result = await drainOfflineQueue(uploader);
+
+      // Exactly one upload happened (the one before the toggle).
+      expect(uploader).toHaveBeenCalledTimes(1);
+      expect(result.flushed).toBe(1);
+      // Remaining backlog dropped — the rider's current consent
+      // overrides past captures.
+      expect(getPendingCount()).toBe(0);
     });
 
     it("flushes items oldest-first and empties the queue", async () => {

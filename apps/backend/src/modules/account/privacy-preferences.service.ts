@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import {
   DEFAULT_PRIVACY_PREFERENCES,
   type PrivacyPreferences,
@@ -68,6 +68,37 @@ export class PrivacyPreferencesService {
   async loadPreferences(userId: string): Promise<PrivacyPreferences> {
     const row = await this.repo.findOne({ where: { user_id: userId } });
     return mergeWithDefaults(row);
+  }
+
+  /**
+   * Resolve which of the supplied user ids belong to riders with
+   * `profile_visibility = 'private'` (#279 / #501). Single batched
+   * SELECT, used by every consumer that masks display names on a
+   * cross-user feed (route reviews, route collections, …) — kept
+   * here rather than duplicated per-service so the fail-closed
+   * posture and shape stay aligned automatically (Cursor Bugbot
+   * review on PR #513).
+   *
+   * Riders without an explicit `privacy_preferences` row inherit
+   * the default (`riders-only`) and are NOT in the returned set.
+   *
+   * Fail-closed: a transient DB error returns every supplied id so
+   * the caller masks the whole feed rather than risking a leak —
+   * better to over-mask once than surface a private rider's name on
+   * a hiccup.
+   */
+  async loadPrivateUserIds(userIds: readonly string[]): Promise<Set<string>> {
+    const unique = Array.from(new Set(userIds.filter((id) => Boolean(id))));
+    if (unique.length === 0) return new Set();
+    try {
+      const rows = await this.repo.find({
+        where: { user_id: In(unique), profile_visibility: 'private' },
+        select: { user_id: true },
+      });
+      return new Set(rows.map((r) => r.user_id));
+    } catch {
+      return new Set(unique);
+    }
   }
 
   private toResponse(prefs: PrivacyPreferences): PrivacyPreferencesResponseDto {

@@ -234,6 +234,156 @@ describe('RoadsService', () => {
       expect(result.riders_per_month).toBe(12);
     });
 
+    it('masks reporter and review author when their profile is private (#279 / #501)', async () => {
+      // Codex review on PR #513: the road-detail card embeds
+      // `active_hazards` and `recent_reviews` via raw SQL in
+      // `roads.service.ts`. Without the privacy_preferences join
+      // these queries would still emit `reporter: 'Jane Rider'`
+      // and `user_display_name: 'John Rider'` even though the
+      // standalone /hazards and /roads/:id/reviews endpoints
+      // already mask private riders. The road preview is a
+      // public surface, so the same gate must apply here.
+      const hazardCreatedAt = new Date('2026-04-14T08:00:00Z');
+      const hazardExpiresAt = new Date('2026-04-21T08:00:00Z');
+      const reviewCreatedAt = new Date('2026-04-12T15:30:00Z');
+      segmentRepo
+        .query!.mockResolvedValueOnce([
+          {
+            id: 'seg-priv',
+            road_name: 'Hidden Pass',
+            road_number: null,
+            quality_score: 4.0,
+            curviness_score: 2.5,
+            surface_type: 'asphalt',
+            length_m: 200,
+            confidence: 70,
+            reading_count: 7,
+            last_updated: new Date('2026-04-13T10:00:00Z'),
+            elevation_min: null,
+            elevation_max: null,
+            elevation_profile: null,
+            geojson: { coordinates: [[16.75, 49.1]] },
+          },
+        ])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ count: 1 }])
+        // Hazard row: SQL `CASE WHEN profile_visibility = 'private'`
+        // already collapsed `reporter` to null and emitted
+        // `is_private_reporter = true` so the mapper also nulls
+        // `photo_url` (Codex review on PR #513 r3212896110) — the
+        // photo filename embeds `<userId>-...` so emitting the URL
+        // would still leak the masked id even with the name nulled.
+        .mockResolvedValueOnce([
+          {
+            id: 'h-priv',
+            hazard_type: 'pothole',
+            severity: 'high',
+            note: 'Big crater',
+            photo_url:
+              'http://localhost:3000/uploads/hazard-photos/user-priv-1700000000000-abc.jpg',
+            confirmations: 1,
+            created_at: hazardCreatedAt,
+            expires_at: hazardExpiresAt,
+            lng: 16.755,
+            lat: 49.105,
+            reporter: null,
+            is_private_reporter: true,
+            road_name: 'Hidden Pass',
+          },
+        ])
+        .mockResolvedValueOnce([{ count: 1, avg_rating: 5 }])
+        // Review row: author is a real user (not deleted) but
+        // `is_private_author = true`. Mapper emits the `'Hidden
+        // rider'` tombstone, nulls `user_id`, and also nulls
+        // `photos` (Codex review on PR #513 r3212896111) — the
+        // photo filenames embed `<segmentId>-<userId>-...`.
+        .mockResolvedValueOnce([
+          {
+            id: 'r-priv',
+            rating: 5,
+            comment: 'Empty road, smooth tarmac',
+            bike_model: null,
+            photos: [
+              'https://media.tarmoto.app/road-review-photos/seg-priv-user-priv-1700000000000-xyz.jpg',
+            ],
+            created_at: reviewCreatedAt,
+            user_id: 'user-priv',
+            user_join_id: 'user-priv',
+            user_deleted_at: null,
+            display_name: 'John Rider',
+            is_private_author: true,
+          },
+        ])
+        .mockResolvedValueOnce([{ count: 4 }]);
+
+      const result = await service.findById('seg-priv');
+
+      expect(result.active_hazards).toHaveLength(1);
+      expect(result.active_hazards[0].reporter).toBeNull();
+      expect(result.active_hazards[0].photo_url).toBeNull();
+      expect(result.recent_reviews).toHaveLength(1);
+      expect(result.recent_reviews[0].user_id).toBeNull();
+      expect(result.recent_reviews[0].user_display_name).toBe('Hidden rider');
+      expect(result.recent_reviews[0].photos).toBeNull();
+      // The review row itself still surfaces — masking identity,
+      // not hiding content.
+      expect(result.recent_reviews[0].rating).toBe(5);
+      expect(result.recent_reviews[0].comment).toBe(
+        'Empty road, smooth tarmac',
+      );
+    });
+
+    it('keeps the SQL-emitted display name when the author is not private (#279 / #501)', async () => {
+      // Defense for the legacy non-private path — `is_private_author`
+      // is `false` (or absent) and the mapper surfaces the real
+      // display name. Locks in that the new flag doesn't accidentally
+      // mask every author.
+      segmentRepo
+        .query!.mockResolvedValueOnce([
+          {
+            id: 'seg-public',
+            road_name: 'Public Pass',
+            road_number: null,
+            quality_score: 4.0,
+            curviness_score: 2.5,
+            surface_type: 'asphalt',
+            length_m: 200,
+            confidence: 70,
+            reading_count: 7,
+            last_updated: new Date('2026-04-13T10:00:00Z'),
+            elevation_min: null,
+            elevation_max: null,
+            elevation_profile: null,
+            geojson: { coordinates: [[16.75, 49.1]] },
+          },
+        ])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ count: 0 }])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ count: 1, avg_rating: 5 }])
+        .mockResolvedValueOnce([
+          {
+            id: 'r-pub',
+            rating: 5,
+            comment: 'Smooth',
+            bike_model: null,
+            photos: null,
+            created_at: new Date('2026-04-12T15:30:00Z'),
+            user_id: 'user-pub',
+            user_join_id: 'user-pub',
+            user_deleted_at: null,
+            display_name: 'John Rider',
+            is_private_author: false,
+          },
+        ])
+        .mockResolvedValueOnce([{ count: 0 }]);
+
+      const result = await service.findById('seg-public');
+
+      expect(result.recent_reviews[0].user_id).toBe('user-pub');
+      expect(result.recent_reviews[0].user_display_name).toBe('John Rider');
+    });
+
     it('should throw NotFoundException for missing segment', async () => {
       segmentRepo.query!.mockResolvedValueOnce([]);
 

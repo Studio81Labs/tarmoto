@@ -139,8 +139,13 @@ export class ReviewResponseDto {
   @ApiProperty({ nullable: true })
   bike_model!: string | null;
 
-  @ApiProperty({ type: [String] })
-  photos!: string[];
+  @ApiProperty({
+    type: [String],
+    nullable: true,
+    description:
+      "Photo URLs attached to the review. `null` when the author has been masked (deleted, soft-deleted, or `profile_visibility = 'private'` to a non-self viewer) — managed photo URLs embed the author's id in their filename, so suppressing the array on masked surfaces avoids leaking the rider's UUID through the path even when `user_id` is null (#279 / #501).",
+  })
+  photos!: string[] | null;
 
   @ApiProperty()
   created_at!: string;

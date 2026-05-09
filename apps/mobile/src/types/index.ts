@@ -529,8 +529,15 @@ export interface RoadReview {
   // equality checks against the wire format line up with backend.
   comment: string | null;
   bike_model: string | null;
-  /** HTTPS URLs of photos uploaded with the review. Empty array when none. */
-  photos: string[];
+  /**
+   * HTTPS URLs of photos uploaded with the review. Empty array when
+   * none. `null` when the author has been masked (deleted or
+   * `profile_visibility = 'private'`) — managed photo URLs embed
+   * the author's id in their filename, so the backend suppresses
+   * the array on masked surfaces to avoid leaking the rider's UUID
+   * through the path even when `user_id` is null (#279 / #501).
+   */
+  photos: string[] | null;
   created_at: string;
   /** Helpful votes cast by other riders. Always present (zero when none). */
   helpful_count: number;

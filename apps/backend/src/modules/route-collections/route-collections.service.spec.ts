@@ -10,6 +10,7 @@ import { DataSource, Repository } from 'typeorm';
 import { RouteCollection } from '../../entities/route-collection.entity.js';
 import { RouteCollectionItem } from '../../entities/route-collection-item.entity.js';
 import { RouteCollectionFollow } from '../../entities/route-collection-follow.entity.js';
+import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import { RouteCollectionsService } from './route-collections.service.js';
 
 describe('RouteCollectionsService', () => {
@@ -17,6 +18,8 @@ describe('RouteCollectionsService', () => {
   let collectionRepo: Partial<jest.Mocked<Repository<RouteCollection>>>;
   let itemRepo: Partial<jest.Mocked<Repository<RouteCollectionItem>>>;
   let followRepo: Partial<jest.Mocked<Repository<RouteCollectionFollow>>>;
+  let privacy: { loadPrivateUserIds: jest.Mock };
+  let privateUserIds: Set<string>;
   let queryMock: jest.Mock;
 
   const ownerId = 'user-1';
@@ -90,6 +93,13 @@ describe('RouteCollectionsService', () => {
       delete: jest.fn().mockResolvedValue({ affected: 0 }),
     };
 
+    privateUserIds = new Set();
+    privacy = {
+      loadPrivateUserIds: jest
+        .fn()
+        .mockImplementation(() => Promise.resolve(new Set(privateUserIds))),
+    };
+
     // The service's `addItem` opens a transaction; mock it to invoke the
     // callback with a manager that returns the same mocks. Avoids needing a
     // real DataSource for unit tests. `query` is mocked to return [] by
@@ -122,6 +132,7 @@ describe('RouteCollectionsService', () => {
           provide: getRepositoryToken(RouteCollectionFollow),
           useValue: followRepo,
         },
+        { provide: PrivacyPreferencesService, useValue: privacy },
         { provide: DataSource, useValue: dataSource },
       ],
     }).compile();
@@ -239,6 +250,110 @@ describe('RouteCollectionsService', () => {
       expect(result.followed).toHaveLength(1);
       expect(result.followed[0]?.id).toBe(followedCol.id);
       expect(result.followed[0]?.item_count).toBe(4);
+    });
+
+    it('masks owner_name on followed cards when the curator is private (#279 / #501)', async () => {
+      const followedCol = {
+        ...baseCollection,
+        id: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+        owner_id: otherId,
+        visibility: 'public',
+        title: 'Followed by me',
+      };
+      (collectionRepo.createQueryBuilder as jest.Mock)
+        .mockReturnValueOnce({
+          leftJoin: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          select: jest.fn().mockReturnThis(),
+          addSelect: jest.fn().mockReturnThis(),
+          groupBy: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          getRawAndEntities: jest
+            .fn()
+            .mockResolvedValue({ entities: [], raw: [] }),
+        })
+        .mockReturnValueOnce({
+          innerJoin: jest.fn().mockReturnThis(),
+          leftJoin: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          select: jest.fn().mockReturnThis(),
+          addSelect: jest.fn().mockReturnThis(),
+          groupBy: jest.fn().mockReturnThis(),
+          addGroupBy: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          getRawAndEntities: jest.fn().mockResolvedValue({
+            entities: [followedCol],
+            raw: [
+              {
+                c_id: followedCol.id,
+                item_count: '4',
+                owner_name: 'Jane Rider',
+              },
+            ],
+          }),
+        });
+
+      privateUserIds = new Set([otherId]);
+
+      const result = await service.listLibrary(ownerId);
+
+      expect(result.followed).toHaveLength(1);
+      expect(result.followed[0]?.owner_name).toBeNull();
+      // #279 / #501 — also mask owner_id so it can't be cross-
+      // referenced to recover the rider's identity (Cursor Bugbot
+      // review on PR #513).
+      expect(result.followed[0]?.owner_id).toBeNull();
+    });
+
+    it('keeps owner_name on followed cards when the curator is not private (#279 / #501)', async () => {
+      const followedCol = {
+        ...baseCollection,
+        id: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+        owner_id: otherId,
+        visibility: 'public',
+        title: 'Followed by me',
+      };
+      (collectionRepo.createQueryBuilder as jest.Mock)
+        .mockReturnValueOnce({
+          leftJoin: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          select: jest.fn().mockReturnThis(),
+          addSelect: jest.fn().mockReturnThis(),
+          groupBy: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          getRawAndEntities: jest
+            .fn()
+            .mockResolvedValue({ entities: [], raw: [] }),
+        })
+        .mockReturnValueOnce({
+          innerJoin: jest.fn().mockReturnThis(),
+          leftJoin: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          select: jest.fn().mockReturnThis(),
+          addSelect: jest.fn().mockReturnThis(),
+          groupBy: jest.fn().mockReturnThis(),
+          addGroupBy: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          getRawAndEntities: jest.fn().mockResolvedValue({
+            entities: [followedCol],
+            raw: [
+              {
+                c_id: followedCol.id,
+                item_count: '4',
+                owner_name: 'Jane Rider',
+              },
+            ],
+          }),
+        });
+
+      privateUserIds = new Set();
+
+      const result = await service.listLibrary(ownerId);
+
+      expect(result.followed).toHaveLength(1);
+      expect(result.followed[0]?.owner_name).toBe('Jane Rider');
     });
 
     it('returns owned list with empty followed when follow table is missing (42P01)', async () => {
@@ -480,6 +595,57 @@ describe('RouteCollectionsService', () => {
       expect(followRepo.exists).toHaveBeenCalledWith({
         where: { user_id: otherId, collection_id: collectionId },
       });
+    });
+
+    it('masks owner_name for non-owner viewers when owner is private (#279 / #501)', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        visibility: 'public',
+      });
+      privateUserIds = new Set([ownerId]);
+
+      const result = await service.getBySlug('abcDEF12345', otherId);
+
+      // `null` matches `listLibrary`'s followed-card shape so a client
+      // can use the same `owner_name === null` check on every surface
+      // (Cursor Bugbot review on PR #513).
+      expect(result.owner_name).toBeNull();
+      // owner_id is masked alongside the name (Cursor Bugbot review
+      // on PR #513) — exposing the id alone would let a caller
+      // recover the rider's identity via `/users/:id/profile`.
+      expect(result.owner_id).toBeNull();
+    });
+
+    it('keeps owner_name for the owner viewing their own private profile slug (#279 / #501)', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        visibility: 'public',
+      });
+      // The self-view branch skips the privacy lookup entirely —
+      // the owner always sees their own name on their own
+      // collection. Even seeding `privateUserIds` with the owner
+      // here must NOT mask, because we never call the helper.
+      privateUserIds = new Set([ownerId]);
+
+      const result = await service.getBySlug('abcDEF12345', ownerId);
+
+      expect(result.owner_name).toBe('Jane Rider');
+      // Self-view also keeps `owner_id` populated — the mask only
+      // applies to non-owner viewers.
+      expect(result.owner_id).toBe(ownerId);
+      expect(privacy.loadPrivateUserIds).not.toHaveBeenCalled();
+    });
+
+    it('keeps owner_name for non-owner viewers when owner is not private (#279 / #501)', async () => {
+      (collectionRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...baseCollection,
+        visibility: 'public',
+      });
+      privateUserIds = new Set();
+
+      const result = await service.getBySlug('abcDEF12345', otherId);
+
+      expect(result.owner_name).toBe('Jane Rider');
     });
   });
 

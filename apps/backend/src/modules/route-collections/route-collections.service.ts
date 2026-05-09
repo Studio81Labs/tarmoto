@@ -11,6 +11,7 @@ import { DataSource, Repository } from 'typeorm';
 import { RouteCollection } from '../../entities/route-collection.entity.js';
 import { RouteCollectionItem } from '../../entities/route-collection-item.entity.js';
 import { RouteCollectionFollow } from '../../entities/route-collection-follow.entity.js';
+import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import {
   AddRouteCollectionItemDto,
   CreateRouteCollectionDto,
@@ -45,6 +46,7 @@ export class RouteCollectionsService {
     private readonly itemRepo: Repository<RouteCollectionItem>,
     @InjectRepository(RouteCollectionFollow)
     private readonly followRepo: Repository<RouteCollectionFollow>,
+    private readonly privacy: PrivacyPreferencesService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -157,13 +159,27 @@ export class RouteCollectionsService {
         }
       }
 
-      followed = rows.entities.map((c) =>
-        this.toSummaryResponse(
+      // #279 / #501 — mask owner_name on followed cards when the
+      // owner has set `profile_visibility = 'private'`. Followed
+      // collections still surface (we keep their curation value) but
+      // the owner identity is hidden, mirroring the soft-deleted-
+      // owner pattern. Batched lookup keeps this O(1) queries
+      // regardless of library size — implemented once on
+      // `PrivacyPreferencesService` so both this and the reviews
+      // feed call the same fail-closed code path.
+      const privateOwnerIds = await this.privacy.loadPrivateUserIds(
+        rows.entities.map((c) => c.owner_id),
+      );
+
+      followed = rows.entities.map((c) => {
+        const ownerIsPrivate = privateOwnerIds.has(c.owner_id);
+        return this.toSummaryResponse(
           c,
           countById.get(c.id) ?? 0,
-          ownerNameById.get(c.id) ?? null,
-        ),
-      );
+          ownerIsPrivate ? null : (ownerNameById.get(c.id) ?? null),
+          { ownerIsPrivate },
+        );
+      });
     } catch (err) {
       if (isMissingTableError(err)) {
         this.logger.warn(
@@ -255,11 +271,22 @@ export class RouteCollectionsService {
             where: { user_id: viewerId, collection_id: collection.id },
           })
         : false;
+    // #279 / #501 — mask owner_name on the public detail endpoint
+    // when the owner is private and the viewer is someone else. The
+    // owner viewing their own collection still sees their own name,
+    // matching how the rest of the privacy gates exempt self-views.
+    const isSelfView = viewerId != null && viewerId === collection.owner_id;
+    const ownerIsPrivate = isSelfView
+      ? false
+      : (await this.privacy.loadPrivateUserIds([collection.owner_id])).has(
+          collection.owner_id,
+        );
     return this.toDetailResponse(
       collection,
       items,
       viewerId,
       viewerIsFollowing,
+      { ownerIsPrivate },
     );
   }
 
@@ -718,10 +745,17 @@ export class RouteCollectionsService {
     c: RouteCollection,
     item_count: number,
     owner_name: string | null = null,
+    opts: { ownerIsPrivate?: boolean } = {},
   ): RouteCollectionSummaryDto {
     return {
       id: c.id,
-      owner_id: c.owner_id,
+      // #279 / #501 — opted-out owners surface a `null` id alongside
+      // the masked name (Cursor Bugbot review on PR #513). Without
+      // this the id could be cross-referenced (e.g. by hitting
+      // `/users/:id/profile`) to recover the rider's identity even
+      // though `owner_name` was hidden, partially defeating the
+      // privacy toggle.
+      owner_id: opts.ownerIsPrivate ? null : c.owner_id,
       title: c.title,
       description: c.description ?? null,
       visibility: c.visibility,
@@ -738,16 +772,36 @@ export class RouteCollectionsService {
     items: RouteCollectionItem[],
     viewerId: string | null,
     viewerIsFollowing: boolean,
+    opts: { ownerIsPrivate?: boolean } = {},
   ): RouteCollectionDetailDto {
-    const ownerName = c.owner?.display_name ?? '';
+    const rawOwnerName = c.owner?.display_name ?? '';
+    // #279 / #501 — opted-out owners surface as `null`, matching
+    // `listLibrary`'s followed-card shape (Cursor Bugbot review on
+    // PR #513). Keeping both endpoints on the same wire shape means
+    // a client checking `owner_name === null` to render a "Hidden
+    // curator" label works on every surface that exposes a
+    // collection. The legacy empty-string sentinel for "owner
+    // relation not hydrated" stays as-is — that's a different
+    // code path (e.g. the create-then-refind fallback) with its
+    // own pinned wire shape and isn't what the privacy masking is
+    // about.
+    const ownerName: string | null = opts.ownerIsPrivate ? null : rawOwnerName;
     return {
-      ...this.toSummaryResponse(c, items.length, ownerName || null),
+      ...this.toSummaryResponse(c, items.length, ownerName || null, opts),
       items: items.map((i) => this.toItemResponse(i)),
       owner_name: ownerName,
       viewer_is_owner: viewerId != null && viewerId === c.owner_id,
       viewer_is_following: viewerIsFollowing,
     };
   }
+
+  // The batched `loadPrivateUserIds` helper lives on
+  // `PrivacyPreferencesService` so the reviews + collections feeds
+  // share the same fail-closed code path (see
+  // `apps/backend/src/modules/account/privacy-preferences.service.ts`).
+  // Single-row "is this one user private?" lookups happen via the
+  // same helper with a one-element array, so both consumers stay on
+  // a single SQL shape.
 
   private toItemResponse(
     item: RouteCollectionItem,

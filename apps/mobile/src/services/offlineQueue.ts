@@ -31,6 +31,7 @@ import {
   isRetriableError,
   isTransientServerError,
 } from "./networkErrors";
+import { canContributeRoadData } from "./privacyCache";
 
 // ── Types ──
 
@@ -316,6 +317,33 @@ export async function submitSensorUpload(
   calibration: CalibrationPayload | null,
   uploader: SensorUploader,
 ): Promise<SubmitResult> {
+  // #279 / #501 — honour the rider's `road_data_contribution` opt-out
+  // BEFORE touching the queue or the network. The backend also drops
+  // an opted-out payload server-side (`SensorService.processUpload`),
+  // but we suppress here too so an opt-out rider doesn't burn battery
+  // / bandwidth shipping data the server will discard. Silent success
+  // (`status: "uploaded"`, zeros) so the caller's stop-flow keeps
+  // moving — surfacing an error here for an intentional opt-out
+  // would confuse the rider.
+  //
+  // We also DROP any pre-opt-out backlog (Codex review on PR #513): a
+  // queue entry was captured while consent was still ON, but the
+  // rider's current preference is "don't send" — letting the
+  // backlog replay later (after another submit / drainOfflineQueue
+  // tick) would silently leak the rider's road data against their
+  // current consent. Clearing the queue makes the opt-out take
+  // effect for every payload that hasn't yet reached the server,
+  // matching the intent of the toggle.
+  if (!canContributeRoadData()) {
+    clearOfflineQueue();
+    return {
+      status: "uploaded",
+      accepted: 0,
+      segmentsUpdated: 0,
+      pending: getPendingCount(),
+    };
+  }
+
   // Flush the backlog first so rides stay chronologically ordered on the
   // server — otherwise a fresh ride would land before older queued ones
   // and the backend's "newest data wins" aggregation would re-rank older
@@ -328,6 +356,25 @@ export async function submitSensorUpload(
   // the link or the server is unhealthy, so a healthy fresh upload
   // shouldn't be delayed behind them.
   const drain = await drainOfflineQueue(uploader);
+
+  // #279 / #501 — recheck consent after the drain await (Codex
+  // review on PR #513 r3212972527). The entry-point gate above
+  // only catches an opt-out that was already in place when this
+  // call started; a toggle that lands mid-drain (e.g. via a
+  // concurrent privacy refresh after the companion flipped the
+  // preference) would otherwise still hit the live `uploader(...)`
+  // below for the fresh payload. Drop it cleanly: clear any
+  // residual queue and return silent-success zeros, matching the
+  // entry-point behaviour.
+  if (!canContributeRoadData()) {
+    clearOfflineQueue();
+    return {
+      status: "uploaded",
+      accepted: 0,
+      segmentsUpdated: 0,
+      pending: getPendingCount(),
+    };
+  }
 
   if (drain.networkFailed || drain.transientServerError) {
     // Skip the live call:
@@ -369,6 +416,22 @@ export async function submitSensorUpload(
     };
   } catch (error) {
     if (isRetriableError(error)) {
+      // #279 / #501 — recheck consent before enqueuing the
+      // failed live upload (Codex review on PR #513
+      // r3213030169). The rider may have toggled
+      // `road_data_contribution` off WHILE the live request was
+      // awaiting; without this gate, the catch path would store
+      // the fresh ride payload under their now-off preference,
+      // ready to be sent later if they opted back in.
+      if (!canContributeRoadData()) {
+        clearOfflineQueue();
+        return {
+          status: "uploaded",
+          accepted: 0,
+          segmentsUpdated: 0,
+          pending: getPendingCount(),
+        };
+      }
       // Both connectivity drops and transient server faults land here —
       // either way the correct move is to preserve the ride data and
       // retry later, not surface a blocking error to the rider.
@@ -405,6 +468,33 @@ export async function submitSensorUpload(
 export function drainOfflineQueue(
   uploader: SensorUploader,
 ): Promise<DrainResult> {
+  // #279 / #501 — opt-out gate fires BEFORE the in-flight reuse
+  // (Codex review on PR #513 r3212984407). Otherwise a caller
+  // arriving while a drain is active and after consent flipped
+  // off would only get back the existing `drainInFlight` promise
+  // and never trigger a clear; if the active loop then breaks on
+  // a network error before its next per-iteration consent check,
+  // the remaining backlog would stay persisted and could be
+  // uploaded if the rider toggled consent back on later.
+  //
+  // Clearing here is safe even when a drain is in flight: the
+  // active loop's next `readQueue()` returns `[]` after the wipe,
+  // so it exits cleanly on its next iteration. At most one more
+  // payload (the one currently being uploaded) ships before the
+  // loop notices — that's acceptable: we can't cancel an in-flight
+  // HTTP request without an `AbortController`, and the contract is
+  // "stop sending NEW data after the toggle", not "abort the
+  // current request mid-flight".
+  if (!canContributeRoadData()) {
+    clearOfflineQueue();
+    return Promise.resolve({
+      flushed: 0,
+      remaining: 0,
+      networkFailed: false,
+      transientServerError: false,
+    });
+  }
+
   // Concurrent callers get the exact same promise so they see the real
   // outcome instead of a stub reply that would race the in-flight flush.
   if (drainInFlight) return drainInFlight;
@@ -424,6 +514,20 @@ export function drainOfflineQueue(
     // three drain calls, matching the original design intent.
     const attemptedThisDrain = new Set<string>();
     while (true) {
+      // #279 / #501 — recheck the rider's consent on every
+      // iteration (Codex review on PR #513 r3212972527). The
+      // entry-point gate above only fires once per drain call,
+      // so a long-running drain that started under consent could
+      // otherwise keep uploading after the rider toggled the
+      // preference off mid-flight (e.g. from the companion while
+      // mobile is still flushing). Bail out cleanly: clear the
+      // remaining backlog (the rider's current preference is
+      // "don't send", which overrides past captures) and report
+      // the in-progress drain's `flushed` count.
+      if (!canContributeRoadData()) {
+        clearOfflineQueue();
+        break;
+      }
       const queue = readQueue();
       // Re-read each iteration so a concurrent enqueue isn't silently
       // overwritten, but skip anything we've already handled this pass.
@@ -445,6 +549,21 @@ export function drainOfflineQueue(
         removeById(next.id);
         flushed += 1;
       } catch (error) {
+        // #279 / #501 — recheck consent on the failure path
+        // before we flag a stop reason (Codex review on PR #513
+        // r3212930165). The rider may have toggled
+        // `road_data_contribution` off WHILE the failing upload
+        // was awaiting; without this check we'd return
+        // `networkFailed`/`transientServerError` with the
+        // backlog still persisted, and a later opt-in plus drain
+        // could replay payloads captured against the rider's
+        // current "don't send" preference. The poison-pill /
+        // dropped-attempt branch below also shares this gate so
+        // dropped items don't linger after a mid-flight opt-out.
+        if (!canContributeRoadData()) {
+          clearOfflineQueue();
+          break;
+        }
         if (isNetworkDownError(error)) {
           // Link is down. Leave the rest for the next drain and tell
           // the caller why we stopped so they can skip their live call.

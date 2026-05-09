@@ -14,6 +14,7 @@ import { ReviewsService } from './reviews.service.js';
 import { RoadReview } from '../../entities/road-review.entity.js';
 import { RoadReviewVote } from '../../entities/road-review-vote.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
+import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import { OBJECT_STORAGE } from '../storage/storage.tokens.js';
 import type { ObjectStorage } from '../storage/object-storage.interface.js';
 
@@ -33,6 +34,11 @@ describe('ReviewsService', () => {
   let viewerVotes: Array<{ road_review_id: string; is_helpful: boolean }>;
   let storage: jest.Mocked<ObjectStorage>;
   let configGet: jest.Mock;
+  let privacy: { loadPrivateUserIds: jest.Mock };
+  // Default — empty set → no author is private. Per-test overrides
+  // populate this with specific user ids to exercise the mask via
+  // `PrivacyPreferencesService.loadPrivateUserIds`.
+  let privateUserIds: Set<string>;
 
   const mockUser = { display_name: 'John Rider' };
 
@@ -82,6 +88,7 @@ describe('ReviewsService', () => {
         { provide: getRepositoryToken(RoadReview), useValue: reviewRepo },
         { provide: getRepositoryToken(RoadSegment), useValue: segmentRepo },
         { provide: getRepositoryToken(RoadReviewVote), useValue: voteRepo },
+        { provide: PrivacyPreferencesService, useValue: privacy },
         { provide: OBJECT_STORAGE, useValue: storage },
         { provide: ConfigService, useValue: { get: configGet } },
       ],
@@ -138,6 +145,13 @@ describe('ReviewsService', () => {
       }),
       find: jest.fn().mockImplementation(() => viewerVotes),
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
+    };
+
+    privateUserIds = new Set();
+    privacy = {
+      loadPrivateUserIds: jest
+        .fn()
+        .mockImplementation(() => Promise.resolve(new Set(privateUserIds))),
     };
 
     // Test fixtures use `https://app.tarmoto.test/...` everywhere —
@@ -246,6 +260,121 @@ describe('ReviewsService', () => {
 
       expect(result[0].user_display_name).toBe('Deleted user');
       expect(result[0].user_id).toBeNull();
+    });
+
+    it('masks user_display_name + user_id when the author is private (#279 / #501)', async () => {
+      // The author exists and is not soft-deleted, but their privacy
+      // preference says `profile_visibility: 'private'`. The review row
+      // stays so the road quality context is preserved, but the
+      // identity gets a "Hidden rider" tombstone instead of the name.
+      privateUserIds = new Set(['user-1']);
+
+      const result = await service.listForSegment('seg-1');
+
+      expect(result[0].user_display_name).toBe('Hidden rider');
+      expect(result[0].user_id).toBeNull();
+      // Other fields still surface so the segment retains its quality
+      // context — privacy hides identity, not the review.
+      expect(result[0].rating).toBe(4);
+      expect(result[0].comment).toBe('Smooth asphalt, great ride!');
+    });
+
+    it('suppresses photos for private authors so the URL filename cannot leak the user id (#501 review)', async () => {
+      // Codex review on PR #513 r3212896111: managed review photo
+      // filenames embed `<segmentId>-<userId>-...`, so emitting the
+      // URL for a masked author would leak the rider's UUID even
+      // with `user_id` nulled. The toResponse mapper must suppress
+      // `photos` whenever the author is masked.
+      reviewRepo.find!.mockResolvedValueOnce([
+        {
+          ...mockReview,
+          photos: [
+            'https://app.tarmoto.test/road-review-photos/seg-1-user-1-1700000000000-abc.jpg',
+          ],
+        },
+      ]);
+      privateUserIds = new Set(['user-1']);
+
+      const result = await service.listForSegment('seg-1');
+
+      expect(result[0].user_display_name).toBe('Hidden rider');
+      expect(result[0].photos).toBeNull();
+    });
+
+    it('keeps photos visible to the author themselves on the self-view path (#501 review)', async () => {
+      // Self-view exemption — a private rider editing their own
+      // review still sees their own attachments.
+      reviewRepo.find!.mockResolvedValueOnce([
+        {
+          ...mockReview,
+          photos: [
+            'https://app.tarmoto.test/road-review-photos/seg-1-user-1-1700000000000-abc.jpg',
+          ],
+        },
+      ]);
+      privateUserIds = new Set(['user-1']);
+
+      const result = await service.listForSegment('seg-1', 'user-1');
+
+      expect(result[0].user_display_name).toBe('John Rider');
+      expect(result[0].photos).toEqual([
+        'https://app.tarmoto.test/road-review-photos/seg-1-user-1-1700000000000-abc.jpg',
+      ]);
+    });
+
+    it('keeps the author visible for a non-private profile (#279 / #501)', async () => {
+      privateUserIds = new Set();
+
+      const result = await service.listForSegment('seg-1');
+
+      expect(result[0].user_display_name).toBe('John Rider');
+      expect(result[0].user_id).toBe('user-1');
+    });
+
+    it('fails closed when the privacy lookup fails closed in the shared helper (#501 review)', async () => {
+      // The shared `PrivacyPreferencesService.loadPrivateUserIds`
+      // owns the fail-closed try/catch (covered in its own spec) —
+      // simulate the closed result here (every supplied id returned
+      // as private) and assert the feed masks the whole list rather
+      // than 500ing.
+      privacy.loadPrivateUserIds.mockResolvedValueOnce(new Set(['user-1']));
+
+      const result = await service.listForSegment('seg-1');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].user_display_name).toBe('Hidden rider');
+      expect(result[0].user_id).toBeNull();
+      // The review row itself still surfaces — masking identity, not
+      // hiding content.
+      expect(result[0].rating).toBe(4);
+    });
+
+    it("keeps the viewer's own private review unmasked (#501 review)", async () => {
+      // Codex + Cursor Bugbot review on PR #513: a private rider
+      // viewing the segment must still see their OWN review with
+      // their real name + user_id (matches the `create` / `update`
+      // paths). The mask is about hiding identity from OTHER
+      // riders, not from the rider themselves.
+      privateUserIds = new Set(['user-1']);
+
+      const result = await service.listForSegment('seg-1', 'user-1');
+
+      expect(result[0].user_display_name).toBe('John Rider');
+      expect(result[0].user_id).toBe('user-1');
+      expect(result[0].is_mine).toBe(true);
+    });
+
+    it("still masks a private author's review for other viewers (#501 review)", async () => {
+      // Symmetric guard for the self-view exemption — a different
+      // viewer of the same private rider's review must still see
+      // the masked tombstone.
+      privateUserIds = new Set(['user-1']);
+
+      const result = await service.listForSegment('seg-1', 'someone-else');
+
+      expect(result[0].user_display_name).toBe('Hidden rider');
+      expect(result[0].user_id).toBeNull();
+      expect(result[0].is_mine).toBe(false);
     });
   });
 

@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { canShowPersonalizedRecommendations } from '@tarmoto/shared';
 import { RideSegment } from '../../entities/ride-segment.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
 import { Ride } from '../../entities/ride.entity.js';
+import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import {
   ExplorationStatsDto,
   UnriddenSegmentDto,
@@ -21,6 +23,7 @@ export class ExplorationService {
     private readonly roadSegmentRepo: Repository<RoadSegment>,
     @InjectRepository(Ride)
     private readonly rideRepo: Repository<Ride>,
+    private readonly privacy: PrivacyPreferencesService,
   ) {}
 
   async getStats(userId: string): Promise<ExplorationStatsDto> {
@@ -61,6 +64,18 @@ export class ExplorationService {
     radiusKm: number,
     limit: number,
   ): Promise<UnriddenSegmentDto[]> {
+    // #279 / #501 — `nearby-unridden` is genuinely personalised: the
+    // result set is filtered against the rider's completed-ride history.
+    // When the rider has opted out of personalised recommendations there
+    // is no "non-personalised" version of "what haven't I ridden" — we
+    // simply return an empty list. Mirrors the framing in
+    // `personalized_recommendations_consent`'s entity comment: opted-out
+    // riders fall back to nothing rather than to a generic global feed.
+    const prefs = await this.privacy.loadPreferences(userId);
+    if (!canShowPersonalizedRecommendations(prefs)) {
+      return [];
+    }
+
     const radiusM = radiusKm * 1000;
 
     const results = await this.roadSegmentRepo

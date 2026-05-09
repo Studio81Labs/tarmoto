@@ -18,6 +18,7 @@ import {
 import { buildTrustedManagedOriginCheck } from '../../common/trusted-managed-origin.js';
 import { HazardReport } from '../../entities/hazard-report.entity.js';
 import { CommuteRoute } from '../../entities/commute-route.entity.js';
+import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import { CreateHazardDto, EXPIRY_HOURS } from './dto/create-hazard.dto.js';
 import { QueryHazardsDto } from './dto/query-hazards.dto.js';
 import { RouteHazardsDto } from './dto/route-hazards.dto.js';
@@ -114,16 +115,34 @@ async function deleteOwnedHazardPhoto(
  */
 const COMMUTE_HAZARD_BUFFER_M = 200;
 
+// #279 / #501 — `reporter` is masked to NULL when the rider's
+// `profile_visibility` is `'private'`. Hazard reports are a public-by-
+// default surface (the map shows everyone's reports), so the rider's
+// explicit "do not show me anywhere" toggle has to suppress the
+// display name even though the geometry stays visible. The LEFT JOIN
+// is left-side so riders without an explicit privacy_preferences row
+// (defaults apply, not private) still surface their name.
+//
+// `is_private_reporter` is surfaced separately so the row mapper can
+// also null `photo_url` for private reporters (Codex review on PR
+// #513 r3212896110): managed hazard photos are stored under
+// `/uploads/hazard-photos/<userId>-<ts>-...`, so returning the URL
+// while masking the name still leaks the rider's UUID via the
+// filename. Suppressing the URL on the public response is the
+// targeted fix; the file itself stays on disk so the rider's own
+// review of their report (a future feature) can still surface it.
 const HAZARD_SELECT_BASE = `
   SELECT
     hr.id, hr.hazard_type, hr.severity, hr.note, hr.photo_url, hr.confirmations,
     hr.created_at, hr.expires_at,
     ST_Y(hr.location::geometry) AS lat,
     ST_X(hr.location::geometry) AS lng,
-    u.display_name AS reporter,
+    CASE WHEN pp.profile_visibility = 'private' THEN NULL ELSE u.display_name END AS reporter,
+    (pp.profile_visibility = 'private') AS is_private_reporter,
     rs.road_name
   FROM hazard_reports hr
   JOIN users u ON u.id = hr.user_id
+  LEFT JOIN privacy_preferences pp ON pp.user_id = hr.user_id
   LEFT JOIN road_segments rs ON rs.id = hr.road_segment_id
   WHERE hr.is_active = true
     AND hr.expires_at > NOW()
@@ -145,6 +164,7 @@ export class HazardsService {
     private readonly commuteRepo: Repository<CommuteRoute>,
     private readonly eventsGateway: EventsGateway,
     private readonly pushService: PushService,
+    private readonly privacy: PrivacyPreferencesService,
     config: ConfigService,
   ) {
     this.isTrustedManagedOrigin = buildTrustedManagedOriginCheck(config);
@@ -184,7 +204,13 @@ export class HazardsService {
     // every freshly-broadcast hazard would show up on other clients as an
     // anonymous report until the next REST refresh filled it in.
     const hydrated = await this.findActiveHazard(saved.id);
-    const response = this.toResponse(hydrated);
+    // #279 / #501 — mirror the `HAZARD_SELECT_BASE` reporter mask on
+    // the relation-based path. The reporter is the caller themselves
+    // here, so the privacy lookup is for their own row; we still mask
+    // before broadcast so other clients (which receive the same DTO
+    // via WebSocket) never see a private rider's name.
+    const reporterIsPrivate = await this.isReporterPrivate(userId);
+    const response = this.toResponse(hydrated, { reporterIsPrivate });
 
     // Broadcast new hazard to nearby riders via WebSocket
     this.emitHazardEvent(response);
@@ -303,7 +329,8 @@ export class HazardsService {
       .execute();
 
     const updated = await this.findActiveHazard(hazardId);
-    const response = this.toResponse(updated);
+    const reporterIsPrivate = await this.isReporterPrivate(updated.user_id);
+    const response = this.toResponse(updated, { reporterIsPrivate });
 
     // Broadcast confirmation to nearby riders
     this.emitHazardEvent(response);
@@ -313,7 +340,8 @@ export class HazardsService {
 
   async dismiss(hazardId: string): Promise<void> {
     const hazard = await this.findActiveHazard(hazardId);
-    const response = this.toResponse(hazard);
+    const reporterIsPrivate = await this.isReporterPrivate(hazard.user_id);
+    const response = this.toResponse(hazard, { reporterIsPrivate });
 
     hazard.is_active = false;
     await this.hazardRepo.save(hazard);
@@ -402,7 +430,10 @@ export class HazardsService {
     return hazard;
   }
 
-  private toResponse(hazard: HazardReport): HazardResponseDto {
+  private toResponse(
+    hazard: HazardReport,
+    opts: { reporterIsPrivate?: boolean } = {},
+  ): HazardResponseDto {
     const coords = (
       hazard.location as unknown as { coordinates: [number, number] }
     ).coordinates;
@@ -413,13 +444,42 @@ export class HazardsService {
       hazard_type: hazard.hazard_type as HazardType,
       severity: hazard.severity as HazardSeverity,
       note: hazard.note,
-      photo_url: sanitizeHazardPhotoUrl(hazard.photo_url),
+      // #279 / #501 — managed hazard photos embed the rider's id in
+      // their filename (`<userId>-<ts>-...`), so emitting the URL on
+      // a private reporter's report would leak the same id this path
+      // is masking. Suppress the URL alongside the name (Codex
+      // review on PR #513 r3212896110).
+      photo_url: opts.reporterIsPrivate
+        ? null
+        : sanitizeHazardPhotoUrl(hazard.photo_url),
       confirmations: hazard.confirmations,
-      reporter: hazard.user?.display_name ?? null,
+      // #279 / #501 — opted-out reporters surface as `null` so the
+      // map UI renders an "Anonymous reporter" tag instead of leaking
+      // the rider's name to anyone with a hazard ping.
+      reporter: opts.reporterIsPrivate
+        ? null
+        : (hazard.user?.display_name ?? null),
       road_name: hazard.road_segment?.road_name ?? null,
       created_at: hazard.created_at.toISOString(),
       expires_at: hazard.expires_at.toISOString(),
     };
+  }
+
+  /**
+   * Lookup helper for the relation-based load paths (`create`,
+   * `confirm`, `dismiss`) which use TypeORM relations to hydrate the
+   * `user` and `road_segment` fields and therefore can't reuse the
+   * masked SQL projection in `HAZARD_SELECT_BASE`. Defaults
+   * fail-closed: if the privacy fetch errors we treat the rider as
+   * private rather than leaking the name on a transient DB hiccup.
+   */
+  private async isReporterPrivate(userId: string): Promise<boolean> {
+    try {
+      const prefs = await this.privacy.loadPreferences(userId);
+      return prefs.profile_visibility === 'private';
+    } catch {
+      return true;
+    }
   }
 
   private emitHazardEvent(response: HazardResponseDto): void {
@@ -427,6 +487,15 @@ export class HazardsService {
   }
 
   private rowToResponse(row: Record<string, unknown>): HazardResponseDto {
+    // #279 / #501 — managed hazard photos are stored under
+    // `/uploads/hazard-photos/<userId>-<ts>-...`, so emitting the URL
+    // for a private reporter would leak the rider's UUID through the
+    // filename even after the SQL CASE blanks `reporter`. Suppress
+    // the URL on the public response (Codex review on PR #513
+    // r3212896110). Third-party / non-managed URLs would also be
+    // suppressed — the rider's privacy preference covers any media
+    // they attached, regardless of where it lives.
+    const reporterIsPrivate = row.is_private_reporter === true;
     return {
       id: row.id as string,
       lat: row.lat as number,
@@ -434,7 +503,9 @@ export class HazardsService {
       hazard_type: row.hazard_type as HazardType,
       severity: row.severity as HazardSeverity,
       note: (row.note as string) ?? null,
-      photo_url: sanitizeHazardPhotoUrl(row.photo_url),
+      photo_url: reporterIsPrivate
+        ? null
+        : sanitizeHazardPhotoUrl(row.photo_url),
       confirmations: row.confirmations as number,
       reporter: (row.reporter as string) ?? null,
       road_name: (row.road_name as string) ?? null,
