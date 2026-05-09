@@ -661,7 +661,16 @@ export class ReviewsService {
       rating: review.rating,
       comment: review.comment,
       bike_model: review.bike_model,
-      photos: sanitizeReviewPhotos(review.photos),
+      // #279 / #501 — managed review photos are stored under
+      // `/road-review-photos/<segmentId>-<userId>-<ts>-...`, so
+      // emitting the URLs while masking `user_id`/name would leak
+      // the rider's UUID through the filename (Codex review on PR
+      // #513 r3212896111). Suppress the photo list entirely on the
+      // masked path. Self-views aren't masked (`isAuthorPrivate`
+      // is false for `r.user_id === viewerUserId` in
+      // `listForSegment`), so a private rider editing their own
+      // review still sees their own attachments.
+      photos: isAuthorMasked ? null : sanitizeReviewPhotos(review.photos),
       created_at: review.created_at.toISOString(),
       helpful_count: votes?.helpful_count ?? 0,
       not_helpful_count: votes?.not_helpful_count ?? 0,

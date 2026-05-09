@@ -587,6 +587,59 @@ describe('HazardsService', () => {
       // private one's identity.
       expect(result.reporter).toBeNull();
     });
+
+    it('suppresses photo_url for private reporters so the filename cannot leak the user id (#501 review)', async () => {
+      // Codex review on PR #513 r3212896110: managed hazard photo
+      // filenames embed `<userId>-<ts>-...`, so emitting the URL
+      // for a private reporter would leak the rider's UUID even
+      // after the SQL CASE blanks `reporter`. The toResponse
+      // mapper must suppress `photo_url` whenever the reporter is
+      // private.
+      privacy.loadPreferences.mockResolvedValueOnce({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        profile_visibility: 'private',
+      });
+
+      const dto = {
+        lat: 49.1,
+        lng: 16.75,
+        hazard_type: 'pothole' as const,
+        photo_url:
+          'http://localhost:3000/uploads/hazard-photos/user-1-1700000000000-abc.jpg',
+      };
+      const result = await service.create('user-1', dto);
+
+      expect(result.reporter).toBeNull();
+      expect(result.photo_url).toBeNull();
+      // The broadcast payload must also drop the URL so other
+      // clients can't see the masked rider's id even before the
+      // next REST refresh.
+      expect(eventsGateway.emitHazardAlert).toHaveBeenCalledWith(
+        49.1,
+        16.75,
+        expect.objectContaining({ photo_url: null }),
+      );
+    });
+
+    it('keeps photo_url visible for non-private reporters (#501 review)', async () => {
+      privacy.loadPreferences.mockResolvedValueOnce({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        profile_visibility: 'riders-only',
+      });
+
+      const dto = {
+        lat: 49.1,
+        lng: 16.75,
+        hazard_type: 'pothole' as const,
+        photo_url:
+          'http://localhost:3000/uploads/hazard-photos/user-1-1700000000000-abc.jpg',
+      };
+      const result = await service.create('user-1', dto);
+
+      expect(result.photo_url).toBe(
+        'http://localhost:3000/uploads/hazard-photos/user-1-1700000000000-abc.jpg',
+      );
+    });
   });
 
   describe('expireOld', () => {

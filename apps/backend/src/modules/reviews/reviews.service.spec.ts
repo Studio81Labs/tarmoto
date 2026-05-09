@@ -279,6 +279,49 @@ describe('ReviewsService', () => {
       expect(result[0].comment).toBe('Smooth asphalt, great ride!');
     });
 
+    it('suppresses photos for private authors so the URL filename cannot leak the user id (#501 review)', async () => {
+      // Codex review on PR #513 r3212896111: managed review photo
+      // filenames embed `<segmentId>-<userId>-...`, so emitting the
+      // URL for a masked author would leak the rider's UUID even
+      // with `user_id` nulled. The toResponse mapper must suppress
+      // `photos` whenever the author is masked.
+      reviewRepo.find!.mockResolvedValueOnce([
+        {
+          ...mockReview,
+          photos: [
+            'https://app.tarmoto.test/road-review-photos/seg-1-user-1-1700000000000-abc.jpg',
+          ],
+        },
+      ]);
+      privateUserIds = new Set(['user-1']);
+
+      const result = await service.listForSegment('seg-1');
+
+      expect(result[0].user_display_name).toBe('Hidden rider');
+      expect(result[0].photos).toBeNull();
+    });
+
+    it('keeps photos visible to the author themselves on the self-view path (#501 review)', async () => {
+      // Self-view exemption — a private rider editing their own
+      // review still sees their own attachments.
+      reviewRepo.find!.mockResolvedValueOnce([
+        {
+          ...mockReview,
+          photos: [
+            'https://app.tarmoto.test/road-review-photos/seg-1-user-1-1700000000000-abc.jpg',
+          ],
+        },
+      ]);
+      privateUserIds = new Set(['user-1']);
+
+      const result = await service.listForSegment('seg-1', 'user-1');
+
+      expect(result[0].user_display_name).toBe('John Rider');
+      expect(result[0].photos).toEqual([
+        'https://app.tarmoto.test/road-review-photos/seg-1-user-1-1700000000000-abc.jpg',
+      ]);
+    });
+
     it('keeps the author visible for a non-private profile (#279 / #501)', async () => {
       privateUserIds = new Set();
 

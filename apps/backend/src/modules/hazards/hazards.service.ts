@@ -122,6 +122,15 @@ const COMMUTE_HAZARD_BUFFER_M = 200;
 // display name even though the geometry stays visible. The LEFT JOIN
 // is left-side so riders without an explicit privacy_preferences row
 // (defaults apply, not private) still surface their name.
+//
+// `is_private_reporter` is surfaced separately so the row mapper can
+// also null `photo_url` for private reporters (Codex review on PR
+// #513 r3212896110): managed hazard photos are stored under
+// `/uploads/hazard-photos/<userId>-<ts>-...`, so returning the URL
+// while masking the name still leaks the rider's UUID via the
+// filename. Suppressing the URL on the public response is the
+// targeted fix; the file itself stays on disk so the rider's own
+// review of their report (a future feature) can still surface it.
 const HAZARD_SELECT_BASE = `
   SELECT
     hr.id, hr.hazard_type, hr.severity, hr.note, hr.photo_url, hr.confirmations,
@@ -129,6 +138,7 @@ const HAZARD_SELECT_BASE = `
     ST_Y(hr.location::geometry) AS lat,
     ST_X(hr.location::geometry) AS lng,
     CASE WHEN pp.profile_visibility = 'private' THEN NULL ELSE u.display_name END AS reporter,
+    (pp.profile_visibility = 'private') AS is_private_reporter,
     rs.road_name
   FROM hazard_reports hr
   JOIN users u ON u.id = hr.user_id
@@ -434,7 +444,14 @@ export class HazardsService {
       hazard_type: hazard.hazard_type as HazardType,
       severity: hazard.severity as HazardSeverity,
       note: hazard.note,
-      photo_url: sanitizeHazardPhotoUrl(hazard.photo_url),
+      // #279 / #501 — managed hazard photos embed the rider's id in
+      // their filename (`<userId>-<ts>-...`), so emitting the URL on
+      // a private reporter's report would leak the same id this path
+      // is masking. Suppress the URL alongside the name (Codex
+      // review on PR #513 r3212896110).
+      photo_url: opts.reporterIsPrivate
+        ? null
+        : sanitizeHazardPhotoUrl(hazard.photo_url),
       confirmations: hazard.confirmations,
       // #279 / #501 — opted-out reporters surface as `null` so the
       // map UI renders an "Anonymous reporter" tag instead of leaking
@@ -470,6 +487,15 @@ export class HazardsService {
   }
 
   private rowToResponse(row: Record<string, unknown>): HazardResponseDto {
+    // #279 / #501 — managed hazard photos are stored under
+    // `/uploads/hazard-photos/<userId>-<ts>-...`, so emitting the URL
+    // for a private reporter would leak the rider's UUID through the
+    // filename even after the SQL CASE blanks `reporter`. Suppress
+    // the URL on the public response (Codex review on PR #513
+    // r3212896110). Third-party / non-managed URLs would also be
+    // suppressed — the rider's privacy preference covers any media
+    // they attached, regardless of where it lives.
+    const reporterIsPrivate = row.is_private_reporter === true;
     return {
       id: row.id as string,
       lat: row.lat as number,
@@ -477,7 +503,9 @@ export class HazardsService {
       hazard_type: row.hazard_type as HazardType,
       severity: row.severity as HazardSeverity,
       note: (row.note as string) ?? null,
-      photo_url: sanitizeHazardPhotoUrl(row.photo_url),
+      photo_url: reporterIsPrivate
+        ? null
+        : sanitizeHazardPhotoUrl(row.photo_url),
       confirmations: row.confirmations as number,
       reporter: (row.reporter as string) ?? null,
       road_name: (row.road_name as string) ?? null,

@@ -164,7 +164,10 @@ export class RoadsService {
       // standalone /hazards endpoints (`HAZARD_SELECT_BASE`). The road
       // detail card is a public surface, so without the LEFT JOIN here a
       // private rider's display name would still leak to anyone opening
-      // the segment that contains their report.
+      // the segment that contains their report. `is_private_reporter`
+      // also flows to `mapHazardRows` so the photo URL (which embeds
+      // `<userId>-...` in its filename) can be suppressed alongside the
+      // name (Codex review on PR #513 r3212896110).
       this.segmentRepo.query(
         `SELECT
           h.id, h.hazard_type, h.severity, h.note, h.photo_url, h.confirmations,
@@ -172,6 +175,7 @@ export class RoadsService {
           ST_X(h.location::geometry) AS lng,
           ST_Y(h.location::geometry) AS lat,
           CASE WHEN pp.profile_visibility = 'private' THEN NULL ELSE u.display_name END AS reporter,
+          (pp.profile_visibility = 'private') AS is_private_reporter,
           rs.road_name AS road_name
         FROM hazard_reports h
         LEFT JOIN users u ON u.id = h.user_id
@@ -546,20 +550,28 @@ export class RoadsService {
 
 function mapHazardRows(rows: unknown): HazardResponseDto[] {
   if (!Array.isArray(rows)) return [];
-  return (rows as Array<Record<string, unknown>>).map((r) => ({
-    id: r.id as string,
-    lat: Number(r.lat),
-    lng: Number(r.lng),
-    hazard_type: r.hazard_type as HazardType,
-    severity: r.severity as HazardSeverity,
-    note: (r.note as string) ?? null,
-    photo_url: sanitizeHazardPhotoUrl(r.photo_url),
-    confirmations: r.confirmations as number,
-    reporter: (r.reporter as string) ?? null,
-    road_name: (r.road_name as string) ?? null,
-    created_at: (r.created_at as Date).toISOString(),
-    expires_at: (r.expires_at as Date).toISOString(),
-  }));
+  return (rows as Array<Record<string, unknown>>).map((r) => {
+    // #279 / #501 — managed hazard photos are stored under
+    // `/uploads/hazard-photos/<userId>-<ts>-...`, so emitting the
+    // URL when the reporter is private would leak the rider's UUID
+    // through the filename (Codex review on PR #513 r3212896110).
+    // Suppress alongside the name.
+    const reporterIsPrivate = r.is_private_reporter === true;
+    return {
+      id: r.id as string,
+      lat: Number(r.lat),
+      lng: Number(r.lng),
+      hazard_type: r.hazard_type as HazardType,
+      severity: r.severity as HazardSeverity,
+      note: (r.note as string) ?? null,
+      photo_url: reporterIsPrivate ? null : sanitizeHazardPhotoUrl(r.photo_url),
+      confirmations: r.confirmations as number,
+      reporter: (r.reporter as string) ?? null,
+      road_name: (r.road_name as string) ?? null,
+      created_at: (r.created_at as Date).toISOString(),
+      expires_at: (r.expires_at as Date).toISOString(),
+    };
+  });
 }
 
 function mapReviewRows(rows: unknown): ReviewResponseDto[] {
@@ -591,7 +603,14 @@ function mapReviewRows(rows: unknown): ReviewResponseDto[] {
       rating: r.rating as number,
       comment: (r.comment as string) ?? null,
       bike_model: (r.bike_model as string) ?? null,
-      photos: sanitizeReviewPhotos(r.photos),
+      // #279 / #501 — managed review photos embed `<segmentId>-
+      // <userId>-...` in their filenames, so emitting the URL list
+      // for a masked author would leak the rider's UUID through
+      // the path even with `user_id` nulled (Codex review on PR
+      // #513 r3212896111). Suppress on every masked path
+      // (deleted + private). The road preview is anonymous-
+      // friendly, so there's no self-view exemption here.
+      photos: authorMasked ? null : sanitizeReviewPhotos(r.photos),
       created_at: (r.created_at as Date).toISOString(),
       helpful_count: (r.helpful_count as number) ?? 0,
       not_helpful_count: (r.not_helpful_count as number) ?? 0,

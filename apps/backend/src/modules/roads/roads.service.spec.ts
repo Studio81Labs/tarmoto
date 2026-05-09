@@ -268,35 +268,44 @@ describe('RoadsService', () => {
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([{ count: 1 }])
         // Hazard row: SQL `CASE WHEN profile_visibility = 'private'`
-        // already collapsed `reporter` to null. The mapper passes it
-        // through verbatim — exactly what we want public callers to
-        // see for an opted-out reporter.
+        // already collapsed `reporter` to null and emitted
+        // `is_private_reporter = true` so the mapper also nulls
+        // `photo_url` (Codex review on PR #513 r3212896110) — the
+        // photo filename embeds `<userId>-...` so emitting the URL
+        // would still leak the masked id even with the name nulled.
         .mockResolvedValueOnce([
           {
             id: 'h-priv',
             hazard_type: 'pothole',
             severity: 'high',
             note: 'Big crater',
+            photo_url:
+              'http://localhost:3000/uploads/hazard-photos/user-priv-1700000000000-abc.jpg',
             confirmations: 1,
             created_at: hazardCreatedAt,
             expires_at: hazardExpiresAt,
             lng: 16.755,
             lat: 49.105,
             reporter: null,
+            is_private_reporter: true,
             road_name: 'Hidden Pass',
           },
         ])
         .mockResolvedValueOnce([{ count: 1, avg_rating: 5 }])
         // Review row: author is a real user (not deleted) but
-        // `is_private_author = true`. Mapper should emit the
-        // `'Hidden rider'` tombstone and null `user_id`.
+        // `is_private_author = true`. Mapper emits the `'Hidden
+        // rider'` tombstone, nulls `user_id`, and also nulls
+        // `photos` (Codex review on PR #513 r3212896111) — the
+        // photo filenames embed `<segmentId>-<userId>-...`.
         .mockResolvedValueOnce([
           {
             id: 'r-priv',
             rating: 5,
             comment: 'Empty road, smooth tarmac',
             bike_model: null,
-            photos: null,
+            photos: [
+              'https://media.tarmoto.app/road-review-photos/seg-priv-user-priv-1700000000000-xyz.jpg',
+            ],
             created_at: reviewCreatedAt,
             user_id: 'user-priv',
             user_join_id: 'user-priv',
@@ -311,9 +320,11 @@ describe('RoadsService', () => {
 
       expect(result.active_hazards).toHaveLength(1);
       expect(result.active_hazards[0].reporter).toBeNull();
+      expect(result.active_hazards[0].photo_url).toBeNull();
       expect(result.recent_reviews).toHaveLength(1);
       expect(result.recent_reviews[0].user_id).toBeNull();
       expect(result.recent_reviews[0].user_display_name).toBe('Hidden rider');
+      expect(result.recent_reviews[0].photos).toBeNull();
       // The review row itself still surfaces — masking identity,
       // not hiding content.
       expect(result.recent_reviews[0].rating).toBe(5);
