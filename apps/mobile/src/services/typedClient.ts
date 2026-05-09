@@ -154,14 +154,21 @@ export function storeTokens(auth: AuthResponse): void {
   // straight from one bearer to another), wipe the cached privacy
   // preferences first so the new rider's `road_data_contribution`
   // gate doesn't read the previous rider's value during the brief
-  // window before the fire-and-forget refresh lands. Compared by
-  // user id so the normal access-token-rotation path (same user,
-  // refresh middleware issuing a new pair) does NOT churn the
-  // cache (Codex review on PR #513 r3212937340).
+  // window before the fire-and-forget refresh lands.
+  //
+  // Clears on ANY non-matching persisted id, including the legacy
+  // case where `USER_ID_KEY` is empty on an upgraded install but
+  // the privacy cache survived from a pre-upgrade refresh — also
+  // a stale-cache leak (Codex follow-up review on PR #513
+  // r3212954097). Compared by user id so the normal access-token-
+  // rotation path (same user, refresh middleware issuing a new
+  // pair without `auth.user`) does NOT churn the cache:
+  // `incomingUserId` is null on that path, so the outer `if`
+  // never fires.
   const incomingUserId = auth.user?.id ?? null;
   if (incomingUserId) {
     const persistedUserId = storage.getString(USER_ID_KEY) ?? null;
-    if (persistedUserId && persistedUserId !== incomingUserId) {
+    if (persistedUserId !== incomingUserId) {
       clearCachedPreferences();
     }
   }
