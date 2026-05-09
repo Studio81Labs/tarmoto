@@ -357,6 +357,25 @@ export async function submitSensorUpload(
   // shouldn't be delayed behind them.
   const drain = await drainOfflineQueue(uploader);
 
+  // #279 / #501 — recheck consent after the drain await (Codex
+  // review on PR #513 r3212972527). The entry-point gate above
+  // only catches an opt-out that was already in place when this
+  // call started; a toggle that lands mid-drain (e.g. via a
+  // concurrent privacy refresh after the companion flipped the
+  // preference) would otherwise still hit the live `uploader(...)`
+  // below for the fresh payload. Drop it cleanly: clear any
+  // residual queue and return silent-success zeros, matching the
+  // entry-point behaviour.
+  if (!canContributeRoadData()) {
+    clearOfflineQueue();
+    return {
+      status: "uploaded",
+      accepted: 0,
+      segmentsUpdated: 0,
+      pending: getPendingCount(),
+    };
+  }
+
   if (drain.networkFailed || drain.transientServerError) {
     // Skip the live call:
     //   - networkFailed → link is down
@@ -468,6 +487,20 @@ export function drainOfflineQueue(
     // three drain calls, matching the original design intent.
     const attemptedThisDrain = new Set<string>();
     while (true) {
+      // #279 / #501 — recheck the rider's consent on every
+      // iteration (Codex review on PR #513 r3212972527). The
+      // entry-point gate above only fires once per drain call,
+      // so a long-running drain that started under consent could
+      // otherwise keep uploading after the rider toggled the
+      // preference off mid-flight (e.g. from the companion while
+      // mobile is still flushing). Bail out cleanly: clear the
+      // remaining backlog (the rider's current preference is
+      // "don't send", which overrides past captures) and report
+      // the in-progress drain's `flushed` count.
+      if (!canContributeRoadData()) {
+        clearOfflineQueue();
+        break;
+      }
       const queue = readQueue();
       // Re-read each iteration so a concurrent enqueue isn't silently
       // overwritten, but skip anything we've already handled this pass.

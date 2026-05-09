@@ -546,6 +546,48 @@ describe("offlineQueue", () => {
       expect(getPendingCount()).toBe(0);
     });
 
+    it("bails mid-drain when consent toggles off (#501 review)", async () => {
+      // Codex review on PR #513 r3212972527: a drain that started
+      // under consent must self-cancel if the rider toggles
+      // `road_data_contribution` off mid-flight (e.g. via a
+      // concurrent privacy refresh after the companion flipped the
+      // preference). The in-loop check clears the remaining backlog
+      // and returns whatever `flushed` count it reached; subsequent
+      // drains see an empty queue.
+      enqueueUpload("a", [makeReading(1)], "iPhone", null);
+      enqueueUpload("b", [makeReading(2)], "iPhone", null);
+      enqueueUpload("c", [makeReading(3)], "iPhone", null);
+      // Start with consent on so the entry-point gate doesn't fire.
+      setCachedPreferences({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        road_data_contribution: true,
+      });
+
+      let calls = 0;
+      const uploader: SensorUploader = jest.fn(async () => {
+        calls += 1;
+        // Simulate the companion flipping the toggle off after the
+        // FIRST queued ride uploads. The drain loop should bail
+        // before touching `b` or `c`.
+        if (calls === 1) {
+          setCachedPreferences({
+            ...DEFAULT_PRIVACY_PREFERENCES,
+            road_data_contribution: false,
+          });
+        }
+        return { accepted: 1, segments_updated: 0 };
+      });
+
+      const result = await drainOfflineQueue(uploader);
+
+      // Exactly one upload happened (the one before the toggle).
+      expect(uploader).toHaveBeenCalledTimes(1);
+      expect(result.flushed).toBe(1);
+      // Remaining backlog dropped — the rider's current consent
+      // overrides past captures.
+      expect(getPendingCount()).toBe(0);
+    });
+
     it("flushes items oldest-first and empties the queue", async () => {
       enqueueUpload("a", [makeReading(1)], "iPhone", null);
       enqueueUpload("b", [makeReading(2)], "iPhone", null);
