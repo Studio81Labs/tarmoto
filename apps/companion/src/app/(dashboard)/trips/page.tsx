@@ -228,11 +228,19 @@ export default function TripListPage() {
       .getState()
       .trips.filter((storedTrip) => storedTrip.folder_id === folder.id)
       .map((storedTrip) => storedTrip.id);
+    // Snapshot the folder scope too: if the rider was viewing the
+    // folder being deleted, we optimistically reset to "all" below so
+    // they don't end up looking at a filter that points at a folder
+    // that just disappeared. On rollback we have to restore that
+    // selection — otherwise the folder reappears in the sidebar but
+    // the trip list keeps showing every folder until the rider
+    // re-clicks the folder manually.
+    const previousFolderScope = filters.folderScope;
     setFolders(folders.filter((f) => f.id !== folder.id));
-    if (
+    const scopePointedAtDeleted =
       filters.folderScope.kind === "folder" &&
-      filters.folderScope.id === folder.id
-    ) {
+      filters.folderScope.id === folder.id;
+    if (scopePointedAtDeleted) {
       setFilters({ ...filters, folderScope: { kind: "all" } });
     }
     setTrips(
@@ -247,10 +255,11 @@ export default function TripListPage() {
     try {
       await tripFoldersApi.delete(folder.id);
     } catch {
-      // Roll back BOTH the folder list and the per-trip optimistic
-      // unfile so the rider isn't left looking at a folder that
-      // reappeared in the sidebar but whose trips still show as
-      // unfiled — which would only correct itself on a full reload.
+      // Roll back the folder list, the per-trip optimistic unfile, AND
+      // the folder-scope filter so the rider isn't left looking at a
+      // folder that reappeared in the sidebar but whose trips show as
+      // unfiled / whose scope is still "all" — those would only
+      // correct themselves on a full reload.
       setFolders(previousFolders);
       const affectedSet = new Set(affectedTripIds);
       setTrips(
@@ -262,6 +271,12 @@ export default function TripListPage() {
               : storedTrip,
           ),
       );
+      // Use the functional setter so we restore the saved scope on top
+      // of any unrelated filter change (status toggle, search input)
+      // that landed during the await.
+      if (scopePointedAtDeleted) {
+        setFilters((prev) => ({ ...prev, folderScope: previousFolderScope }));
+      }
       setErrorBanner("Couldn't delete the folder. Try again.");
     }
   };
