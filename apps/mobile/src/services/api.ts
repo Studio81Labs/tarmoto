@@ -210,10 +210,22 @@ class ApiService {
    * cache before each upload — call this on app foreground / login
    * and after every PUT from the privacy settings screen so the
    * mobile gate stays in sync with the server.
+   *
+   * Snapshots the access token at start and re-checks it before
+   * writing the cache (Codex review on PR #513). If the bearer
+   * changed mid-flight — logout cleared it, or a different rider
+   * signed in — the response is dropped. Without this guard, a
+   * `register` / `login`-spawned fire-and-forget refresh could
+   * resolve AFTER `logout()` had already cleared the cache and
+   * silently repopulate it with the previous rider's toggles for
+   * the next sign-in on the same device.
    */
   async refreshPrivacyPreferences(): Promise<void> {
+    const tokenAtStart = getAccessToken();
+    if (!tokenAtStart) return;
     const result = await client.GET("/api/v1/account/privacy");
     const dto = unwrap(result, "Failed to load privacy preferences");
+    if (getAccessToken() !== tokenAtStart) return;
     setCachedPreferences({
       profile_visibility: dto.profile_visibility,
       default_ride_sharing: dto.default_ride_sharing,

@@ -612,9 +612,10 @@ describe('RouteCollectionsService', () => {
 
       const result = await service.getBySlug('abcDEF12345', otherId);
 
-      // Empty string mirrors the historical "no owner loaded" sentinel
-      // so existing string-rendering clients keep working.
-      expect(result.owner_name).toBe('');
+      // `null` matches `listLibrary`'s followed-card shape so a client
+      // can use the same `owner_name === null` check on every surface
+      // (Cursor Bugbot review on PR #513).
+      expect(result.owner_name).toBeNull();
     });
 
     it('keeps owner_name for the owner viewing their own private profile slug (#279 / #501)', async () => {

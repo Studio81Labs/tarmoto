@@ -765,13 +765,17 @@ export class RouteCollectionsService {
     opts: { ownerIsPrivate?: boolean } = {},
   ): RouteCollectionDetailDto {
     const rawOwnerName = c.owner?.display_name ?? '';
-    // #279 / #501 — opted-out owners surface as an empty string
-    // (matching the historical "no owner loaded" sentinel) so the UI
-    // can render a generic "Hidden curator" tag without leaking the
-    // name. We deliberately keep the empty-string shape rather than
-    // emitting `null` so existing clients that string-render
-    // `owner_name` keep working.
-    const ownerName = opts.ownerIsPrivate ? '' : rawOwnerName;
+    // #279 / #501 — opted-out owners surface as `null`, matching
+    // `listLibrary`'s followed-card shape (Cursor Bugbot review on
+    // PR #513). Keeping both endpoints on the same wire shape means
+    // a client checking `owner_name === null` to render a "Hidden
+    // curator" label works on every surface that exposes a
+    // collection. The legacy empty-string sentinel for "owner
+    // relation not hydrated" stays as-is — that's a different
+    // code path (e.g. the create-then-refind fallback) with its
+    // own pinned wire shape and isn't what the privacy masking is
+    // about.
+    const ownerName: string | null = opts.ownerIsPrivate ? null : rawOwnerName;
     return {
       ...this.toSummaryResponse(c, items.length, ownerName || null),
       items: items.map((i) => this.toItemResponse(i)),
