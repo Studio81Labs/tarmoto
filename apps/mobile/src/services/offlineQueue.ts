@@ -452,16 +452,23 @@ export async function submitSensorUpload(
 export function drainOfflineQueue(
   uploader: SensorUploader,
 ): Promise<DrainResult> {
-  // Concurrent callers get the exact same promise so they see the real
-  // outcome instead of a stub reply that would race the in-flight flush.
-  if (drainInFlight) return drainInFlight;
-
-  // #279 / #501 — same opt-out gate as `submitSensorUpload`. The
-  // Settings "Retry now" button reaches us via this entry point, and
-  // a drain that ships pre-opt-out queued payloads to the server
-  // would defeat the rider's current consent setting. Clear the
-  // queue and report a no-op drain. Listeners get the "pending = 0"
-  // event from `clearOfflineQueue` so badge counters update.
+  // #279 / #501 — opt-out gate fires BEFORE the in-flight reuse
+  // (Codex review on PR #513 r3212984407). Otherwise a caller
+  // arriving while a drain is active and after consent flipped
+  // off would only get back the existing `drainInFlight` promise
+  // and never trigger a clear; if the active loop then breaks on
+  // a network error before its next per-iteration consent check,
+  // the remaining backlog would stay persisted and could be
+  // uploaded if the rider toggled consent back on later.
+  //
+  // Clearing here is safe even when a drain is in flight: the
+  // active loop's next `readQueue()` returns `[]` after the wipe,
+  // so it exits cleanly on its next iteration. At most one more
+  // payload (the one currently being uploaded) ships before the
+  // loop notices — that's acceptable: we can't cancel an in-flight
+  // HTTP request without an `AbortController`, and the contract is
+  // "stop sending NEW data after the toggle", not "abort the
+  // current request mid-flight".
   if (!canContributeRoadData()) {
     clearOfflineQueue();
     return Promise.resolve({
@@ -471,6 +478,10 @@ export function drainOfflineQueue(
       transientServerError: false,
     });
   }
+
+  // Concurrent callers get the exact same promise so they see the real
+  // outcome instead of a stub reply that would race the in-flight flush.
+  if (drainInFlight) return drainInFlight;
 
   const run = async (): Promise<DrainResult> => {
     let flushed = 0;

@@ -546,6 +546,66 @@ describe("offlineQueue", () => {
       expect(getPendingCount()).toBe(0);
     });
 
+    it("clears the queue even when a drain is already in flight (#501 review)", async () => {
+      // Codex review on PR #513 r3212984407: a drain started under
+      // consent + then the rider toggling off + then a second
+      // caller (e.g. Settings "Retry now") arriving WHILE the
+      // first drain is still running used to skip the clear
+      // entirely — the second caller would just reuse
+      // `drainInFlight`, and if the active loop broke on a
+      // network error before its next per-iteration consent
+      // check, the queue would persist. The fix moves the
+      // consent gate ahead of the in-flight reuse so even a
+      // concurrent caller wipes the queue immediately.
+      enqueueUpload("a", [makeReading(1)], "iPhone", null);
+      enqueueUpload("b", [makeReading(2)], "iPhone", null);
+      setCachedPreferences({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        road_data_contribution: true,
+      });
+
+      // First drain: stalls forever so we can simulate the
+      // "drain already running" state. We don't await it.
+      let resolveStall: () => void = () => undefined;
+      const stall = new Promise<{ accepted: number; segments_updated: number }>(
+        (resolve) => {
+          resolveStall = () => resolve({ accepted: 1, segments_updated: 0 });
+        },
+      );
+      const stallingUploader: SensorUploader = jest.fn(async () => stall);
+      const inFlight = drainOfflineQueue(stallingUploader);
+
+      // Toggle off mid-drain.
+      setCachedPreferences({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        road_data_contribution: false,
+      });
+
+      // Second caller arrives — must observe the off-toggle and
+      // wipe the queue immediately, NOT just inherit
+      // `drainInFlight`.
+      const secondUploader = jest.fn<
+        ReturnType<SensorUploader>,
+        Parameters<SensorUploader>
+      >();
+      const secondResult = await drainOfflineQueue(secondUploader);
+
+      expect(secondResult).toEqual({
+        flushed: 0,
+        remaining: 0,
+        networkFailed: false,
+        transientServerError: false,
+      });
+      expect(secondUploader).not.toHaveBeenCalled();
+      expect(getPendingCount()).toBe(0);
+
+      // Let the stalled first uploader complete so the test
+      // teardown doesn't leak a pending promise. Its loop will
+      // see the now-empty queue on next iteration and exit.
+      resolveStall();
+      await inFlight;
+    });
+
     it("bails mid-drain when consent toggles off (#501 review)", async () => {
       // Codex review on PR #513 r3212972527: a drain that started
       // under consent must self-cancel if the rider toggles
