@@ -173,7 +173,15 @@ export class ReviewsService {
     );
     return reviews.map((r) =>
       this.toResponse(r, voteMap.get(r.id), viewerUserId, {
-        authorIsPrivate: privateAuthorIds.has(r.user_id),
+        // #279 / #501 — self-view exemption: a private rider must
+        // still see their OWN review with their real name in the
+        // listing (matches the `create` / `update` paths which pass
+        // `authorIsPrivate: false` for the same reason — Codex /
+        // Cursor Bugbot review on PR #513). The mask is about
+        // hiding identity from OTHER riders, never from the rider
+        // themselves.
+        authorIsPrivate:
+          privateAuthorIds.has(r.user_id) && r.user_id !== viewerUserId,
       }),
     );
   }

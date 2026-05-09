@@ -313,6 +313,44 @@ describe('ReviewsService', () => {
       // hiding content.
       expect(result[0].rating).toBe(4);
     });
+
+    it("keeps the viewer's own private review unmasked (#501 review)", async () => {
+      // Codex + Cursor Bugbot review on PR #513: a private rider
+      // viewing the segment must still see their OWN review with
+      // their real name + user_id (matches the `create` / `update`
+      // paths). The mask is about hiding identity from OTHER
+      // riders, not from the rider themselves.
+      privacyRows = [
+        {
+          user_id: 'user-1',
+          profile_visibility: 'private',
+        } as PrivacyPreferencesRow,
+      ];
+
+      const result = await service.listForSegment('seg-1', 'user-1');
+
+      expect(result[0].user_display_name).toBe('John Rider');
+      expect(result[0].user_id).toBe('user-1');
+      expect(result[0].is_mine).toBe(true);
+    });
+
+    it("still masks a private author's review for other viewers (#501 review)", async () => {
+      // Symmetric guard for the self-view exemption — a different
+      // viewer of the same private rider's review must still see
+      // the masked tombstone.
+      privacyRows = [
+        {
+          user_id: 'user-1',
+          profile_visibility: 'private',
+        } as PrivacyPreferencesRow,
+      ];
+
+      const result = await service.listForSegment('seg-1', 'someone-else');
+
+      expect(result[0].user_display_name).toBe('Hidden rider');
+      expect(result[0].user_id).toBeNull();
+      expect(result[0].is_mine).toBe(false);
+    });
   });
 
   describe('create', () => {
