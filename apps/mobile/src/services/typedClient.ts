@@ -19,6 +19,7 @@ import { createMMKV } from "react-native-mmkv";
 import { createApiClient } from "@tarmoto/openapi/client";
 import type { Schemas } from "@/types";
 import { API_BASE_URL } from "@/config";
+import { clearCachedPreferences } from "./privacyCache";
 
 type AuthResponse = Schemas["AuthResponseDto"];
 
@@ -164,6 +165,17 @@ export function clearTokens(): void {
   storage.remove(ACCESS_TOKEN_KEY);
   storage.remove(REFRESH_TOKEN_KEY);
   storage.remove(USER_ID_KEY);
+  // #279 / #501 — every token-invalidation path (logout, refresh
+  // 4xx, refresh fetch failure / timeout) must also wipe the
+  // cached privacy preferences. Otherwise a different rider
+  // signing in on the same device after a silent session
+  // invalidation would keep reading the previous rider's
+  // `road_data_contribution` until the fire-and-forget refresh
+  // succeeds — exactly the cross-account leak the cache is meant
+  // to avoid (Codex review on PR #513 r3212924104). Centralising
+  // the clear here means we can't add a new clearTokens caller
+  // without picking up the privacy clear too.
+  clearCachedPreferences();
 }
 
 export function isAuthenticated(): boolean {

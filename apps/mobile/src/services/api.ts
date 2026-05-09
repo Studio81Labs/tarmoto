@@ -102,7 +102,7 @@ import {
   type SubmitReviewResult,
 } from "./reviewQueue";
 import { registerForPush, unregisterPush } from "./pushRegistration";
-import { clearCachedPreferences, setCachedPreferences } from "./privacyCache";
+import { setCachedPreferences } from "./privacyCache";
 import { SENSOR_PREPROCESSING_VERSION } from "./sensorsFilter";
 
 /** Top-level error thrown by every facade method on a non-2xx response.
@@ -196,13 +196,15 @@ class ApiService {
     // wiped and even if a concurrent relogin populates a different
     // user's tokens. See `pushRegistration.unregisterPush` for the
     // race-condition history this guards against.
+    //
+    // #279 / #501 — `clearTokens` itself wipes the privacy cache
+    // (alongside the access / refresh / user-id slots) so every
+    // token-invalidation path — explicit logout AND silent refresh
+    // failure — drops the previous rider's preferences in lockstep.
+    // No separate `clearCachedPreferences()` call needed here.
     const bearer = getAccessToken() ?? undefined;
     clearTokens();
     void unregisterPush(this.pushApi(bearer));
-    // #279 / #501 — clear the cached privacy preferences so a
-    // subsequent rider on the same device doesn't inherit the
-    // previous one's toggles before the next refresh lands.
-    clearCachedPreferences();
   }
 
   /**
