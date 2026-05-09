@@ -90,15 +90,31 @@ export class TripFoldersService {
       if (dto.name !== undefined) folder.name = dto.name.trim();
       if (dto.color !== undefined) folder.color = normaliseColor(dto.color);
 
-      if (dto.position !== undefined && dto.position !== folder.position) {
-        await this.shiftPositions(
-          manager.getRepository(TripFolder),
-          userId,
-          folder.id,
-          folder.position,
-          dto.position,
+      if (dto.position !== undefined) {
+        // The DTO only enforces `position >= 0` because the per-user
+        // count isn't known at validation time. Clamp the upper bound
+        // against the live row count so a request like `{position: 999}`
+        // for a 3-folder library renumbers to "last" instead of stamping
+        // an out-of-range value the dense-ordering math (in
+        // `shiftPositions` and `remove`) can't recover from. The count
+        // is read inside the same locked transaction so a concurrent
+        // create/delete can't shift the maximum out from under us
+        // between the count and the SET below.
+        const count = await repo.count({ where: { user_id: userId } });
+        const target = Math.min(
+          Math.max(dto.position, 0),
+          Math.max(0, count - 1),
         );
-        folder.position = dto.position;
+        if (target !== folder.position) {
+          await this.shiftPositions(
+            manager.getRepository(TripFolder),
+            userId,
+            folder.id,
+            folder.position,
+            target,
+          );
+          folder.position = target;
+        }
       }
 
       return repo.save(folder);

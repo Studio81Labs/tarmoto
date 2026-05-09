@@ -45,6 +45,7 @@ describe('TripFoldersService', () => {
     folderRepo = {
       find: jest.fn().mockResolvedValue([]),
       findOne: jest.fn(),
+      count: jest.fn().mockResolvedValue(0),
       create: jest.fn().mockImplementation(
         (data: Partial<TripFolder>): TripFolder =>
           ({
@@ -216,6 +217,7 @@ describe('TripFoldersService', () => {
       (folderRepo.findOne as jest.Mock).mockResolvedValueOnce(
         baseFolder({ position: 3 }),
       );
+      (folderRepo.count as jest.Mock).mockResolvedValueOnce(4);
 
       await service.update(userId, folderId, { position: 1 });
 
@@ -239,6 +241,7 @@ describe('TripFoldersService', () => {
       (folderRepo.findOne as jest.Mock).mockResolvedValueOnce(
         baseFolder({ position: 0 }),
       );
+      (folderRepo.count as jest.Mock).mockResolvedValueOnce(4);
 
       await service.update(userId, folderId, { position: 2 });
 
@@ -252,10 +255,41 @@ describe('TripFoldersService', () => {
       (folderRepo.findOne as jest.Mock).mockResolvedValueOnce(
         baseFolder({ position: 5 }),
       );
+      (folderRepo.count as jest.Mock).mockResolvedValueOnce(6);
 
       await service.update(userId, folderId, { position: 5, name: 'Same' });
 
       expect(updateBuilder.execute).not.toHaveBeenCalled();
+    });
+
+    it('clamps an out-of-range position to count-1 instead of stamping a non-dense value', async () => {
+      // Bugbot finding: `@Min(0)` only validates the lower bound
+      // (`@Max` can't see the per-user count at DTO time), so a request
+      // like `{position: 999}` against a 3-folder library used to write
+      // 999 verbatim and break the dense-ordering invariant for all
+      // subsequent reorders/deletes. The service now clamps to
+      // count-1, which keeps the column 0..N-1.
+      (folderRepo.findOne as jest.Mock).mockResolvedValueOnce(
+        baseFolder({ position: 0 }),
+      );
+      (folderRepo.count as jest.Mock).mockResolvedValueOnce(3);
+      let savedFolder: TripFolder | undefined;
+      (folderRepo.save as jest.Mock).mockImplementationOnce(
+        (entity: TripFolder) => {
+          savedFolder = entity;
+          return Promise.resolve(entity);
+        },
+      );
+
+      await service.update(userId, folderId, { position: 999 });
+
+      expect(savedFolder?.position).toBe(2);
+      // Shift target must use the clamped value so the SQL range
+      // matches what the row eventually lands on.
+      expect(updateBuilder.andWhere).toHaveBeenCalledWith(
+        'position > :from AND position <= :to',
+        { from: 0, to: 2 },
+      );
     });
   });
 
