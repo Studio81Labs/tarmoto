@@ -38,7 +38,14 @@ export interface CollectionRideRef {
 
 export interface RouteCollectionView {
   id: string;
-  ownerId: string;
+  /**
+   * Owner uuid, or `null` when the owning rider has set
+   * `profile_visibility = 'private'` and the viewer is not the
+   * owner. Masked alongside `ownerName` (#279 / #501) so a
+   * "Hidden curator" surface can't deep-link to the rider's
+   * profile via the id.
+   */
+  ownerId: string | null;
   ownerName: string;
   title: string;
   description: string | null;

@@ -389,7 +389,13 @@ export type RouteCollectionVisibility = "private" | "unlisted" | "public";
 
 export interface RouteCollectionSummary {
   id: string;
-  owner_id: string;
+  /**
+   * Owner uuid, or `null` when the owning rider has set
+   * `profile_visibility = 'private'` and the viewer is not the
+   * owner — masked alongside `owner_name` so the id can't be
+   * cross-referenced to recover the rider's identity (#279 / #501).
+   */
+  owner_id: string | null;
   title: string;
   description: string | null;
   visibility: RouteCollectionVisibility;
