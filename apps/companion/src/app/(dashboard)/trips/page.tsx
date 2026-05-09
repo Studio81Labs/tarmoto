@@ -301,7 +301,20 @@ export default function TripListPage() {
   const duplicateTrip = async (trip: Trip) => {
     markBusy(trip.id);
     try {
-      const { data } = await tripsApi.create(duplicateTripPayload(trip));
+      // US-37 — only carry the source's folder_id forward when the
+      // caller owns the source. Folders are private per-user, so the
+      // server-side `POST /trips` ownership check resolves `folder_id`
+      // against the CALLING user's folders; blindly forwarding the
+      // source's `folder_id` would 404 every collaborator's duplicate
+      // of a filed trip. We mirror the same guard the backend's
+      // `POST /trips/:tripId/duplicate` path applies internally.
+      const ownerCollaborator = trip.collaborators.find(
+        (c) => c.role === "owner",
+      );
+      const isOwner = ownerCollaborator?.userId === userId;
+      const { data } = await tripsApi.create(
+        duplicateTripPayload(trip, { isOwner }),
+      );
       // Match the list-endpoint handling: the server sometimes wraps
       // responses in `{ data: ... }`, so unwrap if present.
       const body = data as unknown as
