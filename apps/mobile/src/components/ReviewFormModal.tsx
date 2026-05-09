@@ -124,7 +124,11 @@ function nextPhotoId(): string {
 
 function buildInitialPhotos(initial?: RoadReview | null): PhotoEntry[] {
   if (!initial) return [];
-  return initial.photos.map((url) => ({
+  // `photos` is nullable when the author is masked (#279 / #501);
+  // editing your own review never hits the mask (self-view exempt
+  // server-side), but a defensive `?? []` keeps the form happy if
+  // the wire payload ever arrives unhydrated.
+  return (initial.photos ?? []).map((url) => ({
     id: nextPhotoId(),
     localUri: url,
     url,
