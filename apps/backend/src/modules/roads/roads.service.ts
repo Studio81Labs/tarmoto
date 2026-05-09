@@ -159,16 +159,23 @@ export class RoadsService {
       // Top-N most-recent active hazards with reporter + road name. Joining
       // on road_segments here so the response shape matches the standalone
       // /hazards endpoint, which the mobile RoadPreview screen renders.
+      // #279 / #501 — `reporter` is masked to NULL when the rider has set
+      // `profile_visibility = 'private'`, mirroring the same gate on the
+      // standalone /hazards endpoints (`HAZARD_SELECT_BASE`). The road
+      // detail card is a public surface, so without the LEFT JOIN here a
+      // private rider's display name would still leak to anyone opening
+      // the segment that contains their report.
       this.segmentRepo.query(
         `SELECT
           h.id, h.hazard_type, h.severity, h.note, h.photo_url, h.confirmations,
           h.created_at, h.expires_at,
           ST_X(h.location::geometry) AS lng,
           ST_Y(h.location::geometry) AS lat,
-          u.display_name AS reporter,
+          CASE WHEN pp.profile_visibility = 'private' THEN NULL ELSE u.display_name END AS reporter,
           rs.road_name AS road_name
         FROM hazard_reports h
         LEFT JOIN users u ON u.id = h.user_id
+        LEFT JOIN privacy_preferences pp ON pp.user_id = h.user_id
         LEFT JOIN road_segments rs ON rs.id = h.road_segment_id
         WHERE h.road_segment_id = $1
           AND h.is_active = true AND h.expires_at > $2
@@ -194,14 +201,22 @@ export class RoadsService {
         // soft-deleted or hard-deleted (#335) — the review row stays for
         // road-quality history, but the byline must not deep-link to a
         // tombstoned profile.
+        // #279 / #501 — `is_private_author` flag joins `privacy_preferences`
+        // so the mapper can also mask private riders, mirroring the same
+        // gate on the standalone /roads/:id/reviews endpoint
+        // (`ReviewsService.toResponse`). The road preview is anonymous-
+        // friendly so there's no self-view exemption — every viewer sees
+        // the masked tombstone for a private author.
         `SELECT
           rr.id, rr.rating, rr.comment, rr.bike_model, rr.photos, rr.created_at,
           rr.user_id, u.id AS user_join_id, u.deleted_at AS user_deleted_at,
           u.display_name,
+          (pp.profile_visibility = 'private') AS is_private_author,
           COALESCE(vc.helpful_count, 0) AS helpful_count,
           COALESCE(vc.not_helpful_count, 0) AS not_helpful_count
         FROM road_reviews rr
         LEFT JOIN users u ON u.id = rr.user_id
+        LEFT JOIN privacy_preferences pp ON pp.user_id = rr.user_id
         LEFT JOIN LATERAL (
           SELECT
             COUNT(*) FILTER (WHERE is_helpful = true)::int AS helpful_count,
@@ -554,11 +569,25 @@ function mapReviewRows(rows: unknown): ReviewResponseDto[] {
     // when the join produced a row AND that row is not soft-deleted.
     // When invisible, both `user_id` and `user_display_name` are masked
     // so the client doesn't render a profile link to a tombstone (#335).
-    const authorVisible = r.user_join_id != null && r.user_deleted_at == null;
+    const authorDeleted = r.user_join_id == null || r.user_deleted_at != null;
+    // #279 / #501 — also mask private riders. Two distinct tombstones
+    // so callers (and operators reading logs) can tell deleted vs
+    // opt-out apart: `'Unknown'` for the deleted-author legacy path,
+    // `'Hidden rider'` for the privacy mask. Either way `user_id` is
+    // null so the byline can't deep-link to a profile we shouldn't
+    // expose. Deleted takes precedence — once the cascade runs there
+    // is no rider left to be private.
+    const authorPrivate = !authorDeleted && r.is_private_author === true;
+    const authorMasked = authorDeleted || authorPrivate;
+    const displayName = authorDeleted
+      ? 'Unknown'
+      : authorPrivate
+        ? 'Hidden rider'
+        : (r.display_name as string);
     return {
       id: r.id as string,
-      user_id: authorVisible ? (r.user_id as string) : null,
-      user_display_name: authorVisible ? (r.display_name as string) : 'Unknown',
+      user_id: authorMasked ? null : (r.user_id as string),
+      user_display_name: displayName,
       rating: r.rating as number,
       comment: (r.comment as string) ?? null,
       bike_model: (r.bike_model as string) ?? null,
