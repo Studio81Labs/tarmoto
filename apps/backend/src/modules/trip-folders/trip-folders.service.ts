@@ -47,11 +47,7 @@ export class TripFoldersService {
     // requests read the same MAX before either INSERT lands).
     const saved = await this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(TripFolder);
-      // Per-user advisory lock; uses the user's UUID hashed to a 32-bit
-      // int so the lock space is bounded. Releases at txn end.
-      await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
-        `trip_folders:${userId}`,
-      ]);
+      await this.acquireUserLock(manager, userId);
       const maxRow = await repo
         .createQueryBuilder('f')
         .select('COALESCE(MAX(f.position), -1)', 'max')
@@ -81,6 +77,15 @@ export class TripFoldersService {
     // stays a non-channel for cross-user folder enumeration.
     const updated = await this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(TripFolder);
+      // Per-user advisory lock first — without it, a concurrent
+      // `update` on folder A and `remove` on folder C (same user)
+      // would each take a `pessimistic_write` on their target row
+      // and then try to bulk-shift positions across the OTHER row's
+      // range, deadlocking. Serialising every mutating folder op for
+      // a given user behind one cooperative key collapses that
+      // diamond into a clean wait. The advisory lock releases at txn
+      // end, so it never bleeds into unrelated requests.
+      await this.acquireUserLock(manager, userId);
       const folder = await repo.findOne({
         where: { id: folderId, user_id: userId },
         lock: { mode: 'pessimistic_write' },
@@ -142,6 +147,11 @@ export class TripFoldersService {
     // Cross-user delete: 404 instead of 403, mirroring `update`.
     const deleted = await this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(TripFolder);
+      // Per-user advisory lock — same rationale as `update`. Without
+      // it a concurrent `update` against a different folder of the
+      // same user could deadlock on the position-range UPDATEs both
+      // sides emit.
+      await this.acquireUserLock(manager, userId);
       const folder = await repo.findOne({
         where: { id: folderId, user_id: userId },
         lock: { mode: 'pessimistic_write' },
@@ -175,6 +185,28 @@ export class TripFoldersService {
     if (!deleted) {
       throw new NotFoundException('Folder not found');
     }
+  }
+
+  /**
+   * Acquire a per-user advisory lock for the lifetime of `manager`'s
+   * transaction. All three mutating paths (`create`, `update`,
+   * `remove`) take this lock as their first action so concurrent
+   * folder ops belonging to the same user serialise on a single
+   * cooperative key. Without it, the row-level pessimistic locks on
+   * different folder rows + the position-range bulk UPDATEs that
+   * follow can produce a deadlock pattern (txn A locks row X then
+   * tries to UPDATE row Y; txn B locks row Y then tries to UPDATE
+   * row X). The advisory lock is keyed on the user uuid hashed to a
+   * 32-bit int and releases automatically at txn end, so it never
+   * bleeds into unrelated callers.
+   */
+  private async acquireUserLock(
+    manager: import('typeorm').EntityManager,
+    userId: string,
+  ): Promise<void> {
+    await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+      `trip_folders:${userId}`,
+    ]);
   }
 
   /**

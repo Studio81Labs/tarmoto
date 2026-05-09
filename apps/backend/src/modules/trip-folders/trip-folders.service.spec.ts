@@ -202,6 +202,22 @@ describe('TripFoldersService', () => {
       expect(updateBuilder.execute).not.toHaveBeenCalled();
     });
 
+    it('takes the per-user advisory lock to serialise vs concurrent remove/create', async () => {
+      // Bugbot finding: without the per-user advisory lock, two
+      // concurrent ops on different folders of the same user (e.g.
+      // `update` of folder A while `remove` of folder C) could each
+      // hold a `pessimistic_write` row lock that the other's
+      // position-range UPDATE needed, deadlocking on PG.
+      (folderRepo.findOne as jest.Mock).mockResolvedValueOnce(baseFolder());
+
+      await service.update(userId, folderId, { name: 'Spring' });
+
+      expect(queryMock).toHaveBeenCalledWith(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [`trip_folders:${userId}`],
+      );
+    });
+
     it('404s when the folder belongs to a different user (no info leak)', async () => {
       (folderRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
 
@@ -294,6 +310,23 @@ describe('TripFoldersService', () => {
   });
 
   describe('remove', () => {
+    it('takes the per-user advisory lock to serialise vs concurrent update/create', async () => {
+      // Same Bugbot rationale as the update test — `remove` issues a
+      // bulk position UPDATE that overlaps the position range a
+      // sibling `update` may be touching for a different folder of
+      // the same user, so both sides must funnel through the
+      // per-user advisory lock to avoid the deadlock diamond.
+      (folderRepo.findOne as jest.Mock).mockResolvedValueOnce(baseFolder());
+      (folderRepo.delete as jest.Mock).mockResolvedValueOnce({ affected: 1 });
+
+      await service.remove(userId, folderId);
+
+      expect(queryMock).toHaveBeenCalledWith(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [`trip_folders:${userId}`],
+      );
+    });
+
     it('takes a pessimistic_write lock on the row before deleting', async () => {
       // Bugbot finding: without the lock, two concurrent deletes can
       // both pass `findOne` and the second runs the position-shift
