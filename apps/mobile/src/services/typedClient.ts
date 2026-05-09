@@ -149,6 +149,23 @@ function getRefreshToken(): string | null {
 }
 
 export function storeTokens(auth: AuthResponse): void {
+  // #279 / #501 — when the rider switching paths land here without
+  // a prior `clearTokens()` (e.g. `LinkAccountScreen` going
+  // straight from one bearer to another), wipe the cached privacy
+  // preferences first so the new rider's `road_data_contribution`
+  // gate doesn't read the previous rider's value during the brief
+  // window before the fire-and-forget refresh lands. Compared by
+  // user id so the normal access-token-rotation path (same user,
+  // refresh middleware issuing a new pair) does NOT churn the
+  // cache (Codex review on PR #513 r3212937340).
+  const incomingUserId = auth.user?.id ?? null;
+  if (incomingUserId) {
+    const persistedUserId = storage.getString(USER_ID_KEY) ?? null;
+    if (persistedUserId && persistedUserId !== incomingUserId) {
+      clearCachedPreferences();
+    }
+  }
+
   storage.set(ACCESS_TOKEN_KEY, auth.access_token);
   storage.set(REFRESH_TOKEN_KEY, auth.refresh_token);
   // The /auth/refresh response is typed as AuthResponse but the
@@ -156,8 +173,8 @@ export function storeTokens(auth: AuthResponse): void {
   // the persisted user id when the response actually carries one,
   // so a refresh-without-user doesn't clobber the stable session
   // identifier the privacy-cache snapshot relies on.
-  if (auth.user?.id) {
-    storage.set(USER_ID_KEY, auth.user.id);
+  if (incomingUserId) {
+    storage.set(USER_ID_KEY, incomingUserId);
   }
 }
 
