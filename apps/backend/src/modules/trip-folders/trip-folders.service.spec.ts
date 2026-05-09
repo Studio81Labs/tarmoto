@@ -294,6 +294,23 @@ describe('TripFoldersService', () => {
   });
 
   describe('remove', () => {
+    it('takes a pessimistic_write lock on the row before deleting', async () => {
+      // Bugbot finding: without the lock, two concurrent deletes can
+      // both pass `findOne` and the second runs the position-shift
+      // against the post-delete state, double-decrementing every row
+      // above. The lock serialises sibling deletes against the same
+      // folder so the second caller blocks → re-reads → sees no row.
+      (folderRepo.findOne as jest.Mock).mockResolvedValueOnce(baseFolder());
+      (folderRepo.delete as jest.Mock).mockResolvedValueOnce({ affected: 1 });
+
+      await service.remove(userId, folderId);
+
+      expect(folderRepo.findOne).toHaveBeenCalledWith({
+        where: { id: folderId, user_id: userId },
+        lock: { mode: 'pessimistic_write' },
+      });
+    });
+
     it('deletes the folder for its owner and relies on FK SET NULL for trips', async () => {
       (folderRepo.findOne as jest.Mock).mockResolvedValueOnce(baseFolder());
       (folderRepo.delete as jest.Mock).mockResolvedValueOnce({ affected: 1 });
@@ -317,6 +334,23 @@ describe('TripFoldersService', () => {
         service.remove(otherUserId, folderId),
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(folderRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('skips the position shift and 404s when the row vanished between findOne and delete', async () => {
+      // Defence in depth: even with the pessimistic lock above, if
+      // some external tool hard-deletes the row outside this txn the
+      // DELETE will report `affected: 0`. We must NOT run the shift
+      // against a state we no longer own — the column would
+      // double-shift if a sibling delete won the race.
+      (folderRepo.findOne as jest.Mock).mockResolvedValueOnce(
+        baseFolder({ position: 1 }),
+      );
+      (folderRepo.delete as jest.Mock).mockResolvedValueOnce({ affected: 0 });
+
+      await expect(service.remove(userId, folderId)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(updateBuilder.execute).not.toHaveBeenCalled();
     });
 
     it('shifts every folder above the deleted one down by 1 to keep positions dense', async () => {

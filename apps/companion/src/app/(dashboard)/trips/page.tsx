@@ -219,6 +219,15 @@ export default function TripListPage() {
       return;
     }
     const previousFolders = folders;
+    // Snapshot the affected trip ids — not the entire trips array — so
+    // a concurrent duplicate / delete / move running during the await
+    // doesn't get clobbered by a stale full-array rollback. We re-
+    // assign `folder_id = folder.id` only on the rows we actually
+    // mutated below, leaving every other concurrent edit intact.
+    const affectedTripIds = useTripStore
+      .getState()
+      .trips.filter((storedTrip) => storedTrip.folder_id === folder.id)
+      .map((storedTrip) => storedTrip.id);
     setFolders(folders.filter((f) => f.id !== folder.id));
     if (
       filters.folderScope.kind === "folder" &&
@@ -238,10 +247,21 @@ export default function TripListPage() {
     try {
       await tripFoldersApi.delete(folder.id);
     } catch {
-      // Roll back the folder list so the rider can retry. We don't try
-      // to roll back the per-trip folder_id mutations — if the delete
-      // failed, the next list refresh will repopulate them anyway.
+      // Roll back BOTH the folder list and the per-trip optimistic
+      // unfile so the rider isn't left looking at a folder that
+      // reappeared in the sidebar but whose trips still show as
+      // unfiled — which would only correct itself on a full reload.
       setFolders(previousFolders);
+      const affectedSet = new Set(affectedTripIds);
+      setTrips(
+        useTripStore
+          .getState()
+          .trips.map((storedTrip) =>
+            affectedSet.has(storedTrip.id)
+              ? { ...storedTrip, folder_id: folder.id }
+              : storedTrip,
+          ),
+      );
       setErrorBanner("Couldn't delete the folder. Try again.");
     }
   };

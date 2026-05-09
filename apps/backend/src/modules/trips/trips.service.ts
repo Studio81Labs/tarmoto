@@ -93,6 +93,20 @@ export class TripsService {
       );
     }
 
+    // US-37 — folder ownership: a non-null `folder_id` must reference
+    // one of the caller's folders. Cross-user references 404 (not
+    // 403) so the endpoint stays a non-channel for enumerating other
+    // riders' folder ids. This is the same guard the trip update path
+    // applies; pulling it forward to create lets the companion's
+    // "Duplicate" action keep a filed trip in its folder without the
+    // global `ValidationPipe` (forbidNonWhitelisted) 400-ing the body.
+    if (dto.folder_id != null) {
+      const folder = await this.folderRepo.findOne({
+        where: { id: dto.folder_id, user_id: userId },
+      });
+      if (!folder) throw new NotFoundException('Folder not found');
+    }
+
     // Trip + owner-membership go in a single transaction so we can never
     // commit an orphan trip the owner can't see (visibility is gated on
     // the membership row). On any error inside the callback the entire
@@ -124,6 +138,20 @@ export class TripsService {
       throw new NotFoundException('Trip not found');
     }
 
+    // US-37 — only carry the source folder forward when the duplicating
+    // user actually owns it. The companion's "Duplicate" action is
+    // available to all members, but folders are private per-user, so
+    // copying the original `folder_id` blindly would leak the owner's
+    // folder layout into a co-collaborator's library (and the FK
+    // ownership check on the row would fail at insert anyway). When
+    // the duplicator isn't the source's owner, the duplicate lands
+    // unfiled — that matches how every other folder-aware op gates
+    // ownership.
+    const carryFolderId =
+      source.folder_id != null && source.owner_id === userId
+        ? source.folder_id
+        : null;
+
     const dupId = await this.withInviteCodeAllocation(
       async (em, inviteCode) => {
         const dup = await em.save(
@@ -138,6 +166,7 @@ export class TripsService {
             road_preference: source.road_preference,
             invite_code: inviteCode,
             status: 'draft',
+            folder_id: carryFolderId,
           }),
         );
 
@@ -209,6 +238,7 @@ export class TripsService {
         road_preference: dto.road_preference ?? DEFAULT_ROAD_PREFERENCE,
         status: 'draft',
         invite_code: inviteCode,
+        folder_id: dto.folder_id ?? null,
       });
       const saved = await manager.save(trip);
 

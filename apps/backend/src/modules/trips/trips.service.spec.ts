@@ -303,6 +303,48 @@ describe('TripsService', () => {
       expect(transactionMock).not.toHaveBeenCalled();
     });
 
+    it('US-37: persists folder_id when the caller owns the folder (duplicate path)', async () => {
+      // The companion's "Duplicate" action posts the source trip's
+      // folder_id back through `POST /trips`. Without folder_id on
+      // CreateTripDto + this ownership check, the global ValidationPipe
+      // (forbidNonWhitelisted) would 400 every duplicate of a filed
+      // trip.
+      folderRepo.findOne.mockResolvedValueOnce({
+        id: 'fld-1',
+        user_id: OWNER_ID,
+      } as TripFolder);
+      mockGetDetailReturns(makeOwnedTrip({ folder_id: 'fld-1' }));
+
+      await service.create(OWNER_ID, {
+        title: 'Filed Loop',
+        num_days: 3,
+        folder_id: 'fld-1',
+      });
+
+      expect(folderRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'fld-1', user_id: OWNER_ID },
+      });
+      expect(manager.create).toHaveBeenCalledWith(
+        Trip,
+        expect.objectContaining({ folder_id: 'fld-1' }),
+      );
+    });
+
+    it('US-37: 404s when the supplied folder_id belongs to a different rider', async () => {
+      folderRepo.findOne.mockResolvedValueOnce(null);
+
+      await expect(
+        service.create(OWNER_ID, {
+          title: 'Hijack',
+          num_days: 3,
+          folder_id: 'fld-other',
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      // Folder ownership probe happens before any DB write, so the
+      // transaction must not have run.
+      expect(transactionMock).not.toHaveBeenCalled();
+    });
+
     it('rejects partial input where daily_km_min exceeds the default daily_km_max', async () => {
       // Defaults: min=150, max=350. Passing min=500 alone means the
       // effective row would be (500, 350) — invalid.

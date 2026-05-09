@@ -123,7 +123,7 @@ export class TripFoldersService {
   }
 
   async remove(userId: string, folderId: string): Promise<void> {
-    // Two things have to happen atomically:
+    // Three things have to happen atomically:
     //  1. Delete the row. The FK on `trips.folder_id` is `ON DELETE SET
     //     NULL`, so child trips become unfiled in the same statement.
     //  2. Decrement the position of every folder that sat AFTER the
@@ -131,17 +131,31 @@ export class TripFoldersService {
     //     from [0,1,2,3] → [0,2,3]) that accumulates over repeated
     //     deletes; the reorder UPDATE math in `shiftPositions` assumes
     //     dense 0..N-1 positions and produces drift in the gappy state.
+    //  3. Two concurrent deletes of the same folder must NOT both run
+    //     the position shift. Without a per-row lock, both txns could
+    //     pass the `findOne` and one of them would `affected: 0` on
+    //     the DELETE — but still execute the shift, double-decrementing
+    //     every position above. We take a `pessimistic_write` lock on
+    //     the target row so the second caller blocks until the first
+    //     commits, then re-reads and finds the row gone.
     //
-    // We need the DELETE pre-image to know which `position` to shift
-    // around, so the read + delete + shift must run in a single txn.
     // Cross-user delete: 404 instead of 403, mirroring `update`.
     const deleted = await this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(TripFolder);
       const folder = await repo.findOne({
         where: { id: folderId, user_id: userId },
+        lock: { mode: 'pessimistic_write' },
       });
       if (!folder) return false;
-      await repo.delete({ id: folderId, user_id: userId });
+      const result = await repo.delete({ id: folderId, user_id: userId });
+      // The pessimistic lock above already serialises concurrent
+      // deletes, so by the time we reach this point a sibling delete
+      // cannot still be in flight against the same row. If `affected`
+      // is somehow 0 (e.g. the row was hard-deleted by a tool outside
+      // this txn between the locked read and the DELETE), treat the
+      // call as a no-op rather than running the shift over a state
+      // we no longer own.
+      if (result.affected === 0) return false;
       // Pull every folder above the deleted one down by one so the
       // column stays dense within this user. Ordering doesn't matter —
       // the rows being shifted have unique positions to start with and
