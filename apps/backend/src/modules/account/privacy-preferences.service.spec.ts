@@ -139,4 +139,47 @@ describe('PrivacyPreferencesService', () => {
       expect(prefs.location_retention).toBe('1year');
     });
   });
+
+  describe('loadPrivateUserIds (#279 / #501)', () => {
+    let findMock: jest.Mock;
+
+    beforeEach(() => {
+      // Repo isn't typed for the `find` method in the existing
+      // fixture — extend it for this suite.
+      findMock = jest.fn();
+      (repo as unknown as { find: jest.Mock }).find = findMock;
+    });
+
+    it('returns the subset of supplied ids whose row is private', async () => {
+      findMock.mockResolvedValueOnce([{ user_id: 'a' }, { user_id: 'c' }]);
+      const result = await service.loadPrivateUserIds(['a', 'b', 'c']);
+      expect(result).toEqual(new Set(['a', 'c']));
+    });
+
+    it('dedupes the input before querying', async () => {
+      findMock.mockResolvedValueOnce([]);
+      await service.loadPrivateUserIds(['a', 'a', 'b']);
+      const where = findMock.mock.calls[0][0].where as {
+        user_id: { _value: string[] };
+      };
+      // typeorm's `In(...)` carries the array on `_value`; assert
+      // we deduped before sending.
+      expect(where.user_id._value).toHaveLength(2);
+      expect(new Set(where.user_id._value)).toEqual(new Set(['a', 'b']));
+    });
+
+    it('skips the query and returns an empty set when no ids supplied', async () => {
+      const result = await service.loadPrivateUserIds([]);
+      expect(result).toEqual(new Set());
+      expect(findMock).not.toHaveBeenCalled();
+    });
+
+    it('fails closed: a transient DB error returns every supplied id', async () => {
+      // Cursor Bugbot review on PR #513 — better to over-mask once
+      // than leak a private rider's identity on a lookup hiccup.
+      findMock.mockRejectedValueOnce(new Error('db down'));
+      const result = await service.loadPrivateUserIds(['a', 'b']);
+      expect(result).toEqual(new Set(['a', 'b']));
+    });
+  });
 });

@@ -11,10 +11,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import { buildTrustedManagedOriginCheck } from '../../common/trusted-managed-origin.js';
-import { PrivacyPreferencesRow } from '../../entities/privacy-preferences.entity.js';
 import { RoadReview } from '../../entities/road-review.entity.js';
 import { RoadReviewVote } from '../../entities/road-review-vote.entity.js';
 import { RoadSegment } from '../../entities/road-segment.entity.js';
+import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import { OBJECT_STORAGE } from '../storage/storage.tokens.js';
 import type { ObjectStorage } from '../storage/object-storage.interface.js';
 import {
@@ -133,8 +133,7 @@ export class ReviewsService {
     private readonly segmentRepo: Repository<RoadSegment>,
     @InjectRepository(RoadReviewVote)
     private readonly voteRepo: Repository<RoadReviewVote>,
-    @InjectRepository(PrivacyPreferencesRow)
-    private readonly privacyRepo: Repository<PrivacyPreferencesRow>,
+    private readonly privacy: PrivacyPreferencesService,
     @Inject(OBJECT_STORAGE)
     private readonly storage: ObjectStorage,
     config: ConfigService,
@@ -168,7 +167,7 @@ export class ReviewsService {
       reviews.map((r) => r.id),
       viewerUserId,
     );
-    const privateAuthorIds = await this.loadPrivateAuthorIds(
+    const privateAuthorIds = await this.privacy.loadPrivateUserIds(
       reviews.map((r) => r.user_id),
     );
     return reviews.map((r) =>
@@ -672,37 +671,5 @@ export class ReviewsService {
           ? false
           : review.user_id === viewerUserId,
     };
-  }
-
-  /**
-   * Resolve which of the supplied author ids belong to riders with
-   * `profile_visibility = 'private'` (#279 / #501). Returns the set of
-   * "private" ids so the caller can mask their names in the feed
-   * response. Implemented as a single batched SELECT to avoid an N+1
-   * preference lookup across a long review list. Riders without an
-   * explicit privacy_preferences row inherit the default
-   * (`riders-only`) and are NOT in the returned set.
-   *
-   * Fail-closed posture mirrors `RouteCollectionsService.loadPrivateOwnerIds`
-   * (Cursor Bugbot review on PR #513): a transient DB error returns
-   * every supplied author id so the caller masks the whole feed
-   * rather than risking a leak — better to render every reviewer as
-   * "Hidden rider" once than surface a private rider's name on a
-   * lookup hiccup.
-   */
-  private async loadPrivateAuthorIds(
-    authorIds: readonly string[],
-  ): Promise<Set<string>> {
-    const unique = Array.from(new Set(authorIds.filter((id) => Boolean(id))));
-    if (unique.length === 0) return new Set();
-    try {
-      const rows = await this.privacyRepo.find({
-        where: { user_id: In(unique), profile_visibility: 'private' },
-        select: { user_id: true },
-      });
-      return new Set(rows.map((r) => r.user_id));
-    } catch {
-      return new Set(unique);
-    }
   }
 }

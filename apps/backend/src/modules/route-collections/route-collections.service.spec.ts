@@ -7,10 +7,10 @@ import {
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import { PrivacyPreferencesRow } from '../../entities/privacy-preferences.entity.js';
 import { RouteCollection } from '../../entities/route-collection.entity.js';
 import { RouteCollectionItem } from '../../entities/route-collection-item.entity.js';
 import { RouteCollectionFollow } from '../../entities/route-collection-follow.entity.js';
+import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import { RouteCollectionsService } from './route-collections.service.js';
 
 describe('RouteCollectionsService', () => {
@@ -18,8 +18,8 @@ describe('RouteCollectionsService', () => {
   let collectionRepo: Partial<jest.Mocked<Repository<RouteCollection>>>;
   let itemRepo: Partial<jest.Mocked<Repository<RouteCollectionItem>>>;
   let followRepo: Partial<jest.Mocked<Repository<RouteCollectionFollow>>>;
-  let privacyRepo: Partial<jest.Mocked<Repository<PrivacyPreferencesRow>>>;
-  let privacyRows: PrivacyPreferencesRow[];
+  let privacy: { loadPrivateUserIds: jest.Mock };
+  let privateUserIds: Set<string>;
   let queryMock: jest.Mock;
 
   const ownerId = 'user-1';
@@ -93,10 +93,11 @@ describe('RouteCollectionsService', () => {
       delete: jest.fn().mockResolvedValue({ affected: 0 }),
     };
 
-    privacyRows = [];
-    privacyRepo = {
-      find: jest.fn().mockImplementation(() => Promise.resolve(privacyRows)),
-      findOne: jest.fn().mockResolvedValue(null),
+    privateUserIds = new Set();
+    privacy = {
+      loadPrivateUserIds: jest
+        .fn()
+        .mockImplementation(() => Promise.resolve(new Set(privateUserIds))),
     };
 
     // The service's `addItem` opens a transaction; mock it to invoke the
@@ -131,10 +132,7 @@ describe('RouteCollectionsService', () => {
           provide: getRepositoryToken(RouteCollectionFollow),
           useValue: followRepo,
         },
-        {
-          provide: getRepositoryToken(PrivacyPreferencesRow),
-          useValue: privacyRepo,
-        },
+        { provide: PrivacyPreferencesService, useValue: privacy },
         { provide: DataSource, useValue: dataSource },
       ],
     }).compile();
@@ -296,12 +294,7 @@ describe('RouteCollectionsService', () => {
           }),
         });
 
-      privacyRows = [
-        {
-          user_id: otherId,
-          profile_visibility: 'private',
-        } as PrivacyPreferencesRow,
-      ];
+      privateUserIds = new Set([otherId]);
 
       const result = await service.listLibrary(ownerId);
 
@@ -351,7 +344,7 @@ describe('RouteCollectionsService', () => {
           }),
         });
 
-      privacyRows = [];
+      privateUserIds = new Set();
 
       const result = await service.listLibrary(ownerId);
 
@@ -605,10 +598,7 @@ describe('RouteCollectionsService', () => {
         ...baseCollection,
         visibility: 'public',
       });
-      (privacyRepo.findOne as jest.Mock).mockResolvedValueOnce({
-        user_id: ownerId,
-        profile_visibility: 'private',
-      });
+      privateUserIds = new Set([ownerId]);
 
       const result = await service.getBySlug('abcDEF12345', otherId);
 
@@ -623,18 +613,16 @@ describe('RouteCollectionsService', () => {
         ...baseCollection,
         visibility: 'public',
       });
-      // privacyRepo.findOne would return private, but the self-view
-      // branch must skip the lookup entirely — the owner sees their
-      // own name on their own collection.
-      (privacyRepo.findOne as jest.Mock).mockResolvedValueOnce({
-        user_id: ownerId,
-        profile_visibility: 'private',
-      });
+      // The self-view branch skips the privacy lookup entirely —
+      // the owner always sees their own name on their own
+      // collection. Even seeding `privateUserIds` with the owner
+      // here must NOT mask, because we never call the helper.
+      privateUserIds = new Set([ownerId]);
 
       const result = await service.getBySlug('abcDEF12345', ownerId);
 
       expect(result.owner_name).toBe('Jane Rider');
-      expect(privacyRepo.findOne).not.toHaveBeenCalled();
+      expect(privacy.loadPrivateUserIds).not.toHaveBeenCalled();
     });
 
     it('keeps owner_name for non-owner viewers when owner is not private (#279 / #501)', async () => {
@@ -642,7 +630,7 @@ describe('RouteCollectionsService', () => {
         ...baseCollection,
         visibility: 'public',
       });
-      (privacyRepo.findOne as jest.Mock).mockResolvedValueOnce(null);
+      privateUserIds = new Set();
 
       const result = await service.getBySlug('abcDEF12345', otherId);
 

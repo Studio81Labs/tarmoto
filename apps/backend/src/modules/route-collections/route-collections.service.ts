@@ -7,11 +7,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
-import { PrivacyPreferencesRow } from '../../entities/privacy-preferences.entity.js';
+import { DataSource, Repository } from 'typeorm';
 import { RouteCollection } from '../../entities/route-collection.entity.js';
 import { RouteCollectionItem } from '../../entities/route-collection-item.entity.js';
 import { RouteCollectionFollow } from '../../entities/route-collection-follow.entity.js';
+import { PrivacyPreferencesService } from '../account/privacy-preferences.service.js';
 import {
   AddRouteCollectionItemDto,
   CreateRouteCollectionDto,
@@ -46,8 +46,7 @@ export class RouteCollectionsService {
     private readonly itemRepo: Repository<RouteCollectionItem>,
     @InjectRepository(RouteCollectionFollow)
     private readonly followRepo: Repository<RouteCollectionFollow>,
-    @InjectRepository(PrivacyPreferencesRow)
-    private readonly privacyRepo: Repository<PrivacyPreferencesRow>,
+    private readonly privacy: PrivacyPreferencesService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -165,8 +164,10 @@ export class RouteCollectionsService {
       // collections still surface (we keep their curation value) but
       // the owner identity is hidden, mirroring the soft-deleted-
       // owner pattern. Batched lookup keeps this O(1) queries
-      // regardless of library size.
-      const privateOwnerIds = await this.loadPrivateOwnerIds(
+      // regardless of library size — implemented once on
+      // `PrivacyPreferencesService` so both this and the reviews
+      // feed call the same fail-closed code path.
+      const privateOwnerIds = await this.privacy.loadPrivateUserIds(
         rows.entities.map((c) => c.owner_id),
       );
 
@@ -277,7 +278,9 @@ export class RouteCollectionsService {
     const isSelfView = viewerId != null && viewerId === collection.owner_id;
     const ownerIsPrivate = isSelfView
       ? false
-      : await this.ownerIsPrivate(collection.owner_id);
+      : (await this.privacy.loadPrivateUserIds([collection.owner_id])).has(
+          collection.owner_id,
+        );
     return this.toDetailResponse(
       collection,
       items,
@@ -785,52 +788,13 @@ export class RouteCollectionsService {
     };
   }
 
-  /**
-   * #279 / #501 — privacy lookup for the slug-detail path. Defaults
-   * fail-closed: a transient DB error returns `true` so a privacy
-   * fetch failure can never accidentally expose a name we'd otherwise
-   * mask. Only called for non-owner viewers (owners always see their
-   * own name).
-   */
-  private async ownerIsPrivate(ownerId: string): Promise<boolean> {
-    try {
-      const row = await this.privacyRepo.findOne({
-        where: { user_id: ownerId },
-        select: { user_id: true, profile_visibility: true },
-      });
-      // No row → defaults apply → not private.
-      if (!row) return false;
-      return row.profile_visibility === 'private';
-    } catch {
-      return true;
-    }
-  }
-
-  /**
-   * Batched companion to `ownerIsPrivate` used by `listLibrary`.
-   * Returns the subset of supplied owner ids that have an explicit
-   * `profile_visibility = 'private'` row. Riders without a row are
-   * NOT in the returned set (they inherit the default
-   * `riders-only`).
-   */
-  private async loadPrivateOwnerIds(
-    ownerIds: readonly string[],
-  ): Promise<Set<string>> {
-    const unique = Array.from(new Set(ownerIds.filter((id) => Boolean(id))));
-    if (unique.length === 0) return new Set();
-    try {
-      const rows = await this.privacyRepo.find({
-        where: { user_id: In(unique), profile_visibility: 'private' },
-        select: { user_id: true },
-      });
-      return new Set(rows.map((r) => r.user_id));
-    } catch {
-      // Fail closed: if the lookup errors, treat every supplied owner
-      // as private so the followed-card surface masks names rather
-      // than risking a leak on a transient hiccup.
-      return new Set(unique);
-    }
-  }
+  // The batched `loadPrivateUserIds` helper lives on
+  // `PrivacyPreferencesService` so the reviews + collections feeds
+  // share the same fail-closed code path (see
+  // `apps/backend/src/modules/account/privacy-preferences.service.ts`).
+  // Single-row "is this one user private?" lookups happen via the
+  // same helper with a one-element array, so both consumers stay on
+  // a single SQL shape.
 
   private toItemResponse(
     item: RouteCollectionItem,
