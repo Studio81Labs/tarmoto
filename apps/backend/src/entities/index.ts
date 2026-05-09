@@ -20,6 +20,7 @@ export { HazardReport } from './hazard-report.entity.js';
 export { RoadReview } from './road-review.entity.js';
 export { RoadReviewVote } from './road-review-vote.entity.js';
 export { Trip } from './trip.entity.js';
+export { TripFolder } from './trip-folder.entity.js';
 export { TripMember } from './trip-member.entity.js';
 export { TripDay } from './trip-day.entity.js';
 export { TripWaypoint } from './trip-waypoint.entity.js';

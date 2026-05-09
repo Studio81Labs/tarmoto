@@ -41,6 +41,7 @@ import type {
   RoadSegment,
   RoadSegmentDetail,
   FunZone,
+  TripFolder,
   TripSummary,
   CommuteRoute,
   CommuteStatus,
@@ -603,15 +604,7 @@ class ApiService {
       SENSOR_PREPROCESSING_VERSION,
       calibration,
       (id, r, model, version, tags, preprocessing, cal) =>
-        this.uploadSensorData(
-          id,
-          r,
-          model,
-          version,
-          tags,
-          preprocessing,
-          cal,
-        ),
+        this.uploadSensorData(id, r, model, version, tags, preprocessing, cal),
     );
   }
 
@@ -623,15 +616,7 @@ class ApiService {
   async flushPendingSensorUploads(): Promise<DrainResult> {
     return drainOfflineQueue(
       (id, r, model, version, tags, preprocessing, cal) =>
-        this.uploadSensorData(
-          id,
-          r,
-          model,
-          version,
-          tags,
-          preprocessing,
-          cal,
-        ),
+        this.uploadSensorData(id, r, model, version, tags, preprocessing, cal),
     );
   }
 
@@ -831,6 +816,19 @@ class ApiService {
       },
     });
     return unwrap(result, "Failed to load trips") as TripSummary[];
+  }
+
+  /**
+   * US-37 — list the rider's trip folders. Mobile groups the trips
+   * list by folder for read-only display; folder CRUD ships companion-
+   * only for v1.
+   */
+  async listTripFolders(): Promise<TripFolder[]> {
+    const result = await client.GET("/api/v1/trip-folders");
+    const body = unwrap(result, "Failed to load trip folders") as {
+      items?: TripFolder[];
+    };
+    return body.items ?? [];
   }
 
   async createTrip(params: {

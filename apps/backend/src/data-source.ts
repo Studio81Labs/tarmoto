@@ -14,6 +14,7 @@ import { RideStats } from './entities/ride-stats.entity.js';
 import { HazardReport } from './entities/hazard-report.entity.js';
 import { RoadReview } from './entities/road-review.entity.js';
 import { Trip } from './entities/trip.entity.js';
+import { TripFolder } from './entities/trip-folder.entity.js';
 import { TripMember } from './entities/trip-member.entity.js';
 import { TripDay } from './entities/trip-day.entity.js';
 import { TripWaypoint } from './entities/trip-waypoint.entity.js';
@@ -89,6 +90,7 @@ import { OutlierFilteredRoadQualityAggregation1717300000000 } from './migrations
 import { AddDeviceCalibration1717400000000 } from './migrations/1717400000000-AddDeviceCalibration.js';
 import { AddModelEvalSamples1717500000000 } from './migrations/1717500000000-AddModelEvalSamples.js';
 import { AddModelEvalReconcileAttemptedAt1717600000000 } from './migrations/1717600000000-AddModelEvalReconcileAttemptedAt.js';
+import { AddTripFolders1717700000000 } from './migrations/1717700000000-AddTripFolders.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -112,6 +114,7 @@ export const AppDataSource = new DataSource({
     HazardReport,
     RoadReview,
     Trip,
+    TripFolder,
     TripMember,
     TripDay,
     TripWaypoint,
@@ -196,6 +199,7 @@ export const AppDataSource = new DataSource({
     AddDeviceCalibration1717400000000,
     AddModelEvalSamples1717500000000,
     AddModelEvalReconcileAttemptedAt1717600000000,
+    AddTripFolders1717700000000,
   ],
   synchronize: false,
 });

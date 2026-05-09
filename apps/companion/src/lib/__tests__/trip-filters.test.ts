@@ -38,7 +38,7 @@ function makeTrip(overrides: Partial<Trip> = {}): Trip {
     collaborators: overrides.collaborators ?? [
       { userId: "u1", displayName: "Me", role: "owner" },
     ],
-    folderId: overrides.folderId,
+    folder_id: overrides.folder_id,
     createdAt: overrides.createdAt ?? "2026-04-01T00:00:00Z",
     updatedAt: overrides.updatedAt ?? "2026-04-15T00:00:00Z",
   };
@@ -74,8 +74,8 @@ describe("applyTripFilters", () => {
 
   it("filters by folder id", () => {
     const trips = [
-      makeTrip({ id: "a", folderId: "fld_1" }),
-      makeTrip({ id: "b", folderId: "fld_2" }),
+      makeTrip({ id: "a", folder_id: "fld_1" }),
+      makeTrip({ id: "b", folder_id: "fld_2" }),
       makeTrip({ id: "c" }),
     ];
     const result = applyTripFilters(
@@ -85,9 +85,9 @@ describe("applyTripFilters", () => {
     expect(result.map((t) => t.id)).toEqual(["a"]);
   });
 
-  it("filters unfiled trips (no folderId)", () => {
+  it("filters unfiled trips (no folder_id)", () => {
     const trips = [
-      makeTrip({ id: "a", folderId: "fld_1" }),
+      makeTrip({ id: "a", folder_id: "fld_1" }),
       makeTrip({ id: "b" }),
     ];
     const result = applyTripFilters(

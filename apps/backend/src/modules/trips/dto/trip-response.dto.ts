@@ -36,6 +36,12 @@ export class TripSummaryDto {
   @ApiProperty()
   id!: string;
 
+  @ApiProperty({
+    description:
+      'US-37 — owner uuid surfaced on the summary so the companion can decide whether to carry the source folder forward when duplicating (folders are private per-user; only the owner of the source can preserve filing without 404-ing the create).',
+  })
+  owner_id!: string;
+
   @ApiProperty()
   title!: string;
 
@@ -50,6 +56,13 @@ export class TripSummaryDto {
 
   @ApiProperty()
   member_count!: number;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'US-37 — uuid of the rider-owned folder this trip is filed under. `null` for unfiled trips.',
+  })
+  folder_id!: string | null;
 
   @ApiProperty()
   created_at!: string;

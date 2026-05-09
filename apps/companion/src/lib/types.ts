@@ -96,7 +96,22 @@ export interface Trip {
   days: TripDay[];
   parameters: TripParameters;
   collaborators: TripCollaborator[];
-  folderId?: string;
+  /**
+   * US-37 — owner uuid surfaced on the wire for the trips list. Used
+   * by the duplicate flow to decide whether to carry the source's
+   * `folder_id` forward (folders are private per-user). Optional
+   * because the planner-side `tripFromDetail` adapter doesn't
+   * populate it from the detail response — duplicates from the
+   * detail screen would have to fall back to an explicit ownership
+   * check there.
+   */
+  owner_id?: string;
+  /**
+   * US-37 — backend-persisted folder uuid. Null/undefined for unfiled
+   * trips. Snake_case to mirror the wire format so consumers can read
+   * the API response without an adapter pass.
+   */
+  folder_id?: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -12,10 +12,26 @@ export interface TripDuplicatePayload {
   description?: string;
   days: Trip["days"];
   parameters: Trip["parameters"];
-  folderId?: string;
+  folder_id?: string | null;
 }
 
-export function duplicateTripPayload(trip: Trip): TripDuplicatePayload {
+export interface DuplicateTripContext {
+  /**
+   * Whether the rider invoking the duplicate owns the source trip.
+   * Folders are private per-user (US-37): the backend's `POST /trips`
+   * folder-ownership check resolves `folder_id` against the *calling*
+   * user's folders, so blindly forwarding the source's `folder_id`
+   * 404s every duplicate a co-collaborator runs against a filed trip.
+   * The companion mirrors the same guard the server-side
+   * `POST /trips/:tripId/duplicate` path applies.
+   */
+  isOwner: boolean;
+}
+
+export function duplicateTripPayload(
+  trip: Trip,
+  context: DuplicateTripContext = { isOwner: true },
+): TripDuplicatePayload {
   const payload: TripDuplicatePayload = {
     name: nextCopyName(trip.name),
     days: trip.days.map((day) => ({
@@ -42,7 +58,13 @@ export function duplicateTripPayload(trip: Trip): TripDuplicatePayload {
   // Use `!== undefined` rather than truthiness so an intentionally empty
   // description ("") survives duplication instead of being silently dropped.
   if (trip.description !== undefined) payload.description = trip.description;
-  if (trip.folderId !== undefined) payload.folderId = trip.folderId;
+  // Only carry the source folder forward when the duplicating rider
+  // actually owns the source trip. A collaborator's duplicate lands
+  // unfiled rather than 404-ing the whole request — the rider can
+  // re-file the copy from their own folder list afterwards.
+  if (context.isOwner && trip.folder_id !== undefined) {
+    payload.folder_id = trip.folder_id;
+  }
   return payload;
 }
 

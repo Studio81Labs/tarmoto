@@ -12,6 +12,7 @@ import { EntityManager, Repository } from 'typeorm';
 import { haversineKm, latLngToPoint, pointToLatLng } from '@tarmoto/shared';
 import { Trip } from '../../entities/trip.entity.js';
 import { TripDay } from '../../entities/trip-day.entity.js';
+import { TripFolder } from '../../entities/trip-folder.entity.js';
 import { TripMember } from '../../entities/trip-member.entity.js';
 import { TripSuggestion } from '../../entities/trip-suggestion.entity.js';
 import { TripWaypoint } from '../../entities/trip-waypoint.entity.js';
@@ -68,6 +69,8 @@ export class TripsService {
     private readonly tripRepo: Repository<Trip>,
     @InjectRepository(TripMember)
     private readonly memberRepo: Repository<TripMember>,
+    @InjectRepository(TripFolder)
+    private readonly folderRepo: Repository<TripFolder>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
     private readonly events: EventsGateway,
@@ -88,6 +91,20 @@ export class TripsService {
       throw new BadRequestException(
         'daily_km_min must be less than or equal to daily_km_max',
       );
+    }
+
+    // US-37 — folder ownership: a non-null `folder_id` must reference
+    // one of the caller's folders. Cross-user references 404 (not
+    // 403) so the endpoint stays a non-channel for enumerating other
+    // riders' folder ids. This is the same guard the trip update path
+    // applies; pulling it forward to create lets the companion's
+    // "Duplicate" action keep a filed trip in its folder without the
+    // global `ValidationPipe` (forbidNonWhitelisted) 400-ing the body.
+    if (dto.folder_id != null) {
+      const folder = await this.folderRepo.findOne({
+        where: { id: dto.folder_id, user_id: userId },
+      });
+      if (!folder) throw new NotFoundException('Folder not found');
     }
 
     // Trip + owner-membership go in a single transaction so we can never
@@ -121,6 +138,20 @@ export class TripsService {
       throw new NotFoundException('Trip not found');
     }
 
+    // US-37 — only carry the source folder forward when the duplicating
+    // user actually owns it. The companion's "Duplicate" action is
+    // available to all members, but folders are private per-user, so
+    // copying the original `folder_id` blindly would leak the owner's
+    // folder layout into a co-collaborator's library (and the FK
+    // ownership check on the row would fail at insert anyway). When
+    // the duplicator isn't the source's owner, the duplicate lands
+    // unfiled — that matches how every other folder-aware op gates
+    // ownership.
+    const carryFolderId =
+      source.folder_id != null && source.owner_id === userId
+        ? source.folder_id
+        : null;
+
     const dupId = await this.withInviteCodeAllocation(
       async (em, inviteCode) => {
         const dup = await em.save(
@@ -135,6 +166,7 @@ export class TripsService {
             road_preference: source.road_preference,
             invite_code: inviteCode,
             status: 'draft',
+            folder_id: carryFolderId,
           }),
         );
 
@@ -206,6 +238,7 @@ export class TripsService {
         road_preference: dto.road_preference ?? DEFAULT_ROAD_PREFERENCE,
         status: 'draft',
         invite_code: inviteCode,
+        folder_id: dto.folder_id ?? null,
       });
       const saved = await manager.save(trip);
 
@@ -597,6 +630,33 @@ export class TripsService {
       delta.road_preference = dto.road_preference;
     }
     if (dto.status !== undefined) delta.status = dto.status;
+    if (dto.folder_id !== undefined) {
+      // Folder visibility is per-user (US-37). The trip owner is the
+      // only user who can file it under one of their folders, so we
+      // verify ownership against the trip's owner_id rather than the
+      // caller — co-collaborators (admins) PATCHing other fields
+      // shouldn't accidentally re-file the trip into one of THEIR own
+      // folders. Cross-user references collapse into a 404 so the
+      // endpoint can't be used to enumerate other riders' folder ids.
+      if (dto.folder_id !== null) {
+        // Read the trip's owner_id directly (lightweight query) instead
+        // of waiting for the locked read inside the txn. The owner_id
+        // is immutable, so doing the lookup outside the lock keeps the
+        // critical section small.
+        const ownerRow = await this.tripRepo.findOne({
+          where: { id: tripId },
+          select: { owner_id: true },
+        });
+        if (!ownerRow) {
+          throw new NotFoundException('Trip not found');
+        }
+        const folder = await this.folderRepo.findOne({
+          where: { id: dto.folder_id, user_id: ownerRow.owner_id },
+        });
+        if (!folder) throw new NotFoundException('Folder not found');
+      }
+      delta.folder_id = dto.folder_id;
+    }
 
     const hasChanges = Object.keys(delta).length > 0;
 
@@ -910,6 +970,7 @@ export class TripsService {
   private toSummary(trip: Trip): TripSummaryDto {
     return {
       id: trip.id,
+      owner_id: trip.owner_id,
       title: trip.title,
       region: trip.region,
       num_days: trip.num_days,
@@ -919,6 +980,7 @@ export class TripsService {
       // `toSummary` is reached via `toDetail` (where we have the full
       // members[] from the QueryBuilder hydration in `getDetail`).
       member_count: trip.member_count ?? trip.members?.length ?? 0,
+      folder_id: trip.folder_id ?? null,
       created_at: trip.created_at.toISOString(),
     };
   }

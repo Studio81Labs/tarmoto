@@ -39,7 +39,7 @@ function makeTrip(overrides: Partial<Trip> = {}): Trip {
       { userId: "u1", displayName: "Owner", role: "owner" },
       { userId: "u2", displayName: "Friend", role: "editor" },
     ],
-    folderId: "fld_alps",
+    folder_id: "fld_alps",
     createdAt: "2026-04-01T00:00:00Z",
     updatedAt: "2026-04-14T00:00:00Z",
     ...overrides,
@@ -84,18 +84,36 @@ describe("duplicateTripPayload", () => {
     expect(payload.parameters.surfacePreference).toEqual(["asphalt"]);
   });
 
-  it("preserves description and folderId when present", () => {
-    const payload = duplicateTripPayload(makeTrip());
+  it("preserves description and folder_id when the caller owns the source", () => {
+    const payload = duplicateTripPayload(makeTrip(), { isOwner: true });
     expect(payload.description).toBe("Five days through the Alps");
-    expect(payload.folderId).toBe("fld_alps");
+    expect(payload.folder_id).toBe("fld_alps");
   });
 
-  it("omits description and folderId when absent", () => {
+  it("omits description and folder_id when absent", () => {
     const payload = duplicateTripPayload(
-      makeTrip({ description: undefined, folderId: undefined }),
+      makeTrip({ description: undefined, folder_id: undefined }),
+      { isOwner: true },
     );
     expect(payload).not.toHaveProperty("description");
-    expect(payload).not.toHaveProperty("folderId");
+    expect(payload).not.toHaveProperty("folder_id");
+  });
+
+  it("strips folder_id when the caller is NOT the source's owner", () => {
+    // Folders are private per-user (US-37). The backend's POST /trips
+    // ownership check resolves folder_id against the CALLING user's
+    // folders, so a co-collaborator forwarding the source's folder_id
+    // used to 404 every duplicate of a filed trip. The companion
+    // mirrors the server-side `carryFolderId` guard.
+    const payload = duplicateTripPayload(makeTrip(), { isOwner: false });
+    expect(payload).not.toHaveProperty("folder_id");
+    // Description still comes through — only folder_id is privileged.
+    expect(payload.description).toBe("Five days through the Alps");
+  });
+
+  it("defaults to owner-style preservation when no context is supplied (back-compat)", () => {
+    const payload = duplicateTripPayload(makeTrip());
+    expect(payload.folder_id).toBe("fld_alps");
   });
 
   it("preserves an explicitly empty description", () => {

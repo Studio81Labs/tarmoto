@@ -20,7 +20,7 @@ import {
   X,
   ChevronDown,
 } from "lucide-react";
-import { tripsApi } from "@/lib/api";
+import { tripsApi, tripFoldersApi } from "@/lib/api";
 import { useTripStore } from "@/stores/trip";
 import { useAuthStore } from "@/stores/auth";
 import {
@@ -36,12 +36,8 @@ import {
   type TripStatus,
 } from "@/lib/trip-filters";
 import {
-  createFolder,
-  loadFolders,
-  removeFolder,
-  renameFolder,
-  saveFolders,
-  sortFoldersByName,
+  migrateLegacyFolders,
+  sortFoldersForDisplay,
   validateFolderName,
   type TripFolder,
 } from "@/lib/trip-folders";
@@ -89,6 +85,7 @@ export default function TripListPage() {
   >(null);
   const [busyTripIds, setBusyTripIds] = useState<Set<string>>(() => new Set());
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
+  const [migrationToast, setMigrationToast] = useState<string | null>(null);
   const markBusy = (id: string) => {
     setBusyTripIds((prev) => {
       const next = new Set(prev);
@@ -146,45 +143,73 @@ export default function TripListPage() {
     // On any userId change (sign-out, sign-in, or direct account switch)
     // drop the previous user's folder scope so it doesn't point at a folder
     // the new user doesn't have. Scope is client-only state; the server-side
-    // folderId is per-trip and handled by the fetch effect above.
+    // folder_id is per-trip and handled by the fetch effect above.
     setFilters((prev) =>
       prev.folderScope.kind === "folder"
         ? { ...prev, folderScope: { kind: "all" } }
         : prev,
     );
     if (!userId) {
-      // Sign-out: also drop the previous user's folder metadata.
+      // Sign-out: also drop the previous user's folders.
       setFolders([]);
       return;
     }
-    setFolders(sortFoldersByName(loadFolders(userId)));
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { data } = await tripFoldersApi.list();
+        if (cancelled) return;
+        const initial = sortFoldersForDisplay(data?.items ?? []);
+        setFolders(initial);
+        // First-load migration: lift any pre-existing localStorage rows
+        // to the backend exactly once. We use the freshly fetched list
+        // as the dedup source so re-running after a partial failure
+        // doesn't duplicate names.
+        const result = await migrateLegacyFolders(userId, initial);
+        if (cancelled) return;
+        if (result && result.succeeded > 0) {
+          // Re-fetch after migration so the newly-posted folders show up
+          // in their server-allocated position order.
+          const refreshed = await tripFoldersApi.list();
+          if (cancelled) return;
+          setFolders(sortFoldersForDisplay(refreshed.data?.items ?? []));
+          setMigrationToast(
+            result.succeeded === 1
+              ? "Moved 1 folder to your Tarmoto account."
+              : `Moved ${result.succeeded} folders to your Tarmoto account.`,
+          );
+        }
+      } catch {
+        if (cancelled) return;
+        setErrorBanner("Couldn't load your folders. Try refreshing the page.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [userId]);
-  const persistFolders = (next: TripFolder[]) => {
-    const sorted = sortFoldersByName(next);
-    setFolders(sorted);
-    if (userId) saveFolders(userId, sorted);
-  };
   const visibleTrips = useMemo(
     () => applyTripFilters(trips, filters),
     [trips, filters],
   );
   const statusCounts = useMemo(() => countByStatus(trips), [trips]);
   const unfiledCount = useMemo(
-    () => trips.filter((storedTrip) => !storedTrip.folderId).length,
+    () => trips.filter((storedTrip) => !storedTrip.folder_id).length,
     [trips],
   );
   const tripsPerFolder = useMemo(() => {
     const map = new Map<string, number>();
     for (const t of trips) {
-      if (!t.folderId) continue;
-      map.set(t.folderId, (map.get(t.folderId) ?? 0) + 1);
+      if (!t.folder_id) continue;
+      map.set(t.folder_id, (map.get(t.folder_id) ?? 0) + 1);
     }
     return map;
   }, [trips]);
-  // When a folder is deleted we drop its metadata, clear `folderId` on every
-  // affected trip locally, and tell the server to do the same. Without the
-  // server update those trips would reload with a stale folderId that no
-  // longer matches any folder and would be filtered out of "Unfiled" too.
+  // When a folder is deleted, the backend's FK on `trips.folder_id` is
+  // `ON DELETE SET NULL`, so child trips become unfiled atomically with
+  // the folder delete. We mirror that locally and don't issue a separate
+  // PATCH per trip — that would be redundant work and would race the
+  // cascade.
   const handleDeleteFolder = async (folder: TripFolder) => {
     if (
       !confirm(
@@ -193,39 +218,70 @@ export default function TripListPage() {
     ) {
       return;
     }
-    persistFolders(removeFolder(folders, folder.id));
-    if (
+    const previousFolders = folders;
+    // Snapshot the affected trip ids — not the entire trips array — so
+    // a concurrent duplicate / delete / move running during the await
+    // doesn't get clobbered by a stale full-array rollback. We re-
+    // assign `folder_id = folder.id` only on the rows we actually
+    // mutated below, leaving every other concurrent edit intact.
+    const affectedTripIds = useTripStore
+      .getState()
+      .trips.filter((storedTrip) => storedTrip.folder_id === folder.id)
+      .map((storedTrip) => storedTrip.id);
+    // Snapshot the folder scope too: if the rider was viewing the
+    // folder being deleted, we optimistically reset to "all" below so
+    // they don't end up looking at a filter that points at a folder
+    // that just disappeared. On rollback we have to restore that
+    // selection — otherwise the folder reappears in the sidebar but
+    // the trip list keeps showing every folder until the rider
+    // re-clicks the folder manually.
+    const previousFolderScope = filters.folderScope;
+    setFolders(folders.filter((f) => f.id !== folder.id));
+    const scopePointedAtDeleted =
       filters.folderScope.kind === "folder" &&
-      filters.folderScope.id === folder.id
-    ) {
+      filters.folderScope.id === folder.id;
+    if (scopePointedAtDeleted) {
       setFilters({ ...filters, folderScope: { kind: "all" } });
     }
-    // Read fresh store state so rapid successive actions from the same
-    // render cycle don't clobber each other's optimistic updates.
-    const current = useTripStore.getState().trips;
-    const affected = current.filter(
-      (storedTrip) => storedTrip.folderId === folder.id,
-    );
     setTrips(
-      current.map((storedTrip) =>
-        storedTrip.folderId === folder.id
-          ? { ...storedTrip, folderId: undefined }
-          : storedTrip,
-      ),
+      useTripStore
+        .getState()
+        .trips.map((storedTrip) =>
+          storedTrip.folder_id === folder.id
+            ? { ...storedTrip, folder_id: null }
+            : storedTrip,
+        ),
     );
-    const failures = await Promise.allSettled(
-      affected.map((storedTrip) =>
-        tripsApi.update(storedTrip.id, { folderId: null }),
-      ),
-    );
-    if (failures.some((r) => r.status === "rejected")) {
-      setErrorBanner(
-        "Folder deleted, but some trips couldn't sync. They may reappear after reload.",
+    try {
+      await tripFoldersApi.delete(folder.id);
+    } catch {
+      // Roll back the folder list, the per-trip optimistic unfile, AND
+      // the folder-scope filter so the rider isn't left looking at a
+      // folder that reappeared in the sidebar but whose trips show as
+      // unfiled / whose scope is still "all" — those would only
+      // correct themselves on a full reload.
+      setFolders(previousFolders);
+      const affectedSet = new Set(affectedTripIds);
+      setTrips(
+        useTripStore
+          .getState()
+          .trips.map((storedTrip) =>
+            affectedSet.has(storedTrip.id)
+              ? { ...storedTrip, folder_id: folder.id }
+              : storedTrip,
+          ),
       );
+      // Use the functional setter so we restore the saved scope on top
+      // of any unrelated filter change (status toggle, search input)
+      // that landed during the await.
+      if (scopePointedAtDeleted) {
+        setFilters((prev) => ({ ...prev, folderScope: previousFolderScope }));
+      }
+      setErrorBanner("Couldn't delete the folder. Try again.");
     }
   };
   const moveTripToFolder = async (trip: Trip, folderId: string | null) => {
-    const previousFolderId = trip.folderId;
+    const previousFolderId = trip.folder_id ?? null;
     // Read fresh state so concurrent optimistic updates don't clobber each
     // other when two actions fire in the same render.
     setTrips(
@@ -233,13 +289,13 @@ export default function TripListPage() {
         .getState()
         .trips.map((storedTrip) =>
           storedTrip.id === trip.id
-            ? { ...storedTrip, folderId: folderId ?? undefined }
+            ? { ...storedTrip, folder_id: folderId }
             : storedTrip,
         ),
     );
     markBusy(trip.id);
     try {
-      await tripsApi.update(trip.id, { folderId });
+      await tripsApi.update(trip.id, { folder_id: folderId });
     } catch {
       // Targeted rollback: touch only this trip so concurrent duplicates or
       // deletes made during the await aren't clobbered by a stale snapshot.
@@ -248,7 +304,7 @@ export default function TripListPage() {
           .getState()
           .trips.map((storedTrip) =>
             storedTrip.id === trip.id
-              ? { ...storedTrip, folderId: previousFolderId }
+              ? { ...storedTrip, folder_id: previousFolderId }
               : storedTrip,
           ),
       );
@@ -260,7 +316,25 @@ export default function TripListPage() {
   const duplicateTrip = async (trip: Trip) => {
     markBusy(trip.id);
     try {
-      const { data } = await tripsApi.create(duplicateTripPayload(trip));
+      // US-37 — only carry the source's folder_id forward when the
+      // caller owns the source. Folders are private per-user, so the
+      // server-side `POST /trips` ownership check resolves `folder_id`
+      // against the CALLING user's folders; blindly forwarding the
+      // source's `folder_id` would 404 every collaborator's duplicate
+      // of a filed trip. We resolve ownership from the summary's
+      // `owner_id` field (cheap and always present) rather than
+      // probing `trip.collaborators`, which is `undefined` on items
+      // sourced from the trips list endpoint (`TripSummaryDto` carries
+      // `member_count` but not the full members[] array, so optional-
+      // chain `.find(...)` would throw before we even hit the API).
+      // When `owner_id` is missing (planner-detail-shaped trips that
+      // didn't go through the list endpoint, or older API responses),
+      // we fall back to "not the owner" so the duplicate lands
+      // unfiled rather than risking a 404.
+      const isOwner = trip.owner_id != null && trip.owner_id === userId;
+      const { data } = await tripsApi.create(
+        duplicateTripPayload(trip, { isOwner }),
+      );
       // Match the list-endpoint handling: the server sometimes wraps
       // responses in `{ data: ... }`, so unwrap if present.
       const body = data as unknown as
@@ -309,14 +383,62 @@ export default function TripListPage() {
       clearBusy(trip.id);
     }
   };
-  const submitFolderModal = (name: string) => {
+  const submitFolderModal = async (name: string) => {
     if (!folderModal) return;
-    if (folderModal.mode === "create") {
-      persistFolders([...folders, createFolder(name)]);
-    } else {
-      persistFolders(renameFolder(folders, folderModal.folder.id, name));
-    }
     setFolderModal(null);
+    if (folderModal.mode === "create") {
+      // Optimistic: prepend a placeholder while the POST resolves so
+      // the UI feels instant. The placeholder uses a synthetic id /
+      // a position one past the current max — both get replaced when
+      // the server response lands.
+      const tempId = `tmp_${Date.now()}`;
+      const optimistic: TripFolder = {
+        id: tempId,
+        user_id: userId ?? "",
+        name: name.trim(),
+        color: null,
+        position: folders.length,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      setFolders(sortFoldersForDisplay([...folders, optimistic]));
+      try {
+        const { data } = await tripFoldersApi.create({ name: name.trim() });
+        setFolders((prev) =>
+          sortFoldersForDisplay(
+            prev.map((f) => (f.id === tempId && data ? data : f)),
+          ),
+        );
+      } catch {
+        setFolders((prev) => prev.filter((f) => f.id !== tempId));
+        setErrorBanner("Couldn't create the folder. Try again.");
+      }
+    } else {
+      const target = folderModal.folder;
+      const previous = folders;
+      setFolders(
+        sortFoldersForDisplay(
+          folders.map((f) =>
+            f.id === target.id ? { ...f, name: name.trim() } : f,
+          ),
+        ),
+      );
+      try {
+        const { data } = await tripFoldersApi.update(target.id, {
+          name: name.trim(),
+        });
+        if (data) {
+          setFolders((prev) =>
+            sortFoldersForDisplay(
+              prev.map((f) => (f.id === target.id ? data : f)),
+            ),
+          );
+        }
+      } catch {
+        setFolders(previous);
+        setErrorBanner("Couldn't rename the folder. Try again.");
+      }
+    }
   };
   return (
     <div className="flex h-full">
@@ -367,6 +489,20 @@ export default function TripListPage() {
                 aria-label={t("Dismiss error")}
                 onClick={() => setErrorBanner(null)}
                 className="text-red-200 hover:text-white"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+
+          {migrationToast && (
+            <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-tarmoto-cyan/30 bg-tarmoto-cyan/10 px-4 py-3 text-sm text-tarmoto-cyan">
+              <span>{migrationToast}</span>
+              <button
+                type="button"
+                aria-label={t("Dismiss notice")}
+                onClick={() => setMigrationToast(null)}
+                className="text-tarmoto-cyan hover:text-white"
               >
                 <X size={14} />
               </button>
@@ -811,8 +947,8 @@ function TripCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const distance = tripDistanceKm(trip);
-  const currentFolder = trip.folderId
-    ? folders.find((f) => f.id === trip.folderId)
+  const currentFolder = trip.folder_id
+    ? folders.find((f) => f.id === trip.folder_id)
     : null;
   return (
     <div
@@ -923,7 +1059,7 @@ function TripCard({
             <div className="pl-3 pr-1 py-1 border-t border-slate-800 max-h-48 overflow-y-auto">
               <MoveItem
                 label="Unfiled"
-                active={!trip.folderId}
+                active={!trip.folder_id}
                 onClick={() => {
                   setMenuOpen(false);
                   setMoveOpen(false);
@@ -934,7 +1070,7 @@ function TripCard({
                 <MoveItem
                   key={folder.id}
                   label={folder.name}
-                  active={trip.folderId === folder.id}
+                  active={trip.folder_id === folder.id}
                   onClick={() => {
                     setMenuOpen(false);
                     setMoveOpen(false);

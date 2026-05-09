@@ -20,7 +20,7 @@ export const TRIP_SORT_KEYS: readonly TripSortKey[] = [
 
 // `folderScope` mirrors the left-sidebar in the trips page:
 //   "all"      → every trip
-//   "unfiled"  → trips with no folderId
+//   "unfiled"  → trips with no folder_id
 //   string id  → trips assigned to that folder
 // Kept as a discriminated shape rather than `string | null` so callers can't
 // confuse "all" with "unfiled".
@@ -53,8 +53,8 @@ export function applyTripFilters(
     if (!filters.statuses.has(trip.status)) return false;
 
     const scope = filters.folderScope;
-    if (scope.kind === "unfiled" && trip.folderId) return false;
-    if (scope.kind === "folder" && trip.folderId !== scope.id) return false;
+    if (scope.kind === "unfiled" && trip.folder_id) return false;
+    if (scope.kind === "folder" && trip.folder_id !== scope.id) return false;
 
     if (needle) {
       const hay = [

@@ -343,7 +343,7 @@ This is the flagship web feature. The full-screen trip planner provides a dramat
 - ✅ **US-34:** As a rider, I want to set trip parameters (number of days, daily km target, road type preference, avoidance criteria) and click "Generate" to receive an AI-optimized multi-day itinerary so that planning takes minutes, not hours.
 - ✅ **US-35:** As a group leader, I want to share a trip link with my riding group, where each member can suggest alternative road segments, add waypoints, and vote on route options so that planning is collaborative.
 - ✅ **US-36:** As a rider, I want the planner to suggest accommodations, fuel stops, and points of interest near Fun Zones and along the route so that logistics fit around the riding.
-- 🚧 **US-37:** As a rider, I want to save multiple trip drafts, duplicate and modify existing trips, and organize trips into folders (e.g., "Summer 2026 Alps", "Weekend Beskydy") so that I can manage my plans over time.
+- ✅ **US-37:** As a rider, I want to save multiple trip drafts, duplicate and modify existing trips, and organize trips into folders (e.g., "Summer 2026 Alps", "Weekend Beskydy") so that I can manage my plans over time.
 - ✅ **US-38:** As a rider, I want to import GPX/KML files into the planner and see them overlaid with road quality data so that I can evaluate routes from other sources.
 - ✅ **US-39:** As a rider, I want to export my planned route as GPX for Garmin devices, as a shareable link, or push it directly to the Tarmoto mobile app so that the transition from planning to riding is seamless.
 - ✅ **US-40:** As a rider, I want to see seasonal road closures, mountain pass status, and construction zones on the planner map so that I don't plan trips around unavailable roads.

@@ -3,10 +3,12 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
   IsIn,
+  ValidateIf,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -55,4 +57,23 @@ export class CreateTripDto {
   @Min(1)
   @Max(1000)
   daily_km_max?: number;
+
+  /**
+   * US-37 — file the new trip into one of the caller's folders. Used by
+   * the companion's "Duplicate" action so a duplicated trip stays in
+   * the same folder as the original. The DTO accepts the field at
+   * create time because the global `ValidationPipe`
+   * (`forbidNonWhitelisted: true`) would otherwise 400 every duplicate
+   * of a filed trip.
+   */
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description:
+      'Optional folder uuid to file the new trip under. Must belong to the caller; cross-user references 404.',
+  })
+  @IsOptional()
+  @ValidateIf((_o, v) => v !== null)
+  @IsUUID()
+  folder_id?: string | null;
 }

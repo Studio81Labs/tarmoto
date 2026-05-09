@@ -36,6 +36,7 @@ import { AccountModule } from './modules/account/index.js';
 import { BikesModule } from './modules/bikes/bikes.module.js';
 import { EmailModule } from './modules/email/index.js';
 import { TripsModule } from './modules/trips/index.js';
+import { TripFoldersModule } from './modules/trip-folders/index.js';
 import { TripActivityModule } from './modules/trip-activity/index.js';
 import { GroupRidesModule } from './modules/group-rides/index.js';
 import { JobsModule } from './modules/jobs/index.js';
@@ -68,6 +69,7 @@ import { ModelEvalModule } from './modules/model-eval/index.js';
     RouteCollectionsModule,
     RidesModule,
     TripsModule,
+    TripFoldersModule,
     TripActivityModule,
     GroupRidesModule,
     EventsModule,
