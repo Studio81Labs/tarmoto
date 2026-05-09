@@ -869,7 +869,16 @@ export interface RoadReview {
   rating: number;
   comment: string | null;
   bike_model: string | null;
-  photos: string[];
+  /**
+   * Photo URLs attached to the review. `null` when the author has
+   * been masked (deleted, soft-deleted, or `profile_visibility =
+   * 'private'` to a non-self viewer) — managed photo URLs embed
+   * the author's id in their filename, so the backend suppresses
+   * the array on masked surfaces to avoid leaking the rider's
+   * UUID through the path even when `user_id` is null
+   * (#279 / #501).
+   */
+  photos: string[] | null;
   created_at: string;
   helpful_count: number;
   not_helpful_count: number;
