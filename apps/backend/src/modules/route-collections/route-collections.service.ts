@@ -171,15 +171,15 @@ export class RouteCollectionsService {
         rows.entities.map((c) => c.owner_id),
       );
 
-      followed = rows.entities.map((c) =>
-        this.toSummaryResponse(
+      followed = rows.entities.map((c) => {
+        const ownerIsPrivate = privateOwnerIds.has(c.owner_id);
+        return this.toSummaryResponse(
           c,
           countById.get(c.id) ?? 0,
-          privateOwnerIds.has(c.owner_id)
-            ? null
-            : (ownerNameById.get(c.id) ?? null),
-        ),
-      );
+          ownerIsPrivate ? null : (ownerNameById.get(c.id) ?? null),
+          { ownerIsPrivate },
+        );
+      });
     } catch (err) {
       if (isMissingTableError(err)) {
         this.logger.warn(
@@ -745,10 +745,17 @@ export class RouteCollectionsService {
     c: RouteCollection,
     item_count: number,
     owner_name: string | null = null,
+    opts: { ownerIsPrivate?: boolean } = {},
   ): RouteCollectionSummaryDto {
     return {
       id: c.id,
-      owner_id: c.owner_id,
+      // #279 / #501 — opted-out owners surface a `null` id alongside
+      // the masked name (Cursor Bugbot review on PR #513). Without
+      // this the id could be cross-referenced (e.g. by hitting
+      // `/users/:id/profile`) to recover the rider's identity even
+      // though `owner_name` was hidden, partially defeating the
+      // privacy toggle.
+      owner_id: opts.ownerIsPrivate ? null : c.owner_id,
       title: c.title,
       description: c.description ?? null,
       visibility: c.visibility,
@@ -780,7 +787,7 @@ export class RouteCollectionsService {
     // about.
     const ownerName: string | null = opts.ownerIsPrivate ? null : rawOwnerName;
     return {
-      ...this.toSummaryResponse(c, items.length, ownerName || null),
+      ...this.toSummaryResponse(c, items.length, ownerName || null, opts),
       items: items.map((i) => this.toItemResponse(i)),
       owner_name: ownerName,
       viewer_is_owner: viewerId != null && viewerId === c.owner_id,

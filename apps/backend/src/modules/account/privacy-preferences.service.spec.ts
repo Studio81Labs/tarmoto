@@ -159,9 +159,10 @@ describe('PrivacyPreferencesService', () => {
     it('dedupes the input before querying', async () => {
       findMock.mockResolvedValueOnce([]);
       await service.loadPrivateUserIds(['a', 'a', 'b']);
-      const where = findMock.mock.calls[0][0].where as {
-        user_id: { _value: string[] };
-      };
+      const calls = findMock.mock.calls as Array<
+        [{ where: { user_id: { _value: string[] } } }]
+      >;
+      const where = calls[0][0].where;
       // typeorm's `In(...)` carries the array on `_value`; assert
       // we deduped before sending.
       expect(where.user_id._value).toHaveLength(2);

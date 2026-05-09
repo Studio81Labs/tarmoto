@@ -75,6 +75,7 @@ import {
   client,
   clearTokens,
   getAccessToken,
+  getAuthenticatedUserId,
   isAuthenticated as hasAccessToken,
   storeTokens,
   rawFetch,
@@ -211,21 +212,24 @@ class ApiService {
    * and after every PUT from the privacy settings screen so the
    * mobile gate stays in sync with the server.
    *
-   * Snapshots the access token at start and re-checks it before
-   * writing the cache (Codex review on PR #513). If the bearer
-   * changed mid-flight — logout cleared it, or a different rider
-   * signed in — the response is dropped. Without this guard, a
-   * `register` / `login`-spawned fire-and-forget refresh could
-   * resolve AFTER `logout()` had already cleared the cache and
-   * silently repopulate it with the previous rider's toggles for
-   * the next sign-in on the same device.
+   * Snapshots the AUTHENTICATED USER ID at start and re-checks it
+   * before writing the cache (Codex review on PR #513). User id is
+   * stable across access-token rotation — only login / register /
+   * logout move it — so the 401 refresh middleware silently issuing
+   * a new access token mid-flight does NOT cause a stale-snapshot
+   * false positive. Snapshot mismatch (logged out, or a different
+   * rider signed in) drops the response so we can't repopulate
+   * MMKV with the previous rider's toggles after logout cleared
+   * it. The earlier access-token-equality version of this guard
+   * regressed the normal token-rotation case — see PR #513
+   * discussion `r3212738433`.
    */
   async refreshPrivacyPreferences(): Promise<void> {
-    const tokenAtStart = getAccessToken();
-    if (!tokenAtStart) return;
+    const userIdAtStart = getAuthenticatedUserId();
+    if (!userIdAtStart) return;
     const result = await client.GET("/api/v1/account/privacy");
     const dto = unwrap(result, "Failed to load privacy preferences");
-    if (getAccessToken() !== tokenAtStart) return;
+    if (getAuthenticatedUserId() !== userIdAtStart) return;
     setCachedPreferences({
       profile_visibility: dto.profile_visibility,
       default_ride_sharing: dto.default_ride_sharing,

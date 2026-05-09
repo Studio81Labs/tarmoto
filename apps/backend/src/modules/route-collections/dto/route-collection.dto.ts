@@ -164,8 +164,12 @@ export class RouteCollectionSummaryDto {
   @ApiProperty()
   id!: string;
 
-  @ApiProperty()
-  owner_id!: string;
+  @ApiProperty({
+    nullable: true,
+    description:
+      "Stable id of the owning rider. `null` when the owner has set `profile_visibility = 'private'` and the viewer is not the owner — masked alongside `owner_name` so the id can't be cross-referenced to recover the rider's identity (#279 / #501).",
+  })
+  owner_id!: string | null;
 
   @ApiProperty()
   title!: string;

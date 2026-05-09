@@ -26,6 +26,12 @@ const storage = createMMKV({ id: "tarmoto-auth" });
 
 const ACCESS_TOKEN_KEY = "access_token";
 const REFRESH_TOKEN_KEY = "refresh_token";
+// #279 / #501 — stable identifier for the authenticated rider,
+// rotated only on login / register / logout (NOT on access-token
+// refresh). Privacy-cache writes use this to detect "logged out"
+// or "different user signed in" mid-flight while still allowing
+// the normal access-token rotation by the 401 refresh middleware.
+const USER_ID_KEY = "user_id";
 
 /**
  * Per-request timeout. Matches the previous axios default (`timeout:
@@ -144,15 +150,36 @@ function getRefreshToken(): string | null {
 export function storeTokens(auth: AuthResponse): void {
   storage.set(ACCESS_TOKEN_KEY, auth.access_token);
   storage.set(REFRESH_TOKEN_KEY, auth.refresh_token);
+  // The /auth/refresh response is typed as AuthResponse but the
+  // access-token-rotation path may not include `user`. Only update
+  // the persisted user id when the response actually carries one,
+  // so a refresh-without-user doesn't clobber the stable session
+  // identifier the privacy-cache snapshot relies on.
+  if (auth.user?.id) {
+    storage.set(USER_ID_KEY, auth.user.id);
+  }
 }
 
 export function clearTokens(): void {
   storage.remove(ACCESS_TOKEN_KEY);
   storage.remove(REFRESH_TOKEN_KEY);
+  storage.remove(USER_ID_KEY);
 }
 
 export function isAuthenticated(): boolean {
   return !!getAccessToken();
+}
+
+/**
+ * Stable identifier for the currently-authenticated rider (#279 /
+ * #501). Rotated only on login / register / logout — NOT on
+ * access-token refresh — so callers that need to detect "the
+ * session changed mid-flight" can compare snapshots without false
+ * positives from the refresh middleware silently issuing a new
+ * access token.
+ */
+export function getAuthenticatedUserId(): string | null {
+  return storage.getString(USER_ID_KEY) ?? null;
 }
 
 /**

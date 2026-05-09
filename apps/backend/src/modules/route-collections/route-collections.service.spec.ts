@@ -300,6 +300,10 @@ describe('RouteCollectionsService', () => {
 
       expect(result.followed).toHaveLength(1);
       expect(result.followed[0]?.owner_name).toBeNull();
+      // #279 / #501 — also mask owner_id so it can't be cross-
+      // referenced to recover the rider's identity (Cursor Bugbot
+      // review on PR #513).
+      expect(result.followed[0]?.owner_id).toBeNull();
     });
 
     it('keeps owner_name on followed cards when the curator is not private (#279 / #501)', async () => {
@@ -606,6 +610,10 @@ describe('RouteCollectionsService', () => {
       // can use the same `owner_name === null` check on every surface
       // (Cursor Bugbot review on PR #513).
       expect(result.owner_name).toBeNull();
+      // owner_id is masked alongside the name (Cursor Bugbot review
+      // on PR #513) — exposing the id alone would let a caller
+      // recover the rider's identity via `/users/:id/profile`.
+      expect(result.owner_id).toBeNull();
     });
 
     it('keeps owner_name for the owner viewing their own private profile slug (#279 / #501)', async () => {
@@ -622,6 +630,9 @@ describe('RouteCollectionsService', () => {
       const result = await service.getBySlug('abcDEF12345', ownerId);
 
       expect(result.owner_name).toBe('Jane Rider');
+      // Self-view also keeps `owner_id` populated — the mask only
+      // applies to non-owner viewers.
+      expect(result.owner_id).toBe(ownerId);
       expect(privacy.loadPrivateUserIds).not.toHaveBeenCalled();
     });
 
