@@ -497,6 +497,48 @@ describe("offlineQueue", () => {
         expect(result.pending).toBe(0);
         expect(getPendingCount()).toBe(0);
       });
+
+      it("does not enqueue the live payload when consent flips off mid-request (#501 review)", async () => {
+        // Codex review on PR #513 r3213030169: the retriable-error
+        // catch in `submitSensorUpload` previously enqueued the
+        // failed live payload unconditionally. If the rider
+        // toggled off WHILE the live request was in flight, the
+        // fresh ride payload (captured against the now-off
+        // preference) used to land in MMKV, ready to be sent
+        // later if the rider opted back in.
+        setCachedPreferences({
+          ...DEFAULT_PRIVACY_PREFERENCES,
+          road_data_contribution: true,
+        });
+
+        const uploader: SensorUploader = jest.fn(async () => {
+          // Toggle off mid-request, then fail retriable.
+          setCachedPreferences({
+            ...DEFAULT_PRIVACY_PREFERENCES,
+            road_data_contribution: false,
+          });
+          throw makeNetworkError();
+        });
+
+        const result = await submitSensorUpload(
+          "ride-mid-toggle",
+          [makeReading(1)],
+          "iPhone",
+          null,
+          [],
+          null,
+          null,
+          uploader,
+        );
+
+        // Silent success (status: "uploaded", zeros) and NO
+        // entry in the queue — the rider's current preference
+        // is "don't send" and that overrides the
+        // catch-and-retry behaviour.
+        expect(result.status).toBe("uploaded");
+        expect(result.pending).toBe(0);
+        expect(getPendingCount()).toBe(0);
+      });
     });
   });
 
@@ -543,6 +585,38 @@ describe("offlineQueue", () => {
         networkFailed: false,
         transientServerError: false,
       });
+      expect(getPendingCount()).toBe(0);
+    });
+
+    it("clears the queue when the failing upload coincides with an off-toggle (#501 review)", async () => {
+      // Codex review on PR #513 r3213030165: the drain catch
+      // block previously broke out with `networkFailed` /
+      // `transientServerError` set without rechecking consent.
+      // If the rider toggled off WHILE a queued upload was
+      // failing, the remaining backlog stayed persisted and
+      // could replay if consent flipped back on later.
+      enqueueUpload("a", [makeReading(1)], "iPhone", null);
+      enqueueUpload("b", [makeReading(2)], "iPhone", null);
+      setCachedPreferences({
+        ...DEFAULT_PRIVACY_PREFERENCES,
+        road_data_contribution: true,
+      });
+
+      const uploader: SensorUploader = jest.fn(async () => {
+        // Toggle off mid-request, then fail with a network error.
+        setCachedPreferences({
+          ...DEFAULT_PRIVACY_PREFERENCES,
+          road_data_contribution: false,
+        });
+        throw makeNetworkError();
+      });
+
+      const result = await drainOfflineQueue(uploader);
+
+      // The catch block sees consent off, wipes the queue, and
+      // breaks WITHOUT setting `networkFailed: true` (the rider's
+      // current preference takes precedence over the link state).
+      expect(result.networkFailed).toBe(false);
       expect(getPendingCount()).toBe(0);
     });
 

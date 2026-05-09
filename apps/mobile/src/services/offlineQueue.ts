@@ -416,6 +416,22 @@ export async function submitSensorUpload(
     };
   } catch (error) {
     if (isRetriableError(error)) {
+      // #279 / #501 — recheck consent before enqueuing the
+      // failed live upload (Codex review on PR #513
+      // r3213030169). The rider may have toggled
+      // `road_data_contribution` off WHILE the live request was
+      // awaiting; without this gate, the catch path would store
+      // the fresh ride payload under their now-off preference,
+      // ready to be sent later if they opted back in.
+      if (!canContributeRoadData()) {
+        clearOfflineQueue();
+        return {
+          status: "uploaded",
+          accepted: 0,
+          segmentsUpdated: 0,
+          pending: getPendingCount(),
+        };
+      }
       // Both connectivity drops and transient server faults land here —
       // either way the correct move is to preserve the ride data and
       // retry later, not surface a blocking error to the rider.
@@ -533,6 +549,21 @@ export function drainOfflineQueue(
         removeById(next.id);
         flushed += 1;
       } catch (error) {
+        // #279 / #501 — recheck consent on the failure path
+        // before we flag a stop reason (Codex review on PR #513
+        // r3212930165). The rider may have toggled
+        // `road_data_contribution` off WHILE the failing upload
+        // was awaiting; without this check we'd return
+        // `networkFailed`/`transientServerError` with the
+        // backlog still persisted, and a later opt-in plus drain
+        // could replay payloads captured against the rider's
+        // current "don't send" preference. The poison-pill /
+        // dropped-attempt branch below also shares this gate so
+        // dropped items don't linger after a mid-flight opt-out.
+        if (!canContributeRoadData()) {
+          clearOfflineQueue();
+          break;
+        }
         if (isNetworkDownError(error)) {
           // Link is down. Leave the rest for the next drain and tell
           // the caller why we stopped so they can skip their live call.
