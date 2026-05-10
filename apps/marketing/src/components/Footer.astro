@@ -1,25 +1,126 @@
+---
+const cols = [
+  { h: "Product", links: ["Planner", "Companion app", "GPX import", "What's planned"] },
+  { h: "Company", links: ["About", "Changelog", "Press kit", "Contact"] },
+  { h: "Legal", links: ["Privacy", "Terms", "Imprint"] },
+];
+const year = new Date().getFullYear();
+---
+
 <footer>
   <div class="container">
-    <p>&copy; {new Date().getFullYear()} Tarmoto. All rights reserved.</p>
-    <p class="tagline">Know the road before you ride it.</p>
+    <div class="footer-grid">
+      <div>
+        <div class="footer-brand">
+          <span class="footer-logo-mark">
+            <svg width="13" height="13" viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M 3 15 L 10 4 L 17 15 Z" fill="#0B0D10"></path>
+            </svg>
+          </span>
+          <span class="footer-brand-text">Tarmoto</span>
+        </div>
+        <p class="footer-tagline">A desktop-first motorcycle route planner. Bologna, Italy.</p>
+      </div>
+      {
+        cols.map((col) => (
+          <div>
+            <span class="stamp">{col.h}</span>
+            <div class="footer-col-links">
+              {col.links.map((item) => (
+                <a>{item}</a>
+              ))}
+            </div>
+          </div>
+        ))
+      }
+    </div>
+    <div class="footer-bottom mono">
+      <span>© {year} TARMOTO · BOLOGNA, ITALY</span>
+      <span>v0.4 · PRELAUNCH</span>
+    </div>
   </div>
 </footer>
 
 <style>
   footer {
-    padding: 40px 0;
-    border-top: 1px solid var(--border);
-    text-align: center;
+    border-top: 1px solid var(--line);
+    padding: 60px 0 32px;
+    background: var(--panel);
   }
 
-  footer p {
-    font-size: 12px;
-    color: var(--text3);
+  .footer-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1fr;
+    gap: 48px;
+    margin-bottom: 48px;
   }
 
-  .tagline {
-    color: var(--cyan-deep);
-    font-weight: 500;
-    margin-top: 4px;
+  .footer-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .footer-logo-mark {
+    width: 24px;
+    height: 24px;
+    border-radius: 5px;
+    background: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .footer-brand-text {
+    font-weight: 600;
+    font-size: 16px;
+    letter-spacing: -0.012em;
+  }
+
+  .footer-tagline {
+    font-size: 13px;
+    color: var(--mute);
+    max-width: 320px;
+    margin-top: 18px;
+    line-height: 1.6;
+  }
+
+  .footer-col-links {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 14px;
+  }
+
+  .footer-col-links a {
+    font-size: 13.5px;
+    color: var(--dim);
+    cursor: pointer;
+    transition: color 0.2s;
+  }
+
+  .footer-col-links a:hover {
+    color: var(--text);
+  }
+
+  .footer-bottom {
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--mute);
+    letter-spacing: 0.08em;
+  }
+
+  @media (max-width: 768px) {
+    .footer-grid {
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+    }
+    .footer-bottom {
+      flex-direction: column;
+      gap: 10px;
+    }
   }
 </style>
