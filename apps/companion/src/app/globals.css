@@ -326,14 +326,50 @@
      enough to read on cream and on white/colored bgs (e.g.
      `bg-tarmoto-cyan text-slate-950` → ink-on-orange, as designed).
 
+     The ancestor matcher uses `[class~=...]` (whole-word) rather than
+     `[class*=...]` (substring) so opacity-suffixed slate utilities like
+     `bg-slate-900/90` do *not* trigger the remap — those panels remain
+     dark in the migration and need their original light text. The `.bg-
+     slate-*` background overrides above only target the exact utility
+     names, so a substring matcher here would force ink text onto still-
+     dark translucent slate surfaces.
+
      Selectors use `:where()` so they contribute zero specificity and any
      component-level Tailwind class can still override them. */
-  :where([class*="bg-slate-"]).text-white,
-  :where([class*="bg-slate-"]).text-slate-50,
-  :where([class*="bg-slate-"]).text-slate-100,
-  :where([class*="bg-slate-"]).text-slate-200,
-  :where([class*="bg-slate-"]).text-slate-300,
-  :where([class*="bg-slate-"])
+  :where(
+      [class~="bg-slate-50"],
+      [class~="bg-slate-100"],
+      [class~="bg-slate-200"],
+      [class~="bg-slate-300"],
+      [class~="bg-slate-400"],
+      [class~="bg-slate-500"],
+      [class~="bg-slate-600"],
+      [class~="bg-slate-700"],
+      [class~="bg-slate-800"],
+      [class~="bg-slate-850"],
+      [class~="bg-slate-900"],
+      [class~="bg-slate-950"]
+    ):where(
+      .text-white,
+      .text-slate-50,
+      .text-slate-100,
+      .text-slate-200,
+      .text-slate-300
+    ),
+  :where(
+      [class~="bg-slate-50"],
+      [class~="bg-slate-100"],
+      [class~="bg-slate-200"],
+      [class~="bg-slate-300"],
+      [class~="bg-slate-400"],
+      [class~="bg-slate-500"],
+      [class~="bg-slate-600"],
+      [class~="bg-slate-700"],
+      [class~="bg-slate-800"],
+      [class~="bg-slate-850"],
+      [class~="bg-slate-900"],
+      [class~="bg-slate-950"]
+    )
     :where(
       :not(
           [class*="bg-red-"],
