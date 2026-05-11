@@ -126,14 +126,6 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
   }
-  /* Strong text utilities map to ink instead of pure white so the cream theme
-     never produces hard-white text on cream. */
-  .text-white {
-    color: var(--tk-ink) !important;
-  }
-  .text-slate-100 {
-    color: var(--tk-ink) !important;
-  }
   ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -263,5 +255,64 @@
     background-image:
       radial-gradient(circle at 20% 30%, rgba(14, 14, 16, 0.025), transparent 50%),
       radial-gradient(circle at 80% 70%, rgba(14, 14, 16, 0.02), transparent 60%);
+  }
+}
+
+@layer utilities {
+  /* Legacy slate panels were remapped to cream; on those surfaces `text-white`
+     and `text-slate-100` would render hard-white on cream and disappear.
+     We flip them to ink — but only inside slate-* containers, and not for
+     elements that carry their own coloured background (red/blue/etc.
+     destructive or status surfaces, where white-on-color is the right
+     contrast).
+     Selectors use `:where()` so they contribute zero specificity and any
+     component-level Tailwind class can still override them. */
+  :where([class*="bg-slate-"]).text-white,
+  :where([class*="bg-slate-"]).text-slate-100,
+  :where([class*="bg-slate-"])
+    :where(
+      :not(
+          [class*="bg-red-"],
+          [class*="bg-blue-"],
+          [class*="bg-green-"],
+          [class*="bg-emerald-"],
+          [class*="bg-amber-"],
+          [class*="bg-yellow-"],
+          [class*="bg-orange-"],
+          [class*="bg-rose-"],
+          [class*="bg-pink-"],
+          [class*="bg-violet-"],
+          [class*="bg-indigo-"],
+          [class*="bg-purple-"],
+          [class*="bg-fuchsia-"],
+          [class*="bg-sky-"],
+          [class*="bg-cyan-"],
+          [class*="bg-teal-"],
+          [class*="bg-lime-"]
+        )
+    ).text-white,
+  :where([class*="bg-slate-"])
+    :where(
+      :not(
+          [class*="bg-red-"],
+          [class*="bg-blue-"],
+          [class*="bg-green-"],
+          [class*="bg-emerald-"],
+          [class*="bg-amber-"],
+          [class*="bg-yellow-"],
+          [class*="bg-orange-"],
+          [class*="bg-rose-"],
+          [class*="bg-pink-"],
+          [class*="bg-violet-"],
+          [class*="bg-indigo-"],
+          [class*="bg-purple-"],
+          [class*="bg-fuchsia-"],
+          [class*="bg-sky-"],
+          [class*="bg-cyan-"],
+          [class*="bg-teal-"],
+          [class*="bg-lime-"]
+        )
+    ).text-slate-100 {
+    color: var(--tk-ink);
   }
 }
