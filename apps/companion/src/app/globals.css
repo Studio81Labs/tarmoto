@@ -257,59 +257,95 @@
   /* ─── Slate background remap ───────────────────────────────────────────
      Legacy slate-* surfaces were dark in the original theme; in cream/ink
      they become cream paper. We override the .bg-slate-X utilities here
-     instead of remapping --color-slate-* in @theme so that the matching
-     text-slate-X utilities keep their native dark colours — that way
-     `bg-white text-slate-900` (print pages) and
+     (and the matching pseudo-state variants — hover / focus / active /
+     group-hover) instead of remapping --color-slate-* in @theme so that
+     the matching text-slate-X utilities keep their native dark colours —
+     that way `bg-white text-slate-900` (print pages) and
      `bg-tarmoto-cyan text-slate-950` (primary CTAs) still get the dark
-     foreground they were designed for. */
-  .bg-slate-50 {
+     foreground they were designed for.
+
+     The overrides are scoped to `body.bg-cream:not(:has(.tarmoto-embed))`
+     so they only fire on cream-themed surfaces — embed widgets keep
+     their original dark slate backgrounds. Each rule's specificity goes
+     to (0,2,1)/(0,3,1), comfortably beating the corresponding Tailwind
+     utility regardless of source order. */
+  body.bg-cream:not(:has(.tarmoto-embed)) .bg-slate-50,
+  body.bg-cream:not(:has(.tarmoto-embed)) .hover\:bg-slate-50:hover,
+  body.bg-cream:not(:has(.tarmoto-embed)) .focus\:bg-slate-50:focus,
+  body.bg-cream:not(:has(.tarmoto-embed)) .active\:bg-slate-50:active,
+  body.bg-cream:not(:has(.tarmoto-embed)) .group:hover .group-hover\:bg-slate-50,
+  body.bg-cream:not(:has(.tarmoto-embed)) .bg-slate-100,
+  body.bg-cream:not(:has(.tarmoto-embed)) .hover\:bg-slate-100:hover,
+  body.bg-cream:not(:has(.tarmoto-embed)) .focus\:bg-slate-100:focus,
+  body.bg-cream:not(:has(.tarmoto-embed)) .active\:bg-slate-100:active,
+  body.bg-cream:not(:has(.tarmoto-embed)) .group:hover .group-hover\:bg-slate-100,
+  body.bg-cream:not(:has(.tarmoto-embed)) .bg-slate-900,
+  body.bg-cream:not(:has(.tarmoto-embed)) .hover\:bg-slate-900:hover,
+  body.bg-cream:not(:has(.tarmoto-embed)) .focus\:bg-slate-900:focus,
+  body.bg-cream:not(:has(.tarmoto-embed)) .active\:bg-slate-900:active,
+  body.bg-cream:not(:has(.tarmoto-embed)) .group:hover .group-hover\:bg-slate-900,
+  body.bg-cream:not(:has(.tarmoto-embed)) .bg-slate-950,
+  body.bg-cream:not(:has(.tarmoto-embed)) .hover\:bg-slate-950:hover,
+  body.bg-cream:not(:has(.tarmoto-embed)) .focus\:bg-slate-950:focus,
+  body.bg-cream:not(:has(.tarmoto-embed)) .active\:bg-slate-950:active,
+  body.bg-cream:not(:has(.tarmoto-embed)) .group:hover .group-hover\:bg-slate-950 {
     background-color: var(--tk-cream);
   }
-  .bg-slate-100 {
-    background-color: var(--tk-cream);
-  }
-  .bg-slate-200 {
+  body.bg-cream:not(:has(.tarmoto-embed)) .bg-slate-200,
+  body.bg-cream:not(:has(.tarmoto-embed)) .hover\:bg-slate-200:hover,
+  body.bg-cream:not(:has(.tarmoto-embed)) .focus\:bg-slate-200:focus,
+  body.bg-cream:not(:has(.tarmoto-embed)) .active\:bg-slate-200:active,
+  body.bg-cream:not(:has(.tarmoto-embed)) .group:hover .group-hover\:bg-slate-200,
+  body.bg-cream:not(:has(.tarmoto-embed)) .bg-slate-300,
+  body.bg-cream:not(:has(.tarmoto-embed)) .hover\:bg-slate-300:hover,
+  body.bg-cream:not(:has(.tarmoto-embed)) .focus\:bg-slate-300:focus,
+  body.bg-cream:not(:has(.tarmoto-embed)) .active\:bg-slate-300:active,
+  body.bg-cream:not(:has(.tarmoto-embed)) .group:hover .group-hover\:bg-slate-300,
+  body.bg-cream:not(:has(.tarmoto-embed)) .bg-slate-400,
+  body.bg-cream:not(:has(.tarmoto-embed)) .hover\:bg-slate-400:hover,
+  body.bg-cream:not(:has(.tarmoto-embed)) .focus\:bg-slate-400:focus,
+  body.bg-cream:not(:has(.tarmoto-embed)) .active\:bg-slate-400:active,
+  body.bg-cream:not(:has(.tarmoto-embed)) .group:hover .group-hover\:bg-slate-400,
+  body.bg-cream:not(:has(.tarmoto-embed)) .bg-slate-700,
+  body.bg-cream:not(:has(.tarmoto-embed)) .hover\:bg-slate-700:hover,
+  body.bg-cream:not(:has(.tarmoto-embed)) .focus\:bg-slate-700:focus,
+  body.bg-cream:not(:has(.tarmoto-embed)) .active\:bg-slate-700:active,
+  body.bg-cream:not(:has(.tarmoto-embed)) .group:hover .group-hover\:bg-slate-700,
+  body.bg-cream:not(:has(.tarmoto-embed)) .bg-slate-800,
+  body.bg-cream:not(:has(.tarmoto-embed)) .hover\:bg-slate-800:hover,
+  body.bg-cream:not(:has(.tarmoto-embed)) .focus\:bg-slate-800:focus,
+  body.bg-cream:not(:has(.tarmoto-embed)) .active\:bg-slate-800:active,
+  body.bg-cream:not(:has(.tarmoto-embed)) .group:hover .group-hover\:bg-slate-800 {
     background-color: var(--tk-paper);
   }
-  .bg-slate-300 {
-    background-color: var(--tk-paper);
-  }
-  .bg-slate-400 {
-    background-color: var(--tk-paper);
-  }
-  .bg-slate-500 {
+  body.bg-cream:not(:has(.tarmoto-embed)) .bg-slate-500,
+  body.bg-cream:not(:has(.tarmoto-embed)) .hover\:bg-slate-500:hover,
+  body.bg-cream:not(:has(.tarmoto-embed)) .focus\:bg-slate-500:focus,
+  body.bg-cream:not(:has(.tarmoto-embed)) .active\:bg-slate-500:active,
+  body.bg-cream:not(:has(.tarmoto-embed)) .group:hover .group-hover\:bg-slate-500,
+  body.bg-cream:not(:has(.tarmoto-embed)) .bg-slate-600,
+  body.bg-cream:not(:has(.tarmoto-embed)) .hover\:bg-slate-600:hover,
+  body.bg-cream:not(:has(.tarmoto-embed)) .focus\:bg-slate-600:focus,
+  body.bg-cream:not(:has(.tarmoto-embed)) .active\:bg-slate-600:active,
+  body.bg-cream:not(:has(.tarmoto-embed)) .group:hover .group-hover\:bg-slate-600 {
     background-color: var(--tk-paper-2);
-  }
-  .bg-slate-600 {
-    background-color: var(--tk-paper-2);
-  }
-  .bg-slate-700 {
-    background-color: var(--tk-paper);
-  }
-  .bg-slate-800 {
-    background-color: var(--tk-paper);
-  }
-  .bg-slate-900 {
-    background-color: var(--tk-cream);
-  }
-  .bg-slate-950 {
-    background-color: var(--tk-cream);
   }
 
   /* ─── Slate border remap ───
      Borders pick up the new hairline-ink line colour so card outlines stay
-     readable against the now-cream surfaces. */
-  .border-slate-200,
-  .border-slate-300,
-  .border-slate-400,
-  .border-slate-700,
-  .border-slate-800 {
+     readable against the now-cream surfaces. Embed widgets keep their
+     original slate borders because of the `.tarmoto-embed` opt-out. */
+  body.bg-cream:not(:has(.tarmoto-embed)) .border-slate-200,
+  body.bg-cream:not(:has(.tarmoto-embed)) .border-slate-300,
+  body.bg-cream:not(:has(.tarmoto-embed)) .border-slate-400,
+  body.bg-cream:not(:has(.tarmoto-embed)) .border-slate-700,
+  body.bg-cream:not(:has(.tarmoto-embed)) .border-slate-800 {
     border-color: var(--tk-line);
   }
-  .border-slate-500,
-  .border-slate-600,
-  .border-slate-900,
-  .border-slate-950 {
+  body.bg-cream:not(:has(.tarmoto-embed)) .border-slate-500,
+  body.bg-cream:not(:has(.tarmoto-embed)) .border-slate-600,
+  body.bg-cream:not(:has(.tarmoto-embed)) .border-slate-900,
+  body.bg-cream:not(:has(.tarmoto-embed)) .border-slate-950 {
     border-color: var(--tk-line-strong);
   }
 
@@ -566,9 +602,7 @@
           [class*="bg-slate-850/"],
           [class*="bg-slate-900/"],
           [class*="bg-slate-950/"],
-          [class*="bg-["],
-          [class*="hover:bg-slate-"],
-          [class*="group-hover:bg-slate-"]
+          [class*="bg-["]
         )
     ).hover\:text-white:hover,
   body.bg-cream:not(:has(.tarmoto-embed))
@@ -603,9 +637,7 @@
           [class*="bg-slate-850/"],
           [class*="bg-slate-900/"],
           [class*="bg-slate-950/"],
-          [class*="bg-["],
-          [class*="hover:bg-slate-"],
-          [class*="group-hover:bg-slate-"]
+          [class*="bg-["]
         )
     ).hover\:text-slate-50:hover,
   body.bg-cream:not(:has(.tarmoto-embed))
@@ -640,9 +672,7 @@
           [class*="bg-slate-850/"],
           [class*="bg-slate-900/"],
           [class*="bg-slate-950/"],
-          [class*="bg-["],
-          [class*="hover:bg-slate-"],
-          [class*="group-hover:bg-slate-"]
+          [class*="bg-["]
         )
     ).hover\:text-slate-100:hover,
   body.bg-cream:not(:has(.tarmoto-embed))
@@ -677,9 +707,7 @@
           [class*="bg-slate-850/"],
           [class*="bg-slate-900/"],
           [class*="bg-slate-950/"],
-          [class*="bg-["],
-          [class*="hover:bg-slate-"],
-          [class*="group-hover:bg-slate-"]
+          [class*="bg-["]
         )
     ).hover\:text-slate-200:hover,
   body.bg-cream:not(:has(.tarmoto-embed))
@@ -714,9 +742,7 @@
           [class*="bg-slate-850/"],
           [class*="bg-slate-900/"],
           [class*="bg-slate-950/"],
-          [class*="bg-["],
-          [class*="hover:bg-slate-"],
-          [class*="group-hover:bg-slate-"]
+          [class*="bg-["]
         )
     ).hover\:text-slate-300:hover {
     color: var(--tk-ink);
@@ -758,8 +784,7 @@
           [class*="bg-slate-850/"],
           [class*="bg-slate-900/"],
           [class*="bg-slate-950/"],
-          [class*="bg-["],
-          [class*="focus:bg-slate-"]
+          [class*="bg-["]
         )
     ).focus\:text-white:focus,
   body.bg-cream:not(:has(.tarmoto-embed))
@@ -794,8 +819,7 @@
           [class*="bg-slate-850/"],
           [class*="bg-slate-900/"],
           [class*="bg-slate-950/"],
-          [class*="bg-["],
-          [class*="focus:bg-slate-"]
+          [class*="bg-["]
         )
     ).focus\:text-slate-100:focus,
   body.bg-cream:not(:has(.tarmoto-embed))
@@ -830,8 +854,7 @@
           [class*="bg-slate-850/"],
           [class*="bg-slate-900/"],
           [class*="bg-slate-950/"],
-          [class*="bg-["],
-          [class*="focus:bg-slate-"]
+          [class*="bg-["]
         )
     ).focus\:text-slate-200:focus {
     color: var(--tk-ink);
