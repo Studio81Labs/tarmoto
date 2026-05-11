@@ -1,29 +1,36 @@
 ---
 interface FooterLink {
   label: string;
+  href?: string;
   action?: "cookie-preferences";
+  soon?: boolean;
 }
 
 const cols: Array<{ h: string; links: FooterLink[] }> = [
   {
     h: "Product",
     links: [
-      { label: "Planner" },
-      { label: "Companion app" },
-      { label: "GPX import" },
-      { label: "What's planned" },
+      { label: "Planner", href: "#planner" },
+      { label: "Companion app", href: "#workflow" },
+      { label: "GPX import", href: "#features" },
+      { label: "What's planned", href: "#roadmap" },
     ],
   },
   {
     h: "Company",
-    links: [{ label: "About" }, { label: "Changelog" }, { label: "Press kit" }, { label: "Contact" }],
+    links: [
+      { label: "About", href: "#about" },
+      { label: "Changelog", soon: true },
+      { label: "Press kit", soon: true },
+      { label: "Contact", soon: true },
+    ],
   },
   {
     h: "Legal",
     links: [
-      { label: "Privacy" },
-      { label: "Terms" },
-      { label: "Imprint" },
+      { label: "Privacy", soon: true },
+      { label: "Terms", soon: true },
+      { label: "Imprint", soon: true },
       { label: "Cookie preferences", action: "cookie-preferences" },
     ],
   },
@@ -60,15 +67,24 @@ const year = new Date().getFullYear();
           <div>
             <span class="stamp">{col.h}</span>
             <div class="footer-col-links">
-              {col.links.map((item) =>
-                item.action === "cookie-preferences" ? (
-                  <a href="#" data-cookie-preferences>
-                    {item.label}
-                  </a>
-                ) : (
-                  <a>{item.label}</a>
-                ),
-              )}
+              {col.links.map((item) => {
+                if (item.action === "cookie-preferences") {
+                  return (
+                    <a href="#" data-cookie-preferences>
+                      {item.label}
+                    </a>
+                  );
+                }
+                if (item.soon) {
+                  return (
+                    <span class="footer-link-soon" aria-disabled="true">
+                      {item.label}
+                      <span class="mono footer-link-soon-tag">soon</span>
+                    </span>
+                  );
+                }
+                return <a href={item.href}>{item.label}</a>;
+              })}
             </div>
           </div>
         ))
@@ -146,6 +162,26 @@ const year = new Date().getFullYear();
 
   .footer-col-links a:hover {
     color: var(--text);
+  }
+
+  .footer-link-soon {
+    font-size: 13.5px;
+    color: var(--faint);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: default;
+  }
+
+  .footer-link-soon-tag {
+    font-size: 9.5px;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--mute);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--line);
+    background: rgba(232, 229, 222, 0.03);
   }
 
   .footer-bottom {
