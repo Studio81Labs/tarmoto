@@ -334,8 +334,17 @@
      names, so a substring matcher here would force ink text onto still-
      dark translucent slate surfaces.
 
-     Selectors use `:where()` so they contribute zero specificity and any
-     component-level Tailwind class can still override them. */
+     The slate ancestor matcher and the coloured-bg exclusion both sit in
+     `:where()` so they contribute zero specificity, but the trailing
+     `.text-white` / `.text-slate-*` class is kept outside `:where()` —
+     that gives the whole rule class-level specificity (0,1,0). It now
+     matches the specificity of Tailwind's own `.text-white`, and because
+     this rule lives in `@layer utilities` it's emitted after the
+     auto-generated utilities, so it wins under the cascade. A
+     component-level Tailwind class on the same element (for instance
+     `text-red-500`) still wins over us because Tailwind's text-colour
+     utilities all live in the same specificity band and any later
+     class on the element supersedes ours. */
   :where(
       [class~="bg-slate-50"],
       [class~="bg-slate-100"],
@@ -349,13 +358,63 @@
       [class~="bg-slate-850"],
       [class~="bg-slate-900"],
       [class~="bg-slate-950"]
-    ):where(
-      .text-white,
-      .text-slate-50,
-      .text-slate-100,
-      .text-slate-200,
-      .text-slate-300
-    ),
+    ).text-white,
+  :where(
+      [class~="bg-slate-50"],
+      [class~="bg-slate-100"],
+      [class~="bg-slate-200"],
+      [class~="bg-slate-300"],
+      [class~="bg-slate-400"],
+      [class~="bg-slate-500"],
+      [class~="bg-slate-600"],
+      [class~="bg-slate-700"],
+      [class~="bg-slate-800"],
+      [class~="bg-slate-850"],
+      [class~="bg-slate-900"],
+      [class~="bg-slate-950"]
+    ).text-slate-50,
+  :where(
+      [class~="bg-slate-50"],
+      [class~="bg-slate-100"],
+      [class~="bg-slate-200"],
+      [class~="bg-slate-300"],
+      [class~="bg-slate-400"],
+      [class~="bg-slate-500"],
+      [class~="bg-slate-600"],
+      [class~="bg-slate-700"],
+      [class~="bg-slate-800"],
+      [class~="bg-slate-850"],
+      [class~="bg-slate-900"],
+      [class~="bg-slate-950"]
+    ).text-slate-100,
+  :where(
+      [class~="bg-slate-50"],
+      [class~="bg-slate-100"],
+      [class~="bg-slate-200"],
+      [class~="bg-slate-300"],
+      [class~="bg-slate-400"],
+      [class~="bg-slate-500"],
+      [class~="bg-slate-600"],
+      [class~="bg-slate-700"],
+      [class~="bg-slate-800"],
+      [class~="bg-slate-850"],
+      [class~="bg-slate-900"],
+      [class~="bg-slate-950"]
+    ).text-slate-200,
+  :where(
+      [class~="bg-slate-50"],
+      [class~="bg-slate-100"],
+      [class~="bg-slate-200"],
+      [class~="bg-slate-300"],
+      [class~="bg-slate-400"],
+      [class~="bg-slate-500"],
+      [class~="bg-slate-600"],
+      [class~="bg-slate-700"],
+      [class~="bg-slate-800"],
+      [class~="bg-slate-850"],
+      [class~="bg-slate-900"],
+      [class~="bg-slate-950"]
+    ).text-slate-300,
   :where(
       [class~="bg-slate-50"],
       [class~="bg-slate-100"],
@@ -390,13 +449,147 @@
           [class*="bg-teal-"],
           [class*="bg-lime-"]
         )
-    ):where(
-      .text-white,
-      .text-slate-50,
-      .text-slate-100,
-      .text-slate-200,
-      .text-slate-300
-    ) {
+    ).text-white,
+  :where(
+      [class~="bg-slate-50"],
+      [class~="bg-slate-100"],
+      [class~="bg-slate-200"],
+      [class~="bg-slate-300"],
+      [class~="bg-slate-400"],
+      [class~="bg-slate-500"],
+      [class~="bg-slate-600"],
+      [class~="bg-slate-700"],
+      [class~="bg-slate-800"],
+      [class~="bg-slate-850"],
+      [class~="bg-slate-900"],
+      [class~="bg-slate-950"]
+    )
+    :where(
+      :not(
+          [class*="bg-red-"],
+          [class*="bg-blue-"],
+          [class*="bg-green-"],
+          [class*="bg-emerald-"],
+          [class*="bg-amber-"],
+          [class*="bg-yellow-"],
+          [class*="bg-orange-"],
+          [class*="bg-rose-"],
+          [class*="bg-pink-"],
+          [class*="bg-violet-"],
+          [class*="bg-indigo-"],
+          [class*="bg-purple-"],
+          [class*="bg-fuchsia-"],
+          [class*="bg-sky-"],
+          [class*="bg-cyan-"],
+          [class*="bg-teal-"],
+          [class*="bg-lime-"]
+        )
+    ).text-slate-50,
+  :where(
+      [class~="bg-slate-50"],
+      [class~="bg-slate-100"],
+      [class~="bg-slate-200"],
+      [class~="bg-slate-300"],
+      [class~="bg-slate-400"],
+      [class~="bg-slate-500"],
+      [class~="bg-slate-600"],
+      [class~="bg-slate-700"],
+      [class~="bg-slate-800"],
+      [class~="bg-slate-850"],
+      [class~="bg-slate-900"],
+      [class~="bg-slate-950"]
+    )
+    :where(
+      :not(
+          [class*="bg-red-"],
+          [class*="bg-blue-"],
+          [class*="bg-green-"],
+          [class*="bg-emerald-"],
+          [class*="bg-amber-"],
+          [class*="bg-yellow-"],
+          [class*="bg-orange-"],
+          [class*="bg-rose-"],
+          [class*="bg-pink-"],
+          [class*="bg-violet-"],
+          [class*="bg-indigo-"],
+          [class*="bg-purple-"],
+          [class*="bg-fuchsia-"],
+          [class*="bg-sky-"],
+          [class*="bg-cyan-"],
+          [class*="bg-teal-"],
+          [class*="bg-lime-"]
+        )
+    ).text-slate-100,
+  :where(
+      [class~="bg-slate-50"],
+      [class~="bg-slate-100"],
+      [class~="bg-slate-200"],
+      [class~="bg-slate-300"],
+      [class~="bg-slate-400"],
+      [class~="bg-slate-500"],
+      [class~="bg-slate-600"],
+      [class~="bg-slate-700"],
+      [class~="bg-slate-800"],
+      [class~="bg-slate-850"],
+      [class~="bg-slate-900"],
+      [class~="bg-slate-950"]
+    )
+    :where(
+      :not(
+          [class*="bg-red-"],
+          [class*="bg-blue-"],
+          [class*="bg-green-"],
+          [class*="bg-emerald-"],
+          [class*="bg-amber-"],
+          [class*="bg-yellow-"],
+          [class*="bg-orange-"],
+          [class*="bg-rose-"],
+          [class*="bg-pink-"],
+          [class*="bg-violet-"],
+          [class*="bg-indigo-"],
+          [class*="bg-purple-"],
+          [class*="bg-fuchsia-"],
+          [class*="bg-sky-"],
+          [class*="bg-cyan-"],
+          [class*="bg-teal-"],
+          [class*="bg-lime-"]
+        )
+    ).text-slate-200,
+  :where(
+      [class~="bg-slate-50"],
+      [class~="bg-slate-100"],
+      [class~="bg-slate-200"],
+      [class~="bg-slate-300"],
+      [class~="bg-slate-400"],
+      [class~="bg-slate-500"],
+      [class~="bg-slate-600"],
+      [class~="bg-slate-700"],
+      [class~="bg-slate-800"],
+      [class~="bg-slate-850"],
+      [class~="bg-slate-900"],
+      [class~="bg-slate-950"]
+    )
+    :where(
+      :not(
+          [class*="bg-red-"],
+          [class*="bg-blue-"],
+          [class*="bg-green-"],
+          [class*="bg-emerald-"],
+          [class*="bg-amber-"],
+          [class*="bg-yellow-"],
+          [class*="bg-orange-"],
+          [class*="bg-rose-"],
+          [class*="bg-pink-"],
+          [class*="bg-violet-"],
+          [class*="bg-indigo-"],
+          [class*="bg-purple-"],
+          [class*="bg-fuchsia-"],
+          [class*="bg-sky-"],
+          [class*="bg-cyan-"],
+          [class*="bg-teal-"],
+          [class*="bg-lime-"]
+        )
+    ).text-slate-300 {
     color: var(--tk-ink);
   }
 }
