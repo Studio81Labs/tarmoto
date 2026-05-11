@@ -35,34 +35,34 @@ const qualityScale = [
 const Q_VARS = ["var(--q1)", "var(--q2)", "var(--q3)", "var(--q4)", "var(--q5)"];
 
 const workflowSteps = [
-  ["01", "Plan", "Set start, end, stops. First draft in seconds."],
-  ["02", "Tune", "Curves, asphalt, scenery, avoidances. Re-paths live."],
-  ["03", "Sync", "One click. Route appears on your phone, offline-ready."],
-  ["04", "Ride", "Mount the phone. Sign in once. Sync the route. Ride offline."],
+  ["01", "Plan", "Set start, end, stops. Build a first draft quickly."],
+  ["02", "Tune", "Curves, surface, scenery, avoidances. Adjust the route before you ride."],
+  ["03", "Sync", "Send the route to your phone and keep it available offline."],
+  ["04", "Ride", "Mount the phone. Open the synced route. Ride without signal anxiety."],
 ] as const;
 
 const workflowExtras = [
   {
     t: "GPX in & out",
-    d: "Drop a .gpx onto the planner. Export to Garmin, TomTom, Quad Lock, anything that reads GPX.",
+    d: "Import existing GPX files and export routes for tools and devices that understand GPX.",
   },
   {
     t: "Multi-stop drafts",
-    d: "Save as many drafts as you want. Compare lengths, climb, asphalt mix side by side.",
+    d: "Plan multi-stop routes, keep alternatives, and compare distance, climb, and surface mix.",
   },
   {
-    t: "Offline regions",
-    d: "Download the area before you leave. Map, route, turn cues all work without signal.",
+    t: "Offline riding",
+    d: "The goal is simple: sync before you leave, then keep map, route, and cues usable without signal.",
   },
 ];
 
 const features = [
-  { t: "Branchable drafts", s: "Fork a route at any point, compare alternatives, keep the better one." },
-  { t: "Elevation profile", s: "See climb, descent and grade. Plan stops where the view is." },
-  { t: "Road-type aware", s: "Asphalt, paved, unknown, gravel, cobble — explicit, never hidden." },
-  { t: "GPX import / export", s: "Round-trip with Garmin, TomTom, Quad Lock, Komoot, Calimoto." },
-  { t: "Distance & time budget", s: "Tell it 180 km, back by 5pm. It will redraw to fit." },
-  { t: "Companion app", s: "iOS and Android. Open route, ride it, track it. That is the app." },
+  { t: "Branchable drafts", s: "Fork a route idea, compare alternatives, and keep the better one." },
+  { t: "Elevation profile", s: "See climb, descent, and grade before committing to a route." },
+  { t: "Road-type aware", s: "Asphalt, paved, unknown, gravel, cobble — visible instead of hidden." },
+  { t: "GPX import / export", s: "Bring routes in, tune them, and export them back out when needed." },
+  { t: "Distance & time budget", s: "Planned tooling for shaping routes around distance, time, and return constraints." },
+  { t: "Companion app", s: "iOS and Android companion for opening synced routes and riding offline." },
 ];
 
 const milestones = [
@@ -109,7 +109,7 @@ const faq: Array<[string, string]> = [
   ],
   [
     "Is this another phone GPS app?",
-    "No. The planner is desktop-first — Mac, Windows, or web. The phone is an offline-ready companion: it opens the route you planned and shows simple cues while you ride. We're not trying to be your phone GPS.",
+    "No. Tarmoto starts with planning on a bigger screen — Mac, Windows, or web. The phone companion is for the ride itself: open the route you prepared, keep it available offline, and follow simple cues. We're not trying to make complex route planning happen on a small screen.",
   ],
   [
     "How does it compare to Calimoto, Kurviger, Rever?",
@@ -117,7 +117,7 @@ const faq: Array<[string, string]> = [
   ],
   [
     "Can I import my existing GPX routes?",
-    "Yes. Drop a .gpx file onto the planner; we re-snap it to the road network, show you a quality breakdown, and let you tune it from there. Export back to GPX is one click.",
+    "GPX import and export are part of the plan. The goal is to let you bring existing routes into the planner, inspect their surface/quality breakdown where data exists, tune them, and export them again.",
   ],
   [
     "What about privacy?",
@@ -151,8 +151,9 @@ const trustNote = "BUILT AROUND OPENSTREETMAP DATA";
           on a <em>real screen.</em>
         </h1>
         <p class="hero-sub">
-          Tarmoto is a desktop route planner for motorcyclists who actually plan rides. Twisty
-          without the broken asphalt. More control, fewer surprises. Sync it to your phone and go.
+          Tarmoto is a desktop-first route planner for motorcyclists who actually plan rides.
+          Built for twisty roads, surface awareness, and fewer surprises. Sync the route to your
+          phone companion and ride.
         </p>
         <div id="waitlist" class="hero-waitlist">
           <WaitlistForm client:visible apiUrl={apiUrl} stage="waitlist" />
