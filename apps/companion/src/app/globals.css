@@ -314,121 +314,145 @@
   }
 
   /* ─── Scoped foreground remap ───
-     On slate-* surfaces (now cream), the original "light text" utilities —
-     `text-white` and the light `text-slate-50/100/200/300` shades — would
-     render too pale to read. We flip them to ink, but only when the
-     element doesn't carry its own non-slate coloured background, so
-     destructive / status surfaces like `bg-red-600 text-white` keep their
-     intended white-on-colour contrast.
+     Repaints the legacy dark-theme foreground utilities so they read on
+     the cream theme:
 
-     The `text-slate-700/800/900/950` and mid-range `text-slate-400/500/600`
-     utilities are *not* overridden — Tailwind's native colours are dark
-     enough to read on cream and on white/colored bgs (e.g.
-     `bg-tarmoto-cyan text-slate-950` → ink-on-orange, as designed).
+     - `text-white` and the light `text-slate-50/100/200/300` shades that
+       were chosen for dark slate panels would now render too pale to
+       read on cream.
+     - The same applies to their hover/focus variants — `hover:text-white`
+       on a control that sits on cream makes the label disappear on hover.
 
-     The ancestor matcher uses `[class~=...]` (whole-word) rather than
-     `[class*=...]` (substring) so opacity-suffixed slate utilities like
-     `bg-slate-900/90` do *not* trigger the remap — those panels remain
-     dark in the migration and need their original light text. The `.bg-
-     slate-*` background overrides above only target the exact utility
-     names, so a substring matcher here would force ink text onto still-
-     dark translucent slate surfaces.
+     `text-slate-700/800/900/950` and the mid-range `text-slate-400/500/600`
+     are left alone — Tailwind's native colours are dark enough to read on
+     cream (and on white / coloured backgrounds for things like
+     `bg-tarmoto-cyan text-slate-950` primary CTAs).
 
-     The slate ancestor matcher and the coloured-bg exclusion both sit in
-     `:where()` so they contribute zero specificity, but the trailing
-     `.text-white` / `.text-slate-*` class is kept outside `:where()` —
-     that gives the whole rule class-level specificity (0,1,0). It now
-     matches the specificity of Tailwind's own `.text-white`, and because
-     this rule lives in `@layer utilities` it's emitted after the
-     auto-generated utilities, so it wins under the cascade. A
-     component-level Tailwind class on the same element (for instance
-     `text-red-500`) still wins over us because Tailwind's text-colour
-     utilities all live in the same specificity band and any later
-     class on the element supersedes ours. */
-  :where(
-      [class~="bg-slate-50"],
-      [class~="bg-slate-100"],
-      [class~="bg-slate-200"],
-      [class~="bg-slate-300"],
-      [class~="bg-slate-400"],
-      [class~="bg-slate-500"],
-      [class~="bg-slate-600"],
-      [class~="bg-slate-700"],
-      [class~="bg-slate-800"],
-      [class~="bg-slate-850"],
-      [class~="bg-slate-900"],
-      [class~="bg-slate-950"]
+     Scoping uses `body.bg-cream` as the stable ancestor: layout.tsx puts
+     `bg-cream` on `<body>`, so every cream-themed page (dashboard, auth
+     form column, public routes that reuse the shell) inherits it. The
+     inner `:where(:not([class*="bg-red-"], …))` skips elements that
+     paint their own non-slate coloured background, so destructive /
+     status surfaces like `bg-red-600 text-white` keep their intended
+     white-on-colour contrast.
+
+     Specificity: `body.bg-cream` contributes (0,1,1); the trailing class
+     adds another (0,1,0). The whole rule is (0,2,1), comfortably beating
+     Tailwind's plain `.text-white` (0,1,0) and matching/beating the
+     `:hover` variants (0,2,0) thanks to the body anchor. Source order is
+     therefore not load-bearing. Component-level Tailwind classes on the
+     same element still override via direct specificity. */
+  body.bg-cream
+    :where(
+      :not(
+          [class*="bg-red-"],
+          [class*="bg-blue-"],
+          [class*="bg-green-"],
+          [class*="bg-emerald-"],
+          [class*="bg-amber-"],
+          [class*="bg-yellow-"],
+          [class*="bg-orange-"],
+          [class*="bg-rose-"],
+          [class*="bg-pink-"],
+          [class*="bg-violet-"],
+          [class*="bg-indigo-"],
+          [class*="bg-purple-"],
+          [class*="bg-fuchsia-"],
+          [class*="bg-sky-"],
+          [class*="bg-cyan-"],
+          [class*="bg-teal-"],
+          [class*="bg-lime-"]
+        )
     ).text-white,
-  :where(
-      [class~="bg-slate-50"],
-      [class~="bg-slate-100"],
-      [class~="bg-slate-200"],
-      [class~="bg-slate-300"],
-      [class~="bg-slate-400"],
-      [class~="bg-slate-500"],
-      [class~="bg-slate-600"],
-      [class~="bg-slate-700"],
-      [class~="bg-slate-800"],
-      [class~="bg-slate-850"],
-      [class~="bg-slate-900"],
-      [class~="bg-slate-950"]
+  body.bg-cream
+    :where(
+      :not(
+          [class*="bg-red-"],
+          [class*="bg-blue-"],
+          [class*="bg-green-"],
+          [class*="bg-emerald-"],
+          [class*="bg-amber-"],
+          [class*="bg-yellow-"],
+          [class*="bg-orange-"],
+          [class*="bg-rose-"],
+          [class*="bg-pink-"],
+          [class*="bg-violet-"],
+          [class*="bg-indigo-"],
+          [class*="bg-purple-"],
+          [class*="bg-fuchsia-"],
+          [class*="bg-sky-"],
+          [class*="bg-cyan-"],
+          [class*="bg-teal-"],
+          [class*="bg-lime-"]
+        )
     ).text-slate-50,
-  :where(
-      [class~="bg-slate-50"],
-      [class~="bg-slate-100"],
-      [class~="bg-slate-200"],
-      [class~="bg-slate-300"],
-      [class~="bg-slate-400"],
-      [class~="bg-slate-500"],
-      [class~="bg-slate-600"],
-      [class~="bg-slate-700"],
-      [class~="bg-slate-800"],
-      [class~="bg-slate-850"],
-      [class~="bg-slate-900"],
-      [class~="bg-slate-950"]
+  body.bg-cream
+    :where(
+      :not(
+          [class*="bg-red-"],
+          [class*="bg-blue-"],
+          [class*="bg-green-"],
+          [class*="bg-emerald-"],
+          [class*="bg-amber-"],
+          [class*="bg-yellow-"],
+          [class*="bg-orange-"],
+          [class*="bg-rose-"],
+          [class*="bg-pink-"],
+          [class*="bg-violet-"],
+          [class*="bg-indigo-"],
+          [class*="bg-purple-"],
+          [class*="bg-fuchsia-"],
+          [class*="bg-sky-"],
+          [class*="bg-cyan-"],
+          [class*="bg-teal-"],
+          [class*="bg-lime-"]
+        )
     ).text-slate-100,
-  :where(
-      [class~="bg-slate-50"],
-      [class~="bg-slate-100"],
-      [class~="bg-slate-200"],
-      [class~="bg-slate-300"],
-      [class~="bg-slate-400"],
-      [class~="bg-slate-500"],
-      [class~="bg-slate-600"],
-      [class~="bg-slate-700"],
-      [class~="bg-slate-800"],
-      [class~="bg-slate-850"],
-      [class~="bg-slate-900"],
-      [class~="bg-slate-950"]
+  body.bg-cream
+    :where(
+      :not(
+          [class*="bg-red-"],
+          [class*="bg-blue-"],
+          [class*="bg-green-"],
+          [class*="bg-emerald-"],
+          [class*="bg-amber-"],
+          [class*="bg-yellow-"],
+          [class*="bg-orange-"],
+          [class*="bg-rose-"],
+          [class*="bg-pink-"],
+          [class*="bg-violet-"],
+          [class*="bg-indigo-"],
+          [class*="bg-purple-"],
+          [class*="bg-fuchsia-"],
+          [class*="bg-sky-"],
+          [class*="bg-cyan-"],
+          [class*="bg-teal-"],
+          [class*="bg-lime-"]
+        )
     ).text-slate-200,
-  :where(
-      [class~="bg-slate-50"],
-      [class~="bg-slate-100"],
-      [class~="bg-slate-200"],
-      [class~="bg-slate-300"],
-      [class~="bg-slate-400"],
-      [class~="bg-slate-500"],
-      [class~="bg-slate-600"],
-      [class~="bg-slate-700"],
-      [class~="bg-slate-800"],
-      [class~="bg-slate-850"],
-      [class~="bg-slate-900"],
-      [class~="bg-slate-950"]
+  body.bg-cream
+    :where(
+      :not(
+          [class*="bg-red-"],
+          [class*="bg-blue-"],
+          [class*="bg-green-"],
+          [class*="bg-emerald-"],
+          [class*="bg-amber-"],
+          [class*="bg-yellow-"],
+          [class*="bg-orange-"],
+          [class*="bg-rose-"],
+          [class*="bg-pink-"],
+          [class*="bg-violet-"],
+          [class*="bg-indigo-"],
+          [class*="bg-purple-"],
+          [class*="bg-fuchsia-"],
+          [class*="bg-sky-"],
+          [class*="bg-cyan-"],
+          [class*="bg-teal-"],
+          [class*="bg-lime-"]
+        )
     ).text-slate-300,
-  :where(
-      [class~="bg-slate-50"],
-      [class~="bg-slate-100"],
-      [class~="bg-slate-200"],
-      [class~="bg-slate-300"],
-      [class~="bg-slate-400"],
-      [class~="bg-slate-500"],
-      [class~="bg-slate-600"],
-      [class~="bg-slate-700"],
-      [class~="bg-slate-800"],
-      [class~="bg-slate-850"],
-      [class~="bg-slate-900"],
-      [class~="bg-slate-950"]
-    )
+  body.bg-cream
     :where(
       :not(
           [class*="bg-red-"],
@@ -449,21 +473,8 @@
           [class*="bg-teal-"],
           [class*="bg-lime-"]
         )
-    ).text-white,
-  :where(
-      [class~="bg-slate-50"],
-      [class~="bg-slate-100"],
-      [class~="bg-slate-200"],
-      [class~="bg-slate-300"],
-      [class~="bg-slate-400"],
-      [class~="bg-slate-500"],
-      [class~="bg-slate-600"],
-      [class~="bg-slate-700"],
-      [class~="bg-slate-800"],
-      [class~="bg-slate-850"],
-      [class~="bg-slate-900"],
-      [class~="bg-slate-950"]
-    )
+    ).hover\:text-white:hover,
+  body.bg-cream
     :where(
       :not(
           [class*="bg-red-"],
@@ -484,21 +495,8 @@
           [class*="bg-teal-"],
           [class*="bg-lime-"]
         )
-    ).text-slate-50,
-  :where(
-      [class~="bg-slate-50"],
-      [class~="bg-slate-100"],
-      [class~="bg-slate-200"],
-      [class~="bg-slate-300"],
-      [class~="bg-slate-400"],
-      [class~="bg-slate-500"],
-      [class~="bg-slate-600"],
-      [class~="bg-slate-700"],
-      [class~="bg-slate-800"],
-      [class~="bg-slate-850"],
-      [class~="bg-slate-900"],
-      [class~="bg-slate-950"]
-    )
+    ).hover\:text-slate-50:hover,
+  body.bg-cream
     :where(
       :not(
           [class*="bg-red-"],
@@ -519,21 +517,8 @@
           [class*="bg-teal-"],
           [class*="bg-lime-"]
         )
-    ).text-slate-100,
-  :where(
-      [class~="bg-slate-50"],
-      [class~="bg-slate-100"],
-      [class~="bg-slate-200"],
-      [class~="bg-slate-300"],
-      [class~="bg-slate-400"],
-      [class~="bg-slate-500"],
-      [class~="bg-slate-600"],
-      [class~="bg-slate-700"],
-      [class~="bg-slate-800"],
-      [class~="bg-slate-850"],
-      [class~="bg-slate-900"],
-      [class~="bg-slate-950"]
-    )
+    ).hover\:text-slate-100:hover,
+  body.bg-cream
     :where(
       :not(
           [class*="bg-red-"],
@@ -554,21 +539,8 @@
           [class*="bg-teal-"],
           [class*="bg-lime-"]
         )
-    ).text-slate-200,
-  :where(
-      [class~="bg-slate-50"],
-      [class~="bg-slate-100"],
-      [class~="bg-slate-200"],
-      [class~="bg-slate-300"],
-      [class~="bg-slate-400"],
-      [class~="bg-slate-500"],
-      [class~="bg-slate-600"],
-      [class~="bg-slate-700"],
-      [class~="bg-slate-800"],
-      [class~="bg-slate-850"],
-      [class~="bg-slate-900"],
-      [class~="bg-slate-950"]
-    )
+    ).hover\:text-slate-200:hover,
+  body.bg-cream
     :where(
       :not(
           [class*="bg-red-"],
@@ -589,7 +561,73 @@
           [class*="bg-teal-"],
           [class*="bg-lime-"]
         )
-    ).text-slate-300 {
+    ).hover\:text-slate-300:hover,
+  body.bg-cream
+    :where(
+      :not(
+          [class*="bg-red-"],
+          [class*="bg-blue-"],
+          [class*="bg-green-"],
+          [class*="bg-emerald-"],
+          [class*="bg-amber-"],
+          [class*="bg-yellow-"],
+          [class*="bg-orange-"],
+          [class*="bg-rose-"],
+          [class*="bg-pink-"],
+          [class*="bg-violet-"],
+          [class*="bg-indigo-"],
+          [class*="bg-purple-"],
+          [class*="bg-fuchsia-"],
+          [class*="bg-sky-"],
+          [class*="bg-cyan-"],
+          [class*="bg-teal-"],
+          [class*="bg-lime-"]
+        )
+    ).focus\:text-white:focus,
+  body.bg-cream
+    :where(
+      :not(
+          [class*="bg-red-"],
+          [class*="bg-blue-"],
+          [class*="bg-green-"],
+          [class*="bg-emerald-"],
+          [class*="bg-amber-"],
+          [class*="bg-yellow-"],
+          [class*="bg-orange-"],
+          [class*="bg-rose-"],
+          [class*="bg-pink-"],
+          [class*="bg-violet-"],
+          [class*="bg-indigo-"],
+          [class*="bg-purple-"],
+          [class*="bg-fuchsia-"],
+          [class*="bg-sky-"],
+          [class*="bg-cyan-"],
+          [class*="bg-teal-"],
+          [class*="bg-lime-"]
+        )
+    ).focus\:text-slate-100:focus,
+  body.bg-cream
+    :where(
+      :not(
+          [class*="bg-red-"],
+          [class*="bg-blue-"],
+          [class*="bg-green-"],
+          [class*="bg-emerald-"],
+          [class*="bg-amber-"],
+          [class*="bg-yellow-"],
+          [class*="bg-orange-"],
+          [class*="bg-rose-"],
+          [class*="bg-pink-"],
+          [class*="bg-violet-"],
+          [class*="bg-indigo-"],
+          [class*="bg-purple-"],
+          [class*="bg-fuchsia-"],
+          [class*="bg-sky-"],
+          [class*="bg-cyan-"],
+          [class*="bg-teal-"],
+          [class*="bg-lime-"]
+        )
+    ).focus\:text-slate-200:focus {
     color: var(--tk-ink);
   }
 }
