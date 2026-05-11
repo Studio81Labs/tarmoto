@@ -313,6 +313,7 @@
     border-color: var(--tk-line-strong);
   }
 
+
   /* ─── Scoped foreground remap ───
      Repaints the legacy dark-theme foreground utilities so they read on
      the cream theme:
@@ -331,17 +332,25 @@
      Scoping uses `body.bg-cream` as the stable ancestor: layout.tsx puts
      `bg-cream` on `<body>`, so every cream-themed page (dashboard, auth
      form column, public routes that reuse the shell) inherits it. The
-     inner `:where(:not([class*="bg-red-"], …))` skips elements that
-     paint their own non-slate coloured background, so destructive /
-     status surfaces like `bg-red-600 text-white` keep their intended
-     white-on-colour contrast.
+     inner `:where(:not(...))` skips elements that paint their own
+     non-slate coloured background, so destructive / status surfaces like
+     `bg-red-600 text-white` keep their intended white-on-colour contrast.
+
+     The remap is split into three rules so the exclusion list can vary
+     per pseudo-state. A static text utility on an element that also has
+     a `hover:bg-slate-*` class still wants to be flipped to ink in its
+     *default* state (the base bg has been converted to cream), so we
+     only add the hover/focus prefix exclusions to the corresponding
+     hover/focus rule — never to the static rule.
 
      Specificity: `body.bg-cream` contributes (0,1,1); the trailing class
-     adds another (0,1,0). The whole rule is (0,2,1), comfortably beating
-     Tailwind's plain `.text-white` (0,1,0) and matching/beating the
-     `:hover` variants (0,2,0) thanks to the body anchor. Source order is
-     therefore not load-bearing. Component-level Tailwind classes on the
-     same element still override via direct specificity. */
+     adds (0,1,0) for static / (0,2,0) for `:hover`/`:focus`. Cascade
+     order is therefore not load-bearing — component-level Tailwind
+     classes on the same element still override via direct specificity. */
+
+  /* Common exclusion: coloured (non-slate) backgrounds + opacity-suffixed
+     slate variants. Used by every selector below. */
+  /* Static text utilities ------------------------------------------- */
   body.bg-cream
     :where(
       :not(
@@ -362,12 +371,6 @@
           [class*="bg-cyan-"],
           [class*="bg-teal-"],
           [class*="bg-lime-"],
-          /* Opacity-suffixed slate backgrounds (e.g. bg-slate-900/90,
-             bg-slate-950/85) are *not* converted to cream by the
-             .bg-slate-* utility overrides above, so those panels stay
-             dark and still need their original light text. Excluding
-             them here keeps `bg-slate-900/90 text-slate-100` and
-             friends readable. */
           [class*="bg-slate-50/"],
           [class*="bg-slate-100/"],
           [class*="bg-slate-200/"],
@@ -379,22 +382,7 @@
           [class*="bg-slate-800/"],
           [class*="bg-slate-850/"],
           [class*="bg-slate-900/"],
-          [class*="bg-slate-950/"],
-          /* Pseudo-state slate backgrounds (hover/focus/active/group-hover)
-             are *not* converted to cream by the `.bg-slate-*` utility
-             overrides — those only target the base utilities. An element
-             that paints a slate bg on hover (e.g. `hover:bg-slate-800`)
-             still needs its `hover:text-white` / `hover:text-slate-100`
-             label to stay light on the dark hover surface. Excluding
-             these prefixes from the remap leaves Tailwind's native hover
-             colour in place. No companion call sites pair `text-white`
-             or `text-slate-50/100/200/300` *statically* with
-             `hover:bg-slate-*`, so the exclusion can't accidentally hide
-             a default-state label on cream. */
-          [class*="hover:bg-slate-"],
-          [class*="focus:bg-slate-"],
-          [class*="active:bg-slate-"],
-          [class*="group-hover:bg-slate-"]
+          [class*="bg-slate-950/"]
         )
     ).text-white,
   body.bg-cream
@@ -417,12 +405,6 @@
           [class*="bg-cyan-"],
           [class*="bg-teal-"],
           [class*="bg-lime-"],
-          /* Opacity-suffixed slate backgrounds (e.g. bg-slate-900/90,
-             bg-slate-950/85) are *not* converted to cream by the
-             .bg-slate-* utility overrides above, so those panels stay
-             dark and still need their original light text. Excluding
-             them here keeps `bg-slate-900/90 text-slate-100` and
-             friends readable. */
           [class*="bg-slate-50/"],
           [class*="bg-slate-100/"],
           [class*="bg-slate-200/"],
@@ -434,22 +416,7 @@
           [class*="bg-slate-800/"],
           [class*="bg-slate-850/"],
           [class*="bg-slate-900/"],
-          [class*="bg-slate-950/"],
-          /* Pseudo-state slate backgrounds (hover/focus/active/group-hover)
-             are *not* converted to cream by the `.bg-slate-*` utility
-             overrides — those only target the base utilities. An element
-             that paints a slate bg on hover (e.g. `hover:bg-slate-800`)
-             still needs its `hover:text-white` / `hover:text-slate-100`
-             label to stay light on the dark hover surface. Excluding
-             these prefixes from the remap leaves Tailwind's native hover
-             colour in place. No companion call sites pair `text-white`
-             or `text-slate-50/100/200/300` *statically* with
-             `hover:bg-slate-*`, so the exclusion can't accidentally hide
-             a default-state label on cream. */
-          [class*="hover:bg-slate-"],
-          [class*="focus:bg-slate-"],
-          [class*="active:bg-slate-"],
-          [class*="group-hover:bg-slate-"]
+          [class*="bg-slate-950/"]
         )
     ).text-slate-50,
   body.bg-cream
@@ -472,12 +439,6 @@
           [class*="bg-cyan-"],
           [class*="bg-teal-"],
           [class*="bg-lime-"],
-          /* Opacity-suffixed slate backgrounds (e.g. bg-slate-900/90,
-             bg-slate-950/85) are *not* converted to cream by the
-             .bg-slate-* utility overrides above, so those panels stay
-             dark and still need their original light text. Excluding
-             them here keeps `bg-slate-900/90 text-slate-100` and
-             friends readable. */
           [class*="bg-slate-50/"],
           [class*="bg-slate-100/"],
           [class*="bg-slate-200/"],
@@ -489,22 +450,7 @@
           [class*="bg-slate-800/"],
           [class*="bg-slate-850/"],
           [class*="bg-slate-900/"],
-          [class*="bg-slate-950/"],
-          /* Pseudo-state slate backgrounds (hover/focus/active/group-hover)
-             are *not* converted to cream by the `.bg-slate-*` utility
-             overrides — those only target the base utilities. An element
-             that paints a slate bg on hover (e.g. `hover:bg-slate-800`)
-             still needs its `hover:text-white` / `hover:text-slate-100`
-             label to stay light on the dark hover surface. Excluding
-             these prefixes from the remap leaves Tailwind's native hover
-             colour in place. No companion call sites pair `text-white`
-             or `text-slate-50/100/200/300` *statically* with
-             `hover:bg-slate-*`, so the exclusion can't accidentally hide
-             a default-state label on cream. */
-          [class*="hover:bg-slate-"],
-          [class*="focus:bg-slate-"],
-          [class*="active:bg-slate-"],
-          [class*="group-hover:bg-slate-"]
+          [class*="bg-slate-950/"]
         )
     ).text-slate-100,
   body.bg-cream
@@ -527,12 +473,6 @@
           [class*="bg-cyan-"],
           [class*="bg-teal-"],
           [class*="bg-lime-"],
-          /* Opacity-suffixed slate backgrounds (e.g. bg-slate-900/90,
-             bg-slate-950/85) are *not* converted to cream by the
-             .bg-slate-* utility overrides above, so those panels stay
-             dark and still need their original light text. Excluding
-             them here keeps `bg-slate-900/90 text-slate-100` and
-             friends readable. */
           [class*="bg-slate-50/"],
           [class*="bg-slate-100/"],
           [class*="bg-slate-200/"],
@@ -544,22 +484,7 @@
           [class*="bg-slate-800/"],
           [class*="bg-slate-850/"],
           [class*="bg-slate-900/"],
-          [class*="bg-slate-950/"],
-          /* Pseudo-state slate backgrounds (hover/focus/active/group-hover)
-             are *not* converted to cream by the `.bg-slate-*` utility
-             overrides — those only target the base utilities. An element
-             that paints a slate bg on hover (e.g. `hover:bg-slate-800`)
-             still needs its `hover:text-white` / `hover:text-slate-100`
-             label to stay light on the dark hover surface. Excluding
-             these prefixes from the remap leaves Tailwind's native hover
-             colour in place. No companion call sites pair `text-white`
-             or `text-slate-50/100/200/300` *statically* with
-             `hover:bg-slate-*`, so the exclusion can't accidentally hide
-             a default-state label on cream. */
-          [class*="hover:bg-slate-"],
-          [class*="focus:bg-slate-"],
-          [class*="active:bg-slate-"],
-          [class*="group-hover:bg-slate-"]
+          [class*="bg-slate-950/"]
         )
     ).text-slate-200,
   body.bg-cream
@@ -582,12 +507,6 @@
           [class*="bg-cyan-"],
           [class*="bg-teal-"],
           [class*="bg-lime-"],
-          /* Opacity-suffixed slate backgrounds (e.g. bg-slate-900/90,
-             bg-slate-950/85) are *not* converted to cream by the
-             .bg-slate-* utility overrides above, so those panels stay
-             dark and still need their original light text. Excluding
-             them here keeps `bg-slate-900/90 text-slate-100` and
-             friends readable. */
           [class*="bg-slate-50/"],
           [class*="bg-slate-100/"],
           [class*="bg-slate-200/"],
@@ -599,24 +518,17 @@
           [class*="bg-slate-800/"],
           [class*="bg-slate-850/"],
           [class*="bg-slate-900/"],
-          [class*="bg-slate-950/"],
-          /* Pseudo-state slate backgrounds (hover/focus/active/group-hover)
-             are *not* converted to cream by the `.bg-slate-*` utility
-             overrides — those only target the base utilities. An element
-             that paints a slate bg on hover (e.g. `hover:bg-slate-800`)
-             still needs its `hover:text-white` / `hover:text-slate-100`
-             label to stay light on the dark hover surface. Excluding
-             these prefixes from the remap leaves Tailwind's native hover
-             colour in place. No companion call sites pair `text-white`
-             or `text-slate-50/100/200/300` *statically* with
-             `hover:bg-slate-*`, so the exclusion can't accidentally hide
-             a default-state label on cream. */
-          [class*="hover:bg-slate-"],
-          [class*="focus:bg-slate-"],
-          [class*="active:bg-slate-"],
-          [class*="group-hover:bg-slate-"]
+          [class*="bg-slate-950/"]
         )
-    ).text-slate-300,
+    ).text-slate-300 {
+    color: var(--tk-ink);
+  }
+
+  /* Hover text utilities -------------------------------------------
+     Adds `hover:bg-slate-*` and `group-hover:bg-slate-*` to the
+     exclusion: when an element paints a slate background on hover
+     (e.g. `bg-slate-800 hover:bg-slate-700 hover:text-white`), the
+     hover *text* needs to stay light on that still-dark hover surface. */
   body.bg-cream
     :where(
       :not(
@@ -637,12 +549,6 @@
           [class*="bg-cyan-"],
           [class*="bg-teal-"],
           [class*="bg-lime-"],
-          /* Opacity-suffixed slate backgrounds (e.g. bg-slate-900/90,
-             bg-slate-950/85) are *not* converted to cream by the
-             .bg-slate-* utility overrides above, so those panels stay
-             dark and still need their original light text. Excluding
-             them here keeps `bg-slate-900/90 text-slate-100` and
-             friends readable. */
           [class*="bg-slate-50/"],
           [class*="bg-slate-100/"],
           [class*="bg-slate-200/"],
@@ -655,20 +561,7 @@
           [class*="bg-slate-850/"],
           [class*="bg-slate-900/"],
           [class*="bg-slate-950/"],
-          /* Pseudo-state slate backgrounds (hover/focus/active/group-hover)
-             are *not* converted to cream by the `.bg-slate-*` utility
-             overrides — those only target the base utilities. An element
-             that paints a slate bg on hover (e.g. `hover:bg-slate-800`)
-             still needs its `hover:text-white` / `hover:text-slate-100`
-             label to stay light on the dark hover surface. Excluding
-             these prefixes from the remap leaves Tailwind's native hover
-             colour in place. No companion call sites pair `text-white`
-             or `text-slate-50/100/200/300` *statically* with
-             `hover:bg-slate-*`, so the exclusion can't accidentally hide
-             a default-state label on cream. */
           [class*="hover:bg-slate-"],
-          [class*="focus:bg-slate-"],
-          [class*="active:bg-slate-"],
           [class*="group-hover:bg-slate-"]
         )
     ).hover\:text-white:hover,
@@ -692,12 +585,6 @@
           [class*="bg-cyan-"],
           [class*="bg-teal-"],
           [class*="bg-lime-"],
-          /* Opacity-suffixed slate backgrounds (e.g. bg-slate-900/90,
-             bg-slate-950/85) are *not* converted to cream by the
-             .bg-slate-* utility overrides above, so those panels stay
-             dark and still need their original light text. Excluding
-             them here keeps `bg-slate-900/90 text-slate-100` and
-             friends readable. */
           [class*="bg-slate-50/"],
           [class*="bg-slate-100/"],
           [class*="bg-slate-200/"],
@@ -710,20 +597,7 @@
           [class*="bg-slate-850/"],
           [class*="bg-slate-900/"],
           [class*="bg-slate-950/"],
-          /* Pseudo-state slate backgrounds (hover/focus/active/group-hover)
-             are *not* converted to cream by the `.bg-slate-*` utility
-             overrides — those only target the base utilities. An element
-             that paints a slate bg on hover (e.g. `hover:bg-slate-800`)
-             still needs its `hover:text-white` / `hover:text-slate-100`
-             label to stay light on the dark hover surface. Excluding
-             these prefixes from the remap leaves Tailwind's native hover
-             colour in place. No companion call sites pair `text-white`
-             or `text-slate-50/100/200/300` *statically* with
-             `hover:bg-slate-*`, so the exclusion can't accidentally hide
-             a default-state label on cream. */
           [class*="hover:bg-slate-"],
-          [class*="focus:bg-slate-"],
-          [class*="active:bg-slate-"],
           [class*="group-hover:bg-slate-"]
         )
     ).hover\:text-slate-50:hover,
@@ -747,12 +621,6 @@
           [class*="bg-cyan-"],
           [class*="bg-teal-"],
           [class*="bg-lime-"],
-          /* Opacity-suffixed slate backgrounds (e.g. bg-slate-900/90,
-             bg-slate-950/85) are *not* converted to cream by the
-             .bg-slate-* utility overrides above, so those panels stay
-             dark and still need their original light text. Excluding
-             them here keeps `bg-slate-900/90 text-slate-100` and
-             friends readable. */
           [class*="bg-slate-50/"],
           [class*="bg-slate-100/"],
           [class*="bg-slate-200/"],
@@ -765,20 +633,7 @@
           [class*="bg-slate-850/"],
           [class*="bg-slate-900/"],
           [class*="bg-slate-950/"],
-          /* Pseudo-state slate backgrounds (hover/focus/active/group-hover)
-             are *not* converted to cream by the `.bg-slate-*` utility
-             overrides — those only target the base utilities. An element
-             that paints a slate bg on hover (e.g. `hover:bg-slate-800`)
-             still needs its `hover:text-white` / `hover:text-slate-100`
-             label to stay light on the dark hover surface. Excluding
-             these prefixes from the remap leaves Tailwind's native hover
-             colour in place. No companion call sites pair `text-white`
-             or `text-slate-50/100/200/300` *statically* with
-             `hover:bg-slate-*`, so the exclusion can't accidentally hide
-             a default-state label on cream. */
           [class*="hover:bg-slate-"],
-          [class*="focus:bg-slate-"],
-          [class*="active:bg-slate-"],
           [class*="group-hover:bg-slate-"]
         )
     ).hover\:text-slate-100:hover,
@@ -802,12 +657,6 @@
           [class*="bg-cyan-"],
           [class*="bg-teal-"],
           [class*="bg-lime-"],
-          /* Opacity-suffixed slate backgrounds (e.g. bg-slate-900/90,
-             bg-slate-950/85) are *not* converted to cream by the
-             .bg-slate-* utility overrides above, so those panels stay
-             dark and still need their original light text. Excluding
-             them here keeps `bg-slate-900/90 text-slate-100` and
-             friends readable. */
           [class*="bg-slate-50/"],
           [class*="bg-slate-100/"],
           [class*="bg-slate-200/"],
@@ -820,20 +669,7 @@
           [class*="bg-slate-850/"],
           [class*="bg-slate-900/"],
           [class*="bg-slate-950/"],
-          /* Pseudo-state slate backgrounds (hover/focus/active/group-hover)
-             are *not* converted to cream by the `.bg-slate-*` utility
-             overrides — those only target the base utilities. An element
-             that paints a slate bg on hover (e.g. `hover:bg-slate-800`)
-             still needs its `hover:text-white` / `hover:text-slate-100`
-             label to stay light on the dark hover surface. Excluding
-             these prefixes from the remap leaves Tailwind's native hover
-             colour in place. No companion call sites pair `text-white`
-             or `text-slate-50/100/200/300` *statically* with
-             `hover:bg-slate-*`, so the exclusion can't accidentally hide
-             a default-state label on cream. */
           [class*="hover:bg-slate-"],
-          [class*="focus:bg-slate-"],
-          [class*="active:bg-slate-"],
           [class*="group-hover:bg-slate-"]
         )
     ).hover\:text-slate-200:hover,
@@ -857,12 +693,6 @@
           [class*="bg-cyan-"],
           [class*="bg-teal-"],
           [class*="bg-lime-"],
-          /* Opacity-suffixed slate backgrounds (e.g. bg-slate-900/90,
-             bg-slate-950/85) are *not* converted to cream by the
-             .bg-slate-* utility overrides above, so those panels stay
-             dark and still need their original light text. Excluding
-             them here keeps `bg-slate-900/90 text-slate-100` and
-             friends readable. */
           [class*="bg-slate-50/"],
           [class*="bg-slate-100/"],
           [class*="bg-slate-200/"],
@@ -875,23 +705,17 @@
           [class*="bg-slate-850/"],
           [class*="bg-slate-900/"],
           [class*="bg-slate-950/"],
-          /* Pseudo-state slate backgrounds (hover/focus/active/group-hover)
-             are *not* converted to cream by the `.bg-slate-*` utility
-             overrides — those only target the base utilities. An element
-             that paints a slate bg on hover (e.g. `hover:bg-slate-800`)
-             still needs its `hover:text-white` / `hover:text-slate-100`
-             label to stay light on the dark hover surface. Excluding
-             these prefixes from the remap leaves Tailwind's native hover
-             colour in place. No companion call sites pair `text-white`
-             or `text-slate-50/100/200/300` *statically* with
-             `hover:bg-slate-*`, so the exclusion can't accidentally hide
-             a default-state label on cream. */
           [class*="hover:bg-slate-"],
-          [class*="focus:bg-slate-"],
-          [class*="active:bg-slate-"],
           [class*="group-hover:bg-slate-"]
         )
-    ).hover\:text-slate-300:hover,
+    ).hover\:text-slate-300:hover {
+    color: var(--tk-ink);
+  }
+
+  /* Focus text utilities -------------------------------------------
+     Adds `focus:bg-slate-*` to the exclusion: when an element paints a
+     slate background on focus, the focus *text* needs to stay light on
+     that still-dark focus surface. */
   body.bg-cream
     :where(
       :not(
@@ -912,12 +736,6 @@
           [class*="bg-cyan-"],
           [class*="bg-teal-"],
           [class*="bg-lime-"],
-          /* Opacity-suffixed slate backgrounds (e.g. bg-slate-900/90,
-             bg-slate-950/85) are *not* converted to cream by the
-             .bg-slate-* utility overrides above, so those panels stay
-             dark and still need their original light text. Excluding
-             them here keeps `bg-slate-900/90 text-slate-100` and
-             friends readable. */
           [class*="bg-slate-50/"],
           [class*="bg-slate-100/"],
           [class*="bg-slate-200/"],
@@ -930,21 +748,7 @@
           [class*="bg-slate-850/"],
           [class*="bg-slate-900/"],
           [class*="bg-slate-950/"],
-          /* Pseudo-state slate backgrounds (hover/focus/active/group-hover)
-             are *not* converted to cream by the `.bg-slate-*` utility
-             overrides — those only target the base utilities. An element
-             that paints a slate bg on hover (e.g. `hover:bg-slate-800`)
-             still needs its `hover:text-white` / `hover:text-slate-100`
-             label to stay light on the dark hover surface. Excluding
-             these prefixes from the remap leaves Tailwind's native hover
-             colour in place. No companion call sites pair `text-white`
-             or `text-slate-50/100/200/300` *statically* with
-             `hover:bg-slate-*`, so the exclusion can't accidentally hide
-             a default-state label on cream. */
-          [class*="hover:bg-slate-"],
-          [class*="focus:bg-slate-"],
-          [class*="active:bg-slate-"],
-          [class*="group-hover:bg-slate-"]
+          [class*="focus:bg-slate-"]
         )
     ).focus\:text-white:focus,
   body.bg-cream
@@ -967,12 +771,6 @@
           [class*="bg-cyan-"],
           [class*="bg-teal-"],
           [class*="bg-lime-"],
-          /* Opacity-suffixed slate backgrounds (e.g. bg-slate-900/90,
-             bg-slate-950/85) are *not* converted to cream by the
-             .bg-slate-* utility overrides above, so those panels stay
-             dark and still need their original light text. Excluding
-             them here keeps `bg-slate-900/90 text-slate-100` and
-             friends readable. */
           [class*="bg-slate-50/"],
           [class*="bg-slate-100/"],
           [class*="bg-slate-200/"],
@@ -985,21 +783,7 @@
           [class*="bg-slate-850/"],
           [class*="bg-slate-900/"],
           [class*="bg-slate-950/"],
-          /* Pseudo-state slate backgrounds (hover/focus/active/group-hover)
-             are *not* converted to cream by the `.bg-slate-*` utility
-             overrides — those only target the base utilities. An element
-             that paints a slate bg on hover (e.g. `hover:bg-slate-800`)
-             still needs its `hover:text-white` / `hover:text-slate-100`
-             label to stay light on the dark hover surface. Excluding
-             these prefixes from the remap leaves Tailwind's native hover
-             colour in place. No companion call sites pair `text-white`
-             or `text-slate-50/100/200/300` *statically* with
-             `hover:bg-slate-*`, so the exclusion can't accidentally hide
-             a default-state label on cream. */
-          [class*="hover:bg-slate-"],
-          [class*="focus:bg-slate-"],
-          [class*="active:bg-slate-"],
-          [class*="group-hover:bg-slate-"]
+          [class*="focus:bg-slate-"]
         )
     ).focus\:text-slate-100:focus,
   body.bg-cream
@@ -1022,12 +806,6 @@
           [class*="bg-cyan-"],
           [class*="bg-teal-"],
           [class*="bg-lime-"],
-          /* Opacity-suffixed slate backgrounds (e.g. bg-slate-900/90,
-             bg-slate-950/85) are *not* converted to cream by the
-             .bg-slate-* utility overrides above, so those panels stay
-             dark and still need their original light text. Excluding
-             them here keeps `bg-slate-900/90 text-slate-100` and
-             friends readable. */
           [class*="bg-slate-50/"],
           [class*="bg-slate-100/"],
           [class*="bg-slate-200/"],
@@ -1040,21 +818,7 @@
           [class*="bg-slate-850/"],
           [class*="bg-slate-900/"],
           [class*="bg-slate-950/"],
-          /* Pseudo-state slate backgrounds (hover/focus/active/group-hover)
-             are *not* converted to cream by the `.bg-slate-*` utility
-             overrides — those only target the base utilities. An element
-             that paints a slate bg on hover (e.g. `hover:bg-slate-800`)
-             still needs its `hover:text-white` / `hover:text-slate-100`
-             label to stay light on the dark hover surface. Excluding
-             these prefixes from the remap leaves Tailwind's native hover
-             colour in place. No companion call sites pair `text-white`
-             or `text-slate-50/100/200/300` *statically* with
-             `hover:bg-slate-*`, so the exclusion can't accidentally hide
-             a default-state label on cream. */
-          [class*="hover:bg-slate-"],
-          [class*="focus:bg-slate-"],
-          [class*="active:bg-slate-"],
-          [class*="group-hover:bg-slate-"]
+          [class*="focus:bg-slate-"]
         )
     ).focus\:text-slate-200:focus {
     color: var(--tk-ink);
