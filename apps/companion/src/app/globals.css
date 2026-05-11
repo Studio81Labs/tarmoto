@@ -351,7 +351,7 @@
   /* Common exclusion: coloured (non-slate) backgrounds + opacity-suffixed
      slate variants. Used by every selector below. */
   /* Static text utilities ------------------------------------------- */
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       :not(
           [class*="bg-red-"],
@@ -385,7 +385,7 @@
           [class*="bg-slate-950/"]
         )
     ).text-white,
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       :not(
           [class*="bg-red-"],
@@ -419,7 +419,7 @@
           [class*="bg-slate-950/"]
         )
     ).text-slate-50,
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       :not(
           [class*="bg-red-"],
@@ -453,7 +453,7 @@
           [class*="bg-slate-950/"]
         )
     ).text-slate-100,
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       :not(
           [class*="bg-red-"],
@@ -487,7 +487,7 @@
           [class*="bg-slate-950/"]
         )
     ).text-slate-200,
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       :not(
           [class*="bg-red-"],
@@ -529,7 +529,7 @@
      exclusion: when an element paints a slate background on hover
      (e.g. `bg-slate-800 hover:bg-slate-700 hover:text-white`), the
      hover *text* needs to stay light on that still-dark hover surface. */
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       :not(
           [class*="bg-red-"],
@@ -565,7 +565,7 @@
           [class*="group-hover:bg-slate-"]
         )
     ).hover\:text-white:hover,
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       :not(
           [class*="bg-red-"],
@@ -601,7 +601,7 @@
           [class*="group-hover:bg-slate-"]
         )
     ).hover\:text-slate-50:hover,
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       :not(
           [class*="bg-red-"],
@@ -637,7 +637,7 @@
           [class*="group-hover:bg-slate-"]
         )
     ).hover\:text-slate-100:hover,
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       :not(
           [class*="bg-red-"],
@@ -673,7 +673,7 @@
           [class*="group-hover:bg-slate-"]
         )
     ).hover\:text-slate-200:hover,
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       :not(
           [class*="bg-red-"],
@@ -716,7 +716,7 @@
      Adds `focus:bg-slate-*` to the exclusion: when an element paints a
      slate background on focus, the focus *text* needs to stay light on
      that still-dark focus surface. */
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       :not(
           [class*="bg-red-"],
@@ -751,7 +751,7 @@
           [class*="focus:bg-slate-"]
         )
     ).focus\:text-white:focus,
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       :not(
           [class*="bg-red-"],
@@ -786,7 +786,7 @@
           [class*="focus:bg-slate-"]
         )
     ).focus\:text-slate-100:focus,
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       :not(
           [class*="bg-red-"],
@@ -836,7 +836,7 @@
      colour values (referenced via the same CSS custom properties Tailwind
      uses to generate `.text-slate-X`). It comes after the remap above, so
      for matching specificity it wins on source order. */
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       [class*="bg-slate-50/"],
       [class*="bg-slate-100/"],
@@ -852,7 +852,7 @@
       [class*="bg-slate-950/"]
     )
     .text-white,
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       [class*="bg-slate-50/"],
       [class*="bg-slate-100/"],
@@ -868,7 +868,7 @@
       [class*="bg-slate-950/"]
     )
     .hover\:text-white:hover,
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       [class*="bg-slate-50/"],
       [class*="bg-slate-100/"],
@@ -886,7 +886,7 @@
     .focus\:text-white:focus {
     color: #fff;
   }
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       [class*="bg-slate-50/"],
       [class*="bg-slate-100/"],
@@ -902,7 +902,7 @@
       [class*="bg-slate-950/"]
     )
     .text-slate-50,
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       [class*="bg-slate-50/"],
       [class*="bg-slate-100/"],
@@ -920,7 +920,7 @@
     .hover\:text-slate-50:hover {
     color: var(--color-slate-50);
   }
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       [class*="bg-slate-50/"],
       [class*="bg-slate-100/"],
@@ -936,7 +936,7 @@
       [class*="bg-slate-950/"]
     )
     .text-slate-100,
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       [class*="bg-slate-50/"],
       [class*="bg-slate-100/"],
@@ -952,7 +952,7 @@
       [class*="bg-slate-950/"]
     )
     .hover\:text-slate-100:hover,
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       [class*="bg-slate-50/"],
       [class*="bg-slate-100/"],
@@ -970,7 +970,7 @@
     .focus\:text-slate-100:focus {
     color: var(--color-slate-100);
   }
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       [class*="bg-slate-50/"],
       [class*="bg-slate-100/"],
@@ -986,7 +986,7 @@
       [class*="bg-slate-950/"]
     )
     .text-slate-200,
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       [class*="bg-slate-50/"],
       [class*="bg-slate-100/"],
@@ -1002,7 +1002,7 @@
       [class*="bg-slate-950/"]
     )
     .hover\:text-slate-200:hover,
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       [class*="bg-slate-50/"],
       [class*="bg-slate-100/"],
@@ -1020,7 +1020,7 @@
     .focus\:text-slate-200:focus {
     color: var(--color-slate-200);
   }
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       [class*="bg-slate-50/"],
       [class*="bg-slate-100/"],
@@ -1036,7 +1036,7 @@
       [class*="bg-slate-950/"]
     )
     .text-slate-300,
-  body.bg-cream
+  body.bg-cream:not(:has(.tarmoto-embed))
     :where(
       [class*="bg-slate-50/"],
       [class*="bg-slate-100/"],
