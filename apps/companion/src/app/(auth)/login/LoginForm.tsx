@@ -47,57 +47,55 @@ export function LoginForm({
   };
   return (
     <div className="animate-fade-in">
-      <h2 className="text-2xl font-bold mb-2">{t("Welcome back")}</h2>
-      <p className="text-slate-400 mb-8">
-        {t("Sign in to your Tarmoto account")}
-      </p>
+      <h2 className="text-2xl font-bold text-ink mb-2">{t("Welcome back")}</h2>
+      <p className="text-ink/60 mb-8">{t("Sign in to your Tarmoto account")}</p>
 
       {error && (
-        <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+        <div className="mb-4 p-3 rounded-lg bg-quality-q1/15 border border-quality-q1/30 text-quality-q1 text-sm">
           {error}
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-1.5">
+          <label className="block text-sm font-semibold text-ink/80 mb-1.5">
             {t("Email")}
           </label>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-4 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-white placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan focus:ring-1 focus:ring-tarmoto-cyan transition"
+            className="w-full px-4 py-2.5 rounded-lg bg-cream border border-ink/15 text-ink placeholder:text-ink/40 focus:outline-none focus:border-ink focus:ring-1 focus:ring-ink transition"
             placeholder={t("rider@example.com")}
             required
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-1.5">
+          <label className="block text-sm font-semibold text-ink/80 mb-1.5">
             {t("Password")}
           </label>
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-4 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-white placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan focus:ring-1 focus:ring-tarmoto-cyan transition"
+            className="w-full px-4 py-2.5 rounded-lg bg-cream border border-ink/15 text-ink placeholder:text-ink/40 focus:outline-none focus:border-ink focus:ring-1 focus:ring-ink transition"
             placeholder="••••••••"
             required
           />
         </div>
 
         <div className="flex items-center justify-between text-sm">
-          <label className="flex items-center gap-2 text-slate-400">
+          <label className="flex items-center gap-2 text-ink/65">
             <input
               type="checkbox"
-              className="rounded border-slate-600 bg-slate-800 text-tarmoto-cyan focus:ring-tarmoto-cyan"
+              className="rounded border-ink/30 bg-cream text-accent focus:ring-accent"
             />
             {t("Remember me")}
           </label>
           <Link
             href="/forgot-password"
-            className="text-tarmoto-cyan hover:underline"
+            className="font-semibold text-ink/70 hover:text-accent hover:underline"
           >
             {t("Forgot password?")}
           </Link>
@@ -106,7 +104,7 @@ export function LoginForm({
         <button
           type="submit"
           disabled={loading}
-          className="w-full py-2.5 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold hover:bg-tarmoto-cyan-light disabled:opacity-50 transition"
+          className="w-full py-2.5 rounded-lg bg-ink text-cream font-semibold hover:bg-tarmac disabled:opacity-50 transition"
         >
           {loading ? t("Signing in...") : t("Sign in")}
         </button>
@@ -114,7 +112,7 @@ export function LoginForm({
 
       <OAuthButtons providers={oauthProviders} callbackUrl={callbackUrl} />
 
-      <p className="mt-6 text-center text-sm text-slate-400">
+      <p className="mt-6 text-center text-sm text-ink/65">
         {t("Don't have an account?")}{" "}
         <Link
           href={
@@ -130,7 +128,7 @@ export function LoginForm({
               ? `/register?callbackUrl=${encodeURIComponent(searchParams.get("callbackUrl") ?? "")}`
               : "/register"
           }
-          className="text-tarmoto-cyan hover:underline"
+          className="font-semibold text-ink hover:text-accent hover:underline"
         >
           {t("Create one")}
         </Link>
