@@ -180,6 +180,124 @@ a {
   transform: translateY(0);
 }
 
+/* ============= subpages (about / contact / privacy / terms) ============= */
+.subpage {
+  padding: 96px 0 80px;
+}
+
+.subpage-container {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 32px;
+}
+
+.subpage-title {
+  font-family: var(--serif);
+  font-size: clamp(38px, 6vw, 64px);
+  letter-spacing: -0.025em;
+  line-height: 1.04;
+  font-weight: 400;
+  margin: 0;
+}
+
+.subpage-lede {
+  font-size: 18px;
+  color: var(--dim);
+  line-height: 1.55;
+  margin: 22px 0 0;
+}
+
+.subpage-body {
+  margin-top: 40px;
+  font-size: 15.5px;
+  color: var(--dim);
+  line-height: 1.7;
+}
+
+.subpage-body h2 {
+  font-family: var(--font);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.012em;
+  margin: 32px 0 12px;
+}
+
+.subpage-body h2:first-child {
+  margin-top: 0;
+}
+
+.subpage-body p {
+  margin: 0 0 14px;
+}
+
+.subpage-body p:last-child {
+  margin-bottom: 0;
+}
+
+.subpage-body strong {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.subpage-body a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(255, 106, 26, 0.35);
+  transition: border-color 0.2s ease;
+}
+
+.subpage-body a:hover {
+  border-bottom-color: var(--accent);
+}
+
+.subpage-body ul {
+  margin: 0 0 14px;
+  padding-left: 22px;
+}
+
+.subpage-body li {
+  margin-bottom: 8px;
+}
+
+.subpage-body dl {
+  margin: 0 0 18px;
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 8px 18px;
+}
+
+.subpage-body dt {
+  color: var(--mute);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  padding-top: 4px;
+}
+
+.subpage-body dd {
+  margin: 0;
+}
+
+.subpage-meta {
+  margin-top: 56px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--mute);
+}
+
+@media (max-width: 600px) {
+  .subpage-body dl {
+    grid-template-columns: 1fr;
+    gap: 4px 0;
+  }
+  .subpage-body dt {
+    padding-top: 14px;
+  }
+}
+
 @keyframes pulse {
   0%,
   100% {

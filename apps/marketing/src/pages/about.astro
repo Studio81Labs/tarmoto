@@ -1,0 +1,77 @@
+---
+import Base from "../layouts/Base.astro";
+import Nav from "../components/Nav.astro";
+import Footer from "../components/Footer.astro";
+---
+
+<Base
+  title="About · Tarmoto"
+  description="Why we're building Tarmoto — a desktop-first motorcycle route planner."
+>
+  <Nav />
+
+  <section class="subpage">
+    <div class="subpage-container">
+      <div class="eyebrow">
+        <span class="eyebrow-num">§</span>
+        <span class="eyebrow-rule"></span>
+        <span class="stamp">About</span>
+      </div>
+
+      <h1 class="subpage-title">
+        Why we're building <em style="font-style: italic;">Tarmoto.</em>
+      </h1>
+
+      <p class="subpage-lede">
+        Most motorcycle route apps start on the phone. That's fine for navigation,
+        but painful for planning. Tarmoto starts on a real screen — bigger map,
+        better context, more control, fewer surprises once you're already on the road.
+      </p>
+
+      <div class="subpage-body">
+        <h2>The problem</h2>
+        <p>
+          A great motorcycle ride is twisty and smooth. The curvy part is easy to
+          find — most apps optimise for that. The smooth part is the hard one. You
+          plan a 200&nbsp;km loop on a phone, half-tap your way around the map,
+          and end up on broken farm tracks because nothing told you the surface
+          was wrong.
+        </p>
+
+        <h2>What we're building</h2>
+        <p>
+          A desktop-first planner that knows the difference between
+          <strong>twisty</strong> and <strong>broken</strong>. You set the start,
+          the end, and the stops; we draft a route biased toward better asphalt
+          and let you tune curvature, surface minimum, and avoidances. When the
+          route is right, you sync it to a small phone companion that opens
+          offline and plays back simple cues while you ride. No turn-by-turn
+          competition with your existing GPS. No on-bike logins.
+        </p>
+
+        <h2>Where the data comes from</h2>
+        <p>
+          We estimate road quality where data exists, starting from public
+          OpenStreetMap surface and smoothness tags. Beta rider feedback is
+          planned to refine confidence over time. Segments without signal are
+          marked as <em>unknown</em> — you can choose to avoid them rather than
+          guess.
+        </p>
+
+        <h2>Who is building it</h2>
+        <p>
+          A small team operating as <strong>Studio81 Labs, s.r.o.</strong>,
+          building Tarmoto in the open. We're inviting riders in small batches
+          through the waitlist. We'll say so when something slips.
+        </p>
+
+        <p>
+          If you want updates, <a href="/#waitlist">join the waitlist</a> — one
+          email when there's something to share, no marketing list.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <Footer />
+</Base>

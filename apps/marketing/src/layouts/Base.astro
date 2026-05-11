@@ -11,6 +11,9 @@ const {
 
 import "../styles/global.css";
 import CookieConsent from "../components/CookieConsent.astro";
+import WaitlistDialog from "../components/WaitlistDialog.tsx";
+
+const apiUrl = import.meta.env.PUBLIC_API_URL ?? "";
 ---
 
 <!doctype html>
@@ -35,5 +38,6 @@ import CookieConsent from "../components/CookieConsent.astro";
   <body>
     <slot />
     <CookieConsent />
+    <WaitlistDialog client:load apiUrl={apiUrl} />
   </body>
 </html>

@@ -1,37 +1,29 @@
 ---
 interface FooterLink {
   label: string;
-  href?: string;
-  action?: "cookie-preferences";
-  soon?: boolean;
+  href: string;
 }
 
 const cols: Array<{ h: string; links: FooterLink[] }> = [
   {
     h: "Product",
     links: [
-      { label: "Planner", href: "#planner" },
-      { label: "Companion app", href: "#workflow" },
-      { label: "GPX import", href: "#features" },
-      { label: "What's planned", href: "#roadmap" },
+      { label: "Planner", href: "/#planner" },
+      { label: "What's planned", href: "/#roadmap" },
     ],
   },
   {
     h: "Company",
     links: [
-      { label: "About", href: "#about" },
-      { label: "Changelog", soon: true },
-      { label: "Press kit", soon: true },
-      { label: "Contact", soon: true },
+      { label: "About", href: "/about" },
+      { label: "Contact", href: "/contact" },
     ],
   },
   {
     h: "Legal",
     links: [
-      { label: "Privacy", soon: true },
-      { label: "Terms", soon: true },
-      { label: "Imprint", soon: true },
-      { label: "Cookie preferences", action: "cookie-preferences" },
+      { label: "Privacy", href: "/privacy" },
+      { label: "Terms", href: "/terms" },
     ],
   },
 ];
@@ -67,24 +59,9 @@ const year = new Date().getFullYear();
           <div>
             <span class="stamp">{col.h}</span>
             <div class="footer-col-links">
-              {col.links.map((item) => {
-                if (item.action === "cookie-preferences") {
-                  return (
-                    <a href="#" data-cookie-preferences>
-                      {item.label}
-                    </a>
-                  );
-                }
-                if (item.soon) {
-                  return (
-                    <span class="footer-link-soon" aria-disabled="true">
-                      {item.label}
-                      <span class="mono footer-link-soon-tag">soon</span>
-                    </span>
-                  );
-                }
-                return <a href={item.href}>{item.label}</a>;
-              })}
+              {col.links.map((item) => (
+                <a href={item.href}>{item.label}</a>
+              ))}
             </div>
           </div>
         ))
@@ -92,7 +69,13 @@ const year = new Date().getFullYear();
     </div>
     <div class="footer-bottom mono">
       <span>© {year} TARMOTO · STUDIO81 LABS, S.R.O.</span>
-      <span>EARLY BETA · PRELAUNCH</span>
+      <span class="footer-bottom-right">
+        EARLY BETA · PRELAUNCH
+        <span class="footer-bottom-sep" aria-hidden="true">·</span>
+        <a href="#" data-cookie-preferences class="footer-bottom-link"
+          >COOKIE PREFERENCES</a
+        >
+      </span>
     </div>
   </div>
 </footer>
@@ -164,24 +147,24 @@ const year = new Date().getFullYear();
     color: var(--text);
   }
 
-  .footer-link-soon {
-    font-size: 13.5px;
-    color: var(--faint);
+  .footer-bottom-right {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    cursor: default;
+    gap: 10px;
   }
 
-  .footer-link-soon-tag {
-    font-size: 9.5px;
-    letter-spacing: 0.13em;
-    text-transform: uppercase;
+  .footer-bottom-sep {
+    opacity: 0.6;
+  }
+
+  .footer-bottom-link {
     color: var(--mute);
-    padding: 2px 6px;
-    border-radius: 4px;
-    border: 1px solid var(--line);
-    background: rgba(232, 229, 222, 0.03);
+    cursor: pointer;
+    transition: color 0.2s ease;
+  }
+
+  .footer-bottom-link:hover {
+    color: var(--text);
   }
 
   .footer-bottom {
@@ -189,6 +172,8 @@ const year = new Date().getFullYear();
     border-top: 1px solid var(--line);
     display: flex;
     justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
     font-size: 11px;
     color: var(--mute);
     letter-spacing: 0.08em;
