@@ -194,8 +194,16 @@ const UMAMI_URL = "https://cloud.umami.is/script.js";
   });
 
   declineBtn?.addEventListener("click", () => {
+    // If Umami was already injected this session (user previously
+    // accepted and is now revoking via cookie preferences), reload so
+    // the analytics runtime is torn down — removing the <script> tag
+    // alone doesn't unhook listeners it already attached.
+    const wasInjected = umamiAlreadyInjected();
     writeConsent("declined");
     hideBanner();
+    if (wasInjected) {
+      window.location.reload();
+    }
   });
 
   // Footer "Cookie preferences" link (or anything else with this attribute)

@@ -72,33 +72,50 @@ const milestones = [
   { m: "Late 2026 / Early 2027", t: "v1.0 target", state: "future" },
 ];
 
+// Pricing intent mirrors the canonical SUBSCRIPTION_PRICING /
+// PLAN_CATALOG in packages/shared + apps/backend so the public page
+// doesn't quote numbers that disagree with checkout. If those canonical
+// values change, update them here too (or wire the marketing app into
+// @tarmoto/shared as a follow-up).
 const tiers = [
   {
     name: "Free",
     price: "€0",
     cadence: "forever",
-    pitch: "Plan, save up to 5 routes, sync to one device.",
+    pitch: "Plan a ride, see road quality, ride with the companion.",
     feats: [
-      "Full planner on web",
-      "Up to 5 saved routes",
-      "GPX export",
-      "Companion app · 1 region offline",
+      "Basic navigation",
+      "Road quality overlay (limited)",
+      "Hazard alerts",
+      "1 active trip",
     ],
     highlight: false,
   },
   {
-    name: "Pro",
-    price: "~€39",
+    name: "Premium",
+    price: "€29.99",
     cadence: "per year · planned",
-    pitch: "Unlimited routes, drafts, regions. Supports the work.",
+    pitch: "Unlimited planning, offline maps, GPX export.",
     feats: [
-      "Everything in Free",
-      "Unlimited routes & drafts",
-      "Unlimited offline regions",
-      "Compare drafts side-by-side",
-      "Priority email support",
+      "Unlimited trip planning",
+      "Full road quality zoom",
+      "Offline maps",
+      "GPX export",
     ],
     highlight: true,
+  },
+  {
+    name: "Pro",
+    price: "€49.99",
+    cadence: "per year · planned",
+    pitch: "For group organisers and power users.",
+    feats: [
+      "Everything in Premium",
+      "Unlimited group rides",
+      "Priority hazard alerts",
+      "Advanced analytics",
+    ],
+    highlight: false,
   },
 ];
 
@@ -156,7 +173,7 @@ const trustNote = "BUILT AROUND OPENSTREETMAP DATA";
           phone companion and ride.
         </p>
         <div id="waitlist" class="hero-waitlist">
-          <WaitlistForm client:visible apiUrl={apiUrl} stage="waitlist" />
+          <WaitlistForm client:load apiUrl={apiUrl} stage="waitlist" />
         </div>
         <div class="hero-platforms">
           <span><span class="hero-platforms-strong">Mac · Windows · Web</span> for planning</span>
@@ -647,7 +664,7 @@ const trustNote = "BUILT AROUND OPENSTREETMAP DATA";
         <span class="stamp">Pricing intent</span>
       </div>
       <h2 class="serif h-display section-h fade-up">
-        One subscription. <em>That's the whole business.</em>
+        Just subscriptions. <em>That's the whole business.</em>
       </h2>
       <p class="section-lede fade-up">
         Pricing is directional. Beta is free. We will confirm the final plan before charging anyone.
@@ -1815,10 +1832,10 @@ const trustNote = "BUILT AROUND OPENSTREETMAP DATA";
 
   .pricing-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 20px;
     margin: 56px auto 0;
-    max-width: 880px;
+    max-width: 1080px;
   }
 
   .pricing-card {

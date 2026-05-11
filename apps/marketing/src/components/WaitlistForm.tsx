@@ -36,12 +36,11 @@ export default function WaitlistForm({
     setErrorBorder(false);
     setStatus("submitting");
 
-    if (!apiUrl) {
-      setStatus("success");
-      return;
-    }
-
     try {
+      // When PUBLIC_API_URL is unset we still hit the relative /signup
+      // path so a same-origin Worker route works in production. A genuine
+      // misconfiguration surfaces as a network/HTTP error rather than a
+      // silent "you're on the list" confirmation.
       const res = await fetch(`${apiUrl}/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

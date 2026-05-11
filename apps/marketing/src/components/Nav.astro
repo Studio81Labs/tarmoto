@@ -28,7 +28,7 @@ const links = [
     </a>
     <div class="nav-links">
       {links.map((l) => <a href={l.href}>{l.label}</a>)}
-      <a href="#waitlist" class="nav-cta">Join the waitlist</a>
+      <a href="/#waitlist" class="nav-cta">Join the waitlist</a>
     </div>
   </div>
 </nav>
@@ -126,10 +126,17 @@ const links = [
 </style>
 
 <script>
-  // The header CTA opens a modal waitlist dialog mounted on the page.
-  // The inline hero / final-CTA forms still work for users who scroll.
+  // The header CTA opens a modal waitlist dialog. The dialog is a React
+  // island and may not be hydrated yet on slow connections — in that
+  // case we let the native /#waitlist anchor handle the scroll instead
+  // of preventDefault'ing into nothing.
   const cta = document.querySelector<HTMLAnchorElement>(".nav-cta");
+  let dialogReady = false;
+  window.addEventListener("tarmoto:waitlist-dialog-ready", () => {
+    dialogReady = true;
+  });
   cta?.addEventListener("click", (e) => {
+    if (!dialogReady) return;
     e.preventDefault();
     window.dispatchEvent(new CustomEvent("tarmoto:open-waitlist"));
   });

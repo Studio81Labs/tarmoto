@@ -44,7 +44,9 @@ export default function WaitlistDialog({ apiUrl }: WaitlistDialogProps) {
       .catch(() => {});
   }, [apiUrl]);
 
-  // Listen for the custom event the nav CTA dispatches.
+  // Listen for the custom event the nav CTA dispatches, and announce
+  // readiness so the Nav script knows it can preventDefault() the
+  // anchor click instead of leaving the user with nothing happening.
   useEffect(() => {
     const onOpen = () => {
       const dialog = dialogRef.current;
@@ -54,6 +56,7 @@ export default function WaitlistDialog({ apiUrl }: WaitlistDialogProps) {
       requestAnimationFrame(() => emailRef.current?.focus());
     };
     window.addEventListener(OPEN_EVENT, onOpen);
+    window.dispatchEvent(new CustomEvent("tarmoto:waitlist-dialog-ready"));
     return () => window.removeEventListener(OPEN_EVENT, onOpen);
   }, [reset]);
 
@@ -76,12 +79,10 @@ export default function WaitlistDialog({ apiUrl }: WaitlistDialogProps) {
     setErrorBorder(false);
     setStatus("submitting");
 
-    if (!apiUrl) {
-      setStatus("success");
-      return;
-    }
-
     try {
+      // See WaitlistForm: relative /signup keeps a same-origin Worker
+      // route working in production and surfaces a real error otherwise,
+      // instead of silently confirming a dropped signup.
       const res = await fetch(`${apiUrl}/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

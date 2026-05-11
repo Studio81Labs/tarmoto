@@ -37,8 +37,14 @@ import Footer from "../components/Footer.astro";
         <h2>What we collect</h2>
         <ul>
           <li>
-            <strong>Waitlist email.</strong> If you join the waitlist, we store
-            the email address you submit and a timestamp. That's it.
+            <strong>Waitlist submission.</strong> When you join the waitlist we
+            store the email address you submit, a timestamp, the page or form
+            that triggered the signup (<em>source</em>), an optional rider
+            type if the form collects it, the country your request originated
+            from (derived from your IP by our hosting provider — we do not
+            store the raw IP address), and the browser User-Agent string. The
+            country and User-Agent help us spot abuse and shape the beta
+            invite mix; nothing else is derived from them.
           </li>
           <li>
             <strong>Analytics (opt-in).</strong> If you accept analytics in the
