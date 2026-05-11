@@ -781,9 +781,7 @@ const trustNote = "BUILT AROUND OPENSTREETMAP DATA";
     height: 7px;
     border-radius: 50%;
     background: var(--accent);
-    box-shadow:
-      0 0 0 4px rgba(255, 106, 26, 0.13),
-      0 0 14px 0 rgba(255, 154, 98, 0.45);
+    box-shadow: 0 0 0 4px rgba(255, 106, 26, 0.13);
   }
 
   .hero-badge-text {
@@ -846,7 +844,6 @@ const trustNote = "BUILT AROUND OPENSTREETMAP DATA";
     border: 1px solid var(--line-2);
     box-shadow:
       0 40px 100px -30px rgba(0, 0, 0, 0.6),
-      0 24px 80px -40px rgba(255, 154, 98, 0.16),
       inset 0 1px 0 rgba(255, 255, 255, 0.04);
   }
 
@@ -894,13 +891,13 @@ const trustNote = "BUILT AROUND OPENSTREETMAP DATA";
   }
 
   .hero-panel-action.primary {
-    color: var(--bg);
-    background: linear-gradient(180deg, var(--accent-soft) 0%, var(--accent) 60%, var(--accent-deep) 100%);
+    color: var(--ink-warm);
+    background: linear-gradient(180deg, var(--accent-top) 0%, var(--accent) 100%);
     font-weight: 600;
     border-color: transparent;
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.18),
-      0 4px 14px -6px rgba(217, 79, 8, 0.55);
+      0 6px 16px rgba(255, 106, 26, 0.20),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12);
   }
 
   .hero-panel-body {
@@ -1142,9 +1139,7 @@ const trustNote = "BUILT AROUND OPENSTREETMAP DATA";
   }
 
   .pillar-card:hover {
-    background:
-      radial-gradient(140% 80% at 100% 0%, rgba(255, 154, 98, 0.05) 0%, transparent 60%),
-      var(--panel-2);
+    background: var(--panel-2);
     border-color: var(--line-2);
   }
 
@@ -1316,10 +1311,10 @@ const trustNote = "BUILT AROUND OPENSTREETMAP DATA";
   }
 
   .avoid-pill.on {
-    background: linear-gradient(180deg, var(--accent) 0%, var(--accent-deep) 100%);
-    color: var(--bg);
+    background: linear-gradient(180deg, var(--accent-top) 0%, var(--accent) 100%);
+    color: var(--ink-warm);
     font-weight: 600;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
   }
 
   .avoid-pill.off {
@@ -1436,7 +1431,6 @@ const trustNote = "BUILT AROUND OPENSTREETMAP DATA";
     border: 1px solid var(--line-2);
     box-shadow:
       0 30px 80px -40px rgba(0, 0, 0, 0.55),
-      0 16px 60px -36px rgba(255, 154, 98, 0.10),
       inset 0 1px 0 rgba(255, 255, 255, 0.03);
   }
 
@@ -1607,7 +1601,7 @@ const trustNote = "BUILT AROUND OPENSTREETMAP DATA";
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--bg);
+    color: var(--ink-warm);
     font-size: 13px;
     font-weight: 700;
     flex-shrink: 0;
@@ -1836,13 +1830,11 @@ const trustNote = "BUILT AROUND OPENSTREETMAP DATA";
   }
 
   .pricing-card.highlight {
-    background:
-      radial-gradient(120% 80% at 100% 0%, rgba(255, 154, 98, 0.06) 0%, transparent 60%),
-      var(--panel-2);
-    border-color: var(--accent-deep);
+    background: var(--panel-2);
+    border-color: rgba(217, 79, 8, 0.45);
     box-shadow:
-      0 24px 60px -36px rgba(217, 79, 8, 0.40),
-      inset 0 1px 0 rgba(255, 154, 98, 0.10);
+      0 18px 48px -32px rgba(217, 79, 8, 0.22),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
   }
 
   .pricing-card-head {

@@ -1,8 +1,13 @@
 :root {
   /* Brand accent — coral orange, warm and tactile */
   --accent: #FF6A1A;
+  --accent-top: #FF7A26;
   --accent-soft: #FF9A62;
   --accent-deep: #D94F08;
+
+  /* Warm dark button text — darker than ink, kept warm so it reads as
+     anodised hardware rather than pure black plastic. */
+  --ink-warm: #1A120D;
 
   /* Sunset / heated-metal highlights — used sparingly for glows and gradients */
   --surface-good: #E28A3B;

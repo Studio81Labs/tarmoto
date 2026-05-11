@@ -164,10 +164,10 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "11px 18px",
     borderRadius: "7px",
     background:
-      "linear-gradient(180deg, var(--accent-soft) 0%, var(--accent) 55%, var(--accent-deep) 100%)",
+      "linear-gradient(180deg, var(--accent-top) 0%, var(--accent) 100%)",
     boxShadow:
-      "inset 0 1px 0 rgba(255,255,255,0.18), 0 6px 18px -8px rgba(217,79,8,0.55)",
-    color: "var(--bg)",
+      "0 8px 24px rgba(255, 106, 26, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.14)",
+    color: "var(--ink-warm)",
     fontWeight: 600,
     fontSize: "13.5px",
     fontFamily: "var(--font)",
@@ -199,7 +199,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    color: "var(--bg)",
+    color: "var(--ink-warm)",
     fontWeight: 700,
     fontSize: "14px",
     flexShrink: 0,
