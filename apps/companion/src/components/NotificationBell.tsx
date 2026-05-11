@@ -3,6 +3,7 @@ import { t } from "@/i18n";
 import Link from "next/link";
 import { Bell, Settings } from "lucide-react";
 import { useDropdown } from "@/hooks";
+
 export function NotificationBell({
   hasUnread = false,
 }: {
@@ -13,32 +14,32 @@ export function NotificationBell({
     <div ref={ref} className="relative">
       <button
         onClick={toggle}
-        className="relative p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+        className="relative rounded-full border border-ink/15 bg-cream p-2 text-ink transition hover:bg-paper"
         aria-label={t("Notifications")}
       >
-        <Bell size={18} />
+        <Bell size={16} />
         {hasUnread && (
-          <span className="absolute top-1 right-1 w-2 h-2 bg-tarmoto-cyan rounded-full" />
+          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-accent" />
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-72 rounded-lg border border-slate-800 bg-slate-900 shadow-lg z-50">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
-            <span className="text-sm font-semibold text-slate-200">
-              {t("Notifications ")}
+        <div className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-xl border border-ink/15 bg-cream shadow-[0_12px_32px_rgba(14,14,16,0.14)]">
+          <div className="flex items-center justify-between border-b border-ink/10 px-4 py-3">
+            <span className="font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-ink/60">
+              {t("Notifications")}
             </span>
             <Link
               href="/settings/notifications"
               onClick={close}
-              className="p-1 rounded text-slate-500 hover:text-slate-300 transition"
+              className="rounded p-1 text-ink/45 transition hover:bg-paper hover:text-ink"
               aria-label={t("Notification settings")}
             >
               <Settings size={14} />
             </Link>
           </div>
-          <div className="px-4 py-8 text-center text-sm text-slate-500">
-            {t("No new notifications ")}
+          <div className="px-4 py-10 text-center text-sm text-ink/55">
+            {t("No new notifications")}
           </div>
         </div>
       )}
