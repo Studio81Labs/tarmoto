@@ -21,7 +21,7 @@ const pillars = [
   {
     n: "03",
     t: "Send it. Ride it.",
-    s: "When the route is right, send it to your phone. Offline-ready, simple turn cues, no logins on the bike. The route is the artifact — the phone just plays it back.",
+    s: "When the route is right, send it to your phone. Offline-ready, simple turn cues. The route is the artifact — the phone companion keeps the ride simple.",
   },
 ];
 
@@ -38,7 +38,7 @@ const workflowSteps = [
   ["01", "Plan", "Set start, end, stops. First draft in seconds."],
   ["02", "Tune", "Curves, asphalt, scenery, avoidances. Re-paths live."],
   ["03", "Sync", "One click. Route appears on your phone, offline-ready."],
-  ["04", "Ride", "Mount the phone. Simple cues. No app, no logins."],
+  ["04", "Ride", "Mount the phone. Sign in once. Sync the route. Ride offline."],
 ] as const;
 
 const workflowExtras = [
@@ -66,10 +66,10 @@ const features = [
 ];
 
 const milestones = [
-  { m: "Apr 2026", t: "Waitlist opens", state: "done" },
-  { m: "Jun 2026", t: "Closed beta · Alps & Dolomites", state: "current" },
-  { m: "Sep 2026", t: "Open beta · Western Europe", state: "future" },
-  { m: "Q4 2026", t: "v1.0 — Mac, Windows, web, iOS, Android", state: "future" },
+  { m: "May 2026", t: "Waitlist opens", state: "current" },
+  { m: "Summer 2026", t: "First private beta", state: "future" },
+  { m: "Autumn 2026", t: "Wider European beta", state: "future" },
+  { m: "Late 2026 / Early 2027", t: "v1.0 target", state: "future" },
 ];
 
 const tiers = [
@@ -88,8 +88,8 @@ const tiers = [
   },
   {
     name: "Pro",
-    price: "€39",
-    cadence: "per year (planned)",
+    price: "~€39",
+    cadence: "per year · planned",
     pitch: "Unlimited routes, drafts, regions. Supports the work.",
     feats: [
       "Everything in Free",
@@ -105,11 +105,11 @@ const tiers = [
 const faq: Array<[string, string]> = [
   [
     "Where does the road quality data come from?",
-    "Three sources. Public OpenStreetMap surface and smoothness tags get us the baseline. Beta riders contribute observations on segments they actually rode. And we mark anything we don't have signal on as \"unknown\" — you can choose to avoid those segments rather than guess.",
+    "We start from public OpenStreetMap surface and smoothness tags as a baseline, and estimate quality only where data exists. Beta rider feedback is planned to refine the picture over time. Segments we don't have signal on are clearly marked as \"unknown\" — you can choose to avoid them rather than guess.",
   ],
   [
     "Is this another phone GPS app?",
-    "No. The planner lives on your computer — Mac, Windows, or web. The phone app is a small companion: it opens the route you planned, shows simple turn cues, and works offline. We deliberately did not try to be your phone GPS.",
+    "No. The planner is desktop-first — Mac, Windows, or web. The phone is an offline-ready companion: it opens the route you planned and shows simple cues while you ride. We're not trying to be your phone GPS.",
   ],
   [
     "How does it compare to Calimoto, Kurviger, Rever?",
@@ -121,15 +121,15 @@ const faq: Array<[string, string]> = [
   ],
   [
     "What about privacy?",
-    "No ads, no data resale. We sync routes between your devices through your account; rides recorded on the phone stay on the phone unless you choose to share. You can export or delete everything any time.",
+    "No ads, no data resale. Routes sync between your devices through your account; rides recorded on the phone stay on the phone unless you choose to share. You'll be able to export or delete your data. We'll publish a full privacy policy before public launch.",
   ],
   [
     "When will it be available?",
-    "Closed beta in June 2026 (Alps and Dolomites first). Open beta in September. v1.0 by end of year. We will email you once when your invite is ready, then again when v1.0 ships. That is the entire email program.",
+    "Waitlist is open now. We're aiming for a first private beta in summer 2026, a wider European beta in autumn, and a v1.0 target in late 2026 or early 2027. These are intentions, not guarantees — we'll write to you when there's an invite to give.",
   ],
 ];
 
-const trustItems = ["OPENSTREETMAP", "MAPBOX GL", "GRAPHHOPPER", "SRTM ELEVATION"];
+const trustNote = "BUILT AROUND OPENSTREETMAP DATA";
 ---
 
 <Base
@@ -274,11 +274,11 @@ const trustItems = ["OPENSTREETMAP", "MAPBOX GL", "GRAPHHOPPER", "SRTM ELEVATION
   <!-- TRUST STRIP -->
   <section class="trust-strip">
     <div class="container trust-inner">
-      <span class="stamp">Built with</span>
+      <span class="stamp">Foundation</span>
       <div class="trust-logos">
-        {trustItems.map((t) => <span>{t}</span>)}
+        <span>{trustNote}</span>
       </div>
-      <span class="mono trust-made">MADE IN BOLOGNA</span>
+      <span class="mono trust-made">EARLY BETA · WAITLIST OPEN</span>
     </div>
   </section>
 
@@ -420,10 +420,11 @@ const trustItems = ["OPENSTREETMAP", "MAPBOX GL", "GRAPHHOPPER", "SRTM ELEVATION
       </div>
       <h2 class="serif h-display section-h fade-up">A five-point view of the road under you.</h2>
       <p class="section-lede fade-up">
-        We score every segment from <span class="rq-emph">1 (avoid)</span> to <span class="rq-emph"
-          >5 (hero asphalt)</span
-        > using OpenStreetMap surface tags, road class, and feedback from beta riders. It's coarse,
-        but honest — and you can see the confidence on every segment.
+        We estimate road quality where data exists, from <span class="rq-emph">1 (avoid)</span> to <span
+          class="rq-emph">5 (hero asphalt)</span
+        >, using OpenStreetMap surface and smoothness tags as a baseline. Rider feedback is planned
+        to sharpen confidence over time. Segments without signal are clearly marked — you can
+        choose to avoid them.
       </p>
 
       <div class="quality-grid fade-up">
@@ -449,10 +450,10 @@ const trustItems = ["OPENSTREETMAP", "MAPBOX GL", "GRAPHHOPPER", "SRTM ELEVATION
       <div class="how-we-know fade-up">
         <span class="stamp stamp-accent">How we know</span>
         <div class="how-we-know-text">
-          We start from public surface tags (OSM <span class="mono how-we-know-mono">surface=*</span
-          >, <span class="mono how-we-know-mono">smoothness=*</span>) and refine with rider-submitted
-          observations. Where we don't have signal, we say so — and you can choose to avoid those
-          segments.
+          We start from public OpenStreetMap tags (<span class="mono how-we-know-mono">surface=*</span
+          >, <span class="mono how-we-know-mono">smoothness=*</span>) as a baseline. Beta rider
+          observations are planned to refine confidence on segments people actually ride. Where we
+          don't have signal, we say so — and you can choose to avoid those segments.
         </div>
       </div>
     </div>
@@ -470,8 +471,8 @@ const trustItems = ["OPENSTREETMAP", "MAPBOX GL", "GRAPHHOPPER", "SRTM ELEVATION
         Four steps. <em>Plan. Tune. Sync. Ride.</em>
       </h2>
       <p class="section-lede fade-up">
-        The desktop is where the route gets shaped. The phone is where it gets used. The two stay in
-        sync, and both work without an account on the bike.
+        The desktop is where the route gets shaped. The phone is where it gets used. The two stay
+        in sync — once the route is synced, the riding flow works offline.
       </p>
 
       <div class="workflow-steps fade-up">
@@ -581,19 +582,20 @@ const trustItems = ["OPENSTREETMAP", "MAPBOX GL", "GRAPHHOPPER", "SRTM ELEVATION
     </div>
   </section>
 
-  <!-- FOUNDER NOTE -->
+  <!-- WHY THIS EXISTS -->
   <section class="founder">
     <div class="founder-inner">
-      <span class="stamp">Why we're building this</span>
+      <span class="stamp">Why this exists</span>
       <div class="serif founder-quote">
-        “I kept a paper notebook of good roads for fifteen years. It rode in every tank bag I ever
-        owned. Tarmoto is that notebook — opened up, so we can plan the next loop a little better.”
+        “Most motorcycle route apps start on the phone. That is fine for navigation, but painful
+        for planning. Tarmoto starts on a real screen: bigger map, better context, more control,
+        and fewer surprises once you are already on the road.”
       </div>
       <div class="founder-credit">
-        <div class="founder-avatar">M</div>
         <div class="founder-credit-text">
-          <div class="founder-name">Matteo Casella</div>
-          <div class="founder-role">Founder · ex-Mapbox · Bologna</div>
+          <div class="founder-role">
+            Built by riders, for riders planning longer weekend routes.
+          </div>
         </div>
       </div>
     </div>
@@ -611,8 +613,9 @@ const trustItems = ["OPENSTREETMAP", "MAPBOX GL", "GRAPHHOPPER", "SRTM ELEVATION
           </div>
           <h2 class="serif roadmap-h">Honest about<br />the state of things.</h2>
           <p class="roadmap-lede">
-            We're a small team in Bologna. Closed beta this summer with a few hundred riders in the
-            Alps and Dolomites. v1.0 by year-end. We will say so when something slips.
+            We're a small team building Tarmoto in the open. A first private beta is planned for
+            summer, a wider European beta in autumn, with v1.0 targeted for late 2026 or early
+            2027. These are intentions — we'll say so when something slips.
           </p>
         </div>
         <div class="roadmap-card">
@@ -646,8 +649,8 @@ const trustItems = ["OPENSTREETMAP", "MAPBOX GL", "GRAPHHOPPER", "SRTM ELEVATION
         One subscription. <em>That's the whole business.</em>
       </h2>
       <p class="section-lede fade-up">
-        No ads, no data resale. Pricing here is the plan, not a promise — we'll confirm it before
-        launch. Beta is free.
+        Pricing is directional. Beta is free. We will confirm the final plan before charging anyone.
+        No ads, no data resale.
       </p>
 
       <div class="pricing-grid fade-up">
@@ -657,7 +660,7 @@ const trustItems = ["OPENSTREETMAP", "MAPBOX GL", "GRAPHHOPPER", "SRTM ELEVATION
               <div class="pricing-card-head">
                 <div class="pricing-card-name">{t.name}</div>
                 {t.highlight && (
-                  <span class="mono pricing-card-rec">RECOMMENDED</span>
+                  <span class="mono pricing-card-rec">PLANNED</span>
                 )}
               </div>
               <div class="pricing-card-pitch">{t.pitch}</div>
@@ -711,7 +714,7 @@ const trustItems = ["OPENSTREETMAP", "MAPBOX GL", "GRAPHHOPPER", "SRTM ELEVATION
   <!-- FINAL CTA -->
   <section class="final-cta">
     <div class="final-cta-inner">
-      <span class="stamp">Closed beta · Summer 2026</span>
+      <span class="stamp">First private beta · Summer 2026</span>
       <h2 class="serif final-cta-h">
         Plan a ride <em>worth riding.</em>
       </h2>
@@ -1681,26 +1684,8 @@ const trustItems = ["OPENSTREETMAP", "MAPBOX GL", "GRAPHHOPPER", "SRTM ELEVATION
     gap: 12px;
   }
 
-  .founder-avatar {
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    background: var(--panel-3);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 1px solid var(--line-2);
-    font-weight: 600;
-    font-size: 14px;
-  }
-
   .founder-credit-text {
     text-align: left;
-  }
-
-  .founder-name {
-    font-weight: 600;
-    font-size: 13.5px;
   }
 
   .founder-role {
