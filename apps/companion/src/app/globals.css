@@ -40,20 +40,15 @@
   --color-tarmoto-cyan-light: #ff8a44;
   --color-tarmoto-cyan-dark: #d44f00;
 
-  /* Slate remap → warm cream/ink so the existing slate-based UI flips theme
-     wholesale. Dark surfaces become cream paper, dark text becomes ink. */
-  --color-slate-50: #f5efe6;
-  --color-slate-100: #ede6da;
-  --color-slate-200: #0e0e10;
-  --color-slate-300: rgba(14, 14, 16, 0.7);
-  --color-slate-400: rgba(14, 14, 16, 0.62);
-  --color-slate-500: rgba(14, 14, 16, 0.42);
-  --color-slate-600: rgba(14, 14, 16, 0.32);
-  --color-slate-700: rgba(14, 14, 16, 0.18);
-  --color-slate-800: rgba(14, 14, 16, 0.1);
+  /* Custom slate-850 hue kept for the few call sites that reference it
+     directly. The rest of the slate scale is *not* remapped at the token
+     level because Tailwind uses the same `--color-slate-*` tokens for
+     both `bg-*` and `text-*` utilities; remapping a single token there
+     would force foreground and background to share the same colour,
+     which breaks cases like `bg-white text-slate-900` (print pages) or
+     `bg-tarmoto-cyan text-slate-950` (primary CTAs). Background and text
+     translations are handled separately in @layer utilities below. */
   --color-slate-850: #ede6da;
-  --color-slate-900: #f5efe6;
-  --color-slate-950: #f5efe6;
 
   --font-sans: "Space Grotesk", "Plus Jakarta Sans", system-ui, -apple-system,
     sans-serif;
@@ -259,16 +254,85 @@
 }
 
 @layer utilities {
-  /* Legacy slate panels were remapped to cream; on those surfaces `text-white`
-     and `text-slate-100` would render hard-white on cream and disappear.
-     We flip them to ink — but only inside slate-* containers, and not for
-     elements that carry their own coloured background (red/blue/etc.
-     destructive or status surfaces, where white-on-color is the right
-     contrast).
+  /* ─── Slate background remap ───────────────────────────────────────────
+     Legacy slate-* surfaces were dark in the original theme; in cream/ink
+     they become cream paper. We override the .bg-slate-X utilities here
+     instead of remapping --color-slate-* in @theme so that the matching
+     text-slate-X utilities keep their native dark colours — that way
+     `bg-white text-slate-900` (print pages) and
+     `bg-tarmoto-cyan text-slate-950` (primary CTAs) still get the dark
+     foreground they were designed for. */
+  .bg-slate-50 {
+    background-color: var(--tk-cream);
+  }
+  .bg-slate-100 {
+    background-color: var(--tk-cream);
+  }
+  .bg-slate-200 {
+    background-color: var(--tk-paper);
+  }
+  .bg-slate-300 {
+    background-color: var(--tk-paper);
+  }
+  .bg-slate-400 {
+    background-color: var(--tk-paper);
+  }
+  .bg-slate-500 {
+    background-color: var(--tk-paper-2);
+  }
+  .bg-slate-600 {
+    background-color: var(--tk-paper-2);
+  }
+  .bg-slate-700 {
+    background-color: var(--tk-paper);
+  }
+  .bg-slate-800 {
+    background-color: var(--tk-paper);
+  }
+  .bg-slate-900 {
+    background-color: var(--tk-cream);
+  }
+  .bg-slate-950 {
+    background-color: var(--tk-cream);
+  }
+
+  /* ─── Slate border remap ───
+     Borders pick up the new hairline-ink line colour so card outlines stay
+     readable against the now-cream surfaces. */
+  .border-slate-200,
+  .border-slate-300,
+  .border-slate-400,
+  .border-slate-700,
+  .border-slate-800 {
+    border-color: var(--tk-line);
+  }
+  .border-slate-500,
+  .border-slate-600,
+  .border-slate-900,
+  .border-slate-950 {
+    border-color: var(--tk-line-strong);
+  }
+
+  /* ─── Scoped foreground remap ───
+     On slate-* surfaces (now cream), the original "light text" utilities —
+     `text-white` and the light `text-slate-50/100/200/300` shades — would
+     render too pale to read. We flip them to ink, but only when the
+     element doesn't carry its own non-slate coloured background, so
+     destructive / status surfaces like `bg-red-600 text-white` keep their
+     intended white-on-colour contrast.
+
+     The `text-slate-700/800/900/950` and mid-range `text-slate-400/500/600`
+     utilities are *not* overridden — Tailwind's native colours are dark
+     enough to read on cream and on white/colored bgs (e.g.
+     `bg-tarmoto-cyan text-slate-950` → ink-on-orange, as designed).
+
      Selectors use `:where()` so they contribute zero specificity and any
      component-level Tailwind class can still override them. */
   :where([class*="bg-slate-"]).text-white,
+  :where([class*="bg-slate-"]).text-slate-50,
   :where([class*="bg-slate-"]).text-slate-100,
+  :where([class*="bg-slate-"]).text-slate-200,
+  :where([class*="bg-slate-"]).text-slate-300,
   :where([class*="bg-slate-"])
     :where(
       :not(
@@ -290,29 +354,13 @@
           [class*="bg-teal-"],
           [class*="bg-lime-"]
         )
-    ).text-white,
-  :where([class*="bg-slate-"])
-    :where(
-      :not(
-          [class*="bg-red-"],
-          [class*="bg-blue-"],
-          [class*="bg-green-"],
-          [class*="bg-emerald-"],
-          [class*="bg-amber-"],
-          [class*="bg-yellow-"],
-          [class*="bg-orange-"],
-          [class*="bg-rose-"],
-          [class*="bg-pink-"],
-          [class*="bg-violet-"],
-          [class*="bg-indigo-"],
-          [class*="bg-purple-"],
-          [class*="bg-fuchsia-"],
-          [class*="bg-sky-"],
-          [class*="bg-cyan-"],
-          [class*="bg-teal-"],
-          [class*="bg-lime-"]
-        )
-    ).text-slate-100 {
+    ):where(
+      .text-white,
+      .text-slate-50,
+      .text-slate-100,
+      .text-slate-200,
+      .text-slate-300
+    ) {
     color: var(--tk-ink);
   }
 }
