@@ -16,6 +16,7 @@ import {
 import { RidesFilters } from "./_components/RidesFilters";
 import { RidesMap } from "./_components/RidesMap";
 import { RidesTable } from "./_components/RidesTable";
+import { RidesSubNav } from "@/components/RidesSubNav";
 import {
   useRidesQuery,
   type RideSummary,
@@ -78,6 +79,8 @@ function RidesPageInner() {
           )}
         </div>
       </div>
+
+      <RidesSubNav className="mb-3" />
 
       <RidesFilters state={state} update={update} reset={reset} />
 
