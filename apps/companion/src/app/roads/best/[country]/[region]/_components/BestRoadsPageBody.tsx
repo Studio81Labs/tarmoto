@@ -47,7 +47,7 @@ export function BestRoadsPageBody({
   const subRegions = parent ? [] : findSubRegions(country.code, region.slug);
   const origin = new URL(pageUrl).origin;
   return (
-    <main className="mx-auto max-w-5xl px-6 py-10 text-slate-100">
+    <main className="tarmoto-no-cream mx-auto max-w-5xl px-6 py-10 text-slate-100">
       <nav className="mb-4 text-sm text-slate-400">
         <Link href="/roads/best" className="hover:text-white">
           {t("Best roads ")}

@@ -4,7 +4,7 @@ import { COUNTRIES, findCountryRegions } from "@tarmoto/shared";
 export const revalidate = 604800;
 export default function BestRoadsHubPage() {
   return (
-    <main className="mx-auto max-w-5xl px-6 py-10 text-slate-100">
+    <main className="tarmoto-no-cream mx-auto max-w-5xl px-6 py-10 text-slate-100">
       <header className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight">
           {t("Best motorcycle roads ")}
