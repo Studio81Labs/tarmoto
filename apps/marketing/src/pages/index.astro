@@ -4,6 +4,7 @@ import Nav from "../components/Nav.astro";
 import Footer from "../components/Footer.astro";
 import PlannerMap from "../components/PlannerMap.astro";
 import WaitlistForm from "../components/WaitlistForm.tsx";
+import WaitlistDialog from "../components/WaitlistDialog.tsx";
 
 const apiUrl = import.meta.env.PUBLIC_API_URL ?? "";
 
@@ -729,6 +730,8 @@ const trustNote = "BUILT AROUND OPENSTREETMAP DATA";
   </section>
 
   <Footer />
+
+  <WaitlistDialog client:load apiUrl={apiUrl} />
 </Base>
 
 <style>

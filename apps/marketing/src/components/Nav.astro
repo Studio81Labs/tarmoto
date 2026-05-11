@@ -126,29 +126,11 @@ const links = [
 </style>
 
 <script>
-  // If the hero waitlist field is already on screen, focus it without
-  // scrolling — otherwise let the anchor scroll happen, then focus.
+  // The header CTA opens a modal waitlist dialog mounted on the page.
+  // The inline hero / final-CTA forms still work for users who scroll.
   const cta = document.querySelector<HTMLAnchorElement>(".nav-cta");
-  const NAV_OFFSET = 88;
-
-  function focusInput() {
-    const input = document.querySelector<HTMLInputElement>(
-      '#waitlist input[type="email"]',
-    );
-    input?.focus({ preventScroll: true });
-  }
-
   cta?.addEventListener("click", (e) => {
-    const target = document.getElementById("waitlist");
-    if (!target) return;
-    const rect = target.getBoundingClientRect();
-    const inView = rect.top >= NAV_OFFSET && rect.bottom <= window.innerHeight;
-    if (inView) {
-      e.preventDefault();
-      focusInput();
-    } else {
-      // browser handles the smooth scroll; focus after it settles
-      window.setTimeout(focusInput, 600);
-    }
+    e.preventDefault();
+    window.dispatchEvent(new CustomEvent("tarmoto:open-waitlist"));
   });
 </script>
