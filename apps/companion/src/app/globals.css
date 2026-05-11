@@ -823,4 +823,235 @@
     ).focus\:text-slate-200:focus {
     color: var(--tk-ink);
   }
+
+  /* ─── Descendant override for dark slate ancestors ───
+     The rules above flip `text-white` / `text-slate-50…300` to ink on the
+     cream theme, but the same-element `:not(...)` only excludes elements
+     that themselves carry an opacity-suffixed slate background. Children
+     *inside* a `bg-slate-950/90` panel (e.g. the trip planner map overlay)
+     have no such class on themselves, so their light text was still being
+     forced to ink on the still-dark parent.
+
+     This rule re-paints those descendants back to Tailwind's native text
+     colour values (referenced via the same CSS custom properties Tailwind
+     uses to generate `.text-slate-X`). It comes after the remap above, so
+     for matching specificity it wins on source order. */
+  body.bg-cream
+    :where(
+      [class*="bg-slate-50/"],
+      [class*="bg-slate-100/"],
+      [class*="bg-slate-200/"],
+      [class*="bg-slate-300/"],
+      [class*="bg-slate-400/"],
+      [class*="bg-slate-500/"],
+      [class*="bg-slate-600/"],
+      [class*="bg-slate-700/"],
+      [class*="bg-slate-800/"],
+      [class*="bg-slate-850/"],
+      [class*="bg-slate-900/"],
+      [class*="bg-slate-950/"]
+    )
+    .text-white,
+  body.bg-cream
+    :where(
+      [class*="bg-slate-50/"],
+      [class*="bg-slate-100/"],
+      [class*="bg-slate-200/"],
+      [class*="bg-slate-300/"],
+      [class*="bg-slate-400/"],
+      [class*="bg-slate-500/"],
+      [class*="bg-slate-600/"],
+      [class*="bg-slate-700/"],
+      [class*="bg-slate-800/"],
+      [class*="bg-slate-850/"],
+      [class*="bg-slate-900/"],
+      [class*="bg-slate-950/"]
+    )
+    .hover\:text-white:hover,
+  body.bg-cream
+    :where(
+      [class*="bg-slate-50/"],
+      [class*="bg-slate-100/"],
+      [class*="bg-slate-200/"],
+      [class*="bg-slate-300/"],
+      [class*="bg-slate-400/"],
+      [class*="bg-slate-500/"],
+      [class*="bg-slate-600/"],
+      [class*="bg-slate-700/"],
+      [class*="bg-slate-800/"],
+      [class*="bg-slate-850/"],
+      [class*="bg-slate-900/"],
+      [class*="bg-slate-950/"]
+    )
+    .focus\:text-white:focus {
+    color: #fff;
+  }
+  body.bg-cream
+    :where(
+      [class*="bg-slate-50/"],
+      [class*="bg-slate-100/"],
+      [class*="bg-slate-200/"],
+      [class*="bg-slate-300/"],
+      [class*="bg-slate-400/"],
+      [class*="bg-slate-500/"],
+      [class*="bg-slate-600/"],
+      [class*="bg-slate-700/"],
+      [class*="bg-slate-800/"],
+      [class*="bg-slate-850/"],
+      [class*="bg-slate-900/"],
+      [class*="bg-slate-950/"]
+    )
+    .text-slate-50,
+  body.bg-cream
+    :where(
+      [class*="bg-slate-50/"],
+      [class*="bg-slate-100/"],
+      [class*="bg-slate-200/"],
+      [class*="bg-slate-300/"],
+      [class*="bg-slate-400/"],
+      [class*="bg-slate-500/"],
+      [class*="bg-slate-600/"],
+      [class*="bg-slate-700/"],
+      [class*="bg-slate-800/"],
+      [class*="bg-slate-850/"],
+      [class*="bg-slate-900/"],
+      [class*="bg-slate-950/"]
+    )
+    .hover\:text-slate-50:hover {
+    color: var(--color-slate-50);
+  }
+  body.bg-cream
+    :where(
+      [class*="bg-slate-50/"],
+      [class*="bg-slate-100/"],
+      [class*="bg-slate-200/"],
+      [class*="bg-slate-300/"],
+      [class*="bg-slate-400/"],
+      [class*="bg-slate-500/"],
+      [class*="bg-slate-600/"],
+      [class*="bg-slate-700/"],
+      [class*="bg-slate-800/"],
+      [class*="bg-slate-850/"],
+      [class*="bg-slate-900/"],
+      [class*="bg-slate-950/"]
+    )
+    .text-slate-100,
+  body.bg-cream
+    :where(
+      [class*="bg-slate-50/"],
+      [class*="bg-slate-100/"],
+      [class*="bg-slate-200/"],
+      [class*="bg-slate-300/"],
+      [class*="bg-slate-400/"],
+      [class*="bg-slate-500/"],
+      [class*="bg-slate-600/"],
+      [class*="bg-slate-700/"],
+      [class*="bg-slate-800/"],
+      [class*="bg-slate-850/"],
+      [class*="bg-slate-900/"],
+      [class*="bg-slate-950/"]
+    )
+    .hover\:text-slate-100:hover,
+  body.bg-cream
+    :where(
+      [class*="bg-slate-50/"],
+      [class*="bg-slate-100/"],
+      [class*="bg-slate-200/"],
+      [class*="bg-slate-300/"],
+      [class*="bg-slate-400/"],
+      [class*="bg-slate-500/"],
+      [class*="bg-slate-600/"],
+      [class*="bg-slate-700/"],
+      [class*="bg-slate-800/"],
+      [class*="bg-slate-850/"],
+      [class*="bg-slate-900/"],
+      [class*="bg-slate-950/"]
+    )
+    .focus\:text-slate-100:focus {
+    color: var(--color-slate-100);
+  }
+  body.bg-cream
+    :where(
+      [class*="bg-slate-50/"],
+      [class*="bg-slate-100/"],
+      [class*="bg-slate-200/"],
+      [class*="bg-slate-300/"],
+      [class*="bg-slate-400/"],
+      [class*="bg-slate-500/"],
+      [class*="bg-slate-600/"],
+      [class*="bg-slate-700/"],
+      [class*="bg-slate-800/"],
+      [class*="bg-slate-850/"],
+      [class*="bg-slate-900/"],
+      [class*="bg-slate-950/"]
+    )
+    .text-slate-200,
+  body.bg-cream
+    :where(
+      [class*="bg-slate-50/"],
+      [class*="bg-slate-100/"],
+      [class*="bg-slate-200/"],
+      [class*="bg-slate-300/"],
+      [class*="bg-slate-400/"],
+      [class*="bg-slate-500/"],
+      [class*="bg-slate-600/"],
+      [class*="bg-slate-700/"],
+      [class*="bg-slate-800/"],
+      [class*="bg-slate-850/"],
+      [class*="bg-slate-900/"],
+      [class*="bg-slate-950/"]
+    )
+    .hover\:text-slate-200:hover,
+  body.bg-cream
+    :where(
+      [class*="bg-slate-50/"],
+      [class*="bg-slate-100/"],
+      [class*="bg-slate-200/"],
+      [class*="bg-slate-300/"],
+      [class*="bg-slate-400/"],
+      [class*="bg-slate-500/"],
+      [class*="bg-slate-600/"],
+      [class*="bg-slate-700/"],
+      [class*="bg-slate-800/"],
+      [class*="bg-slate-850/"],
+      [class*="bg-slate-900/"],
+      [class*="bg-slate-950/"]
+    )
+    .focus\:text-slate-200:focus {
+    color: var(--color-slate-200);
+  }
+  body.bg-cream
+    :where(
+      [class*="bg-slate-50/"],
+      [class*="bg-slate-100/"],
+      [class*="bg-slate-200/"],
+      [class*="bg-slate-300/"],
+      [class*="bg-slate-400/"],
+      [class*="bg-slate-500/"],
+      [class*="bg-slate-600/"],
+      [class*="bg-slate-700/"],
+      [class*="bg-slate-800/"],
+      [class*="bg-slate-850/"],
+      [class*="bg-slate-900/"],
+      [class*="bg-slate-950/"]
+    )
+    .text-slate-300,
+  body.bg-cream
+    :where(
+      [class*="bg-slate-50/"],
+      [class*="bg-slate-100/"],
+      [class*="bg-slate-200/"],
+      [class*="bg-slate-300/"],
+      [class*="bg-slate-400/"],
+      [class*="bg-slate-500/"],
+      [class*="bg-slate-600/"],
+      [class*="bg-slate-700/"],
+      [class*="bg-slate-800/"],
+      [class*="bg-slate-850/"],
+      [class*="bg-slate-900/"],
+      [class*="bg-slate-950/"]
+    )
+    .hover\:text-slate-300:hover {
+    color: var(--color-slate-300);
+  }
 }
