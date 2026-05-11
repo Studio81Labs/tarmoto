@@ -1,12 +1,20 @@
 :root {
-  /* Brand accent */
+  /* Brand accent — coral orange, warm and tactile */
   --accent: #FF6A1A;
+  --accent-soft: #FF9A62;
+  --accent-deep: #D94F08;
 
-  /* Warm dark palette */
+  /* Sunset / heated-metal highlights — used sparingly for glows and gradients */
+  --surface-good: #E28A3B;
+  --surface-best: #FFB347;
+
+  /* Asphalt-warm dark surfaces */
   --bg: #0B0D10;
-  --panel: #13161B;
-  --panel-2: #191D24;
-  --panel-3: #22272F;
+  --panel: #12161B;
+  --panel-2: #171C22;
+  --panel-3: #20262E;
+  --road: #2A2E35;
+  --road-light: #3A4048;
 
   /* Cream text scale */
   --text: #E8E5DE;
@@ -24,6 +32,14 @@
   --q3: #C9A656;
   --q4: #A8BE6A;
   --q5: #7AB785;
+
+  /* Utility — muted teal, only for sync / success / location states.
+     Never used as a brand accent. */
+  --sync: #4DB6AC;
+
+  /* Sunset glow halo — warm, low-saturation, used on CTAs and hero panel */
+  --glow-warm: 0 24px 60px -28px rgba(217, 79, 8, 0.45);
+  --glow-warm-soft: 0 12px 40px -18px rgba(255, 154, 98, 0.30);
 
   /* Typography */
   --font: "Space Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
