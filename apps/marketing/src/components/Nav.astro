@@ -11,9 +11,17 @@ const links = [
 <nav id="nav">
   <div class="nav-inner">
     <a href="/" class="nav-logo">
-      <span class="nav-logo-mark">
-        <svg width="14" height="14" viewBox="0 0 20 20" aria-hidden="true">
-          <path d="M 3 15 L 10 4 L 17 15 Z" fill="#0B0D10"></path>
+      <span class="nav-logo-mark" aria-hidden="true">
+        <svg width="24" height="24" viewBox="0 0 100 100" fill="none">
+          <rect x="18" y="20" width="64" height="12" rx="4" fill="var(--accent)"></rect>
+          <rect x="40" y="20" width="20" height="42" rx="4" fill="var(--accent)"></rect>
+          <path
+            d="M 16 80 L 30 80 L 38 70 L 46 86 L 54 68 L 62 82 L 70 76 L 84 76"
+            stroke="var(--accent)"
+            stroke-width="5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            fill="none"></path>
         </svg>
       </span>
       <span class="nav-logo-text">Tarmoto</span>
@@ -52,13 +60,13 @@ const links = [
   }
 
   .nav-logo-mark {
-    width: 26px;
-    height: 26px;
-    border-radius: 5px;
-    background: var(--accent);
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
+  }
+
+  .nav-logo-mark svg {
+    display: block;
   }
 
   .nav-logo-text {
