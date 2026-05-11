@@ -22,7 +22,7 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/", stamp: "00", label: "Home" },
-  { href: "/trips", stamp: "01", label: "Trip Planner" },
+  { href: "/trips", stamp: "01", label: "Trips" },
   { href: "/explore", stamp: "02", label: "Road Explorer" },
   { href: "/rides", stamp: "03", label: "Ride History" },
   { href: "/community", stamp: "04", label: "Community" },
@@ -86,6 +86,7 @@ export function Sidebar() {
               )}
             >
               <span
+                aria-hidden="true"
                 className={clsx(
                   "w-6 font-mono text-[10px] font-bold tracking-[1px]",
                   isActive ? "text-ink" : "text-cream/40",
@@ -108,28 +109,14 @@ export function Sidebar() {
 
       <div className="flex-1" />
 
-      {/* Contribution mini-panel */}
-      <div className="rounded-xl border border-cream/10 bg-cream/5 p-3">
-        <span className="font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-cream/55">
-          {t("Your contribution")}
-        </span>
-        <div className="mt-1.5 flex items-baseline gap-1.5">
-          <span className="text-[22px] font-bold leading-none tracking-tight text-cream">
-            4,284
-          </span>
-          <span className="font-mono text-[10px] font-medium text-cream/60">
-            {t("KM MAPPED")}
-          </span>
-        </div>
-        <div className="mt-2 h-1 overflow-hidden rounded-full bg-cream/10">
-          <div className="h-full w-[68%] rounded-full bg-accent" />
-        </div>
-        <span className="mt-1.5 block font-mono text-[9px] tracking-wide text-cream/50">
-          {t("Top 8% of riders in your region")}
-        </span>
-      </div>
+      {/* User block.
 
-      {/* User block */}
+         The "Your contribution" panel from the v2 design is intentionally
+         left out for now — we don't yet have a single hook that returns the
+         signed-in rider's total mapped distance, so the panel would only be
+         able to show placeholder numbers, which would lie to new riders and
+         disagree with the dedicated stats / road-map pages. Add it back
+         once a real contribution endpoint is wired up. */}
       <Link
         href="/settings"
         className="flex items-center gap-2.5 rounded-lg px-1.5 py-1.5 transition hover:bg-cream/5"
@@ -142,7 +129,7 @@ export function Sidebar() {
             {user?.displayName ?? t("Rider")}
           </span>
           <span className="mt-1 block font-mono text-[9px] tracking-[1px] text-cream/50">
-            {t("PRO · MEMBER")}
+            {t("ACCOUNT")}
           </span>
         </span>
       </Link>

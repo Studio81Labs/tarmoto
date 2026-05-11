@@ -2,6 +2,7 @@
 import { t } from "@/i18n";
 import Link from "next/link";
 import { useAuthStore } from "@/stores/auth";
+import { useUserTrips } from "@/hooks/useUserTrips";
 import {
   Map,
   Route,
@@ -18,6 +19,8 @@ import {
   QualityBars,
   Stamp,
 } from "@/components/tarmoto/atoms";
+import { formatDistance } from "@/lib/utils";
+import type { Trip } from "@/lib/types";
 
 const QUICK_ACTIONS = [
   {
@@ -50,15 +53,33 @@ const QUICK_ACTIONS = [
   },
 ] as const;
 
+function tripTotalKm(trip: Trip): number {
+  return trip.days.reduce((acc, d) => acc + (d.distanceKm ?? 0), 0);
+}
+
+function tripAvgQualityTier(trip: Trip): number | null {
+  const scores = trip.days
+    .map((d) => d.avgQuality)
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (scores.length === 0) return null;
+  const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
+  return Math.max(1, Math.min(5, Math.round(mean)));
+}
+
 export default function HomePage() {
   const user = useAuthStore((s) => s.user);
+  const { trips, loading } = useUserTrips();
   const firstName = user?.displayName?.split(" ")[0];
+  const draftTrips = trips
+    .filter((trip) => trip.status === "draft" || trip.status === "planned")
+    .slice(0, 3);
+
   return (
     <div className="mx-auto w-full max-w-6xl animate-fade-in space-y-8 p-7">
       {/* Hero stamp + title */}
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <Stamp>{t("Welcome back · today")}</Stamp>
+          <Stamp>{t("Welcome back")}</Stamp>
           <Heading size="xl" className="mt-2">
             {firstName ? `${t("Hello")}, ${firstName}.` : t("Hello, rider.")}
           </Heading>
@@ -69,9 +90,6 @@ export default function HomePage() {
         <div className="flex gap-2">
           <Pill variant="outline">
             <Mono>{t("Metric · °C / km")}</Mono>
-          </Pill>
-          <Pill variant="accent">
-            <Mono>{t("New road data 2h ago")}</Mono>
           </Pill>
         </div>
       </header>
@@ -145,46 +163,76 @@ export default function HomePage() {
         </Card>
       </section>
 
-      {/* Active trips */}
+      {/* Trip drafts */}
       <section>
         <SectionHeader
           stamp={t("Trip drafts")}
-          title={t("Your AI route ideas")}
+          title={t("Your route ideas")}
           actionHref="/trips/planner"
           actionLabel={t("Plan new trip")}
         />
         <Card className="overflow-hidden">
-          <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-3">
-            {[
-              { name: "Stelvio + Umbrail", km: 218, days: 2, q: 5 },
-              { name: "Beskydy loop", km: 94, days: 1, q: 4 },
-              { name: "Dolomites · east wall", km: 164, days: 1, q: 5 },
-            ].map((trip) => (
+          {loading ? (
+            <div className="px-5 py-10 text-center text-[13px] text-ink/55">
+              {t("Loading your trips…")}
+            </div>
+          ) : draftTrips.length === 0 ? (
+            <div className="px-5 py-12 text-center">
+              <Route size={36} className="mx-auto mb-3 text-ink/30" />
+              <p className="text-[14px] font-semibold text-ink">
+                {t("No trips planned yet.")}
+              </p>
+              <p className="mx-auto mt-1 max-w-sm text-[12px] text-ink/55">
+                {t(
+                  "Create your first trip to discover the best roads. Pick a region, tune the curves and asphalt, push it to your phone.",
+                )}
+              </p>
               <Link
-                key={trip.name}
                 href="/trips/planner"
-                className="group flex flex-col gap-3 rounded-xl border border-ink/10 bg-paper p-4 transition hover:border-ink/30"
+                className="mt-5 inline-flex items-center gap-1.5 rounded-lg bg-ink px-4 py-2.5 text-[13px] font-bold text-cream transition hover:bg-tarmac"
               >
-                <div className="flex items-start justify-between">
-                  <span className="text-[15px] font-bold leading-tight text-ink">
-                    {trip.name}
-                  </span>
-                  <QualityBars q={trip.q} size={4} />
-                </div>
-                <div className="flex items-center gap-3 text-[11px] text-ink/55">
-                  <Mono>{trip.km} KM</Mono>
-                  <span className="text-ink/30">·</span>
-                  <Mono>
-                    {trip.days} {trip.days > 1 ? t("days") : t("day")}
-                  </Mono>
-                </div>
-                <div className="mt-auto flex items-center justify-between border-t border-ink/10 pt-3 text-[11px] font-semibold text-ink/60 group-hover:text-ink">
-                  <span>{t("Open draft")}</span>
-                  <ChevronRight size={14} />
-                </div>
+                {t("Plan a trip")}
+                <ArrowUpRight size={14} />
               </Link>
-            ))}
-          </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-3">
+              {draftTrips.map((trip) => {
+                const km = tripTotalKm(trip);
+                const days = trip.days.length;
+                const q = tripAvgQualityTier(trip);
+                return (
+                  <Link
+                    key={trip.id}
+                    href={`/trips/${trip.id}`}
+                    className="group flex flex-col gap-3 rounded-xl border border-ink/10 bg-paper p-4 transition hover:border-ink/30"
+                  >
+                    <div className="flex items-start justify-between">
+                      <span className="line-clamp-2 text-[15px] font-bold leading-tight text-ink">
+                        {trip.name}
+                      </span>
+                      {q !== null && <QualityBars q={q} size={4} />}
+                    </div>
+                    <div className="flex items-center gap-3 text-[11px] text-ink/55">
+                      {km > 0 && <Mono>{formatDistance(km)}</Mono>}
+                      {km > 0 && days > 0 && (
+                        <span className="text-ink/30">·</span>
+                      )}
+                      {days > 0 && (
+                        <Mono>
+                          {days} {days > 1 ? t("days") : t("day")}
+                        </Mono>
+                      )}
+                    </div>
+                    <div className="mt-auto flex items-center justify-between border-t border-ink/10 pt-3 text-[11px] font-semibold text-ink/60 group-hover:text-ink">
+                      <span>{t("Open draft")}</span>
+                      <ChevronRight size={14} />
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
         </Card>
       </section>
     </div>
