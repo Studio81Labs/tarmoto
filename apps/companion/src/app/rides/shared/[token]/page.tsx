@@ -45,7 +45,7 @@ export default async function SharedRidePage({
   const preview = buildRoutePreview(ride.route_geometry, 960, 14);
   const rideLabel = `${ride.rider_name} · ${formatRideType(ride.ride_type)} ride`;
   return (
-    <main className="mx-auto max-w-5xl px-6 py-10 text-slate-100">
+    <main className="tarmoto-no-cream mx-auto max-w-5xl px-6 py-10 text-slate-100">
       <nav className="mb-4 text-sm text-slate-400">
         <Link href="/" className="hover:text-white">
           {t("Tarmoto ")}

@@ -56,7 +56,7 @@ export default async function SharedCollectionPage({
   const detail = await fetchSharedCollection(slug);
   if (!detail) notFound();
   return (
-    <main className="mx-auto max-w-4xl px-6 py-10 text-slate-100">
+    <main className="tarmoto-no-cream mx-auto max-w-4xl px-6 py-10 text-slate-100">
       <nav className="mb-4 text-sm text-slate-400">
         <Link href="/" className="hover:text-white">
           {t("Tarmoto ")}

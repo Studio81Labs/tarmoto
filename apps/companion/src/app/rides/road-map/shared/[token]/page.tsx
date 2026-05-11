@@ -36,7 +36,7 @@ export default async function SharedRoadMapPage({
   const snapshot = parseMapShareSnapshot(share.snapshot);
   const initialCenter = snapshot?.initial_center ?? DEFAULT_CENTER;
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100">
+    <main className="tarmoto-no-cream min-h-screen bg-slate-950 text-slate-100">
       <header className="border-b border-slate-800 px-6 py-4">
         <nav className="mb-2 text-xs text-slate-500">
           <Link href="/" className="hover:text-slate-300">
