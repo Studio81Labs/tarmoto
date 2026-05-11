@@ -1,8 +1,32 @@
 ---
-const cols = [
-  { h: "Product", links: ["Planner", "Companion app", "GPX import", "What's planned"] },
-  { h: "Company", links: ["About", "Changelog", "Press kit", "Contact"] },
-  { h: "Legal", links: ["Privacy", "Terms", "Imprint"] },
+interface FooterLink {
+  label: string;
+  action?: "cookie-preferences";
+}
+
+const cols: Array<{ h: string; links: FooterLink[] }> = [
+  {
+    h: "Product",
+    links: [
+      { label: "Planner" },
+      { label: "Companion app" },
+      { label: "GPX import" },
+      { label: "What's planned" },
+    ],
+  },
+  {
+    h: "Company",
+    links: [{ label: "About" }, { label: "Changelog" }, { label: "Press kit" }, { label: "Contact" }],
+  },
+  {
+    h: "Legal",
+    links: [
+      { label: "Privacy" },
+      { label: "Terms" },
+      { label: "Imprint" },
+      { label: "Cookie preferences", action: "cookie-preferences" },
+    ],
+  },
 ];
 const year = new Date().getFullYear();
 ---
@@ -36,9 +60,15 @@ const year = new Date().getFullYear();
           <div>
             <span class="stamp">{col.h}</span>
             <div class="footer-col-links">
-              {col.links.map((item) => (
-                <a>{item}</a>
-              ))}
+              {col.links.map((item) =>
+                item.action === "cookie-preferences" ? (
+                  <a href="#" data-cookie-preferences>
+                    {item.label}
+                  </a>
+                ) : (
+                  <a>{item.label}</a>
+                ),
+              )}
             </div>
           </div>
         ))
