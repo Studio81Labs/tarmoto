@@ -68,7 +68,7 @@ function tripAvgQualityTier(trip: Trip): number | null {
 
 export default function HomePage() {
   const user = useAuthStore((s) => s.user);
-  const { trips, loading } = useUserTrips();
+  const { trips, loading, error: tripsError } = useUserTrips();
   const firstName = user?.displayName?.split(" ")[0];
   const draftTrips = trips
     .filter((trip) => trip.status === "draft" || trip.status === "planned")
@@ -175,6 +175,29 @@ export default function HomePage() {
           {loading ? (
             <div className="px-5 py-10 text-center text-[13px] text-ink/55">
               {t("Loading your trips…")}
+            </div>
+          ) : tripsError && draftTrips.length === 0 ? (
+            // Distinguish "we don't know" from "rider has none" — a transient
+            // API outage or expired token must not nudge a rider with real
+            // saved drafts to start a brand new trip.
+            <div className="flex flex-col items-center gap-3 px-5 py-10 text-center">
+              <span className="font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-quality-q1">
+                {t("Couldn't load your trips")}
+              </span>
+              <p className="max-w-sm text-[12px] text-ink/55">
+                {t(
+                  "We hit a network hiccup while loading your drafts. Refresh the page to try again — your trips are safe.",
+                )}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== "undefined") window.location.reload();
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-ink/20 bg-cream px-3 py-1.5 text-[12px] font-bold text-ink transition hover:bg-paper"
+              >
+                {t("Retry")}
+              </button>
             </div>
           ) : draftTrips.length === 0 ? (
             <div className="px-5 py-12 text-center">
