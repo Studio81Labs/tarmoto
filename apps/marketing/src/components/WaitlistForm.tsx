@@ -2,9 +2,13 @@ import { useState, useEffect } from "react";
 
 interface WaitlistFormProps {
   apiUrl: string;
+  stage?: "waitlist" | "beta" | "launch";
 }
 
-export default function WaitlistForm({ apiUrl }: WaitlistFormProps) {
+export default function WaitlistForm({
+  apiUrl,
+  stage = "waitlist",
+}: WaitlistFormProps) {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<
     "idle" | "submitting" | "success" | "error"
@@ -13,6 +17,7 @@ export default function WaitlistForm({ apiUrl }: WaitlistFormProps) {
   const [errorBorder, setErrorBorder] = useState(false);
 
   useEffect(() => {
+    if (!apiUrl) return;
     fetch(`${apiUrl}/count`)
       .then((res) => res.json())
       .then((data) => {
@@ -21,7 +26,8 @@ export default function WaitlistForm({ apiUrl }: WaitlistFormProps) {
       .catch(() => {});
   }, [apiUrl]);
 
-  async function handleSubmit() {
+  async function handleSubmit(e?: React.FormEvent) {
+    e?.preventDefault();
     const trimmed = email.trim();
     if (!trimmed || !trimmed.includes("@") || !trimmed.includes(".")) {
       setErrorBorder(true);
@@ -31,6 +37,10 @@ export default function WaitlistForm({ apiUrl }: WaitlistFormProps) {
     setStatus("submitting");
 
     try {
+      // When PUBLIC_API_URL is unset we still hit the relative /signup
+      // path so a same-origin Worker route works in production. A genuine
+      // misconfiguration surfaces as a network/HTTP error rather than a
+      // silent "you're on the list" confirmation.
       const res = await fetch(`${apiUrl}/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -48,136 +58,180 @@ export default function WaitlistForm({ apiUrl }: WaitlistFormProps) {
     }
   }
 
-  const countText =
-    count !== null
-      ? `${count} rider${count > 1 ? "s" : ""} on the waitlist`
-      : "Early access opening soon";
+  const submitLabel =
+    status === "submitting"
+      ? "Joining..."
+      : stage === "launch"
+        ? "Get Tarmoto"
+        : stage === "beta"
+          ? "Request invite"
+          : "Join the waitlist";
 
   if (status === "success") {
     return (
-      <>
-        <div style={styles.success}>
-          &#10003; You're on the list! We'll be in touch when the beta is ready.
+      <div style={styles.successWrap}>
+        <div style={styles.successBox}>
+          <span style={styles.successCheck}>✓</span>
+          <div>
+            <div style={styles.successTitle}>You're on the list.</div>
+            <div style={styles.successNote}>
+              We'll write once, when your invite is ready.
+            </div>
+          </div>
         </div>
-        <div style={styles.count}>
-          <span style={styles.countDot} />
-          <span>{countText}</span>
-        </div>
-      </>
+        {count !== null && (
+          <div style={styles.count}>
+            <span style={styles.countDot} />
+            <span>
+              {count} rider{count > 1 ? "s" : ""} on the waitlist
+            </span>
+          </div>
+        )}
+      </div>
     );
   }
 
   return (
-    <>
-      <div style={styles.form}>
+    <div style={styles.wrap}>
+      <form
+        onSubmit={handleSubmit}
+        style={{
+          ...styles.form,
+          borderColor: errorBorder
+            ? "rgba(176,71,58,0.5)"
+            : "rgba(232,229,222,0.16)",
+        }}
+      >
         <input
           type="email"
+          required
           value={email}
           onChange={(e) => {
             setEmail(e.target.value);
             setErrorBorder(false);
           }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") handleSubmit();
-          }}
-          placeholder="your@email.com"
-          style={{
-            ...styles.input,
-            borderColor: errorBorder
-              ? "rgba(239,68,68,.5)"
-              : "rgba(255,255,255,.12)",
-          }}
+          placeholder="you@email.com"
+          style={styles.input}
         />
         <button
-          onClick={handleSubmit}
+          type="submit"
           disabled={status === "submitting"}
           style={styles.button}
         >
-          {status === "submitting" ? "Joining..." : "Join waitlist"}
+          {submitLabel}
         </button>
-      </div>
+      </form>
       <p style={styles.note}>
-        No spam. Unsubscribe anytime. We respect your inbox.
+        One email when there's something to share. No marketing list.
       </p>
       {status === "error" && (
-        <p style={{ ...styles.note, color: "var(--red)", marginTop: "8px" }}>
+        <p style={{ ...styles.note, color: "#B0473A", marginTop: "8px" }}>
           Something went wrong. Please try again.
         </p>
       )}
-      <div style={styles.count}>
-        <span style={styles.countDot} />
-        <span>{countText}</span>
-      </div>
-    </>
+    </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  wrap: {
+    maxWidth: "520px",
+    width: "100%",
+  },
   form: {
     display: "flex",
-    flexWrap: "wrap",
-    gap: "10px",
-    maxWidth: "440px",
-    margin: "0 auto",
+    gap: "6px",
+    padding: "5px",
+    borderRadius: "10px",
+    background: "var(--panel-2)",
+    border: "1px solid var(--line-2)",
   },
   input: {
     flex: 1,
-    padding: "14px 18px",
-    borderRadius: "12px",
-    border: "1px solid rgba(255,255,255,.12)",
-    background: "var(--bg2)",
-    color: "var(--text)",
-    fontFamily: "var(--font)",
-    fontSize: "15px",
+    minWidth: 0,
+    border: "none",
     outline: "none",
+    background: "transparent",
+    padding: "11px 12px",
+    fontSize: "14px",
+    fontFamily: "var(--font)",
+    color: "var(--text)",
   },
   button: {
-    padding: "14px 28px",
-    borderRadius: "12px",
-    background: "linear-gradient(135deg, var(--cyan), var(--cyan-deep))",
-    color: "var(--bg)",
-    fontWeight: 700,
-    fontSize: "15px",
     border: "none",
     cursor: "pointer",
+    padding: "11px 18px",
+    borderRadius: "7px",
+    background:
+      "linear-gradient(180deg, var(--accent-top) 0%, var(--accent) 100%)",
+    boxShadow:
+      "0 8px 24px rgba(255, 106, 26, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.14)",
+    color: "var(--ink-warm)",
+    fontWeight: 600,
+    fontSize: "13.5px",
     fontFamily: "var(--font)",
     whiteSpace: "nowrap",
   },
   note: {
     fontSize: "12px",
-    color: "var(--text3)",
-    marginTop: "12px",
-    textAlign: "center" as const,
+    color: "var(--mute)",
+    marginTop: "10px",
   },
-  success: {
-    padding: "16px",
-    borderRadius: "12px",
-    background: "rgba(34,197,94,.1)",
-    border: "1px solid rgba(34,197,94,.2)",
-    color: "var(--green)",
-    fontWeight: 600,
-    textAlign: "center" as const,
+  successWrap: {
+    maxWidth: "520px",
+    width: "100%",
+  },
+  successBox: {
+    padding: "16px 18px",
+    borderRadius: "10px",
+    background: "var(--panel-2)",
+    border: "1px solid var(--line-2)",
+    display: "flex",
+    alignItems: "center",
+    gap: "14px",
+  },
+  successCheck: {
+    width: "28px",
+    height: "28px",
+    borderRadius: "50%",
+    background: "var(--accent)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "var(--ink-warm)",
+    fontWeight: 700,
     fontSize: "14px",
-    marginTop: "12px",
+    flexShrink: 0,
+  },
+  successTitle: {
+    fontSize: "14px",
+    fontWeight: 600,
+    color: "var(--text)",
+  },
+  successNote: {
+    fontSize: "12px",
+    color: "var(--mute)",
+    marginTop: "2px",
   },
   count: {
     display: "inline-flex",
     alignItems: "center",
     gap: "6px",
-    padding: "8px 16px",
-    borderRadius: "20px",
-    background: "rgba(34,197,94,.08)",
-    border: "1px solid rgba(34,197,94,.15)",
-    fontSize: "13px",
-    color: "var(--green)",
+    padding: "8px 14px",
+    borderRadius: "999px",
+    background: "rgba(77,182,172,0.07)",
+    border: "1px solid rgba(77,182,172,0.20)",
+    fontSize: "12px",
+    color: "var(--sync)",
     fontWeight: 500,
-    marginTop: "24px",
+    marginTop: "16px",
   },
   countDot: {
     width: "6px",
     height: "6px",
     borderRadius: "50%",
-    background: "var(--green)",
+    background: "var(--sync)",
+    boxShadow: "0 0 8px 0 rgba(77,182,172,0.55)",
     animation: "pulse 2s infinite",
     display: "inline-block",
   },

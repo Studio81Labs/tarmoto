@@ -6,10 +6,14 @@ interface Props {
 
 const {
   title,
-  description = "Tarmoto — Know the road before you ride it. The motorcycle app that tells you how good the actual road surface is.",
+  description = "Tarmoto — A desktop-first motorcycle route planner. Twisty without the broken asphalt.",
 } = Astro.props;
 
 import "../styles/global.css";
+import CookieConsent from "../components/CookieConsent.astro";
+import WaitlistDialog from "../components/WaitlistDialog.tsx";
+
+const apiUrl = import.meta.env.PUBLIC_API_URL ?? "";
 ---
 
 <!doctype html>
@@ -17,20 +21,28 @@ import "../styles/global.css";
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#070a10" />
+    <meta name="theme-color" content="#0B0D10" />
     <meta name="description" content={description} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
     <title>{title}</title>
+    <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&display=swap"
       rel="stylesheet"
     />
   </head>
   <body>
     <slot />
+    <CookieConsent />
+    <WaitlistDialog client:load apiUrl={apiUrl} />
   </body>
 </html>

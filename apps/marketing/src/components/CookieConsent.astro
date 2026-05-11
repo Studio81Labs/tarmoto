@@ -1,0 +1,224 @@
+---
+const UMAMI_WEBSITE_ID = "8c1c6826-6667-4653-b97f-40077d2f957d";
+const UMAMI_URL = "https://cloud.umami.is/script.js";
+---
+
+<div
+  id="cookie-banner"
+  class="cookie-banner"
+  role="dialog"
+  aria-live="polite"
+  aria-labelledby="cookie-banner-title"
+  hidden
+>
+  <div class="cookie-banner-inner">
+    <div class="cookie-banner-copy">
+      <span class="stamp">Privacy</span>
+      <p id="cookie-banner-title" class="cookie-banner-text">
+        We use Umami, a privacy-friendly analytics tool, to understand traffic on this
+        site. Nothing is loaded until you accept. You can change this at any time
+        from the footer.
+      </p>
+    </div>
+    <div class="cookie-banner-actions">
+      <button type="button" id="cookie-decline" class="cookie-banner-btn decline">
+        Decline
+      </button>
+      <button type="button" id="cookie-accept" class="cookie-banner-btn accept">
+        Accept
+      </button>
+    </div>
+  </div>
+</div>
+
+<style>
+  .cookie-banner {
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    z-index: 200;
+    max-width: 720px;
+    margin-inline: auto;
+    background: var(--panel-2);
+    border: 1px solid var(--line-2);
+    border-radius: 14px;
+    padding: 18px 22px;
+    box-shadow:
+      0 30px 60px -20px rgba(0, 0, 0, 0.6),
+      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    backdrop-filter: saturate(140%) blur(10px);
+    -webkit-backdrop-filter: saturate(140%) blur(10px);
+  }
+
+  .cookie-banner[hidden] {
+    display: none;
+  }
+
+  .cookie-banner-inner {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+
+  .cookie-banner-copy {
+    flex: 1 1 280px;
+    min-width: 0;
+  }
+
+  .cookie-banner-text {
+    font-size: 13.5px;
+    color: var(--dim);
+    line-height: 1.55;
+    margin: 6px 0 0;
+  }
+
+  .cookie-banner-actions {
+    display: flex;
+    gap: 10px;
+    margin-left: auto;
+  }
+
+  .cookie-banner-btn {
+    border: none;
+    font-family: var(--font);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 10px 16px;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: box-shadow 0.25s ease, background 0.2s ease, color 0.2s ease;
+  }
+
+  .cookie-banner-btn.decline {
+    background: transparent;
+    color: var(--dim);
+    border: 1px solid var(--line-2);
+  }
+
+  .cookie-banner-btn.decline:hover {
+    color: var(--text);
+    background: var(--panel-3);
+  }
+
+  .cookie-banner-btn.accept {
+    background: linear-gradient(180deg, var(--accent-top) 0%, var(--accent) 100%);
+    color: var(--ink-warm);
+    box-shadow:
+      0 8px 24px rgba(255, 106, 26, 0.22),
+      inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  }
+
+  .cookie-banner-btn.accept:hover {
+    box-shadow:
+      0 10px 28px rgba(255, 106, 26, 0.26),
+      inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  }
+
+  @media (max-width: 560px) {
+    .cookie-banner-inner {
+      align-items: stretch;
+    }
+    .cookie-banner-actions {
+      margin-left: 0;
+      width: 100%;
+      justify-content: flex-end;
+    }
+  }
+</style>
+
+<script define:vars={{ UMAMI_WEBSITE_ID, UMAMI_URL }}>
+  const STORAGE_KEY = "tarmoto:cookie-consent";
+  const banner = document.getElementById("cookie-banner");
+  const acceptBtn = document.getElementById("cookie-accept");
+  const declineBtn = document.getElementById("cookie-decline");
+
+  function umamiAlreadyInjected() {
+    return !!document.querySelector(
+      'script[data-website-id="' + UMAMI_WEBSITE_ID + '"]',
+    );
+  }
+
+  function injectUmami() {
+    if (umamiAlreadyInjected()) return;
+    const script = document.createElement("script");
+    script.defer = true;
+    script.src = UMAMI_URL;
+    script.dataset.websiteId = UMAMI_WEBSITE_ID;
+    document.head.appendChild(script);
+  }
+
+  function showBanner() {
+    banner?.removeAttribute("hidden");
+  }
+
+  function hideBanner() {
+    banner?.setAttribute("hidden", "");
+  }
+
+  function readConsent() {
+    try {
+      return localStorage.getItem(STORAGE_KEY);
+    } catch {
+      return null;
+    }
+  }
+
+  function writeConsent(value) {
+    try {
+      localStorage.setItem(STORAGE_KEY, value);
+    } catch {
+      // storage may be unavailable (private mode); just ignore
+    }
+  }
+
+  function applyStoredConsent() {
+    const stored = readConsent();
+    if (stored === "accepted") {
+      injectUmami();
+      hideBanner();
+    } else if (stored === "declined") {
+      hideBanner();
+    } else {
+      showBanner();
+    }
+  }
+
+  applyStoredConsent();
+
+  acceptBtn?.addEventListener("click", () => {
+    writeConsent("accepted");
+    injectUmami();
+    hideBanner();
+  });
+
+  declineBtn?.addEventListener("click", () => {
+    // If Umami was already injected this session (user previously
+    // accepted and is now revoking via cookie preferences), reload so
+    // the analytics runtime is torn down — removing the <script> tag
+    // alone doesn't unhook listeners it already attached.
+    const wasInjected = umamiAlreadyInjected();
+    writeConsent("declined");
+    hideBanner();
+    if (wasInjected) {
+      window.location.reload();
+    }
+  });
+
+  // Footer "Cookie preferences" link (or anything else with this attribute)
+  // re-opens the banner so visitors can change their mind.
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const trigger = target.closest("[data-cookie-preferences]");
+    if (!trigger) return;
+    event.preventDefault();
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+    showBanner();
+  });
+</script>
