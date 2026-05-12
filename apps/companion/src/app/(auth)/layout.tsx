@@ -59,12 +59,12 @@ export default function AuthLayout({
           </g>
         </svg>
         <div className="relative z-10 max-w-md px-10">
-          <div className="mb-8 flex items-center gap-3">
-            <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent">
-              <MarketingLogoMark size={26} />
+          <div className="mb-8 flex items-center gap-2.5">
+            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-accent">
+              <MarketingLogoMark size={20} />
             </span>
-            <span className="font-mono text-[11px] font-bold uppercase tracking-[2px] text-cream/55">
-              {t("TARMOTO · COMPANION")}
+            <span className="text-[16px] font-semibold tracking-[-0.012em] text-cream">
+              {t("Tarmoto")}
             </span>
           </div>
           <h1 className="text-[44px] font-bold leading-[1.05] tracking-tight text-cream">
@@ -78,7 +78,7 @@ export default function AuthLayout({
           <div className="mt-10 inline-flex items-center gap-2 rounded-full border border-cream/15 px-3 py-1.5">
             <span className="h-1.5 w-1.5 rounded-full bg-accent" />
             <span className="font-mono text-[10px] font-bold uppercase tracking-[1.5px] text-cream/70">
-              {t("Beta · launching summer 2026")}
+              {t("TARMOTO · COMPANION")}
             </span>
           </div>
         </div>
