@@ -349,6 +349,75 @@
     border-color: var(--tk-line-strong);
   }
 
+  /* ─── Status colour foreground remap ───
+     Status banners and inline error / warning copy were authored for the
+     legacy dark shell, where pale `text-red-200/300/400`,
+     `text-amber-200/300/400`, `text-rose-200/300/400`,
+     `text-yellow-200/300` and `text-emerald-200/300/400` had real contrast
+     against `bg-slate-950`. On the cream shell those pale tones lose
+     contrast — especially when the surrounding chip uses a translucent
+     same-family bg (`bg-red-500/10 text-red-300`, `bg-amber-300/10
+     text-amber-200`, …) — and important failure messages can disappear.
+     Flip those pale tones to the corresponding `*-700` shade in the
+     cream context so the message reads against cream / paper / a pale
+     same-family tint, while preserving the originals on `.tarmoto-no-cream`
+     pages (embed widgets, public dark layouts). The selector skips
+     elements that paint a *solid* same-family background of the same
+     family (`bg-red-500` without `/`) — there the pale label is
+     intentional white-on-strong-fill contrast that should stay. */
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-red-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-red-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-red-400 {
+    color: #b91c1c;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-rose-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-rose-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-rose-400 {
+    color: #be123c;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-amber-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-amber-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-amber-400 {
+    color: #b45309;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-yellow-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-yellow-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-yellow-400 {
+    color: #a16207;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-emerald-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-emerald-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-emerald-400 {
+    color: #047857;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-green-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-green-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-green-400 {
+    color: #15803d;
+  }
+
+  /* Hover variants of the status colours: same logic for `hover:text-X`. */
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-red-200:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-red-300:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-red-400:hover {
+    color: #991b1b;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-rose-200:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-rose-300:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-rose-400:hover {
+    color: #9f1239;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-amber-200:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-amber-300:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-amber-400:hover {
+    color: #92400e;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-emerald-200:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-emerald-300:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-emerald-400:hover {
+    color: #065f46;
+  }
+
 
   /* ─── Scoped foreground remap ───
      Repaints the legacy dark-theme foreground utilities so they read on
