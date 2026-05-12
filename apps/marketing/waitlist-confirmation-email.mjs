@@ -1,5 +1,16 @@
 export const WAITLIST_CONFIRMATION_SUBJECT = "You're on the Tarmoto waitlist";
 
+// Logo mark for the email header. Inlined as a base64 data URI so the
+// image is shipped with the email itself — no dependency on a public
+// asset URL that has to be reachable from every recipient client at
+// open time. Regenerate when the brand mark changes:
+//   base64 -i apps/marketing/public/brand/logo-mark-on-accent.png \
+//     | tr -d '\n'
+// Source SVG: docs/design/brand/logo-mark-on-accent.svg (160×160 PNG
+// export via macOS Quick Look at 4× the 40×40 display size).
+const LOGO_MARK_PNG_BASE64 =
+  "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";
+
 const WAITLIST_CONFIRMATION_TEXT = `You're on the list.
 
 Thanks for joining the Tarmoto waitlist. Your spot is saved.
@@ -10,13 +21,9 @@ We'll write once — when your invite is ready. No drip campaign. No marketing l
 
 —
 
-What's planned
+What's next
 
-  First   Private beta, in small batches
-  Next    Wider European beta
-  Then    v1.0
-
-We're a small team building Tarmoto in the open. Beta is free.
+Beta access will roll out gradually in small batches.
 
 —
 
@@ -25,7 +32,7 @@ Know a rider who plans Saturdays around the road? Send them our way: https://tar
 
 —
 
-tarmoto.app — early beta · prelaunch
+tarmoto.app — route planning for riders.
 You're receiving this because you joined the waitlist at tarmoto.app.
 © {{year}} Tarmoto · Studio81 Labs, s.r.o.
 
@@ -73,23 +80,12 @@ const WAITLIST_CONFIRMATION_HTML = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0
     body { margin: 0 !important; padding: 0 !important; width: 100% !important; }
     a { text-decoration: none; }
 
-    /* Tokens mirrored from apps/marketing/app/globals.css :root.
-       --accent       #FF6A1A   --bg          #0B0D10
-       --accent-top   #FF7A26   --panel       #12161B
-       --accent-deep  #D94F08   --panel-2     #171C22
-       --ink-warm     #1A120D   --text        #E8E5DE
-       --dim solid    #918F89   --mute solid  #686661
-       --line         rgba(232,229,222,0.08)
-    */
-
     @media only screen and (max-width: 620px) {
       .container       { width: 100% !important; max-width: 100% !important; }
       .px-outer        { padding-left: 16px !important; padding-right: 16px !important; }
       .px-inner        { padding-left: 24px !important; padding-right: 24px !important; }
       .display         { font-size: 32px !important; line-height: 1.12 !important; letter-spacing: -0.02em !important; }
       .body-copy       { font-size: 15px !important; line-height: 1.6 !important; }
-      .timeline-cell   { display: block !important; width: 100% !important; padding: 14px 0 !important; border-right: 0 !important; border-bottom: 1px solid rgba(232,229,222,0.08) !important; }
-      .timeline-cell-last { border-bottom: 0 !important; }
       .stamp-stack     { display: block !important; width: 100% !important; text-align: left !important; padding-top: 4px !important; }
       .footer-row      { display: block !important; width: 100% !important; padding-bottom: 12px !important; }
     }
@@ -113,7 +109,7 @@ const WAITLIST_CONFIRMATION_HTML = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0
 
         <table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px; max-width:600px;">
 
-          <!-- HEADER: T-on-accent + Tarmoto wordmark + stamp -->
+          <!-- HEADER: brand-mark image (with letter "T" alt fallback) + Tarmoto wordmark + stamp -->
           <tr>
             <td style="padding:0 0 28px 0;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -123,16 +119,16 @@ const WAITLIST_CONFIRMATION_HTML = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0
                       <tr>
                         <!-- Logo cell:
                              - When images load (Apple Mail, iOS, most clients):
-                               the PNG renders the same road-mark on the
-                               orange square that the marketing nav uses.
+                               the inlined road-mark PNG renders on the orange
+                               square, matching the marketing-site nav.
                              - When images are blocked (some Outlook configs,
                                first paint in Gmail web): the bgcolor + cell
                                text styling fall back to a bold "T" on the
-                               orange tile, matching the previous template. -->
+                               orange tile. -->
                         <td width="40" height="40" align="center" valign="middle"
                             bgcolor="#FF6A1A"
                             style="width:40px; height:40px; background-color:#FF6A1A; background:linear-gradient(180deg,#FF7A26 0%,#FF6A1A 100%); border-radius:10px; color:#1A120D; font-family:'Space Grotesk', 'Segoe UI', Helvetica, Arial, sans-serif; font-weight:700; font-size:22px; line-height:40px; text-align:center;">
-                          <img src="https://tarmoto.app/brand/logo-mark-on-accent.png"
+                          <img src="data:image/png;base64,${LOGO_MARK_PNG_BASE64}"
                                alt="T"
                                width="40" height="40"
                                style="display:block; width:40px; height:40px; border:0; border-radius:10px;" />
@@ -194,47 +190,14 @@ const WAITLIST_CONFIRMATION_HTML = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0
                   </td>
                 </tr>
 
-                <!-- What's planned — sequence only, no dates -->
+                <!-- What's next — one line, no timeline -->
                 <tr>
                   <td class="px-inner" style="padding:28px 40px 0 40px;">
-                    <p class="mono" style="margin:0 0 18px 0; font-family:'JetBrains Mono', 'Courier New', Courier, monospace; font-size:11px; font-weight:500; letter-spacing:0.15em; text-transform:uppercase; color:#686661;">
-                      § 02 &nbsp;What's planned
+                    <p class="mono" style="margin:0 0 14px 0; font-family:'JetBrains Mono', 'Courier New', Courier, monospace; font-size:11px; font-weight:500; letter-spacing:0.15em; text-transform:uppercase; color:#686661;">
+                      § 02 &nbsp;What's next
                     </p>
-
-                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                      <tr>
-                        <td valign="top" class="timeline-cell" width="33%"
-                            style="width:33%; padding:0 16px 0 0; border-right:1px solid rgba(232,229,222,0.08);">
-                          <p class="mono" style="margin:0 0 8px 0; font-family:'JetBrains Mono', 'Courier New', Courier, monospace; font-size:10px; font-weight:600; letter-spacing:0.15em; text-transform:uppercase; color:#FF6A1A;">
-                            First
-                          </p>
-                          <p style="margin:0; font-family:'Space Grotesk', 'Segoe UI', Helvetica, Arial, sans-serif; font-size:14px; line-height:1.45; color:#E8E5DE;">
-                            Private beta, in small batches
-                          </p>
-                        </td>
-                        <td valign="top" class="timeline-cell" width="33%"
-                            style="width:33%; padding:0 16px; border-right:1px solid rgba(232,229,222,0.08);">
-                          <p class="mono" style="margin:0 0 8px 0; font-family:'JetBrains Mono', 'Courier New', Courier, monospace; font-size:10px; font-weight:600; letter-spacing:0.15em; text-transform:uppercase; color:#686661;">
-                            Next
-                          </p>
-                          <p style="margin:0; font-family:'Space Grotesk', 'Segoe UI', Helvetica, Arial, sans-serif; font-size:14px; line-height:1.45; color:#E8E5DE;">
-                            Wider European beta
-                          </p>
-                        </td>
-                        <td valign="top" class="timeline-cell timeline-cell-last" width="34%"
-                            style="width:34%; padding:0 0 0 16px;">
-                          <p class="mono" style="margin:0 0 8px 0; font-family:'JetBrains Mono', 'Courier New', Courier, monospace; font-size:10px; font-weight:600; letter-spacing:0.15em; text-transform:uppercase; color:#686661;">
-                            Then
-                          </p>
-                          <p style="margin:0; font-family:'Space Grotesk', 'Segoe UI', Helvetica, Arial, sans-serif; font-size:14px; line-height:1.45; color:#E8E5DE;">
-                            v1.0
-                          </p>
-                        </td>
-                      </tr>
-                    </table>
-
-                    <p style="margin:18px 0 0 0; font-family:'Space Grotesk', 'Segoe UI', Helvetica, Arial, sans-serif; font-size:13px; line-height:1.55; color:#686661;">
-                      We're a small team building Tarmoto in the open. Beta is free.
+                    <p class="body-copy" style="margin:0; font-family:'Space Grotesk', 'Segoe UI', Helvetica, Arial, sans-serif; font-size:16px; line-height:1.6; color:#918F89;">
+                      Beta access will roll out gradually in small batches.
                     </p>
                   </td>
                 </tr>
@@ -295,7 +258,7 @@ const WAITLIST_CONFIRMATION_HTML = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0
                       style="font-family:'JetBrains Mono', 'Courier New', Courier, monospace; font-size:11px; font-weight:500; letter-spacing:0.15em; text-transform:uppercase; color:#918F89;">
                     <a href="https://tarmoto.app" style="color:#E8E5DE; text-decoration:none; letter-spacing:0.15em;">tarmoto.app</a>
                     <span style="color:#686661;">&nbsp;·&nbsp;</span>
-                    <span style="color:#686661;">Early beta · prelaunch</span>
+                    <span style="color:#686661;">Route planning for riders.</span>
                   </td>
                   <td class="footer-row" valign="top" align="right"
                       style="font-family:'JetBrains Mono', 'Courier New', Courier, monospace; font-size:11px; font-weight:500; letter-spacing:0.15em; text-transform:uppercase;">

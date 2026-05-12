@@ -57,16 +57,33 @@ test("waitlist signup sends a confirmation email through Resend", async () => {
   assert.match(body.html, /You're <em[^>]*>on the list\.<\/em>/);
   assert.match(body.html, /Thanks for joining the Tarmoto waitlist/);
 
-  // Logo: PNG primary, letter "T" as image-blocked fallback. The
-  // image src points at the marketing site's hosted asset; the
-  // wrapping cell carries the orange bgcolor so it still reads as
-  // the brand square when images don't load.
+  // §02 now reads as a single sentence — the older "First / Next /
+  // Then" timeline and the "We're a small team building Tarmoto…"
+  // paragraph are gone.
+  assert.match(body.html, /What's next/);
   assert.match(
     body.html,
-    /src="https:\/\/tarmoto\.app\/brand\/logo-mark-on-accent\.png"/,
+    /Beta access will roll out gradually in small batches\./,
   );
+  assert.doesNotMatch(body.html, /Private beta, in small batches/);
+  assert.doesNotMatch(body.html, /Wider European beta/);
+  assert.doesNotMatch(body.html, /We're a small team building Tarmoto/);
+
+  // Footer micro-tagline replaces the previous "Early beta ·
+  // prelaunch" stamp.
+  assert.match(body.html, /Route planning for riders\./);
+  assert.doesNotMatch(body.html, /Early beta · prelaunch/);
+
+  // Logo: PNG inlined as a base64 data URI so it ships with the
+  // email body itself — no external asset URL to resolve at open
+  // time. Letter "T" is kept as the image-blocked fallback via
+  // alt text + the cell's orange bgcolor.
+  assert.match(body.html, /src="data:image\/png;base64,iVBOR/);
   assert.match(body.html, /alt="T"/);
   assert.match(body.html, /bgcolor="#FF6A1A"/);
+  // Brand identity copy + the unsubscribe link both point at
+  // tarmoto.app so we keep at least one assertion against the
+  // canonical domain.
   assert.match(body.html, /https:\/\/tarmoto\.app/);
   assert.match(
     body.html,
@@ -76,6 +93,14 @@ test("waitlist signup sends a confirmation email through Resend", async () => {
   assert.doesNotMatch(body.html, /\{\{year\}\}/);
   assert.match(body.text, /You're on the list\./);
   assert.match(body.text, /Thanks for joining the Tarmoto waitlist/);
+  assert.match(body.text, /What's next/);
+  assert.match(
+    body.text,
+    /Beta access will roll out gradually in small batches\./,
+  );
+  assert.doesNotMatch(body.text, /First.*Private beta/);
+  assert.doesNotMatch(body.text, /We're a small team/);
+  assert.match(body.text, /route planning for riders/i);
   assert.match(
     body.text,
     /Unsubscribe: https:\/\/tarmoto\.app\/api\/waitlist\/unsubscribe\?token=/,
