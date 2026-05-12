@@ -1,0 +1,37 @@
+{
+  // Marketing landing page deployed to Cloudflare Workers as static
+  // assets + a small worker for the `/api/waitlist` endpoints.
+  //
+  // KV namespaces (TARMOTO-WAITLIST + TARMOTO-WAITLIST_preview) were
+  // created via `wrangler kv namespace create TARMOTO-WAITLIST` and
+  // `wrangler kv namespace create TARMOTO-WAITLIST --preview`.
+  //
+  // Cloudflare-side titles are TARMOTO-WAITLIST / TARMOTO-WAITLIST_preview.
+  // The worker-side `binding` is `WAITLIST` because env bindings must
+  // be valid JS identifiers (no hyphens), and that's what worker.mjs
+  // references via `env.WAITLIST` — same shape as the nexcue worker.
+  "name": "tarmoto-marketing",
+  "main": "./worker.mjs",
+  "compatibility_date": "2026-04-30",
+  "keep_vars": true,
+  "assets": {
+    "directory": "./out",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/api/*"],
+  },
+  "vars": {
+    "RESEND_FROM": "Tarmoto <hello@tarmoto.app>",
+  },
+  "kv_namespaces": [
+    {
+      "binding": "WAITLIST",
+      "id": "9f5684c40eda4cfe83a6fbfc6b2c5df0",
+      "preview_id": "<replace-with-preview-kv-id>",
+    },
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+  },
+}

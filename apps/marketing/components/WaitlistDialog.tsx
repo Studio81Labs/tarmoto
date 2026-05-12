@@ -7,96 +7,83 @@ import {
   useRef,
   useState,
   type FormEvent,
-  type MouseEvent as ReactMouseEvent,
+  type MouseEvent,
 } from "react";
-
-import { useWaitlist } from "@/components/WaitlistProvider";
 
 type Status = "idle" | "submitting" | "success" | "error";
 
-export function WaitlistDialog() {
-  const { isOpen, close } = useWaitlist();
+const ENDPOINT = "/api/waitlist";
+
+type Props = {
+  open: boolean;
+  onClose: () => void;
+};
+
+export function WaitlistDialog({ open, onClose }: Props) {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const emailRef = useRef<HTMLInputElement | null>(null);
   const titleId = useId();
 
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<Status>("idle");
-  const [count, setCount] = useState<number | null>(null);
-  const [errorBorder, setErrorBorder] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Reset to a fresh form state every time the dialog is reopened.
   const reset = useCallback(() => {
     setEmail("");
     setStatus("idle");
-    setErrorBorder(false);
+    setErrorMessage(null);
   }, []);
 
-  // Fetch the rider count once so the success state can show a consistent
-  // number — same contract as the inline WaitlistForm.
-  useEffect(() => {
-    fetch("/api/waitlist/count")
-      .then((res) => res.json())
-      .then((data) => {
-        if (typeof data.count === "number" && data.count > 0) {
-          setCount(data.count);
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  // Open / close the native <dialog> in lockstep with the provider state.
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    if (isOpen && !dialog.open) {
+
+    if (open && !dialog.open) {
       reset();
       dialog.showModal();
       requestAnimationFrame(() => emailRef.current?.focus());
-    } else if (!isOpen && dialog.open) {
+    } else if (!open && dialog.open) {
       dialog.close();
     }
-  }, [isOpen, reset]);
+  }, [open, reset]);
 
-  // Native ESC / form-close events on the <dialog> must propagate back to
-  // the provider so the provider stays in sync with the actual DOM state.
+  // Native dialogs fire `close` on Escape — propagate to parent state.
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    const onClose = () => close();
-    dialog.addEventListener("close", onClose);
-    return () => dialog.removeEventListener("close", onClose);
-  }, [close]);
+    const onNativeClose = () => onClose();
+    dialog.addEventListener("close", onNativeClose);
+    return () => dialog.removeEventListener("close", onNativeClose);
+  }, [onClose]);
 
-  const handleBackdropClick = (event: ReactMouseEvent<HTMLDialogElement>) => {
-    if (event.target === dialogRef.current) close();
+  const handleBackdropClick = (event: MouseEvent<HTMLDialogElement>) => {
+    if (event.target === dialogRef.current) onClose();
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (status === "submitting") return;
-    const trimmed = email.trim();
-    if (!trimmed.includes("@") || !trimmed.includes(".")) {
-      setErrorBorder(true);
-      return;
-    }
-    setErrorBorder(false);
+
     setStatus("submitting");
+    setErrorMessage(null);
 
     try {
-      const res = await fetch("/api/waitlist", {
+      const response = await fetch(ENDPOINT, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: trimmed, source: "nav_dialog" }),
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
       });
-      if (!res.ok) {
-        setStatus("error");
-        return;
+
+      if (!response.ok) {
+        const data = await safeJson(response);
+        throw new Error(data?.error ?? `request_failed_${response.status}`);
       }
-      const data = await res.json();
+
       setStatus("success");
-      if (typeof data.count === "number") setCount(data.count);
-    } catch {
+    } catch (err) {
       setStatus("error");
+      setErrorMessage(toUserMessage(err));
     }
   };
 
@@ -112,7 +99,7 @@ export function WaitlistDialog() {
           type="button"
           aria-label="Close"
           className="waitlist-dialog-close"
-          onClick={close}
+          onClick={onClose}
         >
           ×
         </button>
@@ -129,21 +116,10 @@ export function WaitlistDialog() {
               We&apos;ll write once, when your invite is ready. No marketing
               list.
             </p>
-            {count !== null && (
-              <div className="waitlist-dialog-count">
-                <span
-                  className="waitlist-dialog-count-dot"
-                  aria-hidden="true"
-                />
-                <span>
-                  {count} rider{count > 1 ? "s" : ""} on the waitlist
-                </span>
-              </div>
-            )}
             <button
               type="button"
               className="waitlist-dialog-done"
-              onClick={close}
+              onClick={onClose}
             >
               Done
             </button>
@@ -170,25 +146,16 @@ export function WaitlistDialog() {
                 required
                 placeholder="you@email.com"
                 value={email}
-                onChange={(e) => {
-                  setEmail(e.target.value);
-                  setErrorBorder(false);
-                }}
+                onChange={(e) => setEmail(e.target.value)}
                 disabled={status === "submitting"}
-                aria-invalid={errorBorder || status === "error"}
-                style={
-                  errorBorder
-                    ? { borderColor: "rgba(176, 71, 58, 0.55)" }
-                    : undefined
-                }
               />
             </label>
 
-            {status === "error" && (
+            {errorMessage ? (
               <p className="waitlist-dialog-error" role="alert">
-                Something went wrong. Please try again in a moment.
+                {errorMessage}
               </p>
-            )}
+            ) : null}
 
             <button
               type="submit"
@@ -206,4 +173,28 @@ export function WaitlistDialog() {
       </div>
     </dialog>
   );
+}
+
+async function safeJson(
+  response: Response,
+): Promise<{ error?: string } | null> {
+  try {
+    return (await response.json()) as { error?: string };
+  } catch {
+    return null;
+  }
+}
+
+function toUserMessage(err: unknown): string {
+  const code = err instanceof Error ? err.message : String(err);
+  switch (code) {
+    case "invalid_email":
+      return "That email doesn’t look right — please double-check it.";
+    case "payload_too_large":
+      return "That submission is too large. Try a shorter email.";
+    case "waitlist_kv_not_configured":
+      return "We’re still wiring up the waitlist. Please try again soon.";
+    default:
+      return "Something went wrong on our end. Please try again in a moment.";
+  }
 }

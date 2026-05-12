@@ -9,24 +9,26 @@ import {
   type ReactNode,
 } from "react";
 
-interface WaitlistContextValue {
-  isOpen: boolean;
+import { WaitlistDialog } from "@/components/WaitlistDialog";
+
+type WaitlistContextValue = {
   open: () => void;
-  close: () => void;
-}
+};
 
 const WaitlistContext = createContext<WaitlistContextValue | null>(null);
 
 export function WaitlistProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
+
   const open = useCallback(() => setIsOpen(true), []);
   const close = useCallback(() => setIsOpen(false), []);
 
-  const value = useMemo(() => ({ isOpen, open, close }), [isOpen, open, close]);
+  const value = useMemo<WaitlistContextValue>(() => ({ open }), [open]);
 
   return (
     <WaitlistContext.Provider value={value}>
       {children}
+      <WaitlistDialog open={isOpen} onClose={close} />
     </WaitlistContext.Provider>
   );
 }

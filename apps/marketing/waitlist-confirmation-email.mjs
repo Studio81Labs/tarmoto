@@ -132,21 +132,21 @@ const WAITLIST_CONFIRMATION_HTML = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0
 </body>
 </html>`;
 
-export function renderWaitlistConfirmationHtml(unsubscribeUrl: string): string {
+export function renderWaitlistConfirmationHtml(unsubscribeUrl) {
   return WAITLIST_CONFIRMATION_HTML.replaceAll(
     "{{unsubscribe_url}}",
     escapeHtmlAttribute(unsubscribeUrl),
   );
 }
 
-export function renderWaitlistConfirmationText(unsubscribeUrl: string): string {
+export function renderWaitlistConfirmationText(unsubscribeUrl) {
   return WAITLIST_CONFIRMATION_TEXT.replaceAll(
     "{{unsubscribe_url}}",
     unsubscribeUrl,
   );
 }
 
-function escapeHtmlAttribute(value: string): string {
+function escapeHtmlAttribute(value) {
   return value
     .replaceAll("&", "&amp;")
     .replaceAll('"', "&quot;")

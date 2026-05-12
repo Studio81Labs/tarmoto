@@ -9,6 +9,27 @@ import next from "@next/eslint-plugin-next";
 import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
 
+// Globals that exist in the Cloudflare Workers runtime *and* in
+// Node ≥ 18 — the worker .mjs files (and their tests) live at the
+// app root and run in both environments depending on context.
+const workerRuntimeGlobals = {
+  URL: "readonly",
+  URLSearchParams: "readonly",
+  Request: "readonly",
+  Response: "readonly",
+  Headers: "readonly",
+  fetch: "readonly",
+  crypto: "readonly",
+  TextDecoder: "readonly",
+  TextEncoder: "readonly",
+  console: "readonly",
+  CustomEvent: "readonly",
+  Event: "readonly",
+  EventListener: "readonly",
+  KVNamespace: "readonly",
+  process: "readonly",
+};
+
 export default [
   {
     ignores: [
@@ -16,11 +37,6 @@ export default [
       "out/**",
       "node_modules/**",
       "next-env.d.ts",
-      // The Cloudflare Worker that ships alongside the site is a
-      // separate package (`@tarmoto/worker`) with its own type roots;
-      // it has its own typecheck and tests and doesn't need to share
-      // this app's ESLint rule list.
-      "worker/**",
     ],
   },
   js.configs.recommended,
@@ -40,6 +56,16 @@ export default [
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
+    },
+  },
+  {
+    // worker.mjs + worker.test.mjs + waitlist-confirmation-email.mjs +
+    // social-metadata.test.mjs all run in either the Cloudflare Workers
+    // runtime or Node — they don't get TypeScript's lib types so ESLint
+    // needs the global names declared explicitly.
+    files: ["*.mjs"],
+    languageOptions: {
+      globals: workerRuntimeGlobals,
     },
   },
 ];

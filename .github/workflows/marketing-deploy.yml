@@ -1,37 +1,33 @@
 name: Marketing Deploy
 
 # Deploy model:
-#   push to main          → staging worker            (auto)
-#   push tag marketing-v* → production worker         (auto)
-#   workflow_dispatch     → choose staging/production (manual)
+#   push to main         → staging  (auto)
+#   push tag marketing-v*→ production (auto)
+#   workflow_dispatch    → choose staging or production
 #
-# Deploy target: single Cloudflare Worker that serves both the Next.js
-# static export (via the ASSETS binding, see wrangler.jsonc) and the
-# /api/waitlist/* endpoints. Matches the nexcue-marketing topology.
+# Deploy target: Cloudflare Workers (wrangler). The worker serves
+# both the Next.js static export (via the ASSETS binding) and the
+# /api/waitlist endpoints. Matches nexcue-marketing's topology.
 #
 # Cloudflare Workers atomically swap on deploy, so `wrangler deploy`
 # returns synchronously with the new version active. No
 # rolling-update / poll / healthcheck stages required — the smoke
 # test below is enough to catch a broken bundle.
 #
-# Prefix the marketing tag namespace (`marketing-v*`) so it does not
-# clash with other tag-driven deploys (e.g. backend `v*` tags).
-#
-# KV note: staging and production workers share the same
-# TARMOTO_WAITLIST namespace id (see wrangler.jsonc). Staging signups
-# therefore land in the production KV. Acceptable for a public
-# waitlist — split the namespace later if staging needs isolation.
+# Prefix the marketing tag namespace (`marketing-v*`) so it doesn't
+# clash with the backend deploy's plain `v*` tags or the mobile
+# release's `mobile-v*` tags.
 #
 # Required repo secrets:
-#   CLOUDFLARE_API_TOKEN           shared Cloudflare API token
-#   RESEND_API_KEY_PROD            Resend key for production waitlist confirmation emails
-#   RESEND_API_KEY_STAGING         Resend key for staging waitlist confirmation emails
+#   CLOUDFLARE_API_TOKEN          shared with other Cloudflare deploys
+#   RESEND_API_KEY_PROD           Resend key for production waitlist confirmation emails
+#   RESEND_API_KEY_STAGING        Resend key for staging waitlist confirmation emails
 #
 # Required repo variables:
-#   CLOUDFLARE_ACCOUNT_ID             Cloudflare account hosting the worker
-#   MARKETING_PROD_WORKER_NAME        production worker name (default: tarmoto-waitlist)
-#   MARKETING_STAGING_WORKER_NAME     staging worker name    (default: tarmoto-waitlist-staging)
-#   MARKETING_WORKERS_SUBDOMAIN       account workers.dev subdomain (e.g. studio81)
+#   CLOUDFLARE_ACCOUNT_ID            Cloudflare account hosting the worker
+#   MARKETING_PROD_WORKER_NAME       production worker name (e.g. tarmoto-marketing)
+#   MARKETING_STAGING_WORKER_NAME    staging worker name (e.g. tarmoto-marketing-staging)
+#   MARKETING_WORKERS_SUBDOMAIN      account workers.dev subdomain (e.g. studio81)
 
 on:
   push:
@@ -74,7 +70,6 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           GITHUB_REF: ${{ github.ref }}
         run: |
-          set -euo pipefail
           if [ -n "$INPUT_ENV" ]; then
             ENV_NAME="$INPUT_ENV"
           elif [ "$IS_TAG" = "true" ]; then
@@ -84,9 +79,14 @@ jobs:
           fi
           echo "name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
 
-          # Push events deploy the actual ref that triggered the run;
-          # workflow_dispatch always builds main HEAD so operator
-          # overrides ship current main, not a feature branch.
+          # Push events deploy the actual ref that triggered the run:
+          #   - push to main → deploy main HEAD as staging
+          #   - push tag marketing-v* → deploy the tagged commit as
+          #     production (so the tag really pins the production
+          #     release; otherwise main could have moved on and the
+          #     "tagged" deploy would silently include untagged work).
+          # workflow_dispatch always builds main HEAD — operator
+          # override should ship current main, not a feature branch.
           if [ "$EVENT_NAME" = "push" ]; then
             CHECKOUT_REF="$GITHUB_REF"
           else
@@ -122,8 +122,8 @@ jobs:
         id: worker
         env:
           ENV_NAME: ${{ needs.resolve.outputs.name }}
-          PROD_NAME: ${{ vars.MARKETING_PROD_WORKER_NAME || 'tarmoto-waitlist' }}
-          STAGING_NAME: ${{ vars.MARKETING_STAGING_WORKER_NAME || 'tarmoto-waitlist-staging' }}
+          PROD_NAME: ${{ vars.MARKETING_PROD_WORKER_NAME || 'tarmoto-marketing' }}
+          STAGING_NAME: ${{ vars.MARKETING_STAGING_WORKER_NAME || 'tarmoto-marketing-staging' }}
         run: |
           set -euo pipefail
           if [ "$ENV_NAME" = "production" ]; then
@@ -135,7 +135,7 @@ jobs:
 
       - name: Deploy marketing site to Cloudflare Workers
         id: deploy
-        working-directory: apps/marketing/worker
+        working-directory: apps/marketing
         env:
           ENV_NAME: ${{ needs.resolve.outputs.name }}
           WORKER_NAME: ${{ steps.worker.outputs.name }}
@@ -161,7 +161,8 @@ jobs:
           }
 
           if grep -q "<replace-with-" wrangler.jsonc; then
-            echo "::warning::wrangler.jsonc still contains a <replace-with-...> placeholder (likely the preview KV id used only by wrangler dev). Deploys will still succeed."
+            echo "::error::wrangler.jsonc still contains <replace-with-...> placeholder KV namespace ids; create the namespaces and paste real ids before deploying"
+            exit 1
           fi
 
           if [ "$ENV_NAME" = "production" ]; then
@@ -188,7 +189,7 @@ jobs:
             }));
           ' "$RUNNER_TEMP/marketing-worker-secrets.json"
 
-          pnpm exec wrangler deploy \
+          pnpm dlx wrangler@latest deploy \
             --name "$WORKER_NAME" \
             --secrets-file "$RUNNER_TEMP/marketing-worker-secrets.json"
 

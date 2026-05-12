@@ -1,29 +1,19 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
+import { useState, type CSSProperties, type FormEvent } from "react";
 
 interface WaitlistFormProps {
   stage?: "waitlist" | "beta" | "launch";
 }
+
+const ENDPOINT = "/api/waitlist";
 
 export function WaitlistForm({ stage = "waitlist" }: WaitlistFormProps) {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<
     "idle" | "submitting" | "success" | "error"
   >("idle");
-  const [count, setCount] = useState<number | null>(null);
   const [errorBorder, setErrorBorder] = useState(false);
-
-  useEffect(() => {
-    fetch("/api/waitlist/count")
-      .then((res) => res.json())
-      .then((data) => {
-        if (typeof data.count === "number" && data.count > 0) {
-          setCount(data.count);
-        }
-      })
-      .catch(() => {});
-  }, []);
 
   async function handleSubmit(e?: FormEvent) {
     e?.preventDefault();
@@ -36,18 +26,16 @@ export function WaitlistForm({ stage = "waitlist" }: WaitlistFormProps) {
     setStatus("submitting");
 
     try {
-      const res = await fetch("/api/waitlist", {
+      const res = await fetch(ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: trimmed, source: "landing_page" }),
+        body: JSON.stringify({ email: trimmed }),
       });
       if (!res.ok) {
         setStatus("error");
         return;
       }
-      const data = await res.json();
       setStatus("success");
-      if (typeof data.count === "number") setCount(data.count);
     } catch {
       setStatus("error");
     }
@@ -74,14 +62,6 @@ export function WaitlistForm({ stage = "waitlist" }: WaitlistFormProps) {
             </div>
           </div>
         </div>
-        {count !== null && (
-          <div style={styles.count}>
-            <span style={styles.countDot} />
-            <span>
-              {count} rider{count > 1 ? "s" : ""} on the waitlist
-            </span>
-          </div>
-        )}
       </div>
     );
   }
@@ -207,27 +187,5 @@ const styles: Record<string, CSSProperties> = {
     fontSize: "12px",
     color: "var(--mute)",
     marginTop: "2px",
-  },
-  count: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "6px",
-    padding: "8px 14px",
-    borderRadius: "999px",
-    background: "rgba(77,182,172,0.07)",
-    border: "1px solid rgba(77,182,172,0.20)",
-    fontSize: "12px",
-    color: "var(--sync)",
-    fontWeight: 500,
-    marginTop: "16px",
-  },
-  countDot: {
-    width: "6px",
-    height: "6px",
-    borderRadius: "50%",
-    background: "var(--sync)",
-    boxShadow: "0 0 8px 0 rgba(77,182,172,0.55)",
-    animation: "pulse 2s infinite",
-    display: "inline-block",
   },
 };

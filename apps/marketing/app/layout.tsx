@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Space_Grotesk, JetBrains_Mono, Fraunces } from "next/font/google";
-import { CookieConsent } from "@/components/CookieConsent";
+import { Analytics } from "@/components/Analytics";
+import { CookieBanner } from "@/components/CookieBanner";
 import { WaitlistProvider } from "@/components/WaitlistProvider";
-import { WaitlistDialog } from "@/components/WaitlistDialog";
 import "./globals.css";
 
 const spaceGrotesk = Space_Grotesk({
@@ -75,11 +75,9 @@ export default function RootLayout({
       className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} ${fraunces.variable}`}
     >
       <body>
-        <WaitlistProvider>
-          {children}
-          <WaitlistDialog />
-        </WaitlistProvider>
-        <CookieConsent />
+        <WaitlistProvider>{children}</WaitlistProvider>
+        <CookieBanner />
+        <Analytics />
       </body>
     </html>
   );

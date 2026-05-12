@@ -31,19 +31,11 @@ const cols: Array<{ h: string; links: FooterLink[] }> = [
   },
 ];
 
-const COOKIE_STORAGE_KEY = "tarmoto:cookie-consent";
-const COOKIE_OPEN_EVENT = "tarmoto:open-cookie-banner";
-
 export function Footer() {
   const year = new Date().getFullYear();
 
   const openCookiePreferences = () => {
-    try {
-      localStorage.removeItem(COOKIE_STORAGE_KEY);
-    } catch {
-      // storage may be unavailable
-    }
-    window.dispatchEvent(new CustomEvent(COOKIE_OPEN_EVENT));
+    window.dispatchEvent(new CustomEvent("tarmoto:reset-consent"));
   };
 
   return (

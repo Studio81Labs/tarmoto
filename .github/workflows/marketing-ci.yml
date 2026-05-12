@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build & Test
+    name: Marketing Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -44,27 +44,33 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Build before standalone typecheck: `next build` is what generates
-      # `apps/marketing/next-env.d.ts` (gitignored ambient declarations
-      # for next/font, next/image, etc.). On a fresh CI checkout that
-      # file doesn't exist, so running `tsc --noEmit` first would fail
-      # on missing Next ambient types.
+      # Build before standalone typecheck: `next build` is what
+      # generates `apps/marketing/next-env.d.ts` (gitignored ambient
+      # declarations for next/font, next/image, etc.). On a fresh CI
+      # checkout that file doesn't exist, so running `tsc --noEmit`
+      # first would fail on missing Next ambient types.
       - name: Build marketing site
         run: pnpm marketing:build
 
       - name: Typecheck marketing site
         run: pnpm marketing:typecheck
 
-      - name: Typecheck worker
-        run: pnpm --filter @tarmoto/worker typecheck
-
-      - name: Test worker
-        run: pnpm --filter @tarmoto/worker test
+      - name: Test marketing site
+        # Runs both worker.test.mjs and social-metadata.test.mjs from
+        # apps/marketing via `node --test *.test.mjs`. Nexcue ships
+        # these tests but doesn't wire them into CI — we do.
+        run: pnpm --filter @tarmoto/web test
 
       - name: Validate Cloudflare Worker bundle
-        # `wrangler deploy --dry-run` compiles src/index.ts against
-        # wrangler.jsonc, validates the ASSETS directory exists (we
-        # built the Next.js export above), and surfaces broken worker
-        # code or config drift before deploy.
-        working-directory: apps/marketing/worker
+        # `wrangler deploy --dry-run` compiles worker.mjs against
+        # wrangler.jsonc and validates the assets directory exists.
+        # Surfaces broken worker code or config drift before deploy.
+        working-directory: apps/marketing
         run: pnpm dlx wrangler@latest deploy --dry-run --outdir "$RUNNER_TEMP/wrangler-dry-run"
+
+      - name: Upload static export
+        uses: actions/upload-artifact@v7
+        with:
+          name: marketing-out
+          path: apps/marketing/out
+          retention-days: 7
