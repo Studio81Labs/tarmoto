@@ -350,6 +350,17 @@ async function handleWaitlistUnsubscribe(
   await env.TARMOTO_WAITLIST.delete(waitlistKey);
   await env.TARMOTO_WAITLIST.delete(tokenKey);
 
+  // Keep the public counter honest: drop one off meta:count so /count and
+  // the form's "N riders on the waitlist" pill don't stay inflated, and a
+  // later re-signup with the same email doesn't double-increment from a
+  // stale total. KV has no atomic decrement, so this loses precision under
+  // concurrent unsubscribes — acceptable for a public waitlist number.
+  const currentCount = parseInt(
+    (await env.TARMOTO_WAITLIST.get("meta:count")) ?? "0",
+  );
+  const nextCount = Math.max(0, currentCount - 1);
+  await env.TARMOTO_WAITLIST.put("meta:count", nextCount.toString());
+
   return htmlResponse(
     200,
     renderUnsubscribePage({
@@ -360,10 +371,23 @@ async function handleWaitlistUnsubscribe(
   );
 }
 
+// Pre-rename endpoints kept as aliases of the new /api/waitlist/* paths so
+// any external consumer (bookmarked admin URLs, ops scripts hitting
+// /admin/export, an out-of-date copy of the frontend cached at the edge)
+// keeps working through the rename. Remove once we're confident nothing
+// is calling them.
+const LEGACY_ALIASES: Record<string, string> = {
+  "/signup": "/api/waitlist",
+  "/signup/unsubscribe": "/api/waitlist/unsubscribe",
+  "/count": "/api/waitlist/count",
+  "/admin/list": "/api/waitlist/admin/list",
+  "/admin/export": "/api/waitlist/admin/export",
+};
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    const path = url.pathname;
+    const path = LEGACY_ALIASES[url.pathname] ?? url.pathname;
 
     const corsHeaders: Record<string, string> = {
       "Access-Control-Allow-Origin": env.ALLOWED_ORIGIN ?? "*",

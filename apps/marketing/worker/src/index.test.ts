@@ -368,6 +368,64 @@ test("unsubscribe POST removes subscriber records", async () => {
   assert.equal(kv.entries.has("unsubscribe:unsubscribe-token"), false);
 });
 
+test("unsubscribe decrements the public waitlist count", async () => {
+  const kv = createWaitlistKv({
+    "email:rider@example.com": {
+      email: "rider@example.com",
+      source: "landing_page",
+      rider_type: "",
+      timestamp: "2026-05-01T12:00:00.000Z",
+      ip_country: "CZ",
+      user_agent: "test-agent",
+      unsubscribeToken: "unsubscribe-token",
+      confirmationEmailSentAt: "2026-05-01T12:00:01.000Z",
+    },
+    "unsubscribe:unsubscribe-token": "rider@example.com",
+    "meta:count": "7",
+  });
+  const env = baseEnv(kv);
+
+  const response = await worker.fetch(
+    new Request(
+      "https://tarmoto.app/api/waitlist/unsubscribe?token=unsubscribe-token",
+      { method: "POST" },
+    ),
+    env,
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(kv.entries.get("meta:count"), "6");
+});
+
+test("unsubscribe does not drive meta:count below zero", async () => {
+  const kv = createWaitlistKv({
+    "email:rider@example.com": {
+      email: "rider@example.com",
+      source: "landing_page",
+      rider_type: "",
+      timestamp: "2026-05-01T12:00:00.000Z",
+      ip_country: "CZ",
+      user_agent: "test-agent",
+      unsubscribeToken: "unsubscribe-token",
+      confirmationEmailSentAt: "2026-05-01T12:00:01.000Z",
+    },
+    "unsubscribe:unsubscribe-token": "rider@example.com",
+    "meta:count": "0",
+  });
+  const env = baseEnv(kv);
+
+  const response = await worker.fetch(
+    new Request(
+      "https://tarmoto.app/api/waitlist/unsubscribe?token=unsubscribe-token",
+      { method: "POST" },
+    ),
+    env,
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(kv.entries.get("meta:count"), "0");
+});
+
 test("unsubscribe rejects unknown tokens", async () => {
   const kv = createWaitlistKv();
   const env = baseEnv(kv);
@@ -392,4 +450,96 @@ test("/api/waitlist/count returns the meta count value", async () => {
 
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { count: 42 });
+});
+
+test("legacy /signup endpoint still accepts signups", async () => {
+  const fetchCalls: unknown[] = [];
+  globalThis.fetch = (async (...args: unknown[]) => {
+    fetchCalls.push(args);
+    return new Response(JSON.stringify({ id: "email_legacy" }), { status: 200 });
+  }) as unknown as typeof fetch;
+
+  const kv = createWaitlistKv();
+  const env = baseEnv(kv);
+
+  const response = await worker.fetch(
+    new Request("https://tarmoto.app/signup", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "rider@example.com" }),
+    }),
+    env,
+  );
+
+  assert.equal(response.status, 200);
+  const json = (await response.json()) as Record<string, unknown>;
+  assert.equal(json.alreadySubscribed, false);
+  assert.equal(json.confirmationEmailSent, true);
+  assert.equal(kv.entries.has("email:rider@example.com"), true);
+});
+
+test("legacy /count endpoint still returns the meta count", async () => {
+  const kv = createWaitlistKv({ "meta:count": "11" });
+  const env = baseEnv(kv);
+
+  const response = await worker.fetch(
+    new Request("https://tarmoto.app/count"),
+    env,
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { count: 11 });
+});
+
+test("legacy /admin/list endpoint is reachable with the admin key", async () => {
+  const kv = createWaitlistKv({
+    "email:rider@example.com": {
+      email: "rider@example.com",
+      source: "landing_page",
+      rider_type: "",
+      timestamp: "2026-05-01T12:00:00.000Z",
+      ip_country: "CZ",
+      user_agent: "test-agent",
+      unsubscribeToken: "tok",
+    },
+  });
+  const env = baseEnv(kv);
+
+  const response = await worker.fetch(
+    new Request("https://tarmoto.app/admin/list?key=admin-test"),
+    env,
+  );
+
+  assert.equal(response.status, 200);
+  const json = (await response.json()) as { count: number };
+  assert.equal(json.count, 1);
+});
+
+test("legacy /signup/unsubscribe endpoint is honoured", async () => {
+  const kv = createWaitlistKv({
+    "email:rider@example.com": {
+      email: "rider@example.com",
+      source: "landing_page",
+      rider_type: "",
+      timestamp: "2026-05-01T12:00:00.000Z",
+      ip_country: "CZ",
+      user_agent: "test-agent",
+      unsubscribeToken: "legacy-token",
+      confirmationEmailSentAt: "2026-05-01T12:00:01.000Z",
+    },
+    "unsubscribe:legacy-token": "rider@example.com",
+    "meta:count": "3",
+  });
+  const env = baseEnv(kv);
+
+  const response = await worker.fetch(
+    new Request("https://tarmoto.app/signup/unsubscribe?token=legacy-token", {
+      method: "POST",
+    }),
+    env,
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(kv.entries.has("email:rider@example.com"), false);
+  assert.equal(kv.entries.get("meta:count"), "2");
 });
