@@ -1,30 +1,32 @@
-import { useState } from 'react';
-import TarmotoWireframes from '../wireframes';
-import TarmotoMobileMockups from '../mobile-mockups';
-import TarmotoMobileConceptV2 from '../mobile-concept-v2';
+import { useState } from "react";
+import TarmotoWireframes from "../wireframes";
+import TarmotoMobileMockups from "../mobile-mockups";
+import TarmotoMobileConceptV2 from "../mobile-concept-v2";
+import BrandIdentity from "../BrandIdentity";
 
 const tabs = [
-  { id: 'wireframes', label: 'Wireframes' },
-  { id: 'mobile', label: 'Mobile Mockups' },
-  { id: 'mobile-v2', label: 'Mobile Concept V2' },
-  { id: 'erd', label: 'Database ERD' },
+  { id: "brand", label: "Brand" },
+  { id: "wireframes", label: "Wireframes" },
+  { id: "mobile", label: "Mobile Mockups" },
+  { id: "mobile-v2", label: "Mobile Concept V2" },
+  { id: "erd", label: "Database ERD" },
 ];
 
 export default function App() {
-  const [active, setActive] = useState('wireframes');
+  const [active, setActive] = useState("wireframes");
 
   return (
-    <div style={{ minHeight: '100vh', background: '#070A10' }}>
+    <div style={{ minHeight: "100vh", background: "#070A10" }}>
       {/* Nav */}
       <nav
         style={{
-          display: 'flex',
-          alignItems: 'center',
+          display: "flex",
+          alignItems: "center",
           gap: 24,
-          padding: '16px 24px',
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
-          background: '#0C1018',
-          position: 'sticky',
+          padding: "16px 24px",
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          background: "#0C1018",
+          position: "sticky",
           top: 0,
           zIndex: 100,
         }}
@@ -33,8 +35,8 @@ export default function App() {
           style={{
             fontSize: 16,
             fontWeight: 800,
-            color: '#0ED3CF',
-            letterSpacing: '-0.02em',
+            color: "#0ED3CF",
+            letterSpacing: "-0.02em",
             marginRight: 16,
           }}
         >
@@ -45,31 +47,33 @@ export default function App() {
             key={tab.id}
             onClick={() => setActive(tab.id)}
             style={{
-              background: active === tab.id ? 'rgba(14,211,207,0.12)' : 'transparent',
-              color: active === tab.id ? '#0ED3CF' : '#8B95A8',
-              border: 'none',
-              padding: '8px 16px',
+              background:
+                active === tab.id ? "rgba(14,211,207,0.12)" : "transparent",
+              color: active === tab.id ? "#0ED3CF" : "#8B95A8",
+              border: "none",
+              padding: "8px 16px",
               borderRadius: 8,
               fontSize: 13,
               fontWeight: 600,
-              cursor: 'pointer',
-              transition: 'all 0.15s',
+              cursor: "pointer",
+              transition: "all 0.15s",
             }}
           >
             {tab.label}
           </button>
         ))}
-        <span style={{ marginLeft: 'auto', fontSize: 11, color: '#4A5568' }}>
+        <span style={{ marginLeft: "auto", fontSize: 11, color: "#4A5568" }}>
           Design Docs — Local Dev
         </span>
       </nav>
 
       {/* Content */}
       <div style={{ padding: 24 }}>
-        {active === 'wireframes' && <TarmotoWireframes />}
-        {active === 'mobile' && <TarmotoMobileMockups />}
-        {active === 'mobile-v2' && <TarmotoMobileConceptV2 />}
-        {active === 'erd' && <ErdViewer />}
+        {active === "brand" && <BrandIdentity />}
+        {active === "wireframes" && <TarmotoWireframes />}
+        {active === "mobile" && <TarmotoMobileMockups />}
+        {active === "mobile-v2" && <TarmotoMobileConceptV2 />}
+        {active === "erd" && <ErdViewer />}
       </div>
     </div>
   );
@@ -79,19 +83,19 @@ function ErdViewer() {
   return (
     <div
       style={{
-        background: '#0C1018',
+        background: "#0C1018",
         borderRadius: 16,
-        border: '1px solid rgba(255,255,255,0.06)',
-        overflow: 'hidden',
+        border: "1px solid rgba(255,255,255,0.06)",
+        overflow: "hidden",
       }}
     >
       <iframe
         src="/database_erd.html"
         style={{
-          width: '100%',
-          height: 'calc(100vh - 140px)',
-          border: 'none',
-          background: '#0C1018',
+          width: "100%",
+          height: "calc(100vh - 140px)",
+          border: "none",
+          background: "#0C1018",
         }}
         title="Database ERD"
       />

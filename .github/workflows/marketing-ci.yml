@@ -5,7 +5,6 @@ on:
     branches: [main]
     paths:
       - "apps/marketing/**"
-      - "docs/design/brand/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -14,7 +13,6 @@ on:
     branches: [main]
     paths:
       - "apps/marketing/**"
-      - "docs/design/brand/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -45,9 +43,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Build brand
-        run: pnpm brand:build
 
       # Build before standalone typecheck: `next build` is what generates
       # `apps/marketing/next-env.d.ts` (gitignored ambient declarations
