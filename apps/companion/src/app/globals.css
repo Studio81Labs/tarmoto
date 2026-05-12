@@ -509,6 +509,1704 @@
   }
 
 
+  /* ─── Status descendant + same-element restore ───
+     The status-colour remap above darkens pale tones in cream context,
+     but if the status text sits on (or inside) a dark slate-opacity
+     panel — e.g. the trip planner sidebar renders ClosuresPanel inside
+     `bg-slate-900/70` with `text-amber-300` / `text-sky-300` /
+     `text-cyan-300` warning labels — those panels stay dark (the slate
+     bg remap only flips bare `bg-slate-X`, not opacity-suffixed)
+     and the darkened `*-700` tone becomes low-contrast on dark.
+     Restore the original Tailwind pale colour when the status text
+     element either carries a dark slate-opacity class itself or lives
+     inside an ancestor that does. Anchored matchers (space + start)
+     keep `hover:bg-slate-X/N` / `focus:bg-slate-X/N` / `group-hover:`
+     prefixes from triggering this restore in the resting state. */
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-red-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-red-200 {
+    color: var(--color-red-200);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-red-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-red-300 {
+    color: var(--color-red-300);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-red-400,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-red-400 {
+    color: var(--color-red-400);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-rose-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-rose-200 {
+    color: var(--color-rose-200);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-rose-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-rose-300 {
+    color: var(--color-rose-300);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-rose-400,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-rose-400 {
+    color: var(--color-rose-400);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-amber-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-amber-200 {
+    color: var(--color-amber-200);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-amber-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-amber-300 {
+    color: var(--color-amber-300);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-amber-400,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-amber-400 {
+    color: var(--color-amber-400);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-yellow-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-yellow-200 {
+    color: var(--color-yellow-200);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-yellow-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-yellow-300 {
+    color: var(--color-yellow-300);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-yellow-400,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-yellow-400 {
+    color: var(--color-yellow-400);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-green-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-green-200 {
+    color: var(--color-green-200);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-green-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-green-300 {
+    color: var(--color-green-300);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-green-400,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-green-400 {
+    color: var(--color-green-400);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-emerald-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-emerald-200 {
+    color: var(--color-emerald-200);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-emerald-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-emerald-300 {
+    color: var(--color-emerald-300);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-emerald-400,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-emerald-400 {
+    color: var(--color-emerald-400);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-lime-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-lime-200 {
+    color: var(--color-lime-200);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-lime-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-lime-300 {
+    color: var(--color-lime-300);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-lime-400,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-lime-400 {
+    color: var(--color-lime-400);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-orange-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-orange-200 {
+    color: var(--color-orange-200);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-orange-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-orange-300 {
+    color: var(--color-orange-300);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-orange-400,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-orange-400 {
+    color: var(--color-orange-400);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-teal-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-teal-200 {
+    color: var(--color-teal-200);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-teal-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-teal-300 {
+    color: var(--color-teal-300);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-teal-400,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-teal-400 {
+    color: var(--color-teal-400);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-sky-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-sky-200 {
+    color: var(--color-sky-200);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-sky-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-sky-300 {
+    color: var(--color-sky-300);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-sky-400,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-sky-400 {
+    color: var(--color-sky-400);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-cyan-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-cyan-200 {
+    color: var(--color-cyan-200);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-cyan-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-cyan-300 {
+    color: var(--color-cyan-300);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-cyan-400,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-cyan-400 {
+    color: var(--color-cyan-400);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-blue-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-blue-200 {
+    color: var(--color-blue-200);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-blue-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-blue-300 {
+    color: var(--color-blue-300);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-blue-400,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-blue-400 {
+    color: var(--color-blue-400);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-indigo-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-indigo-200 {
+    color: var(--color-indigo-200);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-indigo-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-indigo-300 {
+    color: var(--color-indigo-300);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-indigo-400,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-indigo-400 {
+    color: var(--color-indigo-400);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-violet-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-violet-200 {
+    color: var(--color-violet-200);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-violet-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-violet-300 {
+    color: var(--color-violet-300);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-violet-400,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-violet-400 {
+    color: var(--color-violet-400);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-purple-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-purple-200 {
+    color: var(--color-purple-200);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-purple-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-purple-300 {
+    color: var(--color-purple-300);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-purple-400,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-purple-400 {
+    color: var(--color-purple-400);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-fuchsia-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-fuchsia-200 {
+    color: var(--color-fuchsia-200);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-fuchsia-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-fuchsia-300 {
+    color: var(--color-fuchsia-300);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-fuchsia-400,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-fuchsia-400 {
+    color: var(--color-fuchsia-400);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-pink-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-pink-200 {
+    color: var(--color-pink-200);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-pink-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-pink-300 {
+    color: var(--color-pink-300);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ) .text-pink-400,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+  :where(
+      [class*=" bg-slate-50/"], [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"], [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"], [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"], [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"], [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"], [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"], [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"], [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"], [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"], [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"], [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"], [class^="bg-slate-950/"]
+    ).text-pink-400 {
+    color: var(--color-pink-400);
+  }
+
+  /* ─── Hover/focus slate-opacity bg remap ───
+     Bare `hover:bg-slate-X` is remapped to cream/paper via the explicit
+     list near the top of this layer, but opacity-suffixed variants
+     (`hover:bg-slate-900/60`, `focus:bg-slate-800/40`) generate
+     separate class names and slipped through. On `/discover` zone
+     rows (`hover:bg-slate-900/60`) and `/rides` rows
+     (`hover:bg-slate-800/40`) the static text has already been
+     remapped to ink, so on hover a dark translucent slate background
+     appears behind ink text. Mirror the bare hover remap onto every
+     opacity variant via attribute selectors so hover surfaces stay
+     light and the row remains readable. */
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="hover:bg-slate-50/"]:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="focus:bg-slate-50/"]:focus,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="active:bg-slate-50/"]:active,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="hover:bg-slate-100/"]:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="focus:bg-slate-100/"]:focus,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="active:bg-slate-100/"]:active,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="hover:bg-slate-900/"]:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="focus:bg-slate-900/"]:focus,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="active:bg-slate-900/"]:active,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="hover:bg-slate-950/"]:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="focus:bg-slate-950/"]:focus,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="active:bg-slate-950/"]:active {
+    background-color: var(--tk-cream);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="hover:bg-slate-200/"]:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="focus:bg-slate-200/"]:focus,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="active:bg-slate-200/"]:active,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="hover:bg-slate-300/"]:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="focus:bg-slate-300/"]:focus,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="active:bg-slate-300/"]:active,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="hover:bg-slate-400/"]:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="focus:bg-slate-400/"]:focus,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="active:bg-slate-400/"]:active,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="hover:bg-slate-700/"]:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="focus:bg-slate-700/"]:focus,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="active:bg-slate-700/"]:active,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="hover:bg-slate-800/"]:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="focus:bg-slate-800/"]:focus,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="active:bg-slate-800/"]:active {
+    background-color: var(--tk-paper);
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="hover:bg-slate-500/"]:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="focus:bg-slate-500/"]:focus,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="active:bg-slate-500/"]:active,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="hover:bg-slate-600/"]:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="focus:bg-slate-600/"]:focus,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) [class*="active:bg-slate-600/"]:active {
+    background-color: var(--tk-paper-2);
+  }
+
+
   /* ─── Scoped foreground remap ───
      Repaints the legacy dark-theme foreground utilities so they read on
      the cream theme:
