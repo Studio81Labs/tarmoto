@@ -108,7 +108,7 @@ async function sha256Hex(value: string): Promise<string> {
 }
 
 function buildUnsubscribeUrl(requestUrl: string, token: string): string {
-  const url = new URL("/signup/unsubscribe", requestUrl);
+  const url = new URL("/api/waitlist/unsubscribe", requestUrl);
   url.searchParams.set("token", token);
   return url.toString();
 }
@@ -289,7 +289,7 @@ function renderUnsubscribeConfirmationPage(token: string): string {
     title: "Confirm unsubscribe",
     body: "Please confirm that you no longer want to receive Tarmoto waitlist emails.",
     actionHtml: `<div class="unsubscribe-actions">
-      <form method="post" action="/signup/unsubscribe?token=${escapeHtml(token)}">
+      <form method="post" action="/api/waitlist/unsubscribe?token=${escapeHtml(token)}">
         <button type="submit">Unsubscribe from waitlist</button>
       </form>
       <a class="secondary-link" href="https://tarmoto.app">Keep my spot</a>
@@ -376,11 +376,11 @@ export default {
     }
 
     try {
-      if (path === "/signup/unsubscribe") {
+      if (path === "/api/waitlist/unsubscribe") {
         return handleWaitlistUnsubscribe(request, env);
       }
 
-      if (path === "/signup" && request.method === "POST") {
+      if (path === "/api/waitlist" && request.method === "POST") {
         const body = (await request.json()) as SignupBody;
         if (!body || typeof body !== "object") {
           return jsonResponse(
@@ -484,14 +484,14 @@ export default {
         );
       }
 
-      if (path === "/count" && request.method === "GET") {
+      if (path === "/api/waitlist/count" && request.method === "GET") {
         const count = parseInt(
           (await env.TARMOTO_WAITLIST.get("meta:count")) ?? "0",
         );
         return jsonResponse({ count }, 200, corsHeaders);
       }
 
-      if (path === "/admin/list" && request.method === "GET") {
+      if (path === "/api/waitlist/admin/list" && request.method === "GET") {
         const authKey = url.searchParams.get("key");
         if (authKey !== env.ADMIN_KEY) {
           return jsonResponse({ error: "Unauthorized" }, 401, corsHeaders);
@@ -509,7 +509,7 @@ export default {
         );
       }
 
-      if (path === "/admin/export" && request.method === "GET") {
+      if (path === "/api/waitlist/admin/export" && request.method === "GET") {
         const authKey = url.searchParams.get("key");
         if (authKey !== env.ADMIN_KEY) {
           return jsonResponse({ error: "Unauthorized" }, 401, corsHeaders);

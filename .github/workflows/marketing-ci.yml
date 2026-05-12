@@ -49,6 +49,11 @@ jobs:
       - name: Build brand
         run: pnpm brand:build
 
+      # Build before standalone typecheck: `next build` is what generates
+      # `apps/marketing/next-env.d.ts` (gitignored ambient declarations
+      # for next/font, next/image, etc.). On a fresh CI checkout that
+      # file doesn't exist, so running `tsc --noEmit` first would fail
+      # on missing Next ambient types.
       - name: Build marketing site
         run: pnpm marketing:build
 
@@ -63,7 +68,8 @@ jobs:
 
       - name: Validate Cloudflare Worker bundle
         # `wrangler deploy --dry-run` compiles src/index.ts against
-        # wrangler.jsonc and surfaces broken worker code or config
-        # drift before deploy.
+        # wrangler.jsonc, validates the ASSETS directory exists (we
+        # built the Next.js export above), and surfaces broken worker
+        # code or config drift before deploy.
         working-directory: apps/marketing/worker
         run: pnpm dlx wrangler@latest deploy --dry-run --outdir "$RUNNER_TEMP/wrangler-dry-run"

@@ -1,3 +1,5 @@
+"use client";
+
 import {
   useCallback,
   useEffect,
@@ -8,15 +10,12 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
+import { useWaitlist } from "@/components/WaitlistProvider";
+
 type Status = "idle" | "submitting" | "success" | "error";
 
-interface WaitlistDialogProps {
-  apiUrl: string;
-}
-
-const OPEN_EVENT = "tarmoto:open-waitlist";
-
-export default function WaitlistDialog({ apiUrl }: WaitlistDialogProps) {
+export function WaitlistDialog() {
+  const { isOpen, close } = useWaitlist();
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const emailRef = useRef<HTMLInputElement | null>(null);
   const titleId = useId();
@@ -32,37 +31,41 @@ export default function WaitlistDialog({ apiUrl }: WaitlistDialogProps) {
     setErrorBorder(false);
   }, []);
 
-  // Fetch the rider count once for the success state — same contract as
-  // the inline form so the dialog can show a consistent number.
+  // Fetch the rider count once so the success state can show a consistent
+  // number — same contract as the inline WaitlistForm.
   useEffect(() => {
-    if (!apiUrl) return;
-    fetch(`${apiUrl}/count`)
+    fetch("/api/waitlist/count")
       .then((res) => res.json())
       .then((data) => {
-        if (data.count > 0) setCount(data.count);
+        if (typeof data.count === "number" && data.count > 0) {
+          setCount(data.count);
+        }
       })
       .catch(() => {});
-  }, [apiUrl]);
+  }, []);
 
-  // Listen for the custom event the nav CTA dispatches, and announce
-  // readiness so the Nav script knows it can preventDefault() the
-  // anchor click instead of leaving the user with nothing happening.
+  // Open / close the native <dialog> in lockstep with the provider state.
   useEffect(() => {
-    const onOpen = () => {
-      const dialog = dialogRef.current;
-      if (!dialog || dialog.open) return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (isOpen && !dialog.open) {
       reset();
       dialog.showModal();
       requestAnimationFrame(() => emailRef.current?.focus());
-    };
-    window.addEventListener(OPEN_EVENT, onOpen);
-    window.dispatchEvent(new CustomEvent("tarmoto:waitlist-dialog-ready"));
-    return () => window.removeEventListener(OPEN_EVENT, onOpen);
-  }, [reset]);
+    } else if (!isOpen && dialog.open) {
+      dialog.close();
+    }
+  }, [isOpen, reset]);
 
-  const close = useCallback(() => {
-    dialogRef.current?.close();
-  }, []);
+  // Native ESC / form-close events on the <dialog> must propagate back to
+  // the provider so the provider stays in sync with the actual DOM state.
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const onClose = () => close();
+    dialog.addEventListener("close", onClose);
+    return () => dialog.removeEventListener("close", onClose);
+  }, [close]);
 
   const handleBackdropClick = (event: ReactMouseEvent<HTMLDialogElement>) => {
     if (event.target === dialogRef.current) close();
@@ -80,10 +83,7 @@ export default function WaitlistDialog({ apiUrl }: WaitlistDialogProps) {
     setStatus("submitting");
 
     try {
-      // See WaitlistForm: relative /signup keeps a same-origin Worker
-      // route working in production and surfaces a real error otherwise,
-      // instead of silently confirming a dropped signup.
-      const res = await fetch(`${apiUrl}/signup`, {
+      const res = await fetch("/api/waitlist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: trimmed, source: "nav_dialog" }),
@@ -94,7 +94,7 @@ export default function WaitlistDialog({ apiUrl }: WaitlistDialogProps) {
       }
       const data = await res.json();
       setStatus("success");
-      if (data.count) setCount(data.count);
+      if (typeof data.count === "number") setCount(data.count);
     } catch {
       setStatus("error");
     }

@@ -1,14 +1,12 @@
-import { useState, useEffect } from "react";
+"use client";
+
+import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
 
 interface WaitlistFormProps {
-  apiUrl: string;
   stage?: "waitlist" | "beta" | "launch";
 }
 
-export default function WaitlistForm({
-  apiUrl,
-  stage = "waitlist",
-}: WaitlistFormProps) {
+export function WaitlistForm({ stage = "waitlist" }: WaitlistFormProps) {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<
     "idle" | "submitting" | "success" | "error"
@@ -17,16 +15,17 @@ export default function WaitlistForm({
   const [errorBorder, setErrorBorder] = useState(false);
 
   useEffect(() => {
-    if (!apiUrl) return;
-    fetch(`${apiUrl}/count`)
+    fetch("/api/waitlist/count")
       .then((res) => res.json())
       .then((data) => {
-        if (data.count > 0) setCount(data.count);
+        if (typeof data.count === "number" && data.count > 0) {
+          setCount(data.count);
+        }
       })
       .catch(() => {});
-  }, [apiUrl]);
+  }, []);
 
-  async function handleSubmit(e?: React.FormEvent) {
+  async function handleSubmit(e?: FormEvent) {
     e?.preventDefault();
     const trimmed = email.trim();
     if (!trimmed || !trimmed.includes("@") || !trimmed.includes(".")) {
@@ -37,11 +36,7 @@ export default function WaitlistForm({
     setStatus("submitting");
 
     try {
-      // When PUBLIC_API_URL is unset we still hit the relative /signup
-      // path so a same-origin Worker route works in production. A genuine
-      // misconfiguration surfaces as a network/HTTP error rather than a
-      // silent "you're on the list" confirmation.
-      const res = await fetch(`${apiUrl}/signup`, {
+      const res = await fetch("/api/waitlist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: trimmed, source: "landing_page" }),
@@ -52,7 +47,7 @@ export default function WaitlistForm({
       }
       const data = await res.json();
       setStatus("success");
-      if (data.count) setCount(data.count);
+      if (typeof data.count === "number") setCount(data.count);
     } catch {
       setStatus("error");
     }
@@ -73,9 +68,9 @@ export default function WaitlistForm({
         <div style={styles.successBox}>
           <span style={styles.successCheck}>✓</span>
           <div>
-            <div style={styles.successTitle}>You're on the list.</div>
+            <div style={styles.successTitle}>You&apos;re on the list.</div>
             <div style={styles.successNote}>
-              We'll write once, when your invite is ready.
+              We&apos;ll write once, when your invite is ready.
             </div>
           </div>
         </div>
@@ -122,7 +117,7 @@ export default function WaitlistForm({
         </button>
       </form>
       <p style={styles.note}>
-        One email when there's something to share. No marketing list.
+        One email when there&apos;s something to share. No marketing list.
       </p>
       {status === "error" && (
         <p style={{ ...styles.note, color: "#B0473A", marginTop: "8px" }}>
@@ -133,7 +128,7 @@ export default function WaitlistForm({
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
+const styles: Record<string, CSSProperties> = {
   wrap: {
     maxWidth: "520px",
     width: "100%",

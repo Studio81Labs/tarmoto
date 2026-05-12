@@ -53,7 +53,7 @@ function createWaitlistKv(seed: Record<string, unknown> = {}): WaitlistKv {
 }
 
 function signupRequest(body: unknown): Request {
-  return new Request("https://tarmoto.app/signup", {
+  return new Request("https://tarmoto.app/api/waitlist", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -110,13 +110,13 @@ test("signup sends a confirmation email through Resend", async () => {
   assert.match(body.html as string, /tarmoto\.app/);
   assert.match(
     body.html as string,
-    /https:\/\/tarmoto\.app\/signup\/unsubscribe\?token=/,
+    /https:\/\/tarmoto\.app\/api\/waitlist\/unsubscribe\?token=/,
   );
   assert.doesNotMatch(body.html as string, /\{\{unsubscribe_url\}\}/);
   assert.match(body.text as string, /We've saved your spot\./);
   assert.match(
     body.text as string,
-    /Unsubscribe: https:\/\/tarmoto\.app\/signup\/unsubscribe\?token=/,
+    /Unsubscribe: https:\/\/tarmoto\.app\/api\/waitlist\/unsubscribe\?token=/,
   );
   assert.doesNotMatch(body.text as string, /\{\{unsubscribe_url\}\}/);
 
@@ -318,7 +318,7 @@ test("unsubscribe GET shows a confirmation page without deleting", async () => {
 
   const response = await worker.fetch(
     new Request(
-      "https://tarmoto.app/signup/unsubscribe?token=unsubscribe-token",
+      "https://tarmoto.app/api/waitlist/unsubscribe?token=unsubscribe-token",
     ),
     env,
   );
@@ -353,7 +353,7 @@ test("unsubscribe POST removes subscriber records", async () => {
 
   const response = await worker.fetch(
     new Request(
-      "https://tarmoto.app/signup/unsubscribe?token=unsubscribe-token",
+      "https://tarmoto.app/api/waitlist/unsubscribe?token=unsubscribe-token",
       { method: "POST" },
     ),
     env,
@@ -373,7 +373,7 @@ test("unsubscribe rejects unknown tokens", async () => {
   const env = baseEnv(kv);
 
   const response = await worker.fetch(
-    new Request("https://tarmoto.app/signup/unsubscribe?token=missing-token"),
+    new Request("https://tarmoto.app/api/waitlist/unsubscribe?token=missing-token"),
     env,
   );
 
@@ -381,12 +381,12 @@ test("unsubscribe rejects unknown tokens", async () => {
   assert.match(await response.text(), /link is invalid/);
 });
 
-test("/count returns the meta count value", async () => {
+test("/api/waitlist/count returns the meta count value", async () => {
   const kv = createWaitlistKv({ "meta:count": "42" });
   const env = baseEnv(kv);
 
   const response = await worker.fetch(
-    new Request("https://tarmoto.app/count"),
+    new Request("https://tarmoto.app/api/waitlist/count"),
     env,
   );
 

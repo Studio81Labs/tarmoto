@@ -1,0 +1,117 @@
+import type { Metadata } from "next";
+import { Nav } from "@/components/Nav";
+import { Footer } from "@/components/Footer";
+import { CookiePreferencesLink } from "@/components/CookiePreferencesLink";
+
+export const metadata: Metadata = {
+  title: "Privacy",
+  description: "How Tarmoto handles your data during the prelaunch beta.",
+};
+
+export default function PrivacyPage() {
+  return (
+    <>
+      <Nav />
+
+      <section className="subpage">
+        <div className="subpage-container">
+          <div className="eyebrow">
+            <span className="eyebrow-num">§</span>
+            <span className="eyebrow-rule"></span>
+            <span className="stamp">Privacy</span>
+          </div>
+
+          <h1 className="subpage-title">Privacy policy.</h1>
+
+          <p className="subpage-lede">
+            Tarmoto is in early beta. This page describes what we collect today.
+            We&apos;ll publish a full privacy policy before public launch — it
+            will grow as the product grows, never the other way around.
+          </p>
+
+          <div className="subpage-body">
+            <h2>Who is responsible</h2>
+            <p>
+              The data controller is <strong>Studio81 Labs, s.r.o.</strong>,
+              operator of Tarmoto. For data requests email{" "}
+              <a href="mailto:privacy@tarmoto.app">privacy@tarmoto.app</a>.
+            </p>
+
+            <h2>What we collect</h2>
+            <ul>
+              <li>
+                <strong>Waitlist submission.</strong> When you join the waitlist
+                we store the email address you submit, a timestamp, the page or
+                form that triggered the signup (<em>source</em>), an optional
+                rider type if the form collects it, the country your request
+                originated from (derived from your IP by our hosting provider —
+                we do not store the raw IP address), and the browser User-Agent
+                string. The country and User-Agent help us spot abuse and shape
+                the beta invite mix; nothing else is derived from them.
+              </li>
+              <li>
+                <strong>Analytics (opt-in).</strong> If you accept analytics in
+                the cookie banner, we load Umami — a privacy-friendly,
+                cookieless analytics tool — which counts page views and basic
+                referrer information. No cross-site tracking, no personal
+                profiles. If you decline, no analytics script is loaded.
+              </li>
+            </ul>
+
+            <h2>Why we collect it</h2>
+            <ul>
+              <li>
+                <strong>Email:</strong> to send you one message when invites
+                open, and another when v1.0 ships.
+              </li>
+              <li>
+                <strong>Analytics:</strong> to understand how many people are
+                interested and which sections of the site they read.
+              </li>
+            </ul>
+
+            <h2>Legal basis (GDPR)</h2>
+            <p>
+              Consent. You give it by submitting the waitlist form (for email)
+              and by clicking Accept on the cookie banner (for analytics). You
+              can withdraw at any time — see &ldquo;Your rights&rdquo; below.
+            </p>
+
+            <h2>Retention</h2>
+            <p>
+              Waitlist emails are kept until the product launches publicly or
+              you ask us to remove them, whichever comes first. Analytics data
+              is kept for as long as we run the Umami project for Tarmoto.
+            </p>
+
+            <h2>Sharing</h2>
+            <p>
+              We don&apos;t sell or share your data with advertisers. We
+              don&apos;t run ads on this site. The waitlist data is stored on
+              infrastructure we operate; if that ever changes, we&apos;ll update
+              this page.
+            </p>
+
+            <h2>Your rights</h2>
+            <p>
+              Under GDPR you can access, correct, or delete the data we hold
+              about you, and you can withdraw consent at any time. To exercise
+              any of these rights, email{" "}
+              <a href="mailto:privacy@tarmoto.app">privacy@tarmoto.app</a>. You
+              can also change your analytics decision any time from{" "}
+              <CookiePreferencesLink>cookie preferences</CookiePreferencesLink>{" "}
+              in the footer.
+            </p>
+
+            <p className="subpage-meta">
+              This is a prelaunch policy and will be replaced by a full version
+              before public launch.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <Footer />
+    </>
+  );
+}

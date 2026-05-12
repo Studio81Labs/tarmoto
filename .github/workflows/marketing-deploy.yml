@@ -5,13 +5,9 @@ name: Marketing Deploy
 #   push tag marketing-v* → production worker         (auto)
 #   workflow_dispatch     → choose staging/production (manual)
 #
-# The Astro landing site is a separate Cloudflare Pages project and
-# stays on a single environment — it auto-deploys to prod on every
-# push to main (its public_api_url is built against the prod worker).
-# Only the Worker has a staging/prod split, because that is where
-# behavior changes (signup flow, Resend, unsubscribe) actually land.
-#
-# Deploy target: Cloudflare Workers (wrangler) + Cloudflare Pages.
+# Deploy target: single Cloudflare Worker that serves both the Next.js
+# static export (via the ASSETS binding, see wrangler.jsonc) and the
+# /api/waitlist/* endpoints. Matches the nexcue-marketing topology.
 #
 # Cloudflare Workers atomically swap on deploy, so `wrangler deploy`
 # returns synchronously with the new version active. No
@@ -32,12 +28,10 @@ name: Marketing Deploy
 #   RESEND_API_KEY_STAGING         Resend key for staging waitlist confirmation emails
 #
 # Required repo variables:
-#   CLOUDFLARE_ACCOUNT_ID             Cloudflare account hosting the worker + Pages project
+#   CLOUDFLARE_ACCOUNT_ID             Cloudflare account hosting the worker
 #   MARKETING_PROD_WORKER_NAME        production worker name (default: tarmoto-waitlist)
 #   MARKETING_STAGING_WORKER_NAME     staging worker name    (default: tarmoto-waitlist-staging)
 #   MARKETING_WORKERS_SUBDOMAIN       account workers.dev subdomain (e.g. studio81)
-#   MARKETING_PAGES_PROJECT           Cloudflare Pages project name (default: tarmoto-website)
-#   PUBLIC_API_URL                    public worker URL baked into the static site
 
 on:
   push:
@@ -72,7 +66,6 @@ jobs:
     outputs:
       name: ${{ steps.env.outputs.name }}
       checkout_ref: ${{ steps.env.outputs.checkout_ref }}
-      deploy_pages: ${{ steps.env.outputs.deploy_pages }}
     steps:
       - name: Resolve environment
         id: env
@@ -102,16 +95,6 @@ jobs:
           fi
           echo "checkout_ref=${CHECKOUT_REF}" >> "$GITHUB_OUTPUT"
 
-          # Pages site deploys only on push to main (or a main-HEAD
-          # dispatch). Tag pushes only ship the production worker; the
-          # Pages prod state already reflects main from the merge that
-          # produced the tagged commit.
-          if [ "$EVENT_NAME" = "push" ] && [ "$IS_TAG" != "true" ]; then
-            echo "deploy_pages=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "deploy_pages=false" >> "$GITHUB_OUTPUT"
-          fi
-
   deploy:
     name: Deploy Marketing Site
     needs: resolve
@@ -134,19 +117,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build marketing site
-        if: needs.resolve.outputs.deploy_pages == 'true'
-        env:
-          PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL || 'https://tarmoto-waitlist.studio81.workers.dev' }}
         run: pnpm marketing:build
-
-      - name: Deploy marketing site to Cloudflare Pages
-        if: needs.resolve.outputs.deploy_pages == 'true'
-        working-directory: apps/marketing/worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          PAGES_PROJECT: ${{ vars.MARKETING_PAGES_PROJECT || 'tarmoto-website' }}
-        run: pnpm exec wrangler pages deploy ../dist --project-name="$PAGES_PROJECT" --commit-dirty=true
 
       - name: Resolve worker name
         id: worker
@@ -163,7 +134,7 @@ jobs:
           fi
           echo "name=${WORKER_NAME}" >> "$GITHUB_OUTPUT"
 
-      - name: Deploy waitlist worker to Cloudflare Workers
+      - name: Deploy marketing site to Cloudflare Workers
         id: deploy
         working-directory: apps/marketing/worker
         env:
@@ -224,21 +195,21 @@ jobs:
 
           DEPLOY_URL="https://${WORKER_NAME}.${WORKERS_SUBDOMAIN}.workers.dev"
           echo "url=${DEPLOY_URL}" >> "$GITHUB_OUTPUT"
-          echo "::notice::Marketing worker deployed to ${DEPLOY_URL}"
+          echo "::notice::Marketing deployed to ${DEPLOY_URL}"
 
-      - name: Smoke test worker
+      - name: Smoke test
         env:
           URL: ${{ steps.deploy.outputs.url }}
         run: |
           set -euo pipefail
           for attempt in 1 2 3 4 5; do
-            STATUS=$(curl -sL -o response.json -w '%{http_code}' "${URL}/count" || echo '000')
-            if [ "$STATUS" = "200" ] && grep -q '"count"' response.json; then
-              echo "::notice::Marketing worker smoke OK (${URL}/count)"
+            STATUS=$(curl -sL -o response.html -w '%{http_code}' "$URL" || echo '000')
+            if [ "$STATUS" = "200" ] && grep -qi "tarmoto" response.html; then
+              echo "::notice::Marketing smoke OK ($URL)"
               exit 0
             fi
             echo "Smoke attempt ${attempt}: HTTP ${STATUS}"
             sleep 5
           done
-          echo "::error::Marketing worker smoke failed after 5 attempts (last status ${STATUS})"
+          echo "::error::Marketing smoke failed after 5 attempts (last status ${STATUS})"
           exit 1
