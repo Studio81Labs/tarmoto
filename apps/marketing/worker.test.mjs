@@ -52,20 +52,48 @@ test("waitlist signup sends a confirmation email through Resend", async () => {
   const body = JSON.parse(call.init.body);
   assert.equal(body.from, "Tarmoto <hello@tarmoto.app>");
   assert.equal(body.to, "rider@example.com");
+  assert.equal(body.reply_to, "Tarmoto <hello@tarmoto.app>");
   assert.equal(body.subject, "You're on the Tarmoto waitlist");
-  assert.match(body.html, /We've saved your spot\./);
+  assert.match(body.html, /You're <em[^>]*>on the list\.<\/em>/);
+  assert.match(body.html, /Thanks for joining the Tarmoto waitlist/);
+
+  // Logo: PNG primary, letter "T" as image-blocked fallback. The
+  // image src points at the marketing site's hosted asset; the
+  // wrapping cell carries the orange bgcolor so it still reads as
+  // the brand square when images don't load.
+  assert.match(
+    body.html,
+    /src="https:\/\/tarmoto\.app\/brand\/logo-mark-on-accent\.png"/,
+  );
+  assert.match(body.html, /alt="T"/);
+  assert.match(body.html, /bgcolor="#FF6A1A"/);
   assert.match(body.html, /https:\/\/tarmoto\.app/);
   assert.match(
     body.html,
     /https:\/\/tarmoto\.app\/api\/waitlist\/unsubscribe\?token=/,
   );
   assert.doesNotMatch(body.html, /\{\{unsubscribe_url\}\}/);
-  assert.match(body.text, /We've saved your spot\./);
+  assert.doesNotMatch(body.html, /\{\{year\}\}/);
+  assert.match(body.text, /You're on the list\./);
+  assert.match(body.text, /Thanks for joining the Tarmoto waitlist/);
   assert.match(
     body.text,
     /Unsubscribe: https:\/\/tarmoto\.app\/api\/waitlist\/unsubscribe\?token=/,
   );
   assert.doesNotMatch(body.text, /\{\{unsubscribe_url\}\}/);
+  assert.doesNotMatch(body.text, /\{\{year\}\}/);
+
+  // List-Unsubscribe / one-click headers must point at the same
+  // unsubscribe endpoint as the footer link so Gmail/Yahoo accept
+  // the bulk-sender contract.
+  assert.match(
+    body.headers["List-Unsubscribe"],
+    /^<https:\/\/tarmoto\.app\/api\/waitlist\/unsubscribe\?token=[a-z0-9-]+>$/,
+  );
+  assert.equal(
+    body.headers["List-Unsubscribe-Post"],
+    "List-Unsubscribe=One-Click",
+  );
 
   const stored = JSON.parse(env.WAITLIST.entries.get("waitlist:rider@example.com"));
   assert.equal(typeof stored.unsubscribeToken, "string");
