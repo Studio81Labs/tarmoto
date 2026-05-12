@@ -1,34 +1,32 @@
 import { t } from "@/i18n";
 import Link from "next/link";
-function LogoMark({ size = 28 }: { size?: number }) {
+import { TarmotoMark } from "./tarmoto/atoms";
+
+export function AppLogo({ inverted = false }: { inverted?: boolean }) {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 100 100"
-      fill="none"
+    <Link
+      href="/"
+      className="flex items-center gap-2.5 shrink-0"
       aria-label={t("Tarmoto")}
     >
-      <rect x="18" y="20" width="64" height="12" rx="4" fill="#0ED3CF" />
-      <rect x="40" y="20" width="20" height="42" rx="4" fill="#0ED3CF" />
-      <path
-        d="M 16 80 L 30 80 L 38 70 L 46 86 L 54 68 L 62 82 L 70 76 L 84 76"
-        stroke="#0ED3CF"
-        strokeWidth="4.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-    </svg>
-  );
-}
-export function AppLogo() {
-  return (
-    <Link href="/" className="flex items-center gap-2 shrink-0">
-      <LogoMark size={28} />
-      <span className="text-lg font-bold tracking-tight">
-        {"TAR"}
-        <span className="text-tarmoto-cyan">{t("MOTO")}</span>
+      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent">
+        <TarmotoMark size={18} color="#0E0E10" />
+      </span>
+      <span className="leading-none">
+        <span
+          className={`block text-[15px] font-bold tracking-tight ${
+            inverted ? "text-cream" : "text-ink"
+          }`}
+        >
+          TARMOTO
+        </span>
+        <span
+          className={`mt-0.5 block font-mono text-[9px] tracking-[1px] ${
+            inverted ? "text-cream/50" : "text-ink/45"
+          }`}
+        >
+          WEB · v1.4
+        </span>
       </span>
     </Link>
   );

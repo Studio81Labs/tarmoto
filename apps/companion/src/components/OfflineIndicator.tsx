@@ -18,7 +18,6 @@ export function OfflineIndicator() {
       setShowOffline(false);
       return;
     }
-    // Give the connection a moment to establish before warning the user.
     const timer = window.setTimeout(
       () => setShowOffline(true),
       GRACE_PERIOD_MS,
@@ -32,7 +31,7 @@ export function OfflineIndicator() {
       role="status"
       aria-live="polite"
       title={t("Real-time updates are paused")}
-      className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-medium"
+      className="flex items-center gap-1.5 rounded-full border border-accent/50 bg-accent/15 px-2.5 py-1 text-[11px] font-bold text-ink"
     >
       <WifiOff size={12} />
       <span>{label}</span>

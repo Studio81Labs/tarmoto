@@ -23,11 +23,13 @@ export default function ForgotPasswordPage() {
   if (sent) {
     return (
       <div className="animate-fade-in text-center">
-        <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-tarmoto-cyan/10 flex items-center justify-center text-tarmoto-cyan text-2xl">
+        <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-accent/20 flex items-center justify-center text-ink text-2xl">
           ✓
         </div>
-        <h2 className="text-2xl font-bold mb-2">{t("Check your email")}</h2>
-        <p className="text-slate-400 mb-8">
+        <h2 className="text-2xl font-bold text-ink mb-2">
+          {t("Check your email")}
+        </h2>
+        <p className="text-ink/65 mb-8">
           {t(
             "If an account exists for {email}, we've sent a password reset link.",
             { email },
@@ -35,7 +37,7 @@ export default function ForgotPasswordPage() {
         </p>
         <Link
           href="/login"
-          className="text-tarmoto-cyan hover:underline text-sm"
+          className="text-sm font-semibold text-ink hover:text-accent hover:underline"
         >
           {t("Back to sign in")}
         </Link>
@@ -44,21 +46,23 @@ export default function ForgotPasswordPage() {
   }
   return (
     <div className="animate-fade-in">
-      <h2 className="text-2xl font-bold mb-2">{t("Reset password")}</h2>
-      <p className="text-slate-400 mb-8">
+      <h2 className="text-2xl font-bold text-ink mb-2">
+        {t("Reset password")}
+      </h2>
+      <p className="text-ink/60 mb-8">
         {t("Enter your email and we'll send a reset link")}
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-1.5">
+          <label className="block text-sm font-semibold text-ink/80 mb-1.5">
             {t("Email")}
           </label>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-4 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-white placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan focus:ring-1 focus:ring-tarmoto-cyan transition"
+            className="w-full px-4 py-2.5 rounded-lg bg-cream border border-ink/15 text-ink placeholder:text-ink/40 focus:outline-none focus:border-ink focus:ring-1 focus:ring-ink transition"
             placeholder={t("rider@example.com")}
             required
           />
@@ -67,14 +71,17 @@ export default function ForgotPasswordPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full py-2.5 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold hover:bg-tarmoto-cyan-light disabled:opacity-50 transition"
+          className="w-full py-2.5 rounded-lg bg-ink text-cream font-semibold hover:bg-tarmac disabled:opacity-50 transition"
         >
           {loading ? t("Sending...") : t("Send reset link")}
         </button>
       </form>
 
-      <p className="mt-6 text-center text-sm text-slate-400">
-        <Link href="/login" className="text-tarmoto-cyan hover:underline">
+      <p className="mt-6 text-center text-sm text-ink/65">
+        <Link
+          href="/login"
+          className="font-semibold text-ink hover:text-accent hover:underline"
+        >
           {t("Back to sign in")}
         </Link>
       </p>

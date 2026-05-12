@@ -45,55 +45,57 @@ export function RegisterForm({
   };
   return (
     <div className="animate-fade-in">
-      <h2 className="text-2xl font-bold mb-2">{t("Create your account")}</h2>
-      <p className="text-slate-400 mb-8">
+      <h2 className="text-2xl font-bold text-ink mb-2">
+        {t("Create your account")}
+      </h2>
+      <p className="text-ink/60 mb-8">
         {t("Join the Tarmoto rider community")}
       </p>
 
       {error && (
-        <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+        <div className="mb-4 p-3 rounded-lg bg-quality-q1/15 border border-quality-q1/30 text-quality-q1 text-sm">
           {error}
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-1.5">
+          <label className="block text-sm font-semibold text-ink/80 mb-1.5">
             {t("Display name")}
           </label>
           <input
             type="text"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
-            className="w-full px-4 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-white placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan focus:ring-1 focus:ring-tarmoto-cyan transition"
+            className="w-full px-4 py-2.5 rounded-lg bg-cream border border-ink/15 text-ink placeholder:text-ink/40 focus:outline-none focus:border-ink focus:ring-1 focus:ring-ink transition"
             placeholder={t("RoadWarrior42")}
             required
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-1.5">
+          <label className="block text-sm font-semibold text-ink/80 mb-1.5">
             {t("Email")}
           </label>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-4 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-white placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan focus:ring-1 focus:ring-tarmoto-cyan transition"
+            className="w-full px-4 py-2.5 rounded-lg bg-cream border border-ink/15 text-ink placeholder:text-ink/40 focus:outline-none focus:border-ink focus:ring-1 focus:ring-ink transition"
             placeholder={t("rider@example.com")}
             required
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-1.5">
+          <label className="block text-sm font-semibold text-ink/80 mb-1.5">
             {t("Password")}
           </label>
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-4 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-white placeholder:text-slate-500 focus:outline-none focus:border-tarmoto-cyan focus:ring-1 focus:ring-tarmoto-cyan transition"
+            className="w-full px-4 py-2.5 rounded-lg bg-cream border border-ink/15 text-ink placeholder:text-ink/40 focus:outline-none focus:border-ink focus:ring-1 focus:ring-ink transition"
             placeholder={t("Min. 8 characters")}
             minLength={8}
             required
@@ -103,7 +105,7 @@ export function RegisterForm({
         <button
           type="submit"
           disabled={loading}
-          className="w-full py-2.5 rounded-lg bg-tarmoto-cyan text-slate-950 font-semibold hover:bg-tarmoto-cyan-light disabled:opacity-50 transition"
+          className="w-full py-2.5 rounded-lg bg-ink text-cream font-semibold hover:bg-tarmac disabled:opacity-50 transition"
         >
           {loading ? t("Creating account...") : t("Create account")}
         </button>
@@ -111,7 +113,7 @@ export function RegisterForm({
 
       <OAuthButtons providers={oauthProviders} callbackUrl={callbackUrl} />
 
-      <p className="mt-6 text-center text-sm text-slate-400">
+      <p className="mt-6 text-center text-sm text-ink/65">
         {t("Already have an account?")}{" "}
         <Link
           href={
@@ -122,7 +124,7 @@ export function RegisterForm({
               ? `/login?callbackUrl=${encodeURIComponent(searchParams.get("callbackUrl") ?? "")}`
               : "/login"
           }
-          className="text-tarmoto-cyan hover:underline"
+          className="font-semibold text-ink hover:text-accent hover:underline"
         >
           {t("Sign in")}
         </Link>
