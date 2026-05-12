@@ -61,8 +61,9 @@ export default function PrivacyPage() {
             <h2>Why we collect it</h2>
             <ul>
               <li>
-                <strong>Email:</strong> to send you one message when invites
-                open, and another when v1.0 ships.
+                <strong>Email:</strong> to send you a confirmation message with
+                an unsubscribe link when you join the waitlist, one more message
+                when invites open, and a final one when v1.0 ships.
               </li>
               <li>
                 <strong>Analytics:</strong> to understand how many people are
@@ -87,9 +88,21 @@ export default function PrivacyPage() {
             <h2>Sharing</h2>
             <p>
               We don&apos;t sell or share your data with advertisers. We
-              don&apos;t run ads on this site. The waitlist data is stored on
-              infrastructure we operate; if that ever changes, we&apos;ll update
-              this page.
+              don&apos;t run ads on this site. The waitlist record itself is
+              stored on infrastructure we operate (Cloudflare KV).
+            </p>
+            <p>
+              To deliver the confirmation email and the unsubscribe link tied to
+              it, we send your email address to{" "}
+              <a href="https://resend.com" rel="noreferrer">
+                Resend
+              </a>
+              , our transactional email provider, acting as a data processor on
+              our instructions. Resend sees the email address, the message, and
+              the technical metadata needed to deliver it; we don&apos;t pass
+              them anything else, and we don&apos;t use them for marketing. If
+              we ever switch providers or change how waitlist data is processed,
+              we&apos;ll update this page.
             </p>
 
             <h2>Your rights</h2>
