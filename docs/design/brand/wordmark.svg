@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Tarmoto wordmark — accent mark + cream "Tarmoto" text on transparent.
+  Placeholder: text uses a generic sans-serif fallback. Re-export from
+  Figma with Space Grotesk SemiBold (600) when a clean version is
+  available; see ./README.md for typography rules.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80" width="320" height="80" role="img" aria-label="Tarmoto wordmark">
+  <title>Tarmoto wordmark</title>
+  <g transform="translate(10 16)">
+    <rect x="0" y="0" width="48" height="48" rx="10" fill="#FF6A1A"/>
+    <g transform="translate(4 4)">
+      <rect x="7" y="8" width="26" height="5" rx="1.6" fill="#1A120D"/>
+      <rect x="16" y="8" width="8" height="17" rx="1.6" fill="#1A120D"/>
+      <path d="M 6.4 32 L 12 32 L 15.2 28 L 18.4 34.4 L 21.6 27.2 L 24.8 32.8 L 28 30.4 L 33.6 30.4"
+            stroke="#1A120D" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round" fill="none"/>
+    </g>
+  </g>
+  <text x="74" y="50" fill="#E8E5DE"
+        font-family="'Space Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif"
+        font-size="32" font-weight="600" letter-spacing="-0.5">Tarmoto</text>
+</svg>

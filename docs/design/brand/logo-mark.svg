@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Tarmoto logo mark.
+  Standalone form — transparent background, road-grey strokes.
+  Use on light backgrounds; for dark backgrounds prefer
+  logo-mark-on-accent.svg (the orange square version) or
+  logo-mark-inverse.svg.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100" role="img" aria-label="Tarmoto logo mark">
+  <title>Tarmoto logo mark</title>
+  <rect x="18" y="20" width="64" height="12" rx="4" fill="#2A2E35"/>
+  <rect x="40" y="20" width="20" height="42" rx="4" fill="#2A2E35"/>
+  <path d="M 16 80 L 30 80 L 38 70 L 46 86 L 54 68 L 62 82 L 70 76 L 84 76"
+        stroke="#2A2E35" stroke-width="5" stroke-linecap="round"
+        stroke-linejoin="round" fill="none"/>
+</svg>
