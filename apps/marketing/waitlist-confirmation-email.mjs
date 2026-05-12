@@ -121,9 +121,21 @@ const WAITLIST_CONFIRMATION_HTML = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0
                   <td valign="middle" align="left" style="font-size:0;">
                     <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="display:inline-block; vertical-align:middle;">
                       <tr>
+                        <!-- Logo cell:
+                             - When images load (Apple Mail, iOS, most clients):
+                               the PNG renders the same road-mark on the
+                               orange square that the marketing nav uses.
+                             - When images are blocked (some Outlook configs,
+                               first paint in Gmail web): the bgcolor + cell
+                               text styling fall back to a bold "T" on the
+                               orange tile, matching the previous template. -->
                         <td width="40" height="40" align="center" valign="middle"
+                            bgcolor="#FF6A1A"
                             style="width:40px; height:40px; background-color:#FF6A1A; background:linear-gradient(180deg,#FF7A26 0%,#FF6A1A 100%); border-radius:10px; color:#1A120D; font-family:'Space Grotesk', 'Segoe UI', Helvetica, Arial, sans-serif; font-weight:700; font-size:22px; line-height:40px; text-align:center;">
-                          T
+                          <img src="https://tarmoto.app/brand/logo-mark-on-accent.png"
+                               alt="T"
+                               width="40" height="40"
+                               style="display:block; width:40px; height:40px; border:0; border-radius:10px;" />
                         </td>
                         <td width="12" style="width:12px;">&nbsp;</td>
                         <td valign="middle" style="font-family:'Space Grotesk', 'Segoe UI', Helvetica, Arial, sans-serif; font-weight:600; font-size:18px; color:#E8E5DE; letter-spacing:-0.01em;">

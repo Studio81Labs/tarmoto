@@ -56,6 +56,17 @@ test("waitlist signup sends a confirmation email through Resend", async () => {
   assert.equal(body.subject, "You're on the Tarmoto waitlist");
   assert.match(body.html, /You're <em[^>]*>on the list\.<\/em>/);
   assert.match(body.html, /Thanks for joining the Tarmoto waitlist/);
+
+  // Logo: PNG primary, letter "T" as image-blocked fallback. The
+  // image src points at the marketing site's hosted asset; the
+  // wrapping cell carries the orange bgcolor so it still reads as
+  // the brand square when images don't load.
+  assert.match(
+    body.html,
+    /src="https:\/\/tarmoto\.app\/brand\/logo-mark-on-accent\.png"/,
+  );
+  assert.match(body.html, /alt="T"/);
+  assert.match(body.html, /bgcolor="#FF6A1A"/);
   assert.match(body.html, /https:\/\/tarmoto\.app/);
   assert.match(
     body.html,
