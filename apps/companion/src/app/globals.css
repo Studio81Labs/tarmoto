@@ -3585,4 +3585,54 @@
     .hover\:text-slate-300:hover {
     color: var(--color-slate-300);
   }
+
+  /* ─── Cream-panel shield ───
+     The descendant restore above re-paints `text-white` /
+     `text-slate-50…300` (plus hover/focus variants) back to their pale
+     Tailwind colours when *any* ancestor carries a dark slate-opacity
+     class. That guard only excludes the text element itself if it
+     carries a bare `bg-slate-X` class — it does not stop at intermediate
+     remapped panels. Authenticated modals (e.g. `BikeFormModal`) have
+     a `bg-slate-950/70` backdrop wrapping a `bg-slate-900` panel
+     (remapped to cream); a `text-white` heading inside the panel sits
+     in cream context but was being restored to white through the
+     backdrop ancestor.
+
+     This shield re-pins those classes back to ink whenever the text
+     lives inside a bare `bg-slate-X` ancestor — i.e. a cream / paper
+     panel — regardless of any further-out dark-slate-opacity ancestor.
+     Source order is after the descendant restore, so at equal
+     specificity this rule wins on the cascade. */
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+    :where(
+      [class~="bg-slate-50"],
+      [class~="bg-slate-100"],
+      [class~="bg-slate-200"],
+      [class~="bg-slate-300"],
+      [class~="bg-slate-400"],
+      [class~="bg-slate-500"],
+      [class~="bg-slate-600"],
+      [class~="bg-slate-700"],
+      [class~="bg-slate-800"],
+      [class~="bg-slate-850"],
+      [class~="bg-slate-900"],
+      [class~="bg-slate-950"]
+    )
+    :is(
+      .text-white,
+      .text-slate-50,
+      .text-slate-100,
+      .text-slate-200,
+      .text-slate-300,
+      .hover\:text-white:hover,
+      .hover\:text-slate-50:hover,
+      .hover\:text-slate-100:hover,
+      .hover\:text-slate-200:hover,
+      .hover\:text-slate-300:hover,
+      .focus\:text-white:focus,
+      .focus\:text-slate-100:focus,
+      .focus\:text-slate-200:focus
+    ) {
+    color: var(--tk-ink);
+  }
 }
