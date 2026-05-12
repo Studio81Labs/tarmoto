@@ -1,5 +1,35 @@
 import { t } from "@/i18n";
-import { TarmotoMark } from "@/components/tarmoto/atoms";
+
+/**
+ * Auth-screen hero brand mark — the same road-bar-and-mountains glyph
+ * the marketing site uses in its top nav (`apps/marketing/src/components/
+ * Nav.astro`). Kept inline here because it's the only place in the
+ * companion that needs the marketing version of the lockup; the cream
+ * dashboard chrome continues to use the simpler triangle in
+ * `components/tarmoto/atoms.tsx`.
+ */
+function MarketingLogoMark({ size = 26 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 100 100"
+      fill="none"
+      aria-hidden="true"
+    >
+      <rect x="18" y="20" width="64" height="12" rx="4" fill="#0E0E10" />
+      <rect x="40" y="20" width="20" height="42" rx="4" fill="#0E0E10" />
+      <path
+        d="M 16 80 L 30 80 L 38 70 L 46 86 L 54 68 L 62 82 L 70 76 L 84 76"
+        stroke="#0E0E10"
+        strokeWidth="5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+    </svg>
+  );
+}
 
 export default function AuthLayout({
   children,
@@ -31,18 +61,18 @@ export default function AuthLayout({
         <div className="relative z-10 max-w-md px-10">
           <div className="mb-8 flex items-center gap-3">
             <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent">
-              <TarmotoMark size={26} color="#0E0E10" />
+              <MarketingLogoMark size={26} />
             </span>
             <span className="font-mono text-[11px] font-bold uppercase tracking-[2px] text-cream/55">
-              {t("TARMOTO · WEB")}
+              {t("TARMOTO · COMPANION")}
             </span>
           </div>
           <h1 className="text-[44px] font-bold leading-[1.05] tracking-tight text-cream">
-            {t("A map of every road worth riding.")}
+            {t("The route is already waiting.")}
           </h1>
           <p className="mt-5 max-w-sm text-[15px] leading-relaxed text-cream/65">
             {t(
-              "Plan the loop on a real screen. Tune for curves and asphalt. Push it to your phone before you ride.",
+              "Open your synced rides, check the essentials, and head out without signal anxiety.",
             )}
           </p>
           <div className="mt-10 inline-flex items-center gap-2 rounded-full border border-cream/15 px-3 py-1.5">
