@@ -1044,6 +1044,22 @@
       [class*="bg-slate-950/"],
       [class*="bg-["]
     )
+    :where(
+      :not(
+          [class~="bg-slate-50"],
+          [class~="bg-slate-100"],
+          [class~="bg-slate-200"],
+          [class~="bg-slate-300"],
+          [class~="bg-slate-400"],
+          [class~="bg-slate-500"],
+          [class~="bg-slate-600"],
+          [class~="bg-slate-700"],
+          [class~="bg-slate-800"],
+          [class~="bg-slate-850"],
+          [class~="bg-slate-900"],
+          [class~="bg-slate-950"]
+        )
+    )
     .text-white,
   body.bg-cream:not(:has(.tarmoto-no-cream))
     :where(
@@ -1061,6 +1077,22 @@
       [class*="bg-slate-950/"],
       [class*="bg-["]
     )
+    :where(
+      :not(
+          [class~="bg-slate-50"],
+          [class~="bg-slate-100"],
+          [class~="bg-slate-200"],
+          [class~="bg-slate-300"],
+          [class~="bg-slate-400"],
+          [class~="bg-slate-500"],
+          [class~="bg-slate-600"],
+          [class~="bg-slate-700"],
+          [class~="bg-slate-800"],
+          [class~="bg-slate-850"],
+          [class~="bg-slate-900"],
+          [class~="bg-slate-950"]
+        )
+    )
     .hover\:text-white:hover,
   body.bg-cream:not(:has(.tarmoto-no-cream))
     :where(
@@ -1077,6 +1109,22 @@
       [class*="bg-slate-900/"],
       [class*="bg-slate-950/"],
       [class*="bg-["]
+    )
+    :where(
+      :not(
+          [class~="bg-slate-50"],
+          [class~="bg-slate-100"],
+          [class~="bg-slate-200"],
+          [class~="bg-slate-300"],
+          [class~="bg-slate-400"],
+          [class~="bg-slate-500"],
+          [class~="bg-slate-600"],
+          [class~="bg-slate-700"],
+          [class~="bg-slate-800"],
+          [class~="bg-slate-850"],
+          [class~="bg-slate-900"],
+          [class~="bg-slate-950"]
+        )
     )
     .focus\:text-white:focus {
     color: #fff;
@@ -1097,6 +1145,22 @@
       [class*="bg-slate-950/"],
       [class*="bg-["]
     )
+    :where(
+      :not(
+          [class~="bg-slate-50"],
+          [class~="bg-slate-100"],
+          [class~="bg-slate-200"],
+          [class~="bg-slate-300"],
+          [class~="bg-slate-400"],
+          [class~="bg-slate-500"],
+          [class~="bg-slate-600"],
+          [class~="bg-slate-700"],
+          [class~="bg-slate-800"],
+          [class~="bg-slate-850"],
+          [class~="bg-slate-900"],
+          [class~="bg-slate-950"]
+        )
+    )
     .text-slate-50,
   body.bg-cream:not(:has(.tarmoto-no-cream))
     :where(
@@ -1113,6 +1177,22 @@
       [class*="bg-slate-900/"],
       [class*="bg-slate-950/"],
       [class*="bg-["]
+    )
+    :where(
+      :not(
+          [class~="bg-slate-50"],
+          [class~="bg-slate-100"],
+          [class~="bg-slate-200"],
+          [class~="bg-slate-300"],
+          [class~="bg-slate-400"],
+          [class~="bg-slate-500"],
+          [class~="bg-slate-600"],
+          [class~="bg-slate-700"],
+          [class~="bg-slate-800"],
+          [class~="bg-slate-850"],
+          [class~="bg-slate-900"],
+          [class~="bg-slate-950"]
+        )
     )
     .hover\:text-slate-50:hover {
     color: var(--color-slate-50);
@@ -1133,6 +1213,22 @@
       [class*="bg-slate-950/"],
       [class*="bg-["]
     )
+    :where(
+      :not(
+          [class~="bg-slate-50"],
+          [class~="bg-slate-100"],
+          [class~="bg-slate-200"],
+          [class~="bg-slate-300"],
+          [class~="bg-slate-400"],
+          [class~="bg-slate-500"],
+          [class~="bg-slate-600"],
+          [class~="bg-slate-700"],
+          [class~="bg-slate-800"],
+          [class~="bg-slate-850"],
+          [class~="bg-slate-900"],
+          [class~="bg-slate-950"]
+        )
+    )
     .text-slate-100,
   body.bg-cream:not(:has(.tarmoto-no-cream))
     :where(
@@ -1150,6 +1246,22 @@
       [class*="bg-slate-950/"],
       [class*="bg-["]
     )
+    :where(
+      :not(
+          [class~="bg-slate-50"],
+          [class~="bg-slate-100"],
+          [class~="bg-slate-200"],
+          [class~="bg-slate-300"],
+          [class~="bg-slate-400"],
+          [class~="bg-slate-500"],
+          [class~="bg-slate-600"],
+          [class~="bg-slate-700"],
+          [class~="bg-slate-800"],
+          [class~="bg-slate-850"],
+          [class~="bg-slate-900"],
+          [class~="bg-slate-950"]
+        )
+    )
     .hover\:text-slate-100:hover,
   body.bg-cream:not(:has(.tarmoto-no-cream))
     :where(
@@ -1166,6 +1278,22 @@
       [class*="bg-slate-900/"],
       [class*="bg-slate-950/"],
       [class*="bg-["]
+    )
+    :where(
+      :not(
+          [class~="bg-slate-50"],
+          [class~="bg-slate-100"],
+          [class~="bg-slate-200"],
+          [class~="bg-slate-300"],
+          [class~="bg-slate-400"],
+          [class~="bg-slate-500"],
+          [class~="bg-slate-600"],
+          [class~="bg-slate-700"],
+          [class~="bg-slate-800"],
+          [class~="bg-slate-850"],
+          [class~="bg-slate-900"],
+          [class~="bg-slate-950"]
+        )
     )
     .focus\:text-slate-100:focus {
     color: var(--color-slate-100);
@@ -1186,6 +1314,22 @@
       [class*="bg-slate-950/"],
       [class*="bg-["]
     )
+    :where(
+      :not(
+          [class~="bg-slate-50"],
+          [class~="bg-slate-100"],
+          [class~="bg-slate-200"],
+          [class~="bg-slate-300"],
+          [class~="bg-slate-400"],
+          [class~="bg-slate-500"],
+          [class~="bg-slate-600"],
+          [class~="bg-slate-700"],
+          [class~="bg-slate-800"],
+          [class~="bg-slate-850"],
+          [class~="bg-slate-900"],
+          [class~="bg-slate-950"]
+        )
+    )
     .text-slate-200,
   body.bg-cream:not(:has(.tarmoto-no-cream))
     :where(
@@ -1203,6 +1347,22 @@
       [class*="bg-slate-950/"],
       [class*="bg-["]
     )
+    :where(
+      :not(
+          [class~="bg-slate-50"],
+          [class~="bg-slate-100"],
+          [class~="bg-slate-200"],
+          [class~="bg-slate-300"],
+          [class~="bg-slate-400"],
+          [class~="bg-slate-500"],
+          [class~="bg-slate-600"],
+          [class~="bg-slate-700"],
+          [class~="bg-slate-800"],
+          [class~="bg-slate-850"],
+          [class~="bg-slate-900"],
+          [class~="bg-slate-950"]
+        )
+    )
     .hover\:text-slate-200:hover,
   body.bg-cream:not(:has(.tarmoto-no-cream))
     :where(
@@ -1219,6 +1379,22 @@
       [class*="bg-slate-900/"],
       [class*="bg-slate-950/"],
       [class*="bg-["]
+    )
+    :where(
+      :not(
+          [class~="bg-slate-50"],
+          [class~="bg-slate-100"],
+          [class~="bg-slate-200"],
+          [class~="bg-slate-300"],
+          [class~="bg-slate-400"],
+          [class~="bg-slate-500"],
+          [class~="bg-slate-600"],
+          [class~="bg-slate-700"],
+          [class~="bg-slate-800"],
+          [class~="bg-slate-850"],
+          [class~="bg-slate-900"],
+          [class~="bg-slate-950"]
+        )
     )
     .focus\:text-slate-200:focus {
     color: var(--color-slate-200);
@@ -1239,6 +1415,22 @@
       [class*="bg-slate-950/"],
       [class*="bg-["]
     )
+    :where(
+      :not(
+          [class~="bg-slate-50"],
+          [class~="bg-slate-100"],
+          [class~="bg-slate-200"],
+          [class~="bg-slate-300"],
+          [class~="bg-slate-400"],
+          [class~="bg-slate-500"],
+          [class~="bg-slate-600"],
+          [class~="bg-slate-700"],
+          [class~="bg-slate-800"],
+          [class~="bg-slate-850"],
+          [class~="bg-slate-900"],
+          [class~="bg-slate-950"]
+        )
+    )
     .text-slate-300,
   body.bg-cream:not(:has(.tarmoto-no-cream))
     :where(
@@ -1255,6 +1447,22 @@
       [class*="bg-slate-900/"],
       [class*="bg-slate-950/"],
       [class*="bg-["]
+    )
+    :where(
+      :not(
+          [class~="bg-slate-50"],
+          [class~="bg-slate-100"],
+          [class~="bg-slate-200"],
+          [class~="bg-slate-300"],
+          [class~="bg-slate-400"],
+          [class~="bg-slate-500"],
+          [class~="bg-slate-600"],
+          [class~="bg-slate-700"],
+          [class~="bg-slate-800"],
+          [class~="bg-slate-850"],
+          [class~="bg-slate-900"],
+          [class~="bg-slate-950"]
+        )
     )
     .hover\:text-slate-300:hover {
     color: var(--color-slate-300);
