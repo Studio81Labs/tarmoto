@@ -43,51 +43,53 @@ export default async function BestRoadsCountryPage({
   if (!c) notFound();
   const regions = findCountryRegions(c.code);
   return (
-    <main className="tarmoto-no-cream mx-auto max-w-5xl px-6 py-10 text-slate-100">
-      <nav className="mb-4 text-sm text-slate-400">
-        <Link href="/roads/best" className="hover:text-white">
-          {t("Best roads ")}
-        </Link>
-        <span className="mx-2">/</span>
-        <span>{c.name}</span>
-      </nav>
+    <div className="tarmoto-no-cream min-h-screen bg-slate-950 text-slate-100">
+      <main className="mx-auto max-w-5xl px-6 py-10">
+        <nav className="mb-4 text-sm text-slate-400">
+          <Link href="/roads/best" className="hover:text-white">
+            {t("Best roads ")}
+          </Link>
+          <span className="mx-2">/</span>
+          <span>{c.name}</span>
+        </nav>
 
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight">
-          {t("Best motorcycle roads in ")}
-          {c.name}
-        </h1>
-        <p className="mt-2 text-slate-400">
-          {regions.length}
-          {t("curated region")}
-          {regions.length === 1 ? "" : "s"}
-          {t(
-            "\u2014 tap through for ranked roads, quality scores and a map preview. ",
-          )}
-        </p>
-      </header>
+        <header className="mb-8">
+          <h1 className="text-3xl font-bold tracking-tight">
+            {t("Best motorcycle roads in ")}
+            {c.name}
+          </h1>
+          <p className="mt-2 text-slate-400">
+            {regions.length}
+            {t("curated region")}
+            {regions.length === 1 ? "" : "s"}
+            {t(
+              "\u2014 tap through for ranked roads, quality scores and a map preview. ",
+            )}
+          </p>
+        </header>
 
-      <ul className="grid gap-4 sm:grid-cols-2">
-        {regions.map((r) => (
-          <li key={r.slug}>
-            <Link
-              href={`/roads/best/${c.code}/${r.slug}`}
-              className="block rounded-xl border border-slate-800 bg-slate-900/60 p-5 hover:bg-slate-800/60 transition"
-            >
-              <h2 className="text-xl font-semibold">{r.name}</h2>
-              <p className="mt-1 text-sm text-slate-400 line-clamp-2">
-                {r.description}
-              </p>
-              {r.bestSeason && (
-                <p className="mt-2 text-xs text-slate-500">
-                  {t("Best season: ")}
-                  {r.bestSeason}
+        <ul className="grid gap-4 sm:grid-cols-2">
+          {regions.map((r) => (
+            <li key={r.slug}>
+              <Link
+                href={`/roads/best/${c.code}/${r.slug}`}
+                className="block rounded-xl border border-slate-800 bg-slate-900/60 p-5 hover:bg-slate-800/60 transition"
+              >
+                <h2 className="text-xl font-semibold">{r.name}</h2>
+                <p className="mt-1 text-sm text-slate-400 line-clamp-2">
+                  {r.description}
                 </p>
-              )}
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </main>
+                {r.bestSeason && (
+                  <p className="mt-2 text-xs text-slate-500">
+                    {t("Best season: ")}
+                    {r.bestSeason}
+                  </p>
+                )}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </main>
+    </div>
   );
 }
