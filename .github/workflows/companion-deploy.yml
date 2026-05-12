@@ -52,7 +52,10 @@ concurrency:
 jobs:
   deploy:
     name: Build & deploy to Cloudflare Workers
-    if: vars.COMPANION_DEPLOY_ENABLED == 'true'
+    # Dependabot-authored PRs don't receive environment secrets
+    # (CLOUDFLARE_API_TOKEN), so skip the deploy. Build & Test still gates the
+    # bump; deploy re-runs on push to main after merge.
+    if: vars.COMPANION_DEPLOY_ENABLED == 'true' && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     environment:
       name: ${{ github.event_name == 'pull_request' && 'companion-preview' || 'companion-production' }}
