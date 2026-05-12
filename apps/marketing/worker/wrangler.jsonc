@@ -1,0 +1,35 @@
+{
+  // Marketing waitlist Worker.
+  // Handles signup, count, admin, and unsubscribe endpoints. The
+  // landing site (Astro) is deployed separately to Cloudflare Pages.
+  //
+  // The default `name` is the production worker. Deploys override it
+  // with `--name` so staging lands on `tarmoto-waitlist-staging` and
+  // production stays on `tarmoto-waitlist`. The historical worker
+  // name is kept intentionally to avoid orphaning a deployed worker
+  // and any DNS / routing pointed at it.
+  //
+  // Preview KV namespace (TARMOTO-WAITLIST_preview) is for
+  // `wrangler dev` only and is created via
+  // `wrangler kv namespace create TARMOTO-WAITLIST --preview`.
+  // Replace the placeholder below with the real preview id when you
+  // need local dev against KV; deploys do not require it.
+  "name": "tarmoto-waitlist",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-12-01",
+  "keep_vars": true,
+  "vars": {
+    "RESEND_FROM": "Tarmoto <hello@tarmoto.app>",
+  },
+  "kv_namespaces": [
+    {
+      "binding": "TARMOTO_WAITLIST",
+      "id": "9f5684c40eda4cfe83a6fbfc6b2c5df0",
+      "preview_id": "<replace-with-preview-kv-id>",
+    },
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+  },
+}

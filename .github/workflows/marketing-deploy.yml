@@ -1,30 +1,125 @@
 name: Marketing Deploy
 
-# Deploys the Astro marketing/landing site to Cloudflare Pages and the
-# waitlist Worker on push to main.
+# Deploy model:
+#   push to main          → staging worker            (auto)
+#   push tag marketing-v* → production worker         (auto)
+#   workflow_dispatch     → choose staging/production (manual)
+#
+# The Astro landing site is a separate Cloudflare Pages project and
+# stays on a single environment — it auto-deploys to prod on every
+# push to main (its public_api_url is built against the prod worker).
+# Only the Worker has a staging/prod split, because that is where
+# behavior changes (signup flow, Resend, unsubscribe) actually land.
+#
+# Deploy target: Cloudflare Workers (wrangler) + Cloudflare Pages.
+#
+# Cloudflare Workers atomically swap on deploy, so `wrangler deploy`
+# returns synchronously with the new version active. No
+# rolling-update / poll / healthcheck stages required — the smoke
+# test below is enough to catch a broken bundle.
+#
+# Prefix the marketing tag namespace (`marketing-v*`) so it does not
+# clash with other tag-driven deploys (e.g. backend `v*` tags).
+#
+# KV note: staging and production workers share the same
+# TARMOTO_WAITLIST namespace id (see wrangler.jsonc). Staging signups
+# therefore land in the production KV. Acceptable for a public
+# waitlist — split the namespace later if staging needs isolation.
+#
+# Required repo secrets:
+#   CLOUDFLARE_API_TOKEN           shared Cloudflare API token
+#   RESEND_API_KEY_PROD            Resend key for production waitlist confirmation emails
+#   RESEND_API_KEY_STAGING         Resend key for staging waitlist confirmation emails
+#
+# Required repo variables:
+#   CLOUDFLARE_ACCOUNT_ID             Cloudflare account hosting the worker + Pages project
+#   MARKETING_PROD_WORKER_NAME        production worker name (default: tarmoto-waitlist)
+#   MARKETING_STAGING_WORKER_NAME     staging worker name    (default: tarmoto-waitlist-staging)
+#   MARKETING_WORKERS_SUBDOMAIN       account workers.dev subdomain (e.g. studio81)
+#   MARKETING_PAGES_PROJECT           Cloudflare Pages project name (default: tarmoto-website)
+#   PUBLIC_API_URL                    public worker URL baked into the static site
 
 on:
   push:
     branches: [main]
+    tags: ["marketing-v*"]
     paths:
       - "apps/marketing/**"
       - "packages/brand/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - ".github/workflows/marketing-deploy.yml"
   workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options: ["staging", "production"]
+        default: "staging"
 
 permissions:
   contents: read
 
 concurrency:
-  group: marketing-deploy
-  cancel-in-progress: true
+  group: marketing-deploy-${{ inputs.environment || (startsWith(github.ref, 'refs/tags/marketing-v') && 'production' || 'staging') }}
+  cancel-in-progress: false
 
 jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      name: ${{ steps.env.outputs.name }}
+      checkout_ref: ${{ steps.env.outputs.checkout_ref }}
+      deploy_pages: ${{ steps.env.outputs.deploy_pages }}
+    steps:
+      - name: Resolve environment
+        id: env
+        env:
+          INPUT_ENV: ${{ inputs.environment || '' }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/marketing-v') }}
+          EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_ENV" ]; then
+            ENV_NAME="$INPUT_ENV"
+          elif [ "$IS_TAG" = "true" ]; then
+            ENV_NAME="production"
+          else
+            ENV_NAME="staging"
+          fi
+          echo "name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
+
+          # Push events deploy the actual ref that triggered the run;
+          # workflow_dispatch always builds main HEAD so operator
+          # overrides ship current main, not a feature branch.
+          if [ "$EVENT_NAME" = "push" ]; then
+            CHECKOUT_REF="$GITHUB_REF"
+          else
+            CHECKOUT_REF="refs/heads/main"
+          fi
+          echo "checkout_ref=${CHECKOUT_REF}" >> "$GITHUB_OUTPUT"
+
+          # Pages site deploys only on push to main (or a main-HEAD
+          # dispatch). Tag pushes only ship the production worker; the
+          # Pages prod state already reflects main from the merge that
+          # produced the tagged commit.
+          if [ "$EVENT_NAME" = "push" ] && [ "$IS_TAG" != "true" ]; then
+            echo "deploy_pages=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy_pages=false" >> "$GITHUB_OUTPUT"
+          fi
+
   deploy:
-    name: Deploy marketing site + waitlist worker
+    name: Deploy Marketing Site
+    needs: resolve
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve.outputs.checkout_ref }}
 
       - uses: pnpm/action-setup@v6
         with:
@@ -39,20 +134,111 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build marketing site
+        if: needs.resolve.outputs.deploy_pages == 'true'
         env:
           PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL || 'https://tarmoto-waitlist.studio81.workers.dev' }}
         run: pnpm marketing:build
 
       - name: Deploy marketing site to Cloudflare Pages
+        if: needs.resolve.outputs.deploy_pages == 'true'
         working-directory: apps/marketing/worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-        run: pnpm exec wrangler pages deploy ../dist --project-name=tarmoto-website --commit-dirty=true
+          PAGES_PROJECT: ${{ vars.MARKETING_PAGES_PROJECT || 'tarmoto-website' }}
+        run: pnpm exec wrangler pages deploy ../dist --project-name="$PAGES_PROJECT" --commit-dirty=true
 
-      - name: Deploy waitlist worker
+      - name: Resolve worker name
+        id: worker
+        env:
+          ENV_NAME: ${{ needs.resolve.outputs.name }}
+          PROD_NAME: ${{ vars.MARKETING_PROD_WORKER_NAME || 'tarmoto-waitlist' }}
+          STAGING_NAME: ${{ vars.MARKETING_STAGING_WORKER_NAME || 'tarmoto-waitlist-staging' }}
+        run: |
+          set -euo pipefail
+          if [ "$ENV_NAME" = "production" ]; then
+            WORKER_NAME="$PROD_NAME"
+          else
+            WORKER_NAME="$STAGING_NAME"
+          fi
+          echo "name=${WORKER_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy waitlist worker to Cloudflare Workers
+        id: deploy
         working-directory: apps/marketing/worker
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ENV_NAME: ${{ needs.resolve.outputs.name }}
+          WORKER_NAME: ${{ steps.worker.outputs.name }}
+          WORKERS_SUBDOMAIN: ${{ vars.MARKETING_WORKERS_SUBDOMAIN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-        run: pnpm exec wrangler deploy
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          RESEND_API_KEY_PROD: ${{ secrets.RESEND_API_KEY_PROD }}
+          RESEND_API_KEY_STAGING: ${{ secrets.RESEND_API_KEY_STAGING }}
+        run: |
+          set -euo pipefail
+
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || {
+            echo "::error::CLOUDFLARE_ACCOUNT_ID repo variable is not set"
+            exit 1
+          }
+          test -n "$CLOUDFLARE_API_TOKEN" || {
+            echo "::error::CLOUDFLARE_API_TOKEN secret is not set"
+            exit 1
+          }
+          test -n "$WORKERS_SUBDOMAIN" || {
+            echo "::error::MARKETING_WORKERS_SUBDOMAIN repo variable is not set"
+            exit 1
+          }
+
+          if grep -q "<replace-with-" wrangler.jsonc; then
+            echo "::warning::wrangler.jsonc still contains a <replace-with-...> placeholder (likely the preview KV id used only by wrangler dev). Deploys will still succeed."
+          fi
+
+          if [ "$ENV_NAME" = "production" ]; then
+            RESEND_API_KEY="$RESEND_API_KEY_PROD"
+            VAR_SUFFIX="PROD"
+          elif [ "$ENV_NAME" = "staging" ]; then
+            RESEND_API_KEY="$RESEND_API_KEY_STAGING"
+            VAR_SUFFIX="STAGING"
+          else
+            echo "::error::Unexpected ENV_NAME='${ENV_NAME}' (expected production or staging)"
+            exit 1
+          fi
+
+          test -n "$RESEND_API_KEY" || {
+            echo "::error::RESEND_API_KEY_${VAR_SUFFIX} secret is not set"
+            exit 1
+          }
+
+          export RESEND_API_KEY
+          node --input-type=module -e '
+            import { writeFileSync } from "node:fs";
+            writeFileSync(process.argv[1], JSON.stringify({
+              RESEND_API_KEY: process.env.RESEND_API_KEY,
+            }));
+          ' "$RUNNER_TEMP/marketing-worker-secrets.json"
+
+          pnpm exec wrangler deploy \
+            --name "$WORKER_NAME" \
+            --secrets-file "$RUNNER_TEMP/marketing-worker-secrets.json"
+
+          DEPLOY_URL="https://${WORKER_NAME}.${WORKERS_SUBDOMAIN}.workers.dev"
+          echo "url=${DEPLOY_URL}" >> "$GITHUB_OUTPUT"
+          echo "::notice::Marketing worker deployed to ${DEPLOY_URL}"
+
+      - name: Smoke test worker
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            STATUS=$(curl -sL -o response.json -w '%{http_code}' "${URL}/count" || echo '000')
+            if [ "$STATUS" = "200" ] && grep -q '"count"' response.json; then
+              echo "::notice::Marketing worker smoke OK (${URL}/count)"
+              exit 0
+            fi
+            echo "Smoke attempt ${attempt}: HTTP ${STATUS}"
+            sleep 5
+          done
+          echo "::error::Marketing worker smoke failed after 5 attempts (last status ${STATUS})"
+          exit 1

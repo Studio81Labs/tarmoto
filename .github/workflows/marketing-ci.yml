@@ -1,11 +1,23 @@
 name: Marketing CI
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/marketing/**"
+      - "packages/brand/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/marketing-ci.yml"
   pull_request:
     branches: [main]
     paths:
       - "apps/marketing/**"
       - "packages/brand/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - ".github/workflows/marketing-ci.yml"
 
 permissions:
@@ -45,3 +57,13 @@ jobs:
 
       - name: Typecheck worker
         run: pnpm --filter @tarmoto/worker typecheck
+
+      - name: Test worker
+        run: pnpm --filter @tarmoto/worker test
+
+      - name: Validate Cloudflare Worker bundle
+        # `wrangler deploy --dry-run` compiles src/index.ts against
+        # wrangler.jsonc and surfaces broken worker code or config
+        # drift before deploy.
+        working-directory: apps/marketing/worker
+        run: pnpm dlx wrangler@latest deploy --dry-run --outdir "$RUNNER_TEMP/wrangler-dry-run"
