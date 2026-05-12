@@ -350,21 +350,21 @@
   }
 
   /* ─── Status colour foreground remap ───
-     Status banners and inline error / warning copy were authored for the
-     legacy dark shell, where pale `text-red-200/300/400`,
-     `text-amber-200/300/400`, `text-rose-200/300/400`,
-     `text-yellow-200/300` and `text-emerald-200/300/400` had real contrast
-     against `bg-slate-950`. On the cream shell those pale tones lose
-     contrast — especially when the surrounding chip uses a translucent
-     same-family bg (`bg-red-500/10 text-red-300`, `bg-amber-300/10
-     text-amber-200`, …) — and important failure messages can disappear.
-     Flip those pale tones to the corresponding `*-700` shade in the
-     cream context so the message reads against cream / paper / a pale
-     same-family tint, while preserving the originals on `.tarmoto-no-cream`
-     pages (embed widgets, public dark layouts). The selector skips
-     elements that paint a *solid* same-family background of the same
-     family (`bg-red-500` without `/`) — there the pale label is
-     intentional white-on-strong-fill contrast that should stay. */
+     Status banners, inline error/warning copy, accent chips and quality
+     badges were authored for the legacy dark shell, where pale `*-200`,
+     `*-300` and `*-400` shades across the red / rose / amber / yellow /
+     lime / orange / green / emerald / teal / sky / cyan / blue / indigo /
+     violet / purple / fuchsia / pink families had real contrast against
+     `bg-slate-950`. On the cream shell those pale tones lose contrast —
+     especially when the surrounding chip uses a translucent same-family
+     bg (`bg-red-500/10 text-red-300`, `bg-amber-300/10 text-amber-200`,
+     `bg-lime-500/20 text-lime-300`, …) — and important failure / status
+     messages can disappear. Flip every pale shade to the corresponding
+     `*-700` value in the cream context so the message reads against
+     cream / paper / a pale same-family tint, while preserving the
+     originals on `.tarmoto-no-cream` pages (embed widgets, public dark
+     layouts). Hover variants flip to `*-800` for a darker pressed-state
+     contrast. */
   body.bg-cream:not(:has(.tarmoto-no-cream)) .text-red-200,
   body.bg-cream:not(:has(.tarmoto-no-cream)) .text-red-300,
   body.bg-cream:not(:has(.tarmoto-no-cream)) .text-red-400 {
@@ -395,6 +395,61 @@
   body.bg-cream:not(:has(.tarmoto-no-cream)) .text-green-400 {
     color: #15803d;
   }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-lime-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-lime-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-lime-400 {
+    color: #4d7c0f;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-orange-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-orange-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-orange-400 {
+    color: #c2410c;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-sky-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-sky-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-sky-400 {
+    color: #0369a1;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-cyan-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-cyan-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-cyan-400 {
+    color: #0e7490;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-blue-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-blue-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-blue-400 {
+    color: #1d4ed8;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-indigo-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-indigo-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-indigo-400 {
+    color: #4338ca;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-violet-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-violet-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-violet-400 {
+    color: #6d28d9;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-purple-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-purple-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-purple-400 {
+    color: #7e22ce;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-fuchsia-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-fuchsia-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-fuchsia-400 {
+    color: #a21caf;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-pink-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-pink-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-pink-400 {
+    color: #be185d;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-teal-200,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-teal-300,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .text-teal-400 {
+    color: #0f766e;
+  }
 
   /* Hover variants of the status colours: same logic for `hover:text-X`. */
   body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-red-200:hover,
@@ -416,6 +471,41 @@
   body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-emerald-300:hover,
   body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-emerald-400:hover {
     color: #065f46;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-lime-200:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-lime-300:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-lime-400:hover {
+    color: #3f6212;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-orange-200:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-orange-300:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-orange-400:hover {
+    color: #9a3412;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-sky-200:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-sky-300:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-sky-400:hover {
+    color: #075985;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-cyan-200:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-cyan-300:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-cyan-400:hover {
+    color: #155e75;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-blue-200:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-blue-300:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-blue-400:hover {
+    color: #1e40af;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-violet-200:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-violet-300:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-violet-400:hover {
+    color: #5b21b6;
+  }
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-pink-200:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-pink-300:hover,
+  body.bg-cream:not(:has(.tarmoto-no-cream)) .hover\:text-pink-400:hover {
+    color: #9d174d;
   }
 
 

@@ -62,7 +62,7 @@ function RidesPageInner() {
     }
   }
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] p-4 md:p-6 max-w-7xl mx-auto w-full animate-fade-in">
+    <div className="flex flex-col h-full min-h-0 p-4 md:p-6 max-w-7xl mx-auto w-full animate-fade-in">
       <div className="flex items-center justify-between mb-4 gap-4 flex-wrap">
         <h1 className="text-2xl font-bold">{t("Ride History")}</h1>
         <div className="flex items-center gap-2">
