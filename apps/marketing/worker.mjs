@@ -243,9 +243,18 @@ async function sendWaitlistConfirmationEmail({
   const responseBody = {
     from,
     to: email,
+    reply_to: from,
     subject: WAITLIST_CONFIRMATION_SUBJECT,
     html: renderWaitlistConfirmationHtml(unsubscribeUrl),
     text: renderWaitlistConfirmationText(unsubscribeUrl),
+    // Gmail / Yahoo bulk-sender rules: a working List-Unsubscribe
+    // header pair is required once volume grows. Both the URL and
+    // the one-click POST contract point at the same unsubscribe
+    // endpoint the email's "Unsubscribe" footer link uses.
+    headers: {
+      "List-Unsubscribe": `<${unsubscribeUrl}>`,
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    },
   };
 
   try {
