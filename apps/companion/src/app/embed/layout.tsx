@@ -19,11 +19,18 @@ export const metadata: Metadata = {
  * same marker is reused by the public unauthenticated layouts
  * (`/explore`, `/discover`, `/roads/best`) which also render dark slate
  * shells until the rider signs in.
+ *
+ * `min-h-screen bg-slate-950` paints the iframe canvas dark even when
+ * the embedded widget is shorter than the iframe viewport — without it
+ * the cream `<body>` shows through the gap around / below compact
+ * widgets.
  */
 export default function EmbedLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <div className="tarmoto-no-cream">{children}</div>;
+  return (
+    <div className="tarmoto-no-cream min-h-screen bg-slate-950">{children}</div>
+  );
 }
