@@ -95,7 +95,8 @@ Tarmoto is a motorcycle companion app with crowdsourced road surface quality int
 - `docs/decisions/` - ADRs
 - `docs/reference/` - Architecture overview and technical reference
 - `docs/process/` - Runbooks, testing strategy, migrations, definition of done, issue workflow
-- `docs/design/` - Wireframes and ERD (`pnpm docs:dev`)
+- `docs/design/brand/` - Brand reference: logo SVGs + colour palette + typography rules (static markdown)
+- `docs/design/database_erd.html` - Generated ERD (static HTML)
 - `docs/database/` - PostgreSQL and PostGIS schema documentation
 
 ## Tech stack
@@ -117,7 +118,6 @@ pnpm mobile:dev           # Metro bundler
 pnpm ios                  # Run on iOS simulator
 pnpm android              # Run on Android emulator
 pnpm companion:dev        # Companion web dev server
-pnpm docs:dev             # Design docs viewer on :4200
 pnpm poc:dev              # PoC sensor app dev server
 pnpm db:up                # Start PostgreSQL + Redis via Docker
 pnpm db:down              # Stop Docker services

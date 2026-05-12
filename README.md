@@ -19,8 +19,11 @@ After bootstrap:
 pnpm backend:dev                 # Backend watch mode
 pnpm mobile:dev                  # Metro bundler (then `pnpm mobile:ios` / `pnpm mobile:android`)
 pnpm companion:dev               # Next.js companion (web)
-pnpm docs:dev                    # Design docs viewer on :4200
 ```
+
+Brand reference (logo SVGs, colour palette, typography rules) lives
+as static markdown + SVGs in [`docs/design/brand/`](./docs/design/brand/) —
+read it directly on GitHub.
 
 ## Prerequisites
 
@@ -118,7 +121,6 @@ tarmoto/
 | `pnpm poc:build`                          | Build PoC sensor                                       |
 | `pnpm shared:build`                       | Build shared package                                   |
 | `pnpm openapi:gen`                        | Generate OpenAPI spec + TypeScript client from backend |
-| `pnpm docs:dev`                           | Design docs viewer (wireframes + ERD) on `:4200`       |
 | `pnpm db:up`                              | Start PostgreSQL + Redis via Docker                    |
 | `pnpm db:down`                            | Stop Docker services                                   |
 | `pnpm db:migrate`                         | Alias for `backend:db:migrate`                         |
