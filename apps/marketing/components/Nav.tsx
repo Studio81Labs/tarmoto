@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { BrandMark } from "@/components/BrandMark";
 import { useWaitlist } from "@/components/WaitlistProvider";
 
@@ -17,12 +19,12 @@ export function Nav() {
   return (
     <nav id="nav" className="nav">
       <div className="nav-inner">
-        <a href="/" className="nav-logo">
+        <Link href="/" className="nav-logo">
           <span className="nav-logo-mark" aria-hidden="true">
             <BrandMark size={20} />
           </span>
           <span className="nav-logo-text">Tarmoto</span>
-        </a>
+        </Link>
         <div className="nav-links">
           {links.map((l) => (
             <a key={l.href} href={l.href}>

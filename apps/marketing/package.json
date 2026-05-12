@@ -7,7 +7,7 @@
     "dev": "next dev --port 3100",
     "build": "next build",
     "start": "next start --port 3100",
-    "lint": "next lint",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -16,12 +16,15 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "@next/eslint-plugin-next": "^16.2.4",
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "eslint": "^10.0.0",
-    "eslint-config-next": "^16.0.0",
-    "typescript": "^6.0.0"
+    "eslint-plugin-react-hooks": "^7.0.0",
+    "typescript": "^6.0.0",
+    "typescript-eslint": "^8.20.0"
   },
   "engines": {
     "node": ">=24.0.0",

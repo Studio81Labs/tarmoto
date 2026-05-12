@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 
@@ -51,8 +52,8 @@ export default function ContactPage() {
 
             <p>
               For the waitlist, just use the{" "}
-              <a href="/#waitlist">form on the home page</a> — we&apos;ll write
-              once when your invite is ready.
+              <Link href="/#waitlist">form on the home page</Link> — we&apos;ll
+              write once when your invite is ready.
             </p>
           </div>
         </div>
