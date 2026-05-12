@@ -2482,6 +2482,63 @@
     color: var(--tk-ink);
   }
 
+  /* `text-slate-400` is the "muted secondary copy" tone of the legacy
+     dark theme — readable on slate-950 (~9.6:1) but unreadable on cream
+     (~2.3:1). The cream-shell muted equivalent is `--tk-ink-dim`
+     (62% ink, ~5.7:1 on cream) so the visual hierarchy stays muted
+     while the copy regains AA contrast. Same exclusion structure as
+     the other slate foreground classes; embed widgets and
+     `.tarmoto-no-cream` pages keep the original Tailwind slate-400. */
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+    :where(
+      :not(
+          [class*="bg-red-"],
+          [class*="bg-blue-"],
+          [class*="bg-green-"],
+          [class*="bg-emerald-"],
+          [class*="bg-amber-"],
+          [class*="bg-yellow-"],
+          [class*="bg-orange-"],
+          [class*="bg-rose-"],
+          [class*="bg-pink-"],
+          [class*="bg-violet-"],
+          [class*="bg-indigo-"],
+          [class*="bg-purple-"],
+          [class*="bg-fuchsia-"],
+          [class*="bg-sky-"],
+          [class*="bg-cyan-"],
+          [class*="bg-teal-"],
+          [class*="bg-lime-"],
+          [class*=" bg-slate-50/"],
+          [class^="bg-slate-50/"],
+          [class*=" bg-slate-100/"],
+          [class^="bg-slate-100/"],
+          [class*=" bg-slate-200/"],
+          [class^="bg-slate-200/"],
+          [class*=" bg-slate-300/"],
+          [class^="bg-slate-300/"],
+          [class*=" bg-slate-400/"],
+          [class^="bg-slate-400/"],
+          [class*=" bg-slate-500/"],
+          [class^="bg-slate-500/"],
+          [class*=" bg-slate-600/"],
+          [class^="bg-slate-600/"],
+          [class*=" bg-slate-700/"],
+          [class^="bg-slate-700/"],
+          [class*=" bg-slate-800/"],
+          [class^="bg-slate-800/"],
+          [class*=" bg-slate-850/"],
+          [class^="bg-slate-850/"],
+          [class*=" bg-slate-900/"],
+          [class^="bg-slate-900/"],
+          [class*=" bg-slate-950/"],
+          [class^="bg-slate-950/"],
+          [class*="bg-["]
+        )
+    ).text-slate-400 {
+    color: var(--tk-ink-dim);
+  }
+
   /* Hover text utilities -------------------------------------------
      Adds `hover:bg-slate-*` and `group-hover:bg-slate-*` to the
      exclusion: when an element paints a slate background on hover
@@ -2785,6 +2842,69 @@
     color: var(--tk-ink);
   }
 
+  /* Muted secondary hover variant — see static `text-slate-400` block. */
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+    :where(
+      :not(
+          [class*="bg-red-"],
+          [class*="bg-blue-"],
+          [class*="bg-green-"],
+          [class*="bg-emerald-"],
+          [class*="bg-amber-"],
+          [class*="bg-yellow-"],
+          [class*="bg-orange-"],
+          [class*="bg-rose-"],
+          [class*="bg-pink-"],
+          [class*="bg-violet-"],
+          [class*="bg-indigo-"],
+          [class*="bg-purple-"],
+          [class*="bg-fuchsia-"],
+          [class*="bg-sky-"],
+          [class*="bg-cyan-"],
+          [class*="bg-teal-"],
+          [class*="bg-lime-"],
+          [class*=" bg-slate-50/"],
+          [class^="bg-slate-50/"],
+          [class*=" bg-slate-100/"],
+          [class^="bg-slate-100/"],
+          [class*=" bg-slate-200/"],
+          [class^="bg-slate-200/"],
+          [class*=" bg-slate-300/"],
+          [class^="bg-slate-300/"],
+          [class*=" bg-slate-400/"],
+          [class^="bg-slate-400/"],
+          [class*=" bg-slate-500/"],
+          [class^="bg-slate-500/"],
+          [class*=" bg-slate-600/"],
+          [class^="bg-slate-600/"],
+          [class*=" bg-slate-700/"],
+          [class^="bg-slate-700/"],
+          [class*=" bg-slate-800/"],
+          [class^="bg-slate-800/"],
+          [class*=" bg-slate-850/"],
+          [class^="bg-slate-850/"],
+          [class*=" bg-slate-900/"],
+          [class^="bg-slate-900/"],
+          [class*=" bg-slate-950/"],
+          [class^="bg-slate-950/"],
+          [class*=":bg-slate-50/"],
+          [class*=":bg-slate-100/"],
+          [class*=":bg-slate-200/"],
+          [class*=":bg-slate-300/"],
+          [class*=":bg-slate-400/"],
+          [class*=":bg-slate-500/"],
+          [class*=":bg-slate-600/"],
+          [class*=":bg-slate-700/"],
+          [class*=":bg-slate-800/"],
+          [class*=":bg-slate-850/"],
+          [class*=":bg-slate-900/"],
+          [class*=":bg-slate-950/"],
+          [class*="bg-["]
+        )
+    ).hover\:text-slate-400:hover {
+    color: var(--tk-ink-dim);
+  }
+
   /* Focus text utilities -------------------------------------------
      Adds `focus:bg-slate-*` to the exclusion: when an element paints a
      slate background on focus, the focus *text* needs to stay light on
@@ -2967,6 +3087,69 @@
         )
     ).focus\:text-slate-200:focus {
     color: var(--tk-ink);
+  }
+
+  /* Muted secondary focus variant — see static `text-slate-400` block. */
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+    :where(
+      :not(
+          [class*="bg-red-"],
+          [class*="bg-blue-"],
+          [class*="bg-green-"],
+          [class*="bg-emerald-"],
+          [class*="bg-amber-"],
+          [class*="bg-yellow-"],
+          [class*="bg-orange-"],
+          [class*="bg-rose-"],
+          [class*="bg-pink-"],
+          [class*="bg-violet-"],
+          [class*="bg-indigo-"],
+          [class*="bg-purple-"],
+          [class*="bg-fuchsia-"],
+          [class*="bg-sky-"],
+          [class*="bg-cyan-"],
+          [class*="bg-teal-"],
+          [class*="bg-lime-"],
+          [class*=" bg-slate-50/"],
+          [class^="bg-slate-50/"],
+          [class*=" bg-slate-100/"],
+          [class^="bg-slate-100/"],
+          [class*=" bg-slate-200/"],
+          [class^="bg-slate-200/"],
+          [class*=" bg-slate-300/"],
+          [class^="bg-slate-300/"],
+          [class*=" bg-slate-400/"],
+          [class^="bg-slate-400/"],
+          [class*=" bg-slate-500/"],
+          [class^="bg-slate-500/"],
+          [class*=" bg-slate-600/"],
+          [class^="bg-slate-600/"],
+          [class*=" bg-slate-700/"],
+          [class^="bg-slate-700/"],
+          [class*=" bg-slate-800/"],
+          [class^="bg-slate-800/"],
+          [class*=" bg-slate-850/"],
+          [class^="bg-slate-850/"],
+          [class*=" bg-slate-900/"],
+          [class^="bg-slate-900/"],
+          [class*=" bg-slate-950/"],
+          [class^="bg-slate-950/"],
+          [class*=":bg-slate-50/"],
+          [class*=":bg-slate-100/"],
+          [class*=":bg-slate-200/"],
+          [class*=":bg-slate-300/"],
+          [class*=":bg-slate-400/"],
+          [class*=":bg-slate-500/"],
+          [class*=":bg-slate-600/"],
+          [class*=":bg-slate-700/"],
+          [class*=":bg-slate-800/"],
+          [class*=":bg-slate-850/"],
+          [class*=":bg-slate-900/"],
+          [class*=":bg-slate-950/"],
+          [class*="bg-["]
+        )
+    ).focus\:text-slate-400:focus {
+    color: var(--tk-ink-dim);
   }
 
   /* ─── Descendant override for dark slate ancestors ───
@@ -3586,6 +3769,102 @@
     color: var(--color-slate-300);
   }
 
+  /* Descendant restore for the muted secondary tone (`text-slate-400`)
+     when nested inside a dark slate-opacity ancestor — keep the original
+     Tailwind colour, which still reads on the dark surface. */
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+    :where(
+      [class*=" bg-slate-50/"],
+      [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"],
+      [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"],
+      [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"],
+      [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"],
+      [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"],
+      [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"],
+      [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"],
+      [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"],
+      [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"],
+      [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"],
+      [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"],
+      [class^="bg-slate-950/"],
+      [class*="bg-["]
+    )
+    :where(
+      :not(
+          [class~="bg-slate-50"],
+          [class~="bg-slate-100"],
+          [class~="bg-slate-200"],
+          [class~="bg-slate-300"],
+          [class~="bg-slate-400"],
+          [class~="bg-slate-500"],
+          [class~="bg-slate-600"],
+          [class~="bg-slate-700"],
+          [class~="bg-slate-800"],
+          [class~="bg-slate-850"],
+          [class~="bg-slate-900"],
+          [class~="bg-slate-950"]
+        )
+    )
+    .text-slate-400,
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+    :where(
+      [class*=" bg-slate-50/"],
+      [class^="bg-slate-50/"],
+      [class*=" bg-slate-100/"],
+      [class^="bg-slate-100/"],
+      [class*=" bg-slate-200/"],
+      [class^="bg-slate-200/"],
+      [class*=" bg-slate-300/"],
+      [class^="bg-slate-300/"],
+      [class*=" bg-slate-400/"],
+      [class^="bg-slate-400/"],
+      [class*=" bg-slate-500/"],
+      [class^="bg-slate-500/"],
+      [class*=" bg-slate-600/"],
+      [class^="bg-slate-600/"],
+      [class*=" bg-slate-700/"],
+      [class^="bg-slate-700/"],
+      [class*=" bg-slate-800/"],
+      [class^="bg-slate-800/"],
+      [class*=" bg-slate-850/"],
+      [class^="bg-slate-850/"],
+      [class*=" bg-slate-900/"],
+      [class^="bg-slate-900/"],
+      [class*=" bg-slate-950/"],
+      [class^="bg-slate-950/"],
+      [class*="bg-["]
+    )
+    :where(
+      :not(
+          [class~="bg-slate-50"],
+          [class~="bg-slate-100"],
+          [class~="bg-slate-200"],
+          [class~="bg-slate-300"],
+          [class~="bg-slate-400"],
+          [class~="bg-slate-500"],
+          [class~="bg-slate-600"],
+          [class~="bg-slate-700"],
+          [class~="bg-slate-800"],
+          [class~="bg-slate-850"],
+          [class~="bg-slate-900"],
+          [class~="bg-slate-950"]
+        )
+    )
+    .hover\:text-slate-400:hover {
+    color: var(--color-slate-400);
+  }
+
   /* ─── Cream-panel shield ───
      The descendant restore above re-paints `text-white` /
      `text-slate-50…300` (plus hover/focus variants) back to their pale
@@ -3634,5 +3913,27 @@
       .focus\:text-slate-200:focus
     ) {
     color: var(--tk-ink);
+  }
+
+  /* Same shield, but for `text-slate-400` (muted secondary). Inside
+     a cream-remapped panel the muted ink-dim tone is the right
+     equivalent — keeps the visual hierarchy while regaining contrast. */
+  body.bg-cream:not(:has(.tarmoto-no-cream))
+    :where(
+      [class~="bg-slate-50"],
+      [class~="bg-slate-100"],
+      [class~="bg-slate-200"],
+      [class~="bg-slate-300"],
+      [class~="bg-slate-400"],
+      [class~="bg-slate-500"],
+      [class~="bg-slate-600"],
+      [class~="bg-slate-700"],
+      [class~="bg-slate-800"],
+      [class~="bg-slate-850"],
+      [class~="bg-slate-900"],
+      [class~="bg-slate-950"]
+    )
+    :is(.text-slate-400, .hover\:text-slate-400:hover, .focus\:text-slate-400:focus) {
+    color: var(--tk-ink-dim);
   }
 }
