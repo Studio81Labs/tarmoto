@@ -6,7 +6,6 @@ import {
 
 interface Env {
   TARMOTO_WAITLIST: KVNamespace;
-  ADMIN_KEY: string;
   ALLOWED_ORIGIN?: string;
   RESEND_API_KEY?: string;
   RESEND_FROM?: string;
@@ -59,32 +58,6 @@ function htmlResponse(
       ...extraHeaders,
     },
   });
-}
-
-async function fetchAllSignups(kv: KVNamespace): Promise<SignupRecord[]> {
-  const signups: SignupRecord[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await kv.list({ prefix: EMAIL_KEY_PREFIX, cursor });
-    for (const entry of page.keys) {
-      const data = await kv.get(entry.name);
-      if (data) signups.push(JSON.parse(data) as SignupRecord);
-    }
-    cursor = page.list_complete ? undefined : page.cursor;
-  } while (cursor);
-  return signups;
-}
-
-function escapeCsv(value: unknown): string {
-  const str = String(value ?? "");
-  let escaped = str;
-  if (/^\s*[=+\-@]/.test(escaped)) {
-    escaped = `'${escaped}`;
-  }
-  if (/[,\n\r"]/.test(escaped)) {
-    escaped = `"${escaped.replace(/"/g, '""')}"`;
-  }
-  return escaped;
 }
 
 function normaliseToken(value: string | null): string | null {
@@ -372,16 +345,12 @@ async function handleWaitlistUnsubscribe(
 }
 
 // Pre-rename endpoints kept as aliases of the new /api/waitlist/* paths so
-// any external consumer (bookmarked admin URLs, ops scripts hitting
-// /admin/export, an out-of-date copy of the frontend cached at the edge)
-// keeps working through the rename. Remove once we're confident nothing
-// is calling them.
+// edge-cached copies of the previous frontend keep working through the
+// rename. Remove once we're confident nothing is calling them.
 const LEGACY_ALIASES: Record<string, string> = {
   "/signup": "/api/waitlist",
   "/signup/unsubscribe": "/api/waitlist/unsubscribe",
   "/count": "/api/waitlist/count",
-  "/admin/list": "/api/waitlist/admin/list",
-  "/admin/export": "/api/waitlist/admin/export",
 };
 
 export default {
@@ -513,45 +482,6 @@ export default {
           (await env.TARMOTO_WAITLIST.get("meta:count")) ?? "0",
         );
         return jsonResponse({ count }, 200, corsHeaders);
-      }
-
-      if (path === "/api/waitlist/admin/list" && request.method === "GET") {
-        const authKey = url.searchParams.get("key");
-        if (authKey !== env.ADMIN_KEY) {
-          return jsonResponse({ error: "Unauthorized" }, 401, corsHeaders);
-        }
-
-        const signups = await fetchAllSignups(env.TARMOTO_WAITLIST);
-        signups.sort(
-          (a, b) =>
-            new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
-        );
-        return jsonResponse(
-          { count: signups.length, signups },
-          200,
-          corsHeaders,
-        );
-      }
-
-      if (path === "/api/waitlist/admin/export" && request.method === "GET") {
-        const authKey = url.searchParams.get("key");
-        if (authKey !== env.ADMIN_KEY) {
-          return jsonResponse({ error: "Unauthorized" }, 401, corsHeaders);
-        }
-
-        const signups = await fetchAllSignups(env.TARMOTO_WAITLIST);
-        let csv = "email,timestamp,country,source\n";
-        for (const s of signups) {
-          csv += `${escapeCsv(s.email)},${escapeCsv(s.timestamp)},${escapeCsv(s.ip_country)},${escapeCsv(s.source)}\n`;
-        }
-
-        return new Response(csv, {
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "text/csv",
-            "Content-Disposition": "attachment; filename=tarmoto_waitlist.csv",
-          },
-        });
       }
 
       return jsonResponse({ error: "Not found" }, 404, corsHeaders);

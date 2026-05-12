@@ -63,7 +63,6 @@ function signupRequest(body: unknown): Request {
 function baseEnv(kv: WaitlistKv) {
   return {
     TARMOTO_WAITLIST: kv as unknown as KVNamespace,
-    ADMIN_KEY: "admin-test",
     RESEND_API_KEY: "re_test",
     RESEND_FROM: "Tarmoto <hello@tarmoto.app>",
   };
@@ -280,7 +279,6 @@ test("signup skips Resend when not configured but still saves the record", async
   const kv = createWaitlistKv();
   const env = {
     TARMOTO_WAITLIST: kv as unknown as KVNamespace,
-    ADMIN_KEY: "admin-test",
   };
 
   const response = await worker.fetch(
@@ -489,30 +487,6 @@ test("legacy /count endpoint still returns the meta count", async () => {
 
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { count: 11 });
-});
-
-test("legacy /admin/list endpoint is reachable with the admin key", async () => {
-  const kv = createWaitlistKv({
-    "email:rider@example.com": {
-      email: "rider@example.com",
-      source: "landing_page",
-      rider_type: "",
-      timestamp: "2026-05-01T12:00:00.000Z",
-      ip_country: "CZ",
-      user_agent: "test-agent",
-      unsubscribeToken: "tok",
-    },
-  });
-  const env = baseEnv(kv);
-
-  const response = await worker.fetch(
-    new Request("https://tarmoto.app/admin/list?key=admin-test"),
-    env,
-  );
-
-  assert.equal(response.status, 200);
-  const json = (await response.json()) as { count: number };
-  assert.equal(json.count, 1);
 });
 
 test("legacy /signup/unsubscribe endpoint is honoured", async () => {

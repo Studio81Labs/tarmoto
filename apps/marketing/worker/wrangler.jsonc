@@ -27,18 +27,11 @@
     // Cloudflare's asset server. Without an entry here the asset
     // server short-circuits (serving 404.html when nothing matches),
     // so the Worker's route table never runs for that path.
-    // /api/*       — the current waitlist API surface.
-    // /signup,     — pre-rename aliases (LEGACY_ALIASES in src/index.ts).
-    // /signup/*      Listing them here keeps bookmarked admin URLs,
-    // /count,        old ops scripts, and edge-cached copies of the
-    // /admin/*       previous frontend reachable through the rename.
-    "run_worker_first": [
-      "/api/*",
-      "/signup",
-      "/signup/*",
-      "/count",
-      "/admin/*",
-    ],
+    // /api/*      — the current waitlist API surface.
+    // /signup,    — pre-rename aliases (LEGACY_ALIASES in src/index.ts);
+    // /signup/*     keeps edge-cached copies of the previous frontend
+    // /count        working through the rename.
+    "run_worker_first": ["/api/*", "/signup", "/signup/*", "/count"],
   },
   "vars": {
     "RESEND_FROM": "Tarmoto <hello@tarmoto.app>",
