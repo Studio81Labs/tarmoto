@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - "apps/marketing/**"
-      - "packages/brand/**"
+      - "docs/design/brand/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -14,7 +14,7 @@ on:
     branches: [main]
     paths:
       - "apps/marketing/**"
-      - "packages/brand/**"
+      - "docs/design/brand/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"

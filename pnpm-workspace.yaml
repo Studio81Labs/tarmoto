@@ -3,6 +3,7 @@ packages:
   - "apps/*/worker"
   - "packages/*"
   - "docs/design"
+  - "docs/design/brand"
 onlyBuiltDependencies:
   - "@nestjs/core"
   - "@scarf/scarf"

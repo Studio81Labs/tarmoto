@@ -39,7 +39,7 @@ on:
     tags: ["marketing-v*"]
     paths:
       - "apps/marketing/**"
-      - "packages/brand/**"
+      - "docs/design/brand/**"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
