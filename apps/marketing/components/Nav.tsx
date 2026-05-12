@@ -31,9 +31,21 @@ export function Nav() {
               {l.label}
             </a>
           ))}
-          <button type="button" className="nav-cta" onClick={open}>
+          {/* Anchor + onClick (not <button>) so the CTA still works
+              before React hydrates or with JS disabled — the native
+              href scrolls to the inline waitlist form on the home
+              page, and once hydrated the click handler opens the
+              modal instead. */}
+          <Link
+            href="/#waitlist"
+            className="nav-cta"
+            onClick={(event) => {
+              event.preventDefault();
+              open();
+            }}
+          >
             Join the waitlist
-          </button>
+          </Link>
         </div>
       </div>
     </nav>
