@@ -1,0 +1,191 @@
+"use client";
+
+import { useState, type CSSProperties, type FormEvent } from "react";
+
+interface WaitlistFormProps {
+  stage?: "waitlist" | "beta" | "launch";
+}
+
+const ENDPOINT = "/api/waitlist";
+
+export function WaitlistForm({ stage = "waitlist" }: WaitlistFormProps) {
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState<
+    "idle" | "submitting" | "success" | "error"
+  >("idle");
+  const [errorBorder, setErrorBorder] = useState(false);
+
+  async function handleSubmit(e?: FormEvent) {
+    e?.preventDefault();
+    const trimmed = email.trim();
+    if (!trimmed || !trimmed.includes("@") || !trimmed.includes(".")) {
+      setErrorBorder(true);
+      return;
+    }
+    setErrorBorder(false);
+    setStatus("submitting");
+
+    try {
+      const res = await fetch(ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: trimmed }),
+      });
+      if (!res.ok) {
+        setStatus("error");
+        return;
+      }
+      setStatus("success");
+    } catch {
+      setStatus("error");
+    }
+  }
+
+  const submitLabel =
+    status === "submitting"
+      ? "Joining..."
+      : stage === "launch"
+        ? "Get Tarmoto"
+        : stage === "beta"
+          ? "Request invite"
+          : "Join the waitlist";
+
+  if (status === "success") {
+    return (
+      <div style={styles.successWrap}>
+        <div style={styles.successBox}>
+          <span style={styles.successCheck}>✓</span>
+          <div>
+            <div style={styles.successTitle}>You&apos;re on the list.</div>
+            <div style={styles.successNote}>
+              We&apos;ll write once, when your invite is ready.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={styles.wrap}>
+      <form
+        onSubmit={handleSubmit}
+        style={{
+          ...styles.form,
+          borderColor: errorBorder
+            ? "rgba(176,71,58,0.5)"
+            : "rgba(232,229,222,0.16)",
+        }}
+      >
+        <input
+          type="email"
+          required
+          value={email}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            setErrorBorder(false);
+          }}
+          placeholder="you@email.com"
+          style={styles.input}
+        />
+        <button
+          type="submit"
+          disabled={status === "submitting"}
+          style={styles.button}
+        >
+          {submitLabel}
+        </button>
+      </form>
+      <p style={styles.note}>
+        One email when there&apos;s something to share. No marketing list.
+      </p>
+      {status === "error" && (
+        <p style={{ ...styles.note, color: "#B0473A", marginTop: "8px" }}>
+          Something went wrong. Please try again.
+        </p>
+      )}
+    </div>
+  );
+}
+
+const styles: Record<string, CSSProperties> = {
+  wrap: {
+    maxWidth: "520px",
+    width: "100%",
+  },
+  form: {
+    display: "flex",
+    gap: "6px",
+    padding: "5px",
+    borderRadius: "10px",
+    background: "var(--panel-2)",
+    border: "1px solid var(--line-2)",
+  },
+  input: {
+    flex: 1,
+    minWidth: 0,
+    border: "none",
+    outline: "none",
+    background: "transparent",
+    padding: "11px 12px",
+    fontSize: "14px",
+    fontFamily: "var(--font)",
+    color: "var(--text)",
+  },
+  button: {
+    border: "none",
+    cursor: "pointer",
+    padding: "11px 18px",
+    borderRadius: "7px",
+    background:
+      "linear-gradient(180deg, var(--accent-top) 0%, var(--accent) 100%)",
+    boxShadow:
+      "0 8px 24px rgba(255, 106, 26, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.14)",
+    color: "var(--ink-warm)",
+    fontWeight: 600,
+    fontSize: "13.5px",
+    fontFamily: "var(--font)",
+    whiteSpace: "nowrap",
+  },
+  note: {
+    fontSize: "12px",
+    color: "var(--mute)",
+    marginTop: "10px",
+  },
+  successWrap: {
+    maxWidth: "520px",
+    width: "100%",
+  },
+  successBox: {
+    padding: "16px 18px",
+    borderRadius: "10px",
+    background: "var(--panel-2)",
+    border: "1px solid var(--line-2)",
+    display: "flex",
+    alignItems: "center",
+    gap: "14px",
+  },
+  successCheck: {
+    width: "28px",
+    height: "28px",
+    borderRadius: "50%",
+    background: "var(--accent)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "var(--ink-warm)",
+    fontWeight: 700,
+    fontSize: "14px",
+    flexShrink: 0,
+  },
+  successTitle: {
+    fontSize: "14px",
+    fontWeight: 600,
+    color: "var(--text)",
+  },
+  successNote: {
+    fontSize: "12px",
+    color: "var(--mute)",
+    marginTop: "2px",
+  },
+};

@@ -7,6 +7,8 @@ dist/
 build/
 .next/
 .open-next/
+out/
+next-env.d.ts
 
 # Cloudflare Workers (companion)
 .wrangler/
