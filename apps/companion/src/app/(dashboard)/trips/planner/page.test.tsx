@@ -734,6 +734,54 @@ describe("TripPlannerPage", () => {
     expect(tripsApiGenerateMock).not.toHaveBeenCalled();
   });
 
+  it("regenerates the selected backend option when planner controls change before saving", async () => {
+    storeState.activeTrip = activeTrip;
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Best backend/i })),
+    );
+
+    tripsApiGenerateMock.mockClear();
+    fireEvent.change(screen.getByLabelText("Number of days"), {
+      target: { value: "4" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(tripsApiUpdateMock).toHaveBeenCalledWith(
+        "server-trip-1",
+        expect.objectContaining({
+          num_days: 4,
+        }),
+      ),
+    );
+    expect(tripsApiGenerateMock).toHaveBeenCalledWith(
+      "server-trip-1",
+      expect.objectContaining({
+        option: "best-fit",
+      }),
+    );
+    expect(mockPush).toHaveBeenCalledWith("/trips/server-trip-1");
+  });
+
+  it("does not expose day-scoped regeneration for backend-generated options", async () => {
+    storeState.activeTrip = activeTrip;
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Best backend/i })),
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /Regenerate day 1/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("deletes a newly created metadata-only trip when route generation fails", async () => {
     tripsApiGenerateMock.mockRejectedValueOnce(new Error("route failed"));
     storeState.activeTrip = activeTrip;

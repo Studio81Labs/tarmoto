@@ -23,7 +23,6 @@ import {
   BedDouble,
   Gauge,
   Mountain,
-  RefreshCw,
   Route,
 } from "lucide-react";
 import { ClosuresPanel } from "@/components/ClosuresPanel";
@@ -49,6 +48,7 @@ import {
   type GeneratedTripOption,
   type TripGenerationOptionId,
 } from "@/lib/trip-generation-options";
+import { filterRoutingWaypoints } from "@/lib/trip-routing";
 import { currentUtcMonth } from "@/lib/passes-summary";
 import {
   findOwnerId,
@@ -160,13 +160,15 @@ export default function TripPlannerPage() {
   const [generatedOptions, setGeneratedOptions] = useState<
     GeneratedTripOption[]
   >([]);
+  const [generatedOptionsSignature, setGeneratedOptionsSignature] = useState<
+    string | null
+  >(null);
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const generationLockRef = useRef(false);
   const requestTokenRef = useRef(0);
   const isMountedRef = useRef(true);
   const activeTripRef = useRef<Trip | null>(null);
   const generatedOptionsRef = useRef<GeneratedTripOption[]>([]);
-  const selectedOptionIdRef = useRef<string | null>(null);
   const syncedControlsTripIdRef = useRef<string | null>(null);
   const activeTrip = useTripStore((s) => s.activeTrip);
   const setActiveTrip = useTripStore((s) => s.setActiveTrip);
@@ -242,6 +244,9 @@ export default function TripPlannerPage() {
     setActiveTrip(null);
     setServerTripId(null);
     setServerTripOwnerId(null);
+    setGeneratedOptions([]);
+    setGeneratedOptionsSignature(null);
+    setSelectedOptionId(null);
   }, [setActiveTrip]);
   const collabSession = useTripCollabSession(serverTripId, {
     onTripUpdated: handleRemoteTripUpdated,
@@ -343,10 +348,10 @@ export default function TripPlannerPage() {
     () => buildTripClosureRoutes(displayedTrip),
     [displayedTrip],
   );
-  const canRegenerate =
-    displayedTrip != null &&
-    selectedOption != null &&
-    displayedTrip.id === selectedOption.trip.id;
+  const currentGenerationSignature = useMemo(
+    () => buildGenerationInputSignature(displayedTrip, plannerParams),
+    [displayedTrip, plannerParams],
+  );
   const closuresData = useClosures(travelMonth, closureRoutes);
   const passesData = usePasses(travelMonth, closureRoutes);
   const selectedDay = activeTrip?.days[selectedDayIndex] ?? null;
@@ -441,24 +446,20 @@ export default function TripPlannerPage() {
       const selectedBackendOption = generatedOptions.find(
         (option) => option.id === selectedOptionId,
       );
+      const selectedBackendOptionIsCurrent =
+        selectedBackendOption !== undefined &&
+        generatedOptionsSignature === currentGenerationSignature;
       const shouldGenerate =
-        !selectedBackendOption &&
-        (!existingTripId || displayedTrip.id !== existingTripId);
+        !selectedBackendOptionIsCurrent &&
+        (!existingTripId ||
+          displayedTrip.id !== existingTripId ||
+          selectedBackendOption !== undefined);
       if (shouldGenerate) {
         try {
-          await tripsApi.generate(tripId, {
-            start_location: {
-              lat: startWp.location.lat,
-              lng: startWp.location.lng,
-            },
-            option: undefined,
-            avoid_highways: p.avoidHighways,
-            avoid_tolls: p.avoidTolls,
-            avoid_unpaved: p.avoidUnpaved,
-            surfaces: generationSurfaces(p).length
-              ? generationSurfaces(p)
-              : undefined,
-          });
+          await tripsApi.generate(
+            tripId,
+            buildGenerationPayload(p, startWp, selectedBackendOption?.id),
+          );
         } catch (generateError) {
           if (createdTripId) {
             try {
@@ -477,7 +478,9 @@ export default function TripPlannerPage() {
       setSaving(false);
     }
   }, [
+    currentGenerationSignature,
     displayedTrip,
+    generatedOptionsSignature,
     generatedOptions,
     plannerParams,
     router,
@@ -607,11 +610,10 @@ export default function TripPlannerPage() {
     generatedOptionsRef.current = generatedOptions;
   }, [generatedOptions]);
   useEffect(() => {
-    selectedOptionIdRef.current = selectedOptionId;
-  }, [selectedOptionId]);
-  useEffect(() => {
     if (!activeTrip) {
       if (selectedOptionId !== null) setSelectedOptionId(null);
+      if (generatedOptionsSignature !== null)
+        setGeneratedOptionsSignature(null);
       return;
     }
     const matchingOption = generatedOptionsRef.current.find(
@@ -619,6 +621,8 @@ export default function TripPlannerPage() {
     );
     if (!matchingOption) {
       if (selectedOptionId !== null) setSelectedOptionId(null);
+      if (generatedOptionsSignature !== null)
+        setGeneratedOptionsSignature(null);
       return;
     }
     if (matchingOption.trip !== activeTrip) {
@@ -633,7 +637,7 @@ export default function TripPlannerPage() {
     if (matchingOption.id !== selectedOptionId) {
       setSelectedOptionId(matchingOption.id);
     }
-  }, [activeTrip, selectedOptionId]);
+  }, [activeTrip, generatedOptionsSignature, selectedOptionId]);
   const handleGenerate = useCallback(async () => {
     if (generationLockRef.current) return;
     const activeTripAtStart = activeTripRef.current;
@@ -694,6 +698,9 @@ export default function TripPlannerPage() {
       const selected =
         selectedGeneratedOption(options, response.selected_option) ?? null;
       setGeneratedOptions(options);
+      setGeneratedOptionsSignature(
+        buildGenerationInputSignature(selected?.trip ?? null, plannerParams),
+      );
       setSelectedOptionId(selected?.id ?? null);
       setActiveTrip(selected?.trip ?? null);
       setServerTripId(tripId);
@@ -760,6 +767,9 @@ export default function TripPlannerPage() {
           response.selected_option,
         );
         setGeneratedOptions(options);
+        setGeneratedOptionsSignature(
+          buildGenerationInputSignature(selected?.trip ?? null, plannerParams),
+        );
         setSelectedOptionId(selected?.id ?? option.id);
         setActiveTrip(selected?.trip ?? option.trip);
       } catch {
@@ -779,69 +789,6 @@ export default function TripPlannerPage() {
       }
     },
     [plannerParams, serverTripId, setActiveTrip, setGenerating],
-  );
-  const handleRegenerateDay = useCallback(
-    async (_dayNumber: number) => {
-      if (!canRegenerate || !displayedTrip || !selectedOptionId) return;
-      if (generationLockRef.current) return;
-      const regeneratingOptionId = selectedOptionId;
-      const requestToken = requestTokenRef.current + 1;
-      requestTokenRef.current = requestToken;
-      setGenerationError(null);
-      generationLockRef.current = true;
-      setGenerating(true);
-      try {
-        const latestTrip = activeTripRef.current;
-        if (!latestTrip || latestTrip.id !== displayedTrip.id) {
-          return;
-        }
-        const persistedTripId =
-          serverTripId ?? resolveExistingTripId(serverTripId, latestTrip);
-        const startWaypoint = findStartWaypoint(latestTrip);
-        if (!persistedTripId || !startWaypoint) {
-          throw new Error("Missing persisted trip for regeneration");
-        }
-        const { data } = await tripsApi.generate(
-          persistedTripId,
-          buildGenerationPayload(
-            plannerParams,
-            startWaypoint,
-            regeneratingOptionId as TripGenerationOptionId,
-          ),
-        );
-        if (!isMountedRef.current || requestTokenRef.current !== requestToken) {
-          return;
-        }
-        const response = data as GenerateTripResponse;
-        const options = generatedOptionsFromResponse(response);
-        const selected = selectedGeneratedOption(options, regeneratingOptionId);
-        setGeneratedOptions(options);
-        if (selectedOptionIdRef.current === regeneratingOptionId) {
-          setActiveTrip(selected?.trip ?? null);
-        }
-      } catch {
-        if (!isMountedRef.current || requestTokenRef.current !== requestToken) {
-          return;
-        }
-        setGenerationError("Could not regenerate this route.");
-      } finally {
-        if (requestTokenRef.current === requestToken) {
-          generationLockRef.current = false;
-          if (isMountedRef.current) {
-            setGenerating(false);
-          }
-        }
-      }
-    },
-    [
-      canRegenerate,
-      displayedTrip,
-      plannerParams,
-      selectedOptionId,
-      serverTripId,
-      setActiveTrip,
-      setGenerating,
-    ],
   );
   return (
     <div className="flex flex-col h-full">
@@ -906,6 +853,7 @@ export default function TripPlannerPage() {
               type="button"
               onClick={() => {
                 setGeneratedOptions([]);
+                setGeneratedOptionsSignature(null);
                 setSelectedOptionId(null);
                 setActiveTrip(DEMO_TRIP);
               }}
@@ -1370,17 +1318,6 @@ export default function TripPlannerPage() {
                 </span>
                 <ChevronRight size={14} className="text-slate-500" />
               </button>
-              {canRegenerate && (
-                <button
-                  type="button"
-                  onClick={() => handleRegenerateDay(day.dayNumber)}
-                  disabled={isGenerating}
-                  className="rounded-md border border-slate-700 p-2 text-slate-400 transition hover:border-tarmoto-cyan hover:text-tarmoto-cyan disabled:cursor-wait disabled:opacity-50"
-                  aria-label={`Regenerate day ${day.dayNumber}`}
-                >
-                  <RefreshCw size={12} />
-                </button>
-              )}
             </div>
           ),
         )}
@@ -1459,6 +1396,33 @@ function buildGenerationPayload(
     avoid_unpaved: params.avoidUnpaved,
     surfaces: surfaces.length ? surfaces : undefined,
   };
+}
+function buildGenerationInputSignature(
+  trip: Trip | null,
+  params: TripParameters,
+): string | null {
+  if (!trip) return null;
+  return JSON.stringify({
+    params: {
+      days: params.days,
+      dailyKmTarget: normalizeBackendDailyKm(params.dailyKmTarget),
+      roadPreference: params.roadPreference,
+      surfacePreference: [...params.surfacePreference].sort(),
+      minQuality: params.minQuality,
+      avoidHighways: params.avoidHighways,
+      avoidTolls: params.avoidTolls,
+      avoidUnpaved: params.avoidUnpaved,
+    },
+    routeAnchors: trip.days.map((day) => ({
+      dayNumber: day.dayNumber,
+      waypoints: filterRoutingWaypoints(day.waypoints).map((waypoint) => ({
+        id: waypoint.id,
+        type: waypoint.type,
+        lng: roundCoordinate(waypoint.location.lng),
+        lat: roundCoordinate(waypoint.location.lat),
+      })),
+    })),
+  });
 }
 function validateGenerationInput(
   trip: Trip | null,
@@ -1688,6 +1652,9 @@ function surfacesEqualDefault(surfaces: SurfaceType[]): boolean {
 function normalizeBackendDailyKm(value: number) {
   if (!Number.isFinite(value)) return MIN_BACKEND_DAILY_KM;
   return Math.max(MIN_BACKEND_DAILY_KM, Math.round(value));
+}
+function roundCoordinate(value: number) {
+  return Number.isFinite(value) ? Number(value.toFixed(6)) : value;
 }
 function buildImportedRoutePayload(trip: Trip) {
   if (!trip.id.startsWith("imported-")) return null;
