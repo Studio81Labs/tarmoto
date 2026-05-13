@@ -199,8 +199,6 @@ describe("rideRouteFeatureCollection", () => {
       speed_avg: 50,
       speed_max: null,
       lean_angle_max: 0,
-      length_m: null,
-      elevation_profile: null,
     };
   }
 
@@ -234,8 +232,6 @@ describe("rideRouteFeatureCollection", () => {
         speed_avg: 0,
         speed_max: null,
         lean_angle_max: 0,
-        length_m: null,
-        elevation_profile: null,
       },
     ];
     const fc = rideRouteFeatureCollection(geometry, segs);
@@ -285,8 +281,6 @@ describe("rideRouteFeatureCollection", () => {
         speed_avg: 0,
         speed_max: null,
         lean_angle_max: 0,
-        length_m: null,
-        elevation_profile: null,
       },
     ];
     const fc = rideRouteFeatureCollection(geometry, segs);
@@ -381,8 +375,6 @@ describe("segmentQualityHistogram", () => {
       speed_avg: 50,
       speed_max: null,
       lean_angle_max: 0,
-      length_m: null,
-      elevation_profile: null,
     };
   }
 

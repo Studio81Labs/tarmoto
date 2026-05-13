@@ -121,8 +121,6 @@ const RIDE: RideDetail = {
       speed_avg: 60,
       speed_max: null,
       lean_angle_max: 20,
-      length_m: null,
-      elevation_profile: null,
     },
     {
       road_segment_id: "s2",
@@ -131,8 +129,6 @@ const RIDE: RideDetail = {
       speed_avg: 40,
       speed_max: null,
       lean_angle_max: 12,
-      length_m: null,
-      elevation_profile: null,
     },
   ],
 };
@@ -197,8 +193,6 @@ describe("RideDetailScreen", () => {
           speed_avg: 0,
           speed_max: null,
           lean_angle_max: 0,
-          length_m: null,
-          elevation_profile: null,
         },
         {
           road_segment_id: "s4",
@@ -207,8 +201,6 @@ describe("RideDetailScreen", () => {
           speed_avg: 0,
           speed_max: null,
           lean_angle_max: 0,
-          length_m: null,
-          elevation_profile: null,
         },
       ],
     };

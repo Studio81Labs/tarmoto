@@ -18,12 +18,10 @@ import { api } from "@/lib/api";
 import type { QualityTier } from "@/lib/types";
 import { formatDuration, QUALITY_CONFIG } from "@/lib/utils";
 import {
-  buildElevationProfile,
   buildSpeedProfile,
   computeQualityBreakdown,
   formatNumber,
   readingToTier,
-  type ElevationProfilePoint,
   type RideSegmentLike,
   type SpeedProfilePoint,
 } from "@/lib/ride-detail";
@@ -94,10 +92,6 @@ export default function RideDetailPage() {
   }, [rideId]);
   const breakdown = useMemo(
     () => computeQualityBreakdown(ride?.segments ?? []),
-    [ride?.segments],
-  );
-  const elevationProfile = useMemo(
-    () => buildElevationProfile(ride?.segments ?? []),
     [ride?.segments],
   );
   const speedProfile = useMemo(
@@ -279,13 +273,9 @@ export default function RideDetailPage() {
           <SectionHeader
             icon={<Mountain size={16} />}
             title={t("Elevation profile")}
-            subtitle={
-              elevationProfile.length > 0
-                ? `${formatNumber(ride.elevation_gain, 0)} m gain · ${formatNumber(ride.elevation_loss, 0)} m loss`
-                : "Elevation samples are attached when matched road segments include profile data."
-            }
+            subtitle="Elevation gain/loss is available in the stats below; per-sample ride elevation is not recorded yet."
           />
-          <ElevationProfileChart points={elevationProfile} />
+          <ElevationProfileChart />
         </div>
         <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
           <SectionHeader
@@ -600,31 +590,11 @@ function QualityBar({
   );
 }
 
-function ElevationProfileChart({
-  points,
-}: {
-  points: ElevationProfilePoint[];
-}) {
-  if (points.length === 0) {
-    return (
-      <EmptyChartState>
-        {t("No elevation profile was recorded for this ride.")}
-      </EmptyChartState>
-    );
-  }
-  const values = points.map((point) => point.elevationM);
+function ElevationProfileChart() {
   return (
-    <LineSeriesChart
-      points={points.map((point) => ({
-        x: point.distanceKm,
-        y: point.elevationM,
-      }))}
-      color="#22d3ee"
-      minY={Math.min(...values)}
-      maxY={Math.max(...values)}
-      ariaLabel={t("Ride elevation profile")}
-      valueSuffix="m"
-    />
+    <EmptyChartState>
+      {t("No elevation profile was recorded for this ride.")}
+    </EmptyChartState>
   );
 }
 
@@ -638,10 +608,10 @@ function SpeedProfileChart({ points }: { points: SpeedProfilePoint[] }) {
   }
   const avgPoints = points
     .filter((point) => point.avgKmh != null)
-    .map((point) => ({ x: point.distanceKm, y: point.avgKmh! }));
+    .map((point) => ({ x: point.segmentNumber, y: point.avgKmh! }));
   const maxPoints = points
     .filter((point) => point.maxKmh != null)
-    .map((point) => ({ x: point.distanceKm, y: point.maxKmh! }));
+    .map((point) => ({ x: point.segmentNumber, y: point.maxKmh! }));
   const values = [...avgPoints, ...maxPoints].map((point) => point.y);
   const peak = values.length ? Math.max(...values) : 1;
   return (
@@ -664,6 +634,7 @@ function SpeedProfileChart({ points }: { points: SpeedProfilePoint[] }) {
         minY={0}
         maxY={peak}
         ariaLabel={t("Ride speed graph")}
+        xSuffix="seg"
         valueSuffix="km/h"
       />
     </div>
@@ -686,6 +657,7 @@ function LineSeriesChart({
   minY,
   maxY,
   ariaLabel,
+  xSuffix = "km",
   valueSuffix,
 }: {
   points: Array<{ x: number; y: number }>;
@@ -695,6 +667,7 @@ function LineSeriesChart({
   minY: number;
   maxY: number;
   ariaLabel: string;
+  xSuffix?: string;
   valueSuffix: string;
 }) {
   const allPoints = [...points, ...secondaryPoints];
@@ -744,14 +717,22 @@ function LineSeriesChart({
         )}
       </svg>
       <div className="flex items-center justify-between text-[11px] text-slate-500">
-        <span>{formatNumber(minX, 1)} km</span>
+        <span>
+          {formatChartXAxisValue(minX)} {xSuffix}
+        </span>
         {last && (
           <span>
             {formatNumber(last.y, 0)} {valueSuffix}
           </span>
         )}
-        <span>{formatNumber(maxX, 1)} km</span>
+        <span>
+          {formatChartXAxisValue(maxX)} {xSuffix}
+        </span>
       </div>
     </div>
   );
+}
+
+function formatChartXAxisValue(value: number): string {
+  return Number.isInteger(value) ? String(value) : formatNumber(value, 1);
 }

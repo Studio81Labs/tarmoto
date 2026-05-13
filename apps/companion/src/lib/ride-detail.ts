@@ -26,8 +26,6 @@ export interface RideSegmentLike {
   speed_avg: number | null;
   speed_max?: number | null;
   lean_angle_max: number | null;
-  length_m?: number | null;
-  elevation_profile?: number[] | null;
 }
 
 export interface QualityBreakdownRow {
@@ -151,51 +149,9 @@ export function buildRoutePreview(
   };
 }
 
-export interface ElevationProfilePoint {
-  distanceKm: number;
-  elevationM: number;
-}
-
-export function buildElevationProfile(
-  segments: readonly RideSegmentLike[],
-): ElevationProfilePoint[] {
-  const points: ElevationProfilePoint[] = [];
-  let cumulativeKm = 0;
-
-  for (const segment of segments) {
-    const lengthKm =
-      segment.length_m != null && Number.isFinite(segment.length_m)
-        ? Math.max(segment.length_m / 1000, 0)
-        : 0;
-    const profile = segment.elevation_profile;
-    if (
-      !Array.isArray(profile) ||
-      profile.length < 2 ||
-      !profile.every(Number.isFinite)
-    ) {
-      cumulativeKm += lengthKm;
-      continue;
-    }
-
-    const stepKm = lengthKm > 0 ? lengthKm / (profile.length - 1) : 0;
-
-    profile.forEach((elevationM, index) => {
-      if (points.length > 0 && index === 0) return;
-      points.push({
-        distanceKm: roundProfileDistance(cumulativeKm + stepKm * index),
-        elevationM,
-      });
-    });
-
-    cumulativeKm += lengthKm;
-  }
-
-  return points.length >= 2 ? points : [];
-}
-
 export interface SpeedProfilePoint {
   label: string;
-  distanceKm: number;
+  segmentNumber: number;
   avgKmh: number | null;
   maxKmh: number | null;
 }
@@ -203,14 +159,7 @@ export interface SpeedProfilePoint {
 export function buildSpeedProfile(
   segments: readonly RideSegmentLike[],
 ): SpeedProfilePoint[] {
-  let cumulativeKm = 0;
   const points = segments.flatMap((segment, index) => {
-    const lengthKm =
-      segment.length_m != null && Number.isFinite(segment.length_m)
-        ? Math.max(segment.length_m / 1000, 0)
-        : 0;
-    cumulativeKm += lengthKm;
-
     const avgKmh = finiteOrNull(segment.speed_avg);
     const maxKmh = finiteOrNull(segment.speed_max);
     if (avgKmh == null && maxKmh == null) return [];
@@ -218,7 +167,7 @@ export function buildSpeedProfile(
     return [
       {
         label: segment.road_name ?? `Segment ${index + 1}`,
-        distanceKm: roundProfileDistance(cumulativeKm || index + 1),
+        segmentNumber: index + 1,
         avgKmh,
         maxKmh,
       },
@@ -230,8 +179,4 @@ export function buildSpeedProfile(
 
 function finiteOrNull(value: number | null | undefined): number | null {
   return value != null && Number.isFinite(value) ? value : null;
-}
-
-function roundProfileDistance(value: number): number {
-  return Number(value.toFixed(3));
 }

@@ -56,8 +56,6 @@ function ride(overrides: Record<string, unknown> = {}) {
         speed_avg: 58,
         speed_max: 86,
         lean_angle_max: 22,
-        length_m: 1000,
-        elevation_profile: [350, 390, 370],
       },
       {
         road_segment_id: "seg-2",
@@ -66,8 +64,6 @@ function ride(overrides: Record<string, unknown> = {}) {
         speed_avg: 72,
         speed_max: 98,
         lean_angle_max: 31,
-        length_m: 900,
-        elevation_profile: [370, 420, 410],
       },
     ],
     ...overrides,
@@ -100,7 +96,9 @@ describe("RideDetailPage analytics", () => {
     );
     expect(screen.getByText("Elevation profile")).toBeInTheDocument();
     expect(screen.getByText("Speed graph")).toBeInTheDocument();
-    expect(screen.getByText(/700 m gain/i)).toBeInTheDocument();
+    expect(
+      screen.getByText("No elevation profile was recorded for this ride."),
+    ).toBeInTheDocument();
     expect(screen.getByText(/98 km\/h peak/i)).toBeInTheDocument();
   });
 

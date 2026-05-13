@@ -63,8 +63,6 @@ function comparableRide(id: string, overrides: Record<string, unknown> = {}) {
         speed_avg: id === "ride-a" ? 50 : 60,
         speed_max: id === "ride-a" ? 80 : 95,
         lean_angle_max: 22,
-        length_m: 1000,
-        elevation_profile: id === "ride-a" ? [300, 350, 340] : [310, 380, 360],
       },
     ],
     ...overrides,

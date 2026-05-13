@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildElevationProfile,
   buildRoutePreview,
   buildSpeedProfile,
   computeQualityBreakdown,
@@ -16,8 +15,6 @@ function segment(overrides: Partial<RideSegmentLike> = {}): RideSegmentLike {
     speed_avg: 60,
     speed_max: 80,
     lean_angle_max: 20,
-    length_m: 1000,
-    elevation_profile: null,
     ...overrides,
   };
 }
@@ -163,54 +160,27 @@ describe("buildRoutePreview", () => {
   });
 });
 
-describe("buildElevationProfile", () => {
-  it("concatenates segment elevation samples onto cumulative distance", () => {
-    const points = buildElevationProfile([
-      segment({ length_m: 1000, elevation_profile: [100, 120, 110] }),
-      segment({ length_m: 500, elevation_profile: [110, 130] }),
-    ]);
-
-    expect(points).toEqual([
-      { distanceKm: 0, elevationM: 100 },
-      { distanceKm: 0.5, elevationM: 120 },
-      { distanceKm: 1, elevationM: 110 },
-      { distanceKm: 1.5, elevationM: 130 },
-    ]);
-  });
-
-  it("returns an empty series when no usable elevation samples exist", () => {
-    expect(
-      buildElevationProfile([
-        segment({ elevation_profile: null }),
-        segment({ elevation_profile: [100] }),
-        segment({ elevation_profile: [100, Number.NaN] }),
-      ]),
-    ).toEqual([]);
-  });
-});
-
 describe("buildSpeedProfile", () => {
   it("builds an ordered segment speed series with average and max speeds", () => {
     const points = buildSpeedProfile([
-      segment({ road_name: "A", speed_avg: 50, speed_max: 70, length_m: 1000 }),
+      segment({ road_name: "A", speed_avg: 50, speed_max: 70 }),
       segment({
         road_name: "B",
         speed_avg: 65,
         speed_max: null,
-        length_m: 500,
       }),
     ]);
 
     expect(points).toEqual([
       {
         label: "A",
-        distanceKm: 1,
+        segmentNumber: 1,
         avgKmh: 50,
         maxKmh: 70,
       },
       {
         label: "B",
-        distanceKm: 1.5,
+        segmentNumber: 2,
         avgKmh: 65,
         maxKmh: null,
       },
