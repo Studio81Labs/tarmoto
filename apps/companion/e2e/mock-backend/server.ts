@@ -270,6 +270,10 @@ export function buildApp(): Express {
       owner_id: session.user_id,
       title: String(title ?? "Untitled trip"),
       num_days: Number(num_days ?? 1),
+      daily_km_min: Number(req.body?.daily_km_min ?? 200),
+      daily_km_max: Number(req.body?.daily_km_max ?? 300),
+      min_quality: Number(req.body?.min_quality ?? 3),
+      road_preference: String(req.body?.road_preference ?? "mixed"),
       status: "draft" as const,
       members: [session.user_id],
       snapshot: {},
@@ -306,6 +310,10 @@ export function buildApp(): Express {
       ...trip,
       title: req.body?.title ?? trip.title,
       num_days: req.body?.num_days ?? trip.num_days,
+      daily_km_min: req.body?.daily_km_min ?? trip.daily_km_min,
+      daily_km_max: req.body?.daily_km_max ?? trip.daily_km_max,
+      min_quality: req.body?.min_quality ?? trip.min_quality,
+      road_preference: req.body?.road_preference ?? trip.road_preference,
       status: req.body?.status ?? trip.status,
       snapshot: req.body?.snapshot ?? trip.snapshot,
       updated_at: new Date().toISOString(),
@@ -335,10 +343,40 @@ export function buildApp(): Express {
         res.status(404).json({ message: "not-found" });
         return;
       }
+      const selected = String(req.body?.option ?? "best-fit");
+      const dailyTarget = Math.round(
+        ((trip.daily_km_min ?? 250) + (trip.daily_km_max ?? 250)) / 2,
+      );
+      const options = ["best-fit", "scenic", "fastest"].map((id) =>
+        buildGeneratedOption(
+          id,
+          selected,
+          trip.num_days,
+          dailyTarget,
+          req.body,
+        ),
+      );
+      const selectedOption = options.find((option) => option.id === selected)!;
+      const updated = {
+        ...trip,
+        status: "planned" as const,
+        snapshot: {
+          ...trip.snapshot,
+          days: selectedOption.days,
+          selected_option: selected,
+          generation_request: req.body ?? {},
+        },
+        updated_at: new Date().toISOString(),
+      };
+      state.trips.set(updated.id, updated);
       pushActivity(trip.id, req.session!.user_id, "trip_generated", {
-        option: "best-fit",
+        option: selected,
       });
-      res.json({ options: [] });
+      res.json({
+        trip: serializeTripDetail(updated),
+        selected_option: selected,
+        options,
+      });
     },
   );
 
@@ -840,7 +878,7 @@ function serializeTripCard(trip: import("./state").MockTrip) {
     id: trip.id,
     name: trip.title,
     status: trip.status,
-    days: [],
+    days: serializedTripDays(trip),
     collaborators: trip.members.map((userId) => {
       const user = state.users.get(userId);
       return {
@@ -851,8 +889,10 @@ function serializeTripCard(trip: import("./state").MockTrip) {
     }),
     parameters: {
       days: trip.num_days,
-      dailyKmTarget: 250,
-      roadPreference: "mixed",
+      dailyKmTarget: Math.round(
+        ((trip.daily_km_min ?? 200) + (trip.daily_km_max ?? 300)) / 2,
+      ),
+      roadPreference: trip.road_preference === "fast" ? "direct" : "mixed",
       surfacePreference: ["asphalt"],
       avoidHighways: true,
       avoidTolls: false,
@@ -883,13 +923,123 @@ function serializeTripDetail(trip: import("./state").MockTrip) {
     status: trip.status,
     member_count: members.length,
     created_at: trip.created_at,
-    daily_km_min: 200,
-    daily_km_max: 300,
-    min_quality: 3,
-    road_preference: "mixed",
+    daily_km_min: trip.daily_km_min ?? 200,
+    daily_km_max: trip.daily_km_max ?? 300,
+    min_quality: trip.min_quality ?? 3,
+    road_preference: trip.road_preference ?? "mixed",
     invite_code: trip.id.slice(0, 8),
     members,
-    days: [],
+    days: serializedTripDays(trip),
+  };
+}
+
+function serializedTripDays(trip: import("./state").MockTrip) {
+  const days = trip.snapshot.days;
+  return Array.isArray(days) ? days : [];
+}
+
+function buildGeneratedOption(
+  id: string,
+  selected: string,
+  numDays: number,
+  dailyTarget: number,
+  body: Record<string, unknown> | undefined,
+) {
+  const labels: Record<string, string> = {
+    "best-fit": "Best fit",
+    scenic: "Scenic sweep",
+    fastest: "Fastest line",
+  };
+  const summaries: Record<string, string> = {
+    "best-fit": "Balanced route closest to your trip settings.",
+    scenic: "More mountain roads and viewpoints.",
+    fastest: "Lower transfer time while keeping good roads.",
+  };
+  const multiplier = id === "scenic" ? 1.12 : id === "fastest" ? 0.88 : 1;
+  const days = Array.from({ length: Math.max(1, numDays) }, (_, index) =>
+    buildGeneratedDay(index + 1, id, dailyTarget, multiplier, body),
+  );
+  return {
+    id,
+    label: labels[id] ?? id,
+    summary: summaries[id] ?? "Generated route option.",
+    total_distance_km: days.reduce((sum, day) => sum + day.distance_km, 0),
+    total_duration_min: days.reduce(
+      (sum, day) => sum + day.estimated_time_min,
+      0,
+    ),
+    avg_quality:
+      days.reduce((sum, day) => sum + day.avg_quality, 0) / days.length,
+    avg_curviness:
+      days.reduce((sum, day) => sum + day.curviness_score, 0) / days.length,
+    avg_scenic:
+      days.reduce((sum, day) => sum + day.scenic_score, 0) / days.length,
+    selected: id === selected,
+    days,
+  };
+}
+
+function buildGeneratedDay(
+  dayNumber: number,
+  optionId: string,
+  dailyTarget: number,
+  multiplier: number,
+  body: Record<string, unknown> | undefined,
+) {
+  const start =
+    typeof body?.start_location === "object" && body.start_location !== null
+      ? (body.start_location as { lat?: number; lng?: number })
+      : { lat: 46.47, lng: 10.37 };
+  const lat = Number(start.lat ?? 46.47) + (dayNumber - 1) * 0.12;
+  const lng = Number(start.lng ?? 10.37) + (dayNumber - 1) * 0.18;
+  const bend =
+    optionId === "scenic" ? 0.16 : optionId === "fastest" ? 0.05 : 0.1;
+  const geometry = [
+    { lat, lng },
+    { lat: lat + bend, lng: lng + 0.18 },
+    { lat: lat + 0.24, lng: lng + 0.34 },
+  ];
+  const distance = Math.round(dailyTarget * multiplier);
+  return {
+    id: `mock-day-${optionId}-${dayNumber}`,
+    day_number: dayNumber,
+    title: `Day ${dayNumber} ${optionId}`,
+    distance_km: distance,
+    avg_quality:
+      optionId === "fastest" ? 3.8 : optionId === "scenic" ? 4.6 : 4.2,
+    elevation_gain: Math.round(distance * (optionId === "scenic" ? 9 : 6)),
+    elevation_loss: Math.round(distance * 4),
+    curviness_score:
+      optionId === "fastest" ? 58 : optionId === "scenic" ? 88 : 74,
+    scenic_score: optionId === "fastest" ? 62 : optionId === "scenic" ? 92 : 80,
+    estimated_time_min: Math.round(
+      distance * (optionId === "fastest" ? 1.0 : 1.2),
+    ),
+    route_geometry: geometry,
+    waypoints: [
+      {
+        id: `mock-wp-${optionId}-${dayNumber}-start`,
+        sequence: 0,
+        lat: geometry[0]!.lat,
+        lng: geometry[0]!.lng,
+        name: dayNumber === 1 ? "Start" : `Day ${dayNumber} start`,
+        waypoint_type: "start",
+        road_segment_id: null,
+        notes: null,
+        duration_min: null,
+      },
+      {
+        id: `mock-wp-${optionId}-${dayNumber}-end`,
+        sequence: 1,
+        lat: geometry.at(-1)!.lat,
+        lng: geometry.at(-1)!.lng,
+        name: `Day ${dayNumber} finish`,
+        waypoint_type: "end",
+        road_segment_id: null,
+        notes: null,
+        duration_min: null,
+      },
+    ],
   };
 }
 

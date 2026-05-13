@@ -14,6 +14,10 @@ export interface MockTrip {
   owner_id: string;
   title: string;
   num_days: number;
+  daily_km_min?: number;
+  daily_km_max?: number;
+  min_quality?: number;
+  road_preference?: string;
   status: "draft" | "planned" | "active" | "completed";
   members: string[];
   snapshot: Record<string, unknown>;

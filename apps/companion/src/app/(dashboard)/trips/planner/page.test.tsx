@@ -1,4 +1,3 @@
-import { StrictMode } from "react";
 import {
   act,
   fireEvent,
@@ -10,10 +9,6 @@ import TripPlannerPage from "./page";
 import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
 import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
 import { useTripStore } from "@/stores/trip";
-import {
-  generateTripOptions,
-  regenerateTripDay,
-} from "@/lib/trip-itinerary-generator";
 import { tripsApi } from "@/lib/api";
 import type { Trip } from "@/lib/types";
 
@@ -42,11 +37,6 @@ vi.mock("@/hooks/usePasses", () => ({
 
 vi.mock("@/stores/trip", () => ({
   useTripStore: vi.fn(),
-}));
-
-vi.mock("@/lib/trip-itinerary-generator", () => ({
-  generateTripOptions: vi.fn(),
-  regenerateTripDay: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -175,6 +165,110 @@ function buildTrip(name: string): Trip {
   };
 }
 
+function buildTripDetail(
+  name: string,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    id: "server-trip-1",
+    title: name,
+    region: null,
+    num_days: 3,
+    status: "planned",
+    member_count: 1,
+    created_at: "2026-04-23T09:00:00Z",
+    daily_km_min: 250,
+    daily_km_max: 250,
+    min_quality: 3,
+    road_preference: "mixed",
+    invite_code: "ABCDEFGH",
+    members: [
+      {
+        user_id: "u-owner",
+        display_name: "Owner",
+        role: "owner",
+        joined_at: "2026-04-23T09:00:00Z",
+      },
+    ],
+    days: [
+      {
+        id: "day-1",
+        day_number: 1,
+        title: "Backend day",
+        distance_km: 251,
+        avg_quality: 4.4,
+        elevation_gain: 1200,
+        elevation_loss: 900,
+        curviness_score: 74,
+        scenic_score: 81,
+        estimated_time_min: 288,
+        route_geometry: [
+          { lat: 46.47, lng: 10.37 },
+          { lat: 46.52, lng: 10.45 },
+          { lat: 46.61, lng: 10.57 },
+        ],
+        waypoints: [
+          {
+            id: "wp-start",
+            sequence: 0,
+            lat: 46.47,
+            lng: 10.37,
+            name: "Bormio",
+            waypoint_type: "start",
+            road_segment_id: null,
+            notes: null,
+            duration_min: null,
+          },
+          {
+            id: "wp-end",
+            sequence: 1,
+            lat: 46.61,
+            lng: 10.57,
+            name: "Prato allo Stelvio",
+            waypoint_type: "end",
+            road_segment_id: null,
+            notes: null,
+            duration_min: null,
+          },
+        ],
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function buildGenerationResponse(selected = "best-fit") {
+  const option = (id: string, label: string, title: string) => ({
+    id,
+    label,
+    summary: `${label} from backend`,
+    total_distance_km: id === "fastest" ? 220 : id === "scenic" ? 284 : 251,
+    total_duration_min: id === "fastest" ? 240 : id === "scenic" ? 330 : 288,
+    avg_quality: id === "fastest" ? 3.9 : id === "scenic" ? 4.7 : 4.4,
+    avg_curviness: id === "fastest" ? 62 : id === "scenic" ? 88 : 74,
+    avg_scenic: id === "fastest" ? 64 : id === "scenic" ? 92 : 81,
+    selected: id === selected,
+    days: buildTripDetail(title).days,
+  });
+
+  const selectedLabel =
+    selected === "fastest"
+      ? "Fastest backend"
+      : selected === "scenic"
+        ? "Scenic backend"
+        : "Best backend";
+
+  return {
+    trip: buildTripDetail(selectedLabel),
+    selected_option: selected,
+    options: [
+      option("best-fit", "Best backend", "Best backend"),
+      option("scenic", "Scenic backend", "Scenic backend"),
+      option("fastest", "Fastest backend", "Fastest backend"),
+    ],
+  };
+}
+
 type TripStoreSnapshot = {
   trips: Trip[];
   activeTrip: Trip | null;
@@ -217,8 +311,6 @@ describe("TripPlannerPage", () => {
   const useClosuresMock = vi.mocked(useClosures);
   const usePassesMock = vi.mocked(usePasses);
   const useTripStoreMock = vi.mocked(useTripStore);
-  const generateTripOptionsMock = vi.mocked(generateTripOptions);
-  const regenerateTripDayMock = vi.mocked(regenerateTripDay);
   const tripsApiCreateMock = vi.mocked(tripsApi.create);
   const tripsApiDeleteMock = vi.mocked(tripsApi.delete);
   const tripsApiGenerateMock = vi.mocked(tripsApi.generate);
@@ -255,9 +347,6 @@ describe("TripPlannerPage", () => {
   const setActiveTrip = vi.fn<(trip: Trip | null) => void>();
   const setGenerating = vi.fn<(isGenerating: boolean) => void>();
   const activeTrip = buildTrip("Best fit");
-  const scenicTrip = buildTrip("Scenic sweep");
-  const fastTrip = buildTrip("Fastest line");
-  const importedTrip = buildTrip("Imported route");
   let storeState: TripStoreSnapshot;
 
   beforeEach(() => {
@@ -273,8 +362,6 @@ describe("TripPlannerPage", () => {
     setGenerating.mockReset();
     useClosuresMock.mockReset();
     usePassesMock.mockReset();
-    generateTripOptionsMock.mockReset();
-    regenerateTripDayMock.mockReset();
     tripsApiCreateMock.mockReset();
     tripsApiDeleteMock.mockReset();
     tripsApiGenerateMock.mockReset();
@@ -286,7 +373,9 @@ describe("TripPlannerPage", () => {
       data: { id: "server-trip-1" },
     } as never);
     tripsApiDeleteMock.mockResolvedValue({ data: undefined } as never);
-    tripsApiGenerateMock.mockResolvedValue({ data: {} } as never);
+    tripsApiGenerateMock.mockResolvedValue({
+      data: buildGenerationResponse(),
+    } as never);
     tripsApiGetMock.mockResolvedValue({ data: {} } as never);
     tripsApiImportRouteMock.mockResolvedValue({
       data: { id: "imported-server-trip-1" },
@@ -330,35 +419,6 @@ describe("TripPlannerPage", () => {
     useTripStoreMock.mockImplementation((selector) => selector(storeState));
     useClosuresMock.mockReturnValue(closuresData);
     usePassesMock.mockReturnValue(passesData);
-    generateTripOptionsMock.mockReturnValue([
-      {
-        id: "best-fit",
-        label: "Best fit",
-        summary: "Balanced route",
-        trip: activeTrip,
-      },
-      {
-        id: "scenic",
-        label: "Scenic sweep",
-        summary: "More climbing",
-        trip: scenicTrip,
-      },
-      {
-        id: "fastest",
-        label: "Fastest line",
-        summary: "Lower transfer time",
-        trip: fastTrip,
-      },
-    ]);
-    regenerateTripDayMock.mockReturnValue({
-      ...activeTrip,
-      days: [
-        {
-          ...activeTrip.days[0]!,
-          title: "Regen day",
-        },
-      ],
-    });
   });
 
   it("fetches planner conditions once and shares the results with the map and sidebar panels", () => {
@@ -496,6 +556,11 @@ describe("TripPlannerPage", () => {
   });
 
   it("generates itinerary options from the planner parameters and selects the best-fit trip", async () => {
+    tripsApiGenerateMock.mockResolvedValueOnce({
+      data: buildGenerationResponse(),
+    } as never);
+    storeState.activeTrip = activeTrip;
+
     render(<TripPlannerPage />);
 
     fireEvent.change(screen.getByLabelText("Number of days"), {
@@ -508,312 +573,120 @@ describe("TripPlannerPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
 
     await waitFor(() =>
-      expect(generateTripOptionsMock).toHaveBeenCalledWith(
+      expect(tripsApiCreateMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          days: 4,
-          dailyKmTarget: 320,
-          surfacePreference: ["asphalt", "gravel"],
+          title: "Best fit",
+          num_days: 4,
+          daily_km_min: 320,
+          daily_km_max: 320,
         }),
       ),
     );
+    expect(tripsApiGenerateMock).toHaveBeenCalledWith(
+      "server-trip-1",
+      expect.objectContaining({
+        start_location: { lat: 46.47, lng: 10.37 },
+        avoid_highways: true,
+        avoid_tolls: false,
+        avoid_unpaved: true,
+        surfaces: ["asphalt"],
+      }),
+    );
     expect(setGenerating).toHaveBeenNthCalledWith(1, true);
-    expect(setActiveTrip).toHaveBeenCalledWith(activeTrip);
+    expect(setActiveTrip).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "server-trip-1",
+        name: "Best backend",
+        days: [
+          expect.objectContaining({
+            routeGeometry: {
+              type: "LineString",
+              coordinates: [
+                [10.37, 46.47],
+                [10.45, 46.52],
+                [10.57, 46.61],
+              ],
+            },
+          }),
+        ],
+      }),
+    );
     expect(setGenerating).toHaveBeenLastCalledWith(false);
-    expect(screen.getByText("Scenic sweep")).toBeInTheDocument();
-    expect(screen.getByText("Fastest line")).toBeInTheDocument();
+    expect(screen.getByText("Scenic backend")).toBeInTheDocument();
+    expect(screen.getByText("Fastest backend")).toBeInTheDocument();
   });
 
-  it("regenerates a single day without replacing the whole itinerary", async () => {
+  it("persists a newly selected backend option before showing it as active", async () => {
+    tripsApiGenerateMock
+      .mockResolvedValueOnce({ data: buildGenerationResponse() } as never)
+      .mockResolvedValueOnce({
+        data: buildGenerationResponse("fastest"),
+      } as never);
+    storeState.activeTrip = activeTrip;
+
     render(<TripPlannerPage />);
 
     fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
 
-    await waitFor(() => expect(setActiveTrip).toHaveBeenCalledWith(activeTrip));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Fastest backend/i })),
+    );
 
-    fireEvent.click(screen.getByRole("button", { name: "Regenerate day 1" }));
+    fireEvent.click(screen.getByRole("button", { name: /Fastest backend/i }));
 
     await waitFor(() =>
-      expect(regenerateTripDayMock).toHaveBeenCalledWith(activeTrip, 1),
+      expect(tripsApiGenerateMock).toHaveBeenLastCalledWith(
+        "server-trip-1",
+        expect.objectContaining({
+          option: "fastest",
+        }),
+      ),
     );
     expect(setActiveTrip).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        days: [expect.objectContaining({ title: "Regen day" })],
+        name: "Fastest backend",
       }),
     );
   });
 
-  it("hides regenerate controls when the active trip no longer matches a generated option", async () => {
-    const { rerender } = render(<TripPlannerPage />);
+  it("shows a backend generation error without falling back to demo options", async () => {
+    tripsApiGenerateMock.mockRejectedValueOnce(new Error("route failed"));
+    storeState.activeTrip = activeTrip;
 
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-
-    await waitFor(() => expect(setActiveTrip).toHaveBeenCalledWith(activeTrip));
-    expect(
-      screen.getByRole("button", { name: "Regenerate day 1" }),
-    ).toBeInTheDocument();
-
-    storeState.activeTrip = importedTrip;
-    rerender(<TripPlannerPage />);
-
-    expect(
-      screen.queryByRole("button", { name: "Regenerate day 1" }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("keeps the selected option snapshot aligned when the active trip is edited in place", async () => {
-    const { rerender } = render(<TripPlannerPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-
-    await waitFor(() => expect(setActiveTrip).toHaveBeenCalledWith(activeTrip));
-
-    const editedTrip = {
-      ...activeTrip,
-      updatedAt: "2026-04-23T10:00:00Z",
-      days: [
-        {
-          ...activeTrip.days[0]!,
-          title: "Edited best fit",
-        },
-      ],
-    };
-
-    storeState.activeTrip = editedTrip;
-    rerender(<TripPlannerPage />);
-
-    setActiveTrip.mockClear();
-
-    fireEvent.click(screen.getByRole("button", { name: /Scenic sweep/i }));
-    expect(setActiveTrip).toHaveBeenCalledWith(scenicTrip);
-
-    fireEvent.click(screen.getByRole("button", { name: /Best fit/i }));
-    expect(setActiveTrip).toHaveBeenLastCalledWith(editedTrip);
-  });
-
-  it("clears the generated selection when the active trip is cleared", async () => {
-    const { rerender } = render(<TripPlannerPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-
-    await waitFor(() => expect(setActiveTrip).toHaveBeenCalledWith(activeTrip));
-    expect(
-      screen.getByRole("heading", { level: 1, name: "Best fit" }),
-    ).toBeInTheDocument();
-
-    storeState.activeTrip = null;
-    rerender(<TripPlannerPage />);
-
-    expect(
-      screen.getByRole("heading", { level: 1, name: "New Trip" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Regenerate day 1" }),
-    ).toBeNull();
-  });
-
-  it("ignores rapid repeat regenerate clicks while generation is already running", async () => {
     render(<TripPlannerPage />);
 
     fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
 
-    await waitFor(() => expect(setActiveTrip).toHaveBeenCalledWith(activeTrip));
-
-    const regenerateButton = screen.getByRole("button", {
-      name: "Regenerate day 1",
-    });
-    fireEvent.click(regenerateButton);
-    fireEvent.click(regenerateButton);
-
-    await waitFor(() => expect(regenerateTripDayMock).toHaveBeenCalledTimes(1));
-  });
-
-  it("regenerates from the latest active trip snapshot after in-flight edits", async () => {
-    vi.useFakeTimers();
-    const { rerender } = render(<TripPlannerPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(180);
-    });
-
-    setActiveTrip.mockClear();
-    regenerateTripDayMock.mockClear();
-
-    fireEvent.click(screen.getByRole("button", { name: "Regenerate day 1" }));
-
-    const editedTrip = {
-      ...activeTrip,
-      updatedAt: "2026-04-23T10:15:00Z",
-      days: [
-        {
-          ...activeTrip.days[0]!,
-          title: "Edited while regenerating",
-        },
-      ],
-    };
-
-    storeState.activeTrip = editedTrip;
-    rerender(<TripPlannerPage />);
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(120);
-    });
-
-    expect(regenerateTripDayMock).toHaveBeenCalledWith(editedTrip, 1);
-
-    vi.useRealTimers();
-  });
-
-  it("ignores option switches while a day regeneration is in flight", async () => {
-    render(<TripPlannerPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-
-    await waitFor(() => expect(setActiveTrip).toHaveBeenCalledWith(activeTrip));
-    setActiveTrip.mockClear();
-
-    fireEvent.click(screen.getByRole("button", { name: "Regenerate day 1" }));
-    fireEvent.click(screen.getByRole("button", { name: /Scenic sweep/ }));
-
-    await waitFor(() => expect(regenerateTripDayMock).toHaveBeenCalledTimes(1));
-    expect(setActiveTrip).not.toHaveBeenCalledWith(scenicTrip);
-  });
-
-  it("drops generated results when the active trip changes before generation finishes", async () => {
-    vi.useFakeTimers();
-    const { rerender } = render(<TripPlannerPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-
-    storeState.activeTrip = importedTrip;
-    rerender(<TripPlannerPage />);
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(180);
-    });
-
-    expect(generateTripOptionsMock).toHaveBeenCalledTimes(1);
-    expect(setActiveTrip).not.toHaveBeenCalledWith(activeTrip);
-    expect(screen.queryByText("Scenic sweep")).not.toBeInTheDocument();
-    expect(screen.getByText("Imported route")).toBeInTheDocument();
-
-    vi.useRealTimers();
-  });
-
-  it("drops generated results when the active trip is edited in place before generation finishes", async () => {
-    vi.useFakeTimers();
-    const { rerender } = render(<TripPlannerPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-
-    const editedTrip = {
-      ...importedTrip,
-      id: "best-fit",
-      updatedAt: "2026-04-23T11:00:00Z",
-      days: [
-        {
-          ...importedTrip.days[0]!,
-          title: "Edited during generation",
-        },
-      ],
-    };
-
-    storeState.activeTrip = editedTrip;
-    rerender(<TripPlannerPage />);
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(180);
-    });
-
-    expect(generateTripOptionsMock).toHaveBeenCalledTimes(1);
-    expect(setActiveTrip).not.toHaveBeenCalledWith(activeTrip);
-    expect(screen.queryByText("Scenic sweep")).not.toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { level: 1, name: "Imported route" }),
+      await screen.findByText(
+        "Could not generate itinerary options right now.",
+      ),
     ).toBeInTheDocument();
-
-    vi.useRealTimers();
-  });
-
-  it("drops delayed generation callbacks after the planner unmounts", async () => {
-    vi.useFakeTimers();
-    const { unmount } = render(<TripPlannerPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-    unmount();
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(180);
-    });
-
-    expect(generateTripOptionsMock).not.toHaveBeenCalled();
     expect(setActiveTrip).not.toHaveBeenCalledWith(activeTrip);
-
-    vi.useRealTimers();
-  });
-
-  it("still generates after StrictMode remounts the planner effect", async () => {
-    vi.useFakeTimers();
-
-    render(
-      <StrictMode>
-        <TripPlannerPage />
-      </StrictMode>,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(180);
-    });
-
-    expect(generateTripOptionsMock).toHaveBeenCalledTimes(1);
-    expect(setActiveTrip).toHaveBeenCalledWith(activeTrip);
-
-    vi.useRealTimers();
-  });
-
-  it("drops delayed day regeneration callbacks after the planner unmounts", async () => {
-    vi.useFakeTimers();
-    const { unmount } = render(<TripPlannerPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(180);
-    });
-
-    setActiveTrip.mockClear();
-    regenerateTripDayMock.mockClear();
-
-    fireEvent.click(screen.getByRole("button", { name: "Regenerate day 1" }));
-    unmount();
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(120);
-    });
-
-    expect(regenerateTripDayMock).not.toHaveBeenCalled();
-    expect(setActiveTrip).not.toHaveBeenCalled();
-
-    vi.useRealTimers();
   });
 
   it("shows a stable average-quality value for empty generated options", async () => {
-    generateTripOptionsMock.mockReturnValueOnce([
-      {
-        id: "empty",
-        label: "Empty option",
-        summary: "No generated days",
-        trip: {
-          ...activeTrip,
-          id: "empty-option",
-          name: "Empty option",
-          days: [],
-        },
+    tripsApiGenerateMock.mockResolvedValueOnce({
+      data: {
+        ...buildGenerationResponse(),
+        trip: buildTripDetail("Empty option", { days: [] }),
+        options: [
+          {
+            id: "best-fit",
+            label: "Empty option",
+            summary: "No generated days",
+            total_distance_km: 0,
+            total_duration_min: 0,
+            avg_quality: 0,
+            avg_curviness: 0,
+            avg_scenic: 0,
+            selected: true,
+            days: [],
+          },
+        ],
       },
-    ]);
+    } as never);
+    storeState.activeTrip = activeTrip;
 
     render(<TripPlannerPage />);
 
@@ -829,16 +702,19 @@ describe("TripPlannerPage", () => {
   });
 
   it("saves the selected generated option to the backend", async () => {
+    storeState.activeTrip = activeTrip;
     render(<TripPlannerPage />);
 
     fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /Fastest line/i })),
+      expect(screen.getByRole("button", { name: /Fastest backend/i })),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Fastest line/i }));
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    tripsApiGenerateMock.mockResolvedValueOnce({
+      data: buildGenerationResponse("fastest"),
+    } as never);
+    fireEvent.click(screen.getByRole("button", { name: /Fastest backend/i }));
 
     await waitFor(() =>
       expect(tripsApiGenerateMock).toHaveBeenCalledWith(
@@ -848,19 +724,227 @@ describe("TripPlannerPage", () => {
         }),
       ),
     );
-    expect(mockPush).toHaveBeenCalledWith("/trips/server-trip-1");
+
+    tripsApiGenerateMock.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mockPush).toHaveBeenCalledWith("/trips/server-trip-1"),
+    );
+    expect(tripsApiGenerateMock).not.toHaveBeenCalled();
   });
 
-  it("deletes a newly created metadata-only trip when route generation fails", async () => {
-    tripsApiGenerateMock.mockRejectedValueOnce(new Error("route failed"));
+  it("keeps request-only generation filters live after installing the generated backend trip", async () => {
+    storeState.activeTrip = activeTrip;
+    render(<TripPlannerPage />);
 
+    fireEvent.click(screen.getByLabelText("Avoid highways"));
+    fireEvent.click(screen.getByLabelText("Gravel"));
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() =>
+      expect(setActiveTrip).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "Best backend",
+          parameters: expect.objectContaining({
+            surfacePreference: ["asphalt", "gravel"],
+            avoidHighways: false,
+            avoidUnpaved: true,
+          }),
+        }),
+      ),
+    );
+    expect(screen.getByLabelText("Avoid highways")).not.toBeChecked();
+    expect(screen.getByLabelText("Gravel")).toBeChecked();
+
+    tripsApiGenerateMock.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mockPush).toHaveBeenCalledWith("/trips/server-trip-1"),
+    );
+    expect(tripsApiGenerateMock).not.toHaveBeenCalled();
+  });
+
+  it("cleans up a newly created backend trip when generation results go stale", async () => {
+    storeState.activeTrip = activeTrip;
+    const { rerender } = render(<TripPlannerPage />);
+    tripsApiGenerateMock.mockImplementationOnce(async () => {
+      storeState.activeTrip = buildTrip("Edited while generating");
+      rerender(<TripPlannerPage />);
+      return { data: buildGenerationResponse() } as never;
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() =>
+      expect(tripsApiDeleteMock).toHaveBeenCalledWith("server-trip-1"),
+    );
+    expect(setActiveTrip).not.toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Best backend" }),
+    );
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("keeps Save disabled while backend generation is in flight", async () => {
+    storeState.activeTrip = activeTrip;
+    const generateDeferred: {
+      resolve?: (value: {
+        data: ReturnType<typeof buildGenerationResponse>;
+      }) => void;
+    } = {};
+    tripsApiGenerateMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          generateDeferred.resolve = resolve;
+        }) as never,
+    );
+
+    const { rerender } = render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() => expect(tripsApiCreateMock).toHaveBeenCalledTimes(1));
+    rerender(<TripPlannerPage />);
+
+    const saveButton = screen.getByRole("button", { name: "Save" });
+    expect(saveButton).toBeDisabled();
+
+    fireEvent.click(saveButton);
+    expect(tripsApiCreateMock).toHaveBeenCalledTimes(1);
+
+    generateDeferred.resolve?.({ data: buildGenerationResponse() });
+  });
+
+  it("keeps generated options when a saved trip update echo replaces the active trip object", async () => {
+    const serverTripId = "11111111-2222-4333-8444-555555555555";
+    storeState.activeTrip = {
+      ...activeTrip,
+      id: serverTripId,
+      name: "Saved route",
+    };
+    const { rerender } = render(<TripPlannerPage />);
+    tripsApiUpdateMock.mockImplementationOnce(async () => {
+      storeState.activeTrip = {
+        ...activeTrip,
+        id: serverTripId,
+        name: "Saved route",
+      };
+      rerender(<TripPlannerPage />);
+      return { data: { id: serverTripId } } as never;
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() =>
+      expect(setActiveTrip).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "Best backend" }),
+      ),
+    );
+    expect(screen.getByText("Scenic backend")).toBeInTheDocument();
+    expect(tripsApiDeleteMock).not.toHaveBeenCalled();
+  });
+
+  it("regenerates the selected backend option when planner controls change before saving", async () => {
+    storeState.activeTrip = activeTrip;
     render(<TripPlannerPage />);
 
     fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
 
-    await waitFor(() => expect(setActiveTrip).toHaveBeenCalledWith(activeTrip));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Best backend/i })),
+    );
 
+    tripsApiGenerateMock.mockClear();
+    fireEvent.change(screen.getByLabelText("Number of days"), {
+      target: { value: "4" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(tripsApiUpdateMock).toHaveBeenCalledWith(
+        "server-trip-1",
+        expect.objectContaining({
+          num_days: 4,
+        }),
+      ),
+    );
+    expect(tripsApiGenerateMock).toHaveBeenCalledWith(
+      "server-trip-1",
+      expect.objectContaining({
+        option: "best-fit",
+      }),
+    );
+    expect(mockPush).toHaveBeenCalledWith("/trips/server-trip-1");
+  });
+
+  it("does not regenerate when only unsupported waypoint anchors change before saving", async () => {
+    storeState.activeTrip = activeTrip;
+    const { rerender } = render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() =>
+      expect(setActiveTrip).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "Best backend" }),
+      ),
+    );
+    const generatedTrip = setActiveTrip.mock.calls.at(-1)?.[0];
+    expect(generatedTrip).not.toBeNull();
+    storeState.activeTrip = {
+      ...(generatedTrip as Trip),
+      days: (generatedTrip as Trip).days.map((day) =>
+        day.dayNumber === 1
+          ? {
+              ...day,
+              waypoints: day.waypoints.map((waypoint) =>
+                waypoint.type === "end"
+                  ? {
+                      ...waypoint,
+                      location: {
+                        lng: waypoint.location.lng + 0.1,
+                        lat: waypoint.location.lat + 0.1,
+                      },
+                    }
+                  : waypoint,
+              ),
+            }
+          : day,
+      ),
+    };
+    rerender(<TripPlannerPage />);
+
+    tripsApiGenerateMock.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mockPush).toHaveBeenCalledWith("/trips/server-trip-1"),
+    );
+    expect(tripsApiGenerateMock).not.toHaveBeenCalled();
+  });
+
+  it("does not expose day-scoped regeneration for backend-generated options", async () => {
+    storeState.activeTrip = activeTrip;
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Best backend/i })),
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /Regenerate day 1/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("deletes a newly created metadata-only trip when route generation fails", async () => {
+    tripsApiGenerateMock.mockRejectedValueOnce(new Error("route failed"));
+    storeState.activeTrip = activeTrip;
+
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
 
     await waitFor(() =>
       expect(tripsApiDeleteMock).toHaveBeenCalledWith("server-trip-1"),
@@ -1125,11 +1209,16 @@ describe("TripPlannerPage", () => {
   });
 
   it("keeps the save button disabled after successful save while navigation is pending", async () => {
+    storeState.activeTrip = activeTrip;
     render(<TripPlannerPage />);
 
     fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
 
-    await waitFor(() => expect(setActiveTrip).toHaveBeenCalledWith(activeTrip));
+    await waitFor(() =>
+      expect(setActiveTrip).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "Best backend" }),
+      ),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
