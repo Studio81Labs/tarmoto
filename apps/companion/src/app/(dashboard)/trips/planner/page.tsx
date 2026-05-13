@@ -373,7 +373,9 @@ export default function TripPlannerPage() {
     }
   }, [activeTrip, selectedDayIndex]);
   const handleSave = useCallback(async () => {
-    if (!displayedTrip || saving) return;
+    if (!displayedTrip || saving || isGenerating || generationLockRef.current) {
+      return;
+    }
     setSaving(true);
     try {
       setGenerationError(null);
@@ -481,6 +483,7 @@ export default function TripPlannerPage() {
     displayedTrip,
     generatedOptionsSignature,
     generatedOptions,
+    isGenerating,
     plannerParams,
     router,
     saving,
@@ -836,7 +839,7 @@ export default function TripPlannerPage() {
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving || !displayedTrip}
+            disabled={saving || isGenerating || !displayedTrip}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light transition disabled:opacity-60"
           >
             {saving ? (

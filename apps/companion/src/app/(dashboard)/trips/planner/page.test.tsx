@@ -786,6 +786,36 @@ describe("TripPlannerPage", () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
+  it("keeps Save disabled while backend generation is in flight", async () => {
+    storeState.activeTrip = activeTrip;
+    const generateDeferred: {
+      resolve?: (value: {
+        data: ReturnType<typeof buildGenerationResponse>;
+      }) => void;
+    } = {};
+    tripsApiGenerateMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          generateDeferred.resolve = resolve;
+        }) as never,
+    );
+
+    const { rerender } = render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() => expect(tripsApiCreateMock).toHaveBeenCalledTimes(1));
+    rerender(<TripPlannerPage />);
+
+    const saveButton = screen.getByRole("button", { name: "Save" });
+    expect(saveButton).toBeDisabled();
+
+    fireEvent.click(saveButton);
+    expect(tripsApiCreateMock).toHaveBeenCalledTimes(1);
+
+    generateDeferred.resolve?.({ data: buildGenerationResponse() });
+  });
+
   it("regenerates the selected backend option when planner controls change before saving", async () => {
     storeState.activeTrip = activeTrip;
     render(<TripPlannerPage />);
