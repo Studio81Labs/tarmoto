@@ -46,6 +46,9 @@ export function RouteCollectionFollowCta({
   slug,
   ownerName,
 }: Props) {
+  const loginHref = `/login?callbackUrl=${encodeURIComponent(
+    `/community/collections/shared/${encodeURIComponent(slug)}`,
+  )}`;
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const accessToken = useAuthStore((s) => s.accessToken);
   const [state, setState] = useState<ViewerState>({ kind: "loading" });
@@ -112,7 +115,7 @@ export function RouteCollectionFollowCta({
           )}
         </p>
         <Link
-          href="/auth/login"
+          href={loginHref}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-tarmoto-cyan text-slate-950 text-sm font-semibold hover:bg-tarmoto-cyan-light transition"
         >
           {t("Sign in")}
