@@ -457,7 +457,6 @@ function TripPlannerMapContent({
     map.on("mouseleave", FUN_ZONES_FILL, pointerOff);
     map.on("click", FUN_ZONES_FILL, (event: MapLayerMouseEvent) => {
       if (drawRef.current?.getMode() !== "idle") return;
-      if (drawRef.current?.hitTest(event.point)) return;
       const id = event.features?.[0]?.properties?.id as string | undefined;
       if (id) setSelectedFunZoneId(id);
     });
