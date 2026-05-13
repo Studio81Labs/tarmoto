@@ -458,7 +458,12 @@ function TripPlannerMapContent({
     map.on("click", FUN_ZONES_FILL, (event: MapLayerMouseEvent) => {
       if (drawRef.current?.getMode() !== "idle") return;
       const id = event.features?.[0]?.properties?.id as string | undefined;
-      if (id) setSelectedFunZoneId(id);
+      if (!id) return;
+      // Layer clicks also reach the map-level click listener, which adds
+      // waypoints. Mark this click as consumed so selecting a Fun Zone never
+      // mutates the trip route.
+      swallowNextClickRef.current = true;
+      setSelectedFunZoneId(id);
     });
     setReady(true);
   };

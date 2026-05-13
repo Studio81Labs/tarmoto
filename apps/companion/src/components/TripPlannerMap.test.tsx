@@ -490,6 +490,72 @@ describe("TripPlannerMap", () => {
     );
   });
 
+  it("does not add a waypoint when selecting a Fun Zone outside the drawn region", async () => {
+    const handleAddWaypoint = vi.fn();
+    let funZoneClickHandler: ((event: unknown) => void) | undefined;
+    let mapClickHandler: ((event: unknown) => void) | undefined;
+    mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
+      if (event === "click" && layerOrHandler === "fun-zones-fill") {
+        funZoneClickHandler = maybeHandler as (event: unknown) => void;
+      } else if (event === "click" && typeof layerOrHandler !== "string") {
+        mapClickHandler = layerOrHandler as (event: unknown) => void;
+      }
+      return mockMap;
+    });
+    drawControl.hitTest.mockReturnValue(false);
+    mockMap.queryRenderedFeatures.mockReturnValue([]);
+    vi.mocked(fetchFunZoneDetail).mockResolvedValueOnce({
+      zone: {
+        id: "zone-1",
+        name: "Stelvio sweepers",
+        composite_score: 4.6,
+        road_count: 12,
+        total_curve_km: 48,
+        avg_quality: 4.2,
+        best_season: "summer",
+        boundary: [
+          { lng: 10.3, lat: 46.45 },
+          { lng: 10.6, lat: 46.45 },
+          { lng: 10.6, lat: 46.7 },
+          { lng: 10.3, lat: 46.7 },
+          { lng: 10.3, lat: 46.45 },
+        ],
+      },
+      top_roads: [],
+    } as never);
+
+    render(
+      <TripPlannerMap
+        trip={trip()}
+        month={7}
+        onAddWaypoint={handleAddWaypoint}
+      />,
+    );
+
+    act(() => {
+      const event = {
+        point: { x: 200, y: 200 },
+        lngLat: { lng: 10.65, lat: 46.75 },
+        features: [{ properties: { id: "zone-1" } }],
+      };
+      funZoneClickHandler?.(event);
+      mapClickHandler?.(event);
+    });
+
+    await waitFor(() =>
+      expect(mockMap.setFilter).toHaveBeenCalledWith("fun-zones-selected", [
+        "==",
+        ["get", "id"],
+        "zone-1",
+      ]),
+    );
+    expect(handleAddWaypoint).not.toHaveBeenCalled();
+    expect(fetchFunZoneDetail).toHaveBeenCalledWith(
+      "zone-1",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
   it("clears Fun Zone results when the drawn region is cleared", async () => {
     vi.mocked(fetchFunZonesInBbox).mockResolvedValueOnce([
       {
