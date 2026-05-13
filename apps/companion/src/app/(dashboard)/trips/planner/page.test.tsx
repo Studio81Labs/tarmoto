@@ -816,6 +816,35 @@ describe("TripPlannerPage", () => {
     generateDeferred.resolve?.({ data: buildGenerationResponse() });
   });
 
+  it("keeps generated options when a saved trip update echo replaces the active trip object", async () => {
+    const serverTripId = "11111111-2222-4333-8444-555555555555";
+    storeState.activeTrip = {
+      ...activeTrip,
+      id: serverTripId,
+      name: "Saved route",
+    };
+    const { rerender } = render(<TripPlannerPage />);
+    tripsApiUpdateMock.mockImplementationOnce(async () => {
+      storeState.activeTrip = {
+        ...activeTrip,
+        id: serverTripId,
+        name: "Saved route",
+      };
+      rerender(<TripPlannerPage />);
+      return { data: { id: serverTripId } } as never;
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() =>
+      expect(setActiveTrip).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "Best backend" }),
+      ),
+    );
+    expect(screen.getByText("Scenic backend")).toBeInTheDocument();
+    expect(tripsApiDeleteMock).not.toHaveBeenCalled();
+  });
+
   it("regenerates the selected backend option when planner controls change before saving", async () => {
     storeState.activeTrip = activeTrip;
     render(<TripPlannerPage />);

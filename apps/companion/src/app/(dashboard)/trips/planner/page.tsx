@@ -659,6 +659,10 @@ export default function TripPlannerPage() {
     let createdTripId: string | null = null;
     try {
       if (!activeTripAtStart) return;
+      const generationInputAtStart = buildGenerationInputSignature(
+        activeTripAtStart,
+        plannerParams,
+      );
       const existingTripId = resolveExistingTripId(
         serverTripId,
         activeTripAtStart,
@@ -688,10 +692,20 @@ export default function TripPlannerPage() {
         tripId,
         buildGenerationPayload(plannerParams, startWaypoint),
       );
+      const latestTrip = activeTripRef.current;
+      const latestTripId = latestTrip?.id ?? null;
+      const latestTripMatchesRequest =
+        latestTripId !== null &&
+        (latestTripId === activeTripAtStart.id || latestTripId === tripId);
+      const generationInputNow = buildGenerationInputSignature(
+        latestTrip,
+        plannerParams,
+      );
       if (
         !isMountedRef.current ||
         requestTokenRef.current !== requestToken ||
-        activeTripRef.current !== activeTripAtStart
+        !latestTripMatchesRequest ||
+        generationInputNow !== generationInputAtStart
       ) {
         if (createdTripId) {
           await cleanupCreatedTrip(createdTripId);
