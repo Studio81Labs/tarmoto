@@ -19,6 +19,7 @@ import {
 } from "@/lib/trip-share";
 import { formatDuration, formatDistance } from "@/lib/utils";
 import type { Waypoint } from "@/lib/types";
+import { SharedTripJoinCta } from "./SharedTripJoinCta";
 export const dynamic = "force-dynamic";
 export async function generateMetadata(): Promise<Metadata> {
   return {
@@ -61,11 +62,15 @@ export default async function SharedTripPage({
             {share.title}
           </h1>
           <p className="mt-3 max-w-3xl text-slate-300">
-            {t("Read-only view shared by ")}
+            {share.trip_id
+              ? t("Trip preview shared by ")
+              : t("Read-only preview shared by ")}
             {share.owner_name}
-            {t(
-              ". Sign in to the planner to create your own trip \u2014 the collaborative editing surface is coming soon. ",
-            )}
+            {share.trip_id
+              ? t(
+                  ". Sign in to join the group plan, suggest route changes, and vote with the riders. ",
+                )
+              : t(". You can view this trip without a Tarmoto account. ")}
           </p>
           <div className="mt-4 flex flex-wrap gap-2 text-sm text-slate-300">
             <Pill icon={<User size={14} />}>{share.owner_name}</Pill>
@@ -87,6 +92,12 @@ export default async function SharedTripPage({
             )}
           </div>
         </header>
+
+        <SharedTripJoinCta
+          token={share.share_token}
+          title={share.title}
+          tripId={share.trip_id}
+        />
 
         {preview ? (
           <section className="mb-8 overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/70 p-5">

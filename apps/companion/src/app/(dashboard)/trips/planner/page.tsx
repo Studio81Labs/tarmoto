@@ -53,6 +53,7 @@ import { currentUtcMonth } from "@/lib/passes-summary";
 import {
   findOwnerId,
   tripFromDetail,
+  type TripDetailMember,
   type TripDetailResponse,
 } from "@/lib/trip-from-detail";
 import type { SurfaceType, Trip, TripParameters, Waypoint } from "@/lib/types";
@@ -201,8 +202,15 @@ export default function TripPlannerPage() {
   const [serverTripOwnerId, setServerTripOwnerId] = useState<string | null>(
     null,
   );
+  const [serverTripCallerRole, setServerTripCallerRole] = useState<
+    TripDetailMember["role"] | null
+  >(null);
   const currentUserId = useAuthStore((s) => s.user?.id ?? null);
   const authReady = useAuthStore((s) => Boolean(s.accessToken));
+  const canCreateInviteLink =
+    !serverTripId ||
+    serverTripCallerRole === "owner" ||
+    serverTripCallerRole === "admin";
   // Live-edit reaction (US-35): another collaborator's import /
   // regenerate / mutation comes in over the socket as `trip:updated`,
   // and we re-hydrate the local planner state from the broadcast
@@ -222,6 +230,7 @@ export default function TripPlannerPage() {
       const hydrated = tripFromDetail(detail);
       setActiveTrip(hydrated);
       setServerTripOwnerId(findOwnerId(detail));
+      setServerTripCallerRole(findCallerRole(detail, currentUserId));
       // Mirror the REST hydration path below: the planner's control
       // strip (days / dailyKmTarget / road preference / surfaces /
       // minQuality / avoid* toggles) is local React state, NOT
@@ -240,7 +249,7 @@ export default function TripPlannerPage() {
       setAvoidTolls(params.avoidTolls);
       setAvoidUnpaved(params.avoidUnpaved);
     },
-    [serverTripId, setActiveTrip],
+    [currentUserId, serverTripId, setActiveTrip],
   );
   const handleRemoteTripDeleted = useCallback(() => {
     // Owner deleted the trip out from under everyone. Drop local trip
@@ -249,6 +258,7 @@ export default function TripPlannerPage() {
     setActiveTrip(null);
     setServerTripId(null);
     setServerTripOwnerId(null);
+    setServerTripCallerRole(null);
     setGeneratedOptions([]);
     setGeneratedOptionsSignature(null);
     setSelectedOptionId(null);
@@ -272,6 +282,7 @@ export default function TripPlannerPage() {
   useEffect(() => {
     if (!serverTripId) {
       setServerTripOwnerId(null);
+      setServerTripCallerRole(null);
       return;
     }
     // Mirrors the gate on `/trips/:id` and `/settings/subscription`:
@@ -279,14 +290,19 @@ export default function TripPlannerPage() {
     // a hard navigation to `/trips/planner?tripId=...` doesn't race
     // AuthSync and silently land as a 401 (the catch swallows errors
     // and the canvas would render empty).
-    if (!authReady) return;
+    if (!authReady) {
+      setServerTripCallerRole(null);
+      return;
+    }
     let cancelled = false;
+    setServerTripCallerRole(null);
     (async () => {
       try {
         const { data } = await tripsApi.get(serverTripId);
         if (cancelled) return;
         const detail = data as unknown as TripDetailResponse;
         setServerTripOwnerId(findOwnerId(detail));
+        setServerTripCallerRole(findCallerRole(detail, currentUserId));
         // Hydrate `activeTrip` when the planner is showing a different
         // trip (or no trip at all) so deep links and the `/trips/:id/edit`
         // handoff actually load the requested itinerary instead of leaving
@@ -319,14 +335,19 @@ export default function TripPlannerPage() {
     return () => {
       cancelled = true;
     };
-  }, [serverTripId, authReady, setActiveTrip]);
-  const handlePromotedToServer = useCallback((newServerTripId: string) => {
-    setServerTripId(newServerTripId);
-    // Push the id into the URL so a reload preserves the live session.
-    // history.replaceState avoids depending on the Next router, keeping
-    // the page prerenderable (see comment on the URL read above).
-    writeServerTripIdToUrl(newServerTripId);
-  }, []);
+  }, [currentUserId, serverTripId, authReady, setActiveTrip]);
+  const handlePromotedToServer = useCallback(
+    (newServerTripId: string) => {
+      setServerTripId(newServerTripId);
+      setServerTripOwnerId(currentUserId);
+      setServerTripCallerRole("owner");
+      // Push the id into the URL so a reload preserves the live session.
+      // history.replaceState avoids depending on the Next router, keeping
+      // the page prerenderable (see comment on the URL read above).
+      writeServerTripIdToUrl(newServerTripId);
+    },
+    [currentUserId],
+  );
   const plannerParams = useMemo<TripParameters>(
     () => ({
       days,
@@ -761,6 +782,7 @@ export default function TripPlannerPage() {
       setActiveTrip(selected?.trip ?? null);
       setServerTripId(tripId);
       setServerTripOwnerId(currentUserId);
+      setServerTripCallerRole("owner");
       writeServerTripIdToUrl(tripId);
     } catch {
       if (!isMountedRef.current || requestTokenRef.current !== requestToken) {
@@ -1405,6 +1427,7 @@ export default function TripPlannerPage() {
         serverTripId={serverTripId}
         ownerId={serverTripOwnerId}
         currentUserId={currentUserId}
+        canCreateInviteLink={canCreateInviteLink}
         suggestions={collabSession.suggestions}
         onSuggestionsChange={collabSession.setSuggestions}
         suggestionsError={collabSession.suggestionsError}
@@ -1431,6 +1454,16 @@ function resolveExistingTripId(
   if (serverTripId) return serverTripId;
   if (trip && UUID_RE.test(trip.id)) return trip.id;
   return null;
+}
+function findCallerRole(
+  detail: TripDetailResponse,
+  currentUserId: string | null,
+): TripDetailMember["role"] | null {
+  if (!currentUserId) return null;
+  return (
+    detail.members?.find((member) => member.user_id === currentUserId)?.role ??
+    null
+  );
 }
 function buildTripMetadataPayload(trip: Trip, params: TripParameters) {
   const dailyKmTarget = normalizeBackendDailyKm(params.dailyKmTarget);

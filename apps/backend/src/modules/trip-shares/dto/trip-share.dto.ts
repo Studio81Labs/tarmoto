@@ -1,6 +1,8 @@
 import {
   IsObject,
+  IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   MinLength,
   Validate,
@@ -62,6 +64,16 @@ export class CreateTripShareDto {
   @IsObject()
   @Validate(SnapshotSizeConstraint)
   snapshot!: Record<string, unknown>;
+
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description:
+      'Persisted server trip id to attach to this share. When present, authenticated recipients can accept the share token into collaboration membership.',
+  })
+  @IsOptional()
+  @IsUUID()
+  trip_id?: string | null;
 }
 
 export class TripShareResponseDto {
@@ -73,6 +85,9 @@ export class TripShareResponseDto {
 
   @ApiProperty()
   share_url!: string;
+
+  @ApiProperty({ nullable: true })
+  trip_id!: string | null;
 
   @ApiProperty()
   title!: string;
@@ -90,6 +105,13 @@ export class TripShareResponseDto {
 export class TripSharePublicDto {
   @ApiProperty()
   share_token!: string;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Server trip id when this public preview can be accepted into collaboration; null for legacy snapshot-only shares.',
+  })
+  trip_id!: string | null;
 
   @ApiProperty()
   title!: string;
@@ -115,6 +137,16 @@ export class TripSharePublicDto {
 
   @ApiProperty()
   updated_at!: string;
+}
+
+export class TripShareJoinResponseDto {
+  @ApiProperty()
+  trip_id!: string;
+
+  @ApiProperty({
+    description: 'Companion URL for opening the joined trip in the planner.',
+  })
+  planner_url!: string;
 }
 
 export class TripShareListResponseDto {

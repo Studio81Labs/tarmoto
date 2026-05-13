@@ -9,6 +9,7 @@ import TripPlannerPage from "./page";
 import { useClosures, type ClosuresQueryResult } from "@/hooks/useClosures";
 import { usePasses, type PassesQueryResult } from "@/hooks/usePasses";
 import { useTripStore } from "@/stores/trip";
+import { useAuthStore } from "@/stores/auth";
 import { tripsApi } from "@/lib/api";
 import type { Trip } from "@/lib/types";
 
@@ -353,6 +354,11 @@ describe("TripPlannerPage", () => {
     // Each test starts on the bare planner URL so URL hydration can't bleed
     // between cases.
     window.history.replaceState({}, "", "/trips/planner");
+    useAuthStore.setState({
+      user: null,
+      isAuthenticated: false,
+      accessToken: null,
+    });
     mockedTripPlannerMap.mockClear();
     mockedPassesPanel.mockClear();
     mockedClosuresPanel.mockClear();
@@ -1389,6 +1395,104 @@ describe("TripPlannerPage", () => {
       "tripId=11111111-2222-4333-8444-555555555555",
     );
     expect(window.location.search).toContain("days=5");
+  });
+
+  it("passes invite-link permission as false for joined planner members", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/trips/planner?tripId=11111111-2222-4333-8444-555555555555",
+    );
+    useAuthStore.setState({
+      user: {
+        id: "u-member",
+        email: "member@example.com",
+        displayName: "Member",
+      },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValueOnce({
+      data: buildTripDetail("Joined trip", {
+        id: "11111111-2222-4333-8444-555555555555",
+        members: [
+          {
+            user_id: "u-owner",
+            display_name: "Owner",
+            role: "owner",
+            joined_at: "2026-04-23T09:00:00Z",
+          },
+          {
+            user_id: "u-member",
+            display_name: "Member",
+            role: "member",
+            joined_at: "2026-04-23T09:15:00Z",
+          },
+        ],
+      }),
+    } as never);
+
+    render(<TripPlannerPage />);
+
+    await waitFor(() =>
+      expect(tripsApiGetMock).toHaveBeenCalledWith(
+        "11111111-2222-4333-8444-555555555555",
+      ),
+    );
+    await waitFor(() => {
+      expect(mockedTripCollaborateModal).toHaveBeenLastCalledWith(
+        expect.objectContaining({ canCreateInviteLink: false }),
+      );
+    });
+  });
+
+  it("passes invite-link permission as true for planner admins", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/trips/planner?tripId=11111111-2222-4333-8444-555555555555",
+    );
+    useAuthStore.setState({
+      user: {
+        id: "u-admin",
+        email: "admin@example.com",
+        displayName: "Admin",
+      },
+      isAuthenticated: true,
+      accessToken: "test-access-token",
+    });
+    tripsApiGetMock.mockResolvedValueOnce({
+      data: buildTripDetail("Admin trip", {
+        id: "11111111-2222-4333-8444-555555555555",
+        members: [
+          {
+            user_id: "u-owner",
+            display_name: "Owner",
+            role: "owner",
+            joined_at: "2026-04-23T09:00:00Z",
+          },
+          {
+            user_id: "u-admin",
+            display_name: "Admin",
+            role: "admin",
+            joined_at: "2026-04-23T09:15:00Z",
+          },
+        ],
+      }),
+    } as never);
+
+    render(<TripPlannerPage />);
+
+    await waitFor(() =>
+      expect(tripsApiGetMock).toHaveBeenCalledWith(
+        "11111111-2222-4333-8444-555555555555",
+      ),
+    );
+    await waitFor(() => {
+      expect(mockedTripCollaborateModal).toHaveBeenLastCalledWith(
+        expect.objectContaining({ canCreateInviteLink: true }),
+      );
+    });
   });
 
   it("updates the promoted server trip instead of creating a duplicate draft", async () => {

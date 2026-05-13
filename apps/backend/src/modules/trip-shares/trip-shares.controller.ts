@@ -22,6 +22,7 @@ import { AuthGuard } from '../auth/auth.guard.js';
 import { TripSharesService } from './trip-shares.service.js';
 import {
   CreateTripShareDto,
+  TripShareJoinResponseDto,
   TripShareListResponseDto,
   TripSharePublicDto,
   TripShareResponseDto,
@@ -65,6 +66,25 @@ export class TripSharesController {
   @ApiResponse({ status: 404, description: 'Trip share not found' })
   async getByToken(@Param('token') token: string): Promise<TripSharePublicDto> {
     return this.tripSharesService.getByToken(token);
+  }
+
+  @Post(':token/join')
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Accept a shared trip token into collaboration membership',
+  })
+  @ApiResponse({ status: 201, type: TripShareJoinResponseDto })
+  @ApiResponse({
+    status: 400,
+    description: 'Share token resolves to a read-only snapshot only',
+  })
+  @ApiResponse({ status: 404, description: 'Trip share not found' })
+  async joinByToken(
+    @Req() req: express.Request,
+    @Param('token') token: string,
+  ): Promise<TripShareJoinResponseDto> {
+    return this.tripSharesService.joinByToken(req.user!.userId, token);
   }
 
   @Delete(':id')

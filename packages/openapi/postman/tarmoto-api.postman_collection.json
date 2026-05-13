@@ -1746,7 +1746,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"\",\n  \"snapshot\": {}\n}",
+              "raw": "{\n  \"title\": \"\",\n  \"snapshot\": {},\n  \"trip_id\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1796,6 +1796,29 @@
           }
         },
         {
+          "name": "Accept a shared trip token into collaboration membership",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trip-shares/:token/join",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trip-shares", ":token", "join"],
+              "variable": [
+                {
+                  "key": "token",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
           "name": "Revoke a trip share (owner only)",
           "request": {
             "method": "DELETE",
@@ -1815,6 +1838,687 @@
                   "value": ""
                 }
               ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "trips",
+      "item": [
+        {
+          "name": "List recent activity for a trip (members only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/activity",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", ":tripId", "activity"],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                }
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": "Max entries to return (1-200, default 100).",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List trips the caller can see",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create a new trip and become its owner",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"\",\n  \"num_days\": 0,\n  \"region\": \"\",\n  \"min_quality\": 0,\n  \"road_preference\": \"curvy\",\n  \"daily_km_min\": 0,\n  \"daily_km_max\": 0,\n  \"folder_id\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Create a trip seeded from a parsed GPX/KML file (US-20)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/import",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", "import"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"\",\n  \"region\": \"\",\n  \"source_format\": \"gpx\",\n  \"geometry\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"waypoints\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0,\n      \"name\": \"\",\n      \"type\": \"via\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Replace an existing trip with a parsed GPX/KML route",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/import",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", ":tripId", "import"],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"\",\n  \"region\": \"\",\n  \"source_format\": \"gpx\",\n  \"geometry\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"waypoints\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0,\n      \"name\": \"\",\n      \"type\": \"via\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Materialise a shared trip into the caller's library, preserving multi-day structure (#357)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/from-share",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", "from-share"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"share_token\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Get full trip detail (members, days, waypoints)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", ":tripId"],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update trip metadata",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", ":tripId"],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"\",\n  \"region\": \"\",\n  \"num_days\": 0,\n  \"min_quality\": 0,\n  \"road_preference\": \"curvy\",\n  \"daily_km_min\": 0,\n  \"daily_km_max\": 0,\n  \"status\": \"draft\",\n  \"folder_id\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Delete a trip",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", ":tripId"],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Auto-generate a multi-day itinerary for a trip",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/generate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", ":tripId", "generate"],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"start_location\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"bbox\": \"11.0,46.0,12.5,47.0\",\n  \"option\": \"best-fit\",\n  \"avoid_highways\": false,\n  \"avoid_tolls\": false,\n  \"avoid_unpaved\": false,\n  \"surfaces\": [\n    \"asphalt\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Duplicate a trip as a new draft",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/duplicate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", ":tripId", "duplicate"],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Join a trip via its invite code",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/join",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", ":tripId", "join"],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"invite_code\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Email a trip invite link to a recipient",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/invite",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", ":tripId", "invite"],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"rider@example.com\",\n  \"message\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List route/segment suggestions for a trip",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/suggestions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", ":tripId", "suggestions"],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Suggest a route change or road segment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/suggestions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", ":tripId", "suggestions"],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"\",\n  \"description\": \"\",\n  \"trip_day_id\": \"\",\n  \"road_segment_id\": \"\",\n  \"lat\": 0,\n  \"lng\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Delete a suggestion",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/suggestions/:suggestionId",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId",
+                "suggestions",
+                ":suggestionId"
+              ],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                },
+                {
+                  "key": "suggestionId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Accept a suggestion (owner/admin only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/suggestions/:suggestionId/accept",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId",
+                "suggestions",
+                ":suggestionId",
+                "accept"
+              ],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                },
+                {
+                  "key": "suggestionId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Reject a suggestion (owner/admin only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/suggestions/:suggestionId/reject",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId",
+                "suggestions",
+                ":suggestionId",
+                "reject"
+              ],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                },
+                {
+                  "key": "suggestionId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Cast or change a vote on a suggestion",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/suggestions/:suggestionId/vote",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId",
+                "suggestions",
+                ":suggestionId",
+                "vote"
+              ],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                },
+                {
+                  "key": "suggestionId",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vote\": \"up\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Remove the caller's vote on a suggestion",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/suggestions/:suggestionId/vote",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "api",
+                "v1",
+                "trips",
+                ":tripId",
+                "suggestions",
+                ":suggestionId",
+                "vote"
+              ],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                },
+                {
+                  "key": "suggestionId",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "List trip chat messages (newest first)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", ":tripId", "messages"],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                }
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": "Max number of messages to return (newest first).",
+                  "disabled": true
+                },
+                {
+                  "key": "before",
+                  "value": "",
+                  "description": "Keyset cursor — return messages strictly older than this ISO-8601 timestamp. Pair with `before_id` (the oldest message id in the previous page) so messages sharing the same `created_at` at a page boundary are not skipped.",
+                  "disabled": true
+                },
+                {
+                  "key": "before_id",
+                  "value": "",
+                  "description": "Tie-breaker for the keyset cursor — the id of the oldest message in the previous page. Required together with `before` to correctly page through messages that share a timestamp.",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Post a chat message to the trip",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/trips/:tripId/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "trips", ":tripId", "messages"],
+              "variable": [
+                {
+                  "key": "tripId",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           }
         }
@@ -2670,687 +3374,6 @@
                 {
                   "key": "rideId",
                   "value": ""
-                }
-              ]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "trips",
-      "item": [
-        {
-          "name": "List trips the caller can see",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trips",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips"],
-              "query": [
-                {
-                  "key": "status",
-                  "value": "",
-                  "description": "",
-                  "disabled": true
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Create a new trip and become its owner",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trips",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"title\": \"\",\n  \"num_days\": 0,\n  \"region\": \"\",\n  \"min_quality\": 0,\n  \"road_preference\": \"curvy\",\n  \"daily_km_min\": 0,\n  \"daily_km_max\": 0\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Create a trip seeded from a parsed GPX/KML file (US-20)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trips/import",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", "import"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"title\": \"\",\n  \"region\": \"\",\n  \"source_format\": \"gpx\",\n  \"geometry\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"waypoints\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0,\n      \"name\": \"\",\n      \"type\": \"via\"\n    }\n  ]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Replace an existing trip with a parsed GPX/KML route",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trips/:tripId/import",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "import"],
-              "variable": [
-                {
-                  "key": "tripId",
-                  "value": ""
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"title\": \"\",\n  \"region\": \"\",\n  \"source_format\": \"gpx\",\n  \"geometry\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0\n    },\n    {\n      \"lat\": 1,\n      \"lng\": 1\n    }\n  ],\n  \"waypoints\": [\n    {\n      \"lat\": 0,\n      \"lng\": 0,\n      \"name\": \"\",\n      \"type\": \"via\"\n    }\n  ]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Materialise a shared trip into the caller's library, preserving multi-day structure (#357)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trips/from-share",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", "from-share"]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"share_token\": \"\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Get full trip detail (members, days, waypoints)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trips/:tripId",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId"],
-              "variable": [
-                {
-                  "key": "tripId",
-                  "value": ""
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Update trip metadata",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trips/:tripId",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId"],
-              "variable": [
-                {
-                  "key": "tripId",
-                  "value": ""
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"title\": \"\",\n  \"region\": \"\",\n  \"num_days\": 0,\n  \"min_quality\": 0,\n  \"road_preference\": \"curvy\",\n  \"daily_km_min\": 0,\n  \"daily_km_max\": 0,\n  \"status\": \"draft\",\n  \"folder_id\": \"\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Delete a trip",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trips/:tripId",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId"],
-              "variable": [
-                {
-                  "key": "tripId",
-                  "value": ""
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Auto-generate a multi-day itinerary for a trip",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trips/:tripId/generate",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "generate"],
-              "variable": [
-                {
-                  "key": "tripId",
-                  "value": ""
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"start_location\": {\n    \"lat\": 0,\n    \"lng\": 0\n  },\n  \"bbox\": \"11.0,46.0,12.5,47.0\",\n  \"option\": \"best-fit\",\n  \"avoid_highways\": false,\n  \"avoid_tolls\": false,\n  \"avoid_unpaved\": false,\n  \"surfaces\": [\n    \"asphalt\"\n  ]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Duplicate a trip as a new draft",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trips/:tripId/duplicate",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "duplicate"],
-              "variable": [
-                {
-                  "key": "tripId",
-                  "value": ""
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Join a trip via its invite code",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trips/:tripId/join",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "join"],
-              "variable": [
-                {
-                  "key": "tripId",
-                  "value": ""
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"invite_code\": \"\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Email a trip invite link to a recipient",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trips/:tripId/invite",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "invite"],
-              "variable": [
-                {
-                  "key": "tripId",
-                  "value": ""
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"rider@example.com\",\n  \"message\": \"\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "List route/segment suggestions for a trip",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trips/:tripId/suggestions",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "suggestions"],
-              "variable": [
-                {
-                  "key": "tripId",
-                  "value": ""
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Suggest a route change or road segment",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trips/:tripId/suggestions",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "suggestions"],
-              "variable": [
-                {
-                  "key": "tripId",
-                  "value": ""
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"title\": \"\",\n  \"description\": \"\",\n  \"trip_day_id\": \"\",\n  \"road_segment_id\": \"\",\n  \"lat\": 0,\n  \"lng\": 0\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Delete a suggestion",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trips/:tripId/suggestions/:suggestionId",
-              "host": ["{{baseUrl}}"],
-              "path": [
-                "api",
-                "v1",
-                "trips",
-                ":tripId",
-                "suggestions",
-                ":suggestionId"
-              ],
-              "variable": [
-                {
-                  "key": "tripId",
-                  "value": ""
-                },
-                {
-                  "key": "suggestionId",
-                  "value": ""
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Accept a suggestion (owner/admin only)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trips/:tripId/suggestions/:suggestionId/accept",
-              "host": ["{{baseUrl}}"],
-              "path": [
-                "api",
-                "v1",
-                "trips",
-                ":tripId",
-                "suggestions",
-                ":suggestionId",
-                "accept"
-              ],
-              "variable": [
-                {
-                  "key": "tripId",
-                  "value": ""
-                },
-                {
-                  "key": "suggestionId",
-                  "value": ""
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Reject a suggestion (owner/admin only)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trips/:tripId/suggestions/:suggestionId/reject",
-              "host": ["{{baseUrl}}"],
-              "path": [
-                "api",
-                "v1",
-                "trips",
-                ":tripId",
-                "suggestions",
-                ":suggestionId",
-                "reject"
-              ],
-              "variable": [
-                {
-                  "key": "tripId",
-                  "value": ""
-                },
-                {
-                  "key": "suggestionId",
-                  "value": ""
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Cast or change a vote on a suggestion",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trips/:tripId/suggestions/:suggestionId/vote",
-              "host": ["{{baseUrl}}"],
-              "path": [
-                "api",
-                "v1",
-                "trips",
-                ":tripId",
-                "suggestions",
-                ":suggestionId",
-                "vote"
-              ],
-              "variable": [
-                {
-                  "key": "tripId",
-                  "value": ""
-                },
-                {
-                  "key": "suggestionId",
-                  "value": ""
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"vote\": \"up\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Remove the caller's vote on a suggestion",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trips/:tripId/suggestions/:suggestionId/vote",
-              "host": ["{{baseUrl}}"],
-              "path": [
-                "api",
-                "v1",
-                "trips",
-                ":tripId",
-                "suggestions",
-                ":suggestionId",
-                "vote"
-              ],
-              "variable": [
-                {
-                  "key": "tripId",
-                  "value": ""
-                },
-                {
-                  "key": "suggestionId",
-                  "value": ""
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "List trip chat messages (newest first)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trips/:tripId/messages",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "messages"],
-              "variable": [
-                {
-                  "key": "tripId",
-                  "value": ""
-                }
-              ],
-              "query": [
-                {
-                  "key": "limit",
-                  "value": "",
-                  "description": "Max number of messages to return (newest first).",
-                  "disabled": true
-                },
-                {
-                  "key": "before",
-                  "value": "",
-                  "description": "Keyset cursor — return messages strictly older than this ISO-8601 timestamp. Pair with `before_id` (the oldest message id in the previous page) so messages sharing the same `created_at` at a page boundary are not skipped.",
-                  "disabled": true
-                },
-                {
-                  "key": "before_id",
-                  "value": "",
-                  "description": "Tie-breaker for the keyset cursor — the id of the oldest message in the previous page. Required together with `before` to correctly page through messages that share a timestamp.",
-                  "disabled": true
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Post a chat message to the trip",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trips/:tripId/messages",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "messages"],
-              "variable": [
-                {
-                  "key": "tripId",
-                  "value": ""
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"body\": \"\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "List recent activity for a trip (members only)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/trips/:tripId/activity",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "trips", ":tripId", "activity"],
-              "variable": [
-                {
-                  "key": "tripId",
-                  "value": ""
-                }
-              ],
-              "query": [
-                {
-                  "key": "limit",
-                  "value": "",
-                  "description": "Max entries to return (1-200, default 100).",
-                  "disabled": true
                 }
               ]
             }

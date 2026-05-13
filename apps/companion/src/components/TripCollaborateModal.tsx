@@ -29,6 +29,7 @@ interface TripCollaborateModalProps {
   serverTripId?: string | null;
   currentUserId?: string | null;
   ownerId?: string | null;
+  canCreateInviteLink?: boolean;
   /**
    * Shared suggestions state from the planner page's
    * `useTripCollabSession`. When supplied, the tab reads/mutates this
@@ -63,6 +64,7 @@ export function TripCollaborateModal({
   serverTripId = null,
   currentUserId = null,
   ownerId = null,
+  canCreateInviteLink: explicitCanCreateInviteLink,
   suggestions: externalSuggestions,
   onSuggestionsChange,
   suggestionsError: externalSuggestionsError = null,
@@ -76,6 +78,8 @@ export function TripCollaborateModal({
   const [copied, setCopied] = useState(false);
   const sessionRef = useRef(0);
   const onCloseRef = useRef(onClose);
+  const canCreateInviteLink =
+    explicitCanCreateInviteLink ?? serverTripId === null;
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
@@ -101,7 +105,7 @@ export function TripCollaborateModal({
     return () => window.clearTimeout(id);
   }, [copied]);
   const handleGenerate = useCallback(async () => {
-    if (!trip) return;
+    if (!trip || !canCreateInviteLink) return;
     const session = sessionRef.current;
     setLoading(true);
     setError(null);
@@ -109,6 +113,7 @@ export function TripCollaborateModal({
       const { data } = await tripSharesApi.create({
         title: trip.name || "Untitled trip",
         snapshot: trip as unknown as Record<string, unknown>,
+        trip_id: serverTripId,
       });
       if (session !== sessionRef.current) return;
       setShare(data);
@@ -118,7 +123,7 @@ export function TripCollaborateModal({
     } finally {
       if (session === sessionRef.current) setLoading(false);
     }
-  }, [trip]);
+  }, [canCreateInviteLink, serverTripId, trip]);
   const handleCopy = useCallback(async () => {
     if (!share) return;
     const url = buildInviteUrl(share.share_token);
@@ -155,7 +160,7 @@ export function TripCollaborateModal({
             </h2>
             <p className="mt-1 text-sm text-slate-400">
               {t(
-                "Share a read-only link, gather route suggestions from your group, and track the activity log. ",
+                "Share a group link, gather route suggestions from your riders, and track the activity log. ",
               )}
             </p>
           </div>
@@ -216,6 +221,7 @@ export function TripCollaborateModal({
               loading={loading}
               copied={copied}
               inviteUrl={inviteUrl}
+              canCreateInviteLink={canCreateInviteLink}
               onGenerate={handleGenerate}
               onCopy={handleCopy}
             />
@@ -261,6 +267,7 @@ function InviteTab({
   loading,
   copied,
   inviteUrl,
+  canCreateInviteLink,
   onGenerate,
   onCopy,
 }: {
@@ -269,6 +276,7 @@ function InviteTab({
   loading: boolean;
   copied: boolean;
   inviteUrl: string | null;
+  canCreateInviteLink: boolean;
   onGenerate: () => void;
   onCopy: () => void;
 }) {
@@ -276,6 +284,13 @@ function InviteTab({
     return (
       <p className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-400">
         {t("Generate or load a trip first to create an invite link. ")}
+      </p>
+    );
+  }
+  if (!canCreateInviteLink) {
+    return (
+      <p className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-400">
+        {t("Only trip owners and admins can create invite links. ")}
       </p>
     );
   }
@@ -334,7 +349,7 @@ function InviteTab({
       </div>
       <p className="text-xs text-slate-500">
         {t(
-          "Anyone with the link can view the trip, no account required. Switch to the Suggestions tab to invite signed-in members to collaborate. ",
+          "Anyone with the link can preview the trip. Signed-in riders can join it and open the planner to suggest changes or vote. ",
         )}
       </p>
     </div>

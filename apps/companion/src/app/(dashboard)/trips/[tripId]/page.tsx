@@ -77,6 +77,7 @@ export default function TripDetailPage() {
       ? (loaded.members.find((m) => m.user_id === currentUserId)?.role ?? null)
       : null;
   const isOwner = callerRole === "owner";
+  const canManageInvites = callerRole === "owner" || callerRole === "admin";
   const closureRoutes = useMemo(() => buildTripClosureRoutes(trip), [trip]);
   const closuresData = useClosures(travelMonth, closureRoutes);
   const passesData = usePasses(travelMonth, closureRoutes);
@@ -393,7 +394,7 @@ export default function TripDetailPage() {
               <MembersList
                 members={loaded.members}
                 inviteCode={loaded.detail.invite_code}
-                canInvite={callerRole !== null}
+                canInvite={canManageInvites}
                 onShareLinkClick={() => {
                   setCollaborateOpen(true);
                 }}
@@ -415,6 +416,7 @@ export default function TripDetailPage() {
         serverTripId={loaded.detail.id}
         ownerId={ownerId}
         currentUserId={currentUserId}
+        canCreateInviteLink={canManageInvites}
         suggestions={collabSession.suggestions}
         onSuggestionsChange={collabSession.setSuggestions}
         suggestionsError={collabSession.suggestionsError}
@@ -623,7 +625,7 @@ function MembersList({
           </h3>
           <p className="mt-1 text-[11px] text-slate-500">
             {t(
-              "Share the invite code so riders can join from the mobile app, or copy a read-only link for the web companion. ",
+              "Share the invite code for mobile riders, or copy a web link that lets signed-in riders join the group planner. ",
             )}
           </p>
           <div className="mt-3 flex items-center gap-2">
@@ -644,7 +646,7 @@ function MembersList({
             className="mt-3 inline-flex items-center gap-1.5 text-[11px] text-tarmoto-cyan hover:underline"
           >
             <Share2 size={11} />
-            {t("Or share a read-only link ")}
+            {t("Or share a group link ")}
           </button>
         </section>
       )}

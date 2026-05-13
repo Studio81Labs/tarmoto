@@ -405,6 +405,7 @@ describe("TripCollaborateModal — collab tabs", () => {
         serverTripId="server-trip-1"
         currentUserId="member-1"
         ownerId="owner-1"
+        canCreateInviteLink
         onClose={() => {}}
       />,
     );

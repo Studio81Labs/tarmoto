@@ -821,7 +821,8 @@ export function buildApp(): Express {
     const share = {
       id,
       share_token: token,
-      trip_id: null,
+      trip_id:
+        typeof req.body?.trip_id === "string" ? String(req.body.trip_id) : null,
       title: String(req.body?.title ?? "Untitled trip"),
       snapshot: req.body?.snapshot ?? {},
       view_count: 0,
@@ -834,6 +835,7 @@ export function buildApp(): Express {
       id,
       share_token: token,
       share_url: `/trips/shared/${token}`,
+      trip_id: share.trip_id,
       title: share.title,
       view_count: 0,
       created_at: now,
@@ -846,6 +848,7 @@ export function buildApp(): Express {
       id: s.id,
       share_token: s.share_token,
       share_url: `/trips/shared/${s.share_token}`,
+      trip_id: s.trip_id,
       title: s.title,
       view_count: s.view_count,
       created_at: s.created_at,
@@ -863,6 +866,7 @@ export function buildApp(): Express {
     share.view_count += 1;
     res.json({
       share_token: share.share_token,
+      trip_id: share.trip_id,
       title: share.title,
       owner_name: "Test Owner",
       snapshot: share.snapshot,
@@ -871,6 +875,35 @@ export function buildApp(): Express {
       updated_at: share.updated_at,
     });
   });
+
+  app.post(
+    "/api/v1/trip-shares/:token/join",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const share = state.sharesByToken.get(param(req, "token"));
+      const trip = share?.trip_id ? state.trips.get(share.trip_id) : null;
+      if (!share) {
+        res.status(404).json({ message: "not-found" });
+        return;
+      }
+      if (!trip) {
+        res.status(400).json({ message: "read-only-share" });
+        return;
+      }
+      const userId = req.session!.user_id;
+      if (!trip.members.includes(userId)) {
+        trip.members.push(userId);
+        pushActivity(trip.id, userId, "member_joined", {
+          source: "trip_share",
+          share_token: share.share_token,
+        });
+      }
+      res.status(201).json({
+        trip_id: trip.id,
+        planner_url: `/trips/planner?tripId=${trip.id}`,
+      });
+    },
+  );
 
   // ── Account ───────────────────────────────────────────────────────
   app.get(

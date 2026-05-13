@@ -336,6 +336,61 @@ describe("TripDetailPage — member-role gating", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("hides trip invite controls for plain members", async () => {
+    primeStores("member-1");
+    tripsApiGetMock.mockResolvedValue({ data: buildDetail() } as never);
+    render(<TripDetailPage />);
+
+    expect(await screen.findByText("Italian Loop")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /members/i }));
+
+    expect(screen.queryByText("Invite riders")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/or share a group link/i),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("tab", { name: /collaborate/i }));
+    await waitFor(() => {
+      expect(mockedTripCollabModal).toHaveBeenLastCalledWith(
+        expect.objectContaining({ canCreateInviteLink: false }),
+      );
+    });
+  });
+
+  it("shows trip invite controls for admins", async () => {
+    primeStores("member-1");
+    tripsApiGetMock.mockResolvedValue({
+      data: buildDetail({
+        members: [
+          {
+            user_id: "owner-1",
+            display_name: "Adam",
+            role: "owner",
+            joined_at: "2026-04-24T10:00:00.000Z",
+          },
+          {
+            user_id: "member-1",
+            display_name: "Eve",
+            role: "admin",
+            joined_at: "2026-04-24T11:00:00.000Z",
+          },
+        ],
+      }),
+    } as never);
+    render(<TripDetailPage />);
+
+    expect(await screen.findByText("Italian Loop")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /members/i }));
+
+    expect(await screen.findByText("Invite riders")).toBeInTheDocument();
+    expect(screen.getByText(/or share a group link/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(mockedTripCollabModal).toHaveBeenLastCalledWith(
+        expect.objectContaining({ canCreateInviteLink: true }),
+      );
+    });
+  });
+
   it("renders the owner badge with the Crown icon for the owner row", async () => {
     tripsApiGetMock.mockResolvedValue({ data: buildDetail() } as never);
     render(<TripDetailPage />);

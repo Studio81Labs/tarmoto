@@ -178,6 +178,7 @@ test.describe("trip collaboration", () => {
         body: JSON.stringify({
           title: trip.title,
           snapshot: { name: trip.title, days: [] },
+          trip_id: trip.id,
         }),
       },
     );
@@ -198,6 +199,118 @@ test.describe("trip collaboration", () => {
       });
     } finally {
       await anonymous.close();
+    }
+  });
+
+  test("shared trip link lets a signed-in recipient join the planner and collaborate", async ({
+    browser,
+    mockApi,
+  }) => {
+    await mockApi.reset();
+    const owner = await mockApi.seedUser({
+      email: "owner-share@example.com",
+      displayName: "Share Owner",
+    });
+    const collaborator = await mockApi.seedUser({
+      email: "recipient-share@example.com",
+      displayName: "Share Recipient",
+    });
+    const trip = await mockApi.createTrip(owner, {
+      title: "Shared Dolomites plan",
+      num_days: 2,
+    });
+
+    const shareRes = await fetch(
+      `http://127.0.0.1:${process.env.PLAYWRIGHT_MOCK_BACKEND_PORT ?? 4311}/api/v1/trip-shares`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${owner.accessToken}`,
+        },
+        body: JSON.stringify({
+          title: trip.title,
+          snapshot: { name: trip.title, days: [] },
+          trip_id: trip.id,
+        }),
+      },
+    );
+    const share = (await shareRes.json()) as { share_token: string };
+
+    const ownerContext = await browser.newContext();
+    const recipientContext = await browser.newContext();
+
+    try {
+      await authenticate(ownerContext, owner);
+
+      const recipientPage = await recipientContext.newPage();
+      await recipientPage.goto(`/trips/shared/${share.share_token}`);
+      await recipientPage
+        .getByRole("link", { name: /sign in to collaborate/i })
+        .click();
+      await expect(recipientPage).toHaveURL(/\/login\?callbackUrl=/);
+
+      await recipientPage
+        .getByPlaceholder("rider@example.com")
+        .fill(collaborator.email);
+      await recipientPage
+        .locator('input[type="password"]')
+        .fill(collaborator.password);
+      await recipientPage.getByRole("button", { name: /^Sign in$/i }).click();
+      await recipientPage.waitForURL(
+        (url) => url.pathname === `/trips/shared/${share.share_token}`,
+        { timeout: 15_000 },
+      );
+
+      await recipientPage.getByRole("button", { name: /join trip/i }).click();
+      await recipientPage.waitForURL(
+        (url) =>
+          url.pathname === "/trips/planner" &&
+          url.searchParams.get("tripId") === trip.id,
+        { timeout: 15_000 },
+      );
+
+      await recipientPage
+        .getByRole("button", { name: /^Collaborate$/ })
+        .click();
+      await recipientPage.getByRole("tab", { name: /suggestions/i }).click();
+      await recipientPage
+        .getByRole("textbox", { name: /suggestion title/i })
+        .fill("Add the lake viewpoint");
+      await recipientPage
+        .getByRole("textbox", { name: /suggestion description/i })
+        .fill("Good place for the whole group to regroup.");
+      await recipientPage
+        .getByRole("button", { name: /submit suggestion/i })
+        .click();
+      await expect(
+        recipientPage.getByRole("heading", { name: /add the lake viewpoint/i }),
+      ).toBeVisible({ timeout: 10_000 });
+
+      const ownerPage = await ownerContext.newPage();
+      await ownerPage.goto("/trips");
+      await ownerPage
+        .getByRole("link", { name: /shared dolomites plan/i })
+        .first()
+        .click();
+      await ownerPage.waitForURL((url) =>
+        /\/trips\/[0-9a-f-]+/.test(url.pathname),
+      );
+      await ownerPage
+        .getByRole("link", { name: /^edit$/i })
+        .first()
+        .click();
+      await ownerPage.waitForURL((url) =>
+        url.pathname.includes("/trips/planner"),
+      );
+      await ownerPage.getByRole("button", { name: /^Collaborate$/ }).click();
+      await ownerPage.getByRole("tab", { name: /suggestions/i }).click();
+      await expect(
+        ownerPage.getByRole("heading", { name: /add the lake viewpoint/i }),
+      ).toBeVisible({ timeout: 10_000 });
+    } finally {
+      await ownerContext.close();
+      await recipientContext.close();
     }
   });
 });
