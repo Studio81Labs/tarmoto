@@ -607,6 +607,50 @@ export const hazardsApi = {
   },
 };
 
+export interface TrendPointResponse {
+  month: string;
+  score: number;
+}
+
+export interface QualityBreakdownResponse {
+  excellent: number;
+  good: number;
+  fair: number;
+  poor: number;
+  very_poor: number;
+}
+
+export interface SegmentPointResponse {
+  lat: number;
+  lng: number;
+}
+
+export interface RoadSegmentDetailResponse {
+  id: string;
+  road_name: string | null;
+  road_number: string | null;
+  quality_score: number | null;
+  curviness_score: number;
+  surface_type: string;
+  length_m: number;
+  confidence: number;
+  reading_count: number;
+  last_updated: string;
+  geometry: SegmentPointResponse[];
+  elevation_min: number | null;
+  elevation_max: number | null;
+  elevation_profile: number[] | null;
+  quality_breakdown: QualityBreakdownResponse;
+  active_hazards: HazardResponse[];
+  active_hazard_count: number;
+  recent_reviews: RoadReview[];
+  review_count: number;
+  avg_review_rating: number | null;
+  riders_per_month: number;
+  quality_history: TrendPointResponse[];
+  regional_quality_history: TrendPointResponse[];
+}
+
 // ── Closures endpoints (US-40 seasonal closures & roadworks) ──
 
 export type RoadClosureReason =
@@ -904,6 +948,11 @@ export interface ReviewPhotosResponse {
 }
 
 export const roadsApi = {
+  getSegmentDetail: (segmentId: string, init?: RequestInit) =>
+    apiFetch<RoadSegmentDetailResponse>(
+      `/roads/${encodeURIComponent(segmentId)}`,
+      init,
+    ),
   getReviews: (segmentId: string, init?: RequestInit) =>
     apiFetch<RoadReview[]>(
       `/roads/${encodeURIComponent(segmentId)}/reviews`,

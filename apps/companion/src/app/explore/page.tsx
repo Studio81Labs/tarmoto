@@ -15,6 +15,17 @@ import {
 import { HAZARD_CONFIG, HAZARD_TYPES_UI } from "@/lib/utils";
 import type { HazardType } from "@tarmoto/shared";
 import { QualityMap } from "./_components/QualityMap";
+import {
+  SegmentDetailSidebar,
+  type SegmentDetailPanelState,
+} from "./_components/SegmentDetailSidebar";
+import { ApiError, roadsApi } from "@/lib/api";
+
+declare global {
+  interface Window {
+    __tarmotoSelectExploreSegment?: (segmentId: string) => void;
+  }
+}
 /**
  * ExplorerPage — Full-screen road quality map explorer
  *
@@ -58,6 +69,11 @@ const HAZARD_OPTIONS: {
 function ExplorerPageInner() {
   const [filterOpen, setFilterOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(
+    null,
+  );
+  const [segmentDetailState, setSegmentDetailState] =
+    useState<SegmentDetailPanelState>({ status: "idle" });
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -100,6 +116,59 @@ function ExplorerPageInner() {
       scroll: false,
     });
   }, [filters, hydrated, pathname, router, searchParams]);
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    window.__tarmotoSelectExploreSegment = (segmentId: string) => {
+      if (segmentId) setSelectedSegmentId(segmentId);
+    };
+    return () => {
+      delete window.__tarmotoSelectExploreSegment;
+    };
+  }, []);
+  useEffect(() => {
+    if (!selectedSegmentId) {
+      setSegmentDetailState({ status: "idle" });
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+    setSegmentDetailState({
+      status: "loading",
+      segmentId: selectedSegmentId,
+    });
+
+    roadsApi
+      .getSegmentDetail(selectedSegmentId, { signal: controller.signal })
+      .then(({ data }) => {
+        if (cancelled) return;
+        setSegmentDetailState({ status: "ready", segment: data });
+      })
+      .catch((err) => {
+        if ((err as { name?: string }).name === "AbortError") return;
+        if (cancelled) return;
+        if (err instanceof ApiError && err.status === 404) {
+          setSegmentDetailState({
+            status: "not-found",
+            segmentId: selectedSegmentId,
+          });
+          return;
+        }
+        setSegmentDetailState({
+          status: "error",
+          segmentId: selectedSegmentId,
+          message:
+            err instanceof Error
+              ? err.message
+              : "Could not load road segment details.",
+        });
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [selectedSegmentId]);
   const isDefault = filtersEqual(filters, DEFAULT_MAP_FILTERS);
   return (
     <div className="flex flex-col h-full">
@@ -298,6 +367,7 @@ function ExplorerPageInner() {
             showQuality={showQualityOverlay}
             showSurface={showSurfaceOverlay}
             showHazards={showHazardOverlay}
+            onSegmentSelect={setSelectedSegmentId}
             onViewChange={(view) => {
               setCenter({ lng: view.lng, lat: view.lat });
               setZoom(view.zoom);
@@ -307,6 +377,10 @@ function ExplorerPageInner() {
             showQuality={showQualityOverlay}
             showSurface={showSurfaceOverlay}
             showHazards={showHazardOverlay}
+          />
+          <SegmentDetailSidebar
+            state={segmentDetailState}
+            onClose={() => setSelectedSegmentId(null)}
           />
         </div>
       </div>

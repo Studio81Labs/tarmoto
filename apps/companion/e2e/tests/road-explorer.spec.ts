@@ -1,4 +1,29 @@
+import type { Page } from "@playwright/test";
 import { test, expect } from "../fixtures";
+
+const MOCK_ROAD_SEGMENT_ID = "11111111-2222-4333-8444-555555555111";
+
+async function selectMockRoadSegment(page: Page) {
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          typeof (
+            window as Window & {
+              __tarmotoSelectExploreSegment?: (id: string) => void;
+            }
+          ).__tarmotoSelectExploreSegment,
+      ),
+    )
+    .toBe("function");
+  await page.evaluate((segmentId) => {
+    (
+      window as Window & {
+        __tarmotoSelectExploreSegment?: (id: string) => void;
+      }
+    ).__tarmotoSelectExploreSegment?.(segmentId);
+  }, MOCK_ROAD_SEGMENT_ID);
+}
 
 test.describe("road quality explorer", () => {
   test("the explorer is accessible without authentication", async ({
@@ -105,5 +130,72 @@ test.describe("road quality explorer", () => {
     } finally {
       await context.close();
     }
+  });
+
+  test("T16/T17/T25: anonymous riders can open a segment detail sidebar with trend and reviews", async ({
+    browser,
+    mockApi,
+  }) => {
+    await mockApi.reset();
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.goto("/explore");
+      await expect(
+        page.getByRole("heading", { name: /^filters$/i }),
+      ).toBeVisible();
+
+      await selectMockRoadSegment(page);
+
+      const dialog = page.getByRole("dialog", {
+        name: /road segment details/i,
+      });
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByText("Mock Ridge Road").first()).toBeVisible();
+      await expect(dialog.getByText("4.6").first()).toBeVisible();
+      await expect(dialog.getByText(/37 passes/i)).toBeVisible();
+      await expect(
+        dialog.getByText(/loose gravel after the bend/i),
+      ).toBeVisible();
+      await expect(
+        dialog.getByTestId(`segment-trend-chart-${MOCK_ROAD_SEGMENT_ID}`),
+      ).toBeVisible();
+      await expect(
+        dialog.getByText(/fast surface with clean sight lines/i),
+      ).toBeVisible();
+      await expect(
+        dialog.getByText(/sign in to rate this road/i),
+      ).toBeVisible();
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("T26: authenticated riders can submit a review from the segment sidebar", async ({
+    authedPage,
+  }) => {
+    await authedPage.goto("/explore");
+    await expect(
+      authedPage.getByRole("heading", { name: /^filters$/i }),
+    ).toBeVisible();
+
+    await selectMockRoadSegment(authedPage);
+
+    const dialog = authedPage.getByRole("dialog", {
+      name: /road segment details/i,
+    });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: /write a review/i }).click();
+    await dialog.getByRole("button", { name: /^5 stars$/i }).click();
+    await dialog
+      .getByLabel(/^comment$/i)
+      .fill("Fresh E2E review: clean asphalt and a great rhythm.");
+    await dialog.getByLabel(/bike model/i).fill("Honda Transalp");
+    await dialog.getByRole("button", { name: /submit review/i }).click();
+
+    await expect(
+      dialog.getByText(/fresh e2e review: clean asphalt/i),
+    ).toBeVisible();
+    await expect(dialog.getByText(/this is your review/i)).toBeVisible();
   });
 });
