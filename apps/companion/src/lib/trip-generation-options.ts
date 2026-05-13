@@ -3,7 +3,7 @@ import {
   type TripDetailDay,
   type TripDetailResponse,
 } from "@/lib/trip-from-detail";
-import type { Trip } from "@/lib/types";
+import type { Trip, TripParameters } from "@/lib/types";
 
 export type TripGenerationOptionId = "best-fit" | "scenic" | "fastest";
 
@@ -36,23 +36,42 @@ export interface GenerateTripResponse {
 
 export function generatedOptionsFromResponse(
   response: GenerateTripResponse,
+  requestParameters?: TripParameters,
 ): GeneratedTripOption[] {
   return response.options.map((option) => ({
     id: option.id,
     label: option.label,
     summary: option.summary,
     selected: option.selected,
-    trip: tripFromDetail(
-      option.selected
-        ? response.trip
-        : {
-            ...response.trip,
-            id: `${response.trip.id}:${option.id}`,
-            status: response.trip.status || "planned",
-            days: option.days,
-          },
+    trip: withRequestParameters(
+      tripFromDetail(
+        option.selected
+          ? response.trip
+          : {
+              ...response.trip,
+              id: `${response.trip.id}:${option.id}`,
+              status: response.trip.status || "planned",
+              days: option.days,
+            },
+      ),
+      requestParameters,
     ),
   }));
+}
+
+function withRequestParameters(
+  trip: Trip,
+  requestParameters: TripParameters | undefined,
+): Trip {
+  return requestParameters
+    ? {
+        ...trip,
+        parameters: {
+          ...requestParameters,
+          surfacePreference: [...requestParameters.surfacePreference],
+        },
+      }
+    : trip;
 }
 
 export function selectedGeneratedOption(

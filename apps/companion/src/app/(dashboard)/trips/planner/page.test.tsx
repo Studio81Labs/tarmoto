@@ -734,6 +734,38 @@ describe("TripPlannerPage", () => {
     expect(tripsApiGenerateMock).not.toHaveBeenCalled();
   });
 
+  it("keeps request-only generation filters live after installing the generated backend trip", async () => {
+    storeState.activeTrip = activeTrip;
+    render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByLabelText("Avoid highways"));
+    fireEvent.click(screen.getByLabelText("Gravel"));
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() =>
+      expect(setActiveTrip).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "Best backend",
+          parameters: expect.objectContaining({
+            surfacePreference: ["asphalt", "gravel"],
+            avoidHighways: false,
+            avoidUnpaved: true,
+          }),
+        }),
+      ),
+    );
+    expect(screen.getByLabelText("Avoid highways")).not.toBeChecked();
+    expect(screen.getByLabelText("Gravel")).toBeChecked();
+
+    tripsApiGenerateMock.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mockPush).toHaveBeenCalledWith("/trips/server-trip-1"),
+    );
+    expect(tripsApiGenerateMock).not.toHaveBeenCalled();
+  });
+
   it("regenerates the selected backend option when planner controls change before saving", async () => {
     storeState.activeTrip = activeTrip;
     render(<TripPlannerPage />);

@@ -694,7 +694,7 @@ export default function TripPlannerPage() {
         return;
       }
       const response = data as GenerateTripResponse;
-      const options = generatedOptionsFromResponse(response);
+      const options = generatedOptionsFromResponse(response, plannerParams);
       const selected =
         selectedGeneratedOption(options, response.selected_option) ?? null;
       setGeneratedOptions(options);
@@ -761,7 +761,7 @@ export default function TripPlannerPage() {
           return;
         }
         const response = data as GenerateTripResponse;
-        const options = generatedOptionsFromResponse(response);
+        const options = generatedOptionsFromResponse(response, plannerParams);
         const selected = selectedGeneratedOption(
           options,
           response.selected_option,
