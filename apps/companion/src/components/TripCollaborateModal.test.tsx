@@ -62,12 +62,32 @@ describe("TripCollaborateModal", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("hides invite-link creation when the caller cannot manage trip invites", () => {
+    render(
+      <TripCollaborateModal
+        open
+        trip={minimalTrip}
+        canCreateInviteLink={false}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(
+      screen.getByText(/only trip owners and admins can create invite links/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /create invite link/i }),
+    ).not.toBeInTheDocument();
+    expect(hoisted.create).not.toHaveBeenCalled();
+  });
+
   it("generates a share link and copies it to the clipboard", async () => {
     hoisted.create.mockResolvedValueOnce({
       data: {
         id: "share-1",
         share_token: "a".repeat(32),
         share_url: `/trips/shared/${"a".repeat(32)}`,
+        trip_id: null,
         title: "Pyrenees Loop",
         view_count: 0,
         created_at: "2026-04-20T10:00:00.000Z",
@@ -85,6 +105,7 @@ describe("TripCollaborateModal", () => {
       expect(hoisted.create).toHaveBeenCalledWith({
         title: "Pyrenees Loop",
         snapshot: minimalTrip,
+        trip_id: null,
       });
     });
 
@@ -161,6 +182,7 @@ describe("TripCollaborateModal", () => {
         id: "share-1",
         share_token: "a".repeat(32),
         share_url: `/trips/shared/${"a".repeat(32)}`,
+        trip_id: null,
         title: "Pyrenees Loop",
         view_count: 0,
         created_at: "2026-04-20T10:00:00.000Z",
@@ -232,6 +254,7 @@ describe("TripCollaborateModal", () => {
         id: "share-stale",
         share_token: "b".repeat(32),
         share_url: `/trips/shared/${"b".repeat(32)}`,
+        trip_id: null,
         title: "Pyrenees Loop",
         view_count: 0,
         created_at: "2026-04-20T10:00:00.000Z",

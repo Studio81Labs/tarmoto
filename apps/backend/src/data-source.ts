@@ -64,6 +64,7 @@ import { AddTripShares1714900000000 } from './migrations/1714900000000-AddTripSh
 import { AddTripCollaboration1715000000000 } from './migrations/1715000000000-AddTripCollaboration.js';
 import { AddTripActivity1715100000000 } from './migrations/1715100000000-AddTripActivity.js';
 import { AddSurfaceReadingClientModelVersion1715200000000 } from './migrations/1715200000000-AddSurfaceReadingClientModelVersion.js';
+import { AddTripShareTripLink1715250000000 } from './migrations/1715250000000-AddTripShareTripLink.js';
 import { AddFunZoneClusteringSeed1715300000000 } from './migrations/1715300000000-AddFunZoneClusteringSeed.js';
 import { AddTripDayGenerationColumns1715350000000 } from './migrations/1715350000000-AddTripDayGenerationColumns.js';
 import { AddCrashAlerts1715400000000 } from './migrations/1715400000000-AddCrashAlerts.js';
@@ -173,6 +174,7 @@ export const AppDataSource = new DataSource({
     AddTripCollaboration1715000000000,
     AddTripActivity1715100000000,
     AddSurfaceReadingClientModelVersion1715200000000,
+    AddTripShareTripLink1715250000000,
     AddFunZoneClusteringSeed1715300000000,
     AddTripDayGenerationColumns1715350000000,
     AddCrashAlerts1715400000000,

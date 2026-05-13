@@ -4,11 +4,17 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TripShare } from '../../entities/trip-share.entity.js';
+import { TripMember } from '../../entities/trip-member.entity.js';
+import { Trip } from '../../entities/trip.entity.js';
+import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 import { TripSharesService } from './trip-shares.service.js';
 
 describe('TripSharesService', () => {
   let service: TripSharesService;
   let repo: Partial<jest.Mocked<Repository<TripShare>>>;
+  let tripRepo: Partial<jest.Mocked<Repository<Trip>>>;
+  let memberRepo: Partial<jest.Mocked<Repository<TripMember>>>;
+  let activity: jest.Mocked<Pick<TripActivityService, 'recordSafe'>>;
 
   const mockShare = {
     id: 'share-1',
@@ -37,11 +43,32 @@ describe('TripSharesService', () => {
       increment: jest.fn().mockResolvedValue({ affected: 1 }),
       remove: jest.fn().mockResolvedValue(undefined),
     };
+    tripRepo = {
+      findOne: jest.fn().mockResolvedValue({
+        id: 'trip-1',
+        invite_code: 'ABCDEFGH',
+      }),
+    };
+    memberRepo = {
+      findOne: jest.fn().mockResolvedValue({
+        trip_id: 'trip-1',
+        user_id: 'user-1',
+        role: 'owner',
+      }),
+      create: jest.fn().mockImplementation((data) => data as TripMember),
+      save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
+    };
+    activity = {
+      recordSafe: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TripSharesService,
         { provide: getRepositoryToken(TripShare), useValue: repo },
+        { provide: getRepositoryToken(Trip), useValue: tripRepo },
+        { provide: getRepositoryToken(TripMember), useValue: memberRepo },
+        { provide: TripActivityService, useValue: activity },
       ],
     }).compile();
 
@@ -69,6 +96,75 @@ describe('TripSharesService', () => {
       expect(repo.save).toHaveBeenCalled();
       expect(result.share_url).toBe(`/trips/shared/${result.share_token}`);
       expect(result.title).toBe('Pyrenees Loop');
+    });
+
+    it('attaches a server trip id to the share when the caller can invite collaborators', async () => {
+      const result = await service.create('user-1', {
+        title: 'Pyrenees Loop',
+        snapshot: { days: [] },
+        trip_id: 'trip-1',
+      });
+
+      expect(memberRepo.findOne).toHaveBeenCalledWith({
+        where: { trip_id: 'trip-1', user_id: 'user-1' },
+      });
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          trip_id: 'trip-1',
+        }),
+      );
+      expect(result.trip_id).toBe('trip-1');
+    });
+  });
+
+  describe('joinByToken', () => {
+    it('adds the caller as a member of the trip attached to the share token', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...mockShare,
+        trip_id: 'trip-1',
+      });
+      (memberRepo.findOne as jest.Mock)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
+
+      const result = await service.joinByToken('user-2', 'a'.repeat(32));
+
+      expect(memberRepo.save).toHaveBeenCalledWith({
+        trip_id: 'trip-1',
+        user_id: 'user-2',
+        role: 'member',
+      });
+      expect(activity.recordSafe).toHaveBeenCalledWith(
+        'trip-1',
+        'user-2',
+        'member_joined',
+        { source: 'trip_share' },
+      );
+      expect(
+        JSON.stringify(activity.recordSafe.mock.calls[0]?.[3]),
+      ).not.toContain('a'.repeat(32));
+      expect(result).toEqual({
+        trip_id: 'trip-1',
+        planner_url: '/trips/planner?tripId=trip-1',
+      });
+    });
+
+    it('returns the planner URL without duplicating membership for an existing member', async () => {
+      (repo.findOne as jest.Mock).mockResolvedValueOnce({
+        ...mockShare,
+        trip_id: 'trip-1',
+      });
+      (memberRepo.findOne as jest.Mock).mockResolvedValueOnce({
+        trip_id: 'trip-1',
+        user_id: 'user-2',
+        role: 'member',
+      });
+
+      const result = await service.joinByToken('user-2', 'a'.repeat(32));
+
+      expect(memberRepo.save).not.toHaveBeenCalled();
+      expect(activity.recordSafe).not.toHaveBeenCalled();
+      expect(result.planner_url).toBe('/trips/planner?tripId=trip-1');
     });
   });
 

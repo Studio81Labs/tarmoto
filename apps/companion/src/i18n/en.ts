@@ -8,10 +8,12 @@ export const en = {
     "-only perks switch off after the current cycle ends. ",
   ". Click the map to begin the route. ":
     ". Click the map to begin the route. ",
-  ". Sign in to the planner to create your own trip \u2014 the collaborative editing surface is coming soon. ":
-    ". Sign in to the planner to create your own trip \u2014 the collaborative editing surface is coming soon. ",
+  ". Sign in to join the group plan, suggest route changes, and vote with the riders. ":
+    ". Sign in to join the group plan, suggest route changes, and vote with the riders. ",
   ". We snap to nearby roads when visible. ":
     ". We snap to nearby roads when visible. ",
+  ". You can view this trip without a Tarmoto account. ":
+    ". You can view this trip without a Tarmoto account. ",
   ". Your shared rides and account settings stay intact, while ":
     ". Your shared rides and account settings stay intact, while ",
   "1 collection": "1 collection",
@@ -59,8 +61,8 @@ export const en = {
   "Already have an account?": "Already have an account?",
   Any: "Any",
   "Any condition": "Any condition",
-  "Anyone with the link can view the trip, no account required. Switch to the Suggestions tab to invite signed-in members to collaborate. ":
-    "Anyone with the link can view the trip, no account required. Switch to the Suggestions tab to invite signed-in members to collaborate. ",
+  "Anyone with the link can preview the trip. Signed-in riders can join it and open the planner to suggest changes or vote. ":
+    "Anyone with the link can preview the trip. Signed-in riders can join it and open the planner to suggest changes or vote. ",
   "Apply coordinates ": "Apply coordinates ",
   "Avatar URL ": "Avatar URL ",
   "Avg / ride": "Avg / ride",
@@ -194,6 +196,8 @@ export const en = {
   "Create account ": "Create account ",
   Create: "Create",
   "Create invite link ": "Create invite link ",
+  "Only trip owners and admins can create invite links. ":
+    "Only trip owners and admins can create invite links. ",
   "Create one": "Create one",
   "Create one ": "Create one ",
   "Create your account": "Create your account",
@@ -590,7 +594,7 @@ export const en = {
   "Ranked roads": "Ranked roads",
   "Rate this road and add quick notes for the next rider. ":
     "Rate this road and add quick notes for the next rider. ",
-  "Read-only view shared by ": "Read-only view shared by ",
+  "Read-only preview shared by ": "Read-only preview shared by ",
   "Real-time updates are paused": "Real-time updates are paused",
   "Recent rides": "Recent rides",
   "Record a ride from the mobile app and it will show up here.":
@@ -692,16 +696,16 @@ export const en = {
   "Settings ": "Settings ",
   Share: "Share",
   "Share ": "Share ",
-  "Share a read-only link, gather route suggestions from your group, and track the activity log. ":
-    "Share a read-only link, gather route suggestions from your group, and track the activity log. ",
+  "Share a group link, gather route suggestions from your riders, and track the activity log. ":
+    "Share a group link, gather route suggestions from your riders, and track the activity log. ",
   "Share a route change idea with your group. Members can vote; the trip owner can accept or reject. ":
     "Share a route change idea with your group. Members can vote; the trip owner can accept or reject. ",
   "Share anonymized accelerometer readings from your rides so every Tarmoto rider gets a more accurate road quality map. No personal identifiers are attached. ":
     "Share anonymized accelerometer readings from your rides so every Tarmoto rider gets a more accurate road quality map. No personal identifiers are attached. ",
   "Share of segments by quality tier. Arrows indicate change on Ride B relative to Ride A \u2014 improved tiers (more excellent/good, less poor/very-poor) are shown in green. ":
     "Share of segments by quality tier. Arrows indicate change on Ride B relative to Ride A \u2014 improved tiers (more excellent/good, less poor/very-poor) are shown in green. ",
-  "Share the invite code so riders can join from the mobile app, or copy a read-only link for the web companion. ":
-    "Share the invite code so riders can join from the mobile app, or copy a read-only link for the web companion. ",
+  "Share the invite code for mobile riders, or copy a web link that lets signed-in riders join the group planner. ":
+    "Share the invite code for mobile riders, or copy a web link that lets signed-in riders join the group planner. ",
   "Share this region as a mini-map ": "Share this region as a mini-map ",
   "Share this ride as a route widget ": "Share this ride as a route widget ",
   "Shareable invite URL": "Shareable invite URL",

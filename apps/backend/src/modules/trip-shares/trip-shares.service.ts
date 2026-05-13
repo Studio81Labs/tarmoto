@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -7,33 +8,103 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { TripShare } from '../../entities/trip-share.entity.js';
+import { Trip } from '../../entities/trip.entity.js';
+import { TripMember } from '../../entities/trip-member.entity.js';
+import { TripActivityService } from '../trip-activity/trip-activity.service.js';
 import {
   CreateTripShareDto,
+  TripShareJoinResponseDto,
   TripShareListResponseDto,
   TripSharePublicDto,
   TripShareResponseDto,
 } from './dto/trip-share.dto.js';
+
+const PRIVILEGED_ROLES = new Set(['owner', 'admin']);
 
 @Injectable()
 export class TripSharesService {
   constructor(
     @InjectRepository(TripShare)
     private readonly tripShareRepo: Repository<TripShare>,
+    @InjectRepository(Trip)
+    private readonly tripRepo: Repository<Trip>,
+    @InjectRepository(TripMember)
+    private readonly memberRepo: Repository<TripMember>,
+    private readonly activity: TripActivityService,
   ) {}
 
   async create(
     userId: string,
     dto: CreateTripShareDto,
   ): Promise<TripShareResponseDto> {
+    const tripId = dto.trip_id ?? null;
+    if (tripId) {
+      await this.requireShareAuthority(userId, tripId);
+    }
+
     const created = await this.tripShareRepo.save(
       this.tripShareRepo.create({
         owner_id: userId,
+        trip_id: tripId,
         share_token: randomBytes(16).toString('hex'),
         title: dto.title,
         snapshot: dto.snapshot,
       }),
     );
     return this.toOwnerResponse(created);
+  }
+
+  async joinByToken(
+    userId: string,
+    token: string,
+  ): Promise<TripShareJoinResponseDto> {
+    const share = await this.findActiveByToken(token);
+    if (!share.trip_id) {
+      throw new BadRequestException(
+        'This shared trip is a read-only preview and cannot be joined',
+      );
+    }
+
+    const trip = await this.tripRepo.findOne({
+      where: { id: share.trip_id },
+      select: { id: true },
+    });
+    if (!trip) {
+      throw new BadRequestException(
+        'This shared trip is a read-only preview and cannot be joined',
+      );
+    }
+
+    const existing = await this.memberRepo.findOne({
+      where: { trip_id: share.trip_id, user_id: userId },
+    });
+
+    let inserted = false;
+    if (!existing) {
+      try {
+        await this.memberRepo.save(
+          this.memberRepo.create({
+            trip_id: share.trip_id,
+            user_id: userId,
+            role: 'member',
+          }),
+        );
+        inserted = true;
+      } catch (err: unknown) {
+        if (!isUniqueViolation(err)) throw err;
+      }
+    }
+
+    if (inserted) {
+      await this.activity.recordSafe(share.trip_id, userId, 'member_joined', {
+        source: 'trip_share',
+      });
+    }
+
+    return {
+      trip_id: share.trip_id,
+      planner_url: this.buildPlannerUrl(share.trip_id),
+    };
   }
 
   async getByToken(token: string): Promise<TripSharePublicDto> {
@@ -99,6 +170,7 @@ export class TripSharesService {
       id: share.id,
       share_token: share.share_token,
       share_url: this.buildShareUrl(share.share_token),
+      trip_id: share.trip_id ?? null,
       title: share.title,
       view_count: share.view_count ?? 0,
       created_at: share.created_at.toISOString(),
@@ -109,6 +181,7 @@ export class TripSharesService {
   private toPublicResponse(share: TripShare): TripSharePublicDto {
     return {
       share_token: share.share_token,
+      trip_id: share.trip_id ?? null,
       title: share.title,
       owner_name: share.owner?.display_name ?? 'Unknown',
       snapshot: share.snapshot,
@@ -121,4 +194,26 @@ export class TripSharesService {
   private buildShareUrl(token: string): string {
     return `/trips/shared/${token}`;
   }
+
+  private buildPlannerUrl(tripId: string): string {
+    return `/trips/planner?tripId=${encodeURIComponent(tripId)}`;
+  }
+
+  private async requireShareAuthority(
+    userId: string,
+    tripId: string,
+  ): Promise<void> {
+    const membership = await this.memberRepo.findOne({
+      where: { trip_id: tripId, user_id: userId },
+    });
+    if (!membership || !PRIVILEGED_ROLES.has(membership.role)) {
+      throw new NotFoundException('Trip not found');
+    }
+  }
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const candidate = err as { code?: unknown };
+  return candidate.code === '23505';
 }

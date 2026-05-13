@@ -14,6 +14,7 @@ describe('TripSharesController', () => {
     id: 'share-1',
     share_token: 'a'.repeat(32),
     share_url: `/trips/shared/${'a'.repeat(32)}`,
+    trip_id: 'trip-1',
     title: 'Pyrenees Loop',
     view_count: 0,
     created_at: '2026-04-20T10:00:00.000Z',
@@ -22,6 +23,8 @@ describe('TripSharesController', () => {
 
   const mockPublic = {
     share_token: 'a'.repeat(32),
+    trip_id: 'trip-1',
+    join_url: `/trips/shared/${'a'.repeat(32)}`,
     title: 'Pyrenees Loop',
     owner_name: 'Jane Rider',
     snapshot: { days: [] },
@@ -36,6 +39,7 @@ describe('TripSharesController', () => {
         id: 'share-1',
         share_token: 'a'.repeat(32),
         share_url: `/trips/shared/${'a'.repeat(32)}`,
+        trip_id: 'trip-1',
         title: 'Pyrenees Loop',
         view_count: 4,
         created_at: '2026-04-20T10:00:00.000Z',
@@ -49,6 +53,10 @@ describe('TripSharesController', () => {
     const mockService = {
       create: jest.fn().mockResolvedValue(mockCreated),
       getByToken: jest.fn().mockResolvedValue(mockPublic),
+      joinByToken: jest.fn().mockResolvedValue({
+        trip_id: 'trip-1',
+        planner_url: '/trips/planner?tripId=trip-1',
+      }),
       listMine: jest.fn().mockResolvedValue(mockListed),
       revoke: jest.fn().mockResolvedValue(undefined),
     };
@@ -69,11 +77,13 @@ describe('TripSharesController', () => {
     const result = await controller.create(mockReq, {
       title: 'Pyrenees Loop',
       snapshot: { days: [] },
+      trip_id: 'trip-1',
     });
 
     expect(service.create).toHaveBeenCalledWith('user-1', {
       title: 'Pyrenees Loop',
       snapshot: { days: [] },
+      trip_id: 'trip-1',
     });
     expect(result.share_token).toBe('a'.repeat(32));
   });
@@ -91,6 +101,16 @@ describe('TripSharesController', () => {
     expect(service.getByToken).toHaveBeenCalledWith('a'.repeat(32));
     expect(result.owner_name).toBe('Jane Rider');
     expect(result.snapshot).toEqual({ days: [] });
+  });
+
+  it('POST /trip-shares/:token/join accepts the shared trip for the authenticated caller', async () => {
+    const result = await controller.joinByToken(mockReq, 'a'.repeat(32));
+
+    expect(service.joinByToken).toHaveBeenCalledWith('user-1', 'a'.repeat(32));
+    expect(result).toEqual({
+      trip_id: 'trip-1',
+      planner_url: '/trips/planner?tripId=trip-1',
+    });
   });
 
   it('DELETE /trip-shares/:id revokes the share for the owner', async () => {
