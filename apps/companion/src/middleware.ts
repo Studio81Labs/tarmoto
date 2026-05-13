@@ -11,6 +11,8 @@ const PUBLIC_PATHS = [
   "/rides/road-map/shared",
   "/trips/shared",
   "/embed/rides",
+  "/embed/roads",
+  "/community/collections/shared",
 ];
 
 export const middleware = auth((req) => {
