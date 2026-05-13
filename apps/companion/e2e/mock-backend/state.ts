@@ -54,6 +54,20 @@ export interface MockActivity {
   created_at: string;
 }
 
+export interface MockRoadReview {
+  id: string;
+  segment_id: string;
+  user_id: string | null;
+  user_display_name: string;
+  rating: number;
+  comment: string | null;
+  bike_model: string | null;
+  photos: string[] | null;
+  created_at: string;
+  helpful_count: number;
+  not_helpful_count: number;
+}
+
 export interface MockShare {
   id: string;
   share_token: string;
@@ -145,6 +159,7 @@ export class MockState {
   trips = new Map<string, MockTrip>();
   suggestions = new Map<string, MockSuggestion>();
   activity: MockActivity[] = [];
+  roadReviews = new Map<string, MockRoadReview[]>();
   shares = new Map<string, MockShare>();
   sharesByToken = new Map<string, MockShare>();
 
@@ -192,6 +207,7 @@ export class MockState {
     this.trips.clear();
     this.suggestions.clear();
     this.activity = [];
+    this.roadReviews.clear();
     this.shares.clear();
     this.sharesByToken.clear();
     this.bikes.clear();

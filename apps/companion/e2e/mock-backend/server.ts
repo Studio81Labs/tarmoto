@@ -12,6 +12,7 @@ interface AuthedRequest extends Request {
 }
 
 const MOCK_FUN_ZONE_ID = "11111111-2222-4333-8444-555555555000";
+const MOCK_ROAD_SEGMENT_ID = "11111111-2222-4333-8444-555555555111";
 
 // `@types/express-serve-static-core` 5.x types `req.params[key]` as
 // `string | string[]` because Express 5 supports repeated-segment route
@@ -69,6 +70,117 @@ function mockFunZone() {
       { lat: 46.7, lng: 10.3 },
       { lat: 46.45, lng: 10.3 },
     ],
+  };
+}
+
+function mockRoadSegmentDetail() {
+  const reviews = state.roadReviews.get(MOCK_ROAD_SEGMENT_ID) ?? [];
+  const avg =
+    reviews.length === 0
+      ? 4.5
+      : Math.round(
+          (reviews.reduce((sum, review) => sum + review.rating, 0) /
+            reviews.length) *
+            10,
+        ) / 10;
+  return {
+    id: MOCK_ROAD_SEGMENT_ID,
+    road_name: "Mock Ridge Road",
+    road_number: "MR-12",
+    quality_score: 4.6,
+    curviness_score: 82,
+    surface_type: "asphalt",
+    length_m: 1240,
+    confidence: 91,
+    reading_count: 37,
+    last_updated: "2026-05-10T12:00:00.000Z",
+    geometry: [
+      { lat: 46.45, lng: 10.3 },
+      { lat: 46.58, lng: 10.48 },
+    ],
+    elevation_min: 840,
+    elevation_max: 1260,
+    elevation_profile: [840, 1020, 1260],
+    quality_breakdown: {
+      excellent: 60,
+      good: 30,
+      fair: 10,
+      poor: 0,
+      very_poor: 0,
+    },
+    active_hazards: [
+      {
+        id: "haz-1",
+        hazard_type: "gravel",
+        severity: "medium",
+        note: "Loose gravel after the bend",
+        photo_url: null,
+        confirmations: 3,
+        reporter: "Jane Rider",
+        road_name: "Mock Ridge Road",
+        lat: 46.5,
+        lng: 10.4,
+        created_at: "2026-05-10T10:00:00.000Z",
+        expires_at: "2026-05-13T10:00:00.000Z",
+      },
+    ],
+    active_hazard_count: 1,
+    recent_reviews: reviews.slice(0, 5).map(serializeRoadReview),
+    review_count: reviews.length || 1,
+    avg_review_rating: avg,
+    riders_per_month: 12,
+    quality_history: [
+      { month: "2026-03", score: 4.1 },
+      { month: "2026-04", score: 4.6 },
+    ],
+    regional_quality_history: [{ month: "2026-04", score: 3.8 }],
+  };
+}
+
+function seedRoadReviews() {
+  if (state.roadReviews.has(MOCK_ROAD_SEGMENT_ID)) return;
+  state.roadReviews.set(MOCK_ROAD_SEGMENT_ID, [
+    {
+      id: "review-seeded-1",
+      segment_id: MOCK_ROAD_SEGMENT_ID,
+      user_id: null,
+      user_display_name: "Ari Explorer",
+      rating: 5,
+      comment: "Fast surface with clean sight lines.",
+      bike_model: "Yamaha Tracer",
+      photos: ["http://127.0.0.1:4311/uploads/mock-review.jpg"],
+      created_at: "2026-05-10T09:00:00.000Z",
+      helpful_count: 2,
+      not_helpful_count: 0,
+    },
+  ]);
+}
+
+function serializeRoadReview(review: {
+  id: string;
+  user_id: string | null;
+  user_display_name: string;
+  rating: number;
+  comment: string | null;
+  bike_model: string | null;
+  photos: string[] | null;
+  created_at: string;
+  helpful_count: number;
+  not_helpful_count: number;
+}) {
+  return {
+    id: review.id,
+    user_id: review.user_id,
+    user_display_name: review.user_display_name,
+    rating: review.rating,
+    comment: review.comment,
+    bike_model: review.bike_model,
+    photos: review.photos,
+    created_at: review.created_at,
+    helpful_count: review.helpful_count,
+    not_helpful_count: review.not_helpful_count,
+    my_vote: null,
+    is_mine: false,
   };
 }
 
@@ -305,6 +417,78 @@ export function buildApp(): Express {
         },
       ],
     });
+  });
+
+  app.get("/api/v1/roads/:segmentId/reviews", (req: AuthedRequest, res) => {
+    const segmentId = param(req, "segmentId");
+    if (segmentId !== MOCK_ROAD_SEGMENT_ID) {
+      res.status(404).json({ message: "not-found" });
+      return;
+    }
+    seedRoadReviews();
+    const session = state.resolveSession(req.header("authorization"));
+    const reviews = state.roadReviews.get(segmentId) ?? [];
+    res.json(
+      reviews.map((review) => ({
+        ...serializeRoadReview(review),
+        is_mine: session?.user_id === review.user_id,
+      })),
+    );
+  });
+
+  app.post(
+    "/api/v1/roads/:segmentId/reviews",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const segmentId = param(req, "segmentId");
+      if (segmentId !== MOCK_ROAD_SEGMENT_ID) {
+        res.status(404).json({ message: "not-found" });
+        return;
+      }
+      const session = req.session!;
+      const user = state.users.get(session.user_id);
+      if (!user) {
+        res.status(401).json({ message: "Unauthorized" });
+        return;
+      }
+      seedRoadReviews();
+      const reviews = state.roadReviews.get(segmentId) ?? [];
+      const existing = reviews.find((review) => review.user_id === user.id);
+      if (existing) {
+        res
+          .status(409)
+          .json({ message: "You have already reviewed this road" });
+        return;
+      }
+      const review = {
+        id: randomUUID(),
+        segment_id: segmentId,
+        user_id: user.id,
+        user_display_name: user.display_name,
+        rating: Number(req.body?.rating ?? 0),
+        comment: req.body?.comment ? String(req.body.comment) : null,
+        bike_model: req.body?.bike_model ? String(req.body.bike_model) : null,
+        photos: Array.isArray(req.body?.photos) ? req.body.photos : [],
+        created_at: new Date().toISOString(),
+        helpful_count: 0,
+        not_helpful_count: 0,
+      };
+      reviews.unshift(review);
+      state.roadReviews.set(segmentId, reviews);
+      res.status(201).json({
+        ...serializeRoadReview(review),
+        is_mine: true,
+      });
+    },
+  );
+
+  app.get("/api/v1/roads/:segmentId", (req, res) => {
+    if (param(req, "segmentId") !== MOCK_ROAD_SEGMENT_ID) {
+      res.status(404).json({ message: "not-found" });
+      return;
+    }
+    seedRoadReviews();
+    res.json(mockRoadSegmentDetail());
   });
 
   // ── Trips ─────────────────────────────────────────────────────────

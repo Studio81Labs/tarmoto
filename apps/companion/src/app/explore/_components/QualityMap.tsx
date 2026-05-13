@@ -9,7 +9,12 @@ import maplibregl, {
 import type { ExpressionSpecification } from "@/lib/maplibre-expression";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Feature, FeatureCollection, Point } from "geojson";
-import { MapCanvas, type MapCanvasHandle } from "@/components/map/MapCanvas";
+import {
+  MapCanvas,
+  TARMOTO_QUALITY_LAYER,
+  TARMOTO_SURFACE_LAYER,
+  type MapCanvasHandle,
+} from "@/components/map/MapCanvas";
 import {
   HAZARD_CONFIG,
   HAZARD_TYPES_UI,
@@ -65,6 +70,7 @@ interface Props {
   showQuality: boolean;
   showSurface: boolean;
   showHazards: boolean;
+  onSegmentSelect?: (segmentId: string) => void;
   onViewChange?: (view: { lng: number; lat: number; zoom: number }) => void;
 }
 
@@ -75,10 +81,16 @@ export function QualityMap({
   showQuality,
   showSurface,
   showHazards,
+  onSegmentSelect,
   onViewChange,
 }: Props) {
   const handleRef = useRef<MapCanvasHandle>(null);
   const [ready, setReady] = useState(false);
+  const segmentSelectionRef = useRef({
+    showQuality,
+    showSurface,
+    onSegmentSelect,
+  });
 
   const rawHazardsRef = useRef<HazardResponse[]>([]);
   // Tracks when each WS-delivered hazard arrived, so an in-flight REST
@@ -90,6 +102,14 @@ export function QualityMap({
 
   const qualityOpacity = buildQualityOpacityExpression(filters);
   const surfaceOpacity = buildSurfaceOpacityExpression(filters);
+
+  useEffect(() => {
+    segmentSelectionRef.current = {
+      showQuality,
+      showSurface,
+      onSegmentSelect,
+    };
+  }, [showQuality, showSurface, onSegmentSelect]);
 
   const handleReady = (map: MapLibreMap) => {
     map.addSource(HAZARDS_SOURCE, {
@@ -223,6 +243,23 @@ export function QualityMap({
     map.on("click", HAZARD_BG, onHazardClick);
     map.on("click", HAZARD_ICON, onHazardClick);
 
+    map.on("click", (e: MapLayerMouseEvent) => {
+      const {
+        showQuality: canSelectQuality,
+        showSurface: canSelectSurface,
+        onSegmentSelect: selectSegment,
+      } = segmentSelectionRef.current;
+      if (!selectSegment) return;
+      const layers = [
+        ...(canSelectQuality ? [TARMOTO_QUALITY_LAYER] : []),
+        ...(canSelectSurface ? [TARMOTO_SURFACE_LAYER] : []),
+      ].filter((id) => map.getLayer(id));
+      if (layers.length === 0) return;
+      const feature = map.queryRenderedFeatures(e.point, { layers })[0];
+      const segmentId = readSegmentId(feature);
+      if (segmentId) selectSegment(segmentId);
+    });
+
     const setPointer = () => {
       map.getCanvas().style.cursor = "pointer";
     };
@@ -230,6 +267,10 @@ export function QualityMap({
       map.getCanvas().style.cursor = "";
     };
     for (const id of [HAZARD_BG, HAZARD_ICON, HAZARD_CLUSTERS]) {
+      map.on("mouseenter", id, setPointer);
+      map.on("mouseleave", id, unsetPointer);
+    }
+    for (const id of [TARMOTO_QUALITY_LAYER, TARMOTO_SURFACE_LAYER]) {
       map.on("mouseenter", id, setPointer);
       map.on("mouseleave", id, unsetPointer);
     }
@@ -378,6 +419,23 @@ export function QualityMap({
       onViewChange={handleViewChange}
     />
   );
+}
+
+function readSegmentId(
+  feature: maplibregl.MapGeoJSONFeature | undefined,
+): string | null {
+  if (!feature) return null;
+  const propertyId = feature.properties?.id;
+  if (typeof propertyId === "string" && propertyId.length > 0) {
+    return propertyId;
+  }
+  if (typeof feature.id === "string" && feature.id.length > 0) {
+    return feature.id;
+  }
+  if (typeof feature.id === "number") {
+    return String(feature.id);
+  }
+  return null;
 }
 
 // ── expression helpers ──

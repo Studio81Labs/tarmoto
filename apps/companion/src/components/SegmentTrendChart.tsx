@@ -104,10 +104,16 @@ export function SegmentTrendChart({
       ) : (
         <>
           <div
-            className="h-48"
+            className="h-48 w-full min-w-0"
             data-testid={`segment-trend-chart-${segmentId}`}
           >
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer
+              width="100%"
+              height="100%"
+              minWidth={1}
+              minHeight={1}
+              initialDimension={{ width: 320, height: 192 }}
+            >
               <LineChart
                 data={data}
                 margin={{ top: 8, right: 8, bottom: 0, left: 0 }}

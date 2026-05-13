@@ -15,9 +15,9 @@ import { useMapColorScheme } from "@/hooks/useMapColorScheme";
 import { applyTarmotoMapTheme, type MapColorScheme } from "@/lib/map-style";
 import { QUALITY_CONFIG } from "@/lib/utils";
 
-const SOURCE_ID = "tarmoto-roads";
-const QUALITY_LAYER = "tarmoto-quality";
-const SURFACE_LAYER = "tarmoto-surface";
+export const TARMOTO_ROADS_SOURCE = "tarmoto-roads";
+export const TARMOTO_QUALITY_LAYER = "tarmoto-quality";
+export const TARMOTO_SURFACE_LAYER = "tarmoto-surface";
 const ACTIVE_OPACITY = 0.9;
 
 // Surface palette — must stay in sync with --color-surface-* in globals.css
@@ -136,7 +136,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
       applyTarmotoMapTheme(map, colorSchemeRef.current);
       appliedColorSchemeRef.current = colorSchemeRef.current;
 
-      map.addSource(SOURCE_ID, {
+      map.addSource(TARMOTO_ROADS_SOURCE, {
         type: "vector",
         tiles: [`${originForTiles()}${API_BASE}/roads/tiles/{z}/{x}/{y}.mvt`],
         minzoom: 6,
@@ -152,9 +152,9 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
       // map renders the user's stored toggle state immediately on load.
 
       map.addLayer({
-        id: QUALITY_LAYER,
+        id: TARMOTO_QUALITY_LAYER,
         type: "line",
-        source: SOURCE_ID,
+        source: TARMOTO_ROADS_SOURCE,
         "source-layer": "quality",
         layout: {
           "line-cap": "round",
@@ -191,9 +191,9 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
       });
 
       map.addLayer({
-        id: SURFACE_LAYER,
+        id: TARMOTO_SURFACE_LAYER,
         type: "line",
-        source: SOURCE_ID,
+        source: TARMOTO_ROADS_SOURCE,
         "source-layer": "surface",
         layout: {
           "line-cap": "round",
@@ -272,24 +272,24 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    setVisibility(map, QUALITY_LAYER, showQuality);
-    setVisibility(map, SURFACE_LAYER, showSurface);
+    setVisibility(map, TARMOTO_QUALITY_LAYER, showQuality);
+    setVisibility(map, TARMOTO_SURFACE_LAYER, showSurface);
   }, [ready, showQuality, showSurface]);
 
   // ── paint updates for opacity expressions ──
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    if (map.getLayer(QUALITY_LAYER)) {
+    if (map.getLayer(TARMOTO_QUALITY_LAYER)) {
       map.setPaintProperty(
-        QUALITY_LAYER,
+        TARMOTO_QUALITY_LAYER,
         "line-opacity",
         qualityOpacityExpression,
       );
     }
-    if (map.getLayer(SURFACE_LAYER)) {
+    if (map.getLayer(TARMOTO_SURFACE_LAYER)) {
       map.setPaintProperty(
-        SURFACE_LAYER,
+        TARMOTO_SURFACE_LAYER,
         "line-opacity",
         surfaceOpacityExpression,
       );
