@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   GeoJSONSource,
   Map as MapLibreMap,
+  MapLayerMouseEvent,
   MapMouseEvent,
   MapTouchEvent,
 } from "maplibre-gl";
@@ -12,6 +13,7 @@ import {
   Layers3,
   Mountain,
   Route,
+  Sparkles,
   Square,
   X,
 } from "lucide-react";
@@ -46,6 +48,18 @@ import {
   snapWaypointToRoadFeatures,
   type RoadSnapFeature,
 } from "@/lib/trip-planner-snap";
+import {
+  fetchFunZoneDetail,
+  fetchFunZonesInBbox,
+  type FunZoneDetail,
+  type FunZoneListItem,
+} from "@/lib/discover";
+import {
+  FUN_ZONES_FILL,
+  installFunZoneLayer,
+  setFunZoneSelection,
+  updateFunZoneLayerData,
+} from "@/components/map/FunZoneLayer";
 import type { Trip } from "@/lib/types";
 import type { TripSuggestion } from "@/lib/api";
 import type { CollaboratorCursor } from "@/hooks/useTripCollabSession";
@@ -70,9 +84,12 @@ const SUGGESTION_LAYER = "trip-planner-suggestion-marker";
 const SEGMENT_HIGHLIGHT_SOURCE = "trip-planner-segment-highlight";
 const SEGMENT_HIGHLIGHT_GLOW_LAYER = "trip-planner-segment-highlight-glow";
 const SEGMENT_HIGHLIGHT_LINE_LAYER = "trip-planner-segment-highlight-line";
+const FUN_ZONE_FETCH_DEBOUNCE_MS = 300;
 interface TripPlannerMapProps {
   trip: Trip | null;
   month: number;
+  drawnRegion?: RegionDrawBbox | null;
+  onDrawnRegionChange?: (bbox: RegionDrawBbox | null) => void;
   closuresData?: ClosuresQueryResult;
   passesData?: PassesQueryResult;
   onAddWaypoint?: (location: { lng: number; lat: number }) => void;
@@ -105,6 +122,8 @@ interface TripPlannerMapProps {
 export function TripPlannerMap({
   trip,
   month,
+  drawnRegion,
+  onDrawnRegionChange,
   closuresData,
   passesData,
   onAddWaypoint,
@@ -119,6 +138,8 @@ export function TripPlannerMap({
       <TripPlannerMapContent
         trip={trip}
         month={month}
+        drawnRegion={drawnRegion}
+        onDrawnRegionChange={onDrawnRegionChange}
         closuresData={closuresData}
         passesData={passesData}
         onAddWaypoint={onAddWaypoint}
@@ -134,6 +155,8 @@ export function TripPlannerMap({
     <FetchedTripPlannerMap
       trip={trip}
       month={month}
+      drawnRegion={drawnRegion}
+      onDrawnRegionChange={onDrawnRegionChange}
       onAddWaypoint={onAddWaypoint}
       onMoveWaypoint={onMoveWaypoint}
       selectedDayNumber={selectedDayNumber}
@@ -146,6 +169,8 @@ export function TripPlannerMap({
 function FetchedTripPlannerMap({
   trip,
   month,
+  drawnRegion,
+  onDrawnRegionChange,
   onAddWaypoint,
   onMoveWaypoint,
   selectedDayNumber,
@@ -155,6 +180,8 @@ function FetchedTripPlannerMap({
 }: {
   trip: Trip | null;
   month: number;
+  drawnRegion?: RegionDrawBbox | null;
+  onDrawnRegionChange?: (bbox: RegionDrawBbox | null) => void;
   onAddWaypoint?: (location: { lng: number; lat: number }) => void;
   onMoveWaypoint?: (
     dayNumber: number,
@@ -173,6 +200,8 @@ function FetchedTripPlannerMap({
     <TripPlannerMapContent
       trip={trip}
       month={month}
+      drawnRegion={drawnRegion}
+      onDrawnRegionChange={onDrawnRegionChange}
       closuresData={closuresData}
       passesData={passesData}
       onAddWaypoint={onAddWaypoint}
@@ -187,6 +216,8 @@ function FetchedTripPlannerMap({
 function TripPlannerMapContent({
   trip,
   month,
+  drawnRegion: controlledDrawnRegion,
+  onDrawnRegionChange,
   closuresData,
   passesData,
   onAddWaypoint,
@@ -198,6 +229,8 @@ function TripPlannerMapContent({
 }: {
   trip: Trip | null;
   month: number;
+  drawnRegion?: RegionDrawBbox | null;
+  onDrawnRegionChange?: (bbox: RegionDrawBbox | null) => void;
   closuresData: ClosuresQueryResult;
   passesData: PassesQueryResult;
   onAddWaypoint?: (location: { lng: number; lat: number }) => void;
@@ -233,7 +266,22 @@ function TripPlannerMapContent({
   const [showQuality, setShowQuality] = useState(true);
   const [showSurface, setShowSurface] = useState(false);
   const [drawMode, setDrawMode] = useState<RegionDrawMode>("idle");
-  const [drawnRegion, setDrawnRegion] = useState<RegionDrawBbox | null>(null);
+  const [drawnRegion, setDrawnRegion] = useState<RegionDrawBbox | null>(
+    controlledDrawnRegion ?? null,
+  );
+  const [funZones, setFunZones] = useState<FunZoneListItem[]>([]);
+  const [funZonesLoading, setFunZonesLoading] = useState(false);
+  const [funZonesError, setFunZonesError] = useState<string | null>(null);
+  const [funZonesRetryNonce, setFunZonesRetryNonce] = useState(0);
+  const [selectedFunZoneId, setSelectedFunZoneId] = useState<string | null>(
+    null,
+  );
+  const [selectedFunZoneDetail, setSelectedFunZoneDetail] =
+    useState<FunZoneDetail | null>(null);
+  const [selectedFunZoneLoading, setSelectedFunZoneLoading] = useState(false);
+  const [selectedFunZoneError, setSelectedFunZoneError] = useState<
+    string | null
+  >(null);
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
   const hydratePreferences = usePreferencesStore((s) => s.hydrate);
   // Sidebar publishes the focused segment id so the map can paint the
@@ -294,6 +342,8 @@ function TripPlannerMapContent({
     () => buildTripPlannerSegmentHighlightCollection(trip, focusedSegmentId),
     [trip, focusedSegmentId],
   );
+  const selectedFunZone =
+    funZones.find((zone) => zone.id === selectedFunZoneId) ?? null;
   const highlightedClosures =
     routeClosures.length > 0 ? routeClosures : closures;
   const highlightedPasses =
@@ -379,13 +429,37 @@ function TripPlannerMapContent({
     },
     [drawMode, onAddWaypoint],
   );
+  const updateDrawnRegion = useCallback(
+    (bbox: RegionDrawBbox | null) => {
+      setDrawnRegion(bbox);
+      onDrawnRegionChange?.(bbox);
+    },
+    [onDrawnRegionChange],
+  );
   const handleReady = (map: MapLibreMap) => {
     ensurePlannerLayers(map);
+    installFunZoneLayer(map);
     drawRef.current?.destroy();
     drawRef.current = createRegionDrawControl(map, {
-      onRegionDrawn: (bbox) => setDrawnRegion(bbox),
-      onRegionCleared: () => setDrawnRegion(null),
+      onRegionDrawn: (bbox) => updateDrawnRegion(bbox),
+      onRegionCleared: () => updateDrawnRegion(null),
       onModeChange: setDrawMode,
+    });
+    const pointerOn = () => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      map.getCanvas().style.cursor = "pointer";
+    };
+    const pointerOff = () => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      map.getCanvas().style.cursor = "";
+    };
+    map.on("mouseenter", FUN_ZONES_FILL, pointerOn);
+    map.on("mouseleave", FUN_ZONES_FILL, pointerOff);
+    map.on("click", FUN_ZONES_FILL, (event: MapLayerMouseEvent) => {
+      if (drawRef.current?.getMode() !== "idle") return;
+      if (drawRef.current?.hitTest(event.point)) return;
+      const id = event.features?.[0]?.properties?.id as string | undefined;
+      if (id) setSelectedFunZoneId(id);
     });
     setReady(true);
   };
@@ -454,6 +528,93 @@ function TripPlannerMapContent({
     if (!ready) return;
     drawRef.current?.setDrawn(drawnRegion);
   }, [drawnRegion, ready]);
+  useEffect(() => {
+    if (controlledDrawnRegion === undefined) return;
+    setDrawnRegion(controlledDrawnRegion);
+  }, [controlledDrawnRegion]);
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready) return;
+    if (!drawnRegion) {
+      setFunZones([]);
+      setFunZonesLoading(false);
+      setFunZonesError(null);
+      setSelectedFunZoneId(null);
+      setSelectedFunZoneDetail(null);
+      updateFunZoneLayerData(map, []);
+      return;
+    }
+    const controller = new AbortController();
+    let cancelled = false;
+    setFunZonesLoading(true);
+    setFunZonesError(null);
+    const timer = window.setTimeout(async () => {
+      try {
+        const zones = await fetchFunZonesInBbox(drawnRegion, {
+          signal: controller.signal,
+        });
+        if (cancelled) return;
+        const rankedZones = [...zones].sort(
+          (a, b) => b.composite_score - a.composite_score,
+        );
+        setFunZones(rankedZones);
+        updateFunZoneLayerData(map, rankedZones);
+        setSelectedFunZoneId((current) =>
+          current && rankedZones.some((zone) => zone.id === current)
+            ? current
+            : null,
+        );
+      } catch (err) {
+        if ((err as { name?: string }).name === "AbortError") return;
+        console.warn("[planner] fun zones fetch failed", err);
+        setFunZones([]);
+        updateFunZoneLayerData(map, []);
+        setFunZonesError("Couldn't load Fun Zones.");
+      } finally {
+        if (!cancelled) setFunZonesLoading(false);
+      }
+    }, FUN_ZONE_FETCH_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [drawnRegion, funZonesRetryNonce, ready]);
+  useEffect(() => {
+    const map = handleRef.current?.map;
+    if (!map || !ready) return;
+    setFunZoneSelection(map, selectedFunZoneId);
+  }, [ready, selectedFunZoneId]);
+  useEffect(() => {
+    if (!selectedFunZoneId) {
+      setSelectedFunZoneDetail(null);
+      setSelectedFunZoneError(null);
+      setSelectedFunZoneLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    let cancelled = false;
+    setSelectedFunZoneLoading(true);
+    setSelectedFunZoneError(null);
+    fetchFunZoneDetail(selectedFunZoneId, { signal: controller.signal })
+      .then((detail) => {
+        if (cancelled) return;
+        setSelectedFunZoneDetail(detail);
+        if (!detail) setSelectedFunZoneError("Fun Zone details unavailable.");
+      })
+      .catch((err) => {
+        if ((err as { name?: string }).name === "AbortError") return;
+        console.warn("[planner] fun zone detail fetch failed", err);
+        if (!cancelled) setSelectedFunZoneError("Couldn't load top roads.");
+      })
+      .finally(() => {
+        if (!cancelled) setSelectedFunZoneLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [selectedFunZoneId]);
   useEffect(() => {
     if (!drawnRegion || drawMode === "drawing") return;
     const handleKey = (event: KeyboardEvent) => {
@@ -740,7 +901,7 @@ function TripPlannerMapContent({
       showSurface={showSurface}
       onReady={handleReady}
     >
-      <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
+      <div className="absolute top-3 left-3 z-20 flex flex-col gap-2">
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
@@ -777,7 +938,8 @@ function TripPlannerMapContent({
           <button
             type="button"
             onClick={() => drawRef.current?.start()}
-            className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/90 px-3 py-2 text-sm text-slate-100 transition hover:bg-slate-800"
+            disabled={!ready}
+            className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/90 px-3 py-2 text-sm text-slate-100 transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60"
           >
             <Square size={14} />
             {drawnRegion ? t("Redraw region ") : t("Draw region ")}
@@ -833,6 +995,153 @@ function TripPlannerMapContent({
             "Generated routes use backend road geometry from the start waypoint and planner parameters. ",
           )}
         </p>
+
+        <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/80 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-white">
+              <Sparkles size={14} className="text-tarmoto-cyan" />
+              {t("Fun Zones")}
+            </div>
+            {drawnRegion ? (
+              <span className="rounded bg-tarmoto-cyan/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-tarmoto-cyan">
+                {t("Drawn")}
+              </span>
+            ) : null}
+          </div>
+
+          {!drawnRegion ? (
+            <p className="mt-2 text-xs text-slate-500">
+              {t("Draw a region to discover Fun Zones.")}
+            </p>
+          ) : funZonesLoading && funZones.length === 0 ? (
+            <p className="mt-2 text-xs text-slate-500">
+              {t("Loading Fun Zones…")}
+            </p>
+          ) : funZonesError ? (
+            <div className="mt-2">
+              <p className="text-xs text-rose-300">{funZonesError}</p>
+              <button
+                type="button"
+                onClick={() => setFunZonesRetryNonce((value) => value + 1)}
+                className="mt-2 text-xs font-medium text-tarmoto-cyan hover:underline"
+              >
+                {t("Retry")}
+              </button>
+            </div>
+          ) : funZones.length === 0 ? (
+            <p className="mt-2 text-xs text-slate-500">
+              {t("No Fun Zones in this region yet. Try a larger area.")}
+            </p>
+          ) : (
+            <div className="mt-3 space-y-2">
+              {funZones.slice(0, 3).map((zone, index) => {
+                const active = zone.id === selectedFunZoneId;
+                return (
+                  <button
+                    key={zone.id}
+                    type="button"
+                    onClick={() => setSelectedFunZoneId(zone.id)}
+                    className={`w-full rounded-lg border px-3 py-2 text-left transition ${
+                      active
+                        ? "border-tarmoto-cyan bg-tarmoto-cyan/10"
+                        : "border-slate-800 bg-slate-950/70 hover:border-slate-700"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-medium text-slate-100">
+                          {index + 1}. {zone.name ?? fallbackZoneName(zone)}
+                        </p>
+                        <p className="mt-1 text-[11px] text-slate-400">
+                          {zone.road_count}
+                          {t(" roads")}
+                          {zone.total_curve_km != null
+                            ? ` · ${Math.round(zone.total_curve_km)} km curves`
+                            : ""}
+                        </p>
+                        {zone.best_season ? (
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            {zone.best_season}
+                          </p>
+                        ) : null}
+                      </div>
+                      <span className="shrink-0 text-xs font-semibold text-tarmoto-cyan">
+                        {zone.composite_score.toFixed(1)}
+                        {t(" score")}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+              {funZones.length > 3 ? (
+                <p className="text-[11px] text-slate-500">
+                  {t("+ {count} more in this region", {
+                    count: funZones.length - 3,
+                  })}
+                </p>
+              ) : null}
+            </div>
+          )}
+
+          {selectedFunZone ? (
+            <div className="mt-3 border-t border-slate-800 pt-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-semibold text-slate-200">
+                  {selectedFunZone.name ?? fallbackZoneName(selectedFunZone)}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setSelectedFunZoneId(null)}
+                  className="text-[11px] text-slate-500 hover:text-slate-300"
+                >
+                  {t("Clear")}
+                </button>
+              </div>
+              <p className="mt-1 text-[11px] text-slate-500">
+                {selectedFunZone.composite_score.toFixed(1)}
+                {t(" score")}
+                {selectedFunZone.avg_quality != null
+                  ? ` · ${selectedFunZone.avg_quality.toFixed(1)} avg quality`
+                  : ""}
+              </p>
+              {selectedFunZoneLoading ? (
+                <p className="mt-2 text-[11px] text-slate-500">
+                  {t("Loading top roads…")}
+                </p>
+              ) : selectedFunZoneError ? (
+                <p className="mt-2 text-[11px] text-rose-300">
+                  {selectedFunZoneError}
+                </p>
+              ) : selectedFunZoneDetail?.top_roads.length ? (
+                <div className="mt-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    {t("Top roads")}
+                  </p>
+                  <ul className="mt-1 space-y-1">
+                    {selectedFunZoneDetail.top_roads
+                      .slice(0, 3)
+                      .map((road: FunZoneDetail["top_roads"][number]) => (
+                        <li
+                          key={road.id}
+                          className="flex items-center justify-between gap-2 text-[11px] text-slate-400"
+                        >
+                          <span className="truncate">
+                            {road.road_name ??
+                              road.road_number ??
+                              t("Unnamed road")}
+                          </span>
+                          <span className="shrink-0 text-slate-500">
+                            {(road.length_m / 1000).toFixed(1)}
+                            {t(" km")}
+                          </span>
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
 
         <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/80 p-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-white">
@@ -941,6 +1250,21 @@ function toggleClassName(active: boolean): string {
       ? "border-tarmoto-cyan bg-tarmoto-cyan/15 text-tarmoto-cyan"
       : "border-slate-700 bg-slate-900/90 text-slate-300 hover:bg-slate-800"
   }`;
+}
+function fallbackZoneName(zone: FunZoneListItem): string {
+  const points = zone.boundary as unknown as Array<{
+    lat: number;
+    lng: number;
+  }>;
+  if (points.length === 0) return t("Unnamed Fun Zone");
+  const lat =
+    points.reduce((sum: number, point) => sum + point.lat, 0) / points.length;
+  const lng =
+    points.reduce((sum: number, point) => sum + point.lng, 0) / points.length;
+  return t("Zone near {lat}, {lng}", {
+    lat: lat.toFixed(2),
+    lng: lng.toFixed(2),
+  });
 }
 function dedupeMessages(messages: Array<string | null>): string[] {
   return [
