@@ -810,8 +810,8 @@ export const en = {
   Unnamed: "Unnamed",
   "Unridden ": "Unridden ",
   "Unsaved changes": "Unsaved changes",
-  "Until route generation lands, the planner previews each day as a direct line between its ordered waypoints. ":
-    "Until route generation lands, the planner previews each day as a direct line between its ordered waypoints. ",
+  "Generated routes use backend road geometry; waypoint edits are applied on the next generation. ":
+    "Generated routes use backend road geometry; waypoint edits are applied on the next generation. ",
   "Up to ": "Up to ",
   "Up to {count} JPEG, PNG, or WebP photos (max {sizeMb} MB each).":
     "Up to {count} JPEG, PNG, or WebP photos (max {sizeMb} MB each).",

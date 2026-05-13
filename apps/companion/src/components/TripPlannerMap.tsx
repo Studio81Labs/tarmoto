@@ -830,7 +830,7 @@ function TripPlannerMapContent({
         </p>
         <p className="mt-2 text-xs text-slate-500">
           {t(
-            "Until route generation lands, the planner previews each day as a direct line between its ordered waypoints. ",
+            "Generated routes use backend road geometry; waypoint edits are applied on the next generation. ",
           )}
         </p>
 

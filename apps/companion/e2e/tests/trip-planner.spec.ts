@@ -49,10 +49,14 @@ test.describe("trip planner", () => {
     await page.goto("/trips/planner");
     await page.getByRole("button", { name: /load demo trip/i }).click();
 
-    // Bump the day count to 5.
+    // Bump the day count and daily target so the backend mock builds
+    // a larger generated geometry set from the submitted controls.
     const daysInput = page.locator("#trip-planner-days");
     await daysInput.fill("5");
     await daysInput.blur();
+    const dailyKmInput = page.locator("#trip-planner-daily-km");
+    await dailyKmInput.fill("300");
+    await dailyKmInput.blur();
 
     await page.getByRole("button", { name: /generate itinerary/i }).click();
 
@@ -62,27 +66,15 @@ test.describe("trip planner", () => {
       'button:has-text("Distance"):has-text("Avg quality")',
     );
     await expect(options).toHaveCount(3);
+    await expect(options.first()).toContainText("1500km");
   });
 
-  test("promoting a trip via the Collaborate modal pushes the saved id into the URL and lets us reopen it", async ({
+  test("saving a backend-generated trip lets us reopen the same route detail", async ({
     authedPage: page,
   }) => {
     await page.goto("/trips/planner");
     await page.getByRole("button", { name: /load demo trip/i }).click();
     await page.getByRole("button", { name: /generate itinerary/i }).click();
-
-    await page.getByRole("button", { name: /^Collaborate$/ }).click();
-    await expect(
-      page.getByRole("dialog", { name: /collaborate on this trip/i }),
-    ).toBeVisible();
-
-    // The Suggestions tab gates the "Save trip" CTA when there's no
-    // serverTripId yet — that's the supported path for promoting a
-    // local trip into a saved one.
-    await page.getByRole("tab", { name: /suggestions/i }).click();
-    await page
-      .getByRole("button", { name: /save trip and enable collaboration/i })
-      .click();
 
     await expect
       .poll(() => new URL(page.url()).searchParams.get("tripId"), {
@@ -92,28 +84,22 @@ test.describe("trip planner", () => {
     const tripId = new URL(page.url()).searchParams.get("tripId")!;
     expect(tripId).toMatch(/^[0-9a-f-]{30,}$/i);
 
-    // Generate replaces the active trip's name with the selected
-    // option's label (e.g. "3-day mixed best fit"), so the saved trip
-    // takes that name rather than the demo's "Alps loop". Match on the
-    // shape of the generator's auto-name so the assertion stays
-    // deterministic without binding to a specific preset wording.
-    const generatedNamePattern =
-      /\d+-day .* (best fit|scenic sweep|fastest line)/i;
+    await page.getByRole("button", { name: /^Save$/ }).click();
+    await expect(page).toHaveURL(new RegExp(`/trips/${tripId}$`));
+    await expect(page.getByText(/250\.0 km/).first()).toBeVisible({
+      timeout: 10_000,
+    });
 
-    // Close the modal and reopen the saved trip via its detail page —
-    // the AC's "reopen via trip detail" path. We navigate via the trip
-    // list (the natural user flow) so the auth store is already
-    // populated before the detail page fires its trip fetch.
-    await page.getByRole("button", { name: /close dialog/i }).click();
+    // Reopen via the trip list, which verifies the persisted backend
+    // geometry/detail is what the detail page reads after navigation.
     await page.goto("/trips");
-    const tripCard = page
-      .getByRole("link", { name: generatedNamePattern })
-      .first();
+    const tripCard = page.getByRole("link", { name: /alps loop/i }).first();
     await expect(tripCard).toBeVisible({ timeout: 10_000 });
     await tripCard.click();
     await expect(page).toHaveURL(new RegExp(`/trips/${tripId}$`));
     await expect(
-      page.getByRole("heading", { name: generatedNamePattern }).first(),
+      page.getByRole("heading", { name: /alps loop/i }).first(),
     ).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/250\.0 km/).first()).toBeVisible();
   });
 });
