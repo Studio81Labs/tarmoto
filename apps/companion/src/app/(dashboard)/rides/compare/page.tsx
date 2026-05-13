@@ -25,7 +25,7 @@ import {
   type DeltaDirection,
   type StatRow,
 } from "@/lib/ride-compare";
-import { RideRouteMap } from "../_components/RideRouteMap";
+import { RideRouteMap, type RouteMapBounds } from "../_components/RideRouteMap";
 /** Subset of `RideSummaryDto` fields we use in the picker. */
 interface RideOption {
   id: string;
@@ -299,6 +299,11 @@ function RouteCompareSection({
   rideA: FetchedRide;
   rideB: FetchedRide;
 }) {
+  const sharedBounds = useMemo(
+    () => buildSharedRouteBounds(rideA.route_geometry, rideB.route_geometry),
+    [rideA.route_geometry, rideB.route_geometry],
+  );
+
   return (
     <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
       <h2 className="text-sm font-semibold text-white mb-1">
@@ -315,12 +320,14 @@ function RouteCompareSection({
           meta={formatRideMeta(rideA)}
           geometry={rideA.route_geometry}
           color="#0ED3CF"
+          fitBounds={sharedBounds}
         />
         <RouteBox
           label="Ride B"
           meta={formatRideMeta(rideB)}
           geometry={rideB.route_geometry}
           color="#F472B6"
+          fitBounds={sharedBounds}
         />
       </div>
     </section>
@@ -331,11 +338,13 @@ function RouteBox({
   meta,
   geometry,
   color,
+  fitBounds,
 }: {
   label: string;
   meta: string;
   geometry: FetchedRide["route_geometry"];
   color: string;
+  fitBounds: RouteMapBounds | null;
 }) {
   const hasGeometry = geometry != null && geometry.length >= 2;
   return (
@@ -354,6 +363,7 @@ function RouteBox({
           geometry={geometry}
           color={color}
           label={`${label} interactive route map`}
+          fitBounds={fitBounds}
         />
       ) : (
         <div className="rounded-lg border border-dashed border-slate-800 p-8 text-center text-xs text-slate-500">
@@ -363,6 +373,44 @@ function RouteBox({
     </div>
   );
 }
+
+function buildSharedRouteBounds(
+  a: FetchedRide["route_geometry"],
+  b: FetchedRide["route_geometry"],
+): RouteMapBounds | null {
+  const aValid = validRoutePoints(a);
+  const bValid = validRoutePoints(b);
+  if (aValid.length < 2 || bValid.length < 2) return null;
+
+  const all = [...aValid, ...bValid];
+  return all.reduce<RouteMapBounds>(
+    (bounds, point) => ({
+      minLng: Math.min(bounds.minLng, point.lng),
+      minLat: Math.min(bounds.minLat, point.lat),
+      maxLng: Math.max(bounds.maxLng, point.lng),
+      maxLat: Math.max(bounds.maxLat, point.lat),
+    }),
+    {
+      minLng: Infinity,
+      minLat: Infinity,
+      maxLng: -Infinity,
+      maxLat: -Infinity,
+    },
+  );
+}
+
+function validRoutePoints(
+  geometry: FetchedRide["route_geometry"],
+): Array<{ lat: number; lng: number }> {
+  return (geometry ?? []).filter(
+    (point): point is { lat: number; lng: number } =>
+      Number.isFinite(point.lat) &&
+      Number.isFinite(point.lng) &&
+      Math.abs(point.lat) <= 90 &&
+      Math.abs(point.lng) <= 180,
+  );
+}
+
 function StatsTable({ rows }: { rows: StatRow[] }) {
   return (
     <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5">

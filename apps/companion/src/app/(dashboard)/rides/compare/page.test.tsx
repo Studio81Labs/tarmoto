@@ -30,7 +30,8 @@ vi.mock("@/lib/api", async () => {
 });
 
 vi.mock("../_components/RideRouteMap", () => ({
-  RideRouteMap: (props: { label?: string }) => mockedRideRouteMap(props),
+  RideRouteMap: (props: { label?: string; fitBounds?: unknown }) =>
+    mockedRideRouteMap(props),
 }));
 
 function comparableRide(id: string, overrides: Record<string, unknown> = {}) {
@@ -96,7 +97,20 @@ describe("CompareRidesPage analytics", () => {
   });
 
   it("renders T34 side-by-side maps and stats diff for the selected rides", async () => {
-    mockCompareApi();
+    mockCompareApi(
+      comparableRide("ride-a", {
+        route_geometry: [
+          { lat: 49.1, lng: 16.6 },
+          { lat: 49.2, lng: 16.8 },
+        ],
+      }),
+      comparableRide("ride-b", {
+        route_geometry: [
+          { lat: 48.9, lng: 16.2 },
+          { lat: 49.6, lng: 17.1 },
+        ],
+      }),
+    );
 
     render(<CompareRidesPage />);
 
@@ -107,6 +121,28 @@ describe("CompareRidesPage analytics", () => {
     expect(screen.getAllByText("Ride B").length).toBeGreaterThan(0);
     expect(screen.getByText("Stats diff")).toBeInTheDocument();
     expect(screen.getByText("+18.0")).toBeInTheDocument();
+    expect(mockedRideRouteMap).toHaveBeenCalledWith(
+      expect.objectContaining({
+        label: "Ride A interactive route map",
+        fitBounds: {
+          minLng: 16.2,
+          minLat: 48.9,
+          maxLng: 17.1,
+          maxLat: 49.6,
+        },
+      }),
+    );
+    expect(mockedRideRouteMap).toHaveBeenCalledWith(
+      expect.objectContaining({
+        label: "Ride B interactive route map",
+        fitBounds: {
+          minLng: 16.2,
+          minLat: 48.9,
+          maxLng: 17.1,
+          maxLat: 49.6,
+        },
+      }),
+    );
   });
 
   it("shows missing-GPS states per side without hiding the comparison", async () => {
@@ -120,6 +156,12 @@ describe("CompareRidesPage analytics", () => {
     await waitFor(() => {
       expect(screen.getAllByTestId("ride-route-map")).toHaveLength(1);
     });
+    expect(mockedRideRouteMap).toHaveBeenCalledWith(
+      expect.objectContaining({
+        label: "Ride A interactive route map",
+        fitBounds: null,
+      }),
+    );
     expect(screen.getByText("Ride B has no GPS track.")).toBeInTheDocument();
   });
 });

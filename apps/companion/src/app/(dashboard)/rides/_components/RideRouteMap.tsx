@@ -18,12 +18,14 @@ interface Props {
   geometry: readonly RoutePoint[];
   label?: string;
   color?: string;
+  fitBounds?: RouteMapBounds | null;
 }
 
 export function RideRouteMap({
   geometry,
   label = "Ride route map",
   color = "#22d3ee",
+  fitBounds,
 }: Props) {
   const handleRef = useRef<MapCanvasHandle>(null);
   const [ready, setReady] = useState(false);
@@ -32,8 +34,8 @@ export function RideRouteMap({
     [geometry],
   );
   const center = useMemo(
-    () => routeCenter(geometry) ?? DEFAULT_CENTER,
-    [geometry],
+    () => boundsCenter(fitBounds) ?? routeCenter(geometry) ?? DEFAULT_CENTER,
+    [fitBounds, geometry],
   );
 
   const handleReady = (map: MapLibreMap) => {
@@ -47,8 +49,8 @@ export function RideRouteMap({
     ensureRideRouteLayer(map, color);
     const source = map.getSource(ROUTE_SOURCE_ID) as GeoJSONSource | undefined;
     source?.setData(collection);
-    fitRoute(map, collection);
-  }, [collection, color, ready]);
+    fitRoute(map, collection, fitBounds);
+  }, [collection, color, fitBounds, ready]);
 
   return (
     <div
@@ -118,12 +120,18 @@ function emptyRouteCollection(): FeatureCollection<LineString> {
 function fitRoute(
   map: MapLibreMap,
   collection: FeatureCollection<LineString>,
+  fitBounds?: RouteMapBounds | null,
 ): void {
-  const coordinates = collection.features[0]?.geometry.coordinates;
-  if (!coordinates?.length) return;
   const bounds = new maplibregl.LngLatBounds();
-  for (const coordinate of coordinates) {
-    bounds.extend(coordinate as [number, number]);
+  if (fitBounds) {
+    bounds.extend([fitBounds.minLng, fitBounds.minLat]);
+    bounds.extend([fitBounds.maxLng, fitBounds.maxLat]);
+  } else {
+    const coordinates = collection.features[0]?.geometry.coordinates;
+    if (!coordinates?.length) return;
+    for (const coordinate of coordinates) {
+      bounds.extend(coordinate as [number, number]);
+    }
   }
   if (!bounds.isEmpty()) {
     map.fitBounds(bounds as LngLatBoundsLike, {
@@ -132,6 +140,23 @@ function fitRoute(
       duration: 0,
     });
   }
+}
+
+export interface RouteMapBounds {
+  minLng: number;
+  minLat: number;
+  maxLng: number;
+  maxLat: number;
+}
+
+function boundsCenter(
+  bounds: RouteMapBounds | null | undefined,
+): { lng: number; lat: number } | null {
+  if (!bounds) return null;
+  return {
+    lng: (bounds.minLng + bounds.maxLng) / 2,
+    lat: (bounds.minLat + bounds.maxLat) / 2,
+  };
 }
 
 function routeCenter(
