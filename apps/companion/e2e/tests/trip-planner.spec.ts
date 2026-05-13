@@ -69,6 +69,21 @@ test.describe("trip planner", () => {
     await expect(options.first()).toContainText("1500km");
   });
 
+  test("restoring a planner region surfaces Fun Zones and top roads", async ({
+    authedPage: page,
+  }) => {
+    await page.goto("/trips/planner?bbox=10.3,46.45,10.6,46.7");
+    const canvas = page.locator(".maplibregl-canvas").first();
+    await expect(canvas).toBeVisible({ timeout: 10_000 });
+
+    await expect(page.getByText("Mock Ridge Fun Zone")).toBeVisible({
+      timeout: 10_000,
+    });
+    await page.getByRole("button", { name: /Mock Ridge Fun Zone/i }).click();
+    await expect(page.getByText("Top roads")).toBeVisible();
+    await expect(page.getByText("Mock Ridge Road")).toBeVisible();
+  });
+
   test("saving a backend-generated trip lets us reopen the same route detail", async ({
     authedPage: page,
   }) => {

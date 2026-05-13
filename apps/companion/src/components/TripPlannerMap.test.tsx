@@ -13,6 +13,7 @@ import { useClosures } from "@/hooks/useClosures";
 import { usePasses } from "@/hooks/usePasses";
 import { buildTripClosureRoutes } from "@/lib/closures-summary";
 import { useTripStore } from "@/stores/trip";
+import { fetchFunZoneDetail, fetchFunZonesInBbox } from "@/lib/discover";
 
 const mockCanvas = {
   style: { cursor: "" },
@@ -36,7 +37,9 @@ const mockMap = {
   on: vi.fn(),
   off: vi.fn(),
   queryRenderedFeatures: vi.fn(),
+  querySourceFeatures: vi.fn(),
   setPaintProperty: vi.fn(),
+  setFilter: vi.fn(),
   fitBounds: vi.fn(),
   getCanvas: vi.fn(() => mockCanvas),
   unproject: vi.fn((point: [number, number]) => ({
@@ -117,6 +120,11 @@ vi.mock("@/lib/closures-summary", async () => {
   };
 });
 
+vi.mock("@/lib/discover", () => ({
+  fetchFunZonesInBbox: vi.fn(),
+  fetchFunZoneDetail: vi.fn(),
+}));
+
 function trip(): Trip {
   return {
     id: "trip-1",
@@ -176,6 +184,7 @@ describe("TripPlannerMap", () => {
   const buildTripClosureRoutesMock = vi.mocked(buildTripClosureRoutes);
 
   beforeEach(() => {
+    vi.useRealTimers();
     vi.mocked(createRegionDrawControl).mockClear();
     lastDrawOptions = null;
     drawControl.start.mockReset();
@@ -195,10 +204,15 @@ describe("TripPlannerMap", () => {
     mockMap.getSource.mockReset();
     mockMap.addLayer.mockReset();
     mockMap.getLayer.mockReset();
+    mockMap.getLayer.mockImplementation((id) =>
+      id === "fun-zones-selected" ? ({ id } as never) : undefined,
+    );
     mockMap.on.mockReset();
     mockMap.off.mockReset();
     mockMap.queryRenderedFeatures.mockReset();
+    mockMap.querySourceFeatures.mockReset();
     mockMap.setPaintProperty.mockReset();
+    mockMap.setFilter.mockReset();
     mockMap.fitBounds.mockReset();
     mockMap.unproject.mockReset();
     mockMap.unproject.mockImplementation((point: [number, number]) => ({
@@ -230,6 +244,12 @@ describe("TripPlannerMap", () => {
       error: null,
       routeError: null,
     });
+    vi.mocked(fetchFunZonesInBbox).mockReset();
+    vi.mocked(fetchFunZoneDetail).mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("toggles the shared MapCanvas quality and surface overlays", () => {
@@ -253,8 +273,12 @@ describe("TripPlannerMap", () => {
   it("snaps map clicks onto nearby road geometry before adding a waypoint", () => {
     const handleAddWaypoint = vi.fn();
     const eventHandlers = new Map<string, (event: unknown) => void>();
-    mockMap.on.mockImplementation((event, handler) => {
-      eventHandlers.set(event, handler);
+    mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
+      if (typeof layerOrHandler === "string") return mockMap;
+      eventHandlers.set(
+        event,
+        (maybeHandler ?? layerOrHandler) as (event: unknown) => void,
+      );
       return mockMap;
     });
     mockMap.off.mockImplementation((event) => {
@@ -336,6 +360,239 @@ describe("TripPlannerMap", () => {
     ).toBeInTheDocument();
   });
 
+  it("fetches Fun Zones for the drawn region and exposes selected top roads", async () => {
+    const zones = [
+      {
+        id: "zone-1",
+        name: "Stelvio sweepers",
+        composite_score: 4.6,
+        road_count: 12,
+        total_curve_km: 48,
+        avg_quality: 4.2,
+        best_season: "summer",
+        boundary: [
+          { lng: 10.3, lat: 46.45 },
+          { lng: 10.6, lat: 46.45 },
+          { lng: 10.6, lat: 46.7 },
+          { lng: 10.3, lat: 46.7 },
+          { lng: 10.3, lat: 46.45 },
+        ],
+      },
+    ];
+    vi.mocked(fetchFunZonesInBbox).mockResolvedValueOnce(zones as never);
+    vi.mocked(fetchFunZoneDetail).mockResolvedValueOnce({
+      zone: zones[0],
+      top_roads: [
+        {
+          id: "road-1",
+          road_name: "SS38",
+          road_number: "SS38",
+          quality_score: 4.7,
+          curviness_score: 4.5,
+          surface_type: "asphalt",
+          length_m: 12340,
+          confidence: 90,
+          elevation_min: 900,
+          elevation_max: 2700,
+          elevation_profile: null,
+          geometry: [],
+          contribution_score: 9.2,
+        },
+      ],
+    } as never);
+
+    render(<TripPlannerMap trip={trip()} month={7} />);
+
+    act(() => {
+      lastDrawOptions?.onRegionDrawn([10.3, 46.45, 10.6, 46.7]);
+      lastDrawOptions?.onModeChange?.("idle");
+    });
+
+    expect(screen.getByText("Loading Fun Zones…")).toBeInTheDocument();
+
+    await waitFor(() =>
+      expect(fetchFunZonesInBbox).toHaveBeenCalledWith(
+        [10.3, 46.45, 10.6, 46.7],
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    );
+    expect(screen.getByRole("button", { name: /Stelvio sweepers/i }));
+    expect(screen.getByText("4.6 score")).toBeInTheDocument();
+    expect(screen.getByText(/summer/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Stelvio sweepers/i }));
+
+    await waitFor(() =>
+      expect(fetchFunZoneDetail).toHaveBeenCalledWith(
+        "zone-1",
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    );
+    expect(screen.getByText("Top roads")).toBeInTheDocument();
+    expect(screen.getByText("SS38")).toBeInTheDocument();
+    expect(screen.getByText("12.3 km")).toBeInTheDocument();
+    expect(mockMap.setFilter).toHaveBeenCalledWith("fun-zones-selected", [
+      "==",
+      ["get", "id"],
+      "zone-1",
+    ]);
+  });
+
+  it("selects a Fun Zone map feature inside the drawn region", async () => {
+    let funZoneClickHandler: ((event: unknown) => void) | undefined;
+    mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
+      if (event === "click" && layerOrHandler === "fun-zones-fill") {
+        funZoneClickHandler = maybeHandler as (event: unknown) => void;
+      }
+      return mockMap;
+    });
+    drawControl.hitTest.mockReturnValue(true);
+    vi.mocked(fetchFunZoneDetail).mockResolvedValueOnce({
+      zone: {
+        id: "zone-1",
+        name: "Stelvio sweepers",
+        composite_score: 4.6,
+        road_count: 12,
+        total_curve_km: 48,
+        avg_quality: 4.2,
+        best_season: "summer",
+        boundary: [
+          { lng: 10.3, lat: 46.45 },
+          { lng: 10.6, lat: 46.45 },
+          { lng: 10.6, lat: 46.7 },
+          { lng: 10.3, lat: 46.7 },
+          { lng: 10.3, lat: 46.45 },
+        ],
+      },
+      top_roads: [],
+    } as never);
+
+    render(<TripPlannerMap trip={trip()} month={7} />);
+
+    act(() => {
+      funZoneClickHandler?.({
+        point: { x: 200, y: 200 },
+        features: [{ properties: { id: "zone-1" } }],
+      });
+    });
+
+    await waitFor(() =>
+      expect(mockMap.setFilter).toHaveBeenCalledWith("fun-zones-selected", [
+        "==",
+        ["get", "id"],
+        "zone-1",
+      ]),
+    );
+    expect(drawControl.hitTest).not.toHaveBeenCalled();
+    expect(fetchFunZoneDetail).toHaveBeenCalledWith(
+      "zone-1",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it("does not add a waypoint when selecting a Fun Zone outside the drawn region", async () => {
+    const handleAddWaypoint = vi.fn();
+    let funZoneClickHandler: ((event: unknown) => void) | undefined;
+    let mapClickHandler: ((event: unknown) => void) | undefined;
+    mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
+      if (event === "click" && layerOrHandler === "fun-zones-fill") {
+        funZoneClickHandler = maybeHandler as (event: unknown) => void;
+      } else if (event === "click" && typeof layerOrHandler !== "string") {
+        mapClickHandler = layerOrHandler as (event: unknown) => void;
+      }
+      return mockMap;
+    });
+    drawControl.hitTest.mockReturnValue(false);
+    mockMap.queryRenderedFeatures.mockReturnValue([]);
+    vi.mocked(fetchFunZoneDetail).mockResolvedValueOnce({
+      zone: {
+        id: "zone-1",
+        name: "Stelvio sweepers",
+        composite_score: 4.6,
+        road_count: 12,
+        total_curve_km: 48,
+        avg_quality: 4.2,
+        best_season: "summer",
+        boundary: [
+          { lng: 10.3, lat: 46.45 },
+          { lng: 10.6, lat: 46.45 },
+          { lng: 10.6, lat: 46.7 },
+          { lng: 10.3, lat: 46.7 },
+          { lng: 10.3, lat: 46.45 },
+        ],
+      },
+      top_roads: [],
+    } as never);
+
+    render(
+      <TripPlannerMap
+        trip={trip()}
+        month={7}
+        onAddWaypoint={handleAddWaypoint}
+      />,
+    );
+
+    act(() => {
+      const event = {
+        point: { x: 200, y: 200 },
+        lngLat: { lng: 10.65, lat: 46.75 },
+        features: [{ properties: { id: "zone-1" } }],
+      };
+      funZoneClickHandler?.(event);
+      mapClickHandler?.(event);
+    });
+
+    await waitFor(() =>
+      expect(mockMap.setFilter).toHaveBeenCalledWith("fun-zones-selected", [
+        "==",
+        ["get", "id"],
+        "zone-1",
+      ]),
+    );
+    expect(handleAddWaypoint).not.toHaveBeenCalled();
+    expect(fetchFunZoneDetail).toHaveBeenCalledWith(
+      "zone-1",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it("clears Fun Zone results when the drawn region is cleared", async () => {
+    vi.mocked(fetchFunZonesInBbox).mockResolvedValueOnce([
+      {
+        id: "zone-1",
+        name: "Stelvio sweepers",
+        composite_score: 4.6,
+        road_count: 12,
+        total_curve_km: 48,
+        avg_quality: 4.2,
+        best_season: "summer",
+        boundary: [
+          { lng: 10.3, lat: 46.45 },
+          { lng: 10.6, lat: 46.45 },
+          { lng: 10.6, lat: 46.7 },
+          { lng: 10.3, lat: 46.7 },
+          { lng: 10.3, lat: 46.45 },
+        ],
+      },
+    ] as never);
+
+    render(<TripPlannerMap trip={trip()} month={7} />);
+
+    act(() => {
+      lastDrawOptions?.onRegionDrawn([10.3, 46.45, 10.6, 46.7]);
+      lastDrawOptions?.onModeChange?.("idle");
+    });
+    await waitFor(() => expect(fetchFunZonesInBbox).toHaveBeenCalled());
+    await screen.findByText(/Stelvio sweepers/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear region" }));
+
+    expect(screen.queryByText(/Stelvio sweepers/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Draw a region to discover Fun Zones."),
+    ).toBeInTheDocument();
+  });
+
   it("clears the drawn region when the rider presses Delete or Backspace", () => {
     render(<TripPlannerMap trip={trip()} month={7} />);
 
@@ -401,8 +658,12 @@ describe("TripPlannerMap", () => {
   it("does not add a waypoint when the click lands on the drawn region", () => {
     const handleAddWaypoint = vi.fn();
     const eventHandlers = new Map<string, (event: unknown) => void>();
-    mockMap.on.mockImplementation((event, handler) => {
-      eventHandlers.set(event, handler);
+    mockMap.on.mockImplementation((event, layerOrHandler, maybeHandler) => {
+      if (typeof layerOrHandler === "string") return mockMap;
+      eventHandlers.set(
+        event,
+        (maybeHandler ?? layerOrHandler) as (event: unknown) => void,
+      );
       return mockMap;
     });
     mockMap.off.mockImplementation((event) => {

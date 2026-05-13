@@ -616,6 +616,57 @@ describe("TripPlannerPage", () => {
     expect(screen.getByText("Fastest backend")).toBeInTheDocument();
   });
 
+  it("passes the drawn planner region bbox into trip generation", async () => {
+    tripsApiGenerateMock.mockResolvedValueOnce({
+      data: buildGenerationResponse(),
+    } as never);
+    storeState.activeTrip = activeTrip;
+
+    render(<TripPlannerPage />);
+
+    const latestMapProps = mockedTripPlannerMap.mock.calls.at(-1)?.[0] as
+      | {
+          onDrawnRegionChange?: (
+            bbox: [number, number, number, number] | null,
+          ) => void;
+        }
+      | undefined;
+
+    await act(async () => {
+      latestMapProps?.onDrawnRegionChange?.([10.3, 46.45, 10.6, 46.7]);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() =>
+      expect(tripsApiGenerateMock).toHaveBeenCalledWith(
+        "server-trip-1",
+        expect.objectContaining({
+          bbox: "10.3,46.45,10.6,46.7",
+        }),
+      ),
+    );
+    expect(window.location.search).toContain("bbox=10.3%2C46.45%2C10.6%2C46.7");
+  });
+
+  it("restores the drawn planner region from the URL", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/trips/planner?bbox=10.3,46.45,10.6,46.7",
+    );
+
+    render(<TripPlannerPage />);
+
+    await waitFor(() =>
+      expect(mockedTripPlannerMap).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          drawnRegion: [10.3, 46.45, 10.6, 46.7],
+        }),
+      ),
+    );
+  });
+
   it("persists a newly selected backend option before showing it as active", async () => {
     tripsApiGenerateMock
       .mockResolvedValueOnce({ data: buildGenerationResponse() } as never)

@@ -33,6 +33,7 @@ import { TripStopsPanel } from "@/components/TripStopsPanel";
 import { TripCollaborateModal } from "@/components/TripCollaborateModal";
 import { TripExportMenu } from "@/components/TripExportMenu";
 import { TripImportDialog } from "@/components/TripImportDialog";
+import type { RegionDrawBbox } from "@/components/map/RegionDrawControl";
 import { useClosures } from "@/hooks/useClosures";
 import { usePasses } from "@/hooks/usePasses";
 import { useTripCollabSession } from "@/hooks/useTripCollabSession";
@@ -111,6 +112,7 @@ const URL_PARAM_KEYS = {
   avoidHighways: "avoidHighways",
   avoidTolls: "avoidTolls",
   avoidUnpaved: "avoidUnpaved",
+  bbox: "bbox",
 } as const;
 export default function TripPlannerPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -155,6 +157,10 @@ export default function TripPlannerPage() {
     PLANNER_DEFAULTS.avoidUnpaved,
   );
   const urlControlsHydratedRef = useRef(false);
+  const urlRegionHydratedRef = useRef(false);
+  const [plannerRegion, setPlannerRegion] = useState<RegionDrawBbox | null>(
+    null,
+  );
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [generatedOptions, setGeneratedOptions] = useState<
     GeneratedTripOption[]
@@ -348,8 +354,13 @@ export default function TripPlannerPage() {
     [displayedTrip],
   );
   const currentGenerationSignature = useMemo(
-    () => buildGenerationInputSignature(displayedTrip, plannerParams),
-    [displayedTrip, plannerParams],
+    () =>
+      buildGenerationInputSignature(
+        displayedTrip,
+        plannerParams,
+        plannerRegion,
+      ),
+    [displayedTrip, plannerParams, plannerRegion],
   );
   const closuresData = useClosures(travelMonth, closureRoutes);
   const passesData = usePasses(travelMonth, closureRoutes);
@@ -459,7 +470,12 @@ export default function TripPlannerPage() {
         try {
           await tripsApi.generate(
             tripId,
-            buildGenerationPayload(p, startWp, selectedBackendOption?.id),
+            buildGenerationPayload(
+              p,
+              startWp,
+              plannerRegion,
+              selectedBackendOption?.id,
+            ),
           );
         } catch (generateError) {
           if (createdTripId) {
@@ -485,6 +501,7 @@ export default function TripPlannerPage() {
     generatedOptions,
     isGenerating,
     plannerParams,
+    plannerRegion,
     router,
     saving,
     selectedOptionId,
@@ -609,6 +626,20 @@ export default function TripPlannerPage() {
     surfacePreference,
   ]);
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!urlRegionHydratedRef.current) {
+      urlRegionHydratedRef.current = true;
+      const fromUrl = parseBboxParam(
+        new URLSearchParams(window.location.search).get(URL_PARAM_KEYS.bbox),
+      );
+      if (!bboxEqual(fromUrl, plannerRegion)) {
+        setPlannerRegion(fromUrl);
+        return;
+      }
+    }
+    syncPlannerRegionToUrl(plannerRegion);
+  }, [plannerRegion]);
+  useEffect(() => {
     generatedOptionsRef.current = generatedOptions;
   }, [generatedOptions]);
   useEffect(() => {
@@ -662,6 +693,7 @@ export default function TripPlannerPage() {
       const generationInputAtStart = buildGenerationInputSignature(
         activeTripAtStart,
         plannerParams,
+        plannerRegion,
       );
       const existingTripId = resolveExistingTripId(
         serverTripId,
@@ -690,7 +722,7 @@ export default function TripPlannerPage() {
       }
       const { data } = await tripsApi.generate(
         tripId,
-        buildGenerationPayload(plannerParams, startWaypoint),
+        buildGenerationPayload(plannerParams, startWaypoint, plannerRegion),
       );
       const latestTrip = activeTripRef.current;
       const latestTripId = latestTrip?.id ?? null;
@@ -700,6 +732,7 @@ export default function TripPlannerPage() {
       const generationInputNow = buildGenerationInputSignature(
         latestTrip,
         plannerParams,
+        plannerRegion,
       );
       if (
         !isMountedRef.current ||
@@ -718,7 +751,11 @@ export default function TripPlannerPage() {
         selectedGeneratedOption(options, response.selected_option) ?? null;
       setGeneratedOptions(options);
       setGeneratedOptionsSignature(
-        buildGenerationInputSignature(selected?.trip ?? null, plannerParams),
+        buildGenerationInputSignature(
+          selected?.trip ?? null,
+          plannerParams,
+          plannerRegion,
+        ),
       );
       setSelectedOptionId(selected?.id ?? null);
       setActiveTrip(selected?.trip ?? null);
@@ -744,6 +781,7 @@ export default function TripPlannerPage() {
   }, [
     currentUserId,
     plannerParams,
+    plannerRegion,
     serverTripId,
     setActiveTrip,
     setGenerating,
@@ -770,7 +808,12 @@ export default function TripPlannerPage() {
       try {
         const { data } = await tripsApi.generate(
           serverTripId,
-          buildGenerationPayload(plannerParams, startWaypoint, option.id),
+          buildGenerationPayload(
+            plannerParams,
+            startWaypoint,
+            plannerRegion,
+            option.id,
+          ),
         );
         if (!isMountedRef.current || requestTokenRef.current !== requestToken) {
           return;
@@ -783,7 +826,11 @@ export default function TripPlannerPage() {
         );
         setGeneratedOptions(options);
         setGeneratedOptionsSignature(
-          buildGenerationInputSignature(selected?.trip ?? null, plannerParams),
+          buildGenerationInputSignature(
+            selected?.trip ?? null,
+            plannerParams,
+            plannerRegion,
+          ),
         );
         setSelectedOptionId(selected?.id ?? option.id);
         setActiveTrip(selected?.trip ?? option.trip);
@@ -803,7 +850,7 @@ export default function TripPlannerPage() {
         }
       }
     },
-    [plannerParams, serverTripId, setActiveTrip, setGenerating],
+    [plannerParams, plannerRegion, serverTripId, setActiveTrip, setGenerating],
   );
   return (
     <div className="flex flex-col h-full">
@@ -1220,6 +1267,8 @@ export default function TripPlannerPage() {
           <TripPlannerMap
             trip={displayedTrip}
             month={travelMonth}
+            drawnRegion={plannerRegion}
+            onDrawnRegionChange={setPlannerRegion}
             closuresData={closuresData}
             passesData={passesData}
             selectedDayNumber={selectedDay?.dayNumber ?? 1}
@@ -1397,6 +1446,7 @@ function buildTripMetadataPayload(trip: Trip, params: TripParameters) {
 function buildGenerationPayload(
   params: TripParameters,
   startWaypoint: Waypoint,
+  drawnRegion?: RegionDrawBbox | null,
   option?: TripGenerationOptionId,
 ) {
   const surfaces = generationSurfaces(params);
@@ -1405,6 +1455,7 @@ function buildGenerationPayload(
       lat: startWaypoint.location.lat,
       lng: startWaypoint.location.lng,
     },
+    bbox: drawnRegion ? formatBboxParam(drawnRegion) : undefined,
     option,
     avoid_highways: params.avoidHighways,
     avoid_tolls: params.avoidTolls,
@@ -1415,6 +1466,7 @@ function buildGenerationPayload(
 function buildGenerationInputSignature(
   trip: Trip | null,
   params: TripParameters,
+  drawnRegion?: RegionDrawBbox | null,
 ): string | null {
   if (!trip) return null;
   const startWaypoint = findStartWaypoint(trip);
@@ -1435,6 +1487,7 @@ function buildGenerationInputSignature(
           lat: roundCoordinate(startWaypoint.location.lat),
         }
       : null,
+    bbox: drawnRegion ? formatBboxParam(drawnRegion) : null,
   });
 }
 function validateGenerationInput(
@@ -1571,6 +1624,22 @@ function parseSurfacesParam(
   }
   return seen.size > 0 ? Array.from(seen) : fallback;
 }
+function parseBboxParam(raw: string | null): RegionDrawBbox | null {
+  if (raw === null) return null;
+  const parts = raw.split(",").map(Number);
+  if (parts.length !== 4 || parts.some((part) => !Number.isFinite(part))) {
+    return null;
+  }
+  const [west, south, east, north] = parts;
+  if (west >= east || south >= north) return null;
+  if (west < -180 || east > 180 || south < -90 || north > 90) return null;
+  return [
+    roundCoordinate(west),
+    roundCoordinate(south),
+    roundCoordinate(east),
+    roundCoordinate(north),
+  ];
+}
 function syncPlannerControlsToUrl(controls: PlannerControls) {
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
@@ -1640,6 +1709,31 @@ function syncPlannerControlsToUrl(controls: PlannerControls) {
   if (nextSearch === currentSearch) return;
   const suffix = nextSearch ? `?${nextSearch}` : "";
   window.history.replaceState({}, "", `${url.pathname}${suffix}${url.hash}`);
+}
+function syncPlannerRegionToUrl(region: RegionDrawBbox | null) {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  setOrDeleteParam(
+    url.searchParams,
+    URL_PARAM_KEYS.bbox,
+    region ? formatBboxParam(region) : null,
+  );
+  const nextSearch = url.searchParams.toString();
+  const currentSearch = window.location.search.replace(/^\?/, "");
+  if (nextSearch === currentSearch) return;
+  const suffix = nextSearch ? `?${nextSearch}` : "";
+  window.history.replaceState({}, "", `${url.pathname}${suffix}${url.hash}`);
+}
+function formatBboxParam(bbox: RegionDrawBbox): string {
+  return bbox.map((value) => String(roundCoordinate(value))).join(",");
+}
+function bboxEqual(
+  a: RegionDrawBbox | null,
+  b: RegionDrawBbox | null,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.every((value, index) => value === b[index]);
 }
 function setOrDeleteParam(
   search: URLSearchParams,

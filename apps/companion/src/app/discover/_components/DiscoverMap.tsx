@@ -10,7 +10,7 @@ import {
   setFunZoneSelection,
   FUN_ZONES_FILL,
   FUN_ZONES_SOURCE,
-} from "./FunZoneLayer";
+} from "@/components/map/FunZoneLayer";
 import {
   createRegionDrawControl,
   type RegionDrawControl,

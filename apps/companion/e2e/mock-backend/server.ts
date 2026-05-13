@@ -11,6 +11,8 @@ interface AuthedRequest extends Request {
   session?: MockSession;
 }
 
+const MOCK_FUN_ZONE_ID = "11111111-2222-4333-8444-555555555000";
+
 // `@types/express-serve-static-core` 5.x types `req.params[key]` as
 // `string | string[]` because Express 5 supports repeated-segment route
 // params. The mock never uses those patterns, so tunnel each access
@@ -48,6 +50,25 @@ function tokenResponse(session: MockSession) {
       display_name: user.display_name,
       phone: user.phone,
     },
+  };
+}
+
+function mockFunZone() {
+  return {
+    id: MOCK_FUN_ZONE_ID,
+    name: "Mock Ridge Fun Zone",
+    composite_score: 4.6,
+    road_count: 12,
+    total_curve_km: 48,
+    avg_quality: 4.2,
+    best_season: "summer",
+    boundary: [
+      { lat: 46.45, lng: 10.3 },
+      { lat: 46.45, lng: 10.6 },
+      { lat: 46.7, lng: 10.6 },
+      { lat: 46.7, lng: 10.3 },
+      { lat: 46.45, lng: 10.3 },
+    ],
   };
 }
 
@@ -242,6 +263,48 @@ export function buildApp(): Express {
   app.post("/api/v1/auth/forgot-password", (req, res) => {
     res.status(204).end();
     void req;
+  });
+
+  // ── Roads / Fun Zones ────────────────────────────────────────────
+  app.get("/api/v1/roads/fun-zones", (req, res) => {
+    const bbox = String(req.query.bbox ?? "")
+      .split(",")
+      .map(Number);
+    if (bbox.length !== 4 || bbox.some((value) => !Number.isFinite(value))) {
+      res.status(400).json({ message: "invalid-bbox" });
+      return;
+    }
+    res.json([mockFunZone()]);
+  });
+
+  app.get("/api/v1/roads/fun-zones/:id", (req, res) => {
+    if (param(req, "id") !== MOCK_FUN_ZONE_ID) {
+      res.status(404).json({ message: "not-found" });
+      return;
+    }
+    res.json({
+      zone: mockFunZone(),
+      top_roads: [
+        {
+          id: "11111111-2222-4333-8444-555555555111",
+          road_name: "Mock Ridge Road",
+          road_number: "MR-12",
+          quality_score: 4.7,
+          curviness_score: 4.5,
+          surface_type: "asphalt",
+          length_m: 12340,
+          confidence: 92,
+          elevation_min: 840,
+          elevation_max: 1620,
+          elevation_profile: null,
+          geometry: [
+            { lat: 46.45, lng: 10.3 },
+            { lat: 46.58, lng: 10.48 },
+          ],
+          contribution_score: 9.1,
+        },
+      ],
+    });
   });
 
   // ── Trips ─────────────────────────────────────────────────────────
