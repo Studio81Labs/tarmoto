@@ -766,6 +766,26 @@ describe("TripPlannerPage", () => {
     expect(tripsApiGenerateMock).not.toHaveBeenCalled();
   });
 
+  it("cleans up a newly created backend trip when generation results go stale", async () => {
+    storeState.activeTrip = activeTrip;
+    const { rerender } = render(<TripPlannerPage />);
+    tripsApiGenerateMock.mockImplementationOnce(async () => {
+      storeState.activeTrip = buildTrip("Edited while generating");
+      rerender(<TripPlannerPage />);
+      return { data: buildGenerationResponse() } as never;
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() =>
+      expect(tripsApiDeleteMock).toHaveBeenCalledWith("server-trip-1"),
+    );
+    expect(setActiveTrip).not.toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Best backend" }),
+    );
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
   it("regenerates the selected backend option when planner controls change before saving", async () => {
     storeState.activeTrip = activeTrip;
     render(<TripPlannerPage />);
@@ -797,6 +817,51 @@ describe("TripPlannerPage", () => {
       }),
     );
     expect(mockPush).toHaveBeenCalledWith("/trips/server-trip-1");
+  });
+
+  it("does not regenerate when only unsupported waypoint anchors change before saving", async () => {
+    storeState.activeTrip = activeTrip;
+    const { rerender } = render(<TripPlannerPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate itinerary" }));
+
+    await waitFor(() =>
+      expect(setActiveTrip).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "Best backend" }),
+      ),
+    );
+    const generatedTrip = setActiveTrip.mock.calls.at(-1)?.[0];
+    expect(generatedTrip).not.toBeNull();
+    storeState.activeTrip = {
+      ...(generatedTrip as Trip),
+      days: (generatedTrip as Trip).days.map((day) =>
+        day.dayNumber === 1
+          ? {
+              ...day,
+              waypoints: day.waypoints.map((waypoint) =>
+                waypoint.type === "end"
+                  ? {
+                      ...waypoint,
+                      location: {
+                        lng: waypoint.location.lng + 0.1,
+                        lat: waypoint.location.lat + 0.1,
+                      },
+                    }
+                  : waypoint,
+              ),
+            }
+          : day,
+      ),
+    };
+    rerender(<TripPlannerPage />);
+
+    tripsApiGenerateMock.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mockPush).toHaveBeenCalledWith("/trips/server-trip-1"),
+    );
+    expect(tripsApiGenerateMock).not.toHaveBeenCalled();
   });
 
   it("does not expose day-scoped regeneration for backend-generated options", async () => {

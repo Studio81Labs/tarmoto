@@ -810,8 +810,8 @@ export const en = {
   Unnamed: "Unnamed",
   "Unridden ": "Unridden ",
   "Unsaved changes": "Unsaved changes",
-  "Generated routes use backend road geometry; waypoint edits are applied on the next generation. ":
-    "Generated routes use backend road geometry; waypoint edits are applied on the next generation. ",
+  "Generated routes use backend road geometry from the start waypoint and planner parameters. ":
+    "Generated routes use backend road geometry from the start waypoint and planner parameters. ",
   "Up to ": "Up to ",
   "Up to {count} JPEG, PNG, or WebP photos (max {sizeMb} MB each).":
     "Up to {count} JPEG, PNG, or WebP photos (max {sizeMb} MB each).",

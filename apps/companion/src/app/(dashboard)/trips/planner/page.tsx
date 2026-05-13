@@ -48,7 +48,6 @@ import {
   type GeneratedTripOption,
   type TripGenerationOptionId,
 } from "@/lib/trip-generation-options";
-import { filterRoutingWaypoints } from "@/lib/trip-routing";
 import { currentUtcMonth } from "@/lib/passes-summary";
 import {
   findOwnerId,
@@ -691,6 +690,9 @@ export default function TripPlannerPage() {
         requestTokenRef.current !== requestToken ||
         activeTripRef.current !== activeTripAtStart
       ) {
+        if (createdTripId) {
+          await cleanupCreatedTrip(createdTripId);
+        }
         return;
       }
       const response = data as GenerateTripResponse;
@@ -711,11 +713,7 @@ export default function TripPlannerPage() {
         return;
       }
       if (createdTripId) {
-        try {
-          await tripsApi.delete(createdTripId);
-        } catch (cleanupError) {
-          console.warn("Failed to clean up ungenerated trip", cleanupError);
-        }
+        await cleanupCreatedTrip(createdTripId);
       }
       setGenerationError("Could not generate itinerary options right now.");
     } finally {
@@ -1402,6 +1400,7 @@ function buildGenerationInputSignature(
   params: TripParameters,
 ): string | null {
   if (!trip) return null;
+  const startWaypoint = findStartWaypoint(trip);
   return JSON.stringify({
     params: {
       days: params.days,
@@ -1413,15 +1412,12 @@ function buildGenerationInputSignature(
       avoidTolls: params.avoidTolls,
       avoidUnpaved: params.avoidUnpaved,
     },
-    routeAnchors: trip.days.map((day) => ({
-      dayNumber: day.dayNumber,
-      waypoints: filterRoutingWaypoints(day.waypoints).map((waypoint) => ({
-        id: waypoint.id,
-        type: waypoint.type,
-        lng: roundCoordinate(waypoint.location.lng),
-        lat: roundCoordinate(waypoint.location.lat),
-      })),
-    })),
+    startLocation: startWaypoint
+      ? {
+          lng: roundCoordinate(startWaypoint.location.lng),
+          lat: roundCoordinate(startWaypoint.location.lat),
+        }
+      : null,
   });
 }
 function validateGenerationInput(
@@ -1655,6 +1651,13 @@ function normalizeBackendDailyKm(value: number) {
 }
 function roundCoordinate(value: number) {
   return Number.isFinite(value) ? Number(value.toFixed(6)) : value;
+}
+async function cleanupCreatedTrip(tripId: string) {
+  try {
+    await tripsApi.delete(tripId);
+  } catch (cleanupError) {
+    console.warn("Failed to clean up ungenerated trip", cleanupError);
+  }
 }
 function buildImportedRoutePayload(trip: Trip) {
   if (!trip.id.startsWith("imported-")) return null;
