@@ -18,13 +18,17 @@ import { api } from "@/lib/api";
 import type { QualityTier } from "@/lib/types";
 import { formatDuration, QUALITY_CONFIG } from "@/lib/utils";
 import {
-  buildRoutePreview,
+  buildElevationProfile,
+  buildSpeedProfile,
   computeQualityBreakdown,
   formatNumber,
   readingToTier,
+  type ElevationProfilePoint,
   type RideSegmentLike,
+  type SpeedProfilePoint,
 } from "@/lib/ride-detail";
 import { downloadRideExport, type RideExportFormat } from "@/lib/ride-export";
+import { RideRouteMap } from "../_components/RideRouteMap";
 interface RideDetail {
   id: string;
   status: string;
@@ -92,16 +96,23 @@ export default function RideDetailPage() {
     () => computeQualityBreakdown(ride?.segments ?? []),
     [ride?.segments],
   );
-  const preview = useMemo(
-    () => buildRoutePreview(ride?.route_geometry ?? null, 800, 12),
-    [ride?.route_geometry],
+  const elevationProfile = useMemo(
+    () => buildElevationProfile(ride?.segments ?? []),
+    [ride?.segments],
+  );
+  const speedProfile = useMemo(
+    () => buildSpeedProfile(ride?.segments ?? []),
+    [ride?.segments],
   );
   const maxSegmentSpeed = useMemo(() => {
     if (!ride) return 0;
-    return ride.segments.reduce(
-      (acc, s) => (s.speed_avg != null ? Math.max(acc, s.speed_avg) : acc),
-      0,
-    );
+    return ride.segments.reduce((acc, s) => {
+      const avg =
+        s.speed_avg != null && Number.isFinite(s.speed_avg) ? s.speed_avg : 0;
+      const max =
+        s.speed_max != null && Number.isFinite(s.speed_max) ? s.speed_max : 0;
+      return Math.max(acc, avg, max);
+    }, 0);
   }, [ride]);
   async function handleExport(format: RideExportFormat) {
     if (!ride || exporting) return;
@@ -245,36 +256,49 @@ export default function RideDetailPage() {
         </div>
       )}
 
-      {/* Route preview */}
+      {/* Route map */}
       <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5 mb-6">
         <SectionHeader
           icon={<Route size={16} />}
           title={t("Route")}
-          subtitle="Polyline preview of your ride. Full map coming with the explorer."
+          subtitle="Interactive ride route with road quality overlay where Tarmoto has segment data."
         />
-        {preview ? (
-          <div className="mt-4 flex justify-center">
-            <svg
-              viewBox={preview.viewBox}
-              className="max-h-80 w-full"
-              role="img"
-              aria-label={t("Ride route preview")}
-            >
-              <path
-                d={preview.path}
-                fill="none"
-                stroke="#0ED3CF"
-                strokeWidth={3}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+        {ride.route_geometry && ride.route_geometry.length >= 2 ? (
+          <div className="mt-4">
+            <RideRouteMap geometry={ride.route_geometry} />
           </div>
         ) : (
           <div className="mt-4 rounded-xl border border-dashed border-slate-800 p-10 text-center text-sm text-slate-500">
-            {t("No GPS track was recorded for this ride. ")}
+            {t("No GPS track was recorded for this ride.")}
           </div>
         )}
+      </section>
+
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
+          <SectionHeader
+            icon={<Mountain size={16} />}
+            title={t("Elevation profile")}
+            subtitle={
+              elevationProfile.length > 0
+                ? `${formatNumber(ride.elevation_gain, 0)} m gain · ${formatNumber(ride.elevation_loss, 0)} m loss`
+                : "Elevation samples are attached when matched road segments include profile data."
+            }
+          />
+          <ElevationProfileChart points={elevationProfile} />
+        </div>
+        <div className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
+          <SectionHeader
+            icon={<Gauge size={16} />}
+            title={t("Speed graph")}
+            subtitle={
+              speedProfile.length > 0
+                ? `${formatNumber(maxSegmentSpeed, 0)} km/h peak across recorded segments.`
+                : "Speed samples are attached once segment telemetry is available."
+            }
+          />
+          <SpeedProfileChart points={speedProfile} />
+        </div>
       </section>
 
       {/* Stats */}
@@ -572,6 +596,162 @@ function QualityBar({
             title={`${row.percent}% ${row.tier}`}
           />
         ))}
+    </div>
+  );
+}
+
+function ElevationProfileChart({
+  points,
+}: {
+  points: ElevationProfilePoint[];
+}) {
+  if (points.length === 0) {
+    return (
+      <EmptyChartState>
+        {t("No elevation profile was recorded for this ride.")}
+      </EmptyChartState>
+    );
+  }
+  const values = points.map((point) => point.elevationM);
+  return (
+    <LineSeriesChart
+      points={points.map((point) => ({
+        x: point.distanceKm,
+        y: point.elevationM,
+      }))}
+      color="#22d3ee"
+      minY={Math.min(...values)}
+      maxY={Math.max(...values)}
+      ariaLabel={t("Ride elevation profile")}
+      valueSuffix="m"
+    />
+  );
+}
+
+function SpeedProfileChart({ points }: { points: SpeedProfilePoint[] }) {
+  if (points.length === 0) {
+    return (
+      <EmptyChartState>
+        {t("No speed samples were recorded for this ride.")}
+      </EmptyChartState>
+    );
+  }
+  const avgPoints = points
+    .filter((point) => point.avgKmh != null)
+    .map((point) => ({ x: point.distanceKm, y: point.avgKmh! }));
+  const maxPoints = points
+    .filter((point) => point.maxKmh != null)
+    .map((point) => ({ x: point.distanceKm, y: point.maxKmh! }));
+  const values = [...avgPoints, ...maxPoints].map((point) => point.y);
+  const peak = values.length ? Math.max(...values) : 1;
+  return (
+    <div>
+      <div className="mt-4 flex items-center gap-4 text-[11px] text-slate-400">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-tarmoto-cyan" />
+          {t("Avg")}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-pink-400" />
+          {t("Max")}
+        </span>
+      </div>
+      <LineSeriesChart
+        points={avgPoints}
+        secondaryPoints={maxPoints}
+        color="#22d3ee"
+        secondaryColor="#f472b6"
+        minY={0}
+        maxY={peak}
+        ariaLabel={t("Ride speed graph")}
+        valueSuffix="km/h"
+      />
+    </div>
+  );
+}
+
+function EmptyChartState({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mt-4 flex h-56 items-center justify-center rounded-xl border border-dashed border-slate-800 px-4 text-center text-sm text-slate-500">
+      {children}
+    </div>
+  );
+}
+
+function LineSeriesChart({
+  points,
+  secondaryPoints = [],
+  color,
+  secondaryColor,
+  minY,
+  maxY,
+  ariaLabel,
+  valueSuffix,
+}: {
+  points: Array<{ x: number; y: number }>;
+  secondaryPoints?: Array<{ x: number; y: number }>;
+  color: string;
+  secondaryColor?: string;
+  minY: number;
+  maxY: number;
+  ariaLabel: string;
+  valueSuffix: string;
+}) {
+  const allPoints = [...points, ...secondaryPoints];
+  if (allPoints.length === 0) return null;
+  const minX = Math.min(...allPoints.map((point) => point.x));
+  const maxX = Math.max(...allPoints.map((point) => point.x));
+  const ySpan = Math.max(maxY - minY, 1);
+  const xSpan = Math.max(maxX - minX, 1);
+  const project = (point: { x: number; y: number }) => {
+    const x = 16 + ((point.x - minX) / xSpan) * 368;
+    const y = 152 - ((point.y - minY) / ySpan) * 128;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  };
+  const path = (series: Array<{ x: number; y: number }>) =>
+    series.map(project).join(" ");
+  const last = allPoints.at(-1);
+
+  return (
+    <div className="mt-4">
+      <svg
+        viewBox="0 0 400 176"
+        className="h-56 w-full"
+        role="img"
+        aria-label={ariaLabel}
+      >
+        <line x1="16" y1="24" x2="384" y2="24" stroke="#1e293b" />
+        <line x1="16" y1="88" x2="384" y2="88" stroke="#1e293b" />
+        <line x1="16" y1="152" x2="384" y2="152" stroke="#334155" />
+        <polyline
+          points={path(points)}
+          fill="none"
+          stroke={color}
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {secondaryPoints.length > 0 && secondaryColor && (
+          <polyline
+            points={path(secondaryPoints)}
+            fill="none"
+            stroke={secondaryColor}
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeDasharray="6 5"
+          />
+        )}
+      </svg>
+      <div className="flex items-center justify-between text-[11px] text-slate-500">
+        <span>{formatNumber(minX, 1)} km</span>
+        {last && (
+          <span>
+            {formatNumber(last.y, 0)} {valueSuffix}
+          </span>
+        )}
+        <span>{formatNumber(maxX, 1)} km</span>
+      </div>
     </div>
   );
 }

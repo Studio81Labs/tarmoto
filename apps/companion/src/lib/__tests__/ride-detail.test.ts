@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildElevationProfile,
   buildRoutePreview,
+  buildSpeedProfile,
   computeQualityBreakdown,
   formatNumber,
   readingToTier,
@@ -12,7 +14,10 @@ function segment(overrides: Partial<RideSegmentLike> = {}): RideSegmentLike {
     road_name: "Road",
     quality_reading: 4,
     speed_avg: 60,
+    speed_max: 80,
     lean_angle_max: 20,
+    length_m: 1000,
+    elevation_profile: null,
     ...overrides,
   };
 }
@@ -155,5 +160,69 @@ describe("buildRoutePreview", () => {
       maxLng: 14.3,
       maxLat: 50.5,
     });
+  });
+});
+
+describe("buildElevationProfile", () => {
+  it("concatenates segment elevation samples onto cumulative distance", () => {
+    const points = buildElevationProfile([
+      segment({ length_m: 1000, elevation_profile: [100, 120, 110] }),
+      segment({ length_m: 500, elevation_profile: [110, 130] }),
+    ]);
+
+    expect(points).toEqual([
+      { distanceKm: 0, elevationM: 100 },
+      { distanceKm: 0.5, elevationM: 120 },
+      { distanceKm: 1, elevationM: 110 },
+      { distanceKm: 1.5, elevationM: 130 },
+    ]);
+  });
+
+  it("returns an empty series when no usable elevation samples exist", () => {
+    expect(
+      buildElevationProfile([
+        segment({ elevation_profile: null }),
+        segment({ elevation_profile: [100] }),
+        segment({ elevation_profile: [100, Number.NaN] }),
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe("buildSpeedProfile", () => {
+  it("builds an ordered segment speed series with average and max speeds", () => {
+    const points = buildSpeedProfile([
+      segment({ road_name: "A", speed_avg: 50, speed_max: 70, length_m: 1000 }),
+      segment({
+        road_name: "B",
+        speed_avg: 65,
+        speed_max: null,
+        length_m: 500,
+      }),
+    ]);
+
+    expect(points).toEqual([
+      {
+        label: "A",
+        distanceKm: 1,
+        avgKmh: 50,
+        maxKmh: 70,
+      },
+      {
+        label: "B",
+        distanceKm: 1.5,
+        avgKmh: 65,
+        maxKmh: null,
+      },
+    ]);
+  });
+
+  it("returns an empty series when segments have no speed readings", () => {
+    expect(
+      buildSpeedProfile([
+        segment({ speed_avg: null, speed_max: null }),
+        segment({ speed_avg: Number.NaN, speed_max: null }),
+      ]),
+    ).toEqual([]);
   });
 });

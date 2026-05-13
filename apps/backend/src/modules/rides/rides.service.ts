@@ -309,7 +309,10 @@ export class RidesService {
         road_name: s.road_segment?.road_name ?? null,
         quality_reading: s.quality_reading,
         speed_avg: s.speed_avg,
+        speed_max: s.speed_max,
         lean_angle_max: s.lean_angle_max,
+        length_m: s.road_segment?.length_m ?? null,
+        elevation_profile: s.road_segment?.elevation_profile ?? null,
       })),
     };
   }

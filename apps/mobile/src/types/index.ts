@@ -318,7 +318,10 @@ export interface RideSegment {
   road_name: string | null;
   quality_reading: number | null;
   speed_avg: number | null;
+  speed_max: number | null;
   lean_angle_max: number | null;
+  length_m: number | null;
+  elevation_profile: number[] | null;
 }
 
 // ── Hazards ──

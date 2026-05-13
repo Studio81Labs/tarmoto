@@ -44,7 +44,16 @@ class RideSegmentDto {
   speed_avg!: number | null;
 
   @ApiProperty({ nullable: true })
+  speed_max!: number | null;
+
+  @ApiProperty({ nullable: true })
   lean_angle_max!: number | null;
+
+  @ApiProperty({ nullable: true })
+  length_m!: number | null;
+
+  @ApiProperty({ type: [Number], nullable: true })
+  elevation_profile!: number[] | null;
 }
 
 export class RideResponseDto {
