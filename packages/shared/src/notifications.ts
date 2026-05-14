@@ -93,3 +93,18 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
  */
 export const CRITICAL_NOTIFICATION_CATEGORIES: ReadonlySet<NotificationCategory> =
   new Set(["crash_followup"]);
+
+export interface InAppNotification {
+  id: string;
+  category: NotificationCategory;
+  title: string;
+  body: string;
+  data: Record<string, string>;
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface InAppNotificationListResponse {
+  items: InAppNotification[];
+  unread_count: number;
+}

@@ -10,6 +10,7 @@ import {
 } from '@tarmoto/shared';
 import { DeviceToken } from '../../entities/device-token.entity.js';
 import { NotificationPreferencesRow } from '../../entities/notification-preferences.entity.js';
+import { UserNotification } from '../../entities/user-notification.entity.js';
 import { LogPushProvider } from './providers/log.provider.js';
 import {
   PUSH_PROVIDER,
@@ -41,8 +42,8 @@ export interface PushDispatchResult {
  *
  * Responsibilities, in order:
  *   1. Load the user's preferences (lazy default if no row exists).
- *   2. Gate by category-channel toggle and quiet hours (critical
- *      categories bypass quiet hours).
+ *   2. Gate by quiet hours (critical categories bypass quiet hours) and
+ *      category-channel toggles.
  *   3. Load active device tokens for the user.
  *   4. Hand off to the configured `PushProvider` — the service does
  *      not know FCM from APN.
@@ -62,6 +63,8 @@ export class PushService {
     private readonly tokenRepo: Repository<DeviceToken>,
     @InjectRepository(NotificationPreferencesRow)
     private readonly prefsRepo: Repository<NotificationPreferencesRow>,
+    @InjectRepository(UserNotification)
+    private readonly notificationRepo: Repository<UserNotification>,
     @Inject(PUSH_PROVIDER)
     @Optional()
     private readonly provider: PushProvider | null,
@@ -75,15 +78,27 @@ export class PushService {
   ): Promise<PushDispatchResult> {
     const prefs = await this.loadPreferences(userId);
 
-    if (!isCategoryEnabled(prefs, input.category, 'push')) {
-      return zeroResult('preference-off');
-    }
-
     if (
       !CRITICAL_NOTIFICATION_CATEGORIES.has(input.category) &&
       isInQuietHours(prefs, new Date())
     ) {
       return zeroResult('quiet-hours');
+    }
+
+    if (isCategoryEnabled(prefs, input.category, 'in_app')) {
+      try {
+        await this.createInAppNotification(userId, input);
+      } catch (err) {
+        this.logger.warn(
+          `in-app notification write failed user=${userId} category=${input.category}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
+
+    if (!isCategoryEnabled(prefs, input.category, 'push')) {
+      return zeroResult('preference-off');
     }
 
     const tokens = await this.tokenRepo.find({
@@ -183,6 +198,21 @@ export class PushService {
       { deleted_at: now },
     );
     return result.affected ?? 0;
+  }
+
+  private async createInAppNotification(
+    userId: string,
+    input: PushNotificationInput,
+  ): Promise<void> {
+    await this.notificationRepo.save(
+      this.notificationRepo.create({
+        user_id: userId,
+        category: input.category,
+        title: input.title,
+        body: input.body,
+        data: input.data ?? {},
+      }),
+    );
   }
 }
 

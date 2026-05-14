@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, passesApi } from "@/lib/api";
+import { useNetworkReconnectRevision } from "@/lib/network-status";
 import {
   countByStatus,
   dedupePasses,
@@ -54,6 +55,7 @@ export function usePasses(
   forMonth: number | undefined,
   routes: PlannerClosureRoute[] = EMPTY_ROUTES,
 ): PassesQueryResult {
+  const reconnectRevision = useNetworkReconnectRevision();
   const routeQueryKey = useMemo(
     () => buildRouteQueryKey(forMonth, routes),
     [forMonth, routes],
@@ -190,7 +192,7 @@ export function usePasses(
       });
 
     return () => ctrl.abort();
-  }, [forMonth, routePoints, routeQueryKey]);
+  }, [forMonth, routePoints, routeQueryKey, reconnectRevision]);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -231,7 +233,7 @@ export function usePasses(
         }));
       });
     return () => ctrl.abort();
-  }, [forMonth]);
+  }, [forMonth, reconnectRevision]);
 
   return {
     ...state,

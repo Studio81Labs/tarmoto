@@ -10,9 +10,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DeviceToken } from '../../entities/device-token.entity.js';
 import { NotificationPreferencesRow } from '../../entities/notification-preferences.entity.js';
+import { UserNotification } from '../../entities/user-notification.entity.js';
 import { AuthModule } from '../auth/index.js';
 import { DevicesController } from './devices.controller.js';
 import { DeviceTokensService } from './device-tokens.service.js';
+import { InAppNotificationsController } from './in-app-notifications.controller.js';
+import { InAppNotificationsService } from './in-app-notifications.service.js';
 import { NotificationPreferencesController } from './notification-preferences.controller.js';
 import { NotificationPreferencesService } from './notification-preferences.service.js';
 import {
@@ -158,17 +161,31 @@ function walkAndShutdown(provider: PushProvider): void {
   imports: [
     ConfigModule,
     AuthModule,
-    TypeOrmModule.forFeature([DeviceToken, NotificationPreferencesRow]),
+    TypeOrmModule.forFeature([
+      DeviceToken,
+      NotificationPreferencesRow,
+      UserNotification,
+    ]),
   ],
-  controllers: [DevicesController, NotificationPreferencesController],
+  controllers: [
+    DevicesController,
+    NotificationPreferencesController,
+    InAppNotificationsController,
+  ],
   providers: [
     pushProvider,
     PushService,
     DeviceTokensService,
     NotificationPreferencesService,
+    InAppNotificationsService,
     PushProviderShutdownHook,
   ],
-  exports: [PushService, DeviceTokensService, NotificationPreferencesService],
+  exports: [
+    PushService,
+    DeviceTokensService,
+    NotificationPreferencesService,
+    InAppNotificationsService,
+  ],
 })
 export class PushModule {}
 

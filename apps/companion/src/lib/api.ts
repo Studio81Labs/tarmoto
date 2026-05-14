@@ -1,5 +1,7 @@
 import { createApiClient } from "@tarmoto/openapi/client";
 import type {
+  InAppNotification,
+  InAppNotificationListResponse,
   NotificationPreferences,
   PrivacyPreferences,
 } from "@tarmoto/shared";
@@ -1176,6 +1178,17 @@ export const accountApi = {
     apiFetch<NotificationPreferences>("/me/notification-preferences", {
       method: "PUT",
       body: JSON.stringify(data),
+    }),
+  getNotifications: () =>
+    apiFetch<InAppNotificationListResponse>("/me/notifications"),
+  markNotificationRead: (id: string) =>
+    apiFetch<InAppNotification>(
+      `/me/notifications/${encodeURIComponent(id)}/read`,
+      { method: "PATCH" },
+    ),
+  markAllNotificationsRead: () =>
+    apiFetch<InAppNotificationListResponse>("/me/notifications/read-all", {
+      method: "PATCH",
     }),
   // #279: typed `/account/privacy` endpoint (GET/PUT). The backend
   // uses snake_case keys; the companion's UI types are camelCase, so

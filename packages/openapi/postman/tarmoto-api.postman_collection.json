@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Tarmoto API",
-    "_postman_id": "7ea3983d-e5c2-4d23-9c75-828121afebf0",
+    "_postman_id": "773cd354-6b6d-4d45-b42b-81a940308a27",
     "description": "Know the road before you ride it",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -719,6 +719,71 @@
                   "language": "json"
                 }
               }
+            }
+          }
+        },
+        {
+          "name": "List the authenticated user's in-app notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/notifications",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "notifications"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mark one in-app notification as read",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/notifications/:id/read",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "notifications", ":id", "read"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mark all in-app notifications as read",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/notifications/read-all",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "notifications", "read-all"]
             }
           }
         }

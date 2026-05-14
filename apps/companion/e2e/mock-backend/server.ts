@@ -1053,6 +1053,58 @@ export function buildApp(): Express {
     },
   );
 
+  app.get(
+    "/api/v1/me/notifications",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const items = state.inAppNotifications.get(req.session!.user_id) ?? [];
+      res.json({
+        items,
+        unread_count: items.filter((item) => item.read_at == null).length,
+      });
+    },
+  );
+
+  app.patch(
+    "/api/v1/me/notifications/read-all",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const userId = req.session!.user_id;
+      const items = state.inAppNotifications.get(userId) ?? [];
+      const now = new Date().toISOString();
+      const next = items.map((item) =>
+        item.read_at ? item : { ...item, read_at: now },
+      );
+      state.inAppNotifications.set(userId, next);
+      res.json({
+        items: next,
+        unread_count: 0,
+      });
+    },
+  );
+
+  app.patch(
+    "/api/v1/me/notifications/:id/read",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const userId = req.session!.user_id;
+      const items = state.inAppNotifications.get(userId) ?? [];
+      const id = param(req, "id");
+      const index = items.findIndex((item) => item.id === id);
+      if (index === -1) {
+        res.status(404).json({ message: "not-found" });
+        return;
+      }
+      const next = [...items];
+      next[index] = {
+        ...next[index],
+        read_at: next[index].read_at ?? new Date().toISOString(),
+      };
+      state.inAppNotifications.set(userId, next);
+      res.json(next[index]);
+    },
+  );
+
   app.post(
     "/api/v1/account/data-export",
     requireAuth,
