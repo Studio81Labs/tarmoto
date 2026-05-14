@@ -679,11 +679,49 @@ function LineSeriesChart({
   const project = (point: { x: number; y: number }) => {
     const x = 16 + ((point.x - minX) / xSpan) * 368;
     const y = 152 - ((point.y - minY) / ySpan) * 128;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
+    return { x, y };
   };
   const path = (series: Array<{ x: number; y: number }>) =>
-    series.map(project).join(" ");
+    series
+      .map((point) => {
+        const projected = project(point);
+        return `${projected.x.toFixed(1)},${projected.y.toFixed(1)}`;
+      })
+      .join(" ");
   const last = allPoints.at(-1);
+  const renderSeries = (
+    series: Array<{ x: number; y: number }>,
+    stroke: string,
+    strokeWidth: string,
+    strokeDasharray?: string,
+  ) => {
+    if (series.length === 0) return null;
+    if (series.length === 1) {
+      const projected = project(series[0]!);
+      return (
+        <circle
+          cx={projected.x}
+          cy={projected.y}
+          r="4"
+          fill={stroke}
+          stroke="#0f172a"
+          strokeWidth="2"
+        />
+      );
+    }
+
+    return (
+      <polyline
+        points={path(series)}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeDasharray={strokeDasharray}
+      />
+    );
+  };
 
   return (
     <div className="mt-4">
@@ -696,25 +734,9 @@ function LineSeriesChart({
         <line x1="16" y1="24" x2="384" y2="24" stroke="#1e293b" />
         <line x1="16" y1="88" x2="384" y2="88" stroke="#1e293b" />
         <line x1="16" y1="152" x2="384" y2="152" stroke="#334155" />
-        <polyline
-          points={path(points)}
-          fill="none"
-          stroke={color}
-          strokeWidth="3"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        {secondaryPoints.length > 0 && secondaryColor && (
-          <polyline
-            points={path(secondaryPoints)}
-            fill="none"
-            stroke={secondaryColor}
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeDasharray="6 5"
-          />
-        )}
+        {renderSeries(points, color, "3")}
+        {secondaryColor &&
+          renderSeries(secondaryPoints, secondaryColor, "2.5", "6 5")}
       </svg>
       <div className="flex items-center justify-between text-[11px] text-slate-500">
         <span>

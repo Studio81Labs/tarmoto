@@ -102,6 +102,32 @@ describe("RideDetailPage analytics", () => {
     expect(screen.getByText(/98 km\/h peak/i)).toBeInTheDocument();
   });
 
+  it("renders a visible speed marker for one-segment rides", async () => {
+    vi.mocked(api.GET).mockResolvedValueOnce({
+      data: ride({
+        segments: [
+          {
+            road_segment_id: "seg-1",
+            road_name: "Ridge Road",
+            quality_reading: 4.4,
+            speed_avg: 58,
+            speed_max: 86,
+            lean_angle_max: 22,
+          },
+        ],
+      }),
+      response: { status: 200 },
+    } as unknown as Awaited<ReturnType<typeof api.GET>>);
+
+    const { container } = render(<RideDetailPage />);
+
+    expect(await screen.findByText(/86 km\/h peak/i)).toBeInTheDocument();
+    const speedGraph = container.querySelector(
+      'svg[aria-label="Ride speed graph"]',
+    );
+    expect(speedGraph?.querySelector("circle")).toBeInTheDocument();
+  });
+
   it("distinguishes missing GPS and missing elevation from API failures", async () => {
     vi.mocked(api.GET).mockResolvedValueOnce({
       data: ride({ route_geometry: null, segments: [] }),
