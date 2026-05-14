@@ -10,8 +10,18 @@ const mockSearchParams = vi.hoisted(() => ({
   value: new URLSearchParams(),
 }));
 
-const mockQualityMap = vi.fn(
-  (props: { onSegmentSelect?: (segmentId: string) => void }) => (
+type MockQualityMapProps = {
+  onSegmentSelect?: (segmentId: string) => void;
+  onViewChange?: (view: {
+    lng: number;
+    lat: number;
+    zoom: number;
+    bbox: [number, number, number, number];
+  }) => void;
+};
+
+const mockQualityMap = vi.fn((props: MockQualityMapProps) => (
+  <>
     <button
       type="button"
       onClick={() =>
@@ -20,8 +30,21 @@ const mockQualityMap = vi.fn(
     >
       Select mock segment
     </button>
-  ),
-);
+    <button
+      type="button"
+      onClick={() =>
+        props.onViewChange?.({
+          lng: 14,
+          lat: 49,
+          zoom: 8,
+          bbox: [13.1, 48.2, 14.9, 49.8],
+        })
+      }
+    >
+      Report mock viewport
+    </button>
+  </>
+));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/explore",
@@ -30,8 +53,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("./_components/QualityMap", () => ({
-  QualityMap: (props: { onSegmentSelect?: (segmentId: string) => void }) =>
-    mockQualityMap(props),
+  QualityMap: (props: MockQualityMapProps) => mockQualityMap(props),
 }));
 
 vi.mock("@/components/SegmentTrendChart", () => ({
@@ -207,11 +229,15 @@ describe("ExplorerPage", () => {
   it("T27/T28: exposes regional closures and passes panels scoped to the explorer viewport", () => {
     render(<ExplorerPage />);
 
+    fireEvent.click(
+      screen.getByRole("button", { name: /report mock viewport/i }),
+    );
+
     expect(
-      screen.getByText(/closures panel bbox=17\.557,49\.644,18\.963,49\.996/i),
+      screen.getByText(/closures panel bbox=13\.1,48\.2,14\.9,49\.8/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/passes panel bbox=17\.557,49\.644,18\.963,49\.996/i),
+      screen.getByText(/passes panel bbox=13\.1,48\.2,14\.9,49\.8/i),
     ).toBeInTheDocument();
     expect(screen.getAllByText(/routes=hidden/i)).toHaveLength(2);
   });

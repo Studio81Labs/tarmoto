@@ -1,6 +1,6 @@
 "use client";
 import { t } from "@/i18n";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMapStore } from "@/stores/map";
 import { Filter, Search, RotateCcw } from "lucide-react";
@@ -70,23 +70,8 @@ const HAZARD_OPTIONS: {
   hex: HAZARD_CONFIG[key].hex,
 }));
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
-
-function formatCoord(value: number): string {
-  return value.toFixed(3);
-}
-
-function viewportBbox(center: { lng: number; lat: number }, zoom: number) {
-  const scale = 2 ** clamp(zoom, 0, 18);
-  const lngRadius = clamp(720 / scale, 0.05, 12);
-  const latRadius = clamp(lngRadius / 4, 0.03, 6);
-  const west = clamp(center.lng - lngRadius, -180, 180);
-  const east = clamp(center.lng + lngRadius, -180, 180);
-  const south = clamp(center.lat - latRadius, -85, 85);
-  const north = clamp(center.lat + latRadius, -85, 85);
-  return [west, south, east, north].map(formatCoord).join(",");
+function formatBbox(bbox: readonly [number, number, number, number]): string {
+  return bbox.join(",");
 }
 
 function ExplorerPageInner() {
@@ -98,6 +83,7 @@ function ExplorerPageInner() {
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(
     null,
   );
+  const [conditionBbox, setConditionBbox] = useState<string | null>(null);
   const [segmentDetailState, setSegmentDetailState] =
     useState<SegmentDetailPanelState>({ status: "idle" });
   const router = useRouter();
@@ -122,10 +108,6 @@ function ExplorerPageInner() {
     setZoom,
     resetFilters,
   } = useMapStore();
-  const conditionBbox = useMemo(
-    () => viewportBbox(center, zoom),
-    [center, zoom],
-  );
   // Hydrate the store from URL params on mount and on back/forward navigation.
   // `hydrated` is state (not a ref) so the URL-sync effect waits for the render
   // that follows the store update — otherwise it would see stale `filters` from
@@ -390,19 +372,23 @@ function ExplorerPageInner() {
               <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                 {t("Road conditions ")}
               </h3>
-              <ClosuresPanel
-                month={conditionsMonth}
-                routes={[]}
-                bbox={conditionBbox}
-                showRouteWarnings={false}
-              />
-              <PassesPanel
-                month={conditionsMonth}
-                onMonthChange={setConditionsMonth}
-                routes={[]}
-                bbox={conditionBbox}
-                showRouteWarnings={false}
-              />
+              {conditionBbox ? (
+                <>
+                  <ClosuresPanel
+                    month={conditionsMonth}
+                    routes={[]}
+                    bbox={conditionBbox}
+                    showRouteWarnings={false}
+                  />
+                  <PassesPanel
+                    month={conditionsMonth}
+                    onMonthChange={setConditionsMonth}
+                    routes={[]}
+                    bbox={conditionBbox}
+                    showRouteWarnings={false}
+                  />
+                </>
+              ) : null}
             </div>
           </div>
         )}
@@ -420,6 +406,7 @@ function ExplorerPageInner() {
             onViewChange={(view) => {
               setCenter({ lng: view.lng, lat: view.lat });
               setZoom(view.zoom);
+              setConditionBbox(formatBbox(view.bbox));
             }}
           />
           <MapLegend

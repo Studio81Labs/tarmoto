@@ -14,6 +14,7 @@ import {
   TARMOTO_QUALITY_LAYER,
   TARMOTO_SURFACE_LAYER,
   type MapCanvasHandle,
+  type MapCanvasViewChange,
 } from "@/components/map/MapCanvas";
 import {
   HAZARD_CONFIG,
@@ -72,7 +73,23 @@ interface Props {
   showSurface: boolean;
   showHazards: boolean;
   onSegmentSelect?: (segmentId: string) => void;
-  onViewChange?: (view: { lng: number; lat: number; zoom: number }) => void;
+  onViewChange?: (view: MapCanvasViewChange) => void;
+}
+
+function readMapView(map: MapLibreMap): MapCanvasViewChange {
+  const center = map.getCenter();
+  const bounds = map.getBounds();
+  return {
+    lng: Number(center.lng.toFixed(5)),
+    lat: Number(center.lat.toFixed(5)),
+    zoom: Number(map.getZoom().toFixed(2)),
+    bbox: [
+      Number(bounds.getWest().toFixed(5)),
+      Number(bounds.getSouth().toFixed(5)),
+      Number(bounds.getEast().toFixed(5)),
+      Number(bounds.getNorth().toFixed(5)),
+    ],
+  };
 }
 
 export function QualityMap({
@@ -278,14 +295,11 @@ export function QualityMap({
     }
 
     setReady(true);
+    onViewChange?.(readMapView(map));
   };
 
-  const handleViewChange = (view: {
-    lng: number;
-    lat: number;
-    zoom: number;
-  }) => {
-    onViewChange?.({ lng: view.lng, lat: view.lat, zoom: view.zoom });
+  const handleViewChange = (view: MapCanvasViewChange) => {
+    onViewChange?.(view);
   };
 
   // ── project raw hazards → filtered GeoJSON source ──
