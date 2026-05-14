@@ -27,6 +27,7 @@ import { mergeHazardsWithInFlightWsArrivals } from "@/lib/hazard-merge";
 import { useRealtimeStore } from "@/stores/realtime";
 import { haversineMeters, type HazardType } from "@tarmoto/shared";
 import { FILTERABLE_SURFACES, type MapFilters } from "@/lib/map-filters";
+import { useNetworkReconnectRevision } from "@/lib/network-status";
 
 const HAZARDS_SOURCE = "hazards-src";
 const HAZARD_CLUSTERS = "tarmoto-hazard-clusters";
@@ -99,6 +100,7 @@ export function QualityMap({
   const [hazardsRevision, setHazardsRevision] = useState(0);
   const [hazardNow, setHazardNow] = useState(() => Date.now());
   const realtimeStatus = useRealtimeStore((s) => s.status);
+  const reconnectRevision = useNetworkReconnectRevision();
 
   const qualityOpacity = buildQualityOpacityExpression(filters);
   const surfaceOpacity = buildSurfaceOpacityExpression(filters);
@@ -368,7 +370,7 @@ export function QualityMap({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [ready, showHazards, center.lat, center.lng, zoom]);
+  }, [ready, showHazards, center.lat, center.lng, zoom, reconnectRevision]);
 
   // ── real-time: subscribe to hazards in viewport + merge incoming events ──
   useEffect(() => {

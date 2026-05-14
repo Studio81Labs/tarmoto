@@ -110,6 +110,16 @@ export interface NotificationPreferencesRow {
   >;
 }
 
+export interface MockInAppNotification {
+  id: string;
+  category: string;
+  title: string;
+  body: string;
+  data: Record<string, string>;
+  read_at: string | null;
+  created_at: string;
+}
+
 export interface MockSession {
   access_token: string;
   refresh_token: string;
@@ -166,6 +176,7 @@ export class MockState {
   bikes = new Map<string, MockBike[]>();
   privacy = new Map<string, PrivacyPreferencesRow>();
   notifications = new Map<string, NotificationPreferencesRow>();
+  inAppNotifications = new Map<string, MockInAppNotification[]>();
 
   subscriptions = new Map<
     string,
@@ -213,6 +224,7 @@ export class MockState {
     this.bikes.clear();
     this.privacy.clear();
     this.notifications.clear();
+    this.inAppNotifications.clear();
     this.subscriptions.clear();
     this.dataExports.clear();
     this.deletedUsers.clear();
@@ -238,6 +250,7 @@ export class MockState {
     this.usersByEmail.set(user.email, id);
     this.privacy.set(id, { ...DEFAULT_PRIVACY });
     this.notifications.set(id, buildDefaultNotifications());
+    this.inAppNotifications.set(id, []);
     this.bikes.set(id, []);
     this.subscriptions.set(id, {
       tier: "free",

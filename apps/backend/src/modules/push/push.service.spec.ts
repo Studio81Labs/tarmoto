@@ -4,6 +4,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DeviceToken } from '../../entities/device-token.entity.js';
 import { NotificationPreferencesRow } from '../../entities/notification-preferences.entity.js';
+import { UserNotification } from '../../entities/user-notification.entity.js';
 import {
   PushService,
   isInQuietHours,
@@ -40,6 +41,9 @@ describe('PushService', () => {
   let prefsRepo: jest.Mocked<
     Pick<Repository<NotificationPreferencesRow>, 'findOne'>
   >;
+  let notificationRepo: jest.Mocked<
+    Pick<Repository<unknown>, 'create' | 'save'>
+  >;
   let provider: jest.Mocked<PushProvider>;
 
   beforeEach(async () => {
@@ -65,6 +69,11 @@ describe('PushService', () => {
       findOne: jest.fn().mockResolvedValue(null),
     };
 
+    notificationRepo = {
+      create: jest.fn((data: unknown) => data),
+      save: jest.fn((data: unknown) => Promise.resolve(data)),
+    };
+
     provider = {
       name: 'mock',
       send: jest.fn<Promise<PushSendResult>, Parameters<PushProvider['send']>>(
@@ -84,6 +93,10 @@ describe('PushService', () => {
         {
           provide: getRepositoryToken(NotificationPreferencesRow),
           useValue: prefsRepo,
+        },
+        {
+          provide: getRepositoryToken(UserNotification),
+          useValue: notificationRepo,
         },
         { provide: PUSH_PROVIDER, useValue: provider },
       ],
@@ -114,6 +127,58 @@ describe('PushService', () => {
       expect(result).toMatchObject({ delivered: 2, suppressed: false });
     });
 
+    it('creates an in-app notification row when the category in_app toggle is enabled', async () => {
+      await service.sendToUser(USER_ID, {
+        category: 'new_follower',
+        title: 'New follower',
+        body: 'Adam started following you',
+        data: { type: 'new_follower', follower_id: 'follower-1' },
+      });
+
+      expect(notificationRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: USER_ID,
+          category: 'new_follower',
+          title: 'New follower',
+          body: 'Adam started following you',
+          data: { type: 'new_follower', follower_id: 'follower-1' },
+        }),
+      );
+      expect(notificationRepo.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not create an in-app notification when the category in_app toggle is off', async () => {
+      prefsRepo.findOne.mockResolvedValue(
+        makeRow({
+          categories: {
+            new_follower: { email: false, push: true, in_app: false },
+          },
+        }),
+      );
+
+      await service.sendToUser(USER_ID, {
+        category: 'new_follower',
+        title: 'New follower',
+        body: 'no',
+      });
+
+      expect(notificationRepo.save).not.toHaveBeenCalled();
+      expect(provider.send).toHaveBeenCalledTimes(1);
+    });
+
+    it('continues push delivery when the in-app feed write fails', async () => {
+      notificationRepo.save.mockRejectedValueOnce(new Error('db down'));
+
+      const result = await service.sendToUser(USER_ID, {
+        category: 'new_follower',
+        title: 'New follower',
+        body: 'Adam started following you',
+      });
+
+      expect(provider.send).toHaveBeenCalledTimes(1);
+      expect(result).toMatchObject({ delivered: 2, suppressed: false });
+    });
+
     it('suppresses when the category push toggle is off', async () => {
       prefsRepo.findOne.mockResolvedValue(
         makeRow({
@@ -130,6 +195,7 @@ describe('PushService', () => {
       });
 
       expect(provider.send).not.toHaveBeenCalled();
+      expect(notificationRepo.save).toHaveBeenCalledTimes(1);
       expect(result).toEqual({
         delivered: 0,
         pruned: 0,

@@ -68,6 +68,10 @@ describe("companion middleware", () => {
     );
   });
 
+  it("lets unknown logged-out routes reach the app-level 404", async () => {
+    expect(await runMiddleware("/nonexistent")).toBeUndefined();
+  });
+
   it("allows authenticated dashboard visitors through", async () => {
     expect(
       await runMiddleware("/trips", { authenticated: true }),

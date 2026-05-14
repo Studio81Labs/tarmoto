@@ -15,6 +15,15 @@ const PUBLIC_PATHS = [
   "/community/collections/shared",
 ];
 
+const PROTECTED_PATHS = [
+  "/",
+  "/trips",
+  "/rides",
+  "/community",
+  "/gamification",
+  "/settings",
+];
+
 export const middleware = auth((req) => {
   const { nextUrl, auth: session } = req;
   const isAuthenticated = !!session?.user;
@@ -27,6 +36,11 @@ export const middleware = auth((req) => {
     (path) =>
       nextUrl.pathname === path || nextUrl.pathname.startsWith(`${path}/`),
   );
+  const isProtectedPage = PROTECTED_PATHS.some((path) =>
+    path === "/"
+      ? nextUrl.pathname === "/"
+      : nextUrl.pathname === path || nextUrl.pathname.startsWith(`${path}/`),
+  );
 
   if (isApiRoute) return;
 
@@ -34,7 +48,7 @@ export const middleware = auth((req) => {
     return Response.redirect(new URL("/", nextUrl));
   }
 
-  if (!isAuthPage && !isPublicPage && !isAuthenticated) {
+  if (!isAuthPage && !isPublicPage && isProtectedPage && !isAuthenticated) {
     const loginUrl = new URL("/login", nextUrl);
     loginUrl.searchParams.set("callbackUrl", nextUrl.pathname);
     return Response.redirect(loginUrl);

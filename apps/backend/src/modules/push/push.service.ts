@@ -10,6 +10,7 @@ import {
 } from '@tarmoto/shared';
 import { DeviceToken } from '../../entities/device-token.entity.js';
 import { NotificationPreferencesRow } from '../../entities/notification-preferences.entity.js';
+import { UserNotification } from '../../entities/user-notification.entity.js';
 import { LogPushProvider } from './providers/log.provider.js';
 import {
   PUSH_PROVIDER,
@@ -62,6 +63,8 @@ export class PushService {
     private readonly tokenRepo: Repository<DeviceToken>,
     @InjectRepository(NotificationPreferencesRow)
     private readonly prefsRepo: Repository<NotificationPreferencesRow>,
+    @InjectRepository(UserNotification)
+    private readonly notificationRepo: Repository<UserNotification>,
     @Inject(PUSH_PROVIDER)
     @Optional()
     private readonly provider: PushProvider | null,
@@ -74,6 +77,18 @@ export class PushService {
     input: PushNotificationInput,
   ): Promise<PushDispatchResult> {
     const prefs = await this.loadPreferences(userId);
+
+    if (isCategoryEnabled(prefs, input.category, 'in_app')) {
+      try {
+        await this.createInAppNotification(userId, input);
+      } catch (err) {
+        this.logger.warn(
+          `in-app notification write failed user=${userId} category=${input.category}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
 
     if (!isCategoryEnabled(prefs, input.category, 'push')) {
       return zeroResult('preference-off');
@@ -183,6 +198,21 @@ export class PushService {
       { deleted_at: now },
     );
     return result.affected ?? 0;
+  }
+
+  private async createInAppNotification(
+    userId: string,
+    input: PushNotificationInput,
+  ): Promise<void> {
+    await this.notificationRepo.save(
+      this.notificationRepo.create({
+        user_id: userId,
+        category: input.category,
+        title: input.title,
+        body: input.body,
+        data: input.data ?? {},
+      }),
+    );
   }
 }
 

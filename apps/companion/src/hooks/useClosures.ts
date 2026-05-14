@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { closuresApi } from "@/lib/api";
+import { useNetworkReconnectRevision } from "@/lib/network-status";
 import {
   countClosuresBySeverity,
   dedupeClosures,
@@ -35,6 +36,7 @@ export function useClosures(
   month: number,
   routes: PlannerClosureRoute[],
 ): ClosuresQueryResult {
+  const reconnectRevision = useNetworkReconnectRevision();
   const previewDate = useMemo(() => previewDateForMonth(month), [month]);
   const previewIso = previewDate.toISOString();
   const [state, setState] = useState<ClosuresState>({
@@ -82,7 +84,7 @@ export function useClosures(
       });
 
     return () => ctrl.abort();
-  }, [previewDate, previewIso]);
+  }, [previewDate, previewIso, reconnectRevision]);
 
   useEffect(() => {
     if (routes.length === 0) {
@@ -160,7 +162,7 @@ export function useClosures(
       });
 
     return () => ctrl.abort();
-  }, [previewDate, previewIso, routes]);
+  }, [previewDate, previewIso, routes, reconnectRevision]);
 
   return {
     ...state,

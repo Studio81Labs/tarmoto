@@ -33,6 +33,7 @@ import { GroupRide } from './entities/group-ride.entity.js';
 import { GroupRideMember } from './entities/group-ride-member.entity.js';
 import { DeviceToken } from './entities/device-token.entity.js';
 import { NotificationPreferencesRow } from './entities/notification-preferences.entity.js';
+import { UserNotification } from './entities/user-notification.entity.js';
 import { PrivacyPreferencesRow } from './entities/privacy-preferences.entity.js';
 import { RouteCollection } from './entities/route-collection.entity.js';
 import { RouteCollectionItem } from './entities/route-collection-item.entity.js';
@@ -92,6 +93,7 @@ import { AddDeviceCalibration1717400000000 } from './migrations/1717400000000-Ad
 import { AddModelEvalSamples1717500000000 } from './migrations/1717500000000-AddModelEvalSamples.js';
 import { AddModelEvalReconcileAttemptedAt1717600000000 } from './migrations/1717600000000-AddModelEvalReconcileAttemptedAt.js';
 import { AddTripFolders1717700000000 } from './migrations/1717700000000-AddTripFolders.js';
+import { AddInAppNotifications1717800000000 } from './migrations/1717800000000-AddInAppNotifications.js';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -134,6 +136,7 @@ export const AppDataSource = new DataSource({
     GroupRideMember,
     DeviceToken,
     NotificationPreferencesRow,
+    UserNotification,
     PrivacyPreferencesRow,
     RouteCollection,
     RouteCollectionItem,
@@ -202,6 +205,7 @@ export const AppDataSource = new DataSource({
     AddModelEvalSamples1717500000000,
     AddModelEvalReconcileAttemptedAt1717600000000,
     AddTripFolders1717700000000,
+    AddInAppNotifications1717800000000,
   ],
   synchronize: false,
 });
