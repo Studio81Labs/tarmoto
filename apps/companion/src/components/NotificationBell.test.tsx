@@ -164,6 +164,51 @@ describe("NotificationBell", () => {
     expect(screen.queryByTestId("notification-unread-indicator")).toBeNull();
   });
 
+  it("restores unread state when marking all notifications read fails", async () => {
+    useAuthStore.getState().setSession(
+      {
+        id: "user-1",
+        email: "rider@example.com",
+        displayName: "Rider",
+      },
+      "token-1",
+    );
+    const unreadFeed = {
+      data: {
+        unread_count: 1,
+        items: [
+          {
+            id: "note-1",
+            category: "new_follower" as const,
+            title: "New follower",
+            body: "Ada started following you",
+            data: { type: "new_follower", follower_id: "user-2" },
+            read_at: null,
+            created_at: "2026-05-14T08:00:00.000Z",
+          },
+        ],
+      },
+    };
+    vi.mocked(accountApi.getNotifications)
+      .mockResolvedValueOnce(unreadFeed)
+      .mockResolvedValueOnce(unreadFeed);
+    vi.mocked(accountApi.markAllNotificationsRead).mockRejectedValue(
+      new Error("offline"),
+    );
+
+    render(<NotificationBell />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /mark all read/i }),
+    );
+
+    await waitFor(() => {
+      expect(accountApi.markAllNotificationsRead).toHaveBeenCalledTimes(1);
+      expect(accountApi.getNotifications).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.getByTestId("notification-unread-indicator")).toBeVisible();
+  });
+
   it("waits for the auth token before fetching notifications", async () => {
     vi.mocked(accountApi.getNotifications).mockResolvedValue({
       data: {

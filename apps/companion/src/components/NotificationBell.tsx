@@ -20,6 +20,19 @@ export function NotificationBell({
   const [error, setError] = useState<string | null>(null);
   const accessToken = useAuthStore((s) => s.accessToken);
 
+  const refreshNotifications = () => {
+    void accountApi
+      .getNotifications()
+      .then(({ data }) => {
+        setItems(data.items);
+        setUnreadCount(data.unread_count);
+        setError(null);
+      })
+      .catch((err: Error) => {
+        setError(err.message || "Failed to load notifications");
+      });
+  };
+
   useEffect(() => {
     if (!accessToken) {
       setLoading(false);
@@ -63,10 +76,7 @@ export function NotificationBell({
     );
     setUnreadCount((current) => Math.max(0, current - 1));
     void accountApi.markNotificationRead(note.id).catch(() => {
-      void accountApi.getNotifications().then(({ data }) => {
-        setItems(data.items);
-        setUnreadCount(data.unread_count);
-      });
+      refreshNotifications();
     });
     close();
   };
@@ -78,10 +88,16 @@ export function NotificationBell({
       ),
     );
     setUnreadCount(0);
-    void accountApi.markAllNotificationsRead().then(({ data }) => {
-      setItems(data.items);
-      setUnreadCount(data.unread_count);
-    });
+    void accountApi
+      .markAllNotificationsRead()
+      .then(({ data }) => {
+        setItems(data.items);
+        setUnreadCount(data.unread_count);
+        setError(null);
+      })
+      .catch(() => {
+        refreshNotifications();
+      });
   };
 
   const hasDataUnread = unreadCount > 0;
