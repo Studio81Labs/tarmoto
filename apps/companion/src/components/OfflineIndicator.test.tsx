@@ -1,7 +1,6 @@
 import { act, render, screen } from "@testing-library/react";
 import { OfflineIndicator } from "./OfflineIndicator";
 import { useRealtimeStore } from "@/stores/realtime";
-import { NETWORK_RECONNECTED_EVENT } from "@/lib/network-status";
 
 function setOnline(value: boolean) {
   Object.defineProperty(window.navigator, "onLine", {
@@ -45,21 +44,21 @@ describe("OfflineIndicator", () => {
     expect(screen.getByText("Reconnecting…")).toBeInTheDocument();
   });
 
-  it("announces reconnect so data surfaces can refresh", () => {
-    const listener = vi.fn();
-    window.addEventListener(NETWORK_RECONNECTED_EVENT, listener);
-
+  it("clears the offline badge when the browser comes back online", () => {
     render(<OfflineIndicator />);
 
     act(() => {
       setOnline(false);
       window.dispatchEvent(new Event("offline"));
+    });
+
+    expect(screen.getByText("Offline")).toBeInTheDocument();
+
+    act(() => {
       setOnline(true);
       window.dispatchEvent(new Event("online"));
     });
 
-    expect(listener).toHaveBeenCalledTimes(1);
-
-    window.removeEventListener(NETWORK_RECONNECTED_EVENT, listener);
+    expect(screen.queryByText("Offline")).not.toBeInTheDocument();
   });
 });

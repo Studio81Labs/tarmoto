@@ -3,7 +3,6 @@ import { t } from "@/i18n";
 import { useEffect, useState } from "react";
 import { WifiOff } from "lucide-react";
 import { useRealtimeStore } from "@/stores/realtime";
-import { emitNetworkReconnected } from "@/lib/network-status";
 /**
  * Compact badge surfaced in the Topbar when the browser is offline or the
  * realtime socket is reconnecting. Browser offline wins because the whole app
@@ -25,7 +24,6 @@ export function OfflineIndicator() {
     const onOnline = () => {
       setIsOnline(true);
       setShowOffline(false);
-      emitNetworkReconnected();
     };
     window.addEventListener("offline", onOffline);
     window.addEventListener("online", onOnline);

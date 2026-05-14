@@ -38,7 +38,8 @@ export class InAppNotificationsService {
     userId: string,
     limit = DEFAULT_LIMIT,
   ): Promise<InAppNotificationListResponseDto> {
-    const bounded = Math.min(Math.max(limit, 1), MAX_LIMIT);
+    const safeLimit = Number.isFinite(limit) ? limit : DEFAULT_LIMIT;
+    const bounded = Math.min(Math.max(safeLimit, 1), MAX_LIMIT);
     const [items, unreadCount] = await Promise.all([
       this.repo.find({
         where: { user_id: userId },

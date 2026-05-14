@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { I18nProvider } from "@/i18n/I18nProvider";
 import { usePathname } from "next/navigation";
+import { NetworkStatusProvider } from "./NetworkStatusProvider";
 
 const AuthenticatedAppProviders = dynamic(() =>
   import("./AuthenticatedAppProviders").then(
@@ -19,6 +20,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
 
   return (
     <I18nProvider>
+      <NetworkStatusProvider />
       <AuthenticatedAppProviders>{children}</AuthenticatedAppProviders>
     </I18nProvider>
   );
