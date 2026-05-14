@@ -57,6 +57,7 @@ function emptyRepos() {
     privacyPreferences: { findOne: jest.fn().mockResolvedValue(null) },
     rideTagEvents: { find: jest.fn().mockResolvedValue([]) },
     bikes: { find: jest.fn().mockResolvedValue([]) },
+    userNotifications: { find: jest.fn().mockResolvedValue([]) },
   };
 }
 
@@ -83,6 +84,7 @@ describe('BundleAssembler', () => {
       'challenges.json',
       'commute_routes.json',
       'ride_tag_events.json',
+      'in_app_notifications.json',
     ];
     for (const f of expected) expect(entries.has(f)).toBe(true);
 
@@ -102,6 +104,7 @@ describe('BundleAssembler', () => {
     expect(JSON.parse(entries.get('preferences.json')!)).toEqual({});
     expect(JSON.parse(entries.get('privacy.json')!)).toEqual({});
     expect(JSON.parse(entries.get('notifications.json')!)).toEqual({});
+    expect(JSON.parse(entries.get('in_app_notifications.json')!)).toEqual([]);
 
     expect(entries.get('README.txt')).toContain('Tarmoto data export');
     expect(entries.get('README.txt')).toContain('GDPR Article 15');
@@ -224,6 +227,37 @@ describe('BundleAssembler', () => {
     );
     expect(entries.get('README.txt')).toContain('garage entries');
     expect(entries.get('README.txt')).not.toContain('empty until bike entity');
+  });
+
+  it('includes durable in-app notification feed entries in the GDPR bundle', async () => {
+    const user = makeUser();
+    const repos = emptyRepos();
+    const notificationRows = [
+      {
+        id: 'note-1',
+        user_id: 'u1',
+        category: 'hazard_alert',
+        title: 'Hazard nearby',
+        body: 'Loose gravel reported on your saved route',
+        data: { type: 'hazard_alert', hazard_id: 'hazard-1' },
+        read_at: null,
+        created_at: new Date('2026-05-14T08:00:00Z'),
+      },
+    ];
+    repos.userNotifications.find.mockResolvedValue(notificationRows);
+
+    const assembler = new BundleAssembler(repos);
+    const buf = await streamToBuffer(await assembler.assemble(user));
+    const entries = await listEntries(buf);
+
+    expect(repos.userNotifications.find).toHaveBeenCalledWith({
+      where: { user_id: 'u1' },
+      order: { created_at: 'DESC' },
+    });
+    expect(JSON.parse(entries.get('in_app_notifications.json')!)).toEqual(
+      JSON.parse(JSON.stringify(notificationRows)),
+    );
+    expect(entries.get('README.txt')).toContain('in_app_notifications.json');
   });
 
   it('includes per-ride GPX files for rides with a route', async () => {

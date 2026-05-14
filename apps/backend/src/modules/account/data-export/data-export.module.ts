@@ -21,6 +21,7 @@ import { PrivacyPreferencesRow } from '../../../entities/privacy-preferences.ent
 import { DataExportRequest } from '../../../entities/data-export-request.entity.js';
 import { RideTagEvent } from '../../../entities/ride-tag-event.entity.js';
 import { Bike } from '../../../entities/bike.entity.js';
+import { UserNotification } from '../../../entities/user-notification.entity.js';
 import { AuthModule } from '../../auth/index.js';
 import { EmailModule } from '../../email/index.js';
 import { StorageModule } from '../../storage/index.js';
@@ -61,6 +62,7 @@ import { BundleAssembler } from './assembler/bundle-assembler.js';
       PrivacyPreferencesRow,
       RideTagEvent,
       Bike,
+      UserNotification,
     ]),
   ],
   controllers: [DataExportController],
@@ -85,6 +87,7 @@ import { BundleAssembler } from './assembler/bundle-assembler.js';
         getRepositoryToken(PrivacyPreferencesRow),
         getRepositoryToken(RideTagEvent),
         getRepositoryToken(Bike),
+        getRepositoryToken(UserNotification),
       ],
       useFactory: (
         contacts: Repository<UserContact>,
@@ -102,6 +105,7 @@ import { BundleAssembler } from './assembler/bundle-assembler.js';
         privacyPreferences: Repository<PrivacyPreferencesRow>,
         rideTagEvents: Repository<RideTagEvent>,
         bikes: Repository<Bike>,
+        userNotifications: Repository<UserNotification>,
       ) =>
         new BundleAssembler({
           contacts,
@@ -119,6 +123,7 @@ import { BundleAssembler } from './assembler/bundle-assembler.js';
           privacyPreferences,
           rideTagEvents,
           bikes,
+          userNotifications,
         }),
     },
   ],

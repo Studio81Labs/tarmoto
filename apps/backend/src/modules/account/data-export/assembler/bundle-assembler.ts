@@ -18,6 +18,7 @@ import type { NotificationPreferencesRow } from '../../../../entities/notificati
 import type { PrivacyPreferencesRow } from '../../../../entities/privacy-preferences.entity.js';
 import type { RideTagEvent } from '../../../../entities/ride-tag-event.entity.js';
 import type { Bike } from '../../../../entities/bike.entity.js';
+import type { UserNotification } from '../../../../entities/user-notification.entity.js';
 import { sanitizeUserForExport } from './sanitizers.js';
 import { rideToGpx, tripDayToGpx } from './gpx.js';
 
@@ -45,6 +46,9 @@ export interface BundleRepos {
   // US-64 — bikes carry rider-entered free-form `notes` plus
   // make/model/year, so a complete GDPR export must include them.
   bikes: Pick<Repository<Bike>, 'find'>;
+  // In-app notifications are durable user-specific feed entries containing
+  // titles, bodies, metadata, read state, and timestamps.
+  userNotifications: Pick<Repository<UserNotification>, 'find'>;
 }
 
 export class BundleAssembler {
@@ -67,6 +71,7 @@ export class BundleAssembler {
       privacyRow,
       rideTagEvents,
       bikes,
+      userNotifications,
     ] = await Promise.all([
       this.repos.contacts.find({ where: { user_id: userId } }),
       this.repos.rides.find({
@@ -88,6 +93,10 @@ export class BundleAssembler {
       this.repos.bikes.find({
         where: { user_id: userId },
         order: { created_at: 'ASC' },
+      }),
+      this.repos.userNotifications.find({
+        where: { user_id: userId },
+        order: { created_at: 'DESC' },
       }),
     ]);
 
@@ -137,6 +146,9 @@ export class BundleAssembler {
     archive.append(json(challenges), { name: 'challenges.json' });
     archive.append(json(commute), { name: 'commute_routes.json' });
     archive.append(json(rideTagEvents), { name: 'ride_tag_events.json' });
+    archive.append(json(userNotifications), {
+      name: 'in_app_notifications.json',
+    });
 
     for (const r of rides) {
       const gpx = rideToGpx({
@@ -207,6 +219,7 @@ function buildReadme(generatedAt: string): string {
     '  challenges.json      - challenge entries',
     '  commute_routes.json  - your saved commute routes',
     '  ride_tag_events.json - rider-asserted surface tags captured during rides',
+    '  in_app_notifications.json - durable in-app notification feed entries',
     '',
     'Anonymized road quality contributions are NOT included because they no',
     'longer reference your account after anonymization.',
