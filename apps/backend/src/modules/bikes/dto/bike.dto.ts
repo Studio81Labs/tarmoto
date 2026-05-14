@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsBoolean,
   IsInt,
@@ -11,7 +11,7 @@ import {
   ValidatorConstraint,
   ValidatorConstraintInterface,
 } from 'class-validator';
-import { Expose, Transform } from 'class-transformer';
+import { Transform } from 'class-transformer';
 
 const trim = Transform(({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value,
@@ -66,28 +66,25 @@ export class CreateBikeDto {
   @MaxLength(100)
   model!: string;
 
-  @ApiProperty({ required: false, example: 2024 })
+  @ApiPropertyOptional({ example: 2024 })
   @IsOptional()
   @IsInt()
   @Validate(IsBikeYearConstraint)
   year?: number;
 
-  @ApiProperty({ required: false, default: false })
+  @ApiPropertyOptional({ default: false })
   @IsOptional()
   @IsBoolean()
-  @Expose({ name: 'isActive' })
   is_active?: boolean;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()
   @IsUrl({ require_protocol: true })
   @MaxLength(2048)
-  @Expose({ name: 'photoUrl' })
-  photo_url?: string;
+  photo_url?: string | null;
 
-  @ApiProperty({
-    required: false,
+  @ApiPropertyOptional({
     description: 'Short slug for the rider-picked bike icon.',
   })
   @IsOptional()
@@ -96,16 +93,16 @@ export class CreateBikeDto {
   @MaxLength(32)
   icon?: string;
 
-  @ApiProperty({ required: false, description: 'Free-form rider notes.' })
+  @ApiPropertyOptional({ description: 'Free-form rider notes.' })
   @IsOptional()
   @trim
   @IsString()
   @MaxLength(1000)
-  notes?: string;
+  notes?: string | null;
 }
 
 export class UpdateBikeDto {
-  @ApiProperty({ required: false, example: 'Honda' })
+  @ApiPropertyOptional({ example: 'Honda' })
   @IsOptional()
   @trim
   @IsString()
@@ -113,7 +110,7 @@ export class UpdateBikeDto {
   @MaxLength(100)
   make?: string;
 
-  @ApiProperty({ required: false, example: 'Africa Twin' })
+  @ApiPropertyOptional({ example: 'Africa Twin' })
   @IsOptional()
   @trim
   @IsString()
@@ -121,39 +118,37 @@ export class UpdateBikeDto {
   @MaxLength(100)
   model?: string;
 
-  @ApiProperty({ required: false, example: 2024 })
+  @ApiPropertyOptional({ example: 2024 })
   @IsOptional()
   @IsInt()
   @Validate(IsBikeYearConstraint)
   year?: number;
 
-  @ApiProperty({ required: false, example: true })
+  @ApiPropertyOptional({ example: true })
   @IsOptional()
   @IsBoolean()
-  @Expose({ name: 'isActive' })
   is_active?: boolean;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()
   @IsUrl({ require_protocol: true })
   @MaxLength(2048)
-  @Expose({ name: 'photoUrl' })
-  photo_url?: string;
+  photo_url?: string | null;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional()
   @IsOptional()
   @trim
   @IsString()
   @MaxLength(32)
   icon?: string;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @trim
   @IsString()
   @MaxLength(1000)
-  notes?: string;
+  notes?: string | null;
 }
 
 export class BikeDto {

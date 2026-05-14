@@ -41,7 +41,6 @@ import {
   validateFolderName,
   type TripFolder,
 } from "@/lib/trip-folders";
-import { duplicateTripPayload } from "@/lib/trip-duplicate";
 import { formatRelativeTime } from "@/lib/utils";
 import type { Trip } from "@/lib/types";
 const STATUS_LABEL: Record<TripStatus, string> = {
@@ -316,25 +315,7 @@ export default function TripListPage() {
   const duplicateTrip = async (trip: Trip) => {
     markBusy(trip.id);
     try {
-      // US-37 — only carry the source's folder_id forward when the
-      // caller owns the source. Folders are private per-user, so the
-      // server-side `POST /trips` ownership check resolves `folder_id`
-      // against the CALLING user's folders; blindly forwarding the
-      // source's `folder_id` would 404 every collaborator's duplicate
-      // of a filed trip. We resolve ownership from the summary's
-      // `owner_id` field (cheap and always present) rather than
-      // probing `trip.collaborators`, which is `undefined` on items
-      // sourced from the trips list endpoint (`TripSummaryDto` carries
-      // `member_count` but not the full members[] array, so optional-
-      // chain `.find(...)` would throw before we even hit the API).
-      // When `owner_id` is missing (planner-detail-shaped trips that
-      // didn't go through the list endpoint, or older API responses),
-      // we fall back to "not the owner" so the duplicate lands
-      // unfiled rather than risking a 404.
-      const isOwner = trip.owner_id != null && trip.owner_id === userId;
-      const { data } = await tripsApi.create(
-        duplicateTripPayload(trip, { isOwner }),
-      );
+      const { data } = await tripsApi.duplicate(trip.id);
       // Match the list-endpoint handling: the server sometimes wraps
       // responses in `{ data: ... }`, so unwrap if present.
       const body = data as unknown as

@@ -952,14 +952,14 @@ export function buildApp(): Express {
   app.post("/api/v1/account/bikes", requireAuth, (req: AuthedRequest, res) => {
     const userId = req.session!.user_id;
     const list = state.bikes.get(userId) ?? [];
-    const { make, model, year, photoUrl, isActive } = req.body ?? {};
+    const { make, model, year, photo_url, is_active } = req.body ?? {};
     const bike = {
       id: randomUUID(),
       make: String(make ?? ""),
       model: String(model ?? ""),
       year: Number(year ?? new Date().getFullYear()),
-      photoUrl: photoUrl ?? null,
-      isActive: list.length === 0 || Boolean(isActive),
+      photoUrl: photo_url ?? null,
+      isActive: list.length === 0 || Boolean(is_active),
       totalRides: 0,
       totalKm: 0,
     };
@@ -984,9 +984,9 @@ export function buildApp(): Express {
         make: req.body?.make ?? bike.make,
         model: req.body?.model ?? bike.model,
         year: req.body?.year ?? bike.year,
-        photoUrl: req.body?.photoUrl ?? bike.photoUrl,
+        photoUrl: req.body?.photo_url ?? bike.photoUrl,
       });
-      if (req.body?.isActive === true) {
+      if (req.body?.is_active === true) {
         for (const b of list) b.isActive = b.id === bike.id;
       }
       res.json(bike);

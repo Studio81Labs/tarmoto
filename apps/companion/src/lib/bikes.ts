@@ -1,3 +1,4 @@
+import type { CreateBikeInput } from "@/lib/api";
 import type { Bike } from "@/lib/types";
 
 export interface BikeFormValues {
@@ -7,12 +8,7 @@ export interface BikeFormValues {
   photoUrl: string;
 }
 
-export interface BikeFormPayload {
-  make: string;
-  model: string;
-  year: number;
-  photoUrl: string | null;
-}
+export type BikeFormPayload = CreateBikeInput;
 
 export type BikeFormErrors = Partial<Record<keyof BikeFormValues, string>>;
 
@@ -79,7 +75,8 @@ export function formValuesToPayload(values: BikeFormValues): BikeFormPayload {
     make: values.make.trim(),
     model: values.model.trim(),
     year: Number(values.year.trim()),
-    photoUrl: photo ? photo : null,
+    is_active: false,
+    photo_url: photo ? photo : null,
   };
 }
 

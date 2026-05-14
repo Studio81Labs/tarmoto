@@ -66,10 +66,11 @@ describe("SubscriptionPage", () => {
       data: {
         current_plan: {
           tier: "premium",
+          name: "Premium",
           status: "active",
           price_label: "€29.99/yr",
           renews_at: "2026-11-15T00:00:00.000Z",
-          manage_url: "https://billing.example.com/portal",
+          cancel_at_period_end: false,
         },
         plans: [
           {
@@ -161,6 +162,7 @@ describe("SubscriptionPage", () => {
           status: "active",
           price_label: "€49.99/yr",
           renews_at: "2026-11-15T00:00:00.000Z",
+          cancel_at_period_end: false,
         },
         plans: [
           {

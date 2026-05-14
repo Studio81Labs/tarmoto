@@ -121,7 +121,8 @@ describe("formValuesToPayload", () => {
       make: "Yamaha",
       model: "MT-09",
       year: 2024,
-      photoUrl: "https://example.com/mt09.jpg",
+      is_active: false,
+      photo_url: "https://example.com/mt09.jpg",
     });
   });
 
@@ -132,7 +133,7 @@ describe("formValuesToPayload", () => {
         model: "MT-09",
         year: "2024",
         photoUrl: "   ",
-      }).photoUrl,
+      }).photo_url,
     ).toBeNull();
   });
 });

@@ -1,11 +1,37 @@
+import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { CreateBikeDto, MIN_BIKE_YEAR, maxBikeYear } from './bike.dto.js';
+import {
+  CreateBikeDto,
+  MIN_BIKE_YEAR,
+  UpdateBikeDto,
+  maxBikeYear,
+} from './bike.dto.js';
 
 async function validateBody(body: unknown): Promise<string[]> {
   const dto = plainToInstance(CreateBikeDto, body);
   const errors = await validate(dto);
   return errors.flatMap((e) => Object.keys(e.constraints ?? {}));
+}
+
+const appValidationPipe = new ValidationPipe({
+  whitelist: true,
+  forbidNonWhitelisted: true,
+  transform: true,
+});
+
+async function transformCreate(body: unknown): Promise<CreateBikeDto> {
+  return appValidationPipe.transform(body, {
+    type: 'body',
+    metatype: CreateBikeDto,
+  }) as Promise<CreateBikeDto>;
+}
+
+async function transformUpdate(body: unknown): Promise<UpdateBikeDto> {
+  return appValidationPipe.transform(body, {
+    type: 'body',
+    metatype: UpdateBikeDto,
+  }) as Promise<UpdateBikeDto>;
 }
 
 describe('CreateBikeDto', () => {
@@ -105,14 +131,64 @@ describe('CreateBikeDto', () => {
     const errors = await validateBody({
       make: 'Honda',
       model: 'Africa Twin',
-      photoUrl: 'javascript:alert(1)',
+      photo_url: 'javascript:alert(1)',
     });
     expect(errors).toContain('isUrl');
+  });
+
+  it('accepts generated snake_case bike fields through the global validation pipe', async () => {
+    await expect(
+      transformCreate({
+        make: 'Honda',
+        model: 'Africa Twin',
+        is_active: true,
+        photo_url: 'https://example.com/bike.jpg',
+      }),
+    ).resolves.toMatchObject({
+      make: 'Honda',
+      model: 'Africa Twin',
+      is_active: true,
+      photo_url: 'https://example.com/bike.jpg',
+    });
+  });
+
+  it('rejects legacy camelCase bike write fields through the global validation pipe', async () => {
+    await expect(
+      transformCreate({
+        make: 'Honda',
+        model: 'Africa Twin',
+        isActive: true,
+        photoUrl: 'https://example.com/bike.jpg',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('exports the expected boundary constants', () => {
     expect(MIN_BIKE_YEAR).toBe(1900);
     const fixed = new Date('2026-05-07T00:00:00Z');
     expect(maxBikeYear(fixed)).toBe(2027);
+  });
+});
+
+describe('UpdateBikeDto', () => {
+  it('accepts generated snake_case bike fields through the global validation pipe', async () => {
+    await expect(
+      transformUpdate({
+        is_active: true,
+        photo_url: 'https://example.com/bike.jpg',
+      }),
+    ).resolves.toMatchObject({
+      is_active: true,
+      photo_url: 'https://example.com/bike.jpg',
+    });
+  });
+
+  it('rejects legacy camelCase bike write fields through the global validation pipe', async () => {
+    await expect(
+      transformUpdate({
+        isActive: true,
+        photoUrl: 'https://example.com/bike.jpg',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

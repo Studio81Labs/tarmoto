@@ -104,7 +104,7 @@ export default function BikesPage() {
     const previousActiveId = bikes.find((b) => b.isActive)?.id ?? null;
     setBikes((list) => list.map((b) => ({ ...b, isActive: b.id === bike.id })));
     try {
-      await accountApi.updateBike(bike.id, { isActive: true });
+      await accountApi.updateBike(bike.id, { is_active: true });
       await refresh();
     } catch (err) {
       // Functional revert: flip only the two affected bikes' isActive flags,
