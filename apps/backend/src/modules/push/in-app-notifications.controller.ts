@@ -3,6 +3,7 @@ import {
   Get,
   Param,
   Patch,
+  ParseUUIDPipe,
   Query,
   Req,
   UseGuards,
@@ -48,7 +49,7 @@ export class InAppNotificationsController {
   @ApiResponse({ status: 200, type: InAppNotificationDto })
   async markRead(
     @Req() req: Request,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ): Promise<InAppNotificationDto> {
     return this.notifications.markRead(req.user!.userId, id);
   }

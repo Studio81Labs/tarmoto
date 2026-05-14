@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { AnchorHTMLAttributes } from "react";
 import { NotificationBell } from "./NotificationBell";
 import { accountApi } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth";
 
 const mocks = vi.hoisted(() => ({
   close: vi.fn(),
@@ -47,6 +48,7 @@ vi.mock("@/lib/api", () => ({
 
 describe("NotificationBell", () => {
   beforeEach(() => {
+    useAuthStore.getState().clearSession();
     mocks.close.mockReset();
     mocks.toggle.mockReset();
     vi.mocked(accountApi.getNotifications).mockReset();
@@ -54,7 +56,19 @@ describe("NotificationBell", () => {
     vi.mocked(accountApi.markAllNotificationsRead).mockReset();
   });
 
+  afterEach(() => {
+    useAuthStore.getState().clearSession();
+  });
+
   it("shows fetched unread notifications and marks one read when opened", async () => {
+    useAuthStore.getState().setSession(
+      {
+        id: "user-1",
+        email: "rider@example.com",
+        displayName: "Rider",
+      },
+      "token-1",
+    );
     vi.mocked(accountApi.getNotifications).mockResolvedValue({
       data: {
         unread_count: 1,
@@ -97,6 +111,14 @@ describe("NotificationBell", () => {
   });
 
   it("can mark all notifications read", async () => {
+    useAuthStore.getState().setSession(
+      {
+        id: "user-1",
+        email: "rider@example.com",
+        displayName: "Rider",
+      },
+      "token-1",
+    );
     vi.mocked(accountApi.getNotifications).mockResolvedValue({
       data: {
         unread_count: 1,
@@ -140,5 +162,31 @@ describe("NotificationBell", () => {
       expect(accountApi.markAllNotificationsRead).toHaveBeenCalledTimes(1);
     });
     expect(screen.queryByTestId("notification-unread-indicator")).toBeNull();
+  });
+
+  it("waits for the auth token before fetching notifications", async () => {
+    vi.mocked(accountApi.getNotifications).mockResolvedValue({
+      data: {
+        unread_count: 0,
+        items: [],
+      },
+    });
+
+    render(<NotificationBell />);
+
+    expect(accountApi.getNotifications).not.toHaveBeenCalled();
+
+    useAuthStore.getState().setSession(
+      {
+        id: "user-1",
+        email: "rider@example.com",
+        displayName: "Rider",
+      },
+      "token-1",
+    );
+
+    await waitFor(() => {
+      expect(accountApi.getNotifications).toHaveBeenCalledTimes(1);
+    });
   });
 });

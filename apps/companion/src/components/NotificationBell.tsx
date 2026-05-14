@@ -6,6 +6,7 @@ import { useDropdown } from "@/hooks";
 import { useEffect, useState } from "react";
 import type { InAppNotification } from "@tarmoto/shared";
 import { accountApi } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth";
 
 export function NotificationBell({
   hasUnread = false,
@@ -17,8 +18,15 @@ export function NotificationBell({
   const [unreadCount, setUnreadCount] = useState(hasUnread ? 1 : 0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const accessToken = useAuthStore((s) => s.accessToken);
 
   useEffect(() => {
+    if (!accessToken) {
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     let cancelled = false;
     setLoading(true);
     accountApi
@@ -39,7 +47,7 @@ export function NotificationBell({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [accessToken]);
 
   const markRead = (note: InAppNotification) => {
     if (note.read_at) {
