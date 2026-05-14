@@ -98,6 +98,8 @@ test.describe("settings: bikes", () => {
     expect(createBody.make).toBe("Yamaha");
     expect(createBody.model).toBe("MT-09");
     expect(createBody.year).toBe(2024);
+    expect(createBody.is_active).toBe(false);
+    expect(createBody).not.toHaveProperty("isActive");
 
     // Card lands on the page once the modal closes and the list refreshes.
     await expect(page.getByText(/Yamaha MT-09/i).first()).toBeVisible();
@@ -123,6 +125,7 @@ test.describe("settings: bikes", () => {
     ]);
     const updateBody = JSON.parse(updateReq.postData() ?? "{}");
     expect(updateBody.model).toBe("MT-10");
+    expect(updateBody).not.toHaveProperty("photoUrl");
     await expect(page.getByText(/Yamaha MT-10/i).first()).toBeVisible();
 
     // Delete via the trash icon — confirm window.confirm via dialog handler.

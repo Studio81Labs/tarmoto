@@ -11,7 +11,7 @@ import {
   ValidatorConstraint,
   ValidatorConstraintInterface,
 } from 'class-validator';
-import { Expose, Transform } from 'class-transformer';
+import { Transform } from 'class-transformer';
 
 const trim = Transform(({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value,
@@ -75,7 +75,6 @@ export class CreateBikeDto {
   @ApiPropertyOptional({ default: false })
   @IsOptional()
   @IsBoolean()
-  @Expose({ name: 'isActive' })
   is_active?: boolean;
 
   @ApiPropertyOptional({ nullable: true })
@@ -83,7 +82,6 @@ export class CreateBikeDto {
   @IsString()
   @IsUrl({ require_protocol: true })
   @MaxLength(2048)
-  @Expose({ name: 'photoUrl' })
   photo_url?: string | null;
 
   @ApiPropertyOptional({
@@ -129,7 +127,6 @@ export class UpdateBikeDto {
   @ApiPropertyOptional({ example: true })
   @IsOptional()
   @IsBoolean()
-  @Expose({ name: 'isActive' })
   is_active?: boolean;
 
   @ApiPropertyOptional({ nullable: true })
@@ -137,7 +134,6 @@ export class UpdateBikeDto {
   @IsString()
   @IsUrl({ require_protocol: true })
   @MaxLength(2048)
-  @Expose({ name: 'photoUrl' })
   photo_url?: string | null;
 
   @ApiPropertyOptional()
