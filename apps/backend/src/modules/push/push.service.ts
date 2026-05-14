@@ -42,8 +42,8 @@ export interface PushDispatchResult {
  *
  * Responsibilities, in order:
  *   1. Load the user's preferences (lazy default if no row exists).
- *   2. Gate by category-channel toggle and quiet hours (critical
- *      categories bypass quiet hours).
+ *   2. Gate by quiet hours (critical categories bypass quiet hours) and
+ *      category-channel toggles.
  *   3. Load active device tokens for the user.
  *   4. Hand off to the configured `PushProvider` — the service does
  *      not know FCM from APN.
@@ -78,6 +78,13 @@ export class PushService {
   ): Promise<PushDispatchResult> {
     const prefs = await this.loadPreferences(userId);
 
+    if (
+      !CRITICAL_NOTIFICATION_CATEGORIES.has(input.category) &&
+      isInQuietHours(prefs, new Date())
+    ) {
+      return zeroResult('quiet-hours');
+    }
+
     if (isCategoryEnabled(prefs, input.category, 'in_app')) {
       try {
         await this.createInAppNotification(userId, input);
@@ -92,13 +99,6 @@ export class PushService {
 
     if (!isCategoryEnabled(prefs, input.category, 'push')) {
       return zeroResult('preference-off');
-    }
-
-    if (
-      !CRITICAL_NOTIFICATION_CATEGORIES.has(input.category) &&
-      isInQuietHours(prefs, new Date())
-    ) {
-      return zeroResult('quiet-hours');
     }
 
     const tokens = await this.tokenRepo.find({

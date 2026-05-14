@@ -224,6 +224,7 @@ describe('PushService', () => {
           body: 'y',
         });
         expect(provider.send).not.toHaveBeenCalled();
+        expect(notificationRepo.save).not.toHaveBeenCalled();
         expect(result.suppressedReason).toBe('quiet-hours');
       } finally {
         jest.useRealTimers();
@@ -249,6 +250,7 @@ describe('PushService', () => {
           body: '2 of 3 contacts notified',
         });
         expect(provider.send).toHaveBeenCalled();
+        expect(notificationRepo.save).toHaveBeenCalledTimes(1);
         expect(result.suppressed).toBe(false);
       } finally {
         jest.useRealTimers();
