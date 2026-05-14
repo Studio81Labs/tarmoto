@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">Best motorcycle roads on Tarmoto</title>
+  <desc id="desc">A dark Tarmoto share image for quality-ranked motorcycle road discovery pages.</desc>
+  <rect width="1200" height="630" fill="#020617"/>
+  <path d="M0 500 C 140 455, 230 455, 350 490 S 585 555, 720 500 S 970 410, 1200 455 V630 H0 Z" fill="#0f172a"/>
+  <path d="M0 545 C 150 505, 250 510, 370 540 S 610 600, 765 535 S 1000 470, 1200 510" fill="none" stroke="#22d3ee" stroke-width="14" stroke-linecap="round"/>
+  <path d="M0 567 C 150 527, 250 532, 370 562 S 610 622, 765 557 S 1000 492, 1200 532" fill="none" stroke="#84cc16" stroke-width="5" stroke-linecap="round" opacity=".85"/>
+  <circle cx="988" cy="166" r="78" fill="#22d3ee" opacity=".14"/>
+  <circle cx="988" cy="166" r="44" fill="#22d3ee" opacity=".28"/>
+  <text x="72" y="104" fill="#67e8f9" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700">Tarmoto</text>
+  <text x="72" y="268" fill="#f8fafc" font-family="Arial, Helvetica, sans-serif" font-size="78" font-weight="800">Best motorcycle roads</text>
+  <text x="72" y="338" fill="#cbd5e1" font-family="Arial, Helvetica, sans-serif" font-size="34">Quality-ranked routes, curviness scores, and regional ride discovery.</text>
+  <text x="72" y="472" fill="#e2e8f0" font-family="Arial, Helvetica, sans-serif" font-size="27">Public road intelligence for riders</text>
+</svg>

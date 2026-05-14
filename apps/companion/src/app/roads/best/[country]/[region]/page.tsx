@@ -3,6 +3,11 @@ import { notFound } from "next/navigation";
 import { findCountry, findRegion, listIndexableRegions } from "@tarmoto/shared";
 import { fetchBestRoads } from "@/lib/bestRoads";
 import { siteUrl } from "@/lib/site";
+import {
+  buildBestRoadsMetadata,
+  normalizeCountryParam,
+  normalizeSlugParam,
+} from "@/lib/best-roads-metadata";
 import { BestRoadsPageBody } from "./_components/BestRoadsPageBody";
 
 export const revalidate = 604800;
@@ -18,24 +23,21 @@ export async function generateMetadata({
 }: {
   params: Promise<{ country: string; region: string }>;
 }): Promise<Metadata> {
-  const { country, region } = await params;
+  const { country: rawCountry, region: rawRegion } = await params;
+  const country = normalizeCountryParam(rawCountry);
+  const region = normalizeSlugParam(rawRegion);
   const r = findRegion(country, region);
   // Sub-regions have their own 3-level page — refuse to render them here so a
   // request like /roads/best/at/alpine-passes doesn't duplicate the canonical
   // /roads/best/at/tyrol/alpine-passes page with conflicting metadata.
   if (!r || r.parent) return {};
   const title = `Best motorcycle roads in ${r.name} — Tarmoto`;
-  return {
+  return buildBestRoadsMetadata({
     title,
     description: r.description,
-    alternates: { canonical: `/roads/best/${r.country}/${r.slug}` },
-    openGraph: {
-      title,
-      description: r.description,
-      url: `/roads/best/${r.country}/${r.slug}`,
-      type: "website",
-    },
-  };
+    canonicalPath: `/roads/best/${r.country}/${r.slug}`,
+    imageAlt: `Best motorcycle roads in ${r.name}`,
+  });
 }
 
 export default async function BestRoadsRegionPage({
@@ -43,7 +45,9 @@ export default async function BestRoadsRegionPage({
 }: {
   params: Promise<{ country: string; region: string }>;
 }) {
-  const { country, region } = await params;
+  const { country: rawCountry, region: rawRegion } = await params;
+  const country = normalizeCountryParam(rawCountry);
+  const region = normalizeSlugParam(rawRegion);
   const regionMeta = findRegion(country, region);
   const countryMeta = findCountry(country);
   // Mirror the generateMetadata guard: sub-regions live under a 3-level URL.

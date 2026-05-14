@@ -17,7 +17,9 @@ import type { PlannerClosureRoute } from "@/lib/closures-summary";
 interface PassesPanelProps {
   month?: number;
   onMonthChange?: (month: number) => void;
+  bbox?: string;
   routes?: PlannerClosureRoute[];
+  showRouteWarnings?: boolean;
   data?: PassesQueryResult;
 }
 const EMPTY_ROUTES: PlannerClosureRoute[] = [];
@@ -43,7 +45,9 @@ const MAX_PASSES_PER_GROUP = 5;
 export function PassesPanel({
   month: controlledMonth,
   onMonthChange,
+  bbox,
   routes = EMPTY_ROUTES,
+  showRouteWarnings = true,
   data,
 }: PassesPanelProps) {
   const [localMonth, setLocalMonth] = useState<number>(() => currentUtcMonth());
@@ -65,6 +69,7 @@ export function PassesPanel({
         setMonth={setMonth}
         isReadOnlyControlled={isReadOnlyControlled}
         routes={routes}
+        showRouteWarnings={showRouteWarnings}
         data={data}
       />
     );
@@ -75,6 +80,8 @@ export function PassesPanel({
       setMonth={setMonth}
       isReadOnlyControlled={isReadOnlyControlled}
       routes={routes}
+      bbox={bbox}
+      showRouteWarnings={showRouteWarnings}
     />
   );
 }
@@ -83,19 +90,24 @@ function FetchedPassesPanel({
   setMonth,
   isReadOnlyControlled,
   routes,
+  bbox,
+  showRouteWarnings,
 }: {
   month: number;
   setMonth: (nextMonth: number) => void;
   isReadOnlyControlled: boolean;
   routes: PlannerClosureRoute[];
+  bbox?: string;
+  showRouteWarnings: boolean;
 }) {
-  const data = usePasses(month, routes);
+  const data = usePasses(month, routes, bbox ? { bbox } : undefined);
   return (
     <PassesPanelBody
       month={month}
       setMonth={setMonth}
       isReadOnlyControlled={isReadOnlyControlled}
       routes={routes}
+      showRouteWarnings={showRouteWarnings}
       data={data}
     />
   );
@@ -105,12 +117,14 @@ function PassesPanelBody({
   setMonth,
   isReadOnlyControlled,
   routes,
+  showRouteWarnings,
   data,
 }: {
   month: number;
   setMonth: (nextMonth: number) => void;
   isReadOnlyControlled: boolean;
   routes: PlannerClosureRoute[];
+  showRouteWarnings: boolean;
   data: PassesQueryResult;
 }) {
   const {
@@ -158,43 +172,47 @@ function PassesPanelBody({
 
       <Legend />
 
-      <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/70 p-3">
-        <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
-          <Route size={12} />
-          {t("Route warnings ")}
-        </div>
+      {showRouteWarnings && (
+        <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+          <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <Route size={12} />
+            {t("Route warnings ")}
+          </div>
 
-        {routes.length === 0 ? (
-          <p className="text-xs text-slate-500">
-            {t("Import or generate a route to check mountain pass crossings. ")}
-          </p>
-        ) : routeLoading ? (
-          <p className="text-xs text-slate-500">
-            {t("Checking route passes\u2026")}
-          </p>
-        ) : hasRouteWarnings ? (
-          <>
-            <p className="text-xs text-slate-300">{routeSummary}</p>
-            {routeError && (
-              <p className="text-xs text-amber-300">{routeError}</p>
-            )}
-            <ul className="space-y-1.5">
-              {routePasses
-                .filter((pass) => pass.status !== "open")
-                .slice(0, 3)
-                .map((pass) => (
-                  <PassRow key={pass.id} pass={pass} />
-                ))}
-            </ul>
-          </>
-        ) : routeError ? (
-          <p className="text-xs text-rose-400">{routeError}</p>
-        ) : (
-          <p className="text-xs text-emerald-400">
-            {t("No closed or unknown passes intersect the current trip. ")}
-          </p>
-        )}
-      </div>
+          {routes.length === 0 ? (
+            <p className="text-xs text-slate-500">
+              {t(
+                "Import or generate a route to check mountain pass crossings. ",
+              )}
+            </p>
+          ) : routeLoading ? (
+            <p className="text-xs text-slate-500">
+              {t("Checking route passes\u2026")}
+            </p>
+          ) : hasRouteWarnings ? (
+            <>
+              <p className="text-xs text-slate-300">{routeSummary}</p>
+              {routeError && (
+                <p className="text-xs text-amber-300">{routeError}</p>
+              )}
+              <ul className="space-y-1.5">
+                {routePasses
+                  .filter((pass) => pass.status !== "open")
+                  .slice(0, 3)
+                  .map((pass) => (
+                    <PassRow key={pass.id} pass={pass} />
+                  ))}
+              </ul>
+            </>
+          ) : routeError ? (
+            <p className="text-xs text-rose-400">{routeError}</p>
+          ) : (
+            <p className="text-xs text-emerald-400">
+              {t("No closed or unknown passes intersect the current trip. ")}
+            </p>
+          )}
+        </div>
+      )}
 
       {error ? (
         <p className="text-xs text-rose-400">{error}</p>

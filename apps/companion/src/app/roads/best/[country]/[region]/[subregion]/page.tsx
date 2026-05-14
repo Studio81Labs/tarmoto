@@ -3,6 +3,11 @@ import { notFound } from "next/navigation";
 import { findCountry, findRegion, listIndexableRegions } from "@tarmoto/shared";
 import { fetchBestRoads } from "@/lib/bestRoads";
 import { siteUrl } from "@/lib/site";
+import {
+  buildBestRoadsMetadata,
+  normalizeCountryParam,
+  normalizeSlugParam,
+} from "@/lib/best-roads-metadata";
 import { BestRoadsPageBody } from "../_components/BestRoadsPageBody";
 
 export const revalidate = 604800;
@@ -22,22 +27,24 @@ export async function generateMetadata({
 }: {
   params: Promise<{ country: string; region: string; subregion: string }>;
 }): Promise<Metadata> {
-  const { country, region, subregion } = await params;
+  const {
+    country: rawCountry,
+    region: rawRegion,
+    subregion: rawSubregion,
+  } = await params;
+  const country = normalizeCountryParam(rawCountry);
+  const region = normalizeSlugParam(rawRegion);
+  const subregion = normalizeSlugParam(rawSubregion);
   const r = findRegion(country, subregion);
   if (!r || r.parent !== region) return {};
   const title = `Best motorcycle roads in ${r.name} — Tarmoto`;
   const url = `/roads/best/${r.country}/${r.parent}/${r.slug}`;
-  return {
+  return buildBestRoadsMetadata({
     title,
     description: r.description,
-    alternates: { canonical: url },
-    openGraph: {
-      title,
-      description: r.description,
-      url,
-      type: "website",
-    },
-  };
+    canonicalPath: url,
+    imageAlt: `Best motorcycle roads in ${r.name}`,
+  });
 }
 
 export default async function BestRoadsSubRegionPage({
@@ -45,7 +52,14 @@ export default async function BestRoadsSubRegionPage({
 }: {
   params: Promise<{ country: string; region: string; subregion: string }>;
 }) {
-  const { country, region: parentSlug, subregion } = await params;
+  const {
+    country: rawCountry,
+    region: rawParentSlug,
+    subregion: rawSubregion,
+  } = await params;
+  const country = normalizeCountryParam(rawCountry);
+  const parentSlug = normalizeSlugParam(rawParentSlug);
+  const subregion = normalizeSlugParam(rawSubregion);
   const regionMeta = findRegion(country, subregion);
   const parentMeta = findRegion(country, parentSlug);
   const countryMeta = findCountry(country);

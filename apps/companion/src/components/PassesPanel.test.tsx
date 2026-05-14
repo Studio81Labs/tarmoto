@@ -107,7 +107,7 @@ describe("PassesPanel", () => {
   it("keeps route warnings tied to the selected travel month", () => {
     render(<PassesPanel month={9} routes={[route]} />);
 
-    expect(usePassesMock).toHaveBeenCalledWith(9, [route]);
+    expect(usePassesMock).toHaveBeenCalledWith(9, [route], undefined);
   });
 
   it("reuses a stable empty routes reference when routes are omitted", () => {
@@ -138,5 +138,17 @@ describe("PassesPanel", () => {
     expect(
       screen.getByText("No mountain passes seeded yet."),
     ).toBeInTheDocument();
+  });
+
+  it("can hide route warnings when used as a regional discovery panel", () => {
+    render(<PassesPanel month={7} showRouteWarnings={false} />);
+
+    expect(screen.queryByText("Route warnings")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "Import or generate a route to check mountain pass crossings.",
+      ),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Seasonal passes")).toBeInTheDocument();
   });
 });

@@ -20,6 +20,9 @@ import {
   type SegmentDetailPanelState,
 } from "./_components/SegmentDetailSidebar";
 import { ApiError, roadsApi } from "@/lib/api";
+import { ClosuresPanel } from "@/components/ClosuresPanel";
+import { PassesPanel } from "@/components/PassesPanel";
+import { currentUtcMonth } from "@/lib/passes-summary";
 
 declare global {
   interface Window {
@@ -66,12 +69,21 @@ const HAZARD_OPTIONS: {
   emoji: HAZARD_CONFIG[key].emoji,
   hex: HAZARD_CONFIG[key].hex,
 }));
+
+function formatBbox(bbox: readonly [number, number, number, number]): string {
+  return bbox.join(",");
+}
+
 function ExplorerPageInner() {
   const [filterOpen, setFilterOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [conditionsMonth, setConditionsMonth] = useState<number>(() =>
+    currentUtcMonth(),
+  );
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(
     null,
   );
+  const [conditionBbox, setConditionBbox] = useState<string | null>(null);
   const [segmentDetailState, setSegmentDetailState] =
     useState<SegmentDetailPanelState>({ status: "idle" });
   const router = useRouter();
@@ -355,6 +367,29 @@ function ExplorerPageInner() {
                 <span>{t("Very twisty")}</span>
               </div>
             </div>
+
+            <div className="space-y-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                {t("Road conditions ")}
+              </h3>
+              {conditionBbox ? (
+                <>
+                  <ClosuresPanel
+                    month={conditionsMonth}
+                    routes={[]}
+                    bbox={conditionBbox}
+                    showRouteWarnings={false}
+                  />
+                  <PassesPanel
+                    month={conditionsMonth}
+                    onMonthChange={setConditionsMonth}
+                    routes={[]}
+                    bbox={conditionBbox}
+                    showRouteWarnings={false}
+                  />
+                </>
+              ) : null}
+            </div>
           </div>
         )}
 
@@ -371,6 +406,7 @@ function ExplorerPageInner() {
             onViewChange={(view) => {
               setCenter({ lng: view.lng, lat: view.lat });
               setZoom(view.zoom);
+              setConditionBbox(formatBbox(view.bbox));
             }}
           />
           <MapLegend
