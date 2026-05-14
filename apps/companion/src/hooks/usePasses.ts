@@ -24,6 +24,10 @@ export interface PassesQueryResult {
   routeError: string | null;
 }
 
+interface UsePassesOptions {
+  bbox?: string;
+}
+
 interface PassesState extends PassesQueryResult {
   routeQueryKey: string | null;
 }
@@ -54,8 +58,10 @@ function buildRouteQueryKey(
 export function usePasses(
   forMonth: number | undefined,
   routes: PlannerClosureRoute[] = EMPTY_ROUTES,
+  options?: UsePassesOptions,
 ): PassesQueryResult {
   const reconnectRevision = useNetworkReconnectRevision();
+  const bbox = options?.bbox;
   const routeQueryKey = useMemo(
     () => buildRouteQueryKey(forMonth, routes),
     [forMonth, routes],
@@ -201,7 +207,12 @@ export function usePasses(
       .GET("/api/v1/passes", {
         params: {
           query:
-            forMonth != null ? ({ for_month: forMonth } as never) : undefined,
+            forMonth != null || bbox
+              ? ({
+                  ...(bbox ? { bbox } : {}),
+                  ...(forMonth != null ? { for_month: forMonth } : {}),
+                } as never)
+              : undefined,
         },
         signal: ctrl.signal,
       })
@@ -233,7 +244,7 @@ export function usePasses(
         }));
       });
     return () => ctrl.abort();
-  }, [forMonth, reconnectRevision]);
+  }, [bbox, forMonth, reconnectRevision]);
 
   return {
     ...state,

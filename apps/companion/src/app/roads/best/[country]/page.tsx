@@ -3,6 +3,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { COUNTRIES, findCountry, findCountryRegions } from "@tarmoto/shared";
+import {
+  buildBestRoadsMetadata,
+  normalizeCountryParam,
+} from "@/lib/best-roads-metadata";
 export const revalidate = 604800;
 export function generateStaticParams() {
   return COUNTRIES.map((c) => ({ country: c.code }));
@@ -14,22 +18,18 @@ export async function generateMetadata({
     country: string;
   }>;
 }): Promise<Metadata> {
-  const { country } = await params;
+  const { country: rawCountry } = await params;
+  const country = normalizeCountryParam(rawCountry);
   const c = findCountry(country);
   if (!c) return {};
   const title = `Best motorcycle roads in ${c.name} — Tarmoto`;
   const description = `Ranked lists of the top-rated motorcycle roads in ${c.name}, scored by quality and curviness.`;
-  return {
+  return buildBestRoadsMetadata({
     title,
     description,
-    alternates: { canonical: `/roads/best/${c.code}` },
-    openGraph: {
-      title,
-      description,
-      url: `/roads/best/${c.code}`,
-      type: "website",
-    },
-  };
+    canonicalPath: `/roads/best/${c.code}`,
+    imageAlt: `Best motorcycle roads in ${c.name}`,
+  });
 }
 export default async function BestRoadsCountryPage({
   params,
@@ -38,7 +38,8 @@ export default async function BestRoadsCountryPage({
     country: string;
   }>;
 }) {
-  const { country } = await params;
+  const { country: rawCountry } = await params;
+  const country = normalizeCountryParam(rawCountry);
   const c = findCountry(country);
   if (!c) notFound();
   const regions = findCountryRegions(c.code);

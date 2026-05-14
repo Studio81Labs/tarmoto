@@ -12,8 +12,14 @@ vi.mock("@/lib/api", () => ({
   },
 }));
 
-function TestHarness({ routes }: { routes?: PlannerClosureRoute[] }) {
-  const result = usePasses(7, routes);
+function TestHarness({
+  bbox,
+  routes,
+}: {
+  bbox?: string;
+  routes?: PlannerClosureRoute[];
+}) {
+  const result = usePasses(7, routes, { bbox });
 
   return (
     <div>
@@ -52,6 +58,24 @@ describe("usePasses", () => {
     });
 
     expect(passesApi.checkRoute).not.toHaveBeenCalled();
+  });
+
+  it("passes the viewport bbox into the public passes list query", async () => {
+    render(<TestHarness bbox="17.557,49.644,18.963,49.996" />);
+
+    await waitFor(() => {
+      expect(api.GET).toHaveBeenCalledWith(
+        "/api/v1/passes",
+        expect.objectContaining({
+          params: {
+            query: {
+              bbox: "17.557,49.644,18.963,49.996",
+              for_month: 7,
+            },
+          },
+        }),
+      );
+    });
   });
 
   it("keeps route loading active on the first render after routes appear", async () => {

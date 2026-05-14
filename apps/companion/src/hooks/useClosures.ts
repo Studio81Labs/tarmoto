@@ -23,6 +23,10 @@ export interface ClosuresQueryResult {
   previewDate: Date;
 }
 
+interface UseClosuresOptions {
+  bbox?: string;
+}
+
 type ClosuresState = Omit<ClosuresQueryResult, "previewDate">;
 
 const EMPTY_COUNTS: ClosureSeverityCounts = {
@@ -35,8 +39,10 @@ const EMPTY_COUNTS: ClosureSeverityCounts = {
 export function useClosures(
   month: number,
   routes: PlannerClosureRoute[],
+  options?: UseClosuresOptions,
 ): ClosuresQueryResult {
   const reconnectRevision = useNetworkReconnectRevision();
+  const bbox = options?.bbox;
   const previewDate = useMemo(() => previewDateForMonth(month), [month]);
   const previewIso = previewDate.toISOString();
   const [state, setState] = useState<ClosuresState>({
@@ -60,7 +66,7 @@ export function useClosures(
     }));
 
     closuresApi
-      .list({ active_on: previewIso }, { signal: ctrl.signal })
+      .list({ active_on: previewIso, bbox }, { signal: ctrl.signal })
       .then(({ data }) => {
         if (ctrl.signal.aborted) return;
         const closures = sortClosures(data);
@@ -84,17 +90,24 @@ export function useClosures(
       });
 
     return () => ctrl.abort();
-  }, [previewDate, previewIso, reconnectRevision]);
+  }, [bbox, previewDate, previewIso, reconnectRevision]);
 
   useEffect(() => {
     if (routes.length === 0) {
-      setState((current) => ({
-        ...current,
-        routeClosures: [],
-        routeCounts: EMPTY_COUNTS,
-        routeLoading: false,
-        routeError: null,
-      }));
+      setState((current) =>
+        current.routeClosures.length === 0 &&
+        current.routeCounts.total === 0 &&
+        !current.routeLoading &&
+        current.routeError == null
+          ? current
+          : {
+              ...current,
+              routeClosures: [],
+              routeCounts: EMPTY_COUNTS,
+              routeLoading: false,
+              routeError: null,
+            },
+      );
       return;
     }
 

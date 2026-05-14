@@ -59,7 +59,7 @@ describe("ClosuresPanel", () => {
 
     render(<ClosuresPanel month={7} routes={[]} />);
 
-    expect(useClosuresMock).toHaveBeenCalledWith(7, []);
+    expect(useClosuresMock).toHaveBeenCalledWith(7, [], undefined);
     expect(screen.getByText("Closures & roadworks")).toBeInTheDocument();
     expect(
       screen.getByText("Import or generate a route to check crossings."),
@@ -228,5 +228,27 @@ describe("ClosuresPanel", () => {
     expect(
       screen.getByText("No active closures for this month yet."),
     ).toBeInTheDocument();
+  });
+
+  it("can hide route warnings when used as a regional discovery panel", () => {
+    useClosuresMock.mockReturnValue({
+      closures: [],
+      routeClosures: [],
+      counts: { full: 0, partial: 0, advisory: 0, total: 0 },
+      routeCounts: { full: 0, partial: 0, advisory: 0, total: 0 },
+      loading: false,
+      routeLoading: false,
+      error: null,
+      routeError: null,
+      previewDate: new Date("2026-07-15T12:00:00Z"),
+    });
+
+    render(<ClosuresPanel month={7} routes={[]} showRouteWarnings={false} />);
+
+    expect(screen.queryByText("Route warnings")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Import or generate a route to check crossings."),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Closures & roadworks")).toBeInTheDocument();
   });
 });

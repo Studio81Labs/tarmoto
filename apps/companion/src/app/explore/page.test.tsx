@@ -46,6 +46,36 @@ vi.mock("@/components/RoadReviewsPanel", () => ({
   ),
 }));
 
+vi.mock("@/components/ClosuresPanel", () => ({
+  ClosuresPanel: ({
+    bbox,
+    showRouteWarnings,
+  }: {
+    bbox?: string;
+    showRouteWarnings?: boolean;
+  }) => (
+    <div>
+      Closures panel bbox={bbox} routes=
+      {showRouteWarnings === false ? "hidden" : "shown"}
+    </div>
+  ),
+}));
+
+vi.mock("@/components/PassesPanel", () => ({
+  PassesPanel: ({
+    bbox,
+    showRouteWarnings,
+  }: {
+    bbox?: string;
+    showRouteWarnings?: boolean;
+  }) => (
+    <div>
+      Passes panel bbox={bbox} routes=
+      {showRouteWarnings === false ? "hidden" : "shown"}
+    </div>
+  ),
+}));
+
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
   return {
@@ -172,6 +202,18 @@ describe("ExplorerPage", () => {
         "Reviews panel for 11111111-2222-4333-8444-555555555111",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("T27/T28: exposes regional closures and passes panels scoped to the explorer viewport", () => {
+    render(<ExplorerPage />);
+
+    expect(
+      screen.getByText(/closures panel bbox=17\.557,49\.644,18\.963,49\.996/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/passes panel bbox=17\.557,49\.644,18\.963,49\.996/i),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(/routes=hidden/i)).toHaveLength(2);
   });
 
   it("keeps unrelated filter params stable while segment detail is open", async () => {

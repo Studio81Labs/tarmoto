@@ -34,28 +34,61 @@ const REASON_LABEL: Record<PlannerClosure["reason"], string> = {
 interface ClosuresPanelProps {
   month: number;
   routes: PlannerClosureRoute[];
+  bbox?: string;
+  showRouteWarnings?: boolean;
   data?: ClosuresQueryResult;
 }
-export function ClosuresPanel({ month, routes, data }: ClosuresPanelProps) {
+export function ClosuresPanel({
+  month,
+  routes,
+  bbox,
+  showRouteWarnings = true,
+  data,
+}: ClosuresPanelProps) {
   if (data) {
-    return <ClosuresPanelBody month={month} routes={routes} data={data} />;
+    return (
+      <ClosuresPanelBody
+        month={month}
+        routes={routes}
+        showRouteWarnings={showRouteWarnings}
+        data={data}
+      />
+    );
   }
-  return <FetchedClosuresPanel month={month} routes={routes} />;
+  return (
+    <FetchedClosuresPanel
+      month={month}
+      routes={routes}
+      bbox={bbox}
+      showRouteWarnings={showRouteWarnings}
+    />
+  );
 }
 function FetchedClosuresPanel({
   month,
   routes,
+  bbox,
+  showRouteWarnings = true,
 }: Omit<ClosuresPanelProps, "data">) {
-  const data = useClosures(month, routes);
-  return <ClosuresPanelBody month={month} routes={routes} data={data} />;
+  const data = useClosures(month, routes, bbox ? { bbox } : undefined);
+  return (
+    <ClosuresPanelBody
+      month={month}
+      routes={routes}
+      showRouteWarnings={showRouteWarnings}
+      data={data}
+    />
+  );
 }
 function ClosuresPanelBody({
   month,
   routes,
+  showRouteWarnings,
   data,
 }: {
   month: number;
   routes: PlannerClosureRoute[];
+  showRouteWarnings: boolean;
   data: ClosuresQueryResult;
 }) {
   const unitSystem = usePreferencesStore((s) => s.unitSystem);
@@ -96,50 +129,53 @@ function ClosuresPanelBody({
         })}
       </p>
 
-      <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/70 p-3">
-        <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
-          <Route size={12} />
-          {t("Route warnings ")}
-        </div>
+      {showRouteWarnings && (
+        <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/70 p-3">
+          <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <Route size={12} />
+            {t("Route warnings ")}
+          </div>
 
-        {routes.length === 0 ? (
-          <p className="text-xs text-slate-500">
-            {t("Import or generate a route to check crossings. ")}
-          </p>
-        ) : routeLoading ? (
-          <p className="text-xs text-slate-500">
-            {t("Checking route crossings\u2026")}
-          </p>
-        ) : hasRouteClosures ? (
-          <>
-            <p className="text-xs text-slate-300">
-              {t("Current trip crosses {count} active {closureLabel}.", {
-                count: routeCounts.total,
-                closureLabel: routeCounts.total === 1 ? "closure" : "closures",
-              })}
+          {routes.length === 0 ? (
+            <p className="text-xs text-slate-500">
+              {t("Import or generate a route to check crossings. ")}
             </p>
-            {hasRouteFailure && (
-              <p className="text-xs text-amber-300">{routeError}</p>
-            )}
-            <ul className="space-y-2">
-              {routeClosures.slice(0, 3).map((closure) => (
-                <ClosureRow
-                  key={closure.id}
-                  closure={closure}
-                  compact
-                  units={unitSystem}
-                />
-              ))}
-            </ul>
-          </>
-        ) : hasRouteFailure ? (
-          <p className="text-xs text-rose-400">{routeError}</p>
-        ) : routeCounts.total === 0 ? (
-          <p className="text-xs text-emerald-400">
-            {t("No active closures intersect the current trip. ")}
-          </p>
-        ) : null}
-      </div>
+          ) : routeLoading ? (
+            <p className="text-xs text-slate-500">
+              {t("Checking route crossings\u2026")}
+            </p>
+          ) : hasRouteClosures ? (
+            <>
+              <p className="text-xs text-slate-300">
+                {t("Current trip crosses {count} active {closureLabel}.", {
+                  count: routeCounts.total,
+                  closureLabel:
+                    routeCounts.total === 1 ? "closure" : "closures",
+                })}
+              </p>
+              {hasRouteFailure && (
+                <p className="text-xs text-amber-300">{routeError}</p>
+              )}
+              <ul className="space-y-2">
+                {routeClosures.slice(0, 3).map((closure) => (
+                  <ClosureRow
+                    key={closure.id}
+                    closure={closure}
+                    compact
+                    units={unitSystem}
+                  />
+                ))}
+              </ul>
+            </>
+          ) : hasRouteFailure ? (
+            <p className="text-xs text-rose-400">{routeError}</p>
+          ) : routeCounts.total === 0 ? (
+            <p className="text-xs text-emerald-400">
+              {t("No active closures intersect the current trip. ")}
+            </p>
+          ) : null}
+        </div>
+      )}
 
       {error ? (
         <p className="text-xs text-rose-400">{error}</p>

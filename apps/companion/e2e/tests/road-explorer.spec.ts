@@ -101,6 +101,29 @@ test.describe("road quality explorer", () => {
     }
   });
 
+  test("T27/T28: public explorer exposes regional closures and passes panels", async ({
+    browser,
+    mockApi,
+  }) => {
+    await mockApi.reset();
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.goto("/explore");
+
+      await expect(page.getByText("Closures & roadworks")).toBeVisible();
+      await expect(page.getByText("Seasonal passes")).toBeVisible();
+      await expect(
+        page.getByText("No active closures for this month yet."),
+      ).toBeVisible();
+      await expect(
+        page.getByText("No mountain passes seeded yet."),
+      ).toBeVisible();
+    } finally {
+      await context.close();
+    }
+  });
+
   test("the reset button clears all filter params from the URL", async ({
     browser,
     mockApi,

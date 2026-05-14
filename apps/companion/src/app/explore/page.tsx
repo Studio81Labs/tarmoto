@@ -1,6 +1,6 @@
 "use client";
 import { t } from "@/i18n";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMapStore } from "@/stores/map";
 import { Filter, Search, RotateCcw } from "lucide-react";
@@ -20,6 +20,9 @@ import {
   type SegmentDetailPanelState,
 } from "./_components/SegmentDetailSidebar";
 import { ApiError, roadsApi } from "@/lib/api";
+import { ClosuresPanel } from "@/components/ClosuresPanel";
+import { PassesPanel } from "@/components/PassesPanel";
+import { currentUtcMonth } from "@/lib/passes-summary";
 
 declare global {
   interface Window {
@@ -66,9 +69,32 @@ const HAZARD_OPTIONS: {
   emoji: HAZARD_CONFIG[key].emoji,
   hex: HAZARD_CONFIG[key].hex,
 }));
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function formatCoord(value: number): string {
+  return value.toFixed(3);
+}
+
+function viewportBbox(center: { lng: number; lat: number }, zoom: number) {
+  const scale = 2 ** clamp(zoom, 0, 18);
+  const lngRadius = clamp(720 / scale, 0.05, 12);
+  const latRadius = clamp(lngRadius / 4, 0.03, 6);
+  const west = clamp(center.lng - lngRadius, -180, 180);
+  const east = clamp(center.lng + lngRadius, -180, 180);
+  const south = clamp(center.lat - latRadius, -85, 85);
+  const north = clamp(center.lat + latRadius, -85, 85);
+  return [west, south, east, north].map(formatCoord).join(",");
+}
+
 function ExplorerPageInner() {
   const [filterOpen, setFilterOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [conditionsMonth, setConditionsMonth] = useState<number>(() =>
+    currentUtcMonth(),
+  );
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(
     null,
   );
@@ -96,6 +122,10 @@ function ExplorerPageInner() {
     setZoom,
     resetFilters,
   } = useMapStore();
+  const conditionBbox = useMemo(
+    () => viewportBbox(center, zoom),
+    [center, zoom],
+  );
   // Hydrate the store from URL params on mount and on back/forward navigation.
   // `hydrated` is state (not a ref) so the URL-sync effect waits for the render
   // that follows the store update — otherwise it would see stale `filters` from
@@ -354,6 +384,25 @@ function ExplorerPageInner() {
                 <span>{t("Straight")}</span>
                 <span>{t("Very twisty")}</span>
               </div>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                {t("Road conditions ")}
+              </h3>
+              <ClosuresPanel
+                month={conditionsMonth}
+                routes={[]}
+                bbox={conditionBbox}
+                showRouteWarnings={false}
+              />
+              <PassesPanel
+                month={conditionsMonth}
+                onMonthChange={setConditionsMonth}
+                routes={[]}
+                bbox={conditionBbox}
+                showRouteWarnings={false}
+              />
             </div>
           </div>
         )}
