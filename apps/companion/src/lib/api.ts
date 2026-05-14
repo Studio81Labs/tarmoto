@@ -1,4 +1,5 @@
 import { createApiClient } from "@tarmoto/openapi/client";
+import type { paths } from "@tarmoto/openapi/types";
 import type {
   InAppNotification,
   InAppNotificationListResponse,
@@ -53,7 +54,11 @@ export async function registerUser(
   return data;
 }
 
-// ── Raw fetch helper for endpoints not yet in the OpenAPI spec ──
+// ── Transitional raw fetch helper ──
+// Owner: companion web. Follow-up: #529 endpoint-family split for remaining
+// raw helpers (auth bootstrap, trip folders/shares/collab, collections/map
+// shares, hazards/closures/POI, community, passes, roads, users, notifications,
+// and privacy) after the core trips/exploration/account contracts below.
 // Checks res.ok and clears session on 401 (matching openapi-fetch client behavior).
 async function apiFetch<T>(
   path: string,
@@ -86,59 +91,168 @@ async function apiFetch<T>(
   return { data };
 }
 
-// ── Trip endpoints (not yet in spec) ──
+type JsonResponse<
+  Path extends keyof paths,
+  Method extends keyof paths[Path],
+  Status extends number,
+> = paths[Path][Method] extends { responses: infer Responses }
+  ? Status extends keyof Responses
+    ? Responses[Status] extends { content: { "application/json": infer Body } }
+      ? Body
+      : void
+    : never
+  : never;
+
+type JsonRequest<
+  Path extends keyof paths,
+  Method extends keyof paths[Path],
+> = paths[Path][Method] extends {
+  requestBody: { content: { "application/json": infer Body } };
+}
+  ? Body
+  : never;
+
+type OpenApiClientResult<T> = {
+  data?: T;
+  error?: unknown;
+  response?: Response;
+};
+
+async function openApiData<T>(
+  resultPromise: Promise<OpenApiClientResult<T>>,
+): Promise<{ data: T }> {
+  const result = await resultPromise;
+  if (result.error) {
+    throw new ApiError(
+      apiErrorMessage(result.error, result.response?.status ?? 0),
+      result.response?.status ?? 0,
+      result.error,
+    );
+  }
+  return { data: result.data as T };
+}
+
+function apiErrorMessage(body: unknown, status: number): string {
+  if (
+    body &&
+    typeof body === "object" &&
+    "message" in body &&
+    typeof body.message === "string"
+  ) {
+    return body.message;
+  }
+  return `Request failed (${status})`;
+}
+
+// ── Trip endpoints (generated OpenAPI contract) ──
+export type ListTripsQuery = NonNullable<
+  paths["/api/v1/trips"]["get"]["parameters"]["query"]
+>;
+export type TripSummaryResponse = JsonResponse<"/api/v1/trips", "get", 200>;
+export type TripDetailResponse = JsonResponse<
+  "/api/v1/trips/{tripId}",
+  "get",
+  200
+>;
+export type CreateTripInput = JsonRequest<"/api/v1/trips", "post">;
+export type ImportTripInput = JsonRequest<"/api/v1/trips/import", "post">;
+export type UpdateTripInput = JsonRequest<"/api/v1/trips/{tripId}", "patch">;
+export type GenerateTripInput = JsonRequest<
+  "/api/v1/trips/{tripId}/generate",
+  "post"
+>;
+export type GenerateTripResponse = JsonResponse<
+  "/api/v1/trips/{tripId}/generate",
+  "post",
+  201
+>;
+export type DuplicateTripResponse = JsonResponse<
+  "/api/v1/trips/{tripId}/duplicate",
+  "post",
+  201
+>;
+export type InviteTripResponse = JsonResponse<
+  "/api/v1/trips/{tripId}/invite",
+  "post",
+  202
+>;
+
 export const tripsApi = {
-  list: (params?: { page?: number; status?: string }) => {
-    const defined = params
-      ? Object.fromEntries(
-          Object.entries(params)
-            .filter(([, v]) => v != null)
-            .map(([k, v]) => [k, String(v)]),
-        )
-      : undefined;
-    const query = defined ? "?" + new URLSearchParams(defined).toString() : "";
-    return apiFetch(`/trips${query}`);
-  },
-  get: (id: string) => apiFetch(`/trips/${id}`),
-  create: (data: unknown) =>
-    apiFetch("/trips", { method: "POST", body: JSON.stringify(data) }),
-  importRoute: (data: unknown) =>
-    apiFetch("/trips/import", { method: "POST", body: JSON.stringify(data) }),
-  replaceImportedRoute: (id: string, data: unknown) =>
-    apiFetch(`/trips/${id}/import`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
-  update: (id: string, data: unknown) =>
-    apiFetch(`/trips/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  delete: (id: string) => apiFetch(`/trips/${id}`, { method: "DELETE" }),
+  list: (params?: ListTripsQuery) =>
+    openApiData<TripSummaryResponse>(
+      api.GET("/api/v1/trips", params ? { params: { query: params } } : {}),
+    ),
+  get: (id: string) =>
+    openApiData<TripDetailResponse>(
+      api.GET("/api/v1/trips/{tripId}", {
+        params: { path: { tripId: id } },
+      }),
+    ),
+  create: (data: CreateTripInput) =>
+    openApiData<TripDetailResponse>(api.POST("/api/v1/trips", { body: data })),
+  importRoute: (data: ImportTripInput) =>
+    openApiData<TripDetailResponse>(
+      api.POST("/api/v1/trips/import", { body: data }),
+    ),
+  replaceImportedRoute: (id: string, data: ImportTripInput) =>
+    openApiData<TripDetailResponse>(
+      api.PUT("/api/v1/trips/{tripId}/import", {
+        params: { path: { tripId: id } },
+        body: data,
+      }),
+    ),
+  update: (id: string, data: UpdateTripInput) =>
+    openApiData<TripDetailResponse>(
+      api.PATCH("/api/v1/trips/{tripId}", {
+        params: { path: { tripId: id } },
+        body: data,
+      }),
+    ),
+  delete: (id: string) =>
+    openApiData<void>(
+      api.DELETE("/api/v1/trips/{tripId}", {
+        params: { path: { tripId: id } },
+      }),
+    ),
   // POST /trips/:tripId/generate (US-7) — backend builds three preset
   // options (best-fit / scenic / fastest), persists the selected one,
   // and returns all three for side-by-side comparison.
-  generate: (tripId: string, params: unknown) =>
-    apiFetch(`/trips/${tripId}/generate`, {
-      method: "POST",
-      body: JSON.stringify(params),
-    }),
+  generate: (tripId: string, params: GenerateTripInput) =>
+    openApiData<GenerateTripResponse>(
+      api.POST("/api/v1/trips/{tripId}/generate", {
+        params: { path: { tripId } },
+        body: params,
+      }),
+    ),
+  duplicate: (tripId: string) =>
+    openApiData<DuplicateTripResponse>(
+      api.POST("/api/v1/trips/{tripId}/duplicate", {
+        params: { path: { tripId } },
+      }),
+    ),
   // POST /trips/:tripId/join — accept an invite by submitting the
   // trip id + invite code. Returns the trip detail on success and
   // 403s on a wrong code (folded with "no such trip" so the endpoint
   // can't be used to enumerate ids).
   join: (tripId: string, inviteCode: string) =>
-    apiFetch(`/trips/${tripId}/join`, {
-      method: "POST",
-      body: JSON.stringify({ invite_code: inviteCode }),
-    }),
+    openApiData<TripDetailResponse>(
+      api.POST("/api/v1/trips/{tripId}/join", {
+        params: { path: { tripId } },
+        body: { invite_code: inviteCode },
+      }),
+    ),
   // POST /trips/:tripId/invite — owner/admin only. Mail dispatch is
   // best-effort: the backend returns 202 + `{ status: "queued" }` once
   // the audit row lands, regardless of whether the email provider
   // accepted the message. The recipient does NOT need a Tarmoto
   // account; the email explains how to sign up and join.
   invite: (tripId: string, email: string, message?: string) =>
-    apiFetch<{ status: "queued" }>(`/trips/${tripId}/invite`, {
-      method: "POST",
-      body: JSON.stringify(message ? { email, message } : { email }),
-    }),
+    openApiData<InviteTripResponse>(
+      api.POST("/api/v1/trips/{tripId}/invite", {
+        params: { path: { tripId } },
+        body: message ? { email, message } : { email },
+      }),
+    ),
 };
 
 // ── Trip folders (US-37: rider-owned folders that sync across devices) ──
@@ -352,53 +466,45 @@ export const tripCollabApi = {
   },
 };
 
-// ── Exploration endpoints (not yet in spec) ──
-export interface ExplorationStats {
-  ridden_segments: number;
-  total_segments: number;
-  percent_explored: number;
-  total_distance_km: number;
-}
-
-export interface UnriddenSegment {
-  id: string;
-  road_name: string | null;
-  length_m: number;
-  quality_score: number | null;
-  surface_type: string;
-  distance_m: number;
-}
-
-export interface RiddenSegmentMeta {
-  id: string;
-  last_ridden_at: string;
-  last_quality_score: number | null;
-  ride_count: number;
-}
+// ── Exploration endpoints (generated OpenAPI contract) ──
+export type ExplorationStats = JsonResponse<
+  "/api/v1/exploration/stats",
+  "get",
+  200
+>;
+export type UnriddenSegment = JsonResponse<
+  "/api/v1/exploration/nearby-unridden",
+  "get",
+  200
+>[number];
+export type RiddenSegmentMeta = JsonResponse<
+  "/api/v1/exploration/ridden-segments",
+  "get",
+  200
+>["segments"][number];
+export type NearbyUnriddenQuery = NonNullable<
+  paths["/api/v1/exploration/nearby-unridden"]["get"]["parameters"]["query"]
+>;
 
 export const explorationApi = {
-  getStats: () => apiFetch<ExplorationStats>("/exploration/stats"),
+  getStats: () =>
+    openApiData<ExplorationStats>(api.GET("/api/v1/exploration/stats")),
   getRiddenIds: () =>
-    apiFetch<{ segment_ids: string[] }>("/exploration/ridden-ids"),
+    openApiData<JsonResponse<"/api/v1/exploration/ridden-ids", "get", 200>>(
+      api.GET("/api/v1/exploration/ridden-ids"),
+    ),
   getRiddenSegments: () =>
-    apiFetch<{ segments: RiddenSegmentMeta[] }>("/exploration/ridden-segments"),
-  getNearbyUnridden: (params: {
-    lat: number;
-    lng: number;
-    radius_km?: number;
-    limit?: number;
-  }) => {
-    const query = new URLSearchParams({
-      lat: String(params.lat),
-      lng: String(params.lng),
-    });
-    if (params.radius_km != null)
-      query.set("radius_km", String(params.radius_km));
-    if (params.limit != null) query.set("limit", String(params.limit));
-    return apiFetch<UnriddenSegment[]>(
-      `/exploration/nearby-unridden?${query.toString()}`,
-    );
-  },
+    openApiData<
+      JsonResponse<"/api/v1/exploration/ridden-segments", "get", 200>
+    >(api.GET("/api/v1/exploration/ridden-segments")),
+  getNearbyUnridden: (params: NearbyUnriddenQuery) =>
+    openApiData<
+      JsonResponse<"/api/v1/exploration/nearby-unridden", "get", 200>
+    >(
+      api.GET("/api/v1/exploration/nearby-unridden", {
+        params: { query: params },
+      }),
+    ),
 };
 
 // ── Route collections (US-56: cloud-synced shareable collections) ──
@@ -592,7 +698,7 @@ export const mapSharesApi = {
     apiFetch(`/map-shares/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };
 
-// ── Hazards endpoints (public; not yet in spec) ──
+// ── Hazards endpoints (public; transitional raw helper, follow-up #529) ──
 
 export interface HazardResponse {
   id: string;
@@ -1113,65 +1219,101 @@ export const usersApi = {
     }),
 };
 
-// ── Account endpoints (not yet in spec) ──
-export interface DataExportRequestView {
-  id: string;
-  status: "queued" | "processing" | "ready" | "failed" | "expired";
-  expiresAt: string;
-  createdAt: string;
-  completedAt: string | null;
-  downloadUrl: string | null;
-  byteSize: number | null;
-  errorMessage: string | null;
-}
+// ── Account endpoints (generated OpenAPI contract where available) ──
+export type SubscriptionSnapshotResponse = JsonResponse<
+  "/api/v1/account/subscription",
+  "get",
+  200
+>;
+export type CreateCheckoutSessionInput = JsonRequest<
+  "/api/v1/account/subscription/checkout",
+  "post"
+>;
+export type CreatePortalSessionInput = JsonRequest<
+  "/api/v1/account/subscription/portal",
+  "post"
+>;
+export type RedirectUrlResponse = JsonResponse<
+  "/api/v1/account/subscription/checkout",
+  "post",
+  201
+>;
+export type BikeResponse = JsonResponse<
+  "/api/v1/account/bikes",
+  "get",
+  200
+>[number];
+export type CreateBikeInput = JsonRequest<"/api/v1/account/bikes", "post">;
+export type UpdateBikeInput = JsonRequest<
+  "/api/v1/account/bikes/{id}",
+  "patch"
+>;
+export type DataExportRequestView = JsonResponse<
+  "/api/v1/account/data-export",
+  "post",
+  202
+>;
+export type DeleteAccountInput = JsonRequest<"/api/v1/account", "delete">;
+export type DeleteAccountResponse = JsonResponse<
+  "/api/v1/account",
+  "delete",
+  200
+>;
 
 export const accountApi = {
   // Profile updates use `usersApi.updateMe` (PATCH /users/me) — the
   // canonical path agreed across mobile + web. The previous
   // `accountApi.updateProfile` shim hit `/account/profile` which the
   // backend never exposed; it was a dead caller and has been removed.
-  getSubscription: () => apiFetch("/account/subscription"),
-  createCheckoutSession: (data: { tier: "premium" | "pro" }) =>
-    apiFetch<{ url: string }>("/account/subscription/checkout", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-  createPortalSession: (data?: {
-    flow?:
-      | "manage"
-      | "payment_method_update"
-      | "subscription_cancel"
-      | "subscription_update";
-  }) =>
-    apiFetch<{ url: string }>("/account/subscription/portal", {
-      method: "POST",
-      body: JSON.stringify(data ?? {}),
-    }),
-  getBikes: () => apiFetch("/account/bikes"),
-  addBike: (data: unknown) =>
-    apiFetch("/account/bikes", { method: "POST", body: JSON.stringify(data) }),
-  updateBike: (id: string, data: unknown) =>
-    apiFetch(`/account/bikes/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(data),
-    }),
+  getSubscription: () =>
+    openApiData<SubscriptionSnapshotResponse>(
+      api.GET("/api/v1/account/subscription"),
+    ),
+  createCheckoutSession: (data: CreateCheckoutSessionInput) =>
+    openApiData<RedirectUrlResponse>(
+      api.POST("/api/v1/account/subscription/checkout", { body: data }),
+    ),
+  createPortalSession: (
+    data: Partial<CreatePortalSessionInput> = { flow: "manage" },
+  ) =>
+    openApiData<RedirectUrlResponse>(
+      api.POST("/api/v1/account/subscription/portal", {
+        body: data as CreatePortalSessionInput,
+      }),
+    ),
+  getBikes: () => openApiData<BikeResponse[]>(api.GET("/api/v1/account/bikes")),
+  addBike: (data: CreateBikeInput) =>
+    openApiData<BikeResponse>(
+      api.POST("/api/v1/account/bikes", { body: data }),
+    ),
+  updateBike: (id: string, data: UpdateBikeInput) =>
+    openApiData<BikeResponse>(
+      api.PATCH("/api/v1/account/bikes/{id}", {
+        params: { path: { id } },
+        body: data,
+      }),
+    ),
   deleteBike: (id: string) =>
-    apiFetch(`/account/bikes/${id}`, { method: "DELETE" }),
+    openApiData<void>(
+      api.DELETE("/api/v1/account/bikes/{id}", {
+        params: { path: { id } },
+      }),
+    ),
   requestDataExport: () =>
-    apiFetch<DataExportRequestView>("/account/data-export", {
-      method: "POST",
-    }),
+    openApiData<DataExportRequestView>(api.POST("/api/v1/account/data-export")),
   getDataExport: (id: string) =>
-    apiFetch<DataExportRequestView>(`/account/data-export/${id}`),
-  deleteAccount: (input: { password: string; reason?: string }) =>
-    apiFetch<{
-      status: "scheduled";
-      scheduled_for: string;
-      grace_period_days: number;
-    }>("/account", {
-      method: "DELETE",
-      body: JSON.stringify(input),
-    }),
+    openApiData<DataExportRequestView>(
+      api.GET("/api/v1/account/data-export/{id}", {
+        params: { path: { id } },
+      }),
+    ),
+  deleteAccount: (input: DeleteAccountInput) =>
+    openApiData<DeleteAccountResponse>(
+      api.DELETE("/api/v1/account", { body: input }),
+    ),
+  // Transitional raw helpers owned by companion/settings until #529 follow-up:
+  // push notification preference endpoints are already represented in shared
+  // DTOs, but the page still maps through local partial update types.
   getNotificationPreferences: () =>
     apiFetch<NotificationPreferences>("/me/notification-preferences"),
   updateNotificationPreferences: (data: PartialNotificationPreferences) =>

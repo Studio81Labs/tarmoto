@@ -45,6 +45,9 @@ jobs:
       - name: Build shared package
         run: pnpm shared:build
 
+      - name: Generate OpenAPI client
+        run: pnpm openapi:gen
+
       - name: Build backend
         run: pnpm backend:build
 

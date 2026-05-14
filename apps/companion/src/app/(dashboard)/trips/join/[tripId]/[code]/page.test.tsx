@@ -55,9 +55,32 @@ beforeEach(() => {
   authState = { accessToken: "token" };
 });
 
+function joinedTripResponse() {
+  return {
+    data: {
+      id: "trip-1",
+      owner_id: "owner-1",
+      title: "Alps Loop",
+      region: null,
+      num_days: 1,
+      status: "draft" as const,
+      member_count: 1,
+      folder_id: null,
+      created_at: "2026-05-14T00:00:00.000Z",
+      daily_km_min: 150,
+      daily_km_max: 250,
+      min_quality: 3,
+      road_preference: "mixed" as const,
+      invite_code: "ABCDEFGH",
+      members: [],
+      days: [],
+    },
+  };
+}
+
 describe("TripInviteJoinPage", () => {
   it("posts the invite code to /trips/:id/join and redirects to the trip detail on success", async () => {
-    vi.mocked(tripsApi.join).mockResolvedValue({ data: { id: "trip-1" } });
+    vi.mocked(tripsApi.join).mockResolvedValue(joinedTripResponse());
     render(<TripInviteJoinPage />);
 
     await waitFor(() => {
@@ -102,7 +125,7 @@ describe("TripInviteJoinPage", () => {
     // `<StrictMode>` here forces the dev double-invoke that the bug
     // depended on, so a regression of the deadlock would time out the
     // `waitFor` instead of redirecting.
-    vi.mocked(tripsApi.join).mockResolvedValue({ data: { id: "trip-1" } });
+    vi.mocked(tripsApi.join).mockResolvedValue(joinedTripResponse());
 
     render(
       <StrictMode>
@@ -128,7 +151,7 @@ describe("TripInviteJoinPage", () => {
     // `clearSession` — wiping the just-issued credentials. The
     // `authReady` gate must hold the spinner until the token lands.
     authState = { accessToken: null };
-    vi.mocked(tripsApi.join).mockResolvedValue({ data: { id: "trip-1" } });
+    vi.mocked(tripsApi.join).mockResolvedValue(joinedTripResponse());
 
     const { rerender } = render(<TripInviteJoinPage />);
     // Spinner is up but no POST has gone out yet.
