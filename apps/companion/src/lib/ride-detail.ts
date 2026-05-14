@@ -24,6 +24,7 @@ export interface RideSegmentLike {
   road_name: string | null;
   quality_reading: number | null;
   speed_avg: number | null;
+  speed_max?: number | null;
   lean_angle_max: number | null;
 }
 
@@ -146,4 +147,36 @@ export function buildRoutePreview(
     width: width + padding * 2,
     height: height + padding * 2,
   };
+}
+
+export interface SpeedProfilePoint {
+  label: string;
+  segmentNumber: number;
+  avgKmh: number | null;
+  maxKmh: number | null;
+}
+
+export function buildSpeedProfile(
+  segments: readonly RideSegmentLike[],
+): SpeedProfilePoint[] {
+  const points = segments.flatMap((segment, index) => {
+    const avgKmh = finiteOrNull(segment.speed_avg);
+    const maxKmh = finiteOrNull(segment.speed_max);
+    if (avgKmh == null && maxKmh == null) return [];
+
+    return [
+      {
+        label: segment.road_name ?? `Segment ${index + 1}`,
+        segmentNumber: index + 1,
+        avgKmh,
+        maxKmh,
+      },
+    ];
+  });
+
+  return points;
+}
+
+function finiteOrNull(value: number | null | undefined): number | null {
+  return value != null && Number.isFinite(value) ? value : null;
 }

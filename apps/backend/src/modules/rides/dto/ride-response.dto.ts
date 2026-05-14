@@ -44,6 +44,9 @@ class RideSegmentDto {
   speed_avg!: number | null;
 
   @ApiProperty({ nullable: true })
+  speed_max!: number | null;
+
+  @ApiProperty({ nullable: true })
   lean_angle_max!: number | null;
 }
 

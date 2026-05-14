@@ -601,6 +601,7 @@ describe('RidesService', () => {
           road_segment: { road_name: 'D35' },
           quality_reading: 4.2,
           speed_avg: 65,
+          speed_max: 91,
           lean_angle_max: 20,
         },
       ] as unknown as RideSegment[]);
@@ -615,6 +616,11 @@ describe('RidesService', () => {
       expect(result.elevation_gain).toBe(150);
       expect(result.segments).toHaveLength(1);
       expect(result.segments[0].road_name).toBe('D35');
+      expect(result.segments[0]).toMatchObject({
+        speed_max: 91,
+      });
+      expect(result.segments[0]).not.toHaveProperty('length_m');
+      expect(result.segments[0]).not.toHaveProperty('elevation_profile');
     });
 
     it('should throw NotFoundException for missing ride', async () => {

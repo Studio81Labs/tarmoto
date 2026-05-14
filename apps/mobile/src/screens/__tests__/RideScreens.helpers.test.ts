@@ -197,6 +197,7 @@ describe("rideRouteFeatureCollection", () => {
       road_name: null,
       quality_reading: quality,
       speed_avg: 50,
+      speed_max: null,
       lean_angle_max: 0,
     };
   }
@@ -229,6 +230,7 @@ describe("rideRouteFeatureCollection", () => {
         road_name: null,
         quality_reading: Number.NaN,
         speed_avg: 0,
+        speed_max: null,
         lean_angle_max: 0,
       },
     ];
@@ -277,6 +279,7 @@ describe("rideRouteFeatureCollection", () => {
         road_name: null,
         quality_reading: 0,
         speed_avg: 0,
+        speed_max: null,
         lean_angle_max: 0,
       },
     ];
@@ -370,6 +373,7 @@ describe("segmentQualityHistogram", () => {
       road_name: null,
       quality_reading: quality,
       speed_avg: 50,
+      speed_max: null,
       lean_angle_max: 0,
     };
   }

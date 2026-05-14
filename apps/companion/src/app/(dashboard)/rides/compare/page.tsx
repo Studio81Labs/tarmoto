@@ -17,7 +17,6 @@ import type { QualityTier } from "@/lib/types";
 import { QUALITY_CONFIG } from "@/lib/utils";
 import { formatNumber } from "@/lib/ride-detail";
 import {
-  buildUnifiedRoutePreview,
   computeStatRows,
   deltaDirection,
   diffQualityBreakdown,
@@ -26,6 +25,7 @@ import {
   type DeltaDirection,
   type StatRow,
 } from "@/lib/ride-compare";
+import { RideRouteMap, type RouteMapBounds } from "../_components/RideRouteMap";
 /** Subset of `RideSummaryDto` fields we use in the picker. */
 interface RideOption {
   id: string;
@@ -253,10 +253,6 @@ function ComparisonView({
       cancelled = true;
     };
   }, [rideAId, rideBId]);
-  const unified = useMemo(() => {
-    if (!rideA || !rideB) return null;
-    return buildUnifiedRoutePreview(rideA, rideB, 600, 16);
-  }, [rideA, rideB]);
   const statRows = useMemo(() => {
     if (!rideA || !rideB) return [];
     return computeStatRows(rideA, rideB);
@@ -282,7 +278,7 @@ function ComparisonView({
   }
   return (
     <div className="space-y-6 animate-slide-up">
-      <RouteCompareSection rideA={rideA} rideB={rideB} unified={unified} />
+      <RouteCompareSection rideA={rideA} rideB={rideB} />
       <StatsTable rows={statRows} />
       <ElevationCompareSection rideA={rideA} rideB={rideB} />
       <QualityDiffSection rows={qualityDiff} />
@@ -299,36 +295,39 @@ async function fetchRide(rideId: string): Promise<FetchedRide | null> {
 function RouteCompareSection({
   rideA,
   rideB,
-  unified,
 }: {
   rideA: FetchedRide;
   rideB: FetchedRide;
-  unified: ReturnType<typeof buildUnifiedRoutePreview> | null;
 }) {
+  const sharedBounds = useMemo(
+    () => buildSharedRouteBounds(rideA.route_geometry, rideB.route_geometry),
+    [rideA.route_geometry, rideB.route_geometry],
+  );
+
   return (
     <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
       <h2 className="text-sm font-semibold text-white mb-1">
-        {t("Routes (same scale) ")}
+        {t("Route maps")}
       </h2>
       <p className="text-xs text-slate-500 mb-4">
         {t(
-          "Both tracks projected into a shared coordinate frame so the visual comparison is meaningful. Zoom/pan is synced because the viewBox is shared. ",
+          "Side-by-side interactive maps show each ride route over the same road quality overlay used elsewhere in Tarmoto.",
         )}
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <RouteBox
           label="Ride A"
           meta={formatRideMeta(rideA)}
-          svg={unified?.a?.path}
-          viewBox={unified?.viewBox}
+          geometry={rideA.route_geometry}
           color="#0ED3CF"
+          fitBounds={sharedBounds}
         />
         <RouteBox
           label="Ride B"
           meta={formatRideMeta(rideB)}
-          svg={unified?.b?.path}
-          viewBox={unified?.viewBox}
+          geometry={rideB.route_geometry}
           color="#F472B6"
+          fitBounds={sharedBounds}
         />
       </div>
     </section>
@@ -337,16 +336,17 @@ function RouteCompareSection({
 function RouteBox({
   label,
   meta,
-  svg,
-  viewBox,
+  geometry,
   color,
+  fitBounds,
 }: {
   label: string;
   meta: string;
-  svg: string | undefined;
-  viewBox: string | undefined;
+  geometry: FetchedRide["route_geometry"];
   color: string;
+  fitBounds: RouteMapBounds | null;
 }) {
+  const hasGeometry = geometry != null && geometry.length >= 2;
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
       <div className="flex items-center justify-between mb-3">
@@ -358,35 +358,64 @@ function RouteBox({
         </span>
         <span className="text-[11px] text-slate-500">{meta}</span>
       </div>
-      {svg && viewBox ? (
-        <svg
-          viewBox={viewBox}
-          className="w-full max-h-72"
-          role="img"
-          aria-label={`${label} route preview`}
-        >
-          <path
-            d={svg}
-            fill="none"
-            stroke={color}
-            strokeWidth={3}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+      {hasGeometry ? (
+        <RideRouteMap
+          geometry={geometry}
+          color={color}
+          label={`${label} interactive route map`}
+          fitBounds={fitBounds}
+        />
       ) : (
         <div className="rounded-lg border border-dashed border-slate-800 p-8 text-center text-xs text-slate-500">
-          {t("No GPS track recorded ")}
+          {t("{label} has no GPS track.", { label })}
         </div>
       )}
     </div>
   );
 }
+
+function buildSharedRouteBounds(
+  a: FetchedRide["route_geometry"],
+  b: FetchedRide["route_geometry"],
+): RouteMapBounds | null {
+  const aValid = validRoutePoints(a);
+  const bValid = validRoutePoints(b);
+  if (aValid.length < 2 || bValid.length < 2) return null;
+
+  const all = [...aValid, ...bValid];
+  return all.reduce<RouteMapBounds>(
+    (bounds, point) => ({
+      minLng: Math.min(bounds.minLng, point.lng),
+      minLat: Math.min(bounds.minLat, point.lat),
+      maxLng: Math.max(bounds.maxLng, point.lng),
+      maxLat: Math.max(bounds.maxLat, point.lat),
+    }),
+    {
+      minLng: Infinity,
+      minLat: Infinity,
+      maxLng: -Infinity,
+      maxLat: -Infinity,
+    },
+  );
+}
+
+function validRoutePoints(
+  geometry: FetchedRide["route_geometry"],
+): Array<{ lat: number; lng: number }> {
+  return (geometry ?? []).filter(
+    (point): point is { lat: number; lng: number } =>
+      Number.isFinite(point.lat) &&
+      Number.isFinite(point.lng) &&
+      Math.abs(point.lat) <= 90 &&
+      Math.abs(point.lng) <= 180,
+  );
+}
+
 function StatsTable({ rows }: { rows: StatRow[] }) {
   return (
     <section className="rounded-2xl bg-slate-900 border border-slate-800 p-5">
       <h2 className="text-sm font-semibold text-white mb-1">
-        {t("Stats overlay")}
+        {t("Stats diff")}
       </h2>
       <p className="text-xs text-slate-500 mb-4">
         {t(

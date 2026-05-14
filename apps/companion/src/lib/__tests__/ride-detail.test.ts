@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildRoutePreview,
+  buildSpeedProfile,
   computeQualityBreakdown,
   formatNumber,
   readingToTier,
@@ -12,6 +13,7 @@ function segment(overrides: Partial<RideSegmentLike> = {}): RideSegmentLike {
     road_name: "Road",
     quality_reading: 4,
     speed_avg: 60,
+    speed_max: 80,
     lean_angle_max: 20,
     ...overrides,
   };
@@ -155,5 +157,42 @@ describe("buildRoutePreview", () => {
       maxLng: 14.3,
       maxLat: 50.5,
     });
+  });
+});
+
+describe("buildSpeedProfile", () => {
+  it("builds an ordered segment speed series with average and max speeds", () => {
+    const points = buildSpeedProfile([
+      segment({ road_name: "A", speed_avg: 50, speed_max: 70 }),
+      segment({
+        road_name: "B",
+        speed_avg: 65,
+        speed_max: null,
+      }),
+    ]);
+
+    expect(points).toEqual([
+      {
+        label: "A",
+        segmentNumber: 1,
+        avgKmh: 50,
+        maxKmh: 70,
+      },
+      {
+        label: "B",
+        segmentNumber: 2,
+        avgKmh: 65,
+        maxKmh: null,
+      },
+    ]);
+  });
+
+  it("returns an empty series when segments have no speed readings", () => {
+    expect(
+      buildSpeedProfile([
+        segment({ speed_avg: null, speed_max: null }),
+        segment({ speed_avg: Number.NaN, speed_max: null }),
+      ]),
+    ).toEqual([]);
   });
 });

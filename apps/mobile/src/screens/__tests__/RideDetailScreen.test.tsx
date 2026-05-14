@@ -119,6 +119,7 @@ const RIDE: RideDetail = {
       road_name: null,
       quality_reading: 4.5,
       speed_avg: 60,
+      speed_max: null,
       lean_angle_max: 20,
     },
     {
@@ -126,6 +127,7 @@ const RIDE: RideDetail = {
       road_name: null,
       quality_reading: 3.0,
       speed_avg: 40,
+      speed_max: null,
       lean_angle_max: 12,
     },
   ],
@@ -189,6 +191,7 @@ describe("RideDetailScreen", () => {
           road_name: null,
           quality_reading: 0,
           speed_avg: 0,
+          speed_max: null,
           lean_angle_max: 0,
         },
         {
@@ -196,6 +199,7 @@ describe("RideDetailScreen", () => {
           road_name: null,
           quality_reading: Number.NaN,
           speed_avg: 0,
+          speed_max: null,
           lean_angle_max: 0,
         },
       ],
