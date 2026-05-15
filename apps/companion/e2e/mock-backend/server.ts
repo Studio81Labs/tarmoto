@@ -657,14 +657,23 @@ export function buildApp(): Express {
       }
       const newId = randomUUID();
       const now = new Date().toISOString();
-      const copy = {
+      // Folders are per-user on the backend (`TripsService.duplicate`
+      // preserves `folder_id` only when the caller is the source's
+      // owner — a collaborator who duplicates someone else's filed
+      // trip gets an unfiled copy because the source folder belongs to
+      // the original owner). Mirror that here so an e2e exercising
+      // collaborator-side duplicate doesn't get a "filed into someone
+      // else's folder" copy that production would never produce.
+      const callerIsSourceOwner = source.owner_id === session.user_id;
+      const copy: import("./state").MockTrip = {
         ...source,
         id: newId,
         owner_id: session.user_id,
         title: `${source.title} (copy)`,
-        status: "draft" as const,
+        status: "draft",
         members: [session.user_id],
         snapshot: { ...source.snapshot },
+        folder_id: callerIsSourceOwner ? source.folder_id : null,
         created_at: now,
         updated_at: now,
       };
