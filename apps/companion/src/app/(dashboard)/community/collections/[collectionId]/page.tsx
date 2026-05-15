@@ -329,8 +329,12 @@ export default function CollectionDetailPage() {
   // Riding days only counts trip days — recorded rides are point-in-time, not
   // multi-day plans. A separate "Rides" stat surfaces recorded-ride count
   // alongside the planner-day count.
+  // `presentTrips` is fed by `useUserTrips()` which surfaces
+  // TripSummaryDto[] from the list endpoint — `days` is undefined there,
+  // so prefer `num_days`. Falls back to `days.length` for any detail-
+  // hydrated entries.
   const totalDays = presentTrips.reduce(
-    (sum, trip) => sum + trip.days.length,
+    (sum, trip) => sum + (trip.num_days ?? trip.days?.length ?? 0),
     0,
   );
   const totalMissing =
@@ -797,7 +801,12 @@ function EmptyRoutes({ onAdd }: { onAdd: () => void }) {
   );
 }
 function TripRow({ trip, onRemove }: { trip: Trip; onRemove: () => void }) {
-  const points = useMemo(() => combineTripRoutePoints(trip.days), [trip.days]);
+  // List-endpoint trips arrive without `days` (TripSummaryDto). The
+  // route preview silently degrades to no-line; `tripDistanceKm`
+  // already handles missing days defensively.
+  const days = trip.days ?? [];
+  const dayCount = trip.num_days ?? days.length;
+  const points = useMemo(() => combineTripRoutePoints(days), [days]);
   const preview = useMemo(() => buildRoutePreview(points, 200, 6), [points]);
   const distance = tripDistanceKm(trip);
   return (
@@ -835,9 +844,9 @@ function TripRow({ trip, onRemove }: { trip: Trip; onRemove: () => void }) {
             <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
               <span className="inline-flex items-center gap-1">
                 <Calendar size={12} />
-                {trip.days.length === 1
+                {dayCount === 1
                   ? t("1 day")
-                  : t("{count} days", { count: trip.days.length })}
+                  : t("{count} days", { count: dayCount })}
               </span>
               <span className="inline-flex items-center gap-1">
                 <MapPin size={12} />
@@ -1273,6 +1282,7 @@ function TripPickerList({
       {visibleTrips.map((trip) => {
         const checked = selected.has(trip.id);
         const distance = tripDistanceKm(trip);
+        const dayCount = trip.num_days ?? trip.days?.length ?? 0;
         return (
           <li key={trip.id}>
             <label
@@ -1293,9 +1303,9 @@ function TripPickerList({
                   {trip.name}
                 </p>
                 <p className="text-[11px] text-slate-500">
-                  {trip.days.length === 1
+                  {dayCount === 1
                     ? t("1 day")
-                    : t("{count} days", { count: trip.days.length })}{" "}
+                    : t("{count} days", { count: dayCount })}{" "}
                   · {formatDistance(distance)} · {trip.status}
                 </p>
               </div>
