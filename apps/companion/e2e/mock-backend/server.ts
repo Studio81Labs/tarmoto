@@ -635,14 +635,12 @@ export function buildApp(): Express {
     res.status(204).end();
   });
 
-  // US-37: duplicate retains the title with a "(copy)" suffix and assigns the
-  // caller as the new owner. The companion's optimistic-list flow
-  // (`/trips/page.tsx::duplicateTrip`) inserts the response into the trip
-  // store as a `Trip` and renders `trip.name` immediately — so the
-  // response carries both the detail shape (matching the OpenAPI
-  // contract) and the camelCase `name` the list consumer reads. The
-  // drift between these two shapes is tracked separately; the mock
-  // accommodates both rather than masking the list-render issue.
+  // US-37: duplicate retains the title with a "(copy)" suffix and assigns
+  // the caller as the new owner. Returns a TripDetailDto per the OpenAPI
+  // contract; the companion must adapt this through `tripFromDetail`
+  // before rendering — the mock will NOT carry a companion-friendly
+  // camelCase `name` so any callsite that forgets the adapter fails the
+  // same way it would in production.
   app.post(
     "/api/v1/trips/:id/duplicate",
     requireAuth,
@@ -672,10 +670,7 @@ export function buildApp(): Express {
       };
       state.trips.set(newId, copy);
       pushActivity(newId, session.user_id, "trip_updated", {});
-      res.status(201).json({
-        ...serializeTripDetail(copy),
-        name: copy.title,
-      });
+      res.status(201).json(serializeTripDetail(copy));
     },
   );
 

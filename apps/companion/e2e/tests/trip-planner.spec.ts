@@ -118,34 +118,20 @@ test.describe("trip planner", () => {
     await expect(page.getByText(/250\.0 km/).first()).toBeVisible();
   });
 
-  // T4 — Segment sidebar: after generating an itinerary, the planner
-  // mounts the "Road Preview Cards" sidebar (`SegmentSidebar`). The
-  // per-segment card content (quality / curviness / elevation / surface
-  // / hazards) lives in `RoadPreviewCard` and is covered by its unit
-  // tests — the mock backend's `/generate` response doesn't carry the
-  // `segments` array the sidebar drills into, so this e2e covers the
-  // mount surface itself.
-  test("T4: generating an itinerary mounts the road-preview sidebar", async ({
-    authedPage: page,
-  }) => {
-    await page.goto("/trips/planner");
-    await page.getByRole("button", { name: /load demo trip/i }).click();
-    await page.getByRole("button", { name: /generate itinerary/i }).click();
-
-    // The "Distance" trio is the post-generate readiness gate the other
-    // planner tests already use.
-    await expect(page.getByText(/Distance/i).first()).toBeVisible({
-      timeout: 5_000,
-    });
-
-    const sidebar = page.getByRole("complementary", {
-      name: /road preview cards/i,
-    });
-    await expect(sidebar).toBeVisible({ timeout: 5_000 });
-    // Sidebar header surfaces the "Road Preview Cards" title regardless
-    // of whether per-segment data is hydrated yet.
-    await expect(
-      sidebar.getByRole("heading", { name: /road preview cards/i }),
-    ).toBeVisible();
-  });
+  // T4 (segment sidebar) is **blocked at e2e**.
+  //
+  // The `SegmentSidebar` keys off `activeTrip.days[i].segments`, but the
+  // wire shape (`TripDetailDay` in `lib/trip-from-detail.ts`) doesn't
+  // carry that field and `tripFromDetail` never populates it — segments
+  // are computed locally only when the user mutates waypoints
+  // (`trip-planner-builder.ts::rebuildPlannerDay`). After a fresh
+  // Generate the sidebar therefore renders the empty state in
+  // production, identical to its pre-Generate state. A test that
+  // asserts the sidebar mounts before-and-after Generate doesn't gate
+  // anything; a test that seeds `segments` in the mock would only
+  // validate code that isn't wired in production.
+  //
+  // Per-segment card content is covered by `RoadPreviewCard.test.tsx`.
+  // The wire-data work that would unblock a meaningful T4 belongs in
+  // the OpenAPI / backend day-DTO conversation, tracked separately.
 });
