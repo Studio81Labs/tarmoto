@@ -50,8 +50,12 @@ test.describe("trip management", () => {
   // redirect into the planner with the existing trip context loaded.
   // The route is a thin client redirect that hands off to
   // `/trips/planner?tripId=<id>`; the planner then hydrates the trip
-  // detail. We assert the redirect happens and the planner mounts.
-  test("T8: /trips/:id/edit redirects into the planner with the trip context", async ({
+  // detail. To gate the *hydration* path (not just the redirect), we
+  // seed a trip with a non-default `num_days` and assert the planner's
+  // days control reflects it — the control defaults to 3 in an empty
+  // planner, so seeing 2 here is proof that `GET /api/v1/trips/:id`
+  // ran and `setDays(params.days)` propagated.
+  test("T8: /trips/:id/edit hands off to the planner with the trip hydrated", async ({
     authedPage: page,
     mockApi,
     user,
@@ -68,11 +72,10 @@ test.describe("trip management", () => {
       new RegExp(`/trips/planner\\?tripId=${source.id}`),
       { timeout: 10_000 },
     );
-    // Sanity check that the planner actually mounted — the generate
-    // CTA is a stable affordance present in both empty and live trip
-    // modes.
-    await expect(
-      page.getByRole("button", { name: /generate itinerary/i }),
-    ).toBeVisible({ timeout: 10_000 });
+
+    // Hydration proof: the days control reflects the source trip's
+    // num_days (2), not the empty-planner default of 3.
+    const daysInput = page.locator("#trip-planner-days");
+    await expect(daysInput).toHaveValue("2", { timeout: 10_000 });
   });
 });
