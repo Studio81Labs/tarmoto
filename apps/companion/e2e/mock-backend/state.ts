@@ -21,6 +21,12 @@ export interface MockTrip {
   status: "draft" | "planned" | "active" | "completed";
   members: string[];
   snapshot: Record<string, unknown>;
+  /**
+   * Folder id this trip is filed under, or null/undefined for unfiled.
+   * Mirrors the backend's `TripSummaryDto.folder_id` so the detail
+   * response can carry it through into list-view consumers.
+   */
+  folder_id?: string | null;
   created_at: string;
   updated_at: string;
 }

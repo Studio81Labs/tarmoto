@@ -29,6 +29,15 @@ export interface TripDetailResponse {
   invite_code: string;
   members: TripDetailMember[];
   days: TripDetailDay[];
+  /**
+   * Surfaced because `TripDetailDto` extends `TripSummaryDto` on the
+   * backend — list-side consumers of the adapter (e.g. the duplicate
+   * flow in `(dashboard)/trips/page.tsx`) need this to keep the
+   * resulting card in the right folder. Optional here because the
+   * planner side has never relied on it.
+   */
+  owner_id?: string;
+  folder_id?: string | null;
 }
 
 export interface TripDetailMember {
@@ -117,6 +126,13 @@ export function tripFromDetail(detail: TripDetailResponse): Trip {
       displayName: m.display_name,
       role: mapMemberRoleToCollaboratorRole(m.role),
     })),
+    // Summary-side fields carried through so list-view consumers
+    // (folder scoping, owner-aware UI) get the same shape as the
+    // list endpoint after going through this adapter. Both are
+    // optional on `Trip` and `TripDetailResponse`, so detail-only
+    // callers (planner) keep getting `undefined`.
+    owner_id: detail.owner_id,
+    folder_id: detail.folder_id ?? null,
     createdAt: detail.created_at,
     // Backend doesn't return updated_at on the detail DTO. Fall back to
     // created_at so callers ordering by recency don't crash.

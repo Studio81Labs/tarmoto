@@ -377,6 +377,60 @@ export function buildApp(): Express {
     void req;
   });
 
+  // ── Roads / Best ─────────────────────────────────────────────────
+  // Best Roads SSR pages (`/roads/best/:country/:region`) and the embed
+  // widget (`/embed/roads/:country/:region`) both fetch this endpoint at
+  // request time. The mock returns a stable two-road region so the e2e
+  // suite can assert the curated list rendered + SEO metadata wired up.
+  app.get("/api/v1/roads/best", (req, res) => {
+    const country = String(req.query.country ?? "").toLowerCase();
+    const region = String(req.query.region ?? "").toLowerCase();
+    if (!country || !region) {
+      res.status(400).json({ message: "missing-region" });
+      return;
+    }
+    res.json({
+      region: {
+        slug: region,
+        country,
+        name: region.replace(/-/g, " "),
+        bbox: [18, 49.3, 18.85, 49.7],
+      },
+      roads: [
+        {
+          id: "22222222-3333-4444-8555-666666666111",
+          road_name: "Mock Ridge Road",
+          road_number: "32",
+          quality_score: 4.5,
+          curviness_score: 3.6,
+          surface_type: "asphalt",
+          length_m: 12_400,
+          confidence: 92,
+          geometry: [
+            { lat: 49.55, lng: 18.3 },
+            { lat: 49.56, lng: 18.32 },
+          ],
+          best_score: 91,
+        },
+        {
+          id: "22222222-3333-4444-8555-666666666222",
+          road_name: "Sunset Climb",
+          road_number: null,
+          quality_score: 4.2,
+          curviness_score: 4.1,
+          surface_type: "asphalt",
+          length_m: 8_900,
+          confidence: 85,
+          geometry: [
+            { lat: 49.61, lng: 18.41 },
+            { lat: 49.63, lng: 18.45 },
+          ],
+          best_score: 88,
+        },
+      ],
+    });
+  });
+
   // ── Roads / Fun Zones ────────────────────────────────────────────
   app.get("/api/v1/roads/fun-zones", (req, res) => {
     const bbox = String(req.query.bbox ?? "")
@@ -580,6 +634,54 @@ export function buildApp(): Express {
     state.trips.delete(param(req, "id"));
     res.status(204).end();
   });
+
+  // US-37: duplicate retains the title with a "(copy)" suffix and assigns
+  // the caller as the new owner. Returns a TripDetailDto per the OpenAPI
+  // contract; the companion must adapt this through `tripFromDetail`
+  // before rendering — the mock will NOT carry a companion-friendly
+  // camelCase `name` so any callsite that forgets the adapter fails the
+  // same way it would in production.
+  app.post(
+    "/api/v1/trips/:id/duplicate",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const session = req.session!;
+      const source = state.trips.get(param(req, "id"));
+      if (
+        !source ||
+        (source.owner_id !== session.user_id &&
+          !source.members.includes(session.user_id))
+      ) {
+        res.status(404).json({ message: "not-found" });
+        return;
+      }
+      const newId = randomUUID();
+      const now = new Date().toISOString();
+      // Folders are per-user on the backend (`TripsService.duplicate`
+      // preserves `folder_id` only when the caller is the source's
+      // owner — a collaborator who duplicates someone else's filed
+      // trip gets an unfiled copy because the source folder belongs to
+      // the original owner). Mirror that here so an e2e exercising
+      // collaborator-side duplicate doesn't get a "filed into someone
+      // else's folder" copy that production would never produce.
+      const callerIsSourceOwner = source.owner_id === session.user_id;
+      const copy: import("./state").MockTrip = {
+        ...source,
+        id: newId,
+        owner_id: session.user_id,
+        title: `${source.title} (copy)`,
+        status: "draft",
+        members: [session.user_id],
+        snapshot: { ...source.snapshot },
+        folder_id: callerIsSourceOwner ? source.folder_id : null,
+        created_at: now,
+        updated_at: now,
+      };
+      state.trips.set(newId, copy);
+      pushActivity(newId, session.user_id, "trip_updated", {});
+      res.status(201).json(serializeTripDetail(copy));
+    },
+  );
 
   app.post(
     "/api/v1/trips/:id/generate",
@@ -1262,6 +1364,11 @@ function serializeTripDetail(trip: import("./state").MockTrip) {
     invite_code: trip.id.slice(0, 8),
     members,
     days: serializedTripDays(trip),
+    // TripDetailDto extends TripSummaryDto on the backend — surface
+    // these so list-side consumers of the adapter (folder-scoped
+    // views, owner-aware UI) round-trip correctly.
+    owner_id: trip.owner_id,
+    folder_id: trip.folder_id ?? null,
   };
 }
 

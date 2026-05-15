@@ -221,4 +221,134 @@ test.describe("road quality explorer", () => {
     ).toBeVisible();
     await expect(dialog.getByText(/this is your review/i)).toBeVisible();
   });
+
+  // T19 — surface type filter writes to `?s=...` and unticks the
+  // corresponding checkbox. The chip set lives next to the quality
+  // chips in the side panel and uses the same checkbox pattern.
+  test("T19: unticking a surface type mirrors the URL with ?s=...", async ({
+    browser,
+    mockApi,
+  }) => {
+    await mockApi.reset();
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.goto("/explore");
+
+      // Scope by the section heading — `Gravel` appears as both a surface
+      // and a hazard label, so a page-wide `getByRole("checkbox", …)`
+      // would be ambiguous.
+      const surfaceSection = page
+        .getByRole("heading", { name: /^surface type$/i })
+        .locator("..");
+      const gravel = surfaceSection.getByRole("checkbox", {
+        name: /^gravel$/i,
+      });
+      await expect(gravel).toBeChecked();
+      expect(new URL(page.url()).searchParams.has("s")).toBe(false);
+
+      await gravel.uncheck();
+      await expect
+        .poll(() => new URL(page.url()).searchParams.get("s"))
+        .toBe("asphalt,concrete,cobblestone,dirt");
+      await expect(gravel).not.toBeChecked();
+    } finally {
+      await context.close();
+    }
+  });
+
+  // T20 — curviness slider drives `?c=N`. The default minimum is 0; any
+  // positive value should round-trip through the URL.
+  test("T20: moving the curviness slider mirrors the URL with ?c=...", async ({
+    browser,
+    mockApi,
+  }) => {
+    await mockApi.reset();
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.goto("/explore");
+
+      const slider = page.getByRole("slider", { name: /minimum curviness/i });
+      await expect(slider).toBeVisible();
+      // Setting the slider via keyboard avoids the per-browser jitter of
+      // pointer drag in CI. Focus then press ArrowRight; each step bumps
+      // the value by 1 unit on this control.
+      await slider.focus();
+      await slider.press("ArrowRight");
+      await slider.press("ArrowRight");
+      await expect
+        .poll(() => new URL(page.url()).searchParams.get("c"))
+        .toMatch(/^[1-9]$/);
+    } finally {
+      await context.close();
+    }
+  });
+
+  // T21 — URL round-trip: filters set on one tab survive a reload. This
+  // is the inverse of the existing hydration test (which only loads
+  // with params); here we set, reload, and re-read.
+  test("T21: filters set on the URL survive a reload", async ({
+    browser,
+    mockApi,
+  }) => {
+    await mockApi.reset();
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.goto("/explore");
+
+      // Untick "Very poor" — should write q=excellent,good,fair,poor.
+      const veryPoor = page.getByRole("checkbox", { name: /^very poor$/i });
+      await veryPoor.uncheck();
+      await expect
+        .poll(() => new URL(page.url()).searchParams.get("q"))
+        .toBe("excellent,good,fair,poor");
+
+      // Reload the page; the filter state must be restored from the URL.
+      await page.reload();
+      await expect(
+        page.getByRole("checkbox", { name: /^very poor$/i }),
+      ).not.toBeChecked();
+      await expect(
+        page.getByRole("checkbox", { name: /^excellent$/i }),
+      ).toBeChecked();
+    } finally {
+      await context.close();
+    }
+  });
+
+  // T22 — hazard type filter: unticking a hazard writes `?h=...`. The
+  // doc-level "click a marker for type/reporter/time" step requires
+  // map-interaction infrastructure that doesn't ship to the public
+  // explorer; covering the filter affordance is the testable slice.
+  test("T22: unticking a hazard type mirrors the URL with ?h=...", async ({
+    browser,
+    mockApi,
+  }) => {
+    await mockApi.reset();
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.goto("/explore");
+
+      expect(new URL(page.url()).searchParams.has("h")).toBe(false);
+
+      // Scope by the "Hazard type" heading — same `Gravel` label collides
+      // with the surface filter above.
+      const hazardSection = page
+        .getByRole("heading", { name: /^hazard type$/i })
+        .locator("..");
+      const pothole = hazardSection.getByRole("checkbox", {
+        name: /^pothole$/i,
+      });
+      await expect(pothole).toBeChecked();
+      await pothole.uncheck();
+      await expect
+        .poll(() => new URL(page.url()).searchParams.get("h"))
+        .toBe("gravel,oil_spill,roadworks,animals,police,flooding,ice,other");
+    } finally {
+      await context.close();
+    }
+  });
 });

@@ -103,4 +103,17 @@ test.describe("auth", () => {
     await page.goto("/trips");
     await expect(page).toHaveURL(/\/login\?callbackUrl=%2Ftrips/);
   });
+
+  // T49 — auth persistence: after a successful login, navigating to a
+  // protected route and reloading must restore the session without
+  // bouncing through /login again.
+  test("T49: signed-in riders stay signed in across reload", async ({
+    authedPage: page,
+  }) => {
+    await page.goto("/trips");
+    await expect(page).toHaveURL(/\/trips$/);
+    await page.reload();
+    await expect(page).toHaveURL(/\/trips$/);
+    await expect(page).not.toHaveURL(/\/login/);
+  });
 });

@@ -117,4 +117,21 @@ test.describe("trip planner", () => {
     ).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(/250\.0 km/).first()).toBeVisible();
   });
+
+  // T4 (segment sidebar) is **blocked at e2e**.
+  //
+  // The `SegmentSidebar` keys off `activeTrip.days[i].segments`, but the
+  // wire shape (`TripDetailDay` in `lib/trip-from-detail.ts`) doesn't
+  // carry that field and `tripFromDetail` never populates it — segments
+  // are computed locally only when the user mutates waypoints
+  // (`trip-planner-builder.ts::rebuildPlannerDay`). After a fresh
+  // Generate the sidebar therefore renders the empty state in
+  // production, identical to its pre-Generate state. A test that
+  // asserts the sidebar mounts before-and-after Generate doesn't gate
+  // anything; a test that seeds `segments` in the mock would only
+  // validate code that isn't wired in production.
+  //
+  // Per-segment card content is covered by `RoadPreviewCard.test.tsx`.
+  // The wire-data work that would unblock a meaningful T4 belongs in
+  // the OpenAPI / backend day-DTO conversation, tracked separately.
 });

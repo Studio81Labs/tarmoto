@@ -21,6 +21,10 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { tripsApi, tripFoldersApi } from "@/lib/api";
+import {
+  tripFromDetail,
+  type TripDetailResponse,
+} from "@/lib/trip-from-detail";
 import { useTripStore } from "@/stores/trip";
 import { useAuthStore } from "@/stores/auth";
 import {
@@ -316,21 +320,24 @@ export default function TripListPage() {
     markBusy(trip.id);
     try {
       const { data } = await tripsApi.duplicate(trip.id);
-      // Match the list-endpoint handling: the server sometimes wraps
-      // responses in `{ data: ... }`, so unwrap if present.
+      // Server may wrap the response in `{ data: ... }`. Either way we
+      // get back a TripDetailDto (snake_case `title` / `created_at`,
+      // members[] in place of collaborators) and must adapt it through
+      // `tripFromDetail` before pushing into the list — without the
+      // adapter `trip.name` is undefined and the new card renders with
+      // an empty title.
       const body = data as unknown as
-        | {
-            data?: Trip;
-          }
-        | Trip
+        | { data?: TripDetailResponse }
+        | TripDetailResponse
         | null;
-      const created =
+      const detail =
         body && typeof body === "object" && "data" in body && body.data
-          ? (body.data as Trip)
-          : (body as Trip | null);
-      // Read the fresh trip list from the store — concurrent deletes or
-      // moves made during the await shouldn't be silently reverted.
-      if (created && created.id) {
+          ? body.data
+          : (body as TripDetailResponse | null);
+      if (detail && detail.id) {
+        const created = tripFromDetail(detail);
+        // Read the fresh trip list from the store — concurrent deletes
+        // or moves made during the await shouldn't be silently reverted.
         setTrips([created, ...useTripStore.getState().trips]);
       }
     } catch {
