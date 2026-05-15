@@ -40,7 +40,10 @@ module.exports = {
       ],
     ],
     "scope-empty": [2, "never"],
-    "subject-case": [2, "always", "lower-case"],
+    // subject-case left to the PR-title check (lint-pr.yml subjectPattern),
+    // which requires only the first character to be lowercase. Strict
+    // all-lowercase rejects legitimate acronyms (API, UI, GPS, JSON, ...).
+    "subject-case": [0],
     "subject-empty": [2, "never"],
     "subject-full-stop": [2, "never", "."],
   },
