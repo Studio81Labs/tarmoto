@@ -23,6 +23,10 @@ jobs:
             refactor
             test
             chore
+            perf
+            ci
+            build
+            revert
           scopes: |
             backend
             mobile
