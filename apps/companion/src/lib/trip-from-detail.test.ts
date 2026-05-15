@@ -213,6 +213,25 @@ describe("tripFromDetail", () => {
       { userId: "member-1", displayName: "Eve", role: "viewer" },
     ]);
   });
+
+  it("forwards owner_id and folder_id when the detail response carries them", () => {
+    const trip = tripFromDetail(
+      makeDetail({ owner_id: "owner-1", folder_id: "folder-abc" }),
+    );
+    // List-side consumers (e.g. the duplicate flow) rely on these
+    // summary-flavoured fields to keep the resulting card in the
+    // right folder and to render owner-aware affordances.
+    expect(trip.owner_id).toBe("owner-1");
+    expect(trip.folder_id).toBe("folder-abc");
+  });
+
+  it("normalises a missing folder_id to null instead of undefined", () => {
+    const trip = tripFromDetail(makeDetail());
+    // `null` matches the wire convention for "unfiled"; consumers
+    // can distinguish that from an absent field with `folder_id ?? null`.
+    expect(trip.folder_id).toBeNull();
+    expect(trip.owner_id).toBeUndefined();
+  });
 });
 
 describe("findOwnerId", () => {

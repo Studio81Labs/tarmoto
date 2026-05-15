@@ -1355,6 +1355,11 @@ function serializeTripDetail(trip: import("./state").MockTrip) {
     invite_code: trip.id.slice(0, 8),
     members,
     days: serializedTripDays(trip),
+    // TripDetailDto extends TripSummaryDto on the backend — surface
+    // these so list-side consumers of the adapter (folder-scoped
+    // views, owner-aware UI) round-trip correctly.
+    owner_id: trip.owner_id,
+    folder_id: trip.folder_id ?? null,
   };
 }
 
