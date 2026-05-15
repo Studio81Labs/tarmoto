@@ -93,7 +93,25 @@ export interface Trip {
   description?: string;
   importSourceFormat?: "gpx" | "kml";
   status: "draft" | "planned" | "active" | "completed";
+  /**
+   * Day-by-day breakdown. Hydrated by `tripFromDetail` for detail
+   * responses. **Note:** the backend's list endpoint
+   * (`GET /api/v1/trips`) returns `TripSummaryDto[]` which carries
+   * `num_days` instead and does not include this field at runtime.
+   * Until this interface is split into `TripSummary` + `TripDetail`,
+   * list-endpoint consumers must defensively read `trip.num_days`
+   * (or guard with `trip.days ?? []`) and may not access day-level
+   * fields like `distanceKm` / `avgQuality`.
+   */
   days: TripDay[];
+  /**
+   * Number of days on the trip, surfaced on the wire as `num_days`.
+   * Present on summary responses; absent on detail responses
+   * (where `days.length` is authoritative). Until the type split
+   * lands, this is the only safe day-count source on list-endpoint
+   * data.
+   */
+  num_days?: number;
   parameters: TripParameters;
   collaborators: TripCollaborator[];
   /**

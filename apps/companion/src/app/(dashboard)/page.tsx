@@ -54,11 +54,18 @@ const QUICK_ACTIONS = [
 ] as const;
 
 function tripTotalKm(trip: Trip): number {
-  return trip.days.reduce((acc, d) => acc + (d.distanceKm ?? 0), 0);
+  // `trip.days` is absent on list-endpoint payloads (TripSummaryDto only
+  // carries `num_days`). Without per-day distance we can't compute a
+  // total — return 0 and rely on the call-site `km > 0` guard to hide
+  // the chip. Pending the Trip / TripSummary type split.
+  return (trip.days ?? []).reduce((acc, d) => acc + (d.distanceKm ?? 0), 0);
 }
 
 function tripAvgQualityTier(trip: Trip): number | null {
-  const scores = trip.days
+  // Same shape caveat as tripTotalKm — summary payloads have no
+  // per-day quality, so this returns null and the chip stays hidden.
+  const days = trip.days ?? [];
+  const scores = days
     .map((d) => d.avgQuality)
     .filter((n) => Number.isFinite(n) && n > 0);
   if (scores.length === 0) return null;
@@ -222,7 +229,10 @@ export default function HomePage() {
             <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-3">
               {draftTrips.map((trip) => {
                 const km = tripTotalKm(trip);
-                const days = trip.days.length;
+                // Prefer the summary's `num_days` (always present on the
+                // list endpoint); fall back to `days.length` for detail-
+                // shaped trips that might land here in the future.
+                const days = trip.num_days ?? trip.days?.length ?? 0;
                 const q = tripAvgQualityTier(trip);
                 return (
                   <Link

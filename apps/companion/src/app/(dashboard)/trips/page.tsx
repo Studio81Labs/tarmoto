@@ -29,7 +29,7 @@ import {
   TRIP_SORT_KEYS,
   applyTripFilters,
   countByStatus,
-  tripDistanceKm,
+  tripDistanceKmOrNull,
   type FolderScope,
   type TripFilters,
   type TripSortKey,
@@ -927,7 +927,11 @@ function TripCard({
 }: TripCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
-  const distance = tripDistanceKm(trip);
+  // `null` when the trip arrived as a TripSummaryDto (list endpoint) and we
+  // don't have per-day distances. Display is suppressed in that case rather
+  // than confidently rendering "0 km total". Pending #541 (TripSummary type
+  // split) which will make this distinction enforced by the compiler.
+  const distance = tripDistanceKmOrNull(trip);
   const currentFolder = trip.folder_id
     ? folders.find((f) => f.id === trip.folder_id)
     : null;
@@ -964,12 +968,14 @@ function TripCard({
               )}
             </span>
           </div>
-          <div className="flex items-center gap-2">
-            <MapPin size={13} />
-            <span>
-              {t("{distance} km total", { distance: Math.round(distance) })}
-            </span>
-          </div>
+          {distance !== null && (
+            <div className="flex items-center gap-2">
+              <MapPin size={13} />
+              <span>
+                {t("{distance} km total", { distance: Math.round(distance) })}
+              </span>
+            </div>
+          )}
           {(trip.collaborators?.length ?? 0) > 1 && (
             <div className="flex items-center gap-2">
               <Users size={13} />
