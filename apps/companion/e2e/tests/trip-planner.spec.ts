@@ -117,4 +117,35 @@ test.describe("trip planner", () => {
     ).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(/250\.0 km/).first()).toBeVisible();
   });
+
+  // T4 — Segment sidebar: after generating an itinerary, the planner
+  // mounts the "Road Preview Cards" sidebar (`SegmentSidebar`). The
+  // per-segment card content (quality / curviness / elevation / surface
+  // / hazards) lives in `RoadPreviewCard` and is covered by its unit
+  // tests — the mock backend's `/generate` response doesn't carry the
+  // `segments` array the sidebar drills into, so this e2e covers the
+  // mount surface itself.
+  test("T4: generating an itinerary mounts the road-preview sidebar", async ({
+    authedPage: page,
+  }) => {
+    await page.goto("/trips/planner");
+    await page.getByRole("button", { name: /load demo trip/i }).click();
+    await page.getByRole("button", { name: /generate itinerary/i }).click();
+
+    // The "Distance" trio is the post-generate readiness gate the other
+    // planner tests already use.
+    await expect(page.getByText(/Distance/i).first()).toBeVisible({
+      timeout: 5_000,
+    });
+
+    const sidebar = page.getByRole("complementary", {
+      name: /road preview cards/i,
+    });
+    await expect(sidebar).toBeVisible({ timeout: 5_000 });
+    // Sidebar header surfaces the "Road Preview Cards" title regardless
+    // of whether per-segment data is hydrated yet.
+    await expect(
+      sidebar.getByRole("heading", { name: /road preview cards/i }),
+    ).toBeVisible();
+  });
 });

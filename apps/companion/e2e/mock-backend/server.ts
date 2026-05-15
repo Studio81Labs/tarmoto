@@ -377,6 +377,60 @@ export function buildApp(): Express {
     void req;
   });
 
+  // ── Roads / Best ─────────────────────────────────────────────────
+  // Best Roads SSR pages (`/roads/best/:country/:region`) and the embed
+  // widget (`/embed/roads/:country/:region`) both fetch this endpoint at
+  // request time. The mock returns a stable two-road region so the e2e
+  // suite can assert the curated list rendered + SEO metadata wired up.
+  app.get("/api/v1/roads/best", (req, res) => {
+    const country = String(req.query.country ?? "").toLowerCase();
+    const region = String(req.query.region ?? "").toLowerCase();
+    if (!country || !region) {
+      res.status(400).json({ message: "missing-region" });
+      return;
+    }
+    res.json({
+      region: {
+        slug: region,
+        country,
+        name: region.replace(/-/g, " "),
+        bbox: [18, 49.3, 18.85, 49.7],
+      },
+      roads: [
+        {
+          id: "22222222-3333-4444-8555-666666666111",
+          road_name: "Mock Ridge Road",
+          road_number: "32",
+          quality_score: 4.5,
+          curviness_score: 3.6,
+          surface_type: "asphalt",
+          length_m: 12_400,
+          confidence: 92,
+          geometry: [
+            { lat: 49.55, lng: 18.3 },
+            { lat: 49.56, lng: 18.32 },
+          ],
+          best_score: 91,
+        },
+        {
+          id: "22222222-3333-4444-8555-666666666222",
+          road_name: "Sunset Climb",
+          road_number: null,
+          quality_score: 4.2,
+          curviness_score: 4.1,
+          surface_type: "asphalt",
+          length_m: 8_900,
+          confidence: 85,
+          geometry: [
+            { lat: 49.61, lng: 18.41 },
+            { lat: 49.63, lng: 18.45 },
+          ],
+          best_score: 88,
+        },
+      ],
+    });
+  });
+
   // ── Roads / Fun Zones ────────────────────────────────────────────
   app.get("/api/v1/roads/fun-zones", (req, res) => {
     const bbox = String(req.query.bbox ?? "")
@@ -580,6 +634,50 @@ export function buildApp(): Express {
     state.trips.delete(param(req, "id"));
     res.status(204).end();
   });
+
+  // US-37: duplicate retains the title with a "(copy)" suffix and assigns the
+  // caller as the new owner. The companion's optimistic-list flow
+  // (`/trips/page.tsx::duplicateTrip`) inserts the response into the trip
+  // store as a `Trip` and renders `trip.name` immediately — so the
+  // response carries both the detail shape (matching the OpenAPI
+  // contract) and the camelCase `name` the list consumer reads. The
+  // drift between these two shapes is tracked separately; the mock
+  // accommodates both rather than masking the list-render issue.
+  app.post(
+    "/api/v1/trips/:id/duplicate",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const session = req.session!;
+      const source = state.trips.get(param(req, "id"));
+      if (
+        !source ||
+        (source.owner_id !== session.user_id &&
+          !source.members.includes(session.user_id))
+      ) {
+        res.status(404).json({ message: "not-found" });
+        return;
+      }
+      const newId = randomUUID();
+      const now = new Date().toISOString();
+      const copy = {
+        ...source,
+        id: newId,
+        owner_id: session.user_id,
+        title: `${source.title} (copy)`,
+        status: "draft" as const,
+        members: [session.user_id],
+        snapshot: { ...source.snapshot },
+        created_at: now,
+        updated_at: now,
+      };
+      state.trips.set(newId, copy);
+      pushActivity(newId, session.user_id, "trip_updated", {});
+      res.status(201).json({
+        ...serializeTripDetail(copy),
+        name: copy.title,
+      });
+    },
+  );
 
   app.post(
     "/api/v1/trips/:id/generate",
