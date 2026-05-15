@@ -5,6 +5,7 @@ import {
   applyTripFilters,
   countByStatus,
   tripDistanceKm,
+  tripDistanceKmOrNull,
   type TripFilters,
 } from "../trip-filters";
 import type { Trip } from "../types";
@@ -230,6 +231,49 @@ describe("tripDistanceKm", () => {
       ],
     });
     expect(tripDistanceKm(trip)).toBeCloseTo(200.5);
+  });
+});
+
+describe("tripDistanceKmOrNull", () => {
+  it("sums every day's distance when days are present", () => {
+    const trip = makeTrip({
+      days: [
+        {
+          dayNumber: 1,
+          waypoints: [],
+          distanceKm: 60,
+          durationMinutes: 0,
+          elevationGain: 0,
+          avgQuality: 3,
+        },
+        {
+          dayNumber: 2,
+          waypoints: [],
+          distanceKm: 40,
+          durationMinutes: 0,
+          elevationGain: 0,
+          avgQuality: 3,
+        },
+      ],
+    });
+    expect(tripDistanceKmOrNull(trip)).toBe(100);
+  });
+
+  it("returns null when days is undefined (TripSummaryDto from list endpoint)", () => {
+    const trip = makeTrip();
+    // Simulates the wire shape: backend list endpoint omits days.
+    const summary: Trip = {
+      ...trip,
+      days: undefined as unknown as Trip["days"],
+    };
+    expect(tripDistanceKmOrNull(summary)).toBeNull();
+  });
+
+  it("returns 0 when days is an empty array (detail with no days yet)", () => {
+    const trip = makeTrip({ days: [] });
+    // Empty days[] is a valid early-draft state — distance is genuinely 0
+    // and consumers should render "0 km", not hide the field.
+    expect(tripDistanceKmOrNull(trip)).toBe(0);
   });
 });
 

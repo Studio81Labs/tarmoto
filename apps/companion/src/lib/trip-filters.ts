@@ -109,6 +109,24 @@ export function tripDistanceKm(trip: Trip): number {
   return (trip.days ?? []).reduce((sum, d) => sum + d.distanceKm, 0);
 }
 
+/**
+ * Like {@link tripDistanceKm} but returns `null` for trips that arrived
+ * from the list endpoint without hydrated `days`. Use at display sites
+ * where rendering "0 km" for a trip whose distance is simply unknown
+ * would be confidently wrong; sort/aggregate callers that need a number
+ * should keep using {@link tripDistanceKm} (which treats missing days
+ * as zero). Once Trip is split into TripSummary + TripDetail (see
+ * issue #541) this helper can go away — TripSummary won't expose
+ * `days` at all and the type system will force the right call.
+ */
+export function tripDistanceKmOrNull(trip: Trip): number | null {
+  // `days === undefined` ⇒ summary-only payload, distance is unknown.
+  // `days === []`        ⇒ detail with no days yet (early draft); distance
+  //                        is genuinely 0 and should display as such.
+  if (trip.days === undefined) return null;
+  return trip.days.reduce((sum, d) => sum + d.distanceKm, 0);
+}
+
 // Returns how many trips sit in each status, regardless of the current search
 // or folder scope. Used by the status filter chips to show counts.
 export function countByStatus(

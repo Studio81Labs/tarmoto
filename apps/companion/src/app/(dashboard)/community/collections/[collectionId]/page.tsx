@@ -50,7 +50,7 @@ import {
   type CollectionTripRef,
   type RouteCollectionView,
 } from "@/lib/route-collections";
-import { tripDistanceKm } from "@/lib/trip-filters";
+import { tripDistanceKmOrNull } from "@/lib/trip-filters";
 import { buildRoutePreview, type RoutePoint } from "@/lib/ride-detail";
 import { formatDistance, formatRelativeTime } from "@/lib/utils";
 import type { Trip, TripDay } from "@/lib/types";
@@ -323,8 +323,25 @@ export default function CollectionDetailPage() {
   // Distance covers both trips (planner geometry) and rides (recorded distance).
   // Trip distance is computed from per-day route geometry; ride distance comes
   // straight from the backend `distance_km` field.
+  //
+  // `presentTrips` is sourced from `useUserTrips()` which currently returns
+  // TripSummaryDto[] (no `days`, no per-day distances). We exclude those
+  // unhydrated trips from the aggregate rather than letting their 0s pull the
+  // total down to a confidently-wrong number; the total below renders the
+  // partial sum and `tripsWithUnknownDistance` powers a "+N trips, distance
+  // pending" annotation on the stat card. Pending #541 (TripSummary type
+  // split) — once the list endpoint or its consumer carries a known total,
+  // these unhydrated trips contribute to the sum like rides do.
+  const tripDistances = presentTrips.map((trip) => tripDistanceKmOrNull(trip));
+  const tripsWithUnknownDistance = tripDistances.filter(
+    (d) => d === null,
+  ).length;
+  const knownTripDistanceKm = tripDistances.reduce<number>(
+    (sum, d) => sum + (d ?? 0),
+    0,
+  );
   const totalDistance =
-    presentTrips.reduce((sum, trip) => sum + tripDistanceKm(trip), 0) +
+    knownTripDistanceKm +
     presentRides.reduce((sum, r) => sum + (r.distance_km ?? 0), 0);
   // Riding days only counts trip days — recorded rides are point-in-time, not
   // multi-day plans. A separate "Rides" stat surfaces recorded-ride count
@@ -425,6 +442,15 @@ export default function CollectionDetailPage() {
             loadingMembers || memberLoadError
               ? "—"
               : formatDistance(totalDistance)
+          }
+          hint={
+            // List-endpoint trips don't carry per-day distances, so their
+            // contribution is omitted from the aggregate rather than counted
+            // as zero. Surface the omission so the user understands the
+            // total isn't lying.
+            !loadingMembers && !memberLoadError && tripsWithUnknownDistance > 0
+              ? `+${tripsWithUnknownDistance} trip${tripsWithUnknownDistance === 1 ? "" : "s"} not counted`
+              : undefined
           }
         />
         <Stat
@@ -801,14 +827,15 @@ function EmptyRoutes({ onAdd }: { onAdd: () => void }) {
   );
 }
 function TripRow({ trip, onRemove }: { trip: Trip; onRemove: () => void }) {
-  // List-endpoint trips arrive without `days` (TripSummaryDto). The
-  // route preview silently degrades to no-line; `tripDistanceKm`
-  // already handles missing days defensively.
+  // List-endpoint trips arrive without `days` (TripSummaryDto): the route
+  // preview silently degrades to no-line, and `distance === null` hides
+  // the distance pill below rather than showing "0 km" for a value we
+  // don't actually know.
   const days = trip.days ?? [];
   const dayCount = trip.num_days ?? days.length;
   const points = useMemo(() => combineTripRoutePoints(days), [days]);
   const preview = useMemo(() => buildRoutePreview(points, 200, 6), [points]);
-  const distance = tripDistanceKm(trip);
+  const distance = tripDistanceKmOrNull(trip);
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900 hover:border-slate-700 transition">
       <div className="flex items-stretch gap-0">
@@ -848,10 +875,12 @@ function TripRow({ trip, onRemove }: { trip: Trip; onRemove: () => void }) {
                   ? t("1 day")
                   : t("{count} days", { count: dayCount })}
               </span>
-              <span className="inline-flex items-center gap-1">
-                <MapPin size={12} />
-                {formatDistance(distance)}
-              </span>
+              {distance !== null && (
+                <span className="inline-flex items-center gap-1">
+                  <MapPin size={12} />
+                  {formatDistance(distance)}
+                </span>
+              )}
               <span className="text-[11px] text-slate-600 uppercase tracking-widest">
                 {trip.status}
               </span>
@@ -1281,8 +1310,15 @@ function TripPickerList({
     <ul className="space-y-1.5">
       {visibleTrips.map((trip) => {
         const checked = selected.has(trip.id);
-        const distance = tripDistanceKm(trip);
+        // `distance === null` ⇒ summary-only; drop the distance segment from
+        // the meta line rather than rendering "0 km".
+        const distance = tripDistanceKmOrNull(trip);
         const dayCount = trip.num_days ?? trip.days?.length ?? 0;
+        const dayLabel =
+          dayCount === 1 ? t("1 day") : t("{count} days", { count: dayCount });
+        const metaParts = [dayLabel];
+        if (distance !== null) metaParts.push(formatDistance(distance));
+        metaParts.push(trip.status);
         return (
           <li key={trip.id}>
             <label
@@ -1303,10 +1339,7 @@ function TripPickerList({
                   {trip.name}
                 </p>
                 <p className="text-[11px] text-slate-500">
-                  {dayCount === 1
-                    ? t("1 day")
-                    : t("{count} days", { count: dayCount })}{" "}
-                  · {formatDistance(distance)} · {trip.status}
+                  {metaParts.join(" · ")}
                 </p>
               </div>
             </label>
