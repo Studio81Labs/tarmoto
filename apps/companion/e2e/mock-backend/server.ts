@@ -1867,6 +1867,76 @@ export function buildApp(): Express {
     },
   );
 
+  // Create a new collection. Mirrors `CreateRouteCollectionDto`'s
+  // shape: `title` required (non-empty, ≤80), `description?` (≤500),
+  // `visibility?` defaulting to `'private'`. Slug is server-allocated
+  // — production uses `allocateSlug()` + retry; the mock uses a
+  // short uuid slice which is collision-free for test scope.
+  app.post("/api/v1/collections", requireAuth, (req: AuthedRequest, res) => {
+    const session = req.session!;
+    const body = req.body ?? {};
+    const rawTitle = body.title;
+    if (
+      typeof rawTitle !== "string" ||
+      rawTitle.trim().length === 0 ||
+      rawTitle.trim().length > 80
+    ) {
+      res.status(400).json({
+        statusCode: 400,
+        error: "Bad Request",
+        message: "title is required (1-80 chars)",
+      });
+      return;
+    }
+    const rawDescription = body.description;
+    if (
+      rawDescription != null &&
+      (typeof rawDescription !== "string" || rawDescription.length > 500)
+    ) {
+      res.status(400).json({
+        statusCode: 400,
+        error: "Bad Request",
+        message: "description must be string (≤500 chars)",
+      });
+      return;
+    }
+    const rawVisibility = body.visibility;
+    if (
+      rawVisibility != null &&
+      !["private", "unlisted", "public"].includes(String(rawVisibility))
+    ) {
+      res.status(400).json({
+        statusCode: 400,
+        error: "Bad Request",
+        message: "visibility must be private|unlisted|public",
+      });
+      return;
+    }
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    const created: import("./state").MockCollection = {
+      id,
+      owner_id: session.user_id,
+      title: rawTitle.trim(),
+      description:
+        typeof rawDescription === "string" && rawDescription.trim().length > 0
+          ? rawDescription
+          : null,
+      visibility:
+        (rawVisibility as "private" | "unlisted" | "public" | undefined) ??
+        "private",
+      slug: `collection-${id.slice(0, 8)}`,
+      created_at: now,
+      updated_at: now,
+    };
+    state.collections.set(id, created);
+    state.collectionsBySlug.set(created.slug, id);
+    // POST returns the detail shape with owner_name hydrated — same
+    // contract as `RouteCollectionsService.create` (re-reads with the
+    // owner relation so the response carries `display_name`).
+    res.status(201).json(serializeCollectionDetail(created, true));
+  });
+
   app.get("/api/v1/collections/:id", requireAuth, (req: AuthedRequest, res) => {
     const session = req.session!;
     const collection = state.collections.get(param(req, "id"));
@@ -1881,6 +1951,227 @@ export function buildApp(): Express {
     }
     res.json(serializeCollectionDetail(collection, /* viewerOwns */ true));
   });
+
+  // Owner-only delete. Production responds 404 when the collection is
+  // missing (id existence isn't a side channel), 403 when the caller
+  // isn't the owner. Items + follows cascade via FK in the real DB —
+  // the mock drops the slug index and any follow rows so an e2e that
+  // deletes a collection doesn't leak stale state into a follow-up.
+  app.delete(
+    "/api/v1/collections/:id",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const session = req.session!;
+      const collection = state.collections.get(param(req, "id"));
+      if (!collection) {
+        res.status(404).json({ message: "not-found" });
+        return;
+      }
+      if (collection.owner_id !== session.user_id) {
+        res.status(403).json({ message: "not-the-owner" });
+        return;
+      }
+      state.collections.delete(collection.id);
+      state.collectionsBySlug.delete(collection.slug);
+      // FK CASCADE on `route_collection_follows` → drop any follow
+      // row referencing this collection so the library / follow flag
+      // doesn't surface a dangling entry post-delete.
+      for (const follows of state.collectionFollows.values()) {
+        follows.delete(collection.id);
+      }
+      res.status(204).end();
+    },
+  );
+
+  // ── Users / public profile / follows ─────────────────────────────
+  // Backs `/community/[riderId]` (T38). `GET :userId/profile` carries
+  // the `PublicProfile` wire shape; follow + badges + shared-rides
+  // are auth-only sub-resources the page mounts alongside the
+  // profile.
+
+  app.get(
+    "/api/v1/users/:userId/profile",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const session = req.session!;
+      const target = state.users.get(param(req, "userId"));
+      // Production `getPublicProfile` 404s on both missing and
+      // soft-deleted users so the response can't disambiguate the two.
+      if (!target || state.deletedUsers.has(target.id)) {
+        res.status(404).json({ message: "user-not-found" });
+        return;
+      }
+      const isSelf = target.id === session.user_id;
+      // #279 — `private` profiles 404 to non-self viewers.
+      const targetPrivacy = state.privacy.get(target.id);
+      if (!isSelf && targetPrivacy?.profile_visibility === "private") {
+        res.status(404).json({ message: "user-not-found" });
+        return;
+      }
+      // Counts derive from `state.userFollows`: follower_count is the
+      // number of viewers who have followed `target.id`, following_count
+      // is how many users `target.id` has followed.
+      let followerCount = 0;
+      for (const follows of state.userFollows.values()) {
+        if (follows.has(target.id)) followerCount += 1;
+      }
+      const followingMap = state.userFollows.get(target.id);
+      const followingCount = followingMap ? followingMap.size : 0;
+      // `is_following` is null when viewing yourself so the page hides
+      // the follow CTA instead of defaulting it to "Follow".
+      const viewerFollowsTarget = isSelf
+        ? null
+        : (state.userFollows.get(session.user_id)?.has(target.id) ?? false);
+      res.json({
+        id: target.id,
+        display_name: target.display_name,
+        avatar_url: target.avatar_url,
+        bio: target.bio,
+        home_region: target.home_region,
+        created_at: target.created_at,
+        follower_count: followerCount,
+        following_count: followingCount,
+        is_following: viewerFollowsTarget,
+        is_self: isSelf,
+      });
+    },
+  );
+
+  // Badges are a secondary surface on the profile page — the mock
+  // doesn't model the gamification catalogue, so an empty list is the
+  // right default. Production also returns `[]` for a rider who hasn't
+  // earned any badge yet; the page renders a "no badges earned" state.
+  app.get(
+    "/api/v1/users/:userId/badges",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const target = state.users.get(param(req, "userId"));
+      if (!target || state.deletedUsers.has(target.id)) {
+        res.status(404).json({ message: "user-not-found" });
+        return;
+      }
+      res.json([]);
+    },
+  );
+
+  // Paginated list of the rider's shared rides. Non-self viewers only
+  // see public shares; the rider viewing their own profile sees both
+  // public and private shares (production `SharingService.listForUser`
+  // — issue #279). Mock filters `state.rideShares` against the
+  // rider's `ride.user_id` and `is_public` flag.
+  app.get(
+    "/api/v1/users/:userId/shared-rides",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const session = req.session!;
+      const target = state.users.get(param(req, "userId"));
+      if (!target || state.deletedUsers.has(target.id)) {
+        res.status(404).json({ message: "user-not-found" });
+        return;
+      }
+      const isSelf = target.id === session.user_id;
+      const targetPrivacy = state.privacy.get(target.id);
+      if (!isSelf && targetPrivacy?.profile_visibility === "private") {
+        res.status(404).json({ message: "user-not-found" });
+        return;
+      }
+      const limit = Math.max(0, Number(req.query.limit ?? 20));
+      const offset = Math.max(0, Number(req.query.offset ?? 0));
+      const shares: Array<{
+        token: string;
+        ride: import("./state").MockRide;
+        is_public: boolean;
+      }> = [];
+      for (const [token, share] of state.rideShares) {
+        if (!isSelf && !share.is_public) continue;
+        const ride = state.rides.get(share.ride_id);
+        if (!ride || ride.user_id !== target.id) continue;
+        shares.push({ token, ride, is_public: share.is_public });
+      }
+      // `SharingService.listForUser` orders by `share.created_at DESC`
+      // (the share row, not the ride). The mock doesn't track a
+      // separate `shared_at` per row, so reuse the ride's
+      // `started_at` as the proxy — collapses ties deterministically
+      // and matches the newest-first display the page expects.
+      shares.sort((a, b) => b.ride.started_at.localeCompare(a.ride.started_at));
+      const page = shares
+        .slice(offset, offset + limit)
+        .map(({ token, ride, is_public }) => ({
+          id: ride.id,
+          share_token: token,
+          ride_type: ride.ride_type,
+          is_public,
+          started_at: ride.started_at,
+          ended_at: ride.ended_at,
+          distance_km: ride.distance_km,
+          avg_speed: ride.avg_speed,
+          avg_road_quality: ride.avg_road_quality,
+          avg_curviness: ride.avg_curviness,
+          duration_min: deriveDurationMin(ride),
+          view_count: state.rideShares.get(token)?.view_count ?? 0,
+          shared_at: ride.started_at,
+          route_geometry: ride.route_geometry,
+        }));
+      res.json({ items: page, total: shares.length, limit, offset });
+    },
+  );
+
+  app.post(
+    "/api/v1/users/:userId/follow",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const session = req.session!;
+      const target = state.users.get(param(req, "userId"));
+      if (!target || state.deletedUsers.has(target.id)) {
+        res.status(404).json({ message: "user-not-found" });
+        return;
+      }
+      if (target.id === session.user_id) {
+        res.status(400).json({ message: "cannot-follow-self" });
+        return;
+      }
+      let follows = state.userFollows.get(session.user_id);
+      if (!follows) {
+        follows = new Map();
+        state.userFollows.set(session.user_id, follows);
+      }
+      // `user_follows` carries a UNIQUE (follower, following) index —
+      // production maps the constraint violation to a 409 rather than
+      // returning 200 for a duplicate. Mirror that so a re-follow
+      // surfaces the same status the companion's `followRider` swallows.
+      if (follows.has(target.id)) {
+        res.status(409).json({ message: "already-following" });
+        return;
+      }
+      const followedAt = new Date().toISOString();
+      follows.set(target.id, followedAt);
+      res.status(201).json({
+        follower_id: session.user_id,
+        following_id: target.id,
+        created_at: followedAt,
+      });
+    },
+  );
+
+  app.delete(
+    "/api/v1/users/:userId/follow",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const session = req.session!;
+      const target = state.users.get(param(req, "userId"));
+      if (!target) {
+        res.status(404).json({ message: "not-following-this-user" });
+        return;
+      }
+      const follows = state.userFollows.get(session.user_id);
+      if (!follows?.has(target.id)) {
+        res.status(404).json({ message: "not-following-this-user" });
+        return;
+      }
+      follows.delete(target.id);
+      res.status(204).end();
+    },
+  );
 
   // ── Rides ────────────────────────────────────────────────────────
   // Three endpoints back the rides surface: list (paginated + filtered),

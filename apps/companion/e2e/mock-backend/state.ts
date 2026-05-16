@@ -6,6 +6,16 @@ export interface MockUser {
   password: string;
   display_name: string;
   phone: string | null;
+  /**
+   * Public-profile metadata. Mirrors the columns the production
+   * `User` entity exposes through `PublicProfileDto` so the mock
+   * profile endpoint can serialise the same wire shape without
+   * faking values client-side. Defaults to null on `createUser` so
+   * existing tests don't have to know about these fields.
+   */
+  avatar_url: string | null;
+  bio: string | null;
+  home_region: string | null;
   created_at: string;
 }
 
@@ -259,6 +269,14 @@ export class MockState {
    */
   collectionFollows = new Map<string, Map<string, string>>();
   /**
+   * Per-viewer map of `target_user_id → followed_at` ISO. Mirrors
+   * production's `user_follows` table (one row per (follower,
+   * following) pair). Keeps the timestamp so `getPublicProfile` can
+   * eventually order followers/following by recency, and lets the
+   * follow toggle stay idempotent on re-follow.
+   */
+  userFollows = new Map<string, Map<string, string>>();
+  /**
    * Per-share-token metadata for `GET /api/v1/rides/shared/:token`
    * AND the public `/rides/community` feed. The community feed
    * filters by `is_public === true` per
@@ -324,6 +342,7 @@ export class MockState {
     this.collections.clear();
     this.collectionsBySlug.clear();
     this.collectionFollows.clear();
+    this.userFollows.clear();
     this.suggestions.clear();
     this.activity = [];
     this.roadReviews.clear();
@@ -352,6 +371,9 @@ export class MockState {
       password: input.password,
       display_name: input.display_name,
       phone: null,
+      avatar_url: null,
+      bio: null,
+      home_region: null,
       created_at: new Date().toISOString(),
     };
     this.users.set(id, user);
