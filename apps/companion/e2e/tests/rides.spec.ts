@@ -235,5 +235,19 @@ test.describe("rides read path", () => {
     // angle" panel the doc names alongside the chart.
     await expect(page.getByText("Stelvio Pass")).toBeVisible();
     await expect(page.getByText("Bormio Loop")).toBeVisible();
+
+    // Elevation profile: per-sample elevation isn't recorded yet, so
+    // `ElevationProfileChart` always renders the empty state today.
+    // Assert both the section header and the empty-state copy so a
+    // regression that deletes the section (or breaks the chart slot)
+    // fails T31 — covering the "elevation profile" line of the doc
+    // even though it's currently a flat empty state. Replace with a
+    // real-data assertion when per-sample elevation lands.
+    await expect(
+      page.getByRole("heading", { name: /elevation profile/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/no elevation profile was recorded for this ride/i),
+    ).toBeVisible();
   });
 });
