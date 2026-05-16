@@ -1691,6 +1691,31 @@ export function buildApp(): Express {
     );
   });
 
+  // Public preview geometries for the shared-collection page —
+  // `CollectionPreviewMap` fetches this on mount. Production
+  // `RouteCollectionsController.getPreviewBySlug` is unauthenticated
+  // and mirrors the by-slug visibility gates (404 on private,
+  // 404 on soft-deleted owner). Items live in `route_collection_items`
+  // which the mock doesn't model, so the response is the natural
+  // empty-collection shape `{ routes: [] }` — same payload production
+  // returns for a public collection with zero items.
+  app.get("/api/v1/collections/by-slug/:slug/preview", (req, res) => {
+    const collectionId = state.collectionsBySlug.get(param(req, "slug"));
+    const collection = collectionId
+      ? state.collections.get(collectionId)
+      : null;
+    if (
+      !collection ||
+      (collection.visibility !== "public" &&
+        collection.visibility !== "unlisted") ||
+      state.deletedUsers.has(collection.owner_id)
+    ) {
+      res.status(404).json({ message: "not-found" });
+      return;
+    }
+    res.json({ routes: [] });
+  });
+
   app.get("/api/v1/collections/me", requireAuth, (req: AuthedRequest, res) => {
     const session = req.session!;
     // `ownedByViewer: true` nulls `owner_name` — matches
