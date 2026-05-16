@@ -26,14 +26,21 @@ test.describe("account & settings", () => {
 
     await nameField.fill("Adam the Rider");
 
-    const [patchReq] = await Promise.all([
-      page.waitForRequest(
-        (r) => r.url().endsWith("/users/me") && r.method() === "PATCH",
+    // Wait for the response so a 4xx/5xx surfaces as a failing
+    // assertion rather than slipping past the outbound-request
+    // wait. The page only sets `saveState: "saved"` on a
+    // successful resolve, but pinning to the response makes the
+    // test independent of that state-machine.
+    const [patchRes] = await Promise.all([
+      page.waitForResponse(
+        (r) =>
+          r.url().endsWith("/users/me") && r.request().method() === "PATCH",
         { timeout: 10_000 },
       ),
       page.getByRole("button", { name: /save changes/i }).click(),
     ]);
-    const body = JSON.parse(patchReq.postData() ?? "{}");
+    expect(patchRes.ok()).toBe(true);
+    const body = JSON.parse(patchRes.request().postData() ?? "{}");
     expect(body.display_name).toBe("Adam the Rider");
 
     // Success affordance — the success copy is "Saved " (trailing
@@ -97,16 +104,23 @@ test.describe("account & settings", () => {
     });
     await expect(setActiveBtn).toBeVisible();
 
-    const [patchReq] = await Promise.all([
-      page.waitForRequest(
+    // Wait for the response (not just the outbound request) — the
+    // bikes page flips the active flag optimistically before
+    // `accountApi.updateBike` resolves, so asserting on the
+    // re-rendered UI before the response would let a server-side
+    // failure (404/500) pass against the temporary snapshot the
+    // catch handler is about to roll back.
+    const [patchRes] = await Promise.all([
+      page.waitForResponse(
         (r) =>
           /\/account\/bikes\/[0-9a-f-]+/.test(r.url()) &&
-          r.method() === "PATCH",
+          r.request().method() === "PATCH",
         { timeout: 10_000 },
       ),
       setActiveBtn.click(),
     ]);
-    const body = JSON.parse(patchReq.postData() ?? "{}");
+    expect(patchRes.ok()).toBe(true);
+    const body = JSON.parse(patchRes.request().postData() ?? "{}");
     expect(body.is_active).toBe(true);
 
     // After the PATCH resolves the list re-renders: Honda's "Set
