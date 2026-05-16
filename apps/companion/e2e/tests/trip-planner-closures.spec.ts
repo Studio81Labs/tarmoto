@@ -44,15 +44,16 @@ test.describe("trip planner — closures (T13)", () => {
     // The closure title also surfaces in the per-row list inside
     // the route-warnings block — proves the closure object itself
     // round-tripped via `/closures/check-route`, not just via the
-    // unscoped bbox `/closures` list. Scope the locator to the
-    // route-warnings block (the div containing the "Route
-    // warnings" header) so a regression that drops the per-row
-    // list while keeping the bbox surface alive fails the test.
-    const routeWarningsBlock = page.locator("div", {
-      has: page.getByText(/route warnings/i),
-    });
+    // unscoped bbox `/closures` list. Anchor on the count copy
+    // (which only exists in the route-warnings block), then walk
+    // up to its immediate parent `<div>` (the route-warnings card)
+    // so a regression that drops the per-row list inside that card
+    // while keeping the bbox surface alive fails the test.
+    const routeWarningsCard = page
+      .getByText(/current trip crosses\s+1\s+active closure/i)
+      .locator("xpath=ancestor::div[1]");
     await expect(
-      routeWarningsBlock.getByText(/stelvio pass closed/i).first(),
+      routeWarningsCard.getByText(/stelvio pass closed/i),
     ).toBeVisible();
   });
 });
