@@ -1503,31 +1503,66 @@ export function buildApp(): Express {
 
       all.push({ ride, share: { token, view_count: share.view_count } });
     }
-    // Production's default sort is `most_popular` (view_count DESC,
-    // then ride id as a stable tiebreaker). `newest` uses
-    // started_at DESC. `nearest` is location-scoped (asc by distance
-    // from the center) when the location filter is active.
-    // Anything else falls through to newest.
+    // Sort comparators mirror `SharingService.applySort` predicate-
+    // by-predicate. Every CommunityRideSort the companion ships has
+    // a real ORDER BY in production:
+    //   newest          → started_at DESC
+    //   oldest          → started_at ASC
+    //   longest         → distance_km DESC
+    //   shortest        → distance_km ASC
+    //   highest_quality → avg_road_quality DESC
+    //   most_popular    → view_count DESC (default)
+    //   nearest         → polyline-to-center distance ASC (location
+    //                     filter must be active)
+    //   curviest        → falls through to most_popular because
+    //                     `MockRide` doesn't carry a curviness value
+    //                     yet; an e2e for that ordering needs the
+    //                     row extended first.
+    // Each branch uses ride.id as a stable tiebreaker so paging is
+    // deterministic across runs.
+    const tiebreak = (
+      a: { ride: { id: string } },
+      b: { ride: { id: string } },
+    ) => a.ride.id.localeCompare(b.ride.id);
     all.sort((a, b) => {
-      if (sort === "nearest" && locationActive) {
-        const da = kmToPolyline(
-          { lat: filterLat!, lng: filterLng! },
-          a.ride.route_geometry,
-        );
-        const db = kmToPolyline(
-          { lat: filterLat!, lng: filterLng! },
-          b.ride.route_geometry,
-        );
-        const dd = da - db;
-        return dd !== 0 ? dd : a.ride.id.localeCompare(b.ride.id);
+      switch (sort) {
+        case "nearest": {
+          if (!locationActive) break;
+          const da = kmToPolyline(
+            { lat: filterLat!, lng: filterLng! },
+            a.ride.route_geometry,
+          );
+          const db = kmToPolyline(
+            { lat: filterLat!, lng: filterLng! },
+            b.ride.route_geometry,
+          );
+          const dd = da - db;
+          return dd !== 0 ? dd : tiebreak(a, b);
+        }
+        case "newest": {
+          const dt = b.ride.started_at.localeCompare(a.ride.started_at);
+          return dt !== 0 ? dt : tiebreak(a, b);
+        }
+        case "oldest": {
+          const dt = a.ride.started_at.localeCompare(b.ride.started_at);
+          return dt !== 0 ? dt : tiebreak(a, b);
+        }
+        case "longest": {
+          const dd = b.ride.distance_km - a.ride.distance_km;
+          return dd !== 0 ? dd : tiebreak(a, b);
+        }
+        case "shortest": {
+          const dd = a.ride.distance_km - b.ride.distance_km;
+          return dd !== 0 ? dd : tiebreak(a, b);
+        }
+        case "highest_quality": {
+          const dq = b.ride.avg_road_quality - a.ride.avg_road_quality;
+          return dq !== 0 ? dq : tiebreak(a, b);
+        }
+        // most_popular (default), and curviest fallback.
       }
-      if (sort === "newest") {
-        const dt = b.ride.started_at.localeCompare(a.ride.started_at);
-        return dt !== 0 ? dt : a.ride.id.localeCompare(b.ride.id);
-      }
-      // most_popular (default)
       const dv = b.share.view_count - a.share.view_count;
-      return dv !== 0 ? dv : a.ride.id.localeCompare(b.ride.id);
+      return dv !== 0 ? dv : tiebreak(a, b);
     });
     const page = all.slice(offset, offset + limit);
     res.json({
@@ -1642,7 +1677,12 @@ export function buildApp(): Express {
         ? [...followIds]
             .map((id) => state.collections.get(id))
             .filter((c): c is import("./state").MockCollection => c != null)
+            // Soft-deleted owners → drop (rider is effectively gone).
+            // Collections whose owner flipped `visibility` to private
+            // → also drop (`listLibrary` uses `c.visibility <>
+            // 'private'`; the shared slug would 404 anyway).
             .filter((c) => !state.deletedUsers.has(c.owner_id))
+            .filter((c) => c.visibility !== "private")
             .map((c) => {
               const ownerPrivacy = state.privacy.get(c.owner_id);
               const maskOwner = ownerPrivacy?.profile_visibility === "private";
