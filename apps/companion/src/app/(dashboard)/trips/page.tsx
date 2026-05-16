@@ -23,7 +23,9 @@ import {
 import { tripsApi, tripFoldersApi } from "@/lib/api";
 import {
   tripFromDetail,
+  tripSummaryFromWire,
   type TripDetailResponse,
+  type TripSummaryWire,
 } from "@/lib/trip-from-detail";
 import { useTripStore } from "@/stores/trip";
 import { useAuthStore } from "@/stores/auth";
@@ -122,8 +124,12 @@ export default function TripListPage() {
       .list()
       .then(({ data }) => {
         if (cancelled) return;
-        const body = data as { data?: TripSummary[] } | TripSummary[];
-        setTrips(Array.isArray(body) ? body : (body?.data ?? []));
+        // Wire rows arrive as `TripSummaryDto` (`title`, `created_at`).
+        // Adapt to the companion's `TripSummary` (`name`, `createdAt`)
+        // so cards / sorts read populated fields.
+        const body = data as { data?: TripSummaryWire[] } | TripSummaryWire[];
+        const rows = Array.isArray(body) ? body : (body?.data ?? []);
+        setTrips(rows.map(tripSummaryFromWire));
       })
       .catch(() => {
         if (cancelled) return;

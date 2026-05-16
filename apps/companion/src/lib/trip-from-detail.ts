@@ -110,6 +110,48 @@ const WAYPOINT_TYPE_MAP: Record<string, Waypoint["type"]> = {
  * from the rolled-up planner stats. Anything the planner UI doesn't read
  * is dropped on purpose so the type stays the single source of truth.
  */
+/**
+ * Wire shape for `GET /api/v1/trips` — `TripSummaryDto[]` items.
+ * Mirrors the OpenAPI contract: `title` + `created_at` (snake_case),
+ * not the camelCase `name` + `createdAt` the rest of the companion
+ * uses. Adapt through `tripSummaryFromWire` before storing.
+ */
+export interface TripSummaryWire {
+  id: string;
+  owner_id?: string;
+  title: string;
+  region: string | null;
+  num_days: number;
+  status: "draft" | "planned" | "active" | "completed";
+  member_count: number;
+  folder_id: string | null;
+  created_at: string;
+}
+
+/**
+ * Adapt a wire `TripSummaryDto` row into the companion's
+ * `TripSummary` shape. Mirrors how `tripFromDetail` adapts the
+ * detail endpoint: name/createdAt are translated from the wire
+ * snake_case so the rest of the app keeps a single style. Without
+ * this, list consumers read `trip.name` / `trip.createdAt` and get
+ * `undefined` — cards render blank, sort-by-created breaks.
+ */
+export function tripSummaryFromWire(
+  wire: TripSummaryWire,
+): import("@/lib/types").TripSummary {
+  return {
+    id: wire.id,
+    name: wire.title,
+    status: wire.status,
+    num_days: wire.num_days,
+    member_count: wire.member_count,
+    region: wire.region,
+    owner_id: wire.owner_id,
+    folder_id: wire.folder_id,
+    createdAt: wire.created_at,
+  };
+}
+
 export function tripFromDetail(detail: TripDetailResponse): Trip {
   const days: TripDay[] = (detail.days ?? []).map((day) => mapDay(day));
 

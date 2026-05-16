@@ -2,6 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { tripsApi } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { useTripStore } from "@/stores/trip";
+import {
+  tripSummaryFromWire,
+  type TripSummaryWire,
+} from "@/lib/trip-from-detail";
 import type { TripSummary } from "@/lib/types";
 
 /**
@@ -49,13 +53,15 @@ export function useUserTrips(): {
       .list()
       .then(({ data }) => {
         if (cancelled) return;
-        // The list endpoint is documented to return either a raw
-        // array or a `{ data }` envelope depending on backend
-        // version. Both branches yield `TripSummary[]` directly —
-        // no `as unknown as` shape coercion now that the types
-        // match the wire.
-        const body = data as { data?: TripSummary[] } | TripSummary[];
-        setTrips(Array.isArray(body) ? body : (body?.data ?? []));
+        // The list endpoint may return either a raw array or a
+        // `{ data }` envelope depending on backend version. Either
+        // way, each row is a wire-shape `TripSummaryDto` (`title`,
+        // `created_at`) — adapt to the companion's `TripSummary`
+        // (`name`, `createdAt`) before storing so list consumers
+        // don't read undefined fields.
+        const body = data as { data?: TripSummaryWire[] } | TripSummaryWire[];
+        const rows = Array.isArray(body) ? body : (body?.data ?? []);
+        setTrips(rows.map(tripSummaryFromWire));
       })
       .catch(() => {
         if (cancelled) return;
