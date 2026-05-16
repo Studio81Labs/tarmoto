@@ -1546,14 +1546,19 @@ export function buildApp(): Express {
     // off-severity closure would still see it surface, drifting
     // from what the real backend would return.
     if (typeof req.query.bbox === "string") {
-      const parts = req.query.bbox.split(",").map(Number);
-      // Mirror production `ClosuresService.parseBbox`:
-      // - 4 finite numbers required (else 400)
-      // - min < max on both axes (else 400)
-      // Without these, a planner regression that flips/breaks the
-      // bbox would keep T13-style tests on the normal empty path
-      // instead of surfacing the production 400.
-      if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) {
+      // Mirror production: `ListClosuresQueryDto.bbox` matches
+      // `/^-?\d+(?:\.\d+)?(?:,-?\d+(?:\.\d+)?){3}$/` (exactly four
+      // numeric tokens separated by commas). Splitting + `Number()`
+      // on its own coerces blank parts like `10,,11,12` to `0` and
+      // passes the finite check, so explicitly require non-empty
+      // numeric tokens before parsing.
+      const rawParts = req.query.bbox.split(",");
+      const parts =
+        rawParts.length === 4 &&
+        rawParts.every((s) => s.trim().length > 0 && Number.isFinite(Number(s)))
+          ? rawParts.map(Number)
+          : null;
+      if (parts === null) {
         res.status(400).json({
           statusCode: 400,
           error: "Bad Request",
