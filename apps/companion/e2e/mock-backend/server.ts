@@ -1427,7 +1427,14 @@ export function buildApp(): Express {
       res.status(404).json({ message: "not-found" });
       return;
     }
-    res.json(serializeCollectionDetail(collection, /* viewerOwns */ false));
+    // Production runs `OptionalAuthGuard` here: the bearer token is
+    // read if present, and the viewer's identity feeds
+    // `viewer_is_owner` / `viewer_is_following` so the page can render
+    // the right CTA. Mirror that — fall back to anonymous if no token.
+    const session = state.resolveSession(req.header("authorization"));
+    const viewerOwns =
+      session != null && session.user_id === collection.owner_id;
+    res.json(serializeCollectionDetail(collection, viewerOwns));
   });
 
   app.get("/api/v1/collections/me", requireAuth, (req: AuthedRequest, res) => {
