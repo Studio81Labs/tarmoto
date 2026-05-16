@@ -1426,7 +1426,12 @@ export function buildApp(): Express {
     const q = req.query;
     const limit = Math.max(0, Number(q.limit ?? 9));
     const offset = Math.max(0, Number(q.offset ?? 0));
-    const sort = String(q.sort ?? "most_popular");
+    // `SharingService.listCommunityRides` defaults to `newest` when
+    // the caller omits `sort` (`query.sort ?? 'newest'`). Match that
+    // so API-only consumers + the few companion paths that don't
+    // serialize a sort still see the same default order the backend
+    // returns.
+    const sort = String(q.sort ?? "newest");
     // Companion-side `buildCommunityRideQuery` ships these filters;
     // production applies each as a SQL predicate before paging
     // (`SharingService.listCommunityRides`). Parse once so the inner
@@ -1455,6 +1460,8 @@ export function buildApp(): Express {
       Number.isFinite(filterRadiusKm);
     const filterMinCurviness =
       q.min_curviness != null ? Number(q.min_curviness) : null;
+    const filterMaxCurviness =
+      q.max_curviness != null ? Number(q.max_curviness) : null;
 
     const all: Array<{
       ride: import("./state").MockRide;
@@ -1500,6 +1507,13 @@ export function buildApp(): Express {
       if (filterMinCurviness != null) {
         if (ride.avg_curviness == null) continue;
         if (ride.avg_curviness < filterMinCurviness) continue;
+      }
+      // `max_curviness` uses the same `IS NOT NULL AND <= :max` shape:
+      // null-curviness rides are excluded even when the cap is high,
+      // mirroring production.
+      if (filterMaxCurviness != null) {
+        if (ride.avg_curviness == null) continue;
+        if (ride.avg_curviness > filterMaxCurviness) continue;
       }
       if (locationActive) {
         // No route geometry ⇒ can't satisfy `ST_DWithin`; drop the
