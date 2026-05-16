@@ -2145,10 +2145,16 @@ export function buildApp(): Express {
       }
       const followedAt = new Date().toISOString();
       follows.set(target.id, followedAt);
+      // Match `FollowUserResponseDto` (`following_id`, `display_name`,
+      // `followed_at`) — the production handler returns the target's
+      // display name on success so the companion can render a richer
+      // toast without a second round-trip. The legacy `follower_id` /
+      // `created_at` shape was mock-only and would let a client that
+      // started reading these fields drift away from the real wire.
       res.status(201).json({
-        follower_id: session.user_id,
         following_id: target.id,
-        created_at: followedAt,
+        display_name: target.display_name,
+        followed_at: followedAt,
       });
     },
   );
