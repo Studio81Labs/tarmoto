@@ -1364,13 +1364,17 @@ export function buildApp(): Express {
   app.get("/api/v1/rides/tracks", requireAuth, (req: AuthedRequest, res) => {
     const session = req.session!;
     const filtered = filterRides(req, session.user_id);
-    // `RidesService.getTracks` caps at 500 rides; the companion's map
-    // banner also tells users it's showing the most recent 500. Match
-    // that here so a test that seeds 201–500 rides doesn't see a
-    // phantom `truncated: true` from the mock.
+    // `RidesService.getTracks` orders by `started_at DESC` then caps at
+    // 500 rides; the companion's map banner also tells users it's
+    // showing the most recent 500. Match both the order and the limit
+    // so a test seeding 500+ rides sees the same newest-500 slice as
+    // production rather than the insertion-ordered first 500.
     const MAX = 500;
-    const truncated = filtered.length > MAX;
-    const visible = filtered.slice(0, MAX);
+    const ordered = filtered
+      .slice()
+      .sort((a, b) => b.started_at.localeCompare(a.started_at));
+    const truncated = ordered.length > MAX;
+    const visible = ordered.slice(0, MAX);
     res.json({
       tracks: visible.map((ride) => ({
         id: ride.id,
