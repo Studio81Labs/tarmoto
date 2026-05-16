@@ -1514,15 +1514,26 @@ export function buildApp(): Express {
     // supplied route. The mock doesn't run a geometry intersection —
     // tests seed a single closure conceptually-over the trip route
     // and assert on the rendered "Current trip crosses N closures"
-    // copy, not on coordinate math. An empty route gets an empty
-    // response (zero counts), matching the conservative behaviour
-    // the real backend would have when checked against an empty
-    // polyline.
+    // copy, not on coordinate math.
     const route = (req.body?.route ?? []) as Array<{
       lat: number;
       lng: number;
     }>;
-    const matched = route.length === 0 ? [] : [...state.closures.values()];
+    // Production `CheckRouteClosuresDto` requires `@ArrayMinSize(2)`
+    // AND `ClosuresService.checkRoute` throws `BadRequestException
+    // ("Route must have at least 2 points")` for shorter polylines.
+    // Mirror that so a planner regression that ships a degenerate
+    // single-point route surfaces the same 400 instead of silently
+    // getting a closure list back.
+    if (route.length < 2) {
+      res.status(400).json({
+        statusCode: 400,
+        error: "Bad Request",
+        message: "Route must have at least 2 points",
+      });
+      return;
+    }
+    const matched = [...state.closures.values()];
     // Mirror `CheckRouteClosuresResponseDto`: `closures` plus per-
     // severity counts so consumers reading the count fields hit
     // numbers instead of `undefined`.
