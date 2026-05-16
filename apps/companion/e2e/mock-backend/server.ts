@@ -1424,7 +1424,11 @@ export function buildApp(): Express {
   // state remains the default when nothing is seeded.
   app.get("/api/v1/rides/community", (req, res) => {
     const q = req.query;
-    const limit = Math.max(0, Number(q.limit ?? 9));
+    // `SharingService.listCommunityRides` defaults to `?? 20` when
+    // the caller omits `limit`. The companion's feed page sends its
+    // own PAGE_SIZE of 9, but API-only consumers + tests that rely
+    // on the backend default get the matching 20-row first page.
+    const limit = Math.max(0, Number(q.limit ?? 20));
     const offset = Math.max(0, Number(q.offset ?? 0));
     // `SharingService.listCommunityRides` defaults to `newest` when
     // the caller omits `sort` (`query.sort ?? 'newest'`). Match that
@@ -1445,19 +1449,24 @@ export function buildApp(): Express {
       q.min_distance_km != null ? Number(q.min_distance_km) : null;
     const filterMaxDistance =
       q.max_distance_km != null ? Number(q.max_distance_km) : null;
-    // Location filter: `?lat=&lng=&radius_km=` — all three required
-    // for the predicate to apply (matches the companion's all-or-
-    // nothing serialisation).
+    // Location filter: production activates spatial filtering as
+    // soon as `lat` + `lng` are present, defaulting `radius_km` to
+    // 25 km. The companion always sends all three together, but
+    // API-only consumers (or tests that mimic them) can omit the
+    // radius and still expect filtering + nearest-sort to kick in.
     const filterLat = q.lat != null ? Number(q.lat) : null;
     const filterLng = q.lng != null ? Number(q.lng) : null;
-    const filterRadiusKm = q.radius_km != null ? Number(q.radius_km) : null;
+    const rawRadius = q.radius_km != null ? Number(q.radius_km) : null;
     const locationActive =
       filterLat != null &&
       filterLng != null &&
-      filterRadiusKm != null &&
       Number.isFinite(filterLat) &&
-      Number.isFinite(filterLng) &&
-      Number.isFinite(filterRadiusKm);
+      Number.isFinite(filterLng);
+    const filterRadiusKm = locationActive
+      ? rawRadius != null && Number.isFinite(rawRadius)
+        ? rawRadius
+        : 25
+      : null;
     const filterMinCurviness =
       q.min_curviness != null ? Number(q.min_curviness) : null;
     const filterMaxCurviness =
