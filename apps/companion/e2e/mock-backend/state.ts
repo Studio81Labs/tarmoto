@@ -248,13 +248,16 @@ export class MockState {
   collections = new Map<string, MockCollection>();
   collectionsBySlug = new Map<string, string>();
   /**
-   * Per-user set of followed collection ids. Mirrors production's
-   * `route_collection_follows` table: a row exists per (viewer,
-   * collection) pair when the viewer has followed the collection.
-   * `RouteCollectionsService.getBySlug` reads this to set
-   * `viewer_is_following` on the response.
+   * Per-user map of followed collection id → `followed_at` ISO
+   * timestamp. Mirrors production's `route_collection_follows` table:
+   * a row exists per (viewer, collection) pair with the row's
+   * `created_at`. The timestamp powers `listLibrary`'s
+   * `ORDER BY f.created_at DESC` so most-recently-followed
+   * collections show first in the saved-library shelf.
+   * `RouteCollectionsService.getBySlug` still only reads existence to
+   * set `viewer_is_following`, so `.has(id)` keeps working.
    */
-  collectionFollows = new Map<string, Set<string>>();
+  collectionFollows = new Map<string, Map<string, string>>();
   /**
    * Per-share-token metadata for `GET /api/v1/rides/shared/:token`
    * AND the public `/rides/community` feed. The community feed

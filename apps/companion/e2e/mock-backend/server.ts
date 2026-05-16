@@ -1695,9 +1695,13 @@ export function buildApp(): Express {
     const session = req.session!;
     // `ownedByViewer: true` nulls `owner_name` — matches
     // `RouteCollectionsService.toSummaryResponse` on the self-owned
-    // endpoints.
+    // endpoints. Order by `updated_at` DESC to match production
+    // `RouteCollectionsService.listMine`'s `ORDER BY c.updated_at
+    // DESC`; `Map` insertion order would otherwise hand back the
+    // oldest row first and let an e2e assert reversed ordering.
     const items = [...state.collections.values()]
       .filter((c) => c.owner_id === session.user_id)
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
       .map((c) => serializeCollectionSummary(c, { ownedByViewer: true }));
     res.json({ items, total: items.length });
   });
@@ -1718,10 +1722,16 @@ export function buildApp(): Express {
       // private rider — they're returned with `owner_id` and
       // `owner_name` masked to `null` so the saved card stays in
       // the library shelf without leaking identity.
-      const followIds = state.collectionFollows.get(session.user_id);
-      const followed = followIds
-        ? [...followIds]
-            .map((id) => state.collections.get(id))
+      // Sort followed rows by `followed_at` DESC so the most
+      // recently-followed collection sits at the top of the saved
+      // library — matches `RouteCollectionsService.listLibrary`'s
+      // `ORDER BY f.created_at DESC`. Iterating the inner map in
+      // insertion order would surface the oldest follow first.
+      const followsMap = state.collectionFollows.get(session.user_id);
+      const followed = followsMap
+        ? [...followsMap.entries()]
+            .sort(([, a], [, b]) => b.localeCompare(a))
+            .map(([id]) => state.collections.get(id))
             .filter((c): c is import("./state").MockCollection => c != null)
             // Soft-deleted owners → drop (rider is effectively gone).
             // Collections whose owner flipped `visibility` to private
@@ -1774,13 +1784,22 @@ export function buildApp(): Express {
       }
       let follows = state.collectionFollows.get(session.user_id);
       if (!follows) {
-        follows = new Set();
+        follows = new Map();
         state.collectionFollows.set(session.user_id, follows);
       }
-      follows.add(collection.id);
+      // `route_collection_follows` uses a UNIQUE (viewer, collection)
+      // index — re-following keeps the original row, so preserve the
+      // existing `followed_at` instead of bumping it on every POST.
+      // Without this an e2e that follows → toggles UI → re-follows
+      // would see the timestamp reset and the library reorder.
+      const existing = follows.get(collection.id);
+      const followedAt = existing ?? new Date().toISOString();
+      if (!existing) {
+        follows.set(collection.id, followedAt);
+      }
       res.status(201).json({
         collection_id: collection.id,
-        followed_at: new Date().toISOString(),
+        followed_at: followedAt,
       });
     },
   );
