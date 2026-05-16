@@ -1453,16 +1453,16 @@ export function buildApp(): Express {
   app.get("/api/v1/collections/:id", requireAuth, (req: AuthedRequest, res) => {
     const session = req.session!;
     const collection = state.collections.get(param(req, "id"));
-    if (!collection) {
+    // `RouteCollectionsService.getOwned` 404s every non-owner on the
+    // id-based endpoint regardless of visibility — public/unlisted
+    // viewing is exclusively `/collections/by-slug/:slug`. Mirror that
+    // here so an e2e that accidentally hits the owner-only route as a
+    // different rider fails the same way it would in production.
+    if (!collection || collection.owner_id !== session.user_id) {
       res.status(404).json({ message: "not-found" });
       return;
     }
-    const viewerOwns = collection.owner_id === session.user_id;
-    if (!viewerOwns && collection.visibility === "private") {
-      res.status(404).json({ message: "not-found" });
-      return;
-    }
-    res.json(serializeCollectionDetail(collection, viewerOwns));
+    res.json(serializeCollectionDetail(collection, /* viewerOwns */ true));
   });
 
   // ── Rides ────────────────────────────────────────────────────────
