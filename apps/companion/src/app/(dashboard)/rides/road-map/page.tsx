@@ -140,6 +140,13 @@ export default function RoadMapPage() {
   // clicking "Use my location"). Without it, a late-resolving request would
   // overwrite fresher results.
   useEffect(() => {
+    // Must gate on `authReady` for the same reason as the exploration
+    // bootstrap effect above: a cold visit races AuthSync. Worse here,
+    // a 401 against `getNearbyUnridden` would trip the shared OpenAPI
+    // client's `onUnauthorized` hook and `clearSession()` would wipe
+    // the just-hydrated token, leaving the whole app unauthenticated
+    // for the rest of the navigation.
+    if (!authReady) return;
     let cancelled = false;
     setNearbyLoading(true);
     setNearbyError(null);
@@ -164,7 +171,7 @@ export default function RoadMapPage() {
     return () => {
       cancelled = true;
     };
-  }, [center.lat, center.lng]);
+  }, [authReady, center.lat, center.lng]);
   const periodStats = useMemo(
     () => computePeriodStats(rides, period),
     [rides, period],
