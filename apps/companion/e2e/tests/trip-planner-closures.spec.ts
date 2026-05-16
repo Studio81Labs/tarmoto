@@ -41,11 +41,18 @@ test.describe("trip planner — closures (T13)", () => {
       page.getByText(/current trip crosses\s+1\s+active closure/i),
     ).toBeVisible({ timeout: 15_000 });
 
-    // The closure title also surfaces in the per-row list under the
-    // route-warnings block — proves the closure object itself
-    // round-tripped, not just the count. The title repeats across
-    // the bbox-list, route-warnings, and compact-row sections, so
-    // anchor to the first occurrence.
-    await expect(page.getByText(/stelvio pass closed/i).first()).toBeVisible();
+    // The closure title also surfaces in the per-row list inside
+    // the route-warnings block — proves the closure object itself
+    // round-tripped via `/closures/check-route`, not just via the
+    // unscoped bbox `/closures` list. Scope the locator to the
+    // route-warnings block (the div containing the "Route
+    // warnings" header) so a regression that drops the per-row
+    // list while keeping the bbox surface alive fails the test.
+    const routeWarningsBlock = page.locator("div", {
+      has: page.getByText(/route warnings/i),
+    });
+    await expect(
+      routeWarningsBlock.getByText(/stelvio pass closed/i).first(),
+    ).toBeVisible();
   });
 });

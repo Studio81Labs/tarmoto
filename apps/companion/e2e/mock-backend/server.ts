@@ -1537,9 +1537,40 @@ export function buildApp(): Express {
     const includePast = req.query.include_past === "true";
     const activeOn =
       typeof req.query.active_on === "string" ? req.query.active_on : undefined;
-    const rows = includePast
+    let rows = includePast
       ? [...state.closures.values()]
       : filterActiveOn(state.closures.values(), activeOn);
+    // Mirror production `ClosuresService.list` filters: bbox
+    // (intersection), severity (exact match), reason (exact
+    // match). Without these, an e2e seeding an out-of-region or
+    // off-severity closure would still see it surface, drifting
+    // from what the real backend would return.
+    if (typeof req.query.bbox === "string") {
+      const parts = req.query.bbox.split(",").map(Number);
+      if (parts.length === 4 && parts.every(Number.isFinite)) {
+        const [minLng, minLat, maxLng, maxLat] = parts as [
+          number,
+          number,
+          number,
+          number,
+        ];
+        rows = rows.filter((c) =>
+          c.geometry.some(
+            (pt) =>
+              pt.lng >= minLng &&
+              pt.lng <= maxLng &&
+              pt.lat >= minLat &&
+              pt.lat <= maxLat,
+          ),
+        );
+      }
+    }
+    if (typeof req.query.severity === "string") {
+      rows = rows.filter((c) => c.severity === req.query.severity);
+    }
+    if (typeof req.query.reason === "string") {
+      rows = rows.filter((c) => c.reason === req.query.reason);
+    }
     res.json(rows);
   });
   app.post("/api/v1/closures/check-route", (req, res) => {
