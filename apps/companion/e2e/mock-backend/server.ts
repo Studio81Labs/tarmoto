@@ -1711,9 +1711,14 @@ export function buildApp(): Express {
     requireAuth,
     (req: AuthedRequest, res) => {
       const session = req.session!;
-      // `owned` is the rider's own rows → owner_name null.
+      // `owned` is the rider's own rows → owner_name null. Production
+      // builds this half by calling `listMine`, which orders
+      // `c.updated_at DESC`; mirror the sort here so an e2e that
+      // updates an older row sees it bubble to the top instead of the
+      // mock's insertion order.
       const owned = [...state.collections.values()]
         .filter((c) => c.owner_id === session.user_id)
+        .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
         .map((c) => serializeCollectionSummary(c, { ownedByViewer: true }));
       // `followed` surfaces other riders' collections the viewer
       // already followed. Production `RouteCollectionsService
@@ -2428,9 +2433,15 @@ function serializeCollectionDetail(
   viewerOwns: boolean,
   opts: { maskOwner?: boolean; viewerIsFollowing?: boolean } = {},
 ) {
+  // Production `RouteCollectionsService.toDetailResponse` hydrates the
+  // owner relation and surfaces `owner_name` on every detail response
+  // — the suppression only applies to summary/list responses for
+  // owned rows. Forwarding `ownedByViewer: viewerOwns` here would let
+  // an e2e assert `owner_name: null` on an owner-detail or self
+  // public-slug payload that production never serves. Privacy still
+  // wins via `maskOwner`.
   return {
     ...serializeCollectionSummary(collection, {
-      ownedByViewer: viewerOwns,
       maskOwner: opts.maskOwner,
     }),
     items: [] as unknown[],
