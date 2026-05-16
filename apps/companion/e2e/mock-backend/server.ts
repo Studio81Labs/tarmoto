@@ -1663,24 +1663,55 @@ function pushActivity(
   });
 }
 
-// Great-circle distance between two WGS84 lat/lng points in km.
-// Mirrors `ST_DWithin(..., :radius_m)` precisely enough for the
-// proximity-filter contract — Haversine is what PostGIS reduces to
-// over short distances on geography columns.
-function haversineKm(
-  a: { lat: number; lng: number },
-  b: { lat: number; lng: number },
-): number {
-  const R = 6371; // km
+type LatLng = { lat: number; lng: number };
+
+// Distance in km from point `p` to the nearest point on segment AB,
+// where "segment" means the geodesic between two WGS84 vertices.
+// `ST_DWithin` on a LineString geography measures perpendicular
+// distance to the line itself, not its vertices — a test point
+// near the middle of a long leg can be inside `radius_m` of the line
+// while being far from every vertex. We approximate that with a
+// local equirectangular projection at the segment's mean latitude,
+// which is faithful to a few centimetres at the kilometre scale
+// these tests care about and avoids dragging in a full geography
+// library.
+function kmToSegment(p: LatLng, a: LatLng, b: LatLng): number {
   const toRad = (n: number) => (n * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const lat1 = toRad(a.lat);
-  const lat2 = toRad(b.lat);
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.sin(dLng / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
-  return 2 * R * Math.asin(Math.sqrt(h));
+  const meanLat = (a.lat + b.lat) / 2;
+  const kmPerDegLat = 111;
+  const kmPerDegLng = 111 * Math.cos(toRad(meanLat));
+  const ax = a.lng * kmPerDegLng;
+  const ay = a.lat * kmPerDegLat;
+  const bx = b.lng * kmPerDegLng;
+  const by = b.lat * kmPerDegLat;
+  const px = p.lng * kmPerDegLng;
+  const py = p.lat * kmPerDegLat;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  // Degenerate "segment" of zero length collapses to point-to-point.
+  let t = 0;
+  if (lenSq > 0) {
+    t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+  }
+  const cx = ax + t * dx;
+  const cy = ay + t * dy;
+  return Math.hypot(px - cx, py - cy);
+}
+
+// Min distance from `p` to the polyline. Mirrors `ST_Distance(
+// route_geom::geography, ST_MakePoint(...))` for the
+// `ST_DWithin(...) <= radius_m` predicate.
+function kmToPolyline(p: LatLng, polyline: readonly LatLng[]): number {
+  if (polyline.length === 0) return Infinity;
+  if (polyline.length === 1) return kmToSegment(p, polyline[0]!, polyline[0]!);
+  let min = Infinity;
+  for (let i = 0; i < polyline.length - 1; i++) {
+    const d = kmToSegment(p, polyline[i]!, polyline[i + 1]!);
+    if (d < min) min = d;
+  }
+  return min;
 }
 
 function filterRides(
@@ -1735,14 +1766,10 @@ function filterRides(
     if (type && ride.ride_type !== type) return false;
     if (nearActive) {
       // `ST_DWithin` against a NULL geometry is false; rides with no
-      // route geometry can never satisfy a proximity filter, so drop
-      // them before scanning points.
+      // route geometry can never satisfy a proximity filter.
       if (ride.route_geometry.length === 0) return false;
       const center = { lat: nearLat, lng: nearLng };
-      const withinRadius = ride.route_geometry.some(
-        (p) => haversineKm(p, center) <= nearKm,
-      );
-      if (!withinRadius) return false;
+      if (kmToPolyline(center, ride.route_geometry) > nearKm) return false;
     }
     return true;
   });
