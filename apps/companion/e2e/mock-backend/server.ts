@@ -1554,8 +1554,12 @@ export function buildApp(): Express {
           number,
           number,
         ];
+        // Densify the closure line so segments that cross the
+        // bbox while both endpoints sit outside still match —
+        // mirrors `ST_Intersects(c.geom, envelope)` more faithfully
+        // than a pure-vertex check.
         rows = rows.filter((c) =>
-          c.geometry.some(
+          densifyPolyline(c.geometry).some(
             (pt) =>
               pt.lng >= minLng &&
               pt.lng <= maxLng &&
@@ -1605,13 +1609,17 @@ export function buildApp(): Express {
     // Production `ClosuresService.checkRoute` returns closures
     // whose geometry comes within `buffer_m` of the route polyline
     // (`ST_DWithin(c.geom, route.geom, buffer_m)`). Approximate
-    // that here using `kmToPolyline`: a closure matches when ANY
-    // point in its geometry is within `bufferKm` of the route.
-    // Without this proximity check, the mock returned every seeded
-    // closure for any route, so a planner regression that swapped
-    // the trip's geometry wouldn't be caught by T13.
+    // that by densifying the closure line (so segments running
+    // parallel-but-close to the route still match between their
+    // vertices) and checking each sampled point's distance to the
+    // route polyline. Without this, a long closure that crosses
+    // the route between its vertices would be dropped here while
+    // production reports it.
     const matched = filterActiveOn(state.closures.values(), activeOn).filter(
-      (c) => c.geometry.some((pt) => kmToPolyline(pt, route) <= bufferKm),
+      (c) =>
+        densifyPolyline(c.geometry).some(
+          (pt) => kmToPolyline(pt, route) <= bufferKm,
+        ),
     );
     // Mirror `CheckRouteClosuresResponseDto`: `closures` plus per-
     // severity counts so consumers reading the count fields hit
@@ -2919,6 +2927,35 @@ function kmToSegment(p: LatLng, a: LatLng, b: LatLng): number {
   const cx = ax + t * dx;
   const cy = ay + t * dy;
   return Math.hypot(px - cx, py - cy);
+}
+
+// Densify a polyline by sampling `samplesPerSegment` interior
+// points along each segment. Lets bbox / proximity checks treat
+// each segment as a continuous line rather than just its two
+// vertices — without this, a closure whose midpoint is inside the
+// bbox (but both vertices are outside) would be dropped by a
+// pure-vertex check while production's `ST_Intersects` still
+// returns it. Five samples per segment keeps the result faithful
+// to a few hundred metres at the scale these mocks operate on.
+function densifyPolyline(
+  polyline: readonly LatLng[],
+  samplesPerSegment = 5,
+): LatLng[] {
+  if (polyline.length === 0) return [];
+  if (polyline.length === 1) return [polyline[0]!];
+  const out: LatLng[] = [];
+  for (let i = 0; i < polyline.length - 1; i++) {
+    const a = polyline[i]!;
+    const b = polyline[i + 1]!;
+    for (let s = 0; s <= samplesPerSegment; s++) {
+      const t = s / samplesPerSegment;
+      out.push({
+        lat: a.lat + (b.lat - a.lat) * t,
+        lng: a.lng + (b.lng - a.lng) * t,
+      });
+    }
+  }
+  return out;
 }
 
 // Min distance from `p` to the polyline. Mirrors `ST_Distance(
