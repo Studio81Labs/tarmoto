@@ -3,6 +3,7 @@ import { t } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { useAuthStore } from "@/stores/auth";
 import {
   ArrowLeft,
   Clock,
@@ -60,8 +61,13 @@ export default function RideDetailPage() {
   const [exporting, setExporting] = useState<RideExportFormat | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [shareCopied, setShareCopied] = useState(false);
+  // Gate the detail fetch on the access token being hydrated by
+  // `AuthSync`. Without this, the initial mount races AuthSync and
+  // the first GET goes out without a Bearer header → backend 401s.
+  // Same pattern as `useRidesQuery` and `useUserTrips`.
+  const authReady = useAuthStore((s) => Boolean(s.accessToken));
   useEffect(() => {
-    if (!rideId) return;
+    if (!rideId || !authReady) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -89,7 +95,7 @@ export default function RideDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [rideId]);
+  }, [rideId, authReady]);
   const breakdown = useMemo(
     () => computeQualityBreakdown(ride?.segments ?? []),
     [ride?.segments],

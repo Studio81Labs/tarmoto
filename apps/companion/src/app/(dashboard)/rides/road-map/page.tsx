@@ -25,6 +25,7 @@ import {
   scoreToTier,
 } from "@/lib/utils";
 import { fetchAllRides } from "@/lib/rides-fetch";
+import { useAuthStore } from "@/stores/auth";
 import type { RideForStats } from "@/lib/ride-stats";
 import {
   TIME_PERIODS,
@@ -105,7 +106,12 @@ export default function RoadMapPage() {
   useEffect(() => {
     hydratePreferences();
   }, [hydratePreferences]);
+  // Gate the exploration + rides fetch on auth so a cold visit to
+  // `/rides/road-map` doesn't race AuthSync. The three Promise.all
+  // calls all hit authed endpoints.
+  const authReady = useAuthStore((s) => Boolean(s.accessToken));
   useEffect(() => {
+    if (!authReady) return;
     let cancelled = false;
     setLoading(true);
     Promise.all([
@@ -128,12 +134,19 @@ export default function RoadMapPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authReady]);
   // `cancelled` guards against stale responses when the centre changes faster
   // than the network round-trip (e.g. pasting coordinates, then immediately
   // clicking "Use my location"). Without it, a late-resolving request would
   // overwrite fresher results.
   useEffect(() => {
+    // Must gate on `authReady` for the same reason as the exploration
+    // bootstrap effect above: a cold visit races AuthSync. Worse here,
+    // a 401 against `getNearbyUnridden` would trip the shared OpenAPI
+    // client's `onUnauthorized` hook and `clearSession()` would wipe
+    // the just-hydrated token, leaving the whole app unauthenticated
+    // for the rest of the navigation.
+    if (!authReady) return;
     let cancelled = false;
     setNearbyLoading(true);
     setNearbyError(null);
@@ -158,7 +171,7 @@ export default function RoadMapPage() {
     return () => {
       cancelled = true;
     };
-  }, [center.lat, center.lng]);
+  }, [authReady, center.lat, center.lng]);
   const periodStats = useMemo(
     () => computePeriodStats(rides, period),
     [rides, period],

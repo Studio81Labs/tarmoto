@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import RideDetailPage from "./page";
 import { api } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth";
 
 let routeRideId = "ride-1";
 
@@ -75,6 +76,18 @@ describe("RideDetailPage analytics", () => {
     routeRideId = "ride-1";
     mockedRideRouteMap.mockClear();
     vi.mocked(api.GET).mockReset();
+    // The detail page now gates its fetch on `useAuthStore.accessToken`
+    // (matches the AuthSync race fix). Seed a session so the effect
+    // actually fires under test.
+    useAuthStore.setState({
+      accessToken: "test-token",
+      isAuthenticated: true,
+      user: {
+        id: "user-1",
+        email: "rider@example.com",
+        displayName: "Test Rider",
+      },
+    });
   });
 
   it("renders T31 route map, elevation profile, speed graph, and stats", async () => {
