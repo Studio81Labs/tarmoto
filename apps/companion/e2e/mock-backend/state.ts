@@ -31,6 +31,34 @@ export interface MockTrip {
   updated_at: string;
 }
 
+/**
+ * Recorded ride row. Matches the `RideSummary` + `RideDetail` shapes the
+ * companion reads from `/api/v1/rides`, `/api/v1/rides/:id`, and
+ * `/api/v1/rides/tracks` — list and detail responses are derived from a
+ * single row so a test can seed once and exercise both surfaces.
+ */
+export interface MockRide {
+  id: string;
+  user_id: string;
+  name: string | null;
+  ride_type: string;
+  status: string;
+  started_at: string;
+  ended_at: string | null;
+  distance_km: number;
+  duration_min: number;
+  avg_speed: number;
+  max_speed: number;
+  avg_road_quality: number;
+  elevation_gain: number;
+  elevation_loss: number;
+  curve_count: number;
+  max_lean_angle: number;
+  fuel_estimate_l: number;
+  /** Polyline of {lat, lng} points, ordered along direction of travel. */
+  route_geometry: Array<{ lat: number; lng: number }>;
+}
+
 export interface MockSuggestion {
   id: string;
   trip_id: string;
@@ -173,6 +201,7 @@ export class MockState {
   sessionsByRefresh = new Map<string, MockSession>();
 
   trips = new Map<string, MockTrip>();
+  rides = new Map<string, MockRide>();
   suggestions = new Map<string, MockSuggestion>();
   activity: MockActivity[] = [];
   roadReviews = new Map<string, MockRoadReview[]>();
@@ -222,6 +251,7 @@ export class MockState {
     this.sessionsByAccess.clear();
     this.sessionsByRefresh.clear();
     this.trips.clear();
+    this.rides.clear();
     this.suggestions.clear();
     this.activity = [];
     this.roadReviews.clear();

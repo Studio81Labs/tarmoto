@@ -26,6 +26,26 @@ interface SeedOpts {
   displayName?: string;
 }
 
+export interface SeedRideOpts {
+  id?: string;
+  name?: string | null;
+  ride_type?: string;
+  status?: string;
+  started_at?: string;
+  ended_at?: string;
+  distance_km?: number;
+  duration_min?: number;
+  avg_speed?: number;
+  max_speed?: number;
+  avg_road_quality?: number;
+  elevation_gain?: number;
+  elevation_loss?: number;
+  curve_count?: number;
+  max_lean_angle?: number;
+  fuel_estimate_l?: number;
+  route_geometry?: Array<{ lat: number; lng: number }>;
+}
+
 export interface MockApi {
   reset(): Promise<void>;
   seedUser(opts?: SeedOpts): Promise<SeededUser>;
@@ -38,6 +58,7 @@ export interface MockApi {
     user: SeededUser,
     payload: { title: string; num_days?: number },
   ): Promise<{ id: string; title: string }>;
+  seedRide(user: SeededUser, ride?: SeedRideOpts): Promise<{ id: string }>;
 }
 
 function buildMockApi(api: APIRequestContext): MockApi {
@@ -97,6 +118,15 @@ function buildMockApi(api: APIRequestContext): MockApi {
         throw new Error(`createTrip failed: ${res.status()}`);
       }
       return (await res.json()) as { id: string; title: string };
+    },
+    async seedRide(user, ride = {}) {
+      const res = await api.post(`${MOCK_BACKEND_URL}/__test__/seed-ride`, {
+        data: { user_id: user.id, ride },
+      });
+      if (!res.ok()) {
+        throw new Error(`seedRide failed: ${res.status()} ${await res.text()}`);
+      }
+      return (await res.json()) as { id: string };
     },
   };
 }

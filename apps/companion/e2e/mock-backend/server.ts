@@ -329,6 +329,45 @@ export function buildApp(): Express {
     res.json({ ok: true });
   });
 
+  app.post("/__test__/seed-ride", (req, res) => {
+    const { user_id, ride } = req.body ?? {};
+    if (!user_id || !ride) {
+      res.status(400).json({ message: "missing-fields" });
+      return;
+    }
+    const id = ride.id ?? randomUUID();
+    const startedAt = ride.started_at ?? new Date().toISOString();
+    const seeded: import("./state").MockRide = {
+      id,
+      user_id,
+      name: ride.name ?? null,
+      ride_type: ride.ride_type ?? "leisure",
+      status: ride.status ?? "completed",
+      started_at: startedAt,
+      ended_at:
+        ride.ended_at ??
+        new Date(new Date(startedAt).getTime() + 60 * 60 * 1000).toISOString(),
+      distance_km: Number(ride.distance_km ?? 100),
+      duration_min: Number(ride.duration_min ?? 60),
+      avg_speed: Number(ride.avg_speed ?? 80),
+      max_speed: Number(ride.max_speed ?? 130),
+      avg_road_quality: Number(ride.avg_road_quality ?? 4),
+      elevation_gain: Number(ride.elevation_gain ?? 500),
+      elevation_loss: Number(ride.elevation_loss ?? 500),
+      curve_count: Number(ride.curve_count ?? 80),
+      max_lean_angle: Number(ride.max_lean_angle ?? 35),
+      fuel_estimate_l: Number(ride.fuel_estimate_l ?? 5),
+      route_geometry: Array.isArray(ride.route_geometry)
+        ? ride.route_geometry
+        : [
+            { lat: 46.47, lng: 10.37 },
+            { lat: 46.55, lng: 10.45 },
+          ],
+    };
+    state.rides.set(id, seeded);
+    res.status(201).json({ id });
+  });
+
   // ── Auth ──────────────────────────────────────────────────────────
   app.post("/api/v1/auth/register", (req, res) => {
     const { email, password, display_name } = req.body ?? {};
@@ -1295,6 +1334,68 @@ export function buildApp(): Express {
     res.json([]);
   });
 
+  // ── Rides ────────────────────────────────────────────────────────
+  // Three endpoints back the rides surface: list (paginated + filtered),
+  // tracks (geometry only, same filters minus sort/page — used for the
+  // map overlay), and detail. All three filter by `user_id === session`
+  // so a seeded ride only shows up for the rider who owns it.
+  app.get("/api/v1/rides", requireAuth, (req: AuthedRequest, res) => {
+    const session = req.session!;
+    const filtered = filterRides(req, session.user_id);
+    const sort = String(req.query.sort ?? "started_at");
+    const order = String(req.query.order ?? "desc") === "asc" ? 1 : -1;
+    const sorted = filtered.slice().sort((a, b) => {
+      const va = (a as unknown as Record<string, unknown>)[sort];
+      const vb = (b as unknown as Record<string, unknown>)[sort];
+      if (typeof va === "number" && typeof vb === "number") {
+        return (va - vb) * order;
+      }
+      return String(va ?? "").localeCompare(String(vb ?? "")) * order;
+    });
+    const limit = Math.max(0, Number(req.query.limit ?? 20));
+    const offset = Math.max(0, Number(req.query.offset ?? 0));
+    const page = sorted.slice(offset, offset + limit);
+    res.json({
+      rides: page.map(serializeRideSummary),
+      total: sorted.length,
+    });
+  });
+
+  app.get("/api/v1/rides/tracks", requireAuth, (req: AuthedRequest, res) => {
+    const session = req.session!;
+    const filtered = filterRides(req, session.user_id);
+    // Real backend caps tracks for unbounded queries; the mock caps at
+    // 200 to match the "truncated" flag's contract.
+    const MAX = 200;
+    const truncated = filtered.length > MAX;
+    const visible = filtered.slice(0, MAX);
+    res.json({
+      tracks: visible.map((ride) => ({
+        id: ride.id,
+        geometry:
+          ride.route_geometry.length > 0
+            ? {
+                type: "LineString" as const,
+                coordinates: ride.route_geometry.map(
+                  (p) => [p.lng, p.lat] as [number, number],
+                ),
+              }
+            : null,
+      })),
+      truncated,
+    });
+  });
+
+  app.get("/api/v1/rides/:rideId", requireAuth, (req: AuthedRequest, res) => {
+    const session = req.session!;
+    const ride = state.rides.get(param(req, "rideId"));
+    if (!ride || ride.user_id !== session.user_id) {
+      res.status(404).json({ message: "not-found" });
+      return;
+    }
+    res.json(serializeRideDetail(ride));
+  });
+
   // Catch-all for unhandled routes — return 200 with an empty body so a
   // page that fires off a non-critical fetch (e.g. for a feature we
   // haven't mocked) doesn't block the test on a JSON parse error.
@@ -1522,4 +1623,81 @@ function pushActivity(
     payload,
     created_at: new Date().toISOString(),
   });
+}
+
+function filterRides(
+  req: Request,
+  userId: string,
+): import("./state").MockRide[] {
+  const q = req.query;
+  const startedFrom = q.started_from ? String(q.started_from) : null;
+  const startedTo = q.started_to ? String(q.started_to) : null;
+  const minDistance =
+    q.min_distance_km != null ? Number(q.min_distance_km) : null;
+  const maxDistance =
+    q.max_distance_km != null ? Number(q.max_distance_km) : null;
+  const minQuality = q.min_quality != null ? Number(q.min_quality) : null;
+  const maxQuality = q.max_quality != null ? Number(q.max_quality) : null;
+  const search = q.q ? String(q.q).toLowerCase() : null;
+  const type = q.type ? String(q.type) : null;
+  return [...state.rides.values()].filter((ride) => {
+    if (ride.user_id !== userId) return false;
+    if (startedFrom && ride.started_at < startedFrom) return false;
+    // Real backend treats `started_to` as inclusive end-of-day; mirror by
+    // letting `YYYY-MM-DD` compare loosely against the ISO timestamp.
+    if (startedTo && ride.started_at.slice(0, 10) > startedTo) return false;
+    if (minDistance != null && ride.distance_km < minDistance) return false;
+    if (maxDistance != null && ride.distance_km > maxDistance) return false;
+    if (minQuality != null && ride.avg_road_quality < minQuality) return false;
+    if (maxQuality != null && ride.avg_road_quality > maxQuality) return false;
+    if (
+      search &&
+      !(ride.name ?? "").toLowerCase().includes(search) &&
+      !ride.ride_type.toLowerCase().includes(search)
+    ) {
+      return false;
+    }
+    if (type && ride.ride_type !== type) return false;
+    return true;
+  });
+}
+
+function serializeRideSummary(ride: import("./state").MockRide) {
+  return {
+    id: ride.id,
+    name: ride.name,
+    started_at: ride.started_at,
+    ended_at: ride.ended_at,
+    ride_type: ride.ride_type,
+    status: ride.status,
+    distance_km: ride.distance_km,
+    avg_speed: ride.avg_speed,
+    avg_road_quality: ride.avg_road_quality,
+    duration_min: ride.duration_min,
+  };
+}
+
+function serializeRideDetail(ride: import("./state").MockRide) {
+  return {
+    id: ride.id,
+    status: ride.status,
+    ride_type: ride.ride_type,
+    started_at: ride.started_at,
+    ended_at: ride.ended_at,
+    distance_km: ride.distance_km,
+    duration_min: ride.duration_min,
+    avg_speed: ride.avg_speed,
+    max_speed: ride.max_speed,
+    avg_road_quality: ride.avg_road_quality,
+    elevation_gain: ride.elevation_gain,
+    elevation_loss: ride.elevation_loss,
+    curve_count: ride.curve_count,
+    max_lean_angle: ride.max_lean_angle,
+    fuel_estimate_l: ride.fuel_estimate_l,
+    route_geometry: ride.route_geometry,
+    // Per-segment breakdown is rendered as a chart on the detail page —
+    // an empty array is the legitimate "no segment data yet" state and
+    // keeps the chart hidden without breaking the page.
+    segments: [],
+  };
 }

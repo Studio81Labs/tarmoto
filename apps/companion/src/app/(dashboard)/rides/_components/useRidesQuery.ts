@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth";
 
 export type SortField =
   | "started_at"
@@ -192,6 +193,13 @@ export function useRidesQuery() {
     stateRef.current = state;
   }, [state]);
 
+  // Gate fetches on the access token being hydrated by `AuthSync`.
+  // Without this, both the list and tracks effects fire on mount before
+  // `useSession` returns and Zustand picks up the user's token — the
+  // outbound requests then go without a Bearer header and the backend
+  // 401s. `useUserTrips` (`/trips`) uses the same pattern.
+  const authReady = useAuthStore((s) => Boolean(s.accessToken));
+
   // ── list fetch ──
   const [list, setList] = useState<ListResult>({
     rides: [],
@@ -200,6 +208,7 @@ export function useRidesQuery() {
     error: null,
   });
   useEffect(() => {
+    if (!authReady) return;
     const ctrl = new AbortController();
     setList((s) => ({ ...s, loading: true, error: null }));
     api
@@ -236,7 +245,7 @@ export function useRidesQuery() {
         });
       });
     return () => ctrl.abort();
-  }, [state]);
+  }, [authReady, state]);
 
   // ── tracks fetch (debounced on filter changes) ──
   const [tracks, setTracks] = useState<TracksResult>({
@@ -251,6 +260,7 @@ export function useRidesQuery() {
   );
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
+    if (!authReady) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     const ctrl = new AbortController();
     setTracks((s) => ({ ...s, loading: true, error: null }));
@@ -299,7 +309,7 @@ export function useRidesQuery() {
     // tracksKey captures every param that affects this fetch; state is
     // intentionally excluded so pagination/sort changes don't re-trigger.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tracksKey]);
+  }, [authReady, tracksKey]);
 
   function update(patch: Partial<RidesQueryState>) {
     // Read the freshest state via the ref so stale-closure callers still
