@@ -539,9 +539,13 @@ export function buildApp(): Express {
       title: String(c.title ?? "Roadworks on the demo route"),
       reason: c.reason ?? "roadworks",
       severity: c.severity ?? "full",
+      // Default geometry overlaps the demo-trip's generated start
+      // point (46.47, 10.37) so the production-like proximity
+      // filter on `/closures/check-route` actually matches with
+      // the default 100m buffer.
       geometry: c.geometry ?? [
-        { lat: 46.45, lng: 10.3 },
-        { lat: 46.46, lng: 10.32 },
+        { lat: 46.47, lng: 10.37 },
+        { lat: 46.48, lng: 10.39 },
       ],
       detour: c.detour ?? null,
       country_code: c.country_code ?? "IT",
@@ -1564,7 +1568,20 @@ export function buildApp(): Express {
     }
     const activeOn =
       typeof req.body?.active_on === "string" ? req.body.active_on : undefined;
-    const matched = filterActiveOn(state.closures.values(), activeOn);
+    const bufferM =
+      typeof req.body?.buffer_m === "number" ? req.body.buffer_m : 100;
+    const bufferKm = bufferM / 1000;
+    // Production `ClosuresService.checkRoute` returns closures
+    // whose geometry comes within `buffer_m` of the route polyline
+    // (`ST_DWithin(c.geom, route.geom, buffer_m)`). Approximate
+    // that here using `kmToPolyline`: a closure matches when ANY
+    // point in its geometry is within `bufferKm` of the route.
+    // Without this proximity check, the mock returned every seeded
+    // closure for any route, so a planner regression that swapped
+    // the trip's geometry wouldn't be caught by T13.
+    const matched = filterActiveOn(state.closures.values(), activeOn).filter(
+      (c) => c.geometry.some((pt) => kmToPolyline(pt, route) <= bufferKm),
+    );
     // Mirror `CheckRouteClosuresResponseDto`: `closures` plus per-
     // severity counts so consumers reading the count fields hit
     // numbers instead of `undefined`.
