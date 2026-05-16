@@ -1364,9 +1364,11 @@ export function buildApp(): Express {
   app.get("/api/v1/rides/tracks", requireAuth, (req: AuthedRequest, res) => {
     const session = req.session!;
     const filtered = filterRides(req, session.user_id);
-    // Real backend caps tracks for unbounded queries; the mock caps at
-    // 200 to match the "truncated" flag's contract.
-    const MAX = 200;
+    // `RidesService.getTracks` caps at 500 rides; the companion's map
+    // banner also tells users it's showing the most recent 500. Match
+    // that here so a test that seeds 201–500 rides doesn't see a
+    // phantom `truncated: true` from the mock.
+    const MAX = 500;
     const truncated = filtered.length > MAX;
     const visible = filtered.slice(0, MAX);
     res.json({
