@@ -12,6 +12,7 @@ import {
 } from "@/lib/trip-from-detail";
 import type { Trip } from "@/lib/types";
 import { TripPrintBody } from "@/components/TripPrintBody";
+import { useAuthStore } from "@/stores/auth";
 /**
  * Print-friendly view of a saved trip (US-39 / issue #283). Fetches the
  * trip directly from the backend so opening the page from a deep link,
@@ -41,13 +42,20 @@ function TripPrintPageContent() {
   }>();
   const searchParams = useSearchParams();
   const autoprint = searchParams?.get("autoprint") === "1";
+  // Gate fetches on the access token being hydrated by `AuthSync`.
+  // The print page mounts on a hard navigation (the export menu
+  // uses `window.open`), so without this the initial `tripsApi.get`
+  // races AuthSync and 401s — the rider sees "Couldn't load this
+  // trip" right after opening the print tab. Mirrors the same fix
+  // applied to `/rides/[rideId]`.
+  const accessToken = useAuthStore((s) => s.accessToken);
   const [trip, setTrip] = useState<Trip | null>(null);
   const [members, setMembers] = useState<TripDetailMember[]>([]);
   const [region, setRegion] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   useEffect(() => {
-    if (!tripId) return;
+    if (!tripId || !accessToken) return;
     let cancelled = false;
     setLoading(true);
     setErrorMessage(null);
@@ -77,7 +85,7 @@ function TripPrintPageContent() {
     return () => {
       cancelled = true;
     };
-  }, [tripId]);
+  }, [tripId, accessToken]);
   // Auto-trigger the browser's print dialog once the trip has rendered.
   // The 200ms delay gives layout + SVG previews time to settle so the
   // first PDF page isn't blank — without it Chrome occasionally captures
