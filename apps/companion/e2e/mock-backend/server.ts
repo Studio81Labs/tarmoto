@@ -2094,23 +2094,22 @@ export function buildApp(): Express {
   });
 
   // `PATCH /users/me` mutates the user's profile fields. Production
-  // accepts `display_name` / `avatar_url` / `bio` / `home_region` /
-  // `phone` and validates display_name min-length on save. The mock
-  // mirrors the validation that the settings page also enforces
-  // client-side so an e2e that submits an empty name sees the same
-  // 400 the real backend serves.
+  // `UpdateProfileDto` only applies `@IsString()` + `@MaxLength(100)`
+  // on `display_name` — empty strings ARE accepted (the settings
+  // page enforces the non-empty rule client-side). Match production
+  // so the mock doesn't drift; only reject on type/length to stay
+  // faithful to the real backend contract.
   app.patch("/api/v1/users/me", requireAuth, (req: AuthedRequest, res) => {
     const user = state.users.get(req.session!.user_id)!;
     const body = req.body ?? {};
     if (
       body.display_name !== undefined &&
-      (typeof body.display_name !== "string" ||
-        body.display_name.trim().length === 0)
+      (typeof body.display_name !== "string" || body.display_name.length > 100)
     ) {
       res.status(400).json({
         statusCode: 400,
         error: "Bad Request",
-        message: "display_name must be a non-empty string",
+        message: "display_name must be a string (≤100 chars)",
       });
       return;
     }
