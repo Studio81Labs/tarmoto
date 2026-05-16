@@ -44,9 +44,15 @@ export interface MockRide {
   ride_type: string;
   status: string;
   started_at: string;
+  /**
+   * End timestamp. The companion derives `duration_min` from
+   * `ended_at - started_at` on both summary and detail responses
+   * (production `RidesService` doesn't store a duration column), so
+   * the mock derives it the same way at serialise time rather than
+   * caching a potentially-inconsistent value here.
+   */
   ended_at: string | null;
   distance_km: number;
-  duration_min: number;
   avg_speed: number;
   max_speed: number;
   avg_road_quality: number;

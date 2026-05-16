@@ -337,6 +337,17 @@ export function buildApp(): Express {
     }
     const id = ride.id ?? randomUUID();
     const startedAt = ride.started_at ?? new Date().toISOString();
+    // Production derives `duration_min` from `ended_at - started_at`,
+    // so the source of truth is the timestamps. The seed API still
+    // accepts `duration_min` as an ergonomic hint — use it to fix
+    // `ended_at` when callers didn't supply one — but the row no
+    // longer carries a separate stored duration that could drift.
+    const endedAt: string =
+      ride.ended_at ??
+      new Date(
+        new Date(startedAt).getTime() +
+          Number(ride.duration_min ?? 60) * 60 * 1000,
+      ).toISOString();
     const seeded: import("./state").MockRide = {
       id,
       user_id,
@@ -344,11 +355,8 @@ export function buildApp(): Express {
       ride_type: ride.ride_type ?? "leisure",
       status: ride.status ?? "completed",
       started_at: startedAt,
-      ended_at:
-        ride.ended_at ??
-        new Date(new Date(startedAt).getTime() + 60 * 60 * 1000).toISOString(),
+      ended_at: endedAt,
       distance_km: Number(ride.distance_km ?? 100),
-      duration_min: Number(ride.duration_min ?? 60),
       avg_speed: Number(ride.avg_speed ?? 80),
       max_speed: Number(ride.max_speed ?? 130),
       avg_road_quality: Number(ride.avg_road_quality ?? 4),
@@ -1344,9 +1352,16 @@ export function buildApp(): Express {
     const filtered = filterRides(req, session.user_id);
     const sort = String(req.query.sort ?? "started_at");
     const order = String(req.query.order ?? "desc") === "asc" ? 1 : -1;
+    // `duration_min` is a derived value — read it through the same
+    // `deriveDurationMin` helper the serializers use so sort + display
+    // stay consistent. Other fields read straight off the row.
+    const valueFor = (ride: import("./state").MockRide): unknown => {
+      if (sort === "duration_min") return deriveDurationMin(ride);
+      return (ride as unknown as Record<string, unknown>)[sort];
+    };
     const sorted = filtered.slice().sort((a, b) => {
-      const va = (a as unknown as Record<string, unknown>)[sort];
-      const vb = (b as unknown as Record<string, unknown>)[sort];
+      const va = valueFor(a);
+      const vb = valueFor(b);
       if (typeof va === "number" && typeof vb === "number") {
         return (va - vb) * order;
       }
@@ -1363,13 +1378,16 @@ export function buildApp(): Express {
 
   app.get("/api/v1/rides/tracks", requireAuth, (req: AuthedRequest, res) => {
     const session = req.session!;
-    const filtered = filterRides(req, session.user_id);
-    // `RidesService.getTracks` orders by `started_at DESC` then caps at
-    // 500 rides; the companion's map banner also tells users it's
-    // showing the most recent 500. Match both the order and the limit
-    // so a test seeding 500+ rides sees the same newest-500 slice as
-    // production rather than the insertion-ordered first 500.
+    // `RidesService.getTracks` filters `route_geom IS NOT NULL` first,
+    // then orders by `started_at DESC`, then caps at 500. The mock has
+    // to apply the same order so a test seeding many no-GPS rides plus
+    // one older route-bearing ride doesn't see the route get dropped
+    // by the cap (which would falsely flip `truncated` to true while
+    // production happily returns the route).
     const MAX = 500;
+    const filtered = filterRides(req, session.user_id).filter(
+      (ride) => ride.route_geometry.length >= 2,
+    );
     const ordered = filtered
       .slice()
       .sort((a, b) => b.started_at.localeCompare(a.started_at));
@@ -1378,15 +1396,12 @@ export function buildApp(): Express {
     res.json({
       tracks: visible.map((ride) => ({
         id: ride.id,
-        geometry:
-          ride.route_geometry.length > 0
-            ? {
-                type: "LineString" as const,
-                coordinates: ride.route_geometry.map(
-                  (p) => [p.lng, p.lat] as [number, number],
-                ),
-              }
-            : null,
+        geometry: {
+          type: "LineString" as const,
+          coordinates: ride.route_geometry.map(
+            (p) => [p.lng, p.lat] as [number, number],
+          ),
+        },
       })),
       truncated,
     });
@@ -1670,6 +1685,21 @@ function filterRides(
   });
 }
 
+/**
+ * Production derives `duration_min` from `ended_at - started_at` (the
+ * rides table has no stored duration column). Mirror that here so a
+ * test seeding inconsistent timestamps + duration can't get a green
+ * assertion against a value the real backend would never produce.
+ * Returns null when the ride is still active (ended_at unset).
+ */
+function deriveDurationMin(ride: import("./state").MockRide): number | null {
+  if (!ride.ended_at) return null;
+  const diffMs =
+    new Date(ride.ended_at).getTime() - new Date(ride.started_at).getTime();
+  if (!Number.isFinite(diffMs) || diffMs < 0) return null;
+  return Math.round(diffMs / 60_000);
+}
+
 function serializeRideSummary(ride: import("./state").MockRide) {
   return {
     id: ride.id,
@@ -1681,7 +1711,7 @@ function serializeRideSummary(ride: import("./state").MockRide) {
     distance_km: ride.distance_km,
     avg_speed: ride.avg_speed,
     avg_road_quality: ride.avg_road_quality,
-    duration_min: ride.duration_min,
+    duration_min: deriveDurationMin(ride),
   };
 }
 
@@ -1693,7 +1723,7 @@ function serializeRideDetail(ride: import("./state").MockRide) {
     started_at: ride.started_at,
     ended_at: ride.ended_at,
     distance_km: ride.distance_km,
-    duration_min: ride.duration_min,
+    duration_min: deriveDurationMin(ride),
     avg_speed: ride.avg_speed,
     max_speed: ride.max_speed,
     avg_road_quality: ride.avg_road_quality,
