@@ -161,11 +161,16 @@ export function tripFromDetail(detail: TripDetailResponse): Trip {
     status: VALID_TRIP_STATUSES.has(detail.status as Trip["status"])
       ? (detail.status as Trip["status"])
       : "draft",
-    // `num_days` is required on `TripSummary` (and inherited by
-    // `TripDetail`). Backend's `TripDetailDto` carries the field
-    // directly; fall back to `days.length` if the response shape
-    // ever lands here without it.
+    // `num_days` and `member_count` are required (or optional but
+    // inherited) on `TripSummary`. Backend's `TripDetailDto`
+    // extends `TripSummaryDto` and carries both; preserve them so
+    // a detail-derived row pushed into a `TripSummary[]` (e.g.
+    // the duplicate-trip flow on the /trips list) reads the same
+    // values a list-endpoint refetch would deliver. Without the
+    // member_count copy, duplicated collaborative trips would
+    // hide their rider count until the list refetches.
     num_days: detail.num_days ?? days.length,
+    member_count: detail.member_count ?? (detail.members ?? []).length,
     days,
     parameters: parametersFromDetail(detail),
     collaborators: (detail.members ?? []).map((m) => ({
