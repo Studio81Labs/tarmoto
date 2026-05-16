@@ -1441,9 +1441,12 @@ export function buildApp(): Express {
 
   app.get("/api/v1/collections/me", requireAuth, (req: AuthedRequest, res) => {
     const session = req.session!;
+    // Pass `ownedByViewer: true` so `owner_name` comes back `null` —
+    // matches `RouteCollectionsService.toSummaryResponse` on the
+    // self-owned endpoints.
     const items = [...state.collections.values()]
       .filter((c) => c.owner_id === session.user_id)
-      .map(serializeCollectionSummary);
+      .map((c) => serializeCollectionSummary(c, true));
     res.json({ items, total: items.length });
   });
 
@@ -1452,9 +1455,12 @@ export function buildApp(): Express {
     requireAuth,
     (req: AuthedRequest, res) => {
       const session = req.session!;
+      // `owned` is the rider's own rows → owner_name null. `followed`
+      // surfaces other riders' collections so their names stay
+      // populated (no rows here yet — follow state isn't modelled).
       const owned = [...state.collections.values()]
         .filter((c) => c.owner_id === session.user_id)
-        .map(serializeCollectionSummary);
+        .map((c) => serializeCollectionSummary(c, true));
       res.json({ owned, followed: [] });
     },
   );
@@ -2014,6 +2020,14 @@ function serializeRideDetail(ride: import("./state").MockRide) {
 
 function serializeCollectionSummary(
   collection: import("./state").MockCollection,
+  /**
+   * Suppresses `owner_name` when true. Production's
+   * `RouteCollectionsService.toSummaryResponse` returns `null` for the
+   * rider's own rows — the rider knows their own name — and populates
+   * the field only on surfaces that show other riders' collections
+   * (followed list, by-slug responses, etc.).
+   */
+  ownedByViewer = false,
 ) {
   const owner = state.users.get(collection.owner_id);
   return {
@@ -2024,10 +2038,9 @@ function serializeCollectionSummary(
     visibility: collection.visibility,
     slug: collection.slug,
     item_count: 0,
-    // /collections/me suppresses owner_name (rider knows their own
-    // name); other surfaces echo it. The serializer always returns
-    // the display name and lets each endpoint null it out if needed.
-    owner_name: owner?.display_name ?? "Anonymous Rider",
+    owner_name: ownedByViewer
+      ? null
+      : (owner?.display_name ?? "Anonymous Rider"),
     created_at: collection.created_at,
     updated_at: collection.updated_at,
   };
@@ -2038,7 +2051,7 @@ function serializeCollectionDetail(
   viewerOwns: boolean,
 ) {
   return {
-    ...serializeCollectionSummary(collection),
+    ...serializeCollectionSummary(collection, viewerOwns),
     items: [],
     viewer_is_owner: viewerOwns,
     viewer_is_following: false,
