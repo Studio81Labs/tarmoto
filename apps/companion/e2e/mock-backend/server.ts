@@ -1663,6 +1663,26 @@ function pushActivity(
   });
 }
 
+// Great-circle distance between two WGS84 lat/lng points in km.
+// Mirrors `ST_DWithin(..., :radius_m)` precisely enough for the
+// proximity-filter contract — Haversine is what PostGIS reduces to
+// over short distances on geography columns.
+function haversineKm(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): number {
+  const R = 6371; // km
+  const toRad = (n: number) => (n * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.sin(dLng / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
 function filterRides(
   req: Request,
   userId: string,
@@ -1678,6 +1698,21 @@ function filterRides(
   const maxQuality = q.max_quality != null ? Number(q.max_quality) : null;
   const search = q.q ? String(q.q).toLowerCase() : null;
   const type = q.type ? String(q.type) : null;
+  // `RidesService.applyRidesFilters` runs `ST_DWithin(route_geom, :pt,
+  // :radius_m)` when all three params are present; the companion's
+  // `useRidesQuery::toListParams` only ships the trio together, so
+  // require the full set here too. Partial params silently drop the
+  // proximity filter (matches production's all-or-nothing behaviour).
+  const nearLat = q.near_lat != null ? Number(q.near_lat) : null;
+  const nearLng = q.near_lng != null ? Number(q.near_lng) : null;
+  const nearKm = q.near_km != null ? Number(q.near_km) : null;
+  const nearActive =
+    nearLat != null &&
+    nearLng != null &&
+    nearKm != null &&
+    Number.isFinite(nearLat) &&
+    Number.isFinite(nearLng) &&
+    Number.isFinite(nearKm);
   return [...state.rides.values()].filter((ride) => {
     if (ride.user_id !== userId) return false;
     if (startedFrom && ride.started_at < startedFrom) return false;
@@ -1698,6 +1733,17 @@ function filterRides(
       return false;
     }
     if (type && ride.ride_type !== type) return false;
+    if (nearActive) {
+      // `ST_DWithin` against a NULL geometry is false; rides with no
+      // route geometry can never satisfy a proximity filter, so drop
+      // them before scanning points.
+      if (ride.route_geometry.length === 0) return false;
+      const center = { lat: nearLat, lng: nearLng };
+      const withinRadius = ride.route_geometry.some(
+        (p) => haversineKm(p, center) <= nearKm,
+      );
+      if (!withinRadius) return false;
+    }
     return true;
   });
 }
