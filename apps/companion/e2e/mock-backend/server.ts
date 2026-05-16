@@ -2093,23 +2093,44 @@ export function buildApp(): Express {
     });
   });
 
-  // `PATCH /users/me` mutates the user's profile fields. Production
-  // `UpdateProfileDto` only applies `@IsString()` + `@MaxLength(100)`
-  // on `display_name` — empty strings ARE accepted (the settings
-  // page enforces the non-empty rule client-side). Match production
-  // so the mock doesn't drift; only reject on type/length to stay
-  // faithful to the real backend contract.
+  // `PATCH /users/me` mutates the user's profile fields. Mirrors
+  // production `UpdateProfileDto`:
+  // - `display_name`: string, ≤100
+  // - `phone`:        string, ≤20
+  // - `avatar_url`:   string|null, ≤500
+  // - `bio`:          string|null, ≤500
+  // - `home_region`:  string|null, ≤120
+  // `@IsOptional` in class-validator treats `null` AND `undefined`
+  // as "skip validation" — so nullable fields accept `null` to
+  // clear, and a present non-null value must satisfy the rest. The
+  // mock matches that semantics so a too-long or non-string value
+  // surfaces the same 400 production would serve.
   app.patch("/api/v1/users/me", requireAuth, (req: AuthedRequest, res) => {
     const user = state.users.get(req.session!.user_id)!;
     const body = req.body ?? {};
-    if (
-      body.display_name !== undefined &&
-      (typeof body.display_name !== "string" || body.display_name.length > 100)
-    ) {
+    const violations: string[] = [];
+    const validateString = (
+      field: string,
+      maxLength: number,
+      nullable: boolean,
+    ) => {
+      if (!(field in body)) return;
+      const value = body[field];
+      if (nullable && value === null) return;
+      if (typeof value !== "string" || value.length > maxLength) {
+        violations.push(`${field} must be a string (≤${maxLength} chars)`);
+      }
+    };
+    validateString("display_name", 100, false);
+    validateString("phone", 20, false);
+    validateString("avatar_url", 500, true);
+    validateString("bio", 500, true);
+    validateString("home_region", 120, true);
+    if (violations.length > 0) {
       res.status(400).json({
         statusCode: 400,
         error: "Bad Request",
-        message: "display_name must be a string (≤100 chars)",
+        message: violations,
       });
       return;
     }

@@ -204,6 +204,12 @@ test.describe("account & settings", () => {
       .getByRole("status")
       .filter({ hasText: /download your data/i });
     await expect(downloadLink).toBeVisible({ timeout: 5_000 });
-    await expect(downloadLink).toHaveAttribute("href", /https?:\/\/.*\.zip$/);
+    // The OpenAPI `DataExportRequestDto.downloadUrl` is just a
+    // string — production `DataExportService.buildPublicView`
+    // signs URLs like `/api/v1/account/data-export/:id/download
+    // ?sig=…&exp=…`. Only assert it's a non-empty http(s) URL so
+    // the test doesn't break the day the mock is aligned with
+    // the real signed-URL shape.
+    await expect(downloadLink).toHaveAttribute("href", /^https?:\/\/\S+/);
   });
 });
