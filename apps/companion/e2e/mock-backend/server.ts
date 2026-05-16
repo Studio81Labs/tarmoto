@@ -1429,6 +1429,14 @@ export function buildApp(): Express {
       res.status(404).json({ message: "not-found" });
       return;
     }
+    // Production `RouteCollectionsService.getBySlug` 404s when the
+    // owner has been soft-deleted (`deletedUsers` here) — a deleted
+    // rider's shared collection should disappear regardless of
+    // visibility.
+    if (state.deletedUsers.has(collection.owner_id)) {
+      res.status(404).json({ message: "not-found" });
+      return;
+    }
     // Production runs `OptionalAuthGuard` here: the bearer token is
     // read if present, and the viewer's identity feeds
     // `viewer_is_owner` / `viewer_is_following` so the page can render
@@ -1436,17 +1444,24 @@ export function buildApp(): Express {
     const session = state.resolveSession(req.header("authorization"));
     const viewerOwns =
       session != null && session.user_id === collection.owner_id;
-    res.json(serializeCollectionDetail(collection, viewerOwns));
+    // Privacy masking: `toSummaryResponse` returns `owner_id: null` +
+    // `owner_name: null` for non-self viewers when the owner's
+    // `profile_visibility` is private. The viewer always sees their
+    // own row unmasked, even via the public-slug path.
+    const ownerPrivacy = state.privacy.get(collection.owner_id);
+    const maskOwner =
+      ownerPrivacy?.profile_visibility === "private" && !viewerOwns;
+    res.json(serializeCollectionDetail(collection, viewerOwns, { maskOwner }));
   });
 
   app.get("/api/v1/collections/me", requireAuth, (req: AuthedRequest, res) => {
     const session = req.session!;
-    // Pass `ownedByViewer: true` so `owner_name` comes back `null` —
-    // matches `RouteCollectionsService.toSummaryResponse` on the
-    // self-owned endpoints.
+    // `ownedByViewer: true` nulls `owner_name` — matches
+    // `RouteCollectionsService.toSummaryResponse` on the self-owned
+    // endpoints.
     const items = [...state.collections.values()]
       .filter((c) => c.owner_id === session.user_id)
-      .map((c) => serializeCollectionSummary(c, true));
+      .map((c) => serializeCollectionSummary(c, { ownedByViewer: true }));
     res.json({ items, total: items.length });
   });
 
@@ -1460,7 +1475,7 @@ export function buildApp(): Express {
       // populated (no rows here yet — follow state isn't modelled).
       const owned = [...state.collections.values()]
         .filter((c) => c.owner_id === session.user_id)
-        .map((c) => serializeCollectionSummary(c, true));
+        .map((c) => serializeCollectionSummary(c, { ownedByViewer: true }));
       res.json({ owned, followed: [] });
     },
   );
@@ -2018,29 +2033,52 @@ function serializeRideDetail(ride: import("./state").MockRide) {
   };
 }
 
-function serializeCollectionSummary(
-  collection: import("./state").MockCollection,
+interface CollectionSerializeOptions {
   /**
    * Suppresses `owner_name` when true. Production's
    * `RouteCollectionsService.toSummaryResponse` returns `null` for the
-   * rider's own rows — the rider knows their own name — and populates
-   * the field only on surfaces that show other riders' collections
-   * (followed list, by-slug responses, etc.).
+   * rider's own rows (the rider knows their own name) and populates
+   * the field only on surfaces that show other riders' collections.
    */
-  ownedByViewer = false,
-) {
+  ownedByViewer?: boolean;
+  /**
+   * Masks BOTH `owner_id` and `owner_name` to `null`. Production
+   * applies this when the owner's `profile_visibility` is private and
+   * the viewer is not the owner themselves — see
+   * `RouteCollectionsService.toSummaryResponse`'s private-owner
+   * branch.
+   */
+  maskOwner?: boolean;
+}
+
+function serializeCollectionSummary(
+  collection: import("./state").MockCollection,
+  opts: CollectionSerializeOptions = {},
+): {
+  id: string;
+  owner_id: string | null;
+  title: string;
+  description: string | null;
+  visibility: string;
+  slug: string;
+  item_count: number;
+  owner_name: string | null;
+  created_at: string;
+  updated_at: string;
+} {
   const owner = state.users.get(collection.owner_id);
   return {
     id: collection.id,
-    owner_id: collection.owner_id,
+    owner_id: opts.maskOwner ? null : collection.owner_id,
     title: collection.title,
     description: collection.description,
     visibility: collection.visibility,
     slug: collection.slug,
     item_count: 0,
-    owner_name: ownedByViewer
-      ? null
-      : (owner?.display_name ?? "Anonymous Rider"),
+    owner_name:
+      opts.maskOwner || opts.ownedByViewer
+        ? null
+        : (owner?.display_name ?? "Anonymous Rider"),
     created_at: collection.created_at,
     updated_at: collection.updated_at,
   };
@@ -2049,10 +2087,14 @@ function serializeCollectionSummary(
 function serializeCollectionDetail(
   collection: import("./state").MockCollection,
   viewerOwns: boolean,
+  opts: { maskOwner?: boolean } = {},
 ) {
   return {
-    ...serializeCollectionSummary(collection, viewerOwns),
-    items: [],
+    ...serializeCollectionSummary(collection, {
+      ownedByViewer: viewerOwns,
+      maskOwner: opts.maskOwner,
+    }),
+    items: [] as unknown[],
     viewer_is_owner: viewerOwns,
     viewer_is_following: false,
   };
