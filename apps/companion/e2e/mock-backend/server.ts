@@ -1547,22 +1547,41 @@ export function buildApp(): Express {
     // from what the real backend would return.
     if (typeof req.query.bbox === "string") {
       const parts = req.query.bbox.split(",").map(Number);
-      if (parts.length === 4 && parts.every(Number.isFinite)) {
-        const [minLng, minLat, maxLng, maxLat] = parts as [
-          number,
-          number,
-          number,
-          number,
-        ];
-        // Exact segment-vs-rectangle intersection so a closure
-        // whose vertices are both outside the bbox but whose
-        // segment crosses through still matches — mirrors
-        // `ST_Intersects(c.geom, envelope)` without sampling
-        // tolerance.
-        rows = rows.filter((c) =>
-          polylineIntersectsBbox(c.geometry, minLng, minLat, maxLng, maxLat),
-        );
+      // Mirror production `ClosuresService.parseBbox`:
+      // - 4 finite numbers required (else 400)
+      // - min < max on both axes (else 400)
+      // Without these, a planner regression that flips/breaks the
+      // bbox would keep T13-style tests on the normal empty path
+      // instead of surfacing the production 400.
+      if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) {
+        res.status(400).json({
+          statusCode: 400,
+          error: "Bad Request",
+          message: 'bbox must be "minLng,minLat,maxLng,maxLat"',
+        });
+        return;
       }
+      const [minLng, minLat, maxLng, maxLat] = parts as [
+        number,
+        number,
+        number,
+        number,
+      ];
+      if (minLng >= maxLng || minLat >= maxLat) {
+        res.status(400).json({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "bbox min must be strictly less than max for both axes",
+        });
+        return;
+      }
+      // Exact segment-vs-rectangle intersection so a closure whose
+      // vertices are both outside the bbox but whose segment crosses
+      // through still matches — mirrors `ST_Intersects(c.geom,
+      // envelope)`.
+      rows = rows.filter((c) =>
+        polylineIntersectsBbox(c.geometry, minLng, minLat, maxLng, maxLat),
+      );
     }
     if (typeof req.query.severity === "string") {
       rows = rows.filter((c) => c.severity === req.query.severity);
