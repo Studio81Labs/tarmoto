@@ -63,6 +63,19 @@ export interface MockRide {
   fuel_estimate_l: number;
   /** Polyline of {lat, lng} points, ordered along direction of travel. */
   route_geometry: Array<{ lat: number; lng: number }>;
+  /**
+   * Per-segment telemetry powering the speed graph, quality breakdown,
+   * and segments table on the detail page. Empty array is the
+   * legitimate "no segment telemetry yet" state — keep both branches
+   * testable.
+   */
+  segments: Array<{
+    road_name: string | null;
+    quality_reading: number | null;
+    speed_avg: number | null;
+    speed_max: number | null;
+    lean_angle_max: number | null;
+  }>;
 }
 
 export interface MockSuggestion {

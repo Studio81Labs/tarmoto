@@ -371,6 +371,23 @@ export function buildApp(): Express {
             { lat: 46.47, lng: 10.37 },
             { lat: 46.55, lng: 10.45 },
           ],
+      segments: Array.isArray(ride.segments)
+        ? ride.segments.map(
+            (s: {
+              road_name?: string | null;
+              quality_reading?: number | null;
+              speed_avg?: number | null;
+              speed_max?: number | null;
+              lean_angle_max?: number | null;
+            }) => ({
+              road_name: s.road_name ?? null,
+              quality_reading: s.quality_reading ?? null,
+              speed_avg: s.speed_avg ?? null,
+              speed_max: s.speed_max ?? null,
+              lean_angle_max: s.lean_angle_max ?? null,
+            }),
+          )
+        : [],
     };
     state.rides.set(id, seeded);
     res.status(201).json({ id });
@@ -1733,9 +1750,6 @@ function serializeRideDetail(ride: import("./state").MockRide) {
     max_lean_angle: ride.max_lean_angle,
     fuel_estimate_l: ride.fuel_estimate_l,
     route_geometry: ride.route_geometry,
-    // Per-segment breakdown is rendered as a chart on the detail page —
-    // an empty array is the legitimate "no segment data yet" state and
-    // keeps the chart hidden without breaking the page.
-    segments: [],
+    segments: ride.segments,
   };
 }

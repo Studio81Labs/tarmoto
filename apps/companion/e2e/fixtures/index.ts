@@ -44,6 +44,13 @@ export interface SeedRideOpts {
   max_lean_angle?: number;
   fuel_estimate_l?: number;
   route_geometry?: Array<{ lat: number; lng: number }>;
+  segments?: Array<{
+    road_name?: string | null;
+    quality_reading?: number | null;
+    speed_avg?: number | null;
+    speed_max?: number | null;
+    lean_angle_max?: number | null;
+  }>;
 }
 
 export interface MockApi {

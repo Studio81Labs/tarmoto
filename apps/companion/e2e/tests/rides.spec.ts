@@ -31,6 +31,26 @@ const RIDE_DETAIL = {
   avg_road_quality: 4.2,
   avg_speed: 90,
   elevation_gain: 1200,
+  // Segment telemetry populates the speed graph, quality breakdown,
+  // and segments table on the detail page — without it, the speed
+  // graph stays in its empty state and the doc-level T31 acceptance
+  // criterion ("speed graph") goes uncovered.
+  segments: [
+    {
+      road_name: "Stelvio Pass",
+      quality_reading: 4.5,
+      speed_avg: 62,
+      speed_max: 95,
+      lean_angle_max: 38,
+    },
+    {
+      road_name: "Bormio Loop",
+      quality_reading: 4.1,
+      speed_avg: 78,
+      speed_max: 110,
+      lean_angle_max: 32,
+    },
+  ],
 };
 
 test.describe("rides read path", () => {
@@ -196,5 +216,24 @@ test.describe("rides read path", () => {
     // it by its aria-label rather than `getByRole("region", …)`.
     await expect(page.getByLabel(/ride route map/i)).toBeVisible();
     await expect(page.getByText(/no gps track was recorded/i)).toBeHidden();
+
+    // Speed graph: the Speed-graph SectionHeader has two subtitle
+    // branches — empty ("Speed samples are attached once segment
+    // telemetry…") and populated ("X km/h peak across recorded
+    // segments."). Seeding two segments puts it into the populated
+    // branch with a 110 km/h peak; asserting that phrase catches a
+    // regression that dropped per-segment hydration on the wire.
+    await expect(
+      page.getByText(/km\/h peak across recorded segments/i),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/speed samples are attached once segment telemetry/i),
+    ).toBeHidden();
+
+    // Segments table: each seeded segment surfaces by its road_name.
+    // Also covers the "Per-segment road quality, speed, and lean
+    // angle" panel the doc names alongside the chart.
+    await expect(page.getByText("Stelvio Pass")).toBeVisible();
+    await expect(page.getByText("Bormio Loop")).toBeVisible();
   });
 });
