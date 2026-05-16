@@ -38,6 +38,7 @@ export interface SeedRideOpts {
   avg_speed?: number;
   max_speed?: number;
   avg_road_quality?: number;
+  avg_curviness?: number | null;
   elevation_gain?: number;
   elevation_loss?: number;
   curve_count?: number;
@@ -70,6 +71,16 @@ export interface MockApi {
     rideId: string,
     opts?: { token?: string },
   ): Promise<{ token: string }>;
+  seedCollection(
+    user: SeededUser,
+    opts?: {
+      id?: string;
+      title?: string;
+      description?: string | null;
+      visibility?: "private" | "unlisted" | "public";
+      slug?: string;
+    },
+  ): Promise<{ id: string; slug: string }>;
 }
 
 function buildMockApi(api: APIRequestContext): MockApi {
@@ -150,6 +161,18 @@ function buildMockApi(api: APIRequestContext): MockApi {
         );
       }
       return (await res.json()) as { token: string };
+    },
+    async seedCollection(user, opts = {}) {
+      const res = await api.post(
+        `${MOCK_BACKEND_URL}/__test__/seed-collection`,
+        { data: { owner_id: user.id, collection: opts } },
+      );
+      if (!res.ok()) {
+        throw new Error(
+          `seedCollection failed: ${res.status()} ${await res.text()}`,
+        );
+      }
+      return (await res.json()) as { id: string; slug: string };
     },
   };
 }

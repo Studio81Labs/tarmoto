@@ -360,6 +360,13 @@ export function buildApp(): Express {
       avg_speed: Number(ride.avg_speed ?? 80),
       max_speed: Number(ride.max_speed ?? 130),
       avg_road_quality: Number(ride.avg_road_quality ?? 4),
+      // `avg_curviness` is explicitly nullable on the wire — production
+      // returns null when no scored segments were crossed. Default to a
+      // mid-range value (3) so seeded rides exercise the populated
+      // branch; tests that want the null branch can pass `avg_curviness:
+      // null` explicitly.
+      avg_curviness:
+        ride.avg_curviness === null ? null : Number(ride.avg_curviness ?? 3),
       elevation_gain: Number(ride.elevation_gain ?? 500),
       elevation_loss: Number(ride.elevation_loss ?? 500),
       curve_count: Number(ride.curve_count ?? 80),
@@ -393,18 +400,52 @@ export function buildApp(): Express {
     res.status(201).json({ id });
   });
 
+  // Stand up a route collection so `/community/collections/*` flows
+  // have something to render. Caller controls visibility + slug so a
+  // shared-by-slug e2e can hit a deterministic URL.
+  app.post("/__test__/seed-collection", (req, res) => {
+    const { owner_id, collection } = req.body ?? {};
+    if (!owner_id || !state.users.has(owner_id)) {
+      res.status(400).json({ message: "owner-not-found" });
+      return;
+    }
+    const c = collection ?? {};
+    const id = c.id ?? randomUUID();
+    const slug = String(c.slug ?? `collection-${id.slice(0, 8)}`);
+    const now = new Date().toISOString();
+    const seeded: import("./state").MockCollection = {
+      id,
+      owner_id,
+      title: String(c.title ?? "Untitled collection"),
+      description: c.description ?? null,
+      visibility: c.visibility ?? "private",
+      slug,
+      created_at: c.created_at ?? now,
+      updated_at: c.updated_at ?? now,
+    };
+    state.collections.set(id, seeded);
+    state.collectionsBySlug.set(slug, id);
+    res.status(201).json({ id, slug });
+  });
+
   // Stand up a public-share record so an anonymous visit to
-  // `/rides/shared/:token` can resolve to a seeded ride. Token defaults
-  // to a generated one; tests can pin a known token for deterministic
-  // URLs.
+  // `/rides/shared/:token` can resolve to a seeded ride. Token
+  // defaults to a generated one; `is_public` defaults to true so the
+  // share also flows through the public `/rides/community` feed —
+  // tests that need a private/unlisted share can pass `is_public:
+  // false`.
   app.post("/__test__/seed-ride-share", (req, res) => {
-    const { ride_id, token } = req.body ?? {};
+    const { ride_id, token, is_public } = req.body ?? {};
     if (!ride_id || !state.rides.has(ride_id)) {
       res.status(400).json({ message: "ride-not-found" });
       return;
     }
     const finalToken = String(token ?? randomUUID());
-    state.rideShares.set(finalToken, ride_id);
+    state.rideShares.set(finalToken, {
+      ride_id,
+      is_public: is_public !== false,
+      view_count: 0,
+    });
     res.status(201).json({ token: finalToken });
   });
 
@@ -1374,6 +1415,473 @@ export function buildApp(): Express {
     res.json([]);
   });
 
+  // ── Community feed ───────────────────────────────────────────────
+  // Production `SharingController.listCommunityRides` is an anonymous
+  // endpoint — no `@UseGuards(AuthGuard)`. It reads `SharedRide` rows
+  // with `sr.is_public = true` and joins to the ride row. The mock
+  // mirrors that by scanning `state.rideShares` for public entries
+  // and serializing each backing ride as a community card. Empty
+  // state remains the default when nothing is seeded.
+  app.get("/api/v1/rides/community", (req, res) => {
+    const q = req.query;
+    // `SharingService.listCommunityRides` defaults to `?? 20` when
+    // the caller omits `limit`. The companion's feed page sends its
+    // own PAGE_SIZE of 9, but API-only consumers + tests that rely
+    // on the backend default get the matching 20-row first page.
+    const limit = Math.max(0, Number(q.limit ?? 20));
+    const offset = Math.max(0, Number(q.offset ?? 0));
+    // `SharingService.listCommunityRides` defaults to `newest` when
+    // the caller omits `sort` (`query.sort ?? 'newest'`). Match that
+    // so API-only consumers + the few companion paths that don't
+    // serialize a sort still see the same default order the backend
+    // returns.
+    const sort = String(q.sort ?? "newest");
+    // Companion-side `buildCommunityRideQuery` ships these filters;
+    // production applies each as a SQL predicate before paging
+    // (`SharingService.listCommunityRides`). Parse once so the inner
+    // loop stays linear.
+    const filterRideType = q.ride_type ? String(q.ride_type) : null;
+    const filterMinQuality =
+      q.min_quality != null ? Number(q.min_quality) : null;
+    const filterMinPopularity =
+      q.min_popularity != null ? Number(q.min_popularity) : null;
+    const filterMinDistance =
+      q.min_distance_km != null ? Number(q.min_distance_km) : null;
+    const filterMaxDistance =
+      q.max_distance_km != null ? Number(q.max_distance_km) : null;
+    // Location filter: production activates spatial filtering as
+    // soon as `lat` + `lng` are present, defaulting `radius_km` to
+    // 25 km. The companion always sends all three together, but
+    // API-only consumers (or tests that mimic them) can omit the
+    // radius and still expect filtering + nearest-sort to kick in.
+    const filterLat = q.lat != null ? Number(q.lat) : null;
+    const filterLng = q.lng != null ? Number(q.lng) : null;
+    const rawRadius = q.radius_km != null ? Number(q.radius_km) : null;
+    const latValid = filterLat != null && Number.isFinite(filterLat);
+    const lngValid = filterLng != null && Number.isFinite(filterLng);
+    // Production `CommunityRidesQueryDto` requires both coordinates
+    // whenever `sort === 'nearest'` (`@ValidateIf((o) => ... || o.sort
+    // === 'nearest')` + `@IsLatitude`/`@IsLongitude`) AND when one
+    // coordinate is supplied without the other (so we never run a
+    // half-defined spatial query). Reject the same way — a 400 here
+    // surfaces companion bugs (e.g. the nearest option leaking
+    // through after the place is cleared) instead of letting the mock
+    // silently re-sort to popularity.
+    if (sort === "nearest" && !(latValid && lngValid)) {
+      res.status(400).json({
+        statusCode: 400,
+        error: "Bad Request",
+        message: "nearest sort requires lat and lng",
+      });
+      return;
+    }
+    if (latValid !== lngValid) {
+      res.status(400).json({
+        statusCode: 400,
+        error: "Bad Request",
+        message: "lat and lng must be provided together",
+      });
+      return;
+    }
+    const locationActive = latValid && lngValid;
+    const filterRadiusKm = locationActive
+      ? rawRadius != null && Number.isFinite(rawRadius)
+        ? rawRadius
+        : 25
+      : null;
+    const filterMinCurviness =
+      q.min_curviness != null ? Number(q.min_curviness) : null;
+    const filterMaxCurviness =
+      q.max_curviness != null ? Number(q.max_curviness) : null;
+
+    const all: Array<{
+      ride: import("./state").MockRide;
+      share: { token: string; view_count: number };
+    }> = [];
+    for (const [token, share] of state.rideShares.entries()) {
+      if (!share.is_public) continue;
+      const ride = state.rides.get(share.ride_id);
+      if (!ride) continue;
+      // `SharingService.listCommunityRides` excludes rides whose
+      // owner has been soft-deleted or whose profile is private —
+      // production hides their cards from the public feed even when
+      // the share row stays public.
+      if (state.deletedUsers.has(ride.user_id)) continue;
+      const ownerPrivacy = state.privacy.get(ride.user_id);
+      if (ownerPrivacy?.profile_visibility === "private") continue;
+
+      // Filter predicates — each mirrors the corresponding SQL
+      // clause in `applyCommunityRidesFilters`.
+      if (filterRideType && ride.ride_type !== filterRideType) continue;
+      if (
+        filterMinQuality != null &&
+        ride.avg_road_quality < filterMinQuality
+      ) {
+        continue;
+      }
+      if (
+        filterMinPopularity != null &&
+        share.view_count < filterMinPopularity
+      ) {
+        continue;
+      }
+      if (filterMinDistance != null && ride.distance_km < filterMinDistance) {
+        continue;
+      }
+      if (filterMaxDistance != null && ride.distance_km > filterMaxDistance) {
+        continue;
+      }
+      // `applyCommunityRidesFilters` uses `ride.avg_curviness IS NOT
+      // NULL AND ride.avg_curviness >= :min_curviness` — both halves
+      // matter: a ride with `null` curviness is dropped by the filter
+      // even if the threshold is 0.
+      if (filterMinCurviness != null) {
+        if (ride.avg_curviness == null) continue;
+        if (ride.avg_curviness < filterMinCurviness) continue;
+      }
+      // `max_curviness` uses the same `IS NOT NULL AND <= :max` shape:
+      // null-curviness rides are excluded even when the cap is high,
+      // mirroring production.
+      if (filterMaxCurviness != null) {
+        if (ride.avg_curviness == null) continue;
+        if (ride.avg_curviness > filterMaxCurviness) continue;
+      }
+      if (locationActive) {
+        // No route geometry ⇒ can't satisfy `ST_DWithin`; drop the
+        // ride from the location-scoped feed, matching production.
+        if (ride.route_geometry.length === 0) continue;
+        const dist = kmToPolyline(
+          { lat: filterLat!, lng: filterLng! },
+          ride.route_geometry,
+        );
+        if (dist > filterRadiusKm!) continue;
+      }
+
+      all.push({ ride, share: { token, view_count: share.view_count } });
+    }
+    // Sort comparators mirror `SharingService.applySort` predicate-
+    // by-predicate. Every CommunityRideSort the companion ships has
+    // a real ORDER BY in production:
+    //   newest          → started_at DESC, ride.id DESC
+    //   oldest          → started_at ASC,  ride.id ASC
+    //   longest         → distance_km DESC, ride.id DESC
+    //   shortest        → distance_km ASC,  ride.id ASC
+    //   highest_quality → avg_road_quality DESC, ride.id DESC
+    //   curviest        → avg_curviness DESC NULLS LAST, ride.id DESC
+    //   most_popular    → view_count DESC, ride.id DESC (default)
+    //   nearest         → polyline-to-center ASC, ride.id ASC (only
+    //                     when the location filter is active)
+    // Tiebreaker direction matches the primary key's direction so
+    // ties paginate in the same order the backend serves them.
+    const idTiebreak = (
+      a: { ride: { id: string } },
+      b: { ride: { id: string } },
+      direction: "asc" | "desc",
+    ) =>
+      direction === "asc"
+        ? a.ride.id.localeCompare(b.ride.id)
+        : b.ride.id.localeCompare(a.ride.id);
+    all.sort((a, b) => {
+      switch (sort) {
+        case "nearest": {
+          if (!locationActive) break;
+          const da = kmToPolyline(
+            { lat: filterLat!, lng: filterLng! },
+            a.ride.route_geometry,
+          );
+          const db = kmToPolyline(
+            { lat: filterLat!, lng: filterLng! },
+            b.ride.route_geometry,
+          );
+          const dd = da - db;
+          return dd !== 0 ? dd : idTiebreak(a, b, "asc");
+        }
+        case "newest": {
+          const dt = b.ride.started_at.localeCompare(a.ride.started_at);
+          return dt !== 0 ? dt : idTiebreak(a, b, "desc");
+        }
+        case "oldest": {
+          const dt = a.ride.started_at.localeCompare(b.ride.started_at);
+          return dt !== 0 ? dt : idTiebreak(a, b, "asc");
+        }
+        case "longest": {
+          const dd = b.ride.distance_km - a.ride.distance_km;
+          return dd !== 0 ? dd : idTiebreak(a, b, "desc");
+        }
+        case "shortest": {
+          const dd = a.ride.distance_km - b.ride.distance_km;
+          return dd !== 0 ? dd : idTiebreak(a, b, "asc");
+        }
+        case "highest_quality": {
+          const dq = b.ride.avg_road_quality - a.ride.avg_road_quality;
+          return dq !== 0 ? dq : idTiebreak(a, b, "desc");
+        }
+        case "curviest": {
+          // NULLS LAST: rides without a curviness reading sort after
+          // those with one regardless of direction.
+          const av = a.ride.avg_curviness;
+          const bv = b.ride.avg_curviness;
+          if (av == null && bv == null) return idTiebreak(a, b, "desc");
+          if (av == null) return 1;
+          if (bv == null) return -1;
+          const dc = bv - av;
+          return dc !== 0 ? dc : idTiebreak(a, b, "desc");
+        }
+        // most_popular (default).
+      }
+      const dv = b.share.view_count - a.share.view_count;
+      return dv !== 0 ? dv : idTiebreak(a, b, "desc");
+    });
+    const page = all.slice(offset, offset + limit);
+    res.json({
+      items: page.map(({ ride, share }) => {
+        const owner = state.users.get(ride.user_id);
+        return {
+          id: ride.id,
+          share_token: share.token,
+          rider_id: ride.user_id,
+          rider_name: owner?.display_name ?? "Anonymous Rider",
+          rider_avatar_url: null,
+          ride_type: ride.ride_type,
+          started_at: ride.started_at,
+          distance_km: ride.distance_km,
+          avg_speed: ride.avg_speed,
+          avg_road_quality: ride.avg_road_quality,
+          avg_curviness: ride.avg_curviness,
+          duration_min: deriveDurationMin(ride),
+          view_count: share.view_count,
+          route_geometry: ride.route_geometry,
+        };
+      }),
+      total: all.length,
+      limit,
+      offset,
+    });
+  });
+
+  // ── Route collections ────────────────────────────────────────────
+  // Public shared-collection view is registered BEFORE the authed
+  // `:id` route so the literal `by-slug` path segment isn't captured
+  // as a collection id.
+  app.get("/api/v1/collections/by-slug/:slug", (req, res) => {
+    const collectionId = state.collectionsBySlug.get(param(req, "slug"));
+    const collection = collectionId
+      ? state.collections.get(collectionId)
+      : null;
+    if (
+      !collection ||
+      (collection.visibility !== "public" &&
+        collection.visibility !== "unlisted")
+    ) {
+      res.status(404).json({ message: "not-found" });
+      return;
+    }
+    // Production `RouteCollectionsService.getBySlug` 404s when the
+    // owner has been soft-deleted (`deletedUsers` here) — a deleted
+    // rider's shared collection should disappear regardless of
+    // visibility.
+    if (state.deletedUsers.has(collection.owner_id)) {
+      res.status(404).json({ message: "not-found" });
+      return;
+    }
+    // Production runs `OptionalAuthGuard` here: the bearer token is
+    // read if present, and the viewer's identity feeds
+    // `viewer_is_owner` / `viewer_is_following` so the page can render
+    // the right CTA. Mirror that — fall back to anonymous if no token.
+    const session = state.resolveSession(req.header("authorization"));
+    const viewerOwns =
+      session != null && session.user_id === collection.owner_id;
+    // Privacy masking: `toSummaryResponse` returns `owner_id: null` +
+    // `owner_name: null` for non-self viewers when the owner's
+    // `profile_visibility` is private. The viewer always sees their
+    // own row unmasked, even via the public-slug path.
+    const ownerPrivacy = state.privacy.get(collection.owner_id);
+    const maskOwner =
+      ownerPrivacy?.profile_visibility === "private" && !viewerOwns;
+    // `viewer_is_following` reflects the signed-in viewer's follow
+    // state — anonymous and the owner themselves always see false.
+    const viewerIsFollowing =
+      session != null && !viewerOwns
+        ? (state.collectionFollows.get(session.user_id)?.has(collection.id) ??
+          false)
+        : false;
+    res.json(
+      serializeCollectionDetail(collection, viewerOwns, {
+        maskOwner,
+        viewerIsFollowing,
+      }),
+    );
+  });
+
+  // Public preview geometries for the shared-collection page —
+  // `CollectionPreviewMap` fetches this on mount. Production
+  // `RouteCollectionsController.getPreviewBySlug` is unauthenticated
+  // and mirrors the by-slug visibility gates (404 on private,
+  // 404 on soft-deleted owner). Items live in `route_collection_items`
+  // which the mock doesn't model, so the response is the natural
+  // empty-collection shape `{ routes: [] }` — same payload production
+  // returns for a public collection with zero items.
+  app.get("/api/v1/collections/by-slug/:slug/preview", (req, res) => {
+    const collectionId = state.collectionsBySlug.get(param(req, "slug"));
+    const collection = collectionId
+      ? state.collections.get(collectionId)
+      : null;
+    if (
+      !collection ||
+      (collection.visibility !== "public" &&
+        collection.visibility !== "unlisted") ||
+      state.deletedUsers.has(collection.owner_id)
+    ) {
+      res.status(404).json({ message: "not-found" });
+      return;
+    }
+    res.json({ routes: [] });
+  });
+
+  app.get("/api/v1/collections/me", requireAuth, (req: AuthedRequest, res) => {
+    const session = req.session!;
+    // `ownedByViewer: true` nulls `owner_name` — matches
+    // `RouteCollectionsService.toSummaryResponse` on the self-owned
+    // endpoints. Order by `updated_at` DESC to match production
+    // `RouteCollectionsService.listMine`'s `ORDER BY c.updated_at
+    // DESC`; `Map` insertion order would otherwise hand back the
+    // oldest row first and let an e2e assert reversed ordering.
+    const items = [...state.collections.values()]
+      .filter((c) => c.owner_id === session.user_id)
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+      .map((c) => serializeCollectionSummary(c, { ownedByViewer: true }));
+    res.json({ items, total: items.length });
+  });
+
+  app.get(
+    "/api/v1/collections/me/library",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const session = req.session!;
+      // `owned` is the rider's own rows → owner_name null. Production
+      // builds this half by calling `listMine`, which orders
+      // `c.updated_at DESC`; mirror the sort here so an e2e that
+      // updates an older row sees it bubble to the top instead of the
+      // mock's insertion order.
+      const owned = [...state.collections.values()]
+        .filter((c) => c.owner_id === session.user_id)
+        .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+        .map((c) => serializeCollectionSummary(c, { ownedByViewer: true }));
+      // `followed` surfaces other riders' collections the viewer
+      // already followed. Production `RouteCollectionsService
+      // .listLibrary` drops rows whose owner has been soft-deleted
+      // (the rider is effectively gone) but KEEPS rows owned by a
+      // private rider — they're returned with `owner_id` and
+      // `owner_name` masked to `null` so the saved card stays in
+      // the library shelf without leaking identity.
+      // Sort followed rows by `followed_at` DESC so the most
+      // recently-followed collection sits at the top of the saved
+      // library — matches `RouteCollectionsService.listLibrary`'s
+      // `ORDER BY f.created_at DESC`. Iterating the inner map in
+      // insertion order would surface the oldest follow first.
+      const followsMap = state.collectionFollows.get(session.user_id);
+      const followed = followsMap
+        ? [...followsMap.entries()]
+            .sort(([, a], [, b]) => b.localeCompare(a))
+            .map(([id]) => state.collections.get(id))
+            .filter((c): c is import("./state").MockCollection => c != null)
+            // Soft-deleted owners → drop (rider is effectively gone).
+            // Collections whose owner flipped `visibility` to private
+            // → also drop (`listLibrary` uses `c.visibility <>
+            // 'private'`; the shared slug would 404 anyway).
+            .filter((c) => !state.deletedUsers.has(c.owner_id))
+            .filter((c) => c.visibility !== "private")
+            .map((c) => {
+              const ownerPrivacy = state.privacy.get(c.owner_id);
+              const maskOwner = ownerPrivacy?.profile_visibility === "private";
+              return serializeCollectionSummary(c, { maskOwner });
+            })
+        : [];
+      res.json({ owned, followed });
+    },
+  );
+
+  // Follow / unfollow a collection. Production guards with auth +
+  // looks up `route_collection_follows`; the mock mirrors that with a
+  // per-user set in `state.collectionFollows`. Same precedence as
+  // `/by-slug/:slug` — register before `:id` so the `:id` route
+  // doesn't capture the `follow` path segment.
+  app.post(
+    "/api/v1/collections/:id/follow",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const session = req.session!;
+      const collection = state.collections.get(param(req, "id"));
+      if (!collection) {
+        res.status(404).json({ message: "not-found" });
+        return;
+      }
+      // `RouteCollectionsService.follow` 404s when the collection is
+      // private or the owner has been soft-deleted, BEFORE creating
+      // the follow row. Mirror both checks so privacy-aware e2es
+      // exercise the same paths the real backend serves.
+      if (collection.visibility === "private") {
+        res.status(404).json({ message: "not-found" });
+        return;
+      }
+      if (state.deletedUsers.has(collection.owner_id)) {
+        res.status(404).json({ message: "not-found" });
+        return;
+      }
+      // Owners can't follow their own collection — production rejects
+      // with the same 400.
+      if (collection.owner_id === session.user_id) {
+        res.status(400).json({ message: "cannot-follow-own-collection" });
+        return;
+      }
+      let follows = state.collectionFollows.get(session.user_id);
+      if (!follows) {
+        follows = new Map();
+        state.collectionFollows.set(session.user_id, follows);
+      }
+      // `route_collection_follows` uses a UNIQUE (viewer, collection)
+      // index — re-following keeps the original row, so preserve the
+      // existing `followed_at` instead of bumping it on every POST.
+      // Without this an e2e that follows → toggles UI → re-follows
+      // would see the timestamp reset and the library reorder.
+      const existing = follows.get(collection.id);
+      const followedAt = existing ?? new Date().toISOString();
+      if (!existing) {
+        follows.set(collection.id, followedAt);
+      }
+      res.status(201).json({
+        collection_id: collection.id,
+        followed_at: followedAt,
+      });
+    },
+  );
+
+  app.delete(
+    "/api/v1/collections/:id/follow",
+    requireAuth,
+    (req: AuthedRequest, res) => {
+      const session = req.session!;
+      const follows = state.collectionFollows.get(session.user_id);
+      follows?.delete(param(req, "id"));
+      res.status(204).end();
+    },
+  );
+
+  app.get("/api/v1/collections/:id", requireAuth, (req: AuthedRequest, res) => {
+    const session = req.session!;
+    const collection = state.collections.get(param(req, "id"));
+    // `RouteCollectionsService.getOwned` 404s every non-owner on the
+    // id-based endpoint regardless of visibility — public/unlisted
+    // viewing is exclusively `/collections/by-slug/:slug`. Mirror that
+    // here so an e2e that accidentally hits the owner-only route as a
+    // different rider fails the same way it would in production.
+    if (!collection || collection.owner_id !== session.user_id) {
+      res.status(404).json({ message: "not-found" });
+      return;
+    }
+    res.json(serializeCollectionDetail(collection, /* viewerOwns */ true));
+  });
+
   // ── Rides ────────────────────────────────────────────────────────
   // Three endpoints back the rides surface: list (paginated + filtered),
   // tracks (geometry only, same filters minus sort/page — used for the
@@ -1443,12 +1951,16 @@ export function buildApp(): Express {
   // Must register BEFORE `/api/v1/rides/:rideId` so the "shared"
   // segment isn't captured as a rideId.
   app.get("/api/v1/rides/shared/:token", (req, res) => {
-    const rideId = state.rideShares.get(param(req, "token"));
-    const ride = rideId ? state.rides.get(rideId) : null;
-    if (!ride) {
+    const share = state.rideShares.get(param(req, "token"));
+    const ride = share ? state.rides.get(share.ride_id) : null;
+    if (!share || !ride) {
       res.status(404).json({ message: "not-found" });
       return;
     }
+    // Production increments the view counter on every fetch — mirror
+    // so subsequent `view_count` reads through the same token reflect
+    // accumulating views.
+    share.view_count += 1;
     const owner = state.users.get(ride.user_id);
     res.json({
       id: ride.id,
@@ -1460,9 +1972,9 @@ export function buildApp(): Express {
       avg_speed: ride.avg_speed,
       max_speed: ride.max_speed,
       avg_road_quality: ride.avg_road_quality,
-      avg_curviness: null,
+      avg_curviness: ride.avg_curviness,
       duration_min: deriveDurationMin(ride),
-      view_count: 1,
+      view_count: share.view_count,
       embed_click_count: 0,
       route_geometry: ride.route_geometry,
     });
@@ -1909,5 +2421,78 @@ function serializeRideDetail(ride: import("./state").MockRide) {
     fuel_estimate_l: ride.fuel_estimate_l,
     route_geometry: ride.route_geometry,
     segments: ride.segments,
+  };
+}
+
+interface CollectionSerializeOptions {
+  /**
+   * Suppresses `owner_name` when true. Production's
+   * `RouteCollectionsService.toSummaryResponse` returns `null` for the
+   * rider's own rows (the rider knows their own name) and populates
+   * the field only on surfaces that show other riders' collections.
+   */
+  ownedByViewer?: boolean;
+  /**
+   * Masks BOTH `owner_id` and `owner_name` to `null`. Production
+   * applies this when the owner's `profile_visibility` is private and
+   * the viewer is not the owner themselves — see
+   * `RouteCollectionsService.toSummaryResponse`'s private-owner
+   * branch.
+   */
+  maskOwner?: boolean;
+}
+
+function serializeCollectionSummary(
+  collection: import("./state").MockCollection,
+  opts: CollectionSerializeOptions = {},
+): {
+  id: string;
+  owner_id: string | null;
+  title: string;
+  description: string | null;
+  visibility: string;
+  slug: string;
+  item_count: number;
+  owner_name: string | null;
+  created_at: string;
+  updated_at: string;
+} {
+  const owner = state.users.get(collection.owner_id);
+  return {
+    id: collection.id,
+    owner_id: opts.maskOwner ? null : collection.owner_id,
+    title: collection.title,
+    description: collection.description,
+    visibility: collection.visibility,
+    slug: collection.slug,
+    item_count: 0,
+    owner_name:
+      opts.maskOwner || opts.ownedByViewer
+        ? null
+        : (owner?.display_name ?? "Anonymous Rider"),
+    created_at: collection.created_at,
+    updated_at: collection.updated_at,
+  };
+}
+
+function serializeCollectionDetail(
+  collection: import("./state").MockCollection,
+  viewerOwns: boolean,
+  opts: { maskOwner?: boolean; viewerIsFollowing?: boolean } = {},
+) {
+  // Production `RouteCollectionsService.toDetailResponse` hydrates the
+  // owner relation and surfaces `owner_name` on every detail response
+  // — the suppression only applies to summary/list responses for
+  // owned rows. Forwarding `ownedByViewer: viewerOwns` here would let
+  // an e2e assert `owner_name: null` on an owner-detail or self
+  // public-slug payload that production never serves. Privacy still
+  // wins via `maskOwner`.
+  return {
+    ...serializeCollectionSummary(collection, {
+      maskOwner: opts.maskOwner,
+    }),
+    items: [] as unknown[],
+    viewer_is_owner: viewerOwns,
+    viewer_is_following: opts.viewerIsFollowing ?? false,
   };
 }

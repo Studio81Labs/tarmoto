@@ -32,6 +32,22 @@ export interface MockTrip {
 }
 
 /**
+ * Cloud-synced route collection (US-56). The backend exposes both a
+ * private "my collections" surface and a public-by-slug surface; the
+ * mock row carries everything both endpoints need to serialise.
+ */
+export interface MockCollection {
+  id: string;
+  owner_id: string;
+  title: string;
+  description: string | null;
+  visibility: "private" | "unlisted" | "public";
+  slug: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
  * Recorded ride row. Matches the `RideSummary` + `RideDetail` shapes the
  * companion reads from `/api/v1/rides`, `/api/v1/rides/:id`, and
  * `/api/v1/rides/tracks` — list and detail responses are derived from a
@@ -56,6 +72,14 @@ export interface MockRide {
   avg_speed: number;
   max_speed: number;
   avg_road_quality: number;
+  /**
+   * Length-weighted average curviness across the road segments this
+   * ride crossed (0–10). Mirrors `ride.avg_curviness` on the
+   * production schema and powers `min_curviness` filtering + the
+   * `curviest` sort in `SharingService.listCommunityRides`. Null on
+   * rides whose route never crossed a curviness-scored segment.
+   */
+  avg_curviness: number | null;
   elevation_gain: number;
   elevation_loss: number;
   curve_count: number;
@@ -221,13 +245,31 @@ export class MockState {
 
   trips = new Map<string, MockTrip>();
   rides = new Map<string, MockRide>();
+  collections = new Map<string, MockCollection>();
+  collectionsBySlug = new Map<string, string>();
   /**
-   * Token → ride-id lookup for `GET /api/v1/rides/shared/:token`. The
-   * shared-ride endpoint is anonymous, so we deliberately store the
-   * mapping separately from the ride row rather than tagging the row
-   * with a token (which would require the row to know about sharing).
+   * Per-user map of followed collection id → `followed_at` ISO
+   * timestamp. Mirrors production's `route_collection_follows` table:
+   * a row exists per (viewer, collection) pair with the row's
+   * `created_at`. The timestamp powers `listLibrary`'s
+   * `ORDER BY f.created_at DESC` so most-recently-followed
+   * collections show first in the saved-library shelf.
+   * `RouteCollectionsService.getBySlug` still only reads existence to
+   * set `viewer_is_following`, so `.has(id)` keeps working.
    */
-  rideShares = new Map<string, string>();
+  collectionFollows = new Map<string, Map<string, string>>();
+  /**
+   * Per-share-token metadata for `GET /api/v1/rides/shared/:token`
+   * AND the public `/rides/community` feed. The community feed
+   * filters by `is_public === true` per
+   * `SharingService.listCommunityRides`'s `sr.is_public = true`
+   * predicate; private shares stay reachable by token but don't show
+   * up in the feed.
+   */
+  rideShares = new Map<
+    string,
+    { ride_id: string; is_public: boolean; view_count: number }
+  >();
   suggestions = new Map<string, MockSuggestion>();
   activity: MockActivity[] = [];
   roadReviews = new Map<string, MockRoadReview[]>();
@@ -279,6 +321,9 @@ export class MockState {
     this.trips.clear();
     this.rides.clear();
     this.rideShares.clear();
+    this.collections.clear();
+    this.collectionsBySlug.clear();
+    this.collectionFollows.clear();
     this.suggestions.clear();
     this.activity = [];
     this.roadReviews.clear();
